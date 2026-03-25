@@ -1,0 +1,11 @@
+{
+  "id": "rss_regional",
+  "name": "Regional News Feeds",
+  "description": "17 regional news sources: NDTV, The Hindu, Al Jazeera, BBC regional, Africanews, UN News, Mongabay, and more",
+  "category": "news",
+  "regions": ["south-asia", "middle-east", "africa", "global"],
+  "requires_key": false,
+  "env_vars": [],
+  "rate_limit_note": "Standard HTTP. No special limits.",
+  "default_since": "24h"
+}

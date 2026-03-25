@@ -1,0 +1,11 @@
+{
+  "id": "cojournalist",
+  "name": "coJournalist",
+  "description": "AI-curated local news units from coJournalist scouts (web, pulse, social)",
+  "category": "local_news",
+  "regions": ["global"],
+  "requires_key": true,
+  "env_vars": ["COJOURNALIST_API_KEY"],
+  "rate_limit_note": "60 req/min for units, 30 req/min for search",
+  "default_since": "7d"
+}

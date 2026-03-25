@@ -1,0 +1,11 @@
+{
+  "id": "gdacs",
+  "name": "GDACS Disaster Alerts",
+  "description": "Global Disaster Alert and Coordination System — floods, cyclones, volcanoes, wildfires, drought",
+  "category": "crisis",
+  "regions": ["global"],
+  "requires_key": false,
+  "env_vars": [],
+  "rate_limit_note": "Public API. No documented rate limits.",
+  "default_since": "7d"
+}

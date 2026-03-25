@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(command -v firecrawl)",
+      "Bash(command -v exa)",
+      "Bash(command -v tavily)"
+    ]
+  }
+}

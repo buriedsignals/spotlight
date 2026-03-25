@@ -1,0 +1,11 @@
+{
+  "id": "gdelt",
+  "name": "GDELT Document API",
+  "description": "Global news articles from 150+ countries in 21 languages",
+  "category": "news",
+  "regions": ["global"],
+  "requires_key": false,
+  "env_vars": [],
+  "rate_limit_note": "Max 1 request per 5 seconds. Aggressive 429 enforcement.",
+  "default_since": "24h"
+}
