@@ -1,3 +1,5 @@
 cases/
+apps/
+serve.py
 .DS_Store
 .spotlight-config.json

@@ -66,6 +66,28 @@ python3 tools/cojournalist/scout.py delete "name"
 
 Requires `COJOURNALIST_API_KEY` env var.
 
+## Investigation Review & Production Handoff
+
+After Gate 1, Tom reviews findings in the local investigation review app.
+
+```bash
+python serve.py          # http://localhost:8001/apps/investigations/
+```
+
+The review app reads from `cases/{project}/` and lets Tom review findings, provide
+per-finding feedback, and approve the investigation. On approval, the server
+automatically creates `../newsroom/production/{project}/` with:
+
+- `investigation/` — symlinks to case files (findings.json, fact-check.json, summary.json, research/, geo/, data/)
+- `script-assets/` — symlinks to curated media from `cases/{project}/script-assets/` and `research/media/`
+
+This provides the Chronicler's scriptwriter (in newsroom) with structured access to
+all investigation materials without duplicating files. The scriptwriter reads from
+`production/{project}/investigation/` and curates visual assets in `production/{project}/script-assets/`.
+
+The review app and serve.py are local-only (gitignored) — they exist on this device for the
+handoff workflow. The marketplace skill handles the investigation pipeline itself.
+
 ## Sensitive Mode
 
 When Tom says "switch to sensitive mode": remove WebFetch and WebSearch from agent spawn
