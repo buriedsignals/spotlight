@@ -1,7 +1,7 @@
 # Spotlight Runtime-Agnostic Rebuild — Plan
 
 **Date:** 2026-04-15  
-**Status:** Draft — pending Tom approval  
+**Status:** Phase 1 Approved — Phase 2 pending launch  
 **Branch:** `feature/agnostic-rebuild`  
 
 ---
@@ -643,10 +643,10 @@ No migration path in Phase 2 — adapters are scaffolding only. Phase 3 (post-ap
 
 || # | Question | Options | Recommendation |
 |---|----|---------|----------|------------|
-| **O1** | Should the agnostic version include the full OSINT routing table (~1,000 lines from `tools/skills/osint/`)? | (a) Full port — self-contained, duplicates maintenance burden (b) Reference-only — adapter imports from marketplace, breaks hermes-only users (c) Minimal core — 20 most-used tools ported, rest via OSINT Navigator | **Option (c)** — OSINT Navigator (`$OSINT_NAV_API_KEY`) handles tool discovery; port 20 core tools to the agnostic `skills/osint/SKILL.md` |
+| **O1** | Should the agnostic version include the full OSINT routing table (~1,000 lines from `tools/skills/osint/`)? | (a) Full port as its own Claude Code spawn (b) Reference-only — adapter imports from marketplace (c) Minimal core — 20 most-used tools ported | **Option (a)** — full port as a standalone Claude Code spawn. Each OSINT skill (`/osint`, `/investigate`, `/follow-the-money`) ported with TOML/YAML frontmatter + tool verbs, referencing OSINT Navigator for the full routing table. This keeps the agnostic spotlight self-contained and hermes-compatible without needing the marketplace plugin. |
 | **O2** | TOML vs YAML frontmatter? | (a) TOML (b) YAML | **YAML** — wider LLM training coverage; `---` delimiter unambiguous |
 | **O3** | Gemini sub-agent persistence | Gemini Code Execution doesn't persist state between turns | Document as limitation; Gemini adapter targets Phase 3 after Gemini 2.0 agent API matures |
-| **O4** | Sensitive mode for Mycroft | The local CLAUDE.md mentions sensitive mode (no web tools) | Add `sensitive: true` to orchestrator config; adapter strips `fetch`/`search` verbs from agent manifests when set |
+| **O4** | Sensitive mode for Mycroft + sub-agent orchestration | The local CLAUDE.md mentions sensitive mode (no web tools). O4 also surfaced whether Gemma can host sub-agents directly. | **Decision:** Add `sensitive: true` to orchestrator config — adapter strips `fetch`/`search` verbs from agent manifests when set. **Architecture clarification:** Gemma runs as orchestrator (stateless inference over SKILL.md playbook), making sequencing decisions. For `invoke-skill`, `spawn-agent`, and evaluation steps, Mycroft's adapter dispatches to whatever backend is available — `delegate_task → Claude Code` in our case, or any runtime's native sub-agent primitive. The agnostic contract is about the skill files being runtime-neutral; the adapter's internal dispatch choice is implementation-specific, not part of the contract. |
 | **O5** | coJournalist scout management in Hermes | Mycroft's monitoring skills use `python3 tools/cojournalist/scout.py` | Adapter wraps these as `invoke-skill(monitoring)` calls — same as Claude Code |
 | **O6** | Cases directory location | Currently `~/buried_signals/spotlight/cases/` | Keep — `cases_root` in orchestrator SKILL.md references relative path |
 
