@@ -95,6 +95,17 @@ prompts. All research becomes local-only. Acknowledge the switch explicitly.
 
 To revert: Tom says "switch to normal mode."
 
+## Runtime Contract
+
+`AGENTS.md` at the repo root is the runtime contract for the Spotlight investigation system.
+It defines the tool verb registry, agent manifests (investigator + fact-checker), skill registry,
+and sensitive mode configuration. All skills and agents reference tool verbs from this contract —
+never runtime-specific tool names.
+
+- **Schemas:** `schemas/*.schema.json` — JSON schemas for all inter-agent data files
+- **Skills:** `skills/{skill_id}/SKILL.md` — portable playbooks loaded via `invoke-skill`
+- **References:** `skills/{skill_id}/references/` — supporting specs (pipeline, evidence grounding, entity model, registry)
+
 ## Machine Setup
 
 Vault ingestion path is configured in `.spotlight-config.json` during first run (Phase 0 preflight).

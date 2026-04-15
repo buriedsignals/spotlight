@@ -1,4 +1,5 @@
-cases/
+cases/*
+!cases/.gitkeep
 apps/
 serve.py
 .DS_Store
