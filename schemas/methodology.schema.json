@@ -35,7 +35,7 @@
           "osint_techniques": { "type": "array", "items": { "type": "string" } },
           "key_sources": { "type": "array", "items": { "type": "string" } },
           "risks": { "type": "array", "items": { "type": "string" } },
-          "estimated_difficulty": { "enum": ["quick scan","moderate","deep document trail"] }
+          "estimated_difficulty": { "enum": ["quick scan", "moderate", "deep document trail"] }
         }
       }
     },
