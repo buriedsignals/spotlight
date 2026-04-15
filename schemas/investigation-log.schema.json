@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "schema_version": "1.0",
+  "type": "object",
+  "required": ["schema_version", "project", "cycles"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "project": { "type": "string" },
+    "cycles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["cycle", "timestamp", "focus", "methodology", "findings_added", "gaps_remaining"],
+        "properties": {
+          "cycle": { "type": "integer", "minimum": 1 },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "focus": { "type": "string" },
+          "methodology": {
+            "type": "object",
+            "required": ["techniques_used", "tools_used"],
+            "properties": {
+              "techniques_used": { "type": "array", "items": { "type": "string" } },
+              "tools_used": { "type": "array", "items": { "type": "string" } },
+              "search_queries": { "type": "array", "items": { "type": "string" } },
+              "failed_approaches": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "sources_consulted": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["url", "type", "accessed", "useful"],
+              "properties": {
+                "url": { "type": "string" },
+                "type": { "type": "string" },
+                "accessed": { "type": "string", "format": "date-time" },
+                "useful": { "type": "boolean" }
+              }
+            }
+          },
+          "findings_added": { "type": "integer" },
+          "findings_upgraded": { "type": "integer" },
+          "gaps_resolved": { "type": "array", "items": { "type": "string" } },
+          "gaps_remaining": { "type": "array", "items": { "type": "string" } },
+          "notes": { "type": "string" }
+        }
+      }
+    }
+  }
+}

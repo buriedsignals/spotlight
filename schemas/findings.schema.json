@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "schema_version": "1.0",
+  "type": "object",
+  "required": ["schema_version", "project", "lead", "findings"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "project": { "type": "string" },
+    "lead": { "type": "string" },
+    "investigated_at": { "type": "string", "format": "date-time" },
+    "cycle": { "type": "integer", "minimum": 1 },
+    "questions": { "type": "array", "items": { "type": "string" } },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "claim", "sources", "confidence"],
+        "properties": {
+          "id": { "type": "string" },
+          "claim": { "type": "string" },
+          "evidence": { "type": "string" },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["url", "accessed"],
+              "properties": {
+                "url": { "type": "string", "format": "uri" },
+                "type": { "enum": ["court_filing","news","registry","social_media","government","ngo_report","satellite","other"] },
+                "accessed": { "type": "string", "format": "date-time" },
+                "local_file": { "type": "string" },
+                "access_method": { "enum": ["full_text","open_access","archive_copy","abstract_only","inaccessible"] }
+              }
+            }
+          },
+          "confidence": { "enum": ["high","medium","low"] },
+          "confidence_rationale": { "type": "string" },
+          "perspective": { "enum": ["official","affected_community","independent_observer","corporate","legal"] }
+        }
+      }
+    },
+    "connections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "relationship"],
+        "properties": {
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "relationship": { "type": "string" },
+          "evidence": { "type": "string" }
+        }
+      }
+    },
+    "gaps": { "type": "array", "items": { "type": "string" } },
+    "next_steps": { "type": "array", "items": { "type": "string" } },
+    "monitoring_recommendations": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/monitoring_recommendation" }
+    }
+  },
+  "definitions": {
+    "monitoring_recommendation": {
+      "type": "object",
+      "required": ["id", "target", "scout_type", "criteria", "rationale", "priority"],
+      "properties": {
+        "id": { "type": "string" },
+        "target": { "type": "string" },
+        "scout_type": { "enum": ["web","pulse","social","civic"] },
+        "criteria": { "type": "string" },
+        "rationale": { "type": "string" },
+        "priority": { "enum": ["high","medium","low"] },
+        "finding_refs": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}
