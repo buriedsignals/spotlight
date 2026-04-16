@@ -1,0 +1,1 @@
+# Slice 4: Investigator EXECUTION Mode + Investigation-Log Schema\n\nPlaceholder for runtime-agnostic Spotlight rebuild - slice 4.\n\n## Goals\n- Investigator EXECUTION mode implementation\n- Investigation-log schema design\n
