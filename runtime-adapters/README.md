@@ -54,23 +54,26 @@ Every adapter MUST implement all verbs from the registry. At load time, the adap
 | `query-vault` | Search knowledge vault for context |
 | `vault-write` | Write note to vault and update registry |
 
-## Available Adapters
+## Available Adapter Specs
 
 | Adapter | File | Status | Notes |
 |---------|------|--------|-------|
-| Claude | `claude.py` | Stable | Claude Code-specific tool bindings |
-| Hermes | `hermes.py` | Stable | Hermes agent framework bindings |
+| Claude | `claude.md` | Spec | Claude Code verb-to-tool mapping (WebFetch, Read, Edit, Task, etc.) |
+| Hermes | `hermes.md` | Spec | Hermes agent framework verb-to-tool mapping |
+| Codex / Gemini / others | _not yet written_ | — | Any agent that can read `AGENTS.md` and these specs can bind the verb contract to its own tools |
 
-## Loading an Adapter
+## How Adapters Are Used
 
-Adapters are loaded by the orchestrator at startup:
+These files are **specifications, not importable modules**. The directory name `runtime-adapters/` contains a hyphen, which is not a valid Python identifier — the `.md` specs document each runtime's verb-to-tool binding so a new runtime can be ported by following the pattern.
 
-```python
-from runtime_adapters import load_adapter
+A runtime integrates with Spotlight by:
 
-adapter = load_adapter("claude")  # or "hermes"
-adapter.validate()  # Raises AdapterValidationError if incomplete
-```
+1. Reading `AGENTS.md` (the verb contract + agent manifests)
+2. Reading `skills/{skill_id}/SKILL.md` when the orchestrator emits `invoke-skill`
+3. Mapping each of the 13 verbs to native tool calls in that runtime (use `claude.md` or `hermes.md` as reference)
+4. Enforcing `sensitive: true` by stripping `fetch` and `search` from `allowed_verbs`
+
+For interactive use (Claude Code, Codex, Gemini sessions), the runtime's own AI reads the contract and performs the mapping on the fly — no pre-built adapter code is required.
 
 ## Sensitive Mode
 
