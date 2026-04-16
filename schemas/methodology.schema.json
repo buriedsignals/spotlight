@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "schema_version": "1.0",
+  "type": "object",
+  "required": ["schema_version", "project", "investigation_plan"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "project": { "type": "string" },
+    "lead": { "type": "string" },
+    "planned_at": { "type": "string", "format": "date-time" },
+    "brief_directions": { "type": "array", "items": { "type": "string" } },
+    "investigation_plan": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["direction", "questions", "steps"],
+        "properties": {
+          "direction": { "type": "string" },
+          "questions": { "type": "array", "items": { "type": "string" } },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["order", "action", "tool"],
+              "properties": {
+                "order": { "type": "integer" },
+                "action": { "type": "string" },
+                "tool": { "type": "string" },
+                "target": { "type": "string" },
+                "expected_evidence": { "type": "string" },
+                "fallback": { "type": "string" }
+              }
+            }
+          },
+          "osint_techniques": { "type": "array", "items": { "type": "string" } },
+          "key_sources": { "type": "array", "items": { "type": "string" } },
+          "risks": { "type": "array", "items": { "type": "string" } },
+          "estimated_difficulty": { "enum": ["quick scan", "moderate", "deep document trail"] }
+        }
+      }
+    },
+    "tools_required": { "type": "array", "items": { "type": "string" } },
+    "opsec_considerations": { "type": "array", "items": { "type": "string" } },
+    "limitations": { "type": "array", "items": { "type": "string" } }
+  }
+}

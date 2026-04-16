@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "schema_version": "1.0",
+  "type": "object",
+  "required": ["schema_version", "project", "claims"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "project": { "type": "string" },
+    "source_document": { "type": "string" },
+    "checked_at": { "type": "string", "format": "date-time" },
+    "cycle": { "type": "integer", "minimum": 1 },
+    "summary": {
+      "type": "object",
+      "required": ["total_claims", "verified", "unverified", "disputed", "false"],
+      "properties": {
+        "total_claims": { "type": "integer" },
+        "verified": { "type": "integer" },
+        "unverified": { "type": "integer" },
+        "disputed": { "type": "integer" },
+        "false": { "type": "integer" }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "finding_id", "claim_text", "verdict", "evidence_for"],
+        "properties": {
+          "id": { "type": "integer" },
+          "finding_id": { "type": "string" },
+          "claim_text": { "type": "string" },
+          "verdict": { "enum": ["verified","unverified","disputed","false"] },
+          "confidence": { "enum": ["high","medium","low"] },
+          "evidence_for": { "type": "array", "items": { "$ref": "#/definitions/evidence_item" } },
+          "evidence_against": { "type": "array", "items": { "$ref": "#/definitions/evidence_item" } },
+          "sources": { "type": "array", "items": { "type": "string" } },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "gaps_for_next_cycle": { "type": "array", "items": { "type": "string" } }
+  },
+  "definitions": {
+    "evidence_item": {
+      "type": "object",
+      "required": ["description", "source"],
+      "properties": {
+        "description": { "type": "string" },
+        "source": { "type": "string" },
+        "source_type": { "enum": ["primary","secondary"] },
+        "archive_url": { "type": "string" },
+        "access_method": { "enum": ["full_text","open_access","archive_copy","abstract_only","inaccessible"] }
+      }
+    }
+  }
+}
