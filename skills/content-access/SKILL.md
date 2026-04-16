@@ -1,12 +1,10 @@
 ---
 name: content-access
 description: Work through the legal access hierarchy for paywalled or restricted sources before marking them inaccessible and downgrading confidence
-version: 1.0.0
-dependencies:
-  skills:
-    - web-archiving
-  env_vars:
-    - CORE_API_KEY
+version: "1.0"
+invocable_by: [investigator, fact-checker]
+requires: [web-archiving]
+env_vars: [CORE_API_KEY]
 attribution: Adapted from jamditis/claude-skills-journalism (https://github.com/jamditis/claude-skills-journalism). Original author: Jay Amditis. MIT License.
 ---
 

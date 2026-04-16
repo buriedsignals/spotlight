@@ -1,10 +1,10 @@
 ---
 name: web-archiving
 description: Archive evidence before it disappears — structured preservation with chain of custody for editorial accountability and legal defensibility
-version: 1.0.0
-dependencies:
-  skills: []
-  env_vars: []
+version: "1.0"
+invocable_by: [investigator, fact-checker]
+requires: []
+env_vars: []
 attribution: Adapted from jamditis/claude-skills-journalism (https://github.com/jamditis/claude-skills-journalism). Original author: Jay Amditis. MIT License.
 ---
 
