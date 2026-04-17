@@ -58,7 +58,7 @@ Spotlight is provided "as is" per the MIT License. Buried Signals makes no warra
 If you find a bug, a factual error baked into the methodology, or a privacy/security concern:
 
 - GitHub Issues: https://github.com/buriedsignals/spotlight/issues
-- Email: tom@buriedsignals.com
+- Email: buriedsignals@agentmail.com
 
 For security issues (credential leaks, API key exposure patterns, etc.), email directly before filing a public issue.
 
