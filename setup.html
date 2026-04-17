@@ -44,6 +44,8 @@
   h1 { margin: 0 0 8px; font-size: 2rem; letter-spacing: -0.01em; }
   .sub { color: var(--muted); margin: 0 0 40px; font-size: 1.05rem; }
   h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 36px 0 12px; font-weight: 600; }
+  h2 .req { color: var(--red); font-weight: 600; font-size: 0.7rem; margin-left: 6px; letter-spacing: 0.08em; }
+  h2 .opt { color: var(--muted); font-weight: 400; font-size: 0.75rem; margin-left: 6px; text-transform: none; letter-spacing: 0; }
   section.card {
     background: var(--bg-2);
     border: 1px solid var(--border);
@@ -53,6 +55,8 @@
   }
   label.block { display: block; margin-bottom: 8px; font-size: 0.92rem; font-weight: 500; }
   label.block .hint { color: var(--muted); font-weight: 400; font-size: 0.85rem; margin-left: 4px; }
+  label.block a { color: var(--accent); text-decoration: none; }
+  label.block a:hover { text-decoration: underline; }
   input[type="text"], input[type="password"], select {
     width: 100%;
     background: var(--bg-3);
@@ -60,13 +64,10 @@
     border-radius: 6px;
     padding: 9px 12px;
     color: var(--fg);
-    font-family: inherit;
-    font-size: 0.95rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.92rem;
   }
   input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
   .radio-group, .checkbox-group { display: flex; flex-direction: column; gap: 8px; }
   .radio-group label, .checkbox-group label {
     cursor: pointer;
@@ -82,20 +83,58 @@
   }
   .radio-group label:hover, .checkbox-group label:hover { background: var(--bg); }
   .radio-group input, .checkbox-group input { margin-top: 4px; flex-shrink: 0; }
-  .radio-group input:checked + .opt, .checkbox-group input:checked + .opt { color: var(--accent); }
   .radio-group label:has(input:checked), .checkbox-group label:has(input:checked) {
     background: var(--bg);
     border-color: var(--accent);
   }
-  .opt { flex: 1; }
-  .opt .name { font-weight: 600; display: block; font-size: 0.97rem; }
-  .opt .desc { color: var(--muted); font-size: 0.85rem; margin-top: 2px; line-height: 1.45; }
+  .opt-name { flex: 1; }
+  .opt-name .name { font-weight: 600; display: block; font-size: 0.97rem; }
+  .opt-name .desc { color: var(--muted); font-size: 0.85rem; margin-top: 2px; line-height: 1.45; }
   .key-row { margin-top: 10px; }
-  .key-row input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  details { margin-top: 10px; }
-  details summary { cursor: pointer; color: var(--muted); font-size: 0.88rem; padding: 4px 0; }
-  details summary:hover { color: var(--fg); }
   .hidden { display: none !important; }
+  .step-card {
+    background: rgba(124, 183, 255, 0.06);
+    border-left: 3px solid var(--accent);
+    padding: 14px 18px;
+    border-radius: 4px;
+    margin-top: 14px;
+    font-size: 0.92rem;
+  }
+  .step-card h4 {
+    margin: 0 0 10px;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .step-card ol, .step-card ul { margin: 6px 0; padding-left: 22px; }
+  .step-card li { margin: 5px 0; line-height: 1.5; }
+  .step-card code {
+    background: var(--bg-3);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 0.86em;
+  }
+  .step-card a { color: var(--accent); }
+  .note-amber {
+    background: rgba(217, 164, 65, 0.08);
+    border-left: 3px solid var(--amber);
+    padding: 10px 14px;
+    border-radius: 4px;
+    font-size: 0.88rem;
+    margin-top: 12px;
+    color: var(--fg);
+  }
+  .model-info {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 0.88rem;
+    color: var(--muted);
+    margin-top: 10px;
+  }
+  .model-info .stat strong { display: block; color: var(--fg); font-size: 1rem; }
   .generate-bar {
     margin-top: 36px;
     display: flex;
@@ -117,17 +156,6 @@
   }
   button.primary:hover { filter: brightness(1.08); }
   button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
-  button.secondary {
-    background: var(--bg-3);
-    color: var(--fg);
-    border: 1px solid var(--border);
-    padding: 10px 18px;
-    border-radius: 8px;
-    font-family: inherit;
-    font-size: 0.95rem;
-    cursor: pointer;
-  }
-  button.secondary:hover { filter: brightness(1.08); }
   .install-options {
     display: grid;
     grid-template-columns: 1fr;
@@ -148,7 +176,7 @@
     border-radius: 6px;
     padding: 14px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     line-height: 1.5;
     white-space: pre;
     overflow-x: auto;
@@ -188,15 +216,6 @@
     font-family: inherit;
     font-size: 0.85rem;
   }
-  .note {
-    background: rgba(217, 164, 65, 0.1);
-    border-left: 3px solid var(--amber);
-    padding: 10px 14px;
-    border-radius: 4px;
-    font-size: 0.88rem;
-    margin-top: 12px;
-    color: var(--fg);
-  }
   .copied-feedback {
     display: inline-block;
     margin-left: 12px;
@@ -215,99 +234,166 @@
   code { background: var(--bg-3); padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
   .intro-list { font-size: 0.93rem; color: var(--muted); padding-left: 22px; margin: 0 0 24px; }
   .intro-list li { margin: 4px 0; }
+  a.link { color: var(--accent); text-decoration: none; }
+  a.link:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
 <div class="wrap">
 
   <h1>Install Spotlight</h1>
-  <p class="sub">Pick your setup. We'll generate an installer that gets you running in about five minutes.</p>
+  <p class="sub">Pick local or cloud. Fill in a few fields. Get a ready-to-run installer.</p>
 
   <ul class="intro-list">
     <li>Works on macOS and Linux. Windows requires WSL.</li>
-    <li>All keys stay on your machine. Nothing is uploaded.</li>
-    <li>Safe to re-run — updates existing installs without clobbering case data.</li>
+    <li>All keys stay on your machine — nothing is uploaded.</li>
+    <li>After install, type <code>spotlight</code> in any terminal to start an investigation.</li>
   </ul>
 
   <form id="setup-form" onsubmit="return false;">
 
-    <h2>Runtime</h2>
+    <h2>Mode <span class="req">REQUIRED</span></h2>
     <section class="card">
-      <div class="radio-group" id="runtime-group">
-        <label><input type="radio" name="runtime" value="pi" checked><span class="opt"><span class="name">pi</span><span class="desc">Minimal TypeScript harness (pi.dev). Native AGENTS.md + SKILL.md support. Recommended.</span></span></label>
-        <label><input type="radio" name="runtime" value="claude"><span class="opt"><span class="name">Claude Code</span><span class="desc">Anthropic's CLI. Requires Claude API subscription.</span></span></label>
-        <label><input type="radio" name="runtime" value="codex"><span class="opt"><span class="name">Codex CLI</span><span class="desc">OpenAI's CLI. Requires OpenAI API key.</span></span></label>
-        <label><input type="radio" name="runtime" value="gemini"><span class="opt"><span class="name">Gemini CLI</span><span class="desc">Google's CLI. Requires Gemini API key.</span></span></label>
-        <label><input type="radio" name="runtime" value="local"><span class="opt"><span class="name">Local model</span><span class="desc">Run everything on your own machine with a fine-tuned journalism model. Private by design.</span></span></label>
+      <div class="radio-group">
+        <label><input type="radio" name="mode" value="local" checked><span class="opt-name"><span class="name">Local</span><span class="desc">Run a fine-tuned journalism model on your own machine. Private by design — nothing leaves your laptop. Uses <strong>pi</strong> (pi.dev) as the agent harness with a model pulled from Hugging Face.</span></span></label>
+        <label><input type="radio" name="mode" value="cloud"><span class="opt-name"><span class="name">Cloud</span><span class="desc">Use a hosted model (Claude Code, Gemini, or Codex). Faster investigations, higher quality, but queries go to the provider.</span></span></label>
       </div>
-
-      <div id="runtime-keys" style="margin-top: 16px;"></div>
     </section>
 
-    <div id="local-section" class="hidden">
-      <h2>Local model setup</h2>
+    <!-- LOCAL SECTION -->
+    <div id="local-section">
+      <h2>Local model</h2>
       <section class="card">
-        <label class="block">Local inference backend</label>
-        <div class="radio-group">
-          <label><input type="radio" name="local_backend" value="ollama" checked><span class="opt"><span class="name">Ollama <span class="hint">(recommended)</span></span><span class="desc">One-command install via brew. Resolves Hugging Face models directly. Runs on :11434.</span></span></label>
-          <label><input type="radio" name="local_backend" value="llama-server"><span class="opt"><span class="name">llama-server (llama.cpp) <span class="hint">(advanced)</span></span><span class="desc">Lower-level, GGUF direct. Matches the Mac Mini Hermes setup. Runs on :8081.</span></span></label>
+        <p style="margin-top:0; color:var(--muted); font-size:0.93rem;">
+          The installer will use <strong>pi</strong> as the agent harness (<a class="link" href="https://pi.dev" target="_blank">pi.dev</a>, MIT license) and <strong>Ollama</strong> to serve the model locally on <code>127.0.0.1:11434</code>. Both install with one command.
+        </p>
+
+        <label class="block" style="margin-top: 14px;">Hugging Face model repo <span class="hint">— fine-tuned journalism model</span></label>
+        <input type="text" id="model_repo" placeholder="tomvaillant/qwen3-8b-journalist" value="tomvaillant/qwen3-8b-journalist">
+
+        <div class="model-info">
+          <div class="stat"><strong>~5–8 GB</strong>download size</div>
+          <div class="stat"><strong>Ollama</strong>backend</div>
+          <div class="stat"><strong>127.0.0.1:11434</strong>endpoint</div>
         </div>
 
-        <label class="block" style="margin-top: 16px;">Hugging Face model repo <span class="hint">(fine-tune; placeholder until Tom publishes)</span></label>
-        <input type="text" id="model_repo" placeholder="tomvaillant/qwen3-8b-journalist" value="tomvaillant/qwen3-8b-journalist">
-        <p class="note" style="margin-top: 8px;">The fine-tuned journalism model is not yet published. This field defaults to the expected path; leave as-is and the installer will warn if the repo isn't live yet.</p>
+        <p class="note-amber">
+          <strong>Note:</strong> the fine-tuned journalism model isn't published yet. The default value above is the expected path. The installer will continue even if the pull fails — you can re-run <code>ollama pull hf.co/&lt;repo&gt;</code> once the model is live. Model download progress will stream in your Terminal.
+        </p>
       </section>
     </div>
 
-    <h2>Web scraping (required)</h2>
+    <!-- CLOUD SECTION -->
+    <div id="cloud-section" class="hidden">
+      <h2>Cloud provider</h2>
+      <section class="card">
+        <div class="radio-group" id="cloud-group">
+          <label><input type="radio" name="cloud_runtime" value="claude" checked><span class="opt-name"><span class="name">Claude Code</span><span class="desc">Anthropic's terminal agent. Installs via npm; reads <code>AGENTS.md</code> natively once symlinked to <code>CLAUDE.md</code>.</span></span></label>
+          <label><input type="radio" name="cloud_runtime" value="gemini"><span class="opt-name"><span class="name">Gemini</span><span class="desc">Google's terminal agent. Installs via npm; reads <code>GEMINI.md</code> (symlinked to <code>AGENTS.md</code>).</span></span></label>
+          <label><input type="radio" name="cloud_runtime" value="codex"><span class="opt-name"><span class="name">Codex</span><span class="desc">OpenAI's terminal agent. Installs via npm; reads <code>AGENTS.md</code> natively.</span></span></label>
+        </div>
+
+        <div class="key-row">
+          <label class="block" id="cloud_key_label">Anthropic API key <span class="hint">— leave blank if you've already set it globally.</span></label>
+          <input type="password" id="cloud_key" placeholder="sk-ant-..." autocomplete="off">
+        </div>
+
+        <!-- Per-runtime usage steps, conditional -->
+        <div id="cloud-usage-claude" class="step-card">
+          <h4>How you'll run Spotlight with Claude Code</h4>
+          <ol>
+            <li>Installer runs <code>npm install -g @anthropic-ai/claude-code</code></li>
+            <li>Installer clones the repo and symlinks <code>AGENTS.md → CLAUDE.md</code> so Claude Code picks up the Spotlight contract</li>
+            <li>Installer adds a <code>spotlight</code> shell function to your <code>~/.zshrc</code> (or <code>~/.bashrc</code>)</li>
+            <li>Open a new terminal and type <code>spotlight</code> — it opens Claude Code in the Spotlight repo with the skill loaded. Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
+          </ol>
+          <p style="margin:10px 0 0;">You can also use the Claude Desktop app: open the Spotlight repo folder, and Claude will see <code>CLAUDE.md</code> automatically.</p>
+        </div>
+
+        <div class="step-card hidden" id="cloud-usage-gemini">
+          <h4>How you'll run Spotlight with Gemini CLI</h4>
+          <ol>
+            <li>Installer runs <code>npm install -g @google/gemini-cli</code></li>
+            <li>Installer clones the repo and symlinks <code>AGENTS.md → GEMINI.md</code> so Gemini picks up the Spotlight contract</li>
+            <li>Installer adds a <code>spotlight</code> shell function to your <code>~/.zshrc</code> (or <code>~/.bashrc</code>)</li>
+            <li>Open a new terminal and type <code>spotlight</code> — it opens Gemini in the Spotlight repo with the skill loaded. Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
+          </ol>
+        </div>
+
+        <div class="step-card hidden" id="cloud-usage-codex">
+          <h4>How you'll run Spotlight with Codex</h4>
+          <ol>
+            <li>Installer runs <code>npm install -g @openai/codex</code></li>
+            <li>Codex reads <code>AGENTS.md</code> natively — no symlink needed</li>
+            <li>Installer adds a <code>spotlight</code> shell function to your <code>~/.zshrc</code> (or <code>~/.bashrc</code>)</li>
+            <li>Open a new terminal and type <code>spotlight</code> — it opens Codex in the Spotlight repo with the skill loaded. Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
+          </ol>
+        </div>
+      </section>
+    </div>
+
+    <h2>Web scraping <span class="req">REQUIRED</span></h2>
     <section class="card">
-      <label class="block">Firecrawl API key <span class="hint">— required for <code>fetch</code> and <code>search</code> verbs. Get one free at firecrawl.dev.</span></label>
+      <label class="block">Firecrawl API key <span class="hint">— <a class="link" href="https://www.firecrawl.dev/" target="_blank">get a free one here</a></span></label>
       <input type="password" id="firecrawl_key" placeholder="fc-..." autocomplete="off">
       <p id="firecrawl_err" class="error hidden">Firecrawl key is required.</p>
     </section>
 
-    <h2>Vault <span style="color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400;">(where findings are archived)</span></h2>
+    <h2>OSINT tool discovery <span class="req">REQUIRED</span></h2>
     <section class="card">
-      <div class="radio-group">
-        <label><input type="radio" name="vault_type" value="obsidian" checked><span class="opt"><span class="name">Obsidian vault</span><span class="desc">Findings archived with wikilinks and registries. Best for long-running knowledge.</span></span></label>
-        <label><input type="radio" name="vault_type" value="directory"><span class="opt"><span class="name">Plain directory</span><span class="desc">Markdown files with relative links. No Obsidian needed.</span></span></label>
-      </div>
-      <label class="block" style="margin-top: 14px;">Path</label>
-      <input type="text" id="vault_path" placeholder="/Users/you/Documents/investigations" value="~/spotlight-vault">
+      <p style="margin-top:0; color:var(--muted); font-size:0.93rem;">
+        OSINT Navigator gives investigators a live database of 1,000+ OSINT tools with AI-powered lookup — essential for country-specific registries and niche techniques.
+      </p>
+      <label class="block">OSINT Navigator API key <span class="hint">— <a class="link" href="https://navigator.indicator.media/" target="_blank">request access</a></span></label>
+      <input type="password" id="nav_key" placeholder="on_..." autocomplete="off">
+      <p id="nav_err" class="error hidden">OSINT Navigator key is required.</p>
     </section>
 
-    <h2>Monitoring <span style="color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400;">(optional feeds)</span></h2>
+    <h2>Intelligence vault (Obsidian) <span class="req">REQUIRED</span></h2>
+    <section class="card">
+      <p style="margin-top:0; color:var(--muted); font-size:0.93rem;">
+        Spotlight archives verified findings into an Obsidian vault as structured knowledge — entities, methodology, tools — with wikilinks. Over time, the vault becomes your investigative memory.
+      </p>
+
+      <div class="step-card">
+        <h4>Before you continue</h4>
+        <ol>
+          <li>Install Obsidian 1.12+ from <a class="link" href="https://obsidian.md/" target="_blank">obsidian.md</a> (if you don't have it already)</li>
+          <li>Open Obsidian → Settings → General → Advanced → toggle <strong>Command Line Interface</strong> ON</li>
+          <li>This adds the <code>obsidian</code> command to your PATH. Verify by running <code>obsidian --version</code> in Terminal.</li>
+          <li>Create a new vault (or pick an existing one) and note its full path</li>
+        </ol>
+      </div>
+
+      <label class="block" style="margin-top: 14px;">Vault path <span class="hint">— full path to your Obsidian vault folder</span></label>
+      <input type="text" id="vault_path" placeholder="/Users/you/Documents/Intelligence" value="~/Intelligence">
+      <p id="vault_err" class="error hidden">Vault path is required.</p>
+    </section>
+
+    <h2>Monitoring <span class="opt">optional feeds</span></h2>
     <section class="card">
       <div class="checkbox-group">
-        <label><input type="checkbox" id="monitoring_acled"><span class="opt"><span class="name">ACLED conflict events</span><span class="desc">Armed Conflict Location & Event Data. Free registration.</span></span></label>
+        <label><input type="checkbox" id="monitoring_acled"><span class="opt-name"><span class="name">ACLED conflict events</span><span class="desc">Armed Conflict Location & Event Data — battles, civilian violence, protests. Free registration required.</span></span></label>
       </div>
       <div id="acled_keys" class="hidden" style="margin-top: 10px;">
-        <label class="block">ACLED API key</label>
+        <label class="block">ACLED API key <span class="hint">— <a class="link" href="https://developer.acleddata.com/" target="_blank">get your key + email here</a></span></label>
         <input type="password" id="acled_key" placeholder="..." autocomplete="off">
-        <label class="block" style="margin-top: 10px;">ACLED email</label>
+        <label class="block" style="margin-top: 10px;">ACLED email <span class="hint">— the email you used to register</span></label>
         <input type="text" id="acled_email" placeholder="your@email.com" autocomplete="off">
-      </div>
-
-      <div class="checkbox-group" style="margin-top: 12px;">
-        <label><input type="checkbox" id="monitoring_nav"><span class="opt"><span class="name">OSINT Navigator</span><span class="desc">1,000+ OSINT tools with AI-powered lookup. Request access at navigator.indicator.media.</span></span></label>
-      </div>
-      <div id="nav_keys" class="hidden" style="margin-top: 10px;">
-        <label class="block">OSINT_NAV_API_KEY</label>
-        <input type="password" id="nav_key" placeholder="on_..." autocomplete="off">
       </div>
     </section>
 
-    <h2>Integrations <span style="color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400;">(optional external tools)</span></h2>
+    <h2>Integrations <span class="opt">optional external tools</span></h2>
     <section class="card">
       <div class="checkbox-group">
-        <label><input type="checkbox" id="int_browseruse"><span class="opt"><span class="name">browser-use</span><span class="desc">Agent-driven browser automation. Open source. Installs via pip.</span></span></label>
+        <label><input type="checkbox" id="int_browseruse"><span class="opt-name"><span class="name">browser-use</span><span class="desc">Agent-driven browser automation for complex forms and JS-rendered pages. Open source (MIT). Installs via pip. No key required.</span></span></label>
       </div>
 
       <div class="checkbox-group" style="margin-top: 12px;">
-        <label><input type="checkbox" id="int_junkipedia"><span class="opt"><span class="name">Junkipedia</span><span class="desc">Misinformation / narrative database. Application-based access at junkipedia.org.</span></span></label>
+        <label><input type="checkbox" id="int_junkipedia"><span class="opt-name"><span class="name">Junkipedia</span><span class="desc">Misinformation / narrative tracking database. Used by 100+ newsrooms. Application-based access.</span></span></label>
       </div>
       <div id="junkipedia_keys" class="hidden" style="margin-top: 10px;">
-        <label class="block">JUNKIPEDIA_API_KEY</label>
+        <label class="block">Junkipedia API key <span class="hint">— <a class="link" href="https://www.junkipedia.org/" target="_blank">apply for access</a></span></label>
         <input type="password" id="junkipedia_key" placeholder="..." autocomplete="off">
       </div>
     </section>
@@ -339,8 +425,8 @@
       <h3>Option B — Download installer</h3>
       <p class="desc">Download a single file and double-click to run. Good if you'd rather not open Terminal manually.</p>
       <button type="button" class="primary" id="download-btn">Download spotlight-setup.zip</button>
-      <p class="note">
-        <strong>First time on macOS?</strong> macOS Gatekeeper will block unsigned installers. After extracting the zip: <strong>right-click</strong> <code>spotlight-setup.command</code> → <strong>Open</strong> → <strong>Confirm</strong>. Subsequent runs are a plain double-click.
+      <p class="note-amber">
+        <strong>First time on macOS?</strong> Gatekeeper will block unsigned installers. After extracting the zip: <strong>right-click</strong> <code>spotlight-setup.command</code> → <strong>Open</strong> → <strong>Confirm</strong>. Subsequent runs: plain double-click.
       </p>
     </div>
 
@@ -352,8 +438,10 @@
 (function () {
   'use strict';
 
-  const runtimeKeysEl = document.getElementById('runtime-keys');
   const localSection = document.getElementById('local-section');
+  const cloudSection = document.getElementById('cloud-section');
+  const cloudKeyLabel = document.getElementById('cloud_key_label');
+  const cloudKeyInput = document.getElementById('cloud_key');
   const generateBtn = document.getElementById('generate-btn');
   const installOutput = document.getElementById('install-output');
   const scriptPreview = document.getElementById('script-preview');
@@ -361,29 +449,36 @@
   const copiedFeedback = document.getElementById('copied-feedback');
   const downloadBtn = document.getElementById('download-btn');
   const firecrawlErr = document.getElementById('firecrawl_err');
+  const navErr = document.getElementById('nav_err');
+  const vaultErr = document.getElementById('vault_err');
 
-  // --- Runtime API key rendering ---
-  const runtimeKeyConfig = {
-    pi: null,
-    claude: { label: 'Anthropic API key', envVar: 'ANTHROPIC_API_KEY', placeholder: 'sk-ant-...' },
-    codex: { label: 'OpenAI API key', envVar: 'OPENAI_API_KEY', placeholder: 'sk-...' },
-    gemini: { label: 'Gemini API key', envVar: 'GEMINI_API_KEY', placeholder: 'AIza...' },
-    local: null,
+  // --- Mode switching (Local vs Cloud) ---
+  function renderMode() {
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    localSection.classList.toggle('hidden', mode !== 'local');
+    cloudSection.classList.toggle('hidden', mode !== 'cloud');
+  }
+  document.querySelectorAll('input[name="mode"]').forEach(el => el.addEventListener('change', renderMode));
+
+  // --- Cloud runtime switching ---
+  const cloudKeyConfig = {
+    claude: { label: 'Anthropic API key', placeholder: 'sk-ant-...', envVar: 'ANTHROPIC_API_KEY' },
+    gemini: { label: 'Gemini API key', placeholder: 'AIza...', envVar: 'GEMINI_API_KEY' },
+    codex: { label: 'OpenAI API key', placeholder: 'sk-...', envVar: 'OPENAI_API_KEY' },
   };
 
-  function renderRuntimeKeys() {
-    const runtime = document.querySelector('input[name="runtime"]:checked').value;
-    const cfg = runtimeKeyConfig[runtime];
-    runtimeKeysEl.innerHTML = '';
-    if (cfg) {
-      runtimeKeysEl.innerHTML =
-        '<label class="block">' + escapeHtml(cfg.label) + ' <span class="hint">(sets ' + cfg.envVar + ')</span></label>' +
-        '<input type="password" id="runtime_key" placeholder="' + escapeHtml(cfg.placeholder) + '" autocomplete="off">';
-    }
-    localSection.classList.toggle('hidden', runtime !== 'local');
+  function renderCloud() {
+    const rt = document.querySelector('input[name="cloud_runtime"]:checked').value;
+    const cfg = cloudKeyConfig[rt];
+    cloudKeyLabel.innerHTML = cfg.label + ' <span class="hint">— leave blank if you\'ve already set it globally.</span>';
+    cloudKeyInput.placeholder = cfg.placeholder;
+
+    // Show only the matching usage block
+    document.querySelectorAll('[id^="cloud-usage-"]').forEach(el => el.classList.add('hidden'));
+    const activeUsage = document.getElementById('cloud-usage-' + rt);
+    if (activeUsage) activeUsage.classList.remove('hidden');
   }
-  document.querySelectorAll('input[name="runtime"]').forEach(el => el.addEventListener('change', renderRuntimeKeys));
-  renderRuntimeKeys();
+  document.querySelectorAll('input[name="cloud_runtime"]').forEach(el => el.addEventListener('change', renderCloud));
 
   // --- Conditional key fields ---
   function bindCheckbox(checkboxId, targetId) {
@@ -392,27 +487,24 @@
     cb.addEventListener('change', () => target.classList.toggle('hidden', !cb.checked));
   }
   bindCheckbox('monitoring_acled', 'acled_keys');
-  bindCheckbox('monitoring_nav', 'nav_keys');
   bindCheckbox('int_junkipedia', 'junkipedia_keys');
 
   // --- Form collection ---
   function collectForm() {
-    const runtime = document.querySelector('input[name="runtime"]:checked').value;
-    const runtimeKeyEl = document.getElementById('runtime_key');
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    const cloudRt = document.querySelector('input[name="cloud_runtime"]:checked').value;
     return {
-      runtime: runtime,
-      runtime_key: runtimeKeyEl ? runtimeKeyEl.value.trim() : '',
-      runtime_key_var: (runtimeKeyConfig[runtime] || {}).envVar || '',
+      mode: mode,
+      runtime: mode === 'local' ? 'local' : cloudRt,
+      cloud_key: mode === 'cloud' ? document.getElementById('cloud_key').value.trim() : '',
+      cloud_key_var: mode === 'cloud' ? cloudKeyConfig[cloudRt].envVar : '',
       firecrawl_key: document.getElementById('firecrawl_key').value.trim(),
-      vault_type: document.querySelector('input[name="vault_type"]:checked').value,
-      vault_path: document.getElementById('vault_path').value.trim() || '~/spotlight-vault',
-      local_backend: runtime === 'local' ? document.querySelector('input[name="local_backend"]:checked').value : null,
-      model_repo: runtime === 'local' ? document.getElementById('model_repo').value.trim() : null,
+      nav_key: document.getElementById('nav_key').value.trim(),
+      vault_path: document.getElementById('vault_path').value.trim(),
+      model_repo: mode === 'local' ? document.getElementById('model_repo').value.trim() : null,
       monitoring_acled: document.getElementById('monitoring_acled').checked,
       acled_key: document.getElementById('acled_key').value.trim(),
       acled_email: document.getElementById('acled_email').value.trim(),
-      monitoring_nav: document.getElementById('monitoring_nav').checked,
-      nav_key: document.getElementById('nav_key').value.trim(),
       int_browseruse: document.getElementById('int_browseruse').checked,
       int_junkipedia: document.getElementById('int_junkipedia').checked,
       junkipedia_key: document.getElementById('junkipedia_key').value.trim(),
@@ -421,7 +513,6 @@
 
   function shellEscape(s) {
     if (s == null || s === '') return "''";
-    // Single-quote escaping: close quote, escape single quote, reopen
     return "'" + String(s).replace(/'/g, "'\\''") + "'";
   }
 
@@ -431,13 +522,14 @@
 
     p('#!/usr/bin/env bash');
     p('# Spotlight installer — generated ' + new Date().toISOString());
-    p('# Runtime: ' + cfg.runtime);
+    p('# Mode: ' + cfg.mode + (cfg.mode === 'cloud' ? ' (' + cfg.runtime + ')' : ''));
     p('set -euo pipefail');
     p('');
     p('SPOTLIGHT_DIR="${SPOTLIGHT_DIR:-$HOME/spotlight}"');
     p('REPO_URL="https://github.com/buriedsignals/spotlight.git"');
     p('');
     p('echo "→ Spotlight installer starting"');
+    p('echo ""');
     p('');
     p('# ── OS check ──');
     p('OS="$(uname -s)"');
@@ -450,12 +542,17 @@
     p('command -v git >/dev/null 2>&1 || { echo "git is required. Install: xcode-select --install" >&2; exit 1; }');
     p('command -v node >/dev/null 2>&1 || { echo "node is required. Install: brew install node (or from nodejs.org)" >&2; exit 1; }');
     p('command -v python3 >/dev/null 2>&1 || { echo "python3 is required." >&2; exit 1; }');
-    if (cfg.runtime === 'local' || cfg.int_browseruse) {
-      p('command -v pip3 >/dev/null 2>&1 || command -v pip >/dev/null 2>&1 || { echo "pip (Python) is required." >&2; exit 1; }');
-    }
-    if (cfg.runtime === 'local') {
+    if (cfg.mode === 'local') {
       p('command -v brew >/dev/null 2>&1 || { echo "brew (Homebrew) is required for local model install. See https://brew.sh" >&2; exit 1; }');
     }
+    p('');
+    p('# ── Obsidian CLI check ──');
+    p('if ! command -v obsidian >/dev/null 2>&1; then');
+    p('  echo "⚠ Obsidian CLI not found on PATH." >&2');
+    p('  echo "  Open Obsidian (1.12+) → Settings → General → Advanced → toggle \\"Command Line Interface\\" ON." >&2');
+    p('  echo "  Then re-run this installer." >&2');
+    p('  exit 1');
+    p('fi');
     p('');
     p('# ── Clone or update repo ──');
     p('if [ -d "$SPOTLIGHT_DIR/.git" ]; then');
@@ -476,76 +573,85 @@
     p('fi');
     p('');
 
-    // Runtime install
-    p('# ── Runtime: ' + cfg.runtime + ' ──');
-    const runtimeInstalls = {
-      pi: '@mariozechner/pi-coding-agent',
-      claude: '@anthropic-ai/claude-code',
-      codex: '@openai/codex',
-      gemini: '@google/gemini-cli',
-    };
-    if (runtimeInstalls[cfg.runtime]) {
-      const pkg = runtimeInstalls[cfg.runtime];
-      const binName = { pi: 'pi', claude: 'claude', codex: 'codex', gemini: 'gemini' }[cfg.runtime];
-      p('if ! command -v ' + binName + ' >/dev/null 2>&1; then');
-      p('  echo "→ Installing ' + pkg + '"');
-      p('  npm install -g ' + pkg);
+    // Runtime + model setup
+    p('# ── Runtime setup ──');
+    if (cfg.mode === 'local') {
+      // Ollama + pi
+      p('# Ollama (local inference)');
+      p('if ! command -v ollama >/dev/null 2>&1; then');
+      p('  echo "→ Installing Ollama"');
+      p('  brew install ollama');
+      p('  brew services start ollama || true');
+      p('  sleep 2  # give Ollama time to start');
       p('else');
-      p('  echo "→ ' + binName + ' already installed"');
+      p('  echo "→ Ollama already installed"');
       p('fi');
-    } else if (cfg.runtime === 'local') {
-      // Local model setup
-      if (cfg.local_backend === 'ollama') {
-        p('# Ollama install');
-        p('if ! command -v ollama >/dev/null 2>&1; then');
-        p('  echo "→ Installing Ollama"');
-        p('  brew install ollama');
-        p('  brew services start ollama || true');
-        p('else');
-        p('  echo "→ Ollama already installed"');
-        p('fi');
-        p('echo "→ Pulling model ' + cfg.model_repo + ' from Hugging Face"');
-        p('ollama pull ' + shellEscape('hf.co/' + cfg.model_repo) + ' || {');
-        p('  echo "  ⚠ Model pull failed. The fine-tune may not be published yet at ' + cfg.model_repo + '."');
-        p('  echo "  ⚠ Continuing — edit ~/spotlight/.env MODEL_REPO and re-run: ollama pull hf.co/<repo>"');
-        p('}');
-        p('# Install pi as the harness that drives the local model');
-        p('if ! command -v pi >/dev/null 2>&1; then');
-        p('  npm install -g @mariozechner/pi-coding-agent');
-        p('fi');
-      } else {
-        // llama-server
-        p('# llama.cpp / llama-server');
-        p('if ! command -v llama-server >/dev/null 2>&1; then');
-        p('  echo "→ Installing llama.cpp (provides llama-server)"');
-        p('  brew install llama.cpp');
-        p('else');
-        p('  echo "→ llama-server already installed"');
-        p('fi');
-        p('if ! command -v hf >/dev/null 2>&1; then');
-        p('  echo "→ Installing huggingface_hub (hf CLI)"');
-        p('  pip3 install --user -U huggingface_hub');
-        p('fi');
-        p('mkdir -p "$HOME/.spotlight/models"');
-        p('echo "→ Downloading GGUF from ' + cfg.model_repo + '"');
-        p('hf download ' + shellEscape(cfg.model_repo) + ' --local-dir "$HOME/.spotlight/models/' + cfg.model_repo.split('/').slice(-1)[0] + '" || {');
-        p('  echo "  ⚠ Model download failed. The fine-tune may not be published yet at ' + cfg.model_repo + '."');
-        p('  echo "  ⚠ Continuing — edit ~/spotlight/.env MODEL_REPO and re-run manually."');
-        p('}');
-        p('if ! command -v pi >/dev/null 2>&1; then');
-        p('  npm install -g @mariozechner/pi-coding-agent');
-        p('fi');
+      p('');
+      p('echo "→ Pulling model ' + cfg.model_repo + ' from Hugging Face (may take several minutes)"');
+      p('ollama pull ' + shellEscape('hf.co/' + cfg.model_repo) + ' || {');
+      p('  echo "  ⚠ Model pull failed. The fine-tune may not be published yet at hf.co/' + cfg.model_repo + '."');
+      p('  echo "  ⚠ You can re-run: ollama pull hf.co/<repo> once the model is live."');
+      p('}');
+      p('');
+      p('# pi (agent harness)');
+      p('if ! command -v pi >/dev/null 2>&1; then');
+      p('  echo "→ Installing pi (@mariozechner/pi-coding-agent)"');
+      p('  npm install -g @mariozechner/pi-coding-agent');
+      p('else');
+      p('  echo "→ pi already installed"');
+      p('fi');
+      p('');
+      p('# Link repo so pi auto-loads AGENTS.md + skills');
+      p('mkdir -p "$HOME/.pi/agent"');
+      p('ln -sfn "$SPOTLIGHT_DIR" "$HOME/.pi/agent/spotlight"');
+      p('');
+      p('# Point pi at local Ollama endpoint');
+      p('mkdir -p "$HOME/.pi"');
+      p('if [ ! -f "$HOME/.pi/models.json" ]; then');
+      p('  cat > "$HOME/.pi/models.json" <<\'PIMODELS_EOF\'');
+      p('{');
+      p('  "providers": {');
+      p('    "local-journalist": {');
+      p('      "baseURL": "http://127.0.0.1:11434/v1",');
+      p('      "apiKey": "ollama",');
+      p('      "models": ["' + cfg.model_repo.split('/').slice(-1)[0] + '"]');
+      p('    }');
+      p('  }');
+      p('}');
+      p('PIMODELS_EOF');
+      p('  echo "→ Wrote $HOME/.pi/models.json (local-journalist provider)"');
+      p('fi');
+    } else {
+      // Cloud runtime
+      const runtimePkg = {
+        claude: { pkg: '@anthropic-ai/claude-code', bin: 'claude' },
+        gemini: { pkg: '@google/gemini-cli', bin: 'gemini' },
+        codex: { pkg: '@openai/codex', bin: 'codex' },
+      }[cfg.runtime];
+      p('if ! command -v ' + runtimePkg.bin + ' >/dev/null 2>&1; then');
+      p('  echo "→ Installing ' + runtimePkg.pkg + '"');
+      p('  npm install -g ' + runtimePkg.pkg);
+      p('else');
+      p('  echo "→ ' + runtimePkg.bin + ' already installed"');
+      p('fi');
+      p('');
+      // Symlink context file per runtime convention
+      if (cfg.runtime === 'claude') {
+        p('# Claude Code reads CLAUDE.md — symlink to AGENTS.md');
+        p('ln -sfn "$SPOTLIGHT_DIR/AGENTS.md" "$SPOTLIGHT_DIR/CLAUDE.md"');
+      } else if (cfg.runtime === 'gemini') {
+        p('# Gemini CLI reads GEMINI.md — symlink to AGENTS.md');
+        p('ln -sfn "$SPOTLIGHT_DIR/AGENTS.md" "$SPOTLIGHT_DIR/GEMINI.md"');
       }
     }
     p('');
 
     // Python deps
     p('# ── Python dependencies ──');
-    p('pip3 install --user --quiet jsonschema requests || pip install --user --quiet jsonschema requests');
+    p('pip3 install --user --quiet jsonschema requests 2>/dev/null || pip install --user --quiet jsonschema requests');
     if (cfg.int_browseruse) {
-      p('echo "→ Installing browser-use"');
-      p('pip3 install --user --quiet browser-use || pip install --user --quiet browser-use');
-      p('# playwright browsers for browser-use');
+      p('echo "→ Installing browser-use (Python package)"');
+      p('pip3 install --user --quiet browser-use 2>/dev/null || pip install --user --quiet browser-use');
       p('python3 -m playwright install chromium 2>/dev/null || true');
     }
     p('');
@@ -556,23 +662,20 @@
     p('cat > "$SPOTLIGHT_DIR/.env" <<\'ENV_EOF\'');
     p('# Spotlight environment — generated by setup.html');
     p('FIRECRAWL_API_KEY=' + cfg.firecrawl_key);
-    if (cfg.runtime_key && cfg.runtime_key_var) {
-      p(cfg.runtime_key_var + '=' + cfg.runtime_key);
+    p('OSINT_NAV_API_KEY=' + cfg.nav_key);
+    if (cfg.cloud_key && cfg.cloud_key_var) {
+      p(cfg.cloud_key_var + '=' + cfg.cloud_key);
     }
     if (cfg.monitoring_acled) {
       if (cfg.acled_key) p('ACLED_API_KEY=' + cfg.acled_key);
       if (cfg.acled_email) p('ACLED_EMAIL=' + cfg.acled_email);
     }
-    if (cfg.monitoring_nav && cfg.nav_key) {
-      p('OSINT_NAV_API_KEY=' + cfg.nav_key);
-    }
     if (cfg.int_junkipedia && cfg.junkipedia_key) {
       p('JUNKIPEDIA_API_KEY=' + cfg.junkipedia_key);
     }
-    if (cfg.runtime === 'local') {
+    if (cfg.mode === 'local') {
       p('MODEL_REPO=' + cfg.model_repo);
-      p('LOCAL_BACKEND=' + cfg.local_backend);
-      p('LOCAL_ENDPOINT=' + (cfg.local_backend === 'ollama' ? 'http://127.0.0.1:11434/v1' : 'http://127.0.0.1:8081/v1'));
+      p('LOCAL_ENDPOINT=http://127.0.0.1:11434/v1');
     }
     p('ENV_EOF');
     p('chmod 600 "$SPOTLIGHT_DIR/.env"');
@@ -583,13 +686,17 @@
     const config = {
       search_library: 'firecrawl',
       vault_path: cfg.vault_path,
-      vault_type: cfg.vault_type,
+      vault_type: 'obsidian',
       cases_root: 'cases/',
+      mode: cfg.mode,
       runtime: cfg.runtime,
       integrations: {
-        osint_navigator: cfg.monitoring_nav,
+        osint_navigator: true,
         junkipedia: cfg.int_junkipedia,
         browser_use: cfg.int_browseruse,
+      },
+      monitoring: {
+        acled: cfg.monitoring_acled,
       },
       created_at: new Date().toISOString(),
       last_used: new Date().toISOString(),
@@ -599,13 +706,41 @@
     p('CONFIG_EOF');
     p('');
 
-    // Vault dir if directory mode
-    if (cfg.vault_type === 'directory') {
-      p('# Create vault directory');
-      p('VAULT_EXPANDED="' + cfg.vault_path.replace(/^~/, '$HOME') + '"');
-      p('mkdir -p "$VAULT_EXPANDED"');
-      p('');
-    }
+    // spotlight shell function
+    p('# ── Install spotlight shell command ──');
+    p('SHELL_RC=""');
+    p('case "$SHELL" in');
+    p('  */zsh) SHELL_RC="$HOME/.zshrc" ;;');
+    p('  */bash) SHELL_RC="$HOME/.bashrc" ;;');
+    p('  *) SHELL_RC="$HOME/.profile" ;;');
+    p('esac');
+    p('');
+    p('if ! grep -q "# SPOTLIGHT-BEGIN" "$SHELL_RC" 2>/dev/null; then');
+    p('  echo "→ Adding \\"spotlight\\" command to $SHELL_RC"');
+    p('  cat >> "$SHELL_RC" <<\'SHELL_EOF\'');
+    p('');
+    p('# SPOTLIGHT-BEGIN — added by setup.html installer');
+    p('spotlight() {');
+    p('  local dir="${SPOTLIGHT_DIR:-$HOME/spotlight}"');
+    p('  if [ ! -d "$dir" ]; then');
+    p('    echo "Spotlight not installed at $dir. Re-run the installer." >&2');
+    p('    return 1');
+    p('  fi');
+    p('  (cd "$dir" && { [ -f .env ] && set -a && source .env && set +a; } && \\');
+    p('    case "$(python3 -c \'import json;print(json.load(open(".spotlight-config.json"))["runtime"])\' 2>/dev/null)" in');
+    p('      local) pi ;;');
+    p('      claude) claude ;;');
+    p('      codex) codex ;;');
+    p('      gemini) gemini ;;');
+    p('      *) echo "Unknown runtime in .spotlight-config.json" >&2; return 1 ;;');
+    p('    esac)');
+    p('}');
+    p('# SPOTLIGHT-END');
+    p('SHELL_EOF');
+    p('else');
+    p('  echo "→ \\"spotlight\\" command already present in $SHELL_RC"');
+    p('fi');
+    p('');
 
     // Preflight
     p('# ── Preflight ──');
@@ -618,52 +753,26 @@
     p('python3 "$SPOTLIGHT_DIR/integrations/preflight.py" --text || true');
     p('');
 
-    // Done message
+    // Done
     p('# ── Done ──');
     p('echo ""');
     p('echo "══════════════════════════════════════════════════════════"');
-    p('echo "  Spotlight installed at $SPOTLIGHT_DIR"');
+    p('echo "  ✓ Spotlight installed at $SPOTLIGHT_DIR"');
     p('echo "══════════════════════════════════════════════════════════"');
     p('echo ""');
-    const nextSteps = {
-      pi: [
-        'cd "$SPOTLIGHT_DIR"',
-        'ln -sf "$SPOTLIGHT_DIR" "$HOME/.pi/agent/spotlight" 2>/dev/null || mkdir -p "$HOME/.pi/agent" && ln -sf "$SPOTLIGHT_DIR" "$HOME/.pi/agent/spotlight"',
-        'echo "Next: run \\"pi\\" and say: Start a Spotlight investigation on <your lead>"',
-      ],
-      claude: [
-        'cd "$SPOTLIGHT_DIR"',
-        'echo "Next: run \\"claude\\" in this directory. It reads AGENTS.md automatically."',
-      ],
-      codex: [
-        'cd "$SPOTLIGHT_DIR"',
-        'echo "Next: run \\"codex\\" in this directory. It reads AGENTS.md automatically."',
-      ],
-      gemini: [
-        'cd "$SPOTLIGHT_DIR"',
-        'ln -sf "$SPOTLIGHT_DIR/AGENTS.md" "$SPOTLIGHT_DIR/GEMINI.md" 2>/dev/null || true',
-        'echo "Next: run \\"gemini\\" in this directory."',
-      ],
-      local: [
-        'cd "$SPOTLIGHT_DIR"',
-        'mkdir -p "$HOME/.pi/agent"',
-        'ln -sf "$SPOTLIGHT_DIR" "$HOME/.pi/agent/spotlight"',
-        'echo "Next: ensure your local model is running (" + (cfg.local_backend === "ollama" ? "Ollama auto-starts" : "llama-server -m <gguf> --port 8081") + "), then run \\"pi\\" and say: Start a Spotlight investigation on <your lead>"',
-      ],
-    }[cfg.runtime];
-    nextSteps.forEach(s => p(s));
-    p('');
+    p('echo "Open a new terminal window and type:"');
+    p('echo ""');
+    p('echo "    spotlight"');
+    p('echo ""');
+    p('echo "Then tell the agent: Start a Spotlight investigation on <your lead>"');
+    p('echo ""');
     p('echo "Docs: $SPOTLIGHT_DIR/docs/README.md"');
 
     return lines.join('\n') + '\n';
   }
 
   // --- Minimal hand-rolled zip (uncompressed, single file, unix exec bit) ---
-  // Zip format — local file header, file data, central directory, EOCD.
-  // External attrs set to 0o100755 << 16 so extractor preserves execute bit.
-
   function crc32(str) {
-    // CRC-32 over UTF-8 bytes
     let table = crc32.table;
     if (!table) {
       table = crc32.table = new Uint32Array(256);
@@ -675,9 +784,7 @@
     }
     const bytes = new TextEncoder().encode(str);
     let crc = 0xffffffff;
-    for (let i = 0; i < bytes.length; i++) {
-      crc = (crc >>> 8) ^ table[(crc ^ bytes[i]) & 0xff];
-    }
+    for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ table[(crc ^ bytes[i]) & 0xff];
     return (crc ^ 0xffffffff) >>> 0;
   }
 
@@ -687,58 +794,53 @@
     const crc = crc32(contents);
     const sz = dataBytes.length;
 
-    // Local file header: 30 + filename + data
     const lfh = new Uint8Array(30 + fnBytes.length);
     const dv1 = new DataView(lfh.buffer);
-    dv1.setUint32(0, 0x04034b50, true);   // signature
-    dv1.setUint16(4, 20, true);            // version needed
-    dv1.setUint16(6, 0, true);             // flags
-    dv1.setUint16(8, 0, true);             // compression (0 = stored)
-    dv1.setUint16(10, 0, true);            // modtime
-    dv1.setUint16(12, 0x21, true);         // moddate (2000-01-01)
+    dv1.setUint32(0, 0x04034b50, true);
+    dv1.setUint16(4, 20, true);
+    dv1.setUint16(6, 0, true);
+    dv1.setUint16(8, 0, true);
+    dv1.setUint16(10, 0, true);
+    dv1.setUint16(12, 0x21, true);
     dv1.setUint32(14, crc, true);
-    dv1.setUint32(18, sz, true);           // compressed size (= uncompressed)
+    dv1.setUint32(18, sz, true);
     dv1.setUint32(22, sz, true);
     dv1.setUint16(26, fnBytes.length, true);
-    dv1.setUint16(28, 0, true);            // extra field length
+    dv1.setUint16(28, 0, true);
     lfh.set(fnBytes, 30);
 
-    // Central directory header: 46 + filename
     const cdh = new Uint8Array(46 + fnBytes.length);
     const dv2 = new DataView(cdh.buffer);
     dv2.setUint32(0, 0x02014b50, true);
-    dv2.setUint16(4, (3 << 8) | 20, true); // version made by: Unix (3) | version 20
-    dv2.setUint16(6, 20, true);            // version needed
-    dv2.setUint16(8, 0, true);             // flags
-    dv2.setUint16(10, 0, true);            // compression
-    dv2.setUint16(12, 0, true);            // modtime
-    dv2.setUint16(14, 0x21, true);         // moddate
+    dv2.setUint16(4, (3 << 8) | 20, true);
+    dv2.setUint16(6, 20, true);
+    dv2.setUint16(8, 0, true);
+    dv2.setUint16(10, 0, true);
+    dv2.setUint16(12, 0, true);
+    dv2.setUint16(14, 0x21, true);
     dv2.setUint32(16, crc, true);
     dv2.setUint32(20, sz, true);
     dv2.setUint32(24, sz, true);
     dv2.setUint16(28, fnBytes.length, true);
-    dv2.setUint16(30, 0, true);            // extra length
-    dv2.setUint16(32, 0, true);            // comment length
-    dv2.setUint16(34, 0, true);            // disk number
-    dv2.setUint16(36, 0, true);            // internal attrs
-    // External attrs: (S_IFREG=0o100000 | 0o755) << 16 = 0x81ed0000
+    dv2.setUint16(30, 0, true);
+    dv2.setUint16(32, 0, true);
+    dv2.setUint16(34, 0, true);
+    dv2.setUint16(36, 0, true);
     dv2.setUint32(38, (0o100755 << 16) >>> 0, true);
-    dv2.setUint32(42, 0, true);            // local header offset
+    dv2.setUint32(42, 0, true);
     cdh.set(fnBytes, 46);
 
-    // End of central directory record: 22 bytes
     const eocd = new Uint8Array(22);
     const dv3 = new DataView(eocd.buffer);
     dv3.setUint32(0, 0x06054b50, true);
-    dv3.setUint16(4, 0, true);             // disk
-    dv3.setUint16(6, 0, true);             // disk with CD
-    dv3.setUint16(8, 1, true);             // entries this disk
-    dv3.setUint16(10, 1, true);            // total entries
-    dv3.setUint32(12, cdh.length, true);   // CD size
-    dv3.setUint32(16, lfh.length + sz, true); // CD offset
-    dv3.setUint16(20, 0, true);            // comment length
+    dv3.setUint16(4, 0, true);
+    dv3.setUint16(6, 0, true);
+    dv3.setUint16(8, 1, true);
+    dv3.setUint16(10, 1, true);
+    dv3.setUint32(12, cdh.length, true);
+    dv3.setUint32(16, lfh.length + sz, true);
+    dv3.setUint16(20, 0, true);
 
-    // Assemble
     const total = new Uint8Array(lfh.length + sz + cdh.length + eocd.length);
     let off = 0;
     total.set(lfh, off); off += lfh.length;
@@ -752,24 +854,23 @@
   generateBtn.addEventListener('click', () => {
     const cfg = collectForm();
 
-    // Validation
-    if (!cfg.firecrawl_key) {
-      firecrawlErr.classList.remove('hidden');
-      document.getElementById('firecrawl_key').focus();
+    let hasErr = false;
+    if (!cfg.firecrawl_key) { firecrawlErr.classList.remove('hidden'); hasErr = true; } else firecrawlErr.classList.add('hidden');
+    if (!cfg.nav_key) { navErr.classList.remove('hidden'); hasErr = true; } else navErr.classList.add('hidden');
+    if (!cfg.vault_path) { vaultErr.classList.remove('hidden'); hasErr = true; } else vaultErr.classList.add('hidden');
+    if (hasErr) {
+      document.querySelector('.error:not(.hidden)').scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
-    firecrawlErr.classList.add('hidden');
 
     const script = buildScript(cfg);
     scriptPreview.textContent = script;
     installOutput.classList.remove('hidden');
     installOutput.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-    // Stash for buttons
     installOutput.dataset.script = script;
   });
 
-  // --- Copy button ---
+  // --- Copy ---
   copyBtn.addEventListener('click', async () => {
     const script = installOutput.dataset.script || '';
     try {
@@ -777,7 +878,6 @@
       copiedFeedback.classList.add('show');
       setTimeout(() => copiedFeedback.classList.remove('show'), 2000);
     } catch (e) {
-      // Fallback: select the text in the box
       const range = document.createRange();
       range.selectNode(scriptPreview);
       const sel = window.getSelection();
@@ -787,7 +887,7 @@
     }
   });
 
-  // --- Download button ---
+  // --- Download ---
   downloadBtn.addEventListener('click', () => {
     const script = installOutput.dataset.script || '';
     const zip = buildZip('spotlight-setup.command', script);
@@ -800,10 +900,9 @@
     setTimeout(() => URL.revokeObjectURL(url), 3000);
   });
 
-  function escapeHtml(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
+  // Init
+  renderMode();
+  renderCloud();
 })();
 </script>
 </body>
