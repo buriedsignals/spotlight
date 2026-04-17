@@ -1033,7 +1033,7 @@
     p('  # Subcommands');
     p('  case "${1:-}" in');
     p('    update)');
-    p('      (cd "$dir" && git pull --ff-only && \\');
+    p('      (cd "$dir" && git fetch origin && git reset --hard origin/main && \\');
     p('        python3 monitoring/feeds/preflight.py --text && \\');
     p('        python3 integrations/preflight.py --text)');
     p('      return $?');
