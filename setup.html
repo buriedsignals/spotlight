@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spotlight — Install</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --bg-2: #171a21;
+    --bg-3: #1f232c;
+    --fg: #e8ecf1;
+    --muted: #8891a0;
+    --border: #2a2f3a;
+    --accent: #7cb7ff;
+    --green: #6ebf6e;
+    --amber: #d9a441;
+    --red: #e36b6b;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #fafbfc;
+      --bg-2: #ffffff;
+      --bg-3: #f1f3f5;
+      --fg: #1a1f29;
+      --muted: #5a6472;
+      --border: #d9dde3;
+      --accent: #2158c9;
+      --green: #2f7a35;
+      --amber: #a36c10;
+      --red: #b83535;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 15px; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    margin: 0;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 48px 24px 120px; }
+  h1 { margin: 0 0 8px; font-size: 2rem; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); margin: 0 0 40px; font-size: 1.05rem; }
+  h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 36px 0 12px; font-weight: 600; }
+  section.card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+    margin-bottom: 16px;
+  }
+  label.block { display: block; margin-bottom: 8px; font-size: 0.92rem; font-weight: 500; }
+  label.block .hint { color: var(--muted); font-weight: 400; font-size: 0.85rem; margin-left: 4px; }
+  input[type="text"], input[type="password"], select {
+    width: 100%;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 9px 12px;
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
+  .radio-group, .checkbox-group { display: flex; flex-direction: column; gap: 8px; }
+  .radio-group label, .checkbox-group label {
+    cursor: pointer;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.95rem;
+    background: var(--bg-3);
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    transition: background 0.08s, border-color 0.08s;
+  }
+  .radio-group label:hover, .checkbox-group label:hover { background: var(--bg); }
+  .radio-group input, .checkbox-group input { margin-top: 4px; flex-shrink: 0; }
+  .radio-group input:checked + .opt, .checkbox-group input:checked + .opt { color: var(--accent); }
+  .radio-group label:has(input:checked), .checkbox-group label:has(input:checked) {
+    background: var(--bg);
+    border-color: var(--accent);
+  }
+  .opt { flex: 1; }
+  .opt .name { font-weight: 600; display: block; font-size: 0.97rem; }
+  .opt .desc { color: var(--muted); font-size: 0.85rem; margin-top: 2px; line-height: 1.45; }
+  .key-row { margin-top: 10px; }
+  .key-row input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  details { margin-top: 10px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 0.88rem; padding: 4px 0; }
+  details summary:hover { color: var(--fg); }
+  .hidden { display: none !important; }
+  .generate-bar {
+    margin-top: 36px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+  button.primary {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.primary:hover { filter: brightness(1.08); }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secondary {
+    background: var(--bg-3);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  button.secondary:hover { filter: brightness(1.08); }
+  .install-options {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 18px;
+    margin-top: 32px;
+  }
+  .install-option {
+    background: var(--bg-2);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    padding: 20px 22px;
+  }
+  .install-option h3 { margin: 0 0 8px; font-size: 1.1rem; }
+  .install-option .desc { color: var(--muted); font-size: 0.93rem; margin-bottom: 14px; }
+  .script-box {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    white-space: pre;
+    overflow-x: auto;
+    max-height: 280px;
+    overflow-y: auto;
+    color: var(--fg);
+    margin-bottom: 12px;
+  }
+  .steps-list { counter-reset: step; padding: 0; list-style: none; margin: 12px 0 0; }
+  .steps-list li {
+    counter-increment: step;
+    padding: 6px 0 6px 32px;
+    position: relative;
+    font-size: 0.92rem;
+  }
+  .steps-list li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 6px;
+    width: 22px;
+    height: 22px;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 22px;
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+  .steps-list kbd {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: inherit;
+    font-size: 0.85rem;
+  }
+  .note {
+    background: rgba(217, 164, 65, 0.1);
+    border-left: 3px solid var(--amber);
+    padding: 10px 14px;
+    border-radius: 4px;
+    font-size: 0.88rem;
+    margin-top: 12px;
+    color: var(--fg);
+  }
+  .copied-feedback {
+    display: inline-block;
+    margin-left: 12px;
+    color: var(--green);
+    font-size: 0.88rem;
+    font-weight: 500;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .copied-feedback.show { opacity: 1; }
+  .error {
+    color: var(--red);
+    font-size: 0.88rem;
+    margin-top: 8px;
+  }
+  code { background: var(--bg-3); padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+  .intro-list { font-size: 0.93rem; color: var(--muted); padding-left: 22px; margin: 0 0 24px; }
+  .intro-list li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Install Spotlight</h1>
+  <p class="sub">Pick your setup. We'll generate an installer that gets you running in about five minutes.</p>
+
+  <ul class="intro-list">
+    <li>Works on macOS and Linux. Windows requires WSL.</li>
+    <li>All keys stay on your machine. Nothing is uploaded.</li>
+    <li>Safe to re-run — updates existing installs without clobbering case data.</li>
+  </ul>
+
+  <form id="setup-form" onsubmit="return false;">
+
+    <h2>Runtime</h2>
+    <section class="card">
+      <div class="radio-group" id="runtime-group">
+        <label><input type="radio" name="runtime" value="pi" checked><span class="opt"><span class="name">pi</span><span class="desc">Minimal TypeScript harness (pi.dev). Native AGENTS.md + SKILL.md support. Recommended.</span></span></label>
+        <label><input type="radio" name="runtime" value="claude"><span class="opt"><span class="name">Claude Code</span><span class="desc">Anthropic's CLI. Requires Claude API subscription.</span></span></label>
+        <label><input type="radio" name="runtime" value="codex"><span class="opt"><span class="name">Codex CLI</span><span class="desc">OpenAI's CLI. Requires OpenAI API key.</span></span></label>
+        <label><input type="radio" name="runtime" value="gemini"><span class="opt"><span class="name">Gemini CLI</span><span class="desc">Google's CLI. Requires Gemini API key.</span></span></label>
+        <label><input type="radio" name="runtime" value="local"><span class="opt"><span class="name">Local model</span><span class="desc">Run everything on your own machine with a fine-tuned journalism model. Private by design.</span></span></label>
+      </div>
+
+      <div id="runtime-keys" style="margin-top: 16px;"></div>
+    </section>
+
+    <div id="local-section" class="hidden">
+      <h2>Local model setup</h2>
+      <section class="card">
+        <label class="block">Local inference backend</label>
+        <div class="radio-group">
+          <label><input type="radio" name="local_backend" value="ollama" checked><span class="opt"><span class="name">Ollama <span class="hint">(recommended)</span></span><span class="desc">One-command install via brew. Resolves Hugging Face models directly. Runs on :11434.</span></span></label>
+          <label><input type="radio" name="local_backend" value="llama-server"><span class="opt"><span class="name">llama-server (llama.cpp) <span class="hint">(advanced)</span></span><span class="desc">Lower-level, GGUF direct. Matches the Mac Mini Hermes setup. Runs on :8081.</span></span></label>
+        </div>
+
+        <label class="block" style="margin-top: 16px;">Hugging Face model repo <span class="hint">(fine-tune; placeholder until Tom publishes)</span></label>
+        <input type="text" id="model_repo" placeholder="tomvaillant/qwen3-8b-journalist" value="tomvaillant/qwen3-8b-journalist">
+        <p class="note" style="margin-top: 8px;">The fine-tuned journalism model is not yet published. This field defaults to the expected path; leave as-is and the installer will warn if the repo isn't live yet.</p>
+      </section>
+    </div>
+
+    <h2>Web scraping (required)</h2>
+    <section class="card">
+      <label class="block">Firecrawl API key <span class="hint">— required for <code>fetch</code> and <code>search</code> verbs. Get one free at firecrawl.dev.</span></label>
+      <input type="password" id="firecrawl_key" placeholder="fc-..." autocomplete="off">
+      <p id="firecrawl_err" class="error hidden">Firecrawl key is required.</p>
+    </section>
+
+    <h2>Vault <span style="color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400;">(where findings are archived)</span></h2>
+    <section class="card">
+      <div class="radio-group">
+        <label><input type="radio" name="vault_type" value="obsidian" checked><span class="opt"><span class="name">Obsidian vault</span><span class="desc">Findings archived with wikilinks and registries. Best for long-running knowledge.</span></span></label>
+        <label><input type="radio" name="vault_type" value="directory"><span class="opt"><span class="name">Plain directory</span><span class="desc">Markdown files with relative links. No Obsidian needed.</span></span></label>
+      </div>
+      <label class="block" style="margin-top: 14px;">Path</label>
+      <input type="text" id="vault_path" placeholder="/Users/you/Documents/investigations" value="~/spotlight-vault">
+    </section>
+
+    <h2>Monitoring <span style="color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400;">(optional feeds)</span></h2>
+    <section class="card">
+      <div class="checkbox-group">
+        <label><input type="checkbox" id="monitoring_acled"><span class="opt"><span class="name">ACLED conflict events</span><span class="desc">Armed Conflict Location & Event Data. Free registration.</span></span></label>
+      </div>
+      <div id="acled_keys" class="hidden" style="margin-top: 10px;">
+        <label class="block">ACLED API key</label>
+        <input type="password" id="acled_key" placeholder="..." autocomplete="off">
+        <label class="block" style="margin-top: 10px;">ACLED email</label>
+        <input type="text" id="acled_email" placeholder="your@email.com" autocomplete="off">
+      </div>
+
+      <div class="checkbox-group" style="margin-top: 12px;">
+        <label><input type="checkbox" id="monitoring_nav"><span class="opt"><span class="name">OSINT Navigator</span><span class="desc">1,000+ OSINT tools with AI-powered lookup. Request access at navigator.indicator.media.</span></span></label>
+      </div>
+      <div id="nav_keys" class="hidden" style="margin-top: 10px;">
+        <label class="block">OSINT_NAV_API_KEY</label>
+        <input type="password" id="nav_key" placeholder="on_..." autocomplete="off">
+      </div>
+    </section>
+
+    <h2>Integrations <span style="color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400;">(optional external tools)</span></h2>
+    <section class="card">
+      <div class="checkbox-group">
+        <label><input type="checkbox" id="int_browseruse"><span class="opt"><span class="name">browser-use</span><span class="desc">Agent-driven browser automation. Open source. Installs via pip.</span></span></label>
+      </div>
+
+      <div class="checkbox-group" style="margin-top: 12px;">
+        <label><input type="checkbox" id="int_junkipedia"><span class="opt"><span class="name">Junkipedia</span><span class="desc">Misinformation / narrative database. Application-based access at junkipedia.org.</span></span></label>
+      </div>
+      <div id="junkipedia_keys" class="hidden" style="margin-top: 10px;">
+        <label class="block">JUNKIPEDIA_API_KEY</label>
+        <input type="password" id="junkipedia_key" placeholder="..." autocomplete="off">
+      </div>
+    </section>
+
+    <div class="generate-bar">
+      <span class="sub" style="margin:0;">All set? Generate your installer.</span>
+      <button type="button" class="primary" id="generate-btn">Generate installer</button>
+    </div>
+  </form>
+
+  <div id="install-output" class="install-options hidden">
+
+    <div class="install-option">
+      <h3>Option A — Copy into Terminal <span style="color:var(--muted);font-size:0.85rem;font-weight:400;">(simplest)</span></h3>
+      <p class="desc">Copy the script below, open Terminal, paste. No downloads.</p>
+      <div class="script-box" id="script-preview"></div>
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <button type="button" class="primary" id="copy-btn">Copy script</button>
+        <span class="copied-feedback" id="copied-feedback">✓ Copied</span>
+      </div>
+      <ol class="steps-list">
+        <li>Press <kbd>⌘</kbd> + <kbd>Space</kbd></li>
+        <li>Type <kbd>Terminal</kbd>, press <kbd>Return</kbd></li>
+        <li>Press <kbd>⌘</kbd> + <kbd>V</kbd>, then <kbd>Return</kbd></li>
+      </ol>
+    </div>
+
+    <div class="install-option">
+      <h3>Option B — Download installer</h3>
+      <p class="desc">Download a single file and double-click to run. Good if you'd rather not open Terminal manually.</p>
+      <button type="button" class="primary" id="download-btn">Download spotlight-setup.zip</button>
+      <p class="note">
+        <strong>First time on macOS?</strong> macOS Gatekeeper will block unsigned installers. After extracting the zip: <strong>right-click</strong> <code>spotlight-setup.command</code> → <strong>Open</strong> → <strong>Confirm</strong>. Subsequent runs are a plain double-click.
+      </p>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const runtimeKeysEl = document.getElementById('runtime-keys');
+  const localSection = document.getElementById('local-section');
+  const generateBtn = document.getElementById('generate-btn');
+  const installOutput = document.getElementById('install-output');
+  const scriptPreview = document.getElementById('script-preview');
+  const copyBtn = document.getElementById('copy-btn');
+  const copiedFeedback = document.getElementById('copied-feedback');
+  const downloadBtn = document.getElementById('download-btn');
+  const firecrawlErr = document.getElementById('firecrawl_err');
+
+  // --- Runtime API key rendering ---
+  const runtimeKeyConfig = {
+    pi: null,
+    claude: { label: 'Anthropic API key', envVar: 'ANTHROPIC_API_KEY', placeholder: 'sk-ant-...' },
+    codex: { label: 'OpenAI API key', envVar: 'OPENAI_API_KEY', placeholder: 'sk-...' },
+    gemini: { label: 'Gemini API key', envVar: 'GEMINI_API_KEY', placeholder: 'AIza...' },
+    local: null,
+  };
+
+  function renderRuntimeKeys() {
+    const runtime = document.querySelector('input[name="runtime"]:checked').value;
+    const cfg = runtimeKeyConfig[runtime];
+    runtimeKeysEl.innerHTML = '';
+    if (cfg) {
+      runtimeKeysEl.innerHTML =
+        '<label class="block">' + escapeHtml(cfg.label) + ' <span class="hint">(sets ' + cfg.envVar + ')</span></label>' +
+        '<input type="password" id="runtime_key" placeholder="' + escapeHtml(cfg.placeholder) + '" autocomplete="off">';
+    }
+    localSection.classList.toggle('hidden', runtime !== 'local');
+  }
+  document.querySelectorAll('input[name="runtime"]').forEach(el => el.addEventListener('change', renderRuntimeKeys));
+  renderRuntimeKeys();
+
+  // --- Conditional key fields ---
+  function bindCheckbox(checkboxId, targetId) {
+    const cb = document.getElementById(checkboxId);
+    const target = document.getElementById(targetId);
+    cb.addEventListener('change', () => target.classList.toggle('hidden', !cb.checked));
+  }
+  bindCheckbox('monitoring_acled', 'acled_keys');
+  bindCheckbox('monitoring_nav', 'nav_keys');
+  bindCheckbox('int_junkipedia', 'junkipedia_keys');
+
+  // --- Form collection ---
+  function collectForm() {
+    const runtime = document.querySelector('input[name="runtime"]:checked').value;
+    const runtimeKeyEl = document.getElementById('runtime_key');
+    return {
+      runtime: runtime,
+      runtime_key: runtimeKeyEl ? runtimeKeyEl.value.trim() : '',
+      runtime_key_var: (runtimeKeyConfig[runtime] || {}).envVar || '',
+      firecrawl_key: document.getElementById('firecrawl_key').value.trim(),
+      vault_type: document.querySelector('input[name="vault_type"]:checked').value,
+      vault_path: document.getElementById('vault_path').value.trim() || '~/spotlight-vault',
+      local_backend: runtime === 'local' ? document.querySelector('input[name="local_backend"]:checked').value : null,
+      model_repo: runtime === 'local' ? document.getElementById('model_repo').value.trim() : null,
+      monitoring_acled: document.getElementById('monitoring_acled').checked,
+      acled_key: document.getElementById('acled_key').value.trim(),
+      acled_email: document.getElementById('acled_email').value.trim(),
+      monitoring_nav: document.getElementById('monitoring_nav').checked,
+      nav_key: document.getElementById('nav_key').value.trim(),
+      int_browseruse: document.getElementById('int_browseruse').checked,
+      int_junkipedia: document.getElementById('int_junkipedia').checked,
+      junkipedia_key: document.getElementById('junkipedia_key').value.trim(),
+    };
+  }
+
+  function shellEscape(s) {
+    if (s == null || s === '') return "''";
+    // Single-quote escaping: close quote, escape single quote, reopen
+    return "'" + String(s).replace(/'/g, "'\\''") + "'";
+  }
+
+  function buildScript(cfg) {
+    const lines = [];
+    const p = s => lines.push(s);
+
+    p('#!/usr/bin/env bash');
+    p('# Spotlight installer — generated ' + new Date().toISOString());
+    p('# Runtime: ' + cfg.runtime);
+    p('set -euo pipefail');
+    p('');
+    p('SPOTLIGHT_DIR="${SPOTLIGHT_DIR:-$HOME/spotlight}"');
+    p('REPO_URL="https://github.com/buriedsignals/spotlight.git"');
+    p('');
+    p('echo "→ Spotlight installer starting"');
+    p('');
+    p('# ── OS check ──');
+    p('OS="$(uname -s)"');
+    p('if [ "$OS" != "Darwin" ] && [ "$OS" != "Linux" ]; then');
+    p('  echo "Unsupported OS: $OS. macOS or Linux required (Windows: use WSL)." >&2');
+    p('  exit 1');
+    p('fi');
+    p('');
+    p('# ── Prerequisites ──');
+    p('command -v git >/dev/null 2>&1 || { echo "git is required. Install: xcode-select --install" >&2; exit 1; }');
+    p('command -v node >/dev/null 2>&1 || { echo "node is required. Install: brew install node (or from nodejs.org)" >&2; exit 1; }');
+    p('command -v python3 >/dev/null 2>&1 || { echo "python3 is required." >&2; exit 1; }');
+    if (cfg.runtime === 'local' || cfg.int_browseruse) {
+      p('command -v pip3 >/dev/null 2>&1 || command -v pip >/dev/null 2>&1 || { echo "pip (Python) is required." >&2; exit 1; }');
+    }
+    if (cfg.runtime === 'local') {
+      p('command -v brew >/dev/null 2>&1 || { echo "brew (Homebrew) is required for local model install. See https://brew.sh" >&2; exit 1; }');
+    }
+    p('');
+    p('# ── Clone or update repo ──');
+    p('if [ -d "$SPOTLIGHT_DIR/.git" ]; then');
+    p('  echo "→ Spotlight already cloned at $SPOTLIGHT_DIR, pulling latest"');
+    p('  git -C "$SPOTLIGHT_DIR" pull --ff-only');
+    p('else');
+    p('  echo "→ Cloning Spotlight to $SPOTLIGHT_DIR"');
+    p('  git clone "$REPO_URL" "$SPOTLIGHT_DIR"');
+    p('fi');
+    p('cd "$SPOTLIGHT_DIR"');
+    p('');
+    p('# ── firecrawl CLI (required) ──');
+    p('if ! command -v firecrawl >/dev/null 2>&1; then');
+    p('  echo "→ Installing firecrawl-cli via npm"');
+    p('  npm install -g firecrawl-cli');
+    p('else');
+    p('  echo "→ firecrawl-cli already installed"');
+    p('fi');
+    p('');
+
+    // Runtime install
+    p('# ── Runtime: ' + cfg.runtime + ' ──');
+    const runtimeInstalls = {
+      pi: '@mariozechner/pi-coding-agent',
+      claude: '@anthropic-ai/claude-code',
+      codex: '@openai/codex',
+      gemini: '@google/gemini-cli',
+    };
+    if (runtimeInstalls[cfg.runtime]) {
+      const pkg = runtimeInstalls[cfg.runtime];
+      const binName = { pi: 'pi', claude: 'claude', codex: 'codex', gemini: 'gemini' }[cfg.runtime];
+      p('if ! command -v ' + binName + ' >/dev/null 2>&1; then');
+      p('  echo "→ Installing ' + pkg + '"');
+      p('  npm install -g ' + pkg);
+      p('else');
+      p('  echo "→ ' + binName + ' already installed"');
+      p('fi');
+    } else if (cfg.runtime === 'local') {
+      // Local model setup
+      if (cfg.local_backend === 'ollama') {
+        p('# Ollama install');
+        p('if ! command -v ollama >/dev/null 2>&1; then');
+        p('  echo "→ Installing Ollama"');
+        p('  brew install ollama');
+        p('  brew services start ollama || true');
+        p('else');
+        p('  echo "→ Ollama already installed"');
+        p('fi');
+        p('echo "→ Pulling model ' + cfg.model_repo + ' from Hugging Face"');
+        p('ollama pull ' + shellEscape('hf.co/' + cfg.model_repo) + ' || {');
+        p('  echo "  ⚠ Model pull failed. The fine-tune may not be published yet at ' + cfg.model_repo + '."');
+        p('  echo "  ⚠ Continuing — edit ~/spotlight/.env MODEL_REPO and re-run: ollama pull hf.co/<repo>"');
+        p('}');
+        p('# Install pi as the harness that drives the local model');
+        p('if ! command -v pi >/dev/null 2>&1; then');
+        p('  npm install -g @mariozechner/pi-coding-agent');
+        p('fi');
+      } else {
+        // llama-server
+        p('# llama.cpp / llama-server');
+        p('if ! command -v llama-server >/dev/null 2>&1; then');
+        p('  echo "→ Installing llama.cpp (provides llama-server)"');
+        p('  brew install llama.cpp');
+        p('else');
+        p('  echo "→ llama-server already installed"');
+        p('fi');
+        p('if ! command -v hf >/dev/null 2>&1; then');
+        p('  echo "→ Installing huggingface_hub (hf CLI)"');
+        p('  pip3 install --user -U huggingface_hub');
+        p('fi');
+        p('mkdir -p "$HOME/.spotlight/models"');
+        p('echo "→ Downloading GGUF from ' + cfg.model_repo + '"');
+        p('hf download ' + shellEscape(cfg.model_repo) + ' --local-dir "$HOME/.spotlight/models/' + cfg.model_repo.split('/').slice(-1)[0] + '" || {');
+        p('  echo "  ⚠ Model download failed. The fine-tune may not be published yet at ' + cfg.model_repo + '."');
+        p('  echo "  ⚠ Continuing — edit ~/spotlight/.env MODEL_REPO and re-run manually."');
+        p('}');
+        p('if ! command -v pi >/dev/null 2>&1; then');
+        p('  npm install -g @mariozechner/pi-coding-agent');
+        p('fi');
+      }
+    }
+    p('');
+
+    // Python deps
+    p('# ── Python dependencies ──');
+    p('pip3 install --user --quiet jsonschema requests || pip install --user --quiet jsonschema requests');
+    if (cfg.int_browseruse) {
+      p('echo "→ Installing browser-use"');
+      p('pip3 install --user --quiet browser-use || pip install --user --quiet browser-use');
+      p('# playwright browsers for browser-use');
+      p('python3 -m playwright install chromium 2>/dev/null || true');
+    }
+    p('');
+
+    // .env file
+    p('# ── Write .env ──');
+    p('echo "→ Writing $SPOTLIGHT_DIR/.env (chmod 600)"');
+    p('cat > "$SPOTLIGHT_DIR/.env" <<\'ENV_EOF\'');
+    p('# Spotlight environment — generated by setup.html');
+    p('FIRECRAWL_API_KEY=' + cfg.firecrawl_key);
+    if (cfg.runtime_key && cfg.runtime_key_var) {
+      p(cfg.runtime_key_var + '=' + cfg.runtime_key);
+    }
+    if (cfg.monitoring_acled) {
+      if (cfg.acled_key) p('ACLED_API_KEY=' + cfg.acled_key);
+      if (cfg.acled_email) p('ACLED_EMAIL=' + cfg.acled_email);
+    }
+    if (cfg.monitoring_nav && cfg.nav_key) {
+      p('OSINT_NAV_API_KEY=' + cfg.nav_key);
+    }
+    if (cfg.int_junkipedia && cfg.junkipedia_key) {
+      p('JUNKIPEDIA_API_KEY=' + cfg.junkipedia_key);
+    }
+    if (cfg.runtime === 'local') {
+      p('MODEL_REPO=' + cfg.model_repo);
+      p('LOCAL_BACKEND=' + cfg.local_backend);
+      p('LOCAL_ENDPOINT=' + (cfg.local_backend === 'ollama' ? 'http://127.0.0.1:11434/v1' : 'http://127.0.0.1:8081/v1'));
+    }
+    p('ENV_EOF');
+    p('chmod 600 "$SPOTLIGHT_DIR/.env"');
+    p('');
+
+    // .spotlight-config.json
+    p('# ── Write .spotlight-config.json ──');
+    const config = {
+      search_library: 'firecrawl',
+      vault_path: cfg.vault_path,
+      vault_type: cfg.vault_type,
+      cases_root: 'cases/',
+      runtime: cfg.runtime,
+      integrations: {
+        osint_navigator: cfg.monitoring_nav,
+        junkipedia: cfg.int_junkipedia,
+        browser_use: cfg.int_browseruse,
+      },
+      created_at: new Date().toISOString(),
+      last_used: new Date().toISOString(),
+    };
+    p('cat > "$SPOTLIGHT_DIR/.spotlight-config.json" <<\'CONFIG_EOF\'');
+    p(JSON.stringify(config, null, 2));
+    p('CONFIG_EOF');
+    p('');
+
+    // Vault dir if directory mode
+    if (cfg.vault_type === 'directory') {
+      p('# Create vault directory');
+      p('VAULT_EXPANDED="' + cfg.vault_path.replace(/^~/, '$HOME') + '"');
+      p('mkdir -p "$VAULT_EXPANDED"');
+      p('');
+    }
+
+    // Preflight
+    p('# ── Preflight ──');
+    p('echo ""');
+    p('echo "→ Running monitoring preflight"');
+    p('set -a; source "$SPOTLIGHT_DIR/.env"; set +a');
+    p('python3 "$SPOTLIGHT_DIR/monitoring/feeds/preflight.py" --text || true');
+    p('echo ""');
+    p('echo "→ Running integrations preflight"');
+    p('python3 "$SPOTLIGHT_DIR/integrations/preflight.py" --text || true');
+    p('');
+
+    // Done message
+    p('# ── Done ──');
+    p('echo ""');
+    p('echo "══════════════════════════════════════════════════════════"');
+    p('echo "  Spotlight installed at $SPOTLIGHT_DIR"');
+    p('echo "══════════════════════════════════════════════════════════"');
+    p('echo ""');
+    const nextSteps = {
+      pi: [
+        'cd "$SPOTLIGHT_DIR"',
+        'ln -sf "$SPOTLIGHT_DIR" "$HOME/.pi/agent/spotlight" 2>/dev/null || mkdir -p "$HOME/.pi/agent" && ln -sf "$SPOTLIGHT_DIR" "$HOME/.pi/agent/spotlight"',
+        'echo "Next: run \\"pi\\" and say: Start a Spotlight investigation on <your lead>"',
+      ],
+      claude: [
+        'cd "$SPOTLIGHT_DIR"',
+        'echo "Next: run \\"claude\\" in this directory. It reads AGENTS.md automatically."',
+      ],
+      codex: [
+        'cd "$SPOTLIGHT_DIR"',
+        'echo "Next: run \\"codex\\" in this directory. It reads AGENTS.md automatically."',
+      ],
+      gemini: [
+        'cd "$SPOTLIGHT_DIR"',
+        'ln -sf "$SPOTLIGHT_DIR/AGENTS.md" "$SPOTLIGHT_DIR/GEMINI.md" 2>/dev/null || true',
+        'echo "Next: run \\"gemini\\" in this directory."',
+      ],
+      local: [
+        'cd "$SPOTLIGHT_DIR"',
+        'mkdir -p "$HOME/.pi/agent"',
+        'ln -sf "$SPOTLIGHT_DIR" "$HOME/.pi/agent/spotlight"',
+        'echo "Next: ensure your local model is running (" + (cfg.local_backend === "ollama" ? "Ollama auto-starts" : "llama-server -m <gguf> --port 8081") + "), then run \\"pi\\" and say: Start a Spotlight investigation on <your lead>"',
+      ],
+    }[cfg.runtime];
+    nextSteps.forEach(s => p(s));
+    p('');
+    p('echo "Docs: $SPOTLIGHT_DIR/docs/README.md"');
+
+    return lines.join('\n') + '\n';
+  }
+
+  // --- Minimal hand-rolled zip (uncompressed, single file, unix exec bit) ---
+  // Zip format — local file header, file data, central directory, EOCD.
+  // External attrs set to 0o100755 << 16 so extractor preserves execute bit.
+
+  function crc32(str) {
+    // CRC-32 over UTF-8 bytes
+    let table = crc32.table;
+    if (!table) {
+      table = crc32.table = new Uint32Array(256);
+      for (let i = 0; i < 256; i++) {
+        let c = i;
+        for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+        table[i] = c;
+      }
+    }
+    const bytes = new TextEncoder().encode(str);
+    let crc = 0xffffffff;
+    for (let i = 0; i < bytes.length; i++) {
+      crc = (crc >>> 8) ^ table[(crc ^ bytes[i]) & 0xff];
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  function buildZip(filename, contents) {
+    const fnBytes = new TextEncoder().encode(filename);
+    const dataBytes = new TextEncoder().encode(contents);
+    const crc = crc32(contents);
+    const sz = dataBytes.length;
+
+    // Local file header: 30 + filename + data
+    const lfh = new Uint8Array(30 + fnBytes.length);
+    const dv1 = new DataView(lfh.buffer);
+    dv1.setUint32(0, 0x04034b50, true);   // signature
+    dv1.setUint16(4, 20, true);            // version needed
+    dv1.setUint16(6, 0, true);             // flags
+    dv1.setUint16(8, 0, true);             // compression (0 = stored)
+    dv1.setUint16(10, 0, true);            // modtime
+    dv1.setUint16(12, 0x21, true);         // moddate (2000-01-01)
+    dv1.setUint32(14, crc, true);
+    dv1.setUint32(18, sz, true);           // compressed size (= uncompressed)
+    dv1.setUint32(22, sz, true);
+    dv1.setUint16(26, fnBytes.length, true);
+    dv1.setUint16(28, 0, true);            // extra field length
+    lfh.set(fnBytes, 30);
+
+    // Central directory header: 46 + filename
+    const cdh = new Uint8Array(46 + fnBytes.length);
+    const dv2 = new DataView(cdh.buffer);
+    dv2.setUint32(0, 0x02014b50, true);
+    dv2.setUint16(4, (3 << 8) | 20, true); // version made by: Unix (3) | version 20
+    dv2.setUint16(6, 20, true);            // version needed
+    dv2.setUint16(8, 0, true);             // flags
+    dv2.setUint16(10, 0, true);            // compression
+    dv2.setUint16(12, 0, true);            // modtime
+    dv2.setUint16(14, 0x21, true);         // moddate
+    dv2.setUint32(16, crc, true);
+    dv2.setUint32(20, sz, true);
+    dv2.setUint32(24, sz, true);
+    dv2.setUint16(28, fnBytes.length, true);
+    dv2.setUint16(30, 0, true);            // extra length
+    dv2.setUint16(32, 0, true);            // comment length
+    dv2.setUint16(34, 0, true);            // disk number
+    dv2.setUint16(36, 0, true);            // internal attrs
+    // External attrs: (S_IFREG=0o100000 | 0o755) << 16 = 0x81ed0000
+    dv2.setUint32(38, (0o100755 << 16) >>> 0, true);
+    dv2.setUint32(42, 0, true);            // local header offset
+    cdh.set(fnBytes, 46);
+
+    // End of central directory record: 22 bytes
+    const eocd = new Uint8Array(22);
+    const dv3 = new DataView(eocd.buffer);
+    dv3.setUint32(0, 0x06054b50, true);
+    dv3.setUint16(4, 0, true);             // disk
+    dv3.setUint16(6, 0, true);             // disk with CD
+    dv3.setUint16(8, 1, true);             // entries this disk
+    dv3.setUint16(10, 1, true);            // total entries
+    dv3.setUint32(12, cdh.length, true);   // CD size
+    dv3.setUint32(16, lfh.length + sz, true); // CD offset
+    dv3.setUint16(20, 0, true);            // comment length
+
+    // Assemble
+    const total = new Uint8Array(lfh.length + sz + cdh.length + eocd.length);
+    let off = 0;
+    total.set(lfh, off); off += lfh.length;
+    total.set(dataBytes, off); off += sz;
+    total.set(cdh, off); off += cdh.length;
+    total.set(eocd, off);
+    return total;
+  }
+
+  // --- Generate handler ---
+  generateBtn.addEventListener('click', () => {
+    const cfg = collectForm();
+
+    // Validation
+    if (!cfg.firecrawl_key) {
+      firecrawlErr.classList.remove('hidden');
+      document.getElementById('firecrawl_key').focus();
+      return;
+    }
+    firecrawlErr.classList.add('hidden');
+
+    const script = buildScript(cfg);
+    scriptPreview.textContent = script;
+    installOutput.classList.remove('hidden');
+    installOutput.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Stash for buttons
+    installOutput.dataset.script = script;
+  });
+
+  // --- Copy button ---
+  copyBtn.addEventListener('click', async () => {
+    const script = installOutput.dataset.script || '';
+    try {
+      await navigator.clipboard.writeText(script);
+      copiedFeedback.classList.add('show');
+      setTimeout(() => copiedFeedback.classList.remove('show'), 2000);
+    } catch (e) {
+      // Fallback: select the text in the box
+      const range = document.createRange();
+      range.selectNode(scriptPreview);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      alert('Clipboard access denied. Script is selected — press ⌘+C to copy.');
+    }
+  });
+
+  // --- Download button ---
+  downloadBtn.addEventListener('click', () => {
+    const script = installOutput.dataset.script || '';
+    const zip = buildZip('spotlight-setup.command', script);
+    const blob = new Blob([zip], { type: 'application/zip' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'spotlight-setup.zip';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  });
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+})();
+</script>
+</body>
+</html>
