@@ -29,8 +29,10 @@ search: query="{exact title}" site:academia.edu
 
 ### 2. Unpaywall (Academic Papers with DOI)
 
+Unpaywall requires a contact email on every request — it's a fair-use identifier, not a notification target. The journalist should have set `$CONTACT_EMAIL` in `.env` during setup. If it's missing, skip to step 3.
+
 ```
-execute-shell: curl "https://api.unpaywall.org/v2/{DOI}?email=buriedsignals@agentmail.com"
+execute-shell: curl "https://api.unpaywall.org/v2/{DOI}?email=$CONTACT_EMAIL"
 ```
 
 Parse the response for `best_oa_location.url` — if present, it's the legal open-access copy. Also check `oa_locations[]` for mirrors.

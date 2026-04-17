@@ -4,6 +4,11 @@ cases/*
 .spotlight-config.json
 .env
 
+# Local Claude Code / other agent workspace configs (user-specific)
+.claude/
+.codex/
+.pi/
+
 # Local ML artifacts (out of contract; installed via setup.html flow)
 models/
 
