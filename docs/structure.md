@@ -8,15 +8,16 @@ This doc describes the repo layout: what's where, why, and how the pieces connec
 spotlight/
 ├── AGENTS.md                 # Runtime contract — verb registry, agent manifests, skill registry
 ├── README.md                 # Humans-first entry doc (quick-start per runtime)
-├── .spotlight-config.json    # Per-session config (search library, vault path, cases root)
+├── setup.html                # Browser-based installer — picks runtime, collects keys, generates install script
+├── .spotlight-config.json    # Per-session config (search library, vault path, cases root, runtime)
 ├── .gitignore
 ├── schemas/                  # JSON schemas — 5 case files, all schema_version 1.0
-├── skills/                   # 10 skills (pi-native SKILL.md format)
+├── skills/                   # 11 skills (pi-native SKILL.md format)
 ├── agents/                   # 2 agent prompt bundles (investigator + fact-checker)
+├── integrations/             # External tool integrations (browser-use, Junkipedia, OSINT Navigator)
 ├── docs/                     # You are here. Operator manual.
 ├── monitoring/               # Feed framework (ACLED, GDELT, RSS, GDACS)
-├── cases/                    # Per-investigation output (gitignored)
-└── apps/                     # Review app (optional; not part of the contract)
+└── cases/                    # Per-investigation output (gitignored)
 ```
 
 ## AGENTS.md — the runtime contract
