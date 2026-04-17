@@ -928,7 +928,13 @@
         : 'Runtime: ' + r.name;
       p('step "' + label + '"');
       p('if ! command -v ' + r.bin + ' >/dev/null 2>&1; then');
-      p('  spin "Installing ' + r.installPkg + '" npm install -g ' + r.installPkg);
+      if (cfg.runtime === 'gemini') {
+        p('  NPM_PREFIX="$HOME/.npm-global"; mkdir -p "$NPM_PREFIX"');
+        p('  spin "Installing ' + r.installPkg + '" npm install -g --prefix "$NPM_PREFIX" ' + r.installPkg);
+        p('  export PATH="$NPM_PREFIX/bin:$PATH"');
+      } else {
+        p('  spin "Installing ' + r.installPkg + '" npm install -g ' + r.installPkg);
+      }
       p('else');
       p('  printf "%s✓%s ' + r.bin + ' already installed\\n" "$_c_green" "$_c_reset"');
       p('fi');
