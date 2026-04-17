@@ -132,11 +132,15 @@ These skills contain the full methodology. Follow them.
 
 Follow the paper trail. Corporate filings link to people. People link to addresses. Addresses link to other entities. Each document opens a new thread — pull every thread.
 
-**Vault refresh on new entities.** Every time an unexpected new entity emerges during research (a name, a company, an address, a LEI), before spending research time on it, do a fast vault re-check:
+**Vault refresh on new entities.** When unexpected new entities emerge during research (names, companies, addresses, LEIs), check them against the vault before spending research time.
 
-1. `read-file("{VAULT_PATH}/entities/_registry.json")` — does this entity already exist? Check `aliases` too.
+**Load the entities registry ONCE at cycle start** — `read-file("{VAULT_PATH}/entities/_registry.json")` a single time and hold the parsed list in working context for the whole cycle. Don't re-read on every new entity.
+
+For each new entity:
+
+1. Look up the registry list (already loaded) — check both `id` and `aliases`.
 2. If hit: `read-file("{VAULT_PATH}/entities/{entity-id}.md")` and apply what you already know. Do not re-investigate from zero.
-3. `query-vault("{VAULT_PATH}", "<entity name + context keywords>")` for adjacent context that registry filtering might miss.
+3. If the registry lookup misses but you suspect prior work might have covered adjacent context, call `query-vault("{VAULT_PATH}", "<entity name + context keywords>")` sparingly (cap ~3 per cycle) for semantic search.
 
 Record vault matches in your investigation-log under `methodology.vault_hits`. This is where the knowledge base compounds — a journalist shouldn't re-research the same shell company for three different stories.
 

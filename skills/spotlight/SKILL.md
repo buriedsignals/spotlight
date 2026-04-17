@@ -493,6 +493,8 @@ Determine where the pipeline left off:
 - Has `data/findings.json` but no `summary.md` → restart at Phase 3, evaluate current cycle
 - Has `summary.md` → Gate 1 review
 
+For wider failure modes — API hiccups, Ollama restarts, Obsidian lock files, corrupted case JSON, stale review-feedback markers — see `docs/recovery.md`.
+
 ---
 
 ## Sensitive Mode

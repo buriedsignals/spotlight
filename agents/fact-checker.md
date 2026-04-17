@@ -48,13 +48,15 @@ Before searching for new evidence, check the vault for prior verdicts on the ent
 
 If `VAULT_PATH` is set (not `"none"`):
 
+**Load registries ONCE at the start of the fact-check** — one `read-file` each for `{VAULT_PATH}/entities/_registry.json` and `{VAULT_PATH}/tools/_registry.json`. Hold them in working context for the rest of the check. Do not re-read per claim.
+
 1. Extract the proper-noun entities from each claim (persons, organizations, companies, places).
-2. For each entity that appears in `{VAULT_PATH}/entities/_registry.json`, `read-file` its note and scan for:
+2. For entities that appear in the already-loaded `entities/_registry.json`, `read-file` each matching note once and scan for:
    - Prior investigation roles that bear on credibility
    - Previous findings that support or contradict the current claim
    - Known aliases or relationships that change the picture
-3. For each source domain cited in `findings.json`, `read-file("{VAULT_PATH}/tools/_registry.json")` and check for existing "Tips for Future Agents" on that source (e.g. "outlet X has a history of unretracted errors on Y topic"). Treat those tips as inputs to the credibility judgment.
-4. Use `query-vault("{VAULT_PATH}", "<claim keywords>")` for semantic search across prior investigations — it often surfaces fact-checks of near-identical claims.
+3. For source domains cited in `findings.json`, look them up in the already-loaded `tools/_registry.json`. For matches, `read-file` the tool note once and check "Tips for Future Agents" (e.g. "outlet X has a history of unretracted errors on Y topic"). Treat those tips as inputs to the credibility judgment.
+4. For the top-priority claims only (high-confidence or disputed), use `query-vault("{VAULT_PATH}", "<claim keywords>")` for semantic search. Cap at ~5 queries per cycle to keep cost bounded.
 
 Record prior-art references in `notes` on each claim as `"Prior vault context: [[entity-id]], [[prior-project-id]] — {what was found}"`. Do not suppress a verdict because of prior context; use it as one input among many.
 

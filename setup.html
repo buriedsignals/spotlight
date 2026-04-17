@@ -299,15 +299,6 @@
   .fit-copy-cmd button { background: var(--bg-3); border: 1px solid var(--border); color: var(--fg); padding: 4px 10px; border-radius: 4px; font-size: 0.78rem; cursor: pointer; flex-shrink: 0; }
   .fit-copy-cmd button:hover { filter: brightness(1.1); }
 
-  /* Spinner preview animation */
-  .spinner-preview {
-    display: inline-block;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: var(--accent);
-    width: 16px;
-    text-align: center;
-  }
-
   /* Provider sub-picker */
   .provider-grid {
     display: grid;
@@ -802,7 +793,7 @@
     p('# Install the app if missing, launch it, then leave the CLI toggle as a');
     p('# one-time manual step the user completes after the app opens. Spotlight\'s');
     p('# runtime preflight re-checks the CLI before the first investigation.');
-    p('if [ -d "/Applications/Obsidian.app" ] || ls -d "$HOME/Applications/Obsidian.app" >/dev/null 2>&1; then');
+    p('if [ -d "/Applications/Obsidian.app" ] || [ -d "$HOME/Applications/Obsidian.app" ]; then');
     p('  printf "%s✓%s Obsidian.app installed\\n" "$_c_green" "$_c_reset"');
     p('else');
     p('  ensure_brew');
@@ -890,7 +881,7 @@
       p('else');
       p('  printf "%s✓%s opencode already installed\\n" "$_c_green" "$_c_reset"');
       p('fi');
-      p('printf "%s✓%s Provider key will be loaded from .env (' + (cfg.cloud_key_var || 'PROVIDER_API_KEY') + ')\\n" "$_c_green" "$_c_reset"');
+      p('printf "%s✓%s Provider key will be loaded from .env (' + cfg.cloud_key_var + ')\\n" "$_c_green" "$_c_reset"');
     } else {
       const runtimePkg = {
         claude: { pkg: '@anthropic-ai/claude-code', bin: 'claude' },
@@ -1019,7 +1010,8 @@
     p('      ;;');
     p('  esac');
     p('  (cd "$dir" && { [ -f .env ] && set -a && source .env && set +a; } && \\');
-    p('    case "$(python3 -c \'import json;print(json.load(open(".spotlight-config.json"))["runtime"])\' 2>/dev/null)" in');
+    p('    # Fast JSON read: sed avoids python3 startup (~50ms saved per invocation)');
+    p('    case "$(sed -n \'s/.*"runtime": *"\\([^"]*\\)".*/\\1/p\' .spotlight-config.json 2>/dev/null | head -1)" in');
     p('      local) pi ;;');
     p('      claude) claude ;;');
     p('      codex) codex ;;');
