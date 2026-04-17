@@ -1,149 +1,450 @@
 ---
 name: spotlight
-description: Investigation orchestrator — pipeline phases, gates, cycle evaluation, and readiness criteria for the Spotlight OSINT system
+description: OSINT investigation orchestrator — guides verified investigations from lead to findings to knowledge ingestion. Triggers on "investigate", "investigation", "OSINT", "look into", "dig into".
 version: "1.0"
 invocable_by: [orchestrator]
 requires: [investigator, fact-checker]
 ---
 
-# Spotlight — Investigation Orchestrator
+# Spotlight — OSINT Investigation Orchestrator
 
-The Spotlight orchestrator skill governs the investigation pipeline: how cycles execute, when to advance or stall, and how findings are presented at Gate 1.
+You are now orchestrating an OSINT investigation using Spotlight.
+
+This skill instructs. You — the host runtime — execute. You spawn agents, read files, evaluate criteria, and manage gates. The user sees your synthesis and decisions at gates; agents do the research.
+
+Two absolute rules:
+
+1. **NEVER investigate directly.** All research is delegated to agents. You orchestrate, evaluate, and present.
+2. **Gates require the user's explicit approval before proceeding.** No exceptions.
+
+All tool operations use abstract **verbs** defined in `AGENTS.md`. Your runtime adapter binds each verb to a native tool (e.g. `fetch` → firecrawl CLI, `spawn-agent` → your runtime's sub-agent primitive). If a verb isn't supported by your adapter, stop and report the gap — do not silently substitute.
 
 ---
 
-## Pipeline Overview
+## Phase 0 — Preflight
 
-Investigations proceed through iterative **cycles**, each cycle running an investigator + fact-checker pass. After each cycle, the orchestrator evaluates readiness criteria to decide whether to:
+Run these checks in order. Stop at the first failure.
 
-1. **Loop** — Continue to another cycle, targeting specific gaps
-2. **Advance** — Move to Gate 1 when all criteria are met
-3. **Stall** — Trigger stall protocol after 5+ cycles without readiness
+### 1. Config check
+
+Use `read-file` on `.spotlight-config.json` in the working directory. If it exists and contains valid `search_library` + `vault_path` fields, update `last_used` to the current timestamp and skip to step 5 (project setup).
+
+### 2. Search library detection
+
+Spotlight requires **firecrawl** (the universal contract) for `fetch` and `search` verb backings. Check with:
+
+```
+execute-shell("command -v firecrawl")
+```
+
+If not found:
+
+> "No firecrawl CLI detected. Spotlight's `fetch` and `search` verbs require firecrawl. Install: `npm install -g @mendable/firecrawl-cli` and set `FIRECRAWL_API_KEY`."
+
+**STOP.** Do not proceed without firecrawl. (Other search libraries like `exa` and `tavily` work if your adapter explicitly binds `fetch`/`search` to them, but firecrawl is the reference backing.)
+
+### 3. OSINT skill availability
+
+Confirm the following skills resolve via `invoke-skill`:
+
+- `osint` — tool routing and technique catalog
+- `investigate` — step-by-step techniques
+- `follow-the-money` — financial investigation methodology
+- `social-media-intelligence` — account authenticity, coordination detection
+
+These ship in `skills/` in this repo. If your runtime cannot resolve them, fix the skill-loading configuration before proceeding.
+
+### 3.5. Agent skill inventory
+
+No user action required. This step establishes what capabilities your agents have access to before you spawn them.
+
+Agents have access to the following skills by their own `invoke-skill` calls:
+
+| Skill | Agent(s) | Purpose |
+|---|---|---|
+| `web-archiving` | investigator, fact-checker | Archive all evidence before citing |
+| `content-access` | investigator, fact-checker | Work through paywall hierarchy before marking sources inaccessible |
+| `osint`, `investigate`, `follow-the-money` | investigator | Tool routing + technique catalog |
+| `social-media-intelligence` | investigator, fact-checker | Account authenticity, coordination detection, narrative tracking |
+
+When building spawn prompts, remind agents these are available and expected.
+
+### 4. Vault configuration
+
+Ask the user:
+
+> "Where should findings be archived when the investigation completes?
+> (a) Obsidian vault — enter path
+> (b) Local directory (defaults to `./vault/`)"
+
+If the user provides a path, check for `.obsidian/` inside it (`list-files("{path}/.obsidian")`) to detect whether it's an Obsidian vault. Set `vault_type` to `"obsidian"` or `"directory"` accordingly.
+
+### 5. Project setup
+
+Derive a project slug from the user's lead (lowercase, hyphens, no spaces). Create:
+
+```
+cases/{project}/
+cases/{project}/data/
+cases/{project}/research/
+```
+
+### 6. Duplicate project check
+
+If `cases/{project}/` already exists, prompt:
+
+> "An investigation named `{project}` already exists. Resume the existing investigation, or start fresh?"
+
+If resume: read existing state files and determine where the pipeline left off. If fresh: back up the existing directory to `cases/{project}-{timestamp}/` and create a new one.
+
+### 7. Active investigation check
+
+Use `list-files("cases/*")` to scan for directories that do NOT contain `summary.md`. If any are found:
+
+> "Note: {N} investigation(s) in progress without a completed summary: {names}. Continuing with `{project}`."
+
+### 8. Write config
+
+Write `.spotlight-config.json` via `write-file`:
+
+```json
+{
+  "search_library": "<detected library>",
+  "vault_path": "<user-provided path or ./vault/>",
+  "vault_type": "obsidian | directory",
+  "cases_root": "cases/",
+  "integrations": {
+    "osint_navigator": false
+  },
+  "created_at": "<ISO timestamp>",
+  "last_used": "<ISO timestamp>",
+  "active_project": "<project slug>"
+}
+```
+
+### 9. Integration checks
+
+Check for optional API integrations. None are required — investigations work without them.
+
+**OSINT Navigator** (optional — expanded OSINT tool database):
+
+```
+execute-shell('test -n "$OSINT_NAV_API_KEY" && echo true || echo false')
+```
+
+If set, verify the API is reachable:
+
+```
+execute-shell('curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" https://navigator.indicator.media/api/openapi.json')
+```
+
+If the spec fetch succeeds, set `integrations.osint_navigator: true` in the config. If it fails, mark `"degraded"` and warn:
+> "Warning: `$OSINT_NAV_API_KEY` is set but Navigator API did not respond. Integration marked as degraded."
+
+### 10. Monitoring preflight (optional)
+
+If feeds are configured, run:
+
+```
+execute-shell("python3 monitoring/feeds/preflight.py --json")
+```
+
+The preflight reports which feed sources are green (ready), yellow (key set but smoke test failed), or red (missing env vars). Display the result table to the user so they know which feeds will be queryable during the investigation. Do not block on failures — feeds are supplementary.
 
 ---
 
-## Cycle Execution
+## Phase 1 — Brief (Skill <-> User)
 
-### Starting an Investigation
+This is a conversation between you and the user. Do NOT spawn agents.
 
-1. Receive the investigation brief (project ID, scope, targets)
-2. Initialize the case directory:
+1. **If the lead includes a URL**, scrape it first:
    ```
-   cases/{project}/
-   └── data/
-       ├── findings.json          # Schema: schemas/findings.schema.json
-       ├── fact-check.json        # Schema: schemas/fact-check.schema.json
-       ├── methodology.json        # Schema: schemas/methodology.schema.json
-       ├── investigation-log.json  # Schema: schemas/investigation-log.schema.json
-       └── summary.json            # Schema: schemas/summary.schema.json (written at Gate 1)
+   fetch(url="<URL>", output_path="cases/{project}/research/lead-source.md")
    ```
-3. Query the vault for prior work on related targets via `query-vault`
-4. Invoke `investigator` in PLANNING mode to design methodology
+   Then `read-file("cases/{project}/research/lead-source.md")` to understand the source material.
 
-### Running a Cycle
+2. Restate the lead in one sentence.
 
-1. **Investigation Phase** — Invoke `investigator` in EXECUTION mode:
-   - Follow the approved methodology
-   - Execute research using `fetch` and `search`
-   - Write findings to `cases/{project}/data/findings.json`
-   - Append each action to `cases/{project}/data/investigation-log.json`
+3. Ask 1–3 clarifying questions if scope, angle, or priority is unclear. Keep it tight — the investigator agent handles planning, not you.
 
-2. **Fact-Check Phase** — Invoke `fact-checker`:
-   - Read `cases/{project}/data/findings.json`
-   - Conduct independent verification research
-   - Write verdicts to `cases/{project}/data/fact-check.json`
+4. Summarize the agreed direction in a few sentences.
 
-3. **Cycle Evaluation** — Run readiness criteria check (see `references/pipeline.md`)
+5. **Gate: user approves the brief direction.**
+
+6. Write the approved direction: `write-file("cases/{project}/brief-directions.txt", <directions>)`.
 
 ---
 
-## Readiness Criteria
+## Phase 2 — Methodology (Skill -> Agent -> User)
 
-After each cycle, evaluate ALL criteria before deciding next steps:
+After brief approval, spawn the investigator in PLANNING mode:
 
-| Criterion | Threshold | How to Check |
-|-----------|-----------|-------------|
-| Minimum findings | 3+ at high confidence | Count findings where confidence == "high" |
-| Source independence | 2+ independent sources per key claim | Check `data/fact-check.json` `evidence_for` arrays |
-| No unresolved disputes | 0 claims with "disputed" verdict and no resolution path | Check `data/fact-check.json` for disputed verdicts |
-| Affected perspective | At least 1 finding from affected community/person | Check `data/findings.json` `perspective` field |
-| Document trail | Primary source documents cited (not just news reports) | Check source types include court_filing, registry, government |
-| Gap assessment | All gaps resolved or explicitly noted as limitations | Check `data/findings.json` `gaps` array is empty or items are noted as limitations |
+```
+handle = spawn-agent(
+  agent_id: "investigator",
+  prompt: "MODE: PLANNING
+PROJECT: {project}
+VAULT_PATH: {vault_path or 'none'}
+INTEGRATIONS: osint_navigator={config.integrations.osint_navigator}
+SKILLS: web-archiving, content-access, social-media-intelligence (load when investigation touches social media accounts, coordination, or narrative spread)
 
-**Reference:** Full cycle evaluation logic is in `references/pipeline.md`.
+Approved brief directions:
+{directions}
+
+You may recommend monitoring targets in your methodology (see skills/monitoring for the feed framework and recommendation schema).
+If the investigation involves social media, plan to invoke social-media-intelligence for account authenticity and coordination detection.
+
+Write methodology to cases/{project}/data/methodology.json.
+Do NOT execute the investigation.",
+  config: { iteration_limit: 80 }
+)
+output = wait-agent(handle)
+```
+
+When the agent completes:
+
+1. `read-file("cases/{project}/data/methodology.json")`
+2. Present a summary of the proposed methodology to the user
+3. **Gate: user approves the methodology.** Iterate if the user has changes.
 
 ---
 
-## Gate Decisions
+## Phase 3 — Execution (Autonomous Cycles, Max 5)
 
-### If ALL criteria pass → Advance to Gate 1
+With approved methodology, begin the execution loop. No user involvement between cycles — decide autonomously.
 
-Present the investigation summary per the Gate 1 presentation format (`references/pipeline.md`):
-- Headline: "{N} verified findings across {M} cycles"
-- Findings table with claim, confidence, verdict, source count
-- Methods summary from investigation-log
-- Limitations from findings gaps
-- Confidence assessment (margin, not just pass/fail)
+```
+CYCLE N (N starts at 1):
 
-Generate and write `cases/{project}/data/summary.json` per `schemas/summary.schema.json`.
+  1. Spawn investigator (EXECUTION mode):
 
-### If any criteria fail and cycle < 5 → Loop
+     handle = spawn-agent(
+       agent_id: "investigator",
+       prompt: "MODE: EXECUTION
+PROJECT: {project}
+VAULT_PATH: {vault_path or 'none'}
+INTEGRATIONS: osint_navigator={config.integrations.osint_navigator}
+CYCLE: {N}
+SKILLS: web-archiving (archive all evidence before citing), content-access (paywalled sources — use before marking inaccessible), social-media-intelligence (use for account authenticity, coordination detection, narrative tracking when social media is involved)
 
-List specific gaps. Recommend what the next cycle should focus on:
-- "Next cycle: find second independent source for funding claim"
-- "Use `fetch` to scrape court filing referenced in interview"
+{if N > 1: Previous findings gaps:
+{gaps}
 
-### If any criteria fail and cycle >= 5 → Stall
+Fact-check gaps:
+{fc_gaps}}
 
-Present stall message:
+{if monitoring_units: Monitoring results since last cycle:
+{monitoring_summary}}
+
+When you identify targets worth persistent monitoring, add them to monitoring_recommendations[] in data/findings.json.
+
+Read methodology from cases/{project}/data/methodology.json.
+Write to cases/{project}/data/findings.json.
+Append to cases/{project}/data/investigation-log.json.",
+       config: { iteration_limit: 80 }
+     )
+     output = wait-agent(handle)
+
+  2. When complete: read-file("cases/{project}/data/findings.json"); verify investigation-log.json was appended.
+
+  3. Spawn fact-checker:
+
+     handle = spawn-agent(
+       agent_id: "fact-checker",
+       prompt: "PROJECT: {project}
+INTEGRATIONS: osint_navigator={config.integrations.osint_navigator}
+SKILLS: web-archiving (archive sources before issuing verdict), content-access (paywalled sources — use before marking inaccessible)
+
+Apply SIFT source credibility check before searching for corroborating evidence.
+Archive every source before citing it. Work through the content-access hierarchy before marking any source inaccessible.
+If you identify sources worth monitoring for ongoing verification, add them to monitoring_recommendations[] in data/findings.json.
+
+Fact-check all claims in cases/{project}/data/findings.json.
+Write to cases/{project}/data/fact-check.json.",
+       config: { iteration_limit: 50 }
+     )
+     output = wait-agent(handle)
+
+  4. When complete: read-file("cases/{project}/data/fact-check.json").
+
+  5. Run editorial standards check:
+     - Do findings have sources with URLs, timestamps, and `local_file`?
+     - Does investigation-log.json have substance (techniques, queries, failed approaches)?
+     - Do high-confidence findings have 2+ fact-check sources?
+     - Are there findings with no fact-check verdict?
+     If any fail: re-spawn the responsible agent with specific fix instructions.
+     This counts as a cycle.
+
+  5.5. Process monitoring recommendations:
+
+     If data/findings.json contains monitoring_recommendations[]:
+
+     1. Present recommendations to user, ordered by priority (high → medium → low):
+        > "The investigator identified {N} targets worth monitoring:
+        > 1. [HIGH] {target} — {rationale}
+        > 2. [MEDIUM] {target} — {rationale}
+        >
+        > Approve, modify, or skip each?"
+
+     2. For approved recommendations, invoke-skill("monitoring") to configure feed-based scouts. See skills/monitoring/SKILL.md for the feed framework.
+
+     3. Log results to cases/{project}/data/monitoring.json
+
+  6. Evaluate readiness criteria (see references/pipeline.md):
+
+     | Criterion | Threshold |
+     |-----------|-----------|
+     | Minimum findings | 3+ at high confidence |
+     | Source independence | 2+ independent sources per key claim |
+     | No unresolved disputes | 0 claims with "disputed" verdict and no resolution path |
+     | Affected perspective | At least 1 finding from affected community/person |
+     | Document trail | Primary source documents cited (not just news reports) |
+     | Gap assessment | All gaps resolved or explicitly noted as limitations |
+
+  7. If ALL criteria met: proceed to Gate 1.
+
+  8. If NOT met AND N < 5: identify specific gaps, increment N, loop.
+
+  9. If NOT met AND N >= 5: trigger Stall Protocol.
+```
+
+---
+
+## Stall Protocol
+
 > "Investigation stalled after {N} cycles. Missing: {gaps}. Options: continue with more cycles, pivot angle, or review current findings as-is."
 
-Wait for user direction. Do not auto-advance.
+**STOP** and wait for the user's decision. Do not auto-advance.
 
 ---
 
-## Evidence Grounding
+## Phase 4 — Gate 1
 
-All research must follow evidence grounding rules defined in `references/evidence-grounding.md`:
+### Generate summary
 
-- Store all research per-case in `cases/{project}/research/`
-- Scrape before cite — no finding without a scraped file
-- Quote verbatim from primary sources
-- Link every finding to a local file
-- If cannot scrape, document the reason and adjust confidence
+`write-file("cases/{project}/summary.md", <content>)` as a human-readable markdown document:
+
+```markdown
+# {Investigation Title}
+
+**Date:** YYYY-MM-DD | **Cycles:** N | **Status:** Pending review
+
+## Overview
+
+2-3 paragraph narrative overview.
+
+## Scope
+
+What was investigated and what was out of scope.
+
+## Key Conclusions
+
+- Conclusion 1
+- Conclusion 2
+
+## Findings
+
+| # | Claim | Confidence | Verdict | Sources |
+|---|-------|------------|---------|---------|
+| F1 | ... | high | verified | 3 |
+
+## Limitations
+
+- Limitation 1
+- Limitation 2
+```
+
+### Present to user
+
+**Headline:** "{N} verified findings across {M} cycles"
+
+**Findings table:**
+
+| # | Claim | Confidence | Fact-Check Verdict | Source Count |
+|---|-------|------------|-------------------|-------------|
+
+**Methods summary:** Techniques and tools used, drawn from data/investigation-log.json.
+
+**Limitations:** Unresolved gaps from data/findings.json, noted as limitations.
+
+**Confidence assessment:** Overall investigation strength — not just pass/fail on criteria, but how strongly each was met.
+
+### Iterate
+
+The user can request follow-up cycles targeting specific findings. If so, re-enter the execution loop with targeted gap instructions.
+
+**Gate: user approves the investigation.**
 
 ---
 
-## Skill Invocations
+## Phase 5 — Ingestion
 
-During an investigation, these skills may be invoked:
+After Gate 1 approval:
 
-| Skill ID | When Invoked | Purpose |
-|----------|--------------|---------|
-| `ingest` | At Gate 1 or investigation close | Archive findings to knowledge vault |
-| `monitoring` | If `monitoring_recommendations[]` exist in findings | Configure ongoing feed monitoring |
-| `web-archiving` | When evidence URLs need archival | Wayback Machine, Archive.today |
-| `content-access` | When encountering paywalls or access restrictions | Bypass hierarchy and access methods |
+> "Investigation complete. Ingest confirmed findings into your knowledge base?"
+
+- If yes: `invoke-skill("ingest")` — pass project path and vault config from `.spotlight-config.json`.
+- If no: pipeline ends.
 
 ---
 
-## Schema Reference
+## Agent Routing Table
 
-| Schema | Path | Purpose |
-|--------|------|---------|
-| Findings | `schemas/findings.schema.json` | Investigation findings with sources, confidence, connections |
-| Fact-Check | `schemas/fact-check.schema.json` | Per-claim verdicts with evidence trails |
-| Methodology | `schemas/methodology.schema.json` | Investigation plan with directions, steps, tools |
-| Investigation Log | `schemas/investigation-log.schema.json` | Append-only cycle audit trail |
-| Summary | `schemas/summary.schema.json` | Gate 1 summary for review |
+| Task | Agent | Mode |
+|------|-------|------|
+| Design methodology | investigator | PLANNING |
+| Execute investigation | investigator | EXECUTION |
+| Verify findings | fact-checker | -- |
+
+**Model preference** is declared per-agent in `agents/*.md` via the `preferred_model` map (claude/gemini/gpt/local). Your adapter resolves to the runtime's strongest available model. If the preferred model is unavailable, warn:
+
+> "Spotlight agents are designed for the strongest reasoning model available. Running on a lighter model will reduce investigation depth."
+
+Then re-spawn without the model hint.
+
+---
+
+## Communication Style
+
+- Direct and concise. No filler.
+- Synthesize agent results — never dump raw output. Highlight what is surprising or does not add up.
+- Use structured output (bullets, tables) for summaries.
+- Gates are conversations, not announcements. Present information, challenge assumptions, answer questions, iterate.
+- When spawning agents: state what you are doing and why.
+- When something fails: say so clearly with what was tried.
+
+---
+
+## Context Recovery
+
+All state lives in files. If context is lost mid-investigation, re-read:
+
+```
+cases/{project}/
+  brief-directions.txt             — Approved brief directions
+  summary.md                       — Investigation summary (generated at Gate 1)
+  data/
+    methodology.json               — Approved investigation plan
+    findings.json                  — Investigator output (cumulative)
+    fact-check.json                — Fact-checker output
+    investigation-log.json         — Append-only cycle log
+    monitoring.json                — Scout state and check results
+```
+
+Determine where the pipeline left off:
+
+- No `brief-directions.txt` → restart at Phase 1
+- No `data/methodology.json` → restart at Phase 2
+- No `data/findings.json` → restart at Phase 3, cycle 1
+- Has `data/findings.json` but no `summary.md` → restart at Phase 3, evaluate current cycle
+- Has `summary.md` → Gate 1 review
 
 ---
 
 ## Sensitive Mode
 
-When `sensitive: true` is set in AGENTS.md, the adapter strips `fetch` and `search` from all agent `allowed_verbs`. The orchestrator adjusts:
+When `sensitive: true` is set in `AGENTS.md`, the adapter MUST strip `fetch` and `search` from every agent's `allowed_verbs`. The orchestrator then:
 
 - Research phases become local-only (`read-file`, `grep-files`, `list-files`, `query-vault`)
 - All evidence must come from pre-scraped material in `cases/{project}/research/`
-- Readiness criteria requiring new sources cannot be met — flag explicitly
-
+- Readiness criteria requiring new sources cannot be met — flag explicitly at Gate 1 and mark the investigation as **constrained** rather than **verified**
