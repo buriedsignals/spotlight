@@ -1,0 +1,19 @@
+{
+  "id": "osint-navigator",
+  "name": "OSINT Navigator",
+  "description": "Weekly-updated database of 1,000+ OSINT tools with AI-powered query. Surfaces country-specific registries, niche categories, and recent additions beyond the curated 150-tool catalog in the osint skill.",
+  "category": "tool-discovery",
+  "type": "api",
+  "requires_key": true,
+  "env_vars": ["OSINT_NAV_API_KEY"],
+  "capabilities": [
+    "tool-search-by-keyword",
+    "tool-search-by-category",
+    "complex-query-synthesis",
+    "country-specific-tool-lookup"
+  ],
+  "invocable_by": ["investigator", "fact-checker"],
+  "homepage": "https://navigator.indicator.media/",
+  "docs": "See skills/osint/references/navigator-integration.md",
+  "rate_limit_note": "Free tier: /api/query 10/day, /api/tools/search unlimited. Pro tier: /api/query 50/day."
+}

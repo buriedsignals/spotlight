@@ -1,0 +1,20 @@
+{
+  "id": "junkipedia",
+  "name": "Junkipedia",
+  "description": "Misinformation / narrative tracking database. Monitors social media platforms for disinformation and narrative spread. Used by 100+ journalism and research orgs.",
+  "category": "social-osint",
+  "type": "api",
+  "requires_key": true,
+  "env_vars": ["JUNKIPEDIA_API_KEY"],
+  "capabilities": [
+    "narrative-tracking",
+    "misinformation-search",
+    "social-media-monitoring",
+    "cross-platform-query",
+    "issue-tagging"
+  ],
+  "invocable_by": ["investigator", "fact-checker"],
+  "homepage": "https://www.junkipedia.org/",
+  "docs": "https://docs.junkipedia.org/reference-material/api",
+  "rate_limit_note": "Application-based access. Rate limits per tier — see dashboard."
+}

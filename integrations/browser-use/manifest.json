@@ -1,0 +1,21 @@
+{
+  "id": "browser-use",
+  "name": "Browser Use",
+  "description": "AI-driven browser automation — let the agent click through complex forms, export search results, drive login flows. Open-source Python library (MIT).",
+  "category": "browser-automation",
+  "type": "library",
+  "requires_key": false,
+  "env_vars": [],
+  "optional_env_vars": ["BROWSER_USE_API_KEY"],
+  "capabilities": [
+    "form-navigation",
+    "search-export",
+    "login-driving",
+    "multi-step-browsing",
+    "captcha-bypass-cloud"
+  ],
+  "invocable_by": ["investigator", "fact-checker"],
+  "homepage": "https://browser-use.com/",
+  "docs": "https://docs.browser-use.com/open-source/introduction",
+  "rate_limit_note": "OSS: limited only by your LLM provider. Cloud (optional, via BROWSER_USE_API_KEY): per plan."
+}
