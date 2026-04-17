@@ -446,18 +446,26 @@
       <p style="margin-top:0; color:var(--muted); font-size:0.93rem;">
         Spotlight archives verified findings into an Obsidian vault as structured knowledge — entities, methodology, tools — with wikilinks. Over time, the vault becomes your investigative memory.
       </p>
+      <p style="color:var(--muted); font-size:0.93rem; margin:8px 0 0;">
+        <strong>The installer will brew-install Obsidian</strong> if it isn't already on your Mac, then launch it so you can complete one small step below.
+      </p>
 
-      <div class="step-card">
-        <h4>Before you continue</h4>
+      <div class="step-card" style="border-left-color: var(--amber); background: rgba(217, 164, 65, 0.08);">
+        <h4 style="color: var(--amber);">⚠ One manual step (Obsidian 1.12+)</h4>
+        <p style="margin:0 0 8px; font-size:0.93rem;">
+          Obsidian's CLI toggle can't be automated — you must click it once after the app launches:
+        </p>
         <ol>
-          <li>Install Obsidian 1.12+ from <a class="link" href="https://obsidian.md/" target="_blank">obsidian.md</a> (if you don't have it already)</li>
-          <li>Open Obsidian → Settings → General → Advanced → toggle <strong>Command Line Interface</strong> ON</li>
-          <li>This adds the <code>obsidian</code> command to your PATH. Verify by running <code>obsidian --version</code> in Terminal.</li>
-          <li>Create a new vault (or pick an existing one) and note its full path</li>
+          <li>The installer opens Obsidian for you</li>
+          <li>In Obsidian → <strong>Settings</strong> → <strong>General</strong> → <strong>Advanced</strong> → toggle <strong>Command Line Interface</strong> ON</li>
+          <li>That's it. Spotlight will detect the <code>obsidian</code> command on its first run and prompt you again if it's missing.</li>
         </ol>
+        <p style="margin:10px 0 0; font-size:0.88rem;">
+          If Obsidian is already installed and the CLI is on, the installer skips this step. If you haven't opened Obsidian in a while, verify you're on 1.12 or newer (<strong>About</strong> menu).
+        </p>
       </div>
 
-      <label class="block" style="margin-top: 14px;">Vault path <span class="hint">— full path to your Obsidian vault folder</span></label>
+      <label class="block" style="margin-top: 14px;">Vault path <span class="hint">— full path to your Obsidian vault folder (or where to create one)</span></label>
       <input type="text" id="vault_path" placeholder="/Users/you/Documents/Intelligence" value="~/Intelligence">
       <p id="vault_err" class="error hidden">Vault path is required.</p>
     </section>
@@ -743,14 +751,31 @@
       p('ensure_brew  # local mode needs brew for ollama');
     }
     p('');
-    p('step "Obsidian CLI"');
-    p('if ! command -v obsidian >/dev/null 2>&1; then');
-    p('  printf "%s✗%s Obsidian CLI not found on PATH.\\n" "$_c_red" "$_c_reset" >&2');
-    p('  echo "   Open Obsidian (1.12+) → Settings → General → Advanced → toggle \\"Command Line Interface\\" ON." >&2');
-    p('  echo "   Then re-run this installer." >&2');
-    p('  exit 1');
+    p('step "Obsidian vault"');
+    p('# Install the app if missing, launch it, then leave the CLI toggle as a');
+    p('# one-time manual step the user completes after the app opens. Spotlight\'s');
+    p('# runtime preflight re-checks the CLI before the first investigation.');
+    p('if [ -d "/Applications/Obsidian.app" ] || ls -d "$HOME/Applications/Obsidian.app" >/dev/null 2>&1; then');
+    p('  printf "%s✓%s Obsidian.app installed\\n" "$_c_green" "$_c_reset"');
+    p('else');
+    p('  ensure_brew');
+    p('  spin "Installing Obsidian via brew cask" brew install --cask obsidian');
     p('fi');
-    p('printf "%s✓%s obsidian CLI on PATH\\n" "$_c_green" "$_c_reset"');
+    p('');
+    p('if ! command -v obsidian >/dev/null 2>&1; then');
+    p('  printf "%s!%s Opening Obsidian so you can enable the CLI\\n" "$_c_cyan" "$_c_reset"');
+    p('  open -a Obsidian 2>/dev/null || true');
+    p('  echo ""');
+    p('  echo "  ${_c_bold}Enable the Obsidian CLI (one-time):${_c_reset}"');
+    p('  echo "    Settings → General → Advanced → toggle ${_c_bold}Command Line Interface${_c_reset} ON"');
+    p('  echo ""');
+    p('  echo "  The first time you run ${_c_bold}spotlight${_c_reset}, the preflight check will detect"');
+    p('  echo "  whether the CLI is enabled and prompt you again if needed. You can continue"');
+    p('  echo "  the rest of this installer now while Obsidian is open."');
+    p('  echo ""');
+    p('else');
+    p('  printf "%s✓%s obsidian CLI already on PATH\\n" "$_c_green" "$_c_reset"');
+    p('fi');
     p('');
     p('step "Spotlight repo"');
     p('if [ -d "$SPOTLIGHT_DIR/.git" ]; then');

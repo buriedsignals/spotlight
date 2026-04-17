@@ -69,6 +69,29 @@ Agents have access to the following skills by their own `invoke-skill` calls:
 
 When building spawn prompts, remind agents these are available and expected.
 
+### 3.7. Obsidian CLI preflight
+
+Spotlight writes verified findings into an Obsidian vault. The `obsidian` CLI must be on PATH, which requires a one-time toggle in the Obsidian app. Check it here so the user isn't surprised at ingestion time.
+
+```
+execute-shell("command -v obsidian")
+```
+
+If the command returns nothing:
+
+```
+execute-shell("test -d /Applications/Obsidian.app || ls -d ~/Applications/Obsidian.app >/dev/null 2>&1")
+```
+
+- If Obsidian.app is installed but CLI isn't enabled, stop and prompt:
+  > "Obsidian is installed, but the CLI isn't enabled. Open Obsidian → Settings → General → Advanced → toggle **Command Line Interface** ON. Then tell me 'ready' and I'll continue."
+  Wait for the user's confirmation. Re-check; if still missing, repeat once more; if still missing, abort with guidance to verify Obsidian version (1.12+ required).
+- If Obsidian.app isn't installed, stop and instruct:
+  > "Obsidian isn't installed. Install it (via `brew install --cask obsidian` or from obsidian.md), enable the Command Line Interface in Settings, then tell me 'ready'."
+  Wait. Re-check. Abort if still missing after one retry.
+
+If the `obsidian` CLI is on PATH, log `✓ obsidian CLI present` and continue.
+
 ### 4. Vault configuration
 
 Ask the user:
