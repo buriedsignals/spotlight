@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security issue
+    url: mailto:buriedsignals@agentmail.com
+    about: For credential leak patterns, arbitrary-code-execution concerns, or anything that could enable an attacker. Do NOT open a public issue.
+  - name: Documentation question
+    url: https://github.com/buriedsignals/spotlight/discussions
+    about: General questions about how Spotlight works — open a Discussion.
+  - name: Investigation help
+    url: https://github.com/buriedsignals/spotlight/discussions
+    about: Need help running an investigation? Open a Discussion (not an Issue) so others can benefit.

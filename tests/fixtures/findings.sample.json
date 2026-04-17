@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0",
+  "project": "sample-investigation",
+  "lead": "Investigate the ownership structure of Example Corp Ltd, registered in BVI",
+  "investigated_at": "2026-04-17T14:00:00Z",
+  "cycle": 2,
+  "questions": [
+    "Who is the ultimate beneficial owner?",
+    "Are there other related entities registered under the same address?"
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "claim": "Example Corp Ltd is registered at Road Town, Tortola, British Virgin Islands, incorporated on 2019-03-14 with registration number 2019-ABC-123.",
+      "evidence": "\"Example Corp Ltd, Company No. 2019-ABC-123, incorporated 14 March 2019, Registered Agent: Acme Trust Services, Road Town, Tortola\" — BVI Financial Services Commission filing",
+      "sources": [
+        {
+          "url": "https://bvifsc.example/filings/2019-ABC-123",
+          "type": "registry",
+          "accessed": "2026-04-17T12:03:00Z",
+          "archive_url": "https://web.archive.org/web/20260417120300/https://bvifsc.example/filings/2019-ABC-123",
+          "access_method": "full_text",
+          "local_file": "cases/sample-investigation/research/bvifsc-filing-2019-abc-123.md"
+        }
+      ],
+      "confidence": "high",
+      "confidence_rationale": "Primary registry source, archived, access_method full_text.",
+      "perspective": "official"
+    },
+    {
+      "id": "F2",
+      "claim": "The registered agent Acme Trust Services provides incorporation services for at least 43 other companies sharing the same Tortola address, 12 of which are connected to a single ultimate beneficial owner.",
+      "evidence": "ICIJ Offshore Leaks database returned 43 records for the registered agent 'Acme Trust Services' at the Road Town address; 12 of those records share the same UBO name.",
+      "sources": [
+        {
+          "url": "https://offshoreleaks.icij.org/search?q=acme+trust+services",
+          "type": "ngo_report",
+          "accessed": "2026-04-17T12:30:00Z",
+          "archive_url": "https://web.archive.org/web/20260417123000/https://offshoreleaks.icij.org/search",
+          "access_method": "full_text",
+          "local_file": "cases/sample-investigation/research/offshoreleaks-acme-trust-services.json"
+        },
+        {
+          "url": "https://aleph.occrp.org/datasets/companies/acme-trust",
+          "type": "ngo_report",
+          "accessed": "2026-04-17T12:45:00Z",
+          "access_method": "full_text",
+          "local_file": "cases/sample-investigation/research/occrp-aleph-acme-trust.html"
+        }
+      ],
+      "confidence": "high",
+      "confidence_rationale": "Two independent investigative databases converge on the same pattern.",
+      "perspective": "independent_observer"
+    }
+  ],
+  "connections": [
+    {
+      "from": "Example Corp Ltd",
+      "to": "Acme Trust Services",
+      "relationship": "registered_agent",
+      "evidence": "BVI filing 2019-ABC-123"
+    }
+  ],
+  "gaps": [
+    "Ultimate beneficial owner name not yet confirmed from primary documents",
+    "No court filings located for Example Corp Ltd"
+  ],
+  "next_steps": [
+    "Cross-reference the 12 UBO-linked entities in OCCRP Aleph for press mentions",
+    "Search court records in jurisdictions where Example Corp Ltd has done business"
+  ],
+  "monitoring_recommendations": [
+    {
+      "id": "M1",
+      "target": "https://bvifsc.example/filings/2019-ABC-123",
+      "scout_type": "web",
+      "criteria": "new director appointments or address changes",
+      "rationale": "F1 — registry filings update periodically; watch for ownership changes",
+      "priority": "medium",
+      "finding_refs": ["F1"]
+    }
+  ]
+}

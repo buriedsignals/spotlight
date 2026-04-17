@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke:
+    name: Smoke + Eval
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Python test deps
+        run: pip install --quiet jsonschema requests
+
+      - name: Run smoke test
+        run: bash tests/smoke.sh
+
+      - name: Run eval (contract compliance + sample data)
+        run: bash tests/eval.sh
+
+      - name: Generated script syntax (all 6 runtime configs)
+        run: node tests/setup-generator-check.js

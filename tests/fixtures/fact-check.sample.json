@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0",
+  "project": "sample-investigation",
+  "source_document": "cases/sample-investigation/data/findings.json",
+  "checked_at": "2026-04-17T15:30:00Z",
+  "cycle": 2,
+  "summary": {
+    "total_claims": 2,
+    "verified": 1,
+    "unverified": 1,
+    "disputed": 0,
+    "false": 0
+  },
+  "claims": [
+    {
+      "id": 1,
+      "finding_id": "F1",
+      "claim_text": "Example Corp Ltd is registered at Road Town, Tortola, British Virgin Islands, incorporated on 2019-03-14 with registration number 2019-ABC-123.",
+      "verdict": "verified",
+      "confidence": "high",
+      "evidence_for": [
+        {
+          "description": "BVI FSC filing confirms registration date, address, and number verbatim.",
+          "source": "https://bvifsc.example/filings/2019-ABC-123",
+          "source_type": "primary",
+          "archive_url": "https://web.archive.org/web/20260417120300/https://bvifsc.example/filings/2019-ABC-123",
+          "access_method": "full_text"
+        }
+      ],
+      "evidence_against": [],
+      "sources": ["https://bvifsc.example/filings/2019-ABC-123"],
+      "notes": "Primary source match; no contradicting evidence located."
+    },
+    {
+      "id": 2,
+      "finding_id": "F2",
+      "claim_text": "12 of the 43 companies connected to Acme Trust Services share the same ultimate beneficial owner.",
+      "verdict": "unverified",
+      "confidence": "medium",
+      "evidence_for": [
+        {
+          "description": "ICIJ Offshore Leaks and OCCRP Aleph both surface the 12-entity cluster.",
+          "source": "https://offshoreleaks.icij.org/search?q=acme+trust+services",
+          "source_type": "secondary",
+          "access_method": "full_text"
+        }
+      ],
+      "evidence_against": [],
+      "sources": ["https://offshoreleaks.icij.org/search?q=acme+trust+services"],
+      "notes": "The pattern is well-documented but UBO name isn't confirmed from a primary record (e.g. a sworn affidavit or registry disclosure). Verdict: unverified — not false, just evidence-silent on the specific UBO identity."
+    }
+  ],
+  "gaps_for_next_cycle": [
+    "Primary UBO disclosure for the 12-entity cluster",
+    "Cross-reference the 12 entities against sanctions lists (OFAC, UK Treasury, EU)"
+  ]
+}
