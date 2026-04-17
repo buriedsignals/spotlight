@@ -597,15 +597,58 @@
   }
   document.querySelectorAll('input[name="mode"]').forEach(el => el.addEventListener('change', renderMode));
 
-  // --- Cloud runtime switching ---
-  const cloudKeyConfig = {
-    claude: { label: 'Anthropic API key', placeholder: 'sk-ant-...', envVar: 'ANTHROPIC_API_KEY' },
-    gemini: { label: 'Gemini API key', placeholder: 'AIza...', envVar: 'GEMINI_API_KEY' },
-    codex: { label: 'OpenAI API key', placeholder: 'sk-...', envVar: 'OPENAI_API_KEY' },
+  // --- Runtime registry (single source of truth) ---
+  // Every place that needs per-runtime metadata (form rendering, install
+  // command, key env var, context-file symlink, generated shell dispatch)
+  // reads from here. Add a new runtime by adding one entry.
+  const RUNTIMES = {
+    local: {
+      name: 'Local model',
+      bin: 'pi',                    // shell command to launch
+      installPkg: null,             // installer handles ollama + pi separately
+      contextFile: null,            // pi reads AGENTS.md natively
+      keyLabel: null,
+      keyPlaceholder: null,
+      envVar: null,
+    },
+    claude: {
+      name: 'Claude Code',
+      bin: 'claude',
+      installPkg: '@anthropic-ai/claude-code',
+      contextFile: 'CLAUDE.md',
+      keyLabel: 'Anthropic API key',
+      keyPlaceholder: 'sk-ant-...',
+      envVar: 'ANTHROPIC_API_KEY',
+    },
+    gemini: {
+      name: 'Gemini',
+      bin: 'gemini',
+      installPkg: '@google/gemini-cli',
+      contextFile: 'GEMINI.md',
+      keyLabel: 'Gemini API key',
+      keyPlaceholder: 'AIza...',
+      envVar: 'GEMINI_API_KEY',
+    },
+    codex: {
+      name: 'Codex',
+      bin: 'codex',
+      installPkg: '@openai/codex',
+      contextFile: null,            // reads AGENTS.md natively
+      keyLabel: 'OpenAI API key',
+      keyPlaceholder: 'sk-...',
+      envVar: 'OPENAI_API_KEY',
+    },
+    opencode: {
+      name: 'OpenCode',
+      bin: 'opencode',
+      installPkg: 'opencode-ai',
+      contextFile: null,            // reads AGENTS.md natively
+      // keyLabel/placeholder/envVar filled at render time from OPENCODE_PROVIDERS
+    },
   };
 
-  // OpenCode uses the chosen provider's env var
-  const opencodeProviderConfig = {
+  // OpenCode provider registry — picked when runtime === 'opencode'
+  const OPENCODE_PROVIDERS = {
     openrouter: { label: 'OpenRouter API key', placeholder: 'sk-or-v1-...', envVar: 'OPENROUTER_API_KEY' },
     fireworks: { label: 'Fireworks API key', placeholder: 'fw-...', envVar: 'FIREWORKS_API_KEY' },
     together: { label: 'Together AI API key', placeholder: '...', envVar: 'TOGETHER_API_KEY' },
@@ -615,17 +658,18 @@
 
   function renderCloud() {
     const rt = document.querySelector('input[name="cloud_runtime"]:checked').value;
-    let cfg;
+    let keyCfg;
     if (rt === 'opencode') {
       opencodeProviderSection.classList.remove('hidden');
       const prov = document.querySelector('input[name="opencode_provider"]:checked').value;
-      cfg = opencodeProviderConfig[prov];
+      keyCfg = OPENCODE_PROVIDERS[prov];
     } else {
       opencodeProviderSection.classList.add('hidden');
-      cfg = cloudKeyConfig[rt];
+      const r = RUNTIMES[rt];
+      keyCfg = { label: r.keyLabel, placeholder: r.keyPlaceholder, envVar: r.envVar };
     }
-    cloudKeyLabel.innerHTML = cfg.label + ' <span class="hint">— leave blank if you\'ve already set it globally.</span>';
-    cloudKeyInput.placeholder = cfg.placeholder;
+    cloudKeyLabel.innerHTML = keyCfg.label + ' <span class="hint">— leave blank if you\'ve already set it globally.</span>';
+    cloudKeyInput.placeholder = keyCfg.placeholder;
 
     // Show only the matching usage block
     document.querySelectorAll('[id^="cloud-usage-"]').forEach(el => el.classList.add('hidden'));
@@ -653,8 +697,8 @@
     let cloudKeyVar = '';
     if (mode === 'cloud') {
       cloudKeyVar = cloudRt === 'opencode'
-        ? opencodeProviderConfig[opencodeProv].envVar
-        : cloudKeyConfig[cloudRt].envVar;
+        ? OPENCODE_PROVIDERS[opencodeProv].envVar
+        : RUNTIMES[cloudRt].envVar;
     }
 
     return {
@@ -874,32 +918,24 @@
       p('PIMODELS_EOF');
       p('  printf "%s✓%s Wrote $HOME/.pi/models.json\\n" "$_c_green" "$_c_reset"');
       p('fi');
-    } else if (cfg.runtime === 'opencode') {
-      p('step "OpenCode (provider: ' + cfg.opencode_provider + ')"');
-      p('if ! command -v opencode >/dev/null 2>&1; then');
-      p('  spin "Installing opencode-ai" npm install -g opencode-ai');
-      p('else');
-      p('  printf "%s✓%s opencode already installed\\n" "$_c_green" "$_c_reset"');
-      p('fi');
-      p('printf "%s✓%s Provider key will be loaded from .env (' + cfg.cloud_key_var + ')\\n" "$_c_green" "$_c_reset"');
     } else {
-      const runtimePkg = {
-        claude: { pkg: '@anthropic-ai/claude-code', bin: 'claude' },
-        gemini: { pkg: '@google/gemini-cli', bin: 'gemini' },
-        codex: { pkg: '@openai/codex', bin: 'codex' },
-      }[cfg.runtime];
-      p('step "Runtime: ' + cfg.runtime + '"');
-      p('if ! command -v ' + runtimePkg.bin + ' >/dev/null 2>&1; then');
-      p('  spin "Installing ' + runtimePkg.pkg + '" npm install -g ' + runtimePkg.pkg);
+      // Cloud runtime: claude, gemini, codex, opencode — all table-driven
+      const r = RUNTIMES[cfg.runtime];
+      const label = cfg.runtime === 'opencode'
+        ? 'OpenCode (provider: ' + cfg.opencode_provider + ')'
+        : 'Runtime: ' + r.name;
+      p('step "' + label + '"');
+      p('if ! command -v ' + r.bin + ' >/dev/null 2>&1; then');
+      p('  spin "Installing ' + r.installPkg + '" npm install -g ' + r.installPkg);
       p('else');
-      p('  printf "%s✓%s ' + runtimePkg.bin + ' already installed\\n" "$_c_green" "$_c_reset"');
+      p('  printf "%s✓%s ' + r.bin + ' already installed\\n" "$_c_green" "$_c_reset"');
       p('fi');
-      if (cfg.runtime === 'claude') {
-        p('ln -sfn "$SPOTLIGHT_DIR/AGENTS.md" "$SPOTLIGHT_DIR/CLAUDE.md"');
-        p('printf "%s✓%s AGENTS.md linked as CLAUDE.md\\n" "$_c_green" "$_c_reset"');
-      } else if (cfg.runtime === 'gemini') {
-        p('ln -sfn "$SPOTLIGHT_DIR/AGENTS.md" "$SPOTLIGHT_DIR/GEMINI.md"');
-        p('printf "%s✓%s AGENTS.md linked as GEMINI.md\\n" "$_c_green" "$_c_reset"');
+      if (r.contextFile) {
+        p('ln -sfn "$SPOTLIGHT_DIR/AGENTS.md" "$SPOTLIGHT_DIR/' + r.contextFile + '"');
+        p('printf "%s✓%s AGENTS.md linked as ' + r.contextFile + '\\n" "$_c_green" "$_c_reset"');
+      }
+      if (cfg.runtime === 'opencode') {
+        p('printf "%s✓%s Provider key will be loaded from .env (' + cfg.cloud_key_var + ')\\n" "$_c_green" "$_c_reset"');
       }
     }
     p('');
@@ -1012,11 +1048,9 @@
     p('  (cd "$dir" && { [ -f .env ] && set -a && source .env && set +a; } && \\');
     p('    # Fast JSON read: sed avoids python3 startup (~50ms saved per invocation)');
     p('    case "$(sed -n \'s/.*"runtime": *"\\([^"]*\\)".*/\\1/p\' .spotlight-config.json 2>/dev/null | head -1)" in');
-    p('      local) pi ;;');
-    p('      claude) claude ;;');
-    p('      codex) codex ;;');
-    p('      gemini) gemini ;;');
-    p('      opencode) opencode ;;');
+    Object.entries(RUNTIMES).forEach(([id, r]) => {
+      p('      ' + id + ') ' + r.bin + ' ;;');
+    });
     p('      *) echo "Unknown runtime in .spotlight-config.json" >&2; return 1 ;;');
     p('    esac)');
     p('}');
