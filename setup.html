@@ -236,6 +236,67 @@
   .intro-list li { margin: 4px 0; }
   a.link { color: var(--accent); text-decoration: none; }
   a.link:hover { text-decoration: underline; }
+
+  /* LLM fit check */
+  .fit-panel {
+    margin-top: 14px;
+    border-radius: 8px;
+    padding: 16px 18px;
+    font-size: 0.92rem;
+  }
+  .fit-panel.idle { background: var(--bg-3); border: 1px solid var(--border); }
+  .fit-panel.green { background: rgba(110,191,110,0.08); border: 1px solid var(--green); }
+  .fit-panel.amber { background: rgba(217,164,65,0.08); border: 1px solid var(--amber); }
+  .fit-panel.red { background: rgba(227,107,107,0.08); border: 1px solid var(--red); }
+  .fit-verdict { display: flex; align-items: center; gap: 10px; font-weight: 600; margin-bottom: 8px; }
+  .fit-verdict .icon { font-size: 1.3rem; }
+  .fit-verdict.green .icon, .fit-panel.green .fit-verdict .icon { color: var(--green); }
+  .fit-verdict.amber .icon, .fit-panel.amber .fit-verdict .icon { color: var(--amber); }
+  .fit-verdict.red .icon, .fit-panel.red .fit-verdict .icon { color: var(--red); }
+  .fit-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 10px 0; font-size: 0.86rem; }
+  .fit-stats .stat-item { background: var(--bg-2); padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); }
+  .fit-stats .stat-item .k { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .fit-stats .stat-item .v { color: var(--fg); font-weight: 600; font-size: 0.95rem; margin-top: 2px; display: block; }
+  .fit-copy-cmd {
+    display: flex; gap: 8px; align-items: center;
+    background: var(--bg-2); padding: 8px 10px; border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem;
+    border: 1px solid var(--border);
+    margin-top: 10px;
+  }
+  .fit-copy-cmd code { background: none; padding: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fit-copy-cmd button { background: var(--bg-3); border: 1px solid var(--border); color: var(--fg); padding: 4px 10px; border-radius: 4px; font-size: 0.78rem; cursor: pointer; flex-shrink: 0; }
+  .fit-copy-cmd button:hover { filter: brightness(1.1); }
+
+  /* Spinner preview animation */
+  .spinner-preview {
+    display: inline-block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--accent);
+    width: 16px;
+    text-align: center;
+  }
+
+  /* Provider sub-picker */
+  .provider-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .provider-grid label {
+    cursor: pointer;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-3);
+    font-size: 0.9rem;
+    text-align: center;
+    transition: background 0.08s, border-color 0.08s;
+  }
+  .provider-grid label:hover { background: var(--bg); }
+  .provider-grid label:has(input:checked) { background: var(--bg); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .provider-grid input { display: none; }
 </style>
 </head>
 <body>
@@ -272,13 +333,29 @@
         <input type="text" id="model_repo" placeholder="tomvaillant/qwen3-8b-journalist" value="tomvaillant/qwen3-8b-journalist">
 
         <div class="model-info">
-          <div class="stat"><strong>~5–8 GB</strong>download size</div>
-          <div class="stat"><strong>Ollama</strong>backend</div>
-          <div class="stat"><strong>127.0.0.1:11434</strong>endpoint</div>
+          <div class="stat"><strong>Qwen3-8B Q4</strong>model &amp; quantization</div>
+          <div class="stat"><strong>~5 GB</strong>disk</div>
+          <div class="stat"><strong>~8 GB</strong>RAM at runtime</div>
+          <div class="stat"><strong>16 GB+</strong>recommended unified memory</div>
+        </div>
+
+        <div style="margin-top: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <button type="button" class="primary" id="fit-check-btn" style="padding: 9px 16px; font-size: 0.9rem;">Check if my Mac can run this</button>
+          <span style="color: var(--muted); font-size: 0.85rem;">Quick hardware probe (browser-side)</span>
+        </div>
+
+        <div id="fit-panel" class="fit-panel idle hidden">
+          <div class="fit-verdict" id="fit-verdict"><span class="icon">—</span><span id="fit-title">—</span></div>
+          <div class="fit-stats" id="fit-stats"></div>
+          <div id="fit-body" style="color: var(--muted); line-height: 1.55;"></div>
+          <div class="fit-copy-cmd" id="fit-cmd-box" style="display: none;">
+            <code id="fit-cmd">system_profiler SPHardwareDataType | grep Memory</code>
+            <button type="button" id="fit-cmd-copy">Copy</button>
+          </div>
         </div>
 
         <p class="note-amber">
-          <strong>Note:</strong> the fine-tuned journalism model isn't published yet. The default value above is the expected path. The installer will continue even if the pull fails — you can re-run <code>ollama pull hf.co/&lt;repo&gt;</code> once the model is live. Model download progress will stream in your Terminal.
+          <strong>Model not published yet.</strong> The default repo above is the expected path. The installer will continue even if the pull fails — you can re-run <code>ollama pull hf.co/&lt;repo&gt;</code> once the model is live. Download progress streams live in Terminal via Ollama's native progress UI.
         </p>
       </section>
     </div>
@@ -288,9 +365,23 @@
       <h2>Cloud provider</h2>
       <section class="card">
         <div class="radio-group" id="cloud-group">
-          <label><input type="radio" name="cloud_runtime" value="claude" checked><span class="opt-name"><span class="name">Claude Code</span><span class="desc">Anthropic's terminal agent. Installs via npm; reads <code>AGENTS.md</code> natively once symlinked to <code>CLAUDE.md</code>.</span></span></label>
+          <label><input type="radio" name="cloud_runtime" value="claude" checked><span class="opt-name"><span class="name">Claude Code</span><span class="desc">Anthropic's terminal agent. Installs via npm; reads <code>CLAUDE.md</code> (symlinked to <code>AGENTS.md</code>).</span></span></label>
           <label><input type="radio" name="cloud_runtime" value="gemini"><span class="opt-name"><span class="name">Gemini</span><span class="desc">Google's terminal agent. Installs via npm; reads <code>GEMINI.md</code> (symlinked to <code>AGENTS.md</code>).</span></span></label>
           <label><input type="radio" name="cloud_runtime" value="codex"><span class="opt-name"><span class="name">Codex</span><span class="desc">OpenAI's terminal agent. Installs via npm; reads <code>AGENTS.md</code> natively.</span></span></label>
+          <label><input type="radio" name="cloud_runtime" value="opencode"><span class="opt-name"><span class="name">OpenCode</span><span class="desc">Open-source terminal agent (SST). Works with any provider — Fireworks, OpenRouter, Together, and more. Good for routing to specific models or cheaper inference.</span></span></label>
+        </div>
+
+        <!-- OpenCode provider sub-picker (only visible when opencode selected) -->
+        <div id="opencode-provider-section" class="hidden" style="margin-top: 14px;">
+          <label class="block">OpenCode provider</label>
+          <div class="provider-grid" id="opencode-provider-grid">
+            <label><input type="radio" name="opencode_provider" value="openrouter" checked><span class="opt">OpenRouter</span></label>
+            <label><input type="radio" name="opencode_provider" value="fireworks"><span class="opt">Fireworks</span></label>
+            <label><input type="radio" name="opencode_provider" value="together"><span class="opt">Together</span></label>
+            <label><input type="radio" name="opencode_provider" value="anthropic"><span class="opt">Anthropic</span></label>
+            <label><input type="radio" name="opencode_provider" value="openai"><span class="opt">OpenAI</span></label>
+            <label><input type="radio" name="opencode_provider" value="google"><span class="opt">Google</span></label>
+          </div>
         </div>
 
         <div class="key-row">
@@ -328,6 +419,18 @@
             <li>Installer adds a <code>spotlight</code> shell function to your <code>~/.zshrc</code> (or <code>~/.bashrc</code>)</li>
             <li>Open a new terminal and type <code>spotlight</code> — it opens Codex in the Spotlight repo with the skill loaded. Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
           </ol>
+        </div>
+
+        <div class="step-card hidden" id="cloud-usage-opencode">
+          <h4>How you'll run Spotlight with OpenCode</h4>
+          <ol>
+            <li>Installer runs <code>npm install -g opencode-ai</code></li>
+            <li>OpenCode reads <code>AGENTS.md</code> natively — no symlink needed</li>
+            <li>Installer writes your provider's API key to <code>.env</code>; OpenCode auto-detects it on first launch</li>
+            <li>Installer adds a <code>spotlight</code> shell function to your <code>~/.zshrc</code> (or <code>~/.bashrc</code>)</li>
+            <li>Open a new terminal and type <code>spotlight</code> — OpenCode launches; first time, pick a model from your chosen provider via <code>/model</code>. Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
+          </ol>
+          <p style="margin:10px 0 0;">Strong defaults per provider: OpenRouter → <code>z-ai/glm-5.1</code>; Fireworks → <code>qwen3p6-plus</code>; Together → <code>Qwen/Qwen3.6</code>; Anthropic → <code>claude-opus-4.6</code>; OpenAI → <code>gpt-5</code>. Use <code>/model</code> in OpenCode to switch.</p>
         </div>
       </section>
     </div>
@@ -467,9 +570,29 @@
     codex: { label: 'OpenAI API key', placeholder: 'sk-...', envVar: 'OPENAI_API_KEY' },
   };
 
+  // OpenCode uses the chosen provider's env var
+  const opencodeProviderConfig = {
+    openrouter: { label: 'OpenRouter API key', placeholder: 'sk-or-v1-...', envVar: 'OPENROUTER_API_KEY' },
+    fireworks: { label: 'Fireworks API key', placeholder: 'fw-...', envVar: 'FIREWORKS_API_KEY' },
+    together: { label: 'Together AI API key', placeholder: '...', envVar: 'TOGETHER_API_KEY' },
+    anthropic: { label: 'Anthropic API key', placeholder: 'sk-ant-...', envVar: 'ANTHROPIC_API_KEY' },
+    openai: { label: 'OpenAI API key', placeholder: 'sk-...', envVar: 'OPENAI_API_KEY' },
+    google: { label: 'Google AI API key', placeholder: 'AIza...', envVar: 'GEMINI_API_KEY' },
+  };
+
+  const opencodeProviderSection = document.getElementById('opencode-provider-section');
+
   function renderCloud() {
     const rt = document.querySelector('input[name="cloud_runtime"]:checked').value;
-    const cfg = cloudKeyConfig[rt];
+    let cfg;
+    if (rt === 'opencode') {
+      opencodeProviderSection.classList.remove('hidden');
+      const prov = document.querySelector('input[name="opencode_provider"]:checked').value;
+      cfg = opencodeProviderConfig[prov];
+    } else {
+      opencodeProviderSection.classList.add('hidden');
+      cfg = cloudKeyConfig[rt];
+    }
     cloudKeyLabel.innerHTML = cfg.label + ' <span class="hint">— leave blank if you\'ve already set it globally.</span>';
     cloudKeyInput.placeholder = cfg.placeholder;
 
@@ -479,6 +602,7 @@
     if (activeUsage) activeUsage.classList.remove('hidden');
   }
   document.querySelectorAll('input[name="cloud_runtime"]').forEach(el => el.addEventListener('change', renderCloud));
+  document.querySelectorAll('input[name="opencode_provider"]').forEach(el => el.addEventListener('change', renderCloud));
 
   // --- Conditional key fields ---
   function bindCheckbox(checkboxId, targetId) {
@@ -493,11 +617,21 @@
   function collectForm() {
     const mode = document.querySelector('input[name="mode"]:checked').value;
     const cloudRt = document.querySelector('input[name="cloud_runtime"]:checked').value;
+    const opencodeProv = document.querySelector('input[name="opencode_provider"]:checked').value;
+
+    let cloudKeyVar = '';
+    if (mode === 'cloud') {
+      cloudKeyVar = cloudRt === 'opencode'
+        ? opencodeProviderConfig[opencodeProv].envVar
+        : cloudKeyConfig[cloudRt].envVar;
+    }
+
     return {
       mode: mode,
       runtime: mode === 'local' ? 'local' : cloudRt,
+      opencode_provider: cloudRt === 'opencode' ? opencodeProv : null,
       cloud_key: mode === 'cloud' ? document.getElementById('cloud_key').value.trim() : '',
-      cloud_key_var: mode === 'cloud' ? cloudKeyConfig[cloudRt].envVar : '',
+      cloud_key_var: cloudKeyVar,
       firecrawl_key: document.getElementById('firecrawl_key').value.trim(),
       nav_key: document.getElementById('nav_key').value.trim(),
       vault_path: document.getElementById('vault_path').value.trim(),
@@ -522,13 +656,50 @@
 
     p('#!/usr/bin/env bash');
     p('# Spotlight installer — generated ' + new Date().toISOString());
-    p('# Mode: ' + cfg.mode + (cfg.mode === 'cloud' ? ' (' + cfg.runtime + ')' : ''));
+    p('# Mode: ' + cfg.mode + (cfg.mode === 'cloud' ? ' (' + cfg.runtime + (cfg.opencode_provider ? '/' + cfg.opencode_provider : '') + ')' : ''));
     p('set -euo pipefail');
     p('');
     p('SPOTLIGHT_DIR="${SPOTLIGHT_DIR:-$HOME/spotlight}"');
     p('REPO_URL="https://github.com/buriedsignals/spotlight.git"');
     p('');
-    p('echo "→ Spotlight installer starting"');
+    p('# ── ANSI colors + spinner helper ──');
+    p('# Spinner frames from sindresorhus/cli-spinners (dots)');
+    p('_c_reset=$\'\\033[0m\'; _c_cyan=$\'\\033[36m\'; _c_green=$\'\\033[32m\'; _c_red=$\'\\033[31m\'; _c_dim=$\'\\033[2m\'; _c_bold=$\'\\033[1m\'');
+    p('_spin_frames=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)');
+    p('');
+    p('# spin "message" command...   — shows spinner while command runs; ✓ or ✗ on completion');
+    p('spin() {');
+    p('  local msg="$1"; shift');
+    p('  local tmpfile; tmpfile="$(mktemp)"');
+    p('  ( "$@" ) >"$tmpfile" 2>&1 &');
+    p('  local pid=$!');
+    p('  local i=0 n=${#_spin_frames[@]}');
+    p('  # Hide cursor');
+    p('  printf "\\033[?25l" 2>/dev/null || true');
+    p('  while kill -0 $pid 2>/dev/null; do');
+    p('    printf "\\r\\033[K%s%s%s %s" "$_c_cyan" "${_spin_frames[$((i % n))]}" "$_c_reset" "$msg"');
+    p('    i=$((i + 1))');
+    p('    sleep 0.08');
+    p('  done');
+    p('  wait $pid 2>/dev/null; local status=$?');
+    p('  printf "\\033[?25h" 2>/dev/null || true  # show cursor');
+    p('  if [ $status -eq 0 ]; then');
+    p('    printf "\\r\\033[K%s✓%s %s\\n" "$_c_green" "$_c_reset" "$msg"');
+    p('  else');
+    p('    printf "\\r\\033[K%s✗%s %s\\n" "$_c_red" "$_c_reset" "$msg"');
+    p('    echo "$_c_dim─── output ───$_c_reset"');
+    p('    cat "$tmpfile"');
+    p('  fi');
+    p('  rm -f "$tmpfile"');
+    p('  return $status');
+    p('}');
+    p('');
+    p('step() { printf "\\n%s%s━━ %s ━━%s\\n" "$_c_bold" "$_c_cyan" "$1" "$_c_reset"; }');
+    p('');
+    p('echo ""');
+    p('echo "${_c_bold}${_c_cyan}  ╔════════════════════════════════════════════════╗${_c_reset}"');
+    p('echo "${_c_bold}${_c_cyan}  ║           Spotlight installer                  ║${_c_reset}"');
+    p('echo "${_c_bold}${_c_cyan}  ╚════════════════════════════════════════════════╝${_c_reset}"');
     p('echo ""');
     p('');
     p('# ── OS check ──');
@@ -538,74 +709,74 @@
     p('  exit 1');
     p('fi');
     p('');
-    p('# ── Prerequisites ──');
-    p('command -v git >/dev/null 2>&1 || { echo "git is required. Install: xcode-select --install" >&2; exit 1; }');
-    p('command -v node >/dev/null 2>&1 || { echo "node is required. Install: brew install node (or from nodejs.org)" >&2; exit 1; }');
-    p('command -v python3 >/dev/null 2>&1 || { echo "python3 is required." >&2; exit 1; }');
+    p('step "Prerequisites"');
+    p('for cmd in git node python3; do');
+    p('  if command -v "$cmd" >/dev/null 2>&1; then');
+    p('    printf "%s✓%s %s\\n" "$_c_green" "$_c_reset" "$cmd present"');
+    p('  else');
+    p('    printf "%s✗%s %s required — install first\\n" "$_c_red" "$_c_reset" "$cmd" >&2; exit 1');
+    p('  fi');
+    p('done');
     if (cfg.mode === 'local') {
-      p('command -v brew >/dev/null 2>&1 || { echo "brew (Homebrew) is required for local model install. See https://brew.sh" >&2; exit 1; }');
+      p('if ! command -v brew >/dev/null 2>&1; then');
+      p('  printf "%s✗%s Homebrew required for local model install. See https://brew.sh\\n" "$_c_red" "$_c_reset" >&2; exit 1');
+      p('fi');
+      p('printf "%s✓%s brew present\\n" "$_c_green" "$_c_reset"');
     }
     p('');
-    p('# ── Obsidian CLI check ──');
+    p('step "Obsidian CLI"');
     p('if ! command -v obsidian >/dev/null 2>&1; then');
-    p('  echo "⚠ Obsidian CLI not found on PATH." >&2');
-    p('  echo "  Open Obsidian (1.12+) → Settings → General → Advanced → toggle \\"Command Line Interface\\" ON." >&2');
-    p('  echo "  Then re-run this installer." >&2');
+    p('  printf "%s✗%s Obsidian CLI not found on PATH.\\n" "$_c_red" "$_c_reset" >&2');
+    p('  echo "   Open Obsidian (1.12+) → Settings → General → Advanced → toggle \\"Command Line Interface\\" ON." >&2');
+    p('  echo "   Then re-run this installer." >&2');
     p('  exit 1');
     p('fi');
+    p('printf "%s✓%s obsidian CLI on PATH\\n" "$_c_green" "$_c_reset"');
     p('');
-    p('# ── Clone or update repo ──');
+    p('step "Spotlight repo"');
     p('if [ -d "$SPOTLIGHT_DIR/.git" ]; then');
-    p('  echo "→ Spotlight already cloned at $SPOTLIGHT_DIR, pulling latest"');
-    p('  git -C "$SPOTLIGHT_DIR" pull --ff-only');
+    p('  spin "Updating Spotlight at $SPOTLIGHT_DIR" git -C "$SPOTLIGHT_DIR" pull --ff-only');
     p('else');
-    p('  echo "→ Cloning Spotlight to $SPOTLIGHT_DIR"');
-    p('  git clone "$REPO_URL" "$SPOTLIGHT_DIR"');
+    p('  spin "Cloning Spotlight to $SPOTLIGHT_DIR" git clone "$REPO_URL" "$SPOTLIGHT_DIR"');
     p('fi');
     p('cd "$SPOTLIGHT_DIR"');
     p('');
-    p('# ── firecrawl CLI (required) ──');
+    p('step "Core dependencies"');
     p('if ! command -v firecrawl >/dev/null 2>&1; then');
-    p('  echo "→ Installing firecrawl-cli via npm"');
-    p('  npm install -g firecrawl-cli');
+    p('  spin "Installing firecrawl-cli" npm install -g firecrawl-cli');
     p('else');
-    p('  echo "→ firecrawl-cli already installed"');
+    p('  printf "%s✓%s firecrawl-cli already installed\\n" "$_c_green" "$_c_reset"');
     p('fi');
     p('');
 
-    // Runtime + model setup
-    p('# ── Runtime setup ──');
     if (cfg.mode === 'local') {
-      // Ollama + pi
-      p('# Ollama (local inference)');
+      p('step "Local inference (Ollama + pi)"');
       p('if ! command -v ollama >/dev/null 2>&1; then');
-      p('  echo "→ Installing Ollama"');
-      p('  brew install ollama');
-      p('  brew services start ollama || true');
-      p('  sleep 2  # give Ollama time to start');
+      p('  spin "Installing Ollama via brew" brew install ollama');
+      p('  brew services start ollama 2>/dev/null || true');
+      p('  sleep 2');
       p('else');
-      p('  echo "→ Ollama already installed"');
+      p('  printf "%s✓%s Ollama already installed\\n" "$_c_green" "$_c_reset"');
       p('fi');
       p('');
-      p('echo "→ Pulling model ' + cfg.model_repo + ' from Hugging Face (may take several minutes)"');
+      p('step "Journalism model download (~5 GB)"');
+      p('echo "Ollama will stream download progress below — grab a coffee, 5–15 min on a typical connection."');
+      p('echo ""');
       p('ollama pull ' + shellEscape('hf.co/' + cfg.model_repo) + ' || {');
-      p('  echo "  ⚠ Model pull failed. The fine-tune may not be published yet at hf.co/' + cfg.model_repo + '."');
-      p('  echo "  ⚠ You can re-run: ollama pull hf.co/<repo> once the model is live."');
+      p('  printf "%s⚠%s Model pull failed. The fine-tune may not be published yet at hf.co/' + cfg.model_repo + '.\\n" "$_c_red" "$_c_reset"');
+      p('  printf "   Re-run once live: ollama pull hf.co/<repo>\\n"');
       p('}');
       p('');
-      p('# pi (agent harness)');
       p('if ! command -v pi >/dev/null 2>&1; then');
-      p('  echo "→ Installing pi (@mariozechner/pi-coding-agent)"');
-      p('  npm install -g @mariozechner/pi-coding-agent');
+      p('  spin "Installing pi (@mariozechner/pi-coding-agent)" npm install -g @mariozechner/pi-coding-agent');
       p('else');
-      p('  echo "→ pi already installed"');
+      p('  printf "%s✓%s pi already installed\\n" "$_c_green" "$_c_reset"');
       p('fi');
       p('');
-      p('# Link repo so pi auto-loads AGENTS.md + skills');
       p('mkdir -p "$HOME/.pi/agent"');
       p('ln -sfn "$SPOTLIGHT_DIR" "$HOME/.pi/agent/spotlight"');
+      p('printf "%s✓%s pi loads Spotlight from $HOME/.pi/agent/spotlight\\n" "$_c_green" "$_c_reset"');
       p('');
-      p('# Point pi at local Ollama endpoint');
       p('mkdir -p "$HOME/.pi"');
       p('if [ ! -f "$HOME/.pi/models.json" ]; then');
       p('  cat > "$HOME/.pi/models.json" <<\'PIMODELS_EOF\'');
@@ -619,40 +790,43 @@
       p('  }');
       p('}');
       p('PIMODELS_EOF');
-      p('  echo "→ Wrote $HOME/.pi/models.json (local-journalist provider)"');
+      p('  printf "%s✓%s Wrote $HOME/.pi/models.json\\n" "$_c_green" "$_c_reset"');
       p('fi');
+    } else if (cfg.runtime === 'opencode') {
+      p('step "OpenCode (provider: ' + cfg.opencode_provider + ')"');
+      p('if ! command -v opencode >/dev/null 2>&1; then');
+      p('  spin "Installing opencode-ai" npm install -g opencode-ai');
+      p('else');
+      p('  printf "%s✓%s opencode already installed\\n" "$_c_green" "$_c_reset"');
+      p('fi');
+      p('printf "%s✓%s Provider key will be loaded from .env (' + (cfg.cloud_key_var || 'PROVIDER_API_KEY') + ')\\n" "$_c_green" "$_c_reset"');
     } else {
-      // Cloud runtime
       const runtimePkg = {
         claude: { pkg: '@anthropic-ai/claude-code', bin: 'claude' },
         gemini: { pkg: '@google/gemini-cli', bin: 'gemini' },
         codex: { pkg: '@openai/codex', bin: 'codex' },
       }[cfg.runtime];
+      p('step "Runtime: ' + cfg.runtime + '"');
       p('if ! command -v ' + runtimePkg.bin + ' >/dev/null 2>&1; then');
-      p('  echo "→ Installing ' + runtimePkg.pkg + '"');
-      p('  npm install -g ' + runtimePkg.pkg);
+      p('  spin "Installing ' + runtimePkg.pkg + '" npm install -g ' + runtimePkg.pkg);
       p('else');
-      p('  echo "→ ' + runtimePkg.bin + ' already installed"');
+      p('  printf "%s✓%s ' + runtimePkg.bin + ' already installed\\n" "$_c_green" "$_c_reset"');
       p('fi');
-      p('');
-      // Symlink context file per runtime convention
       if (cfg.runtime === 'claude') {
-        p('# Claude Code reads CLAUDE.md — symlink to AGENTS.md');
         p('ln -sfn "$SPOTLIGHT_DIR/AGENTS.md" "$SPOTLIGHT_DIR/CLAUDE.md"');
+        p('printf "%s✓%s AGENTS.md linked as CLAUDE.md\\n" "$_c_green" "$_c_reset"');
       } else if (cfg.runtime === 'gemini') {
-        p('# Gemini CLI reads GEMINI.md — symlink to AGENTS.md');
         p('ln -sfn "$SPOTLIGHT_DIR/AGENTS.md" "$SPOTLIGHT_DIR/GEMINI.md"');
+        p('printf "%s✓%s AGENTS.md linked as GEMINI.md\\n" "$_c_green" "$_c_reset"');
       }
     }
     p('');
 
-    // Python deps
-    p('# ── Python dependencies ──');
-    p('pip3 install --user --quiet jsonschema requests 2>/dev/null || pip install --user --quiet jsonschema requests');
+    p('step "Python dependencies"');
+    p('spin "Installing jsonschema + requests" bash -c "pip3 install --user --quiet jsonschema requests 2>/dev/null || pip install --user --quiet jsonschema requests"');
     if (cfg.int_browseruse) {
-      p('echo "→ Installing browser-use (Python package)"');
-      p('pip3 install --user --quiet browser-use 2>/dev/null || pip install --user --quiet browser-use');
-      p('python3 -m playwright install chromium 2>/dev/null || true');
+      p('spin "Installing browser-use" bash -c "pip3 install --user --quiet browser-use 2>/dev/null || pip install --user --quiet browser-use"');
+      p('spin "Installing Chromium for browser-use" bash -c "python3 -m playwright install chromium 2>/dev/null || true"');
     }
     p('');
 
@@ -681,8 +855,7 @@
     p('chmod 600 "$SPOTLIGHT_DIR/.env"');
     p('');
 
-    // .spotlight-config.json
-    p('# ── Write .spotlight-config.json ──');
+    p('step "Writing .spotlight-config.json"');
     const config = {
       search_library: 'firecrawl',
       vault_path: cfg.vault_path,
@@ -690,6 +863,7 @@
       cases_root: 'cases/',
       mode: cfg.mode,
       runtime: cfg.runtime,
+      opencode_provider: cfg.opencode_provider || null,
       integrations: {
         osint_navigator: true,
         junkipedia: cfg.int_junkipedia,
@@ -732,6 +906,7 @@
     p('      claude) claude ;;');
     p('      codex) codex ;;');
     p('      gemini) gemini ;;');
+    p('      opencode) opencode ;;');
     p('      *) echo "Unknown runtime in .spotlight-config.json" >&2; return 1 ;;');
     p('    esac)');
     p('}');
@@ -742,31 +917,26 @@
     p('fi');
     p('');
 
-    // Preflight
-    p('# ── Preflight ──');
-    p('echo ""');
-    p('echo "→ Running monitoring preflight"');
+    p('step "Preflight"');
     p('set -a; source "$SPOTLIGHT_DIR/.env"; set +a');
     p('python3 "$SPOTLIGHT_DIR/monitoring/feeds/preflight.py" --text || true');
     p('echo ""');
-    p('echo "→ Running integrations preflight"');
     p('python3 "$SPOTLIGHT_DIR/integrations/preflight.py" --text || true');
     p('');
 
-    // Done
-    p('# ── Done ──');
     p('echo ""');
-    p('echo "══════════════════════════════════════════════════════════"');
-    p('echo "  ✓ Spotlight installed at $SPOTLIGHT_DIR"');
-    p('echo "══════════════════════════════════════════════════════════"');
+    p('echo "${_c_green}${_c_bold}  ╔════════════════════════════════════════════════╗${_c_reset}"');
+    p('echo "${_c_green}${_c_bold}  ║   ✓  Spotlight installed                       ║${_c_reset}"');
+    p('echo "${_c_green}${_c_bold}  ╚════════════════════════════════════════════════╝${_c_reset}"');
     p('echo ""');
-    p('echo "Open a new terminal window and type:"');
+    p('echo "  Open a new terminal window and type:"');
     p('echo ""');
-    p('echo "    spotlight"');
+    p('echo "    ${_c_bold}spotlight${_c_reset}"');
     p('echo ""');
-    p('echo "Then tell the agent: Start a Spotlight investigation on <your lead>"');
+    p('echo "  Then tell the agent: ${_c_dim}Start a Spotlight investigation on <your lead>${_c_reset}"');
     p('echo ""');
-    p('echo "Docs: $SPOTLIGHT_DIR/docs/README.md"');
+    p('echo "  Docs: $SPOTLIGHT_DIR/docs/README.md"');
+    p('echo ""');
 
     return lines.join('\n') + '\n';
   }
@@ -898,6 +1068,120 @@
     a.download = 'spotlight-setup.zip';
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 3000);
+  });
+
+  // --- LLM fit check ---
+  const fitBtn = document.getElementById('fit-check-btn');
+  const fitPanel = document.getElementById('fit-panel');
+  const fitVerdict = document.getElementById('fit-verdict');
+  const fitTitle = document.getElementById('fit-title');
+  const fitStats = document.getElementById('fit-stats');
+  const fitBody = document.getElementById('fit-body');
+  const fitCmdBox = document.getElementById('fit-cmd-box');
+  const fitCmd = document.getElementById('fit-cmd');
+  const fitCmdCopy = document.getElementById('fit-cmd-copy');
+
+  async function runFitCheck() {
+    fitPanel.classList.remove('hidden', 'green', 'amber', 'red');
+    fitPanel.classList.add('idle');
+    fitTitle.textContent = 'Probing…';
+    fitVerdict.querySelector('.icon').textContent = '⠋';
+    fitStats.innerHTML = '';
+    fitBody.innerHTML = '';
+    fitCmdBox.style.display = 'none';
+
+    // Animate spinner
+    const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+    let fi = 0;
+    const spinInt = setInterval(() => {
+      fitVerdict.querySelector('.icon').textContent = frames[fi++ % frames.length];
+    }, 90);
+
+    // Detect
+    await new Promise(r => setTimeout(r, 600)); // visible work
+
+    const ua = navigator.userAgent;
+    const isMac = /Macintosh/.test(ua);
+    const isLinux = /Linux/.test(ua) && !/Android/.test(ua);
+    const isAppleSilicon = isMac && !/Intel/.test(ua);
+    const cores = navigator.hardwareConcurrency || 'unknown';
+    const deviceMemGB = navigator.deviceMemory || null; // Chrome/Edge; caps at 8
+
+    // GPU (WebGPU adapter probe)
+    let gpuName = 'unknown';
+    try {
+      if (navigator.gpu) {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (adapter) {
+          const info = await adapter.requestAdapterInfo?.() || {};
+          gpuName = info.architecture || info.vendor || info.description || 'WebGPU available';
+        }
+      }
+    } catch {}
+
+    clearInterval(spinInt);
+
+    // Verdict logic
+    // Target: 16 GB+ unified (Apple Silicon) or 16 GB RAM + discrete/integrated GPU
+    let verdict = 'amber'; // default: inconclusive
+    let title = 'Looks promising — confirm in Terminal';
+    let body = '';
+
+    if (isAppleSilicon) {
+      verdict = 'green';
+      title = 'Apple Silicon detected — likely runs fine';
+      body = 'Apple Silicon Macs use unified memory (GPU reads system RAM directly). An 8B Q4 model fits comfortably in <b>16 GB unified memory</b>. If you\'re on an 8 GB Mac, it\'ll work but feel slow. Confirm your exact RAM with the command below.';
+    } else if (deviceMemGB && deviceMemGB >= 8) {
+      verdict = 'amber';
+      title = 'Possible — check your GPU/VRAM';
+      body = `Your browser reports <b>~${deviceMemGB} GB+</b> system RAM. For the 8B model, you want 16 GB RAM plus a GPU with 6+ GB VRAM (NVIDIA/AMD) — or CPU-only inference which will be slow (~5 tok/s). Check your exact specs in Terminal.`;
+    } else if (deviceMemGB && deviceMemGB < 4) {
+      verdict = 'red';
+      title = 'Probably not enough — we recommend Cloud';
+      body = `Your browser reports <b>~${deviceMemGB} GB</b> system RAM. That\'s below the minimum for running an 8B model locally. Consider switching to <strong>Cloud</strong> mode above — Claude/Gemini/Codex/OpenCode give better quality without local compute.`;
+    } else if (isMac) {
+      verdict = 'amber';
+      title = 'Intel Mac — likely too slow for local';
+      body = 'Intel Macs don\'t have Apple Silicon\'s unified memory advantage. An 8B Q4 model will run but can be painfully slow unless you have a discrete GPU. We recommend trying Cloud first.';
+    } else if (isLinux) {
+      verdict = 'amber';
+      title = 'Linux detected — check your GPU/VRAM';
+      body = 'On Linux, local inference works well with 6+ GB of NVIDIA/AMD VRAM. Check your GPU with the command below before committing to Local.';
+    } else {
+      verdict = 'amber';
+      title = 'Browser detection limited — check manually';
+      body = 'Your browser doesn\'t expose enough hardware info. Use the command below to check RAM + GPU.';
+    }
+
+    fitPanel.classList.remove('idle', 'green', 'amber', 'red');
+    fitPanel.classList.add(verdict);
+    fitVerdict.querySelector('.icon').textContent = verdict === 'green' ? '✓' : verdict === 'amber' ? '?' : '✗';
+    fitVerdict.className = 'fit-verdict ' + verdict;
+    fitTitle.textContent = title;
+    fitBody.innerHTML = body;
+
+    fitStats.innerHTML = `
+      <div class="stat-item"><div class="k">Platform</div><span class="v">${isAppleSilicon ? 'Apple Silicon' : isMac ? 'Intel Mac' : isLinux ? 'Linux' : 'Other'}</span></div>
+      <div class="stat-item"><div class="k">CPU cores</div><span class="v">${cores}</span></div>
+      <div class="stat-item"><div class="k">RAM (browser)</div><span class="v">${deviceMemGB ? '~' + deviceMemGB + ' GB+' : 'n/a'}</span></div>
+      <div class="stat-item"><div class="k">GPU</div><span class="v">${gpuName.length > 30 ? gpuName.slice(0, 28) + '…' : gpuName}</span></div>
+    `;
+
+    // Show terminal command
+    const cmd = isMac
+      ? "system_profiler SPHardwareDataType | grep -E 'Memory|Chip|Cores'"
+      : "free -h && lscpu | grep -E 'Model name|CPU\\(s\\)' && lspci | grep -i vga";
+    fitCmd.textContent = cmd;
+    fitCmdBox.style.display = 'flex';
+  }
+
+  fitBtn.addEventListener('click', runFitCheck);
+  fitCmdCopy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(fitCmd.textContent);
+      fitCmdCopy.textContent = 'Copied!';
+      setTimeout(() => { fitCmdCopy.textContent = 'Copy'; }, 1500);
+    } catch {}
   });
 
   // Init
