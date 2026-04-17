@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spotlight — OSINT investigation system for journalists</title>
+<meta name="description" content="Verified findings, independent fact-checking, and a living knowledge vault. Runtime-agnostic OSINT investigation system by Buried Signals.">
+<style>
+  :root {
+    --bg: #0f1115;
+    --bg-2: #171a21;
+    --bg-3: #1f232c;
+    --fg: #e8ecf1;
+    --muted: #8891a0;
+    --border: #2a2f3a;
+    --accent: #7cb7ff;
+    --green: #6ebf6e;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #fafbfc;
+      --bg-2: #ffffff;
+      --bg-3: #f1f3f5;
+      --fg: #1a1f29;
+      --muted: #5a6472;
+      --border: #d9dde3;
+      --accent: #2158c9;
+      --green: #2f7a35;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 16px; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    margin: 0;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 64px 28px 48px; }
+  header.hero { text-align: left; margin-bottom: 64px; }
+  h1 {
+    font-size: clamp(2.4rem, 6vw, 3.6rem);
+    letter-spacing: -0.02em;
+    margin: 0 0 12px;
+    line-height: 1.05;
+    font-weight: 700;
+  }
+  h1 .accent { color: var(--accent); }
+  .tagline {
+    font-size: clamp(1.05rem, 2.4vw, 1.25rem);
+    color: var(--muted);
+    margin: 0 0 32px;
+    max-width: 560px;
+    line-height: 1.5;
+  }
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--accent);
+    color: #fff;
+    padding: 14px 28px;
+    border-radius: 8px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: filter 0.12s;
+  }
+  .cta:hover { filter: brightness(1.1); }
+  .cta-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+  .cta-row a.secondary {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.95rem;
+    border-bottom: 1px solid transparent;
+  }
+  .cta-row a.secondary:hover { color: var(--fg); border-bottom-color: var(--border); }
+
+  section { margin: 56px 0; }
+  h2 {
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    font-weight: 600;
+    margin: 0 0 16px;
+  }
+  ul.clean { list-style: none; padding: 0; margin: 0; }
+  ul.clean li {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 1.02rem;
+  }
+  ul.clean li:last-child { border-bottom: none; }
+  ul.clean li strong { font-weight: 600; color: var(--fg); }
+  ul.clean li .desc { color: var(--muted); display: block; margin-top: 4px; font-size: 0.92rem; }
+
+  .box-card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 26px;
+  }
+  .box-card p { margin: 0 0 12px; color: var(--muted); font-size: 0.94rem; }
+  .box-card p:last-child { margin-bottom: 0; }
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .stat-grid .stat {
+    background: var(--bg-3);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .stat-grid .stat .n {
+    font-size: 1.4rem;
+    font-weight: 700;
+    display: block;
+    color: var(--accent);
+  }
+  .stat-grid .stat .l {
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 2px;
+  }
+
+  .attribution {
+    color: var(--muted);
+    font-size: 0.88rem;
+    line-height: 1.6;
+  }
+  .attribution a { color: var(--muted); text-decoration: underline; text-decoration-color: var(--border); }
+  .attribution a:hover { color: var(--fg); }
+
+  footer.site-footer {
+    border-top: 1px solid var(--border);
+    margin-top: 80px;
+    padding: 28px 0 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  footer.site-footer a {
+    color: var(--fg);
+    text-decoration: none;
+    border-bottom: 1px solid var(--border);
+  }
+  footer.site-footer a:hover { border-bottom-color: var(--accent); color: var(--accent); }
+  footer.site-footer .links { display: flex; gap: 18px; flex-wrap: wrap; }
+
+  @media (max-width: 540px) {
+    .wrap { padding: 40px 20px 32px; }
+    section { margin: 40px 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <h1>Spotlight<br><span class="accent">investigates so you can publish.</span></h1>
+    <p class="tagline">
+      Verified findings. Independent fact-checking. Your vault, your rules.
+    </p>
+    <div class="cta-row">
+      <a href="setup.html" class="cta">Install Spotlight →</a>
+      <a href="https://github.com/buriedsignals/spotlight" class="secondary" target="_blank">GitHub</a>
+    </div>
+  </header>
+
+  <section>
+    <h2>What it does</h2>
+    <ul class="clean">
+      <li><strong>Takes a lead</strong> — URL, name, topic, document — and designs a methodology you approve before anything runs.</li>
+      <li><strong>Runs up to 5 research cycles</strong>, each followed by an independent fact-checker with its own context.</li>
+      <li><strong>Six readiness criteria</strong> must all pass before findings reach you.</li>
+      <li><strong>Interactive HTML review</strong> — open in any browser, submit feedback, re-trigger the investigator.</li>
+      <li><strong>Archives verified findings</strong> into your knowledge vault as structured, cross-linked knowledge.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What it integrates with</h2>
+    <ul class="clean">
+      <li><strong>Agent runtimes</strong> — local journalism fine-tune, Claude Code, Gemini, Codex, OpenCode (multi-provider).</li>
+      <li><strong>Web scraping, search, and evidence archiving</strong> — every source captured locally with chain of custody.</li>
+      <li><strong>Tool-discovery API</strong> with 1,000+ curated OSINT tools, surfaced per task.</li>
+      <li><strong>Knowledge vault ingestion</strong> (Obsidian) — investigations become permanent, searchable memory.</li>
+      <li><strong>Monitoring feeds</strong> — conflict events, disaster alerts, global news, investigative outlets.</li>
+      <li><strong>Browser automation, narrative tracking, misinformation databases</strong> — plug-in integrations.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What's in the box</h2>
+    <div class="box-card">
+      <div class="stat-grid">
+        <div class="stat"><span class="n">11</span><div class="l">skills</div></div>
+        <div class="stat"><span class="n">2</span><div class="l">agents</div></div>
+        <div class="stat"><span class="n">5</span><div class="l">schemas</div></div>
+        <div class="stat"><span class="n">7+</span><div class="l">runtimes</div></div>
+      </div>
+      <p><strong>Runtime-agnostic.</strong> Same skills run across pi, Claude Code, Gemini, Codex, OpenCode, Hermes, Goose. Open-source ports of the battle-tested <code>buriedsignals/spotlight</code> and <code>osint</code> Claude Code plugins.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Attribution</h2>
+    <p class="attribution">
+      Built on methodology from <a href="https://www.bellingcat.com/" target="_blank">Bellingcat</a>, <a href="https://gijn.org/" target="_blank">GIJN</a>, Jim Shultz's <em>Follow the Money</em>, Jay Amditis's <a href="https://github.com/jamditis/claude-skills-journalism" target="_blank">claude-skills-journalism</a>, and investigative practice from OCCRP / ICIJ. Powered by open-source tooling across the agent ecosystem.
+    </p>
+  </section>
+
+  <footer class="site-footer">
+    <div>
+      Built by <a href="https://buriedsignals.com" target="_blank">Buried Signals</a>
+    </div>
+    <div class="links">
+      <a href="https://github.com/buriedsignals/spotlight" target="_blank">GitHub</a>
+      <a href="setup.html">Install</a>
+      <a href="mailto:tom@buriedsignals.com">Contact</a>
+    </div>
+  </footer>
+
+</div>
+</body>
+</html>

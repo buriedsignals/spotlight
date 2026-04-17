@@ -358,10 +358,10 @@
       <h2>Cloud provider</h2>
       <section class="card">
         <div class="radio-group" id="cloud-group">
-          <label><input type="radio" name="cloud_runtime" value="claude" checked><span class="opt-name"><span class="name">Claude Code</span><span class="desc">Anthropic's terminal agent. Installs via npm; reads <code>CLAUDE.md</code> (symlinked to <code>AGENTS.md</code>).</span></span></label>
-          <label><input type="radio" name="cloud_runtime" value="gemini"><span class="opt-name"><span class="name">Gemini</span><span class="desc">Google's terminal agent. Installs via npm; reads <code>GEMINI.md</code> (symlinked to <code>AGENTS.md</code>).</span></span></label>
-          <label><input type="radio" name="cloud_runtime" value="codex"><span class="opt-name"><span class="name">Codex</span><span class="desc">OpenAI's terminal agent. Installs via npm; reads <code>AGENTS.md</code> natively.</span></span></label>
-          <label><input type="radio" name="cloud_runtime" value="opencode"><span class="opt-name"><span class="name">OpenCode</span><span class="desc">Open-source terminal agent (SST). Works with any provider — Fireworks, OpenRouter, Together, and more. Good for routing to specific models or cheaper inference.</span></span></label>
+          <label><input type="radio" name="cloud_runtime" value="claude" checked><span class="opt-name"><span class="name">Claude Code</span><span class="desc">Anthropic Claude (Opus / Sonnet) — covered by Claude Max or Claude Pro subscription. Strongest for methodology + fact-checking depth.</span></span></label>
+          <label><input type="radio" name="cloud_runtime" value="gemini"><span class="opt-name"><span class="name">Gemini</span><span class="desc">Google Gemini — covered by Google AI / Gemini subscription. Good for long-context investigations.</span></span></label>
+          <label><input type="radio" name="cloud_runtime" value="codex"><span class="opt-name"><span class="name">Codex</span><span class="desc">OpenAI GPT — covered by ChatGPT Plus / Pro / Team / Enterprise. Fast, broadly capable.</span></span></label>
+          <label><input type="radio" name="cloud_runtime" value="opencode"><span class="opt-name"><span class="name">OpenCode</span><span class="desc">Pick a provider below — OpenRouter, Fireworks, or Together. Pay per token (typically cheaper than subscriptions for heavy users).</span></span></label>
         </div>
 
         <!-- OpenCode provider sub-picker (only visible when opencode selected) -->
