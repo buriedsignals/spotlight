@@ -354,13 +354,13 @@
           The installer will use <strong>pi</strong> as the agent harness (<a class="link" href="https://pi.dev" target="_blank">pi.dev</a>, MIT license) and <strong>Ollama</strong> to serve the model locally on <code>127.0.0.1:11434</code>. Both install with one command.
         </p>
 
-        <input type="hidden" id="model_repo" value="tomvaillant/qwen3-8b-journalist">
+        <input type="hidden" id="model_repo" value="unsloth/Qwen3.6-35B-A3B-GGUF">
 
         <div class="model-info">
-          <div class="stat"><strong>Qwen3-8B Q4</strong>model &amp; quantization</div>
-          <div class="stat"><strong>~5 GB</strong>disk</div>
-          <div class="stat"><strong>~8 GB</strong>RAM at runtime</div>
-          <div class="stat"><strong>16 GB+</strong>recommended unified memory</div>
+          <div class="stat"><strong>Qwen3.6-35B-A3B Q4</strong>MoE — 35B total / 3B active</div>
+          <div class="stat"><strong>~21 GB</strong>disk</div>
+          <div class="stat"><strong>~24 GB</strong>RAM at runtime</div>
+          <div class="stat"><strong>32 GB+</strong>recommended unified memory</div>
         </div>
 
         <div style="margin-top: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
@@ -379,7 +379,7 @@
         </div>
 
         <p class="note-amber">
-          <strong>Model not published yet.</strong> The default repo above is the expected path. The installer will continue even if the pull fails — you can re-run <code>ollama pull hf.co/&lt;repo&gt;</code> once the model is live. Download progress streams live in Terminal via Ollama's native progress UI.
+          Large download (~21 GB). Download progress streams live in Terminal via Ollama's native progress UI. If the pull fails or is interrupted, re-run <code>ollama pull hf.co/unsloth/Qwen3.6-35B-A3B-GGUF</code> to resume.
         </p>
       </section>
     </div>

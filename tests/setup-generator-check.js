@@ -40,7 +40,7 @@ const baseCfg = {
 };
 
 const configs = [
-  { label: 'local', mode: 'local', runtime: 'local', opencode_provider: null, cloud_key: '', cloud_key_var: '', model_repo: 'tomvaillant/qwen3-8b-journalist' },
+  { label: 'local', mode: 'local', runtime: 'local', opencode_provider: null, cloud_key: '', cloud_key_var: '', model_repo: 'unsloth/Qwen3.6-35B-A3B-GGUF' },
   { label: 'claude', mode: 'cloud', runtime: 'claude', opencode_provider: null, cloud_key: 'sk-ant-x', cloud_key_var: 'ANTHROPIC_API_KEY' },
   { label: 'gemini', mode: 'cloud', runtime: 'gemini', opencode_provider: null, cloud_key: 'AIzaX', cloud_key_var: 'GEMINI_API_KEY' },
   { label: 'codex', mode: 'cloud', runtime: 'codex', opencode_provider: null, cloud_key: 'sk-x', cloud_key_var: 'OPENAI_API_KEY' },
