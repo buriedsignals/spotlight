@@ -303,13 +303,7 @@
 <div class="wrap">
 
   <h1>Install Spotlight</h1>
-  <p class="sub">Pick local or cloud. Fill in a few fields. Get a ready-to-run installer.</p>
-
-  <ul class="intro-list">
-    <li>Works on macOS and Linux. Windows requires WSL.</li>
-    <li>All keys stay on your machine — nothing is uploaded.</li>
-    <li>After install, type <code>spotlight</code> in any terminal to start an investigation.</li>
-  </ul>
+  <p class="sub">Verified findings. Independent fact-checking. Your vault, your rules.</p>
 
   <form id="setup-form" onsubmit="return false;">
 
@@ -329,8 +323,7 @@
           The installer will use <strong>pi</strong> as the agent harness (<a class="link" href="https://pi.dev" target="_blank">pi.dev</a>, MIT license) and <strong>Ollama</strong> to serve the model locally on <code>127.0.0.1:11434</code>. Both install with one command.
         </p>
 
-        <label class="block" style="margin-top: 14px;">Hugging Face model repo <span class="hint">— fine-tuned journalism model</span></label>
-        <input type="text" id="model_repo" placeholder="tomvaillant/qwen3-8b-journalist" value="tomvaillant/qwen3-8b-journalist">
+        <input type="hidden" id="model_repo" value="tomvaillant/qwen3-8b-journalist">
 
         <div class="model-info">
           <div class="stat"><strong>Qwen3-8B Q4</strong>model &amp; quantization</div>
@@ -378,10 +371,8 @@
             <label><input type="radio" name="opencode_provider" value="openrouter" checked><span class="opt">OpenRouter</span></label>
             <label><input type="radio" name="opencode_provider" value="fireworks"><span class="opt">Fireworks</span></label>
             <label><input type="radio" name="opencode_provider" value="together"><span class="opt">Together</span></label>
-            <label><input type="radio" name="opencode_provider" value="anthropic"><span class="opt">Anthropic</span></label>
-            <label><input type="radio" name="opencode_provider" value="openai"><span class="opt">OpenAI</span></label>
-            <label><input type="radio" name="opencode_provider" value="google"><span class="opt">Google</span></label>
           </div>
+          <p style="margin: 8px 0 0; font-size: 0.82rem; color: var(--muted);">Cost: ~$0.50–2 per investigation depending on provider, model, and depth. Charged per token to the provider's API.</p>
         </div>
 
         <div class="key-row">
@@ -389,48 +380,46 @@
           <input type="password" id="cloud_key" placeholder="sk-ant-..." autocomplete="off">
         </div>
 
-        <!-- Per-runtime usage steps, conditional -->
+        <!-- Per-runtime usage steps, conditional. Assume the runtime is already installed. -->
         <div id="cloud-usage-claude" class="step-card">
-          <h4>How you'll run Spotlight with Claude Code</h4>
+          <h4>Using Spotlight with Claude Code</h4>
           <ol>
-            <li>Installer runs <code>npm install -g @anthropic-ai/claude-code</code></li>
-            <li>Installer clones the repo and symlinks <code>AGENTS.md → CLAUDE.md</code> so Claude Code picks up the Spotlight contract</li>
-            <li>Installer adds a <code>spotlight</code> shell function to your <code>~/.zshrc</code> (or <code>~/.bashrc</code>)</li>
-            <li>Open a new terminal and type <code>spotlight</code> — it opens Claude Code in the Spotlight repo with the skill loaded. Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
+            <li>In any terminal, type <code>spotlight</code> — opens Claude Code in your Spotlight repo with all skills loaded</li>
+            <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
+            <li>Claude walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
           </ol>
-          <p style="margin:10px 0 0;">You can also use the Claude Desktop app: open the Spotlight repo folder, and Claude will see <code>CLAUDE.md</code> automatically.</p>
+          <p style="margin:10px 0 0; font-size:0.88rem; color: var(--muted);">Also works in the Claude Desktop app: open the Spotlight folder, Claude sees <code>CLAUDE.md</code> automatically. Covered by Claude Max / Claude Pro subscriptions — no per-investigation cost.</p>
         </div>
 
         <div class="step-card hidden" id="cloud-usage-gemini">
-          <h4>How you'll run Spotlight with Gemini CLI</h4>
+          <h4>Using Spotlight with Gemini</h4>
           <ol>
-            <li>Installer runs <code>npm install -g @google/gemini-cli</code></li>
-            <li>Installer clones the repo and symlinks <code>AGENTS.md → GEMINI.md</code> so Gemini picks up the Spotlight contract</li>
-            <li>Installer adds a <code>spotlight</code> shell function to your <code>~/.zshrc</code> (or <code>~/.bashrc</code>)</li>
-            <li>Open a new terminal and type <code>spotlight</code> — it opens Gemini in the Spotlight repo with the skill loaded. Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
+            <li>In any terminal, type <code>spotlight</code> — opens Gemini CLI in your Spotlight repo with all skills loaded</li>
+            <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
+            <li>Gemini walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
           </ol>
+          <p style="margin:10px 0 0; font-size:0.88rem; color: var(--muted);">Covered by your Gemini subscription — no per-investigation cost.</p>
         </div>
 
         <div class="step-card hidden" id="cloud-usage-codex">
-          <h4>How you'll run Spotlight with Codex</h4>
+          <h4>Using Spotlight with Codex</h4>
           <ol>
-            <li>Installer runs <code>npm install -g @openai/codex</code></li>
-            <li>Codex reads <code>AGENTS.md</code> natively — no symlink needed</li>
-            <li>Installer adds a <code>spotlight</code> shell function to your <code>~/.zshrc</code> (or <code>~/.bashrc</code>)</li>
-            <li>Open a new terminal and type <code>spotlight</code> — it opens Codex in the Spotlight repo with the skill loaded. Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
+            <li>In any terminal, type <code>spotlight</code> — opens Codex in your Spotlight repo with all skills loaded</li>
+            <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
+            <li>Codex walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
           </ol>
+          <p style="margin:10px 0 0; font-size:0.88rem; color: var(--muted);">Covered by your ChatGPT Plus / Pro / Team / Enterprise subscription — no per-investigation cost.</p>
         </div>
 
         <div class="step-card hidden" id="cloud-usage-opencode">
-          <h4>How you'll run Spotlight with OpenCode</h4>
+          <h4>Using Spotlight with OpenCode</h4>
           <ol>
-            <li>Installer runs <code>npm install -g opencode-ai</code></li>
-            <li>OpenCode reads <code>AGENTS.md</code> natively — no symlink needed</li>
-            <li>Installer writes your provider's API key to <code>.env</code>; OpenCode auto-detects it on first launch</li>
-            <li>Installer adds a <code>spotlight</code> shell function to your <code>~/.zshrc</code> (or <code>~/.bashrc</code>)</li>
-            <li>Open a new terminal and type <code>spotlight</code> — OpenCode launches; first time, pick a model from your chosen provider via <code>/model</code>. Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
+            <li>In any terminal, type <code>spotlight</code> — opens OpenCode in your Spotlight repo with all skills loaded</li>
+            <li>First time: type <code>/model</code> and pick a strong default for your provider</li>
+            <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
+            <li>OpenCode walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
           </ol>
-          <p style="margin:10px 0 0;">Strong defaults per provider: OpenRouter → <code>z-ai/glm-5.1</code>; Fireworks → <code>qwen3p6-plus</code>; Together → <code>Qwen/Qwen3.6</code>; Anthropic → <code>claude-opus-4.6</code>; OpenAI → <code>gpt-5</code>. Use <code>/model</code> in OpenCode to switch.</p>
+          <p style="margin:10px 0 0; font-size:0.88rem; color: var(--muted);">Recommended models: OpenRouter → <code>z-ai/glm-5.1</code>; Fireworks → <code>qwen3p6-plus</code>; Together → a Qwen3.6 variant. Cost is per-token, billed by the provider.</p>
         </div>
       </section>
     </div>
@@ -575,9 +564,6 @@
     openrouter: { label: 'OpenRouter API key', placeholder: 'sk-or-v1-...', envVar: 'OPENROUTER_API_KEY' },
     fireworks: { label: 'Fireworks API key', placeholder: 'fw-...', envVar: 'FIREWORKS_API_KEY' },
     together: { label: 'Together AI API key', placeholder: '...', envVar: 'TOGETHER_API_KEY' },
-    anthropic: { label: 'Anthropic API key', placeholder: 'sk-ant-...', envVar: 'ANTHROPIC_API_KEY' },
-    openai: { label: 'OpenAI API key', placeholder: 'sk-...', envVar: 'OPENAI_API_KEY' },
-    google: { label: 'Google AI API key', placeholder: 'AIza...', envVar: 'GEMINI_API_KEY' },
   };
 
   const opencodeProviderSection = document.getElementById('opencode-provider-section');
@@ -710,18 +696,51 @@
     p('fi');
     p('');
     p('step "Prerequisites"');
-    p('for cmd in git node python3; do');
-    p('  if command -v "$cmd" >/dev/null 2>&1; then');
-    p('    printf "%s✓%s %s\\n" "$_c_green" "$_c_reset" "$cmd present"');
-    p('  else');
-    p('    printf "%s✗%s %s required — install first\\n" "$_c_red" "$_c_reset" "$cmd" >&2; exit 1');
+    p('');
+    p('# Ask-and-install pattern — no silent aborts, journalist doesn\'t need prior tooling.');
+    p('ensure_brew() {');
+    p('  if command -v brew >/dev/null 2>&1; then');
+    p('    printf "%s✓%s Homebrew present\\n" "$_c_green" "$_c_reset"; return 0');
     p('  fi');
-    p('done');
+    p('  echo ""');
+    p('  echo "Homebrew is needed to install other tools. Install it now? [Y/n]"');
+    p('  read -r ans || ans="Y"');
+    p('  if [[ "$ans" =~ ^[Nn] ]]; then echo "Aborted." >&2; exit 1; fi');
+    p('  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"');
+    p('  # Path fix for Apple Silicon');
+    p('  [ -x /opt/homebrew/bin/brew ] && eval "$(/opt/homebrew/bin/brew shellenv)"');
+    p('  [ -x /usr/local/bin/brew ] && eval "$(/usr/local/bin/brew shellenv)"');
+    p('}');
+    p('');
+    p('ensure_tool() {');
+    p('  local cmd="$1"; local pkg="${2:-$1}"');
+    p('  if command -v "$cmd" >/dev/null 2>&1; then');
+    p('    printf "%s✓%s %s present\\n" "$_c_green" "$_c_reset" "$cmd"; return 0');
+    p('  fi');
+    p('  ensure_brew');
+    p('  spin "Installing $cmd via brew" brew install "$pkg"');
+    p('}');
+    p('');
+    p('# git: on macOS, use Apple\'s Xcode CLI (has git). On Linux, via brew/apt.');
+    p('if ! command -v git >/dev/null 2>&1; then');
+    p('  if [ "$OS" = "Darwin" ]; then');
+    p('    echo "git is not installed. Install Xcode Command Line Tools now? [Y/n]"');
+    p('    read -r ans || ans="Y"');
+    p('    if [[ "$ans" =~ ^[Nn] ]]; then echo "Aborted." >&2; exit 1; fi');
+    p('    xcode-select --install || true');
+    p('    echo "A dialog opened. Complete the install, then re-run this script."');
+    p('    exit 0');
+    p('  else');
+    p('    ensure_tool git');
+    p('  fi');
+    p('else');
+    p('  printf "%s✓%s git present\\n" "$_c_green" "$_c_reset"');
+    p('fi');
+    p('');
+    p('ensure_tool node');
+    p('ensure_tool python3 python@3.12');
     if (cfg.mode === 'local') {
-      p('if ! command -v brew >/dev/null 2>&1; then');
-      p('  printf "%s✗%s Homebrew required for local model install. See https://brew.sh\\n" "$_c_red" "$_c_reset" >&2; exit 1');
-      p('fi');
-      p('printf "%s✓%s brew present\\n" "$_c_green" "$_c_reset"');
+      p('ensure_brew  # local mode needs brew for ollama');
     }
     p('');
     p('step "Obsidian CLI"');
@@ -1103,9 +1122,31 @@
     const ua = navigator.userAgent;
     const isMac = /Macintosh/.test(ua);
     const isLinux = /Linux/.test(ua) && !/Android/.test(ua);
-    const isAppleSilicon = isMac && !/Intel/.test(ua);
     const cores = navigator.hardwareConcurrency || 'unknown';
-    const deviceMemGB = navigator.deviceMemory || null; // Chrome/Edge; caps at 8
+    const deviceMemGB = navigator.deviceMemory || null;
+
+    // Detect Apple Silicon properly — browsers now always report "Intel" in UA
+    // on M-series Macs for web-compat. Use User-Agent Client Hints (returns 'arm'
+    // for Apple Silicon, 'x86' for Intel Macs).
+    let arch = null;
+    try {
+      if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+        const high = await navigator.userAgentData.getHighEntropyValues(['architecture', 'bitness']);
+        arch = high.architecture; // 'arm' | 'x86'
+      }
+    } catch {}
+
+    // Fallback heuristic: Mac + WebGPU + not-explicitly-x86 + core count ≥ 8 → likely Apple Silicon
+    // Intel Macs top out around 8-12 cores and WebGPU support is flaky; Apple Silicon has it cleanly.
+    let isAppleSilicon;
+    if (arch === 'arm') isAppleSilicon = true;
+    else if (arch === 'x86') isAppleSilicon = false;
+    else if (isMac) {
+      // Heuristic fallback when User-Agent Client Hints unavailable (Safari, Firefox)
+      isAppleSilicon = (typeof cores === 'number' && cores >= 8) && !!navigator.gpu;
+    } else {
+      isAppleSilicon = false;
+    }
 
     // GPU (WebGPU adapter probe)
     let gpuName = 'unknown';
