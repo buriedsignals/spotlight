@@ -39,7 +39,7 @@ execute-shell("command -v firecrawl")
 
 If not found:
 
-> "No firecrawl CLI detected. Spotlight's `fetch` and `search` verbs require firecrawl. Install: `npm install -g @mendable/firecrawl-cli` and set `FIRECRAWL_API_KEY`."
+> "No firecrawl CLI detected. Spotlight's `fetch` and `search` verbs require firecrawl. Install: `npm install -g firecrawl-cli` and set `FIRECRAWL_API_KEY`."
 
 **STOP.** Do not proceed without firecrawl. (Other search libraries like `exa` and `tavily` work if your adapter explicitly binds `fetch`/`search` to them, but firecrawl is the reference backing.)
 

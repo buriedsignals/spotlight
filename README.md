@@ -62,7 +62,7 @@ Point the runtime at an OpenAI-compatible endpoint (llama-server on 127.0.0.1:80
 ## Dependencies
 
 Required:
-- **firecrawl** CLI — the universal backing for `fetch`/`search`. `npm install -g @mendable/firecrawl-cli`; set `FIRECRAWL_API_KEY`.
+- **firecrawl** CLI — the universal backing for `fetch`/`search`. `npm install -g firecrawl-cli`; set `FIRECRAWL_API_KEY`.
 
 Optional:
 - **qmd** — for `query-vault`. `BUN_INSTALL="" qmd query`.

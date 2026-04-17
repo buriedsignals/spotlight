@@ -175,7 +175,7 @@ entry:
   schemas_dir: schemas/
 requires:
   cli_tools:
-    - firecrawl   # npm install -g @mendable/firecrawl-cli
+    - firecrawl   # npm install -g firecrawl-cli
     - obsidian    # Obsidian app (optional, for vault-write)
     - qmd         # brew install qmd (optional, for query-vault)
   env_vars:

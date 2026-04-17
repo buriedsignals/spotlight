@@ -9,10 +9,11 @@ This `docs/` directory is the operator manual. `AGENTS.md` at the repo root is t
 If you are new to Spotlight, read in this order:
 
 1. **[structure.md](structure.md)** — how this repo is laid out; what each file is for; the 13-verb contract
-2. **[integrations.md](integrations.md)** — how to wire Spotlight into pi, Hermes, Goose, Codex, Gemini, or a local OpenAI-compatible fine-tune
-3. **[investigating.md](investigating.md)** — the investigation pipeline: brief, methodology, cycles, gates, readiness, stall protocol
-4. **[fact-checking.md](fact-checking.md)** — the independent verification pass: SIFT, verdict taxonomy, evidence trails
-5. **[monitoring.md](monitoring.md)** — persistent feed monitoring: sources, preflight, the scout lifecycle
+2. **[runtimes.md](runtimes.md)** — how to wire Spotlight into pi, Hermes, Goose, Codex, Gemini, or a local OpenAI-compatible fine-tune
+3. **[integrations.md](integrations.md)** — external OSINT tool integrations (browser-use, Junkipedia, OSINT Navigator), manifest contract, preflight
+4. **[investigating.md](investigating.md)** — the investigation pipeline: brief, methodology, cycles, gates, readiness, stall protocol
+5. **[fact-checking.md](fact-checking.md)** — the independent verification pass: SIFT, verdict taxonomy, evidence trails
+6. **[monitoring.md](monitoring.md)** — persistent feed monitoring: sources, preflight, the scout lifecycle
 
 ## 60-second quick-start
 
@@ -26,7 +27,7 @@ pi
 # > Start a Spotlight investigation on {lead}.
 ```
 
-Configure a local fine-tune provider in pi's `models.json` to route inference to your own OpenAI-compatible endpoint (llama-server, Ollama, Exoscale, vLLM) — see [integrations.md](integrations.md#pi).
+Configure a local fine-tune provider in pi's `models.json` to route inference to your own OpenAI-compatible endpoint (llama-server, Ollama, Exoscale, vLLM) — see [runtimes.md](runtimes.md#pi).
 
 ### Hermes (Mac Mini ambient agent)
 
@@ -42,7 +43,7 @@ Restart Hermes. The orchestrator is invocable via `invoke-skill("spotlight")`. S
 
 ### Goose (extension pack)
 
-Package this repo as a Goose extension. See [integrations.md](integrations.md#goose) for the extension manifest and recipe entry point.
+Package this repo as a Goose extension. See [runtimes.md](runtimes.md#goose) for the extension manifest and recipe entry point.
 
 ### Codex CLI / Gemini CLI
 
