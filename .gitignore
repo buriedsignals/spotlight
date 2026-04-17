@@ -4,3 +4,13 @@ apps/
 serve.py
 .DS_Store
 .spotlight-config.json
+
+# Local ML/OCR artifacts (not part of the agnostic contract)
+eng.traineddata
+Modelfile-*
+models/
+
+# Python + tooling caches
+__pycache__/
+.firecrawl/
+.playwright-mcp/

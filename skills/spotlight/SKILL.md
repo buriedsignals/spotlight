@@ -139,7 +139,7 @@ During an investigation, these skills may be invoked:
 
 ---
 
-##敏感模式 (Sensitive Mode)
+## Sensitive Mode
 
 When `sensitive: true` is set in AGENTS.md, the adapter strips `fetch` and `search` from all agent `allowed_verbs`. The orchestrator adjusts:
 
