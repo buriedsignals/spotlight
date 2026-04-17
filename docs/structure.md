@@ -68,7 +68,7 @@ Validate a case file:
 python3 -m jsonschema -i cases/{project}/data/findings.json schemas/findings.schema.json
 ```
 
-## skills/ — 10 skills
+## skills/ — 9 skills
 
 Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for large supporting content).
 
