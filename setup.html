@@ -894,7 +894,9 @@
       p('}');
       p('');
       p('if ! command -v pi >/dev/null 2>&1; then');
-      p('  spin "Installing pi (@mariozechner/pi-coding-agent)" npm install -g @mariozechner/pi-coding-agent');
+      p('  NPM_PREFIX="$HOME/.npm-global"; mkdir -p "$NPM_PREFIX"');
+      p('  spin "Installing pi (@mariozechner/pi-coding-agent)" npm install -g --prefix "$NPM_PREFIX" @mariozechner/pi-coding-agent');
+      p('  export PATH="$NPM_PREFIX/bin:$PATH"');
       p('else');
       p('  printf "%s✓%s pi already installed\\n" "$_c_green" "$_c_reset"');
       p('fi');
@@ -1015,6 +1017,7 @@
     p('  cat >> "$SHELL_RC" <<\'SHELL_EOF\'');
     p('');
     p('# SPOTLIGHT-BEGIN — added by setup.html installer');
+    p('export PATH="$HOME/.npm-global/bin:$PATH"');
     p('spotlight() {');
     p('  local dir="${SPOTLIGHT_DIR:-$HOME/spotlight}"');
     p('  if [ ! -d "$dir" ]; then');
