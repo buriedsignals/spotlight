@@ -152,15 +152,23 @@ list-files("cases/{project}/data/review-feedback-processed.json")
 
 If `review-feedback.json` exists AND `review-feedback-processed.json` is absent or older, `invoke-skill("review")` before proceeding. The review skill enters Mode B (process), re-spawns the investigator with feedback-targeted instructions, updates findings/fact-check, and regenerates `review.html`. Only then continue with monitoring preflight.
 
-### 10. Monitoring preflight (optional)
+### 10. Monitoring + integrations preflight (optional)
 
-If feeds are configured, run:
+Run both preflight checkers:
 
 ```
 execute-shell("python3 monitoring/feeds/preflight.py --json")
+execute-shell("python3 integrations/preflight.py --json")
 ```
 
-The preflight reports which feed sources are green (ready), yellow (key set but smoke test failed), or red (missing env vars). Display the result table to the user so they know which feeds will be queryable during the investigation. Do not block on failures — feeds are supplementary.
+Both emit the same green/yellow/red status model. Display a combined table to the user so they know which feeds AND external integrations will be queryable during the investigation. Do not block on failures — feeds and integrations are supplementary.
+
+Typical expectations:
+
+- `firecrawl` ready (checked in step 2 already — Spotlight cannot start without it)
+- Integration `browser-use` green if `pip install browser-use` was run during setup
+- Integration `osint-navigator` green if `OSINT_NAV_API_KEY` is set
+- Other integrations (junkipedia, future integrations like serus/thinkpol) green only if user has access
 
 ---
 

@@ -116,6 +116,7 @@ Skills are markdown playbooks loaded via `invoke-skill(skill_id)`. Each skill li
 |----------|------|-------------|--------------|
 | `spotlight` | `skills/spotlight/SKILL.md` | Investigation orchestrator — pipeline phases, gates, cycle evaluation | orchestrator (top-level) |
 | `review` | `skills/review/SKILL.md` | Post-Gate-1 HTML review artifact + structured feedback loop; re-spawns investigator on feedback submission | orchestrator, user |
+| `integrations` | `skills/integrations/SKILL.md` | Routing layer for external tool integrations — browser-use, Junkipedia, OSINT Navigator. Reads live preflight status, maps investigation tasks to integrations | investigator, fact-checker, orchestrator |
 | `ingest` | `skills/ingest/SKILL.md` | Knowledge archival — vault ingestion from case files | orchestrator, user |
 | `monitoring` | `skills/monitoring/SKILL.md` | Feed framework integration — GDELT, RSS, GDACS, ACLED; preflight + recommendation lifecycle | orchestrator |
 | `web-archiving` | `skills/web-archiving/SKILL.md` | Wayback Machine, Archive.today, local archival with chain of custody | investigator, fact-checker |
