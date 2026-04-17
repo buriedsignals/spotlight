@@ -12,6 +12,10 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Spotlight — OSINT investigation system for journalists">
 <meta name="twitter:description" content="You lead the investigation. Spotlight does the research.">
+<link rel="icon" type="image/svg+xml" href="assets/spotlight-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #0f1115;
@@ -38,21 +42,48 @@
   * { box-sizing: border-box; }
   html { font-size: 16px; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     background: var(--bg);
     color: var(--fg);
     margin: 0;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
+    font-size: 0.95rem;
   }
   .wrap { max-width: 720px; margin: 0 auto; padding: 64px 28px 48px; }
   header.hero { text-align: left; margin-bottom: 64px; }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 32px;
+    color: var(--fg);
+    text-decoration: none;
+  }
+  .brand svg {
+    width: 36px;
+    height: 36px;
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+  .brand .wordmark {
+    font-family: "Fraunces", Georgia, "Times New Roman", serif;
+    font-weight: 600;
+    font-size: 1.6rem;
+    letter-spacing: -0.01em;
+    font-variation-settings: "opsz" 48;
+    color: var(--fg);
+  }
+
   h1 {
-    font-size: clamp(2.4rem, 6vw, 3.6rem);
-    letter-spacing: -0.02em;
-    margin: 0 0 12px;
+    font-family: "Fraunces", Georgia, "Times New Roman", serif;
+    font-size: clamp(2.6rem, 6vw, 3.8rem);
+    letter-spacing: -0.015em;
+    margin: 0 0 16px;
     line-height: 1.05;
-    font-weight: 700;
+    font-weight: 600;
+    font-variation-settings: "opsz" 144;
   }
   h1 .accent { color: var(--accent); }
   .tagline {
@@ -175,6 +206,14 @@
 <div class="wrap">
 
   <header class="hero">
+    <a href="#" class="brand">
+      <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M 51.32 26.82 A 20 20 0 0 1 12.68 26.82" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+        <path d="M 12.68 37.18 A 20 20 0 0 0 51.32 37.18" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+        <circle cx="32" cy="32" r="5" fill="currentColor"/>
+      </svg>
+      <span class="wordmark">Spotlight</span>
+    </a>
     <h1>You lead the investigation.<br><span class="accent">Spotlight does the research.</span></h1>
     <p class="tagline">
       Your lead. Your judgment. Verified findings, independent fact-checking, a vault that grows with you.

@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Spotlight — Install</title>
+<link rel="icon" type="image/svg+xml" href="assets/spotlight-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #0f1115;
@@ -34,15 +38,42 @@
   * { box-sizing: border-box; }
   html { font-size: 15px; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     background: var(--bg);
     color: var(--fg);
     margin: 0;
     line-height: 1.55;
+    font-size: 0.92rem;
   }
   .wrap { max-width: 760px; margin: 0 auto; padding: 48px 24px 120px; }
-  h1 { margin: 0 0 8px; font-size: 2rem; letter-spacing: -0.01em; }
-  .sub { color: var(--muted); margin: 0 0 40px; font-size: 1.05rem; }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 24px;
+    color: var(--fg);
+    text-decoration: none;
+  }
+  .brand svg { width: 28px; height: 28px; color: var(--accent); flex-shrink: 0; }
+  .brand .wordmark {
+    font-family: "Fraunces", Georgia, "Times New Roman", serif;
+    font-weight: 600;
+    font-size: 1.25rem;
+    letter-spacing: -0.01em;
+    font-variation-settings: "opsz" 48;
+    color: var(--fg);
+  }
+
+  h1 {
+    font-family: "Fraunces", Georgia, "Times New Roman", serif;
+    margin: 0 0 8px;
+    font-size: 2.2rem;
+    letter-spacing: -0.015em;
+    font-weight: 600;
+    font-variation-settings: "opsz" 144;
+  }
+  .sub { color: var(--muted); margin: 0 0 40px; font-size: 1rem; }
   h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 36px 0 12px; font-weight: 600; }
   h2 .req { color: var(--red); font-weight: 600; font-size: 0.7rem; margin-left: 6px; letter-spacing: 0.08em; }
   h2 .opt { color: var(--muted); font-weight: 400; font-size: 0.75rem; margin-left: 6px; text-transform: none; letter-spacing: 0; }
@@ -302,7 +333,16 @@
 <body>
 <div class="wrap">
 
-  <h1>Install Spotlight</h1>
+  <a href="landing.html" class="brand">
+    <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M 51.32 26.82 A 20 20 0 0 1 12.68 26.82" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+      <path d="M 12.68 37.18 A 20 20 0 0 0 51.32 37.18" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+      <circle cx="32" cy="32" r="5" fill="currentColor"/>
+    </svg>
+    <span class="wordmark">Spotlight</span>
+  </a>
+
+  <h1>Install</h1>
   <p class="sub">Verified findings. Independent fact-checking. Your vault, your rules.</p>
 
   <form id="setup-form" onsubmit="return false;">
