@@ -14,6 +14,7 @@ If you are new to Spotlight, read in this order:
 4. **[investigating.md](investigating.md)** — the investigation pipeline: brief, methodology, cycles, gates, readiness, stall protocol
 5. **[fact-checking.md](fact-checking.md)** — the independent verification pass: SIFT, verdict taxonomy, evidence trails
 6. **[monitoring.md](monitoring.md)** — persistent feed monitoring: sources, preflight, the scout lifecycle
+7. **[recovery.md](recovery.md)** — when things break: agent crashes, corrupted files, stale locks, API failures
 
 ## 60-second quick-start
 

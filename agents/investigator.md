@@ -132,6 +132,16 @@ These skills contain the full methodology. Follow them.
 
 Follow the paper trail. Corporate filings link to people. People link to addresses. Addresses link to other entities. Each document opens a new thread — pull every thread.
 
+**Vault refresh on new entities.** Every time an unexpected new entity emerges during research (a name, a company, an address, a LEI), before spending research time on it, do a fast vault re-check:
+
+1. `read-file("{VAULT_PATH}/entities/_registry.json")` — does this entity already exist? Check `aliases` too.
+2. If hit: `read-file("{VAULT_PATH}/entities/{entity-id}.md")` and apply what you already know. Do not re-investigate from zero.
+3. `query-vault("{VAULT_PATH}", "<entity name + context keywords>")` for adjacent context that registry filtering might miss.
+
+Record vault matches in your investigation-log under `methodology.vault_hits`. This is where the knowledge base compounds — a journalist shouldn't re-research the same shell company for three different stories.
+
+Skip if `VAULT_PATH == "none"`.
+
 ### 4. Cross-Reference
 
 Verify every finding against at least two independent sources. Flag single-source findings explicitly. Look for contradictions between sources.

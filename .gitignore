@@ -1,16 +1,13 @@
 cases/*
 !cases/.gitkeep
-apps/
-serve.py
 .DS_Store
 .spotlight-config.json
+.env
 
-# Local ML/OCR artifacts (not part of the agnostic contract)
-eng.traineddata
-Modelfile-*
+# Local ML artifacts (out of contract; installed via setup.html flow)
 models/
 
-# Python + tooling caches
+# Tooling caches
 __pycache__/
 .firecrawl/
 .playwright-mcp/

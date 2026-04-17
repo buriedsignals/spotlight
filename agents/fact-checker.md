@@ -42,6 +42,24 @@ You are independent from the investigator — spawned with your own context, rea
 
 `read-file("cases/{project}/data/findings.json")`. Isolate every discrete factual claim from the findings. A claim is a statement that is either true or false — strip out opinions, framing, and rhetoric. Number each claim for tracking.
 
+### 1.5. Vault Prior-Art Check
+
+Before searching for new evidence, check the vault for prior verdicts on the entities, sources, and claims you're about to evaluate. **This is where the knowledge vault pays off** — the AI has seen this before.
+
+If `VAULT_PATH` is set (not `"none"`):
+
+1. Extract the proper-noun entities from each claim (persons, organizations, companies, places).
+2. For each entity that appears in `{VAULT_PATH}/entities/_registry.json`, `read-file` its note and scan for:
+   - Prior investigation roles that bear on credibility
+   - Previous findings that support or contradict the current claim
+   - Known aliases or relationships that change the picture
+3. For each source domain cited in `findings.json`, `read-file("{VAULT_PATH}/tools/_registry.json")` and check for existing "Tips for Future Agents" on that source (e.g. "outlet X has a history of unretracted errors on Y topic"). Treat those tips as inputs to the credibility judgment.
+4. Use `query-vault("{VAULT_PATH}", "<claim keywords>")` for semantic search across prior investigations — it often surfaces fact-checks of near-identical claims.
+
+Record prior-art references in `notes` on each claim as `"Prior vault context: [[entity-id]], [[prior-project-id]] — {what was found}"`. Do not suppress a verdict because of prior context; use it as one input among many.
+
+The vault is read-only. Do not modify it during fact-checking.
+
 ### 2. Source Credibility Check
 
 Before searching for corroborating evidence, assess the credibility of the sources cited in the findings themselves. Apply **SIFT** to each source:
