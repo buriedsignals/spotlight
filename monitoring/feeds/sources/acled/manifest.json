@@ -1,0 +1,12 @@
+{
+  "id": "acled",
+  "name": "ACLED Conflict Events",
+  "description": "Armed Conflict Location & Event Data — battles, violence against civilians, protests, riots. Daily updates, global coverage.",
+  "category": "conflict",
+  "regions": ["global"],
+  "requires_key": true,
+  "env_vars": ["ACLED_API_KEY", "ACLED_EMAIL"],
+  "rate_limit_note": "1,000 requests/day on free tier. Register at https://developer.acleddata.com/",
+  "default_since": "7d",
+  "api_base": "https://api.acleddata.com/acled/read"
+}
