@@ -30,7 +30,7 @@ search: query="{exact title}" site:academia.edu
 ### 2. Unpaywall (Academic Papers with DOI)
 
 ```
-execute-shell: curl "https://api.unpaywall.org/v2/{DOI}?email=research@buriedsignals.com"
+execute-shell: curl "https://api.unpaywall.org/v2/{DOI}?email=buriedsignals@agentmail.com"
 ```
 
 Parse the response for `best_oa_location.url` — if present, it's the legal open-access copy. Also check `oa_locations[]` for mirrors.
