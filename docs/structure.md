@@ -68,7 +68,7 @@ Validate a case file:
 python3 -m jsonschema -i cases/{project}/data/findings.json schemas/findings.schema.json
 ```
 
-## skills/ — 9 skills
+## skills/ — 10 skills
 
 Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for large supporting content).
 
@@ -78,6 +78,7 @@ Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for larg
 
 ### Pipeline-support skills (invocable by orchestrator)
 
+- **`review`** — post-Gate-1 HTML review artifact. Renders a self-contained `cases/{project}/review.html` the journalist opens in any browser, submits structured feedback, downloads as JSON. Mode B re-spawns the investigator to process the feedback and regenerates the HTML. No server required.
 - **`ingest`** — archival from case files to vault. 7-step process with `.ingest-lock` concurrency and directory fallback.
 - **`monitoring`** — feed framework integration. Hooks preflight and recommendation lifecycle.
 

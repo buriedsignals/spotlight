@@ -141,6 +141,17 @@ execute-shell('curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" https://nav
 If the spec fetch succeeds, set `integrations.osint_navigator: true` in the config. If it fails, mark `"degraded"` and warn:
 > "Warning: `$OSINT_NAV_API_KEY` is set but Navigator API did not respond. Integration marked as degraded."
 
+### 9.5. Review feedback check (resume only)
+
+When resuming an existing project, check for pending feedback:
+
+```
+list-files("cases/{project}/data/review-feedback.json")
+list-files("cases/{project}/data/review-feedback-processed.json")
+```
+
+If `review-feedback.json` exists AND `review-feedback-processed.json` is absent or older, `invoke-skill("review")` before proceeding. The review skill enters Mode B (process), re-spawns the investigator with feedback-targeted instructions, updates findings/fact-check, and regenerates `review.html`. Only then continue with monitoring preflight.
+
 ### 10. Monitoring preflight (optional)
 
 If feeds are configured, run:
@@ -374,6 +385,18 @@ What was investigated and what was out of scope.
 The user can request follow-up cycles targeting specific findings. If so, re-enter the execution loop with targeted gap instructions.
 
 **Gate: user approves the investigation.**
+
+### Generate review artifact
+
+After approval, `invoke-skill("review")` to produce `cases/{project}/review.html` — a self-contained HTML artifact the user can open in any browser to inspect findings and submit structured feedback. See `skills/review/SKILL.md`.
+
+Offer the user:
+
+> "Review artifact written to `cases/{project}/review.html`. Open it in any browser to inspect findings and submit feedback (optional). If you submit feedback, save the exported `review-feedback.json` into `cases/{project}/data/` and re-run `/spotlight` to process it. Or proceed to ingestion now."
+
+### Feedback processing (on resume)
+
+When `/spotlight` is resumed and `cases/{project}/data/review-feedback.json` exists without a matching `review-feedback-processed.json` marker, Phase 0 invokes the review skill in process mode before advancing. This re-spawns the investigator with feedback-targeted instructions, updates findings, and regenerates the review artifact. See `skills/review/SKILL.md` § Mode B.
 
 ---
 

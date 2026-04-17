@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spotlight — Investigation Review</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --bg-2: #171a21;
+    --bg-3: #1f232c;
+    --fg: #e8ecf1;
+    --muted: #8891a0;
+    --border: #2a2f3a;
+    --accent: #7cb7ff;
+    --green: #6ebf6e;
+    --amber: #d9a441;
+    --red: #e36b6b;
+    --grey: #6a7382;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #fafbfc;
+      --bg-2: #ffffff;
+      --bg-3: #f1f3f5;
+      --fg: #1a1f29;
+      --muted: #5a6472;
+      --border: #d9dde3;
+      --accent: #2158c9;
+      --green: #2f7a35;
+      --amber: #a36c10;
+      --red: #b83535;
+      --grey: #5a6472;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 15px; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    margin: 0;
+    line-height: 1.55;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 32px;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 40px 32px 120px;
+  }
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+    aside { position: static !important; border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  }
+  aside {
+    position: sticky;
+    top: 40px;
+    align-self: start;
+    font-size: 0.9rem;
+  }
+  aside h1 {
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 8px;
+  }
+  aside h2 {
+    font-size: 1.15rem;
+    margin: 4px 0 12px;
+    line-height: 1.3;
+  }
+  aside .meta {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-bottom: 20px;
+  }
+  aside nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 24px;
+  }
+  aside nav a {
+    color: var(--fg);
+    text-decoration: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: center;
+  }
+  aside nav a:hover { background: var(--bg-3); }
+  aside nav a .id { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 28px; }
+  aside nav a .v { font-size: 0.7rem; padding: 1px 6px; border-radius: 3px; flex-shrink: 0; }
+  main { min-width: 0; }
+  h1.title { font-size: 1.7rem; margin: 0 0 6px; line-height: 1.2; }
+  .overview { color: var(--muted); font-size: 0.95rem; margin-bottom: 28px; }
+  .overview p { margin: 0 0 12px; }
+  section.stats {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    margin-bottom: 32px;
+    padding: 16px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  @media (max-width: 540px) { section.stats { grid-template-columns: repeat(2, 1fr); } }
+  .stat { text-align: center; }
+  .stat .n { font-size: 1.7rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
+  .stat .label { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+  .stat.total .n { color: var(--fg); }
+  .stat.verified .n { color: var(--green); }
+  .stat.unverified .n { color: var(--grey); }
+  .stat.disputed .n { color: var(--amber); }
+  .stat.false .n { color: var(--red); }
+  h2.section { font-size: 1.1rem; margin: 32px 0 12px; border-top: 1px solid var(--border); padding-top: 24px; }
+  h2.section:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+  .finding {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 22px;
+    margin-bottom: 18px;
+  }
+  .finding-header {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .finding-header .fid {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .badge.conf-high { background: rgba(110,191,110,0.15); color: var(--green); }
+  .badge.conf-medium { background: rgba(217,164,65,0.15); color: var(--amber); }
+  .badge.conf-low { background: rgba(106,115,130,0.2); color: var(--grey); }
+  .badge.v-verified { background: rgba(110,191,110,0.18); color: var(--green); }
+  .badge.v-unverified { background: rgba(106,115,130,0.2); color: var(--grey); }
+  .badge.v-disputed { background: rgba(217,164,65,0.18); color: var(--amber); }
+  .badge.v-false { background: rgba(227,107,107,0.2); color: var(--red); }
+  .badge.perspective { background: var(--bg-3); color: var(--muted); }
+  .claim { font-size: 1.05rem; font-weight: 500; margin: 0 0 10px; }
+  .evidence { color: var(--muted); font-size: 0.9rem; font-style: italic; margin: 0 0 12px; padding-left: 12px; border-left: 2px solid var(--border); }
+  .sources summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; margin-bottom: 6px; user-select: none; }
+  .sources summary:hover { color: var(--fg); }
+  .sources table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 8px; }
+  .sources th, .sources td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  .sources th { color: var(--muted); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .sources a { color: var(--accent); text-decoration: none; word-break: break-all; }
+  .sources a:hover { text-decoration: underline; }
+  .verdict-detail { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border); font-size: 0.9rem; }
+  .verdict-detail h4 { margin: 8px 0 4px; font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .verdict-detail ul { margin: 4px 0; padding-left: 20px; }
+  .verdict-detail li { margin: 4px 0; }
+  .verdict-detail .against { color: var(--amber); }
+  details.feedback {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--border);
+  }
+  details.feedback summary {
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--accent);
+    user-select: none;
+    font-weight: 500;
+  }
+  .fb-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .fb-field label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 4px;
+    font-weight: 500;
+  }
+  .fb-field textarea {
+    width: 100%;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 0.9rem;
+    min-height: 60px;
+    resize: vertical;
+  }
+  .fb-field textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+  .fb-field .hasvalue { border-color: var(--accent); }
+  section.general-fb {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 22px;
+    margin: 24px 0;
+  }
+  section.general-fb h3 { margin: 0 0 10px; font-size: 1rem; }
+  section.general-fb .fb-field { margin-bottom: 12px; }
+  section.general-fb .fb-field textarea { min-height: 80px; }
+  .ingest-pref {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .ingest-pref label {
+    cursor: pointer;
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: var(--muted);
+    background: var(--bg-3);
+    transition: all 0.1s;
+  }
+  .ingest-pref input { display: none; }
+  .ingest-pref input:checked + label { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .submit-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-2);
+    border-top: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 50;
+    flex-wrap: wrap;
+  }
+  .submit-bar .status { font-size: 0.85rem; color: var(--muted); }
+  .submit-bar button, .submit-bar .clear {
+    font-family: inherit;
+    font-size: 0.9rem;
+    padding: 9px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg-3);
+    color: var(--fg);
+    font-weight: 500;
+  }
+  .submit-bar button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .submit-bar button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .submit-bar button:hover:not(:disabled) { filter: brightness(1.08); }
+  .reviewer-input {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 9px 12px;
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 0.85rem;
+    width: 180px;
+  }
+  .limitations, .conclusions {
+    background: var(--bg-2);
+    border-left: 3px solid var(--accent);
+    padding: 14px 20px;
+    border-radius: 4px;
+    margin: 12px 0 24px;
+  }
+  .limitations ul, .conclusions ul { margin: 6px 0 0; padding-left: 20px; }
+  .no-findings { color: var(--muted); font-style: italic; padding: 40px; text-align: center; }
+  .processed-notice {
+    background: rgba(124,183,255,0.1);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 0 0 24px;
+    font-size: 0.9rem;
+  }
+</style>
+</head>
+<body>
+
+<script id="investigation-data" type="application/json">
+/*INVESTIGATION_DATA*/
+</script>
+
+<div class="layout">
+  <aside>
+    <h1>Spotlight Review</h1>
+    <h2 id="project-title">—</h2>
+    <div class="meta" id="project-meta"></div>
+    <nav id="jump-nav"></nav>
+    <div class="meta" style="font-size:0.8rem;">
+      This is a standalone artifact. Submit feedback below to trigger
+      another investigation cycle. No server connection — feedback
+      downloads as a JSON file.
+    </div>
+  </aside>
+
+  <main>
+    <div id="processed-banner"></div>
+    <h1 class="title" id="headline">—</h1>
+    <div class="overview" id="overview"></div>
+
+    <section class="stats" id="stats"></section>
+
+    <div id="conclusions-block"></div>
+
+    <h2 class="section">Findings</h2>
+    <div id="findings"></div>
+
+    <section class="general-fb">
+      <h3>General feedback</h3>
+      <div class="fb-field">
+        <label for="general_feedback">Overall investigation feedback</label>
+        <textarea id="general_feedback" placeholder="What worked, what didn't, what concerns you overall"></textarea>
+      </div>
+      <div class="fb-field">
+        <label for="missing_angles">Missing angles</label>
+        <textarea id="missing_angles" placeholder="Angles not pursued that should be; entities / jurisdictions / sources overlooked"></textarea>
+      </div>
+      <div class="fb-field">
+        <label>What next?</label>
+        <div class="ingest-pref">
+          <input type="radio" name="ingest" id="ip-proceed" value="proceed" checked>
+          <label for="ip-proceed">Proceed to ingestion after this cycle</label>
+          <input type="radio" name="ingest" id="ip-hold" value="hold">
+          <label for="ip-hold">Hold — do not ingest yet</label>
+          <input type="radio" name="ingest" id="ip-cancel" value="cancel">
+          <label for="ip-cancel">Cancel — shelve this investigation</label>
+        </div>
+      </div>
+    </section>
+
+    <div id="limitations-block"></div>
+  </main>
+</div>
+
+<div class="submit-bar">
+  <span class="status" id="status">0 feedback items entered.</span>
+  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <input type="text" class="reviewer-input" id="reviewer" placeholder="Your name (optional)">
+    <button class="clear" id="clear-btn" type="button">Clear</button>
+    <button class="primary" id="submit-btn" type="button" disabled>Download feedback JSON</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  const rawEl = document.getElementById('investigation-data');
+  let DATA;
+  try {
+    DATA = JSON.parse(rawEl.textContent);
+  } catch (e) {
+    document.body.innerHTML = '<p style="padding:40px;color:#e36b6b;font-family:monospace;">Failed to parse investigation data. The review skill must inject a JSON payload into the <script id="investigation-data"> tag. Raw error: ' + e.message + '</p>';
+    return;
+  }
+
+  // --- Header ---
+  document.title = 'Spotlight — ' + (DATA.project || 'Investigation Review');
+  document.getElementById('project-title').textContent = DATA.project || '—';
+  const meta = [];
+  if (DATA.cycles) meta.push(DATA.cycles + ' cycle' + (DATA.cycles === 1 ? '' : 's'));
+  if (DATA.generated_at) meta.push(new Date(DATA.generated_at).toLocaleString());
+  document.getElementById('project-meta').textContent = meta.join(' · ');
+
+  document.getElementById('headline').textContent = (DATA.summary && DATA.summary.headline) || ((DATA.findings || []).length + ' findings');
+
+  // Overview
+  const overview = document.getElementById('overview');
+  if (DATA.summary && DATA.summary.overview) {
+    DATA.summary.overview.split(/\n\n+/).forEach(p => {
+      const el = document.createElement('p');
+      el.textContent = p.trim();
+      overview.appendChild(el);
+    });
+  } else {
+    overview.textContent = '(No overview available.)';
+  }
+
+  // Stats
+  const fcs = DATA.fact_check_summary || {};
+  const stats = document.getElementById('stats');
+  const statDefs = [
+    { key: 'total_claims', label: 'Total claims', klass: 'total' },
+    { key: 'verified', label: 'Verified', klass: 'verified' },
+    { key: 'unverified', label: 'Unverified', klass: 'unverified' },
+    { key: 'disputed', label: 'Disputed', klass: 'disputed' },
+    { key: 'false', label: 'False', klass: 'false' },
+  ];
+  statDefs.forEach(d => {
+    const n = fcs[d.key] != null ? fcs[d.key] : (d.key === 'total_claims' ? (DATA.findings || []).length : 0);
+    const el = document.createElement('div');
+    el.className = 'stat ' + d.klass;
+    el.innerHTML = '<div class="n">' + n + '</div><div class="label">' + d.label + '</div>';
+    stats.appendChild(el);
+  });
+
+  // Conclusions block
+  if (DATA.summary && Array.isArray(DATA.summary.conclusions) && DATA.summary.conclusions.length) {
+    const block = document.createElement('div');
+    block.className = 'conclusions';
+    block.innerHTML = '<strong>Key conclusions</strong><ul>' + DATA.summary.conclusions.map(c => '<li>' + escapeHtml(c) + '</li>').join('') + '</ul>';
+    document.getElementById('conclusions-block').appendChild(block);
+  }
+
+  // Findings
+  const findingsContainer = document.getElementById('findings');
+  const nav = document.getElementById('jump-nav');
+  const findings = DATA.findings || [];
+
+  if (findings.length === 0) {
+    findingsContainer.innerHTML = '<div class="no-findings">No findings yet.</div>';
+  }
+
+  findings.forEach(f => {
+    const card = document.createElement('article');
+    card.className = 'finding';
+    card.id = 'f-' + f.id;
+
+    const hdr = document.createElement('div');
+    hdr.className = 'finding-header';
+    hdr.innerHTML =
+      '<span class="fid">' + escapeHtml(f.id) + '</span>' +
+      (f.confidence ? '<span class="badge conf-' + f.confidence + '">' + f.confidence + '</span>' : '') +
+      (f.verdict && f.verdict.verdict ? '<span class="badge v-' + f.verdict.verdict + '">' + f.verdict.verdict + '</span>' : '') +
+      (f.perspective ? '<span class="badge perspective">' + escapeHtml(f.perspective) + '</span>' : '');
+    card.appendChild(hdr);
+
+    const claim = document.createElement('div');
+    claim.className = 'claim';
+    claim.textContent = f.claim || '(no claim text)';
+    card.appendChild(claim);
+
+    if (f.evidence) {
+      const ev = document.createElement('div');
+      ev.className = 'evidence';
+      ev.textContent = f.evidence;
+      card.appendChild(ev);
+    }
+
+    // Sources
+    if (f.sources && f.sources.length) {
+      const det = document.createElement('details');
+      det.className = 'sources';
+      det.innerHTML =
+        '<summary>' + f.sources.length + ' source' + (f.sources.length === 1 ? '' : 's') + '</summary>' +
+        '<table><thead><tr><th>Source</th><th>Type</th><th>Access</th></tr></thead><tbody>' +
+        f.sources.map(s => {
+          const url = s.url || '';
+          const arch = s.archive_url ? ' · <a href="' + escapeHtml(s.archive_url) + '" target="_blank" rel="noopener">archive</a>' : '';
+          return '<tr>' +
+            '<td><a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">' + escapeHtml(url) + '</a>' + arch + '</td>' +
+            '<td>' + escapeHtml(s.type || '—') + '</td>' +
+            '<td>' + escapeHtml(s.access_method || '—') + '</td>' +
+            '</tr>';
+        }).join('') +
+        '</tbody></table>';
+      card.appendChild(det);
+    }
+
+    // Verdict detail
+    if (f.verdict) {
+      const vd = document.createElement('div');
+      vd.className = 'verdict-detail';
+      let html = '';
+      if (f.verdict.evidence_for && f.verdict.evidence_for.length) {
+        html += '<h4>Evidence for</h4><ul>' +
+          f.verdict.evidence_for.map(e => '<li>' + escapeHtml(e.description || '—') + (e.source ? ' — <a href="' + escapeHtml(e.source) + '" target="_blank" rel="noopener">source</a>' : '') + '</li>').join('') +
+          '</ul>';
+      }
+      if (f.verdict.evidence_against && f.verdict.evidence_against.length) {
+        html += '<h4 class="against">Evidence against</h4><ul class="against">' +
+          f.verdict.evidence_against.map(e => '<li>' + escapeHtml(e.description || '—') + (e.source ? ' — <a href="' + escapeHtml(e.source) + '" target="_blank" rel="noopener">source</a>' : '') + '</li>').join('') +
+          '</ul>';
+      }
+      if (f.verdict.notes) html += '<h4>Notes</h4><p>' + escapeHtml(f.verdict.notes) + '</p>';
+      if (html) {
+        vd.innerHTML = html;
+        card.appendChild(vd);
+      }
+    }
+
+    // Feedback form per-finding
+    const fb = document.createElement('details');
+    fb.className = 'feedback';
+    fb.innerHTML =
+      '<summary>Add feedback on ' + escapeHtml(f.id) + '</summary>' +
+      '<div class="fb-grid">' +
+        '<div class="fb-field"><label>Challenge this claim</label><textarea data-fid="' + escapeHtml(f.id) + '" data-field="challenge"></textarea></div>' +
+        '<div class="fb-field"><label>Request deeper verification</label><textarea data-fid="' + escapeHtml(f.id) + '" data-field="deeper_verification"></textarea></div>' +
+        '<div class="fb-field"><label>Suggest alternative framing</label><textarea data-fid="' + escapeHtml(f.id) + '" data-field="alternative_framing"></textarea></div>' +
+      '</div>';
+    card.appendChild(fb);
+
+    findingsContainer.appendChild(card);
+
+    // Nav entry
+    const navA = document.createElement('a');
+    navA.href = '#f-' + f.id;
+    const vClass = f.verdict && f.verdict.verdict ? 'v-' + f.verdict.verdict : '';
+    const vText = f.verdict && f.verdict.verdict ? f.verdict.verdict[0].toUpperCase() : '·';
+    navA.innerHTML = '<span class="id">' + escapeHtml(f.id) + '</span>' +
+      '<span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml((f.claim || '').slice(0, 50)) + '</span>' +
+      (vClass ? '<span class="v badge ' + vClass + '">' + vText + '</span>' : '');
+    nav.appendChild(navA);
+  });
+
+  // Limitations
+  if (DATA.summary && Array.isArray(DATA.summary.limitations) && DATA.summary.limitations.length) {
+    const block = document.createElement('div');
+    block.className = 'limitations';
+    block.innerHTML = '<strong>Limitations</strong><ul>' + DATA.summary.limitations.map(l => '<li>' + escapeHtml(l) + '</li>').join('') + '</ul>';
+    document.getElementById('limitations-block').appendChild(block);
+  }
+
+  // Processed-feedback notice (if rerun after Mode B)
+  if (DATA.existing_feedback && DATA.existing_feedback.processed_at) {
+    const note = document.createElement('div');
+    note.className = 'processed-notice';
+    note.textContent = 'Previous feedback was processed on ' + new Date(DATA.existing_feedback.processed_at).toLocaleString() + '. The findings below reflect the updated state.';
+    document.getElementById('processed-banner').appendChild(note);
+  }
+
+  // --- Form state + submission ---
+  const submitBtn = document.getElementById('submit-btn');
+  const statusEl = document.getElementById('status');
+  const clearBtn = document.getElementById('clear-btn');
+
+  function countFeedback() {
+    let n = 0;
+    document.querySelectorAll('textarea[data-fid]').forEach(ta => { if (ta.value.trim()) n++; });
+    if (document.getElementById('general_feedback').value.trim()) n++;
+    if (document.getElementById('missing_angles').value.trim()) n++;
+    return n;
+  }
+
+  function updateStatus() {
+    const n = countFeedback();
+    statusEl.textContent = n + ' feedback item' + (n === 1 ? '' : 's') + ' entered.';
+    submitBtn.disabled = n === 0;
+  }
+
+  document.addEventListener('input', (e) => {
+    if (e.target.matches('textarea')) {
+      if (e.target.value.trim()) e.target.classList.add('hasvalue');
+      else e.target.classList.remove('hasvalue');
+      updateStatus();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    document.querySelectorAll('textarea').forEach(ta => { ta.value = ''; ta.classList.remove('hasvalue'); });
+    updateStatus();
+  });
+
+  submitBtn.addEventListener('click', () => {
+    const findingsFeedback = [];
+    const perFinding = {};
+    document.querySelectorAll('textarea[data-fid]').forEach(ta => {
+      const fid = ta.dataset.fid;
+      const field = ta.dataset.field;
+      const val = ta.value.trim();
+      if (val) {
+        perFinding[fid] = perFinding[fid] || { finding_id: fid, challenge: '', deeper_verification: '', alternative_framing: '' };
+        perFinding[fid][field] = val;
+      }
+    });
+    Object.values(perFinding).forEach(f => findingsFeedback.push(f));
+
+    const payload = {
+      schema_version: '1.0',
+      project: DATA.project || '',
+      submitted_at: new Date().toISOString(),
+      reviewer: document.getElementById('reviewer').value.trim() || undefined,
+      findings_feedback: findingsFeedback,
+      general_feedback: document.getElementById('general_feedback').value.trim() || undefined,
+      missing_angles: document.getElementById('missing_angles').value.trim() || undefined,
+      ingest_preference: (document.querySelector('input[name="ingest"]:checked') || {}).value || 'proceed'
+    };
+
+    // Strip undefined for clean JSON
+    Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'review-feedback.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+    statusEl.textContent = 'Downloaded review-feedback.json. Save it into cases/' + (DATA.project || '{project}') + '/data/ and re-run /spotlight.';
+    statusEl.style.color = 'var(--green)';
+  });
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  updateStatus();
+})();
+</script>
+</body>
+</html>

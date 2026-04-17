@@ -214,6 +214,14 @@ Also `write-file("cases/{project}/data/summary.json", ...)` per `schemas/summary
 
 The user approves the investigation, requests follow-up cycles (re-enter Phase 3 with targeted gap instructions), or cancels.
 
+### Review artifact (after Gate 1 approval)
+
+After the Gate 1 approval, the orchestrator invokes the `review` skill to produce `cases/{project}/review.html`. This is a self-contained HTML file — no server, no CDN — that the journalist can open in any browser to inspect findings and submit structured feedback. Feedback downloads as `review-feedback.json`; dropping it into `cases/{project}/data/` and re-running `/spotlight` triggers Mode B of the review skill, which re-spawns the investigator with feedback-targeted instructions and regenerates the HTML.
+
+This turns Gate 1 from a one-shot approval into an iterative editorial loop. Skip it to proceed straight to ingestion.
+
+See `skills/review/SKILL.md` for full details.
+
 ## Phase 5 — Ingestion
 
 After Gate 1 approval:

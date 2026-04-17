@@ -53,7 +53,7 @@ Point the runtime at an OpenAI-compatible endpoint (llama-server on 127.0.0.1:80
 - **Independent fact-checking**: fact-checker spawned per cycle, SIFT methodology, 4-verdict taxonomy
 - **6 readiness criteria**: enforced before Gate 1 — min findings, source independence, no unresolved disputes, affected perspective, document trail, gap assessment
 - **Evidence grounding**: scrape-before-cite, every source has a `local_file`, archive hierarchy Wayback → Archive.today → local
-- **9 skills**: orchestrator (spotlight), ingest, monitoring, web-archiving, content-access, osint, investigate, follow-the-money, social-media-intelligence
+- **10 skills**: orchestrator (spotlight), review (post-Gate-1 HTML feedback loop), ingest, monitoring, web-archiving, content-access, osint, investigate, follow-the-money, social-media-intelligence
 - **Feed monitoring**: pluggable sources (GDELT, RSS investigative, RSS regional, GDACS, ACLED) with preflight checks
 - **Knowledge vault ingestion**: Obsidian-native (wikilinks) with directory fallback; atomic registry updates; lock-file concurrency
 - **Sensitive mode**: strips `fetch`/`search` from agents; investigation runs local-only

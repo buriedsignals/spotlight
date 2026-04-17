@@ -1,6 +1,6 @@
 # Spotlight — Documentation
 
-Spotlight is a runtime-agnostic OSINT investigation system — 9 skills, 2 agents, 5 schemas, 5 feed sources. Point your agent runtime (pi, Hermes, Goose, Codex, Gemini, or any OpenAI-compatible harness) at this repo and run full-fidelity investigations end-to-end.
+Spotlight is a runtime-agnostic OSINT investigation system — 10 skills, 2 agents, 5 schemas, 5 feed sources. Point your agent runtime (pi, Hermes, Goose, Codex, Gemini, or any OpenAI-compatible harness) at this repo and run full-fidelity investigations end-to-end.
 
 This `docs/` directory is the operator manual. `AGENTS.md` at the repo root is the machine-readable contract your runtime loads at startup.
 
