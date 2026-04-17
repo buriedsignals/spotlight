@@ -19,6 +19,28 @@ from pathlib import Path
 from typing import Callable
 
 
+def _load_dotenv(root: Path) -> None:
+    """Load repo-root .env into os.environ without requiring python-dotenv.
+
+    Uses a minimal parser that handles KEY=VALUE and KEY='VALUE' lines,
+    skipping comments and blanks. Existing env vars are NOT overwritten
+    (same semantics as `set -a; source .env; set +a` with pre-existing exports).
+    """
+    env_path = root / ".env"
+    if not env_path.is_file():
+        return
+    with open(env_path) as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip("'\"")
+            if key and key not in os.environ:
+                os.environ[key] = val
+
+
 def discover_manifests(root: Path) -> list[dict]:
     """Scan `root` for subdirectories containing manifest.json. Returns
     each parsed manifest with an injected `_dir` field pointing at the
@@ -130,6 +152,16 @@ def run_preflight(
     description: str = "Spotlight preflight",
 ) -> None:
     """Full preflight entry point — argparse, discovery, reports, exit."""
+    # Auto-load .env from repo root so preflight is self-contained regardless
+    # of whether the caller sourced .env in the shell beforehand.
+    # Walk up from `root` until we find a .env file or exhaust the tree.
+    _dotenv_dir = root.resolve()
+    while _dotenv_dir != _dotenv_dir.parent:
+        if (_dotenv_dir / ".env").is_file():
+            break
+        _dotenv_dir = _dotenv_dir.parent
+    _load_dotenv(_dotenv_dir)
+
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--smoke-test", action="store_true",
                         help="Also run a minimal probe against each entry")
