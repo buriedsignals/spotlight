@@ -861,7 +861,7 @@
     p('');
     p('step "Spotlight repo"');
     p('if [ -d "$SPOTLIGHT_DIR/.git" ]; then');
-    p('  spin "Updating Spotlight at $SPOTLIGHT_DIR" git -C "$SPOTLIGHT_DIR" pull --ff-only');
+    p('  spin "Updating Spotlight at $SPOTLIGHT_DIR" bash -c \'git -C "$SPOTLIGHT_DIR" fetch origin && git -C "$SPOTLIGHT_DIR" reset --hard origin/main\'');
     p('else');
     p('  spin "Cloning Spotlight to $SPOTLIGHT_DIR" git clone "$REPO_URL" "$SPOTLIGHT_DIR"');
     p('fi');
