@@ -77,13 +77,23 @@ Add a custom provider in pi's `models.json` to route inference to your own OpenA
     "local-journalist": {
       "baseURL": "http://127.0.0.1:8081/v1",
       "apiKey": "unused",
-      "models": ["gemma4-e4b-journalist"]
+      "models": ["gemma-4-26B-A4B-it"]
     }
   }
 }
 ```
 
-Then `/model local-journalist/gemma4-e4b-journalist` in pi, or bind it as default. This works for any local OpenAI-compatible server: llama-server (llama.cpp), Ollama (add `"baseURL": "http://127.0.0.1:11434/v1"`), vLLM, or a hosted Exoscale endpoint.
+Then `/model local-journalist/gemma-4-26B-A4B-it` in pi, or bind it as default. This works for any local OpenAI-compatible server: llama-server (llama.cpp), Ollama (add `"baseURL": "http://127.0.0.1:11434/v1"`), vLLM, or a hosted Exoscale endpoint.
+
+**Current Spotlight operator model**: `unsloth/gemma-4-26B-A4B-it-GGUF` on Hugging Face (base Gemma 4 26B A4B — we evaluated a journalism fine-tune but the base outperformed it on tool-use + document OCR). Multimodal (text + vision) VLM MoE — 26B total / 4B active. Native vision for scanned court documents, satellite imagery, and screenshots. Recommended quants:
+- `gemma-4-26B-A4B-it-UD-Q6_K_XL.gguf` (~22 GB) + `mmproj-BF16.gguf` (~1.2 GB) — 48GB+ Macs
+- `gemma-4-26B-A4B-it-UD-Q4_K_M.gguf` (~18 GB, imatrix-calibrated by Unsloth) + `mmproj-BF16.gguf` — 24GB+ Macs
+
+Serve via llama-server:
+```bash
+llama-server -m gemma-4-26B-A4B-it-UD-Q6_K_XL.gguf --mmproj mmproj-BF16.gguf \
+  --port 8081 --ctx-size 16384 --n-gpu-layers 999
+```
 
 ### Sensitive mode
 
@@ -294,7 +304,7 @@ preferred_model:
   claude: opus
   gemini: gemini-2.5-pro
   gpt: gpt-4o
-  local: qwen3p6-plus   # or gemma4-e4b-journalist, depending on fine-tune
+  local: gemma-4-26B-A4B-it   # current ship — upstream base VLM with native vision
 ```
 
 The adapter picks the `local` entry when the active provider is the local endpoint. If the fine-tune underperforms on methodology design (observed with sub-10B models per the sovereign-inference spec), the orchestrator warns the user and offers to route just the investigator PLANNING step to a stronger hosted model while keeping EXECUTION and fact-checking on the local fine-tune.

@@ -354,13 +354,13 @@
           The installer will use <strong>pi</strong> as the agent harness (<a class="link" href="https://pi.dev" target="_blank">pi.dev</a>, MIT license) and <strong>Ollama</strong> to serve the model locally on <code>127.0.0.1:11434</code>. Both install with one command.
         </p>
 
-        <input type="hidden" id="model_repo" value="unsloth/Qwen3.6-35B-A3B-GGUF">
+        <input type="hidden" id="model_repo" value="unsloth/gemma-4-26B-A4B-it-GGUF">
 
         <div class="model-info">
-          <div class="stat"><strong>Qwen3.6-35B-A3B Q4</strong>MoE — 35B total / 3B active</div>
-          <div class="stat"><strong>~21 GB</strong>disk</div>
-          <div class="stat"><strong>~24 GB</strong>RAM at runtime</div>
-          <div class="stat"><strong>32 GB+</strong>recommended unified memory</div>
+          <div class="stat"><strong>Gemma 4 26B A4B</strong>Multimodal MoE — 26B total / 4B active, native vision</div>
+          <div class="stat"><strong>~18 GB</strong>disk (Q4_K_M)</div>
+          <div class="stat"><strong>~22 GB</strong>RAM at runtime</div>
+          <div class="stat"><strong>24 GB+</strong>recommended unified memory</div>
         </div>
 
         <div style="margin-top: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
@@ -885,12 +885,14 @@
       p('  printf "%s✓%s Ollama already installed\\n" "$_c_green" "$_c_reset"');
       p('fi');
       p('');
-      p('step "Journalism model download (~21 GB)"');
+      p('step "Gemma 4 26B A4B model download (~18 GB — Q4_K_M + mmproj, fits 24 GB+ Macs)"');
       p('echo "Ollama will stream download progress below — grab a coffee, 5–15 min on a typical connection."');
+      p('echo "  (power users on 48GB+ Macs: override with Q6_K_XL tag for +1% quality — see docs.)"');
       p('echo ""');
-      p('ollama pull ' + shellEscape('hf.co/' + cfg.model_repo) + ' || {');
-      p('  printf "%s⚠%s Model pull failed. The fine-tune may not be published yet at hf.co/' + cfg.model_repo + '.\\n" "$_c_red" "$_c_reset"');
-      p('  printf "   Re-run once live: ollama pull hf.co/<repo>\\n"');
+      p('# Explicit Q4_K_M tag so Ollama picks the right variant from unsloth\'s ladder.');
+      p('ollama pull ' + shellEscape('hf.co/' + cfg.model_repo + ':Q4_K_M') + ' || {');
+      p('  printf "%s⚠%s Model pull failed. Verify hf.co/' + cfg.model_repo + ' is reachable.\\n" "$_c_red" "$_c_reset"');
+      p('  printf "   Re-run: ollama pull hf.co/' + cfg.model_repo + ':Q4_K_M\\n"');
       p('}');
       p('');
       p('if ! command -v pi >/dev/null 2>&1; then');

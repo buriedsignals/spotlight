@@ -59,8 +59,8 @@ preferred_model:
   claude: opus
   gemini: gemini-2.5-pro
   gpt: gpt-4o
-  local: qwen3p6-plus
-  fallback_note: Investigation quality degrades significantly on lighter models
+  local: gemma-4-26B-A4B-it
+  fallback_note: Investigation quality degrades significantly on lighter models. Local ship — unsloth/gemma-4-26B-A4B-it-GGUF (Q4_K_M for 24GB+ Macs, Q6_K_XL for 48GB+). Native vision for scanned docs + satellite imagery.
 vault_context:
   enabled: true
   query_on_load: true
@@ -95,8 +95,8 @@ preferred_model:
   claude: opus
   gemini: gemini-2.5-pro
   gpt: gpt-4o
-  local: qwen3p6-plus
-  fallback_note: Fact-checking accuracy degrades significantly on lighter models
+  local: gemma-4-26B-A4B-it
+  fallback_note: Fact-checking accuracy degrades significantly on lighter models. Local ship — unsloth/gemma-4-26B-A4B-it-GGUF (Q4_K_M for 24GB+ Macs, Q6_K_XL for 48GB+). Native vision for scanned docs + satellite imagery.
 vault_context:
   enabled: true
   query_on_load: true
