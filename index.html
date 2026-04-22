@@ -3091,6 +3091,15 @@
           [ 1.6 - MINI_DX, 0, -MINI_DZ], [ 1.6 + MINI_DX, 0, -MINI_DZ],
           [ 1.6 - MINI_DX, 0,  MINI_DZ], [ 1.6 + MINI_DX, 0,  MINI_DZ],
         ];
+        // 'drift' (#integrations — "Plugs into your stack"): 6 cubes in a
+        // 3×2 layout matching the 6-card grid. One cube per integration.
+        const DRIFT_N = 6;
+        const DRIFT_POS = [
+          // Top row (y=+0.7) — cards 1, 2, 3
+          [-2.2, 0.7, 0], [ 0, 0.7, 0], [ 2.2, 0.7, 0],
+          // Bottom row (y=-0.7) — cards 4, 5, 6
+          [-2.2,-0.7, 0], [ 0,-0.7, 0], [ 2.2,-0.7, 0],
+        ];
         for (let i = 0; i < N_CELLS; i++) {
           const s = cubeState[i];
           let restX, restY, restZ;
@@ -3108,6 +3117,10 @@
             ringPos = true;
           } else if (mood === 'split' && i < SPLIT_N) {
             const p = SPLIT_POS[i];
+            restX = p[0]; restY = p[1]; restZ = p[2];
+            customPos = true;
+          } else if (mood === 'drift' && i < DRIFT_N) {
+            const p = DRIFT_POS[i];
             restX = p[0]; restY = p[1]; restZ = p[2];
             customPos = true;
           } else {
@@ -3366,8 +3379,10 @@
               for (let i = 0; i < N_CELLS; i++) targetActivity[i] = i < 10 ? 1 : 0;
             } else if (mood === 'split') {
               for (let i = 0; i < N_CELLS; i++) targetActivity[i] = i < 8 ? 1 : 0;
+            } else if (mood === 'drift') {
+              for (let i = 0; i < N_CELLS; i++) targetActivity[i] = i < 6 ? 1 : 0;
             } else {
-              // calm (footer), drift, or any other mood — full hero grid
+              // calm (footer) or any other mood — full hero grid
               for (let i = 0; i < N_CELLS; i++) targetActivity[i] = 1;
             }
           }
