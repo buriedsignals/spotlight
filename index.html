@@ -3066,9 +3066,9 @@
         const step = Math.max(0, Math.min(4, window.__fiveThingsStep | 0));
         const layout = (mood === 'aligned') ? STEP_LAYOUTS[step] : null;
         const tSec = performance.now() * 0.001;
-        const RING_N = 10;
-        const RING_R = 1.9;
-        const RING_ANGV = 0.25;   // rad/s — orbital speed
+        const RING_N = 8;
+        const RING_R = 2.6;
+        const RING_ANGV = 0.12;   // rad/s — slower, cleaner
         for (let i = 0; i < N_CELLS; i++) {
           const s = cubeState[i];
           let restX, restY, restZ;
@@ -3337,7 +3337,7 @@
           // 'sparse' lights the first 10 to populate the orbital ring.
           if (mood !== 'aligned') {
             if (mood === 'sparse') {
-              for (let i = 0; i < N_CELLS; i++) targetActivity[i] = i < 10 ? 1 : 0;
+              for (let i = 0; i < N_CELLS; i++) targetActivity[i] = i < 8 ? 1 : 0;
             } else {
               const activityMix = mood === 'calm' ? 0.5 : 1.0;
               for (let i = 0; i < N_CELLS; i++) targetActivity[i] = (i / N_CELLS) < activityMix ? 1 : 0;
@@ -3510,8 +3510,8 @@
 
         applySlot(slot);
 
-        // Floor grid belongs to the hero only.
-        grid.visible = (slot.name === 'hero');
+        // Floor grid only for chaos mood (hero). Other moods = clean backdrop.
+        grid.visible = (window.__sceneMood || 'chaos') === 'chaos';
 
         // Wire colour adapts to the section background — cream when the
         // background behind the slot is dark (hero, hovered card), ink
@@ -3614,18 +3614,19 @@
   })();
 
   // ── Canvas pin — the fixed WebGL canvas should not sit behind the footer's
-  // huge "Lead the story." display. Once the top of that element reaches the
-  // top of the viewport, pin the canvas to that world position so further
-  // scrolling glides it upward off-screen.
+  // huge "Lead the story." display. Clip the bottom of the canvas at the
+  // element's top position every frame. As the user scrolls, the element
+  // rises into view and the clip follows — canvas "stops" at the footer
+  // boundary without ever bleeding underneath the huge text.
   (function() {
     const canvas = document.getElementById('global-canvas');
     const stopEl = document.getElementById('footer-huge');
     if (!canvas || !stopEl) return;
     function update() {
-      const stopTopAbs = stopEl.getBoundingClientRect().top + window.scrollY;
-      const viewportBottom = window.scrollY + window.innerHeight;
-      const delta = Math.max(0, viewportBottom - stopTopAbs);
-      canvas.style.transform = delta > 0 ? `translateY(${-delta}px)` : '';
+      const vh = window.innerHeight;
+      const stopY = stopEl.getBoundingClientRect().top;          // viewport y
+      const clipBottom = Math.max(0, vh - Math.max(0, stopY));
+      canvas.style.clipPath = clipBottom > 0 ? `inset(0 0 ${clipBottom}px 0)` : '';
     }
     window.addEventListener('scroll', update, { passive: true });
     window.addEventListener('resize', update, { passive: true });
