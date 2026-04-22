@@ -75,19 +75,34 @@
   nav.topnav .links a { transition: color 0.2s ease; }
   nav.topnav .links a:hover { color: var(--accent-warm); }
 
+  /* ── GLOBAL SCENE CANVAS ──────────────────────────────────
+     One WebGL canvas for the whole page. It sits fixed behind all content
+     and is rendered via scissor + viewport into each .scene-slot element. */
+  #global-canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    pointer-events: none;
+    z-index: 0;
+  }
+  #global-canvas canvas { display: block; width: 100% !important; height: 100% !important; }
+
   /* ── HERO ─────────────────────────────────────────────── */
   #hero {
     position: relative;
     height: 100vh;
     min-height: 640px;
-    background: var(--ink);
+    /* No background — the global canvas shows through. Sections below keep
+       their opaque paper bg which naturally covers the canvas outside hero. */
     overflow: hidden;
+    z-index: 1;
   }
+  /* #hero-canvas is now a slot placeholder — no canvas inside, just used
+     to measure the hero region for scissor rendering. */
   #hero-canvas {
     position: absolute; inset: 0;
     width: 100%; height: 100%;
   }
-  #hero-canvas canvas { display: block; width: 100% !important; height: 100% !important; }
 
   .hero-gradient {
     position: absolute; inset: 0;
@@ -987,6 +1002,10 @@
 </head>
 <body>
 
+<!-- Global scene canvas — fixed, full-viewport. Three.js appends its <canvas>
+     here; the scene is rendered into each .scene-slot via scissor + viewport. -->
+<div id="global-canvas" aria-hidden="true"></div>
+
 <nav class="topnav" id="topnav">
   <a href="#" class="brand">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
@@ -1329,29 +1348,68 @@
   // - An 18-cell activity texture gates per-cell visibility
   // ————————————————————————————————————————————————
   (function heroCubesGPU() {
-    const container = document.getElementById('hero-canvas');
-    if (!container || !THREE) return;
+    // Global canvas — one WebGL context shared across every .scene-slot on
+    // the page. The slot system (below) drives scissor + viewport per slot.
+    const container = document.getElementById('global-canvas');
+    // Hero slot — the DOM region through which the scene is visible at the
+    // top of the page. Kept as a regular div; we only measure its bounds.
+    const heroSlot  = document.getElementById('hero-canvas');
+    if (!container || !heroSlot || !THREE) return;
     const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     // —— Scene ——
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x000000);
+    // Transparent background — sections without a slot show their own bg,
+    // slots render their scissor region on top. Alpha-enabled renderer below.
+    scene.background = null;
 
     const camera = new THREE.PerspectiveCamera(
       38,
-      container.clientWidth / container.clientHeight,
+      heroSlot.clientWidth / heroSlot.clientHeight,
       0.1,
       80
     );
     camera.position.set(5.2, 2.8, 5.8);
     camera.lookAt(0, 0.1, 0);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x000000, 0);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
     container.appendChild(renderer.domElement);
+
+    // —— Slot registry + scissor helper ——
+    // Each slot = { el: DOM element, camera: THREE.PerspectiveCamera, visible: bool }
+    // Every frame, for each visible slot: compute CSS-pixel bounds, set scissor
+    // + viewport, render into that region. Bounds outside the viewport clip
+    // automatically. Fixed global canvas → bounds are in CSS pixels relative
+    // to the viewport top-left; WebGL scissor origin is bottom-left, so flip Y.
+    const slots = [{ el: heroSlot, camera, visible: true }];
+
+    // Pause rendering for a slot when its DOM region leaves the viewport.
+    const slotObserver = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        const slot = slots.find(s => s.el === e.target);
+        if (slot) slot.visible = e.isIntersecting;
+      }
+    }, { threshold: 0 });
+    slots.forEach(s => slotObserver.observe(s.el));
+
+    function applySlot(slot) {
+      const rect = slot.el.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const x = rect.left;
+      const y = vh - rect.bottom;
+      const w = rect.width;
+      const h = rect.height;
+      renderer.setViewport(x, y, w, h);
+      renderer.setScissor(x, y, w, h);
+      renderer.setScissorTest(true);
+      slot.camera.aspect = (w > 0 && h > 0) ? (w / h) : 1;
+      slot.camera.updateProjectionMatrix();
+    }
 
     // PMREM environment map — (kept as scene.environment for any future use)
     const pmrem = new THREE.PMREMGenerator(renderer);
@@ -1371,8 +1429,8 @@
     function resizeTTarget() {
       const dpr = Math.min(window.devicePixelRatio, 1.5);
       tTarget.setSize(
-        Math.max(2, Math.floor(container.clientWidth  * dpr)),
-        Math.max(2, Math.floor(container.clientHeight * dpr))
+        Math.max(2, Math.floor(window.innerWidth  * dpr)),
+        Math.max(2, Math.floor(window.innerHeight * dpr))
       );
     }
 
@@ -2983,13 +3041,10 @@
       rotsTex.needsUpdate = true;
     }
 
-    // —— Resize ——
+    // —— Resize —— global canvas tracks the viewport; per-slot aspect is
+    // applied per-frame from each slot's measured bounds.
     function onResize() {
-      const w = container.clientWidth;
-      const h = container.clientHeight;
-      renderer.setSize(w, h);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
       resizeTTarget();
     }
     window.addEventListener('resize', onResize);
@@ -3012,6 +3067,19 @@
 
     function animate() {
       if (!running) return;
+      requestAnimationFrame(animate);
+
+      // Always clear the canvas to transparent at the start of each frame —
+      // even when all slots are offscreen — so stale pixels don't bleed onto
+      // other sections as the user scrolls past the hero.
+      renderer.setScissorTest(false);
+      renderer.setRenderTarget(null);
+      renderer.clear();
+
+      // Skip the heavy work (compute, render) when no slot is on-screen.
+      const anyVisible = slots.some(s => s.visible);
+      if (!anyVisible) return;
+
       const dt = params.paused ? 0 : Math.min(clock.getDelta(), 0.05);
       t += dt;
 
@@ -3058,19 +3126,26 @@
       camera.position.y = Math.sin(polar) * radius;
       camera.lookAt(0, 0.1, 0);
 
-      // Refractive glass = 2-pass. First render scene (minus glass) to tTarget,
-      // then render normally with glass shader sampling that buffer.
-      if (params.glassEnabled) {
-        for (let i = 0; i < N_CELLS; i++) glasses[i].visible = false;
-        renderer.setRenderTarget(tTarget);
-        renderer.render(scene, camera);
-        for (let i = 0; i < N_CELLS; i++) glasses[i].visible = true;
-        renderer.setRenderTarget(null);
+      // —— Per-slot render ————————————————————————————————————————————
+      // For each visible slot: set scissor + viewport, then do the two-pass
+      // glass render inside that region.
+      for (let s = 0; s < slots.length; s++) {
+        const slot = slots[s];
+        if (!slot.visible) continue;
+
+        applySlot(slot);
+
+        // Two-pass: tTarget (scene without glass) → main canvas (with glass).
+        if (params.glassEnabled) {
+          for (let i = 0; i < N_CELLS; i++) glasses[i].visible = false;
+          renderer.setRenderTarget(tTarget);
+          renderer.clear();
+          renderer.render(scene, slot.camera);
+          for (let i = 0; i < N_CELLS; i++) glasses[i].visible = true;
+          renderer.setRenderTarget(null);
+        }
+        renderer.render(scene, slot.camera);
       }
-
-      renderer.render(scene, camera);
-
-      requestAnimationFrame(animate);
     }
 
     onResize();
