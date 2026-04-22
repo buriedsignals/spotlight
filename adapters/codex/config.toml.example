@@ -1,0 +1,41 @@
+# Codex CLI profile config for Spotlight
+# Copy to ~/.codex/config.toml and adjust per your OpenAI plan.
+#
+# Profiles:
+#   orchestrator — top-level skill (Phase 0 → Gate 1)
+#   investigator — PLANNING + EXECUTION (spawned by orchestrator)
+#   fact-checker — verification after each investigator cycle
+#
+# For sensitive (local-only) mode, DON'T use a custom model_provider here —
+# Codex 0.122 deprecated `wire_api = "chat"` and requires `"responses"`, which
+# Ollama and llama-server do not speak. Use the native `--oss` flag instead:
+#
+#   codex exec --oss --local-provider ollama --model gemma-4-26B-A4B-it …
+#
+# See docs/runtimes.md#sensitive-mode-and-local-inference for the full pattern.
+
+[profiles.orchestrator]
+model = "gpt-5.4"
+# Orchestrator does not spawn beyond iteration_limit in the agent manifest
+# but runs the full pipeline across multiple agent spawns.
+max_output_tokens = 16384
+approval_policy = "never"
+
+[profiles.investigator]
+# iteration_limit: 80 from agents/investigator.md
+model = "gpt-5.4"
+max_output_tokens = 32768
+approval_policy = "never"
+
+[profiles.fact-checker]
+# iteration_limit: 50 from agents/fact-checker.md
+# Independent verification — MUST remain on a strong model.
+model = "gpt-5.4"
+max_output_tokens = 16384
+approval_policy = "never"
+
+# Global defaults — apply when a profile does not override.
+[sandbox]
+# On bare-metal host: keep "read-only" by default; skills widen per-operation.
+# In Docker: pass `--dangerously-bypass-approvals-and-sandbox` at launch instead.
+mode = "read-only"

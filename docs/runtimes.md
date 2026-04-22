@@ -69,21 +69,32 @@ For our fact-checker/investigator pattern, option 3 (SDK harness + sub-pi calls)
 
 ### Local fine-tune via pi
 
-Add a custom provider in pi's `models.json` to route inference to your own OpenAI-compatible endpoint:
+pi v0.68 does **not** accept arbitrary OpenAI-compatible providers via `~/.pi/agent/models.json` — the file only extends known providers (OpenAI, Anthropic, Google). To route inference to a local server (llama-server, LM Studio, Ollama, vLLM, hosted Exoscale), write a pi extension that calls `pi.registerProvider("local", { baseUrl, api: "openai-completions", models: [...] })`. Reference: `docs/custom-provider.md` in the pi package, plus the worked example at `examples/extensions/custom-provider-qwen-cli/`.
 
-```json
-{
-  "providers": {
-    "local-journalist": {
-      "baseURL": "http://127.0.0.1:8081/v1",
-      "apiKey": "unused",
-      "models": ["gemma-4-26B-A4B-it"]
-    }
-  }
+Minimal extension (TypeScript) — ship as a standalone npm package or drop under `~/.pi/agent/extensions/`:
+
+```typescript
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+
+export default function (pi: ExtensionAPI) {
+  pi.registerProvider("local", {
+    baseUrl: "http://127.0.0.1:11434/v1",    // Ollama (or 8081 for llama-server)
+    apiKey: "unused",
+    api: "openai-completions",
+    models: [{
+      id: "gemma-4-26B-A4B-it",
+      name: "Gemma 4 26B A4B (local)",
+      reasoning: false,
+      input: ["text", "image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 16384,
+      maxTokens: 4096
+    }]
+  });
 }
 ```
 
-Then `/model local-journalist/gemma-4-26B-A4B-it` in pi, or bind it as default. This works for any local OpenAI-compatible server: llama-server (llama.cpp), Ollama (add `"baseURL": "http://127.0.0.1:11434/v1"`), vLLM, or a hosted Exoscale endpoint.
+Then `pi --provider local --model gemma-4-26B-A4B-it`. This pattern works for any OpenAI-compatible server.
 
 **Current Spotlight operator model**: `unsloth/gemma-4-26B-A4B-it-GGUF` on Hugging Face (base Gemma 4 26B A4B — we evaluated a journalism fine-tune but the base outperformed it on tool-use + document OCR). Multimodal (text + vision) VLM MoE — 26B total / 4B active. Native vision for scanned court documents, satellite imagery, and screenshots. Recommended quants:
 - `gemma-4-26B-A4B-it-UD-Q6_K_XL.gguf` (~22 GB) + `mmproj-BF16.gguf` (~1.2 GB) — 48GB+ Macs
@@ -244,19 +255,96 @@ Goose supports per-session provider routing. When `sensitive: true`:
 
 ## Codex CLI
 
-**What it is:** OpenAI's CLI agent. Reads `AGENTS.md` natively at session start (same convention as pi). Currently not installed on this machine — this section is forward-looking.
+**What it is:** OpenAI's CLI agent (`@openai/codex`, tested on v0.122.0). Reads `AGENTS.md` natively at session start (same convention as pi). Auth via ChatGPT Plus/Pro/Team, Codex free-tier login, or an OpenAI API key. A quick-start adapter bundle lives in `adapters/codex/`.
 
-### Loading
+### Installing
 
-Point Codex at the repo root as the working directory. `AGENTS.md` is loaded automatically per Codex's convention.
+```bash
+npm install -g @openai/codex
+codex login   # OAuth via ChatGPT OR set OPENAI_API_KEY
+```
+
+Point Codex at the repo root as its working directory. `AGENTS.md` is loaded automatically.
 
 ### Verb bindings
 
-Map the 13 verbs to Codex's native tool set (similar shape to pi). Document concrete mappings here once Codex is installed and its tool names confirmed.
+| Verb | Codex tool |
+|---|---|
+| `read-file`, `list-files`, `grep-files` | native file tools (no config needed) |
+| `write-file`, `edit-file` | native edit tools — require `--sandbox workspace-write` or higher |
+| `execute-shell` | `bash -lc` tool — require `--sandbox workspace-write` or higher |
+| `fetch`, `search` | `execute-shell` wrapping the `firecrawl` CLI |
+| `query-vault` | `execute-shell` wrapping `BUN_INSTALL="" qmd query` |
+| `vault-write` | `execute-shell` wrapping the `obsidian` CLI |
+| `invoke-skill` | natively loads `skills/{skill}/SKILL.md` when referenced |
+| `spawn-agent`, `wait-agent` | `execute-shell` spawning a second `codex exec` subprocess — see below |
 
-### Sub-agents
+### Sandbox mode
 
-Codex has first-class multi-agent primitives (per OpenAI's published specs). Use them to satisfy `spawn-agent` / `wait-agent`.
+Codex's built-in bubblewrap sandbox **will not start inside a Docker container** (unprivileged user-namespace restrictions). When running containerised — the recommended isolation — pass:
+
+```
+codex exec --dangerously-bypass-approvals-and-sandbox …
+```
+
+The flag is explicitly designed for "externally sandboxed" environments (Codex CLI help). Do **not** use it on bare-metal macOS/Linux — on the host, keep the default read-only sandbox and widen with `-s workspace-write` only when writes are needed.
+
+### Sub-agents — `codex exec` subprocess pattern
+
+Codex 0.122 has no first-class multi-agent primitive. Spotlight relies on isolation between `investigator` and `fact-checker` for the verification guarantee, so we run the sub-agent as a **separate `codex exec` subprocess** — each call is a fresh conversation with its own context window. The orchestrator:
+
+1. Reads the target agent prompt (e.g. `agents/fact-checker.md`) + the skill instructions
+2. Shells out via `execute-shell`:
+
+```bash
+codex exec \
+  --ephemeral \
+  --skip-git-repo-check \
+  --dangerously-bypass-approvals-and-sandbox \
+  --profile fact-checker \
+  --output-last-message /tmp/fact-checker.out \
+  "MODE: VERIFY
+PROJECT: {project}
+VAULT_PATH: {vault}
+CYCLE: {cycle}
+
+<contents of agents/fact-checker.md>"
+```
+
+3. Reads the sub-agent's side-effects from the filesystem (`cases/{project}/data/fact-check.json`) — the contract is file-based, not stdout.
+
+`--ephemeral` keeps the sub-agent session off disk; `--profile fact-checker` loads the per-agent model + iteration budget from `~/.codex/config.toml` (see `adapters/codex/config.toml.example`). Iteration limits from the agent manifest (`iteration_limit: 80` investigator, `50` fact-checker) map to Codex's `max_output_tokens` + turn budget in the profile.
+
+### Sensitive mode and local inference
+
+Codex 0.122 ships a native `--oss` flag that detects Ollama on `127.0.0.1:11434` and LM Studio on `:1234`. Use it instead of a custom `[model_providers.*]` entry — that route is broken in 0.122 because Codex now requires `wire_api = "responses"` (see [codex#7782](https://github.com/openai/codex/discussions/7782)) which Ollama and llama-server do not speak.
+
+```bash
+SPOTLIGHT_SENSITIVE=true codex exec \
+  --oss \
+  --local-provider ollama \
+  --model gemma-4-26B-A4B-it \
+  --skip-git-repo-check \
+  "<prompt>"
+```
+
+For defence-in-depth, wrap `firecrawl` in a shell alias that refuses to run when `SPOTLIGHT_SENSITIVE=true` — otherwise the orchestrator can still fetch external resources via `execute-shell`.
+
+When Ollama runs in a separate container, share its network namespace so Codex sees it as localhost:
+
+```bash
+docker run --network container:ollama-spotlight … codex exec --oss …
+```
+
+See `adapters/codex/README.md` for the full Docker wiring.
+
+### Known limitations (v0.122)
+
+- Rate-limited ChatGPT free tier will **not** complete a full investigation (expect ~10-20 turns before the daily cap). Use Plus/Pro or API for production.
+- Model default is `gpt-5.4` under ChatGPT login; override per profile.
+- `spawn-agent` via subprocess shares the OAuth token with the parent — no per-agent auth isolation. Rate limits apply to the sum of orchestrator + sub-agents.
+- Tool-use falls apart on small models (< ~14B). `llama3.2:3b` technically advertises tools but will not call them — it answers "I don't see the file" instead of invoking `read_file`. Always target Gemma 4 26B A4B class or better for real runs.
+- `[model_providers.*]` with `wire_api = "chat"` is rejected — use `--oss` for all local inference.
 
 ---
 
