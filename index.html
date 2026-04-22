@@ -1694,48 +1694,52 @@
       }
       return out;
     }
-    const LETTER_COL = 0.85, LETTER_ROW = 0.55;
-    const LETTER_L = _letterPositions([
-      [1,0,0],
-      [1,0,0],
-      [1,0,0],
-      [1,0,0],
-      [1,1,1],
-    ], LETTER_COL, LETTER_ROW);
-    const LETTER_C = _letterPositions([
-      [1,1,1],
-      [1,0,0],
-      [1,0,0],
-      [1,0,0],
-      [1,1,1],
-    ], LETTER_COL, LETTER_ROW);
-    const LETTER_F = _letterPositions([
-      [1,1,1],
-      [1,0,0],
-      [1,1,0],
-      [1,0,0],
-      [1,0,0],
-    ], LETTER_COL, LETTER_ROW);
-    const LETTER_R = _letterPositions([
-      [1,1,0],
-      [1,0,1],
-      [1,1,0],
-      [1,0,1],
-      [1,0,1],
-    ], LETTER_COL, LETTER_ROW);
-    const LETTER_V = _letterPositions([
-      [1,0,1],
-      [1,0,1],
-      [1,0,1],
-      [0,1,0],
-      [0,1,0],
-    ], LETTER_COL, LETTER_ROW);
+    // Step shapes — each form illustrates the step's action verb.
+    //   Lead      → arrow    (→, the lead enters)
+    //   Cycles    → loop     (closed 6-cube ring)
+    //   Findings  → pyramid  (3 base + apex, anchored)
+    //   Review    → check    (checkmark, validation)
+    //   Vault     → grid     (full hero cluster)
+    const SHAPE_ARROW = [
+      // Shaft (3 cubes horizontal)
+      new THREE.Vector3(-1.4, 0, 0),
+      new THREE.Vector3(-0.5, 0, 0),
+      new THREE.Vector3( 0.4, 0, 0),
+      // Arrowhead (V angling back from tip)
+      new THREE.Vector3( 1.3, 0, 0),
+      new THREE.Vector3( 0.7, 0.6, 0),
+      new THREE.Vector3( 0.7,-0.6, 0),
+    ];
+    const SHAPE_LOOP = (() => {
+      const out = [];
+      const N = 6, R = 1.1;
+      for (let i = 0; i < N; i++) {
+        const a = (i / N) * Math.PI * 2;
+        out.push(new THREE.Vector3(Math.cos(a) * R, Math.sin(a) * R, 0));
+      }
+      return out;
+    })();
+    const SHAPE_PYRAMID = [
+      // 3-cube triangular base + apex
+      new THREE.Vector3(-0.9, -0.5,  0.6),
+      new THREE.Vector3( 0.9, -0.5,  0.6),
+      new THREE.Vector3( 0.0, -0.5, -1.0),
+      new THREE.Vector3( 0.0,  0.8,  0.0),
+    ];
+    const SHAPE_CHECK = [
+      // Checkmark ✓ — short descending arm, long ascending arm
+      new THREE.Vector3(-1.0,  0.2, 0),
+      new THREE.Vector3(-0.5, -0.3, 0),
+      new THREE.Vector3( 0.0, -0.1, 0),
+      new THREE.Vector3( 0.5,  0.5, 0),
+      new THREE.Vector3( 1.0,  1.0, 0),
+    ];
     const STEP_LAYOUTS = [
-      { count: LETTER_L.length, positions: LETTER_L }, // Lead
-      { count: LETTER_C.length, positions: LETTER_C }, // Cycles
-      { count: LETTER_F.length, positions: LETTER_F }, // Findings
-      { count: LETTER_R.length, positions: LETTER_R }, // Review
-      { count: LETTER_V.length, positions: LETTER_V }, // Vault
+      { count: SHAPE_ARROW.length,   positions: SHAPE_ARROW   }, // Lead
+      { count: SHAPE_LOOP.length,    positions: SHAPE_LOOP    }, // Cycles
+      { count: SHAPE_PYRAMID.length, positions: SHAPE_PYRAMID }, // Findings
+      { count: SHAPE_CHECK.length,   positions: SHAPE_CHECK   }, // Review
+      { useGrid: true },                                          // Vault
     ];
 
     const cellCentersTex = new THREE.DataTexture(
