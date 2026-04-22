@@ -3069,29 +3069,19 @@
         const RING_N = 10;
         const RING_R = 1.9;
         const RING_ANGV = 0.25;   // rad/s — orbital speed
-        // 'calm' (footer): 8 cubes at the corners of a proper cube so
-        // "Lead the story." renders behind a clean cube silhouette.
-        const CUBE_R = 0.9;
-        const CUBE_N = 8;
-        const CUBE_CORNERS = [
-          [ CUBE_R,  CUBE_R,  CUBE_R], [-CUBE_R,  CUBE_R,  CUBE_R],
-          [ CUBE_R, -CUBE_R,  CUBE_R], [-CUBE_R, -CUBE_R,  CUBE_R],
-          [ CUBE_R,  CUBE_R, -CUBE_R], [-CUBE_R,  CUBE_R, -CUBE_R],
-          [ CUBE_R, -CUBE_R, -CUBE_R], [-CUBE_R, -CUBE_R, -CUBE_R],
-        ];
-        // 'split' (#offers — "Two ways in"): 16 cubes split into two random
-        // clusters, left and right. Positions are seeded once, not re-rolled
-        // per frame, so the layout is stable as you scroll past.
-        const SPLIT_N = 16;
+        // 'split' (#offers — "Two ways in"): two mini-hero clusters, 4 cubes
+        // each side. Each cluster is a 2×1×2 compact block (like a slice of
+        // the hero's 3×2×3). Left centred at x=-1.6, right at x=+1.6.
+        const SPLIT_N = 8;
+        const MINI_DX = 0.45;
+        const MINI_DZ = 0.45;
         const SPLIT_POS = [
-          // Left cluster — 8 cubes, x ∈ [-2.6, -0.9]
-          [-2.4, 0.7, 0.5], [-1.2, -0.6, -0.8], [-2.1, -0.2, 1.0],
-          [-1.5, 0.9, -0.4], [-0.9, -0.8, 0.7], [-2.5, -0.5, -1.1],
-          [-1.8, 0.3, 1.2], [-1.0, 0.5, -1.0],
-          // Right cluster — 8 cubes, x ∈ [0.9, 2.6]
-          [ 2.4, -0.6, 0.6], [ 1.2,  0.7, -0.9], [ 2.0,  0.2, 1.1],
-          [ 1.5, -0.9, -0.5], [ 0.9,  0.7, 0.8], [ 2.5,  0.4, -1.0],
-          [ 1.8, -0.3, 1.2], [ 1.0, -0.6, -1.1],
+          // Left — 4 cubes, centre x=-1.6
+          [-1.6 - MINI_DX, 0, -MINI_DZ], [-1.6 + MINI_DX, 0, -MINI_DZ],
+          [-1.6 - MINI_DX, 0,  MINI_DZ], [-1.6 + MINI_DX, 0,  MINI_DZ],
+          // Right — 4 cubes, centre x=+1.6
+          [ 1.6 - MINI_DX, 0, -MINI_DZ], [ 1.6 + MINI_DX, 0, -MINI_DZ],
+          [ 1.6 - MINI_DX, 0,  MINI_DZ], [ 1.6 + MINI_DX, 0,  MINI_DZ],
         ];
         for (let i = 0; i < N_CELLS; i++) {
           const s = cubeState[i];
@@ -3108,10 +3098,6 @@
             restY = 0;
             restZ = Math.sin(angle) * RING_R;
             ringPos = true;
-          } else if (mood === 'calm' && i < CUBE_N) {
-            const c = CUBE_CORNERS[i];
-            restX = c[0]; restY = c[1]; restZ = c[2];
-            customPos = true;
           } else if (mood === 'split' && i < SPLIT_N) {
             const p = SPLIT_POS[i];
             restX = p[0]; restY = p[1]; restZ = p[2];
@@ -3370,11 +3356,10 @@
           if (mood !== 'aligned') {
             if (mood === 'sparse') {
               for (let i = 0; i < N_CELLS; i++) targetActivity[i] = i < 10 ? 1 : 0;
-            } else if (mood === 'calm') {
-              for (let i = 0; i < N_CELLS; i++) targetActivity[i] = i < 8 ? 1 : 0;
             } else if (mood === 'split') {
-              for (let i = 0; i < N_CELLS; i++) targetActivity[i] = i < 16 ? 1 : 0;
+              for (let i = 0; i < N_CELLS; i++) targetActivity[i] = i < 8 ? 1 : 0;
             } else {
+              // calm (footer), drift, or any other mood — full hero grid
               for (let i = 0; i < N_CELLS; i++) targetActivity[i] = 1;
             }
           }
