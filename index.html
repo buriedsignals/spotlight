@@ -188,11 +188,11 @@
   .hero-content {
     position: absolute; inset: 0;
     z-index: 3;
-    display: flex; flex-direction: column; justify-content: space-between;
+    display: flex; flex-direction: column; justify-content: flex-end;
     padding: 92px 48px 40px;
     pointer-events: none;
   }
-  .hero-bottom {
+  .hero-grid {
     display: grid;
     grid-template-columns: 1fr auto;
     align-items: end;
@@ -788,7 +788,7 @@
     /* Hero — tighter title, stacked side block with CTAs stacked too */
     .hero-content { padding: 72px 20px 32px; }
     .hero-title { font-size: clamp(38px, 10vw, 60px); max-width: 100%; }
-    .hero-bottom { grid-template-columns: 1fr; gap: 20px; }
+    .hero-grid { grid-template-columns: 1fr; gap: 20px; }
     .hero-side { max-width: 100%; font-size: 12px; }
     .hero-side > div {
       display: flex; flex-direction: column; align-items: stretch;
@@ -1134,7 +1134,7 @@
   <div id="hero-canvas" aria-hidden="true"></div>
   <div class="hero-gradient"></div>
   <div class="hero-content">
-    <div class="hero-bottom">
+    <div class="hero-grid">
       <h1 class="hero-title" data-reveal="title" style="--rd: 600ms">
         You lead the investigation.
         <span class="accent">Spotlight does</br>the research.</span>
