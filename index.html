@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Spotlight — OSINT investigation system for journalists</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c16a34' stroke-width='2' stroke-linecap='round'><path d='M 20 9.5 A 8 8 0 0 1 4 9.5'/><path d='M 4 14.5 A 8 8 0 0 0 20 14.5'/><circle cx='12' cy='12' r='2' fill='%23c16a34'/></svg>">
 <meta name="description" content="You lead the investigation. Spotlight does the research. Verified findings, independent fact-checking, a vault that grows with every case.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -201,6 +202,19 @@
     align-items: end;
     gap: 48px;
   }
+  .hero-credo {
+    display: inline-flex;
+    gap: 10px;
+    align-items: center;
+    font-family: "Geist Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(255, 245, 217, 0.55);
+    margin: 0 0 28px;
+    flex-wrap: wrap;
+  }
+  .hero-credo .sep { color: var(--accent-warm); opacity: 0.7; }
   .hero-title {
     font-family: "Fraunces", serif;
     font-variation-settings: "opsz" 144;
@@ -554,6 +568,53 @@
     font-size: 13px; line-height: 1.65; opacity: 0.7;
   }
 
+  /* ── WORKS WITH ───────────────────────────────────────── */
+  #works-with {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 140px 48px 120px;
+    border-top: 1px solid var(--muted-faint-dark);
+    position: relative;
+    overflow: hidden;
+  }
+  #works-with .header {
+    display: grid; grid-template-columns: auto 1fr; align-items: baseline;
+    gap: 32px; max-width: 1280px; margin: 0 auto 60px;
+  }
+  #works-with .header .chap { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.55; }
+  #works-with .header .title {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 144, "wght" 500;
+    font-size: clamp(36px, 5vw, 72px);
+    line-height: 1.02; letter-spacing: -0.025em; margin: 0;
+  }
+  .works-grid {
+    max-width: 1280px; margin: 0 auto;
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  }
+  .works-label {
+    font-family: "Geist Mono", monospace;
+    font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+    opacity: 0.55; margin-right: 8px;
+  }
+  .works-pill {
+    display: inline-flex; align-items: center;
+    font-family: "Geist Mono", monospace;
+    font-size: 12px; letter-spacing: 0.04em;
+    padding: 10px 18px;
+    border: 1px solid var(--muted-faint-dark);
+    border-radius: 999px;
+    color: var(--paper);
+    text-decoration: none;
+    transition: border-color 200ms ease, color 200ms ease, background 200ms ease;
+  }
+  a.works-pill:hover {
+    border-color: var(--accent-warm);
+    color: var(--accent-warm);
+    background: rgba(193, 106, 52, 0.08);
+  }
+  .works-pill-static { opacity: 0.55; cursor: default; }
+
   /* ── ATTRIBUTION ──────────────────────────────────────── */
   #attribution {
     background: var(--ink);
@@ -649,6 +710,12 @@
     letter-spacing: -0.02em;
     margin: 0;
   }
+  .about-bs {
+    max-width: 72ch; margin: 0 auto 60px;
+    font-size: 15px; line-height: 1.7;
+    color: var(--paper-fg); opacity: 0.82;
+  }
+  .about-bs strong { font-weight: 500; opacity: 1; }
   .offers-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -1184,25 +1251,6 @@
      here; the scene is rendered into each .scene-slot via scissor + viewport. -->
 <div id="global-canvas" aria-hidden="true"></div>
 
-<nav class="topnav" id="topnav">
-  <a href="#" class="brand">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-      <path d="M 20 9.5 A 8 8 0 0 1 4 9.5" />
-      <path d="M 4 14.5 A 8 8 0 0 0 20 14.5" />
-      <circle cx="12" cy="12" r="2" fill="currentColor"/>
-    </svg>
-    Spotlight
-  </a>
-  <div class="links">
-    <a href="#what">What it does</a>
-    <a href="#integrations">Integrations</a>
-    <a href="#box">In the box</a>
-    <a href="#attribution">Built on</a>
-    <a href="#offers">Work with us</a>
-    <a href="setup.html">Install</a>
-  </div>
-</nav>
-
 <!-- ── HERO ─────────────────────────────────────────────── -->
 <section id="hero" data-screen-label="01 Hero" data-nav-theme="hero">
   <div id="hero-canvas" aria-hidden="true"></div>
@@ -1211,6 +1259,13 @@
     <div class="hero-top">
     </div>
     <div class="hero-bottom">
+      <div class="hero-credo" data-reveal="meta" style="--rd: 400ms">
+        <span>AI investigations</span>
+        <span class="sep">·</span>
+        <span>Skill-file based</span>
+        <span class="sep">·</span>
+        <span>Works with any agent</span>
+      </div>
       <h1 class="hero-title" data-reveal="title" style="--rd: 600ms">
         You lead the investigation.
         <span class="accent">Spotlight does</br>the research.</span>
@@ -1228,13 +1283,6 @@
     <span class="tick"></span>
     Scroll
   </div>
-</section>
-
-<!-- ── CHAPTER BREAK ────────────────────────────────────── -->
-<section class="chapter-break" data-screen-label="02 Pull quote" data-nav-theme="dark">
-  <p class="pull" data-reveal="serif-line">
-    <em>Nothing advances on one source</em> or one agent's reasoning. Every finding arrives sourced, stress-tested, and ready for an editor.
-  </p>
 </section>
 
 <!-- ── WHAT IT DOES ─────────────────────────────────────── -->
@@ -1338,79 +1386,37 @@
 </section>
 
 <!-- ── IN THE BOX ───────────────────────────────────────── -->
-<section id="box" data-screen-label="05 In the box">
+<!-- ── WORKS WITH ───────────────────────────────────────── -->
+<section id="works-with" data-screen-label="05 Works with" data-nav-theme="dark">
   <div class="header">
-    <span class="chap" data-reveal="meta">Ch. 03 — In the box</span>
-    <h2 class="title" data-reveal="title" style="--rd: 120ms">Runtime-agnostic.</h2>
+    <span class="chap" data-reveal="meta">Ch. 03 — Works with</span>
+    <h2 class="title" data-reveal="title" style="--rd: 120ms">Same skills, any agent.</h2>
   </div>
-  <div class="stats-row">
-    <div class="stat-cell" data-reveal="body" data-stagger-idx="0"><div class="n" data-count="11">11</div><div class="l">Skills</div></div>
-    <div class="stat-cell" data-reveal="body" data-stagger-idx="1"><div class="n" data-count="2">2</div><div class="l">Agents</div></div>
-    <div class="stat-cell" data-reveal="body" data-stagger-idx="2"><div class="n" data-count="5">5</div><div class="l">Schemas</div></div>
-    <div class="stat-cell" data-reveal="body" data-stagger-idx="3"><div class="n">7+</div><div class="l">Runtimes</div></div>
-  </div>
-  <p class="note" data-reveal="body" style="--rd: 200ms">Same skills run across pi, Claude Code, Gemini, Codex, OpenCode, Hermes, Goose. Open-source ports of the battle-tested <code style="font-family:'Geist Mono',monospace;background:var(--paper-2);padding:1px 6px;">buriedsignals/spotlight</code> and <code style="font-family:'Geist Mono',monospace;background:var(--paper-2);padding:1px 6px;">osint</code> Claude Code plugins.</p>
-</section>
-
-<!-- ── ATTRIBUTION ──────────────────────────────────────── -->
-<section id="attribution" data-screen-label="06 Attribution" data-nav-theme="dark">
-  <div class="header">
-    <span class="chap" data-reveal="meta">Ch. 04 — Built on</span>
-    <h2 class="title" data-reveal="title" style="--rd: 120ms">Standing on shoulders.</h2>
-  </div>
-
-  <p class="attr-lede" data-reveal="serif-line" style="--rd: 120ms">
-    Spotlight is an <em>open-source port</em> of battle-tested investigation tooling, built with partners who live the work.
-  </p>
-
-  <div class="credits" data-reveal="credit-row" data-stagger-idx="0">
-    <div class="role">Originated by</div>
-    <div class="entities">
-      <div class="entity">
-        <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals</a>
-        <span class="ext">↗ buriedsignals.com</span>
-      </div>
-      <p class="sub">The OSINT agency behind the original <code style="font-family:'Geist Mono',monospace;opacity:0.7;">spotlight</code> and <code style="font-family:'Geist Mono',monospace;opacity:0.7;">osint</code> Claude Code plugins — methodology, skills, and review schemas proven across real investigations.</p>
-    </div>
-  </div>
-
-  <div class="credits" data-reveal="credit-row" data-stagger-idx="1">
-    <div class="role">With</div>
-    <div class="entities">
-      <div class="entity">
-        <a href="https://indicator.media" target="_blank" rel="noopener">Indicator Media</a>
-        <span class="ext">↗ indicator.media</span>
-      </div>
-      <p class="sub">Maintainers of OSINT Navigator — 1,000+ curated tools with AI-powered lookup, surfaced live per investigation task.</p>
-    </div>
-  </div>
-
-  <div class="credits" data-reveal="credit-row" data-stagger-idx="2">
-    <div class="role">Runtimes</div>
-    <div class="entities">
-      <div class="entity">pi · Claude Code · Gemini · Codex · OpenCode · Hermes · Goose</div>
-      <p class="sub">Runtime-agnostic by design. Same skills, same review loop, across the provider mix you already use.</p>
-    </div>
-  </div>
-
-  <div class="credits" data-reveal="credit-row" data-stagger-idx="3">
-    <div class="role">License</div>
-    <div class="entities">
-      <div class="entity">
-        <a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">MIT — open source</a>
-        <span class="ext">↗ github</span>
-      </div>
-      <p class="sub">Free to install, fork, audit. Contributions welcome from newsrooms and researchers.</p>
-    </div>
+  <div class="works-grid" data-reveal="body" style="--rd: 200ms">
+    <span class="works-label">Works with</span>
+    <a class="works-pill" href="https://claude.com/claude-code" target="_blank" rel="noopener">Claude Code</a>
+    <a class="works-pill" href="https://claude.ai" target="_blank" rel="noopener">Claude</a>
+    <a class="works-pill" href="https://openai.com/codex" target="_blank" rel="noopener">Codex</a>
+    <a class="works-pill" href="https://chatgpt.com" target="_blank" rel="noopener">ChatGPT</a>
+    <a class="works-pill" href="https://gemini.google.com" target="_blank" rel="noopener">Gemini</a>
+    <a class="works-pill" href="https://block.github.io/goose/" target="_blank" rel="noopener">Goose</a>
+    <a class="works-pill" href="https://opencode.ai" target="_blank" rel="noopener">OpenCode</a>
+    <a class="works-pill" href="https://pi.dev" target="_blank" rel="noopener">pi</a>
+    <span class="works-pill works-pill-static">Hermes</span>
+    <span class="works-pill works-pill-static">Any API</span>
   </div>
 </section>
 
 <!-- ── OFFERS (Membership + Consulting) ────────────────── -->
 <section id="offers" data-screen-label="07 Offers">
   <div class="header">
-    <span class="chap" data-reveal="meta">Ch. 05 — Work with us</span>
+    <span class="chap" data-reveal="meta">Ch. 04 — Work with us</span>
     <h2 class="title" data-reveal="title" style="--rd: 120ms">Two ways in.</h2>
   </div>
+
+  <p class="about-bs" data-reveal="body" style="--rd: 120ms">
+    <strong>Buried Signals</strong> is an OSINT agency for investigative newsrooms. We built Spotlight from the tooling we use on real cases — methodology, skills, and review schemas proven against the kind of source material that ends up in court. Free and open-source; these two offers are how we keep shipping it.
+  </p>
 
   <div class="offers-grid">
     <article class="offer" data-reveal="card" data-stagger-idx="0">
