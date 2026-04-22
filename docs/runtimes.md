@@ -287,9 +287,12 @@ Any OpenAI-compatible `/v1/chat/completions` endpoint can drive Spotlight as lon
 | Backing | URL | Use case |
 |---|---|---|
 | llama-server (llama.cpp) | `http://127.0.0.1:8081/v1` | Local fine-tunes (Gemma 4 journalist, Qwen 3.6, etc.) |
-| Ollama | `http://127.0.0.1:11434/v1` | Quick-switch between models |
+| Ollama | `http://127.0.0.1:11434/v1` | Quick-switch between models, CLI-first |
+| LM Studio | `http://127.0.0.1:1234/v1` | GUI-first model management — recommended for journalists not at home in Terminal |
 | Exoscale Dedicated Inference | `https://exoscale-ci-…/v1` | Swiss-sovereign hosted inference |
 | vLLM | `http://localhost:8000/v1` | High-throughput self-hosted |
+
+**LM Studio wiring**: install via `brew install --cask lm-studio` (or download from [lmstudio.ai](https://lmstudio.ai)). On first launch the app installs the `lms` CLI at `~/.lmstudio/bin/lms`. Use the **Discover** tab to search and download GGUF models from Hugging Face (e.g. `unsloth/Qwen3.6-35B-A3B-GGUF`), then open the **Developer** tab and click **Start Server** — the OpenAI-compatible endpoint comes up on `127.0.0.1:1234`. Point pi's `models.json` (or Hermes / Goose provider config) at that URL with any non-empty `apiKey` string (LM Studio doesn't authenticate by default).
 
 ### Wiring
 

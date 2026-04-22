@@ -719,15 +719,32 @@
   #footer {
     background: var(--ink);
     color: var(--paper);
-    padding: 80px 48px 40px;
+    padding: 140px 48px 40px;
+    position: relative;
+    overflow: hidden;
     border-top: 1px solid var(--muted-faint-dark);
   }
   #footer .footer-wrap { max-width: 1280px; margin: 0 auto; }
+  .footer-huge {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 144, "wght" 500;
+    font-size: clamp(80px, 18vw, 280px);
+    line-height: 0.82;
+    letter-spacing: -0.04em;
+    margin: 0 0 60px;
+    color: var(--paper);
+  }
+  .footer-huge em {
+    font-style: italic;
+    font-variation-settings: "opsz" 144, "wght" 400;
+    color: var(--accent-warm);
+  }
   .footer-grid {
     display: grid;
     grid-template-columns: 2fr 1fr 1fr 1fr;
     gap: 40px;
-    padding: 0 0 40px;
+    padding: 40px 0;
+    border-top: 1px solid var(--muted-faint-dark);
   }
   .footer-col h4 {
     font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
@@ -843,7 +860,7 @@
 <body>
 
 <nav class="topnav" id="topnav">
-  <a href="index.html" class="brand">
+  <a href="landing.html" class="brand">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
       <path d="M 20 9.5 A 8 8 0 0 1 4 9.5" />
       <path d="M 4 14.5 A 8 8 0 0 0 20 14.5" />
@@ -852,10 +869,11 @@
     Spotlight
   </a>
   <div class="links">
-    <a href="index.html#what">Read</a>
-    <a href="index.html#integrations">Stack</a>
-    <a href="index.html#box">Box</a>
-    <a href="index.html#offers">Offers</a>
+    <a href="landing.html#what">Read</a>
+    <a href="landing.html#integrations">Stack</a>
+    <a href="landing.html#box">Box</a>
+    <a href="landing.html#attribution">Credits</a>
+    <a href="landing.html#offers">Offers</a>
     <a href="setup.html">Install</a>
   </div>
 </nav>
@@ -899,8 +917,17 @@
           <h2 data-reveal="title">Hosted on your Mac.</h2>
         </div>
         <section class="card">
-          <p class="lede">
+          <label class="block">Local server</label>
+          <div class="radio-group" id="local-server-group">
+            <label><input type="radio" name="local_server" value="ollama" checked><span class="opt-name"><span class="name">Ollama</span><span class="desc">CLI-first. The script installs it via <code>brew</code>, pulls the model, starts the service — nothing to click.</span></span></label>
+            <label><input type="radio" name="local_server" value="lmstudio"><span class="opt-name"><span class="name">LM Studio</span><span class="desc">GUI-first. Visual app to browse Hugging Face, download, switch, and serve models. Recommended if you'd rather click than type.</span></span></label>
+          </div>
+
+          <p class="lede" id="local-lede-ollama" style="margin-top: 16px;">
             The installer uses <strong>pi</strong> as the agent harness (<a href="https://pi.dev" target="_blank">pi.dev</a>, MIT) and <strong>Ollama</strong> to serve the model locally on <code>127.0.0.1:11434</code>. Both install with one command.
+          </p>
+          <p class="lede hidden" id="local-lede-lmstudio" style="margin-top: 16px;">
+            The installer uses <strong>pi</strong> as the agent harness (<a href="https://pi.dev" target="_blank">pi.dev</a>, MIT) and <strong>LM Studio</strong> (<a href="https://lmstudio.ai" target="_blank">lmstudio.ai</a>) to serve the model locally on <code>127.0.0.1:1234</code>. The app gives you a visual browser for Hugging Face models — no Terminal to pull or switch models.
           </p>
 
           <input type="hidden" id="model_repo" value="unsloth/Qwen3.6-35B-A3B-GGUF">
@@ -927,8 +954,11 @@
             </div>
           </div>
 
-          <p class="note-amber">
+          <p class="note-amber" id="local-note-ollama">
             Large download (~21 GB). Progress streams live in Terminal via Ollama's native UI. If interrupted, re-run <code>ollama pull hf.co/unsloth/Qwen3.6-35B-A3B-GGUF</code> to resume.
+          </p>
+          <p class="note-amber hidden" id="local-note-lmstudio">
+            Large download (~21 GB). The installer installs the <strong>LM Studio</strong> app and the <code>lms</code> CLI, then opens the app. On first run: complete the setup wizard → go to <strong>Discover</strong>, search <code>unsloth/Qwen3.6-35B-A3B-GGUF</code>, pick a quant (Q4_K_M for 32 GB Macs, Q6_K_XL for 48 GB+), download, then click <strong>Start Server</strong> in the <strong>Developer</strong> tab. <code>spotlight</code> will be ready once the server is listening on port 1234.
           </p>
         </section>
       </div>
@@ -1162,6 +1192,10 @@
 <!-- ── FOOTER ───────────────────────────────────────────── -->
 <section id="footer" data-nav-theme="dark">
   <div class="footer-wrap">
+    <p class="footer-huge">
+      Lead the <em>story.</em>
+    </p>
+
     <div class="footer-grid">
       <div class="footer-col about">
         <h4>Spotlight</h4>
@@ -1170,17 +1204,17 @@
       <div class="footer-col">
         <h4>Product</h4>
         <ul>
-          <li><a href="index.html#what">What it does</a></li>
-          <li><a href="index.html#integrations">Integrations</a></li>
-          <li><a href="index.html#box">In the box</a></li>
+          <li><a href="landing.html#what">What it does</a></li>
+          <li><a href="landing.html#integrations">Integrations</a></li>
+          <li><a href="landing.html#box">In the box</a></li>
           <li><a href="setup.html">Install</a></li>
         </ul>
       </div>
       <div class="footer-col">
         <h4>Project</h4>
         <ul>
-          <li><a href="index.html#attribution">Built on</a></li>
-          <li><a href="index.html#offers">Work with us</a></li>
+          <li><a href="landing.html#attribution">Built on</a></li>
+          <li><a href="landing.html#offers">Work with us</a></li>
           <li><a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a></li>
         </ul>
       </div>
@@ -1231,6 +1265,16 @@
     cloudSection.classList.toggle('hidden', mode !== 'cloud');
   }
   document.querySelectorAll('input[name="mode"]').forEach(el => el.addEventListener('change', renderMode));
+
+  // --- Local server switching (Ollama vs LM Studio) ---
+  function renderLocalServer() {
+    const srv = document.querySelector('input[name="local_server"]:checked').value;
+    document.getElementById('local-lede-ollama').classList.toggle('hidden', srv !== 'ollama');
+    document.getElementById('local-lede-lmstudio').classList.toggle('hidden', srv !== 'lmstudio');
+    document.getElementById('local-note-ollama').classList.toggle('hidden', srv !== 'ollama');
+    document.getElementById('local-note-lmstudio').classList.toggle('hidden', srv !== 'lmstudio');
+  }
+  document.querySelectorAll('input[name="local_server"]').forEach(el => el.addEventListener('change', renderLocalServer));
 
   // --- Runtime registry (single source of truth) ---
   const RUNTIMES = {
@@ -1331,6 +1375,7 @@
     return {
       mode: mode,
       runtime: mode === 'local' ? 'local' : cloudRt,
+      local_server: mode === 'local' ? document.querySelector('input[name="local_server"]:checked').value : null,
       opencode_provider: cloudRt === 'opencode' ? opencodeProv : null,
       cloud_key: mode === 'cloud' ? document.getElementById('cloud_key').value.trim() : '',
       cloud_key_var: cloudKeyVar,
@@ -1449,7 +1494,7 @@
     p('ensure_tool node');
     p('ensure_tool python3 python@3.12');
     if (cfg.mode === 'local') {
-      p('ensure_brew  # local mode needs brew for ollama');
+      p('ensure_brew  # local mode needs brew for ' + (cfg.local_server === 'lmstudio' ? 'lm-studio' : 'ollama'));
     }
     p('');
     p('step "Obsidian vault"');
@@ -1492,23 +1537,52 @@
     p('');
 
     if (cfg.mode === 'local') {
-      p('step "Local inference (Ollama + pi)"');
-      p('if ! command -v ollama >/dev/null 2>&1; then');
-      p('  spin "Installing Ollama via brew" brew install ollama');
-      p('  brew services start ollama 2>/dev/null || true');
-      p('  sleep 2');
-      p('else');
-      p('  printf "%s✓%s Ollama already installed\\n" "$_c_green" "$_c_reset"');
-      p('fi');
-      p('');
-      p('step "Journalism model download (~21 GB)"');
-      p('echo "Ollama will stream download progress below — grab a coffee, 5–15 min on a typical connection."');
-      p('echo ""');
-      p('ollama pull ' + shellEscape('hf.co/' + cfg.model_repo) + ' || {');
-      p('  printf "%s⚠%s Model pull failed. The fine-tune may not be published yet at hf.co/' + cfg.model_repo + '.\\n" "$_c_red" "$_c_reset"');
-      p('  printf "   Re-run once live: ollama pull hf.co/<repo>\\n"');
-      p('}');
-      p('');
+      if (cfg.local_server === 'lmstudio') {
+        p('step "Local inference (LM Studio + pi)"');
+        p('if [ ! -d "/Applications/LM Studio.app" ] && [ ! -d "$HOME/Applications/LM Studio.app" ]; then');
+        p('  spin "Installing LM Studio via brew cask" brew install --cask lm-studio');
+        p('else');
+        p('  printf "%s✓%s LM Studio already installed\\n" "$_c_green" "$_c_reset"');
+        p('fi');
+        p('');
+        p('# Bootstrap the lms CLI (ships inside the app; first launch installs the binary at ~/.lmstudio/bin/lms)');
+        p('if [ ! -x "$HOME/.lmstudio/bin/lms" ]; then');
+        p('  printf "%s!%s Opening LM Studio once so the ${_c_bold}lms${_c_reset} CLI installs itself\\n" "$_c_cyan" "$_c_reset"');
+        p('  open -a "LM Studio" 2>/dev/null || true');
+        p('  sleep 3');
+        p('fi');
+        p('[ -x "$HOME/.lmstudio/bin/lms" ] && export PATH="$HOME/.lmstudio/bin:$PATH"');
+        p('');
+        p('step "Journalism model — manual download via LM Studio GUI"');
+        p('echo "LM Studio is open (or will open shortly). One-time setup:"');
+        p('echo ""');
+        p('echo "  ${_c_bold}1.${_c_reset} Complete the initial wizard if this is a first install"');
+        p('echo "  ${_c_bold}2.${_c_reset} Click ${_c_bold}Discover${_c_reset} (magnifier icon), search: ${_c_bold}' + cfg.model_repo + '${_c_reset}"');
+        p('echo "  ${_c_bold}3.${_c_reset} Pick a quant: ${_c_bold}Q4_K_M${_c_reset} (~18 GB, 32 GB Macs) or ${_c_bold}Q6_K_XL${_c_reset} (~22 GB, 48 GB+ Macs)"');
+        p('echo "  ${_c_bold}4.${_c_reset} Click ${_c_bold}Developer${_c_reset} (bottom tab) → ${_c_bold}Start Server${_c_reset} — listens on 127.0.0.1:1234"');
+        p('echo ""');
+        p('echo "You can keep this installer running. ${_c_bold}spotlight${_c_reset} will work once the LM Studio server is live."');
+        p('echo ""');
+        p('');
+      } else {
+        p('step "Local inference (Ollama + pi)"');
+        p('if ! command -v ollama >/dev/null 2>&1; then');
+        p('  spin "Installing Ollama via brew" brew install ollama');
+        p('  brew services start ollama 2>/dev/null || true');
+        p('  sleep 2');
+        p('else');
+        p('  printf "%s✓%s Ollama already installed\\n" "$_c_green" "$_c_reset"');
+        p('fi');
+        p('');
+        p('step "Journalism model download (~21 GB)"');
+        p('echo "Ollama will stream download progress below — grab a coffee, 5–15 min on a typical connection."');
+        p('echo ""');
+        p('ollama pull ' + shellEscape('hf.co/' + cfg.model_repo) + ' || {');
+        p('  printf "%s⚠%s Model pull failed. The fine-tune may not be published yet at hf.co/' + cfg.model_repo + '.\\n" "$_c_red" "$_c_reset"');
+        p('  printf "   Re-run once live: ollama pull hf.co/<repo>\\n"');
+        p('}');
+        p('');
+      }
       p('if ! command -v pi >/dev/null 2>&1; then');
       p('  NPM_PREFIX="$HOME/.npm-global"; mkdir -p "$NPM_PREFIX"');
       p('  spin "Installing pi (@mariozechner/pi-coding-agent)" npm install -g --prefix "$NPM_PREFIX" @mariozechner/pi-coding-agent');
@@ -1521,14 +1595,16 @@
       p('ln -sfn "$SPOTLIGHT_DIR" "$HOME/.pi/agent/spotlight"');
       p('printf "%s✓%s pi loads Spotlight from $HOME/.pi/agent/spotlight\\n" "$_c_green" "$_c_reset"');
       p('');
+      const pi_baseURL = cfg.local_server === 'lmstudio' ? 'http://127.0.0.1:1234/v1' : 'http://127.0.0.1:11434/v1';
+      const pi_apiKey = cfg.local_server === 'lmstudio' ? 'lm-studio' : 'ollama';
       p('mkdir -p "$HOME/.pi"');
       p('if [ ! -f "$HOME/.pi/models.json" ]; then');
       p('  cat > "$HOME/.pi/models.json" <<\'PIMODELS_EOF\'');
       p('{');
       p('  "providers": {');
       p('    "local-journalist": {');
-      p('      "baseURL": "http://127.0.0.1:11434/v1",');
-      p('      "apiKey": "ollama",');
+      p('      "baseURL": "' + pi_baseURL + '",');
+      p('      "apiKey": "' + pi_apiKey + '",');
       p('      "models": ["' + cfg.model_repo.split('/').slice(-1)[0] + '"]');
       p('    }');
       p('  }');
@@ -1592,7 +1668,8 @@
     }
     if (cfg.mode === 'local') {
       p('MODEL_REPO=' + cfg.model_repo);
-      p('LOCAL_ENDPOINT=http://127.0.0.1:11434/v1');
+      p('LOCAL_SERVER=' + (cfg.local_server || 'ollama'));
+      p('LOCAL_ENDPOINT=' + (cfg.local_server === 'lmstudio' ? 'http://127.0.0.1:1234/v1' : 'http://127.0.0.1:11434/v1'));
     }
     p('ENV_EOF');
     p('chmod 600 "$SPOTLIGHT_DIR/.env"');
@@ -1606,6 +1683,7 @@
       cases_root: 'cases/',
       mode: cfg.mode,
       runtime: cfg.runtime,
+      local_server: cfg.local_server || null,
       opencode_provider: cfg.opencode_provider || null,
       integrations: {
         osint_navigator: true,

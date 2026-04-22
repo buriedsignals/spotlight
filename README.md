@@ -27,7 +27,7 @@ An **agnostic port** of the `buriedsignals/spotlight@1.2.1` and `buriedsignals/o
 | **Gemini CLI** | Install package | `npm install -g @google/gemini-cli`; symlink `GEMINI.md → AGENTS.md` |
 | **Hermes** (Mycroft / Mac Mini) | Production | `skills.external_dirs` in `~/.hermes/config.yaml` |
 | **Goose** | Extension pack | `goose extensions install spotlight` |
-| **Local OpenAI-compatible** | Via harness | Ollama or llama-server + pi (or Hermes) — journalist-friendly setup via setup.html |
+| **Local OpenAI-compatible** | Via harness | Ollama, LM Studio, or llama-server + pi (or Hermes) — journalist-friendly setup via setup.html |
 
 Per-runtime wiring: **[docs/runtimes.md](docs/runtimes.md)**.
 
@@ -57,7 +57,7 @@ Optional:
 - **OSINT_NAV_API_KEY** — for expanded OSINT tool discovery via OSINT Navigator.
 - **JUNKIPEDIA_API_KEY** — for narrative / misinformation tracking (application-based at junkipedia.org).
 - **CORE_API_KEY** — for academic paper access in `content-access` skill.
-- **Ollama** (for Local runtime) — `brew install ollama`. Or llama.cpp (`brew install llama.cpp`) for power users.
+- **Ollama** or **LM Studio** (for Local runtime) — `brew install ollama` (CLI-first) or `brew install --cask lm-studio` (GUI, journalist-friendly). Power users: llama.cpp (`brew install llama.cpp`).
 
 ## Documentation
 
