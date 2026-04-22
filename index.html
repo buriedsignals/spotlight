@@ -1739,12 +1739,27 @@
       [1,1,1,1,0,0,0],
       [0,1,1,0,0,0,0],
     ], 0.65, 0.7);
+    // Vault → 3D star connecting to its centre. 1 centre + 6 axes × 2 cubes
+    // (inner + outer) = 13 cubes radiating along ±X, ±Y, ±Z.
+    const SHAPE_STAR = [
+      // Centre
+      new THREE.Vector3(0, 0, 0),
+      // +X / -X axis
+      new THREE.Vector3( 0.8, 0, 0), new THREE.Vector3( 1.7, 0, 0),
+      new THREE.Vector3(-0.8, 0, 0), new THREE.Vector3(-1.7, 0, 0),
+      // +Y / -Y axis
+      new THREE.Vector3(0,  0.8, 0), new THREE.Vector3(0,  1.7, 0),
+      new THREE.Vector3(0, -0.8, 0), new THREE.Vector3(0, -1.7, 0),
+      // +Z / -Z axis
+      new THREE.Vector3(0, 0,  0.8), new THREE.Vector3(0, 0,  1.7),
+      new THREE.Vector3(0, 0, -0.8), new THREE.Vector3(0, 0, -1.7),
+    ];
     const STEP_LAYOUTS = [
       { count: SHAPE_ARROW.length,   positions: SHAPE_ARROW   }, // Lead
       { count: SHAPE_LOOP.length,    positions: SHAPE_LOOP    }, // Cycles
       { count: SHAPE_PYRAMID.length, positions: SHAPE_PYRAMID }, // Findings
       { count: SHAPE_CHECK.length,   positions: SHAPE_CHECK   }, // Review
-      { useGrid: true },                                          // Vault
+      { count: SHAPE_STAR.length,    positions: SHAPE_STAR    }, // Vault
     ];
 
     const cellCentersTex = new THREE.DataTexture(
