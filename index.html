@@ -1062,10 +1062,17 @@
      persistent hero scene travels with the user as they scroll. Placed at
      end of style block to win cascade over per-section `background: var(--ink)`. */
   .chapter-break,
-  #what, #integrations, #works-with, #offers, #footer {
+  #what, #integrations, #works-with, #offers {
     position: relative;
     z-index: 10;
     background: rgba(7, 7, 10, 0.5);
+  }
+  /* Footer is the page's narrative closer ("Lead the story.") — fully opaque
+     so the cubes don't bleed through the huge display text. */
+  #footer {
+    position: relative;
+    z-index: 10;
+    background: var(--ink);
   }
 </style>
 </head>
@@ -1419,16 +1426,6 @@
         const target = (mood === 'aligned')
           ? { left: vw * 0.5, top: 0, width: vw * 0.5, height: vh }
           : { left: 0,        top: 0, width: vw,       height: vh };
-        // Clip at the footer's top edge so the scene doesn't bleed behind
-        // "Lead the story." — the page's narrative closer is cube-free.
-        const footer = document.getElementById('footer');
-        if (footer) {
-          const ft = footer.getBoundingClientRect();
-          if (ft.top < vh) {
-            const maxH = Math.max(0, ft.top - target.top);
-            if (maxH < target.height) target.height = maxH;
-          }
-        }
         let cur = _slotRect.hero;
         if (!cur) cur = _slotRect.hero = { ...target };
         cur.left   += (target.left   - cur.left)   * RECT_EASE;
