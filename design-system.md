@@ -118,8 +118,9 @@ All UI text is uppercase OR mixed-case per role; never small-caps. Letter-spacin
 | **M-eyebrow** | Chapter label (`.chap`), eyebrow, section meta | 11px | 500 | `0.2em` | UPPERCASE | `0.55` |
 | **M-pill** | Install-pill CTA, footer col title (`h4`), credits role | 11px | 500 | `0.22em` | UPPERCASE | 1 |
 | **M-btn** | Primary/ghost button | 11px | 500 | `0.18em` | UPPERCASE | 1 |
-| **M-meta** | Stat label, footer-meta, offer kicker, scroll-cue, card idx | 10px | 500 | `0.2em` | UPPERCASE | `0.55–0.6` |
+| **M-meta** | Stat label, footer-meta, offer kicker, card idx | 10px | 500 | `0.2em` | UPPERCASE | `0.55–0.6` |
 | **M-ext** | External link marker (↗ TYPE) in credits | 10px | 500 | `0.18em` | UPPERCASE | `0.6` |
+| **M-cue** | Hero `.scroll-cue` overlay on WebGL | 10px | 500 | `0.25em` | UPPERCASE | 0.5 |
 | **M-code** | Inline `<code>`, script box | 11–12px | 400 | `0` | none | 1 |
 
 Don't introduce new letter-spacing values between these tiers. If something needs a different `ls`, it's probably a new tier that should be added here first.
@@ -612,7 +613,7 @@ Stay in this range. Don't introduce arbitrary z-indexes. If you need a new layer
 - **Cool palette** (`#0f1115`, blue `#7cb7ff`, indigo) or any colour outside the 12 tokens above.
 - **Fraunces weight 600+**. 400 italic (accent) or 500 (all display). Nothing else.
 - **Geist Mono as display**. Display is Fraunces, full stop.
-- **Letter-spacing outside the five-tier uppercase mono scale** (`{0, 0.15em, 0.18em, 0.2em, 0.22em}`).
+- **Letter-spacing outside the uppercase mono scale** (`{0, 0.15em, 0.18em, 0.2em, 0.22em, 0.25em}` — the `0.25em` is reserved for **M-cue only**; dev-panel uses `0.14em`, which is acceptable because it's behind `display: none` in production).
 - **Emoji in content** (✓ ⚠ 🚀). Use text ("OK", "Warning") or rely on terracotta/amber/red colour tokens.
 - **Inline `style=""` for visual properties**. Acceptable for per-element reveal delays (`style="--rd: 400ms"`) and `data-count="N"`, not for margins, opacities, fonts.
 - **`--warm` as editorial accent**. Cream is neutral surface. Terracotta (`--accent-warm`) is the accent.
