@@ -1406,7 +1406,7 @@
     // Per-slot smoothed rect — lerped each frame toward the mood-driven target
     // so the render region slides between moods rather than snapping.
     const _slotRect = { hero: null };
-    const RECT_EASE = 0.12;
+    const RECT_EASE = 0.04;
     function applySlot(slot) {
       const vh = window.innerHeight;
       const vw = window.innerWidth;
@@ -3257,7 +3257,7 @@
                            : mood === 'calm'    ? 0.3
                            : 1.0;
       if (window.__moodSpeed == null) window.__moodSpeed = moodSpeedTarget;
-      window.__moodSpeed += (moodSpeedTarget - window.__moodSpeed) * 0.06;
+      window.__moodSpeed += (moodSpeedTarget - window.__moodSpeed) * 0.02;
       const moodSpeed = window.__moodSpeed;
 
       // Ch. 01 aligned cubes "live" via a slow Y-axis spin. Inactive cubes in
