@@ -69,21 +69,32 @@ For our fact-checker/investigator pattern, option 3 (SDK harness + sub-pi calls)
 
 ### Local fine-tune via pi
 
-Add a custom provider in pi's `models.json` to route inference to your own OpenAI-compatible endpoint:
+pi v0.68 does **not** accept arbitrary OpenAI-compatible providers via `~/.pi/agent/models.json` — the file only extends known providers (OpenAI, Anthropic, Google). To route inference to a local server (llama-server, LM Studio, Ollama, vLLM, hosted Exoscale), write a pi extension that calls `pi.registerProvider("local", { baseUrl, api: "openai-completions", models: [...] })`. Reference: `docs/custom-provider.md` in the pi package, plus the worked example at `examples/extensions/custom-provider-qwen-cli/`.
 
-```json
-{
-  "providers": {
-    "local-journalist": {
-      "baseURL": "http://127.0.0.1:8081/v1",
-      "apiKey": "unused",
-      "models": ["gemma-4-26B-A4B-it"]
-    }
-  }
+Minimal extension (TypeScript) — ship as a standalone npm package or drop under `~/.pi/agent/extensions/`:
+
+```typescript
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+
+export default function (pi: ExtensionAPI) {
+  pi.registerProvider("local", {
+    baseUrl: "http://127.0.0.1:11434/v1",    // Ollama (or 8081 for llama-server)
+    apiKey: "unused",
+    api: "openai-completions",
+    models: [{
+      id: "gemma-4-26B-A4B-it",
+      name: "Gemma 4 26B A4B (local)",
+      reasoning: false,
+      input: ["text", "image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 16384,
+      maxTokens: 4096
+    }]
+  });
 }
 ```
 
-Then `/model local-journalist/gemma-4-26B-A4B-it` in pi, or bind it as default. This works for any local OpenAI-compatible server: llama-server (llama.cpp), Ollama (add `"baseURL": "http://127.0.0.1:11434/v1"`), vLLM, or a hosted Exoscale endpoint.
+Then `pi --provider local --model gemma-4-26B-A4B-it`. This pattern works for any OpenAI-compatible server.
 
 **Current Spotlight operator model**: `unsloth/gemma-4-26B-A4B-it-GGUF` on Hugging Face (base Gemma 4 26B A4B — we evaluated a journalism fine-tune but the base outperformed it on tool-use + document OCR). Multimodal (text + vision) VLM MoE — 26B total / 4B active. Native vision for scanned court documents, satellite imagery, and screenshots. Recommended quants:
 - `gemma-4-26B-A4B-it-UD-Q6_K_XL.gguf` (~22 GB) + `mmproj-BF16.gguf` (~1.2 GB) — 48GB+ Macs
@@ -304,15 +315,36 @@ CYCLE: {cycle}
 
 `--ephemeral` keeps the sub-agent session off disk; `--profile fact-checker` loads the per-agent model + iteration budget from `~/.codex/config.toml` (see `adapters/codex/config.toml.example`). Iteration limits from the agent manifest (`iteration_limit: 80` investigator, `50` fact-checker) map to Codex's `max_output_tokens` + turn budget in the profile.
 
-### Sensitive mode
+### Sensitive mode and local inference
 
-Codex supports per-profile model binding. Add a `sensitive` profile in `config.toml` pointing to a local OpenAI-compatible endpoint (llama-server, LM Studio, Ollama) and switch profiles at session start. Also strip network-capable verbs by wrapping `firecrawl` in a no-op when `SPOTLIGHT_SENSITIVE=true` — see `adapters/codex/README.md`.
+Codex 0.122 ships a native `--oss` flag that detects Ollama on `127.0.0.1:11434` and LM Studio on `:1234`. Use it instead of a custom `[model_providers.*]` entry — that route is broken in 0.122 because Codex now requires `wire_api = "responses"` (see [codex#7782](https://github.com/openai/codex/discussions/7782)) which Ollama and llama-server do not speak.
+
+```bash
+SPOTLIGHT_SENSITIVE=true codex exec \
+  --oss \
+  --local-provider ollama \
+  --model gemma-4-26B-A4B-it \
+  --skip-git-repo-check \
+  "<prompt>"
+```
+
+For defence-in-depth, wrap `firecrawl` in a shell alias that refuses to run when `SPOTLIGHT_SENSITIVE=true` — otherwise the orchestrator can still fetch external resources via `execute-shell`.
+
+When Ollama runs in a separate container, share its network namespace so Codex sees it as localhost:
+
+```bash
+docker run --network container:ollama-spotlight … codex exec --oss …
+```
+
+See `adapters/codex/README.md` for the full Docker wiring.
 
 ### Known limitations (v0.122)
 
 - Rate-limited ChatGPT free tier will **not** complete a full investigation (expect ~10-20 turns before the daily cap). Use Plus/Pro or API for production.
 - Model default is `gpt-5.4` under ChatGPT login; override per profile.
 - `spawn-agent` via subprocess shares the OAuth token with the parent — no per-agent auth isolation. Rate limits apply to the sum of orchestrator + sub-agents.
+- Tool-use falls apart on small models (< ~14B). `llama3.2:3b` technically advertises tools but will not call them — it answers "I don't see the file" instead of invoking `read_file`. Always target Gemma 4 26B A4B class or better for real runs.
+- `[model_providers.*]` with `wire_api = "chat"` is rejected — use `--oss` for all local inference.
 
 ---
 
