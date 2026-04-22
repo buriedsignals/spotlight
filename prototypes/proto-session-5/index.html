@@ -76,14 +76,16 @@
   nav.topnav .links a:hover { color: var(--accent-warm); }
 
   /* ── GLOBAL SCENE CANVAS ──────────────────────────────────
-     One WebGL canvas for the whole page. It sits fixed behind all content
-     and is rendered via scissor + viewport into each .scene-slot element. */
+     One WebGL canvas for the whole page. Sits fixed above every section's
+     background but below text content, and is rendered via scissor +
+     viewport into each .scene-slot element. Outside slot regions the
+     canvas is transparent so paper/ink backgrounds show through. */
   #global-canvas {
     position: fixed;
     top: 0; left: 0;
     width: 100vw; height: 100vh;
     pointer-events: none;
-    z-index: 0;
+    z-index: 5;
   }
   #global-canvas canvas { display: block; width: 100% !important; height: 100% !important; }
 
@@ -92,10 +94,11 @@
     position: relative;
     height: 100vh;
     min-height: 640px;
-    /* No background — the global canvas shows through. Sections below keep
-       their opaque paper bg which naturally covers the canvas outside hero. */
+    /* Transparent — the global canvas shows the scene through the hero.
+       z-index:10 sits ABOVE the canvas so hero children (content, gradient)
+       paint on top of the scene without being covered by opaque cube pixels. */
     overflow: hidden;
-    z-index: 1;
+    z-index: 10;
   }
   /* #hero-canvas is now a slot placeholder — no canvas inside, just used
      to measure the hero region for scissor rendering. */
@@ -257,40 +260,13 @@
     height: 100vh;
     display: flex; align-items: center; justify-content: center;
   }
-  .split-graph #step-pattern-3d {
+  /* Five-things slot — DOM placeholder for the global canvas scene. Sits in
+     the sticky right column; the WebGL cubes render into its screen bounds. */
+  .split-graph #five-things-slot {
     width: 100%;
     max-width: 340px;
     aspect-ratio: 1 / 1;
     position: relative;
-  }
-  .split-graph #step-pattern-3d svg {
-    display: block;
-    width: 100%;
-    height: 100%;
-    overflow: visible;
-  }
-  /* Cube grid — recalls the 3×2×3 cubes of the hero 3D scene. Each scroll
-     step drops a handful of cubes into place, brick-by-brick. JS toggles
-     .active on cubes whose data-step ≤ the active step. Pure CSS motion. */
-  #step-pattern-3d .cube {
-    opacity: 0;
-    transform: translateY(14px) scale(0.45);
-    transform-origin: 50% 50%;
-    transform-box: fill-box;
-    transition: opacity 500ms ease, transform 800ms cubic-bezier(0.2, 0.75, 0.25, 1.05);
-  }
-  #step-pattern-3d .cube.active {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  #step-pattern-3d .cube-face    { fill-opacity: 0.55; }
-  #step-pattern-3d .cube-edge    { stroke: #17140e; stroke-width: 0.7; stroke-opacity: 0.6; fill: none; stroke-linecap: round; }
-  #step-pattern-3d .cube-particle { transition: none; }
-  @media (prefers-reduced-motion: reduce) {
-    #step-pattern-3d .cube {
-      transition: opacity 200ms ease !important;
-      transform: none !important;
-    }
   }
   .split-left {
     position: sticky;
@@ -1096,7 +1072,8 @@
       </article>
     </div>
     <div class="split-graph" aria-hidden="true">
-      <div id="step-pattern-3d"></div>
+      <!-- Scene slot — rendered into by the global Three.js canvas. -->
+      <div id="five-things-slot" class="scene-slot"></div>
     </div>
   </div>
 </section>
@@ -1386,7 +1363,17 @@
     // + viewport, render into that region. Bounds outside the viewport clip
     // automatically. Fixed global canvas → bounds are in CSS pixels relative
     // to the viewport top-left; WebGL scissor origin is bottom-left, so flip Y.
-    const slots = [{ el: heroSlot, camera, visible: true }];
+    const slots = [{ name: 'hero', el: heroSlot, camera, visible: true }];
+
+    // Five-things slot — a smaller, tighter view of the same cubes, from a
+    // different angle. Registered only if the DOM element exists on this page.
+    const fiveThingsEl = document.getElementById('five-things-slot');
+    if (fiveThingsEl) {
+      const ftCam = new THREE.PerspectiveCamera(30, 1, 0.1, 80);
+      ftCam.position.set(3.8, 2.2, 3.8);
+      ftCam.lookAt(0, 0, 0);
+      slots.push({ name: 'five-things', el: fiveThingsEl, camera: ftCam, visible: false });
+    }
 
     // Pause rendering for a slot when its DOM region leaves the viewport.
     const slotObserver = new IntersectionObserver((entries) => {
@@ -1613,6 +1600,18 @@
         }
       }
     }
+    // cellRank[i] = rank of cell i sorted by distance from origin (0 closest).
+    // Used by the Five-things slot to reveal cubes progressively outward
+    // across the 5 scroll steps — "cubes arrive one batch per step".
+    const cellRank = new Array(N_CELLS);
+    cellCenters
+      .map((c, i) => ({ i, d: c.length() }))
+      .sort((a, b) => a.d - b.d)
+      .forEach((item, rank) => { cellRank[item.i] = rank; });
+    // Bucket boundaries for the 5 steps — how many cubes are visible after
+    // each step. 4 → 8 → 12 → 15 → 18. Gentle accretion, full grid at step 5.
+    const STEP_CUBE_COUNTS = [4, 8, 12, 15, 18];
+
     const cellCentersTex = new THREE.DataTexture(
       cellCentersData, N_CELLS, 1, THREE.RGBAFormat, THREE.FloatType
     );
@@ -3083,8 +3082,31 @@
       const dt = params.paused ? 0 : Math.min(clock.getDelta(), 0.05);
       t += dt;
 
-      // Cube physics — springs to rest, cursor pushes/pulls
+      // Per-slot scene behaviour — decided BEFORE physics + activity so both
+      // systems pick up the right mode for the current viewing slot.
+      //  · Hero          : physics on, flip scheduler drives activity, floor grid shown
+      //  · Five things   : aligned (grid) mode, step-based activity, no floor grid
+      const ftSlot = slots.find(s => s.name === 'five-things' && s.visible);
+      if (ftSlot) {
+        params.alignedMode       = true;
+        params.alignedClusterX   = 0;
+        params.alignedClusterY   = 0;
+      } else {
+        params.alignedMode       = false;
+      }
+
+      // Cube physics — springs to rest (hero) or lerps to grid (aligned)
       physicsStep(dt);
+
+      // Step-based reveal (Five-things slot only): cube i is on iff its
+      // visual cell rank < threshold. shuffleOrder maps cube index → cell.
+      if (ftSlot) {
+        const step = Math.max(0, Math.min(4, window.__fiveThingsStep | 0));
+        const threshold = STEP_CUBE_COUNTS[step];
+        for (let i = 0; i < N_CELLS; i++) {
+          targetActivity[i] = cellRank[shuffleOrder[i]] < threshold ? 1 : 0;
+        }
+      }
 
       // Smooth per-cell activity + push to data texture
       for (let i = 0; i < N_CELLS; i++) {
@@ -3127,13 +3149,16 @@
       camera.lookAt(0, 0.1, 0);
 
       // —— Per-slot render ————————————————————————————————————————————
-      // For each visible slot: set scissor + viewport, then do the two-pass
-      // glass render inside that region.
+      // For each visible slot: set scissor + viewport, tune shared scene
+      // props for that slot's look, then do the two-pass glass render.
       for (let s = 0; s < slots.length; s++) {
         const slot = slots[s];
         if (!slot.visible) continue;
 
         applySlot(slot);
+
+        // Floor grid is part of the hero aesthetic only — hidden elsewhere.
+        grid.visible = (slot.name === 'hero');
 
         // Two-pass: tTarget (scene without glass) → main canvas (with glass).
         if (params.glassEnabled) {
@@ -3165,126 +3190,6 @@
 
 </script>
 <script>
-  // ── Step pattern: 3×2×3 isometric cubes (same vocabulary as the hero 3D
-  // scene), revealed brick-by-brick as the reader scrolls. Each cube gets
-  // a data-step — the scroll observer toggles .active on cubes whose step
-  // ≤ the currently active step.
-  (function stepPatternCubes() {
-    const container = document.getElementById('step-pattern-3d');
-    if (!container) return;
-
-    const GX = 3, GY = 2, GZ = 3;
-    const N_CELLS = GX * GY * GZ; // 18
-    const S = 28;                 // cube size in SVG units
-    const VIEW = 320;
-    const cx = VIEW / 2;
-    const cy = VIEW / 2 + 24;
-
-    const COS30 = 0.8660254;
-    function iso(x, y, z) {
-      return [
-        cx + (x - z) * S * COS30,
-        cy + (x + z) * S * 0.5 - y * S,
-      ];
-    }
-
-    // Seeded RNG for stable particle layout.
-    let seed = 0x9e3779b9;
-    const rnd = () => {
-      seed = (seed * 1664525 + 1013904223) >>> 0;
-      return seed / 0xffffffff;
-    };
-
-    // Build the 18 cubes with draw-order key + step assignment.
-    const cubes = [];
-    for (let gz = 0; gz < GZ; gz++) {
-      for (let gy = 0; gy < GY; gy++) {
-        for (let gx = 0; gx < GX; gx++) {
-          const x = gx - (GX - 1) / 2;
-          const y = gy - (GY - 1) / 2;
-          const z = gz - (GZ - 1) / 2;
-          cubes.push({
-            x, y, z,
-            drawOrder: x + z - y * 0.001,                 // back-to-front paint order
-            dist: Math.hypot(x, y, z),                    // for step assignment (bloom outward)
-            warm: y > 0,
-          });
-        }
-      }
-    }
-
-    // Step assignment: sort by distance from center, then bucket into 5 groups.
-    const stepOrder = cubes.map((c, i) => ({ c, i })).sort((a, b) => a.c.dist - b.c.dist);
-    // 18 cubes / 5 steps → [4, 4, 4, 3, 3] or similar. Use a gentle distribution.
-    const bucketEnds = [4, 8, 12, 15, 18];
-    stepOrder.forEach((item, rank) => {
-      let step = 1;
-      while (rank >= bucketEnds[step - 1]) step++;
-      item.c.step = step;
-    });
-
-    // Paint cubes back-to-front so closer ones occlude farther ones.
-    cubes.sort((a, b) => a.drawOrder - b.drawOrder);
-
-    // Palette (same tokens as the site)
-    const WARM_TOP   = '#fff5d9';
-    const WARM_FRONT = '#ffc28a';
-    const WARM_RIGHT = '#e8a070';
-    const COOL_TOP   = '#e6ecf2';
-    const COOL_FRONT = '#7cb7ff';
-    const COOL_RIGHT = '#5a96d8';
-    const P_WARM     = '#c16a34';
-    const P_COOL     = '#346fa8';
-
-    const parts = [];
-    parts.push(`<svg viewBox="0 0 ${VIEW} ${VIEW}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">`);
-
-    for (const c of cubes) {
-      const { x, y, z, warm, step } = c;
-      const c000 = iso(x,     y,     z);
-      const c100 = iso(x + 1, y,     z);
-      const c101 = iso(x + 1, y,     z + 1);
-      const c010 = iso(x,     y + 1, z);
-      const c110 = iso(x + 1, y + 1, z);
-      const c011 = iso(x,     y + 1, z + 1);
-      const c111 = iso(x + 1, y + 1, z + 1);
-
-      const TOP   = warm ? WARM_TOP   : COOL_TOP;
-      const FRONT = warm ? WARM_FRONT : COOL_FRONT;
-      const RIGHT = warm ? WARM_RIGHT : COOL_RIGHT;
-
-      parts.push(`<g class="cube" data-step="${step}">`);
-      parts.push(`<polygon class="cube-face" points="${c010.join(',')} ${c110.join(',')} ${c111.join(',')} ${c011.join(',')}" fill="${TOP}" />`);
-      parts.push(`<polygon class="cube-face" points="${c000.join(',')} ${c100.join(',')} ${c110.join(',')} ${c010.join(',')}" fill="${FRONT}" />`);
-      parts.push(`<polygon class="cube-face" points="${c100.join(',')} ${c101.join(',')} ${c111.join(',')} ${c110.join(',')}" fill="${RIGHT}" />`);
-
-      const edges = [
-        [c000, c100], [c100, c110], [c010, c000], [c010, c110],
-        [c100, c101], [c101, c111], [c110, c111],
-        [c011, c010], [c011, c111],
-      ];
-      for (const [a, b] of edges) {
-        parts.push(`<line class="cube-edge" x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}" />`);
-      }
-
-      // 10 particles per cube (mix warm/cool accents).
-      const pTints = warm ? [P_WARM, WARM_FRONT] : [P_COOL, COOL_FRONT];
-      for (let p = 0; p < 10; p++) {
-        const px = x + 0.18 + rnd() * 0.64;
-        const py = y + 0.18 + rnd() * 0.64;
-        const pz = z + 0.18 + rnd() * 0.64;
-        const [sx, sy] = iso(px, py, pz);
-        const r = 0.6 + rnd() * 0.9;
-        parts.push(`<circle class="cube-particle" cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="${r.toFixed(2)}" fill="${pTints[p % 2]}" fill-opacity="${(0.6 + rnd() * 0.3).toFixed(2)}" />`);
-      }
-
-      parts.push(`</g>`);
-    }
-
-    parts.push(`</svg>`);
-    container.innerHTML = parts.join('');
-  })();
-
   // ── Split-scroll: track which step is centered ───────────────────────────
   (function() {
     const steps = document.querySelectorAll('#steps .step');
@@ -3292,7 +3197,6 @@
     const labelEl = document.getElementById('counter-label');
     const fillEl = document.getElementById('progress-fill');
     const total = steps.length;
-    const logoPieces = document.querySelectorAll('#step-pattern-3d .cube');
     function update() {
       const mid = window.innerHeight * 0.5;
       let active = 0;
@@ -3309,12 +3213,9 @@
       labelEl.textContent = step.dataset.label;
       fillEl.style.width = ((active + 1) / total * 100) + '%';
 
-      // Brick-by-brick cube reveal: cube whose data-step ≤ active step
-      // becomes .active (1-based step, 0-based index → +1).
-      logoPieces.forEach((p) => {
-        const pieceStep = parseInt(p.dataset.step, 10);
-        p.classList.toggle('active', pieceStep <= active + 1);
-      });
+      // Expose the active step (0..4) to the global canvas — the Five-things
+      // slot reads it to drive progressive cube reveal across scroll steps.
+      window.__fiveThingsStep = active;
     }
     window.addEventListener('scroll', update, { passive: true });
     update();
