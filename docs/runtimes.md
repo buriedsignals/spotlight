@@ -244,19 +244,75 @@ Goose supports per-session provider routing. When `sensitive: true`:
 
 ## Codex CLI
 
-**What it is:** OpenAI's CLI agent. Reads `AGENTS.md` natively at session start (same convention as pi). Currently not installed on this machine — this section is forward-looking.
+**What it is:** OpenAI's CLI agent (`@openai/codex`, tested on v0.122.0). Reads `AGENTS.md` natively at session start (same convention as pi). Auth via ChatGPT Plus/Pro/Team, Codex free-tier login, or an OpenAI API key. A quick-start adapter bundle lives in `adapters/codex/`.
 
-### Loading
+### Installing
 
-Point Codex at the repo root as the working directory. `AGENTS.md` is loaded automatically per Codex's convention.
+```bash
+npm install -g @openai/codex
+codex login   # OAuth via ChatGPT OR set OPENAI_API_KEY
+```
+
+Point Codex at the repo root as its working directory. `AGENTS.md` is loaded automatically.
 
 ### Verb bindings
 
-Map the 13 verbs to Codex's native tool set (similar shape to pi). Document concrete mappings here once Codex is installed and its tool names confirmed.
+| Verb | Codex tool |
+|---|---|
+| `read-file`, `list-files`, `grep-files` | native file tools (no config needed) |
+| `write-file`, `edit-file` | native edit tools — require `--sandbox workspace-write` or higher |
+| `execute-shell` | `bash -lc` tool — require `--sandbox workspace-write` or higher |
+| `fetch`, `search` | `execute-shell` wrapping the `firecrawl` CLI |
+| `query-vault` | `execute-shell` wrapping `BUN_INSTALL="" qmd query` |
+| `vault-write` | `execute-shell` wrapping the `obsidian` CLI |
+| `invoke-skill` | natively loads `skills/{skill}/SKILL.md` when referenced |
+| `spawn-agent`, `wait-agent` | `execute-shell` spawning a second `codex exec` subprocess — see below |
 
-### Sub-agents
+### Sandbox mode
 
-Codex has first-class multi-agent primitives (per OpenAI's published specs). Use them to satisfy `spawn-agent` / `wait-agent`.
+Codex's built-in bubblewrap sandbox **will not start inside a Docker container** (unprivileged user-namespace restrictions). When running containerised — the recommended isolation — pass:
+
+```
+codex exec --dangerously-bypass-approvals-and-sandbox …
+```
+
+The flag is explicitly designed for "externally sandboxed" environments (Codex CLI help). Do **not** use it on bare-metal macOS/Linux — on the host, keep the default read-only sandbox and widen with `-s workspace-write` only when writes are needed.
+
+### Sub-agents — `codex exec` subprocess pattern
+
+Codex 0.122 has no first-class multi-agent primitive. Spotlight relies on isolation between `investigator` and `fact-checker` for the verification guarantee, so we run the sub-agent as a **separate `codex exec` subprocess** — each call is a fresh conversation with its own context window. The orchestrator:
+
+1. Reads the target agent prompt (e.g. `agents/fact-checker.md`) + the skill instructions
+2. Shells out via `execute-shell`:
+
+```bash
+codex exec \
+  --ephemeral \
+  --skip-git-repo-check \
+  --dangerously-bypass-approvals-and-sandbox \
+  --profile fact-checker \
+  --output-last-message /tmp/fact-checker.out \
+  "MODE: VERIFY
+PROJECT: {project}
+VAULT_PATH: {vault}
+CYCLE: {cycle}
+
+<contents of agents/fact-checker.md>"
+```
+
+3. Reads the sub-agent's side-effects from the filesystem (`cases/{project}/data/fact-check.json`) — the contract is file-based, not stdout.
+
+`--ephemeral` keeps the sub-agent session off disk; `--profile fact-checker` loads the per-agent model + iteration budget from `~/.codex/config.toml` (see `adapters/codex/config.toml.example`). Iteration limits from the agent manifest (`iteration_limit: 80` investigator, `50` fact-checker) map to Codex's `max_output_tokens` + turn budget in the profile.
+
+### Sensitive mode
+
+Codex supports per-profile model binding. Add a `sensitive` profile in `config.toml` pointing to a local OpenAI-compatible endpoint (llama-server, LM Studio, Ollama) and switch profiles at session start. Also strip network-capable verbs by wrapping `firecrawl` in a no-op when `SPOTLIGHT_SENSITIVE=true` — see `adapters/codex/README.md`.
+
+### Known limitations (v0.122)
+
+- Rate-limited ChatGPT free tier will **not** complete a full investigation (expect ~10-20 turns before the daily cap). Use Plus/Pro or API for production.
+- Model default is `gpt-5.4` under ChatGPT login; override per profile.
+- `spawn-agent` via subprocess shares the OAuth token with the parent — no per-agent auth isolation. Rate limits apply to the sum of orchestrator + sub-agents.
 
 ---
 

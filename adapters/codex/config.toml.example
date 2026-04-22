@@ -1,0 +1,48 @@
+# Codex CLI profile config for Spotlight
+# Copy to ~/.codex/config.toml and adjust per your OpenAI plan.
+#
+# Profiles:
+#   orchestrator — top-level skill (Phase 0 → Gate 1)
+#   investigator — PLANNING + EXECUTION (spawned by orchestrator)
+#   fact-checker — verification after each investigator cycle
+#   sensitive    — local-only fallback (see docs/runtimes.md#sensitive-mode)
+
+[profiles.orchestrator]
+model = "gpt-5.4"
+# Orchestrator does not spawn beyond iteration_limit in the agent manifest
+# but runs the full pipeline across multiple agent spawns.
+max_output_tokens = 16384
+approval_policy = "never"
+
+[profiles.investigator]
+# iteration_limit: 80 from agents/investigator.md
+model = "gpt-5.4"
+max_output_tokens = 32768
+approval_policy = "never"
+
+[profiles.fact-checker]
+# iteration_limit: 50 from agents/fact-checker.md
+# Independent verification — MUST remain on a strong model.
+model = "gpt-5.4"
+max_output_tokens = 16384
+approval_policy = "never"
+
+[profiles.sensitive]
+# Local OpenAI-compatible endpoint. Adjust URL per your runtime:
+#   llama-server : http://127.0.0.1:8081/v1
+#   LM Studio    : http://127.0.0.1:1234/v1
+#   Ollama       : http://127.0.0.1:11434/v1
+model_provider = "local"
+model = "gemma-4-26B-A4B-it"
+max_output_tokens = 16384
+approval_policy = "never"
+
+[model_providers.local]
+base_url = "http://127.0.0.1:8081/v1"
+api_key_env_var = "LOCAL_API_KEY"  # most local servers ignore the value; export LOCAL_API_KEY=unused
+
+# Global defaults — apply when a profile does not override.
+[sandbox]
+# On bare-metal host: keep "read-only" by default; skills widen per-operation.
+# In Docker: pass `--dangerously-bypass-approvals-and-sandbox` at launch instead.
+mode = "read-only"
