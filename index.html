@@ -407,56 +407,47 @@
     opacity: 0.75;
   }
 
-  /* ── INTEGRATIONS (pinned horizontal marquee) ─────────── */
+  /* ── INTEGRATIONS — static 3-col grid of integration cards ─────────── */
   #integrations {
     position: relative;
     background: var(--ink);
     color: var(--paper);
     border-top: 1px solid var(--muted-faint-dark);
-  }
-  .pin-wrap { height: 400vh; position: relative; }
-  .pin-sticky {
-    position: sticky; top: 0;
-    height: 100vh;
-    display: flex; flex-direction: column;
-    overflow: hidden;
+    padding-bottom: 120px;
   }
   #integrations .header {
     padding: 80px 48px 40px;
-    flex-shrink: 0;
   }
-  .marquee {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    overflow: hidden;
-  }
-  .marquee-track {
-    display: flex;
-    gap: 24px;
-    padding: 0 48px;
-    will-change: transform;
+  .integrations-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    border-top: 1px solid var(--muted-faint-dark);
   }
   .int-card {
-    flex: 0 0 380px;
-    height: 440px;
     background: var(--ink-2);
-    border: 1px solid var(--muted-faint-dark);
-    padding: 32px 28px 28px;
+    padding: 40px 32px 32px;
     display: flex; flex-direction: column;
     position: relative;
-    transition: background 0.3s, color 0.3s, border-color 0.3s;
+    min-height: 420px;
+    border-right: 1px solid var(--muted-faint-dark);
+    border-bottom: 1px solid var(--muted-faint-dark);
+    transition: background 0.3s ease, border-color 0.3s ease;
   }
+  /* Right edge: last in each row has no right border */
+  .int-card:nth-child(3n) { border-right: none; }
+  /* Bottom edge: last row loses its bottom border */
+  .int-card:nth-last-child(-n+3) { border-bottom: none; }
   .int-card .card-scene-slot {
     flex: 0 0 200px;
     width: 200px;
     max-width: 100%;
     aspect-ratio: 1 / 1;
     align-self: center;
-    margin: 12px 0 14px;
+    margin: 12px 0 18px;
     position: relative;
   }
-  .int-card:hover { background: var(--accent-warm-14); border-color: var(--accent-warm); }
+  .int-card:hover { background: var(--accent-warm-14); }
   .int-card .idx {
     font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.85;
     color: var(--accent-warm);
@@ -464,37 +455,14 @@
   .int-card .name {
     font-family: "Fraunces", serif;
     font-variation-settings: "opsz" 72, "wght" 500;
-    font-size: 34px;
+    font-size: clamp(24px, 2.2vw, 30px);
     line-height: 1.05;
     letter-spacing: -0.02em;
     margin-top: auto;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
   }
   .int-card .desc {
     font-size: 13px; line-height: 1.55; opacity: 0.7;
-  }
-  .marquee-progress {
-    padding: 24px 48px;
-    display: flex; align-items: center; gap: 16px;
-    border-top: 1px solid var(--muted-faint-dark);
-    flex-shrink: 0;
-  }
-  .marquee-progress .bar {
-    flex: 1;
-    height: 1px;
-    background: var(--muted-faint-dark);
-    position: relative;
-  }
-  .marquee-progress .bar .fill {
-    position: absolute; top: 0; left: 0; height: 100%;
-    background: var(--accent-warm);
-  }
-  .marquee-progress .lbl {
-    font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.55;
-    min-width: 120px;
-  }
-  .marquee-progress .count {
-    font-size: 10px; letter-spacing: 0.2em; opacity: 0.55;
   }
 
   /* ── STATS ────────────────────────────────────────────── */
@@ -905,16 +873,15 @@
     .step .step-body { font-size: 13px; max-width: 100%; }
     .split-graph { display: none; }
 
-    /* ── Integrations — keep the pinned page-scroll translate on mobile.
-       The JS in #marquee-track uses window scroll to move the strip; we
-       simply shrink the cards and leave pin-wrap/pin-sticky as-is. ── */
-    .marquee-track { gap: 14px; padding: 0 20px; }
+    /* ── Integrations — collapse the 3-col grid to single column on mobile. */
+    .integrations-grid { grid-template-columns: 1fr; }
     .int-card {
-      flex: 0 0 78%;
-      max-width: 320px;
-      height: auto; min-height: 380px;
-      padding: 22px 20px;
+      min-height: auto;
+      padding: 28px 20px;
+      border-right: none;
+      border-bottom: 1px solid var(--muted-faint-dark);
     }
+    .int-card:last-child { border-bottom: none; }
     .int-card .card-scene-slot {
       flex: 0 0 150px;
       width: 150px;
@@ -923,7 +890,6 @@
     }
     .int-card .name { font-size: 24px; }
     .int-card .desc { font-size: 12px; }
-    .marquee-progress { padding: 16px 20px; }
     #box { padding: 60px 20px; }
     /* Stats — 2×2 compact grid so the 4 numbers sit together instead of
        stacking down a full screen. */
@@ -1037,8 +1003,7 @@
   .footer-col h4[data-reveal="meta"].in,
   .footer-meta[data-reveal="meta"].in { letter-spacing: 0.2em; }
   .offer ul li[data-reveal="meta"].in,
-  .int-card .idx[data-reveal="meta"].in,
-  .marquee-progress .lbl[data-reveal="meta"].in { letter-spacing: 0.2em; }
+  .int-card .idx[data-reveal="meta"].in { letter-spacing: 0.2em; }
 
   /* Kind: card — fade + translateY + scale. Applied to .int-card and .offer. */
   [data-reveal="card"] {
@@ -1235,57 +1200,46 @@
 
 <!-- ── INTEGRATIONS ─────────────────────────────────────── -->
 <section id="integrations" data-screen-label="04 Integrations" data-nav-theme="dark">
-  <div class="pin-wrap" id="pin-wrap">
-    <div class="pin-sticky">
-      <div class="header">
-        <span class="chap" data-reveal="meta">Ch. 02 — Integrations</span>
-        <h2 class="title" data-reveal="title" style="--rd: 120ms">Plugs into your stack.</h2>
-      </div>
-      <div class="marquee">
-        <div class="marquee-track" id="marquee-track">
-          <div class="int-card" data-reveal="card" data-stagger-idx="0">
-            <div class="idx">01 / 06</div>
-            <div class="card-scene-slot" data-card-idx="0"></div>
-            <div class="name">Agent runtimes</div>
-            <div class="desc">Local journalism fine-tune (Ollama or LM Studio), Claude Code, Gemini, Codex, OpenCode — multi-provider, switch per task.</div>
-          </div>
-          <div class="int-card" data-reveal="card" data-stagger-idx="1">
-            <div class="idx">02 / 06</div>
-            <div class="card-scene-slot" data-card-idx="1"></div>
-            <div class="name">Evidence archiving</div>
-            <div class="desc">Every source captured locally with chain of custody. Web scraping and search built in.</div>
-          </div>
-          <div class="int-card" data-reveal="card" data-stagger-idx="2">
-            <div class="idx">03 / 06</div>
-            <div class="card-scene-slot" data-card-idx="2"></div>
-            <div class="name">OSINT Navigator</div>
-            <div class="desc">1,000+ curated OSINT tools with AI-powered lookup, surfaced live per task. By Indicator Media.</div>
-          </div>
-          <div class="int-card" data-reveal="card" data-stagger-idx="3">
-            <div class="idx">04 / 06</div>
-            <div class="card-scene-slot" data-card-idx="3"></div>
-            <div class="name">Knowledge vault</div>
-            <div class="desc">Obsidian ingestion — investigations become permanent, searchable memory.</div>
-          </div>
-          <div class="int-card" data-reveal="card" data-stagger-idx="4">
-            <div class="idx">05 / 06</div>
-            <div class="card-scene-slot" data-card-idx="4"></div>
-            <div class="name">Monitoring feeds</div>
-            <div class="desc">Conflict events, disaster alerts, global news, investigative outlets — piped live into your leads.</div>
-          </div>
-          <div class="int-card" data-reveal="card" data-stagger-idx="5">
-            <div class="idx">06 / 06</div>
-            <div class="card-scene-slot" data-card-idx="5"></div>
-            <div class="name">Browser &amp; narrative</div>
-            <div class="desc">Browser automation, narrative tracking, misinformation databases — plug-in integrations.</div>
-          </div>
-        </div>
-      </div>
-      <div class="marquee-progress">
-        <span class="lbl">Pinned scroll</span>
-        <div class="bar"><div class="fill" id="marquee-fill" style="width: 0%"></div></div>
-        <span class="count" id="marquee-count">01 / 06</span>
-      </div>
+  <div class="header">
+    <span class="chap" data-reveal="meta">Ch. 02 — Integrations</span>
+    <h2 class="title" data-reveal="title" style="--rd: 120ms">Plugs into your stack.</h2>
+  </div>
+  <div class="integrations-grid">
+    <div class="int-card" data-reveal="card" data-stagger-idx="0">
+      <div class="idx">01 / 06</div>
+      <div class="card-scene-slot" data-card-idx="0"></div>
+      <div class="name">Agent runtimes</div>
+      <div class="desc">Local journalism fine-tune (Ollama or LM Studio), Claude Code, Gemini, Codex, OpenCode — multi-provider, switch per task.</div>
+    </div>
+    <div class="int-card" data-reveal="card" data-stagger-idx="1">
+      <div class="idx">02 / 06</div>
+      <div class="card-scene-slot" data-card-idx="1"></div>
+      <div class="name">Evidence archiving</div>
+      <div class="desc">Every source captured locally with chain of custody. Web scraping and search built in.</div>
+    </div>
+    <div class="int-card" data-reveal="card" data-stagger-idx="2">
+      <div class="idx">03 / 06</div>
+      <div class="card-scene-slot" data-card-idx="2"></div>
+      <div class="name">OSINT Navigator</div>
+      <div class="desc">1,000+ curated OSINT tools with AI-powered lookup, surfaced live per task. By Indicator Media.</div>
+    </div>
+    <div class="int-card" data-reveal="card" data-stagger-idx="3">
+      <div class="idx">04 / 06</div>
+      <div class="card-scene-slot" data-card-idx="3"></div>
+      <div class="name">Knowledge vault</div>
+      <div class="desc">Obsidian ingestion — investigations become permanent, searchable memory.</div>
+    </div>
+    <div class="int-card" data-reveal="card" data-stagger-idx="4">
+      <div class="idx">05 / 06</div>
+      <div class="card-scene-slot" data-card-idx="4"></div>
+      <div class="name">Monitoring feeds</div>
+      <div class="desc">Conflict events, disaster alerts, global news, investigative outlets — piped live into your leads.</div>
+    </div>
+    <div class="int-card" data-reveal="card" data-stagger-idx="5">
+      <div class="idx">06 / 06</div>
+      <div class="card-scene-slot" data-card-idx="5"></div>
+      <div class="name">Browser &amp; narrative</div>
+      <div class="desc">Browser automation, narrative tracking, misinformation databases — plug-in integrations.</div>
     </div>
   </div>
 </section>
@@ -3622,33 +3576,6 @@
 
     window.addEventListener('scroll',  update, { passive: true });
     window.addEventListener('resize',  update, { passive: true });
-    update();
-  })();
-
-  // ── Pinned horizontal marquee ────────────────────────────────────────────
-  (function() {
-    const wrap = document.getElementById('pin-wrap');
-    const track = document.getElementById('marquee-track');
-    const fill = document.getElementById('marquee-fill');
-    const countEl = document.getElementById('marquee-count');
-    if (!wrap || !track) return;
-    const cards = track.children.length;
-
-    function update() {
-      const r = wrap.getBoundingClientRect();
-      const vh = window.innerHeight;
-      const total = wrap.offsetHeight - vh;
-      const p = Math.min(1, Math.max(0, -r.top / total));
-      const trackW = track.scrollWidth;
-      const vw = window.innerWidth;
-      const maxShift = Math.max(0, trackW - vw);
-      track.style.transform = `translate3d(${-p * maxShift}px, 0, 0)`;
-      fill.style.width = (p * 100) + '%';
-      const idx = Math.min(cards, Math.floor(p * cards) + 1);
-      countEl.textContent = `${String(idx).padStart(2, '0')} / ${String(cards).padStart(2, '0')}`;
-    }
-    window.addEventListener('scroll', update, { passive: true });
-    window.addEventListener('resize', update);
     update();
   })();
 
