@@ -1,0 +1,966 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Spotlight — Storyboard proto session-1 · under &amp; over</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..500&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --void: #05070b;
+    --panel: #0b0e14;
+    --rule: rgba(255, 255, 255, 0.08);
+    --rule-strong: rgba(255, 255, 255, 0.18);
+    --fg: #e8eef7;
+    --muted: #8891a0;
+    --dim: #565d6a;
+    --slate: #6a7a91;
+    --amber: #ffc890;
+    --orange: #ff6c24;
+    --rust: #c24722;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--void);
+    color: var(--fg);
+    font-family: "Fraunces", Georgia, serif;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.55;
+  }
+  header.top {
+    max-width: 1500px;
+    margin: 0 auto;
+    padding: 56px 48px 20px;
+    border-bottom: 1px solid var(--rule);
+  }
+  header.top .eyebrow {
+    display: block;
+    font-family: "Geist Mono", monospace;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+  header.top h1 {
+    font-family: "Fraunces";
+    font-size: 2.4rem;
+    font-weight: 500;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin: 0 0 16px;
+  }
+  header.top h1 em { font-style: italic; font-weight: 300; color: var(--muted); }
+  header.top p {
+    max-width: 70ch;
+    font-size: 1rem;
+    color: var(--muted);
+    margin: 0 0 14px;
+  }
+  .legend {
+    display: flex;
+    gap: 28px;
+    flex-wrap: wrap;
+    padding: 18px 0 0;
+    font-family: "Geist Mono", monospace;
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+  .legend-item { display: inline-flex; align-items: center; gap: 8px; }
+  .legend-swatch {
+    width: 22px; height: 12px; display: inline-block;
+    border: 1px solid var(--rule-strong);
+  }
+
+  main.storyboard {
+    max-width: 1500px;
+    margin: 0 auto;
+    padding: 24px 48px 80px;
+  }
+  .panel {
+    display: grid;
+    grid-template-columns: 1.75fr 1fr;
+    gap: 28px;
+    padding: 40px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .panel:first-of-type { border-top: none; }
+  .panel header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: baseline;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .panel header .num {
+    font-family: "Geist Mono", monospace;
+    font-size: 1.15rem;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+  .panel header h2 {
+    font-family: "Fraunces";
+    font-size: 1.8rem;
+    font-weight: 500;
+    font-style: italic;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .panel header .duration {
+    margin-left: auto;
+    font-family: "Geist Mono", monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--dim);
+  }
+  .frame {
+    aspect-ratio: 16 / 9;
+    background: #020308;
+    border: 1px solid var(--rule-strong);
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+  }
+  .frame svg { width: 100%; height: 100%; display: block; }
+  .frame .caption {
+    position: absolute;
+    bottom: 8px;
+    left: 10px;
+    font-family: "Geist Mono", monospace;
+    font-size: 0.62rem;
+    color: rgba(255,255,255,0.35);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .notes { font-size: 0.92rem; line-height: 1.65; }
+  .notes dl { margin: 0; }
+  .notes dt {
+    font-family: "Geist Mono", monospace;
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+    margin-top: 14px;
+  }
+  .notes dt:first-child { margin-top: 0; }
+  .notes dd {
+    margin: 4px 0 0 0;
+    color: var(--fg);
+  }
+  .notes dd em { font-style: italic; color: var(--muted); }
+  .notes .hl { color: var(--amber); font-weight: 500; }
+  .notes .im { color: var(--rust); }
+  .notes .cr { color: var(--orange); font-weight: 500; }
+
+  footer.end {
+    max-width: 1500px;
+    margin: 0 auto;
+    padding: 56px 48px 80px;
+    border-top: 1px solid var(--rule);
+    font-family: "Geist Mono", monospace;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  @media (max-width: 900px) {
+    .panel { grid-template-columns: 1fr; }
+    header.top { padding: 40px 24px 20px; }
+    main.storyboard { padding: 24px 24px 60px; }
+    footer.end { padding: 40px 24px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <span class="eyebrow">Spotlight · Landing · Storyboard proto-session-1 — Under &amp; Over</span>
+  <h1>Vue par en-dessous → rotation 180° → vue du dessus — <em>le territoire émerge à travers un arc orbital</em></h1>
+  <p>Le visiteur commence <strong>sous la surface</strong> — composition type poster (halftone, traces d'empreintes plurielles, crosshairs orange aux coordonnées). Au scroll, la caméra décrit un <strong>arc de 180°</strong>. Le plane 2D se déforme en <strong>terrain</strong> avec relief. Les filaments se propagent. Des colonnes de particules s'élèvent. Une source lumineuse s'agrège en haut. Le plan 05 est la vue du dessus : <strong>le même territoire qu'au plan 01</strong> — mais maintenant cartographié, illuminé.</p>
+
+  <div class="legend">
+    <span class="legend-item"><span class="legend-swatch" style="background:#6a7a91"></span> Plane vu d'en dessous (slate + halftone)</span>
+    <span class="legend-item"><span class="legend-swatch" style="background:#0a0b0f"></span> Empreintes (pluralité · cases)</span>
+    <span class="legend-item"><span class="legend-swatch" style="background:#ff6c24"></span> Crosshairs orange (coordonnées)</span>
+    <span class="legend-item"><span class="legend-swatch" style="background:#ffc890"></span> Filaments / particules / source</span>
+    <span class="legend-item"><span class="legend-swatch" style="background:#c24722"></span> Impasse documentée</span>
+  </div>
+</header>
+
+<main class="storyboard">
+
+  <!-- ==================================================================== -->
+  <!-- PLAN 01 — SOUS LA SURFACE                                             -->
+  <!-- ==================================================================== -->
+  <article class="panel">
+    <header>
+      <span class="num">01</span>
+      <h2>Sous la surface — les traces</h2>
+      <span class="duration">~8s · scroll 0–15% · caméra perpendiculaire dessous</span>
+    </header>
+
+    <div class="frame">
+      <svg viewBox="0 0 1600 900" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="halftone01" x="0" y="0" width="28" height="28" patternUnits="userSpaceOnUse">
+            <circle cx="14" cy="14" r="3.2" fill="#2a2f3a"/>
+          </pattern>
+          <radialGradient id="vignette01" cx="50%" cy="50%" r="70%">
+            <stop offset="60%" stop-color="#6a7a91" stop-opacity="0"/>
+            <stop offset="100%" stop-color="#1a2230" stop-opacity="0.55"/>
+          </radialGradient>
+        </defs>
+
+        <rect width="1600" height="900" fill="#6a7a91"/>
+        <rect width="1600" height="900" fill="url(#halftone01)" opacity="0.95"/>
+        <rect width="1600" height="900" fill="url(#vignette01)"/>
+
+        <!-- Footprints plural, scattered dark blobs -->
+        <g fill="#0a0d15">
+          <g transform="translate(320, 250) rotate(18)" opacity="0.88">
+            <ellipse cx="0" cy="0" rx="45" ry="68"/>
+            <ellipse cx="0" cy="-84" rx="32" ry="36"/>
+          </g>
+          <g transform="translate(260, 400) rotate(22)" opacity="0.85">
+            <ellipse cx="0" cy="0" rx="42" ry="63"/>
+            <ellipse cx="0" cy="-78" rx="30" ry="33"/>
+          </g>
+          <g transform="translate(1220, 300) rotate(-28)" opacity="0.9">
+            <ellipse cx="0" cy="0" rx="46" ry="70"/>
+            <ellipse cx="0" cy="-86" rx="33" ry="37"/>
+          </g>
+          <g transform="translate(1290, 440) rotate(-25)" opacity="0.88">
+            <ellipse cx="0" cy="0" rx="42" ry="65"/>
+            <ellipse cx="0" cy="-80" rx="31" ry="34"/>
+          </g>
+          <g transform="translate(820, 720) rotate(5)" opacity="0.92">
+            <ellipse cx="0" cy="0" rx="48" ry="72"/>
+            <ellipse cx="0" cy="-88" rx="34" ry="38"/>
+          </g>
+          <g transform="translate(780, 600) rotate(8)" opacity="0.89">
+            <ellipse cx="0" cy="0" rx="45" ry="67"/>
+            <ellipse cx="0" cy="-82" rx="32" ry="35"/>
+          </g>
+          <g transform="translate(420, 640) rotate(-50)" opacity="0.85">
+            <ellipse cx="0" cy="0" rx="42" ry="62"/>
+            <ellipse cx="0" cy="-76" rx="30" ry="34"/>
+          </g>
+          <g transform="translate(350, 760) rotate(-48)" opacity="0.82">
+            <ellipse cx="0" cy="0" rx="40" ry="58"/>
+            <ellipse cx="0" cy="-70" rx="28" ry="32"/>
+          </g>
+        </g>
+
+        <!-- Orange crosshairs — coordinate markers -->
+        <g stroke="#ff6c24" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.95">
+          <line x1="770" y1="450" x2="870" y2="450"/>
+          <line x1="820" y1="400" x2="820" y2="500"/>
+          <line x1="500" y1="180" x2="570" y2="180"/>
+          <line x1="535" y1="145" x2="535" y2="215"/>
+          <line x1="1400" y1="540" x2="1470" y2="540"/>
+          <line x1="1435" y1="505" x2="1435" y2="575"/>
+          <line x1="580" y1="820" x2="650" y2="820"/>
+          <line x1="615" y1="785" x2="615" y2="855"/>
+        </g>
+        <g fill="#ff6c24" opacity="0.35">
+          <circle cx="820" cy="450" r="14"/>
+          <circle cx="535" cy="180" r="10"/>
+          <circle cx="1435" cy="540" r="10"/>
+          <circle cx="615" cy="820" r="9"/>
+        </g>
+
+        <g opacity="0.6" fill="#1a2230" font-family="Geist Mono, monospace" font-size="18" letter-spacing="2">
+          <text x="40" y="865">cam ↑ perpendiculaire dessous · vue poster</text>
+        </g>
+        <g font-family="Geist Mono, monospace" font-size="14" letter-spacing="2.5" fill="#1a2230" opacity="0.8">
+          <text x="1360" y="865">01 · UNDER</text>
+        </g>
+      </svg>
+      <span class="caption">composition poster 16:9 · halftone · empreintes plurielles · crosshairs orange</span>
+    </div>
+
+    <div class="notes">
+      <dl>
+        <dt>Intention</dt>
+        <dd>Plan d'ouverture hybride <strong>poster / OSINT</strong>. On regarde à travers le sol — on voit les <strong>traces</strong> des journalistes qui ont marché ici, pas eux directement. Signalement immédiat : <em>vous êtes sous la surface, vous lisez ce qui y reste.</em></dd>
+
+        <dt>Cadrage</dt>
+        <dd>Plane entièrement en vue, perpendiculaire — pas de tilt. Composition 2D affirmée, <strong>pas de 3D assumée</strong>.</dd>
+
+        <dt>Caméra</dt>
+        <dd>Position (0, −9, 0) → (0.4, −7.5, 0.8). <strong>LookAt (0, 0, 0)</strong>. View-dir droit vers le haut. Radius 9 pour cadrer large.</dd>
+
+        <dt>Matière</dt>
+        <dd><strong>Slate blue-grey</strong> (#6a7a91) de fond · <strong>halftone dots</strong> sombres réguliers (scale 2.4 dans le shader) · <strong>8 empreintes</strong> dark blobs aux orientations variées (pluralité des cases).</dd>
+
+        <dt>Crosshairs</dt>
+        <dd><span class="cr">4 à 5 marqueurs orange</span> en `+` aux coordonnées clés. Pas décoratifs — ce sont les <em>points de sampling</em> de l'OSINT, les coordonnées qu'on croise.</dd>
+
+        <dt>Interaction</dt>
+        <dd>Aucune souris active sur P1. Le scroll déclenche la rotation caméra.</dd>
+
+        <dt>Texte overlay</dt>
+        <dd>top-left eyebrow · bottom-left <em>« Vous menez l'enquête. »</em> + byline · bottom-right <em>« Spotlight fait la recherche. »</em> + CTA Install + GitHub · hint <em>« scrollez — la caméra traverse, s'élève »</em></dd>
+      </dl>
+    </div>
+  </article>
+
+  <!-- ==================================================================== -->
+  <!-- PLAN 02 — LES FILAMENTS SE PROPAGENT                                   -->
+  <!-- ==================================================================== -->
+  <article class="panel">
+    <header>
+      <span class="num">02</span>
+      <h2>Les filaments se propagent</h2>
+      <span class="duration">~10s · scroll 15–35% · caméra swing vers le côté</span>
+    </header>
+
+    <div class="frame">
+      <svg viewBox="0 0 1600 900" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="halftone02" x="0" y="0" width="26" height="26" patternUnits="userSpaceOnUse">
+            <circle cx="13" cy="13" r="2.6" fill="#2a2f3a"/>
+          </pattern>
+          <linearGradient id="planeGrad02" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#5a6a82" stop-opacity="0.82"/>
+            <stop offset="70%" stop-color="#6a7a91" stop-opacity="1"/>
+            <stop offset="100%" stop-color="#4a5a70" stop-opacity="0.9"/>
+          </linearGradient>
+        </defs>
+
+        <rect width="1600" height="900" fill="#0a0d14"/>
+
+        <!-- Plane in perspective (trapezoidal) -->
+        <polygon points="140,260 1460,260 1580,820 20,820" fill="url(#planeGrad02)"/>
+        <polygon points="140,260 1460,260 1580,820 20,820" fill="url(#halftone02)" opacity="0.55"/>
+
+        <!-- Relief suggestion: wavy lines -->
+        <g stroke="#4a5a70" stroke-width="1.2" fill="none" opacity="0.4">
+          <path d="M 200 640 Q 440 620 680 640 T 1160 640 T 1460 640"/>
+          <path d="M 180 720 Q 440 700 680 715 T 1180 720 T 1500 720"/>
+          <path d="M 240 540 Q 460 525 680 540 T 1140 540 T 1420 540"/>
+        </g>
+
+        <!-- Footprints in perspective (scaled, flatter) -->
+        <g fill="#0a0d15" opacity="0.78">
+          <g transform="translate(480, 470) rotate(18) scale(0.85, 0.75)">
+            <ellipse cx="0" cy="0" rx="45" ry="68"/>
+            <ellipse cx="0" cy="-84" rx="32" ry="36"/>
+          </g>
+          <g transform="translate(1080, 490) rotate(-28) scale(0.85, 0.75)">
+            <ellipse cx="0" cy="0" rx="46" ry="70"/>
+            <ellipse cx="0" cy="-86" rx="33" ry="37"/>
+          </g>
+          <g transform="translate(760, 700) rotate(5) scale(0.9, 0.75)">
+            <ellipse cx="0" cy="0" rx="48" ry="72"/>
+            <ellipse cx="0" cy="-88" rx="34" ry="38"/>
+          </g>
+          <g transform="translate(480, 680) rotate(-50) scale(0.85, 0.7)">
+            <ellipse cx="0" cy="0" rx="42" ry="62"/>
+            <ellipse cx="0" cy="-76" rx="30" ry="34"/>
+          </g>
+        </g>
+
+        <!-- Filaments propagating from footprints -->
+        <g stroke="#ffc890" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.88">
+          <path d="M 480 470 C 340 530, 220 640, 100 760"/>
+          <path d="M 480 470 C 580 560, 620 680, 660 820"/>
+          <path d="M 480 470 C 380 620, 300 700, 220 820"/>
+          <path d="M 1080 490 C 1220 560, 1320 680, 1420 820"/>
+          <path d="M 1080 490 C 980 580, 920 700, 860 820"/>
+          <path d="M 1080 490 C 1240 620, 1340 720, 1480 820"/>
+          <path d="M 760 700 C 640 780, 520 820, 380 860"/>
+          <path d="M 760 700 C 880 780, 980 820, 1120 860"/>
+        </g>
+
+        <!-- Secondary branching (dashed) -->
+        <g stroke="#ffc890" stroke-width="1.25" stroke-dasharray="4 5" fill="none" stroke-linecap="round" opacity="0.55">
+          <path d="M 340 530 C 300 580, 270 620, 240 680"/>
+          <path d="M 1260 530 C 1300 580, 1340 620, 1380 680"/>
+          <path d="M 580 560 C 620 620, 660 680, 700 740"/>
+        </g>
+
+        <!-- Pulse dots along filaments -->
+        <g fill="#ffe4bc" opacity="0.95">
+          <circle cx="340" cy="560" r="2.5"/>
+          <circle cx="180" cy="720" r="2"/>
+          <circle cx="600" cy="680" r="2"/>
+          <circle cx="1240" cy="580" r="2.5"/>
+          <circle cx="1380" cy="760" r="2"/>
+          <circle cx="900" cy="800" r="2"/>
+        </g>
+
+        <!-- Impasse stubs -->
+        <g stroke="#c24722" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.9">
+          <path d="M 480 470 C 440 500, 420 540, 400 580"/>
+          <path d="M 1080 490 C 1120 520, 1140 560, 1160 600"/>
+        </g>
+        <g stroke="#c24722" stroke-width="2" stroke-linecap="round">
+          <path d="M 396 576 l 8 8 M 404 576 l -8 8"/>
+          <path d="M 1156 596 l 8 8 M 1164 596 l -8 8"/>
+        </g>
+
+        <!-- Crosshairs on plane -->
+        <g stroke="#ff6c24" stroke-width="3.5" stroke-linecap="round" fill="none" opacity="0.9">
+          <line x1="770" y1="540" x2="860" y2="540"/>
+          <line x1="815" y1="500" x2="815" y2="580"/>
+          <line x1="300" y1="390" x2="360" y2="390"/>
+          <line x1="330" y1="365" x2="330" y2="415"/>
+          <line x1="1300" y1="420" x2="1360" y2="420"/>
+          <line x1="1330" y1="395" x2="1330" y2="445"/>
+        </g>
+        <g fill="#ff6c24" opacity="0.3">
+          <circle cx="815" cy="540" r="12"/>
+          <circle cx="330" cy="390" r="8"/>
+          <circle cx="1330" cy="420" r="8"/>
+        </g>
+
+        <g opacity="0.55" fill="#e8eef7" font-family="Geist Mono, monospace" font-size="16" letter-spacing="2">
+          <text x="40" y="865">cam ↗ swing vers le côté · lateral offset · filaments apparaissent</text>
+        </g>
+        <g font-family="Geist Mono, monospace" font-size="14" letter-spacing="2.5" fill="#ffc890" opacity="0.85">
+          <text x="1300" y="865">02 · PROPAGATION</text>
+        </g>
+      </svg>
+      <span class="caption">perspective transitoire · plane tilté · filaments émergent des empreintes</span>
+    </div>
+
+    <div class="notes">
+      <dl>
+        <dt>Intention</dt>
+        <dd>La méthode <strong>se propage</strong> depuis les empreintes. Les traces qui étaient juste des marques deviennent des <strong>chemins d'investigation</strong> qui rayonnent. On reste près du sol, on voit le travail commencer.</dd>
+
+        <dt>Cadrage</dt>
+        <dd>Caméra passe de perpendiculaire-dessous à un angle oblique dessous/côté. Le plane garde sa lisibilité — tilté en perspective.</dd>
+
+        <dt>Caméra</dt>
+        <dd>(0.4, −7.5, 0.8) → (2.2, swing d'angle de −86° à −22°). <strong>Lateral offset progressif</strong> (0.4 → 2.2) pour éviter le passage edge-on. Radius 7.5 → 7.0.</dd>
+
+        <dt>Filaments</dt>
+        <dd>36 stripes angulaires dans le shader, ~58% actives, <span class="hl">wobble noise</span>, <strong>pulse voyageur</strong> (uTime × 4) qui circule le long des chemins. Dashes segmentés.</dd>
+
+        <dt>Statuts</dt>
+        <dd>Filaments <span class="hl">vérifiés</span> · <span class="im">impasses</span> (courts, rust, × terminal) · zones de <em>flou</em> non couvertes.</dd>
+
+        <dt>Interaction</dt>
+        <dd>La souris projetée sur le sol <strong>accélère localement</strong> le front de propagation (+4.5 unités).</dd>
+
+        <dt>Texte overlay</dt>
+        <dd>top-left <em>« § 01 — La méthode se déploie »</em> · bottom-right 5 moves (what it does).</dd>
+      </dl>
+    </div>
+  </article>
+
+  <!-- ==================================================================== -->
+  <!-- PLAN 03 — LE TERRAIN SE FORME                                          -->
+  <!-- ==================================================================== -->
+  <article class="panel">
+    <header>
+      <span class="num">03</span>
+      <h2>Le terrain se forme</h2>
+      <span class="duration">~12s · scroll 35–60% · caméra arrière paysage</span>
+    </header>
+
+    <div class="frame">
+      <svg viewBox="0 0 1600 900" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="sky03" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#03050a"/>
+            <stop offset="100%" stop-color="#0a0d14"/>
+          </linearGradient>
+          <radialGradient id="groundGlow03" cx="50%" cy="70%" r="55%">
+            <stop offset="0%" stop-color="#3a2618" stop-opacity="0.5"/>
+            <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+
+        <rect width="1600" height="900" fill="url(#sky03)"/>
+
+        <!-- Terrain 3D — undulated ground with topography -->
+        <path d="M 0 480 L 160 450 L 320 470 L 460 440 L 620 465 L 780 435 L 940 462 L 1120 438 L 1300 465 L 1480 440 L 1600 470 L 1600 580 L 0 580 Z"
+              fill="#12161f" opacity="0.8"/>
+        <path d="M 0 600 L 140 560 L 280 580 L 440 550 L 600 570 L 760 545 L 920 575 L 1080 550 L 1260 580 L 1440 555 L 1600 585 L 1600 690 L 0 690 Z"
+              fill="#171c27"/>
+        <path d="M 0 700 L 120 640 L 240 710 L 400 660 L 560 730 L 720 680 L 880 740 L 1040 690 L 1200 750 L 1360 700 L 1500 755 L 1600 720 L 1600 900 L 0 900 Z"
+              fill="#1c222e"/>
+
+        <ellipse cx="800" cy="780" rx="900" ry="280" fill="url(#groundGlow03)"/>
+
+        <!-- Topographic contour filaments on near terrain -->
+        <g stroke="#ffc890" stroke-width="1.4" fill="none" stroke-linecap="round" opacity="0.75">
+          <path d="M 100 750 C 220 740, 340 730, 440 745 C 540 755, 620 750, 720 730 C 820 710, 920 730, 1040 740 C 1180 745, 1320 730, 1500 750"/>
+          <path d="M 140 780 C 280 770, 380 760, 500 775 C 620 790, 720 780, 840 765 C 960 755, 1080 770, 1240 775 C 1400 785, 1520 775, 1600 790"/>
+          <path d="M 200 820 C 320 810, 440 800, 560 820 C 680 830, 800 820, 920 810 C 1040 800, 1160 820, 1280 815 C 1420 815, 1520 820, 1600 825"/>
+        </g>
+
+        <!-- Radial filaments from horizon centre -->
+        <g stroke="#ffc890" stroke-width="1.25" fill="none" stroke-linecap="round" opacity="0.6">
+          <path d="M 800 680 L 600 880"/>
+          <path d="M 800 680 L 1000 880"/>
+          <path d="M 800 680 L 400 880"/>
+          <path d="M 800 680 L 1200 880"/>
+          <path d="M 800 680 L 300 860"/>
+          <path d="M 800 680 L 1300 860"/>
+          <path d="M 800 680 L 700 860"/>
+          <path d="M 800 680 L 900 860"/>
+        </g>
+
+        <!-- Footprint traces in deep perspective -->
+        <g fill="#080a10" opacity="0.7">
+          <g transform="translate(620, 760) rotate(18) scale(0.5, 0.3)">
+            <ellipse cx="0" cy="0" rx="45" ry="68"/>
+            <ellipse cx="0" cy="-84" rx="32" ry="36"/>
+          </g>
+          <g transform="translate(980, 750) rotate(-28) scale(0.5, 0.3)">
+            <ellipse cx="0" cy="0" rx="46" ry="70"/>
+            <ellipse cx="0" cy="-86" rx="33" ry="37"/>
+          </g>
+          <g transform="translate(800, 820) rotate(5) scale(0.5, 0.3)">
+            <ellipse cx="0" cy="0" rx="48" ry="72"/>
+          </g>
+        </g>
+
+        <!-- Columns of rising particles -->
+        <g fill="#ffc890">
+          <circle cx="280" cy="780" r="2.5"/>
+          <circle cx="280" cy="720" r="2.2" opacity="0.85"/>
+          <circle cx="280" cy="660" r="2" opacity="0.7"/>
+          <circle cx="280" cy="600" r="1.7" opacity="0.55"/>
+          <circle cx="280" cy="540" r="1.5" opacity="0.4"/>
+          <circle cx="440" cy="800" r="2.5"/>
+          <circle cx="440" cy="740" r="2.2" opacity="0.85"/>
+          <circle cx="440" cy="680" r="2" opacity="0.7"/>
+          <circle cx="440" cy="620" r="1.7" opacity="0.55"/>
+          <circle cx="440" cy="560" r="1.5" opacity="0.4"/>
+          <circle cx="620" cy="820" r="2.5"/>
+          <circle cx="620" cy="760" r="2.2" opacity="0.85"/>
+          <circle cx="620" cy="700" r="2" opacity="0.7"/>
+          <circle cx="620" cy="640" r="1.7" opacity="0.55"/>
+          <circle cx="620" cy="580" r="1.5" opacity="0.4"/>
+          <circle cx="800" cy="830" r="2.2" opacity="0.8"/>
+          <circle cx="800" cy="770" r="2" opacity="0.65"/>
+          <circle cx="800" cy="710" r="1.7" opacity="0.5"/>
+          <circle cx="980" cy="820" r="2.5"/>
+          <circle cx="980" cy="760" r="2.2" opacity="0.85"/>
+          <circle cx="980" cy="700" r="2" opacity="0.7"/>
+          <circle cx="980" cy="640" r="1.7" opacity="0.55"/>
+          <circle cx="980" cy="580" r="1.5" opacity="0.4"/>
+          <circle cx="1160" cy="800" r="2.5"/>
+          <circle cx="1160" cy="740" r="2.2" opacity="0.85"/>
+          <circle cx="1160" cy="680" r="2" opacity="0.7"/>
+          <circle cx="1160" cy="620" r="1.7" opacity="0.55"/>
+          <circle cx="1160" cy="560" r="1.5" opacity="0.4"/>
+          <circle cx="1320" cy="780" r="2.5"/>
+          <circle cx="1320" cy="720" r="2.2" opacity="0.85"/>
+          <circle cx="1320" cy="660" r="2" opacity="0.7"/>
+          <circle cx="1320" cy="600" r="1.7" opacity="0.55"/>
+          <circle cx="1320" cy="540" r="1.5" opacity="0.4"/>
+        </g>
+
+        <!-- Orange crosshairs embedded in terrain -->
+        <g stroke="#ff6c24" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.92">
+          <line x1="740" y1="720" x2="810" y2="720"/>
+          <line x1="775" y1="690" x2="775" y2="750"/>
+          <line x1="400" y1="740" x2="460" y2="740"/>
+          <line x1="430" y1="715" x2="430" y2="765"/>
+        </g>
+        <g fill="#ff6c24" opacity="0.3">
+          <circle cx="775" cy="720" r="10"/>
+          <circle cx="430" cy="740" r="8"/>
+        </g>
+
+        <g opacity="0.6" fill="#8891a0" font-family="Geist Mono, monospace" font-size="16" letter-spacing="2">
+          <text x="40" y="865">cam ↗ remontée + recul · vue paysage · terrain avec relief</text>
+        </g>
+        <g font-family="Geist Mono, monospace" font-size="14" letter-spacing="2.5" fill="#ffc890" opacity="0.85">
+          <text x="1270" y="865">03 · TERRAIN FORMÉ</text>
+        </g>
+      </svg>
+      <span class="caption">plane transformé en terrain 3D · columns montantes · footprints encore lisibles</span>
+    </div>
+
+    <div class="notes">
+      <dl>
+        <dt>Intention</dt>
+        <dd>La caméra est maintenant <strong>au-dessus</strong>. Le plane 2D est devenu terrain 3D via vertex displacement. Les empreintes deviennent de discrètes cicatrices dans le paysage. Les colonnes de particules s'élèvent — chaque trouvaille monte vers la conclusion.</dd>
+
+        <dt>Cadrage</dt>
+        <dd>Plan paysage. Terrain en bas, sky cool au-dessus, colonnes verticales qui traversent l'espace.</dd>
+
+        <dt>Caméra</dt>
+        <dd>(2.2, angle −22°, radius 7.0) → (−1.5, angle +32°, radius 8.5). <strong>Lateral offset maximal</strong> au mid-arc pour éviter edge-on. LookAt monte vers (0, 1.8, 0).</dd>
+
+        <dt>Terrain</dt>
+        <dd>Vertex displacement via fbm, amplitude 3.8 + détail 0.85. <strong>Damping central</strong> (zone des empreintes reste plate, bords relief plein). Displace ramp p=0.12 → 0.40.</dd>
+
+        <dt>Filaments</dt>
+        <dd>Toujours actifs — suivent la surface undulée. Pulse continue. Impasses et flous persistent.</dd>
+
+        <dt>Colonnes</dt>
+        <dd>60 colonnes × 20 particules. Shader streaks verticaux. Staggered pulse sin wave par colonne.</dd>
+
+        <dt>Texte overlay</dt>
+        <dd>top-left <em>« § 02 — Intégrations · embarqué · fondations »</em> + stats 11/2/5/7+ · bottom-right 6 intégrations + attribution.</dd>
+      </dl>
+    </div>
+  </article>
+
+  <!-- ==================================================================== -->
+  <!-- PLAN 04 — LA SOURCE S'AGRÈGE                                           -->
+  <!-- ==================================================================== -->
+  <article class="panel">
+    <header>
+      <span class="num">04</span>
+      <h2>La source s'agrège</h2>
+      <span class="duration">~10s · scroll 60–80% · caméra haute</span>
+    </header>
+
+    <div class="frame">
+      <svg viewBox="0 0 1600 900" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="source04" cx="50%" cy="40%" r="55%">
+            <stop offset="0%" stop-color="#ffffff" stop-opacity="0.7"/>
+            <stop offset="25%" stop-color="#ffd9a8" stop-opacity="0.45"/>
+            <stop offset="60%" stop-color="#ffc890" stop-opacity="0.15"/>
+            <stop offset="100%" stop-color="#ffc890" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="illumination04" cx="50%" cy="35%" r="80%">
+            <stop offset="0%" stop-color="#ffc890" stop-opacity="0.1"/>
+            <stop offset="100%" stop-color="#ffc890" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+
+        <rect width="1600" height="900" fill="#03050a"/>
+
+        <path d="M 0 820 L 240 800 L 480 810 L 720 795 L 960 808 L 1200 800 L 1440 812 L 1600 800 L 1600 900 L 0 900 Z"
+              fill="#0d1018" opacity="0.6"/>
+
+        <rect width="1600" height="900" fill="url(#illumination04)"/>
+
+        <!-- Converging columns bending inward -->
+        <g fill="#ffc890" opacity="0.88">
+          <circle cx="220" cy="800" r="2"/>
+          <circle cx="260" cy="720" r="1.9"/>
+          <circle cx="320" cy="640" r="1.8"/>
+          <circle cx="400" cy="560" r="1.6"/>
+          <circle cx="500" cy="470" r="1.4"/>
+          <circle cx="620" cy="380" r="1.2"/>
+
+          <circle cx="380" cy="810" r="2"/>
+          <circle cx="400" cy="730" r="1.9"/>
+          <circle cx="440" cy="650" r="1.8"/>
+          <circle cx="500" cy="560" r="1.6"/>
+          <circle cx="580" cy="470" r="1.4"/>
+          <circle cx="680" cy="390" r="1.2"/>
+
+          <circle cx="1380" cy="800" r="2"/>
+          <circle cx="1340" cy="720" r="1.9"/>
+          <circle cx="1280" cy="640" r="1.8"/>
+          <circle cx="1200" cy="560" r="1.6"/>
+          <circle cx="1100" cy="470" r="1.4"/>
+          <circle cx="980" cy="380" r="1.2"/>
+
+          <circle cx="1220" cy="810" r="2"/>
+          <circle cx="1200" cy="730" r="1.9"/>
+          <circle cx="1160" cy="650" r="1.8"/>
+          <circle cx="1100" cy="560" r="1.6"/>
+          <circle cx="1020" cy="470" r="1.4"/>
+          <circle cx="920" cy="390" r="1.2"/>
+
+          <circle cx="640" cy="820" r="2"/>
+          <circle cx="660" cy="740" r="1.9"/>
+          <circle cx="680" cy="660" r="1.8"/>
+          <circle cx="710" cy="570" r="1.6"/>
+          <circle cx="745" cy="480" r="1.4"/>
+
+          <circle cx="960" cy="820" r="2"/>
+          <circle cx="940" cy="740" r="1.9"/>
+          <circle cx="920" cy="660" r="1.8"/>
+          <circle cx="890" cy="570" r="1.6"/>
+          <circle cx="855" cy="480" r="1.4"/>
+        </g>
+
+        <!-- Source halo -->
+        <circle cx="800" cy="340" r="420" fill="url(#source04)"/>
+        <circle cx="800" cy="340" r="230" fill="url(#source04)" opacity="0.55"/>
+
+        <!-- Source particles cluster -->
+        <g fill="#ffd9a8">
+          <circle cx="800" cy="340" r="5"/>
+          <circle cx="788" cy="335" r="3.5"/>
+          <circle cx="812" cy="335" r="3.5"/>
+          <circle cx="800" cy="352" r="4"/>
+          <circle cx="782" cy="348" r="3"/>
+          <circle cx="818" cy="348" r="3"/>
+          <circle cx="800" cy="322" r="3"/>
+          <circle cx="775" cy="358" r="3"/>
+          <circle cx="825" cy="358" r="3"/>
+          <circle cx="755" cy="330" r="2.7"/>
+          <circle cx="845" cy="330" r="2.7"/>
+          <circle cx="767" cy="375" r="2.4"/>
+          <circle cx="833" cy="375" r="2.4"/>
+          <circle cx="745" cy="355" r="2.4"/>
+          <circle cx="855" cy="355" r="2.4"/>
+          <circle cx="785" cy="308" r="2.2"/>
+          <circle cx="815" cy="308" r="2.2"/>
+          <circle cx="785" cy="390" r="2.2"/>
+          <circle cx="815" cy="390" r="2.2"/>
+          <circle cx="715" cy="320" r="2" opacity="0.82"/>
+          <circle cx="885" cy="320" r="2" opacity="0.82"/>
+          <circle cx="725" cy="375" r="1.8" opacity="0.72"/>
+          <circle cx="875" cy="375" r="1.8" opacity="0.72"/>
+          <circle cx="770" cy="280" r="1.7" opacity="0.68"/>
+          <circle cx="830" cy="280" r="1.7" opacity="0.68"/>
+          <circle cx="800" cy="272" r="1.5" opacity="0.62"/>
+          <circle cx="755" cy="410" r="1.8" opacity="0.68"/>
+          <circle cx="845" cy="410" r="1.8" opacity="0.68"/>
+          <circle cx="690" cy="355" r="1.5" opacity="0.62"/>
+          <circle cx="910" cy="355" r="1.5" opacity="0.62"/>
+          <circle cx="670" cy="335" r="1.3" opacity="0.52"/>
+          <circle cx="930" cy="335" r="1.3" opacity="0.52"/>
+        </g>
+
+        <g opacity="0.55" fill="#8891a0" font-family="Geist Mono, monospace" font-size="16" letter-spacing="2">
+          <text x="40" y="865">cam ↑ remontée vers la source · accrétion</text>
+        </g>
+        <g font-family="Geist Mono, monospace" font-size="14" letter-spacing="2.5" fill="#ffd9a8" opacity="0.88">
+          <text x="1290" y="865">04 · ACCRÉTION</text>
+        </g>
+      </svg>
+      <span class="caption">colonnes convergentes · amat 480 particules · illumination retombante</span>
+    </div>
+
+    <div class="notes">
+      <dl>
+        <dt>Intention</dt>
+        <dd>La conclusion <strong>se construit</strong> — par accrétion. 480 particules clusterées qui agrègent, drift brownien, pulse individuel. La lumière rayonne vers le bas, commence à illuminer la scène.</dd>
+
+        <dt>Cadrage</dt>
+        <dd>Vue aérienne haute. Source cluster domine le cadre supérieur. Ground très distant en bas. Colonnes courbées convergeant vers le centre.</dd>
+
+        <dt>Caméra</dt>
+        <dd>(−1.5, angle +32°, radius 8.5) → (0.3, angle +63°, radius 9.0). LookAt monte dramatiquement vers (0, 5.0, 0).</dd>
+
+        <dt>Source</dt>
+        <dd>480 particules, distribution gaussienne sphérique rayon ~1.4. Scale 0.3 → 1.35. Shader: soft gaussian + core bright. PointLight réelle ambre (#ffc890) — intensité wP4 × 1.8.</dd>
+
+        <dt>Streams</dt>
+        <dd>Force d'attraction centrale ×0.7 en P4 (vs 0.3 en P3) — les colonnes se courbent visiblement vers l'axe.</dd>
+
+        <dt>Texte overlay</dt>
+        <dd>top-left <em>« § 03 — Ce qui émerge »</em> · bottom-left <em>« La conclusion se construit — par accrétion. »</em></dd>
+      </dl>
+    </div>
+  </article>
+
+  <!-- ==================================================================== -->
+  <!-- PLAN 05 — VU D'EN HAUT                                                 -->
+  <!-- ==================================================================== -->
+  <article class="panel">
+    <header>
+      <span class="num">05</span>
+      <h2>Vu d'en haut — le territoire</h2>
+      <span class="duration">~10s · scroll 80–100% · caméra top-down</span>
+    </header>
+
+    <div class="frame">
+      <svg viewBox="0 0 1600 900" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="sourceHalo05" cx="50%" cy="50%" r="60%">
+            <stop offset="0%" stop-color="#ffffff" stop-opacity="0.8"/>
+            <stop offset="30%" stop-color="#ffd9a8" stop-opacity="0.35"/>
+            <stop offset="100%" stop-color="#ffc890" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="territoryGlow05" cx="50%" cy="50%" r="65%">
+            <stop offset="0%" stop-color="#3a2618" stop-opacity="0.4"/>
+            <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+
+        <rect width="1600" height="900" fill="#05060a"/>
+        <rect width="1600" height="900" fill="url(#territoryGlow05)"/>
+
+        <!-- Concentric elevation rings -->
+        <g stroke="#1a2030" stroke-width="1.2" fill="none" opacity="0.5">
+          <ellipse cx="800" cy="450" rx="560" ry="360"/>
+          <ellipse cx="800" cy="450" rx="440" ry="280"/>
+          <ellipse cx="800" cy="450" rx="320" ry="200"/>
+          <ellipse cx="800" cy="450" rx="200" ry="130"/>
+        </g>
+
+        <!-- Radial filaments -->
+        <g stroke="#ffc890" stroke-width="1.3" fill="none" stroke-linecap="round" opacity="0.7">
+          <path d="M 800 450 L 200 180"/>
+          <path d="M 800 450 L 1400 180"/>
+          <path d="M 800 450 L 200 720"/>
+          <path d="M 800 450 L 1400 720"/>
+          <path d="M 800 450 L 140 450"/>
+          <path d="M 800 450 L 1460 450"/>
+          <path d="M 800 450 L 500 120"/>
+          <path d="M 800 450 L 1100 120"/>
+          <path d="M 800 450 L 500 780"/>
+          <path d="M 800 450 L 1100 780"/>
+          <path d="M 800 450 L 320 300"/>
+          <path d="M 800 450 L 1280 300"/>
+          <path d="M 800 450 L 320 600"/>
+          <path d="M 800 450 L 1280 600"/>
+        </g>
+
+        <!-- Secondary branching -->
+        <g stroke="#ffc890" stroke-width="0.9" stroke-dasharray="3 4" fill="none" stroke-linecap="round" opacity="0.5">
+          <path d="M 500 300 L 340 240"/>
+          <path d="M 1100 300 L 1260 240"/>
+          <path d="M 500 600 L 340 660"/>
+          <path d="M 1100 600 L 1260 660"/>
+          <path d="M 620 180 L 480 120"/>
+          <path d="M 980 180 L 1120 120"/>
+        </g>
+
+        <!-- Impasse short stubs -->
+        <g stroke="#c24722" stroke-width="1.4" fill="none" stroke-linecap="round" opacity="0.88">
+          <path d="M 800 450 L 640 350"/>
+          <path d="M 800 450 L 960 560"/>
+          <path d="M 800 450 L 700 590"/>
+        </g>
+        <g stroke="#c24722" stroke-width="1.4" stroke-linecap="round">
+          <path d="M 636 346 l 6 8 M 644 346 l -8 8"/>
+          <path d="M 956 556 l 6 8 M 964 556 l -8 8"/>
+          <path d="M 696 586 l 6 8 M 704 586 l -8 8"/>
+        </g>
+
+        <!-- Fog zones (unmapped) -->
+        <g fill="#0d1018" opacity="0.5">
+          <ellipse cx="1300" cy="380" rx="100" ry="70"/>
+          <ellipse cx="400" cy="550" rx="80" ry="60"/>
+        </g>
+
+        <!-- Footprints still visible (top-down small ovals) -->
+        <g fill="#080a10" opacity="0.7">
+          <ellipse cx="560" cy="340" rx="12" ry="22" transform="rotate(18, 560, 340)"/>
+          <ellipse cx="600" cy="400" rx="12" ry="22" transform="rotate(20, 600, 400)"/>
+          <ellipse cx="1020" cy="340" rx="12" ry="22" transform="rotate(-28, 1020, 340)"/>
+          <ellipse cx="980" cy="400" rx="12" ry="22" transform="rotate(-25, 980, 400)"/>
+          <ellipse cx="790" cy="600" rx="12" ry="22" transform="rotate(5, 790, 600)"/>
+          <ellipse cx="760" cy="560" rx="12" ry="22" transform="rotate(8, 760, 560)"/>
+          <ellipse cx="480" cy="600" rx="12" ry="22" transform="rotate(-50, 480, 600)"/>
+          <ellipse cx="440" cy="660" rx="12" ry="22" transform="rotate(-48, 440, 660)"/>
+        </g>
+
+        <!-- Columns seen from above = dots -->
+        <g fill="#ffe4bc" opacity="0.9">
+          <circle cx="340" cy="300" r="2"/>
+          <circle cx="420" cy="240" r="1.8"/>
+          <circle cx="640" cy="220" r="2"/>
+          <circle cx="900" cy="220" r="2.2"/>
+          <circle cx="1140" cy="240" r="2"/>
+          <circle cx="1280" cy="300" r="2"/>
+          <circle cx="320" cy="450" r="2"/>
+          <circle cx="1280" cy="450" r="2"/>
+          <circle cx="340" cy="600" r="2"/>
+          <circle cx="420" cy="660" r="1.8"/>
+          <circle cx="640" cy="680" r="2"/>
+          <circle cx="900" cy="680" r="2.2"/>
+          <circle cx="1140" cy="660" r="2"/>
+          <circle cx="1280" cy="600" r="2"/>
+          <circle cx="560" cy="450" r="1.6"/>
+          <circle cx="1040" cy="450" r="1.6"/>
+          <circle cx="680" cy="360" r="1.6"/>
+          <circle cx="920" cy="360" r="1.6"/>
+          <circle cx="680" cy="540" r="1.6"/>
+          <circle cx="920" cy="540" r="1.6"/>
+        </g>
+
+        <!-- Source from above -->
+        <circle cx="800" cy="450" r="160" fill="url(#sourceHalo05)"/>
+        <circle cx="800" cy="450" r="80" fill="url(#sourceHalo05)" opacity="0.7"/>
+        <g fill="#ffd9a8">
+          <circle cx="800" cy="450" r="5"/>
+          <circle cx="790" cy="445" r="3.5"/>
+          <circle cx="810" cy="445" r="3.5"/>
+          <circle cx="800" cy="460" r="4"/>
+          <circle cx="782" cy="455" r="3"/>
+          <circle cx="818" cy="455" r="3"/>
+          <circle cx="800" cy="435" r="3"/>
+          <circle cx="775" cy="465" r="2.5"/>
+          <circle cx="825" cy="465" r="2.5"/>
+          <circle cx="760" cy="445" r="2.3"/>
+          <circle cx="840" cy="445" r="2.3"/>
+          <circle cx="770" cy="480" r="2.3"/>
+          <circle cx="830" cy="480" r="2.3"/>
+          <circle cx="755" cy="470" r="2" opacity="0.8"/>
+          <circle cx="845" cy="470" r="2" opacity="0.8"/>
+          <circle cx="795" cy="425" r="2" opacity="0.8"/>
+          <circle cx="805" cy="425" r="2" opacity="0.8"/>
+        </g>
+
+        <!-- Orange crosshairs as landmarks -->
+        <g stroke="#ff6c24" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.92">
+          <line x1="770" y1="450" x2="830" y2="450"/>
+          <line x1="800" y1="420" x2="800" y2="480"/>
+          <line x1="300" y1="240" x2="360" y2="240"/>
+          <line x1="330" y1="215" x2="330" y2="265"/>
+          <line x1="1240" y1="240" x2="1300" y2="240"/>
+          <line x1="1270" y1="215" x2="1270" y2="265"/>
+          <line x1="300" y1="660" x2="360" y2="660"/>
+          <line x1="330" y1="635" x2="330" y2="685"/>
+          <line x1="1240" y1="660" x2="1300" y2="660"/>
+          <line x1="1270" y1="635" x2="1270" y2="685"/>
+        </g>
+        <g fill="#ff6c24" opacity="0.3">
+          <circle cx="330" cy="240" r="8"/>
+          <circle cx="1270" cy="240" r="8"/>
+          <circle cx="330" cy="660" r="8"/>
+          <circle cx="1270" cy="660" r="8"/>
+        </g>
+
+        <g opacity="0.6" fill="#8891a0" font-family="Geist Mono, monospace" font-size="16" letter-spacing="2">
+          <text x="40" y="865">cam ↓ top-down · le territoire complet · arc 180° complété</text>
+        </g>
+        <g font-family="Geist Mono, monospace" font-size="14" letter-spacing="2.5" fill="#ffd9a8" opacity="0.9">
+          <text x="1340" y="865">05 · OVER</text>
+        </g>
+      </svg>
+      <span class="caption">vue du dessus · territoire cartographié · arc circulaire du poster initial complété</span>
+    </div>
+
+    <div class="notes">
+      <dl>
+        <dt>Intention</dt>
+        <dd><strong>Arc 180° bouclé.</strong> On voit maintenant du dessus la même surface qu'on regardait du dessous en P1. Elle n'est plus seulement des empreintes — elle est <strong>cartographiée</strong> : filaments, colonnes, source, impasses, zones de flou. Le poster initial est devenu territoire.</dd>
+
+        <dt>Cadrage</dt>
+        <dd>Quasi top-down. Même composition XZ que P1 mais vue du haut — les empreintes sont au même endroit, les crosshairs aussi.</dd>
+
+        <dt>Caméra</dt>
+        <dd>(0.3, angle +63°, radius 9.0) → (0, angle +85°, radius 8.0). LookAt descend de (0, 5.0, 0) vers (0, 0.3, 0).</dd>
+
+        <dt>Lumière</dt>
+        <dd><strong>PointLight ambre</strong> au centre de la source (intensité wP5 × 3.4, distance 24). <strong>Illumine vraiment le terrain</strong> — pas un effet émissive, une vraie lumière qui éclaire les filaments et les empreintes.</dd>
+
+        <dt>Éléments visibles</dt>
+        <dd>Terrain cartographié avec <span class="hl">filaments actifs</span>, <span class="im">impasses</span> courts, zones de <em>flou</em>, <span class="cr">crosshairs orange</span> aux coordonnées, traces d'empreintes persistantes, colonnes vues du dessus (dots), source centrale.</dd>
+
+        <dt>Texte overlay</dt>
+        <dd>top-left <em>« § 04 — Vu d'en haut — le territoire »</em> · bottom-left <em>« Trouvailles sourcées. Impasses nommées. Mémoire qui grandit. Votre prochaine enquête ne part pas de zéro. »</em> + CTA Install + Read the source.</dd>
+
+        <dt>Handoff coda</dt>
+        <dd>Après P5, canvas fade → fond papier → Consulting + Pro Membership + footer (HTML classique).</dd>
+      </dl>
+    </div>
+  </article>
+
+</main>
+
+<footer class="end">
+  Storyboard schématique · Spotlight landing · Proto session-1 · Rotation 180° · Vue par en-dessous → vue du dessus · Mesures à l'échelle du proto live (`proto-session-1/`)
+</footer>
+
+</body>
+</html>

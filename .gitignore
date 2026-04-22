@@ -16,3 +16,6 @@ models/
 __pycache__/
 .firecrawl/
 .playwright-mcp/
+
+# Brainstorming companion
+.superpowers/

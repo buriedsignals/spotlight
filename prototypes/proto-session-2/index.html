@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spotlight — OSINT investigation system for journalists</title>
+<meta name="description" content="You lead the investigation. Spotlight does the research. Verified findings, independent fact-checking, a vault that grows with every case. By Buried Signals.">
+<meta property="og:title" content="Spotlight — OSINT investigation system for journalists">
+<meta property="og:description" content="You lead the investigation. Spotlight does the research. Verified findings, independent fact-checking, a vault that grows with every case.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://buriedsignals.com/spotlight">
+<link rel="icon" type="image/svg+xml" href="/spotlight-mark.svg">
+<link rel="preconnect" href="https://api.fontshare.com">
+<link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,700&f[]=geist-mono@400,500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="#top" aria-label="Spotlight">
+    <svg viewBox="0 0 64 64" width="24" height="24" aria-hidden="true">
+      <path d="M 51.32 26.82 A 20 20 0 0 1 12.68 26.82" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+      <path d="M 12.68 37.18 A 20 20 0 0 0 51.32 37.18" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+      <circle cx="32" cy="32" r="5" fill="currentColor"/>
+    </svg>
+    <span>Spotlight</span>
+  </a>
+  <nav>
+    <a href="#how">How</a>
+    <a href="#foundations">Foundations</a>
+    <a href="#team">Team</a>
+    <a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub</a>
+  </nav>
+</header>
+
+<section class="hero" id="top">
+  <div class="hero__text">
+    <h1>You lead the<br>investigation.</h1>
+    <p class="hero__sub">Spotlight handles the open-source research — verified findings, independent fact-checking, a vault that grows with every case.</p>
+    <div class="hero__cta">
+      <a href="/setup.html" class="btn btn--primary">Install Spotlight →</a>
+      <a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener" class="btn btn--ghost">GitHub</a>
+    </div>
+    <p class="hero__note">By <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals</a> — investigative media and technology studio.</p>
+  </div>
+  <div class="hero__3d">
+    <canvas id="hero-canvas" aria-hidden="true"></canvas>
+  </div>
+</section>
+
+<section class="block" id="how">
+  <p class="eyebrow">How it works</p>
+  <h2>Verification baked in. Not an afterthought.</h2>
+  <ol class="steps">
+    <li>
+      <strong>Lead.</strong>
+      URL, name, topic, document. Spotlight designs a methodology you approve before anything runs.
+    </li>
+    <li>
+      <strong>Cycles.</strong>
+      Research runs with an independent fact-checker after each cycle. Nothing advances on one source or one agent's reasoning.
+    </li>
+    <li>
+      <strong>Sourcing.</strong>
+      Primary documents anchored, two independent sources per claim, disputes flagged, affected perspectives present.
+    </li>
+    <li>
+      <strong>Review.</strong>
+      Click through findings, challenge claims, re-trigger the investigator on specific points.
+    </li>
+    <li>
+      <strong>Vault.</strong>
+      Entities, sources, tools, methodology stay cross-linked across investigations. The AI remembers past work.
+    </li>
+  </ol>
+</section>
+
+<section class="block" id="foundations">
+  <p class="eyebrow">What you get</p>
+  <h2>Open-source. Runtime-agnostic. Yours to run.</h2>
+  <div class="stats">
+    <div><strong>11</strong><span>skills</span></div>
+    <div><strong>2</strong><span>agents</span></div>
+    <div><strong>5</strong><span>schemas</span></div>
+    <div><strong>7+</strong><span>runtimes</span></div>
+  </div>
+  <p class="block__note">Same skills run across pi, Claude Code, Gemini, Codex, OpenCode, Hermes, Goose. Open-source ports of the battle-tested <code>buriedsignals/spotlight</code> and <code>osint</code> Claude Code plugins.</p>
+  <h3>Integrates with</h3>
+  <ul class="list">
+    <li><strong>Agent runtimes</strong> — local journalism fine-tune, Claude Code, Gemini, Codex, OpenCode.</li>
+    <li><strong>Web scraping &amp; evidence archiving</strong> — every source captured locally with chain of custody.</li>
+    <li><strong><a href="https://navigator.indicator.media/" target="_blank" rel="noopener">OSINT Navigator</a></strong> — 1,000+ curated OSINT tools with AI-powered lookup.</li>
+    <li><strong>Knowledge vault</strong> (Obsidian) — investigations become permanent, searchable memory.</li>
+    <li><strong>Monitoring feeds</strong> — conflict events, disaster alerts, global news, investigative outlets.</li>
+    <li><strong>Browser automation, narrative tracking, misinformation databases</strong> — plug-in integrations.</li>
+  </ul>
+  <h3>Built on methodology from</h3>
+  <p class="block__attribution">
+    <a href="https://www.bellingcat.com/" target="_blank" rel="noopener">Bellingcat</a> ·
+    <a href="https://gijn.org/" target="_blank" rel="noopener">GIJN</a> ·
+    Jim Shultz's <em>Follow the Money</em> ·
+    <a href="https://github.com/jamditis/claude-skills-journalism" target="_blank" rel="noopener">Jay Amditis's claude-skills-journalism</a> ·
+    OCCRP / ICIJ investigative practice.
+  </p>
+</section>
+
+<section class="block" id="team">
+  <p class="eyebrow">From the team behind Spotlight</p>
+  <h2>We ship the tool. We also teach the craft.</h2>
+  <div class="cards">
+    <article class="card">
+      <div class="card__eyebrow">Launching May 2026</div>
+      <h3>Pro Membership</h3>
+      <p class="card__sub">Investigations with AI. The tools to run your own.</p>
+      <ul class="card__features">
+        <li>Collaborative investigations — shared leads, data, methodology</li>
+        <li>Live bootcamps, workshops, events</li>
+        <li>Hosted Pro tier of the agent extensions — coJournalist, Navigator, Spotlight, DataHound</li>
+        <li>Investigation methodologies and AI techniques, in depth</li>
+      </ul>
+      <p class="price"><strong>From $25/mo</strong> · 400+ journalists already reading</p>
+      <form id="signup-form">
+        <input type="email" id="signup-email" placeholder="you@example.com" required autocomplete="email">
+        <button type="submit" id="signup-submit">Subscribe</button>
+      </form>
+      <div id="signup-error" class="error" hidden></div>
+      <div id="signup-success" class="success" hidden>You're in. I'll ping you at launch.</div>
+    </article>
+
+    <article class="card">
+      <h3>Consulting</h3>
+      <p class="card__sub">I train newsrooms to investigate with AI.</p>
+      <ul class="card__services">
+        <li>
+          <strong>Workshops &amp; training</strong> — hands-on sessions where journalists investigate live stories with AI.
+          <span class="clients">Le Temps · MAZ Journalistenschule · Republik · 20 Minuten</span>
+        </li>
+        <li>
+          <strong>Custom AI tooling</strong> — AI systems into your editorial workflow: archive search, source monitoring, research agents.
+          <span class="clients">MediaStorm</span>
+        </li>
+        <li>
+          <strong>Investigation collaborations</strong> — visual production and AI pipelines paired with your field reporting.
+          <span class="clients">The New Humanitarian</span>
+        </li>
+      </ul>
+      <div class="card__cta">
+        <a href="mailto:tom@buriedsignals.com?subject=Spotlight%20%E2%80%94%20Consulting" class="btn btn--ghost">Get in touch →</a>
+        <a href="https://buriedsignals.com/consulting" target="_blank" rel="noopener" class="link">See case studies →</a>
+      </div>
+    </article>
+  </div>
+</section>
+
+<section class="block block--cta">
+  <h2>Your lead. Your judgment.<br>Your vault.</h2>
+  <a href="/setup.html" class="btn btn--primary btn--large">Install Spotlight →</a>
+</section>
+
+<footer class="site-footer">
+  <div>Built by <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals</a></div>
+  <nav>
+    <a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub</a>
+    <a href="/setup.html">Install</a>
+    <a href="https://github.com/buriedsignals/spotlight/blob/main/DISCLAIMER.md" target="_blank" rel="noopener">Disclaimer</a>
+    <a href="mailto:buriedsignals@agentmail.com">Contact</a>
+  </nav>
+</footer>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
