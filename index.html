@@ -3213,10 +3213,24 @@
           params.alignedClusterX = 0;
           params.alignedClusterY = 0;
           // Activity mix per mood — controls how many cubes are "on".
-          const activityMix = mood === 'sparse' ? 0.35 : mood === 'calm' ? 0.5 : 1.0;
-          for (let i = 0; i < N_CELLS; i++) targetActivity[i] = (i / N_CELLS) < activityMix ? 1 : 0;
+          // 'aligned' is handled per-frame below (step-driven progressive reveal).
+          if (mood !== 'aligned') {
+            const activityMix = mood === 'sparse' ? 0.35 : mood === 'calm' ? 0.5 : 1.0;
+            for (let i = 0; i < N_CELLS; i++) targetActivity[i] = (i / N_CELLS) < activityMix ? 1 : 0;
+          }
         }
         window.__prevSceneMood = mood;
+      }
+      // Narrative: in #what (aligned mood), the scene illustrates "five things,
+      // in order" — cubes light up progressively as the user reads each step.
+      // Mapping step N → STEP_CUBE_COUNTS[N] cubes active (sorted by distance
+      // from origin so the activation radiates outward).
+      if (mood === 'aligned') {
+        const step = Math.max(0, Math.min(4, window.__fiveThingsStep | 0));
+        const threshold = STEP_CUBE_COUNTS[step];
+        for (let i = 0; i < N_CELLS; i++) {
+          targetActivity[i] = cellRank[shuffleOrder[i]] < threshold ? 1 : 0;
+        }
       }
       // Mood-driven time multiplier (slows physics without pausing it).
       const moodSpeed = mood === 'chaos' ? 1.0
