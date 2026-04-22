@@ -4,572 +4,1207 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Spotlight — Install</title>
-<link rel="icon" type="image/svg+xml" href="assets/spotlight-mark.svg">
+<meta name="description" content="Configure your Spotlight install. Local or cloud, integrations, vault — generate the script and run it.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0f1115;
-    --bg-2: #171a21;
-    --bg-3: #1f232c;
-    --fg: #e8ecf1;
-    --muted: #8891a0;
-    --border: #2a2f3a;
-    --accent: #7cb7ff;
-    --green: #6ebf6e;
-    --amber: #d9a441;
-    --red: #e36b6b;
-  }
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg: #fafbfc;
-      --bg-2: #ffffff;
-      --bg-3: #f1f3f5;
-      --fg: #1a1f29;
-      --muted: #5a6472;
-      --border: #d9dde3;
-      --accent: #2158c9;
-      --green: #2f7a35;
-      --amber: #a36c10;
-      --red: #b83535;
-    }
+    --ink: #07070a;
+    --ink-2: #0c0c10;
+    --paper: #ede8dc;
+    --paper-2: #e3ddce;
+    --paper-fg: #17140e;
+    --muted-dark: rgba(237, 232, 220, 0.55);
+    --muted-faint-dark: rgba(237, 232, 220, 0.18);
+    --muted-light: rgba(23, 20, 14, 0.55);
+    --muted-faint-light: rgba(23, 20, 14, 0.15);
+    --warm: #fff5d9;          /* surface/texte clair sur dark — pas un accent */
+    --accent-warm: #c16a34;   /* terracotta — accent éditorial primaire */
+    --accent-cool: #346fa8;   /* steel blue — accent secondaire */
+    --green: #4a7d3f;
+    --amber: #8a6212;
+    --red: #a83838;
   }
   * { box-sizing: border-box; }
-  html { font-size: 15px; }
+  html, body { margin: 0; padding: 0; background: var(--ink); color: var(--paper); }
   body {
     font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-    background: var(--bg);
-    color: var(--fg);
-    margin: 0;
-    line-height: 1.55;
-    font-size: 0.92rem;
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
   }
-  .wrap { max-width: 760px; margin: 0 auto; padding: 48px 24px 120px; }
-
-  .brand {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 24px;
-    color: var(--fg);
-    text-decoration: none;
-  }
-  .brand svg { width: 28px; height: 28px; color: var(--accent); flex-shrink: 0; }
-  .brand .wordmark {
+  a { color: inherit; text-decoration: none; }
+  .serif {
     font-family: "Fraunces", Georgia, "Times New Roman", serif;
-    font-weight: 600;
-    font-size: 1.25rem;
-    letter-spacing: -0.01em;
-    font-variation-settings: "opsz" 48;
-    color: var(--fg);
-  }
-
-  h1 {
-    font-family: "Fraunces", Georgia, "Times New Roman", serif;
-    margin: 0 0 8px;
-    font-size: 2.2rem;
-    letter-spacing: -0.015em;
-    font-weight: 600;
     font-variation-settings: "opsz" 144;
+    font-weight: 500;
+    letter-spacing: -0.02em;
   }
-  .sub { color: var(--muted); margin: 0 0 40px; font-size: 1rem; }
-  h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 36px 0 12px; font-weight: 600; }
-  h2 .req { color: var(--red); font-weight: 600; font-size: 0.7rem; margin-left: 6px; letter-spacing: 0.08em; }
-  h2 .opt { color: var(--muted); font-weight: 400; font-size: 0.75rem; margin-left: 6px; text-transform: none; letter-spacing: 0; }
+  .mono { font-family: "Geist Mono", ui-monospace, monospace; }
+
+  /* ── NAV ──────────────────────────────────────────────────
+     3-state system shared with the landing. JS toggles .on-hero
+     and .on-dark based on the section currently under the top edge
+     (data-nav-theme attr on sections). Default = paper background. */
+  nav.topnav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 20px 28px;
+    background: var(--paper);
+    color: var(--paper-fg);
+    border-bottom: 1px solid var(--muted-faint-light);
+    pointer-events: none;
+    /* Only animate the colour — background must snap instantly so we never
+       see a semi-transparent "bleed" state mid-transition. */
+    transition: color 220ms ease, border-color 220ms ease;
+  }
+  nav.topnav.on-hero {
+    background: transparent;
+    color: #fff;
+    border-bottom-color: transparent;
+    mix-blend-mode: difference;
+  }
+  nav.topnav.on-dark {
+    background: var(--ink);
+    color: var(--paper);
+    border-bottom-color: var(--muted-faint-dark);
+  }
+  nav.topnav > * { pointer-events: auto; }
+  nav.topnav .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-family: "Fraunces", serif; font-size: 17px; font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  nav.topnav .brand svg { width: 18px; height: 18px; }
+  nav.topnav .links {
+    display: flex; gap: 22px; align-items: center;
+    font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase;
+  }
+  nav.topnav .links a { transition: color 0.2s ease; opacity: 0.85; }
+  nav.topnav .links a:hover { color: var(--accent-warm); opacity: 1; }
+  /* Install — promoted as a CTA (bordered pill) in the topnav. */
+  nav.topnav .links a[href="setup.html"] {
+    display: inline-flex; align-items: center;
+    padding: 9px 14px;
+    border: 1px solid currentColor;
+    opacity: 1;
+    letter-spacing: 0.22em;
+    font-weight: 500;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  }
+  nav.topnav .links a[href="setup.html"]:hover {
+    background: rgba(193, 106, 52, 0.14);   /* accent-warm fade */
+    border-color: var(--accent-warm);
+    color: var(--accent-warm);
+  }
+
+  /* ── HERO ─────────────────────────────────────────────── */
+  #hero {
+    position: relative;
+    min-height: 60vh;
+    background: var(--ink);
+    padding: 140px 48px 100px;
+    border-bottom: 1px solid var(--muted-faint-dark);
+    overflow: hidden;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: 48px;
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+  .hero-meta {
+    text-align: right;
+    font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+    opacity: 0.55; line-height: 1.8;
+    margin-bottom: 24px;
+  }
+  .hero-title {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 144;
+    font-weight: 500;
+    font-size: clamp(44px, 7vw, 110px);
+    line-height: 0.96;
+    letter-spacing: -0.025em;
+    margin: 0;
+    max-width: 11ch;
+  }
+  .hero-title .accent {
+    font-style: italic;
+    font-variation-settings: "opsz" 144, "wght" 400;
+    color: var(--accent-warm);
+    display: block;
+  }
+  .hero-side {
+    max-width: 320px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--muted-dark);
+    padding-bottom: 8px;
+  }
+
+  /* ── FORM SHELL (paper) ───────────────────────────────── */
+  main.form-shell {
+    background: var(--paper);
+    color: var(--paper-fg);
+  }
+  .form-wrap {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 0 48px;
+  }
+
+  /* Section header */
+  .sec-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 80px 0 28px;
+    border-bottom: 1px solid var(--muted-faint-light);
+    gap: 32px;
+  }
+  .sec-header .chap {
+    font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+    opacity: 0.55;
+    flex-shrink: 0;
+  }
+  .sec-header .chap .req {
+    color: var(--red); margin-left: 8px; font-weight: 600;
+  }
+  .sec-header .chap .opt {
+    margin-left: 8px; opacity: 0.7; text-transform: none; letter-spacing: 0;
+  }
+  .sec-header h2 {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 96, "wght" 500;
+    font-size: clamp(28px, 3.6vw, 44px);
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    margin: 0;
+    text-align: right;
+    max-width: 22ch;
+  }
+
+  /* Cards */
   section.card {
-    background: var(--bg-2);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 20px 22px;
-    margin-bottom: 16px;
+    background: var(--paper-2);
+    border: 1px solid var(--muted-faint-light);
+    padding: 28px 28px;
+    margin: 28px 0 0;
   }
-  label.block { display: block; margin-bottom: 8px; font-size: 0.92rem; font-weight: 500; }
-  label.block .hint { color: var(--muted); font-weight: 400; font-size: 0.85rem; margin-left: 4px; }
-  label.block a { color: var(--accent); text-decoration: none; }
-  label.block a:hover { text-decoration: underline; }
+  section.card > p:first-child { margin-top: 0; }
+  section.card .lede {
+    font-size: 13px; line-height: 1.6;
+    opacity: 0.75;
+    margin: 0 0 18px;
+  }
+
+  /* Labels + inputs */
+  label.block {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    opacity: 0.7;
+    font-weight: 500;
+  }
+  label.block .hint {
+    text-transform: none; letter-spacing: 0;
+    opacity: 0.85;
+    font-weight: 400;
+    font-size: 12px;
+    margin-left: 6px;
+  }
+  label.block a {
+    border-bottom: 1px solid currentColor;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  label.block a:hover {
+    color: var(--accent-warm);
+  }
   input[type="text"], input[type="password"], select {
     width: 100%;
-    background: var(--bg-3);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 9px 12px;
-    color: var(--fg);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.92rem;
+    background: var(--paper);
+    border: 1px solid var(--muted-faint-light);
+    border-radius: 0;
+    padding: 12px 14px;
+    color: var(--paper-fg);
+    font-family: "Geist Mono", ui-monospace, monospace;
+    font-size: 13px;
+    transition: border-color 0.15s, box-shadow 0.15s;
   }
-  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
-  .radio-group, .checkbox-group { display: flex; flex-direction: column; gap: 8px; }
-  .radio-group label, .checkbox-group label {
+  input:focus, select:focus {
+    outline: none;
+    border-color: var(--accent-warm);
+    box-shadow: inset 0 -2px 0 0 var(--accent-warm);
+  }
+
+  /* Radio / checkbox cards (label-as-card pattern) */
+  .radio-group, .checkbox-group {
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .radio-group > label, .checkbox-group > label {
     cursor: pointer;
-    padding: 10px 14px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    font-size: 0.95rem;
-    background: var(--bg-3);
+    padding: 16px 18px;
+    border: 1px solid var(--muted-faint-light);
+    background: var(--paper);
     display: flex;
     align-items: flex-start;
-    gap: 10px;
-    transition: background 0.08s, border-color 0.08s;
+    gap: 14px;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
   }
-  .radio-group label:hover, .checkbox-group label:hover { background: var(--bg); }
-  .radio-group input, .checkbox-group input { margin-top: 4px; flex-shrink: 0; }
-  .radio-group label:has(input:checked), .checkbox-group label:has(input:checked) {
-    background: var(--bg);
-    border-color: var(--accent);
+  .radio-group > label:hover, .checkbox-group > label:hover {
+    border-color: var(--paper-fg);
+  }
+  .radio-group > label > input, .checkbox-group > label > input {
+    margin-top: 4px;
+    flex-shrink: 0;
+    accent-color: var(--paper-fg);
+  }
+  .radio-group > label:has(input:checked),
+  .checkbox-group > label:has(input:checked) {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+  .radio-group > label:has(input:checked) > input,
+  .checkbox-group > label:has(input:checked) > input {
+    accent-color: var(--accent-warm);
+  }
+  /* On selection, the Fraunces name flips to terracotta — signature accent */
+  .radio-group > label:has(input:checked) .opt-name .name,
+  .checkbox-group > label:has(input:checked) .opt-name .name {
+    color: var(--accent-warm);
   }
   .opt-name { flex: 1; }
-  .opt-name .name { font-weight: 600; display: block; font-size: 0.97rem; }
-  .opt-name .desc { color: var(--muted); font-size: 0.85rem; margin-top: 2px; line-height: 1.45; }
-  .key-row { margin-top: 10px; }
+  .opt-name .name {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 48, "wght" 500;
+    font-size: 18px;
+    letter-spacing: -0.01em;
+    display: block;
+    margin-bottom: 4px;
+    transition: color 0.15s;
+  }
+  .opt-name .desc {
+    font-size: 12px;
+    line-height: 1.55;
+    opacity: 0.7;
+  }
+
+  .key-row { margin-top: 18px; }
   .hidden { display: none !important; }
+
+  /* Step / instruction cards */
   .step-card {
-    background: rgba(124, 183, 255, 0.06);
-    border-left: 3px solid var(--accent);
-    padding: 14px 18px;
-    border-radius: 4px;
-    margin-top: 14px;
-    font-size: 0.92rem;
+    background: var(--paper);
+    border-left: 2px solid var(--paper-fg);
+    padding: 18px 20px;
+    margin-top: 16px;
+    font-size: 13px;
   }
   .step-card h4 {
-    margin: 0 0 10px;
-    font-size: 0.8rem;
+    margin: 0 0 12px;
+    font-size: 10px;
+    letter-spacing: 0.22em;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--accent);
-    font-weight: 600;
+    opacity: 0.55;
+    font-weight: 500;
   }
   .step-card ol, .step-card ul { margin: 6px 0; padding-left: 22px; }
-  .step-card li { margin: 5px 0; line-height: 1.5; }
+  .step-card li { margin: 6px 0; line-height: 1.55; }
   .step-card code {
-    background: var(--bg-3);
+    background: var(--paper-2);
     padding: 1px 6px;
-    border-radius: 3px;
-    font-size: 0.86em;
+    font-size: 12px;
+    border: 1px solid var(--muted-faint-light);
   }
-  .step-card a { color: var(--accent); }
+  .step-card a { border-bottom: 1px solid currentColor; transition: color 0.15s, border-color 0.15s; }
+  .step-card a:hover { color: var(--accent-warm); }
+
+  .step-card.warn {
+    border-left-color: var(--amber);
+  }
+  .step-card.warn h4 { color: var(--amber); opacity: 1; }
+
   .note-amber {
-    background: rgba(217, 164, 65, 0.08);
-    border-left: 3px solid var(--amber);
-    padding: 10px 14px;
-    border-radius: 4px;
-    font-size: 0.88rem;
-    margin-top: 12px;
-    color: var(--fg);
+    background: var(--paper);
+    border-left: 2px solid var(--amber);
+    padding: 12px 16px;
+    font-size: 12px;
+    line-height: 1.55;
+    margin-top: 14px;
   }
+
+  /* Inline code */
+  code {
+    background: var(--paper-2);
+    color: var(--paper-fg);
+    padding: 1px 5px;
+    font-family: "Geist Mono", monospace;
+    font-size: 0.92em;
+    border: 1px solid var(--muted-faint-light);
+  }
+  section.card code { background: var(--paper); }
+  /* Inside selected radio/checkbox cards (ink bg) — flip code to dark variant */
+  .radio-group > label:has(input:checked) code,
+  .checkbox-group > label:has(input:checked) code {
+    background: var(--ink-2);
+    color: var(--paper);
+    border-color: var(--muted-faint-dark);
+  }
+
+  /* Local model — info row */
   .model-info {
-    display: flex;
-    gap: 18px;
-    flex-wrap: wrap;
-    font-size: 0.88rem;
-    color: var(--muted);
-    margin-top: 10px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0;
+    margin-top: 8px;
+    border-top: 1px solid var(--paper-fg);
+    border-bottom: 1px solid var(--paper-fg);
   }
-  .model-info .stat strong { display: block; color: var(--fg); font-size: 1rem; }
+  .model-info .stat {
+    padding: 16px 14px;
+    border-right: 1px solid var(--muted-faint-light);
+    font-size: 11px;
+    line-height: 1.5;
+    opacity: 0.75;
+  }
+  .model-info .stat:last-child { border-right: none; }
+  .model-info .stat strong {
+    display: block;
+    color: var(--accent-warm);
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 48, "wght" 500;
+    font-size: 18px;
+    letter-spacing: -0.01em;
+    margin-bottom: 4px;
+    opacity: 1;
+  }
+
+  /* Buttons */
+  button.btn-primary, .btn-primary {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 14px 18px;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: "Geist Mono", monospace;
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.2s;
+  }
+  button.btn-primary:hover, .btn-primary:hover { background: var(--paper-fg); }
+  button.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  button.btn-ghost {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 14px;
+    background: transparent;
+    color: var(--paper-fg);
+    border: 1px solid var(--paper-fg);
+    font-family: "Geist Mono", monospace;
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+  }
+  button.btn-ghost:hover { background: var(--paper-fg); color: var(--paper); }
+
+  /* Generate bar */
   .generate-bar {
-    margin-top: 36px;
+    margin: 80px 0 40px;
+    padding: 32px 0;
+    border-top: 1px solid var(--paper-fg);
     display: flex;
-    gap: 12px;
+    gap: 24px;
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
   }
-  button.primary {
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    padding: 12px 24px;
-    border-radius: 8px;
-    font-family: inherit;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
+  .generate-bar .lbl {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 72, "wght" 400;
+    font-style: italic;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    max-width: 32ch;
+    margin: 0;
   }
-  button.primary:hover { filter: brightness(1.08); }
-  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .generate-bar .lbl em {
+    font-style: normal;
+    color: var(--accent-warm);
+  }
+
+  /* ── INSTALL OUTPUT (dark reveal) ─────────────────────── */
+  #install-output {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 80px 48px 100px;
+    border-top: 1px solid var(--muted-faint-dark);
+  }
+  #install-output .out-wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+  }
+  #install-output .out-header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    padding-bottom: 24px;
+    gap: 32px;
+  }
+  #install-output .out-header .chap {
+    font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.55;
+    padding-bottom: 8px;
+  }
+  #install-output .out-header h2 {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 96, "wght" 500;
+    font-size: clamp(28px, 3.2vw, 44px);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    margin: 0;
+    text-align: right;
+  }
   .install-options {
     display: grid;
-    grid-template-columns: 1fr;
-    gap: 18px;
-    margin-top: 32px;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: 0;
+    border-top: 1px solid var(--muted-faint-dark);
+    border-bottom: 1px solid var(--muted-faint-dark);
   }
   .install-option {
-    background: var(--bg-2);
-    border: 1px solid var(--accent);
-    border-radius: 10px;
-    padding: 20px 22px;
+    padding: 36px 32px;
+    border-right: 1px solid var(--muted-faint-dark);
+    display: flex; flex-direction: column;
+    min-width: 0;
   }
-  .install-option h3 { margin: 0 0 8px; font-size: 1.1rem; }
-  .install-option .desc { color: var(--muted); font-size: 0.93rem; margin-bottom: 14px; }
-  .script-box {
-    background: var(--bg-3);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 14px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.78rem;
-    line-height: 1.5;
-    white-space: pre;
-    overflow-x: auto;
-    max-height: 280px;
-    overflow-y: auto;
-    color: var(--fg);
+  .install-option:last-child { border-right: none; }
+  .install-option .kicker {
+    font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
+    opacity: 0.55;
     margin-bottom: 12px;
   }
-  .steps-list { counter-reset: step; padding: 0; list-style: none; margin: 12px 0 0; }
+  .install-option h3 {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 72, "wght" 500;
+    font-size: clamp(22px, 2.6vw, 32px);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin: 0 0 16px;
+    max-width: 18ch;
+  }
+  .install-option .desc {
+    font-size: 13px; line-height: 1.6; opacity: 0.7;
+    margin: 0 0 20px;
+  }
+  .install-option .note-amber {
+    background: rgba(255, 245, 217, 0.05);
+    border-left: 2px solid var(--warm);
+    color: var(--paper);
+  }
+  .install-option .actions {
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  /* Buttons inside dark install panel — cream surface ignites terracotta on hover */
+  .install-option button.btn-primary {
+    background: var(--warm);
+    color: var(--ink);
+    transition: background 0.2s, color 0.2s;
+  }
+  .install-option button.btn-primary:hover {
+    background: var(--accent-warm);
+    color: var(--paper);
+  }
+
+  .script-box {
+    background: var(--ink-2);
+    border: 1px solid var(--muted-faint-dark);
+    padding: 16px;
+    font-family: "Geist Mono", ui-monospace, monospace;
+    font-size: 11px;
+    line-height: 1.55;
+    white-space: pre;
+    overflow: auto;
+    max-height: 320px;
+    width: 100%;
+    max-width: 100%;
+    color: var(--paper);
+    margin-bottom: 16px;
+  }
+
+  .steps-list { counter-reset: step; padding: 0; list-style: none; margin: 16px 0 0; }
   .steps-list li {
     counter-increment: step;
-    padding: 6px 0 6px 32px;
+    padding: 6px 0 6px 36px;
     position: relative;
-    font-size: 0.92rem;
+    font-size: 12px;
+    line-height: 1.6;
   }
   .steps-list li::before {
-    content: counter(step);
+    content: counter(step, decimal-leading-zero);
     position: absolute;
     left: 0;
-    top: 6px;
-    width: 22px;
-    height: 22px;
-    background: var(--accent);
-    color: #fff;
-    border-radius: 50%;
-    text-align: center;
-    line-height: 22px;
-    font-size: 0.78rem;
-    font-weight: 600;
+    top: 7px;
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 48, "wght" 500;
+    font-size: 13px;
+    color: var(--accent-warm);
+    letter-spacing: 0;
   }
   .steps-list kbd {
-    background: var(--bg-3);
-    border: 1px solid var(--border);
+    background: var(--ink);
+    border: 1px solid var(--muted-faint-dark);
     border-bottom-width: 2px;
-    border-radius: 4px;
     padding: 1px 6px;
-    font-family: inherit;
-    font-size: 0.85rem;
+    font-family: "Geist Mono", monospace;
+    font-size: 11px;
   }
+
   .copied-feedback {
     display: inline-block;
-    margin-left: 12px;
-    color: var(--green);
-    font-size: 0.88rem;
-    font-weight: 500;
+    margin-left: 4px;
+    color: var(--accent-warm);
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
     opacity: 0;
     transition: opacity 0.2s;
   }
   .copied-feedback.show { opacity: 1; }
+
   .error {
     color: var(--red);
-    font-size: 0.88rem;
-    margin-top: 8px;
-  }
-  code { background: var(--bg-3); padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
-  .intro-list { font-size: 0.93rem; color: var(--muted); padding-left: 22px; margin: 0 0 24px; }
-  .intro-list li { margin: 4px 0; }
-  a.link { color: var(--accent); text-decoration: none; }
-  a.link:hover { text-decoration: underline; }
-
-  /* LLM fit check */
-  .fit-panel {
-    margin-top: 14px;
-    border-radius: 8px;
-    padding: 16px 18px;
-    font-size: 0.92rem;
-  }
-  .fit-panel.idle { background: var(--bg-3); border: 1px solid var(--border); }
-  .fit-panel.green { background: rgba(110,191,110,0.08); border: 1px solid var(--green); }
-  .fit-panel.amber { background: rgba(217,164,65,0.08); border: 1px solid var(--amber); }
-  .fit-panel.red { background: rgba(227,107,107,0.08); border: 1px solid var(--red); }
-  .fit-verdict { display: flex; align-items: center; gap: 10px; font-weight: 600; margin-bottom: 8px; }
-  .fit-verdict .icon { font-size: 1.3rem; }
-  .fit-verdict.green .icon, .fit-panel.green .fit-verdict .icon { color: var(--green); }
-  .fit-verdict.amber .icon, .fit-panel.amber .fit-verdict .icon { color: var(--amber); }
-  .fit-verdict.red .icon, .fit-panel.red .fit-verdict .icon { color: var(--red); }
-  .fit-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 10px 0; font-size: 0.86rem; }
-  .fit-stats .stat-item { background: var(--bg-2); padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); }
-  .fit-stats .stat-item .k { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
-  .fit-stats .stat-item .v { color: var(--fg); font-weight: 600; font-size: 0.95rem; margin-top: 2px; display: block; }
-  .fit-copy-cmd {
-    display: flex; gap: 8px; align-items: center;
-    background: var(--bg-2); padding: 8px 10px; border-radius: 6px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem;
-    border: 1px solid var(--border);
+    font-size: 12px;
     margin-top: 10px;
+    letter-spacing: 0.05em;
   }
-  .fit-copy-cmd code { background: none; padding: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .fit-copy-cmd button { background: var(--bg-3); border: 1px solid var(--border); color: var(--fg); padding: 4px 10px; border-radius: 4px; font-size: 0.78rem; cursor: pointer; flex-shrink: 0; }
-  .fit-copy-cmd button:hover { filter: brightness(1.1); }
 
-  /* Provider sub-picker */
+  /* LLM fit check panel */
+  .fit-row {
+    margin-top: 18px;
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .fit-row .fit-aside {
+    font-size: 11px; opacity: 0.6;
+  }
+  .fit-panel {
+    margin-top: 16px;
+    padding: 18px 20px;
+    background: var(--paper);
+    border-left: 2px solid var(--muted-faint-light);
+    font-size: 13px;
+  }
+  .fit-panel.idle { border-left-color: var(--muted-faint-light); }
+  .fit-panel.green { border-left-color: var(--green); }
+  .fit-panel.amber { border-left-color: var(--amber); }
+  .fit-panel.red { border-left-color: var(--red); }
+  .fit-verdict {
+    display: flex; align-items: center; gap: 12px;
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 72, "wght" 500;
+    font-size: 18px;
+    letter-spacing: -0.01em;
+    margin-bottom: 12px;
+  }
+  .fit-verdict .icon {
+    font-family: "Geist Mono", monospace;
+    font-size: 16px;
+    width: 22px; height: 22px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid currentColor;
+  }
+  .fit-verdict.green { color: var(--green); }
+  .fit-verdict.amber { color: var(--amber); }
+  .fit-verdict.red { color: var(--red); }
+  .fit-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0;
+    margin: 12px 0;
+    border-top: 1px solid var(--muted-faint-light);
+    border-bottom: 1px solid var(--muted-faint-light);
+  }
+  .fit-stats .stat-item {
+    padding: 12px 14px;
+    border-right: 1px solid var(--muted-faint-light);
+  }
+  .fit-stats .stat-item:last-child { border-right: none; }
+  .fit-stats .stat-item .k {
+    color: var(--paper-fg);
+    opacity: 0.55;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    margin-bottom: 4px;
+  }
+  .fit-stats .stat-item .v {
+    color: var(--accent-warm);
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 48, "wght" 500;
+    font-size: 17px;
+    letter-spacing: -0.01em;
+    display: block;
+  }
+  #fit-body { color: var(--paper-fg); opacity: 0.8; line-height: 1.6; font-size: 13px; }
+  #fit-body b { font-weight: 600; opacity: 1; }
+  .fit-copy-cmd {
+    display: flex; gap: 10px; align-items: center;
+    background: var(--paper-2);
+    padding: 10px 12px;
+    font-family: "Geist Mono", monospace;
+    font-size: 11px;
+    border: 1px solid var(--muted-faint-light);
+    margin-top: 12px;
+  }
+  .fit-copy-cmd code {
+    background: none;
+    border: none;
+    padding: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fit-copy-cmd button {
+    background: var(--paper);
+    border: 1px solid var(--muted-faint-light);
+    color: var(--paper-fg);
+    padding: 5px 12px;
+    font-family: "Geist Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .fit-copy-cmd button:hover { background: var(--paper-fg); color: var(--paper); }
+
+  /* Provider sub-picker (compact grid) */
   .provider-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 8px;
+    gap: 0;
     margin-top: 10px;
+    border: 1px solid var(--muted-faint-light);
   }
-  .provider-grid label {
+  .provider-grid > label {
     cursor: pointer;
-    padding: 10px 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-3);
-    font-size: 0.9rem;
+    padding: 14px 16px;
+    border-right: 1px solid var(--muted-faint-light);
+    background: var(--paper);
+    font-size: 12px;
+    letter-spacing: 0.05em;
     text-align: center;
-    transition: background 0.08s, border-color 0.08s;
+    transition: background 0.15s, color 0.15s;
   }
-  .provider-grid label:hover { background: var(--bg); }
-  .provider-grid label:has(input:checked) { background: var(--bg); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .provider-grid > label:last-child { border-right: none; }
+  .provider-grid > label:hover { background: var(--paper-2); }
+  .provider-grid > label:has(input:checked) {
+    background: var(--ink);
+    color: var(--paper);
+  }
   .provider-grid input { display: none; }
+
+  /* ── FOOTER ───────────────────────────────────────────── */
+  #footer {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 80px 48px 40px;
+    border-top: 1px solid var(--muted-faint-dark);
+  }
+  #footer .footer-wrap { max-width: 1280px; margin: 0 auto; }
+  .footer-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 40px;
+    padding: 0 0 40px;
+  }
+  .footer-col h4 {
+    font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
+    opacity: 0.5;
+    margin: 0 0 18px;
+    font-weight: 500;
+  }
+  .footer-col ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+  .footer-col ul li a {
+    font-size: 13px;
+    opacity: 0.85;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s, color 0.2s;
+  }
+  .footer-col ul li a:hover { color: var(--accent-warm); border-bottom-color: var(--accent-warm); }
+  .footer-col.about p {
+    font-size: 13px; line-height: 1.6; opacity: 0.7;
+    max-width: 38ch;
+    margin: 0;
+  }
+  .footer-meta {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding-top: 28px;
+    border-top: 1px solid var(--muted-faint-dark);
+    font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+    opacity: 0.5;
+  }
+  .footer-meta .brand-mini { display: flex; align-items: center; gap: 10px; }
+  .footer-meta .brand-mini svg { width: 14px; height: 14px; opacity: 0.7; }
+
+  /* ── MOBILE ───────────────────────────────────────────── */
+  @media (max-width: 760px) {
+    nav.topnav { padding: 14px 20px; }
+    /* Hide every nav link except Install, promoted to a compact CTA. */
+    nav.topnav .links { display: flex; gap: 0; }
+    nav.topnav .links a { display: none; }
+    nav.topnav .links a[href="setup.html"] {
+      display: inline-flex; align-items: center;
+      padding: 7px 12px;
+      border: 1px solid currentColor;
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      opacity: 1;
+      border-radius: 2px;
+    }
+
+    #hero { padding: 110px 20px 60px; min-height: 50vh; }
+    .hero-grid { grid-template-columns: 1fr; gap: 32px; }
+    .hero-meta { text-align: left; margin-bottom: 0; }
+
+    .form-wrap { padding: 0 20px; }
+    .sec-header {
+      flex-direction: column; align-items: flex-start; gap: 12px;
+      padding: 60px 0 22px;
+    }
+    .sec-header h2 { text-align: left; }
+    section.card { padding: 22px 20px; }
+
+    .install-options { grid-template-columns: 1fr; }
+    .install-option { border-right: none; border-bottom: 1px solid var(--muted-faint-dark); }
+    .install-option:last-child { border-bottom: none; }
+    #install-output { padding: 60px 20px 80px; }
+    #install-output .out-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+    #install-output .out-header h2 { text-align: left; }
+
+    #footer { padding: 60px 20px 28px; }
+    .footer-grid { grid-template-columns: 1fr 1fr; gap: 28px; }
+    .footer-col.about { grid-column: 1 / -1; }
+    .footer-meta { flex-direction: column; gap: 12px; align-items: flex-start; }
+
+    .generate-bar { flex-direction: column; align-items: flex-start; gap: 16px; }
+  }
+
+  /* ── REVEAL SYSTEM (subset) ───────────────────────────── */
+  [data-reveal] { --rd: 0ms; --rs: 0; --stagger: 80ms; }
+  [data-reveal="title"] {
+    opacity: 0; transform: translateY(28px);
+    transition:
+      opacity 1000ms cubic-bezier(0.2, 0.75, 0.2, 1) calc(var(--rd) + var(--rs) * var(--stagger)),
+      transform 1100ms cubic-bezier(0.2, 0.75, 0.2, 1) calc(var(--rd) + var(--rs) * var(--stagger));
+  }
+  [data-reveal="title"].in { opacity: 1; transform: translateY(0); }
+  [data-reveal="body"] {
+    opacity: 0; transform: translateY(12px);
+    transition:
+      opacity 700ms cubic-bezier(0.25, 0.6, 0.3, 1) calc(var(--rd) + var(--rs) * var(--stagger)),
+      transform 700ms cubic-bezier(0.25, 0.6, 0.3, 1) calc(var(--rd) + var(--rs) * var(--stagger));
+  }
+  [data-reveal="body"].in { opacity: 1; transform: translateY(0); }
+  [data-reveal="meta"] {
+    opacity: 0; letter-spacing: 0.4em;
+    transition:
+      opacity 600ms ease calc(var(--rd) + var(--rs) * var(--stagger)),
+      letter-spacing 800ms cubic-bezier(0.2, 0.7, 0.2, 1) calc(var(--rd) + var(--rs) * var(--stagger));
+  }
+  [data-reveal="meta"].in { opacity: 0.55; letter-spacing: 0.2em; }
+  nav.topnav {
+    opacity: 0; transform: translateY(-8px);
+    transition: opacity 800ms ease 400ms, transform 800ms cubic-bezier(0.2, 0.7, 0.25, 1) 400ms;
+  }
+  nav.topnav.in { opacity: 1; transform: translateY(0); }
+  @media (prefers-reduced-motion: reduce) {
+    [data-reveal] {
+      transition: opacity 300ms ease !important;
+      transform: none !important;
+      letter-spacing: inherit !important;
+    }
+    [data-reveal] { opacity: 0; }
+    [data-reveal].in { opacity: 1; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
 
-  <a href="landing.html" class="brand">
-    <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <path d="M 51.32 26.82 A 20 20 0 0 1 12.68 26.82" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
-      <path d="M 12.68 37.18 A 20 20 0 0 0 51.32 37.18" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
-      <circle cx="32" cy="32" r="5" fill="currentColor"/>
+<nav class="topnav" id="topnav">
+  <a href="index.html" class="brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+      <path d="M 20 9.5 A 8 8 0 0 1 4 9.5" />
+      <path d="M 4 14.5 A 8 8 0 0 0 20 14.5" />
+      <circle cx="12" cy="12" r="2" fill="currentColor"/>
     </svg>
-    <span class="wordmark">Spotlight</span>
+    Spotlight
   </a>
-
-  <h1>Install</h1>
-  <p class="sub">Verified findings. Independent fact-checking. Your vault, your rules.</p>
-
-  <form id="setup-form" onsubmit="return false;">
-
-    <h2>Mode <span class="req">REQUIRED</span></h2>
-    <section class="card">
-      <div class="radio-group">
-        <label><input type="radio" name="mode" value="local" checked><span class="opt-name"><span class="name">Local</span><span class="desc">Run a fine-tuned journalism model on your own machine. Private by design — nothing leaves your laptop. Uses <strong>pi</strong> (pi.dev) as the agent harness with a model pulled from Hugging Face.</span></span></label>
-        <label><input type="radio" name="mode" value="cloud"><span class="opt-name"><span class="name">Cloud</span><span class="desc">Use a hosted model (Claude Code, Gemini, or Codex). Faster investigations, higher quality, but queries go to the provider.</span></span></label>
-      </div>
-    </section>
-
-    <!-- LOCAL SECTION -->
-    <div id="local-section">
-      <h2>Local model</h2>
-      <section class="card">
-        <p style="margin-top:0; color:var(--muted); font-size:0.93rem;">
-          The installer will use <strong>pi</strong> as the agent harness (<a class="link" href="https://pi.dev" target="_blank">pi.dev</a>, MIT license) and <strong>Ollama</strong> to serve the model locally on <code>127.0.0.1:11434</code>. Both install with one command.
-        </p>
-
-        <input type="hidden" id="model_repo" value="unsloth/gemma-4-26B-A4B-it-GGUF">
-
-        <div class="model-info">
-          <div class="stat"><strong>Gemma 4 26B A4B</strong>Multimodal MoE — 26B total / 4B active, native vision</div>
-          <div class="stat"><strong>~18 GB</strong>disk (Q4_K_M)</div>
-          <div class="stat"><strong>~22 GB</strong>RAM at runtime</div>
-          <div class="stat"><strong>24 GB+</strong>recommended unified memory</div>
-        </div>
-
-        <div style="margin-top: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-          <button type="button" class="primary" id="fit-check-btn" style="padding: 9px 16px; font-size: 0.9rem;">Check if my Mac can run this</button>
-          <span style="color: var(--muted); font-size: 0.85rem;">Quick hardware probe (browser-side)</span>
-        </div>
-
-        <div id="fit-panel" class="fit-panel idle hidden">
-          <div class="fit-verdict" id="fit-verdict"><span class="icon">—</span><span id="fit-title">—</span></div>
-          <div class="fit-stats" id="fit-stats"></div>
-          <div id="fit-body" style="color: var(--muted); line-height: 1.55;"></div>
-          <div class="fit-copy-cmd" id="fit-cmd-box" style="display: none;">
-            <code id="fit-cmd">system_profiler SPHardwareDataType | grep Memory</code>
-            <button type="button" id="fit-cmd-copy">Copy</button>
-          </div>
-        </div>
-
-        <p class="note-amber">
-          Large download (~21 GB). Download progress streams live in Terminal via Ollama's native progress UI. If the pull fails or is interrupted, re-run <code>ollama pull hf.co/unsloth/Qwen3.6-35B-A3B-GGUF</code> to resume.
-        </p>
-      </section>
-    </div>
-
-    <!-- CLOUD SECTION -->
-    <div id="cloud-section" class="hidden">
-      <h2>Cloud provider</h2>
-      <section class="card">
-        <div class="radio-group" id="cloud-group">
-          <label><input type="radio" name="cloud_runtime" value="claude" checked><span class="opt-name"><span class="name">Claude Code</span><span class="desc">Anthropic Claude (Opus / Sonnet) — covered by Claude Max or Claude Pro subscription. Strongest for methodology + fact-checking depth.</span></span></label>
-          <label><input type="radio" name="cloud_runtime" value="gemini"><span class="opt-name"><span class="name">Gemini</span><span class="desc">Google Gemini — covered by Google AI / Gemini subscription. Good for long-context investigations.</span></span></label>
-          <label><input type="radio" name="cloud_runtime" value="codex"><span class="opt-name"><span class="name">Codex</span><span class="desc">OpenAI GPT — covered by ChatGPT Plus / Pro / Team / Enterprise. Fast, broadly capable.</span></span></label>
-          <label><input type="radio" name="cloud_runtime" value="opencode"><span class="opt-name"><span class="name">OpenCode</span><span class="desc">Pick a provider below — OpenRouter, Fireworks, or Together. Pay per token (typically cheaper than subscriptions for heavy users).</span></span></label>
-        </div>
-
-        <!-- OpenCode provider sub-picker (only visible when opencode selected) -->
-        <div id="opencode-provider-section" class="hidden" style="margin-top: 14px;">
-          <label class="block">OpenCode provider</label>
-          <div class="provider-grid" id="opencode-provider-grid">
-            <label><input type="radio" name="opencode_provider" value="openrouter" checked><span class="opt">OpenRouter</span></label>
-            <label><input type="radio" name="opencode_provider" value="fireworks"><span class="opt">Fireworks</span></label>
-            <label><input type="radio" name="opencode_provider" value="together"><span class="opt">Together</span></label>
-          </div>
-          <p style="margin: 8px 0 0; font-size: 0.82rem; color: var(--muted);">Cost: ~$0.50–2 per investigation depending on provider, model, and depth. Charged per token to the provider's API.</p>
-        </div>
-
-        <div class="key-row">
-          <label class="block" id="cloud_key_label">Anthropic API key <span class="hint">— leave blank if you've already set it globally.</span></label>
-          <input type="password" id="cloud_key" placeholder="sk-ant-..." autocomplete="off">
-        </div>
-
-        <!-- Per-runtime usage steps, conditional. Assume the runtime is already installed. -->
-        <div id="cloud-usage-claude" class="step-card">
-          <h4>Using Spotlight with Claude Code</h4>
-          <ol>
-            <li>In any terminal, type <code>spotlight</code> — opens Claude Code in your Spotlight repo with all skills loaded</li>
-            <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
-            <li>Claude walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
-          </ol>
-          <p style="margin:10px 0 0; font-size:0.88rem; color: var(--muted);">Also works in the Claude Desktop app: open the Spotlight folder, Claude sees <code>CLAUDE.md</code> automatically. Covered by Claude Max / Claude Pro subscriptions — no per-investigation cost.</p>
-        </div>
-
-        <div class="step-card hidden" id="cloud-usage-gemini">
-          <h4>Using Spotlight with Gemini</h4>
-          <ol>
-            <li>In any terminal, type <code>spotlight</code> — opens Gemini CLI in your Spotlight repo with all skills loaded</li>
-            <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
-            <li>Gemini walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
-          </ol>
-          <p style="margin:10px 0 0; font-size:0.88rem; color: var(--muted);">Covered by your Gemini subscription — no per-investigation cost.</p>
-        </div>
-
-        <div class="step-card hidden" id="cloud-usage-codex">
-          <h4>Using Spotlight with Codex</h4>
-          <ol>
-            <li>In any terminal, type <code>spotlight</code> — opens Codex in your Spotlight repo with all skills loaded</li>
-            <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
-            <li>Codex walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
-          </ol>
-          <p style="margin:10px 0 0; font-size:0.88rem; color: var(--muted);">Covered by your ChatGPT Plus / Pro / Team / Enterprise subscription — no per-investigation cost.</p>
-        </div>
-
-        <div class="step-card hidden" id="cloud-usage-opencode">
-          <h4>Using Spotlight with OpenCode</h4>
-          <ol>
-            <li>In any terminal, type <code>spotlight</code> — opens OpenCode in your Spotlight repo with all skills loaded</li>
-            <li>First time: type <code>/model</code> and pick a strong default for your provider</li>
-            <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
-            <li>OpenCode walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
-          </ol>
-          <p style="margin:10px 0 0; font-size:0.88rem; color: var(--muted);">Recommended models: OpenRouter → <code>z-ai/glm-5.1</code>; Fireworks → <code>qwen3p6-plus</code>; Together → a Qwen3.6 variant. Cost is per-token, billed by the provider.</p>
-        </div>
-      </section>
-    </div>
-
-    <h2>Web scraping <span class="req">REQUIRED</span></h2>
-    <section class="card">
-      <label class="block">Firecrawl API key <span class="hint">— <a class="link" href="https://www.firecrawl.dev/" target="_blank">get a free one here</a></span></label>
-      <input type="password" id="firecrawl_key" placeholder="fc-..." autocomplete="off">
-      <p id="firecrawl_err" class="error hidden">Firecrawl key is required.</p>
-    </section>
-
-    <h2>Contact email <span class="opt">optional, but recommended</span></h2>
-    <section class="card">
-      <label class="block">Your email <span class="hint">— used as a fair-use identifier when Spotlight queries Unpaywall and other open-access APIs. Never shared, never stored by us.</span></label>
-      <input type="text" id="contact_email" placeholder="you@example.com" autocomplete="off">
-    </section>
-
-    <h2>OSINT tool discovery <span class="req">REQUIRED</span></h2>
-    <section class="card">
-      <p style="margin-top:0; color:var(--muted); font-size:0.93rem;">
-        OSINT Navigator gives investigators a live database of 1,000+ OSINT tools with AI-powered lookup — essential for country-specific registries and niche techniques.
-      </p>
-      <label class="block">OSINT Navigator API key <span class="hint">— <a class="link" href="https://navigator.indicator.media/" target="_blank">request access</a></span></label>
-      <input type="password" id="nav_key" placeholder="on_..." autocomplete="off">
-      <p id="nav_err" class="error hidden">OSINT Navigator key is required.</p>
-    </section>
-
-    <h2>Intelligence vault (Obsidian) <span class="req">REQUIRED</span></h2>
-    <section class="card">
-      <p style="margin-top:0; color:var(--muted); font-size:0.93rem;">
-        Spotlight archives verified findings into an Obsidian vault as structured knowledge — entities, methodology, tools — with wikilinks. Over time, the vault becomes your investigative memory.
-      </p>
-      <p style="color:var(--muted); font-size:0.93rem; margin:8px 0 0;">
-        <strong>The installer will brew-install Obsidian</strong> if it isn't already on your Mac, then launch it so you can complete one small step below.
-      </p>
-
-      <div class="step-card" style="border-left-color: var(--amber); background: rgba(217, 164, 65, 0.08);">
-        <h4 style="color: var(--amber);">⚠ One manual step (Obsidian 1.12+)</h4>
-        <p style="margin:0 0 8px; font-size:0.93rem;">
-          Obsidian's CLI toggle can't be automated — you must click it once after the app launches:
-        </p>
-        <ol>
-          <li>The installer opens Obsidian for you</li>
-          <li>In Obsidian → <strong>Settings</strong> → <strong>General</strong> → <strong>Advanced</strong> → toggle <strong>Command Line Interface</strong> ON</li>
-          <li>That's it. Spotlight will detect the <code>obsidian</code> command on its first run and prompt you again if it's missing.</li>
-        </ol>
-        <p style="margin:10px 0 0; font-size:0.88rem;">
-          If Obsidian is already installed and the CLI is on, the installer skips this step. If you haven't opened Obsidian in a while, verify you're on 1.12 or newer (<strong>About</strong> menu).
-        </p>
-      </div>
-
-      <label class="block" style="margin-top: 14px;">Vault path <span class="hint">— full path to your Obsidian vault folder (or where to create one)</span></label>
-      <input type="text" id="vault_path" placeholder="/Users/you/Documents/Intelligence" value="~/Intelligence">
-      <p id="vault_err" class="error hidden">Vault path is required.</p>
-    </section>
-
-    <h2>Monitoring <span class="opt">optional feeds</span></h2>
-    <section class="card">
-      <div class="checkbox-group">
-        <label><input type="checkbox" id="monitoring_acled"><span class="opt-name"><span class="name">ACLED conflict events</span><span class="desc">Armed Conflict Location & Event Data — battles, civilian violence, protests. Free registration required.</span></span></label>
-      </div>
-      <div id="acled_keys" class="hidden" style="margin-top: 10px;">
-        <label class="block">ACLED API key <span class="hint">— <a class="link" href="https://developer.acleddata.com/" target="_blank">get your key + email here</a></span></label>
-        <input type="password" id="acled_key" placeholder="..." autocomplete="off">
-        <label class="block" style="margin-top: 10px;">ACLED email <span class="hint">— the email you used to register</span></label>
-        <input type="text" id="acled_email" placeholder="your@email.com" autocomplete="off">
-      </div>
-    </section>
-
-    <h2>Integrations <span class="opt">optional external tools</span></h2>
-    <section class="card">
-      <div class="checkbox-group">
-        <label><input type="checkbox" id="int_browseruse"><span class="opt-name"><span class="name">browser-use</span><span class="desc">Agent-driven browser automation for complex forms and JS-rendered pages. Open source (MIT). Installs via pip. No key required.</span></span></label>
-      </div>
-
-      <div class="checkbox-group" style="margin-top: 12px;">
-        <label><input type="checkbox" id="int_junkipedia"><span class="opt-name"><span class="name">Junkipedia</span><span class="desc">Misinformation / narrative tracking database. Used by 100+ newsrooms. Application-based access.</span></span></label>
-      </div>
-      <div id="junkipedia_keys" class="hidden" style="margin-top: 10px;">
-        <label class="block">Junkipedia API key <span class="hint">— <a class="link" href="https://www.junkipedia.org/" target="_blank">apply for access</a></span></label>
-        <input type="password" id="junkipedia_key" placeholder="..." autocomplete="off">
-      </div>
-    </section>
-
-    <div class="generate-bar">
-      <span class="sub" style="margin:0;">All set? Generate your installer.</span>
-      <button type="button" class="primary" id="generate-btn">Generate installer</button>
-    </div>
-  </form>
-
-  <div id="install-output" class="install-options hidden">
-
-    <div class="install-option">
-      <h3>Option A — Copy into Terminal <span style="color:var(--muted);font-size:0.85rem;font-weight:400;">(simplest)</span></h3>
-      <p class="desc">Copy the script below, open Terminal, paste. No downloads.</p>
-      <div class="script-box" id="script-preview"></div>
-      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-        <button type="button" class="primary" id="copy-btn">Copy script</button>
-        <span class="copied-feedback" id="copied-feedback">✓ Copied</span>
-      </div>
-      <ol class="steps-list">
-        <li>Press <kbd>⌘</kbd> + <kbd>Space</kbd></li>
-        <li>Type <kbd>Terminal</kbd>, press <kbd>Return</kbd></li>
-        <li>Press <kbd>⌘</kbd> + <kbd>V</kbd>, then <kbd>Return</kbd></li>
-      </ol>
-    </div>
-
-    <div class="install-option">
-      <h3>Option B — Download installer</h3>
-      <p class="desc">Download a single file and double-click to run. Good if you'd rather not open Terminal manually.</p>
-      <button type="button" class="primary" id="download-btn">Download spotlight-setup.zip</button>
-      <p class="note-amber">
-        <strong>First time on macOS?</strong> Gatekeeper will block unsigned installers. After extracting the zip: <strong>right-click</strong> <code>spotlight-setup.command</code> → <strong>Open</strong> → <strong>Confirm</strong>. Subsequent runs: plain double-click.
-      </p>
-    </div>
-
+  <div class="links">
+    <a href="index.html#what">Read</a>
+    <a href="index.html#integrations">Stack</a>
+    <a href="index.html#box">Box</a>
+    <a href="index.html#offers">Offers</a>
+    <a href="setup.html">Install</a>
   </div>
+</nav>
 
-</div>
+<!-- ── HERO ─────────────────────────────────────────────── -->
+<section id="hero" data-nav-theme="hero">
+  <div class="hero-grid">
+    <div>
+      <h1 class="hero-title" data-reveal="title" style="--rd: 400ms">
+        Install
+        <span class="accent">Spotlight.</span>
+      </h1>
+    </div>
+    <div class="hero-side" data-reveal="body" style="--rd: 1000ms">
+      Pick your runtime, drop in your keys, generate the script. Local or cloud — same skills, same review loop. Install in a single Terminal paste.
+    </div>
+  </div>
+</section>
+
+<!-- ── FORM ─────────────────────────────────────────────── -->
+<main class="form-shell">
+  <div class="form-wrap">
+    <form id="setup-form" onsubmit="return false;">
+
+      <!-- 01 — Mode -->
+      <div class="sec-header">
+        <span class="chap" data-reveal="meta">01 — Mode <span class="req">Required</span></span>
+        <h2 data-reveal="title">Local or cloud.</h2>
+      </div>
+      <section class="card">
+        <div class="radio-group">
+          <label><input type="radio" name="mode" value="local" checked><span class="opt-name"><span class="name">Local</span><span class="desc">Run a fine-tuned journalism model on your own machine. Private by design — nothing leaves your laptop. Uses <strong>pi</strong> (pi.dev) as the agent harness with a model pulled from Hugging Face.</span></span></label>
+          <label><input type="radio" name="mode" value="cloud"><span class="opt-name"><span class="name">Cloud</span><span class="desc">Use a hosted model (Claude Code, Gemini, or Codex). Faster investigations, higher quality, but queries go to the provider.</span></span></label>
+        </div>
+      </section>
+
+      <!-- LOCAL SECTION -->
+      <div id="local-section">
+        <div class="sec-header">
+          <span class="chap" data-reveal="meta">02 — Local model</span>
+          <h2 data-reveal="title">Hosted on your Mac.</h2>
+        </div>
+        <section class="card">
+          <p class="lede">
+            The installer uses <strong>pi</strong> as the agent harness (<a href="https://pi.dev" target="_blank">pi.dev</a>, MIT) and <strong>Ollama</strong> to serve the model locally on <code>127.0.0.1:11434</code>. Both install with one command.
+          </p>
+
+          <input type="hidden" id="model_repo" value="unsloth/Qwen3.6-35B-A3B-GGUF">
+
+          <div class="model-info">
+            <div class="stat"><strong>Qwen3.6-35B</strong>MoE — 35B total / 3B active</div>
+            <div class="stat"><strong>~21 GB</strong>disk</div>
+            <div class="stat"><strong>~24 GB</strong>RAM at runtime</div>
+            <div class="stat"><strong>32 GB+</strong>recommended</div>
+          </div>
+
+          <div class="fit-row">
+            <button type="button" class="btn-ghost" id="fit-check-btn">Check if my Mac can run this</button>
+            <span class="fit-aside">Quick hardware probe — runs in your browser</span>
+          </div>
+
+          <div id="fit-panel" class="fit-panel idle hidden">
+            <div class="fit-verdict" id="fit-verdict"><span class="icon">—</span><span id="fit-title">—</span></div>
+            <div class="fit-stats" id="fit-stats"></div>
+            <div id="fit-body"></div>
+            <div class="fit-copy-cmd" id="fit-cmd-box" style="display: none;">
+              <code id="fit-cmd">system_profiler SPHardwareDataType | grep Memory</code>
+              <button type="button" id="fit-cmd-copy">Copy</button>
+            </div>
+          </div>
+
+          <p class="note-amber">
+            Large download (~21 GB). Progress streams live in Terminal via Ollama's native UI. If interrupted, re-run <code>ollama pull hf.co/unsloth/Qwen3.6-35B-A3B-GGUF</code> to resume.
+          </p>
+        </section>
+      </div>
+
+      <!-- CLOUD SECTION -->
+      <div id="cloud-section" class="hidden">
+        <div class="sec-header">
+          <span class="chap" data-reveal="meta">02 — Cloud provider</span>
+          <h2 data-reveal="title">Pick your runtime.</h2>
+        </div>
+        <section class="card">
+          <div class="radio-group" id="cloud-group">
+            <label><input type="radio" name="cloud_runtime" value="claude" checked><span class="opt-name"><span class="name">Claude Code</span><span class="desc">Anthropic Claude (Opus / Sonnet) — covered by Claude Max or Claude Pro subscription. Strongest for methodology + fact-checking depth.</span></span></label>
+            <label><input type="radio" name="cloud_runtime" value="gemini"><span class="opt-name"><span class="name">Gemini</span><span class="desc">Google Gemini — covered by Google AI / Gemini subscription. Good for long-context investigations.</span></span></label>
+            <label><input type="radio" name="cloud_runtime" value="codex"><span class="opt-name"><span class="name">Codex</span><span class="desc">OpenAI GPT — covered by ChatGPT Plus / Pro / Team / Enterprise. Fast, broadly capable.</span></span></label>
+            <label><input type="radio" name="cloud_runtime" value="opencode"><span class="opt-name"><span class="name">OpenCode</span><span class="desc">Pick a provider below — OpenRouter, Fireworks, or Together. Pay per token (typically cheaper than subscriptions for heavy users).</span></span></label>
+          </div>
+
+          <div id="opencode-provider-section" class="hidden" style="margin-top: 20px;">
+            <label class="block">OpenCode provider</label>
+            <div class="provider-grid" id="opencode-provider-grid">
+              <label><input type="radio" name="opencode_provider" value="openrouter" checked><span class="opt">OpenRouter</span></label>
+              <label><input type="radio" name="opencode_provider" value="fireworks"><span class="opt">Fireworks</span></label>
+              <label><input type="radio" name="opencode_provider" value="together"><span class="opt">Together</span></label>
+            </div>
+            <p style="margin: 10px 0 0; font-size: 11px; opacity: 0.6;">~$0.50–2 per investigation, charged per token by the provider's API.</p>
+          </div>
+
+          <div class="key-row">
+            <label class="block" id="cloud_key_label">Anthropic API key <span class="hint">— leave blank if you've already set it globally.</span></label>
+            <input type="password" id="cloud_key" placeholder="sk-ant-..." autocomplete="off">
+          </div>
+
+          <div id="cloud-usage-claude" class="step-card">
+            <h4>Using Spotlight with Claude Code</h4>
+            <ol>
+              <li>In any terminal, type <code>spotlight</code> — opens Claude Code in your Spotlight repo with all skills loaded</li>
+              <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
+              <li>Claude walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
+            </ol>
+            <p style="margin:10px 0 0; font-size:12px; opacity: 0.7;">Also works in the Claude Desktop app: open the Spotlight folder, Claude sees <code>CLAUDE.md</code> automatically. Covered by Claude Max / Claude Pro — no per-investigation cost.</p>
+          </div>
+
+          <div class="step-card hidden" id="cloud-usage-gemini">
+            <h4>Using Spotlight with Gemini</h4>
+            <ol>
+              <li>In any terminal, type <code>spotlight</code> — opens Gemini CLI in your Spotlight repo with all skills loaded</li>
+              <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
+              <li>Gemini walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
+            </ol>
+            <p style="margin:10px 0 0; font-size:12px; opacity: 0.7;">Covered by your Gemini subscription — no per-investigation cost.</p>
+          </div>
+
+          <div class="step-card hidden" id="cloud-usage-codex">
+            <h4>Using Spotlight with Codex</h4>
+            <ol>
+              <li>In any terminal, type <code>spotlight</code> — opens Codex in your Spotlight repo with all skills loaded</li>
+              <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
+              <li>Codex walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
+            </ol>
+            <p style="margin:10px 0 0; font-size:12px; opacity: 0.7;">Covered by your ChatGPT Plus / Pro / Team / Enterprise subscription — no per-investigation cost.</p>
+          </div>
+
+          <div class="step-card hidden" id="cloud-usage-opencode">
+            <h4>Using Spotlight with OpenCode</h4>
+            <ol>
+              <li>In any terminal, type <code>spotlight</code> — opens OpenCode in your Spotlight repo with all skills loaded</li>
+              <li>First time: type <code>/model</code> and pick a strong default for your provider</li>
+              <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
+              <li>OpenCode walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
+            </ol>
+            <p style="margin:10px 0 0; font-size:12px; opacity: 0.7;">Recommended models: OpenRouter → <code>z-ai/glm-5.1</code>; Fireworks → <code>qwen3p6-plus</code>; Together → a Qwen3.6 variant. Cost is per-token.</p>
+          </div>
+        </section>
+      </div>
+
+      <!-- 03 — Web scraping -->
+      <div class="sec-header">
+        <span class="chap" data-reveal="meta">03 — Web scraping <span class="req">Required</span></span>
+        <h2 data-reveal="title">Firecrawl key.</h2>
+      </div>
+      <section class="card">
+        <label class="block">Firecrawl API key <span class="hint">— <a href="https://www.firecrawl.dev/" target="_blank">get a free one here</a></span></label>
+        <input type="password" id="firecrawl_key" placeholder="fc-..." autocomplete="off">
+        <p id="firecrawl_err" class="error hidden">Firecrawl key is required.</p>
+      </section>
+
+      <!-- 04 — Contact -->
+      <div class="sec-header">
+        <span class="chap" data-reveal="meta">04 — Contact <span class="opt">optional, recommended</span></span>
+        <h2 data-reveal="title">Fair-use identifier.</h2>
+      </div>
+      <section class="card">
+        <label class="block">Your email <span class="hint">— used as a fair-use identifier when Spotlight queries Unpaywall and other open-access APIs. Never shared, never stored by us.</span></label>
+        <input type="text" id="contact_email" placeholder="you@example.com" autocomplete="off">
+      </section>
+
+      <!-- 05 — OSINT Navigator -->
+      <div class="sec-header">
+        <span class="chap" data-reveal="meta">05 — Tool discovery <span class="req">Required</span></span>
+        <h2 data-reveal="title">OSINT Navigator.</h2>
+      </div>
+      <section class="card">
+        <p class="lede">
+          A live database of 1,000+ OSINT tools with AI-powered lookup — essential for country-specific registries and niche techniques.
+        </p>
+        <label class="block">OSINT Navigator API key <span class="hint">— <a href="https://navigator.indicator.media/" target="_blank">request access</a></span></label>
+        <input type="password" id="nav_key" placeholder="on_..." autocomplete="off">
+        <p id="nav_err" class="error hidden">OSINT Navigator key is required.</p>
+      </section>
+
+      <!-- 06 — Vault -->
+      <div class="sec-header">
+        <span class="chap" data-reveal="meta">06 — Vault <span class="req">Required</span></span>
+        <h2 data-reveal="title">Your investigative memory.</h2>
+      </div>
+      <section class="card">
+        <p class="lede">
+          Spotlight archives verified findings into an Obsidian vault as structured knowledge — entities, methodology, tools — with wikilinks. Over time, the vault becomes your investigative memory.
+        </p>
+        <p class="lede" style="margin-top:8px;">
+          <strong>The installer brew-installs Obsidian</strong> if it isn't already on your Mac, then launches it so you can complete one small step below.
+        </p>
+
+        <div class="step-card warn">
+          <h4>One manual step (Obsidian 1.12+)</h4>
+          <p style="margin:0 0 10px; font-size:13px;">
+            Obsidian's CLI toggle can't be automated — you must click it once after the app launches:
+          </p>
+          <ol>
+            <li>The installer opens Obsidian for you</li>
+            <li>In Obsidian → <strong>Settings</strong> → <strong>General</strong> → <strong>Advanced</strong> → toggle <strong>Command Line Interface</strong> ON</li>
+            <li>That's it. Spotlight detects the <code>obsidian</code> command on its first run and prompts you again if it's missing.</li>
+          </ol>
+          <p style="margin:12px 0 0; font-size:12px; opacity: 0.75;">
+            If Obsidian is already installed and the CLI is on, the installer skips this step. If you haven't opened Obsidian in a while, verify you're on 1.12 or newer (<strong>About</strong> menu).
+          </p>
+        </div>
+
+        <label class="block" style="margin-top: 18px;">Vault path <span class="hint">— full path to your Obsidian vault folder (or where to create one)</span></label>
+        <input type="text" id="vault_path" placeholder="/Users/you/Documents/Intelligence" value="~/Intelligence">
+        <p id="vault_err" class="error hidden">Vault path is required.</p>
+      </section>
+
+      <!-- 07 — Monitoring -->
+      <div class="sec-header">
+        <span class="chap" data-reveal="meta">07 — Monitoring <span class="opt">optional feeds</span></span>
+        <h2 data-reveal="title">Live signal feeds.</h2>
+      </div>
+      <section class="card">
+        <div class="checkbox-group">
+          <label><input type="checkbox" id="monitoring_acled"><span class="opt-name"><span class="name">ACLED conflict events</span><span class="desc">Armed Conflict Location & Event Data — battles, civilian violence, protests. Free registration required.</span></span></label>
+        </div>
+        <div id="acled_keys" class="hidden" style="margin-top: 16px;">
+          <label class="block">ACLED API key <span class="hint">— <a href="https://developer.acleddata.com/" target="_blank">get your key + email here</a></span></label>
+          <input type="password" id="acled_key" placeholder="..." autocomplete="off">
+          <label class="block" style="margin-top: 14px;">ACLED email <span class="hint">— the email you used to register</span></label>
+          <input type="text" id="acled_email" placeholder="your@email.com" autocomplete="off">
+        </div>
+      </section>
+
+      <!-- 08 — Integrations -->
+      <div class="sec-header">
+        <span class="chap" data-reveal="meta">08 — Integrations <span class="opt">optional external tools</span></span>
+        <h2 data-reveal="title">Plug-ins.</h2>
+      </div>
+      <section class="card">
+        <div class="checkbox-group">
+          <label><input type="checkbox" id="int_browseruse"><span class="opt-name"><span class="name">browser-use</span><span class="desc">Agent-driven browser automation for complex forms and JS-rendered pages. Open source (MIT). Installs via pip. No key required.</span></span></label>
+        </div>
+
+        <div class="checkbox-group" style="margin-top: 12px;">
+          <label><input type="checkbox" id="int_junkipedia"><span class="opt-name"><span class="name">Junkipedia</span><span class="desc">Misinformation / narrative tracking database. Used by 100+ newsrooms. Application-based access.</span></span></label>
+        </div>
+        <div id="junkipedia_keys" class="hidden" style="margin-top: 16px;">
+          <label class="block">Junkipedia API key <span class="hint">— <a href="https://www.junkipedia.org/" target="_blank">apply for access</a></span></label>
+          <input type="password" id="junkipedia_key" placeholder="..." autocomplete="off">
+        </div>
+      </section>
+
+      <div class="generate-bar">
+        <p class="lbl"><em>All set?</em> Generate your installer.</p>
+        <button type="button" class="btn-primary" id="generate-btn">Generate installer <span aria-hidden="true">→</span></button>
+      </div>
+    </form>
+  </div>
+</main>
+
+<!-- ── INSTALL OUTPUT ─────────────────────────────────── -->
+<section id="install-output" class="hidden" data-nav-theme="dark">
+  <div class="out-wrap">
+    <div class="out-header">
+      <span class="chap">Output — Two ways to install</span>
+      <h2>Run it.</h2>
+    </div>
+
+    <div class="install-options">
+
+      <div class="install-option">
+        <div class="kicker">Option A — Simplest</div>
+        <h3>Copy into Terminal.</h3>
+        <p class="desc">Copy the script below, open Terminal, paste. No downloads.</p>
+        <div class="script-box" id="script-preview"></div>
+        <div class="actions">
+          <button type="button" class="btn-primary" id="copy-btn">Copy script</button>
+          <span class="copied-feedback" id="copied-feedback">✓ Copied</span>
+        </div>
+        <ol class="steps-list">
+          <li>Press <kbd>⌘</kbd> + <kbd>Space</kbd></li>
+          <li>Type <kbd>Terminal</kbd>, press <kbd>Return</kbd></li>
+          <li>Press <kbd>⌘</kbd> + <kbd>V</kbd>, then <kbd>Return</kbd></li>
+        </ol>
+      </div>
+
+      <div class="install-option">
+        <div class="kicker">Option B — Download</div>
+        <h3>One file, double-click.</h3>
+        <p class="desc">Download a single file and double-click to run. Good if you'd rather not open Terminal manually.</p>
+        <div class="actions">
+          <button type="button" class="btn-primary" id="download-btn">Download .zip <span aria-hidden="true">↓</span></button>
+        </div>
+        <div class="note-amber">
+          <strong>First time on macOS?</strong> Gatekeeper will block unsigned installers. After extracting the zip: <strong>right-click</strong> <code>spotlight-setup.command</code> → <strong>Open</strong> → <strong>Confirm</strong>. Subsequent runs: plain double-click.
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── FOOTER ───────────────────────────────────────────── -->
+<section id="footer" data-nav-theme="dark">
+  <div class="footer-wrap">
+    <div class="footer-grid">
+      <div class="footer-col about">
+        <h4>Spotlight</h4>
+        <p>An open-source OSINT investigation system for journalists. Built by Buried Signals with Indicator Media. Runtime-agnostic, evidence-first, editor-ready.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Product</h4>
+        <ul>
+          <li><a href="index.html#what">What it does</a></li>
+          <li><a href="index.html#integrations">Integrations</a></li>
+          <li><a href="index.html#box">In the box</a></li>
+          <li><a href="setup.html">Install</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Project</h4>
+        <ul>
+          <li><a href="index.html#attribution">Built on</a></li>
+          <li><a href="index.html#offers">Work with us</a></li>
+          <li><a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Contact</h4>
+        <ul>
+          <li><a href="https://buriedsignals.com" target="_blank" rel="noopener">buriedsignals.com ↗</a></li>
+          <li><a href="https://indicator.media" target="_blank" rel="noopener">indicator.media ↗</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-meta">
+      <div class="brand-mini">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+          <path d="M 20 9.5 A 8 8 0 0 1 4 9.5" />
+          <path d="M 4 14.5 A 8 8 0 0 0 20 14.5" />
+          <circle cx="12" cy="12" r="2" fill="currentColor"/>
+        </svg>
+        <span>Spotlight · v1.0</span>
+      </div>
+      <span>© 2025 Buried Signals — MIT licensed</span>
+    </div>
+  </div>
+</section>
 
 <script>
 (function () {
@@ -598,15 +1233,12 @@
   document.querySelectorAll('input[name="mode"]').forEach(el => el.addEventListener('change', renderMode));
 
   // --- Runtime registry (single source of truth) ---
-  // Every place that needs per-runtime metadata (form rendering, install
-  // command, key env var, context-file symlink, generated shell dispatch)
-  // reads from here. Add a new runtime by adding one entry.
   const RUNTIMES = {
     local: {
       name: 'Local model',
-      bin: 'pi',                    // shell command to launch
-      installPkg: null,             // installer handles ollama + pi separately
-      contextFile: null,            // pi reads AGENTS.md natively
+      bin: 'pi',
+      installPkg: null,
+      contextFile: null,
       keyLabel: null,
       keyPlaceholder: null,
       envVar: null,
@@ -633,7 +1265,7 @@
       name: 'Codex',
       bin: 'codex',
       installPkg: '@openai/codex',
-      contextFile: null,            // reads AGENTS.md natively
+      contextFile: null,
       keyLabel: 'OpenAI API key',
       keyPlaceholder: 'sk-...',
       envVar: 'OPENAI_API_KEY',
@@ -642,12 +1274,10 @@
       name: 'OpenCode',
       bin: 'opencode',
       installPkg: 'opencode-ai',
-      contextFile: null,            // reads AGENTS.md natively
-      // keyLabel/placeholder/envVar filled at render time from OPENCODE_PROVIDERS
+      contextFile: null,
     },
   };
 
-  // OpenCode provider registry — picked when runtime === 'opencode'
   const OPENCODE_PROVIDERS = {
     openrouter: { label: 'OpenRouter API key', placeholder: 'sk-or-v1-...', envVar: 'OPENROUTER_API_KEY' },
     fireworks: { label: 'Fireworks API key', placeholder: 'fw-...', envVar: 'FIREWORKS_API_KEY' },
@@ -671,7 +1301,6 @@
     cloudKeyLabel.innerHTML = keyCfg.label + ' <span class="hint">— leave blank if you\'ve already set it globally.</span>';
     cloudKeyInput.placeholder = keyCfg.placeholder;
 
-    // Show only the matching usage block
     document.querySelectorAll('[id^="cloud-usage-"]').forEach(el => el.classList.add('hidden'));
     const activeUsage = document.getElementById('cloud-usage-' + rt);
     if (activeUsage) activeUsage.classList.remove('hidden');
@@ -679,7 +1308,6 @@
   document.querySelectorAll('input[name="cloud_runtime"]').forEach(el => el.addEventListener('change', renderCloud));
   document.querySelectorAll('input[name="opencode_provider"]').forEach(el => el.addEventListener('change', renderCloud));
 
-  // --- Conditional key fields ---
   function bindCheckbox(checkboxId, targetId) {
     const cb = document.getElementById(checkboxId);
     const target = document.getElementById(targetId);
@@ -688,7 +1316,6 @@
   bindCheckbox('monitoring_acled', 'acled_keys');
   bindCheckbox('int_junkipedia', 'junkipedia_keys');
 
-  // --- Form collection ---
   function collectForm() {
     const mode = document.querySelector('input[name="mode"]:checked').value;
     const cloudRt = document.querySelector('input[name="cloud_runtime"]:checked').value;
@@ -738,19 +1365,15 @@
     p('SPOTLIGHT_DIR="${SPOTLIGHT_DIR:-$HOME/spotlight}"');
     p('REPO_URL="https://github.com/buriedsignals/spotlight.git"');
     p('');
-    p('# ── ANSI colors + spinner helper ──');
-    p('# Spinner frames from sindresorhus/cli-spinners (dots)');
     p('_c_reset=$\'\\033[0m\'; _c_cyan=$\'\\033[36m\'; _c_green=$\'\\033[32m\'; _c_red=$\'\\033[31m\'; _c_dim=$\'\\033[2m\'; _c_bold=$\'\\033[1m\'');
     p('_spin_frames=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)');
     p('');
-    p('# spin "message" command...   — shows spinner while command runs; ✓ or ✗ on completion');
     p('spin() {');
     p('  local msg="$1"; shift');
     p('  local tmpfile; tmpfile="$(mktemp)"');
     p('  ( "$@" ) >"$tmpfile" 2>&1 &');
     p('  local pid=$!');
     p('  local i=0 n=${#_spin_frames[@]}');
-    p('  # Hide cursor');
     p('  printf "\\033[?25l" 2>/dev/null || true');
     p('  while kill -0 $pid 2>/dev/null; do');
     p('    printf "\\r\\033[K%s%s%s %s" "$_c_cyan" "${_spin_frames[$((i % n))]}" "$_c_reset" "$msg"');
@@ -758,7 +1381,7 @@
     p('    sleep 0.08');
     p('  done');
     p('  wait $pid 2>/dev/null; local status=$?');
-    p('  printf "\\033[?25h" 2>/dev/null || true  # show cursor');
+    p('  printf "\\033[?25h" 2>/dev/null || true');
     p('  if [ $status -eq 0 ]; then');
     p('    printf "\\r\\033[K%s✓%s %s\\n" "$_c_green" "$_c_reset" "$msg"');
     p('  else');
@@ -778,7 +1401,6 @@
     p('echo "${_c_bold}${_c_cyan}  ╚════════════════════════════════════════════════╝${_c_reset}"');
     p('echo ""');
     p('');
-    p('# ── OS check ──');
     p('OS="$(uname -s)"');
     p('if [ "$OS" != "Darwin" ] && [ "$OS" != "Linux" ]; then');
     p('  echo "Unsupported OS: $OS. macOS or Linux required (Windows: use WSL)." >&2');
@@ -787,7 +1409,6 @@
     p('');
     p('step "Prerequisites"');
     p('');
-    p('# Ask-and-install pattern — no silent aborts, journalist doesn\'t need prior tooling.');
     p('ensure_brew() {');
     p('  if command -v brew >/dev/null 2>&1; then');
     p('    printf "%s✓%s Homebrew present\\n" "$_c_green" "$_c_reset"; return 0');
@@ -797,7 +1418,6 @@
     p('  read -r ans || ans="Y"');
     p('  if [[ "$ans" =~ ^[Nn] ]]; then echo "Aborted." >&2; exit 1; fi');
     p('  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"');
-    p('  # Path fix for Apple Silicon');
     p('  [ -x /opt/homebrew/bin/brew ] && eval "$(/opt/homebrew/bin/brew shellenv)"');
     p('  [ -x /usr/local/bin/brew ] && eval "$(/usr/local/bin/brew shellenv)"');
     p('}');
@@ -811,7 +1431,6 @@
     p('  spin "Installing $cmd via brew" brew install "$pkg"');
     p('}');
     p('');
-    p('# git: on macOS, use Apple\'s Xcode CLI (has git). On Linux, via brew/apt.');
     p('if ! command -v git >/dev/null 2>&1; then');
     p('  if [ "$OS" = "Darwin" ]; then');
     p('    echo "git is not installed. Install Xcode Command Line Tools now? [Y/n]"');
@@ -834,9 +1453,6 @@
     }
     p('');
     p('step "Obsidian vault"');
-    p('# Install the app if missing, launch it, then leave the CLI toggle as a');
-    p('# one-time manual step the user completes after the app opens. Spotlight\'s');
-    p('# runtime preflight re-checks the CLI before the first investigation.');
     p('if [ -d "/Applications/Obsidian.app" ] || [ -d "$HOME/Applications/Obsidian.app" ]; then');
     p('  printf "%s✓%s Obsidian.app installed\\n" "$_c_green" "$_c_reset"');
     p('else');
@@ -885,14 +1501,12 @@
       p('  printf "%s✓%s Ollama already installed\\n" "$_c_green" "$_c_reset"');
       p('fi');
       p('');
-      p('step "Gemma 4 26B A4B model download (~18 GB — Q4_K_M + mmproj, fits 24 GB+ Macs)"');
+      p('step "Journalism model download (~21 GB)"');
       p('echo "Ollama will stream download progress below — grab a coffee, 5–15 min on a typical connection."');
-      p('echo "  (power users on 48GB+ Macs: override with Q6_K_XL tag for +1% quality — see docs.)"');
       p('echo ""');
-      p('# Explicit Q4_K_M tag so Ollama picks the right variant from unsloth\'s ladder.');
-      p('ollama pull ' + shellEscape('hf.co/' + cfg.model_repo + ':Q4_K_M') + ' || {');
-      p('  printf "%s⚠%s Model pull failed. Verify hf.co/' + cfg.model_repo + ' is reachable.\\n" "$_c_red" "$_c_reset"');
-      p('  printf "   Re-run: ollama pull hf.co/' + cfg.model_repo + ':Q4_K_M\\n"');
+      p('ollama pull ' + shellEscape('hf.co/' + cfg.model_repo) + ' || {');
+      p('  printf "%s⚠%s Model pull failed. The fine-tune may not be published yet at hf.co/' + cfg.model_repo + '.\\n" "$_c_red" "$_c_reset"');
+      p('  printf "   Re-run once live: ollama pull hf.co/<repo>\\n"');
       p('}');
       p('');
       p('if ! command -v pi >/dev/null 2>&1; then');
@@ -923,7 +1537,6 @@
       p('  printf "%s✓%s Wrote $HOME/.pi/models.json\\n" "$_c_green" "$_c_reset"');
       p('fi');
     } else {
-      // Cloud runtime: claude, gemini, codex, opencode — all table-driven
       const r = RUNTIMES[cfg.runtime];
       const label = cfg.runtime === 'opencode'
         ? 'OpenCode (provider: ' + cfg.opencode_provider + ')'
@@ -958,7 +1571,6 @@
     }
     p('');
 
-    // .env file
     p('# ── Write .env ──');
     p('echo "→ Writing $SPOTLIGHT_DIR/.env (chmod 600)"');
     p('cat > "$SPOTLIGHT_DIR/.env" <<\'ENV_EOF\'');
@@ -1011,7 +1623,6 @@
     p('CONFIG_EOF');
     p('');
 
-    // spotlight shell function
     p('# ── Install spotlight shell command ──');
     p('SHELL_RC=""');
     p('case "$SHELL" in');
@@ -1032,7 +1643,6 @@
     p('    echo "Spotlight not installed at $dir. Re-run the installer." >&2');
     p('    return 1');
     p('  fi');
-    p('  # Subcommands');
     p('  case "${1:-}" in');
     p('    update)');
     p('      (cd "$dir" && git fetch origin && git reset --hard origin/main && \\');
@@ -1057,7 +1667,6 @@
     p('      ;;');
     p('  esac');
     p('  (cd "$dir" && { [ -f .env ] && set -a && source .env && set +a; } && \\');
-    p('    # Fast JSON read: sed avoids python3 startup (~50ms saved per invocation)');
     p('    case "$(sed -n \'s/.*"runtime": *"\\([^"]*\\)".*/\\1/p\' .spotlight-config.json 2>/dev/null | head -1)" in');
     Object.entries(RUNTIMES).forEach(([id, r]) => {
       p('      ' + id + ') ' + r.bin + ' ;;');
@@ -1175,7 +1784,6 @@
     return total;
   }
 
-  // --- Generate handler ---
   generateBtn.addEventListener('click', () => {
     const cfg = collectForm();
 
@@ -1195,7 +1803,6 @@
     installOutput.dataset.script = script;
   });
 
-  // --- Copy ---
   copyBtn.addEventListener('click', async () => {
     const script = installOutput.dataset.script || '';
     try {
@@ -1212,7 +1819,6 @@
     }
   });
 
-  // --- Download ---
   downloadBtn.addEventListener('click', () => {
     const script = installOutput.dataset.script || '';
     const zip = buildZip('spotlight-setup.command', script);
@@ -1245,15 +1851,13 @@
     fitBody.innerHTML = '';
     fitCmdBox.style.display = 'none';
 
-    // Animate spinner
     const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
     let fi = 0;
     const spinInt = setInterval(() => {
       fitVerdict.querySelector('.icon').textContent = frames[fi++ % frames.length];
     }, 90);
 
-    // Detect
-    await new Promise(r => setTimeout(r, 600)); // visible work
+    await new Promise(r => setTimeout(r, 600));
 
     const ua = navigator.userAgent;
     const isMac = /Macintosh/.test(ua);
@@ -1261,30 +1865,23 @@
     const cores = navigator.hardwareConcurrency || 'unknown';
     const deviceMemGB = navigator.deviceMemory || null;
 
-    // Detect Apple Silicon properly — browsers now always report "Intel" in UA
-    // on M-series Macs for web-compat. Use User-Agent Client Hints (returns 'arm'
-    // for Apple Silicon, 'x86' for Intel Macs).
     let arch = null;
     try {
       if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
         const high = await navigator.userAgentData.getHighEntropyValues(['architecture', 'bitness']);
-        arch = high.architecture; // 'arm' | 'x86'
+        arch = high.architecture;
       }
     } catch {}
 
-    // Fallback heuristic: Mac + WebGPU + not-explicitly-x86 + core count ≥ 8 → likely Apple Silicon
-    // Intel Macs top out around 8-12 cores and WebGPU support is flaky; Apple Silicon has it cleanly.
     let isAppleSilicon;
     if (arch === 'arm') isAppleSilicon = true;
     else if (arch === 'x86') isAppleSilicon = false;
     else if (isMac) {
-      // Heuristic fallback when User-Agent Client Hints unavailable (Safari, Firefox)
       isAppleSilicon = (typeof cores === 'number' && cores >= 8) && !!navigator.gpu;
     } else {
       isAppleSilicon = false;
     }
 
-    // GPU (WebGPU adapter probe)
     let gpuName = 'unknown';
     try {
       if (navigator.gpu) {
@@ -1298,9 +1895,7 @@
 
     clearInterval(spinInt);
 
-    // Verdict logic
-    // Target: 16 GB+ unified (Apple Silicon) or 16 GB RAM + discrete/integrated GPU
-    let verdict = 'amber'; // default: inconclusive
+    let verdict = 'amber';
     let title = 'Looks promising — confirm in Terminal';
     let body = '';
 
@@ -1341,10 +1936,9 @@
       <div class="stat-item"><div class="k">Platform</div><span class="v">${isAppleSilicon ? 'Apple Silicon' : isMac ? 'Intel Mac' : isLinux ? 'Linux' : 'Other'}</span></div>
       <div class="stat-item"><div class="k">CPU cores</div><span class="v">${cores}</span></div>
       <div class="stat-item"><div class="k">RAM (browser)</div><span class="v">${deviceMemGB ? '~' + deviceMemGB + ' GB+' : 'n/a'}</span></div>
-      <div class="stat-item"><div class="k">GPU</div><span class="v">${gpuName.length > 30 ? gpuName.slice(0, 28) + '…' : gpuName}</span></div>
+      <div class="stat-item"><div class="k">GPU</div><span class="v">${gpuName.length > 28 ? gpuName.slice(0, 26) + '…' : gpuName}</span></div>
     `;
 
-    // Show terminal command
     const cmd = isMac
       ? "system_profiler SPHardwareDataType | grep -E 'Memory|Chip|Cores'"
       : "free -h && lscpu | grep -E 'Model name|CPU\\(s\\)' && lspci | grep -i vga";
@@ -1364,6 +1958,60 @@
   // Init
   renderMode();
   renderCloud();
+
+  // --- Reveal system (subset) ---
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting) {
+        e.target.classList.add('in');
+        io.unobserve(e.target);
+      }
+    }
+  }, { threshold: 0.15, rootMargin: '0px 0px -10% 0px' });
+  document.querySelectorAll('[data-reveal]').forEach(el => io.observe(el));
+  // Nav fades on load
+  requestAnimationFrame(() => document.getElementById('topnav').classList.add('in'));
+
+  // --- Topnav theme switcher ──────────────────────────────────────────────
+  // Detects which section sits under the top edge of the viewport and swaps
+  // the topnav styling: hero = mix-blend over dark, dark section = ink bg,
+  // everything else (form / paper main) = paper bg + dark text.
+  // Mirrors the landing implementation. Sections opt in via data-nav-theme.
+  (function () {
+    const nav = document.getElementById('topnav');
+    if (!nav) return;
+    const sections = Array.from(document.querySelectorAll('[data-nav-theme]'));
+    if (!sections.length) return;
+    const THEMES = ['hero', 'dark']; // 'paper' is the default (no class)
+
+    function update() {
+      // Probe a little below the top edge so the swap happens once the next
+      // section clearly meets the top, not at every sub-pixel boundary.
+      const probe = window.scrollY + 24;
+      let theme = 'paper';
+      for (const s of sections) {
+        // Skip hidden sections (#install-output starts with .hidden, only
+        // becomes a target once the user generates the script).
+        if (s.offsetParent === null) continue;
+        const top = s.offsetTop;
+        const bottom = top + s.offsetHeight;
+        if (probe >= top && probe < bottom) { theme = s.dataset.navTheme; break; }
+      }
+      THEMES.forEach(t => nav.classList.toggle('on-' + t, theme === t));
+    }
+
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update, { passive: true });
+    update();
+
+    // The install-output section becomes visible after the user clicks
+    // Generate — re-run once it appears so the nav picks it up.
+    const out = document.getElementById('install-output');
+    if (out) {
+      const mo = new MutationObserver(update);
+      mo.observe(out, { attributes: true, attributeFilter: ['class'] });
+    }
+  })();
 })();
 </script>
 </body>
