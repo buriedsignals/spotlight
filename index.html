@@ -3170,9 +3170,10 @@
           wires[i].quaternion.copy(s.rot);
           glasses[i].position.copy(s.pos);
           glasses[i].quaternion.copy(s.rot);
-          // Ch. 01 'aligned' mood — smaller cubes so the shape silhouette
-          // reads cleanly without cubes overlapping each other.
-          const shapeScale = (mood === 'aligned') ? 0.65 : 1.0;
+          // Scale cubes down outside the hero — shape silhouettes (Ch. 01-4)
+          // read cleanly without overlap; the hero stays at full size to
+          // preserve its "dense cluster" signature.
+          const shapeScale = (mood === 'chaos') ? 1.0 : 0.65;
           wires[i].scale.setScalar(shapeScale);
           glasses[i].scale.setScalar(shapeScale);
 
