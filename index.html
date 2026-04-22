@@ -3069,6 +3069,16 @@
         const RING_N = 10;
         const RING_R = 1.9;
         const RING_ANGV = 0.25;   // rad/s — orbital speed
+        // 'calm' (offers + footer): 8 cubes at the corners of a proper cube
+        // so "Lead the story." renders behind a clean cube silhouette.
+        const CUBE_R = 0.9;
+        const CUBE_N = 8;
+        const CUBE_CORNERS = [
+          [ CUBE_R,  CUBE_R,  CUBE_R], [-CUBE_R,  CUBE_R,  CUBE_R],
+          [ CUBE_R, -CUBE_R,  CUBE_R], [-CUBE_R, -CUBE_R,  CUBE_R],
+          [ CUBE_R,  CUBE_R, -CUBE_R], [-CUBE_R,  CUBE_R, -CUBE_R],
+          [ CUBE_R, -CUBE_R, -CUBE_R], [-CUBE_R, -CUBE_R, -CUBE_R],
+        ];
         for (let i = 0; i < N_CELLS; i++) {
           const s = cubeState[i];
           let restX, restY, restZ;
@@ -3084,6 +3094,10 @@
             restY = 0;
             restZ = Math.sin(angle) * RING_R;
             ringPos = true;
+          } else if (mood === 'calm' && i < CUBE_N) {
+            const c = CUBE_CORNERS[i];
+            restX = c[0]; restY = c[1]; restZ = c[2];
+            customPos = true;
           } else {
             const cell = cellCenters[shuffleOrder[i]];
             restX = cell.x + params.alignedClusterX;
@@ -3338,9 +3352,10 @@
           if (mood !== 'aligned') {
             if (mood === 'sparse') {
               for (let i = 0; i < N_CELLS; i++) targetActivity[i] = i < 10 ? 1 : 0;
+            } else if (mood === 'calm') {
+              for (let i = 0; i < N_CELLS; i++) targetActivity[i] = i < 8 ? 1 : 0;
             } else {
-              const activityMix = mood === 'calm' ? 0.5 : 1.0;
-              for (let i = 0; i < N_CELLS; i++) targetActivity[i] = (i / N_CELLS) < activityMix ? 1 : 0;
+              for (let i = 0; i < N_CELLS; i++) targetActivity[i] = 1;
             }
           }
         }
