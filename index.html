@@ -202,6 +202,19 @@
     align-items: end;
     gap: 48px;
   }
+  .hero-credo {
+    display: inline-flex;
+    gap: 10px;
+    align-items: center;
+    font-family: "Geist Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(255, 245, 217, 0.55);
+    margin: 0 0 28px;
+    flex-wrap: wrap;
+  }
+  .hero-credo .sep { color: var(--accent-warm); opacity: 0.7; }
   .hero-title {
     font-family: "Fraunces", serif;
     font-variation-settings: "opsz" 144;
@@ -1238,20 +1251,6 @@
      here; the scene is rendered into each .scene-slot via scissor + viewport. -->
 <div id="global-canvas" aria-hidden="true"></div>
 
-<nav class="topnav" id="topnav">
-  <a href="#" class="brand">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-      <path d="M 20 9.5 A 8 8 0 0 1 4 9.5" />
-      <path d="M 4 14.5 A 8 8 0 0 0 20 14.5" />
-      <circle cx="12" cy="12" r="2" fill="currentColor"/>
-    </svg>
-    Spotlight
-  </a>
-  <div class="links">
-    <a href="setup.html">Install</a>
-  </div>
-</nav>
-
 <!-- ── HERO ─────────────────────────────────────────────── -->
 <section id="hero" data-screen-label="01 Hero" data-nav-theme="hero">
   <div id="hero-canvas" aria-hidden="true"></div>
@@ -1260,6 +1259,13 @@
     <div class="hero-top">
     </div>
     <div class="hero-bottom">
+      <div class="hero-credo" data-reveal="meta" style="--rd: 400ms">
+        <span>AI investigations</span>
+        <span class="sep">·</span>
+        <span>Skill-file based</span>
+        <span class="sep">·</span>
+        <span>Works with any agent</span>
+      </div>
       <h1 class="hero-title" data-reveal="title" style="--rd: 600ms">
         You lead the investigation.
         <span class="accent">Spotlight does</br>the research.</span>
