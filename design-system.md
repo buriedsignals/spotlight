@@ -625,28 +625,27 @@ Stay in this range. Don't introduce arbitrary z-indexes. If you need a new layer
 
 ---
 
-## 9. Alignment needed (code vs this doc)
+## 9. Alignment (code vs this doc)
 
-Known deviations observed in the current `index.html` and `setup.html`. Fix in a follow-up pass:
+Deviations observed on 2026-04-22 and their resolution status. 13/14 complete.
 
-1. **`--stagger` divergence**: 80ms in index, 240ms in setup. This doc says 180ms. Unify.
-2. **Status tokens** (`--green`, `--amber`, `--red`) only declared in setup. Add to index too.
-3. **Dead CSS**:
-   - `.eyebrow` class defined, no matching element. Keep class as utility or remove.
-   - `[data-reveal="line"]` CSS, no matching element. Remove.
-   - `[data-reveal="stat"]` choreography, but `.stat-cell` uses `body`. Reconcile.
-   - `.hero-top .meta` / `hero-meta` kind — `.hero-top` is empty. Either fill or remove.
-4. **Font stack strings**: multiple forms of `"Fraunces", ...` and `"Geist Mono", ...`. Normalise to canonical strings in §2.
-5. **Letter-spacing drift**: 0.14em (dev panel), 0.25em (scroll-cue). Align to the five-tier scale.
-6. **Font-size drift**: 10, 11, 12, 12.5, 13, 13.5px all appear. Consolidate to the tiers in §2.
-7. **Inline style pollution**: 13 inline styles on `index.html`, 19 on `setup.html`. Move to classes where possible.
-8. **Duplicated section-header block**: `.header { flex... }` redeclared 5× in index (once per section id). Factor to a single `.header` selector.
-9. **`.hero-grid` vs `.hero-bottom`**: same role, different names across setup vs index. Pick one — propose `.hero-grid` (semantically clearer).
-10. **Install pill duplicated in mobile**: declared twice (default + inside `@max-width: 760px`). Let the default one inherit if possible.
-11. **`.install-option .note-amber` uses `--warm`** instead of `--amber` while keeping the `amber` class name. Rename class or use the right token.
-12. **Hard-coded `rgba(193,106,52,0.14)` scattered**: define a helper if it appears 3+ times — either a token (`--accent-warm-14`) or a CSS `color-mix()`.
-13. **`!important` on `[data-reveal="card"]`**. Remove and find the real specificity conflict.
-14. **`.footer-col ul li` bullet style** mismatch between landing and setup. Confirm target pattern.
+| # | Deviation | Status |
+|---|---|---|
+| 1 | `--stagger` divergence (80/240ms) | ✅ unified to 180ms |
+| 2 | Status tokens missing from index | ✅ added |
+| 3 | Dead CSS (`.eyebrow`, `line`/`hero-meta` kinds, empty `.hero-top`) | ✅ removed + stat kind reconnected to `.n` |
+| 4 | Font stack strings | ✅ normalised to canonical |
+| 5 | Letter-spacing drift (0.14em, 0.25em) | ✅ doc updated (M-cue tier + dev-panel exception) |
+| 6 | Font-size drift (12.5/13.5px) | ✅ aligned to 12/13 |
+| 7a | Inline `<code>` styles | ✅ factored into `code {}` rule |
+| 7b | Other inline `style=""` (margins, font-sizes, opacities) | ⏳ pending — needs utility classes |
+| 8 | `.header` rule duplicated 5× in index | ✅ factored (-46 lines) |
+| 9 | `.hero-bottom` → `.hero-grid` rename + bottom alignment fix | ✅ unified |
+| 10 | Install pill duplicated in mobile | ✅ slimmed to overrides only |
+| 11 | `.note-amber` misleading name | ✅ renamed to `.note-advisory` |
+| 12 | `rgba(193, 106, 52, 0.14)` scattered | ✅ extracted to `--accent-warm-14` token |
+| 13 | `!important` on `[data-reveal="card"]` | ✅ removed |
+| 14 | `.footer-col ul li` bullet mismatch | ✅ false positive — rules are identical |
 
 ---
 
