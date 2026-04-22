@@ -1673,32 +1673,61 @@
     // Bucket boundaries for the 5 steps — how many cubes are visible after
     // each step. 4 → 8 → 12 → 15 → 18. Gentle accretion, full grid at step 5.
     const STEP_CUBE_COUNTS = [4, 8, 12, 15, 18];
-    // Per-step free-form 3D layouts for Ch. 01 — shapes that illustrate each
-    // step's copy, freed from the 3×2×3 cube grid. Cubes i < count are
-    // positioned at the explicit points; cubes i >= count stay invisible.
-    // The vault step falls back to the default grid via useGrid:true.
-    //   Step 0 Lead    : 1 solitary cube, centred     — "one lead enters"
-    //   Step 1 Cycles  : 2 cubes facing across        — "primary ↔ fact-checker"
-    //   Step 2 Findings: tetrahedron (3 base + apex)  — "anchored on multiple sources"
-    //   Step 3 Review  : 5 cubes in a row             — "click through each finding"
-    //   Step 4 Vault   : full grid                    — "living knowledge base"
+    // Per-step free-form layouts for Ch. 01 — the cubes spell the first
+    // letter of each step's name: L (Lead), C (Cycles), F (Findings),
+    // R (Review) — then step 5 (Vault) opens into the full 3×2×3 grid.
+    // Letters live in a 3×5 pixel grid (x columns, y rows), cube size 0.8
+    // per pixel, z=0. Grid rows go top-down so the first row lands at +y.
+    function _letterPositions(grid, colW, rowH) {
+      const out = [];
+      const rows = grid.length;
+      for (let r = 0; r < rows; r++) {
+        const row = grid[r];
+        const y = -(r - (rows - 1) / 2) * rowH;
+        for (let c = 0; c < row.length; c++) {
+          if (row[c]) {
+            const x = (c - (row.length - 1) / 2) * colW;
+            out.push(new THREE.Vector3(x, y, 0));
+          }
+        }
+      }
+      return out;
+    }
+    const LETTER_COL = 0.85, LETTER_ROW = 0.55;
+    const LETTER_L = _letterPositions([
+      [1,0,0],
+      [1,0,0],
+      [1,0,0],
+      [1,0,0],
+      [1,1,1],
+    ], LETTER_COL, LETTER_ROW);
+    const LETTER_C = _letterPositions([
+      [1,1,1],
+      [1,0,0],
+      [1,0,0],
+      [1,0,0],
+      [1,1,1],
+    ], LETTER_COL, LETTER_ROW);
+    const LETTER_F = _letterPositions([
+      [1,1,1],
+      [1,0,0],
+      [1,1,0],
+      [1,0,0],
+      [1,0,0],
+    ], LETTER_COL, LETTER_ROW);
+    const LETTER_R = _letterPositions([
+      [1,1,0],
+      [1,0,1],
+      [1,1,0],
+      [1,0,1],
+      [1,0,1],
+    ], LETTER_COL, LETTER_ROW);
     const STEP_LAYOUTS = [
-      { count: 1, positions: [ new THREE.Vector3(0, 0, 0) ] },
-      { count: 2, positions: [ new THREE.Vector3(-1.4, 0, 0), new THREE.Vector3(1.4, 0, 0) ] },
-      { count: 4, positions: [
-        new THREE.Vector3(-1.0, -0.5, 0.6),
-        new THREE.Vector3( 1.0, -0.5, 0.6),
-        new THREE.Vector3( 0.0, -0.5, -1.0),
-        new THREE.Vector3( 0.0,  0.8, 0.0),
-      ] },
-      { count: 5, positions: [
-        new THREE.Vector3(-2.2, 0, 0),
-        new THREE.Vector3(-1.1, 0, 0),
-        new THREE.Vector3( 0.0, 0, 0),
-        new THREE.Vector3( 1.1, 0, 0),
-        new THREE.Vector3( 2.2, 0, 0),
-      ] },
-      { useGrid: true },
+      { count: LETTER_L.length, positions: LETTER_L }, // Lead
+      { count: LETTER_C.length, positions: LETTER_C }, // Cycles
+      { count: LETTER_F.length, positions: LETTER_F }, // Findings
+      { count: LETTER_R.length, positions: LETTER_R }, // Review
+      { useGrid: true },                                // Vault
     ];
 
     const cellCentersTex = new THREE.DataTexture(
