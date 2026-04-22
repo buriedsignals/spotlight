@@ -2964,25 +2964,31 @@
     })();
 
     // —— Cell activity scheduler (params-driven) ——
+    // Only runs in 'chaos' mood (hero); in every other mood the scene drives
+    // activity deterministically (letter shapes, ring, etc.) so a random
+    // flip would visibly kill one of those cubes.
     function scheduleFlip() {
       const delay = params.flipMin + Math.random() * (params.flipMax - params.flipMin);
       setTimeout(() => {
-        const numToFlip = 2 + Math.floor(Math.random() * 4);
-        for (let j = 0; j < numToFlip; j++) {
-          const i = Math.floor(Math.random() * N_CELLS);
-          targetActivity[i] = targetActivity[i] > 0.5 ? 0 : 1;
-        }
-        let active = 0;
-        for (let i = 0; i < N_CELLS; i++) if (targetActivity[i] > 0.5) active++;
-        let safety = 0;
-        while (active < params.minActive && safety++ < 30) {
-          const i = Math.floor(Math.random() * N_CELLS);
-          if (targetActivity[i] < 0.5) { targetActivity[i] = 1; active++; }
-        }
-        safety = 0;
-        while (active > params.maxActive && safety++ < 30) {
-          const i = Math.floor(Math.random() * N_CELLS);
-          if (targetActivity[i] > 0.5) { targetActivity[i] = 0; active--; }
+        const mood = window.__sceneMood || 'chaos';
+        if (mood === 'chaos') {
+          const numToFlip = 2 + Math.floor(Math.random() * 4);
+          for (let j = 0; j < numToFlip; j++) {
+            const i = Math.floor(Math.random() * N_CELLS);
+            targetActivity[i] = targetActivity[i] > 0.5 ? 0 : 1;
+          }
+          let active = 0;
+          for (let i = 0; i < N_CELLS; i++) if (targetActivity[i] > 0.5) active++;
+          let safety = 0;
+          while (active < params.minActive && safety++ < 30) {
+            const i = Math.floor(Math.random() * N_CELLS);
+            if (targetActivity[i] < 0.5) { targetActivity[i] = 1; active++; }
+          }
+          safety = 0;
+          while (active > params.maxActive && safety++ < 30) {
+            const i = Math.floor(Math.random() * N_CELLS);
+            if (targetActivity[i] > 0.5) { targetActivity[i] = 0; active--; }
+          }
         }
         scheduleFlip();
       }, delay);
@@ -3066,9 +3072,9 @@
         const step = Math.max(0, Math.min(4, window.__fiveThingsStep | 0));
         const layout = (mood === 'aligned') ? STEP_LAYOUTS[step] : null;
         const tSec = performance.now() * 0.001;
-        const RING_N = 8;
-        const RING_R = 2.6;
-        const RING_ANGV = 0.12;   // rad/s — slower, cleaner
+        const RING_N = 10;
+        const RING_R = 1.9;
+        const RING_ANGV = 0.25;   // rad/s — orbital speed
         for (let i = 0; i < N_CELLS; i++) {
           const s = cubeState[i];
           let restX, restY, restZ;
@@ -3337,7 +3343,7 @@
           // 'sparse' lights the first 10 to populate the orbital ring.
           if (mood !== 'aligned') {
             if (mood === 'sparse') {
-              for (let i = 0; i < N_CELLS; i++) targetActivity[i] = i < 8 ? 1 : 0;
+              for (let i = 0; i < N_CELLS; i++) targetActivity[i] = i < 10 ? 1 : 0;
             } else {
               const activityMix = mood === 'calm' ? 0.5 : 1.0;
               for (let i = 0; i < N_CELLS; i++) targetActivity[i] = (i / N_CELLS) < activityMix ? 1 : 0;
@@ -3613,20 +3619,19 @@
     update();
   })();
 
-  // ── Canvas pin — the fixed WebGL canvas should not sit behind the footer's
-  // huge "Lead the story." display. Clip the bottom of the canvas at the
-  // element's top position every frame. As the user scrolls, the element
-  // rises into view and the clip follows — canvas "stops" at the footer
-  // boundary without ever bleeding underneath the huge text.
+  // ── Canvas pin — the fixed WebGL canvas stops following the viewport once
+  // "Lead the story." enters from the bottom. From that point on it glides
+  // upward with the scroll so it effectively sits at a fixed world position
+  // above the footer, leaving the huge display text unobstructed.
   (function() {
     const canvas = document.getElementById('global-canvas');
     const stopEl = document.getElementById('footer-huge');
     if (!canvas || !stopEl) return;
     function update() {
-      const vh = window.innerHeight;
-      const stopY = stopEl.getBoundingClientRect().top;          // viewport y
-      const clipBottom = Math.max(0, vh - Math.max(0, stopY));
-      canvas.style.clipPath = clipBottom > 0 ? `inset(0 0 ${clipBottom}px 0)` : '';
+      const stopTopAbs = stopEl.getBoundingClientRect().top + window.scrollY;
+      const viewportBottom = window.scrollY + window.innerHeight;
+      const delta = Math.max(0, viewportBottom - stopTopAbs);
+      canvas.style.transform = delta > 0 ? `translateY(${-delta}px)` : '';
     }
     window.addEventListener('scroll', update, { passive: true });
     window.addEventListener('resize', update, { passive: true });
