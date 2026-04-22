@@ -41,7 +41,7 @@ If the bug surfaced mid-investigation, paste the last ~50 lines of `cases/{proje
 
 ## Screenshots / logs
 
-If UI-related (setup.html, landing.html, review.html), attach a screenshot.
+If UI-related (setup.html, index.html, review.html), attach a screenshot.
 If CLI-related, paste the full terminal output.
 
 ## Workaround

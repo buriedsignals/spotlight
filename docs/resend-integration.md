@@ -8,7 +8,7 @@ role: Spec for the Resend newsletter signup integration on the Spotlight landing
 
 ## Goal
 
-Add a two-card block to `landing.html` (before `<footer>`) that promotes Buried Signals Pro Membership and Consulting. Membership card includes a direct Resend signup form (same UX pattern as `osint-navigator`). Consulting card is a `mailto:` CTA plus a plain-text link to case studies.
+Add a two-card block to `index.html` (before `<footer>`) that promotes Buried Signals Pro Membership and Consulting. Membership card includes a direct Resend signup form (same UX pattern as `osint-navigator`). Consulting card is a `mailto:` CTA plus a plain-text link to case studies.
 
 ## Source of copy
 
@@ -82,7 +82,7 @@ Leave `const NEWSLETTER_ENDPOINT = '/api/newsletter/subscribe';` as a placeholde
 
 ## Visual styling
 
-- Reuse existing `landing.html` CSS variables (`--bg-2`, `--border`, `--accent`, `--muted`) and the `.box-card` radius/border treatment. No new palette.
+- Reuse existing `index.html` CSS variables (`--bg-2`, `--border`, `--accent`, `--muted`) and the `.box-card` radius/border treatment. No new palette.
 - Cards use the same card surface as the existing "What's in the box" block for consistency.
 - Grid: `grid-template-columns: repeat(auto-fit, minmax(300px, 1fr))` with `gap: 16px`. Single-column under 640px.
 - Bullets: reuse `ul.clean` styling or a compact variant.

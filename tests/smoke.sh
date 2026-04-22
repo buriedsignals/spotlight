@@ -11,7 +11,7 @@
 #   7. No coJournalist residue outside docs/plans/
 #   8. AGENTS.md has 11 entries in skill registry
 #   9. setup.html exists
-#  10. landing.html exists
+#  10. index.html exists
 #  11. DISCLAIMER.md + LICENSE present
 #
 # Exit 0 on pass, 1 if any check fails.
@@ -111,7 +111,7 @@ fi
 
 echo ""
 echo "── Entry points ──"
-for f in setup.html landing.html DISCLAIMER.md LICENSE; do
+for f in setup.html index.html DISCLAIMER.md LICENSE; do
   if [ -f "$f" ]; then
     ok "$f present"
   else
