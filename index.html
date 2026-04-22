@@ -60,32 +60,17 @@
   }
 
   /* ── NAV ────────────────────────────────────────────────
-     Default (paper) state : solid paper bg + dark ink text for sections on
-     the cream palette. JS adds .on-hero over the WebGL scene (mix-blend
-     so the brand reads against the dark particles) and .on-dark over
-     solid ink sections (chapter-break, attribution, footer). */
+     Transparent across the whole page. mix-blend-mode: difference flips the
+     brand + Install pill against whatever sits underneath (cubes, text,
+     section bg) so it stays legible without its own background. */
   nav.topnav {
     position: fixed; top: 0; left: 0; right: 0; z-index: 50;
     display: flex; justify-content: space-between; align-items: center;
     padding: 20px 28px;
-    background: var(--paper);
-    color: var(--paper-fg);
-    border-bottom: 1px solid var(--muted-faint-dark);
-    pointer-events: none;
-    /* Only animate the colour — background + mix-blend must snap instantly
-       so we never see a semi-transparent "bleed" state mid-transition. */
-    transition: color 220ms ease, border-color 220ms ease;
-  }
-  nav.topnav.on-hero {
     background: transparent;
-    color: #fff;
-    border-bottom-color: transparent;
-    mix-blend-mode: difference;
-  }
-  nav.topnav.on-dark {
-    background: var(--ink);
     color: var(--paper);
-    border-bottom-color: var(--muted-faint-dark);
+    pointer-events: none;
+    mix-blend-mode: difference;
   }
   nav.topnav > * { pointer-events: auto; }
   nav.topnav .brand {
@@ -183,13 +168,6 @@
   #hero-canvas {
     position: absolute; inset: 0;
     width: 100%; height: 100%;
-  }
-
-  .hero-gradient {
-    position: absolute; inset: 0;
-    background: linear-gradient(to bottom, transparent 0%, transparent 45%, rgba(7,7,10,0.7) 95%, var(--ink) 100%);
-    pointer-events: none;
-    z-index: 2;
   }
 
   .hero-content {
@@ -1112,7 +1090,6 @@
 <!-- ── HERO ─────────────────────────────────────────────── -->
 <section id="hero" data-screen-label="01 Hero" data-nav-theme="hero">
   <div id="hero-canvas" aria-hidden="true"></div>
-  <div class="hero-gradient"></div>
   <div class="hero-content">
     <div class="hero-grid">
       <h1 class="hero-title" data-reveal="title" style="--rd: 600ms">
@@ -3474,36 +3451,6 @@
       window.__fiveThingsStep = active;
     }
     window.addEventListener('scroll', update, { passive: true });
-    update();
-  })();
-
-  // ── Topnav theme — detect the section currently under the top edge of
-  // the viewport and swap the topnav styling to match: hero = mix-blend,
-  // dark section = ink background, everything else = paper background.
-  (function() {
-    const nav = document.getElementById('topnav');
-    if (!nav) return;
-    const sections = Array.from(document.querySelectorAll('[data-nav-theme]'));
-    if (!sections.length) return;
-
-    const THEMES = ['hero', 'dark']; // classes toggled; 'paper' is the default (no class)
-
-    function update() {
-      // Probe point is a little below the top of the viewport so the theme
-      // switches once the next section clearly meets the top, not at every
-      // sub-pixel edge.
-      const probe = window.scrollY + 24;
-      let theme = 'paper';
-      for (const s of sections) {
-        const top = s.offsetTop;
-        const bottom = top + s.offsetHeight;
-        if (probe >= top && probe < bottom) { theme = s.dataset.navTheme; break; }
-      }
-      THEMES.forEach(t => nav.classList.toggle('on-' + t, theme === t));
-    }
-
-    window.addEventListener('scroll',  update, { passive: true });
-    window.addEventListener('resize',  update, { passive: true });
     update();
   })();
 
