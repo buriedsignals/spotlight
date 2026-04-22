@@ -1673,19 +1673,19 @@
     // Bucket boundaries for the 5 steps — how many cubes are visible after
     // each step. 4 → 8 → 12 → 15 → 18. Gentle accretion, full grid at step 5.
     const STEP_CUBE_COUNTS = [4, 8, 12, 15, 18];
-    // Per-step spatial patterns for Ch. 01 — each step builds a DIFFERENT shape
-    // (not just progressively more cubes). Cells indexed iz*6 + iy*3 + ix,
-    // with GX=3, GY=2, GZ=3 so ix∈{0,1,2}, iy∈{0,1}, iz∈{0,1,2}.
-    //   Step 0 Lead      : 1 center cube            — the seed
-    //   Step 1 Cycles    : 4 corner cubes (bot)     — closed loop
-    //   Step 2 Findings  : 6 central wall (mid x)   — findings stack up
-    //   Step 3 Review    : 8 in two side walls      — reviewed from both sides
-    //   Step 4 Vault     : all 18                   — the full vault
+    // Per-step spatial patterns for Ch. 01 — each shape references the step's
+    // copy so the cubes don't just pile up, they *illustrate*.
+    // Cells indexed iz*6 + iy*3 + ix, with GX=3, GY=2, GZ=3.
+    //   Step 0 Lead    : horizontal line through the scene — "lead enters, moves through methodology"
+    //   Step 1 Cycles  : two vertical pairs facing each other — "primary + fact-checker, each cycle"
+    //   Step 2 Findings: triangle pointing up — "two sources anchor a claim; findings stand stable"
+    //   Step 3 Review  : 4 corners + centre — "click-through points, challenge anywhere"
+    //   Step 4 Vault   : full grid — "living knowledge base, everything cross-linked"
     const STEP_PATTERNS = [
-      [7],                                            // Lead    — (1,0,1)
-      [0, 2, 12, 14],                                 // Cycles  — corners bottom
-      [1, 7, 13, 4, 10, 16],                          // Findings — center wall (ix=1)
-      [0, 3, 12, 15, 2, 5, 14, 17],                   // Review  — left + right walls (ix=0, ix=2)
+      [6, 7, 8],                                      // Lead    — line through middle row
+      [6, 9, 8, 11],                                  // Cycles  — two vertical pairs facing (x=0 and x=2, z=1)
+      [6, 8, 10],                                     // Findings — triangle: bot-left, bot-right, top-centre
+      [0, 2, 10, 12, 14],                             // Review  — 4 corners + centre top
       [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17],  // Vault   — all
     ];
 
