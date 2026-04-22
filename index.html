@@ -669,11 +669,12 @@
 
   /* ── FOOTER ───────────────────────────────────────────── */
   #footer {
-    background: var(--ink);
+    background: rgba(7, 7, 10, 0.5);
     color: var(--paper);
     padding: 140px 48px 40px;
     position: relative;
     overflow: hidden;
+    z-index: 10;
   }
   .footer-huge {
     font-family: "Fraunces", serif;
@@ -1066,13 +1067,6 @@
     position: relative;
     z-index: 10;
     background: rgba(7, 7, 10, 0.5);
-  }
-  /* Footer is the page's narrative closer ("Lead the story.") — fully opaque
-     so the cubes don't bleed through the huge display text. */
-  #footer {
-    position: relative;
-    z-index: 10;
-    background: var(--ink);
   }
 </style>
 </head>
@@ -3625,12 +3619,12 @@
   // above the footer, leaving the huge display text unobstructed.
   (function() {
     const canvas = document.getElementById('global-canvas');
-    const stopEl = document.getElementById('footer-huge');
+    const stopEl = document.querySelector('.footer-grid');
     if (!canvas || !stopEl) return;
     function update() {
-      const stopBottomAbs = stopEl.getBoundingClientRect().bottom + window.scrollY;
+      const stopTopAbs = stopEl.getBoundingClientRect().top + window.scrollY;
       const viewportBottom = window.scrollY + window.innerHeight;
-      const delta = Math.max(0, viewportBottom - stopBottomAbs);
+      const delta = Math.max(0, viewportBottom - stopTopAbs);
       canvas.style.transform = delta > 0 ? `translateY(${-delta}px)` : '';
     }
     window.addEventListener('scroll', update, { passive: true });
