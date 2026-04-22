@@ -3613,18 +3613,18 @@
     update();
   })();
 
-  // ── Canvas pin — stop the fixed WebGL canvas following the scroll once the
-  // user reaches the bottom of #offers. Past that point the canvas translates
-  // upward in sync with scroll so it effectively "scrolls off" with the page,
-  // leaving the footer ("Lead the story.") cube-free.
+  // ── Canvas pin — the fixed WebGL canvas should not sit behind the footer's
+  // huge "Lead the story." display. Once the top of that element reaches the
+  // top of the viewport, pin the canvas to that world position so further
+  // scrolling glides it upward off-screen.
   (function() {
     const canvas = document.getElementById('global-canvas');
-    const stopSection = document.getElementById('offers');
-    if (!canvas || !stopSection) return;
+    const stopEl = document.getElementById('footer-huge');
+    if (!canvas || !stopEl) return;
     function update() {
-      const stopBottom = stopSection.offsetTop + stopSection.offsetHeight;
+      const stopTopAbs = stopEl.getBoundingClientRect().top + window.scrollY;
       const viewportBottom = window.scrollY + window.innerHeight;
-      const delta = Math.max(0, viewportBottom - stopBottom);
+      const delta = Math.max(0, viewportBottom - stopTopAbs);
       canvas.style.transform = delta > 0 ? `translateY(${-delta}px)` : '';
     }
     window.addEventListener('scroll', update, { passive: true });
