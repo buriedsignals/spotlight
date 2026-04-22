@@ -340,6 +340,8 @@
     line-height: 1.55;
     margin-top: 14px;
   }
+  /* Small helper text under a primary paragraph — pricing footnotes, model footnotes. */
+  .note-sub { margin: 10px 0 0; font-size: 12px; opacity: 0.7; }
 
   /* Inline code */
   code {
@@ -1002,7 +1004,7 @@
               <label><input type="radio" name="opencode_provider" value="fireworks"><span class="opt">Fireworks</span></label>
               <label><input type="radio" name="opencode_provider" value="together"><span class="opt">Together</span></label>
             </div>
-            <p style="margin: 10px 0 0; font-size: 11px; opacity: 0.6;">~$0.50–2 per investigation, charged per token by the provider's API.</p>
+            <p class="note-sub">~$0.50–2 per investigation, charged per token by the provider's API.</p>
           </div>
 
           <div class="key-row">
@@ -1017,7 +1019,7 @@
               <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
               <li>Claude walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
             </ol>
-            <p style="margin:10px 0 0; font-size:12px; opacity: 0.7;">Also works in the Claude Desktop app: open the Spotlight folder, Claude sees <code>CLAUDE.md</code> automatically. Covered by Claude Max / Claude Pro — no per-investigation cost.</p>
+            <p class="note-sub">Also works in the Claude Desktop app: open the Spotlight folder, Claude sees <code>CLAUDE.md</code> automatically. Covered by Claude Max / Claude Pro — no per-investigation cost.</p>
           </div>
 
           <div class="step-card hidden" id="cloud-usage-gemini">
@@ -1027,7 +1029,7 @@
               <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
               <li>Gemini walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
             </ol>
-            <p style="margin:10px 0 0; font-size:12px; opacity: 0.7;">Covered by your Gemini subscription — no per-investigation cost.</p>
+            <p class="note-sub">Covered by your Gemini subscription — no per-investigation cost.</p>
           </div>
 
           <div class="step-card hidden" id="cloud-usage-codex">
@@ -1037,7 +1039,7 @@
               <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
               <li>Codex walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
             </ol>
-            <p style="margin:10px 0 0; font-size:12px; opacity: 0.7;">Covered by your ChatGPT Plus / Pro / Team / Enterprise subscription — no per-investigation cost.</p>
+            <p class="note-sub">Covered by your ChatGPT Plus / Pro / Team / Enterprise subscription — no per-investigation cost.</p>
           </div>
 
           <div class="step-card hidden" id="cloud-usage-opencode">
@@ -1048,7 +1050,7 @@
               <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
               <li>OpenCode walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
             </ol>
-            <p style="margin:10px 0 0; font-size:12px; opacity: 0.7;">Recommended models: OpenRouter → <code>z-ai/glm-5.1</code>; Fireworks → <code>qwen3p6-plus</code>; Together → a Qwen3.6 variant. Cost is per-token.</p>
+            <p class="note-sub">Recommended models: OpenRouter → <code>z-ai/glm-5.1</code>; Fireworks → <code>qwen3p6-plus</code>; Together → a Qwen3.6 variant. Cost is per-token.</p>
           </div>
         </section>
       </div>
