@@ -44,14 +44,32 @@
   }
   .mono { font-family: "Geist Mono", ui-monospace, monospace; }
 
-  /* ── NAV ──────────────────────────────────────────────── */
+  /* ── NAV ──────────────────────────────────────────────────
+     3-state system shared with the landing. JS toggles .on-hero
+     and .on-dark based on the section currently under the top edge
+     (data-nav-theme attr on sections). Default = paper background. */
   nav.topnav {
     position: fixed; top: 0; left: 0; right: 0; z-index: 50;
     display: flex; justify-content: space-between; align-items: center;
     padding: 20px 28px;
-    mix-blend-mode: difference;
-    color: #fff;
+    background: var(--paper);
+    color: var(--paper-fg);
+    border-bottom: 1px solid var(--muted-faint-light);
     pointer-events: none;
+    /* Only animate the colour — background must snap instantly so we never
+       see a semi-transparent "bleed" state mid-transition. */
+    transition: color 220ms ease, border-color 220ms ease;
+  }
+  nav.topnav.on-hero {
+    background: transparent;
+    color: #fff;
+    border-bottom-color: transparent;
+    mix-blend-mode: difference;
+  }
+  nav.topnav.on-dark {
+    background: var(--ink);
+    color: var(--paper);
+    border-bottom-color: var(--muted-faint-dark);
   }
   nav.topnav > * { pointer-events: auto; }
   nav.topnav .brand {
@@ -61,8 +79,25 @@
   }
   nav.topnav .brand svg { width: 18px; height: 18px; }
   nav.topnav .links {
-    display: flex; gap: 22px; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase;
-    opacity: 0.85;
+    display: flex; gap: 22px; align-items: center;
+    font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase;
+  }
+  nav.topnav .links a { transition: color 0.2s ease; opacity: 0.85; }
+  nav.topnav .links a:hover { color: var(--accent-warm); opacity: 1; }
+  /* Install — promoted as a CTA (bordered pill) in the topnav. */
+  nav.topnav .links a[href="setup.html"] {
+    display: inline-flex; align-items: center;
+    padding: 9px 14px;
+    border: 1px solid currentColor;
+    opacity: 1;
+    letter-spacing: 0.22em;
+    font-weight: 500;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  }
+  nav.topnav .links a[href="setup.html"]:hover {
+    background: rgba(193, 106, 52, 0.14);   /* accent-warm fade */
+    border-color: var(--accent-warm);
+    color: var(--accent-warm);
   }
 
   /* ── HERO ─────────────────────────────────────────────── */
@@ -725,8 +760,19 @@
 
   /* ── MOBILE ───────────────────────────────────────────── */
   @media (max-width: 760px) {
-    nav.topnav { padding: 16px 20px; }
-    nav.topnav .links { display: none; }
+    nav.topnav { padding: 14px 20px; }
+    /* Hide every nav link except Install, promoted to a compact CTA. */
+    nav.topnav .links { display: flex; gap: 0; }
+    nav.topnav .links a { display: none; }
+    nav.topnav .links a[href="setup.html"] {
+      display: inline-flex; align-items: center;
+      padding: 7px 12px;
+      border: 1px solid currentColor;
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      opacity: 1;
+      border-radius: 2px;
+    }
 
     #hero { padding: 110px 20px 60px; min-height: 50vh; }
     .hero-grid { grid-template-columns: 1fr; gap: 32px; }
@@ -815,7 +861,7 @@
 </nav>
 
 <!-- ── HERO ─────────────────────────────────────────────── -->
-<section id="hero">
+<section id="hero" data-nav-theme="hero">
   <div class="hero-grid">
     <div>
       <h1 class="hero-title" data-reveal="title" style="--rd: 400ms">
@@ -1072,7 +1118,7 @@
 </main>
 
 <!-- ── INSTALL OUTPUT ─────────────────────────────────── -->
-<section id="install-output" class="hidden">
+<section id="install-output" class="hidden" data-nav-theme="dark">
   <div class="out-wrap">
     <div class="out-header">
       <span class="chap">Output — Two ways to install</span>
@@ -1114,7 +1160,7 @@
 </section>
 
 <!-- ── FOOTER ───────────────────────────────────────────── -->
-<section id="footer">
+<section id="footer" data-nav-theme="dark">
   <div class="footer-wrap">
     <div class="footer-grid">
       <div class="footer-col about">
@@ -1131,12 +1177,11 @@
         </ul>
       </div>
       <div class="footer-col">
-        <h4>Resources</h4>
+        <h4>Project</h4>
         <ul>
+          <li><a href="index.html#attribution">Built on</a></li>
+          <li><a href="index.html#offers">Work with us</a></li>
           <li><a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a></li>
-          <li><a href="#docs">Documentation</a></li>
-          <li><a href="#schemas">Review schemas</a></li>
-          <li><a href="#changelog">Changelog</a></li>
         </ul>
       </div>
       <div class="footer-col">
@@ -1926,6 +1971,47 @@
   document.querySelectorAll('[data-reveal]').forEach(el => io.observe(el));
   // Nav fades on load
   requestAnimationFrame(() => document.getElementById('topnav').classList.add('in'));
+
+  // --- Topnav theme switcher ──────────────────────────────────────────────
+  // Detects which section sits under the top edge of the viewport and swaps
+  // the topnav styling: hero = mix-blend over dark, dark section = ink bg,
+  // everything else (form / paper main) = paper bg + dark text.
+  // Mirrors the landing implementation. Sections opt in via data-nav-theme.
+  (function () {
+    const nav = document.getElementById('topnav');
+    if (!nav) return;
+    const sections = Array.from(document.querySelectorAll('[data-nav-theme]'));
+    if (!sections.length) return;
+    const THEMES = ['hero', 'dark']; // 'paper' is the default (no class)
+
+    function update() {
+      // Probe a little below the top edge so the swap happens once the next
+      // section clearly meets the top, not at every sub-pixel boundary.
+      const probe = window.scrollY + 24;
+      let theme = 'paper';
+      for (const s of sections) {
+        // Skip hidden sections (#install-output starts with .hidden, only
+        // becomes a target once the user generates the script).
+        if (s.offsetParent === null) continue;
+        const top = s.offsetTop;
+        const bottom = top + s.offsetHeight;
+        if (probe >= top && probe < bottom) { theme = s.dataset.navTheme; break; }
+      }
+      THEMES.forEach(t => nav.classList.toggle('on-' + t, theme === t));
+    }
+
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update, { passive: true });
+    update();
+
+    // The install-output section becomes visible after the user clicks
+    // Generate — re-run once it appears so the nav picks it up.
+    const out = document.getElementById('install-output');
+    if (out) {
+      const mo = new MutationObserver(update);
+      mo.observe(out, { attributes: true, attributeFilter: ['class'] });
+    }
+  })();
 })();
 </script>
 </body>

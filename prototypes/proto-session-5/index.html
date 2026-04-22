@@ -52,14 +52,33 @@
     font-weight: 500;
   }
 
-  /* ── NAV ──────────────────────────────────────────────── */
+  /* ── NAV ────────────────────────────────────────────────
+     Default (paper) state : solid paper bg + dark ink text for sections on
+     the cream palette. JS adds .on-hero over the WebGL scene (mix-blend
+     so the brand reads against the dark particles) and .on-dark over
+     solid ink sections (chapter-break, attribution, footer). */
   nav.topnav {
     position: fixed; top: 0; left: 0; right: 0; z-index: 50;
     display: flex; justify-content: space-between; align-items: center;
     padding: 20px 28px;
-    mix-blend-mode: difference;
-    color: #fff;
+    background: var(--paper);
+    color: var(--paper-fg);
+    border-bottom: 1px solid var(--muted-faint-light);
     pointer-events: none;
+    /* Only animate the colour — background + mix-blend must snap instantly
+       so we never see a semi-transparent "bleed" state mid-transition. */
+    transition: color 220ms ease, border-color 220ms ease;
+  }
+  nav.topnav.on-hero {
+    background: transparent;
+    color: #fff;
+    border-bottom-color: transparent;
+    mix-blend-mode: difference;
+  }
+  nav.topnav.on-dark {
+    background: var(--ink);
+    color: var(--paper);
+    border-bottom-color: var(--muted-faint-dark);
   }
   nav.topnav > * { pointer-events: auto; }
   nav.topnav .brand {
@@ -69,11 +88,59 @@
   }
   nav.topnav .brand svg { width: 18px; height: 18px; }
   nav.topnav .links {
-    display: flex; gap: 22px; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase;
-    opacity: 0.85;
+    display: flex; gap: 22px; align-items: center;
+    font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase;
   }
-  nav.topnav .links a { transition: color 0.2s ease; }
-  nav.topnav .links a:hover { color: var(--accent-warm); }
+  nav.topnav .links a { transition: color 0.2s ease; opacity: 0.85; }
+  nav.topnav .links a:hover { color: var(--accent-warm); opacity: 1; }
+  /* Install — promoted as a CTA (bordered pill) in the topnav. */
+  nav.topnav .links a[href="setup.html"] {
+    display: inline-flex; align-items: center;
+    padding: 9px 14px;
+    border: 1px solid currentColor;
+    opacity: 1;
+    letter-spacing: 0.22em;
+    font-weight: 500;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  }
+  nav.topnav .links a[href="setup.html"]:hover {
+    background: rgba(193, 106, 52, 0.14);   /* accent-warm fade */
+    border-color: var(--accent-warm);
+    color: var(--accent-warm);
+  }
+
+  /* ── DEV PANEL ───────────────────────────────────────────
+     Tiny floating toggles, bottom-right, for showing the lil-gui and
+     swapping the cube theme between bi-colour and neutral. Hidden by
+     default in production — keep `display:none` here when shipping. */
+  #dev-panel {
+    position: fixed;
+    bottom: 14px;
+    right: 14px;
+    z-index: 9999;
+    display: none;
+    flex-direction: column; gap: 6px;
+    pointer-events: auto;
+  }
+  #dev-panel button {
+    appearance: none;
+    background: rgba(7, 7, 10, 0.8);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    padding: 6px 10px;
+    font-family: "Geist Mono", ui-monospace, monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+  }
+  #dev-panel button:hover {
+    background: var(--accent-warm);
+    border-color: var(--accent-warm);
+    color: #fff;
+  }
 
   /* ── GLOBAL SCENE CANVAS ──────────────────────────────────
      One WebGL canvas for the whole page. Sits fixed above every section's
@@ -210,7 +277,7 @@
     position: relative;
     background: var(--ink);
     padding: 120px 48px;
-    text-align: left;
+    text-align: center;
     border-top: 1px solid var(--muted-faint-dark);
   }
   .chapter-break .pull {
@@ -220,6 +287,7 @@
     line-height: 1.2;
     letter-spacing: -0.01em;
     max-width: 22ch;
+    margin: 0 auto;
     color: var(--paper);
     font-style: italic;
   }
@@ -250,7 +318,8 @@
 
   .split-scroll {
     display: grid;
-    grid-template-columns: 200px minmax(0, 1fr) 320px;
+    /* Counter | step text (sized to its 18ch copy) | scene slot fills rest */
+    grid-template-columns: 200px max-content minmax(320px, 1fr);
     gap: 60px;
     padding: 0 48px;
   }
@@ -260,12 +329,11 @@
     height: 100vh;
     display: flex; align-items: center; justify-content: center;
   }
-  /* Five-things slot — DOM placeholder for the global canvas scene. Sits in
-     the sticky right column; the WebGL cubes render into its screen bounds. */
+  /* Five-things slot — DOM placeholder for the global canvas scene.
+     Fills the sticky right column (all remaining width × 100vh). */
   .split-graph #five-things-slot {
     width: 100%;
-    max-width: 340px;
-    aspect-ratio: 1 / 1;
+    height: 100%;
     position: relative;
   }
   .split-left {
@@ -382,6 +450,15 @@
     position: relative;
     transition: background 0.3s, color 0.3s, border-color 0.3s;
   }
+  .int-card .card-scene-slot {
+    flex: 0 0 200px;
+    width: 200px;
+    max-width: 100%;
+    aspect-ratio: 1 / 1;
+    align-self: center;
+    margin: 12px 0 14px;
+    position: relative;
+  }
   .int-card:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
   .int-card .idx {
     font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.85;
@@ -447,8 +524,8 @@
     grid-template-columns: 2fr 1fr 1fr 1fr;
     gap: 0;
     align-items: end;
-    border-top: 1px solid var(--ink);
-    border-bottom: 1px solid var(--ink);
+    border-top: 1px solid var(--muted-faint-light);
+    border-bottom: 1px solid var(--muted-faint-light);
   }
   .stat-cell {
     padding: 32px 20px 28px;
@@ -576,8 +653,8 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0;
-    border-top: 1px solid var(--ink);
-    border-bottom: 1px solid var(--ink);
+    border-top: 1px solid var(--muted-faint-light);
+    border-bottom: 1px solid var(--muted-faint-light);
   }
   .offer {
     padding: 48px 40px 44px;
@@ -719,34 +796,159 @@
   .footer-meta .brand-mini { display: flex; align-items: center; gap: 10px; }
   .footer-meta .brand-mini svg { width: 14px; height: 14px; opacity: 0.7; }
 
+  /* ── TABLET ───────────────────────────────────────────────
+     Shrinks the Five-things grid so the scene slot narrows gracefully
+     without cropping the cubes (camera fit is aspect-aware). */
+  @media (max-width: 1100px) {
+    .split-scroll {
+      grid-template-columns: 160px max-content minmax(220px, 1fr);
+      gap: 36px;
+      padding: 0 32px;
+    }
+    .split-left .counter { font-size: 110px; }
+  }
+
   /* ── MOBILE ───────────────────────────────────────────── */
   @media (max-width: 760px) {
-    nav.topnav { padding: 16px 20px; }
-    nav.topnav .links { display: none; }
+    nav.topnav { padding: 14px 20px; }
+    /* Hide every nav link except Install, promoted to a compact CTA. */
+    nav.topnav .links { display: flex; gap: 0; }
+    nav.topnav .links a { display: none; }
+    nav.topnav .links a[href="setup.html"] {
+      display: inline-flex; align-items: center;
+      padding: 7px 12px;
+      border: 1px solid currentColor;
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      opacity: 1;
+      border-radius: 2px;
+    }
+
+    /* Hero — tighter title, stacked side block with CTAs stacked too */
     .hero-content { padding: 72px 20px 32px; }
-    .hero-bottom { grid-template-columns: 1fr; gap: 24px; }
-    .hero-side { max-width: 100%; }
-    .scroll-cue { left: 20px; }
+    .hero-title { font-size: clamp(38px, 10vw, 60px); max-width: 100%; }
+    .hero-bottom { grid-template-columns: 1fr; gap: 20px; }
+    .hero-side { max-width: 100%; font-size: 12.5px; }
+    .hero-side > div {
+      display: flex; flex-direction: column; align-items: stretch;
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .hero-side .cta {
+      margin-top: 0;
+      width: 100%;
+      justify-content: center;
+      padding: 14px 18px;
+    }
+    .hero-side .secondary {
+      margin-top: 0; margin-left: 0;
+      align-self: flex-start;
+      opacity: 0.85;
+    }
+    /* Scroll cue — space is tight on mobile, hide it. */
+    .scroll-cue { display: none; }
+
+    /* Section titles scale down cleanly for narrow screens */
+    #what .header .title,
+    #integrations .header .title,
+    #box .title,
+    #attribution .title,
+    #offers .title {
+      font-size: clamp(26px, 7.5vw, 42px);
+    }
+    #what .header,
+    #integrations .header,
+    #box,
+    #attribution .header,
+    #offers .header {
+      padding-left: 20px; padding-right: 20px;
+    }
+
     .chapter-break { padding: 80px 20px; }
-    #what .header, #integrations .header, #box { padding-left: 20px; padding-right: 20px; }
+    .chapter-break .pull { font-size: clamp(22px, 5.5vw, 32px); max-width: 100%; }
+
+    /* ── Section headers — stack the chap label above the title on mobile
+       so the title gets the full column width instead of wrapping narrow.
+       padding-top clears the fixed topnav (~50px) + adds a clear breath
+       before the title, critical for pinned sections (#integrations)
+       whose header sits at the top of the viewport while scrolling. ── */
+    #what .header,
+    #integrations .header,
+    #attribution .header,
+    #offers .header,
+    #box .header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+      padding-top: 84px;
+      padding-bottom: 22px;
+    }
+
+    /* ── Five-things — compact sticky ticker instead of stacked counter ──
+       Sticks at top:0 with a padding-top that reserves the topnav area.
+       This way the ticker's paper background covers the full strip behind
+       the topnav (which uses mix-blend-mode) so no step text bleeds through. */
     .split-scroll { grid-template-columns: 1fr; gap: 0; padding: 0 20px; }
-    .split-left { position: relative; height: auto; border-right: none; border-bottom: 1px solid var(--muted-faint-light); padding: 40px 0 30px; }
-    .split-left .counter { font-size: 90px; }
+    .split-left {
+      position: sticky; top: 0;
+      display: flex; flex-direction: row; align-items: center;
+      gap: 16px;
+      height: auto;
+      padding: 72px 4px 12px;
+      background: var(--paper);
+      z-index: 15;
+      border-right: none;
+      border-bottom: 1px solid var(--muted-faint-light);
+    }
+    .split-left > div:first-child {
+      display: flex; align-items: baseline; gap: 10px;
+      flex: 0 0 auto;
+    }
+    .split-left .counter { font-size: 34px; line-height: 1; margin: 0; }
+    .split-left .counter-label { margin-top: 0; font-size: 10px; min-height: 0; opacity: 0.75; }
+    .split-left .progress { flex: 1; margin-top: 0; }
+
     .split-right { padding: 20px 0 40px; }
-    .step { min-height: auto; padding: 40px 0; opacity: 1; border-bottom: 1px solid var(--muted-faint-light); }
-    .split-scroll { grid-template-columns: 1fr; }
+    .step { min-height: auto; padding: 36px 0; opacity: 1; border-bottom: 1px solid var(--muted-faint-light); }
+    .step:last-child { border-bottom: none; }
+    .step .step-title { font-size: clamp(22px, 6vw, 32px); max-width: 100%; margin-bottom: 14px; }
+    .step .step-body { font-size: 13.5px; max-width: 100%; }
     .split-graph { display: none; }
-    .pin-wrap { height: auto; }
-    .pin-sticky { position: relative; height: auto; }
-    .marquee { overflow-x: auto; }
-    .marquee-track { gap: 16px; }
-    .int-card { flex: 0 0 280px; height: 360px; padding: 24px 20px; }
-    .int-card .name { font-size: 26px; }
+
+    /* ── Integrations — keep the pinned page-scroll translate on mobile.
+       The JS in #marquee-track uses window scroll to move the strip; we
+       simply shrink the cards and leave pin-wrap/pin-sticky as-is. ── */
+    .marquee-track { gap: 14px; padding: 0 20px; }
+    .int-card {
+      flex: 0 0 78%;
+      max-width: 320px;
+      height: auto; min-height: 380px;
+      padding: 22px 20px;
+    }
+    .int-card .card-scene-slot {
+      flex: 0 0 150px;
+      width: 150px;
+      height: 150px;
+      margin: 10px 0 12px;
+    }
+    .int-card .name { font-size: 24px; }
+    .int-card .desc { font-size: 12.5px; }
+    .marquee-progress { padding: 16px 20px; }
     #box { padding: 60px 20px; }
-    .stats-row { grid-template-columns: 1fr 1fr; }
-    .stat-cell { min-height: 140px; padding: 20px 16px; }
-    .stat-cell:first-child { padding-left: 0; grid-column: 1 / -1; border-right: none; border-bottom: 1px solid var(--muted-faint-light); }
-    .stat-cell:nth-child(2) { padding-left: 0; }
+    /* Stats — 2×2 compact grid so the 4 numbers sit together instead of
+       stacking down a full screen. */
+    .stats-row { grid-template-columns: 1fr 1fr; gap: 0; }
+    .stat-cell {
+      min-height: 110px;
+      padding: 18px 14px;
+      grid-column: auto;
+      border-right: 1px solid var(--muted-faint-light);
+      border-bottom: 1px solid var(--muted-faint-light);
+    }
+    .stat-cell:nth-child(2n) { border-right: none; }
+    .stat-cell:nth-last-child(-n+2) { border-bottom: none; }
+    .stat-cell .n { font-size: 56px; }
+    .stat-cell .l { font-size: 10px; }
 
     #attribution { padding: 80px 20px; }
     #attribution .header { margin-bottom: 50px; }
@@ -1002,7 +1204,7 @@
 </nav>
 
 <!-- ── HERO ─────────────────────────────────────────────── -->
-<section id="hero" data-screen-label="01 Hero">
+<section id="hero" data-screen-label="01 Hero" data-nav-theme="hero">
   <div id="hero-canvas" aria-hidden="true"></div>
   <div class="hero-gradient"></div>
   <div class="hero-content">
@@ -1029,7 +1231,7 @@
 </section>
 
 <!-- ── CHAPTER BREAK ────────────────────────────────────── -->
-<section class="chapter-break" data-screen-label="02 Pull quote">
+<section class="chapter-break" data-screen-label="02 Pull quote" data-nav-theme="dark">
   <p class="pull" data-reveal="serif-line">
     <em>Nothing advances on one source</em> or one agent's reasoning. Every finding arrives sourced, stress-tested, and ready for an editor.
   </p>
@@ -1090,31 +1292,37 @@
         <div class="marquee-track" id="marquee-track">
           <div class="int-card" data-reveal="card" data-stagger-idx="0">
             <div class="idx">01 / 06</div>
+            <div class="card-scene-slot" data-card-idx="0"></div>
             <div class="name">Agent runtimes</div>
             <div class="desc">Local journalism fine-tune, Claude Code, Gemini, Codex, OpenCode — multi-provider, switch per task.</div>
           </div>
           <div class="int-card" data-reveal="card" data-stagger-idx="1">
             <div class="idx">02 / 06</div>
+            <div class="card-scene-slot" data-card-idx="1"></div>
             <div class="name">Evidence archiving</div>
             <div class="desc">Every source captured locally with chain of custody. Web scraping and search built in.</div>
           </div>
           <div class="int-card" data-reveal="card" data-stagger-idx="2">
             <div class="idx">03 / 06</div>
+            <div class="card-scene-slot" data-card-idx="2"></div>
             <div class="name">OSINT Navigator</div>
             <div class="desc">1,000+ curated OSINT tools with AI-powered lookup, surfaced live per task. By Indicator Media.</div>
           </div>
           <div class="int-card" data-reveal="card" data-stagger-idx="3">
             <div class="idx">04 / 06</div>
+            <div class="card-scene-slot" data-card-idx="3"></div>
             <div class="name">Knowledge vault</div>
             <div class="desc">Obsidian ingestion — investigations become permanent, searchable memory.</div>
           </div>
           <div class="int-card" data-reveal="card" data-stagger-idx="4">
             <div class="idx">05 / 06</div>
+            <div class="card-scene-slot" data-card-idx="4"></div>
             <div class="name">Monitoring feeds</div>
             <div class="desc">Conflict events, disaster alerts, global news, investigative outlets — piped live into your leads.</div>
           </div>
           <div class="int-card" data-reveal="card" data-stagger-idx="5">
             <div class="idx">06 / 06</div>
+            <div class="card-scene-slot" data-card-idx="5"></div>
             <div class="name">Browser &amp; narrative</div>
             <div class="desc">Browser automation, narrative tracking, misinformation databases — plug-in integrations.</div>
           </div>
@@ -1145,7 +1353,7 @@
 </section>
 
 <!-- ── ATTRIBUTION ──────────────────────────────────────── -->
-<section id="attribution" data-screen-label="06 Attribution">
+<section id="attribution" data-screen-label="06 Attribution" data-nav-theme="dark">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 04 — Built on</span>
     <h2 class="title" data-reveal="title" style="--rd: 120ms">Standing on shoulders.</h2>
@@ -1248,7 +1456,7 @@
 </section>
 
 <!-- ── FOOTER ───────────────────────────────────────────── -->
-<section id="footer" data-screen-label="08 Footer">
+<section id="footer" data-screen-label="08 Footer" data-nav-theme="dark">
   <p class="footer-huge" id="footer-huge">
     Lead the <em>story.</em>
   </p>
@@ -1268,12 +1476,11 @@
       </ul>
     </div>
     <div class="footer-col" data-reveal="body" data-stagger-idx="2">
-      <h4>Resources</h4>
+      <h4>Project</h4>
       <ul>
+        <li><a href="#attribution">Built on</a></li>
+        <li><a href="#offers">Work with us</a></li>
         <li><a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a></li>
-        <li><a href="#docs">Documentation</a></li>
-        <li><a href="#schemas">Review schemas</a></li>
-        <li><a href="#changelog">Changelog</a></li>
       </ul>
     </div>
     <div class="footer-col" data-reveal="body" data-stagger-idx="3">
@@ -1365,15 +1572,22 @@
     // to the viewport top-left; WebGL scissor origin is bottom-left, so flip Y.
     const slots = [{ name: 'hero', el: heroSlot, camera, visible: true }];
 
-    // Five-things slot — a smaller, tighter view of the same cubes, from a
-    // different angle. Registered only if the DOM element exists on this page.
+    // Five-things slot — fills the sticky right column. Camera fit is
+    // aspect-aware so the 3×2×3 grid stays framed when the slot narrows.
     const fiveThingsEl = document.getElementById('five-things-slot');
     if (fiveThingsEl) {
-      const ftCam = new THREE.PerspectiveCamera(30, 1, 0.1, 80);
-      ftCam.position.set(3.8, 2.2, 3.8);
+      const ftCam = new THREE.PerspectiveCamera(38, 1, 0.1, 80);
+      ftCam.position.set(4.6, 2.6, 4.6);
       ftCam.lookAt(0, 0, 0);
-      slots.push({ name: 'five-things', el: fiveThingsEl, camera: ftCam, visible: false });
+      slots.push({
+        name: 'five-things', el: fiveThingsEl, camera: ftCam, visible: false,
+        fitTarget: new THREE.Vector3(0, 0, 0),
+        fitRadius: 2.0,       // encompasses the full 3×2×3 grid
+      });
     }
+
+    // Card slots are registered later in the IIFE, AFTER cellCenters +
+    // cubeColorsData are initialised. See "Card slots — main scene focus".
 
     // Pause rendering for a slot when its DOM region leaves the viewport.
     const slotObserver = new IntersectionObserver((entries) => {
@@ -1384,6 +1598,7 @@
     }, { threshold: 0 });
     slots.forEach(s => slotObserver.observe(s.el));
 
+    const _fitDir = new THREE.Vector3();
     function applySlot(slot) {
       const rect = slot.el.getBoundingClientRect();
       const vh = window.innerHeight;
@@ -1394,8 +1609,28 @@
       renderer.setViewport(x, y, w, h);
       renderer.setScissor(x, y, w, h);
       renderer.setScissorTest(true);
-      slot.camera.aspect = (w > 0 && h > 0) ? (w / h) : 1;
+      const aspect = (w > 0 && h > 0) ? (w / h) : 1;
+      slot.camera.aspect = aspect;
+
+      // Aspect-aware camera fit — the camera pulls back when the slot
+      // narrows so the fitRadius sphere always stays inside the frustum
+      // on both axes. Skipped for slots without fit config (e.g. hero,
+      // which orbits independently).
+      if (slot.fitRadius != null && slot.fitTarget) {
+        const vfov = slot.camera.fov * Math.PI / 180;
+        const minAspect = Math.min(aspect, 1);
+        const d = slot.fitRadius / (Math.tan(vfov / 2) * minAspect);
+        _fitDir.copy(slot.camera.position).sub(slot.fitTarget).normalize();
+        if (_fitDir.lengthSq() < 1e-6) _fitDir.set(1, 0.6, 1).normalize();
+        slot.camera.position.copy(slot.fitTarget).addScaledVector(_fitDir, d);
+        slot.camera.lookAt(slot.fitTarget);
+      }
       slot.camera.updateProjectionMatrix();
+    }
+
+    function registerSlot(cfg) {
+      slots.push(cfg);
+      slotObserver.observe(cfg.el);
     }
 
     // PMREM environment map — (kept as scene.environment for any future use)
@@ -1688,6 +1923,58 @@
     actTex.minFilter = THREE.NearestFilter;
     actTex.magFilter = THREE.NearestFilter;
     actTex.needsUpdate = true;
+
+    // ——— Card slots — main scene focus ———
+    // One cube per card, rendered from the main scene (same custom glass
+    // shader + particle ribbons as the hero). The per-render override in
+    // animate() isolates just this cube and tints its particle cloud.
+    const CARD_WARM = new THREE.Color(0xffc28a);
+    const CARD_COOL = new THREE.Color(0x7cb7ff);
+    // Every card focuses the SAME cube (index 10 — middle-top of the grid).
+    // The curl-noise + vortex flow is sampled in world space, so picking
+    // different cells would give each card a different particle pattern;
+    // sharing one cell guarantees identical framing across all six cards.
+    const CARD_FOCUS_CUBE   = 10;
+    const CARD_CELL_INDICES = new Array(6).fill(CARD_FOCUS_CUBE);
+    const cardSlotEls = document.querySelectorAll('.card-scene-slot');
+    // Shared camera offset → identical framing across every card.
+    // Near-horizontal iso view (small Y offset) keeps the rotating cube's
+    // silhouette as small as possible so we can fit it tightly without
+    // cropping corners when it swings to its 45° rotation.
+    const CARD_CAM_OFFSET = new THREE.Vector3(1.4, 0.5, 1.4);
+    cardSlotEls.forEach((el, i) => {
+      const focusCube  = CARD_CELL_INDICES[i % CARD_CELL_INDICES.length];
+      const focusCellC = cellCenters[focusCube];
+      const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
+      cam.position.copy(focusCellC).add(CARD_CAM_OFFSET);
+      cam.lookAt(focusCellC);
+      const warm = i % 2 === 0;
+      const slot = {
+        name: 'card-' + i,
+        el,
+        camera: cam,
+        visible: false,
+        focusCube,
+        tintColor: (warm ? CARD_WARM : CARD_COOL).clone(),
+        fitTarget: focusCellC.clone(),
+        // Fit radius sized for the worst-case rotation (corner-on, √2/2 ≈ 0.71
+        // max silhouette radius) with ~10% margin → big cube, never crops.
+        fitRadius: 0.78,
+        _hover: false,
+      };
+      registerSlot(slot);
+      // Track hover on the parent card — the card flips to dark ink on
+      // hover, so the wireframe must switch from ink to paper-cream.
+      const card = el.closest('.int-card');
+      if (card) {
+        card.addEventListener('mouseenter', () => { slot._hover = true; });
+        card.addEventListener('mouseleave', () => { slot._hover = false; });
+      }
+    });
+
+    // Reusable helpers for the per-slot card-override logic.
+    const _cardSpin = new THREE.Quaternion();
+    const _yAxis    = new THREE.Vector3(0, 1, 0);
 
     // ————————————————————————————————————————————————
     // GPU compute: particle positions in a float texture
@@ -2287,6 +2574,7 @@
 
     const gui = new GUI({ title: 'Flow field', width: 280 });
     gui.close(); // collapsed on load — user opens it manually
+    gui.hide(); // hidden by default — toggled via the dev panel + `g` key
 
     const fParticles = gui.addFolder('Particles');
     fParticles.add(params, 'TEX', { '96 (9k)': 96, '128 (16k)': 128, '192 (37k)': 192, '256 (65k)': 256, '384 (147k)': 384, '512 (262k)': 512 })
@@ -2776,6 +3064,54 @@
       applyParams(raw ? JSON.parse(raw) : BAKED_PRESET);
     } catch (e) { /* ignore */ }
 
+    // ——— Dev panel — small floating toggles bottom-right ———
+    // GUI hidden by default. Press "g" or click [GUI] to show the lil-gui.
+    // Theme toggle flips between the warm/cool bi-colour preset and neutral
+    // (white) so we can demo the scene with or without the colour signal.
+    (function devPanel() {
+      const wrap = document.createElement('div');
+      wrap.id = 'dev-panel';
+      const guiBtn   = document.createElement('button');
+      const themeBtn = document.createElement('button');
+      guiBtn.type = 'button';   guiBtn.textContent   = 'GUI';
+      themeBtn.type = 'button';
+      const THEMES = ['warm / cool', 'neutral'];
+      function applyTheme(name) {
+        params.themePreset = name;
+        if (typeof THEME_PRESETS !== 'undefined' && THEME_PRESETS[name]) {
+          THEME_PRESETS[name]();
+          writeCubeColors();
+          for (let i = 0; i < N_CELLS; i++) {
+            params['cube' + i + 'Color'] = '#' + cubeColors[i].getHexString();
+          }
+          gui.controllersRecursive().forEach(c => {
+            if (typeof c.property === 'string' && c.property.startsWith('cube')) c.updateDisplay();
+          });
+        }
+        themeBtn.textContent = 'Theme: ' + (name === 'neutral' ? 'neutral' : 'bi-colour');
+      }
+      function toggleTheme() {
+        applyTheme(params.themePreset === 'neutral' ? 'warm / cool' : 'neutral');
+      }
+      function toggleGui() {
+        if (gui._hidden) gui.show(); else gui.hide();
+      }
+      guiBtn.addEventListener('click', toggleGui);
+      themeBtn.addEventListener('click', toggleTheme);
+      wrap.append(guiBtn, themeBtn);
+      document.body.appendChild(wrap);
+      // Initial label sync
+      themeBtn.textContent = 'Theme: ' + (params.themePreset === 'neutral' ? 'neutral' : 'bi-colour');
+      // Keyboard shortcuts — `g` to toggle GUI, `t` to toggle theme.
+      // Skip when typing in an input/textarea so we don't hijack typing.
+      window.addEventListener('keydown', (e) => {
+        const tgt = e.target;
+        if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return;
+        if (e.key === 'g' || e.key === 'G') { e.preventDefault(); toggleGui(); }
+        else if (e.key === 't' || e.key === 'T') { e.preventDefault(); toggleTheme(); }
+      });
+    })();
+
     // —— Cell activity scheduler (params-driven) ——
     function scheduleFlip() {
       const delay = params.flipMin + Math.random() * (params.flipMax - params.flipMin);
@@ -3051,6 +3387,14 @@
     // —— Animation loop ——
     let t = 0;
     let running = true;
+    // Tracks whether the Five-things slot is currently holding alignedMode
+    // true, so we can release it back to the user's prior state exactly once.
+    let _alignedByFT = false;
+    // Snapshot of the user's alignedCluster values before Five-things forces
+    // them to 0 — restored when the override releases so the hero's aligned
+    // mode keeps using the same anchor points across scroll-away/back.
+    let _savedAlignedX = 0;
+    let _savedAlignedY = 0;
     const clock = new THREE.Clock();
     const target  = { azim: 0, polar: 0 };
     const current = { azim: 0, polar: 0 };
@@ -3086,13 +3430,29 @@
       // systems pick up the right mode for the current viewing slot.
       //  · Hero          : physics on, flip scheduler drives activity, floor grid shown
       //  · Five things   : aligned (grid) mode, step-based activity, no floor grid
+      // We only override alignedMode while Five-things is visible, and we
+      // release it (back to false) exactly once when it stops being visible —
+      // this way the hero's own click-to-align toggle keeps working.
       const ftSlot = slots.find(s => s.name === 'five-things' && s.visible);
       if (ftSlot) {
-        params.alignedMode       = true;
-        params.alignedClusterX   = 0;
-        params.alignedClusterY   = 0;
-      } else {
-        params.alignedMode       = false;
+        if (!_alignedByFT) {
+          // First frame this override kicks in — remember what the hero's
+          // alignedCluster looked like so we can put it back on release.
+          _savedAlignedX = params.alignedClusterX;
+          _savedAlignedY = params.alignedClusterY;
+        }
+        params.alignedMode     = true;
+        params.alignedClusterX = 0;
+        params.alignedClusterY = 0;
+        _alignedByFT = true;
+      } else if (_alignedByFT) {
+        params.alignedMode     = false;
+        params.alignedClusterX = _savedAlignedX;
+        params.alignedClusterY = _savedAlignedY;
+        _alignedByFT = false;
+        // Restore a clean slate for the hero's flip scheduler — otherwise the
+        // cubes hidden by the five-things step stay hidden until the next flip.
+        for (let i = 0; i < N_CELLS; i++) targetActivity[i] = 1;
       }
 
       // Cube physics — springs to rest (hero) or lerps to grid (aligned)
@@ -3108,12 +3468,16 @@
         }
       }
 
-      // Smooth per-cell activity + push to data texture
+      // Smooth per-cell activity + push to data texture.
+      // Wireframes are also toggled off completely when the cube has fully
+      // faded — otherwise their edges remain faintly visible at alpha 0.
       for (let i = 0; i < N_CELLS; i++) {
         activity[i] += (targetActivity[i] - activity[i]) * EASE_ACT;
         wireMats[i].opacity = params.wireOpacity * activity[i];
+        wires[i].visible    = activity[i] > 0.02;
         if (glassMats[i]) {
           glassMats[i].uniforms.uOpacity.value = params.glassOpacity * activity[i];
+          glasses[i].visible = activity[i] > 0.02;
         }
         actData[i] = activity[i];
       }
@@ -3149,24 +3513,124 @@
       camera.lookAt(0, 0.1, 0);
 
       // —— Per-slot render ————————————————————————————————————————————
-      // For each visible slot: set scissor + viewport, tune shared scene
-      // props for that slot's look, then do the two-pass glass render.
+      // Every slot renders the SAME main scene. Card slots override the
+      // shared per-cube state (activity, tint, position, rotation) so only
+      // their focus cube is visible, static at its grid position, slowly
+      // rotating, in the card's warm/cool colour.
       for (let s = 0; s < slots.length; s++) {
         const slot = slots[s];
         if (!slot.visible) continue;
 
+        // Reset per-cube state from the current physics + theme state so any
+        // override left behind by a previous card render doesn't leak in.
+        for (let i = 0; i < N_CELLS; i++) {
+          actData[i] = activity[i];
+          const on = activity[i] > 0.02;
+          wires[i].visible   = on;
+          glasses[i].visible = on;
+          // Live cube tint (warm/cool theme preset is applied in cubeColors[])
+          cubeColorsData[i * 4 + 0] = cubeColors[i].r;
+          cubeColorsData[i * 4 + 1] = cubeColors[i].g;
+          cubeColorsData[i * 4 + 2] = cubeColors[i].b;
+          if (glassMats[i]) glassMats[i].uniforms.uColor.value.set(1, 1, 1);
+          // Live physics state (position + rotation) from cubeState
+          const cs = cubeState[i];
+          wires[i].position.copy(cs.pos);
+          wires[i].quaternion.copy(cs.rot);
+          glasses[i].position.copy(cs.pos);
+          glasses[i].quaternion.copy(cs.rot);
+          offsetsData[i * 4 + 0] = cs.pos.x - cellCenters[i].x;
+          offsetsData[i * 4 + 1] = cs.pos.y - cellCenters[i].y;
+          offsetsData[i * 4 + 2] = cs.pos.z - cellCenters[i].z;
+          rotsData[i * 4 + 0] = cs.rot.x;
+          rotsData[i * 4 + 1] = cs.rot.y;
+          rotsData[i * 4 + 2] = cs.rot.z;
+          rotsData[i * 4 + 3] = cs.rot.w;
+        }
+
+        // Card override — isolate the focus cube, pin it to its grid
+        // position, and spin it slowly on its own Y-axis. No physics, no
+        // parallax, no cluster offset — just one static rotating cube.
+        if (slot.focusCube != null) {
+          const ci = slot.focusCube;
+          for (let i = 0; i < N_CELLS; i++) {
+            actData[i] = (i === ci) ? 1 : 0;
+            wires[i].visible   = (i === ci);
+            glasses[i].visible = (i === ci);
+          }
+          // Card tint follows the global theme: in bi-colour mode each card
+          // shows its alternating warm/cool tint, in neutral mode every cube
+          // falls back to the live cubeColors[] (white), matching the rest
+          // of the site. Glass uColor stays at white so the refraction
+          // reads identically to the hero.
+          const cardTint = (params.themePreset === 'neutral')
+            ? cubeColors[ci]
+            : slot.tintColor;
+          cubeColorsData[ci * 4 + 0] = cardTint.r;
+          cubeColorsData[ci * 4 + 1] = cardTint.g;
+          cubeColorsData[ci * 4 + 2] = cardTint.b;
+
+          // Force full wireframe + glass opacity for the card render. These
+          // are normally driven by the smoothed activity[] (hero's scheduler,
+          // five-things' step reveal) and can be low when we first land on
+          // this card — which made the cube invisible while the particles
+          // kept rendering (they read actData, which we override). Pin them
+          // to their full target so the card always shows the full cube.
+          wireMats[ci].opacity = params.wireOpacity;
+          if (glassMats[ci]) {
+            glassMats[ci].uniforms.uOpacity.value = params.glassOpacity;
+          }
+
+          // Static at cell center, slow self-rotation around Y.
+          const cellC = cellCenters[ci];
+          _cardSpin.setFromAxisAngle(_yAxis, t * 0.25);
+          wires[ci].position.copy(cellC);
+          wires[ci].quaternion.copy(_cardSpin);
+          glasses[ci].position.copy(cellC);
+          glasses[ci].quaternion.copy(_cardSpin);
+          offsetsData[ci * 4 + 0] = 0;
+          offsetsData[ci * 4 + 1] = 0;
+          offsetsData[ci * 4 + 2] = 0;
+          rotsData[ci * 4 + 0] = _cardSpin.x;
+          rotsData[ci * 4 + 1] = _cardSpin.y;
+          rotsData[ci * 4 + 2] = _cardSpin.z;
+          rotsData[ci * 4 + 3] = _cardSpin.w;
+        }
+
+        actTex.needsUpdate        = true;
+        cubeColorsTex.needsUpdate = true;
+        offsetsTex.needsUpdate    = true;
+        rotsTex.needsUpdate       = true;
+
         applySlot(slot);
 
-        // Floor grid is part of the hero aesthetic only — hidden elsewhere.
+        // Floor grid belongs to the hero only.
         grid.visible = (slot.name === 'hero');
 
-        // Two-pass: tTarget (scene without glass) → main canvas (with glass).
+        // Wire colour adapts to the section background — cream when the
+        // background behind the slot is dark (hero, hovered card), ink
+        // when it's the cream paper (Five-things, idle cards).
+        const onDark = (slot.name === 'hero') || slot._hover;
+        const wireHex = onDark ? 0xede8dc : 0x17140e;
+        for (let i = 0; i < N_CELLS; i++) wireMats[i].color.setHex(wireHex);
+
+        // Two-pass render (same trick as hero): glass-less pass into tTarget,
+        // then glass pass sampling that buffer for real refraction.
         if (params.glassEnabled) {
-          for (let i = 0; i < N_CELLS; i++) glasses[i].visible = false;
+          for (let i = 0; i < N_CELLS; i++) {
+            if (glasses[i].visible) {
+              glasses[i].userData._rv = true;
+              glasses[i].visible = false;
+            } else {
+              glasses[i].userData._rv = false;
+            }
+          }
           renderer.setRenderTarget(tTarget);
           renderer.clear();
           renderer.render(scene, slot.camera);
-          for (let i = 0; i < N_CELLS; i++) glasses[i].visible = true;
+          for (let i = 0; i < N_CELLS; i++) {
+            if (glasses[i].userData._rv) glasses[i].visible = true;
+          }
           renderer.setRenderTarget(null);
         }
         renderer.render(scene, slot.camera);
@@ -3218,6 +3682,36 @@
       window.__fiveThingsStep = active;
     }
     window.addEventListener('scroll', update, { passive: true });
+    update();
+  })();
+
+  // ── Topnav theme — detect the section currently under the top edge of
+  // the viewport and swap the topnav styling to match: hero = mix-blend,
+  // dark section = ink background, everything else = paper background.
+  (function() {
+    const nav = document.getElementById('topnav');
+    if (!nav) return;
+    const sections = Array.from(document.querySelectorAll('[data-nav-theme]'));
+    if (!sections.length) return;
+
+    const THEMES = ['hero', 'dark']; // classes toggled; 'paper' is the default (no class)
+
+    function update() {
+      // Probe point is a little below the top of the viewport so the theme
+      // switches once the next section clearly meets the top, not at every
+      // sub-pixel edge.
+      const probe = window.scrollY + 24;
+      let theme = 'paper';
+      for (const s of sections) {
+        const top = s.offsetTop;
+        const bottom = top + s.offsetHeight;
+        if (probe >= top && probe < bottom) { theme = s.dataset.navTheme; break; }
+      }
+      THEMES.forEach(t => nav.classList.toggle('on-' + t, theme === t));
+    }
+
+    window.addEventListener('scroll',  update, { passive: true });
+    window.addEventListener('resize',  update, { passive: true });
     update();
   })();
 

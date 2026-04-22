@@ -37,12 +37,45 @@ Règle d'usage :
   - Body : 14px, line-height 1.6
   - Eyebrow / chap label : 11px, letter-spacing `0.18em-0.22em`, uppercase, opacity 0.55
   - Bouton : 11px, letter-spacing 0.2em, uppercase
-- **Italique d'accent** : `font-style: italic` sur Fraunces avec `color: var(--warm)`. Réservé aux mots clés dans les titres dark.
+- **Italique d'accent** : `font-style: italic` sur Fraunces avec `color: var(--accent-warm)`. Réservé aux mots clés dans les titres et pull quotes (`.hero-title .accent`, `.attr-lede em`, `.chapter-break .pull em`, `.footer-huge em`, `.generate-bar .lbl em`).
 
 ## Composants récurrents
 
-### Nav
-Fixe top, `mix-blend-mode: difference`, padding 20px 28px. Brand = pictogramme Spotlight + wordmark Fraunces 17px.
+### Nav — système 3 états
+Fixe top, padding 20px 28px. Brand = pictogramme Spotlight + wordmark Fraunces 17px. Le nav adopte automatiquement l'un de 3 états selon la section visible sous le bord supérieur — JS observe `scrollY`, lit `data-nav-theme` sur les sections, ajoute la classe.
+
+| État | Classe | Quand | Style |
+|---|---|---|---|
+| **paper** (défaut) | aucune | Sur sections paper / pas de `data-nav-theme` | `background: var(--paper)`, texte `--paper-fg`, border-bottom `muted-faint-light` |
+| **hero** | `.on-hero` | Sur `[data-nav-theme="hero"]` | `background: transparent`, texte `#fff`, `mix-blend-mode: difference` (pour lire sur scène WebGL ou fond dark) |
+| **dark** | `.on-dark` | Sur `[data-nav-theme="dark"]` | `background: var(--ink)`, texte `--paper`, border-bottom `muted-faint-dark` |
+
+**Pattern HTML** : déclarer `data-nav-theme="hero"` sur le `#hero` et `data-nav-theme="dark"` sur toute section ink (chapter-break, attribution, footer, install-output, etc.). Les sections paper ne déclarent rien — elles tombent dans le défaut.
+
+**Transitions** : seules `color` + `border-color` animent (220ms ease). Le `background` snap instantanément pour éviter un état "demi-transparent" pendant la transition.
+
+**Liens nav** : `opacity: 0.85` au repos, hover → `--accent-warm` + `opacity: 1`. `align-items: center` sur le conteneur `.links` (pour aligner le texte régulier avec le CTA pill ci-dessous).
+
+**Install — CTA pill** : le lien `a[href="setup.html"]` dans le topnav est promu en CTA bordé (pas un lien plat). Pattern :
+```css
+nav.topnav .links a[href="setup.html"] {
+  padding: 9px 14px;
+  border: 1px solid currentColor;
+  letter-spacing: 0.22em;
+  opacity: 1;
+}
+nav.topnav .links a[href="setup.html"]:hover {
+  background: rgba(193, 106, 52, 0.14);
+  border-color: var(--accent-warm);
+  color: var(--accent-warm);
+}
+```
+Le `border-color: currentColor` fait que le pill suit automatiquement la couleur du nav (paper-fg / paper / #fff selon l'état). Sur mobile (≤760px) : tous les liens texte se masquent, seul le pill Install reste visible — devient le CTA principal de la nav mobile.
+
+### Global canvas + scene-slot system (landing only)
+Le landing utilise **un seul** canvas WebGL fixed (`#global-canvas`, z-index 5) qui rend ses scènes Three.js dans des `<div class="scene-slot">` placés dans le DOM (hero, `.split-graph`, chaque `.int-card .card-scene-slot`, etc.). Le rendu utilise scissor + viewport pour découper chaque slot. Hors slots, le canvas est transparent.
+
+Pages secondaires (setup, etc.) **ne reprennent pas** ce système — pas besoin de scène 3D sur un formulaire.
 
 ### Section header
 ```html
@@ -67,21 +100,30 @@ Hover possible : invert vers ink/paper.
 - Variante ghost : transparent + bordure `--paper-fg`. Hover : remplit en `--paper-fg`.
 - Lien secondaire : opacity 0.55, hover → `--accent-warm` + border-bottom solide.
 
-### Inputs (à porter)
-Dans la nouvelle DA, les inputs doivent abandonner le look "rounded glass" pour un look papier strict :
+### Inputs
+Look papier strict — pas de "rounded glass" :
 - `background: var(--paper)` (sur card paper-2) ou `paper-2` (sur card paper)
-- `border: 1px solid var(--muted-faint-light)` → focus `border-color: var(--paper-fg)`
+- `border: 1px solid var(--muted-faint-light)`
 - `border-radius: 0` (carré) ou max 2px — pas de pilules
 - Padding 12px 14px
 - Font Geist Mono 13px
-- `outline: none`, focus = bordure pleine ink
+- `outline: none`, focus → `border-color: var(--accent-warm)` + soulignement intérieur `box-shadow: inset 0 -2px 0 0 var(--accent-warm)` (signal terracotta)
 
 ### Radio / checkbox cards
-Garder le pattern label-as-card mais en monochrome :
+Pattern label-as-card monochrome :
 - État neutre : background paper, bordure muted-faint-light
-- Hover : background paper-2
-- Sélectionné : background ink, color paper (inversion totale) — c'est plus radical et plus dans la DA que juste un changement de bordure
+- Hover : `border-color: var(--paper-fg)` (pas de remplissage — juste la bordure se durcit)
+- Sélectionné : background ink, color paper (inversion totale), nom Fraunces flippe en `--accent-warm` (titre s'allume terracotta), `accent-color` du dot natif passe en `--accent-warm`
 - Pas de border-radius
+
+### Footer (4 colonnes canoniques)
+Structure standard reprise par toutes les pages :
+1. **About** (col 2x) : `<h4>Spotlight</h4>` + paragraphe descriptif
+2. **Product** : What it does, Integrations, In the box, Install
+3. **Project** : Built on, Work with us, GitHub ↗ — *(et NON "Resources" — c'est un héritage v1 à éviter)*
+4. **Contact** : email, buriedsignals.com ↗, indicator.media ↗
+
+`footer-meta` en bas : brand-mini (SVG + "Spotlight · v1.0") à gauche, copyright "© 2025 Buried Signals — MIT licensed" à droite. Hover sur les liens du footer → `--accent-warm`.
 
 ### Pictogramme Spotlight (mark)
 SVG 24×24 simple stroke, deux arcs + cercle central rempli :
@@ -105,9 +147,9 @@ Système `[data-reveal="<kind>"]` avec IntersectionObserver qui ajoute `.in`. Ki
 
 Pour pages secondaires (setup, etc.), suffit d'utiliser `title`, `body`, `meta`, `card`. Reduced-motion : tout collapse en un fade opacity 300ms.
 
-## Footer (mini variante pour pages secondaires)
+## Footer — variante mini (pages secondaires)
 
-Pour une page non-narrative, omettre le `footer-huge`. Garder seulement le `footer-grid` 4 colonnes + `footer-meta` (brand-mini + copyright). Padding réduit à `80px 48px 40px`.
+Pour une page non-narrative (setup, etc.), omettre le `footer-huge`. Garder seulement le `footer-grid` 4 colonnes (cf. structure ci-dessus) + `footer-meta`. Padding réduit à `80px 48px 40px`. Pour une page primaire (landing), conserver le `footer-huge` "Lead the **story.**" avec le `<em>` italique terracotta.
 
 ## Anti-patterns à proscrire (héritage v1)
 
