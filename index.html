@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Spotlight — OSINT investigation system for journalists</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c16a34' stroke-width='2' stroke-linecap='round'><path d='M 20 9.5 A 8 8 0 0 1 4 9.5'/><path d='M 4 14.5 A 8 8 0 0 0 20 14.5'/><circle cx='12' cy='12' r='2' fill='%23c16a34'/></svg>">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'><path d='M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z'/></svg>">
 <meta name="description" content="You lead the investigation. Spotlight does the research. Verified findings, independent fact-checking, a vault that grows with every case.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -174,7 +174,7 @@
      smooth rather than a hard cutoff at the section boundary. */
   .hero-gradient {
     position: absolute; inset: 0;
-    background: linear-gradient(to bottom, transparent 0%, transparent 55%, rgba(7, 7, 10, 0.5) 100%);
+    background: linear-gradient(to bottom, transparent 0%, transparent 55%, rgba(7, 7, 10, 0) 100%);
     pointer-events: none;
     z-index: 2;
   }
@@ -319,6 +319,8 @@
     gap: 60px;
     padding: 0 48px;
   }
+  /* Sentinel — only used on mobile to detect when .split-left becomes sticky. */
+  .split-left-sentinel { display: none; }
   .split-left {
     position: sticky;
     top: 0;
@@ -669,7 +671,7 @@
 
   /* ── FOOTER ───────────────────────────────────────────── */
   #footer {
-    background: rgba(7, 7, 10, 0.5);
+    background: rgba(7, 7, 10, 0);
     color: var(--paper);
     padding: 140px 48px 40px;
     position: relative;
@@ -741,7 +743,20 @@
 
   /* ── MOBILE ───────────────────────────────────────────── */
   @media (max-width: 760px) {
-    nav.topnav { padding: 14px 20px; }
+    /* Sticky mobile header — solid ink bg + hairline once past hero, but
+       stays transparent (with mix-blend) over the hero itself. */
+    nav.topnav {
+      padding: 14px 20px;
+      background: var(--ink);
+      border-bottom: 1px solid var(--muted-faint-dark);
+      mix-blend-mode: normal;
+      transition: background 220ms ease, border-color 220ms ease;
+    }
+    nav.topnav.on-hero {
+      background: transparent;
+      border-bottom-color: transparent;
+      mix-blend-mode: difference;
+    }
     /* Hide every nav link except Install, promoted to a compact CTA. */
     nav.topnav .links { display: flex; gap: 0; }
     nav.topnav .links a { display: none; }
@@ -779,6 +794,7 @@
     .header .title { font-size: clamp(26px, 7.5vw, 42px); }
     #what .header,
     #integrations .header,
+    #works-with .header,
     #box,
     #attribution .header,
     #offers .header {
@@ -795,6 +811,7 @@
        so the mobile overrides win. ── */
     #what .header,
     #integrations .header,
+    #works-with .header,
     #attribution .header,
     #offers .header,
     #box .header {
@@ -809,17 +826,23 @@
        Sticks at top:0 with a padding-top that reserves the topnav area.
        This way the ticker's paper background covers the full strip behind
        the topnav (which uses mix-blend-mode) so no step text bleeds through. */
-    .split-scroll { grid-template-columns: 1fr; gap: 0; padding: 0 20px; }
+    .split-scroll { grid-template-columns: 1fr; gap: 0; padding: 0; }
+    .split-left-sentinel { display: block; height: 1px; }
     .split-left {
       position: sticky; top: 0;
       display: flex; flex-direction: row; align-items: center;
       gap: 16px;
       height: auto;
-      padding: 72px 4px 12px;
-      background: var(--ink);
+      padding: 72px 22px 12px;
+      background: transparent;
       z-index: 15;
       border-right: none;
-      border-bottom: 1px solid var(--muted-faint-dark);
+      border-bottom: 1px solid transparent;
+      transition: background 200ms ease, border-color 200ms ease;
+    }
+    .split-left.is-stuck {
+      background: var(--ink);
+      border-bottom-color: var(--muted-faint-dark);
     }
     .split-left > div:first-child {
       display: flex; align-items: baseline; gap: 10px;
@@ -829,20 +852,24 @@
     .split-left .counter-label { margin-top: 0; font-size: 10px; min-height: 0; opacity: 0.75; }
     .split-left .progress { flex: 1; margin-top: 0; }
 
-    .split-right { padding: 20px 0 40px; }
+    .split-right { padding: 20px 20px 40px; }
     .step { min-height: auto; padding: 36px 0; opacity: 1; border-bottom: 1px solid var(--muted-faint-dark); }
     .step:last-child { border-bottom: none; }
     .step .step-title { font-size: clamp(22px, 6vw, 32px); max-width: 100%; margin-bottom: 14px; }
     .step .step-body { font-size: 13px; max-width: 100%; }
 
     /* ── Integrations — collapse the 3-col grid to single column on mobile. */
-    .integrations-grid { grid-template-columns: 1fr; }
+    #integrations { padding-bottom: 40px; }
+    .integrations-grid { grid-template-columns: 1fr; padding: 20px; border-bottom: none; }
     .int-card {
       min-height: auto;
-      padding: 28px 20px;
+      padding: 28px 0;
       border-right: none;
       border-bottom: 1px solid var(--muted-faint-dark);
     }
+    /* Override the desktop 3-column "last row" rule — on mobile every card
+       keeps a bottom border except the very last. */
+    .int-card:nth-last-child(-n+3) { border-bottom: 1px solid var(--muted-faint-dark); }
     .int-card:last-child { border-bottom: none; }
     .int-card .name { font-size: 24px; }
     .int-card .desc { font-size: 12px; }
@@ -862,16 +889,22 @@
     .stat-cell .n { font-size: 56px; }
     .stat-cell .l { font-size: 10px; }
 
-    #attribution { padding: 80px 20px; }
+    #attribution { padding: 0 20px 80px; }
     #attribution .header { margin-bottom: 50px; }
     .attr-lede { margin-bottom: 50px; }
     .credits { grid-template-columns: 1fr; gap: 12px; padding: 20px 0; }
     .credits .role { padding-top: 0; }
 
-    #offers { padding: 60px 20px; }
-    .offers-grid { grid-template-columns: 1fr; }
-    .offer { padding: 36px 24px; border-right: none; border-bottom: 1px solid var(--muted-faint-dark); min-height: auto; }
+    #works-with { padding: 0 0 60px; }
+    .works-chips { padding: 0 20px; }
+
+    #offers { padding: 0 0 60px; }
+    #offers .header { margin-bottom: 0; }
+    .about-bs { margin: 0 0 40px; padding: 0 20px; }
+    .offers-grid { grid-template-columns: 1fr; padding: 0 20px; }
+    .offer { padding: 36px 0; border-right: none; border-bottom: 1px solid var(--muted-faint-dark); min-height: auto; }
     .offer:last-child { border-bottom: none; }
+    .offer .actions { flex-direction: column; align-items: flex-start; }
 
     #footer { padding: 80px 20px 28px; }
     .footer-grid { grid-template-columns: 1fr 1fr; gap: 28px; padding: 28px 0; }
@@ -1066,7 +1099,7 @@
   #what, #integrations, #works-with, #offers {
     position: relative;
     z-index: 10;
-    background: rgba(7, 7, 10, 0.5);
+    background: rgba(7, 7, 10, 0);
   }
 </style>
 </head>
@@ -1078,10 +1111,8 @@
 
 <nav class="topnav" id="topnav">
   <a href="#" class="brand">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-      <path d="M 20 9.5 A 8 8 0 0 1 4 9.5" />
-      <path d="M 4 14.5 A 8 8 0 0 0 20 14.5" />
-      <circle cx="12" cy="12" r="2" fill="currentColor"/>
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z"/>
     </svg>
     Spotlight
   </a>
@@ -1122,6 +1153,7 @@
     <h2 class="title" data-reveal="title" style="--rd: 120ms">Five things, in order.</h2>
   </div>
   <div class="split-scroll">
+    <div class="split-left-sentinel" aria-hidden="true"></div>
     <div class="split-left">
       <div>
         <div class="counter" id="counter">01</div>
@@ -1309,10 +1341,8 @@
 
   <div class="footer-meta" data-reveal="meta">
     <div class="brand-mini">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-        <path d="M 20 9.5 A 8 8 0 0 1 4 9.5" />
-        <path d="M 4 14.5 A 8 8 0 0 0 20 14.5" />
-        <circle cx="12" cy="12" r="2" fill="currentColor"/>
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z"/>
       </svg>
       <span>Spotlight · v1.0</span>
     </div>
@@ -1417,7 +1447,11 @@
       // breathes, and the cubes visually inhabit the remaining half.
       if (slot.name === 'hero') {
         const mood = window.__sceneMood || 'chaos';
-        const target = (mood === 'aligned')
+        // On mobile the step text fills the full column, so the right-pane
+        // split used by 'aligned' mood would crop the scene behind the text.
+        // Force full-viewport there.
+        const isNarrow = vw <= 760;
+        const target = (mood === 'aligned' && !isNarrow)
           ? { left: vw * 0.5, top: 0, width: vw * 0.5, height: vh }
           : { left: 0,        top: 0, width: vw,       height: vh };
         let cur = _slotRect.hero;
@@ -3771,6 +3805,46 @@
       const nav = document.getElementById('topnav');
       if (nav) nav.classList.add('in');
     });
+
+    // Topnav theme switcher — toggles .on-hero / .on-dark based on which
+    // data-nav-theme section sits under the top edge. Used by the mobile
+    // sticky-header rule to stay transparent over hero, solid past it.
+    (function () {
+      const nav = document.getElementById('topnav');
+      if (!nav) return;
+      const sections = Array.from(document.querySelectorAll('[data-nav-theme]'));
+      if (!sections.length) return;
+      const THEMES = ['hero', 'dark'];
+
+      function update() {
+        const probe = window.scrollY + 24;
+        let theme = 'paper';
+        for (const s of sections) {
+          if (s.offsetParent === null) continue;
+          const top = s.offsetTop;
+          const bottom = top + s.offsetHeight;
+          if (probe >= top && probe < bottom) { theme = s.dataset.navTheme; break; }
+        }
+        THEMES.forEach(t => nav.classList.toggle('on-' + t, theme === t));
+      }
+
+      window.addEventListener('scroll', update, { passive: true });
+      window.addEventListener('resize', update, { passive: true });
+      update();
+    })();
+
+    // Mobile sticky ticker — toggles .is-stuck on .split-left when the
+    // sentinel above it scrolls out of view (i.e., the ticker hits top:0).
+    (function () {
+      const sentinel = document.querySelector('.split-left-sentinel');
+      const stickyEl = document.querySelector('.split-left');
+      if (!sentinel || !stickyEl) return;
+      const io = new IntersectionObserver(
+        ([entry]) => stickyEl.classList.toggle('is-stuck', !entry.isIntersecting),
+        { threshold: 0 }
+      );
+      io.observe(sentinel);
+    })();
 
     // Hero reveals fire on load (not scroll) — they're visible at top.
     requestAnimationFrame(() => {
