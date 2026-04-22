@@ -330,7 +330,7 @@
   }
   .step-card.warn h4 { color: var(--amber); opacity: 1; }
 
-  .note-amber {
+  .note-advisory {
     background: var(--paper);
     border-left: 2px solid var(--amber);
     padding: 12px 16px;
@@ -502,7 +502,7 @@
     font-size: 13px; line-height: 1.6; opacity: 0.7;
     margin: 0 0 20px;
   }
-  .install-option .note-amber {
+  .install-option .note-advisory {
     background: rgba(255, 245, 217, 0.05);
     border-left: 2px solid var(--warm);
     color: var(--paper);
@@ -970,10 +970,10 @@
             </div>
           </div>
 
-          <p class="note-amber" id="local-note-ollama">
+          <p class="note-advisory" id="local-note-ollama">
             Large download (~21 GB). Progress streams live in Terminal via Ollama's native UI. If interrupted, re-run <code>ollama pull hf.co/unsloth/Qwen3.6-35B-A3B-GGUF</code> to resume.
           </p>
-          <p class="note-amber hidden" id="local-note-lmstudio">
+          <p class="note-advisory hidden" id="local-note-lmstudio">
             Large download (~21 GB). The installer installs the <strong>LM Studio</strong> app and the <code>lms</code> CLI, then opens the app. On first run: complete the setup wizard → go to <strong>Discover</strong>, search <code>unsloth/Qwen3.6-35B-A3B-GGUF</code>, pick a quant (Q4_K_M for 32 GB Macs, Q6_K_XL for 48 GB+), download, then click <strong>Start Server</strong> in the <strong>Developer</strong> tab. <code>spotlight</code> will be ready once the server is listening on port 1234.
           </p>
         </section>
@@ -1196,7 +1196,7 @@
         <div class="actions">
           <button type="button" class="btn-primary" id="download-btn">Download .zip <span aria-hidden="true">↓</span></button>
         </div>
-        <div class="note-amber">
+        <div class="note-advisory">
           <strong>First time on macOS?</strong> Gatekeeper will block unsigned installers. After extracting the zip: <strong>right-click</strong> <code>spotlight-setup.command</code> → <strong>Open</strong> → <strong>Confirm</strong>. Subsequent runs: plain double-click.
         </div>
       </div>
