@@ -150,10 +150,14 @@
   }
 
   /* ── GLOBAL SCENE CANVAS ──────────────────────────────────
-     One WebGL canvas for the whole page. Sits fixed above every section's
-     background but below text content, and is rendered via scissor +
-     viewport into each .scene-slot element. Outside slot regions the
-     canvas is transparent so paper/ink backgrounds show through. */
+     One WebGL canvas for the whole page. Sits fixed. The hero slot keeps
+     rendering persistently across the whole page (full-viewport fallback
+     when its DOM rect scrolls offscreen), so cubes act as an ambient
+     backdrop behind every dark section below the hero.
+
+     Z-stack: canvas z-index 5. Sections below the hero are lifted to
+     z-index 10 with a slightly-transparent ink background so the cubes
+     peek through at ~12% alpha. */
   #global-canvas {
     position: fixed;
     top: 0; left: 0;
@@ -1101,6 +1105,17 @@
     .reveal-huge > * { opacity: 0; transform: none !important; transition: opacity 300ms ease !important; }
     .reveal-huge.in > * { opacity: 1; }
   }
+
+  /* ── Cubes ambient backdrop — dark sections float above the canvas
+     (#global-canvas z-index: 5) with a slightly-transparent ink bg so the
+     persistent hero scene peeks through at ~12% alpha. Placed at end of
+     style block to win cascade over per-section `background: var(--ink)`. */
+  .chapter-break,
+  #what, #integrations, #works-with, #offers, #footer {
+    position: relative;
+    z-index: 10;
+    background: rgba(7, 7, 10, 0.88);
+  }
 </style>
 </head>
 <body>
@@ -1454,18 +1469,29 @@
     // cubeColorsData are initialised. See "Card slots — main scene focus".
 
     // Pause rendering for a slot when its DOM region leaves the viewport.
+    // Exception: the hero slot stays `visible: true` permanently — when its
+    // own DOM rect is offscreen, applySlot() substitutes a full-viewport rect
+    // so the cubes keep rendering subtly behind (slightly-transparent) sections
+    // further down the page. Tom's "cubes en fond sur les sections dark".
     const slotObserver = new IntersectionObserver((entries) => {
       for (const e of entries) {
         const slot = slots.find(s => s.el === e.target);
-        if (slot) slot.visible = e.isIntersecting;
+        if (slot && slot.name !== 'hero') slot.visible = e.isIntersecting;
       }
     }, { threshold: 0 });
     slots.forEach(s => slotObserver.observe(s.el));
 
     const _fitDir = new THREE.Vector3();
     function applySlot(slot) {
-      const rect = slot.el.getBoundingClientRect();
+      let rect = slot.el.getBoundingClientRect();
       const vh = window.innerHeight;
+      const vw = window.innerWidth;
+      // Hero slot: when its DOM rect is fully offscreen (scrolled past the hero),
+      // substitute a full-viewport rect so the scene keeps rendering as an
+      // ambient backdrop behind semi-transparent sections below.
+      if (slot.name === 'hero' && rect.bottom <= 0) {
+        rect = { left: 0, top: 0, right: vw, bottom: vh, width: vw, height: vh };
+      }
       const x = rect.left;
       const y = vh - rect.bottom;
       const w = rect.width;
