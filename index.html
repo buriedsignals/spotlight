@@ -3628,9 +3628,9 @@
     const stopEl = document.getElementById('footer-huge');
     if (!canvas || !stopEl) return;
     function update() {
-      const stopTopAbs = stopEl.getBoundingClientRect().top + window.scrollY;
+      const stopBottomAbs = stopEl.getBoundingClientRect().bottom + window.scrollY;
       const viewportBottom = window.scrollY + window.innerHeight;
-      const delta = Math.max(0, viewportBottom - stopTopAbs);
+      const delta = Math.max(0, viewportBottom - stopBottomAbs);
       canvas.style.transform = delta > 0 ? `translateY(${-delta}px)` : '';
     }
     window.addEventListener('scroll', update, { passive: true });
