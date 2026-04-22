@@ -1403,21 +1403,31 @@
     slots.forEach(s => slotObserver.observe(s.el));
 
     const _fitDir = new THREE.Vector3();
+    // Per-slot smoothed rect — lerped each frame toward the mood-driven target
+    // so the render region slides between moods rather than snapping.
+    const _slotRect = { hero: null };
+    const RECT_EASE = 0.12;
     function applySlot(slot) {
-      let rect = slot.el.getBoundingClientRect();
       const vh = window.innerHeight;
       const vw = window.innerWidth;
+      let rect;
       // Hero slot: render full-viewport by default. In #what (aligned mood)
       // the scene shifts to a right-side pane so the step text on the left
       // breathes, and the cubes visually inhabit the remaining half.
       if (slot.name === 'hero') {
         const mood = window.__sceneMood || 'chaos';
-        if (mood === 'aligned') {
-          const halfW = vw * 0.5;
-          rect = { left: halfW, top: 0, right: vw, bottom: vh, width: halfW, height: vh };
-        } else {
-          rect = { left: 0, top: 0, right: vw, bottom: vh, width: vw, height: vh };
-        }
+        const target = (mood === 'aligned')
+          ? { left: vw * 0.5, top: 0, width: vw * 0.5, height: vh }
+          : { left: 0,        top: 0, width: vw,       height: vh };
+        let cur = _slotRect.hero;
+        if (!cur) cur = _slotRect.hero = { ...target };
+        cur.left   += (target.left   - cur.left)   * RECT_EASE;
+        cur.top    += (target.top    - cur.top)    * RECT_EASE;
+        cur.width  += (target.width  - cur.width)  * RECT_EASE;
+        cur.height += (target.height - cur.height) * RECT_EASE;
+        rect = { left: cur.left, top: cur.top, right: cur.left + cur.width, bottom: cur.top + cur.height, width: cur.width, height: cur.height };
+      } else {
+        rect = slot.el.getBoundingClientRect();
       }
       const x = rect.left;
       const y = vh - rect.bottom;
@@ -3239,12 +3249,16 @@
         }
       }
       // Mood-driven time multiplier (slows physics without pausing it).
-      const moodSpeed = mood === 'chaos' ? 1.0
-                     : mood === 'aligned' ? 0.7
-                     : mood === 'drift'   ? 0.45
-                     : mood === 'sparse'  ? 0.55
-                     : mood === 'calm'    ? 0.3
-                     : 1.0;
+      // Eased toward the target so the speed shifts smoothly between moods.
+      const moodSpeedTarget = mood === 'chaos' ? 1.0
+                           : mood === 'aligned' ? 0.7
+                           : mood === 'drift'   ? 0.45
+                           : mood === 'sparse'  ? 0.55
+                           : mood === 'calm'    ? 0.3
+                           : 1.0;
+      if (window.__moodSpeed == null) window.__moodSpeed = moodSpeedTarget;
+      window.__moodSpeed += (moodSpeedTarget - window.__moodSpeed) * 0.06;
+      const moodSpeed = window.__moodSpeed;
 
       // Ch. 01 aligned cubes "live" via a slow Y-axis spin. Inactive cubes in
       // the same mood stay still so the step-based reveal still reads as
