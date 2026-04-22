@@ -403,19 +403,17 @@
   }
   .int-card {
     background: var(--ink-2);
-    padding: 40px 32px 32px;
+    padding: 28px 24px 24px;
     display: flex; flex-direction: column;
     position: relative;
-    min-height: 420px;
+    min-height: 220px;
     border-right: 1px solid var(--muted-faint-dark);
     border-bottom: 1px solid var(--muted-faint-dark);
-    transition: background 0.3s ease, border-color 0.3s ease;
   }
   /* Right edge: last in each row has no right border */
   .int-card:nth-child(3n) { border-right: none; }
   /* Bottom edge: last row loses its bottom border */
   .int-card:nth-last-child(-n+3) { border-bottom: none; }
-  .int-card:hover { background: var(--accent-warm-14); }
   .int-card .idx {
     font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.85;
     color: var(--accent-warm);
@@ -423,14 +421,14 @@
   .int-card .name {
     font-family: "Fraunces", serif;
     font-variation-settings: "opsz" 72, "wght" 500;
-    font-size: clamp(24px, 2.2vw, 30px);
-    line-height: 1.05;
+    font-size: clamp(20px, 1.8vw, 26px);
+    line-height: 1.1;
     letter-spacing: -0.02em;
     margin-top: auto;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
   }
   .int-card .desc {
-    font-size: 13px; line-height: 1.55; opacity: 0.7;
+    font-size: 12px; line-height: 1.55; opacity: 0.7;
   }
 
   /* ── STATS ────────────────────────────────────────────── */
