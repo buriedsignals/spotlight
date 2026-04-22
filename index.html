@@ -293,6 +293,21 @@
     color: var(--accent-warm);
   }
 
+  /* Canonical section header — chap label + Fraunces title.
+     Per-section instances add their own padding/margin/border via #id overrides. */
+  .header { display: flex; justify-content: space-between; align-items: baseline; }
+  .header .chap {
+    font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+    opacity: 0.55; font-weight: 500;
+  }
+  .header .title {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 96, "wght" 500;
+    font-size: clamp(32px, 4.5vw, 60px);
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+
   /* ── WHAT IT DOES (split-scroll) ──────────────────────── */
   #what {
     position: relative;
@@ -301,16 +316,7 @@
   }
   #what .header {
     padding: 80px 48px 20px;
-    display: flex; justify-content: space-between; align-items: baseline;
     border-bottom: 1px solid var(--muted-faint-light);
-  }
-  #what .header .chap { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.55; }
-  #what .header .title {
-    font-family: "Fraunces", serif;
-    font-variation-settings: "opsz" 96, "wght" 500;
-    font-size: clamp(32px, 4.5vw, 60px);
-    letter-spacing: -0.02em;
-    margin: 0;
   }
 
   .split-scroll {
@@ -414,16 +420,7 @@
   }
   #integrations .header {
     padding: 80px 48px 40px;
-    display: flex; justify-content: space-between; align-items: baseline;
     flex-shrink: 0;
-  }
-  #integrations .header .chap { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.55; }
-  #integrations .header .title {
-    font-family: "Fraunces", serif;
-    font-variation-settings: "opsz" 96, "wght" 500;
-    font-size: clamp(32px, 4.5vw, 60px);
-    letter-spacing: -0.02em;
-    margin: 0;
   }
   .marquee {
     flex: 1;
@@ -504,18 +501,7 @@
     padding: 120px 48px;
     border-top: 1px solid var(--muted-faint-light);
   }
-  #box .header {
-    display: flex; justify-content: space-between; align-items: baseline;
-    margin-bottom: 60px;
-  }
-  #box .header .chap { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.55; }
-  #box .header .title {
-    font-family: "Fraunces", serif;
-    font-variation-settings: "opsz" 96, "wght" 500;
-    font-size: clamp(32px, 4.5vw, 60px);
-    letter-spacing: -0.02em;
-    margin: 0;
-  }
+  #box .header { margin-bottom: 60px; }
   .stats-row {
     display: grid;
     grid-template-columns: 2fr 1fr 1fr 1fr;
@@ -560,18 +546,7 @@
     position: relative;
     overflow: hidden;
   }
-  #attribution .header {
-    display: flex; justify-content: space-between; align-items: baseline;
-    margin-bottom: 80px;
-  }
-  #attribution .header .chap { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.55; }
-  #attribution .header .title {
-    font-family: "Fraunces", serif;
-    font-variation-settings: "opsz" 96, "wght" 500;
-    font-size: clamp(32px, 4.5vw, 60px);
-    letter-spacing: -0.02em;
-    margin: 0;
-  }
+  #attribution .header { margin-bottom: 80px; }
   .attr-lede {
     font-family: "Fraunces", serif;
     font-variation-settings: "opsz" 72, "wght" 400;
@@ -634,18 +609,7 @@
     border-top: 1px solid var(--muted-faint-light);
     padding: 120px 48px;
   }
-  #offers .header {
-    display: flex; justify-content: space-between; align-items: baseline;
-    margin-bottom: 60px;
-  }
-  #offers .header .chap { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.55; }
-  #offers .header .title {
-    font-family: "Fraunces", serif;
-    font-variation-settings: "opsz" 96, "wght" 500;
-    font-size: clamp(32px, 4.5vw, 60px);
-    letter-spacing: -0.02em;
-    margin: 0;
-  }
+  #offers .header { margin-bottom: 60px; }
   .offers-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -846,13 +810,7 @@
     .scroll-cue { display: none; }
 
     /* Section titles scale down cleanly for narrow screens */
-    #what .header .title,
-    #integrations .header .title,
-    #box .title,
-    #attribution .title,
-    #offers .title {
-      font-size: clamp(26px, 7.5vw, 42px);
-    }
+    .header .title { font-size: clamp(26px, 7.5vw, 42px); }
     #what .header,
     #integrations .header,
     #box,
@@ -867,8 +825,8 @@
     /* ── Section headers — stack the chap label above the title on mobile
        so the title gets the full column width instead of wrapping narrow.
        padding-top clears the fixed topnav (~50px) + adds a clear breath
-       before the title, critical for pinned sections (#integrations)
-       whose header sits at the top of the viewport while scrolling. ── */
+       before the title. Per-id selectors match the desktop rule specificity
+       so the mobile overrides win. ── */
     #what .header,
     #integrations .header,
     #attribution .header,
@@ -1038,11 +996,7 @@
   [data-reveal="meta"].in { opacity: 1; }
   /* Restore each meta element's original letter-spacing on .in via a custom
      prop consumer. We can't know the original, so kinds set it below. */
-  #what .header .chap[data-reveal="meta"].in,
-  #integrations .header .chap[data-reveal="meta"].in,
-  #box .header .chap[data-reveal="meta"].in,
-  #attribution .header .chap[data-reveal="meta"].in,
-  #offers .header .chap[data-reveal="meta"].in,
+  .header .chap[data-reveal="meta"].in,
   .credits .role[data-reveal="meta"].in,
   .offer .kicker[data-reveal="meta"].in,
   .footer-col h4[data-reveal="meta"].in,
