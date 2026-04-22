@@ -169,6 +169,15 @@
     position: absolute; inset: 0;
     width: 100%; height: 100%;
   }
+  /* Fade the hero scene into the 50%-alpha ink of the sections below so the
+     visual transition from "full-brightness cubes" to "backdrop cubes" is
+     smooth rather than a hard cutoff at the section boundary. */
+  .hero-gradient {
+    position: absolute; inset: 0;
+    background: linear-gradient(to bottom, transparent 0%, transparent 55%, rgba(7, 7, 10, 0.5) 100%);
+    pointer-events: none;
+    z-index: 2;
+  }
 
   .hero-content {
     position: absolute; inset: 0;
@@ -1089,6 +1098,7 @@
 <!-- ── HERO ─────────────────────────────────────────────── -->
 <section id="hero" data-screen-label="01 Hero" data-nav-theme="hero">
   <div id="hero-canvas" aria-hidden="true"></div>
+  <div class="hero-gradient"></div>
   <div class="hero-content">
     <div class="hero-grid">
       <h1 class="hero-title" data-reveal="title" style="--rd: 600ms">
