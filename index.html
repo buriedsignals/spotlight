@@ -1722,12 +1722,19 @@
       [1,0,1],
       [1,0,1],
     ], LETTER_COL, LETTER_ROW);
+    const LETTER_V = _letterPositions([
+      [1,0,1],
+      [1,0,1],
+      [1,0,1],
+      [0,1,0],
+      [0,1,0],
+    ], LETTER_COL, LETTER_ROW);
     const STEP_LAYOUTS = [
       { count: LETTER_L.length, positions: LETTER_L }, // Lead
       { count: LETTER_C.length, positions: LETTER_C }, // Cycles
       { count: LETTER_F.length, positions: LETTER_F }, // Findings
       { count: LETTER_R.length, positions: LETTER_R }, // Review
-      { useGrid: true },                                // Vault
+      { count: LETTER_V.length, positions: LETTER_V }, // Vault
     ];
 
     const cellCentersTex = new THREE.DataTexture(
