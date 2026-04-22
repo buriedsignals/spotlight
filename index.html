@@ -328,23 +328,10 @@
 
   .split-scroll {
     display: grid;
-    /* Counter | step text (sized to its 18ch copy) | scene slot fills rest */
-    grid-template-columns: 200px max-content minmax(320px, 1fr);
+    /* Counter | step text */
+    grid-template-columns: 200px 1fr;
     gap: 60px;
     padding: 0 48px;
-  }
-  .split-graph {
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    display: flex; align-items: center; justify-content: center;
-  }
-  /* Five-things slot — DOM placeholder for the global canvas scene.
-     Fills the sticky right column (all remaining width × 100vh). */
-  .split-graph #five-things-slot {
-    width: 100%;
-    height: 100%;
-    position: relative;
   }
   .split-left {
     position: sticky;
@@ -442,15 +429,6 @@
   .int-card:nth-child(3n) { border-right: none; }
   /* Bottom edge: last row loses its bottom border */
   .int-card:nth-last-child(-n+3) { border-bottom: none; }
-  .int-card .card-scene-slot {
-    flex: 0 0 200px;
-    width: 200px;
-    max-width: 100%;
-    aspect-ratio: 1 / 1;
-    align-self: center;
-    margin: 12px 0 18px;
-    position: relative;
-  }
   .int-card:hover { background: var(--accent-warm-14); }
   .int-card .idx {
     font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.85;
@@ -773,7 +751,7 @@
      without cropping the cubes (camera fit is aspect-aware). */
   @media (max-width: 1100px) {
     .split-scroll {
-      grid-template-columns: 160px max-content minmax(220px, 1fr);
+      grid-template-columns: 160px 1fr;
       gap: 36px;
       padding: 0 32px;
     }
@@ -875,7 +853,6 @@
     .step:last-child { border-bottom: none; }
     .step .step-title { font-size: clamp(22px, 6vw, 32px); max-width: 100%; margin-bottom: 14px; }
     .step .step-body { font-size: 13px; max-width: 100%; }
-    .split-graph { display: none; }
 
     /* ── Integrations — collapse the 3-col grid to single column on mobile. */
     .integrations-grid { grid-template-columns: 1fr; }
@@ -886,12 +863,6 @@
       border-bottom: 1px solid var(--muted-faint-dark);
     }
     .int-card:last-child { border-bottom: none; }
-    .int-card .card-scene-slot {
-      flex: 0 0 150px;
-      width: 150px;
-      height: 150px;
-      margin: 10px 0 12px;
-    }
     .int-card .name { font-size: 24px; }
     .int-card .desc { font-size: 12px; }
     #box { padding: 60px 20px; }
@@ -1206,10 +1177,6 @@
         <p class="step-body">Entities, sources, tools, and methodology stay cross-linked. The AI remembers past work and applies it to new leads — "we already profiled this shell company" instead of starting from zero.</p>
       </article>
     </div>
-    <div class="split-graph" aria-hidden="true">
-      <!-- Scene slot — rendered into by the global Three.js canvas. -->
-      <div id="five-things-slot" class="scene-slot"></div>
-    </div>
   </div>
 </section>
 
@@ -1222,37 +1189,31 @@
   <div class="integrations-grid">
     <div class="int-card" data-reveal="card" data-stagger-idx="0">
       <div class="idx">01 / 06</div>
-      <div class="card-scene-slot" data-card-idx="0"></div>
       <div class="name">Agent runtimes</div>
       <div class="desc">Local journalism fine-tune (Ollama or LM Studio), Claude Code, Gemini, Codex, OpenCode — multi-provider, switch per task.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="1">
       <div class="idx">02 / 06</div>
-      <div class="card-scene-slot" data-card-idx="1"></div>
       <div class="name">Evidence archiving</div>
       <div class="desc">Every source captured locally with chain of custody. Web scraping and search built in.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="2">
       <div class="idx">03 / 06</div>
-      <div class="card-scene-slot" data-card-idx="2"></div>
       <div class="name">OSINT Navigator</div>
       <div class="desc">1,000+ curated OSINT tools with AI-powered lookup, surfaced live per task. By Indicator Media.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="3">
       <div class="idx">04 / 06</div>
-      <div class="card-scene-slot" data-card-idx="3"></div>
       <div class="name">Knowledge vault</div>
       <div class="desc">Obsidian ingestion — investigations become permanent, searchable memory.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="4">
       <div class="idx">05 / 06</div>
-      <div class="card-scene-slot" data-card-idx="4"></div>
       <div class="name">Monitoring feeds</div>
       <div class="desc">Conflict events, disaster alerts, global news, investigative outlets — piped live into your leads.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="5">
       <div class="idx">06 / 06</div>
-      <div class="card-scene-slot" data-card-idx="5"></div>
       <div class="name">Browser &amp; narrative</div>
       <div class="desc">Browser automation, narrative tracking, misinformation databases — plug-in integrations.</div>
     </div>
@@ -1452,21 +1413,8 @@
     const slots = [{ name: 'hero', el: heroSlot, camera, visible: true }];
 
     // Five-things slot — fills the sticky right column. Camera fit is
-    // aspect-aware so the 3×2×3 grid stays framed when the slot narrows.
-    const fiveThingsEl = document.getElementById('five-things-slot');
-    if (fiveThingsEl) {
-      const ftCam = new THREE.PerspectiveCamera(38, 1, 0.1, 80);
-      ftCam.position.set(4.6, 2.6, 4.6);
-      ftCam.lookAt(0, 0, 0);
-      slots.push({
-        name: 'five-things', el: fiveThingsEl, camera: ftCam, visible: false,
-        fitTarget: new THREE.Vector3(0, 0, 0),
-        fitRadius: 2.0,       // encompasses the full 3×2×3 grid
-      });
-    }
-
-    // Card slots are registered later in the IIFE, AFTER cellCenters +
-    // cubeColorsData are initialised. See "Card slots — main scene focus".
+    // Five-things and card slots removed — the hero scene alone, full-viewport
+    // persistent, is the only rendering. See Tom review Phase 3.
 
     // Pause rendering for a slot when its DOM region leaves the viewport.
     // Exception: the hero slot stays `visible: true` permanently — when its
@@ -1814,53 +1762,7 @@
     actTex.magFilter = THREE.NearestFilter;
     actTex.needsUpdate = true;
 
-    // ——— Card slots — main scene focus ———
-    // One cube per card, rendered from the main scene (same custom glass
-    // shader + particle ribbons as the hero). The per-render override in
-    // animate() isolates just this cube and tints its particle cloud.
-    const CARD_WARM = new THREE.Color(0xffc28a);
-    const CARD_COOL = new THREE.Color(0x7cb7ff);
-    // Every card focuses the SAME cube (index 10 — middle-top of the grid).
-    // The curl-noise + vortex flow is sampled in world space, so picking
-    // different cells would give each card a different particle pattern;
-    // sharing one cell guarantees identical framing across all six cards.
-    const CARD_FOCUS_CUBE   = 10;
-    const CARD_CELL_INDICES = new Array(6).fill(CARD_FOCUS_CUBE);
-    const cardSlotEls = document.querySelectorAll('.card-scene-slot');
-    // Shared camera offset → identical framing across every card.
-    // Near-horizontal iso view (small Y offset) keeps the rotating cube's
-    // silhouette as small as possible so we can fit it tightly without
-    // cropping corners when it swings to its 45° rotation.
-    const CARD_CAM_OFFSET = new THREE.Vector3(1.4, 0.5, 1.4);
-    cardSlotEls.forEach((el, i) => {
-      const focusCube  = CARD_CELL_INDICES[i % CARD_CELL_INDICES.length];
-      const focusCellC = cellCenters[focusCube];
-      const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
-      cam.position.copy(focusCellC).add(CARD_CAM_OFFSET);
-      cam.lookAt(focusCellC);
-      const warm = i % 2 === 0;
-      const slot = {
-        name: 'card-' + i,
-        el,
-        camera: cam,
-        visible: false,
-        focusCube,
-        tintColor: (warm ? CARD_WARM : CARD_COOL).clone(),
-        fitTarget: focusCellC.clone(),
-        // Fit radius sized for the worst-case rotation (corner-on, √2/2 ≈ 0.71
-        // max silhouette radius) with ~10% margin → big cube, never crops.
-        fitRadius: 0.78,
-        _hover: false,
-      };
-      registerSlot(slot);
-      // Track hover on the parent card — the card flips to dark ink on
-      // hover, so the wireframe must switch from ink to paper-cream.
-      const card = el.closest('.int-card');
-      if (card) {
-        card.addEventListener('mouseenter', () => { slot._hover = true; });
-        card.addEventListener('mouseleave', () => { slot._hover = false; });
-      }
-    });
+    // Card slots and five-things slot removed — only the hero scene renders.
 
     // Reusable helpers for the per-slot card-override logic.
     const _cardSpin = new THREE.Quaternion();
