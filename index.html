@@ -41,12 +41,12 @@
   }
   a { color: inherit; text-decoration: none; }
   .serif {
-    font-family: "Fraunces", Georgia, "Times New Roman", serif;
+    font-family: "Fraunces", serif;
     font-variation-settings: "opsz" 144;
     font-weight: 500;
     letter-spacing: -0.02em;
   }
-  .mono { font-family: "Geist Mono", ui-monospace, monospace; }
+  .mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
 
   /* ── NAV ────────────────────────────────────────────────
      Default (paper) state : solid paper bg + dark ink text for sections on
@@ -124,7 +124,7 @@
     color: #fff;
     border: 1px solid rgba(255, 255, 255, 0.15);
     padding: 6px 10px;
-    font-family: "Geist Mono", ui-monospace, monospace;
+    font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 10px;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -603,7 +603,7 @@
     display: inline-flex; align-items: baseline; gap: 14px;
   }
   .credits .entity .ext {
-    font-family: "Geist Mono", monospace;
+    font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
     opacity: 0.45;
     font-weight: 500;
@@ -710,7 +710,7 @@
     padding: 14px 18px;
     background: var(--ink);
     color: var(--paper);
-    font-family: "Geist Mono", monospace;
+    font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
     transition: background 0.2s;
   }
@@ -1311,7 +1311,7 @@
     <div class="stat-cell" data-reveal="body" data-stagger-idx="2"><div class="n" data-reveal="stat" data-stagger-idx="2" data-count="5">5</div><div class="l">Schemas</div></div>
     <div class="stat-cell" data-reveal="body" data-stagger-idx="3"><div class="n" data-reveal="stat" data-stagger-idx="3">7+</div><div class="l">Runtimes</div></div>
   </div>
-  <p class="note" data-reveal="body" style="--rd: 200ms">Same skills run across pi, Claude Code, Gemini, Codex, OpenCode, Hermes, Goose. Open-source ports of the battle-tested <code style="font-family:'Geist Mono',monospace;background:var(--paper-2);padding:1px 6px;">buriedsignals/spotlight</code> and <code style="font-family:'Geist Mono',monospace;background:var(--paper-2);padding:1px 6px;">osint</code> Claude Code plugins.</p>
+  <p class="note" data-reveal="body" style="--rd: 200ms">Same skills run across pi, Claude Code, Gemini, Codex, OpenCode, Hermes, Goose. Open-source ports of the battle-tested <code style="font-family:"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;background:var(--paper-2);padding:1px 6px;">buriedsignals/spotlight</code> and <code style="font-family:"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;background:var(--paper-2);padding:1px 6px;">osint</code> Claude Code plugins.</p>
 </section>
 
 <!-- ── ATTRIBUTION ──────────────────────────────────────── -->
@@ -1332,7 +1332,7 @@
         <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals</a>
         <span class="ext">↗ buriedsignals.com</span>
       </div>
-      <p class="sub">The OSINT agency behind the original <code style="font-family:'Geist Mono',monospace;opacity:0.7;">spotlight</code> and <code style="font-family:'Geist Mono',monospace;opacity:0.7;">osint</code> Claude Code plugins — methodology, skills, and review schemas proven across real investigations.</p>
+      <p class="sub">The OSINT agency behind the original <code style="font-family:"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;opacity:0.7;">spotlight</code> and <code style="font-family:"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;opacity:0.7;">osint</code> Claude Code plugins — methodology, skills, and review schemas proven across real investigations.</p>
     </div>
   </div>
 
