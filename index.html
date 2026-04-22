@@ -47,14 +47,6 @@
     letter-spacing: -0.02em;
   }
   .mono { font-family: "Geist Mono", ui-monospace, monospace; }
-  .eyebrow {
-    font-family: "Geist Mono", monospace;
-    font-size: 11px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    opacity: 0.55;
-    font-weight: 500;
-  }
 
   /* ── NAV ────────────────────────────────────────────────
      Default (paper) state : solid paper bg + dark ink text for sections on
@@ -191,13 +183,6 @@
     display: flex; flex-direction: column; justify-content: space-between;
     padding: 92px 48px 40px;
     pointer-events: none;
-  }
-  .hero-top {
-    display: flex; justify-content: flex-end;
-  }
-  .hero-top .meta {
-    font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.55;
-    text-align: right; line-height: 1.8;
   }
   .hero-bottom {
     display: grid;
@@ -1045,7 +1030,6 @@
   [data-reveal="meta"].in { opacity: 1; }
   /* Restore each meta element's original letter-spacing on .in via a custom
      prop consumer. We can't know the original, so kinds set it below. */
-  .eyebrow[data-reveal="meta"].in,
   #what .header .chap[data-reveal="meta"].in,
   #integrations .header .chap[data-reveal="meta"].in,
   #box .header .chap[data-reveal="meta"].in,
@@ -1074,16 +1058,6 @@
     opacity: 1 !important;
     transform: translateY(0) scale(1) !important;
   }
-
-  /* Kind: line — a horizontal rule that draws from left to right. Uses
-     scaleX on transform-origin left. Apply to decorative hr-like elements. */
-  [data-reveal="line"] {
-    transform: scaleX(0);
-    transform-origin: left center;
-    transition: transform 900ms cubic-bezier(0.65, 0, 0.35, 1) calc(var(--rd) + var(--rs) * var(--stagger));
-    will-change: transform;
-  }
-  [data-reveal="line"].in { transform: scaleX(1); }
 
   /* Kind: credit-row — the whole row fades up, then internal content staggers.
      We use it as container and individual children also reveal. */
@@ -1114,19 +1088,6 @@
     will-change: transform;
   }
   .reveal-huge.in > * { transform: translateY(0); }
-
-  /* Kind: hero-meta — the tiny meta text top-right of hero, fades plus
-     decodes character-by-character via monospace tick effect. JS handles. */
-  [data-reveal="hero-meta"],
-  .hero-top .meta[data-reveal="hero-meta"] {
-    opacity: 0 !important;
-    transform: translateY(-6px);
-    transition:
-      opacity 900ms ease calc(var(--rd) + var(--rs) * var(--stagger)),
-      transform 900ms cubic-bezier(0.2, 0.7, 0.25, 1) calc(var(--rd) + var(--rs) * var(--stagger));
-  }
-  [data-reveal="hero-meta"].in,
-  .hero-top .meta[data-reveal="hero-meta"].in { opacity: 0.55 !important; transform: translateY(0); }
 
   /* Kind: stat — the big number. Fades in + uses JS count-up. Also the
      number's font-variation-settings pulse from lighter weight for a
@@ -1164,7 +1125,6 @@
     [data-reveal="title"],
     [data-reveal="serif-line"],
     [data-reveal="card"],
-    [data-reveal="line"],
     [data-reveal="credit-row"],
     [data-reveal="huge-word"],
     [data-reveal="stat"],
@@ -1212,8 +1172,6 @@
   <div id="hero-canvas" aria-hidden="true"></div>
   <div class="hero-gradient"></div>
   <div class="hero-content">
-    <div class="hero-top">
-    </div>
     <div class="hero-bottom">
       <h1 class="hero-title" data-reveal="title" style="--rd: 600ms">
         You lead the investigation.
@@ -1348,10 +1306,10 @@
     <h2 class="title" data-reveal="title" style="--rd: 120ms">Runtime-agnostic.</h2>
   </div>
   <div class="stats-row">
-    <div class="stat-cell" data-reveal="body" data-stagger-idx="0"><div class="n" data-count="11">11</div><div class="l">Skills</div></div>
-    <div class="stat-cell" data-reveal="body" data-stagger-idx="1"><div class="n" data-count="2">2</div><div class="l">Agents</div></div>
-    <div class="stat-cell" data-reveal="body" data-stagger-idx="2"><div class="n" data-count="5">5</div><div class="l">Schemas</div></div>
-    <div class="stat-cell" data-reveal="body" data-stagger-idx="3"><div class="n">7+</div><div class="l">Runtimes</div></div>
+    <div class="stat-cell" data-reveal="body" data-stagger-idx="0"><div class="n" data-reveal="stat" data-stagger-idx="0" data-count="11">11</div><div class="l">Skills</div></div>
+    <div class="stat-cell" data-reveal="body" data-stagger-idx="1"><div class="n" data-reveal="stat" data-stagger-idx="1" data-count="2">2</div><div class="l">Agents</div></div>
+    <div class="stat-cell" data-reveal="body" data-stagger-idx="2"><div class="n" data-reveal="stat" data-stagger-idx="2" data-count="5">5</div><div class="l">Schemas</div></div>
+    <div class="stat-cell" data-reveal="body" data-stagger-idx="3"><div class="n" data-reveal="stat" data-stagger-idx="3">7+</div><div class="l">Runtimes</div></div>
   </div>
   <p class="note" data-reveal="body" style="--rd: 200ms">Same skills run across pi, Claude Code, Gemini, Codex, OpenCode, Hermes, Goose. Open-source ports of the battle-tested <code style="font-family:'Geist Mono',monospace;background:var(--paper-2);padding:1px 6px;">buriedsignals/spotlight</code> and <code style="font-family:'Geist Mono',monospace;background:var(--paper-2);padding:1px 6px;">osint</code> Claude Code plugins.</p>
 </section>
