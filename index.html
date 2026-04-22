@@ -1090,7 +1090,7 @@
 </nav>
 
 <!-- ── HERO ─────────────────────────────────────────────── -->
-<section id="hero" data-screen-label="01 Hero" data-nav-theme="hero">
+<section id="hero" data-screen-label="01 Hero" data-nav-theme="hero" data-scene-mood="chaos">
   <div id="hero-canvas" aria-hidden="true"></div>
   <div class="hero-gradient"></div>
   <div class="hero-content">
@@ -1115,7 +1115,7 @@
 </section>
 
 <!-- ── WHAT IT DOES ─────────────────────────────────────── -->
-<section id="what" data-screen-label="03 What it does" data-nav-theme="dark">
+<section id="what" data-screen-label="03 What it does" data-nav-theme="dark" data-scene-mood="aligned">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 01 — What it does</span>
     <h2 class="title" data-reveal="title" style="--rd: 120ms">Five things, in order.</h2>
@@ -1154,7 +1154,7 @@
 </section>
 
 <!-- ── INTEGRATIONS ─────────────────────────────────────── -->
-<section id="integrations" data-screen-label="04 Integrations" data-nav-theme="dark">
+<section id="integrations" data-screen-label="04 Integrations" data-nav-theme="dark" data-scene-mood="drift">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 02 — Integrations</span>
     <h2 class="title" data-reveal="title" style="--rd: 120ms">Plugs into your stack.</h2>
@@ -1195,7 +1195,7 @@
 
 <!-- ── IN THE BOX ───────────────────────────────────────── -->
 <!-- ── WORKS WITH — agent compatibility chips ──────────────── -->
-<section id="works-with" data-screen-label="05 Works with" data-nav-theme="dark">
+<section id="works-with" data-screen-label="05 Works with" data-nav-theme="dark" data-scene-mood="sparse">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 03 — Works with</span>
     <h2 class="title" data-reveal="title" style="--rd: 120ms">Bring your own agent.</h2>
@@ -1215,7 +1215,7 @@
 </section>
 
 <!-- ── OFFERS (Membership + Consulting) ────────────────── -->
-<section id="offers" data-screen-label="07 Offers" data-nav-theme="dark">
+<section id="offers" data-screen-label="07 Offers" data-nav-theme="dark" data-scene-mood="calm">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 04 — Work with us</span>
     <h2 class="title" data-reveal="title" style="--rd: 120ms">Two ways in.</h2>
@@ -1269,7 +1269,7 @@
 </section>
 
 <!-- ── FOOTER ───────────────────────────────────────────── -->
-<section id="footer" data-screen-label="08 Footer" data-nav-theme="dark">
+<section id="footer" data-screen-label="08 Footer" data-nav-theme="dark" data-scene-mood="calm">
   <p class="footer-huge" id="footer-huge">
     Lead the <em>story.</em>
   </p>
@@ -3152,12 +3152,9 @@
     // —— Animation loop ——
     let t = 0;
     let running = true;
-    // Tracks whether the Five-things slot is currently holding alignedMode
-    // true, so we can release it back to the user's prior state exactly once.
-    let _alignedByFT = false;
-    // Snapshot of the user's alignedCluster values before Five-things forces
-    // them to 0 — restored when the override releases so the hero's aligned
-    // mode keeps using the same anchor points across scroll-away/back.
+    // Snapshot of the user's alignedCluster values before a non-chaos mood
+    // forces them to 0 — restored when mood returns to 'chaos' so the hero's
+    // own click-to-align toggle keeps its anchor across scroll-away/back.
     let _savedAlignedX = 0;
     let _savedAlignedY = 0;
     const clock = new THREE.Clock();
@@ -3191,47 +3188,46 @@
       const dt = params.paused ? 0 : Math.min(clock.getDelta(), 0.05);
       t += dt;
 
-      // Per-slot scene behaviour — decided BEFORE physics + activity so both
-      // systems pick up the right mode for the current viewing slot.
-      //  · Hero          : physics on, flip scheduler drives activity, floor grid shown
-      //  · Five things   : aligned (grid) mode, step-based activity, no floor grid
-      // We only override alignedMode while Five-things is visible, and we
-      // release it (back to false) exactly once when it stops being visible —
-      // this way the hero's own click-to-align toggle keeps working.
-      const ftSlot = slots.find(s => s.name === 'five-things' && s.visible);
-      if (ftSlot) {
-        if (!_alignedByFT) {
-          // First frame this override kicks in — remember what the hero's
-          // alignedCluster looked like so we can put it back on release.
-          _savedAlignedX = params.alignedClusterX;
-          _savedAlignedY = params.alignedClusterY;
+      // Per-section scene mood — the scene reacts to the section currently
+      // dominant in the viewport (set by the mood IO below). Each mood tweaks
+      // alignedMode + a few activity knobs so cubes "serve" the chapter:
+      //   · chaos   : hero default — free physics, full activity
+      //   · aligned : cubes snap to grid, calm (for narrative sections)
+      //   · drift   : aligned, slower time (integrations — 6 cards grid)
+      //   · sparse  : aligned, lower activity (works-with — few agents lit)
+      //   · calm    : aligned + minimal activity (offers, footer)
+      const mood = window.__sceneMood || 'chaos';
+      const prevMood = window.__prevSceneMood;
+      if (mood !== prevMood) {
+        if (mood === 'chaos') {
+          params.alignedMode = false;
+          params.alignedClusterX = _savedAlignedX;
+          params.alignedClusterY = _savedAlignedY;
+          for (let i = 0; i < N_CELLS; i++) targetActivity[i] = 1;
+        } else {
+          if (prevMood === 'chaos' || prevMood == null) {
+            _savedAlignedX = params.alignedClusterX;
+            _savedAlignedY = params.alignedClusterY;
+          }
+          params.alignedMode = true;
+          params.alignedClusterX = 0;
+          params.alignedClusterY = 0;
+          // Activity mix per mood — controls how many cubes are "on".
+          const activityMix = mood === 'sparse' ? 0.35 : mood === 'calm' ? 0.5 : 1.0;
+          for (let i = 0; i < N_CELLS; i++) targetActivity[i] = (i / N_CELLS) < activityMix ? 1 : 0;
         }
-        params.alignedMode     = true;
-        params.alignedClusterX = 0;
-        params.alignedClusterY = 0;
-        _alignedByFT = true;
-      } else if (_alignedByFT) {
-        params.alignedMode     = false;
-        params.alignedClusterX = _savedAlignedX;
-        params.alignedClusterY = _savedAlignedY;
-        _alignedByFT = false;
-        // Restore a clean slate for the hero's flip scheduler — otherwise the
-        // cubes hidden by the five-things step stay hidden until the next flip.
-        for (let i = 0; i < N_CELLS; i++) targetActivity[i] = 1;
+        window.__prevSceneMood = mood;
       }
+      // Mood-driven time multiplier (slows physics without pausing it).
+      const moodSpeed = mood === 'chaos' ? 1.0
+                     : mood === 'aligned' ? 0.7
+                     : mood === 'drift'   ? 0.45
+                     : mood === 'sparse'  ? 0.55
+                     : mood === 'calm'    ? 0.3
+                     : 1.0;
 
       // Cube physics — springs to rest (hero) or lerps to grid (aligned)
-      physicsStep(dt);
-
-      // Step-based reveal (Five-things slot only): cube i is on iff its
-      // visual cell rank < threshold. shuffleOrder maps cube index → cell.
-      if (ftSlot) {
-        const step = Math.max(0, Math.min(4, window.__fiveThingsStep | 0));
-        const threshold = STEP_CUBE_COUNTS[step];
-        for (let i = 0; i < N_CELLS; i++) {
-          targetActivity[i] = cellRank[shuffleOrder[i]] < threshold ? 1 : 0;
-        }
-      }
+      physicsStep(dt * moodSpeed);
 
       // Smooth per-cell activity + push to data texture.
       // Wireframes are also toggled off completely when the cube has fully
@@ -3447,6 +3443,28 @@
       window.__fiveThingsStep = active;
     }
     window.addEventListener('scroll', update, { passive: true });
+    update();
+  })();
+
+  // ── Scene mood per section ─────────────────────────────────────────────
+  // Picks the section dominating the middle of the viewport and sets
+  // window.__sceneMood. The Three.js animate() loop reads this to shift
+  // cube behaviour (aligned grid, speed, activity level) per chapter.
+  (function() {
+    const sections = Array.from(document.querySelectorAll('[data-scene-mood]'));
+    if (!sections.length) return;
+    function update() {
+      const probe = window.scrollY + window.innerHeight * 0.5;
+      let mood = 'chaos';
+      for (const s of sections) {
+        const top = s.offsetTop;
+        const bottom = top + s.offsetHeight;
+        if (probe >= top && probe < bottom) { mood = s.dataset.sceneMood; break; }
+      }
+      window.__sceneMood = mood;
+    }
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update, { passive: true });
     update();
   })();
 
