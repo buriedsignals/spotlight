@@ -1407,11 +1407,17 @@
       let rect = slot.el.getBoundingClientRect();
       const vh = window.innerHeight;
       const vw = window.innerWidth;
-      // Hero slot: always render full-viewport — the scene acts as a persistent
-      // backdrop from first paint through the entire scroll. Its own DOM rect
-      // is ignored because it would clip the scene as the hero scrolls up.
+      // Hero slot: render full-viewport by default. In #what (aligned mood)
+      // the scene shifts to a right-side pane so the step text on the left
+      // breathes, and the cubes visually inhabit the remaining half.
       if (slot.name === 'hero') {
-        rect = { left: 0, top: 0, right: vw, bottom: vh, width: vw, height: vh };
+        const mood = window.__sceneMood || 'chaos';
+        if (mood === 'aligned') {
+          const halfW = vw * 0.5;
+          rect = { left: halfW, top: 0, right: vw, bottom: vh, width: halfW, height: vh };
+        } else {
+          rect = { left: 0, top: 0, right: vw, bottom: vh, width: vw, height: vh };
+        }
       }
       const x = rect.left;
       const y = vh - rect.bottom;
@@ -3239,6 +3245,16 @@
                      : mood === 'sparse'  ? 0.55
                      : mood === 'calm'    ? 0.3
                      : 1.0;
+
+      // Ch. 01 aligned cubes "live" via a slow Y-axis spin. Inactive cubes in
+      // the same mood stay still so the step-based reveal still reads as
+      // "only the activated cubes participate in the story".
+      if (mood === 'aligned') {
+        for (let i = 0; i < N_CELLS; i++) {
+          if (activity[i] > 0.1) cubeState[i].angVel.set(0, 0.6, 0);
+          else                   cubeState[i].angVel.set(0, 0, 0);
+        }
+      }
 
       // Cube physics — springs to rest (hero) or lerps to grid (aligned)
       physicsStep(dt * moodSpeed);
