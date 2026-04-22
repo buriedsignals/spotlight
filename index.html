@@ -3170,6 +3170,11 @@
           wires[i].quaternion.copy(s.rot);
           glasses[i].position.copy(s.pos);
           glasses[i].quaternion.copy(s.rot);
+          // Ch. 01 'aligned' mood — smaller cubes so the shape silhouette
+          // reads cleanly without cubes overlapping each other.
+          const shapeScale = (mood === 'aligned') ? 0.65 : 1.0;
+          wires[i].scale.setScalar(shapeScale);
+          glasses[i].scale.setScalar(shapeScale);
 
           _tmpA.copy(s.pos).sub(cellCenters[i]);
           offsetsData[i*4    ] = _tmpA.x;
