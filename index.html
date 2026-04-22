@@ -1106,15 +1106,15 @@
     .reveal-huge.in > * { opacity: 1; }
   }
 
-  /* ── Cubes ambient backdrop — dark sections float above the canvas
-     (#global-canvas z-index: 5) with a slightly-transparent ink bg so the
-     persistent hero scene peeks through at ~12% alpha. Placed at end of
-     style block to win cascade over per-section `background: var(--ink)`. */
+  /* ── Cubes ambient backdrop — sections float above the canvas
+     (#global-canvas z-index: 5) with a half-transparent ink bg so the
+     persistent hero scene travels with the user as they scroll. Placed at
+     end of style block to win cascade over per-section `background: var(--ink)`. */
   .chapter-break,
   #what, #integrations, #works-with, #offers, #footer {
     position: relative;
     z-index: 10;
-    background: rgba(7, 7, 10, 0.88);
+    background: rgba(7, 7, 10, 0.5);
   }
 </style>
 </head>
