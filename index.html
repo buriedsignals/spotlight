@@ -1434,10 +1434,10 @@
       let rect = slot.el.getBoundingClientRect();
       const vh = window.innerHeight;
       const vw = window.innerWidth;
-      // Hero slot: when its DOM rect is fully offscreen (scrolled past the hero),
-      // substitute a full-viewport rect so the scene keeps rendering as an
-      // ambient backdrop behind semi-transparent sections below.
-      if (slot.name === 'hero' && rect.bottom <= 0) {
+      // Hero slot: always render full-viewport — the scene acts as a persistent
+      // backdrop from first paint through the entire scroll. Its own DOM rect
+      // is ignored because it would clip the scene as the hero scrolls up.
+      if (slot.name === 'hero') {
         rect = { left: 0, top: 0, right: vw, bottom: vh, width: vw, height: vh };
       }
       const x = rect.left;
