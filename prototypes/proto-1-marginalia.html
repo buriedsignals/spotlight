@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spotlight — OSINT investigation system for journalists</title>
+<meta name="description" content="You lead the investigation. Spotlight does the research. Verified findings, independent fact-checking, and a vault that grows with every case.">
+<link rel="icon" type="image/svg+xml" href="../assets/spotlight-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f3ede0;
+    --paper-deep: #ebe3d1;
+    --ink: #1a140e;
+    --ink-2: #42372a;
+    --ink-muted: #7b6f5e;
+    --rule: #d7cdb6;
+    --accent: #a83e1a;
+    --accent-soft: rgba(168, 62, 26, 0.10);
+    --verified: #2f5e2c;
+    --verified-soft: rgba(47, 94, 44, 0.12);
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 16px; scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Fraunces", Georgia, serif;
+    font-optical-sizing: auto;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--accent); color: var(--paper); }
+  a { color: inherit; }
+
+  header.top {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 32px 48px 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  header.top .brand {
+    display: inline-flex; align-items: center; gap: 12px;
+    color: var(--ink); text-decoration: none;
+  }
+  header.top svg { width: 26px; height: 26px; }
+  header.top .mark {
+    font-family: "Fraunces"; font-weight: 600; font-size: 1.1rem; letter-spacing: -0.01em;
+  }
+  header.top .proto {
+    margin-left: auto;
+    font-family: "Geist Mono", monospace;
+    font-size: 0.7rem;
+    color: var(--ink-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+
+  /* HERO — two-column already in force, margin carries a meta-citation */
+  section.hero {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 120px 48px 48px;
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: 80px;
+    align-items: start;
+  }
+  .hero-body .eyebrow {
+    font-family: "Geist Mono", monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-muted);
+    margin-bottom: 22px;
+  }
+  .hero-body h1 {
+    font-family: "Fraunces";
+    font-size: clamp(2.6rem, 5.8vw, 4.2rem);
+    font-weight: 500;
+    line-height: 1.03;
+    letter-spacing: -0.025em;
+    margin: 0 0 24px;
+    max-width: 16ch;
+  }
+  .hero-body h1 em {
+    font-style: italic; font-weight: 400; color: var(--ink-2);
+  }
+  .hero-body .tag {
+    font-size: 1.1rem; color: var(--ink-muted);
+    max-width: 52ch; line-height: 1.5; margin: 0 0 36px;
+  }
+  .cta-row {
+    display: flex; gap: 20px; flex-wrap: wrap; align-items: center;
+  }
+  .cta {
+    display: inline-block;
+    background: var(--ink); color: var(--paper);
+    padding: 14px 24px; border-radius: 3px;
+    font-family: "Geist Mono", monospace;
+    font-size: 0.88rem; font-weight: 500;
+    text-decoration: none;
+    letter-spacing: 0.02em;
+    transition: background 0.2s;
+  }
+  .cta:hover { background: var(--accent); }
+  .cta-row a.secondary {
+    color: var(--ink-muted);
+    text-decoration: none;
+    font-family: "Geist Mono", monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 2px;
+  }
+  .cta-row a.secondary:hover { color: var(--ink); border-bottom-color: var(--ink); }
+  .hero-body .byline {
+    margin-top: 28px;
+    font-size: 0.9rem;
+    color: var(--ink-muted);
+    max-width: 48ch;
+    line-height: 1.55;
+  }
+  .hero-body .byline a { color: var(--ink); border-bottom: 1px solid var(--rule); text-decoration: none; }
+  .hero-body .byline a:hover { border-bottom-color: var(--ink); }
+  .hero-body .byline em { font-style: italic; color: var(--ink-2); }
+
+  /* MARGIN — sticky for the long scroll */
+  aside.margin-col {
+    position: sticky;
+    top: 40px;
+    border-left: 1px solid var(--rule);
+    padding-left: 32px;
+    font-size: 0.9rem;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+  }
+  aside.margin-col::-webkit-scrollbar { width: 0; }
+  .margin-col .head {
+    font-family: "Geist Mono", monospace;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-muted);
+    margin-bottom: 22px;
+    position: sticky;
+    top: 0;
+    background: var(--paper);
+    padding-bottom: 8px;
+  }
+  .margin-col .items { display: flex; flex-direction: column; gap: 18px; }
+  .margin-col .item {
+    position: relative;
+    padding: 10px 16px;
+    font-family: "Fraunces";
+    line-height: 1.55;
+    font-size: 0.92rem;
+    color: var(--ink-muted);
+    background: transparent;
+    border-left: 2px solid transparent;
+    border-radius: 0 3px 3px 0;
+    transition: background 0.4s, color 0.4s, border-color 0.4s;
+  }
+  .margin-col .item.is-active {
+    color: var(--ink);
+    background: var(--accent-soft);
+    border-left-color: var(--accent);
+  }
+  .margin-col .item .num {
+    font-family: "Geist Mono", monospace;
+    font-size: 0.7rem;
+    color: var(--accent);
+    font-weight: 500;
+    margin-right: 8px;
+  }
+  .margin-col .item .mono {
+    font-family: "Geist Mono", monospace;
+    font-size: 0.78rem;
+    color: var(--ink-2);
+    display: block;
+    margin-top: 6px;
+    line-height: 1.5;
+    word-break: break-word;
+  }
+  .margin-col .item a.src {
+    color: var(--ink-2);
+    text-decoration: underline;
+    text-decoration-color: var(--rule);
+    text-underline-offset: 3px;
+  }
+  .margin-col .item a.src:hover { color: var(--accent); text-decoration-color: var(--accent); }
+  .verdict {
+    display: inline-block;
+    margin-top: 8px;
+    font-family: "Geist Mono", monospace;
+    font-size: 0.64rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 3px 8px;
+    border-radius: 2px;
+  }
+  .v-verified { color: var(--verified); background: var(--verified-soft); }
+  .v-accent { color: var(--accent); background: var(--accent-soft); }
+
+  /* SECTIONS below hero — continue two-column pattern */
+  section.section {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 48px 48px;
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: 80px;
+    align-items: start;
+  }
+  /* On sections past hero, margin column is empty — margin stays sticky from hero */
+  .section .body-col { font-size: 1.06rem; line-height: 1.75; }
+  .section .chap {
+    font-family: "Geist Mono", monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+    margin-bottom: 14px;
+  }
+  .section h2 {
+    font-family: "Fraunces";
+    font-size: clamp(1.7rem, 3vw, 2.4rem);
+    font-weight: 500;
+    line-height: 1.12;
+    letter-spacing: -0.015em;
+    margin: 0 0 28px;
+    max-width: 22ch;
+  }
+  .section .body-col p,
+  .section .body-col li {
+    margin: 0 0 22px;
+    color: var(--ink);
+    transition: color 0.45s;
+  }
+  .section .body-col p[data-refs]:not(.is-active),
+  .section .body-col li[data-refs]:not(.is-active) { color: var(--ink-2); }
+  .section .body-col ul.claims {
+    list-style: none; padding: 0; margin: 0;
+  }
+  .section .body-col ul.claims li {
+    padding: 18px 0;
+    border-bottom: 1px solid var(--rule);
+    font-size: 1.02rem;
+  }
+  .section .body-col ul.claims li:last-child { border-bottom: none; }
+  .section .body-col ul.claims li strong {
+    font-weight: 600;
+    display: inline;
+    color: var(--ink);
+  }
+  .section .body-col .desc {
+    color: var(--ink-2);
+    display: block;
+    margin-top: 6px;
+    font-size: 0.96rem;
+    line-height: 1.55;
+  }
+  .ref {
+    color: var(--accent);
+    font-family: "Geist Mono", monospace;
+    font-size: 0.68em;
+    font-weight: 500;
+    vertical-align: super;
+    margin: 0 1px 0 2px;
+    text-decoration: none;
+  }
+  .ref:hover { color: var(--ink); }
+
+  /* Shipped stats */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+    margin: 8px 0 18px;
+  }
+  .stats-grid .stat {
+    padding: 14px 16px;
+    background: var(--paper-deep);
+    border-radius: 3px;
+  }
+  .stats-grid .stat .n {
+    display: block;
+    font-family: "Fraunces";
+    font-size: 1.8rem;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: -0.01em;
+  }
+  .stats-grid .stat .l {
+    font-family: "Geist Mono", monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-muted);
+    margin-top: 4px;
+  }
+
+  /* Promo cards (membership + consulting) */
+  .promo {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+    margin-top: 16px;
+  }
+  .promo-card {
+    background: var(--paper-deep);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 28px 28px;
+  }
+  .promo-card .eyebrow {
+    font-family: "Geist Mono", monospace;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    margin-bottom: 10px;
+  }
+  .promo-card h3 {
+    font-family: "Fraunces";
+    font-size: 1.5rem;
+    font-weight: 500;
+    margin: 0 0 10px;
+    letter-spacing: -0.01em;
+  }
+  .promo-card .subtitle {
+    color: var(--ink-muted);
+    font-size: 0.96rem;
+    margin: 0 0 18px;
+    line-height: 1.55;
+  }
+  .promo-card ul {
+    list-style: none; padding: 0; margin: 0 0 16px;
+  }
+  .promo-card ul li {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--rule);
+    font-size: 0.94rem;
+    line-height: 1.5;
+  }
+  .promo-card ul li:last-child { border-bottom: none; }
+  .promo-card .price {
+    color: var(--ink-muted);
+    font-size: 0.9rem;
+    margin: 0 0 16px;
+    font-family: "Geist Mono", monospace;
+  }
+  .promo-card .price strong { color: var(--ink); }
+  .signup-form .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .signup-form input[type="email"] {
+    flex: 1; min-width: 0;
+    padding: 12px 14px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    font-family: "Fraunces";
+    font-size: 0.95rem;
+    color: var(--ink);
+  }
+  .signup-form input[type="email"]:focus {
+    outline: none; border-color: var(--accent);
+  }
+  .signup-form button {
+    padding: 12px 20px;
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    border-radius: 3px;
+    font-family: "Geist Mono", monospace;
+    font-size: 0.86rem;
+    font-weight: 500;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+  }
+  .promo-card .service {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--rule);
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+  .promo-card .service:last-of-type { border-bottom: none; }
+  .promo-card .service strong { font-weight: 600; }
+  .promo-card .service .clients {
+    display: block;
+    color: var(--ink-muted);
+    font-size: 0.85rem;
+    margin-top: 4px;
+    font-family: "Geist Mono", monospace;
+  }
+
+  /* End CTA */
+  section.closing {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 56px 48px 0;
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: 80px;
+    align-items: start;
+  }
+  .closing-body {
+    border-top: 1px solid var(--rule);
+    padding-top: 56px;
+  }
+  .closing-body p {
+    font-family: "Fraunces";
+    font-size: clamp(1.5rem, 2.6vw, 2rem);
+    font-weight: 500;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    max-width: 28ch;
+    margin: 0 0 32px;
+  }
+
+  footer.site-footer {
+    max-width: 1400px;
+    margin: 100px auto 0;
+    padding: 28px 48px 40px;
+    border-top: 1px solid var(--rule);
+    color: var(--ink-muted);
+    font-family: "Geist Mono", monospace;
+    font-size: 0.82rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  footer.site-footer a {
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1px solid var(--rule);
+  }
+  footer.site-footer a:hover { border-bottom-color: var(--accent); color: var(--accent); }
+  footer.site-footer .links { display: flex; gap: 20px; flex-wrap: wrap; }
+
+  @media (max-width: 980px) {
+    section.hero, section.section, section.closing {
+      grid-template-columns: 1fr;
+      gap: 32px;
+      padding: 48px 24px;
+    }
+    header.top, footer.site-footer { padding-left: 24px; padding-right: 24px; }
+    aside.margin-col {
+      position: static;
+      border-left: none;
+      padding-left: 0;
+      border-top: 1px solid var(--rule);
+      padding-top: 24px;
+      max-height: none;
+    }
+    section.hero { padding-top: 72px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="#">
+    <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M 51.32 26.82 A 20 20 0 0 1 12.68 26.82" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+      <path d="M 12.68 37.18 A 20 20 0 0 0 51.32 37.18" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+      <circle cx="32" cy="32" r="5" fill="currentColor"/>
+    </svg>
+    <span class="mark">Spotlight</span>
+  </a>
+  <span class="proto">Proto 01 · Marginalia</span>
+</header>
+
+<!-- HERO — two-column, margin already active with meta-source on the product itself -->
+<section class="hero">
+  <div class="hero-body">
+    <div class="eyebrow">OSINT investigation system · for journalists</div>
+    <h1 data-refs="0">You lead the investigation.<br><em>Spotlight does the research.</em></h1>
+    <p class="tag" data-refs="1">Your lead. Your judgment. Verified findings, independent fact-checking, a vault that grows with you.</p>
+    <div class="cta-row">
+      <a class="cta" href="../setup.html">Install Spotlight →</a>
+      <a class="secondary" href="https://github.com/buriedsignals/spotlight" target="_blank">GitHub ↗</a>
+    </div>
+    <p class="byline" data-refs="2">Built by <a href="https://buriedsignals.com" target="_blank">Buried Signals</a> — an investigative media and technology studio. <em>Investigations with AI. The tools to run your own.</em></p>
+  </div>
+
+  <aside class="margin-col" id="margin">
+    <div class="head">Sources · lineage · implementation</div>
+    <div class="items" id="items">
+
+      <div class="item" data-ref="0">
+        <span class="num">[0]</span>
+        Product is a runtime-agnostic port of <code>buriedsignals/spotlight@1.2.1</code> and <code>buriedsignals/osint@3.5.0</code>, the Claude Code plugins used in production investigations at Buried Signals since 2023.
+        <span class="mono">/ agnostic port · 13 abstract verbs · markdown-only contract</span>
+      </div>
+
+      <div class="item" data-ref="1">
+        <span class="num">[1]</span>
+        "Verified findings" is schema-enforced. "Independent fact-checking" means the checker runs in an isolated context with no access to the researcher's sources or reasoning. "Vault that grows" is Obsidian-native with atomic registry updates.
+        <span class="mono">schemas/readiness.json · agents/fact-checker/ · skills/ingest/SKILL.md</span>
+        <span class="verdict v-verified">schema-enforced</span>
+      </div>
+
+      <div class="item" data-ref="2">
+        <span class="num">[2]</span>
+        Buried Signals — investigative media + tech studio. Clients include Le Temps, Republik, MAZ Journalistenschule, 20 Minuten, MediaStorm, The New Humanitarian.
+        <span class="mono"><a href="https://buriedsignals.com" class="src" target="_blank">buriedsignals.com</a></span>
+      </div>
+
+      <div class="item" data-ref="3">
+        <span class="num">[3]</span>
+        Interactive approval gate before any cycle runs. Methodology file → editor review → run. Humans lead, agents execute.
+        <span class="mono">skills/investigate/SKILL.md · agents/spotlight/brief.md</span>
+      </div>
+
+      <div class="item" data-ref="4">
+        <span class="num">[4]</span>
+        Fact-checker spawned per cycle in isolated context. SIFT methodology (Stanford CREDO, 2018). 4-verdict taxonomy: confirmed · disputed · unverifiable · fabricated.
+        <span class="mono">agents/fact-checker/ · schemas/verdict.json</span>
+        <span class="verdict v-verified">2 indep. sources required</span>
+      </div>
+
+      <div class="item" data-ref="5">
+        <span class="num">[5]</span>
+        Six readiness criteria enforced before Gate 1: min findings, source independence, no unresolved disputes, affected perspective present, local_file on every source, gap assessment written.
+        <span class="mono">schemas/readiness.json</span>
+      </div>
+
+      <div class="item" data-ref="6">
+        <span class="num">[6]</span>
+        Post-Gate-1 HTML artifact. Editor comments re-enter the pipeline as <code>cycle_n+1</code> prompts. No black-boxing of what's contested.
+        <span class="mono">skills/review/SKILL.md</span>
+      </div>
+
+      <div class="item" data-ref="7">
+        <span class="num">[7]</span>
+        Vault ingestion via Obsidian CLI. Wikilinks, atomic registry update, lock-file concurrency. Next lead touching a known entity surfaces prior case automatically.
+        <span class="mono">skills/ingest/SKILL.md · qmd (local search) · obsidian (write)</span>
+        <span class="verdict v-verified">persisted memory</span>
+      </div>
+
+      <div class="item" data-ref="8">
+        <span class="num">[8]</span>
+        Runtime coverage: pi (native) · Claude Code · Codex · Gemini · Hermes · Goose · Local OpenAI-compatible (Ollama / llama.cpp).
+        <span class="mono">AGENTS.md · docs/runtimes.md</span>
+      </div>
+
+      <div class="item" data-ref="9">
+        <span class="num">[9]</span>
+        <a href="https://www.firecrawl.dev" class="src" target="_blank">Firecrawl CLI</a> — universal backing for fetch/search. Every source captured locally. Archive hierarchy: Wayback → Archive.today → local file. SHA-256 on every artifact.
+        <span class="mono">FIRECRAWL_API_KEY required · skills/web-archiving/</span>
+      </div>
+
+      <div class="item" data-ref="10">
+        <span class="num">[10]</span>
+        <a href="https://navigator.indicator.media/" class="src" target="_blank">OSINT Navigator</a> — 1,000+ curated OSINT tools with AI-powered lookup, surfaced live per task. Built by Indicator Media.
+        <span class="mono">OSINT_NAV_API_KEY (optional) · base tier free</span>
+      </div>
+
+      <div class="item" data-ref="11">
+        <span class="num">[11]</span>
+        Pluggable monitoring feeds: GDELT, RSS investigative, RSS regional, GDACS (disaster alerts), <a href="https://acleddata.com" class="src" target="_blank">ACLED</a> (conflict events).
+        <span class="mono">monitoring/feeds/ · python-based · preflight-checked</span>
+      </div>
+
+      <div class="item" data-ref="12">
+        <span class="num">[12]</span>
+        browser-use (AI browser automation), <a href="https://junkipedia.org" class="src" target="_blank">Junkipedia</a> (narrative tracking), misinformation databases. Framework accepts more integrations.
+        <span class="mono">docs/integrations.md</span>
+      </div>
+
+      <div class="item" data-ref="13">
+        <span class="num">[13]</span>
+        Counts verified from repo:
+        <span class="mono">find skills -name SKILL.md → 11 · ls agents → 2 · ls schemas → 5 · docs/runtimes.md → 7+</span>
+        <span class="verdict v-verified">verified at commit time</span>
+      </div>
+
+      <div class="item" data-ref="14">
+        <span class="num">[14]</span>
+        <a href="https://www.bellingcat.com/" class="src" target="_blank">Bellingcat</a> — OSINT training corpus and methodology. Primary reference for the <code>investigate</code> skill.
+      </div>
+
+      <div class="item" data-ref="15">
+        <span class="num">[15]</span>
+        <a href="https://gijn.org/" class="src" target="_blank">GIJN</a> — Global Investigative Journalism Network. Patrucic &amp; Cosic (2024, CC BY-ND 4.0) on follow-the-money reporting.
+      </div>
+
+      <div class="item" data-ref="16">
+        <span class="num">[16]</span>
+        Jim Shultz, <em>Follow the Money</em> (Revenue Watch / Open Society Institute, 2005). Synthesized into the <code>follow-the-money</code> skill.
+      </div>
+
+      <div class="item" data-ref="17">
+        <span class="num">[17]</span>
+        <a href="https://github.com/jamditis/claude-skills-journalism" class="src" target="_blank">jamditis/claude-skills-journalism</a> (Jay Amditis, MIT License). Source for web-archiving, content-access, social-media-intelligence skills.
+      </div>
+
+      <div class="item" data-ref="18">
+        <span class="num">[18]</span>
+        OCCRP / ICIJ investigative practice — methodology anchors for cross-jurisdictional entity tracking.
+      </div>
+
+      <div class="item" data-ref="19">
+        <span class="num">[19]</span>
+        Pro Membership launches <strong>May 2026</strong>. 400+ journalists on the newsletter as of 2026-04.
+        <span class="mono">endpoint: /api/newsletter/subscribe · provider: Resend</span>
+      </div>
+
+      <div class="item" data-ref="20">
+        <span class="num">[20]</span>
+        Workshops delivered 2023–2026. Hands-on sessions where journalists investigate live stories with AI.
+        <span class="mono">Le Temps · MAZ Journalistenschule · Republik · 20 Minuten</span>
+      </div>
+
+      <div class="item" data-ref="21">
+        <span class="num">[21]</span>
+        Custom AI tooling for newsrooms — archive search, source monitoring, research agents.
+        <span class="mono">MediaStorm (ongoing)</span>
+      </div>
+
+      <div class="item" data-ref="22">
+        <span class="num">[22]</span>
+        Visual production + AI pipelines paired with field reporting.
+        <span class="mono">The New Humanitarian (2024–)</span>
+      </div>
+
+    </div>
+  </aside>
+</section>
+
+<!-- §1 What it does -->
+<section class="section">
+  <div class="body-col">
+    <div class="chap">§1 — What it does</div>
+    <h2>Five moves that turn a lead into a publishable finding.</h2>
+    <ul class="claims">
+      <li data-refs="3">
+        <strong>Takes a lead</strong> — URL, name, topic, document — and designs a methodology you approve before anything runs.<a class="ref">[3]</a>
+      </li>
+      <li data-refs="4">
+        <strong>Runs research cycles</strong> with an independent fact-checker after each one. Nothing advances on one source or one agent's reasoning.<a class="ref">[4]</a>
+      </li>
+      <li data-refs="5">
+        <strong>Every finding arrives sourced and stress-tested</strong> — primary documents anchored, two independent sources per claim, disputes flagged, affected perspectives present.<a class="ref">[5]</a>
+      </li>
+      <li data-refs="6">
+        <strong>Review page for you or your editor</strong> — click through findings, challenge claims, request deeper verification. Your feedback re-triggers the investigator on specific points.<a class="ref">[6]</a>
+      </li>
+      <li data-refs="7">
+        <strong>Builds a living knowledge base</strong> — entities, sources, tools, and methodology stay cross-linked. <em>"We already profiled this shell company in the Darfur case"</em> instead of starting from zero.<a class="ref">[7]</a>
+      </li>
+    </ul>
+  </div>
+  <div></div>
+</section>
+
+<!-- §2 Integrations -->
+<section class="section">
+  <div class="body-col">
+    <div class="chap">§2 — What it integrates with</div>
+    <h2>Pluggable where it matters. Opinionated where it counts.</h2>
+    <ul class="claims">
+      <li data-refs="8">
+        <strong>Agent runtimes</strong> — local journalism fine-tune, Claude Code, Gemini, Codex, OpenCode. One set of skills, many runtimes.<a class="ref">[8]</a>
+      </li>
+      <li data-refs="9">
+        <strong>Web scraping, search, evidence archiving</strong> — every source captured locally with chain of custody.<a class="ref">[9]</a>
+      </li>
+      <li data-refs="10">
+        <strong>OSINT Navigator</strong> — 1,000+ curated OSINT tools with AI-powered lookup, surfaced live per task.<a class="ref">[10]</a>
+      </li>
+      <li data-refs="11">
+        <strong>Monitoring feeds</strong> — conflict events, disaster alerts, global news, investigative outlets.<a class="ref">[11]</a>
+      </li>
+      <li data-refs="12">
+        <strong>Browser automation, narrative tracking, misinformation databases</strong> — plug-in integrations; the framework takes more.<a class="ref">[12]</a>
+      </li>
+    </ul>
+  </div>
+  <div></div>
+</section>
+
+<!-- §3 What's shipped -->
+<section class="section">
+  <div class="body-col">
+    <div class="chap">§3 — What's in the box</div>
+    <h2>Everything is on disk, inspectable, yours.</h2>
+    <div class="stats-grid" data-refs="13">
+      <div class="stat"><span class="n">11</span><span class="l">skills</span></div>
+      <div class="stat"><span class="n">2</span><span class="l">agents</span></div>
+      <div class="stat"><span class="n">5</span><span class="l">schemas</span></div>
+      <div class="stat"><span class="n">7+</span><span class="l">runtimes</span></div>
+    </div>
+    <p data-refs="13"><strong>Runtime-agnostic.</strong> Same skills run across pi, Claude Code, Gemini, Codex, OpenCode, Hermes, Goose. The markdown-only contract keeps you unlocked.<a class="ref">[13]</a></p>
+  </div>
+  <div></div>
+</section>
+
+<!-- §4 Attribution -->
+<section class="section">
+  <div class="body-col">
+    <div class="chap">§4 — Standing on</div>
+    <h2>This is a synthesis, not an invention.</h2>
+    <p>Methodology from <span data-refs="14"><strong>Bellingcat</strong><a class="ref">[14]</a></span>, <span data-refs="15"><strong>GIJN</strong><a class="ref">[15]</a></span>, <span data-refs="16"><strong>Jim Shultz's <em>Follow the Money</em></strong><a class="ref">[16]</a></span>, <span data-refs="17"><strong>Jay Amditis's claude-skills-journalism</strong><a class="ref">[17]</a></span>, and investigative practice from <span data-refs="18"><strong>OCCRP / ICIJ</strong><a class="ref">[18]</a></span>. Powered by open-source tooling across the agent ecosystem.</p>
+  </div>
+  <div></div>
+</section>
+
+<!-- §5 From the team -->
+<section class="section">
+  <div class="body-col">
+    <div class="chap">§5 — From the team behind Spotlight</div>
+    <h2>Run it yourself, or let us run it with you.</h2>
+
+    <div class="promo">
+      <div class="promo-card" data-refs="19">
+        <div class="eyebrow">Launching May 2026</div>
+        <h3>Pro Membership</h3>
+        <p class="subtitle">Investigations with AI. The tools to run your own.</p>
+        <ul>
+          <li>Collaborative investigations — shared leads, data, methodology</li>
+          <li>Live bootcamps, workshops, events</li>
+          <li>Hosted Pro tier of coJournalist, Navigator, Spotlight, DataHound</li>
+          <li>Methodologies and AI techniques, in depth</li>
+        </ul>
+        <p class="price"><strong>from $25/mo</strong> · 400+ journalists reading<a class="ref">[19]</a></p>
+        <form class="signup-form" id="signup-form">
+          <div class="row">
+            <input type="email" id="signup-email" placeholder="you@example.com" required autocomplete="email">
+            <button type="submit" id="signup-submit">Subscribe</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="promo-card">
+        <h3>Consulting</h3>
+        <p class="subtitle">Tom trains newsrooms to investigate with AI.</p>
+        <div class="service" data-refs="20">
+          <strong>Workshops &amp; training</strong> — hands-on sessions where journalists investigate live stories with AI.<a class="ref">[20]</a>
+          <span class="clients">Le Temps · MAZ · Republik · 20 Minuten</span>
+        </div>
+        <div class="service" data-refs="21">
+          <strong>Custom AI tooling</strong> — archive search, source monitoring, research agents, whatever the newsroom needs.<a class="ref">[21]</a>
+          <span class="clients">MediaStorm</span>
+        </div>
+        <div class="service" data-refs="22">
+          <strong>Investigation collaborations</strong> — visual production and AI pipelines paired with field reporting.<a class="ref">[22]</a>
+          <span class="clients">The New Humanitarian</span>
+        </div>
+        <p style="margin-top: 18px;"><a class="cta" href="mailto:tom@buriedsignals.com?subject=Spotlight%20Consulting" style="font-size: 0.82rem; padding: 10px 16px;">Get in touch →</a></p>
+      </div>
+    </div>
+  </div>
+  <div></div>
+</section>
+
+<!-- Closing -->
+<section class="closing">
+  <div class="closing-body">
+    <p>Your next investigation doesn't start from zero. The method is the tool.</p>
+    <div class="cta-row">
+      <a class="cta" href="../setup.html">Install Spotlight →</a>
+      <a class="secondary" href="https://github.com/buriedsignals/spotlight" target="_blank">Read the source ↗</a>
+    </div>
+  </div>
+  <div></div>
+</section>
+
+<footer class="site-footer">
+  <div>Built by <a href="https://buriedsignals.com" target="_blank">Buried Signals</a></div>
+  <div class="links">
+    <a href="https://github.com/buriedsignals/spotlight" target="_blank">GitHub</a>
+    <a href="../setup.html">Install</a>
+    <a href="https://github.com/buriedsignals/spotlight/blob/main/DISCLAIMER.md" target="_blank">Disclaimer</a>
+    <a href="mailto:buriedsignals@agentmail.com">Contact</a>
+  </div>
+</footer>
+
+<script>
+  // Sync margin highlighting with any element in the body that carries data-refs
+  const claims = document.querySelectorAll('[data-refs]');
+  const items = document.querySelectorAll('.margin-col .item');
+  const marginEl = document.getElementById('margin');
+  const visible = new Set();
+
+  function update() {
+    if (visible.size === 0) return;
+    const centerY = window.innerHeight / 2;
+    let best = null, bestDist = Infinity;
+    visible.forEach(p => {
+      const rect = p.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      const d = Math.abs(mid - centerY);
+      if (d < bestDist) { bestDist = d; best = p; }
+    });
+    if (!best) return;
+    claims.forEach(p => p.classList.toggle('is-active', p === best));
+    const refs = best.dataset.refs.split(',').map(s => s.trim());
+    items.forEach(i => i.classList.toggle('is-active', refs.includes(i.dataset.ref)));
+    // Auto-scroll margin to keep active item in view
+    const active = document.querySelector('.margin-col .item.is-active');
+    if (active && marginEl) {
+      const mRect = marginEl.getBoundingClientRect();
+      const aRect = active.getBoundingClientRect();
+      if (aRect.top < mRect.top + 40 || aRect.bottom > mRect.bottom - 40) {
+        const targetTop = active.offsetTop - 100;
+        marginEl.scrollTo({ top: targetTop, behavior: 'smooth' });
+      }
+    }
+  }
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) visible.add(entry.target);
+      else visible.delete(entry.target);
+    });
+    update();
+  }, { rootMargin: '-30% 0px -30% 0px', threshold: 0 });
+
+  claims.forEach(c => observer.observe(c));
+  window.addEventListener('scroll', update, { passive: true });
+  window.addEventListener('resize', update);
+
+  // Newsletter signup (from landing.html)
+  const form = document.getElementById('signup-form');
+  if (form) {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('signup-submit');
+      btn.textContent = 'Demo — not wired';
+      btn.disabled = true;
+      setTimeout(() => { btn.textContent = 'Subscribe'; btn.disabled = false; }, 1600);
+    });
+  }
+</script>
+
+</body>
+</html>

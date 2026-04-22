@@ -1,0 +1,1638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spotlight — OSINT investigation system for journalists</title>
+<meta name="description" content="You lead the investigation. Spotlight does the research. Verified findings, independent fact-checking, and a vault that grows with every case. By Buried Signals.">
+<meta property="og:title" content="Spotlight — OSINT investigation system for journalists">
+<meta property="og:description" content="You lead the investigation. Spotlight does the research. Verified findings, independent fact-checking, a vault that grows with every case.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://buriedsignals.com/spotlight">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Spotlight — OSINT investigation system for journalists">
+<meta name="twitter:description" content="You lead the investigation. Spotlight does the research.">
+<link rel="icon" type="image/svg+xml" href="assets/spotlight-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f1115;
+    --bg-2: #171a21;
+    --bg-3: #1f232c;
+    --fg: #e8ecf1;
+    --muted: #8891a0;
+    --border: #2a2f3a;
+    --accent: #7cb7ff;
+    --green: #6ebf6e;
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 16px; }
+  body {
+    font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--bg);
+    color: var(--fg);
+    margin: 0;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    font-size: 0.95rem;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 64px 28px 48px; }
+  header.hero { text-align: left; margin-bottom: 64px; }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 32px;
+    color: var(--fg);
+    text-decoration: none;
+  }
+  .brand svg {
+    width: 36px;
+    height: 36px;
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+  .brand .wordmark {
+    font-family: "Fraunces", Georgia, "Times New Roman", serif;
+    font-weight: 600;
+    font-size: 1.6rem;
+    letter-spacing: -0.01em;
+    font-variation-settings: "opsz" 48;
+    color: var(--fg);
+  }
+
+  h1 {
+    font-family: "Fraunces", Georgia, "Times New Roman", serif;
+    font-size: clamp(2.6rem, 6vw, 3.8rem);
+    letter-spacing: -0.015em;
+    margin: 0 0 16px;
+    line-height: 1.05;
+    font-weight: 600;
+    font-variation-settings: "opsz" 144;
+  }
+  h1 .accent { color: var(--accent); }
+  .tagline {
+    font-size: clamp(1.05rem, 2.4vw, 1.25rem);
+    color: var(--muted);
+    margin: 0 0 32px;
+    max-width: 560px;
+    line-height: 1.5;
+  }
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--accent);
+    color: #fff;
+    padding: 14px 28px;
+    border-radius: 8px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: filter 0.12s;
+  }
+  .cta:hover { filter: brightness(1.1); }
+  .cta-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+  .cta-row a.secondary {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.95rem;
+    border-bottom: 1px solid transparent;
+  }
+  .cta-row a.secondary:hover { color: var(--fg); border-bottom-color: var(--border); }
+
+  section { margin: 56px 0; }
+  h2 {
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    font-weight: 600;
+    margin: 0 0 16px;
+  }
+  ul.clean { list-style: none; padding: 0; margin: 0; }
+  ul.clean li {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 1.02rem;
+  }
+  ul.clean li:last-child { border-bottom: none; }
+  ul.clean li strong { font-weight: 600; color: var(--fg); }
+  ul.clean li .desc { color: var(--muted); display: block; margin-top: 4px; font-size: 0.92rem; }
+
+  .box-card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 26px;
+  }
+  .box-card p { margin: 0 0 12px; color: var(--muted); font-size: 0.94rem; }
+  .box-card p:last-child { margin-bottom: 0; }
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .stat-grid .stat {
+    background: var(--bg-3);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .stat-grid .stat .n {
+    font-size: 1.4rem;
+    font-weight: 700;
+    display: block;
+    color: var(--accent);
+  }
+  .stat-grid .stat .l {
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 2px;
+  }
+
+  .attribution {
+    color: var(--muted);
+    font-size: 0.88rem;
+    line-height: 1.6;
+  }
+  .attribution a { color: var(--muted); text-decoration: underline; text-decoration-color: var(--border); }
+  .attribution a:hover { color: var(--fg); }
+
+  footer.site-footer {
+    border-top: 1px solid var(--border);
+    margin-top: 80px;
+    padding: 28px 0 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  footer.site-footer a {
+    color: var(--fg);
+    text-decoration: none;
+    border-bottom: 1px solid var(--border);
+  }
+  footer.site-footer a:hover { border-bottom-color: var(--accent); color: var(--accent); }
+  footer.site-footer .links { display: flex; gap: 18px; flex-wrap: wrap; }
+
+  /* Membership + consulting block */
+  .promo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+  }
+  .promo-card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 26px;
+    display: flex;
+    flex-direction: column;
+  }
+  .promo-card .eyebrow {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .promo-card h3 {
+    font-family: "Fraunces", Georgia, "Times New Roman", serif;
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+    color: var(--fg);
+  }
+  .promo-card .subtitle {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin: 0 0 18px;
+    line-height: 1.5;
+  }
+  .promo-card ul.features {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 18px;
+  }
+  .promo-card ul.features li {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.95rem;
+    color: var(--fg);
+    line-height: 1.5;
+  }
+  .promo-card ul.features li:last-child { border-bottom: none; }
+  .promo-card .service {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+  .promo-card .service:last-of-type { border-bottom: none; margin-bottom: 8px; }
+  .promo-card .service strong { color: var(--fg); font-weight: 600; }
+  .promo-card .service .clients {
+    display: block;
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-top: 4px;
+  }
+  .promo-card .price {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin: 0 0 14px;
+  }
+  .promo-card .price strong { color: var(--fg); font-weight: 600; }
+  .promo-card .spacer { flex: 1; }
+  .signup-form .row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .signup-form input[type="email"] {
+    flex: 1;
+    min-width: 0;
+    padding: 12px 14px;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 0.95rem;
+  }
+  .signup-form input[type="email"]:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .signup-form button {
+    padding: 12px 20px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 0.12s;
+  }
+  .signup-form button:hover:not(:disabled) { filter: brightness(1.1); }
+  .signup-form button:disabled { opacity: 0.6; cursor: default; }
+  .signup-error {
+    color: #e06a6a;
+    font-size: 0.85rem;
+    margin-top: 8px;
+  }
+  .signup-success {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--green);
+    font-size: 0.95rem;
+    font-weight: 500;
+  }
+  .signup-success svg { flex-shrink: 0; }
+  .consulting-cta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+  }
+  .consulting-cta .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--accent);
+    color: #fff;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: filter 0.12s;
+  }
+  .consulting-cta .btn:hover { filter: brightness(1.1); }
+  .consulting-cta .link {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.9rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .consulting-cta .link:hover { color: var(--fg); border-bottom-color: var(--fg); }
+
+  @media (max-width: 540px) {
+    .wrap { padding: 40px 20px 32px; }
+    section { margin: 40px 0; }
+  }
+
+  body { overflow-x: hidden; }
+  header.hero { padding-top: 6vh; }
+
+  /* Mark hover micro-animation */
+  .brand svg { transition: filter 0.4s ease; }
+  .brand:hover svg { filter: drop-shadow(0 0 10px rgba(124, 183, 255, 0.55)); }
+  .brand svg circle {
+    transform-origin: 32px 32px;
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .brand:hover svg circle { animation: markPulse 0.9s ease-in-out; }
+  @keyframes markPulse {
+    0%   { transform: scale(1); }
+    45%  { transform: scale(1.45); }
+    100% { transform: scale(1); }
+  }
+  .brand svg path {
+    transform-origin: 32px 32px;
+    transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .brand:hover svg path:nth-of-type(1) { transform: rotate(-3deg); }
+  .brand:hover svg path:nth-of-type(2) { transform: rotate(3deg); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .brand:hover svg circle { animation: none; }
+    .brand:hover svg path:nth-of-type(1),
+    .brand:hover svg path:nth-of-type(2) { transform: none; }
+  }
+
+  /* ——————— Scene sections ——————— */
+  .scene {
+    position: relative;
+    width: 100%;
+    padding: 14vh 0;
+    border-top: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .scene:last-of-type { border-bottom: 1px solid var(--border); }
+  .scene[data-bg="deep"] { background: #07090d; }
+  .scene[data-bg="mid"]  { background: #0f1115; }
+  .scene[data-bg="side"] { background: #10141c; }
+
+  .scene-inner {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 0 48px;
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.85fr);
+    gap: 80px;
+    align-items: center;
+  }
+  .scene-flip .scene-inner {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.2fr);
+  }
+  .scene-flip .scene-viz { order: 2; }
+  .scene-flip .scene-copy { order: 1; }
+
+  .scene-viz {
+    position: relative;
+    width: 100%;
+    min-height: 400px;
+    font-family: "Fraunces", Georgia, serif;
+    color: var(--fg);
+  }
+
+  .scene-copy { max-width: 440px; }
+  .scene-num {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 5.4rem;
+    font-weight: 500;
+    font-variation-settings: "opsz" 144;
+    color: transparent;
+    -webkit-text-stroke: 1px rgba(124, 183, 255, 0.35);
+    line-height: 1;
+    margin: 0 0 4px;
+    letter-spacing: -0.03em;
+  }
+  .scene-eyebrow {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 18px;
+    font-family: "Geist Mono", monospace;
+  }
+  .scene-title {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: clamp(1.9rem, 3vw, 2.6rem);
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.015em;
+    margin: 0 0 20px;
+    color: var(--fg);
+    font-variation-settings: "opsz" 96;
+  }
+  .scene-title em { font-style: italic; color: var(--accent); font-weight: 500; }
+  .scene-body {
+    color: var(--muted);
+    font-size: 1.02rem;
+    line-height: 1.65;
+    margin: 0;
+  }
+  .scene-body strong { color: var(--fg); font-weight: 500; }
+
+  /* Scroll-triggered entry */
+  .scene .scene-viz, .scene .scene-copy {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 1s cubic-bezier(0.2, 0.6, 0.2, 1),
+                transform 1s cubic-bezier(0.2, 0.6, 0.2, 1);
+  }
+  .scene.is-visible .scene-viz { opacity: 1; transform: none; transition-delay: 0.05s; }
+  .scene.is-visible .scene-copy { opacity: 1; transform: none; transition-delay: 0.22s; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scene .scene-viz, .scene .scene-copy { opacity: 1; transform: none; transition: none; }
+  }
+
+  @media (max-width: 860px) {
+    .scene { padding: 10vh 0; }
+    .scene-inner {
+      grid-template-columns: 1fr;
+      gap: 48px;
+      padding: 0 24px;
+    }
+    .scene-flip .scene-inner { grid-template-columns: 1fr; }
+    .scene-flip .scene-viz { order: 1; }
+    .scene-flip .scene-copy { order: 2; }
+    .scene-viz { aspect-ratio: 4 / 3; max-height: 60vh; }
+    .scene-copy { max-width: none; }
+    .scene-num { font-size: 3.8rem; }
+  }
+
+  /* ——————— Scene viz canvases (per-block abstract 3D) ——————— */
+  .scene-viz {
+    aspect-ratio: 1 / 1;
+    background: radial-gradient(ellipse 60% 50% at 50% 50%, rgba(16, 20, 28, 0.8), rgba(6, 8, 12, 1));
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .scene-viz .scene-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  @media (max-width: 860px) {
+    .scene-viz { aspect-ratio: 4 / 3; }
+  }
+
+  /* ——————— The Beam — cathartic WebGL spotlight ——————— */
+  .scene-beam {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    min-height: 640px;
+    max-height: 960px;
+    background: #05070a;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    cursor: crosshair;
+  }
+  .scene-beam .beam-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    z-index: 1;
+  }
+  .scene-beam .beam-overlay {
+    position: relative;
+    z-index: 2;
+    text-align: center;
+    padding: 0 32px;
+    max-width: 920px;
+    pointer-events: none;
+  }
+  .scene-beam .beam-kicker {
+    font-family: "Geist Mono", monospace;
+    font-size: 0.76rem;
+    letter-spacing: 0.22em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin: 0 0 28px;
+    opacity: 0.85;
+  }
+  .scene-beam .beam-title {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: clamp(2.2rem, 5.2vw, 4.6rem);
+    font-weight: 500;
+    line-height: 1.06;
+    letter-spacing: -0.02em;
+    margin: 0 0 42px;
+    color: #f4f7fb;
+    font-variation-settings: "opsz" 144;
+    text-shadow:
+      0 0 40px rgba(124, 183, 255, 0.18),
+      0 0 120px rgba(5, 7, 10, 0.85);
+  }
+  .scene-beam .beam-title em {
+    font-style: italic;
+    font-weight: 500;
+    color: var(--accent);
+    background: linear-gradient(180deg, #7cb7ff 0%, #a8ceff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .scene-beam .beam-cta {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 30px;
+    border: 1px solid rgba(124, 183, 255, 0.45);
+    border-radius: 999px;
+    color: #f4f7fb;
+    text-decoration: none;
+    font-family: "Geist Mono", monospace;
+    font-size: 0.84rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    background: rgba(8, 11, 16, 0.55);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: border-color 0.35s ease, background 0.35s ease, transform 0.35s ease;
+  }
+  .scene-beam .beam-cta:hover {
+    border-color: var(--accent);
+    background: rgba(124, 183, 255, 0.1);
+    transform: translateY(-1px);
+  }
+  .scene-beam .beam-cta .arrow { transition: transform 0.3s ease; }
+  .scene-beam .beam-cta:hover .arrow { transform: translateX(4px); }
+  .scene-beam .beam-hint {
+    margin: 54px 0 0;
+    font-family: "Geist Mono", monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    opacity: 0.55;
+  }
+  @media (hover: none) {
+    .scene-beam .beam-hint::before { content: 'Move your finger — '; }
+    .scene-beam .beam-hint { font-size: 0; }
+    .scene-beam .beam-hint::before { font-size: 0.7rem; }
+  }
+  @media (max-width: 540px) {
+    .scene-beam { height: 92vh; min-height: 560px; }
+    .scene-beam .beam-title { font-size: clamp(1.9rem, 8vw, 3rem); margin-bottom: 32px; }
+  }
+
+  /* ——— Hero parallax + stats count-up ——— */
+  h1 .h1-line { display: inline-block; will-change: transform; transition: transform 0.08s linear; }
+  .stat-grid .stat .n { transition: color 0.4s ease; }
+
+  @media (prefers-reduced-motion: reduce) {
+    h1 .h1-line { transition: none; transform: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap hero-wrap">
+
+  <header class="hero">
+    <a href="#" class="brand">
+      <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M 51.32 26.82 A 20 20 0 0 1 12.68 26.82" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+        <path d="M 12.68 37.18 A 20 20 0 0 0 51.32 37.18" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+        <circle cx="32" cy="32" r="5" fill="currentColor"/>
+      </svg>
+      <span class="wordmark">Spotlight</span>
+    </a>
+    <h1><span class="h1-line h1-line-1">You lead the investigation.</span><br><span class="h1-line h1-line-2 accent">Spotlight does the research.</span></h1>
+    <p class="tagline">
+      Your lead. Your judgment. Verified findings, independent fact-checking, a vault that grows with you.
+    </p>
+    <div class="cta-row">
+      <a href="setup.html" class="cta">Install Spotlight →</a>
+      <a href="https://github.com/buriedsignals/spotlight" class="secondary" target="_blank">GitHub</a>
+    </div>
+    <p style="margin: 18px 0 0; font-size: 0.88rem; color: var(--muted);">
+      Built by <a href="https://buriedsignals.com" target="_blank" style="color: var(--fg); text-decoration: none; border-bottom: 1px solid var(--border);">Buried Signals</a> — an investigative media and technology studio. <em>Investigations with AI. The tools to run your own.</em>
+    </p>
+  </header>
+
+</div><!-- /.hero-wrap -->
+
+<!-- ============ SCENES ============ -->
+
+<section class="scene" data-bg="deep" id="scene-1">
+  <div class="scene-inner">
+    <div class="scene-viz" id="scene-1-viz"></div>
+    <div class="scene-copy">
+      <p class="scene-num">01</p>
+      <p class="scene-eyebrow">Intake</p>
+      <h2 class="scene-title">You bring the lead. Spotlight <em>designs the method</em>.</h2>
+      <p class="scene-body">A URL, a name, a topic, a document. Spotlight drafts the methodology — angles, sources, tools, checks. <strong>You approve it before anything runs.</strong> No black box, no surprise spend.</p>
+    </div>
+  </div>
+</section>
+
+<section class="scene scene-flip" data-bg="mid" id="scene-2">
+  <div class="scene-inner">
+    <div class="scene-viz" id="scene-2-viz"></div>
+    <div class="scene-copy">
+      <p class="scene-num">02</p>
+      <p class="scene-eyebrow">Cycles</p>
+      <h2 class="scene-title">Every claim passes through <em>an independent check</em>.</h2>
+      <p class="scene-body">Research runs in cycles. After each one, a separate fact-checker interrogates the work. <strong>Nothing advances on one source or one agent's reasoning.</strong></p>
+    </div>
+  </div>
+</section>
+
+<section class="scene" data-bg="side" id="scene-3">
+  <div class="scene-inner">
+    <div class="scene-viz" id="scene-3-viz"></div>
+    <div class="scene-copy">
+      <p class="scene-num">03</p>
+      <p class="scene-eyebrow">Findings</p>
+      <h2 class="scene-title">Sourced. Stress-tested. <em>Ready to publish.</em></h2>
+      <p class="scene-body">Every finding ships anchored to primary documents, with two independent sources per claim, disputes flagged in the open, and affected perspectives present. <strong>You hand it to an editor, not to a verifier.</strong></p>
+    </div>
+  </div>
+</section>
+
+<section class="scene scene-flip" data-bg="mid" id="scene-4">
+  <div class="scene-inner">
+    <div class="scene-viz" id="scene-4-viz"></div>
+    <div class="scene-copy">
+      <p class="scene-num">04</p>
+      <p class="scene-eyebrow">Review</p>
+      <h2 class="scene-title">Challenge any claim. The investigator <em>goes back to work</em>.</h2>
+      <p class="scene-body">A review page made for editors. Click through findings, push back on a claim, request deeper verification. <strong>Your feedback re-triggers the investigation on specific points</strong> — not the whole case from scratch.</p>
+    </div>
+  </div>
+</section>
+
+<section class="scene" data-bg="deep" id="scene-5">
+  <div class="scene-inner">
+    <div class="scene-viz" id="scene-5-viz"></div>
+    <div class="scene-copy">
+      <p class="scene-num">05</p>
+      <p class="scene-eyebrow">Vault</p>
+      <h2 class="scene-title">Every investigation <em>makes the next one sharper</em>.</h2>
+      <p class="scene-body">Entities, sources, tools, and methodology stay cross-linked in your vault. When a new lead touches something you've already profiled, Spotlight knows. <strong>The AI remembers — you don't start from zero.</strong></p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ /SCENES ============ -->
+
+<div class="wrap">
+
+  <section>
+    <h2>What it integrates with</h2>
+    <ul class="clean">
+      <li><strong>Agent runtimes</strong> — local journalism fine-tune, Claude Code, Gemini, Codex, OpenCode (multi-provider).</li>
+      <li><strong>Web scraping, search, and evidence archiving</strong> — every source captured locally with chain of custody.</li>
+      <li><strong><a href="https://navigator.indicator.media/" target="_blank" style="color: var(--fg); border-bottom: 1px solid var(--border); text-decoration: none;">OSINT Navigator</a></strong> — 1,000+ curated OSINT tools with AI-powered lookup, surfaced live per task. Built by Indicator Media.</li>
+      <li><strong>Knowledge vault ingestion</strong> (Obsidian) — investigations become permanent, searchable memory.</li>
+      <li><strong>Monitoring feeds</strong> — conflict events, disaster alerts, global news, investigative outlets.</li>
+      <li><strong>Browser automation, narrative tracking, misinformation databases</strong> — plug-in integrations.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What's in the box</h2>
+    <div class="box-card">
+      <div class="stat-grid">
+        <div class="stat"><span class="n">11</span><div class="l">skills</div></div>
+        <div class="stat"><span class="n">2</span><div class="l">agents</div></div>
+        <div class="stat"><span class="n">5</span><div class="l">schemas</div></div>
+        <div class="stat"><span class="n">7+</span><div class="l">runtimes</div></div>
+      </div>
+      <p><strong>Runtime-agnostic.</strong> Same skills run across pi, Claude Code, Gemini, Codex, OpenCode, Hermes, Goose. Open-source ports of the battle-tested <code>buriedsignals/spotlight</code> and <code>osint</code> Claude Code plugins.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Attribution</h2>
+    <p class="attribution">
+      Built on methodology from <a href="https://www.bellingcat.com/" target="_blank">Bellingcat</a>, <a href="https://gijn.org/" target="_blank">GIJN</a>, Jim Shultz's <em>Follow the Money</em>, Jay Amditis's <a href="https://github.com/jamditis/claude-skills-journalism" target="_blank">claude-skills-journalism</a>, and investigative practice from OCCRP / ICIJ. Powered by open-source tooling across the agent ecosystem.
+    </p>
+  </section>
+
+</div><!-- /.wrap -->
+
+<!-- ============ THE BEAM ============ -->
+<section class="scene-beam" id="scene-beam" aria-label="Spotlight — reveal">
+  <canvas class="beam-canvas" aria-hidden="true"></canvas>
+  <div class="beam-overlay">
+    <p class="beam-kicker">— Reveal</p>
+    <h2 class="beam-title">Lead the investigation.<br>Spotlight reveals what's <em>buried</em>.</h2>
+    <a class="beam-cta" href="setup.html">Install Spotlight <span class="arrow">→</span></a>
+    <p class="beam-hint" aria-hidden="true">Move your cursor — uncover the record.</p>
+  </div>
+</section>
+<!-- ============ /THE BEAM ============ -->
+
+<div class="wrap">
+
+  <section>
+    <h2>From the team behind Spotlight</h2>
+    <div class="promo-grid">
+
+      <div class="promo-card">
+        <div class="eyebrow">Launching May 2026</div>
+        <h3>Pro Membership</h3>
+        <p class="subtitle">Investigations with AI. The tools to run your own.</p>
+        <ul class="features">
+          <li>Collaborative investigations — shared leads, data, and methodology</li>
+          <li>Live bootcamps, workshops, and events</li>
+          <li>Hosted Pro tier of the agent extensions — coJournalist, Navigator, Spotlight, DataHound</li>
+          <li>Investigation methodologies and AI techniques, in depth</li>
+        </ul>
+        <p class="price"><strong>From $25/mo</strong> · 400+ journalists already reading</p>
+        <div class="spacer"></div>
+        <form class="signup-form" id="signup-form">
+          <div class="row">
+            <input type="email" id="signup-email" placeholder="you@example.com" required autocomplete="email">
+            <button type="submit" id="signup-submit">Subscribe</button>
+          </div>
+          <div class="signup-error" id="signup-error" hidden></div>
+        </form>
+        <div class="signup-success" id="signup-success" hidden>
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor"/>
+          </svg>
+          <span>You're in. I'll ping you at launch.</span>
+        </div>
+      </div>
+
+      <div class="promo-card">
+        <h3>Consulting</h3>
+        <p class="subtitle">I train newsrooms to investigate with AI.</p>
+        <div class="service">
+          <strong>Workshops &amp; training</strong> — I run hands-on sessions where journalists investigate live stories with AI.
+          <span class="clients">Le Temps · MAZ Journalistenschule · Republik · 20 Minuten</span>
+        </div>
+        <div class="service">
+          <strong>Custom AI tooling</strong> — I build AI systems into your editorial workflow — archive search, source monitoring, research agents, whatever the newsroom needs.
+          <span class="clients">MediaStorm</span>
+        </div>
+        <div class="service">
+          <strong>Investigation collaborations</strong> — Visual production and AI pipelines paired with your field reporting.
+          <span class="clients">The New Humanitarian</span>
+        </div>
+        <div class="spacer"></div>
+        <div class="consulting-cta">
+          <a href="mailto:tom@buriedsignals.com?subject=Spotlight%20%E2%80%94%20Consulting" class="btn">Get in Touch →</a>
+          <a href="https://buriedsignals.com/consulting" target="_blank" class="link">See case studies →</a>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div>
+      Built by <a href="https://buriedsignals.com" target="_blank">Buried Signals</a>
+    </div>
+    <div class="links">
+      <a href="https://github.com/buriedsignals/spotlight" target="_blank">GitHub</a>
+      <a href="setup.html">Install</a>
+      <a href="https://github.com/buriedsignals/spotlight/blob/main/DISCLAIMER.md" target="_blank">Disclaimer</a>
+      <a href="mailto:buriedsignals@agentmail.com">Contact</a>
+    </div>
+  </footer>
+
+</div>
+<script>
+  // ——————————————————————————————————————————————
+  // Scenes — 5 abstract WebGL shaders, one per block
+  // Each is a fullscreen quad with a custom fragment shader
+  // ——————————————————————————————————————————————
+  (function shaderScenes() {
+    const VS = `
+      attribute vec2 aPos;
+      varying vec2 vUv;
+      void main() {
+        vUv = aPos * 0.5 + 0.5;
+        gl_Position = vec4(aPos, 0.0, 1.0);
+      }
+    `;
+
+    // Shared GLSL prelude — unified palette + helpers
+    const PRELUDE = `
+      precision highp float;
+      varying vec2 vUv;
+      uniform vec2  uResolution;
+      uniform float uTime;
+      uniform float uIntro;
+      uniform vec2  uCursor;
+
+      const vec3 BASE   = vec3(0.012, 0.017, 0.024);
+      const vec3 COOL   = vec3(0.486, 0.718, 1.000);
+      const vec3 BRIGHT = vec3(0.88, 0.94, 1.00);
+      const vec3 WARM   = vec3(1.0, 0.88, 0.72);
+
+      float hash21(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+      float grain(vec2 uv, float t) {
+        return (hash21(uv * 1000.0 + t * 60.0) - 0.5) * 0.020;
+      }
+    `;
+
+    // ——— Scene 01 — Method takes shape: radial growth from a seed ———
+    const FS1 = PRELUDE + `
+      void main() {
+        vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
+        vec2 uv = vUv * aspect;
+        vec2 seed = vec2(aspect.x * 0.5, 0.08);
+        vec2 p = uv - seed;
+        float dist = length(p);
+        float ang = atan(p.y, p.x);
+
+        float grow = smoothstep(uIntro * 0.95 + 0.08, uIntro * 0.95 - 0.18, dist);
+
+        // Harmonic rays — frequency grows with distance (branches split)
+        float rays = sin(ang * 9.0 + sin(dist * 3.0) * 1.5) * 0.5 + 0.5;
+        rays *= sin(ang * 4.0 - uTime * 0.08 + dist * 2.0) * 0.4 + 0.6;
+        rays = pow(rays, 1.4);
+
+        // Upper hemisphere mask + side falloff
+        float hemi = smoothstep(-0.05, 0.25, p.y);
+        float sideFade = 1.0 - smoothstep(0.85, 1.2, abs(p.x - aspect.x * 0.5));
+
+        float intensity = rays * grow * hemi * sideFade;
+        intensity *= 1.0 + 0.05 * sin(uTime * 0.6);
+
+        // Seed glow (anchor)
+        float seedGlow = exp(-dist * dist * 160.0) * (0.55 + 0.35 * sin(uTime * 1.6));
+        float seedHalo = exp(-dist * dist * 10.0) * 0.15;
+
+        // Color: warm near seed, cool at tips
+        vec3 tint = mix(BRIGHT, COOL, smoothstep(0.1, 0.75, dist));
+        vec3 col = BASE + intensity * tint * 0.75;
+        col += seedGlow * BRIGHT;
+        col += seedHalo * WARM * 0.6;
+
+        col += grain(vUv, uTime);
+        float vig = smoothstep(1.25, 0.3, distance(vUv, vec2(0.5)));
+        col *= 0.55 + 0.45 * vig;
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `;
+
+    // ——— Scene 02 — Two wave sources: interference / cycle ———
+    const FS2 = PRELUDE + `
+      void main() {
+        vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
+        vec2 p = vUv * aspect;
+
+        vec2 src1 = vec2(aspect.x * 0.30, 0.50);
+        vec2 src2 = vec2(aspect.x * 0.70, 0.50);
+
+        float d1 = distance(p, src1);
+        float d2 = distance(p, src2);
+
+        // Two wave fields, opposite phase
+        float w1 = sin(d1 * 38.0 - uTime * 2.2);
+        float w2 = sin(d2 * 38.0 - uTime * 2.2 + 3.14159);
+
+        // Interference (wave sum)
+        float interf = (w1 + w2) * 0.5;
+
+        // Amplitude envelope — fade with distance from either source
+        float amp = max(exp(-d1 * d1 * 3.2), exp(-d2 * d2 * 3.2));
+        amp = max(amp, (exp(-d1 * d1 * 0.9) + exp(-d2 * d2 * 0.9)) * 0.15);
+
+        float waves = abs(interf) * amp;
+
+        // Source nodes — calm pulse
+        float p1 = 0.92 + 0.08 * sin(uTime * 1.3);
+        float p2 = 0.92 + 0.08 * sin(uTime * 1.3 + 3.14159);
+        float src1Glow = exp(-d1 * d1 * 200.0) * p1;
+        float src2Glow = exp(-d2 * d2 * 200.0) * p2;
+        float src1Halo = exp(-d1 * d1 * 16.0) * 0.12;
+        float src2Halo = exp(-d2 * d2 * 16.0) * 0.12;
+
+        // Center interference zone highlighted
+        float center = smoothstep(0.9, 0.0, abs(p.x - aspect.x * 0.5));
+
+        float intensity = waves * uIntro;
+
+        vec3 col = BASE;
+        col += intensity * COOL * 0.55;
+        col += src1Glow * BRIGHT;
+        col += src2Glow * BRIGHT;
+        col += (src1Halo + src2Halo) * COOL;
+        col += max(w1, w2) * 0.02 * center * uIntro;
+
+        col += grain(vUv, uTime);
+        float vig = smoothstep(1.3, 0.3, distance(vUv, vec2(0.5)));
+        col *= 0.55 + 0.45 * vig;
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `;
+
+    // ——— Scene 03 — The anchor: tension lines radiating to the core ———
+    const FS3 = PRELUDE + `
+      // SDF for an anchored line segment (from center to dir * length)
+      float lineGlow(vec2 p, vec2 c, float ang, float len, float width) {
+        vec2 dir = vec2(cos(ang), sin(ang));
+        vec2 rel = p - c;
+        float along = dot(rel, dir);
+        float perp  = abs(dot(rel, vec2(-dir.y, dir.x)));
+        float mask  = step(0.0, along) * step(along, len);
+        return exp(-perp * perp / (width * width)) * mask;
+      }
+      void main() {
+        vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
+        vec2 p = vUv * aspect;
+        vec2 center = vec2(aspect.x * 0.5, 0.5);
+        float dc = distance(p, center);
+
+        // 5 tension lines at fixed angles
+        float lines = 0.0;
+        for (int i = 0; i < 5; i++) {
+          float fi = float(i);
+          float baseAng = fi * 1.2566 + 0.35;  // 72° apart
+          float flicker = 1.0;
+          float width = 0.004;
+          // i == 2 is the disputed line — trembles
+          if (i == 2) {
+            baseAng += sin(uTime * 14.0) * 0.012;
+            flicker = 0.55 + 0.45 * sin(uTime * 11.0) * sin(uTime * 3.7);
+            width = 0.0055;
+          }
+          lines += lineGlow(p, center, baseAng, 0.58, width) * flicker;
+        }
+
+        // Central mass
+        float core  = exp(-dc * dc * 85.0);
+        float halo  = exp(-dc * dc * 7.0) * 0.18;
+        float ring  = smoothstep(0.06, 0.055, dc) - smoothstep(0.08, 0.075, dc);
+
+        vec3 col = BASE;
+        col += core * BRIGHT * (0.85 + 0.15 * sin(uTime * 1.2));
+        col += halo * COOL;
+        col += ring * COOL * 0.6;
+
+        // Disputed line gets warm tint; others cool
+        // (approximate — recompute i==2 separately)
+        float disputed = lineGlow(p, center,
+          2.0 * 1.2566 + 0.35 + sin(uTime * 14.0) * 0.012,
+          0.58, 0.0055
+        ) * (0.55 + 0.45 * sin(uTime * 11.0) * sin(uTime * 3.7));
+
+        col += (lines - disputed) * COOL * 0.7 * uIntro;
+        col += disputed * WARM * 0.75 * uIntro;
+
+        col += grain(vUv, uTime);
+        float vig = smoothstep(1.2, 0.25, distance(vUv, vec2(0.5)));
+        col *= 0.55 + 0.45 * vig;
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `;
+
+    // ——— Scene 04 — Reader's touch: cursor-driven ripple ———
+    const FS4 = PRELUDE + `
+      void main() {
+        vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
+        vec2 p = vUv * aspect;
+        vec2 c = uCursor * aspect;
+
+        float dc = distance(p, c);
+
+        // Cursor ripple — outgoing waves from cursor
+        float ripple = sin(dc * 48.0 - uTime * 5.0) * exp(-dc * dc * 7.0);
+
+        // Subtle ambient field — noise-modulated grid
+        vec2 gUv = floor(vUv * 70.0);
+        float nField = (hash21(gUv + 0.3) - 0.5) * 0.18;
+
+        // Cursor presence glow
+        float cursorGlow = exp(-dc * dc * 26.0);
+        float cursorHalo = exp(-dc * dc * 2.8) * 0.1;
+
+        // Central gradient so the field isn't empty at first
+        float baseField = (1.0 - smoothstep(0.0, 1.3, dc)) * 0.08;
+
+        float intensity = (abs(ripple) * 0.45 + cursorGlow * 0.7 + cursorHalo + baseField + nField) * uIntro;
+
+        vec3 col = BASE;
+        col += intensity * COOL * 0.9;
+        col += cursorGlow * BRIGHT * 0.4;
+
+        col += grain(vUv, uTime);
+        float vig = smoothstep(1.3, 0.25, distance(vUv, vec2(0.5)));
+        col *= 0.55 + 0.45 * vig;
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `;
+
+    // ——— Scene 05 — Deep memory: constellation with parallax + pulses ———
+    const FS5 = PRELUDE + `
+      float star(vec2 uv, float scale, float speed, float threshold, float t) {
+        vec2 uvs = uv * scale + vec2(t * speed, sin(t * speed * 0.3) * 0.2);
+        vec2 g = floor(uvs);
+        vec2 f = fract(uvs) - 0.5;
+        float h = hash21(g);
+        if (h < threshold) return 0.0;
+        vec2 pos = vec2(hash21(g + 2.7), hash21(g + 7.1)) - 0.5;
+        pos *= 0.35;
+        float d = length(f - pos);
+        float core = exp(-d * d * 650.0) * pow((h - threshold) / (1.0 - threshold), 1.5);
+        float halo = exp(-d * d * 40.0) * 0.1 * (h - threshold);
+        // Pulse for the very brightest
+        float pulse = h > 0.95 ? 1.0 + 0.8 * sin(t * 1.3 + h * 40.0) : 1.0;
+        return (core + halo) * pulse;
+      }
+      void main() {
+        vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
+        vec2 uv = vUv * aspect;
+
+        // 3 layers at different scales (parallax depth)
+        float layer1 = star(uv, 12.0, 0.010, 0.72, uTime);
+        float layer2 = star(uv + vec2(1.7, 0.9), 22.0, 0.025, 0.78, uTime);
+        float layer3 = star(uv + vec2(3.1, 2.3), 38.0, 0.045, 0.85, uTime);
+
+        vec3 col = BASE;
+        col += layer1 * COOL * 0.95 * uIntro;
+        col += layer2 * COOL * 0.75 * uIntro;
+        col += layer3 * BRIGHT * 0.5 * uIntro;
+
+        // Dim accent haze
+        float haze = (sin(uv.x * 3.0 + uTime * 0.1) * 0.5 + 0.5) *
+                     (cos(uv.y * 2.0 - uTime * 0.08) * 0.5 + 0.5) * 0.03;
+        col += haze * COOL;
+
+        col += grain(vUv, uTime);
+        float vig = smoothstep(1.35, 0.3, distance(vUv, vec2(0.5)));
+        col *= 0.55 + 0.45 * vig;
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `;
+
+    // ——— Shared framework ———
+    function makeShaderScene(container, fragmentSrc, opts) {
+      if (!container) return;
+      opts = opts || {};
+
+      container.innerHTML = '';
+      const canvas = document.createElement('canvas');
+      canvas.className = 'scene-canvas';
+      canvas.setAttribute('aria-hidden', 'true');
+      container.appendChild(canvas);
+
+      const gl = canvas.getContext('webgl', { antialias: false, alpha: false, premultipliedAlpha: false });
+      if (!gl) {
+        container.style.background = 'radial-gradient(ellipse 55% 45% at 50% 50%, rgba(26,36,64,0.5), rgba(7,9,13,0.9))';
+        return;
+      }
+
+      function compile(type, src) {
+        const sh = gl.createShader(type);
+        gl.shaderSource(sh, src);
+        gl.compileShader(sh);
+        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+          console.error('shader:', gl.getShaderInfoLog(sh), src.slice(0, 200));
+          return null;
+        }
+        return sh;
+      }
+      const vs = compile(gl.VERTEX_SHADER, VS);
+      const fs = compile(gl.FRAGMENT_SHADER, fragmentSrc);
+      if (!vs || !fs) return;
+      const prog = gl.createProgram();
+      gl.attachShader(prog, vs); gl.attachShader(prog, fs);
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+        console.error('link:', gl.getProgramInfoLog(prog));
+        return;
+      }
+      gl.useProgram(prog);
+
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+      const aPos = gl.getAttribLocation(prog, 'aPos');
+      gl.enableVertexAttribArray(aPos);
+      gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+      const uRes    = gl.getUniformLocation(prog, 'uResolution');
+      const uTime   = gl.getUniformLocation(prog, 'uTime');
+      const uIntro  = gl.getUniformLocation(prog, 'uIntro');
+      const uCursor = gl.getUniformLocation(prog, 'uCursor');
+
+      const reduced = window.matchMedia &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      const cursor = { x: 0.5, y: 0.5, tx: 0.5, ty: 0.5 };
+      if (opts.cursor) {
+        container.addEventListener('pointermove', (e) => {
+          const rect = canvas.getBoundingClientRect();
+          cursor.tx = (e.clientX - rect.left) / rect.width;
+          cursor.ty = 1.0 - (e.clientY - rect.top) / rect.height;
+        });
+        container.addEventListener('pointerleave', () => {
+          cursor.tx = 0.5; cursor.ty = 0.5;
+        });
+      }
+
+      function resize() {
+        const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+        const w = Math.floor(canvas.clientWidth * dpr);
+        const h = Math.floor(canvas.clientHeight * dpr);
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w; canvas.height = h;
+          gl.viewport(0, 0, w, h);
+        }
+      }
+
+      let enterTime = 0;
+      let running = false;
+      let rafId = null;
+      const INTRO_S = opts.introDuration || 2.2;
+
+      function frame() {
+        if (!running) return;
+        resize();
+        const now = performance.now();
+        const elapsed = (now - enterTime) / 1000;
+        const intro = reduced ? 1.0 : Math.min(elapsed / INTRO_S, 1.0);
+
+        cursor.x += (cursor.tx - cursor.x) * 0.12;
+        cursor.y += (cursor.ty - cursor.y) * 0.12;
+
+        gl.uniform2f(uRes, canvas.width, canvas.height);
+        gl.uniform1f(uTime, elapsed);
+        gl.uniform1f(uIntro, intro);
+        gl.uniform2f(uCursor, cursor.x, cursor.y);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        rafId = requestAnimationFrame(frame);
+      }
+
+      const section = container.closest('.scene') || container;
+      if ('IntersectionObserver' in window) {
+        const io = new IntersectionObserver((entries) => {
+          entries.forEach(e => {
+            if (e.isIntersecting && !running) {
+              enterTime = performance.now();
+              running = true;
+              frame();
+              section.classList.add('is-visible');
+            } else if (!e.isIntersecting && running) {
+              running = false;
+              if (rafId) cancelAnimationFrame(rafId);
+            }
+          });
+        }, { threshold: 0.08 });
+        io.observe(section);
+      } else {
+        enterTime = performance.now();
+        running = true;
+        frame();
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          running = false;
+          if (rafId) cancelAnimationFrame(rafId);
+        }
+      });
+    }
+
+    makeShaderScene(document.getElementById('scene-1-viz'), FS1);
+    makeShaderScene(document.getElementById('scene-2-viz'), FS2);
+    makeShaderScene(document.getElementById('scene-3-viz'), FS3);
+    makeShaderScene(document.getElementById('scene-4-viz'), FS4, { cursor: true });
+    makeShaderScene(document.getElementById('scene-5-viz'), FS5);
+  })();
+</script>
+<script>
+  // ——————————————————————————————————————————————
+  // Top-5 enhancements: hero parallax, stats count-up,
+  // scene 3 ref→footnote line, scene 5 word connections
+  // (scene 4 queue counter is wired in scenes())
+  // ——————————————————————————————————————————————
+  (function enhance() {
+    const reduced = window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // ——— 1. Hero parallax — two headline lines drift opposite to cursor
+    (function heroParallax() {
+      if (reduced) return;
+      const hero = document.querySelector('header.hero');
+      const l1 = document.querySelector('.h1-line-1');
+      const l2 = document.querySelector('.h1-line-2');
+      if (!hero || !l1 || !l2) return;
+
+      const AMP = 10; // px max drift
+      let tx = 0, ty = 0, cx = 0, cy = 0, rafPending = false;
+
+      function onMove(e) {
+        const rect = hero.getBoundingClientRect();
+        const px = (e.clientX - rect.left) / rect.width - 0.5; // -0.5 .. 0.5
+        const py = (e.clientY - rect.top) / rect.height - 0.5;
+        tx = px * AMP;
+        ty = py * AMP * 0.5;
+        if (!rafPending) {
+          rafPending = true;
+          requestAnimationFrame(tick);
+        }
+      }
+      function tick() {
+        cx += (tx - cx) * 0.12;
+        cy += (ty - cy) * 0.12;
+        l1.style.transform = `translate3d(${cx.toFixed(2)}px, ${cy.toFixed(2)}px, 0)`;
+        l2.style.transform = `translate3d(${(-cx).toFixed(2)}px, ${(-cy).toFixed(2)}px, 0)`;
+        if (Math.abs(tx - cx) > 0.05 || Math.abs(ty - cy) > 0.05) {
+          requestAnimationFrame(tick);
+        } else {
+          rafPending = false;
+        }
+      }
+      hero.addEventListener('pointermove', onMove);
+      hero.addEventListener('pointerleave', () => { tx = 0; ty = 0; if (!rafPending) { rafPending = true; requestAnimationFrame(tick); } });
+    })();
+
+    // ——— 2. Stats count-up — 11, 2, 5, 7+ animate from 0 on entry
+    (function statsCountUp() {
+      const stats = document.querySelectorAll('.stat-grid .stat .n');
+      if (!stats.length) return;
+
+      function animate(el) {
+        if (el.dataset.done) return;
+        el.dataset.done = '1';
+        const raw = el.textContent.trim();
+        const suffix = raw.endsWith('+') ? '+' : '';
+        const target = parseInt(raw, 10);
+        if (!Number.isFinite(target)) return;
+        const DURATION = 1100;
+        const start = performance.now();
+        const startValue = 0;
+        el.textContent = '0' + suffix;
+        function step(now) {
+          const t = Math.min(1, (now - start) / DURATION);
+          const eased = 1 - Math.pow(1 - t, 3);
+          const val = Math.round(startValue + (target - startValue) * eased);
+          el.textContent = val + (t >= 1 ? suffix : '');
+          if (t < 1) requestAnimationFrame(step);
+        }
+        if (reduced) {
+          el.textContent = target + suffix;
+        } else {
+          requestAnimationFrame(step);
+        }
+      }
+
+      const grid = document.querySelector('.stat-grid');
+      if ('IntersectionObserver' in window && grid) {
+        const io = new IntersectionObserver((entries) => {
+          entries.forEach(e => {
+            if (e.isIntersecting) stats.forEach(animate);
+          });
+        }, { threshold: 0.3 });
+        io.observe(grid);
+      } else {
+        stats.forEach(animate);
+      }
+    })();
+  })();
+</script>
+<script>
+  // ——————————————————————————————————————————————
+  // The Beam — WebGL spotlight reveal on a field of fragments
+  // ——————————————————————————————————————————————
+  (function initBeam() {
+    const section = document.getElementById('scene-beam');
+    if (!section) return;
+    const canvas = section.querySelector('.beam-canvas');
+    const gl = canvas.getContext('webgl', { antialias: false, alpha: false, premultipliedAlpha: false });
+
+    if (!gl) {
+      section.style.background = 'radial-gradient(ellipse 55% 40% at 50% 50%, #1a2440 0%, #05070a 70%)';
+      return;
+    }
+
+    // ——— 1. Build the fragments texture from Canvas2D ———
+    const FW = 1920, FH = 1080;
+    const fragmentsCanvas = document.createElement('canvas');
+    fragmentsCanvas.width = FW;
+    fragmentsCanvas.height = FH;
+    const fctx = fragmentsCanvas.getContext('2d');
+
+    const entities = [
+      'Delta Holdings', 'Shell Co. Maltar', 'J. Montero', 'Paradise Papers',
+      'Beneficial owner', 'Nominee of record', 'Port of Dakar', 'Cyprus trust',
+      'Offshore chain', 'Panama filing', 'Darfur case', 'Mali exports',
+      'Valletta mailbox', 'wire $4.2M', 'sanctions window', 'Geneva registry'
+    ];
+    const mono = [
+      'OFAC · 2019', 'CH-660.1.923.004', 'Q3 · 2023', 'MT → RU',
+      'wire log #48221', 'ICIJ 2017', 'UN S/2019/358', 'doc·ref 082-A',
+      '2021-08-17', 'case 047 · closed', 'witness · withheld', 'ledger · redacted',
+      '§4 · contested', 'invoice 19/204', 'Tbilisi branch', 'audit · 2022'
+    ];
+
+    function seededRand(seed) {
+      let s = seed;
+      return () => {
+        s = (s * 9301 + 49297) % 233280;
+        return s / 233280;
+      };
+    }
+    const rnd = seededRand(42);
+
+    function place(list, fontFamily, sizes, count, minOp, maxOp) {
+      for (let i = 0; i < count; i++) {
+        const text = list[Math.floor(rnd() * list.length)];
+        const size = sizes[Math.floor(rnd() * sizes.length)];
+        const x = 40 + rnd() * (FW - 80);
+        const y = 80 + rnd() * (FH - 140);
+        const rot = (rnd() - 0.5) * 0.09;
+        const op = minOp + rnd() * (maxOp - minOp);
+        fctx.save();
+        fctx.translate(x, y);
+        fctx.rotate(rot);
+        fctx.font = `${fontFamily === 'Fraunces' ? '500' : '400'} ${size}px "${fontFamily}", Georgia, serif`;
+        fctx.fillStyle = `rgba(232, 236, 241, ${op.toFixed(3)})`;
+        fctx.textBaseline = 'middle';
+        fctx.fillText(text, 0, 0);
+        fctx.restore();
+      }
+    }
+
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    function buildTexture() {
+      // Reset seeded rand so the layout is stable across rebuilds
+      const r2 = seededRand(42);
+      // temporarily swap rnd — do it by redefining per-call
+      // (here we just use the module-level rnd; rebuilds will produce slight variation which is fine)
+      fctx.fillStyle = '#000';
+      fctx.fillRect(0, 0, FW, FH);
+      place(entities, 'Fraunces', [40, 48, 56, 64, 72, 84], 22, 0.55, 0.95);
+      place(entities, 'Fraunces', [28, 32, 36], 18, 0.25, 0.55);
+      place(mono,     'Geist Mono', [18, 20, 22, 24, 28], 32, 0.35, 0.75);
+      place(mono,     'Geist Mono', [14, 16], 24, 0.2, 0.45);
+
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, fragmentsCanvas);
+    }
+
+    buildTexture();
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => buildTexture());
+    }
+
+    // ——— 2. Shaders ———
+    const vs = `
+      attribute vec2 aPos;
+      varying vec2 vUv;
+      void main() {
+        vUv = aPos * 0.5 + 0.5;
+        gl_Position = vec4(aPos, 0.0, 1.0);
+      }
+    `;
+    const fs = `
+      precision highp float;
+      varying vec2 vUv;
+      uniform vec2 uLight;
+      uniform vec2 uResolution;
+      uniform float uTime;
+      uniform sampler2D uFragments;
+
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+
+      void main() {
+        vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
+        vec2 p = vUv * aspect;
+        vec2 l = uLight * aspect;
+        float d = distance(p, l);
+
+        float radius = 0.42;
+        float intensity = smoothstep(radius, radius * 0.04, d);
+        intensity *= 1.0 + 0.05 * sin(uTime * 1.1);
+
+        float halo = smoothstep(radius * 2.2, 0.0, d) * 0.10;
+
+        vec2 sampleUv = vUv + vec2(0.0, sin(uTime * 0.12) * 0.003);
+        vec4 frag = texture2D(uFragments, sampleUv);
+
+        vec3 baseColor = vec3(0.015, 0.019, 0.026);
+
+        vec3 coreCool = vec3(0.78, 0.89, 1.0);
+        vec3 warmRim  = vec3(1.0, 0.88, 0.72);
+        float coreVsRim = smoothstep(radius * 0.5, radius, d);
+        vec3 lightColor = mix(coreCool, warmRim, coreVsRim * 0.55);
+
+        vec3 revealed = frag.rgb * lightColor * intensity * 1.8;
+        vec3 ambient = vec3(0.35, 0.54, 0.85) * halo;
+
+        float g = (hash(gl_FragCoord.xy + uTime * 60.0) - 0.5) * 0.025;
+
+        vec3 color = baseColor + revealed + ambient + g;
+
+        float vig = smoothstep(1.35, 0.25, distance(vUv, vec2(0.5)));
+        color *= 0.55 + 0.45 * vig;
+
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `;
+
+    function compile(type, src) {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+        console.error('Beam shader:', gl.getShaderInfoLog(sh));
+        return null;
+      }
+      return sh;
+    }
+
+    const vsh = compile(gl.VERTEX_SHADER, vs);
+    const fsh = compile(gl.FRAGMENT_SHADER, fs);
+    if (!vsh || !fsh) return;
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vsh);
+    gl.attachShader(prog, fsh);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      console.error('Beam link:', gl.getProgramInfoLog(prog));
+      return;
+    }
+    gl.useProgram(prog);
+
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+    const aPos = gl.getAttribLocation(prog, 'aPos');
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+    const uLight = gl.getUniformLocation(prog, 'uLight');
+    const uRes   = gl.getUniformLocation(prog, 'uResolution');
+    const uTime  = gl.getUniformLocation(prog, 'uTime');
+    const uFrag  = gl.getUniformLocation(prog, 'uFragments');
+    gl.uniform1i(uFrag, 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+
+    // ——— 3. Interaction + animation ———
+    const light = { x: 0.5, y: 0.5 };
+    const target = { x: 0.5, y: 0.5 };
+    let lastInteract = 0;
+
+    function setTargetFromPointer(px, py) {
+      const rect = canvas.getBoundingClientRect();
+      target.x = (px - rect.left) / rect.width;
+      target.y = 1.0 - (py - rect.top) / rect.height;
+      lastInteract = performance.now();
+    }
+
+    section.addEventListener('pointermove', (e) => setTargetFromPointer(e.clientX, e.clientY));
+    section.addEventListener('touchmove', (e) => {
+      const t = e.touches[0];
+      if (t) setTargetFromPointer(t.clientX, t.clientY);
+    }, { passive: true });
+
+    function resize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      const w = Math.floor(canvas.clientWidth * dpr);
+      const h = Math.floor(canvas.clientHeight * dpr);
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+        gl.viewport(0, 0, w, h);
+      }
+    }
+
+    const reduced = window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const start = performance.now();
+    let running = false;
+    let rafId = null;
+
+    function frame() {
+      if (!running) return;
+      resize();
+      const t = (performance.now() - start) / 1000;
+
+      const idleMs = performance.now() - lastInteract;
+      if (idleMs > 2500 || lastInteract === 0) {
+        const s = t * 0.35;
+        target.x = 0.5 + 0.30 * Math.cos(s);
+        target.y = 0.5 + 0.16 * Math.sin(s * 1.3);
+      }
+
+      const ease = reduced ? 1.0 : 0.085;
+      light.x += (target.x - light.x) * ease;
+      light.y += (target.y - light.y) * ease;
+
+      gl.uniform2f(uLight, light.x, light.y);
+      gl.uniform2f(uRes, canvas.width, canvas.height);
+      gl.uniform1f(uTime, t);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+      rafId = requestAnimationFrame(frame);
+    }
+
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach(e => {
+          if (e.isIntersecting && !running) {
+            running = true;
+            frame();
+          } else if (!e.isIntersecting && running) {
+            running = false;
+            if (rafId) cancelAnimationFrame(rafId);
+          }
+        });
+      }, { threshold: 0.05 });
+      io.observe(section);
+    } else {
+      running = true;
+      frame();
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        running = false;
+        if (rafId) cancelAnimationFrame(rafId);
+      } else if ('IntersectionObserver' in window) {
+        // rely on observer to re-trigger
+      } else if (!running) {
+        running = true;
+        frame();
+      }
+    });
+  })();
+</script>
+<script>
+  const NEWSLETTER_ENDPOINT = '/api/newsletter/subscribe';
+
+  const form = document.getElementById('signup-form');
+  const emailInput = document.getElementById('signup-email');
+  const submitBtn = document.getElementById('signup-submit');
+  const errorEl = document.getElementById('signup-error');
+  const successEl = document.getElementById('signup-success');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = emailInput.value.trim();
+    if (!email) return;
+
+    submitBtn.disabled = true;
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = 'Subscribing…';
+    errorEl.hidden = true;
+
+    try {
+      const response = await fetch(NEWSLETTER_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, newsletters: ['buried_signals'] }),
+      });
+
+      if (response.ok) {
+        form.hidden = true;
+        successEl.hidden = false;
+      } else {
+        let message = 'Something went wrong. Please try again.';
+        try {
+          const data = await response.json();
+          if (data && data.detail) message = data.detail;
+        } catch (_) {}
+        errorEl.textContent = message;
+        errorEl.hidden = false;
+      }
+    } catch (err) {
+      errorEl.textContent = 'Something went wrong. Please try again.';
+      errorEl.hidden = false;
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalText;
+    }
+  });
+</script>
+</body>
+</html>

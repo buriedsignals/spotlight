@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>proto-session-4 — terrain + filaments</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #05070b; overflow: hidden; }
+  body { font-family: ui-monospace, Menlo, monospace; color: #cfd6df; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .hud {
+    position: fixed; left: 14px; bottom: 12px;
+    font-size: 11px; letter-spacing: 0.04em; color: #6b7280;
+    pointer-events: none; user-select: none;
+  }
+  .hud kbd {
+    display: inline-block; padding: 1px 6px; border: 1px solid #2a2f3a;
+    border-radius: 3px; color: #9aa3af; background: #0f1115;
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="hud">monolith · <kbd>drag</kbd> rotate · <kbd>right-drag</kbd> pan · <kbd>wheel</kbd> zoom</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

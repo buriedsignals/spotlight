@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spotlight — OSINT investigation system for journalists</title>
+    <meta name="description" content="You lead the investigation. Spotlight does the research. Verified findings, independent fact-checking, a vault that grows with every case." />
+    <link rel="icon" type="image/svg+xml" href="../../assets/spotlight-mark.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..500&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+
+    <!-- WebGL canvas: fixed backdrop, full viewport. -->
+    <canvas id="stage" aria-hidden="true"></canvas>
+
+    <!-- Fixed brand header -->
+    <header class="top">
+      <a class="brand" href="#">
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M 51.32 26.82 A 20 20 0 0 1 12.68 26.82" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+          <path d="M 12.68 37.18 A 20 20 0 0 0 51.32 37.18" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+          <circle cx="32" cy="32" r="5" fill="currentColor"/>
+        </svg>
+        <span class="mark">Spotlight</span>
+      </a>
+      <span class="proto">Proto session-1 · Under &amp; over — arc 180°</span>
+    </header>
+
+    <!-- 5 acts × 100vh = 500vh of sticky scenographic scroll -->
+    <div class="scenography" id="scenography">
+
+      <!-- Plan 01 — Sous la surface : vue par en-dessous, empreintes + crosshairs -->
+      <section class="act act-1" data-act="1">
+        <span class="eyebrow tl">OSINT investigation system · for journalists</span>
+        <div class="corner bl">
+          <h1>Vous menez l'enquête.</h1>
+          <p class="byline">Par <a href="https://buriedsignals.com" target="_blank">Buried Signals</a> — studio d'enquête et de technologie. <em>Des enquêtes avec l'IA. Les outils pour en mener vous-même.</em></p>
+        </div>
+        <div class="corner br">
+          <p class="tag"><em>Spotlight fait la recherche.</em></p>
+          <p class="tag-sub">Votre piste. Votre jugement. Trouvailles sourcées, fact-check indépendant, un vault qui grandit.</p>
+          <div class="cta-row">
+            <a class="cta" href="../../setup.html">Install Spotlight →</a>
+            <a class="secondary" href="https://github.com/buriedsignals/spotlight" target="_blank">GitHub ↗</a>
+          </div>
+          <p class="hint">↳ scrollez — la caméra traverse, s'élève</p>
+        </div>
+      </section>
+
+      <!-- Plan 02 — Les filaments naissent : sol qui s'illumine sous les pieds -->
+      <section class="act act-2" data-act="2">
+        <div class="corner tl">
+          <div class="chap">§ 01 — La méthode se déploie</div>
+          <h2>Cinq gestes qui transforment une piste en trouvaille publiable.</h2>
+        </div>
+        <div class="corner br">
+          <ul class="claims">
+            <li><strong>Prend une piste</strong> — URL, nom, sujet, document — et dessine une méthodologie que vous approuvez avant tout lancement.</li>
+            <li><strong>Lance des cycles de recherche</strong> avec un fact-checker indépendant après chacun. Rien n'avance sur une seule source.</li>
+            <li><strong>Chaque trouvaille arrive sourcée et stress-testée</strong> — deux sources indépendantes par claim, disputes flaggées, perspectives concernées présentes.</li>
+            <li><strong>Page de review pour vous ou votre éditeur</strong> — challenge chaque claim, relance l'investigateur sur des points précis.</li>
+            <li><strong>Construit une base de connaissance vivante</strong> — entités, sources, méthodologie liées en croix dans votre vault.</li>
+          </ul>
+          <p class="hint">↳ la souris accélère la cartographie locale</p>
+        </div>
+      </section>
+
+      <!-- Plan 03 — Les particules s'envolent : paysage avec flux verticaux -->
+      <section class="act act-3" data-act="3">
+        <div class="corner tl">
+          <div class="chap">§ 02 — Intégrations · embarqué · fondations</div>
+          <h2>Branchable là où ça compte. Rigoureux là où il faut.</h2>
+          <div class="stats">
+            <div class="stat"><span class="n">11</span><span class="l">skills</span></div>
+            <div class="stat"><span class="n">2</span><span class="l">agents</span></div>
+            <div class="stat"><span class="n">5</span><span class="l">schemas</span></div>
+            <div class="stat"><span class="n">7+</span><span class="l">runtimes</span></div>
+          </div>
+        </div>
+        <div class="corner br">
+          <ul class="claims compact">
+            <li><strong>Runtimes agents</strong> — fine-tune journalisme local, Claude Code, Gemini, Codex, OpenCode.</li>
+            <li><strong>Scraping web · archivage des preuves</strong> — chaque source capturée localement avec chain of custody.</li>
+            <li><strong><a href="https://navigator.indicator.media/" target="_blank">OSINT Navigator</a></strong> — 1 000+ outils OSINT curés, remontés à la tâche.</li>
+            <li><strong>Ingestion vault (Obsidian)</strong> — les enquêtes deviennent mémoire persistante et cherchable.</li>
+            <li><strong>Feeds de monitoring · browser automation · narrative tracking</strong> — intégrations branchables.</li>
+          </ul>
+          <p class="attribution">Méthodologie : <a href="https://www.bellingcat.com/" target="_blank">Bellingcat</a>, <a href="https://gijn.org/" target="_blank">GIJN</a>, <em>Follow the Money</em> de Jim Shultz, <a href="https://github.com/jamditis/claude-skills-journalism" target="_blank">Jay Amditis</a>, pratique OCCRP / ICIJ.</p>
+        </div>
+      </section>
+
+      <!-- Plan 04 — La source s'agrège : vue aérienne de l'accrétion -->
+      <section class="act act-4" data-act="4">
+        <div class="corner tl">
+          <div class="chap">§ 03 — Ce qui émerge</div>
+        </div>
+        <div class="corner bl">
+          <p class="tag">La conclusion <em>se construit</em> — par accrétion.</p>
+          <p class="tag-sub">Chaque source qui rejoint la masse ajoute sa lumière. Chaque impasse documentée reste en bas. Ce qui émerge est articulé, traçable, audité.</p>
+        </div>
+      </section>
+
+      <!-- Plan 05 — Vu d'en haut : territoire complet depuis la position finale de l'arc -->
+      <section class="act act-5" data-act="5">
+        <div class="corner tl">
+          <div class="chap">§ 04 — Vu d'en haut — le territoire</div>
+        </div>
+        <div class="corner bl">
+          <p class="closing">Trouvailles sourcées. Impasses nommées. Mémoire qui grandit. <em>Votre prochaine enquête ne part pas de zéro.</em></p>
+          <div class="cta-row">
+            <a class="cta" href="../../setup.html">Install Spotlight →</a>
+            <a class="secondary" href="https://github.com/buriedsignals/spotlight" target="_blank">Read the source ↗</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- + cross motif scattered through the scenography. -->
+      <div class="crosses" aria-hidden="true">
+        <span class="plus" style="--x: 18%; --y: 22%"></span>
+        <span class="plus" style="--x: 72%; --y: 14%"></span>
+        <span class="plus" style="--x: 44%; --y: 38%"></span>
+        <span class="plus" style="--x: 88%; --y: 46%"></span>
+        <span class="plus" style="--x: 8%; --y: 58%"></span>
+        <span class="plus" style="--x: 32%; --y: 66%"></span>
+        <span class="plus" style="--x: 62%; --y: 72%"></span>
+        <span class="plus" style="--x: 82%; --y: 84%"></span>
+        <span class="plus" style="--x: 24%; --y: 82%"></span>
+        <span class="plus" style="--x: 54%; --y: 12%"></span>
+      </div>
+
+    </div>
+
+    <!-- Coda — HTML flow sur papier, le WebGL se fade -->
+    <main class="coda">
+
+      <section class="block team">
+        <div class="chap">§ 05 — De l'équipe derrière Spotlight</div>
+        <h2>Menez-le vous-même, ou menons-le avec vous.</h2>
+
+        <div class="promo-row">
+          <div class="promo-card consulting">
+            <h3>Consulting</h3>
+            <p class="subtitle">Tom forme les rédactions à l'enquête avec l'IA.</p>
+            <div class="service">
+              <strong>Workshops &amp; formation</strong> — sessions hands-on où les journalistes enquêtent sur des stories live avec l'IA.
+              <span class="clients">Le Temps · MAZ · Republik · 20 Minuten</span>
+            </div>
+            <div class="service">
+              <strong>Outillage AI sur mesure</strong> — recherche dans les archives, monitoring de sources, agents de recherche.
+              <span class="clients">MediaStorm</span>
+            </div>
+            <div class="service">
+              <strong>Collaborations d'enquête</strong> — production visuelle et pipelines AI en tandem avec le terrain.
+              <span class="clients">The New Humanitarian</span>
+            </div>
+            <p style="margin-top: 18px;">
+              <a class="cta small" href="mailto:tom@buriedsignals.com?subject=Spotlight%20Consulting">Get in touch →</a>
+            </p>
+          </div>
+
+          <div class="promo-card membership">
+            <div class="eyebrow">Lancement mai 2026</div>
+            <h3>Pro Membership</h3>
+            <p class="subtitle">Des enquêtes avec l'IA. Les outils pour en mener vous-même.</p>
+            <ul>
+              <li>Enquêtes collaboratives — pistes, données, méthodologie partagées</li>
+              <li>Bootcamps, workshops, événements live</li>
+              <li>Tier hosted Pro de coJournalist, Navigator, Spotlight, DataHound</li>
+              <li>Méthodologies d'enquête et techniques AI, en profondeur</li>
+            </ul>
+            <p class="price"><strong>à partir de $25/mo</strong> · 400+ journalistes déjà inscrits</p>
+            <form class="signup-form" id="signup-form">
+              <div class="row">
+                <input type="email" id="signup-email" placeholder="vous@exemple.com" required autocomplete="email" />
+                <button type="submit" id="signup-submit">S'inscrire</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <div>Construit par <a href="https://buriedsignals.com" target="_blank">Buried Signals</a></div>
+        <div class="links">
+          <a href="https://github.com/buriedsignals/spotlight" target="_blank">GitHub</a>
+          <a href="../../setup.html">Install</a>
+          <a href="https://github.com/buriedsignals/spotlight/blob/main/DISCLAIMER.md" target="_blank">Disclaimer</a>
+          <a href="mailto:buriedsignals@agentmail.com">Contact</a>
+        </div>
+      </footer>
+
+    </main>
+
+    <!-- Scrubber (dev) -->
+    <div class="scrubber" id="scrubber">
+      <span id="scrubber-label">Plan 01 · Sous la surface</span>
+      <span class="bar"><span class="bar-fill" id="scrubber-fill"></span></span>
+    </div>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

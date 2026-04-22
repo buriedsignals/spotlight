@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spotlight — Hero proto · Fragments field</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #05070a;
+    --fg: #e8ecf1;
+    --muted: #8891a0;
+    --accent: #7cb7ff;
+    --border: #1f232c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: "Geist Mono", ui-monospace, monospace;
+    background: var(--bg);
+    color: var(--fg);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  .proto-label {
+    position: fixed; top: 16px; right: 20px; z-index: 100;
+    font-family: "Geist Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: rgba(10, 12, 16, 0.7);
+    backdrop-filter: blur(4px);
+  }
+  .topnav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 20px 40px;
+    pointer-events: none;
+  }
+  .topnav > * { pointer-events: auto; }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-family: "Fraunces", serif; font-size: 17px; font-weight: 500;
+    letter-spacing: -0.01em;
+    color: var(--fg);
+    text-decoration: none;
+  }
+  .brand svg { width: 18px; height: 18px; color: var(--accent); }
+
+  #hero {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+  }
+  #hero-canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    z-index: 0;
+  }
+  #hero-canvas canvas { display: block; width: 100% !important; height: 100% !important; }
+
+  .hero-gradient {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 70%, transparent 0%, rgba(5,7,10,0.55) 100%),
+      linear-gradient(180deg, rgba(5,7,10,0.7) 0%, transparent 18%, transparent 70%, rgba(5,7,10,0.85) 100%);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .hero-content {
+    position: relative;
+    z-index: 2;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 120px 60px 60px;
+    max-width: 1400px;
+    margin: 0 auto;
+    pointer-events: none;
+  }
+  .hero-content > * { pointer-events: auto; }
+
+  .hero-top .meta {
+    font-family: "Geist Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    line-height: 1.8;
+  }
+  .hero-bottom {
+    display: grid;
+    grid-template-columns: 1.3fr 0.7fr;
+    gap: 80px;
+    align-items: end;
+  }
+  .hero-title {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: clamp(3rem, 6.5vw, 5.4rem);
+    line-height: 0.98;
+    letter-spacing: -0.02em;
+    font-weight: 500;
+    font-variation-settings: "opsz" 144;
+    margin: 0 0 0;
+    color: var(--fg);
+  }
+  .hero-title .accent {
+    display: block;
+    color: var(--accent);
+    font-style: italic;
+    font-weight: 400;
+  }
+  .hero-side {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding-bottom: 8px;
+  }
+  .hero-side p {
+    margin: 0;
+    font-family: "Fraunces", serif;
+    font-size: 1.05rem;
+    line-height: 1.55;
+    color: var(--muted);
+    max-width: 380px;
+  }
+  .hero-side .ctas {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+  }
+  .cta {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 12px 22px;
+    background: var(--accent);
+    color: #05070a;
+    text-decoration: none;
+    font-family: "Geist Mono", monospace;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 500;
+    border-radius: 3px;
+    transition: filter 0.2s;
+  }
+  .cta:hover { filter: brightness(1.15); }
+  .secondary {
+    color: var(--muted);
+    text-decoration: none;
+    font-family: "Geist Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 2px;
+  }
+  .secondary:hover { color: var(--fg); border-color: var(--accent); }
+
+  .scroll-cue {
+    position: absolute;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: "Geist Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--muted);
+    opacity: 0.6;
+    z-index: 2;
+  }
+  .scroll-cue::before {
+    content: ''; display: inline-block;
+    width: 1px; height: 14px;
+    background: var(--muted);
+    margin-right: 12px;
+    vertical-align: middle;
+  }
+
+  @media (max-width: 860px) {
+    .hero-content { padding: 100px 24px 40px; }
+    .hero-bottom { grid-template-columns: 1fr; gap: 40px; }
+    .topnav { padding: 14px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="proto-label">Proto · Direction 1 · Fragments</div>
+
+<nav class="topnav">
+  <a href="#" class="brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+      <path d="M 20 9.5 A 8 8 0 0 1 4 9.5"/>
+      <path d="M 4 14.5 A 8 8 0 0 0 20 14.5"/>
+      <circle cx="12" cy="12" r="2" fill="currentColor"/>
+    </svg>
+    Spotlight
+  </a>
+</nav>
+
+<section id="hero">
+  <div id="hero-canvas" aria-hidden="true"></div>
+  <div class="hero-gradient"></div>
+  <div class="hero-content">
+    <div class="hero-top">
+      <div class="meta">
+        OSINT · Investigation system<br>
+        v1.0 · Built by Buried Signals
+      </div>
+    </div>
+    <div class="hero-bottom">
+      <h1 class="hero-title">
+        You lead the investigation.
+        <span class="accent">Spotlight does the research.</span>
+      </h1>
+      <div class="hero-side">
+        <p>Verified findings, independent fact-checking, a vault that grows with you. Built for journalists, by journalists.</p>
+        <div class="ctas">
+          <a href="setup.html" class="cta">Install Spotlight →</a>
+          <a href="https://github.com/buriedsignals/spotlight" class="secondary" target="_blank">GitHub ↗</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-cue">Scroll · 01 of 08</div>
+</section>
+
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+  // ————————————————————————————————————————————————
+  // Direction 1 — Fragments field
+  // ————————————————————————————————————————————————
+  (function heroFragments() {
+    const container = document.getElementById('hero-canvas');
+    if (!container || !window.THREE) return;
+    const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // —— Scene setup ——
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x05070a);
+    scene.fog = new THREE.FogExp2(0x05070a, 0.042);
+
+    const camera = new THREE.PerspectiveCamera(
+      55,
+      container.clientWidth / container.clientHeight,
+      0.1,
+      200
+    );
+    camera.position.set(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(renderer.domElement);
+
+    // —— Fragment textures from Canvas2D ——
+    const FRAGMENTS = [
+      { type: 'entity',   text: 'Delta Holdings' },
+      { type: 'entity',   text: 'J. Montero' },
+      { type: 'entity',   text: 'Paradise Papers' },
+      { type: 'entity',   text: 'Valletta' },
+      { type: 'entity',   text: 'shell company' },
+      { type: 'entity',   text: 'offshore chain' },
+      { type: 'entity',   text: 'nominee of record' },
+      { type: 'entity',   text: 'Shell Co. Maltar' },
+      { type: 'entity',   text: 'Port of Dakar' },
+      { type: 'entity',   text: 'beneficial owner' },
+      { type: 'mono',     text: 'CH-660.1.923.004' },
+      { type: 'mono',     text: 'OFAC · 2019' },
+      { type: 'mono',     text: 'Q3 · 2023' },
+      { type: 'mono',     text: 'wire log #48221' },
+      { type: 'mono',     text: '§4 · contested' },
+      { type: 'mono',     text: '2021-08-17' },
+      { type: 'mono',     text: 'ICIJ 2017' },
+      { type: 'mono',     text: 'case 047 · closed' },
+      { type: 'mono',     text: 'witness · withheld' },
+      { type: 'mono',     text: 'UN S/2019/358' },
+      { type: 'redacted', text: '' },
+      { type: 'redacted', text: '' },
+    ];
+
+    function makeFragmentTexture(item) {
+      const W = 512, H = 128;
+      const c = document.createElement('canvas');
+      c.width = W; c.height = H;
+      const ctx = c.getContext('2d');
+      ctx.clearRect(0, 0, W, H);
+      ctx.textBaseline = 'middle';
+
+      if (item.type === 'entity') {
+        ctx.font = '500 56px "Fraunces", Georgia, serif';
+        ctx.fillStyle = 'rgba(232, 236, 241, 0.92)';
+        ctx.fillText(item.text, 20, H / 2);
+      } else if (item.type === 'mono') {
+        ctx.font = '400 34px "Geist Mono", ui-monospace, monospace';
+        ctx.fillStyle = 'rgba(180, 200, 230, 0.80)';
+        ctx.fillText(item.text, 20, H / 2);
+      } else if (item.type === 'redacted') {
+        // Redacted bar — dark rectangle
+        ctx.fillStyle = 'rgba(60, 70, 88, 0.85)';
+        ctx.fillRect(20, H / 2 - 14, W - 40, 28);
+      }
+
+      const tex = new THREE.CanvasTexture(c);
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.generateMipmaps = false;
+      tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      return tex;
+    }
+
+    const textures = FRAGMENTS.map(makeFragmentTexture);
+
+    // —— Planes distributed in a frustum-like volume ——
+    const field = new THREE.Group();
+    scene.add(field);
+
+    const NUM_PLANES = 140;
+    const planes = [];
+
+    // Plane geometry — single, reused
+    const geo = new THREE.PlaneGeometry(3.5, 0.875);
+
+    for (let i = 0; i < NUM_PLANES; i++) {
+      const tex = textures[Math.floor(Math.random() * textures.length)];
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        opacity: 0.55 + Math.random() * 0.4,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+
+      // Depth
+      const z = -4 - Math.random() * 38;
+      // Widening spread with depth (natural frustum volume)
+      const spreadX = 6 + Math.abs(z) * 0.55;
+      const spreadY = 4 + Math.abs(z) * 0.35;
+
+      mesh.position.set(
+        (Math.random() - 0.5) * spreadX,
+        (Math.random() - 0.5) * spreadY,
+        z
+      );
+      mesh.rotation.set(
+        (Math.random() - 0.5) * 0.32,
+        (Math.random() - 0.5) * 0.32,
+        (Math.random() - 0.5) * 0.12
+      );
+      const s = 0.6 + Math.random() * 0.9;
+      mesh.scale.setScalar(s);
+
+      // Per-plane animation offsets
+      mesh.userData = {
+        baseY: mesh.position.y,
+        baseZ: mesh.position.z,
+        baseOpacity: mat.opacity,
+        phase: Math.random() * Math.PI * 2,
+        drift: 0.05 + Math.random() * 0.18,
+        surfaceIn: Math.random() < 0.15 ? Math.random() * 20 + 8 : 0,
+      };
+
+      field.add(mesh);
+      planes.push(mesh);
+    }
+
+    // —— Interaction: cursor parallax ——
+    const mouse = { x: 0, y: 0 };
+    const cameraTarget = { rotX: 0, rotY: 0, posX: 0, posY: 0 };
+
+    window.addEventListener('pointermove', (e) => {
+      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = (e.clientY / window.innerHeight) * 2 - 1;
+    });
+
+    // —— Resize ——
+    function onResize() {
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', onResize);
+
+    // —— Animation loop ——
+    let t = 0;
+    let running = true;
+    const clock = new THREE.Clock();
+
+    function animate() {
+      if (!running) return;
+      const dt = Math.min(clock.getDelta(), 0.05);
+      t += dt;
+
+      // Camera parallax (gentle, bounded ±3°)
+      cameraTarget.rotY = -mouse.x * 0.055;
+      cameraTarget.rotX = -mouse.y * 0.035;
+      cameraTarget.posX = mouse.x * 0.4;
+      cameraTarget.posY = -mouse.y * 0.25;
+
+      const ease = reduced ? 1.0 : 0.045;
+      camera.rotation.y += (cameraTarget.rotY - camera.rotation.y) * ease;
+      camera.rotation.x += (cameraTarget.rotX - camera.rotation.x) * ease;
+      camera.position.x += (cameraTarget.posX - camera.position.x) * ease;
+      camera.position.y += (cameraTarget.posY - camera.position.y) * ease;
+
+      // Field slowly rotates on Y
+      field.rotation.y = Math.sin(t * 0.04) * 0.08;
+
+      // Per-plane drift + occasional surface-in
+      planes.forEach(p => {
+        const u = p.userData;
+        p.position.y = u.baseY + Math.sin(t * u.drift + u.phase) * 0.25;
+        // Very slow Z breathing
+        p.position.z = u.baseZ + Math.sin(t * u.drift * 0.4 + u.phase) * 0.8;
+
+        // Opacity breathes slightly — fragments come in and out of focus
+        p.material.opacity = u.baseOpacity * (0.85 + 0.15 * Math.sin(t * u.drift * 0.7 + u.phase * 2.0));
+      });
+
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+
+    // —— Lazy start — trigger once Three is ready + fonts available ——
+    function start() {
+      onResize();
+      // Rebuild textures now fonts are loaded
+      textures.forEach((tex, i) => {
+        const fresh = makeFragmentTexture(FRAGMENTS[i]);
+        tex.image = fresh.image;
+        tex.needsUpdate = true;
+      });
+      clock.start();
+      animate();
+    }
+
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(start);
+    } else {
+      start();
+    }
+
+    // Pause when tab hidden
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        running = false;
+      } else if (!running) {
+        running = true;
+        clock.start();
+        animate();
+      }
+    });
+  })();
+</script>
+</body>
+</html>
