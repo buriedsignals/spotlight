@@ -1707,10 +1707,10 @@
       [1,1,1,1,1,1,1],
       [0,0,0,1,1,0,0],
       [0,0,0,0,1,0,0],
-    ], 0.55, 0.55);
+    ], 0.8, 0.8);
     const SHAPE_LOOP = (() => {
       const out = [];
-      const N = 12, R = 1.3;
+      const N = 12, R = 2.0;
       for (let i = 0; i < N; i++) {
         const a = (i / N) * Math.PI * 2;
         out.push(new THREE.Vector3(Math.cos(a) * R, Math.sin(a) * R, 0));
@@ -1718,18 +1718,18 @@
       return out;
     })();
     const SHAPE_PYRAMID = [
-      // Base layer — 5 cubes around a square perimeter (y=-0.7)
-      new THREE.Vector3(-0.9, -0.7, -0.9),
-      new THREE.Vector3( 0.9, -0.7, -0.9),
-      new THREE.Vector3(-0.9, -0.7,  0.9),
-      new THREE.Vector3( 0.9, -0.7,  0.9),
-      new THREE.Vector3( 0.0, -0.7,  0.0),
-      // Mid layer — 3 cubes (y=0)
-      new THREE.Vector3(-0.45, 0.0, -0.45),
-      new THREE.Vector3( 0.45, 0.0, -0.45),
-      new THREE.Vector3( 0.0,  0.0,  0.45),
-      // Apex — 1 cube (y=0.75)
-      new THREE.Vector3( 0.0,  0.9,  0.0),
+      // Base layer — 5 cubes around a square perimeter (y=-1.2)
+      new THREE.Vector3(-1.4, -1.2, -1.4),
+      new THREE.Vector3( 1.4, -1.2, -1.4),
+      new THREE.Vector3(-1.4, -1.2,  1.4),
+      new THREE.Vector3( 1.4, -1.2,  1.4),
+      new THREE.Vector3( 0.0, -1.2,  0.0),
+      // Mid layer — 3 cubes (y=-0.1)
+      new THREE.Vector3(-0.7, -0.1, -0.7),
+      new THREE.Vector3( 0.7, -0.1, -0.7),
+      new THREE.Vector3( 0.0, -0.1,  0.7),
+      // Apex — 1 cube (y=1.1)
+      new THREE.Vector3( 0.0,  1.1,  0.0),
     ];
     const SHAPE_CHECK = _letterPositions([
       [0,0,0,0,0,0,1],
@@ -1738,7 +1738,7 @@
       [1,0,0,1,1,0,0],
       [1,1,1,1,0,0,0],
       [0,1,1,0,0,0,0],
-    ], 0.45, 0.5);
+    ], 0.65, 0.7);
     const STEP_LAYOUTS = [
       { count: SHAPE_ARROW.length,   positions: SHAPE_ARROW   }, // Lead
       { count: SHAPE_LOOP.length,    positions: SHAPE_LOOP    }, // Cycles
