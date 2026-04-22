@@ -1673,6 +1673,21 @@
     // Bucket boundaries for the 5 steps — how many cubes are visible after
     // each step. 4 → 8 → 12 → 15 → 18. Gentle accretion, full grid at step 5.
     const STEP_CUBE_COUNTS = [4, 8, 12, 15, 18];
+    // Per-step spatial patterns for Ch. 01 — each step builds a DIFFERENT shape
+    // (not just progressively more cubes). Cells indexed iz*6 + iy*3 + ix,
+    // with GX=3, GY=2, GZ=3 so ix∈{0,1,2}, iy∈{0,1}, iz∈{0,1,2}.
+    //   Step 0 Lead      : 1 center cube            — the seed
+    //   Step 1 Cycles    : 4 corner cubes (bot)     — closed loop
+    //   Step 2 Findings  : 6 central wall (mid x)   — findings stack up
+    //   Step 3 Review    : 8 in two side walls      — reviewed from both sides
+    //   Step 4 Vault     : all 18                   — the full vault
+    const STEP_PATTERNS = [
+      [7],                                            // Lead    — (1,0,1)
+      [0, 2, 12, 14],                                 // Cycles  — corners bottom
+      [1, 7, 13, 4, 10, 16],                          // Findings — center wall (ix=1)
+      [0, 3, 12, 15, 2, 5, 14, 17],                   // Review  — left + right walls (ix=0, ix=2)
+      [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17],  // Vault   — all
+    ];
 
     const cellCentersTex = new THREE.DataTexture(
       cellCentersData, N_CELLS, 1, THREE.RGBAFormat, THREE.FloatType
@@ -3243,9 +3258,10 @@
       // from origin so the activation radiates outward).
       if (mood === 'aligned') {
         const step = Math.max(0, Math.min(4, window.__fiveThingsStep | 0));
-        const threshold = STEP_CUBE_COUNTS[step];
+        const pattern = STEP_PATTERNS[step];
+        // Fast lookup — N_CELLS is 18, inner hot path every frame.
         for (let i = 0; i < N_CELLS; i++) {
-          targetActivity[i] = cellRank[shuffleOrder[i]] < threshold ? 1 : 0;
+          targetActivity[i] = pattern.indexOf(shuffleOrder[i]) >= 0 ? 1 : 0;
         }
       }
       // Mood-driven time multiplier (slows physics without pausing it).
