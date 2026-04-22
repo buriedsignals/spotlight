@@ -3053,17 +3053,30 @@
       if (aligned) {
         const lerpK = Math.min(1, dtClamped * 11.0); // ≈ converges in ~0.4s
         // Ch. 01: pick the step's free-form layout (falls back to grid).
+        // Ch. 03 (sparse): a ring of cubes orbiting a central axis — "any
+        // agent plugs in around the same system".
         const mood = window.__sceneMood || 'chaos';
         const step = Math.max(0, Math.min(4, window.__fiveThingsStep | 0));
         const layout = (mood === 'aligned') ? STEP_LAYOUTS[step] : null;
         const tSec = performance.now() * 0.001;
+        const RING_N = 10;
+        const RING_R = 1.9;
+        const RING_ANGV = 0.25;   // rad/s — orbital speed
         for (let i = 0; i < N_CELLS; i++) {
           const s = cubeState[i];
           let restX, restY, restZ;
-          const customPos = layout && !layout.useGrid && i < layout.count;
-          if (customPos) {
+          let customPos = false;
+          let ringPos = false;
+          if (layout && !layout.useGrid && i < layout.count) {
             const p = layout.positions[i];
             restX = p.x; restY = p.y; restZ = p.z;
+            customPos = true;
+          } else if (mood === 'sparse' && i < RING_N) {
+            const angle = (i / RING_N) * Math.PI * 2 + tSec * RING_ANGV;
+            restX = Math.cos(angle) * RING_R;
+            restY = 0;
+            restZ = Math.sin(angle) * RING_R;
+            ringPos = true;
           } else {
             const cell = cellCenters[shuffleOrder[i]];
             restX = cell.x + params.alignedClusterX;
@@ -3076,10 +3089,12 @@
           s.vel.set(0, 0, 0);
           s.angVel.set(0, 0, 0);
           if (customPos) {
-            // Active cube in a free-form layout: slow Y spin with per-cube
-            // phase offset so they don't all face the same direction.
             _tmpA.set(0, 1, 0);
             s.rot.setFromAxisAngle(_tmpA, tSec * 0.5 + i * 0.45);
+          } else if (ringPos) {
+            // Cubes face the centre of the ring as they orbit (lookAt origin).
+            _tmpA.set(0, 1, 0);
+            s.rot.setFromAxisAngle(_tmpA, -((i / RING_N) * Math.PI * 2 + tSec * RING_ANGV));
           } else {
             s.rot.slerp(_identityQuat, lerpK);
           }
@@ -3310,11 +3325,16 @@
           params.alignedMode = true;
           params.alignedClusterX = 0;
           params.alignedClusterY = 0;
-          // Activity mix per mood — controls how many cubes are "on".
-          // 'aligned' is handled per-frame below (step-driven progressive reveal).
+          // Activity per mood — controls which cubes are "on".
+          // 'aligned' is handled per-frame below (step-driven letter shapes).
+          // 'sparse' lights the first 10 to populate the orbital ring.
           if (mood !== 'aligned') {
-            const activityMix = mood === 'sparse' ? 0.35 : mood === 'calm' ? 0.5 : 1.0;
-            for (let i = 0; i < N_CELLS; i++) targetActivity[i] = (i / N_CELLS) < activityMix ? 1 : 0;
+            if (mood === 'sparse') {
+              for (let i = 0; i < N_CELLS; i++) targetActivity[i] = i < 10 ? 1 : 0;
+            } else {
+              const activityMix = mood === 'calm' ? 0.5 : 1.0;
+              for (let i = 0; i < N_CELLS; i++) targetActivity[i] = (i / N_CELLS) < activityMix ? 1 : 0;
+            }
           }
         }
         window.__prevSceneMood = mood;
