@@ -1003,20 +1003,19 @@
   .int-card .idx[data-reveal="meta"].in,
   .marquee-progress .lbl[data-reveal="meta"].in { letter-spacing: 0.2em; }
 
-  /* Kind: card — fade + translateY + scale. !important overrides per-component
-     .int-card/.offer transitions that would otherwise replace ours. */
+  /* Kind: card — fade + translateY + scale. Applied to .int-card and .offer. */
   [data-reveal="card"] {
-    opacity: 0 !important;
-    transform: translateY(32px) scale(0.985) !important;
+    opacity: 0;
+    transform: translateY(32px) scale(0.985);
     transform-origin: left bottom;
     transition:
       opacity 900ms cubic-bezier(0.2, 0.7, 0.25, 1) calc(var(--rd) + var(--rs) * var(--stagger)),
-      transform 1000ms cubic-bezier(0.2, 0.7, 0.25, 1) calc(var(--rd) + var(--rs) * var(--stagger)) !important;
+      transform 1000ms cubic-bezier(0.2, 0.7, 0.25, 1) calc(var(--rd) + var(--rs) * var(--stagger));
     will-change: opacity, transform;
   }
   [data-reveal="card"].in {
-    opacity: 1 !important;
-    transform: translateY(0) scale(1) !important;
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 
   /* Kind: credit-row — the whole row fades up, then internal content staggers.
