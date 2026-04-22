@@ -1419,6 +1419,16 @@
         const target = (mood === 'aligned')
           ? { left: vw * 0.5, top: 0, width: vw * 0.5, height: vh }
           : { left: 0,        top: 0, width: vw,       height: vh };
+        // Clip at the footer's top edge so the scene doesn't bleed behind
+        // "Lead the story." — the page's narrative closer is cube-free.
+        const footer = document.getElementById('footer');
+        if (footer) {
+          const ft = footer.getBoundingClientRect();
+          if (ft.top < vh) {
+            const maxH = Math.max(0, ft.top - target.top);
+            if (maxH < target.height) target.height = maxH;
+          }
+        }
         let cur = _slotRect.hero;
         if (!cur) cur = _slotRect.hero = { ...target };
         cur.left   += (target.left   - cur.left)   * RECT_EASE;
