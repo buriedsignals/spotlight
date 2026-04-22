@@ -41,6 +41,9 @@ Scope: `index.html` (landing) and `setup.html` (installer). Both pages share the
   --amber            : #8a6212;   /* warning, advisory note */
   --red              : #a83838;   /* error, required marker, negative verdict */
 
+  /* Pre-mixed accent-warm fades — add new tiers here when a new opacity is needed */
+  --accent-warm-14   : rgba(193, 106, 52, 0.14);   /* CTA hover bg, selected tint */
+
   /* Motion defaults */
   --rd               : 0ms;       /* reveal delay (per-element via inline style) */
   --rs               : 0;         /* reveal stagger index */

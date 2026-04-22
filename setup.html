@@ -25,6 +25,8 @@
     --green: #4a7d3f;
     --amber: #8a6212;
     --red: #a83838;
+    /* Pre-mixed accent-warm fades (used in CTA hovers, selected states) */
+    --accent-warm-14: rgba(193, 106, 52, 0.14);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--ink); color: var(--paper); }
@@ -95,7 +97,7 @@
     transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
   }
   nav.topnav .links a[href="setup.html"]:hover {
-    background: rgba(193, 106, 52, 0.14);   /* accent-warm fade */
+    background: var(--accent-warm-14);
     border-color: var(--accent-warm);
     color: var(--accent-warm);
   }
