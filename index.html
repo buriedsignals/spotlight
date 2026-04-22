@@ -56,7 +56,7 @@
     padding: 1px 5px;
     font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.92em;
-    border: 1px solid var(--muted-faint-light);
+    border: 1px solid var(--muted-faint-dark);
   }
 
   /* ── NAV ────────────────────────────────────────────────
@@ -70,7 +70,7 @@
     padding: 20px 28px;
     background: var(--paper);
     color: var(--paper-fg);
-    border-bottom: 1px solid var(--muted-faint-light);
+    border-bottom: 1px solid var(--muted-faint-dark);
     pointer-events: none;
     /* Only animate the colour — background + mix-blend must snap instantly
        so we never see a semi-transparent "bleed" state mid-transition. */
@@ -314,12 +314,12 @@
   /* ── WHAT IT DOES (split-scroll) ──────────────────────── */
   #what {
     position: relative;
-    background: var(--paper);
-    color: var(--paper-fg);
+    background: var(--ink);
+    color: var(--paper);
   }
   #what .header {
     padding: 80px 48px 20px;
-    border-bottom: 1px solid var(--muted-faint-light);
+    border-bottom: 1px solid var(--muted-faint-dark);
   }
 
   .split-scroll {
@@ -348,7 +348,7 @@
     height: 100vh;
     display: flex; flex-direction: column; justify-content: center;
     padding: 60px 0;
-    border-right: 1px solid var(--muted-faint-light);
+    border-right: 1px solid var(--muted-faint-dark);
     padding-right: 24px;
   }
   .split-left .counter {
@@ -371,7 +371,7 @@
   .split-left .progress {
     margin-top: 40px;
     height: 1px;
-    background: var(--muted-faint-light);
+    background: var(--muted-faint-dark);
     position: relative;
   }
   .split-left .progress .fill {
@@ -410,9 +410,9 @@
   /* ── INTEGRATIONS (pinned horizontal marquee) ─────────── */
   #integrations {
     position: relative;
-    background: var(--paper);
-    color: var(--paper-fg);
-    border-top: 1px solid var(--muted-faint-light);
+    background: var(--ink);
+    color: var(--paper);
+    border-top: 1px solid var(--muted-faint-dark);
   }
   .pin-wrap { height: 400vh; position: relative; }
   .pin-sticky {
@@ -440,8 +440,8 @@
   .int-card {
     flex: 0 0 380px;
     height: 440px;
-    background: var(--paper-2);
-    border: 1px solid var(--muted-faint-light);
+    background: var(--ink-2);
+    border: 1px solid var(--muted-faint-dark);
     padding: 32px 28px 28px;
     display: flex; flex-direction: column;
     position: relative;
@@ -456,7 +456,7 @@
     margin: 12px 0 14px;
     position: relative;
   }
-  .int-card:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .int-card:hover { background: var(--accent-warm-14); border-color: var(--accent-warm); }
   .int-card .idx {
     font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.85;
     color: var(--accent-warm);
@@ -476,13 +476,13 @@
   .marquee-progress {
     padding: 24px 48px;
     display: flex; align-items: center; gap: 16px;
-    border-top: 1px solid var(--muted-faint-light);
+    border-top: 1px solid var(--muted-faint-dark);
     flex-shrink: 0;
   }
   .marquee-progress .bar {
     flex: 1;
     height: 1px;
-    background: var(--muted-faint-light);
+    background: var(--muted-faint-dark);
     position: relative;
   }
   .marquee-progress .bar .fill {
@@ -502,7 +502,7 @@
     background: var(--paper);
     color: var(--paper-fg);
     padding: 120px 48px;
-    border-top: 1px solid var(--muted-faint-light);
+    border-top: 1px solid var(--muted-faint-dark);
   }
   #box .header { margin-bottom: 60px; }
   .stats-row {
@@ -510,12 +510,12 @@
     grid-template-columns: 2fr 1fr 1fr 1fr;
     gap: 0;
     align-items: end;
-    border-top: 1px solid var(--muted-faint-light);
-    border-bottom: 1px solid var(--muted-faint-light);
+    border-top: 1px solid var(--muted-faint-dark);
+    border-bottom: 1px solid var(--muted-faint-dark);
   }
   .stat-cell {
     padding: 32px 20px 28px;
-    border-right: 1px solid var(--muted-faint-light);
+    border-right: 1px solid var(--muted-faint-dark);
     min-height: 220px;
     display: flex; flex-direction: column; justify-content: space-between;
   }
@@ -639,40 +639,40 @@
 
   /* ── MEMBERSHIP + CONSULTING (split) ──────────────────── */
   #offers {
-    background: var(--paper);
-    color: var(--paper-fg);
-    border-top: 1px solid var(--muted-faint-light);
+    background: var(--ink);
+    color: var(--paper);
+    border-top: 1px solid var(--muted-faint-dark);
     padding: 120px 48px;
   }
   #offers .header { margin-bottom: 60px; }
   .about-bs {
     max-width: 72ch; margin: 0 48px 60px; padding: 0;
     font-size: 15px; line-height: 1.7;
-    color: var(--paper-fg); opacity: 0.82;
+    color: var(--paper); opacity: 0.82;
   }
   .about-bs strong { font-weight: 500; opacity: 1; }
   .offers-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0;
-    border-top: 1px solid var(--muted-faint-light);
-    border-bottom: 1px solid var(--muted-faint-light);
+    border-top: 1px solid var(--muted-faint-dark);
+    border-bottom: 1px solid var(--muted-faint-dark);
   }
   .offer {
     padding: 48px 40px 44px;
-    border-right: 1px solid var(--muted-faint-light);
+    border-right: 1px solid var(--muted-faint-dark);
     display: flex; flex-direction: column;
     position: relative;
     min-height: 520px;
     transition: background 0.35s ease;
   }
   .offer:last-child { border-right: none; }
-  .offer:hover { background: var(--paper-2); }
+  .offer:hover { background: var(--accent-warm-14); }
   .offer .kicker {
     display: flex; justify-content: space-between; align-items: baseline;
     font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.6;
     padding-bottom: 24px;
-    border-bottom: 1px solid var(--muted-faint-light);
+    border-bottom: 1px solid var(--muted-faint-dark);
   }
   .offer .kicker .price {
     font-family: "Fraunces", serif;
@@ -710,7 +710,7 @@
     content: '';
     position: absolute; left: 0; top: 0.7em;
     width: 10px; height: 1px;
-    background: var(--paper-fg);
+    background: var(--paper);
     opacity: 0.5;
   }
   .offer .actions {
@@ -721,19 +721,19 @@
   .offer .btn {
     display: inline-flex; align-items: center; gap: 10px;
     padding: 14px 18px;
-    background: var(--ink);
-    color: var(--paper);
+    background: var(--paper);
+    color: var(--ink);
     font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
-    transition: background 0.2s;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
   }
-  .offer .btn:hover { background: var(--paper-fg); }
+  .offer .btn:hover { background: var(--accent-warm); color: var(--paper); }
   .offer .btn.ghost {
     background: transparent;
-    color: var(--paper-fg);
-    border: 1px solid var(--paper-fg);
+    color: var(--paper);
+    border: 1px solid var(--paper);
   }
-  .offer .btn.ghost:hover { background: var(--paper-fg); color: var(--paper); }
+  .offer .btn.ghost:hover { background: var(--accent-warm-14); border-color: var(--accent-warm); color: var(--accent-warm); }
   .offer .aside {
     font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; opacity: 0.5;
   }
@@ -887,10 +887,10 @@
       gap: 16px;
       height: auto;
       padding: 72px 4px 12px;
-      background: var(--paper);
+      background: var(--ink);
       z-index: 15;
       border-right: none;
-      border-bottom: 1px solid var(--muted-faint-light);
+      border-bottom: 1px solid var(--muted-faint-dark);
     }
     .split-left > div:first-child {
       display: flex; align-items: baseline; gap: 10px;
@@ -901,7 +901,7 @@
     .split-left .progress { flex: 1; margin-top: 0; }
 
     .split-right { padding: 20px 0 40px; }
-    .step { min-height: auto; padding: 36px 0; opacity: 1; border-bottom: 1px solid var(--muted-faint-light); }
+    .step { min-height: auto; padding: 36px 0; opacity: 1; border-bottom: 1px solid var(--muted-faint-dark); }
     .step:last-child { border-bottom: none; }
     .step .step-title { font-size: clamp(22px, 6vw, 32px); max-width: 100%; margin-bottom: 14px; }
     .step .step-body { font-size: 13px; max-width: 100%; }
@@ -934,8 +934,8 @@
       min-height: 110px;
       padding: 18px 14px;
       grid-column: auto;
-      border-right: 1px solid var(--muted-faint-light);
-      border-bottom: 1px solid var(--muted-faint-light);
+      border-right: 1px solid var(--muted-faint-dark);
+      border-bottom: 1px solid var(--muted-faint-dark);
     }
     .stat-cell:nth-child(2n) { border-right: none; }
     .stat-cell:nth-last-child(-n+2) { border-bottom: none; }
@@ -950,7 +950,7 @@
 
     #offers { padding: 60px 20px; }
     .offers-grid { grid-template-columns: 1fr; }
-    .offer { padding: 36px 24px; border-right: none; border-bottom: 1px solid var(--muted-faint-light); min-height: auto; }
+    .offer { padding: 36px 24px; border-right: none; border-bottom: 1px solid var(--muted-faint-dark); min-height: auto; }
     .offer:last-child { border-bottom: none; }
 
     #footer { padding: 80px 20px 28px; }
@@ -1193,7 +1193,7 @@
 </section>
 
 <!-- ── WHAT IT DOES ─────────────────────────────────────── -->
-<section id="what" data-screen-label="03 What it does">
+<section id="what" data-screen-label="03 What it does" data-nav-theme="dark">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 01 — What it does</span>
     <h2 class="title" data-reveal="title" style="--rd: 120ms">Five things, in order.</h2>
@@ -1236,7 +1236,7 @@
 </section>
 
 <!-- ── INTEGRATIONS ─────────────────────────────────────── -->
-<section id="integrations" data-screen-label="04 Integrations">
+<section id="integrations" data-screen-label="04 Integrations" data-nav-theme="dark">
   <div class="pin-wrap" id="pin-wrap">
     <div class="pin-sticky">
       <div class="header">
@@ -1314,7 +1314,7 @@
 </section>
 
 <!-- ── OFFERS (Membership + Consulting) ────────────────── -->
-<section id="offers" data-screen-label="07 Offers">
+<section id="offers" data-screen-label="07 Offers" data-nav-theme="dark">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 04 — Work with us</span>
     <h2 class="title" data-reveal="title" style="--rd: 120ms">Two ways in.</h2>
