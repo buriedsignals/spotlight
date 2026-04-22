@@ -724,7 +724,6 @@
     overflow: hidden;
     border-top: 1px solid var(--muted-faint-dark);
   }
-  #footer .footer-wrap { max-width: 1280px; margin: 0 auto; }
   .footer-huge {
     font-family: "Fraunces", serif;
     font-variation-settings: "opsz" 144, "wght" 500;
@@ -810,7 +809,7 @@
     #install-output .out-header { flex-direction: column; align-items: flex-start; gap: 12px; }
     #install-output .out-header h2 { text-align: left; }
 
-    #footer { padding: 60px 20px 28px; }
+    #footer { padding: 80px 20px 28px; }
     .footer-grid { grid-template-columns: 1fr 1fr; gap: 28px; }
     .footer-col.about { grid-column: 1 / -1; }
     .footer-meta { flex-direction: column; gap: 12px; align-items: flex-start; }
@@ -846,6 +845,25 @@
     transition: opacity 800ms ease 400ms, transform 800ms cubic-bezier(0.2, 0.7, 0.25, 1) 400ms;
   }
   nav.topnav.in { opacity: 1; transform: translateY(0); }
+
+  /* Footer huge-word reveal — each word clip-reveals individually. JS wraps spans. */
+  .reveal-huge {
+    display: inline-block;
+    overflow: hidden;
+    padding: 0 0.02em 0.06em;
+    vertical-align: top;
+    --rd: 0ms;
+    --rs: 0;
+    --stagger: 240ms;
+  }
+  .reveal-huge > * {
+    display: inline-block;
+    transform: translateY(108%);
+    transition: transform 1500ms cubic-bezier(0.16, 0.78, 0.22, 1) calc(var(--rd, 0ms) + var(--rs, 0) * var(--stagger, 240ms));
+    will-change: transform;
+  }
+  .reveal-huge.in > * { transform: translateY(0); }
+
   @media (prefers-reduced-motion: reduce) {
     [data-reveal] {
       transition: opacity 300ms ease !important;
@@ -854,6 +872,8 @@
     }
     [data-reveal] { opacity: 0; }
     [data-reveal].in { opacity: 1; }
+    .reveal-huge > * { opacity: 0; transform: none !important; transition: opacity 300ms ease !important; }
+    .reveal-huge.in > * { opacity: 1; }
   }
 </style>
 </head>
@@ -869,11 +889,11 @@
     Spotlight
   </a>
   <div class="links">
-    <a href="landing.html#what">Read</a>
-    <a href="landing.html#integrations">Stack</a>
-    <a href="landing.html#box">Box</a>
-    <a href="landing.html#attribution">Credits</a>
-    <a href="landing.html#offers">Offers</a>
+    <a href="landing.html#what">What it does</a>
+    <a href="landing.html#integrations">Integrations</a>
+    <a href="landing.html#box">In the box</a>
+    <a href="landing.html#attribution">Built on</a>
+    <a href="landing.html#offers">Work with us</a>
     <a href="setup.html">Install</a>
   </div>
 </nav>
@@ -1191,12 +1211,11 @@
 
 <!-- ── FOOTER ───────────────────────────────────────────── -->
 <section id="footer" data-nav-theme="dark">
-  <div class="footer-wrap">
-    <p class="footer-huge">
-      Lead the <em>story.</em>
-    </p>
+  <p class="footer-huge" id="footer-huge">
+    Lead the <em>story.</em>
+  </p>
 
-    <div class="footer-grid">
+  <div class="footer-grid">
       <div class="footer-col about">
         <h4>Spotlight</h4>
         <p>An open-source OSINT investigation system for journalists. Built by Buried Signals with Indicator Media. Runtime-agnostic, evidence-first, editor-ready.</p>
@@ -1237,7 +1256,6 @@
       </div>
       <span>© 2025 Buried Signals — MIT licensed</span>
     </div>
-  </div>
 </section>
 
 <script>
@@ -2047,6 +2065,53 @@
     }
   }, { threshold: 0.15, rootMargin: '0px 0px -10% 0px' });
   document.querySelectorAll('[data-reveal]').forEach(el => io.observe(el));
+
+  // Wrap words in .footer-huge for per-word reveal, then observe with a
+  // dedicated IO that fires once the element is well into the viewport so
+  // the slow 1500ms animation overlaps the user's scroll.
+  (function () {
+    const huge = document.getElementById('footer-huge');
+    if (!huge) return;
+    const walker = [];
+    huge.childNodes.forEach(n => walker.push(n));
+    huge.innerHTML = '';
+    let idx = 0;
+    walker.forEach(n => {
+      if (n.nodeType === 3) {
+        n.textContent.split(/(\s+)/).forEach(p => {
+          if (!p.trim()) { huge.appendChild(document.createTextNode(p)); return; }
+          const wrap = document.createElement('span');
+          wrap.className = 'reveal-huge';
+          wrap.setAttribute('data-reveal-huge', '');
+          wrap.setAttribute('data-stagger-idx', String(idx++));
+          const inner = document.createElement('span');
+          inner.textContent = p;
+          wrap.appendChild(inner);
+          huge.appendChild(wrap);
+        });
+      } else {
+        const wrap = document.createElement('span');
+        wrap.className = 'reveal-huge';
+        wrap.setAttribute('data-reveal-huge', '');
+        wrap.setAttribute('data-stagger-idx', String(idx++));
+        const inner = document.createElement(n.tagName.toLowerCase());
+        inner.textContent = n.textContent;
+        wrap.appendChild(inner);
+        huge.appendChild(wrap);
+      }
+    });
+    const ioHuge = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (!e.isIntersecting) return;
+        const el = e.target;
+        el.style.setProperty('--rs', parseInt(el.dataset.staggerIdx || '0', 10));
+        el.classList.add('in');
+        ioHuge.unobserve(el);
+      });
+    }, { threshold: 0, rootMargin: '0px 0px -80px 0px' });
+    document.querySelectorAll('[data-reveal-huge]').forEach(el => ioHuge.observe(el));
+  })();
+
   // Nav fades on load
   requestAnimationFrame(() => document.getElementById('topnav').classList.add('in'));
 
