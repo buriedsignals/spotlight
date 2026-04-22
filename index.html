@@ -3155,14 +3155,14 @@
           s.pos.z += (restZ - s.pos.z) * lerpK;
           s.vel.set(0, 0, 0);
           s.angVel.set(0, 0, 0);
-          if (customPos) {
-            _tmpA.set(0, 1, 0);
-            s.rot.setFromAxisAngle(_tmpA, tSec * 0.5 + i * 0.45);
-          } else if (ringPos) {
-            // Cubes face the centre of the ring as they orbit (lookAt origin).
+          if (ringPos) {
+            // Ring cubes face the centre as they orbit — rotation is part of
+            // the motion, not decoration.
             _tmpA.set(0, 1, 0);
             s.rot.setFromAxisAngle(_tmpA, -((i / RING_N) * Math.PI * 2 + tSec * RING_ANGV));
           } else {
+            // Shape cubes (customPos) stay in identity rotation so the
+            // silhouette of the shape is always readable — no self-spin.
             s.rot.slerp(_identityQuat, lerpK);
           }
 
