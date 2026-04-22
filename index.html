@@ -1673,20 +1673,32 @@
     // Bucket boundaries for the 5 steps — how many cubes are visible after
     // each step. 4 → 8 → 12 → 15 → 18. Gentle accretion, full grid at step 5.
     const STEP_CUBE_COUNTS = [4, 8, 12, 15, 18];
-    // Per-step spatial patterns for Ch. 01 — each shape references the step's
-    // copy so the cubes don't just pile up, they *illustrate*.
-    // Cells indexed iz*6 + iy*3 + ix, with GX=3, GY=2, GZ=3.
-    //   Step 0 Lead    : horizontal line through the scene — "lead enters, moves through methodology"
-    //   Step 1 Cycles  : two vertical pairs facing each other — "primary + fact-checker, each cycle"
-    //   Step 2 Findings: triangle pointing up — "two sources anchor a claim; findings stand stable"
-    //   Step 3 Review  : 4 corners + centre — "click-through points, challenge anywhere"
-    //   Step 4 Vault   : full grid — "living knowledge base, everything cross-linked"
-    const STEP_PATTERNS = [
-      [6, 7, 8],                                      // Lead    — line through middle row
-      [6, 9, 8, 11],                                  // Cycles  — two vertical pairs facing (x=0 and x=2, z=1)
-      [6, 8, 10],                                     // Findings — triangle: bot-left, bot-right, top-centre
-      [0, 2, 10, 12, 14],                             // Review  — 4 corners + centre top
-      [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17],  // Vault   — all
+    // Per-step free-form 3D layouts for Ch. 01 — shapes that illustrate each
+    // step's copy, freed from the 3×2×3 cube grid. Cubes i < count are
+    // positioned at the explicit points; cubes i >= count stay invisible.
+    // The vault step falls back to the default grid via useGrid:true.
+    //   Step 0 Lead    : 1 solitary cube, centred     — "one lead enters"
+    //   Step 1 Cycles  : 2 cubes facing across        — "primary ↔ fact-checker"
+    //   Step 2 Findings: tetrahedron (3 base + apex)  — "anchored on multiple sources"
+    //   Step 3 Review  : 5 cubes in a row             — "click through each finding"
+    //   Step 4 Vault   : full grid                    — "living knowledge base"
+    const STEP_LAYOUTS = [
+      { count: 1, positions: [ new THREE.Vector3(0, 0, 0) ] },
+      { count: 2, positions: [ new THREE.Vector3(-1.4, 0, 0), new THREE.Vector3(1.4, 0, 0) ] },
+      { count: 4, positions: [
+        new THREE.Vector3(-1.0, -0.5, 0.6),
+        new THREE.Vector3( 1.0, -0.5, 0.6),
+        new THREE.Vector3( 0.0, -0.5, -1.0),
+        new THREE.Vector3( 0.0,  0.8, 0.0),
+      ] },
+      { count: 5, positions: [
+        new THREE.Vector3(-2.2, 0, 0),
+        new THREE.Vector3(-1.1, 0, 0),
+        new THREE.Vector3( 0.0, 0, 0),
+        new THREE.Vector3( 1.1, 0, 0),
+        new THREE.Vector3( 2.2, 0, 0),
+      ] },
+      { useGrid: true },
     ];
 
     const cellCentersTex = new THREE.DataTexture(
@@ -3004,18 +3016,37 @@
       // A direct position + quaternion lerp gives a genuinely snappy reset.
       if (aligned) {
         const lerpK = Math.min(1, dtClamped * 11.0); // ≈ converges in ~0.4s
+        // Ch. 01: pick the step's free-form layout (falls back to grid).
+        const mood = window.__sceneMood || 'chaos';
+        const step = Math.max(0, Math.min(4, window.__fiveThingsStep | 0));
+        const layout = (mood === 'aligned') ? STEP_LAYOUTS[step] : null;
+        const tSec = performance.now() * 0.001;
         for (let i = 0; i < N_CELLS; i++) {
           const s = cubeState[i];
-          const cell = cellCenters[shuffleOrder[i]];
-          const restX = cell.x + params.alignedClusterX;
-          const restY = cell.y + params.alignedClusterY;
-          const restZ = cell.z;
+          let restX, restY, restZ;
+          const customPos = layout && !layout.useGrid && i < layout.count;
+          if (customPos) {
+            const p = layout.positions[i];
+            restX = p.x; restY = p.y; restZ = p.z;
+          } else {
+            const cell = cellCenters[shuffleOrder[i]];
+            restX = cell.x + params.alignedClusterX;
+            restY = cell.y + params.alignedClusterY;
+            restZ = cell.z;
+          }
           s.pos.x += (restX - s.pos.x) * lerpK;
           s.pos.y += (restY - s.pos.y) * lerpK;
           s.pos.z += (restZ - s.pos.z) * lerpK;
           s.vel.set(0, 0, 0);
           s.angVel.set(0, 0, 0);
-          s.rot.slerp(_identityQuat, lerpK);
+          if (customPos) {
+            // Active cube in a free-form layout: slow Y spin with per-cube
+            // phase offset so they don't all face the same direction.
+            _tmpA.set(0, 1, 0);
+            s.rot.setFromAxisAngle(_tmpA, tSec * 0.5 + i * 0.45);
+          } else {
+            s.rot.slerp(_identityQuat, lerpK);
+          }
 
           wires[i].position.copy(s.pos);
           wires[i].quaternion.copy(s.rot);
@@ -3258,10 +3289,11 @@
       // from origin so the activation radiates outward).
       if (mood === 'aligned') {
         const step = Math.max(0, Math.min(4, window.__fiveThingsStep | 0));
-        const pattern = STEP_PATTERNS[step];
-        // Fast lookup — N_CELLS is 18, inner hot path every frame.
-        for (let i = 0; i < N_CELLS; i++) {
-          targetActivity[i] = pattern.indexOf(shuffleOrder[i]) >= 0 ? 1 : 0;
+        const layout = STEP_LAYOUTS[step];
+        if (layout.useGrid) {
+          for (let i = 0; i < N_CELLS; i++) targetActivity[i] = 1;
+        } else {
+          for (let i = 0; i < N_CELLS; i++) targetActivity[i] = i < layout.count ? 1 : 0;
         }
       }
       // Mood-driven time multiplier (slows physics without pausing it).
@@ -3275,16 +3307,6 @@
       if (window.__moodSpeed == null) window.__moodSpeed = moodSpeedTarget;
       window.__moodSpeed += (moodSpeedTarget - window.__moodSpeed) * 0.02;
       const moodSpeed = window.__moodSpeed;
-
-      // Ch. 01 aligned cubes "live" via a slow Y-axis spin. Inactive cubes in
-      // the same mood stay still so the step-based reveal still reads as
-      // "only the activated cubes participate in the story".
-      if (mood === 'aligned') {
-        for (let i = 0; i < N_CELLS; i++) {
-          if (activity[i] > 0.1) cubeState[i].angVel.set(0, 0.6, 0);
-          else                   cubeState[i].angVel.set(0, 0, 0);
-        }
-      }
 
       // Cube physics — springs to rest (hero) or lerps to grid (aligned)
       physicsStep(dt * moodSpeed);
