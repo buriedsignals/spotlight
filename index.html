@@ -3020,14 +3020,22 @@
     });
     // Don't deactivate on leave/blur — the auto-orbit keeps the scene alive
 
-    // Click anywhere on the scene = toggle "aligned mode".
-    // We listen on window (otherwise hero-content > * intercepts clicks) and
-    // ignore clicks that land on real interactive UI (links, buttons, GUI).
+    // Click anywhere on the scene = toggle "aligned mode" — only active in
+    // 'chaos' mood (hero). In every other mood the scene is driven by the
+    // mood system (letter shapes, ring, etc.) so a manual toggle would break
+    // the narrative. Clicking in Ch. 01+ is a no-op for the scene; we also
+    // re-sync mood state so any stale toggle gets cleared.
     window.addEventListener('click', (e) => {
       const t = e.target;
       if (t && t.closest && t.closest('a, button, input, label, .lil-gui, nav')) return;
-      params.alignedMode = !params.alignedMode;
-      if (_alignedCtrl) _alignedCtrl.updateDisplay();
+      const mood = window.__sceneMood || 'chaos';
+      if (mood === 'chaos') {
+        params.alignedMode = !params.alignedMode;
+        if (_alignedCtrl) _alignedCtrl.updateDisplay();
+      } else {
+        // Force a mood re-apply so the scene snaps back to the expected layout.
+        window.__prevSceneMood = '_force_resync_';
+      }
     });
 
     // —— Cube physics: springs back to rest, cursor pushes/pulls ——
