@@ -3613,6 +3613,25 @@
     update();
   })();
 
+  // ── Canvas pin — stop the fixed WebGL canvas following the scroll once the
+  // user reaches the bottom of #offers. Past that point the canvas translates
+  // upward in sync with scroll so it effectively "scrolls off" with the page,
+  // leaving the footer ("Lead the story.") cube-free.
+  (function() {
+    const canvas = document.getElementById('global-canvas');
+    const stopSection = document.getElementById('offers');
+    if (!canvas || !stopSection) return;
+    function update() {
+      const stopBottom = stopSection.offsetTop + stopSection.offsetHeight;
+      const viewportBottom = window.scrollY + window.innerHeight;
+      const delta = Math.max(0, viewportBottom - stopBottom);
+      canvas.style.transform = delta > 0 ? `translateY(${-delta}px)` : '';
+    }
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update, { passive: true });
+    update();
+  })();
+
   // ── Stats count-up on enter ──────────────────────────────────────────────
   (function() {
     const nums = document.querySelectorAll('.stat-cell .n[data-count]');
