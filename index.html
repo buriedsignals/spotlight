@@ -3310,6 +3310,8 @@
         wires[i].quaternion.copy(s.rot);
         glasses[i].position.copy(s.pos);
         glasses[i].quaternion.copy(s.rot);
+        wires[i].scale.setScalar(0.65);
+        glasses[i].scale.setScalar(0.65);
 
         _tmpA.copy(s.pos).sub(cellCenters[i]);
         offsetsData[i*4    ] = _tmpA.x;
