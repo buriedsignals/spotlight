@@ -11,6 +11,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
+    --canvas-dim: 0;
     --ink: #07070a;
     --ink-2: #0c0c10;
     --paper: #ede8dc;
@@ -37,6 +38,7 @@
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
+    position: relative;
   }
   a { color: inherit; text-decoration: none; }
   .serif {
@@ -46,6 +48,36 @@
     letter-spacing: -0.02em;
   }
   .mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* ── CUBES BACKDROP ──────────────────────────────────── */
+  #cubes-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    overflow: hidden;
+    background: var(--ink);
+  }
+  #cubes-frame {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: var(--ink);
+    filter: saturate(0.95) contrast(1.02);
+  }
+  .cubes-fade {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(
+        to bottom,
+        rgba(7, 7, 10, calc(var(--canvas-dim) * 0.42)) 0%,
+        rgba(7, 7, 10, calc(var(--canvas-dim) * 0.72)) 35%,
+        rgba(7, 7, 10, var(--canvas-dim)) 100%
+      );
+  }
 
   /* ── NAV ────────────────────────────────────────────────
      Transparent across the whole page. mix-blend-mode: difference flips the
@@ -93,12 +125,23 @@
   #hero {
     position: relative;
     min-height: 74vh;
-    background: var(--ink);
+    background: transparent;
     padding: 148px 48px 44px;
     border-bottom: 1px solid var(--muted-faint-dark);
     overflow: hidden;
     display: flex;
     align-items: flex-end;
+    z-index: 10;
+  }
+  #hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 22% 30%, rgba(7, 7, 10, 0.12), transparent 48%),
+      linear-gradient(to bottom, rgba(7, 7, 10, 0.24) 0%, rgba(7, 7, 10, 0.08) 44%, rgba(7, 7, 10, 0.18) 100%);
+    pointer-events: none;
+    z-index: 0;
   }
   .hero-grid {
     display: grid;
@@ -108,6 +151,8 @@
     width: 100%;
     max-width: 1320px;
     margin: 0 auto;
+    position: relative;
+    z-index: 1;
   }
   .hero-meta {
     text-align: right;
@@ -141,8 +186,10 @@
 
   /* ── FORM SHELL (paper) ───────────────────────────────── */
   main.form-shell {
-    background: var(--ink);
+    background: transparent;
     color: var(--paper);
+    position: relative;
+    z-index: 10;
   }
   .form-wrap {
     max-width: 880px;
@@ -428,11 +475,10 @@
     margin: 80px 0 40px;
     padding: 32px 0;
     border-top: 1px solid var(--muted-faint-dark);
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
     gap: 24px;
     align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
   }
   .generate-bar .lbl {
     font-family: "Fraunces", serif;
@@ -447,13 +493,29 @@
     font-style: normal;
     color: var(--accent-warm);
   }
+  #generate-btn {
+    width: 100%;
+    justify-content: center;
+    padding: 18px 24px;
+    background: var(--paper);
+    color: var(--paper-fg);
+    border-color: var(--paper);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+  }
+  #generate-btn:hover {
+    background: #fff8eb;
+    color: var(--ink);
+    border-color: #fff8eb;
+  }
 
   /* ── INSTALL OUTPUT (dark reveal) ─────────────────────── */
   #install-output {
-    background: var(--ink);
+    background: transparent;
     color: var(--paper);
     padding: 80px 48px 100px;
     border-top: 1px solid var(--muted-faint-dark);
+    position: relative;
+    z-index: 10;
   }
   #install-output .out-wrap {
     max-width: 1080px;
@@ -851,7 +913,7 @@
     }
     .footer-meta { flex-direction: column; gap: 12px; align-items: flex-start; margin-top: 28px; }
 
-    .generate-bar { flex-direction: column; align-items: flex-start; gap: 16px; }
+    .generate-bar { grid-template-columns: 1fr; gap: 16px; }
   }
 
   /* ── REVEAL SYSTEM (subset) ───────────────────────────── */
@@ -895,6 +957,11 @@
 </style>
 </head>
 <body>
+
+<div id="cubes-backdrop" aria-hidden="true">
+  <iframe id="cubes-frame" src="index.html?backdrop=1" tabindex="-1"></iframe>
+  <div class="cubes-fade" id="cubes-fade"></div>
+</div>
 
 <nav class="topnav" id="topnav">
   <a href="index.html" class="brand">
@@ -2139,6 +2206,25 @@
 
   // Nav fades on load
   requestAnimationFrame(() => document.getElementById('topnav').classList.add('in'));
+
+  // --- Backdrop dimmer ---
+  (function () {
+    const hero = document.getElementById('hero');
+    if (!hero) return;
+
+    function update() {
+      const rect = hero.getBoundingClientRect();
+      const start = Math.max(window.innerHeight * 0.58, rect.height * 0.52);
+      const end = -window.innerHeight * 0.1;
+      const progress = (start - rect.bottom) / (start - end);
+      const dim = Math.max(0, Math.min(1, progress));
+      document.documentElement.style.setProperty('--canvas-dim', (dim * 0.74).toFixed(3));
+    }
+
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update, { passive: true });
+    update();
+  })();
 
   // --- Topnav theme switcher ──────────────────────────────────────────────
   // Detects which section sits under the top edge of the viewport and swaps
