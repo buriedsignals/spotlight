@@ -212,9 +212,9 @@
   }
   .hero-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
     align-items: end;
-    gap: 36px;
+    gap: 28px;
   }
   .hero-title {
     font-family: "Fraunces", serif;
@@ -224,7 +224,7 @@
     line-height: 0.98;
     letter-spacing: -0.025em;
     margin: 0;
-    max-width: none;
+    max-width: 10.5ch;
   }
   .hero-title .accent {
     font-style: italic;
@@ -232,11 +232,8 @@
     color: var(--accent-warm);
     display: block;
   }
-  @media (min-width: 1100px) {
-    .hero-title .accent { white-space: nowrap; }
-  }
   .hero-side {
-    max-width: 360px;
+    max-width: 320px;
     width: 100%;
     justify-self: end;
     font-size: 13px;
@@ -899,6 +896,51 @@
     .offer h3 { max-width: 22ch; }
   }
 
+  @media (max-width: 1279px) {
+    .hero-content {
+      justify-content: flex-end;
+      padding: 112px 32px 72px;
+    }
+    .hero-grid {
+      grid-template-columns: 1fr;
+      gap: 26px;
+    }
+    .hero-title {
+      font-size: clamp(52px, 8.2vw, 92px);
+      max-width: 11ch;
+    }
+    .hero-side {
+      max-width: 44ch;
+      justify-self: start;
+      position: relative;
+      z-index: 0;
+      padding: 16px 20px 0 0;
+      color: rgba(237, 232, 220, 0.74);
+      text-shadow: 0 2px 18px rgba(0, 0, 0, 0.72);
+    }
+    .hero-side::before {
+      content: "";
+      position: absolute;
+      inset: -18px -20px -18px -18px;
+      background: linear-gradient(90deg, rgba(7, 7, 10, 0.82) 0%, rgba(7, 7, 10, 0.54) 62%, rgba(7, 7, 10, 0.14) 100%);
+      border-radius: 24px;
+      pointer-events: none;
+      z-index: -1;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+    .hero-helper {
+      max-width: 44ch;
+      color: rgba(237, 232, 220, 0.68);
+    }
+    .hero-actions {
+      flex-wrap: wrap;
+      gap: 14px 16px;
+      margin-top: 22px;
+    }
+    .hero-side .secondary { opacity: 0.94; }
+  }
+
   /* ── MOBILE ───────────────────────────────────────────── */
   @media (max-width: 760px) {
     /* Sticky mobile header — solid ink bg + hairline once past hero, but
@@ -933,9 +975,20 @@
       justify-content: flex-end;
       padding: 120px 20px 34px;
     }
-    .hero-title { font-size: clamp(56px, 13.8vw, 84px); max-width: 100%; }
+    .hero-title { font-size: clamp(52px, 12.8vw, 78px); max-width: 100%; }
     .hero-grid { grid-template-columns: 1fr; gap: 28px; }
-    .hero-side { max-width: 100%; font-size: 13px; }
+    .hero-side {
+      max-width: 100%;
+      font-size: 13px;
+      padding: 14px 16px 0 0;
+      color: rgba(237, 232, 220, 0.78);
+    }
+    .hero-side::before {
+      inset: -14px -12px -16px -12px;
+      background: linear-gradient(180deg, rgba(7, 7, 10, 0.84) 0%, rgba(7, 7, 10, 0.66) 58%, rgba(7, 7, 10, 0.24) 100%);
+      border-radius: 20px;
+    }
+    .hero-helper { color: rgba(237, 232, 220, 0.72); }
     .hero-actions {
       display: flex; flex-direction: column; align-items: stretch;
       gap: 14px;
@@ -950,7 +1003,7 @@
     .hero-side .secondary {
       margin-top: 0; margin-left: 0;
       align-self: flex-start;
-      opacity: 0.92;
+      opacity: 0.96;
     }
     /* Scroll cue — space is tight on mobile, hide it. */
     .scroll-cue { display: none; }
