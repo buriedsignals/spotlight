@@ -1220,6 +1220,22 @@
           </p>
         </div>
 
+        <label class="block" style="margin-top: 18px;">Install folder <span class="hint">— where Spotlight itself should live on this Mac</span></label>
+        <div class="provider-grid" id="install-base-grid">
+          <label><input type="radio" name="install_base" value="documents" checked><span class="opt">Documents</span></label>
+          <label><input type="radio" name="install_base" value="code"><span class="opt">Code</span></label>
+          <label><input type="radio" name="install_base" value="home"><span class="opt">Home</span></label>
+          <label><input type="radio" name="install_base" value="custom"><span class="opt">Custom</span></label>
+        </div>
+        <label class="block" style="margin-top: 16px;">Folder name <span class="hint">— Spotlight will be created inside the parent folder above</span></label>
+        <input type="text" id="install_name" placeholder="Spotlight" value="Spotlight" autocomplete="off">
+        <div id="install_custom_wrap" class="hidden" style="margin-top: 16px;">
+          <label class="block">Custom parent folder <span class="hint">— type the parent location and Spotlight will create the folder name inside it</span></label>
+          <input type="text" id="install_custom_base" placeholder="~/Work" autocomplete="off">
+        </div>
+        <p class="hint" style="margin-top: 14px;">Final install path: <code id="install_path_preview">~/Documents/Spotlight</code></p>
+        <p id="install_err" class="error hidden">Install folder is required.</p>
+
         <label class="block" style="margin-top: 18px;">Vault path <span class="hint">— full path to your Obsidian vault folder (or where to create one)</span></label>
         <input type="text" id="vault_path" placeholder="/Users/you/Documents/Intelligence" value="~/Intelligence">
         <p id="vault_err" class="error hidden">Vault path is required.</p>
@@ -1344,15 +1360,73 @@
   const downloadBtn = document.getElementById('download-btn');
   const firecrawlErr = document.getElementById('firecrawl_err');
   const navErr = document.getElementById('nav_err');
+  const installErr = document.getElementById('install_err');
   const vaultErr = document.getElementById('vault_err');
+  const installNameInput = document.getElementById('install_name');
+  const installCustomWrap = document.getElementById('install_custom_wrap');
+  const installCustomBaseInput = document.getElementById('install_custom_base');
+  const installPathPreview = document.getElementById('install_path_preview');
+  let installLocationDirty = false;
 
   // --- Mode switching (Local vs Cloud) ---
   function renderMode() {
     const mode = document.querySelector('input[name="mode"]:checked').value;
     localSection.classList.toggle('hidden', mode !== 'local');
     cloudSection.classList.toggle('hidden', mode !== 'cloud');
+    renderSuggestedInstallBase();
   }
   document.querySelectorAll('input[name="mode"]').forEach(el => el.addEventListener('change', renderMode));
+
+  function normalizePathPart(value) {
+    return String(value || '').trim().replace(/^\/+|\/+$/g, '');
+  }
+
+  function buildInstallPath() {
+    const folderName = normalizePathPart(installNameInput.value);
+    const baseMode = document.querySelector('input[name="install_base"]:checked').value;
+    let base = '';
+
+    if (baseMode === 'documents') base = '~/Documents';
+    if (baseMode === 'code') base = '~/Code';
+    if (baseMode === 'home') base = '~';
+    if (baseMode === 'custom') base = String(installCustomBaseInput.value || '').trim().replace(/\/+$/g, '');
+
+    if (!folderName || !base) return '';
+    if (base === '~') return `~/${folderName}`;
+    return `${base}/${folderName}`;
+  }
+
+  function renderInstallPath() {
+    const baseMode = document.querySelector('input[name="install_base"]:checked').value;
+    installCustomWrap.classList.toggle('hidden', baseMode !== 'custom');
+    const installPath = buildInstallPath();
+    installPathPreview.textContent = installPath || '—';
+  }
+
+  function setInstallBase(value) {
+    const radio = document.querySelector(`input[name="install_base"][value="${value}"]`);
+    if (radio) radio.checked = true;
+  }
+
+  function renderSuggestedInstallBase() {
+    if (installLocationDirty) return;
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    setInstallBase(mode === 'local' ? 'code' : 'documents');
+    renderInstallPath();
+  }
+
+  document.querySelectorAll('input[name="install_base"]').forEach(el => el.addEventListener('change', () => {
+    installLocationDirty = true;
+    renderInstallPath();
+  }));
+  installNameInput.addEventListener('input', () => {
+    installLocationDirty = true;
+    renderInstallPath();
+  });
+  installCustomBaseInput.addEventListener('input', () => {
+    installLocationDirty = true;
+    renderInstallPath();
+  });
 
   // --- Model repo map ---
   const MODEL_REPOS = {
@@ -1492,6 +1566,7 @@
       firecrawl_key: document.getElementById('firecrawl_key').value.trim(),
       contact_email: document.getElementById('contact_email').value.trim(),
       nav_key: document.getElementById('nav_key').value.trim(),
+      install_path: buildInstallPath(),
       vault_path: document.getElementById('vault_path').value.trim(),
       model_repo: mode === 'local' ? document.getElementById('model_repo').value.trim() : null,
       int_browseruse: document.getElementById('int_browseruse').checked,
@@ -1514,7 +1589,16 @@
     p('# Mode: ' + cfg.mode + (cfg.mode === 'cloud' ? ' (' + cfg.runtime + (cfg.opencode_provider ? '/' + cfg.opencode_provider : '') + ')' : ''));
     p('set -euo pipefail');
     p('');
-    p('SPOTLIGHT_DIR="${SPOTLIGHT_DIR:-$HOME/spotlight}"');
+    p('SPOTLIGHT_DIR_INPUT=' + shellEscape(cfg.install_path));
+    p('if [ -n "${SPOTLIGHT_DIR:-}" ]; then');
+    p('  SPOTLIGHT_DIR="$SPOTLIGHT_DIR"');
+    p('elif [ "$SPOTLIGHT_DIR_INPUT" = "~" ]; then');
+    p('  SPOTLIGHT_DIR="$HOME"');
+    p('elif [[ "$SPOTLIGHT_DIR_INPUT" == "~/"* ]]; then');
+    p('  SPOTLIGHT_DIR="$HOME/${SPOTLIGHT_DIR_INPUT#~/}"');
+    p('else');
+    p('  SPOTLIGHT_DIR="$SPOTLIGHT_DIR_INPUT"');
+    p('fi');
     p('REPO_URL="https://github.com/buriedsignals/spotlight.git"');
     p('');
     p('_c_reset=$\'\\033[0m\'; _c_cyan=$\'\\033[36m\'; _c_green=$\'\\033[32m\'; _c_red=$\'\\033[31m\'; _c_dim=$\'\\033[2m\'; _c_bold=$\'\\033[1m\'');
@@ -1790,6 +1874,7 @@
       vault_path: cfg.vault_path,
       vault_type: 'obsidian',
       cases_root: 'cases/',
+      install_path: cfg.install_path,
       mode: cfg.mode,
       runtime: cfg.runtime,
       local_server: cfg.local_server || null,
@@ -1817,9 +1902,11 @@
     p('');
     p('if ! grep -q "# SPOTLIGHT-BEGIN" "$SHELL_RC" 2>/dev/null; then');
     p('  echo "→ Adding \\"spotlight\\" command to $SHELL_RC"');
-    p('  cat >> "$SHELL_RC" <<\'SHELL_EOF\'');
-    p('');
-    p('# SPOTLIGHT-BEGIN — added by setup.html installer');
+    p('  {');
+    p('    echo ""');
+    p('    echo "# SPOTLIGHT-BEGIN — added by setup.html installer"');
+    p('    printf "export SPOTLIGHT_DIR=%q\\n" "$SPOTLIGHT_DIR"');
+    p('    cat <<\'SHELL_EOF\'');
     p('export PATH="$HOME/.npm-global/bin:$PATH"');
     p('spotlight() {');
     p('  local dir="${SPOTLIGHT_DIR:-$HOME/spotlight}"');
@@ -1859,6 +1946,7 @@
     p('}');
     p('# SPOTLIGHT-END');
     p('SHELL_EOF');
+    p('  } >> "$SHELL_RC"');
     p('else');
     p('  echo "→ \\"spotlight\\" command already present in $SHELL_RC"');
     p('fi');
@@ -1971,6 +2059,7 @@
     let hasErr = false;
     if (!cfg.firecrawl_key) { firecrawlErr.classList.remove('hidden'); hasErr = true; } else firecrawlErr.classList.add('hidden');
     if (!cfg.nav_key) { navErr.classList.remove('hidden'); hasErr = true; } else navErr.classList.add('hidden');
+    if (!cfg.install_path) { installErr.classList.remove('hidden'); hasErr = true; } else installErr.classList.add('hidden');
     if (!cfg.vault_path) { vaultErr.classList.remove('hidden'); hasErr = true; } else vaultErr.classList.add('hidden');
     if (hasErr) {
       document.querySelector('.error:not(.hidden)').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -2190,6 +2279,7 @@
   });
 
   // Init
+  renderSuggestedInstallBase();
   renderMode();
   renderCloud();
 
