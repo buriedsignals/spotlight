@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Spotlight — OSINT investigation system for journalists</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'><path d='M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z'/></svg>">
-<meta name="description" content="You lead the investigation. Spotlight does the research. Verified findings, independent fact-checking, a vault that grows with every case.">
+<meta name="description" content="Turn your agent into an investigative system. Spotlight is an open-source skill file for journalists: methodology, investigator and fact-checker loops, human review gates, and local-first workflows for sensitive reporting.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -183,14 +183,14 @@
     position: absolute; inset: 0;
     z-index: 3;
     display: flex; flex-direction: column; justify-content: flex-end;
-    padding: 92px 48px 40px;
+    padding: 92px 48px 96px;
     pointer-events: none;
   }
   .hero-grid {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.85fr);
     align-items: end;
-    gap: 48px;
+    gap: 72px;
   }
   .hero-title {
     font-family: "Fraunces", serif;
@@ -200,7 +200,7 @@
     line-height: 0.98;
     letter-spacing: -0.025em;
     margin: 0;
-    max-width: 14ch;
+    max-width: 18ch;
   }
   .hero-title .accent {
     font-style: italic;
@@ -209,33 +209,49 @@
     display: block;
   }
   .hero-side {
-    max-width: 280px;
+    max-width: 420px;
     font-size: 13px;
     line-height: 1.55;
     color: var(--muted-dark);
-    padding-bottom: 8px;
+    padding-bottom: 0;
   }
-  .hero-side .cta {
+  .hero-helper {
+    margin-top: 12px;
+    max-width: 34ch;
+    color: var(--muted-dark);
+  }
+  .hero-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 28px;
+  }
+  .hero-side .cta,
+  .install-reminder .cta {
     display: inline-flex; align-items: center; gap: 10px;
-    margin-top: 20px;
-    padding: 12px 16px 12px 18px;
-    border: 1px solid rgba(255,245,217,0.35);
-    color: var(--warm);
+    margin-top: 0;
+    padding: 14px 18px 14px 20px;
+    border: 1px solid rgba(255,245,217,0.75);
+    background: var(--paper);
+    color: var(--ink);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
     font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
     pointer-events: auto;
-    transition: background 0.3s, border-color 0.3s;
+    transition: background 0.3s, border-color 0.3s, color 0.3s, transform 0.2s;
   }
-  .hero-side .cta:hover {
-    background: var(--accent-warm-14);
+  .hero-side .cta:hover,
+  .install-reminder .cta:hover {
+    background: var(--accent-warm);
     border-color: var(--accent-warm);
-    color: var(--accent-warm);
+    color: var(--paper);
+    transform: translateY(-1px);
   }
   .hero-side .secondary {
     display: inline-block;
-    margin-top: 12px;
-    margin-left: 16px;
+    margin-top: 0;
+    margin-left: 0;
     font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase;
-    opacity: 0.55;
+    opacity: 0.82;
     pointer-events: auto;
     border-bottom: 1px solid transparent;
     transition: opacity 0.2s, border-color 0.2s;
@@ -248,7 +264,7 @@
 
   .scroll-cue {
     position: absolute;
-    bottom: 24px;
+    bottom: 40px;
     left: 48px;
     font-size: 10px;
     letter-spacing: 0.25em;
@@ -479,7 +495,7 @@
   #works-with {
     background: var(--ink);
     color: var(--paper);
-    padding: 120px 48px;
+    padding: 120px 48px 160px;
   }
   #works-with .header {
     padding: 0 0 40px;
@@ -504,7 +520,12 @@
     border-color: var(--accent-warm);
     color: var(--accent-warm);
   }
-  .works-chip-static { opacity: 0.55; }
+  .works-chip-static { opacity: 1; }
+  .install-reminder {
+    margin-top: 44px;
+    display: flex;
+    justify-content: flex-start;
+  }
 
   /* ── ATTRIBUTION ──────────────────────────────────────── */
   #attribution {
@@ -575,7 +596,7 @@
   #offers {
     background: var(--ink);
     color: var(--paper);
-    padding: 120px 48px;
+    padding: 168px 48px 120px;
   }
   #offers .header { margin-bottom: 60px; }
   .about-bs {
@@ -600,18 +621,14 @@
   }
   .offer:last-child { border-right: none; }
   .offer .kicker {
-    display: flex; justify-content: space-between; align-items: baseline;
-    font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.6;
+    display: flex; justify-content: flex-start; align-items: baseline; gap: 16px; flex-wrap: wrap;
+    font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.82;
     padding-bottom: 24px;
     border-bottom: 1px solid var(--muted-faint-dark);
   }
-  .offer .kicker .price {
-    font-family: "Fraunces", serif;
-    font-variation-settings: "opsz" 72, "wght" 500;
-    font-size: 22px;
+  .offer .kicker .launch {
+    color: var(--accent-warm);
     opacity: 1;
-    letter-spacing: -0.01em;
-    text-transform: none;
   }
   .offer h3 {
     font-family: "Fraunces", serif;
@@ -649,13 +666,20 @@
     display: flex; align-items: center; gap: 20px;
     flex-wrap: wrap;
   }
+  .offer .actions.stack {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
   .offer .btn {
     display: inline-flex; align-items: center; gap: 10px;
     padding: 14px 18px;
+    border: none;
     background: var(--paper);
     color: var(--ink);
     font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+    cursor: pointer;
     transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
   }
   .offer .btn:hover { background: var(--accent-warm); color: var(--paper); }
@@ -668,63 +692,102 @@
   .offer .aside {
     font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; opacity: 0.5;
   }
+  .offer-signup-form {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+  }
+  .offer-signup-form input[type="email"] {
+    flex: 1;
+    min-width: 0;
+    height: 48px;
+    padding: 0 14px;
+    border: 1px solid var(--muted-faint-dark);
+    background: rgba(237, 232, 220, 0.04);
+    color: var(--paper);
+    font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  }
+  .offer-signup-form input[type="email"]::placeholder { color: var(--muted-dark); }
+  .offer-signup-form input[type="email"]:focus {
+    outline: none;
+    border-color: var(--accent-warm);
+    box-shadow: 0 0 0 3px rgba(193, 106, 52, 0.16);
+    background: rgba(237, 232, 220, 0.06);
+  }
+  .offer-signup-form input[type="email"]:disabled { opacity: 0.65; }
+  .offer-signup-error {
+    margin: 0;
+    font-size: 12px;
+    color: #f0a4a4;
+  }
+  .offer-signup-success {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font-size: 13px;
+    color: var(--warm);
+  }
+  .offer-signup-success svg { flex-shrink: 0; }
+  .offer-disclaimer {
+    margin: 0;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.62;
+  }
+  .hidden { display: none !important; }
 
   /* ── FOOTER ───────────────────────────────────────────── */
   #footer {
     background: rgba(7, 7, 10, 0);
     color: var(--paper);
-    padding: 140px 48px 40px;
+    padding: 96px 48px 32px;
     position: relative;
     overflow: hidden;
     z-index: 10;
   }
-  .footer-huge {
-    font-family: "Fraunces", serif;
-    font-variation-settings: "opsz" 144, "wght" 500;
-    font-size: clamp(80px, 18vw, 280px);
-    line-height: 0.82;
-    letter-spacing: -0.04em;
-    margin: 0 0 60px;
-    color: var(--paper);
-  }
-  .footer-huge em {
-    font-style: italic;
-    font-variation-settings: "opsz" 144, "wght" 400;
-    color: var(--accent-warm);
-  }
-  .footer-grid {
-    display: grid;
-    grid-template-columns: 2fr 1fr 1fr 1fr;
-    gap: 40px;
-    padding: 40px 0;
+  .footer-simple {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding-top: 28px;
     border-top: 1px solid var(--muted-faint-dark);
   }
-  .footer-col h4 {
-    font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
-    opacity: 0.5;
-    margin: 0 0 18px;
-    font-weight: 500;
-  }
-  .footer-col ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
-  .footer-col ul li a {
-    font-size: 13px;
-    opacity: 0.85;
-    border-bottom: 1px solid transparent;
-    transition: border-color 0.2s, color 0.2s;
-  }
-  .footer-col ul li a:hover { color: var(--accent-warm); border-bottom-color: var(--accent-warm); }
-  .footer-col.about p {
-    font-size: 13px; line-height: 1.6; opacity: 0.7;
-    max-width: 38ch;
+  .footer-summary {
     margin: 0;
+    max-width: 56ch;
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--muted-dark);
+  }
+  .footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+  .footer-links a {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 14px;
+    border: 1px solid var(--muted-faint-dark);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  }
+  .footer-links a:hover {
+    background: var(--accent-warm-14);
+    border-color: var(--accent-warm);
+    color: var(--accent-warm);
   }
   .footer-meta {
     display: flex; justify-content: space-between; align-items: baseline;
-    padding-top: 28px;
-    border-top: 1px solid var(--muted-faint-dark);
     font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
     opacity: 0.5;
-    margin-top: 60px;
+    margin-top: 8px;
   }
   .footer-meta .brand-mini { display: flex; align-items: center; gap: 10px; }
   .footer-meta .brand-mini svg { width: 14px; height: 14px; opacity: 0.7; }
@@ -767,11 +830,11 @@
     }
 
     /* Hero — tighter title, stacked side block with CTAs stacked too */
-    .hero-content { padding: 72px 20px 32px; }
+    .hero-content { padding: 72px 20px 72px; }
     .hero-title { font-size: clamp(38px, 10vw, 60px); max-width: 100%; }
     .hero-grid { grid-template-columns: 1fr; gap: 20px; }
     .hero-side { max-width: 100%; font-size: 12px; }
-    .hero-side > div {
+    .hero-actions {
       display: flex; flex-direction: column; align-items: stretch;
       gap: 14px;
       margin-top: 18px;
@@ -785,7 +848,7 @@
     .hero-side .secondary {
       margin-top: 0; margin-left: 0;
       align-self: flex-start;
-      opacity: 0.85;
+      opacity: 0.92;
     }
     /* Scroll cue — space is tight on mobile, hide it. */
     .scroll-cue { display: none; }
@@ -895,20 +958,31 @@
     .credits { grid-template-columns: 1fr; gap: 12px; padding: 20px 0; }
     .credits .role { padding-top: 0; }
 
-    #works-with { padding: 0 0 60px; }
+    #works-with { padding: 0 0 96px; }
     .works-chips { padding: 0 20px; }
+    .install-reminder {
+      padding: 0 20px;
+      margin-top: 36px;
+    }
+    .install-reminder .cta {
+      width: 100%;
+      justify-content: center;
+      padding: 14px 18px;
+    }
 
-    #offers { padding: 0 0 60px; }
+    #offers { padding: 24px 0 60px; }
     #offers .header { margin-bottom: 0; }
     .about-bs { margin: 0 0 40px; padding: 0 20px; }
     .offers-grid { grid-template-columns: 1fr; padding: 0 20px; }
     .offer { padding: 36px 0; border-right: none; border-bottom: 1px solid var(--muted-faint-dark); min-height: auto; }
     .offer:last-child { border-bottom: none; }
     .offer .actions { flex-direction: column; align-items: flex-start; }
+    .offer-signup-form { flex-direction: column; }
 
-    #footer { padding: 80px 20px 28px; }
-    .footer-grid { grid-template-columns: 1fr 1fr; gap: 28px; padding: 28px 0; }
-    .footer-col.about { grid-column: 1 / -1; }
+    #footer { padding: 64px 20px 28px; }
+    .footer-simple { gap: 18px; }
+    .footer-summary { font-size: 13px; }
+    .footer-links { gap: 10px; }
     .footer-meta { flex-direction: column; gap: 12px; align-items: flex-start; margin-top: 32px; }
   }
 
@@ -1133,10 +1207,10 @@
       </h1>
       <div class="hero-side" data-reveal="body" style="--rd: 1200ms">
         Turn your agent into an investigative system.
-        <div style="margin-top: 10px; color: var(--muted-dark);">
+        <div class="hero-helper">
           A portable skill file that gives your runtime a reporting methodology, an investigator and fact-checker loop, human review gates, and a case archive you can reuse.
         </div>
-        <div>
+        <div class="hero-actions">
           <a href="setup.html" class="cta">Install Spotlight <span aria-hidden="true">→</span></a>
           <a href="https://github.com/buriedsignals/spotlight" class="secondary" target="_blank" rel="noopener">GitHub ↗</a>
         </div>
@@ -1244,46 +1318,62 @@
     <a class="works-chip" href="https://gemini.google.com" target="_blank" rel="noopener">Gemini</a>
     <a class="works-chip" href="https://block.github.io/goose/" target="_blank" rel="noopener">Goose</a>
     <a class="works-chip" href="https://opencode.ai" target="_blank" rel="noopener">OpenCode</a>
-    <a class="works-chip" href="https://pi.dev" target="_blank" rel="noopener">pi</a>
     <span class="works-chip works-chip-static">Hermes</span>
-    <span class="works-chip works-chip-static">Any OpenAI API</span>
+  </div>
+  <div class="install-reminder" data-reveal="body" style="--rd: 260ms">
+    <a href="setup.html" class="cta">Install Spotlight <span aria-hidden="true">→</span></a>
   </div>
 </section>
 
 <!-- ── OFFERS (Membership + Consulting) ────────────────── -->
 <section id="offers" data-screen-label="07 Offers" data-nav-theme="dark" data-scene-mood="split">
   <div class="header">
-    <span class="chap" data-reveal="meta">Ch. 04 — Work with us</span>
+    <span class="chap" data-reveal="meta">Ch. 04 — Work with me</span>
     <h2 class="title" data-reveal="title" style="--rd: 120ms">Work with me.</h2>
   </div>
 
   <p class="about-bs" data-reveal="body" style="--rd: 120ms">
-    I built Spotlight for my own reporting and for collaborative investigations with partner newsrooms. The open-source core is free. If you want to work with me around the system, here are the two ways in.
+    I use Spotlight in my own reporting and in collaborative investigations with partner newsrooms. If you want to work with me around that system, these are the two ways in.
   </p>
 
   <div class="offers-grid">
     <article class="offer" data-reveal="card" data-stagger-idx="0">
       <div class="kicker">
-        <span>Pro Membership</span>
-        <span class="price">$49<span style="font-size:12px;opacity:0.6;letter-spacing:0.1em;"> / MO</span></span>
+        <span>Membership</span>
+        <span class="launch">Launching May 2026</span>
       </div>
       <h3>Investigations with AI. The tools to run your own.</h3>
       <ul>
-        <li>Collaborative investigations — shared leads, data, and methodology</li>
+        <li>Collaborative investigations with shared leads, data, and methodology</li>
         <li>Live bootcamps, workshops, and events</li>
-        <li>Hosted Pro tier of the agent extensions — coJournalist, Navigator, Spotlight, DataHound</li>
-        <li>Investigation methodologies and AI techniques, in depth</li>
+        <li>Hosted Pro access to Spotlight, coJournalist, Navigator, and DataHound</li>
+        <li>Investigation methods and AI techniques, in depth</li>
       </ul>
-      <div class="actions">
-        <a href="#join" class="btn">Subscribe <span aria-hidden="true">→</span></a>
-        <a href="#compare" class="aside">700+ journalists already reading</a>
+      <div class="actions stack">
+        <form class="offer-signup-form" id="newsletter-signup-form">
+          <input
+            type="email"
+            id="newsletter-email"
+            placeholder="you@example.com"
+            autocomplete="email"
+            required
+          >
+          <button type="submit" class="btn" id="newsletter-submit">Subscribe <span aria-hidden="true">→</span></button>
+        </form>
+        <p class="offer-signup-error hidden" id="newsletter-error"></p>
+        <p class="offer-signup-success hidden" id="newsletter-success">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor"/>
+          </svg>
+          <span>You're in. I'll ping you at launch.</span>
+        </p>
+        <p class="offer-disclaimer" id="newsletter-disclaimer">700+ journalists already reading</p>
       </div>
     </article>
 
     <article class="offer" data-reveal="card" data-stagger-idx="1">
       <div class="kicker">
         <span>Consulting</span>
-        <span class="price">Bespoke</span>
       </div>
       <h3>I train newsrooms to investigate with AI.</h3>
       <p class="lede">Workshops, custom tooling, and investigation collaborations.</p>
@@ -1296,8 +1386,8 @@
         <li>The New Humanitarian</li>
       </ul>
       <div class="actions">
-        <a href="/cdn-cgi/l/email-protection#0f676a6363604f6d7a7d666a6b7c6668616e637c216c6062" class="btn ghost">Get in touch <span aria-hidden="true">→</span></a>
-        <a href="#cases" class="aside">See case studies</a>
+        <a href="mailto:tom@buriedsignals.com" class="btn ghost">Get in touch <span aria-hidden="true">→</span></a>
+        <a href="https://buriedsignals.com/cases" class="aside">See case studies</a>
       </div>
     </article>
   </div>
@@ -1305,39 +1395,16 @@
 
 <!-- ── FOOTER ───────────────────────────────────────────── -->
 <section id="footer" data-screen-label="08 Footer" data-nav-theme="dark" data-scene-mood="calm">
-  <p class="footer-huge" id="footer-huge">
-    Lead the <em>story.</em>
-  </p>
-
-  <div class="footer-grid">
-    <div class="footer-col about" data-reveal="body" data-stagger-idx="0">
-      <h4>Spotlight</h4>
-      <p>An open-source investigative system for AI agents, built for journalists. One agent reports, one agent checks, and you stay the editor. Local when the case is too sensitive for the cloud.</p>
-    </div>
-    <div class="footer-col" data-reveal="body" data-stagger-idx="1">
-      <h4>Product</h4>
-      <ul>
-        <li><a href="#what">What it does</a></li>
-        <li><a href="#integrations">Integrations</a></li>
-        <li><a href="#box">In the box</a></li>
-        <li><a href="setup.html">Install</a></li>
-      </ul>
-    </div>
-    <div class="footer-col" data-reveal="body" data-stagger-idx="2">
-      <h4>Project</h4>
-      <ul>
-        <li><a href="#attribution">Built on</a></li>
-        <li><a href="#offers">Work with us</a></li>
-        <li><a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a></li>
-      </ul>
-    </div>
-    <div class="footer-col" data-reveal="body" data-stagger-idx="3">
-      <h4>Contact</h4>
-      <ul>
-        <li><a href="/cdn-cgi/l/email-protection#d8b0bdb4b4b798baadaab1bdbcabb1bfb6b9b4abf6bbb7b5"><span class="__cf_email__" data-cfemail="3058555c5c5f705245425955544359575e515c431e535f5d">[email&#160;protected]</span></a></li>
-        <li><a href="https://buriedsignals.com" target="_blank" rel="noopener">buriedsignals.com ↗</a></li>
-        <li><a href="https://indicator.media" target="_blank" rel="noopener">indicator.media ↗</a></li>
-      </ul>
+  <div class="footer-simple">
+    <p class="footer-summary" data-reveal="body" data-stagger-idx="0">
+      An open-source investigative system for AI agents, built for journalists. One agent reports, one agent checks, and you stay the editor. Local when the case is too sensitive for the cloud.
+    </p>
+    <div class="footer-links" data-reveal="body" data-stagger-idx="1">
+      <a href="setup.html">Install</a>
+      <a href="#what">How it works</a>
+      <a href="#offers">Work with me</a>
+      <a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a>
+      <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals ↗</a>
     </div>
   </div>
 
@@ -1348,7 +1415,7 @@
       </svg>
       <span>Spotlight · v1.0</span>
     </div>
-    <span>© 2025 Buried Signals — MIT licensed</span>
+    <span>© 2026 Buried Signals — MIT licensed</span>
   </div>
 </section>
 
@@ -3720,12 +3787,12 @@
   })();
 
   // ── Canvas pin — the fixed WebGL canvas stops following the viewport once
-  // "Lead the story." enters from the bottom. From that point on it glides
+  // the footer block enters from the bottom. From that point on it glides
   // upward with the scroll so it effectively sits at a fixed world position
-  // above the footer, leaving the huge display text unobstructed.
+  // above the footer content.
   (function() {
     const canvas = document.getElementById('global-canvas');
-    const stopEl = document.querySelector('.footer-grid');
+    const stopEl = document.querySelector('.footer-simple');
     if (!canvas || !stopEl) return;
     function update() {
       const stopTopAbs = stopEl.getBoundingClientRect().top + window.scrollY;
@@ -3764,44 +3831,6 @@
 
   // ── Reveal system ───────────────────────────────────────────────────────
   (function() {
-    // Wrap words in .footer-huge for per-word reveal.
-    const huge = document.getElementById('footer-huge');
-    if (huge) {
-      // Preserve <em> → we rebuild with <span class="reveal-huge"><span>word</span></span>
-      const walker = [];
-      huge.childNodes.forEach(n => walker.push(n));
-      huge.innerHTML = '';
-      let idx = 0;
-      walker.forEach(n => {
-        if (n.nodeType === 3) {
-          const parts = n.textContent.split(/(\s+)/);
-          parts.forEach(p => {
-            if (!p.trim()) { huge.appendChild(document.createTextNode(p)); return; }
-            const wrap = document.createElement('span');
-            wrap.className = 'reveal-huge';
-            wrap.setAttribute('data-reveal-huge', '');
-            wrap.setAttribute('data-stagger-idx', String(idx++));
-            const inner = document.createElement('span');
-            inner.textContent = p;
-            wrap.appendChild(inner);
-            huge.appendChild(wrap);
-          });
-        } else {
-          // Element (e.g. <em>). Wrap its textContent as one word unit.
-          const text = n.textContent;
-          const wrap = document.createElement('span');
-          wrap.className = 'reveal-huge';
-          wrap.setAttribute('data-reveal-huge', '');
-          wrap.setAttribute('data-stagger-idx', String(idx++));
-          const inner = document.createElement(n.tagName.toLowerCase());
-          inner.textContent = text;
-          // Copy original styles (em italics handled by CSS)
-          wrap.appendChild(inner);
-          huge.appendChild(wrap);
-        }
-      });
-    }
-
     // Nav fires on load.
     requestAnimationFrame(() => {
       const nav = document.getElementById('topnav');
@@ -3884,6 +3913,55 @@
       t.style.setProperty('--rs', idx);
       t.__io = ioHuge;
       ioHuge.observe(t);
+    });
+  })();
+
+  // ── Newsletter signup — mirrors the coJournalist landing-card flow using
+  // the same public Supabase Edge Function.
+  (function () {
+    const form = document.getElementById('newsletter-signup-form');
+    const emailInput = document.getElementById('newsletter-email');
+    const submitBtn = document.getElementById('newsletter-submit');
+    const errorEl = document.getElementById('newsletter-error');
+    const successEl = document.getElementById('newsletter-success');
+    const disclaimerEl = document.getElementById('newsletter-disclaimer');
+    if (!form || !emailInput || !submitBtn || !errorEl || !successEl || !disclaimerEl) return;
+
+    const supabaseUrl = 'https://gfmdziplticfoakhrfpt.supabase.co';
+    const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdmbWR6aXBsdGljZm9ha2hyZnB0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc2MDYzMjIsImV4cCI6MjA4MzE4MjMyMn0.Liz22BqK2qfHBcIsIJxGTT4VvMzfBE_yRFraVrUPKq4';
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const value = emailInput.value.trim();
+      if (!value) return;
+
+      submitBtn.disabled = true;
+      emailInput.disabled = true;
+      errorEl.textContent = '';
+      errorEl.classList.add('hidden');
+
+      try {
+        const res = await fetch(`${supabaseUrl}/functions/v1/newsletter-subscribe`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseAnonKey
+          },
+          body: JSON.stringify({ email: value, newsletters: ['buried_signals'] })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || data.detail || 'Something went wrong. Please try again.');
+        }
+        form.classList.add('hidden');
+        successEl.classList.remove('hidden');
+        disclaimerEl.textContent = 'Joining 700+ journalists already reading.';
+      } catch (error) {
+        errorEl.textContent = error instanceof Error ? error.message : 'Something went wrong. Please try again.';
+        errorEl.classList.remove('hidden');
+        submitBtn.disabled = false;
+        emailInput.disabled = false;
+      }
     });
   })();
 </script>
