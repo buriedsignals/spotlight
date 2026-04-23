@@ -4,15 +4,14 @@ Spotlight is runtime-agnostic on purpose — but real investigations need more t
 
 This doc is the operator overview. See `integrations/README.md` for the manifest contract and add-a-new-one procedure. See `skills/integrations/SKILL.md` for the agent-facing routing table.
 
-## What an integration is (vs a skill vs a feed)
+## What an integration is (vs a skill)
 
 | Concept | Lives at | Example | What it holds |
 |---|---|---|---|
 | **Skill** | `skills/<id>/SKILL.md` | `osint`, `follow-the-money`, `investigate` | Methodology playbook the agent follows. No credentials. |
-| **Feed source** | `monitoring/feeds/sources/<id>/` | `gdelt`, `acled`, `rss_investigative` | Data feed with a `fetch.py` implementation. Returns normalized signals. |
 | **Integration** | `integrations/<id>/` | `browser-use`, `junkipedia`, `osint-navigator` | Specific external tool with its own API contract + credentials. |
 
-An agent invokes a **skill** to get *guidance*; queries a **feed** to get *ambient signals*; calls an **integration** to get *direct data from a specific vendor*.
+An agent invokes a **skill** to get *guidance* and calls an **integration** to get *direct data from a specific vendor or platform*. Passive feed signals now live in Mycroft, not Spotlight.
 
 ## Current integrations (shipped)
 
@@ -21,6 +20,7 @@ An agent invokes a **skill** to get *guidance*; queries a **feed** to get *ambie
 | `browser-use` | library | browser-automation | No (optional cloud) | Agent-driven browser automation — form navigation, JS-rendered extraction, multi-step flows. MIT open source. |
 | `junkipedia` | api | social-osint | `JUNKIPEDIA_API_KEY` | Narrative / misinformation tracking across social platforms. Application-based access. |
 | `osint-navigator` | api | tool-discovery | `OSINT_NAV_API_KEY` | 1,000+ OSINT tools with AI-powered synthesized answers. Complements the curated 150-tool catalog in the `osint` skill. |
+| `cojournalist` | api | monitoring | `COJOURNALIST_API_KEY` | Durable monitoring via existing coJournalist projects, scouts, and information units. |
 
 ## Deferred integrations (architecture ready)
 
@@ -32,8 +32,6 @@ These are documented in the pitch deck and have interest from journalism orgs, b
 | `thinkpol` | Awaiting API access | grey-web-intelligence | think-pol.com — 28.5B+ data point private archive. Enterprise access. |
 | `reality-defender` | Awaiting API access | verification | Deepfake / AI-generated content detection. Has API, enterprise pricing. |
 | `klarety` | Awaiting API access | verification | Disinformation detection. |
-| `cojournalist` | External integration (planned) | monitoring | Local news monitoring via Tom's coJournalist platform. Moves out of the core feed framework into its own integration per separate product direction. |
-
 `vera.ai` was evaluated but excluded — it's an EU research project shipping browser plugins + platform-integrated tools, not a programmatic API. Listed in `osint` skill references as a journalist resource.
 
 ## Preflight
@@ -54,7 +52,7 @@ Status semantics (same as feed sources):
 | `yellow` | Keys set but smoke-test failed (only reported with `--smoke-test`) |
 | `red` | One or more required env vars missing |
 
-The orchestrator runs this at Phase 0 step 10 alongside `monitoring/feeds/preflight.py`, giving the user a combined status table at session start.
+The orchestrator runs this at Phase 0 step 10 alongside its Mycroft/passive-monitor checks, giving the user a combined status table at session start.
 
 Example:
 

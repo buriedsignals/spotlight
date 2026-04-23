@@ -6,7 +6,7 @@ integration's required env vars, reports per-integration status:
 green (ready), yellow (key set but smoke test failed), red (missing
 env vars).
 
-Shared machinery lives in monitoring/feeds/_preflight_base.py.
+Shared machinery lives in integrations/_preflight_base.py.
 
 Usage:
     python3 integrations/preflight.py [--smoke-test] [--json|--text]
@@ -24,9 +24,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-# Import the shared helpers from monitoring/feeds/ — single source of truth
-_BASE_DIR = Path(__file__).parent.parent
-sys.path.insert(0, str(_BASE_DIR / "monitoring" / "feeds"))
+# Import the shared helpers from integrations/ — local single source of truth
+_BASE_DIR = Path(__file__).parent
+sys.path.insert(0, str(_BASE_DIR))
 from _preflight_base import run_preflight  # noqa: E402
 
 INTEGRATIONS_DIR = Path(__file__).parent

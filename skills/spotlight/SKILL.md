@@ -175,16 +175,16 @@ list-files("cases/{project}/data/review-feedback-processed.json")
 
 If `review-feedback.json` exists AND `review-feedback-processed.json` is absent or older, `invoke-skill("review")` before proceeding. The review skill enters Mode B (process), re-spawns the investigator with feedback-targeted instructions, updates findings/fact-check, and regenerates `review.html`. Only then continue with monitoring preflight.
 
-### 10. Monitoring + integrations preflight (optional)
+### 10. Monitoring + integrations availability (optional)
 
-Run both preflight checkers:
+Run integration preflight and check whether Mycroft passive monitoring is installed:
 
 ```
-execute-shell("python3 monitoring/feeds/preflight.py --json")
 execute-shell("python3 integrations/preflight.py --json")
+execute-shell('test -f ~/.mycroft/monitoring/monitor.py && echo true || echo false')
 ```
 
-Both emit the same green/yellow/red status model. Display a combined table to the user so they know which feeds AND external integrations will be queryable during the investigation. Do not block on failures — feeds and integrations are supplementary.
+Display a combined summary to the user so they know which external integrations are green and whether passive Mycroft signals are available. Do not block on failures — supplementary monitoring is optional.
 
 Typical expectations:
 
@@ -233,7 +233,7 @@ SKILLS: web-archiving, content-access, social-media-intelligence (load when inve
 Approved brief directions:
 {directions}
 
-You may recommend monitoring targets in your methodology (see skills/monitoring for the feed framework and recommendation schema).
+You may recommend monitoring targets in your methodology (see skills/monitoring for the recommendation schema and external-monitor lifecycle).
 If the investigation involves social media, plan to invoke social-media-intelligence for account authenticity and coordination detection.
 
 Write methodology to cases/{project}/data/methodology.json.
@@ -328,9 +328,12 @@ Write to cases/{project}/data/fact-check.json.",
         >
         > Approve, modify, or skip each?"
 
-     2. For approved recommendations, invoke-skill("monitoring") to configure feed-based scouts. See skills/monitoring/SKILL.md for the feed framework.
+     2. For approved recommendations, invoke-skill("monitoring") to:
+        - register passive topics in Mycroft when useful,
+        - create durable monitors in coJournalist by project_id when available,
+        - or fall back to runtime-native routines.
 
-     3. Log results to cases/{project}/data/monitoring.json
+     3. Log all created monitor links to cases/{project}/data/monitoring.json
 
   6. Evaluate readiness criteria (see references/pipeline.md):
 

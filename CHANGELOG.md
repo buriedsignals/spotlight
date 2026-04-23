@@ -2,6 +2,23 @@
 
 All notable changes to Spotlight. Format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Monitoring ownership split is now explicit:
+  - `mycroft` owns passive feed polling, scoring, deduplication, and topic-linked signal storage
+  - `spotlight` owns investigation-scoped monitoring orchestration and case linkage
+  - `cojournalist` remains unchanged and is used through existing `projects`, `scouts`, and `units` surfaces
+- Spotlight no longer ships the legacy `monitoring/feeds/` framework.
+- `cases/{project}/data/monitoring.json` is now treated as an external-monitor registry rather than a feed-execution config.
+
+### Added
+
+- `spotlight/monitoring/registry.py` for initializing, normalizing, and migrating `monitoring.json` to schema v2.
+- `integrations/cojournalist/` as the default durable-monitor integration surface.
+- `mycroft/monitoring/` as the passive-monitor single source of truth, including `poll`, `query`, `preflight`, `topic`, and `prune`.
+
 ## [1.0.0] — 2026-04-17
 
 Initial public release. Runtime-agnostic OSINT investigation system for journalists.

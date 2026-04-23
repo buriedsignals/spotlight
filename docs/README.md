@@ -1,6 +1,6 @@
 # Spotlight — Documentation
 
-Spotlight is a runtime-agnostic OSINT investigation system — 10 skills, 2 agents, 5 schemas, 5 feed sources. Point your agent runtime (pi, Hermes, Goose, Codex, Gemini, or any OpenAI-compatible harness) at this repo and run full-fidelity investigations end-to-end.
+Spotlight is a runtime-agnostic OSINT investigation system — 11 skills, 2 agents, 5 schemas, and investigation-scoped monitoring orchestration. Point your agent runtime (pi, Hermes, Goose, Codex, Gemini, or any OpenAI-compatible harness) at this repo and run full-fidelity investigations end-to-end.
 
 This `docs/` directory is the operator manual. `AGENTS.md` at the repo root is the machine-readable contract your runtime loads at startup.
 
@@ -13,7 +13,7 @@ If you are new to Spotlight, read in this order:
 3. **[integrations.md](integrations.md)** — external OSINT tool integrations (browser-use, Junkipedia, OSINT Navigator), manifest contract, preflight
 4. **[investigating.md](investigating.md)** — the investigation pipeline: brief, methodology, cycles, gates, readiness, stall protocol
 5. **[fact-checking.md](fact-checking.md)** — the independent verification pass: SIFT, verdict taxonomy, evidence trails
-6. **[monitoring.md](monitoring.md)** — persistent feed monitoring: sources, preflight, the scout lifecycle
+6. **[monitoring.md](monitoring.md)** — monitoring orchestration across Mycroft, coJournalist, and runtime-native fallbacks
 7. **[recovery.md](recovery.md)** — when things break: agent crashes, corrupted files, stale locks, API failures
 
 ## 60-second quick-start

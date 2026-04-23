@@ -1,6 +1,6 @@
 ---
 name: integrations
-description: Routing table for external tool integrations — browser-use, Junkipedia, OSINT Navigator, and more. Agents invoke this skill to discover which integrations are live and which one fits a given investigation task.
+description: Routing table for external tool integrations — browser-use, Junkipedia, OSINT Navigator, coJournalist, and more. Agents invoke this skill to discover which integrations are live and which one fits a given investigation task.
 version: "1.0"
 invocable_by: [investigator, fact-checker, orchestrator]
 requires: []
@@ -27,6 +27,7 @@ The skill is cheap to load — it's a routing table, not a deep methodology guid
 | `browser-use` | browser-automation | form-navigation, search-export, login-driving, multi-step-browsing | Complex form submissions, pagination beyond firecrawl, agent-driven site navigation. NOT for chain-of-custody evidence (use `dev-browser`). |
 | `junkipedia` | social-osint | narrative-tracking, misinformation-search, social-media-monitoring, cross-platform-query | Tracking how a claim spread; finding social posts deleted from origin; cross-platform narrative investigation. |
 | `osint-navigator` | tool-discovery | tool-search-by-keyword, complex-query-synthesis, country-specific-tool-lookup | When the curated 150-tool catalog in `skills/osint/references/tools-by-category.md` doesn't have what you need. |
+| `cojournalist` | monitoring | project-scoped-monitoring, scout-creation, information-unit-retrieval, scheduled-monitoring | Approved monitoring that should keep running after the current investigation cycle. |
 
 ## Routing decision tree
 
@@ -47,6 +48,10 @@ What's the task?
 │
 ├── "Static page scrape / web search"
 │     → fetch / search (verbs, no integration needed)
+│
+├── "Create a durable monitor / keep watching this after the cycle ends"
+│     → cojournalist  (if green — check preflight)
+│     → fallback: invoke-skill("monitoring") for runtime-native routine guidance
 │
 ├── "Chain-of-custody evidence capture (court records, gov portals)"
 │     → dev-browser (separate tool, not an integration — documented in skills/web-archiving)
@@ -105,8 +110,6 @@ Current deferred integrations (architecture ready, awaiting API access):
 - Thinkpol (grey web intelligence)
 - Reality Defender (deepfake detection)
 - Klarety (disinformation detection)
-- coJournalist (local news monitoring)
-
 When Tom has access to any of these, each is a 3-file drop-in: `manifest.json`, `integration.md`, update the routing table in this skill.
 
 ## Reference

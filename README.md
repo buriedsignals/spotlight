@@ -39,7 +39,7 @@ Per-runtime wiring: **[docs/runtimes.md](docs/runtimes.md)**.
 - **Evidence grounding**: scrape-before-cite, every source has a `local_file`, archive hierarchy Wayback → Archive.today → local
 - **11 skills**: orchestrator (spotlight), review (post-Gate-1 HTML feedback loop), integrations (routing), ingest, monitoring, web-archiving, content-access, osint, investigate, follow-the-money, social-media-intelligence
 - **3 external integrations shipped**: browser-use (AI browser automation), Junkipedia (narrative tracking), OSINT Navigator (tool discovery). Framework accepts more — see [docs/integrations.md](docs/integrations.md).
-- **Feed monitoring**: pluggable sources (GDELT, RSS investigative, RSS regional, GDACS, ACLED) with preflight checks
+- **Monitoring orchestration**: passive signals from Mycroft plus durable monitors from coJournalist or runtime-native routines
 - **Knowledge vault ingestion**: Obsidian-native (wikilinks) with directory fallback; atomic registry updates; lock-file concurrency
 - **Sensitive mode**: strips `fetch`/`search` from agents; investigation runs local-only
 - **Pi-native + Hermes-native**: zero adapter code needed for these runtimes; markdown-only contract for others
@@ -52,8 +52,8 @@ Required:
 Optional:
 - **qmd** — for `query-vault`. `BUN_INSTALL="" qmd query`.
 - **obsidian** CLI — for `vault-write` into an Obsidian vault.
-- **Python 3.11+** — for the feed framework (`monitoring/feeds/`) and integrations preflight.
-- **ACLED_API_KEY + ACLED_EMAIL** — for conflict event monitoring (free registration at https://developer.acleddata.com/).
+- **Python 3.11+** — for integrations preflight and optional local helper scripts.
+- **Mycroft source-specific keys** — only if you also use Mycroft passive monitoring; for example `ACLED_API_KEY` + `ACLED_EMAIL` for ACLED in Mycroft.
 - **OSINT_NAV_API_KEY** — for expanded OSINT tool discovery via OSINT Navigator.
 - **JUNKIPEDIA_API_KEY** — for narrative / misinformation tracking (application-based at junkipedia.org).
 - **CORE_API_KEY** — for academic paper access in `content-access` skill.
@@ -69,7 +69,7 @@ Optional:
 | **[docs/integrations.md](docs/integrations.md)** | External tool integrations (browser-use, Junkipedia, OSINT Navigator), setup flow, manifest contract |
 | **[docs/investigating.md](docs/investigating.md)** | Pipeline phases, gates, cycles, readiness, stall protocol |
 | **[docs/fact-checking.md](docs/fact-checking.md)** | Independence, SIFT, verdict taxonomy, evidence trails |
-| **[docs/monitoring.md](docs/monitoring.md)** | Feed framework, sources, preflight, scout lifecycle |
+| **[docs/monitoring.md](docs/monitoring.md)** | Monitoring lifecycle across Mycroft, coJournalist, and runtime-native fallbacks |
 | **[AGENTS.md](AGENTS.md)** | Machine-readable runtime contract (verb registry, agent manifests, skill registry) |
 
 ## Source reference

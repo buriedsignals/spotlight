@@ -1157,19 +1157,12 @@
 
       <!-- 07 — Monitoring -->
       <div class="sec-header">
-        <span class="chap" data-reveal="meta">07 — Monitoring <span class="opt">optional feeds</span></span>
-        <h2 data-reveal="title">Live signal feeds.</h2>
+        <span class="chap" data-reveal="meta">07 — Monitoring <span class="opt">external orchestration</span></span>
+        <h2 data-reveal="title">Case links, not feed engines.</h2>
       </div>
       <section class="card">
-        <div class="checkbox-group">
-          <label><input type="checkbox" id="monitoring_acled"><span class="opt-name"><span class="name">ACLED conflict events</span><span class="desc">Armed Conflict Location & Event Data — battles, civilian violence, protests. Free registration required.</span></span></label>
-        </div>
-        <div id="acled_keys" class="hidden" style="margin-top: 16px;">
-          <label class="block">ACLED API key <span class="hint">— <a href="https://developer.acleddata.com/" target="_blank">get your key + email here</a></span></label>
-          <input type="password" id="acled_key" placeholder="..." autocomplete="off">
-          <label class="block" style="margin-top: 14px;">ACLED email <span class="hint">— the email you used to register</span></label>
-          <input type="text" id="acled_email" placeholder="your@email.com" autocomplete="off">
-        </div>
+        <p class="hint">Spotlight now orchestrates monitoring instead of polling passive feeds locally.</p>
+        <p class="hint">Use Mycroft for passive signal topics and coJournalist for durable scheduled scouts. This setup page configures Spotlight itself; external monitor backends are configured separately.</p>
       </section>
 
       <!-- 08 — Integrations -->
@@ -1430,7 +1423,6 @@
     const target = document.getElementById(targetId);
     cb.addEventListener('change', () => target.classList.toggle('hidden', !cb.checked));
   }
-  bindCheckbox('monitoring_acled', 'acled_keys');
   bindCheckbox('int_junkipedia', 'junkipedia_keys');
 
   function collectForm() {
@@ -1457,9 +1449,6 @@
       nav_key: document.getElementById('nav_key').value.trim(),
       vault_path: document.getElementById('vault_path').value.trim(),
       model_repo: mode === 'local' ? document.getElementById('model_repo').value.trim() : null,
-      monitoring_acled: document.getElementById('monitoring_acled').checked,
-      acled_key: document.getElementById('acled_key').value.trim(),
-      acled_email: document.getElementById('acled_email').value.trim(),
       int_browseruse: document.getElementById('int_browseruse').checked,
       int_junkipedia: document.getElementById('int_junkipedia').checked,
       junkipedia_key: document.getElementById('junkipedia_key').value.trim(),
@@ -1738,10 +1727,6 @@
     if (cfg.cloud_key && cfg.cloud_key_var) {
       p(cfg.cloud_key_var + '=' + cfg.cloud_key);
     }
-    if (cfg.monitoring_acled) {
-      if (cfg.acled_key) p('ACLED_API_KEY=' + cfg.acled_key);
-      if (cfg.acled_email) p('ACLED_EMAIL=' + cfg.acled_email);
-    }
     if (cfg.int_junkipedia && cfg.junkipedia_key) {
       p('JUNKIPEDIA_API_KEY=' + cfg.junkipedia_key);
     }
@@ -1768,9 +1753,6 @@
         osint_navigator: true,
         junkipedia: cfg.int_junkipedia,
         browser_use: cfg.int_browseruse,
-      },
-      monitoring: {
-        acled: cfg.monitoring_acled,
       },
       created_at: new Date().toISOString(),
       last_used: new Date().toISOString(),
@@ -1803,7 +1785,6 @@
     p('  case "${1:-}" in');
     p('    update)');
     p('      (cd "$dir" && git fetch origin && git reset --hard origin/main && \\');
-    p('        python3 monitoring/feeds/preflight.py --text && \\');
     p('        python3 integrations/preflight.py --text)');
     p('      return $?');
     p('      ;;');
@@ -1840,8 +1821,6 @@
 
     p('step "Preflight"');
     p('set -a; source "$SPOTLIGHT_DIR/.env"; set +a');
-    p('python3 "$SPOTLIGHT_DIR/monitoring/feeds/preflight.py" --text || true');
-    p('echo ""');
     p('python3 "$SPOTLIGHT_DIR/integrations/preflight.py" --text || true');
     p('');
 

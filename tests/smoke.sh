@@ -5,10 +5,10 @@
 #   1. All 11 skill directories present with SKILL.md
 #   2. All 2 agent prompts present
 #   3. All 5 schemas parse as valid JSON
-#   4. Monitoring preflight runs cleanly
-#   5. Integrations preflight runs cleanly
+#   4. Integrations preflight runs cleanly
+#   5. Monitoring registry helper runs cleanly
 #   6. No banned Claude-specific syntax in skills/agents
-#   7. No coJournalist residue outside docs/plans/
+#   7. No legacy local feed framework remains
 #   8. AGENTS.md has 11 entries in skill registry
 #   9. setup.html exists
 #  10. index.html exists
@@ -64,20 +64,20 @@ done
 
 echo ""
 echo "── Preflight scripts ──"
-python3 monitoring/feeds/preflight.py --text >/dev/null 2>&1
-rc=$?
-if [ $rc -eq 0 ] || [ $rc -eq 1 ]; then
-  ok "monitoring/feeds/preflight.py runs (rc=$rc)"
-else
-  fail "monitoring/feeds/preflight.py failed with rc=$rc"
-fi
-
 python3 integrations/preflight.py --text >/dev/null 2>&1
 rc=$?
 if [ $rc -eq 0 ] || [ $rc -eq 1 ]; then
   ok "integrations/preflight.py runs (rc=$rc)"
 else
   fail "integrations/preflight.py failed with rc=$rc"
+fi
+
+python3 monitoring/registry.py schema --json >/dev/null 2>&1
+rc=$?
+if [ $rc -eq 0 ]; then
+  ok "monitoring/registry.py runs"
+else
+  fail "monitoring/registry.py failed with rc=$rc"
 fi
 
 echo ""
@@ -90,14 +90,10 @@ else
   fail "banned syntax found in: $banned_syntax"
 fi
 
-# coJournalist is now a named deferred integration (per integrations/ framework),
-# so mentioning it in skills/integrations/ and docs/integrations.md is expected.
-# Check only that it's not treated as an active monitoring source anymore.
-monitoring_cojournalist=$(grep -rli cojournalist monitoring/feeds/sources/ 2>/dev/null || true)
-if [ -z "$monitoring_cojournalist" ]; then
-  ok "no coJournalist as active monitoring source"
+if [ ! -d "monitoring/feeds" ]; then
+  ok "legacy monitoring/feeds framework removed"
 else
-  fail "coJournalist still in monitoring/feeds/sources/: $monitoring_cojournalist"
+  fail "legacy monitoring/feeds framework still present"
 fi
 
 echo ""

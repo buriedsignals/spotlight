@@ -201,7 +201,7 @@ requires:
     - qmd         # brew install qmd (optional, for query-vault)
   env_vars:
     required: [FIRECRAWL_API_KEY]
-    optional: [OSINT_NAV_API_KEY, ACLED_API_KEY, ACLED_EMAIL, CORE_API_KEY]
+    optional: [OSINT_NAV_API_KEY, CORE_API_KEY]
 recipes:
   - id: spotlight-investigate
     description: "Start a new OSINT investigation"

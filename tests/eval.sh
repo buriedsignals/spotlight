@@ -93,27 +93,6 @@ if m['id'] != '$id':
 done
 
 echo ""
-echo "── Feed source manifest compliance ──"
-
-for m in monitoring/feeds/sources/*/manifest.json; do
-  id=$(basename "$(dirname "$m")")
-  if python3 -c "
-import json,sys
-m = json.load(open('$m'))
-required = ['id','name','category','requires_key','env_vars']
-missing = [k for k in required if k not in m]
-if missing:
-    print('missing:', missing); sys.exit(1)
-if m['id'] != '$id':
-    print('id mismatch:', m['id'], 'vs', '$id'); sys.exit(1)
-" 2>/dev/null; then
-    ok "monitoring/feeds/sources/$id manifest complete"
-  else
-    fail "monitoring/feeds/sources/$id manifest incomplete or id mismatch"
-  fi
-done
-
-echo ""
 echo "── Sample data validates against schemas ──"
 
 if ! python3 -c "import jsonschema" 2>/dev/null; then

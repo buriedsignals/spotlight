@@ -1,0 +1,19 @@
+{
+  "id": "cojournalist",
+  "name": "coJournalist",
+  "description": "Project-scoped scout creation and information-unit retrieval for durable monitoring, using the existing coJournalist public API and CLI.",
+  "category": "monitoring",
+  "type": "api",
+  "requires_key": true,
+  "env_vars": ["COJOURNALIST_API_KEY"],
+  "capabilities": [
+    "project-scoped-monitoring",
+    "scout-creation",
+    "information-unit-retrieval",
+    "scheduled-monitoring"
+  ],
+  "invocable_by": ["orchestrator"],
+  "homepage": "https://www.cojournalist.ai/",
+  "docs": "https://www.cojournalist.ai/api",
+  "rate_limit_note": "Use existing coJournalist quotas and credit model. Spotlight should create monitors only with explicit user approval."
+}

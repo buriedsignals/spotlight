@@ -1,6 +1,6 @@
 # Structure
 
-This doc describes the repo layout: what's where, why, and how the pieces connect. If you want to add a skill, source, schema, or runtime adapter, start here.
+This doc describes the repo layout: what's where, why, and how the pieces connect. If you want to add a skill, monitoring backend, schema, or runtime adapter, start here.
 
 ## Top-level layout
 
@@ -16,7 +16,7 @@ spotlight/
 ├── agents/                   # 2 agent prompt bundles (investigator + fact-checker)
 ├── integrations/             # External tool integrations (browser-use, Junkipedia, OSINT Navigator)
 ├── docs/                     # You are here. Operator manual.
-├── monitoring/               # Feed framework (ACLED, GDELT, RSS, GDACS)
+├── monitoring/               # Case-level monitor registry helper + leads queue
 └── cases/                    # Per-investigation output (gitignored)
 ```
 
@@ -26,7 +26,7 @@ spotlight/
 
 1. **13-verb registry** — the abstract tool vocabulary every skill instruction uses
 2. **Agent manifests** — `investigator` and `fact-checker` with `allowed_verbs`, `iteration_limit`, `preferred_model`
-3. **Skill registry** — 10 skills with IDs, paths, and which agents can invoke them
+3. **Skill registry** — 11 skills with IDs, paths, and which agents can invoke them
 4. **Cases directory structure** — `cases/{project}/{data,research}/` convention
 5. **Schema reference** — pointers to `schemas/*.json`
 6. **Sensitive mode** — toggle that strips `fetch`/`search` from allowed_verbs
@@ -82,7 +82,7 @@ Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for larg
 - **`review`** — post-Gate-1 HTML review artifact. Renders a self-contained `cases/{project}/review.html` the journalist opens in any browser, submits structured feedback, downloads as JSON. Mode B re-spawns the investigator to process the feedback and regenerates the HTML. No server required.
 - **`integrations`** — routing layer for external tool integrations (browser-use, Junkipedia, OSINT Navigator). Reads live preflight status, maps investigation tasks to integrations. See `integrations/` at repo root for manifests + per-integration usage docs.
 - **`ingest`** — archival from case files to vault. 7-step process with `.ingest-lock` concurrency and directory fallback.
-- **`monitoring`** — feed framework integration. Hooks preflight and recommendation lifecycle.
+- **`monitoring`** — case-level monitoring orchestration. Coordinates Mycroft passive signals, coJournalist durable monitors, and runtime-native fallbacks.
 
 ### Agent-support skills (invocable by investigator / fact-checker)
 
@@ -126,67 +126,26 @@ Unlike skills (which are invoked), agents are **spawned**. Their markdown files 
 
 Frontmatter declares `allowed_verbs`, `preferred_model` (per-runtime mapping), `vault_context` (whether to query the vault before research).
 
-## monitoring/ — feed framework
+## monitoring/ — case registry helpers
 
-Pluggable feed sources for persistent investigation monitoring. Each source is a drop-in directory.
+Spotlight no longer ships a passive feed engine. Passive polling lives in Mycroft; durable always-on scouts live in coJournalist. Spotlight keeps only the investigation-scoped linkage and handoff state.
 
 ```
 monitoring/
-├── feeds/
-│   ├── monitor.py            # CLI: list / query / check-all
-│   ├── preflight.py          # Env-var + smoke-test checker
-│   ├── _shared.py            # Shared utilities (topic loading, scoring, dedup)
-│   └── sources/
-│       ├── gdelt/            # GDELT Document API
-│       ├── rss_investigative/ # Bellingcat, ICIJ, The Intercept, Crisis Group
-│       ├── rss_regional/     # 17 regional feeds
-│       ├── gdacs/            # Disaster alerts
-│       └── acled/            # Armed conflict events (requires key)
-└── leads/                    # Scraping queue (feed → case handoff)
+├── registry.py               # CLI helper for cases/{project}/data/monitoring.json
+├── alerts/                   # Optional local alert artifacts / future hooks
+└── leads/                    # Scraping queue (monitor → case handoff)
 ```
 
-Per-source layout:
+`registry.py` owns the local `monitoring.json` shape:
 
-```
-sources/<id>/
-├── manifest.json      # Metadata + env_vars contract
-└── fetch.py           # Exposes fetch(query, topics, since) -> list[signal]
-```
+- initialize a v2 external-monitor registry for a case
+- normalize or migrate legacy feed-oriented `monitoring.json`
+- record linked Mycroft topic slugs
+- record linked coJournalist `project_id` and `scout_id` values
+- record runtime-native fallback handles and resume-time checks
 
-Manifest contract:
-
-```json
-{
-  "id": "<source_id>",
-  "name": "...",
-  "description": "...",
-  "category": "news|conflict|disasters|regulatory|...",
-  "regions": [],
-  "requires_key": true|false,
-  "env_vars": ["ENV_VAR_1"],
-  "rate_limit_note": "...",
-  "default_since": "24h"
-}
-```
-
-Signal shape returned by `fetch()`:
-
-```json
-{
-  "title": "...",
-  "url": "...",
-  "source_name": "...",
-  "source_domain": "...",
-  "date": "ISO 8601",
-  "summary": "...",
-  "category": "...",
-  "relevance_score": 0,
-  "matched_keywords": [],
-  "language": "eng"
-}
-```
-
-See [monitoring.md](monitoring.md) for the full lifecycle.
+See [monitoring.md](monitoring.md) for the lifecycle and registry fields.
 
 ## cases/ — investigation output
 
@@ -202,7 +161,7 @@ cases/{project}/
 │   ├── fact-check.json
 │   ├── investigation-log.json
 │   ├── summary.json
-│   └── monitoring.json       # optional
+│   └── monitoring.json       # optional external-monitor registry
 └── research/
     ├── *.md                  # Scraped web content
     ├── *.json                # Search results
@@ -235,7 +194,7 @@ This file is gitignored — each user's config is local.
 | Extension | Where | What to write |
 |---|---|---|
 | New skill | `skills/<new-id>/SKILL.md` | YAML frontmatter + body. Add row to `AGENTS.md` skill registry |
-| New feed source | `monitoring/feeds/sources/<new-id>/` | `manifest.json` + `fetch.py`. Update `skills/monitoring/references/source-catalog.md` |
+| New monitoring backend | `integrations/<new-id>/` or Mycroft | Integration manifest + usage doc, or Mycroft passive-feed update. Update `skills/monitoring/` references accordingly |
 | New schema | `schemas/<new>.schema.json` | Draft-07 JSON Schema with `schema_version: "1.0"`. Update `AGENTS.md` schema reference |
 | New runtime adapter | `docs/integrations.md` | New section with verb mapping, sub-agent strategy, sensitive-mode enforcement |
 | New agent | `agents/<new-id>.md` | YAML frontmatter with `allowed_verbs`, `iteration_limit`, `preferred_model`. Add to `AGENTS.md` agent manifest. Consider: does this agent need a corresponding agent-support skill? |

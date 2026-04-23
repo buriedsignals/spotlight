@@ -118,7 +118,7 @@ Skills are markdown playbooks loaded via `invoke-skill(skill_id)`. Each skill li
 | `review` | `skills/review/SKILL.md` | Post-Gate-1 HTML review artifact + structured feedback loop; re-spawns investigator on feedback submission | orchestrator, user |
 | `integrations` | `skills/integrations/SKILL.md` | Routing layer for external tool integrations — browser-use, Junkipedia, OSINT Navigator. Reads live preflight status, maps investigation tasks to integrations | investigator, fact-checker, orchestrator |
 | `ingest` | `skills/ingest/SKILL.md` | Knowledge archival — vault ingestion from case files | orchestrator, user |
-| `monitoring` | `skills/monitoring/SKILL.md` | Feed framework integration — GDELT, RSS, GDACS, ACLED; preflight + recommendation lifecycle | orchestrator |
+| `monitoring` | `skills/monitoring/SKILL.md` | Monitoring orchestration — Mycroft passive signals, coJournalist projects/scouts, runtime-native fallbacks | orchestrator |
 | `web-archiving` | `skills/web-archiving/SKILL.md` | Wayback Machine, Archive.today, local archival with chain of custody | investigator, fact-checker |
 | `content-access` | `skills/content-access/SKILL.md` | Paywall access hierarchy, access_method classification | investigator, fact-checker |
 | `osint` | `skills/osint/SKILL.md` | OSINT tool routing table + 150-tool catalog + OSINT Navigator integration | investigator, fact-checker, user |
@@ -151,7 +151,7 @@ cases/{project}/
 │   ├── fact-check.json          # Schema: schemas/fact-check.schema.json
 │   ├── investigation-log.json   # Schema: schemas/investigation-log.schema.json
 │   ├── summary.json             # Schema: schemas/summary.schema.json
-│   └── monitoring.json          # (optional) Feed monitor configuration
+│   └── monitoring.json          # (optional) External monitor registry for the case
 └── research/
     ├── *.md                     # Scraped web content
     ├── *.json                   # Search results

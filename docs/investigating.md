@@ -6,7 +6,7 @@ The investigation pipeline: from a lead to a verified, archived body of findings
 
 ```
 Phase 0 — Preflight
-    config → search lib → skill inventory → vault → project setup → duplicate check → integrations → monitoring preflight
+    config → search lib → skill inventory → vault → project setup → duplicate check → integrations → monitoring availability
         │
         ▼
 Phase 1 — Brief
@@ -60,7 +60,10 @@ Purpose: make sure the environment is sane before any research starts. Runs once
 7. **Active investigation check** — warn about other in-progress cases without `summary.md`.
 8. **Write config** — persist `.spotlight-config.json`.
 9. **Integration checks** — check optional API env vars (OSINT Navigator); verify connectivity via OpenAPI spec fetch.
-10. **Monitoring preflight** — `python3 monitoring/feeds/preflight.py --json` reports per-source status. Display to user; do not block on failures (feeds are supplementary).
+10. **Monitoring availability** — check which supplementary monitoring surfaces are live:
+   - `python3 integrations/preflight.py --json`
+   - whether `~/.mycroft/monitoring/monitor.py` exists for passive signals
+   Display the result to the user; do not block on failures.
 
 ## Phase 1 — Brief
 
@@ -154,7 +157,10 @@ CYCLE N:
 
   4. process monitoring_recommendations
      - If any exist in findings.json, present to user (priority-ordered)
-     - Configure approved monitors in data/monitoring.json
+     - Register passive topics in Mycroft when useful
+     - Create durable monitors in coJournalist when approved
+     - Fall back to runtime-native routines if coJournalist is unavailable
+     - Log all created links in data/monitoring.json
 
   5. evaluate 6 readiness criteria
 
@@ -306,7 +312,7 @@ This separation protects the vault from half-formed findings. The vault holds co
 ## See also
 
 - [fact-checking.md](fact-checking.md) — detailed fact-checker methodology, SIFT, verdicts
-- [monitoring.md](monitoring.md) — feed framework, preflight, scout lifecycle
+- [monitoring.md](monitoring.md) — monitoring orchestration, case registry, scout lifecycle
 - [structure.md](structure.md) — repo layout, verb registry, schema reference
 - [integrations.md](integrations.md) — per-runtime wiring
 - `skills/spotlight/SKILL.md` — the orchestrator playbook (authoritative)

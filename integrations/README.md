@@ -2,7 +2,7 @@
 
 External OSINT tools accessible to Spotlight agents during an investigation. Each integration is a drop-in directory with a `manifest.json` (contract) and `integration.md` (agent-facing usage instructions).
 
-This framework parallels the feed framework at `monitoring/feeds/sources/` — same discovery pattern (scan `manifest.json` files), same preflight contract (green/yellow/red), same add-a-new-one workflow.
+This framework is the single place Spotlight models external tools. Integrations use the same discovery pattern throughout the repo — scan `manifest.json`, run preflight, then route through `skills/integrations/SKILL.md`.
 
 ## Why integrations are separate from skills
 
@@ -18,6 +18,7 @@ An agent invokes a skill to get *guidance*; it calls an integration to get *data
 | `browser-use` | browser-automation | No (OSS); optional cloud | `BROWSER_USE_API_KEY` (optional) |
 | `junkipedia` | social-osint | Yes | `JUNKIPEDIA_API_KEY` |
 | `osint-navigator` | tool-discovery | Yes | `OSINT_NAV_API_KEY` |
+| `cojournalist` | monitoring | Yes | `COJOURNALIST_API_KEY` |
 
 See `skills/integrations/SKILL.md` for the routing table agents use to pick the right integration per investigation task.
 
@@ -75,7 +76,7 @@ python3 integrations/preflight.py --text          # Human-readable table
 python3 integrations/preflight.py --smoke-test    # Also runs a minimal API call per integration
 ```
 
-The orchestrator runs this at Phase 0 step 9.6 (alongside the monitoring feed preflight), so the user sees which integrations are live before starting an investigation.
+The orchestrator runs this at Phase 0 step 10, alongside its local Mycroft/passive-monitor checks, so the user sees which integrations are live before starting an investigation.
 
 ## Agent-facing usage
 
@@ -118,6 +119,4 @@ Integrations in Tom's pitch deck awaiting API access — architecture ready to a
 - Thinkpol (think-pol.com) — grey web intelligence (28.5B+ data points)
 - Reality Defender — deepfake / AI-generated content detection
 - Klarety — disinformation detection
-- coJournalist — local news monitoring
-
 Adding any of these is a 4-step drop-in once API access is confirmed. No code changes elsewhere.

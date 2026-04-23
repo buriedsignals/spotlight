@@ -1,208 +1,159 @@
 ---
 name: monitoring
-description: Persistent feed monitoring during OSINT investigations — pluggable sources (GDELT, RSS, GDACS, ACLED, …), preflight checks, and recommendation ingest. Agents recommend; orchestrator configures.
-version: "1.0"
+description: Investigation-scoped monitoring orchestration. Agents recommend targets; the orchestrator links them to Mycroft passive topics, coJournalist projects/scouts, or runtime-native routines.
+version: "2.0"
 invocable_by: [orchestrator]
 requires: []
 ---
 
 # Investigation Monitoring
 
-Manage persistent monitoring during and between Spotlight investigations using the pluggable **feed framework**. This skill defines the lifecycle for recommending, configuring, and checking monitoring feeds.
+Spotlight no longer owns a local feed engine. Monitoring is now a coordination layer across three surfaces:
 
-The feed framework lives at `monitoring/feeds/` in this repo. Each source is a directory under `monitoring/feeds/sources/` containing a `manifest.json` (metadata + env var contract) and a `fetch.py` (query implementation). Adding a new source is a drop-in file operation — see the "Adding a New Source" section.
+- **Mycroft** for passive open-intelligence signals (GDELT, RSS, GDACS, ACLED)
+- **coJournalist** for durable scheduled scouts and later information units
+- **Runtime-native routines** when coJournalist is unavailable or declined
 
----
+Agents still recommend targets in `monitoring_recommendations[]`. The orchestrator handles approval, creation, persistence, and later checks.
 
 ## Conventions
 
-- **Case attribution:** All monitoring queries and feed configs use `topic: spotlight:{project}` (e.g., `spotlight:chat-control-denmark`) when the underlying source supports topic filtering.
-- **Auth:** All API calls use env vars declared in the source's `manifest.json` under `required_env_vars`. Never hardcode keys.
-- **User gate:** The orchestrator never enables new feed monitoring autonomously. All monitoring configuration requires user approval.
-- **Preflight:** Before any investigation starts, the orchestrator runs `monitoring/feeds/preflight.py` to check which sources are green (ready), yellow (key set but smoke test failed), or red (missing env vars).
+- **Case reference:** use `spotlight:{project}` as the cross-tool handle wherever possible.
+- **User gate:** no durable monitor is created without explicit approval.
+- **Default durable target:** prefer `cojournalist` when it is available and green in integration preflight.
+- **Passive signals:** if Mycroft is installed, Spotlight may register/update case-linked topics there; Spotlight never owns passive feed polling itself.
 
----
+## Monitoring lifecycle
 
-## The Monitoring Lifecycle
+### 1. Recommend
 
-### 1. Recommend (Agents → findings.json)
+Investigators and fact-checkers add `monitoring_recommendations[]` to `data/findings.json` when they identify something worth watching after the current cycle.
 
-During execution cycles, agents identify targets worth persistent monitoring. They record structured recommendations in `monitoring_recommendations[]` in `data/findings.json`. See `references/recommendation-schema.md` for the full schema.
+They recommend. They do not create monitors.
 
-Agents recommend when they observe:
+### 2. Configure
 
-- A page that updated during the investigation window
-- A social account posting relevant content before press releases
-- A news topic in a location that's underreported
-- A government page that may publish updated documents
-- A conflict event pattern in a region (→ ACLED)
+When the user approves a recommendation, the orchestrator chooses one or both of:
 
-Agents do NOT configure feeds. They only recommend.
+- **Passive topic in Mycroft** when the recommendation benefits from ambient feed coverage
+- **Durable monitor in coJournalist** when the recommendation should keep running and return later updates
 
-### 2. Configure (Orchestrator → monitoring.json)
+If coJournalist is unavailable or declined, the orchestrator falls back to a runtime-native routine:
 
-Between investigation cycles, the orchestrator:
+- Codex: Codex Automation
+- Claude: Claude routine
+- Hermes / OpenClaw: cron or recipe
 
-1. Reads `monitoring_recommendations[]` from `data/findings.json`
-2. Presents recommendations to the user, ordered by priority
-3. For each approved recommendation, maps it to a concrete feed query:
-   - `scout_type: web` → `rss_investigative` or `rss_regional` feed with URL filter, OR direct `fetch(url, ...)` on schedule
-   - `scout_type: pulse` → `gdelt` keyword + location query
-   - `scout_type: civic` → `gdacs` (disasters) or `acled` (conflict) by region
-   - `scout_type: social` → delegated to the external Apify/social scraping workflow (not a feed)
-4. Logs configured monitors to `data/monitoring.json`
+### 3. Check on resume
 
-### 3. Check (Orchestrator → feed preflight + query)
+At the start of a resumed investigation, the orchestrator checks:
 
-At the start of any `/spotlight` resume (Phase 0 step 10), the orchestrator runs:
+- **Mycroft topics** if `~/.mycroft/monitoring/monitor.py` exists and the case has linked topic slugs
+- **coJournalist units and scout state** if `monitoring.json` has a stored `project_id` or `scout_id`
+- **Runtime-native routines** by retrieving task output when supported, or by asking the user whether updates were detected
 
-```
-execute-shell("python3 monitoring/feeds/preflight.py --json")
-```
+The orchestrator then presents a short monitoring briefing and asks whether to fold those updates into the next cycle.
 
-This reports which sources are healthy. Then for each configured monitor in `data/monitoring.json`, query new results:
+### 4. Ingest into the next cycle
 
-```
-execute-shell("python3 monitoring/feeds/monitor.py query <source_id> --project {project} --since 24h --json")
+If the user wants to use the updates, include them in the next investigator prompt under `Monitoring results since last cycle:`.
+
+## Commands and checks
+
+### Normalize the case registry
+
+```text
+execute-shell('python3 monitoring/registry.py migrate --project "{project}"')
 ```
 
-Present a monitoring briefing to the user before the next cycle:
+### Check Mycroft availability
 
-> "Monitoring check — your [source] monitor on [target] has returned N new results since your last cycle:
-> - [date] [title] ({source})
-> - [date] [title] ({source})
->
-> These may be relevant to your investigation. Want to review before starting the next cycle?"
-
-### 4. Ingest (Orchestrator → investigation context)
-
-If the user wants to use monitoring results, the orchestrator folds relevant information units into the investigation context for the next cycle. The investigator receives them as additional text in the spawn prompt under `Monitoring results since last cycle:`.
-
----
-
-## Feed Sources
-
-See `references/source-catalog.md` for the full registry of monitoring sources and their capabilities.
-
-Current sources (live as of repo state):
-
-| Source ID | Name | Category | Requires Key |
-|---|---|---|---|
-| `gdelt` | GDELT Document API | News | No |
-| `rss_investigative` | RSS (Bellingcat, ICIJ, The Intercept, Crisis Group) | News | No |
-| `rss_regional` | RSS (17 regional feeds) | News | No |
-| `gdacs` | GDACS disaster alerts | Disasters | No |
-| `acled` | Armed Conflict Location & Event Data | Conflict | Yes (`ACLED_API_KEY`, `ACLED_EMAIL`) |
-
-Each source's `manifest.json` declares the `required_env_vars`. The preflight tool uses this contract to report readiness.
-
----
-
-## Commands
-
-```
-# Preflight — which feeds are ready?
-execute-shell("python3 monitoring/feeds/preflight.py --json")
-
-# Bulk check across all feeds for a project
-execute-shell("python3 monitoring/feeds/monitor.py check-all --project {project} --since 35m --json")
-
-# Discovery — list available sources
-execute-shell("python3 monitoring/feeds/monitor.py list --project {project}")
-
-# Targeted query
-execute-shell("python3 monitoring/feeds/monitor.py query gdelt --project {project} --json")
-execute-shell("python3 monitoring/feeds/monitor.py query acled --project {project} --since 7d --json")
-execute-shell("python3 monitoring/feeds/monitor.py query rss_investigative --since 24h --json")
+```text
+execute-shell('test -f ~/.mycroft/monitoring/monitor.py && echo true || echo false')
 ```
 
----
+### Query Mycroft passive signals
 
-## Data Files
+```text
+execute-shell('python3 ~/.mycroft/monitoring/monitor.py query --topic "{topic_or_target}" --since 7d --json')
+```
 
-### `cases/{project}/data/monitoring.json`
+### Check integration readiness
 
-Case-level monitoring state. Created by the orchestrator when the first monitor is approved.
+```text
+execute-shell("python3 integrations/preflight.py --json")
+```
+
+### Preferred coJournalist path
+
+Read the integration guide first:
+
+```text
+read-file("integrations/cojournalist/integration.md")
+```
+
+Then create or reuse a project, create scouts under that `project_id`, and later fetch updates back by `project_id`.
+
+## `monitoring.json` v2
+
+This file is Spotlight-owned case state. It is no longer a feed-config file.
 
 ```json
 {
-  "topic": "spotlight:{project}",
-  "monitors": [
+  "schema_version": "2",
+  "case_ref": "spotlight:{project}",
+  "mycroft": {
+    "topic_slugs": ["example-topic"],
+    "last_checked_at": "ISO 8601"
+  },
+  "cojournalist": {
+    "project_id": "uuid",
+    "project_name": "Spotlight: {project}",
+    "scouts": [
+      {
+        "scout_id": "uuid",
+        "monitor_kind": "web|pulse|social|civic",
+        "target": "https://...",
+        "criteria": "what to watch"
+      }
+    ],
+    "last_checked_at": "ISO 8601"
+  },
+  "fallback_routines": [
     {
-      "source_id": "gdelt|rss_investigative|rss_regional|gdacs|acled",
-      "query": "keywords or filter",
-      "since": "duration (e.g., 24h, 7d)",
-      "created_at": "ISO 8601",
-      "source_recommendation": "M1",
-      "source_cycle": 1,
-      "priority": "high|medium|low"
+      "runtime": "codex|claude|hermes|openclaw",
+      "handle": "provider-specific identifier",
+      "monitor_kind": "web|pulse|social|civic",
+      "target": "https://...",
+      "criteria": "what to watch"
     }
   ],
   "checks": [
     {
       "checked_at": "ISO 8601",
-      "cycle": 2,
-      "units": [
-        {
-          "title": "Human-readable summary",
-          "source_url": "https://...",
-          "source_id": "gdelt",
-          "created_at": "ISO 8601"
-        }
-      ]
+      "source": "mycroft|cojournalist|runtime-routine",
+      "summary": "human-readable summary",
+      "items": []
     }
   ]
 }
 ```
 
----
+If Spotlight encounters the old feed-oriented `monitoring.json` shape, treat it as legacy and migrate or ignore it safely rather than assuming it is current.
 
-## Adding a New Source
+## Sensitive mode
 
-Extending the feed framework is a 4-step operation:
+In sensitive mode:
 
-1. Create directory: `monitoring/feeds/sources/{source_id}/`
-2. Write `manifest.json` with:
-   ```json
-   {
-     "id": "{source_id}",
-     "name": "Human-readable name",
-     "description": "What this source provides",
-     "category": "news|disasters|conflict|social|regulatory|...",
-     "regions": ["global" | specific],
-     "requires_key": true|false,
-     "required_env_vars": ["ENV_VAR_1", "ENV_VAR_2"],
-     "rate_limit_note": "max requests per period",
-     "default_since": "24h"
-   }
-   ```
-3. Write `fetch.py` implementing a single function:
-   ```python
-   def fetch(since: str, query: str = None, project: str = None) -> list[dict]:
-       """Return a list of normalized items:
-       [{id, title, url, date, summary, source_id}, ...]
-       """
-   ```
-4. Verify with `python3 monitoring/feeds/preflight.py --json` — the new source should appear in the output.
+- do not create new live Mycroft or coJournalist monitors;
+- do not query live remote monitoring backends;
+- you may still read previously exported or cached monitoring artifacts under the case directory.
 
-No changes required to `monitor.py` — it discovers sources by scanning `monitoring/feeds/sources/*/manifest.json`.
+## Reference
 
----
-
-## Reference Files
-
-| File | Contents |
-|------|---------|
-| `references/source-catalog.md` | Registry of all monitoring sources with capabilities and env vars |
-| `references/recommendation-schema.md` | Schema for `monitoring_recommendations[]` in `findings.json` |
-
----
-
-## Sensitive Mode
-
-In sensitive mode, monitoring still functions but with restrictions:
-
-- No new feed queries against remote APIs (`fetch`/`search` are stripped)
-- Preflight still runs but reports all sources as `yellow` (preflight is read-only metadata)
-- Existing `data/monitoring.json` is honored for check-only scans against locally-cached feed archives in `cases/{project}/research/monitoring/`
-- If no local cache exists, monitoring is a no-op; flag this explicitly to the user
+| File | Purpose |
+|---|---|
+| `monitoring/registry.py` | Normalizes and updates `cases/{project}/data/monitoring.json` |
+| `integrations/cojournalist/integration.md` | Durable monitor creation and retrieval via existing coJournalist surfaces |
+| `references/recommendation-schema.md` | Agent output schema for `monitoring_recommendations[]` |
+| `references/source-catalog.md` | Passive feed sources now owned by Mycroft |

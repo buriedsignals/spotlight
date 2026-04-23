@@ -45,15 +45,15 @@ An integration is a specific external OSINT tool (Junkipedia, browser-use, OSINT
 5. Optional: add a checkbox to the Integrations section of `setup.html` so journalists see it during install.
 6. Run `python3 integrations/preflight.py --text` — your new integration should appear.
 
-### Add a new feed source
+### Passive feed sources
 
-A feed source is a data stream for monitoring (news, conflict events, social, disaster alerts).
+Passive feed-source code moved to Mycroft. Do not add new monitoring feeds to Spotlight.
 
-1. `mkdir monitoring/feeds/sources/<id>/`
-2. Write `manifest.json` with `id`, `name`, `category`, `env_vars`, `requires_key`, `default_since`, etc. See `monitoring/feeds/sources/gdelt/manifest.json` as a template.
-3. Write `fetch.py` exposing a `fetch(query, topics, since)` function that returns a list of normalized items. See `monitoring/feeds/sources/gdelt/fetch.py` or `acled/fetch.py` for the shape.
-4. Update `skills/monitoring/references/source-catalog.md` with the human-readable entry.
-5. Run `python3 monitoring/feeds/preflight.py --text` to verify.
+If you need a new passive source:
+
+1. Add it to Mycroft's monitoring service.
+2. Update Spotlight's monitoring references only if the orchestrator needs to know the source exists.
+3. Keep Spotlight focused on recommendation, approval, and cross-tool linkage.
 
 ### Add a new skill
 

@@ -51,7 +51,6 @@ const baseCfg = {
   contact_email: "test@example.com",
   nav_key: "on-test",
   vault_path: "~/Intelligence",
-  monitoring_acled: false,
   int_browseruse: false,
   int_junkipedia: false,
 };
