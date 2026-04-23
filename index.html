@@ -1132,7 +1132,10 @@
         <span class="accent">Spotlight does</br>the research.</span>
       </h1>
       <div class="hero-side" data-reveal="body" style="--rd: 1200ms">
-        Verified findings, independent fact-checking, a vault that grows with every case.
+        Turn your agent into an investigative system.
+        <div style="margin-top: 10px; color: var(--muted-dark);">
+          A portable skill file that gives your runtime a reporting methodology, an investigator and fact-checker loop, human review gates, and a case archive you can reuse.
+        </div>
         <div>
           <a href="setup.html" class="cta">Install Spotlight <span aria-hidden="true">→</span></a>
           <a href="https://github.com/buriedsignals/spotlight" class="secondary" target="_blank" rel="noopener">GitHub ↗</a>
@@ -1150,7 +1153,7 @@
 <section id="what" data-screen-label="03 What it does" data-nav-theme="dark" data-scene-mood="aligned">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 01 — What it does</span>
-    <h2 class="title" data-reveal="title" style="--rd: 120ms">Five things, in order.</h2>
+    <h2 class="title" data-reveal="title" style="--rd: 120ms">How a case moves.</h2>
   </div>
   <div class="split-scroll">
     <div class="split-left-sentinel" aria-hidden="true"></div>
@@ -1163,24 +1166,24 @@
     </div>
     <div class="split-right" id="steps">
       <article class="step active" data-label="Lead" data-num="01">
-        <h3 class="step-title">Takes a lead — URL, name, topic, document — and designs a methodology you approve before anything runs.</h3>
-        <p class="step-body">No surprise research paths. The system proposes a plan; you accept, adjust, or reject.</p>
+        <h3 class="step-title">Start with a lead. Spotlight proposes the methodology before the research starts.</h3>
+        <p class="step-body">You approve the plan first. It can connect to OSINT Navigator and pull the best tooling for the job before the first cycle runs.</p>
       </article>
       <article class="step" data-label="Cycles" data-num="02">
-        <h3 class="step-title">Runs research cycles with an independent fact-checker after each one.</h3>
-        <p class="step-body">Nothing advances on one source or one agent's reasoning. A second agent verifies, contradicts, escalates.</p>
+        <h3 class="step-title">The investigator works the lead. The fact-checker comes after each cycle.</h3>
+        <p class="step-body">One agent pushes the reporting forward. A second agent checks the claims, looks for contradictions, and flags what still does not hold.</p>
       </article>
       <article class="step" data-label="Findings" data-num="03">
-        <h3 class="step-title">Every finding arrives sourced and stress-tested.</h3>
-        <p class="step-body">Primary documents anchored, two independent sources per claim, disputes flagged, affected perspectives present. Ready to publish or hand to an editor.</p>
+        <h3 class="step-title">Findings arrive with evidence attached.</h3>
+        <p class="step-body">Primary documents captured locally. Independent sourcing where possible. Disputes, weak points, and missing perspectives made explicit.</p>
       </article>
       <article class="step" data-label="Review" data-num="04">
-        <h3 class="step-title">A review page for you or your editor — click through, challenge, request deeper verification.</h3>
-        <p class="step-body">Your feedback re-triggers the investigator on specific points, not the whole case.</p>
+        <h3 class="step-title">You stay the editor at every gate.</h3>
+        <p class="step-body">You approve the methodology, review the findings, challenge weak points, and decide what deserves another cycle. Nothing clears the gate without a human decision.</p>
       </article>
       <article class="step" data-label="Vault" data-num="05">
-        <h3 class="step-title">Builds a living knowledge base across investigations.</h3>
-        <p class="step-body">Entities, sources, tools, and methodology stay cross-linked. The AI remembers past work and applies it to new leads — "we already profiled this shell company" instead of starting from zero.</p>
+        <h3 class="step-title">When the case is solid, it becomes infrastructure for the next one.</h3>
+        <p class="step-body">Evidence stays archived, the case goes into your vault, and ongoing monitoring can feed new leads back into the workflow.</p>
       </article>
     </div>
   </div>
@@ -1190,38 +1193,38 @@
 <section id="integrations" data-screen-label="04 Integrations" data-nav-theme="dark" data-scene-mood="drift">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 02 — Integrations</span>
-    <h2 class="title" data-reveal="title" style="--rd: 120ms">Plugs into your stack.</h2>
+    <h2 class="title" data-reveal="title" style="--rd: 120ms">Runs in the tools you already trust.</h2>
   </div>
   <div class="integrations-grid">
     <div class="int-card" data-reveal="card" data-stagger-idx="0">
       <div class="idx">01 / 06</div>
       <div class="name">Agent runtimes</div>
-      <div class="desc">Local journalism fine-tune (Ollama or LM Studio), Claude Code, Gemini, Codex, OpenCode — multi-provider, switch per task.</div>
+      <div class="desc">Claude Code, Codex, Gemini, OpenCode, Goose, Hermes, or local models. Use the runtime that fits the investigation.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="1">
       <div class="idx">02 / 06</div>
-      <div class="name">Evidence archiving</div>
-      <div class="desc">Every source captured locally with chain of custody. Web scraping and search built in.</div>
+      <div class="name">Local and offline</div>
+      <div class="desc">Run sensitive investigations on local models, keep context on your machine, and avoid sending reporting data through third-party APIs when the case calls for it.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="2">
       <div class="idx">03 / 06</div>
       <div class="name">OSINT Navigator</div>
-      <div class="desc">1,000+ curated OSINT tools with AI-powered lookup, surfaced live per task. By Indicator Media.</div>
+      <div class="desc">Connects to OSINT Navigator to surface the best tooling for the task in front of you, not a generic list you still have to sort yourself.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="3">
       <div class="idx">04 / 06</div>
-      <div class="name">Knowledge vault</div>
-      <div class="desc">Obsidian ingestion — investigations become permanent, searchable memory.</div>
+      <div class="name">Evidence archiving</div>
+      <div class="desc">Every source gets captured locally before it becomes evidence. Search and scraping are built into the workflow.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="4">
       <div class="idx">05 / 06</div>
-      <div class="name">Monitoring feeds</div>
-      <div class="desc">Conflict events, disaster alerts, global news, investigative outlets — piped live into your leads.</div>
+      <div class="name">Monitoring</div>
+      <div class="desc">Attach a case to ongoing monitoring, then bring new leads back into the next reporting cycle.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="5">
       <div class="idx">06 / 06</div>
-      <div class="name">Browser &amp; narrative</div>
-      <div class="desc">Browser automation, narrative tracking, misinformation databases — plug-in integrations.</div>
+      <div class="name">Knowledge vault</div>
+      <div class="desc">Investigations get archived into an Obsidian vault you can search, reuse, and build on.</div>
     </div>
   </div>
 </section>
@@ -1231,7 +1234,7 @@
 <section id="works-with" data-screen-label="05 Works with" data-nav-theme="dark" data-scene-mood="sparse">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 03 — Works with</span>
-    <h2 class="title" data-reveal="title" style="--rd: 120ms">Bring your own agent.</h2>
+    <h2 class="title" data-reveal="title" style="--rd: 120ms">Use the runtime you already trust.</h2>
   </div>
   <div class="works-chips" data-reveal="body" style="--rd: 200ms">
     <a class="works-chip" href="https://claude.com/claude-code" target="_blank" rel="noopener">Claude Code</a>
@@ -1251,11 +1254,11 @@
 <section id="offers" data-screen-label="07 Offers" data-nav-theme="dark" data-scene-mood="split">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 04 — Work with us</span>
-    <h2 class="title" data-reveal="title" style="--rd: 120ms">Two ways in.</h2>
+    <h2 class="title" data-reveal="title" style="--rd: 120ms">Work with me.</h2>
   </div>
 
   <p class="about-bs" data-reveal="body" style="--rd: 120ms">
-    <strong>Buried Signals</strong> is an OSINT agency for investigative newsrooms. Spotlight is the open-source tooling we use on real cases — methodology, skills, and review schemas proven against source material that ends up in court. Free and MIT-licensed; these two offers are how we keep shipping it.
+    I built Spotlight for my own reporting and for collaborative investigations with partner newsrooms. The open-source core is free. If you want to work with me around the system, here are the two ways in.
   </p>
 
   <div class="offers-grid">
@@ -1264,18 +1267,16 @@
         <span>Pro Membership</span>
         <span class="price">$49<span style="font-size:12px;opacity:0.6;letter-spacing:0.1em;"> / MO</span></span>
       </div>
-      <h3>For working investigators.</h3>
-      <p class="lede">Hosted Spotlight, managed runtimes, priority integrations, and a private community of journalists running real cases.</p>
+      <h3>Investigations with AI. The tools to run your own.</h3>
       <ul>
-        <li>Hosted instance — no infra to maintain</li>
-        <li>All integrations pre-configured (OSINT Navigator, archiving, vault)</li>
-        <li>Monthly office hours with the Buried Signals team</li>
-        <li>Early access to new skills and schemas</li>
-        <li>Private Discord + investigation peer reviews</li>
+        <li>Collaborative investigations — shared leads, data, and methodology</li>
+        <li>Live bootcamps, workshops, and events</li>
+        <li>Hosted Pro tier of the agent extensions — coJournalist, Navigator, Spotlight, DataHound</li>
+        <li>Investigation methodologies and AI techniques, in depth</li>
       </ul>
       <div class="actions">
-        <a href="#join" class="btn">Join membership <span aria-hidden="true">→</span></a>
-        <a href="#compare" class="aside">Compare plans</a>
+        <a href="#join" class="btn">Subscribe <span aria-hidden="true">→</span></a>
+        <a href="#compare" class="aside">700+ journalists already reading</a>
       </div>
     </article>
 
@@ -1284,17 +1285,18 @@
         <span>Consulting</span>
         <span class="price">Bespoke</span>
       </div>
-      <h3>For newsrooms and investigative units.</h3>
-      <p class="lede">We embed with your team — bespoke skills, custom review loops, on-premise deployment, and training for the journalists who'll run it.</p>
+      <h3>I train newsrooms to investigate with AI.</h3>
+      <p class="lede">Workshops, custom tooling, and investigation collaborations.</p>
       <ul>
-        <li>Methodology tailored to your beat (finance, conflict, climate…)</li>
-        <li>On-premise or private cloud deployment</li>
-        <li>Custom agent skills and evidence schemas</li>
-        <li>Team training &amp; editor workflow integration</li>
-        <li>Ongoing support from Buried Signals operatives</li>
+        <li>Le Temps</li>
+        <li>MAZ Journalistenschule</li>
+        <li>Republik</li>
+        <li>20 Minuten</li>
+        <li>MediaStorm</li>
+        <li>The New Humanitarian</li>
       </ul>
       <div class="actions">
-        <a href="/cdn-cgi/l/email-protection#0f676a6363604f6d7a7d666a6b7c6668616e637c216c6062" class="btn ghost">Start a conversation <span aria-hidden="true">→</span></a>
+        <a href="/cdn-cgi/l/email-protection#0f676a6363604f6d7a7d666a6b7c6668616e637c216c6062" class="btn ghost">Get in touch <span aria-hidden="true">→</span></a>
         <a href="#cases" class="aside">See case studies</a>
       </div>
     </article>
@@ -1310,7 +1312,7 @@
   <div class="footer-grid">
     <div class="footer-col about" data-reveal="body" data-stagger-idx="0">
       <h4>Spotlight</h4>
-      <p>An open-source OSINT investigation system for journalists. Built by Buried Signals with Indicator Media. Runtime-agnostic, evidence-first, editor-ready.</p>
+      <p>An open-source investigative system for AI agents, built for journalists. One agent reports, one agent checks, and you stay the editor. Local when the case is too sensitive for the cloud.</p>
     </div>
     <div class="footer-col" data-reveal="body" data-stagger-idx="1">
       <h4>Product</h4>
