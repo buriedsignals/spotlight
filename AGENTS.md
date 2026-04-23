@@ -59,8 +59,8 @@ preferred_model:
   claude: opus
   gemini: gemini-2.5-pro
   gpt: gpt-4o
-  local: gemma-4-26B-A4B-it
-  fallback_note: Investigation quality degrades significantly on lighter models. Local ship — unsloth/gemma-4-26B-A4B-it-GGUF (Q4_K_M for 24GB+ Macs, Q6_K_XL for 48GB+). Native vision for scanned docs + satellite imagery.
+  local: HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive
+  fallback_note: Investigation quality degrades significantly on lighter models. Local ship — Qwen3.6 27B Uncensored (dense, thinking mode, zero refusals, multimodal) for 24+ GB Macs; Gemma 4 26B A4B MoE for 16 GB Macs. Both unsloth GGUF. Q4_K_M recommended. Native vision for scanned docs + satellite imagery.
 vault_context:
   enabled: true
   query_on_load: true

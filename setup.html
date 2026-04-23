@@ -330,6 +330,19 @@
   /* Small helper text under a primary paragraph — pricing footnotes, model footnotes. */
   .note-sub { margin: 10px 0 0; font-size: 12px; opacity: 0.7; }
 
+  /* Model card — non-recommended gets grayed out but stays clickable */
+  #model-group label.recommended {
+    border-color: var(--accent-warm);
+    background: var(--ink);
+  }
+  #model-group label.not-recommended {
+    opacity: 0.45;
+    cursor: pointer;
+  }
+  #model-group label.not-recommended:hover {
+    opacity: 0.65;
+  }
+
   /* Inline code */
   code {
     background: var(--ink-2);
@@ -944,17 +957,42 @@
             The installer uses <strong>pi</strong> as the agent harness (<a href="https://pi.dev" target="_blank">pi.dev</a>, MIT) and <strong>LM Studio</strong> (<a href="https://lmstudio.ai" target="_blank">lmstudio.ai</a>) to serve the model locally on <code>127.0.0.1:1234</code>. The app gives you a visual browser for Hugging Face models — no Terminal to pull or switch models.
           </p>
 
-          <input type="hidden" id="model_repo" value="unsloth/Qwen3.6-35B-A3B-GGUF">
+          <!-- Model selector — two cards, one gets recommended after fit check -->
+          <div class="radio-group" id="model-group">
+            <label id="model-card-gemma">
+              <input type="radio" name="local_model" value="gemma" checked>
+              <span class="opt-name">
+                <span class="name">Gemma 4 — 26B A4B MoE</span>
+                <span class="desc">Light option — only 3.8B active parameters. Needs 16+ GB RAM, but even then investigation quality degrades: no thinking mode, no vision, little headroom for orchestration. Better for quick queries than full investigations.</span>
+              </span>
+            </label>
+            <label id="model-card-qwen">
+              <input type="radio" name="local_model" value="qwen27b">
+              <span class="opt-name">
+                <span class="name">Qwen3.6 — 27B Uncensored</span>
+                <span class="desc">Quality option — all 27B parameters active per token. Thinking mode, zero refusals, multimodal vision. Better for deep investigations and complex reasoning. Needs 24+ GB RAM.</span>
+              </span>
+            </label>
+          </div>
 
-          <div class="model-info">
-            <div class="stat"><strong>Qwen3.6-35B</strong>MoE — 35B total / 3B active</div>
-            <div class="stat"><strong>~21 GB</strong>disk</div>
-            <div class="stat"><strong>~24 GB</strong>RAM at runtime</div>
-            <div class="stat"><strong>32 GB+</strong>recommended</div>
+          <input type="hidden" id="model_repo" value="unsloth/gemma-4-26B-A4B-it-GGUF">
+
+          <div class="model-info" id="model-info-gemma">
+            <div class="stat"><strong>26B A4B</strong>MoE — 3.8B active / 25.2B total</div>
+            <div class="stat"><strong>~8 GB</strong>disk</div>
+            <div class="stat"><strong>~10 GB</strong>RAM at runtime</div>
+            <div class="stat"><strong>16 GB+</strong>recommended</div>
+          </div>
+
+          <div class="model-info hidden" id="model-info-qwen27b">
+            <div class="stat"><strong>27B</strong>Dense — all params active</div>
+            <div class="stat"><strong>~14 GB</strong>disk</div>
+            <div class="stat"><strong>~16 GB</strong>RAM at runtime</div>
+            <div class="stat"><strong>24 GB+</strong>recommended</div>
           </div>
 
           <div class="fit-row">
-            <button type="button" class="btn-ghost" id="fit-check-btn">Check if my Mac can run this</button>
+            <button type="button" class="btn-ghost" id="fit-check-btn">Check my Mac and recommend</button>
             <span class="fit-aside">Quick hardware probe — runs in your browser</span>
           </div>
 
@@ -969,10 +1007,10 @@
           </div>
 
           <p class="note-advisory" id="local-note-ollama">
-            Large download (~21 GB). Progress streams live in Terminal via Ollama's native UI. If interrupted, re-run <code>ollama pull hf.co/unsloth/Qwen3.6-35B-A3B-GGUF</code> to resume.
+            Large download (~8 GB for Gemma, ~14 GB for Qwen). Progress streams live in Terminal via Ollama's native UI. If interrupted, re-run <code>ollama pull hf.co/&lt;model-repo&gt;</code> to resume.
           </p>
           <p class="note-advisory hidden" id="local-note-lmstudio">
-            Large download (~21 GB). The installer installs the <strong>LM Studio</strong> app and the <code>lms</code> CLI, then opens the app. On first run: complete the setup wizard → go to <strong>Discover</strong>, search <code>unsloth/Qwen3.6-35B-A3B-GGUF</code>, pick a quant (Q4_K_M for 32 GB Macs, Q6_K_XL for 48 GB+), download, then click <strong>Start Server</strong> in the <strong>Developer</strong> tab. <code>spotlight</code> will be ready once the server is listening on port 1234.
+            Large download (~8 GB for Gemma, ~14 GB for Qwen). The installer installs the <strong>LM Studio</strong> app and the <code>lms</code> CLI, then opens the app. On first run: complete the setup wizard → go to <strong>Discover</strong>, search the selected model repo, pick a quant (Q4_K_M for minimum RAM, Q6_K for quality), download, then click <strong>Start Server</strong> in the <strong>Developer</strong> tab. <code>spotlight</code> will be ready once the server is listening on port 1234.
           </p>
         </section>
       </div>
@@ -1278,6 +1316,29 @@
   }
   document.querySelectorAll('input[name="mode"]').forEach(el => el.addEventListener('change', renderMode));
 
+  // --- Model repo map ---
+  const MODEL_REPOS = {
+    gemma: 'unsloth/gemma-4-26B-A4B-it-GGUF',
+    qwen27b: 'HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive',
+  };
+
+  // --- Local model switching (Gemma vs Qwen27b) ---
+  function renderLocalModel() {
+    const sel = document.querySelector('input[name="local_model"]:checked').value;
+    document.getElementById('model_repo').value = MODEL_REPOS[sel];
+    document.getElementById('model-info-gemma').classList.toggle('hidden', sel !== 'gemma');
+    document.getElementById('model-info-qwen27b').classList.toggle('hidden', sel !== 'qwen27b');
+    // Update fit-check button text to reflect the recommended model
+    if (sel === 'gemma') {
+      fitBtn.textContent = 'Check my Mac and recommend';
+      fitBtn.disabled = false;
+    } else {
+      fitBtn.textContent = 'Check if my Mac can run this';
+      fitBtn.disabled = false;
+    }
+  }
+  document.querySelectorAll('input[name="local_model"]').forEach(el => el.addEventListener('change', renderLocalModel));
+
   // --- Local server switching (Ollama vs LM Studio) ---
   function renderLocalServer() {
     const srv = document.querySelector('input[name="local_server"]:checked').value;
@@ -1566,11 +1627,16 @@
         p('[ -x "$HOME/.lmstudio/bin/lms" ] && export PATH="$HOME/.lmstudio/bin:$PATH"');
         p('');
         p('step "Journalism model — manual download via LM Studio GUI"');
+        var diskSize = cfg.model_repo.indexOf('gemma-4') >= 0 ? '~8 GB' : '~14 GB';
+        var ramSize = cfg.model_repo.indexOf('gemma-4') >= 0 ? '~10 GB' : '~16 GB';
+        var quantAdvice = cfg.model_repo.indexOf('gemma-4') >= 0
+          ? 'Pick a quant: ${_c_bold}Q4_K_M${_c_reset} (~8 GB disk, ~10 GB RAM)'
+          : 'Pick a quant: ${_c_bold}Q4_K_M${_c_reset} (~14 GB disk, ~16 GB RAM) — ${_c_bold}Q6_K${_c_reset} (~18 GB) if you have 32 GB+ RAM';
         p('echo "LM Studio is open (or will open shortly). One-time setup:"');
         p('echo ""');
         p('echo "  ${_c_bold}1.${_c_reset} Complete the initial wizard if this is a first install"');
         p('echo "  ${_c_bold}2.${_c_reset} Click ${_c_bold}Discover${_c_reset} (magnifier icon), search: ${_c_bold}' + cfg.model_repo + '${_c_reset}"');
-        p('echo "  ${_c_bold}3.${_c_reset} Pick a quant: ${_c_bold}Q4_K_M${_c_reset} (~18 GB, 32 GB Macs) or ${_c_bold}Q6_K_XL${_c_reset} (~22 GB, 48 GB+ Macs)"');
+        p('echo "  ${_c_bold}3.${_c_reset} ' + quantAdvice + '"');
         p('echo "  ${_c_bold}4.${_c_reset} Click ${_c_bold}Developer${_c_reset} (bottom tab) → ${_c_bold}Start Server${_c_reset} — listens on 127.0.0.1:1234"');
         p('echo ""');
         p('echo "You can keep this installer running. ${_c_bold}spotlight${_c_reset} will work once the LM Studio server is live."');
@@ -1586,7 +1652,8 @@
         p('  printf "%s✓%s Ollama already installed\\n" "$_c_green" "$_c_reset"');
         p('fi');
         p('');
-        p('step "Journalism model download (~21 GB)"');
+        var ollamaSize = cfg.model_repo.indexOf('gemma-4') >= 0 ? '~8 GB' : '~14 GB';
+        p('step "Journalism model download (' + ollamaSize + ')"');
         p('echo "Ollama will stream download progress below — grab a coffee, 5–15 min on a typical connection."');
         p('echo ""');
         p('ollama pull ' + shellEscape('hf.co/' + cfg.model_repo) + ' || {');
@@ -1921,6 +1988,40 @@
     setTimeout(() => URL.revokeObjectURL(url), 3000);
   });
 
+  // --- Model recommendation after fit check ---
+  const gemmaCard = document.getElementById('model-card-gemma');
+  const qwenCard = document.getElementById('model-card-qwen');
+
+  function recommendModel(recommended) {
+    const other = recommended === 'gemma' ? 'qwen27b' : 'gemma';
+    // Set the radio to the recommended model
+    const radio = document.querySelector(`input[name="local_model"][value="${recommended}"]`);
+    if (radio) { radio.checked = true; renderLocalModel(); }
+    // Style the cards
+    gemmaCard.classList.toggle('recommended', recommended === 'gemma');
+    gemmaCard.classList.toggle('not-recommended', recommended !== 'gemma');
+    qwenCard.classList.toggle('recommended', recommended === 'qwen27b');
+    qwenCard.classList.toggle('not-recommended', recommended !== 'qwen27b');
+    // Also clear any previous explicit recommendation on the "wrong" card
+    if (recommended === 'gemma') {
+      qwenCard.querySelector('.opt-name .desc').innerHTML =
+        '<em>Not recommended for your hardware — needs 24+ GB RAM. You can still select it above.</em>';
+    } else {
+      gemmaCard.querySelector('.opt-name .desc').innerHTML =
+        '<em>Not recommended — MoE with only 3.8B active params. Reasoning depth degrades. You can still select it above.</em>';
+    }
+  }
+
+  function clearModelRecommendation() {
+    gemmaCard.classList.remove('recommended', 'not-recommended');
+    qwenCard.classList.remove('recommended', 'not-recommended');
+    // Restore original descriptions
+    gemmaCard.querySelector('.opt-name .desc').innerHTML =
+      'Light option — only 3.8B active parameters. Fast on 16 GB Macs, but reasoning depth degrades vs dense models. No thinking mode, no vision. Good for quick queries and low-RAM machines.';
+    qwenCard.querySelector('.opt-name .desc').innerHTML =
+      'Quality option — all 27B parameters active per token. Thinking mode, zero refusals, multimodal vision. Better for deep investigations and complex reasoning. Needs 24+ GB RAM.';
+  }
+
   // --- LLM fit check ---
   const fitBtn = document.getElementById('fit-check-btn');
   const fitPanel = document.getElementById('fit-panel');
@@ -1940,6 +2041,7 @@
     fitStats.innerHTML = '';
     fitBody.innerHTML = '';
     fitCmdBox.style.display = 'none';
+    clearModelRecommendation();
 
     const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
     let fi = 0;
@@ -1986,33 +2088,51 @@
     clearInterval(spinInt);
 
     let verdict = 'amber';
-    let title = 'Looks promising — confirm in Terminal';
+    let title = 'Model recommendation based on your hardware';
     let body = '';
+    let recommendedModel = null; // 'gemma' or 'qwen27b'
 
-    if (isAppleSilicon) {
+    if (deviceMemGB && deviceMemGB >= 24) {
       verdict = 'green';
-      title = 'Apple Silicon detected — likely runs fine';
-      body = 'Apple Silicon Macs use unified memory (GPU reads system RAM directly). An 8B Q4 model fits comfortably in <b>16 GB unified memory</b>. If you\'re on an 8 GB Mac, it\'ll work but feel slow. Confirm your exact RAM with the command below.';
-    } else if (deviceMemGB && deviceMemGB >= 8) {
+      title = 'Qwen3.6 27B — fits comfortably on your hardware';
+      body = 'You have <b>' + deviceMemGB + ' GB+</b> RAM. The Qwen3.6 27B (dense, thinking mode, zero refusals) will run well here. Gemma 4 MoE also runs fine but offers less reasoning depth.';
+      recommendedModel = 'qwen27b';
+    } else if (deviceMemGB && deviceMemGB >= 16) {
       verdict = 'amber';
-      title = 'Possible — check your GPU/VRAM';
-      body = `Your browser reports <b>~${deviceMemGB} GB+</b> system RAM. For the 8B model, you want 16 GB RAM plus a GPU with 6+ GB VRAM (NVIDIA/AMD) — or CPU-only inference which will be slow (~5 tok/s). Check your exact specs in Terminal.`;
-    } else if (deviceMemGB && deviceMemGB < 4) {
+      title = 'Gemma 4 — works, but investigation quality degrades';
+      body = 'You have <b>~' + deviceMemGB + ' GB</b> RAM. Gemma 4 MoE (~10 GB at runtime) fits but leaves little headroom for Spotlight\'s orchestration (browser automation, search, vault writes). Reasoning depth degrades — no thinking mode, no vision. If your Mac supports it, we\'d recommend 24+ GB for the Qwen3.6 27B.';
+      recommendedModel = 'gemma';
+    } else if (deviceMemGB) {
       verdict = 'red';
-      title = 'Probably not enough — we recommend Cloud';
-      body = `Your browser reports <b>~${deviceMemGB} GB</b> system RAM. That\'s below the minimum for running an 8B model locally. Consider switching to <strong>Cloud</strong> mode above — Claude/Gemini/Codex/OpenCode give better quality without local compute.`;
-    } else if (isMac) {
+      title = 'No local model — switch to Cloud mode';
+      body = 'You have <b>~' + deviceMemGB + ' GB</b> RAM. That\'s below the minimum for running any model that can handle Spotlight\'s orchestration pipeline. Switch to <strong>Cloud</strong> mode above — Claude/Gemini/Codex/OpenCode give you full investigation quality without local compute.';
+      recommendedModel = null;
+    } else if (isAppleSilicon && cores >= 8) {
+      // Apple Silicon with 8+ cores typically has 16+ GB unified, but deviceMemory may not report it
       verdict = 'amber';
-      title = 'Intel Mac — likely too slow for local';
-      body = 'Intel Macs don\'t have Apple Silicon\'s unified memory advantage. An 8B Q4 model will run but can be painfully slow unless you have a discrete GPU. We recommend trying Cloud first.';
+      title = 'Confirm your RAM — 16 GB for Gemma, 24 GB for Qwen3.6 27B';
+      body = 'Apple Silicon with <b>' + cores + ' cores</b> typically has 16+ GB unified memory, but we can\'t confirm via the browser. Run the command below — if you\'re at 16 GB, Gemma 4 MoE works (with degraded quality). At 24 GB+, the Qwen3.6 27B is the recommended choice.';
+      recommendedModel = null;
+    } else if (isMac && arch === 'x86') {
+      verdict = 'red';
+      title = 'Intel Mac — use Cloud mode';
+      body = 'Intel Macs don\'t have Apple Silicon\'s unified memory advantage. Neither local model will handle Spotlight\'s orchestration well. We recommend switching to <strong>Cloud</strong> mode.';
+      recommendedModel = null;
     } else if (isLinux) {
       verdict = 'amber';
-      title = 'Linux detected — check your GPU/VRAM';
-      body = 'On Linux, local inference works well with 6+ GB of NVIDIA/AMD VRAM. Check your GPU with the command below before committing to Local.';
+      title = 'Check your GPU/VRAM — 16 GB RAM minimum for local';
+      body = 'On Linux, you need 16+ GB system RAM for Gemma 4 MoE, or 24+ GB for Qwen3.6 27B. With a 6+ GB NVIDIA/AMD GPU, both can work via VRAM offloading. Confirm your specs with the command below.';
+      recommendedModel = null;
     } else {
-      verdict = 'amber';
-      title = 'Browser detection limited — check manually';
-      body = 'Your browser doesn\'t expose enough hardware info. Use the command below to check RAM + GPU.';
+      verdict = 'red';
+      title = 'Browser detection limited — use Cloud mode';
+      body = 'Your browser doesn\'t expose enough hardware info. We recommend switching to <strong>Cloud</strong> mode for a reliable investigation experience.';
+      recommendedModel = null;
+    }
+
+    // Apply model recommendation
+    if (recommendedModel) {
+      recommendModel(recommendedModel);
     }
 
     fitPanel.classList.remove('idle', 'green', 'amber', 'red');

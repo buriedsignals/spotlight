@@ -65,7 +65,7 @@ const configs = [
     opencode_provider: null,
     cloud_key: "",
     cloud_key_var: "",
-    model_repo: "unsloth/Qwen3.6-35B-A3B-GGUF",
+    model_repo: "unsloth/gemma-4-26B-A4B-it-GGUF",
   },
   {
     label: "local/lmstudio",
@@ -75,7 +75,7 @@ const configs = [
     opencode_provider: null,
     cloud_key: "",
     cloud_key_var: "",
-    model_repo: "unsloth/Qwen3.6-35B-A3B-GGUF",
+    model_repo: "HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive",
   },
   {
     label: "claude",
