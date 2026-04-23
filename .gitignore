@@ -3,6 +3,7 @@ cases/*
 .DS_Store
 .spotlight-config.json
 .env
+.env.txt
 
 # Local Claude Code / other agent workspace configs (user-specific)
 .claude/
@@ -16,6 +17,13 @@ models/
 __pycache__/
 .firecrawl/
 .playwright-mcp/
+.vite/
 
 # Brainstorming companion
 .superpowers/
+
+# Dependencies and build outputs
+node_modules/
+dist/
+coverage/
+*.log

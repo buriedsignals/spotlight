@@ -92,18 +92,21 @@
   /* ── HERO ─────────────────────────────────────────────── */
   #hero {
     position: relative;
-    min-height: 60vh;
+    min-height: 74vh;
     background: var(--ink);
-    padding: 140px 48px 100px;
+    padding: 148px 48px 44px;
     border-bottom: 1px solid var(--muted-faint-dark);
     overflow: hidden;
+    display: flex;
+    align-items: flex-end;
   }
   .hero-grid {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
     align-items: end;
-    gap: 48px;
-    max-width: 1280px;
+    gap: 56px;
+    width: 100%;
+    max-width: 1320px;
     margin: 0 auto;
   }
   .hero-meta {
@@ -116,11 +119,11 @@
     font-family: "Fraunces", serif;
     font-variation-settings: "opsz" 144;
     font-weight: 500;
-    font-size: clamp(44px, 7vw, 110px);
+    font-size: clamp(56px, 7.8vw, 132px);
     line-height: 0.96;
     letter-spacing: -0.025em;
     margin: 0;
-    max-width: 11ch;
+    max-width: 9ch;
   }
   .hero-title .accent {
     font-style: italic;
@@ -129,11 +132,11 @@
     display: block;
   }
   .hero-side {
-    max-width: 320px;
-    font-size: 13px;
-    line-height: 1.55;
+    max-width: 34ch;
+    font-size: 14px;
+    line-height: 1.7;
     color: var(--muted-dark);
-    padding-bottom: 8px;
+    padding-bottom: 6px;
   }
 
   /* ── FORM SHELL (paper) ───────────────────────────────── */
@@ -723,58 +726,53 @@
   #footer {
     background: rgba(7, 7, 10, 0);
     color: var(--paper);
-    padding: 140px 48px 40px;
+    padding: 96px 48px 32px;
     position: relative;
     overflow: hidden;
     z-index: 10;
   }
-  .footer-huge {
-    font-family: "Fraunces", serif;
-    font-variation-settings: "opsz" 144, "wght" 500;
-    font-size: clamp(80px, 18vw, 280px);
-    line-height: 0.82;
-    letter-spacing: -0.04em;
-    margin: 0 0 60px;
-    color: var(--paper);
-  }
-  .footer-huge em {
-    font-style: italic;
-    font-variation-settings: "opsz" 144, "wght" 400;
-    color: var(--accent-warm);
-  }
-  .footer-grid {
+  .footer-simple {
     display: grid;
-    grid-template-columns: 2fr 1fr 1fr 1fr;
-    gap: 40px;
-    padding: 40px 0;
+    grid-template-columns: minmax(0, 56ch) auto;
+    align-items: start;
+    gap: 32px;
+    padding-top: 28px;
     border-top: 1px solid var(--muted-faint-dark);
   }
-  .footer-col h4 {
-    font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
-    opacity: 0.5;
-    margin: 0 0 18px;
-    font-weight: 500;
-  }
-  .footer-col ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
-  .footer-col ul li a {
-    font-size: 13px;
-    opacity: 0.85;
-    border-bottom: 1px solid transparent;
-    transition: border-color 0.2s, color 0.2s;
-  }
-  .footer-col ul li a:hover { color: var(--accent-warm); border-bottom-color: var(--accent-warm); }
-  .footer-col.about p {
-    font-size: 13px; line-height: 1.6; opacity: 0.7;
-    max-width: 38ch;
+  .footer-summary {
     margin: 0;
+    max-width: 56ch;
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--muted-dark);
+  }
+  .footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    justify-content: flex-end;
+    align-content: flex-start;
+  }
+  .footer-links a {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 14px;
+    border: 1px solid var(--muted-faint-dark);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  }
+  .footer-links a:hover {
+    background: var(--accent-warm-14);
+    border-color: var(--accent-warm);
+    color: var(--accent-warm);
   }
   .footer-meta {
     display: flex; justify-content: space-between; align-items: baseline;
-    padding-top: 28px;
-    border-top: 1px solid var(--muted-faint-dark);
     font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
     opacity: 0.5;
-    margin-top: 60px;
+    margin-top: 30px;
   }
   .footer-meta .brand-mini { display: flex; align-items: center; gap: 10px; }
   .footer-meta .brand-mini svg { width: 14px; height: 14px; opacity: 0.7; }
@@ -804,9 +802,27 @@
       letter-spacing: 0.18em;
     }
 
-    #hero { padding: 110px 20px 60px; min-height: 50vh; }
-    .hero-grid { grid-template-columns: 1fr; gap: 32px; }
+    #hero {
+      min-height: 68svh;
+      padding: 108px 20px 30px;
+      align-items: flex-end;
+    }
+    .hero-grid {
+      grid-template-columns: 1fr;
+      gap: 22px;
+      width: 100%;
+    }
     .hero-meta { text-align: left; margin-bottom: 0; }
+    .hero-title {
+      font-size: clamp(62px, 16vw, 94px);
+      max-width: 8ch;
+    }
+    .hero-side {
+      max-width: 26ch;
+      font-size: 14px;
+      line-height: 1.72;
+      padding-bottom: 0;
+    }
 
     .form-wrap { padding: 0 20px; }
     .sec-header {
@@ -823,10 +839,17 @@
     #install-output .out-header { flex-direction: column; align-items: flex-start; gap: 12px; }
     #install-output .out-header h2 { text-align: left; }
 
-    #footer { padding: 80px 20px 28px; }
-    .footer-grid { grid-template-columns: 1fr 1fr; gap: 28px; padding: 28px 0; }
-    .footer-col.about { grid-column: 1 / -1; }
-    .footer-meta { flex-direction: column; gap: 12px; align-items: flex-start; margin-top: 32px; }
+    #footer { padding: 64px 20px 28px; }
+    .footer-simple {
+      grid-template-columns: 1fr;
+      gap: 18px;
+    }
+    .footer-summary { font-size: 13px; }
+    .footer-links {
+      gap: 10px;
+      justify-content: flex-start;
+    }
+    .footer-meta { flex-direction: column; gap: 12px; align-items: flex-start; margin-top: 28px; }
 
     .generate-bar { flex-direction: column; align-items: flex-start; gap: 16px; }
   }
@@ -860,24 +883,6 @@
   }
   nav.topnav.in { opacity: 1; transform: translateY(0); }
 
-  /* Footer huge-word reveal — each word clip-reveals individually. JS wraps spans. */
-  .reveal-huge {
-    display: inline-block;
-    overflow: hidden;
-    padding: 0 0.02em 0.06em;
-    vertical-align: top;
-    --rd: 0ms;
-    --rs: 0;
-    --stagger: 240ms;
-  }
-  .reveal-huge > * {
-    display: inline-block;
-    transform: translateY(108%);
-    transition: transform 1500ms cubic-bezier(0.16, 0.78, 0.22, 1) calc(var(--rd, 0ms) + var(--rs, 0) * var(--stagger, 240ms));
-    will-change: transform;
-  }
-  .reveal-huge.in > * { transform: translateY(0); }
-
   @media (prefers-reduced-motion: reduce) {
     [data-reveal] {
       transition: opacity 300ms ease !important;
@@ -886,8 +891,6 @@
     }
     [data-reveal] { opacity: 0; }
     [data-reveal].in { opacity: 1; }
-    .reveal-huge > * { opacity: 0; transform: none !important; transition: opacity 300ms ease !important; }
-    .reveal-huge.in > * { opacity: 1; }
   }
 </style>
 </head>
@@ -1236,50 +1239,25 @@
 
 <!-- ── FOOTER ───────────────────────────────────────────── -->
 <section id="footer" data-nav-theme="dark" data-scene-mood="calm">
-  <p class="footer-huge" id="footer-huge">
-    Lead the <em>story.</em>
-  </p>
-
-  <div class="footer-grid">
-    <div class="footer-col about" data-reveal="body" data-stagger-idx="0">
-      <h4>Spotlight</h4>
-      <p>An open-source OSINT investigation system for journalists. Built by Buried Signals with Indicator Media. Runtime-agnostic, evidence-first, editor-ready.</p>
-    </div>
-    <div class="footer-col" data-reveal="body" data-stagger-idx="1">
-      <h4>Product</h4>
-      <ul>
-        <li><a href="index.html#what">What it does</a></li>
-        <li><a href="index.html#integrations">Integrations</a></li>
-        <li><a href="index.html#box">In the box</a></li>
-        <li><a href="setup.html">Install</a></li>
-      </ul>
-    </div>
-    <div class="footer-col" data-reveal="body" data-stagger-idx="2">
-      <h4>Project</h4>
-      <ul>
-        <li><a href="index.html#attribution">Built on</a></li>
-        <li><a href="index.html#offers">Work with us</a></li>
-        <li><a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a></li>
-      </ul>
-    </div>
-    <div class="footer-col" data-reveal="body" data-stagger-idx="3">
-      <h4>Contact</h4>
-      <ul>
-        <li><a href="/cdn-cgi/l/email-protection#d8b0bdb4b4b798baadaab1bdbcabb1bfb6b9b4abf6bbb7b5"><span class="__cf_email__" data-cfemail="3058555c5c5f705245425955544359575e515c431e535f5d">[email&#160;protected]</span></a></li>
-        <li><a href="https://buriedsignals.com" target="_blank" rel="noopener">buriedsignals.com ↗</a></li>
-        <li><a href="https://indicator.media" target="_blank" rel="noopener">indicator.media ↗</a></li>
-      </ul>
+  <div class="footer-simple">
+    <p class="footer-summary" data-reveal="body" data-stagger-idx="0">
+      An open-source investigative system for AI agents, built for journalists. One agent reports, one agent checks, and you stay the editor. Local when the case is too sensitive for the cloud.
+    </p>
+    <div class="footer-links" data-reveal="body" data-stagger-idx="1">
+      <a href="setup.html">Install</a>
+      <a href="https://buriedsignals.com/consulting" target="_blank" rel="noopener">Work with me ↗</a>
+      <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals ↗</a>
     </div>
   </div>
 
-  <div class="footer-meta" data-reveal="meta">
+  <div class="footer-meta">
     <div class="brand-mini">
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <path d="M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z"/>
       </svg>
       <span>Spotlight · v1.0</span>
     </div>
-    <span>© 2025 Buried Signals — MIT licensed</span>
+    <span>© 2026 Buried Signals — MIT licensed</span>
   </div>
 </section>
 
@@ -2158,52 +2136,6 @@
     }
   }, { threshold: 0.15, rootMargin: '0px 0px -10% 0px' });
   document.querySelectorAll('[data-reveal]').forEach(el => io.observe(el));
-
-  // Wrap words in .footer-huge for per-word reveal, then observe with a
-  // dedicated IO that fires once the element is well into the viewport so
-  // the slow 1500ms animation overlaps the user's scroll.
-  (function () {
-    const huge = document.getElementById('footer-huge');
-    if (!huge) return;
-    const walker = [];
-    huge.childNodes.forEach(n => walker.push(n));
-    huge.innerHTML = '';
-    let idx = 0;
-    walker.forEach(n => {
-      if (n.nodeType === 3) {
-        n.textContent.split(/(\s+)/).forEach(p => {
-          if (!p.trim()) { huge.appendChild(document.createTextNode(p)); return; }
-          const wrap = document.createElement('span');
-          wrap.className = 'reveal-huge';
-          wrap.setAttribute('data-reveal-huge', '');
-          wrap.setAttribute('data-stagger-idx', String(idx++));
-          const inner = document.createElement('span');
-          inner.textContent = p;
-          wrap.appendChild(inner);
-          huge.appendChild(wrap);
-        });
-      } else {
-        const wrap = document.createElement('span');
-        wrap.className = 'reveal-huge';
-        wrap.setAttribute('data-reveal-huge', '');
-        wrap.setAttribute('data-stagger-idx', String(idx++));
-        const inner = document.createElement(n.tagName.toLowerCase());
-        inner.textContent = n.textContent;
-        wrap.appendChild(inner);
-        huge.appendChild(wrap);
-      }
-    });
-    const ioHuge = new IntersectionObserver((entries) => {
-      entries.forEach(e => {
-        if (!e.isIntersecting) return;
-        const el = e.target;
-        el.style.setProperty('--rs', parseInt(el.dataset.staggerIdx || '0', 10));
-        el.classList.add('in');
-        ioHuge.unobserve(el);
-      });
-    }, { threshold: 0, rootMargin: '0px 0px -80px 0px' });
-    document.querySelectorAll('[data-reveal-huge]').forEach(el => ioHuge.observe(el));
-  })();
 
   // Nav fades on load
   requestAnimationFrame(() => document.getElementById('topnav').classList.add('in'));

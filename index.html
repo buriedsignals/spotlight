@@ -183,24 +183,24 @@
     position: absolute; inset: 0;
     z-index: 3;
     display: flex; flex-direction: column; justify-content: flex-end;
-    padding: 92px 48px 96px;
+    padding: 96px 48px 118px;
     pointer-events: none;
   }
   .hero-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.85fr);
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
     align-items: end;
-    gap: 72px;
+    gap: 36px;
   }
   .hero-title {
     font-family: "Fraunces", serif;
     font-variation-settings: "opsz" 144;
     font-weight: 500;
-    font-size: clamp(44px, 6.5vw, 96px);
+    font-size: clamp(48px, 7vw, 108px);
     line-height: 0.98;
     letter-spacing: -0.025em;
     margin: 0;
-    max-width: 18ch;
+    max-width: none;
   }
   .hero-title .accent {
     font-style: italic;
@@ -208,8 +208,13 @@
     color: var(--accent-warm);
     display: block;
   }
+  @media (min-width: 1100px) {
+    .hero-title .accent { white-space: nowrap; }
+  }
   .hero-side {
-    max-width: 420px;
+    max-width: 360px;
+    width: 100%;
+    justify-self: end;
     font-size: 13px;
     line-height: 1.55;
     color: var(--muted-dark);
@@ -264,7 +269,7 @@
 
   .scroll-cue {
     position: absolute;
-    bottom: 40px;
+    bottom: 28px;
     left: 48px;
     font-size: 10px;
     letter-spacing: 0.25em;
@@ -315,6 +320,14 @@
     font-size: clamp(32px, 4.5vw, 60px);
     letter-spacing: -0.02em;
     margin: 0;
+  }
+  #integrations .header .title,
+  #works-with .header .title,
+  #attribution .header .title,
+  #offers .header .title {
+    font-size: clamp(40px, 5.4vw, 78px);
+    line-height: 1.02;
+    max-width: 13ch;
   }
 
   /* ── WHAT IT DOES (split-scroll) ──────────────────────── */
@@ -400,6 +413,24 @@
     line-height: 1.65;
     max-width: 54ch;
     opacity: 0.75;
+  }
+  .step-meta {
+    display: none;
+    margin-bottom: 20px;
+  }
+  .step-meta .step-num {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 72, "wght" 500;
+    font-size: 34px;
+    line-height: 0.9;
+    color: var(--accent-warm);
+  }
+  .step-meta .step-label {
+    margin-top: 10px;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    opacity: 0.62;
   }
 
   /* ── INTEGRATIONS — static 3-col grid of integration cards ─────────── */
@@ -617,7 +648,7 @@
     border-right: 1px solid var(--muted-faint-dark);
     display: flex; flex-direction: column;
     position: relative;
-    min-height: 520px;
+    min-height: 580px;
   }
   .offer:last-child { border-right: none; }
   .offer .kicker {
@@ -637,7 +668,7 @@
     line-height: 1.02;
     letter-spacing: -0.025em;
     margin: 40px 0 20px;
-    max-width: 14ch;
+    max-width: 18ch;
   }
   .offer .lede {
     font-size: 14px; line-height: 1.65; opacity: 0.75;
@@ -649,10 +680,16 @@
     display: flex; flex-direction: column; gap: 10px;
   }
   .offer ul li {
+    display: block;
     font-size: 13px; line-height: 1.5;
     padding-left: 22px;
     position: relative;
     opacity: 0.8;
+    background: transparent !important;
+    background-image: none !important;
+    border: none;
+    box-shadow: none;
+    outline: none;
   }
   .offer ul li::before {
     content: '';
@@ -662,14 +699,25 @@
     opacity: 0.5;
   }
   .offer .actions {
-    margin-top: auto;
     display: flex; align-items: center; gap: 20px;
     flex-wrap: wrap;
   }
-  .offer .actions.stack {
+  .offer-footer {
+    margin-top: auto;
+    min-height: 116px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 12px;
+  }
+  .offer-footer .actions {
+    margin-top: 0;
+  }
+  .offer-footer .actions.stack {
     flex-direction: column;
     align-items: stretch;
     gap: 12px;
+    justify-content: flex-end;
   }
   .offer .btn {
     display: inline-flex; align-items: center; gap: 10px;
@@ -694,20 +742,29 @@
   }
   .offer-signup-form {
     display: flex;
+    align-items: stretch;
     gap: 10px;
     width: 100%;
   }
   .offer-signup-form input[type="email"] {
+    appearance: none;
+    -webkit-appearance: none;
     flex: 1;
     min-width: 0;
-    height: 48px;
+    min-height: 52px;
+    height: 52px;
     padding: 0 14px;
     border: 1px solid var(--muted-faint-dark);
     background: rgba(237, 232, 220, 0.04);
     color: var(--paper);
     font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 13px;
+    line-height: 1.2;
     transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  }
+  .offer-signup-form .btn {
+    min-height: 52px;
+    justify-content: center;
   }
   .offer-signup-form input[type="email"]::placeholder { color: var(--muted-dark); }
   .offer-signup-form input[type="email"]:focus {
@@ -750,9 +807,10 @@
     z-index: 10;
   }
   .footer-simple {
-    display: flex;
-    flex-direction: column;
-    gap: 22px;
+    display: grid;
+    grid-template-columns: minmax(0, 56ch) auto;
+    align-items: start;
+    gap: 32px;
     padding-top: 28px;
     border-top: 1px solid var(--muted-faint-dark);
   }
@@ -767,6 +825,8 @@
     display: flex;
     flex-wrap: wrap;
     gap: 14px;
+    justify-content: flex-end;
+    align-content: flex-start;
   }
   .footer-links a {
     display: inline-flex;
@@ -787,7 +847,7 @@
     display: flex; justify-content: space-between; align-items: baseline;
     font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
     opacity: 0.5;
-    margin-top: 8px;
+    margin-top: 30px;
   }
   .footer-meta .brand-mini { display: flex; align-items: center; gap: 10px; }
   .footer-meta .brand-mini svg { width: 14px; height: 14px; opacity: 0.7; }
@@ -802,6 +862,17 @@
       padding: 0 32px;
     }
     .split-left .counter { font-size: 110px; }
+  }
+
+  @media (min-width: 1500px) {
+    .hero-grid {
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+      gap: 28px;
+    }
+    .hero-content { padding: 112px 56px 130px; }
+    .hero-title { font-size: clamp(56px, 6.8vw, 118px); }
+    .hero-side { max-width: 320px; }
+    .offer h3 { max-width: 22ch; }
   }
 
   /* ── MOBILE ───────────────────────────────────────────── */
@@ -830,10 +901,17 @@
     }
 
     /* Hero — tighter title, stacked side block with CTAs stacked too */
-    .hero-content { padding: 72px 20px 72px; }
-    .hero-title { font-size: clamp(38px, 10vw, 60px); max-width: 100%; }
-    .hero-grid { grid-template-columns: 1fr; gap: 20px; }
-    .hero-side { max-width: 100%; font-size: 12px; }
+    #hero-canvas {
+      top: -9svh;
+      height: calc(100% + 9svh);
+    }
+    .hero-content {
+      justify-content: flex-end;
+      padding: 120px 20px 34px;
+    }
+    .hero-title { font-size: clamp(56px, 13.8vw, 84px); max-width: 100%; }
+    .hero-grid { grid-template-columns: 1fr; gap: 28px; }
+    .hero-side { max-width: 100%; font-size: 13px; }
     .hero-actions {
       display: flex; flex-direction: column; align-items: stretch;
       gap: 14px;
@@ -854,7 +932,15 @@
     .scroll-cue { display: none; }
 
     /* Section titles scale down cleanly for narrow screens */
-    .header .title { font-size: clamp(26px, 7.5vw, 42px); }
+    .header .title { font-size: clamp(28px, 8.4vw, 46px); }
+    #integrations .header .title,
+    #works-with .header .title,
+    #attribution .header .title,
+    #offers .header .title {
+      font-size: clamp(34px, 10vw, 54px);
+      line-height: 1.04;
+      max-width: 100%;
+    }
     #what .header,
     #integrations .header,
     #works-with .header,
@@ -915,11 +1001,31 @@
     .split-left .counter-label { margin-top: 0; font-size: 10px; min-height: 0; opacity: 0.75; }
     .split-left .progress { flex: 1; margin-top: 0; }
 
-    .split-right { padding: 20px 20px 40px; }
-    .step { min-height: auto; padding: 36px 0; opacity: 1; border-bottom: 1px solid var(--muted-faint-dark); }
-    .step:last-child { border-bottom: none; }
-    .step .step-title { font-size: clamp(22px, 6vw, 32px); max-width: 100%; margin-bottom: 14px; }
-    .step .step-body { font-size: 13px; max-width: 100%; }
+    .split-right {
+      padding: 16px 20px 64px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .step {
+      min-height: clamp(420px, calc(100svh - 132px), 640px);
+      padding: 28px 20px;
+      opacity: 0.38;
+      border: 1px solid var(--muted-faint-dark);
+      background: rgba(12, 12, 16, 0.3);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      transition: opacity 0.35s ease, border-color 0.35s ease, background 0.35s ease;
+    }
+    .step.active {
+      opacity: 1;
+      border-color: rgba(237, 232, 220, 0.3);
+      background: rgba(12, 12, 16, 0.78);
+    }
+    .step:last-child { border-bottom: 1px solid var(--muted-faint-dark); }
+    .step .step-title { font-size: clamp(28px, 7vw, 40px); max-width: 100%; margin-bottom: 16px; }
+    .step .step-body { font-size: 14px; max-width: 100%; }
 
     /* ── Integrations — collapse the 3-col grid to single column on mobile. */
     #integrations { padding-bottom: 40px; }
@@ -978,12 +1084,24 @@
     .offer:last-child { border-bottom: none; }
     .offer .actions { flex-direction: column; align-items: flex-start; }
     .offer-signup-form { flex-direction: column; }
+    .offer-signup-form input[type="email"],
+    .offer-signup-form .btn {
+      width: 100%;
+      min-height: 54px;
+      height: 54px;
+    }
 
     #footer { padding: 64px 20px 28px; }
-    .footer-simple { gap: 18px; }
+    .footer-simple {
+      grid-template-columns: 1fr;
+      gap: 18px;
+    }
     .footer-summary { font-size: 13px; }
-    .footer-links { gap: 10px; }
-    .footer-meta { flex-direction: column; gap: 12px; align-items: flex-start; margin-top: 32px; }
+    .footer-links {
+      gap: 10px;
+      justify-content: flex-start;
+    }
+    .footer-meta { flex-direction: column; gap: 12px; align-items: flex-start; margin-top: 28px; }
   }
 
   /* ─────────────────────────────────────────────────────────────────────────
@@ -1063,8 +1181,7 @@
   .header .chap[data-reveal="meta"].in,
   .credits .role[data-reveal="meta"].in,
   .offer .kicker[data-reveal="meta"].in,
-  .footer-col h4[data-reveal="meta"].in,
-  .footer-meta[data-reveal="meta"].in { letter-spacing: 0.2em; }
+  .footer-col h4[data-reveal="meta"].in { letter-spacing: 0.2em; }
   .offer ul li[data-reveal="meta"].in,
   .int-card .idx[data-reveal="meta"].in { letter-spacing: 0.2em; }
 
@@ -1203,7 +1320,7 @@
     <div class="hero-grid">
       <h1 class="hero-title" data-reveal="title" style="--rd: 600ms">
         You lead the investigation.
-        <span class="accent">Spotlight does</br>the research.</span>
+        <span class="accent">Spotlight does the research.</span>
       </h1>
       <div class="hero-side" data-reveal="body" style="--rd: 1200ms">
         Turn your agent into an investigative system.
@@ -1240,22 +1357,42 @@
     </div>
     <div class="split-right" id="steps">
       <article class="step active" data-label="Lead" data-num="01">
+        <div class="step-meta">
+          <div class="step-num">01</div>
+          <div class="step-label">Lead</div>
+        </div>
         <h3 class="step-title">Start with a lead. Spotlight proposes the methodology before the research starts.</h3>
         <p class="step-body">You approve the plan first. It can connect to OSINT Navigator and pull the best tooling for the job before the first cycle runs.</p>
       </article>
       <article class="step" data-label="Cycles" data-num="02">
+        <div class="step-meta">
+          <div class="step-num">02</div>
+          <div class="step-label">Cycles</div>
+        </div>
         <h3 class="step-title">The investigator works the lead. The fact-checker comes after each cycle.</h3>
         <p class="step-body">One agent pushes the reporting forward. A second agent checks the claims, looks for contradictions, and flags what still does not hold.</p>
       </article>
       <article class="step" data-label="Findings" data-num="03">
+        <div class="step-meta">
+          <div class="step-num">03</div>
+          <div class="step-label">Findings</div>
+        </div>
         <h3 class="step-title">Findings arrive with evidence attached.</h3>
         <p class="step-body">Primary documents captured locally. Independent sourcing where possible. Disputes, weak points, and missing perspectives made explicit.</p>
       </article>
       <article class="step" data-label="Review" data-num="04">
+        <div class="step-meta">
+          <div class="step-num">04</div>
+          <div class="step-label">Review</div>
+        </div>
         <h3 class="step-title">You stay the editor at every gate.</h3>
         <p class="step-body">You approve the methodology, review the findings, challenge weak points, and decide what deserves another cycle. Nothing clears the gate without a human decision.</p>
       </article>
       <article class="step" data-label="Vault" data-num="05">
+        <div class="step-meta">
+          <div class="step-num">05</div>
+          <div class="step-label">Vault</div>
+        </div>
         <h3 class="step-title">When the case is solid, it becomes infrastructure for the next one.</h3>
         <p class="step-body">Evidence stays archived, the case goes into your vault, and ongoing monitoring can feed new leads back into the workflow.</p>
       </article>
@@ -1267,7 +1404,7 @@
 <section id="integrations" data-screen-label="04 Integrations" data-nav-theme="dark" data-scene-mood="drift">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 02 — Integrations</span>
-    <h2 class="title" data-reveal="title" style="--rd: 120ms">Runs in the tools you already trust.</h2>
+    <h2 class="title" data-reveal="title" style="--rd: 120ms">End-to-end investigation workflow.</h2>
   </div>
   <div class="integrations-grid">
     <div class="int-card" data-reveal="card" data-stagger-idx="0">
@@ -1308,7 +1445,7 @@
 <section id="works-with" data-screen-label="05 Works with" data-nav-theme="dark" data-scene-mood="sparse">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 03 — Works with</span>
-    <h2 class="title" data-reveal="title" style="--rd: 120ms">Use the runtime you already trust.</h2>
+    <h2 class="title" data-reveal="title" style="--rd: 120ms">Runs with your preferred agent.</h2>
   </div>
   <div class="works-chips" data-reveal="body" style="--rd: 200ms">
     <a class="works-chip" href="https://claude.com/claude-code" target="_blank" rel="noopener">Claude Code</a>
@@ -1349,7 +1486,15 @@
         <li>Hosted Pro access to Spotlight, coJournalist, Navigator, and DataHound</li>
         <li>Investigation methods and AI techniques, in depth</li>
       </ul>
-      <div class="actions stack">
+      <div class="offer-footer">
+        <p class="offer-signup-error hidden" id="newsletter-error"></p>
+        <p class="offer-signup-success hidden" id="newsletter-success">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor"/>
+          </svg>
+          <span>You're in. I'll ping you at launch.</span>
+        </p>
+        <p class="offer-disclaimer" id="newsletter-disclaimer">700+ journalists already reading</p>
         <form class="offer-signup-form" id="newsletter-signup-form">
           <input
             type="email"
@@ -1360,14 +1505,6 @@
           >
           <button type="submit" class="btn" id="newsletter-submit">Subscribe <span aria-hidden="true">→</span></button>
         </form>
-        <p class="offer-signup-error hidden" id="newsletter-error"></p>
-        <p class="offer-signup-success hidden" id="newsletter-success">
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor"/>
-          </svg>
-          <span>You're in. I'll ping you at launch.</span>
-        </p>
-        <p class="offer-disclaimer" id="newsletter-disclaimer">700+ journalists already reading</p>
       </div>
     </article>
 
@@ -1385,9 +1522,11 @@
         <li>MediaStorm</li>
         <li>The New Humanitarian</li>
       </ul>
-      <div class="actions">
-        <a href="mailto:tom@buriedsignals.com" class="btn ghost">Get in touch <span aria-hidden="true">→</span></a>
-        <a href="https://buriedsignals.com/cases" class="aside">See case studies</a>
+      <div class="offer-footer">
+        <div class="actions">
+          <a href="mailto:tom@buriedsignals.com" class="btn ghost">Get in touch <span aria-hidden="true">→</span></a>
+          <a href="https://buriedsignals.com/cases" class="aside">See case studies</a>
+        </div>
       </div>
     </article>
   </div>
@@ -1401,14 +1540,12 @@
     </p>
     <div class="footer-links" data-reveal="body" data-stagger-idx="1">
       <a href="setup.html">Install</a>
-      <a href="#what">How it works</a>
-      <a href="#offers">Work with me</a>
-      <a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a>
+      <a href="https://buriedsignals.com/consulting" target="_blank" rel="noopener">Work with me ↗</a>
       <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals ↗</a>
     </div>
   </div>
 
-  <div class="footer-meta" data-reveal="meta">
+  <div class="footer-meta">
     <div class="brand-mini">
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <path d="M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z"/>
@@ -3741,7 +3878,8 @@
     const fillEl = document.getElementById('progress-fill');
     const total = steps.length;
     function update() {
-      const mid = window.innerHeight * 0.5;
+      const isMobile = window.innerWidth <= 760;
+      const mid = window.innerHeight * (isMobile ? 0.64 : 0.5);
       let active = 0;
       let best = Infinity;
       steps.forEach((s, i) => {
@@ -3761,6 +3899,7 @@
       window.__fiveThingsStep = active;
     }
     window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update, { passive: true });
     update();
   })();
 
@@ -3916,8 +4055,8 @@
     });
   })();
 
-  // ── Newsletter signup — mirrors the coJournalist landing-card flow using
-  // the same public Supabase Edge Function.
+  // ── Newsletter signup — posts to the shared Supabase Edge Function used
+  // by the coJournalist landing-card flow.
   (function () {
     const form = document.getElementById('newsletter-signup-form');
     const emailInput = document.getElementById('newsletter-email');
