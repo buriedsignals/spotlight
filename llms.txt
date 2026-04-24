@@ -1,0 +1,77 @@
+# Spotlight
+
+> Runtime-agnostic OSINT investigation system for journalists. Spotlight gives an agent runtime a reporting methodology, an investigator and fact-checker loop, human review gates, and a reusable case archive.
+
+## Start here
+
+- [Install](https://spotlight.buriedsignals.com/setup.html): public setup flow for journalists
+- [Landing page](https://spotlight.buriedsignals.com/): public product overview
+- [Documentation index](https://spotlight.buriedsignals.com/docs/README.md): operator manual and reading order
+- [Runtime contract](https://spotlight.buriedsignals.com/AGENTS.md): machine-readable verb registry, agent manifests, skill registry, and case structure
+- [Full public AI reference](https://spotlight.buriedsignals.com/llms_full.txt): flattened summary for one-shot ingestion
+- [GitHub repo](https://github.com/buriedsignals/spotlight): source, issues, releases
+
+## What Spotlight does
+
+- [README](https://spotlight.buriedsignals.com/README.md): overview, supported runtimes, dependencies, and public documentation map
+- [Investigation pipeline](https://spotlight.buriedsignals.com/docs/investigating.md): brief, methodology, cycles, Gate 1, ingestion, and readiness criteria
+- [Fact-checking model](https://spotlight.buriedsignals.com/docs/fact-checking.md): independent verification pass, SIFT workflow, verdict taxonomy, and evidence trails
+- [Monitoring](https://spotlight.buriedsignals.com/docs/monitoring.md): how ongoing monitoring feeds new leads back into investigations
+- [Integrations](https://spotlight.buriedsignals.com/docs/integrations.md): browser-use, Junkipedia, OSINT Navigator, and manifest/preflight behavior
+- [Runtime wiring](https://spotlight.buriedsignals.com/docs/runtimes.md): pi, Hermes, Goose, Codex, Gemini, and local OpenAI-compatible setups
+
+## Core concepts
+
+- **Pipeline:** Preflight -> Brief -> Methodology -> Execution cycles -> Gate 1 -> Ingestion
+- **Two-agent model:** investigator executes the research; fact-checker independently verifies the claims
+- **Editorial control:** the user approves the brief, methodology, Gate 1 summary, and ingestion
+- **Readiness criteria:** minimum findings, source independence, no unresolved disputes, affected perspective, document trail, and gap assessment
+- **Evidence grounding:** scrape before cite, keep local copies, and archive sources before relying on them
+- **Sensitive mode:** strips web search and scraping so investigations can run local-only
+
+## Public docs
+
+- [Docs home](https://spotlight.buriedsignals.com/docs/README.md)
+- [Structure](https://spotlight.buriedsignals.com/docs/structure.md)
+- [Runtimes](https://spotlight.buriedsignals.com/docs/runtimes.md)
+- [Integrations](https://spotlight.buriedsignals.com/docs/integrations.md)
+- [Investigating](https://spotlight.buriedsignals.com/docs/investigating.md)
+- [Fact-checking](https://spotlight.buriedsignals.com/docs/fact-checking.md)
+- [Monitoring](https://spotlight.buriedsignals.com/docs/monitoring.md)
+- [Recovery](https://spotlight.buriedsignals.com/docs/recovery.md)
+
+## Skills
+
+- [spotlight](https://spotlight.buriedsignals.com/skills/spotlight/SKILL.md): top-level investigation orchestrator
+- [review](https://spotlight.buriedsignals.com/skills/review/SKILL.md): post-Gate-1 review artifact and feedback loop
+- [integrations](https://spotlight.buriedsignals.com/skills/integrations/SKILL.md): routing layer for external tools
+- [ingest](https://spotlight.buriedsignals.com/skills/ingest/SKILL.md): vault ingestion and registry updates
+- [monitoring](https://spotlight.buriedsignals.com/skills/monitoring/SKILL.md): monitoring orchestration across runtimes
+- [web-archiving](https://spotlight.buriedsignals.com/skills/web-archiving/SKILL.md): archive workflow and chain of custody
+- [content-access](https://spotlight.buriedsignals.com/skills/content-access/SKILL.md): paywall and access-method handling
+- [osint](https://spotlight.buriedsignals.com/skills/osint/SKILL.md): OSINT tool routing and catalog
+- [investigate](https://spotlight.buriedsignals.com/skills/investigate/SKILL.md): investigation techniques and reference playbooks
+- [follow-the-money](https://spotlight.buriedsignals.com/skills/follow-the-money/SKILL.md): financial and ownership tracing methods
+- [social-media-intelligence](https://spotlight.buriedsignals.com/skills/social-media-intelligence/SKILL.md): account authenticity, coordination, and narrative tracking
+
+## Agents and schemas
+
+- [investigator prompt](https://spotlight.buriedsignals.com/agents/investigator.md)
+- [fact-checker prompt](https://spotlight.buriedsignals.com/agents/fact-checker.md)
+- [findings schema](https://spotlight.buriedsignals.com/schemas/findings.schema.json)
+- [fact-check schema](https://spotlight.buriedsignals.com/schemas/fact-check.schema.json)
+- [methodology schema](https://spotlight.buriedsignals.com/schemas/methodology.schema.json)
+- [investigation log schema](https://spotlight.buriedsignals.com/schemas/investigation-log.schema.json)
+- [summary schema](https://spotlight.buriedsignals.com/schemas/summary.schema.json)
+
+## Runtime contract
+
+- The fixed verb registry is: `fetch`, `search`, `read-file`, `write-file`, `edit-file`, `list-files`, `grep-files`, `execute-shell`, `spawn-agent`, `wait-agent`, `invoke-skill`, `query-vault`, `vault-write`.
+- `fetch` and `search` are backed by `firecrawl`.
+- `query-vault` is backed by `BUN_INSTALL="" qmd query`.
+- `vault-write` is backed by the `obsidian` CLI.
+
+## Compatibility
+
+- Canonical full reference: https://spotlight.buriedsignals.com/llms_full.txt
+- Compatibility alias: https://spotlight.buriedsignals.com/llms-full.txt
