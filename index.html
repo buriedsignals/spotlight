@@ -226,7 +226,7 @@
   }
   .hero-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
     align-items: end;
     gap: 28px;
   }
@@ -247,13 +247,20 @@
     display: block;
   }
   .hero-side {
-    max-width: 320px;
+    max-width: 380px;
     width: 100%;
     justify-self: end;
     font-size: 13px;
     line-height: 1.55;
     color: var(--muted-dark);
     padding-bottom: 0;
+  }
+  .hero-description {
+    margin: 0;
+    color: rgba(237, 232, 220, 0.92);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.6;
   }
   .hero-helper {
     margin-top: 12px;
@@ -269,6 +276,7 @@
   .hero-side .cta,
   .install-reminder .cta {
     display: inline-flex; align-items: center; gap: 10px;
+    flex-wrap: nowrap;
     margin-top: 0;
     padding: 14px 18px 14px 20px;
     border: 1px solid rgba(255,245,217,0.75);
@@ -277,6 +285,7 @@
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
     font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
     pointer-events: auto;
+    white-space: nowrap;
     transition: background 0.3s, border-color 0.3s, color 0.3s, transform 0.2s;
   }
   .hero-side .cta:hover,
@@ -287,19 +296,27 @@
     transform: translateY(-1px);
   }
   .hero-side .secondary {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     margin-top: 0;
     margin-left: 0;
-    font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase;
-    opacity: 0.82;
+    padding: 14px 18px;
+    background: transparent;
+    color: rgba(237, 232, 220, 0.92);
+    border: 1px solid rgba(255, 245, 217, 0.68);
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
     pointer-events: auto;
-    border-bottom: 1px solid transparent;
-    transition: opacity 0.2s, border-color 0.2s;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: color 0.2s, border-color 0.2s, transform 0.2s;
   }
   .hero-side .secondary:hover {
-    opacity: 1;
+    background: transparent;
     color: var(--accent-warm);
-    border-bottom-color: var(--accent-warm);
+    border-color: var(--accent-warm);
+    transform: translateY(-1px);
   }
 
   .scroll-cue {
@@ -901,12 +918,12 @@
 
   @media (min-width: 1500px) {
     .hero-grid {
-      grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
       gap: 28px;
     }
     .hero-content { padding: 112px 56px 130px; }
     .hero-title { font-size: clamp(56px, 6.8vw, 118px); }
-    .hero-side { max-width: 320px; }
+    .hero-side { max-width: 400px; }
     .offer h3 { max-width: 22ch; }
   }
 
@@ -932,12 +949,13 @@
       color: rgba(237, 232, 220, 0.74);
       text-shadow: 0 2px 18px rgba(0, 0, 0, 0.72);
     }
+    .hero-description { color: rgba(237, 232, 220, 0.96); }
     .hero-side::before {
       content: "";
       position: absolute;
       inset: -18px -20px -18px -18px;
       background: linear-gradient(90deg, rgba(7, 7, 10, 0.82) 0%, rgba(7, 7, 10, 0.54) 62%, rgba(7, 7, 10, 0.14) 100%);
-      border-radius: 24px;
+      border-radius: 0;
       pointer-events: none;
       z-index: -1;
       backdrop-filter: blur(8px);
@@ -945,14 +963,13 @@
     }
     .hero-helper {
       max-width: 44ch;
-      color: rgba(237, 232, 220, 0.68);
+      color: rgba(237, 232, 220, 0.78);
     }
     .hero-actions {
       flex-wrap: wrap;
       gap: 14px 16px;
       margin-top: 22px;
     }
-    .hero-side .secondary { opacity: 0.94; }
   }
 
   /* ── MOBILE ───────────────────────────────────────────── */
@@ -997,10 +1014,14 @@
       padding: 14px 16px 0 0;
       color: rgba(237, 232, 220, 0.78);
     }
+    .hero-description {
+      font-size: 14px;
+      color: rgba(237, 232, 220, 0.96);
+    }
     .hero-side::before {
       inset: -14px -12px -16px -12px;
       background: linear-gradient(180deg, rgba(7, 7, 10, 0.84) 0%, rgba(7, 7, 10, 0.66) 58%, rgba(7, 7, 10, 0.24) 100%);
-      border-radius: 20px;
+      border-radius: 0;
     }
     .hero-helper { color: rgba(237, 232, 220, 0.72); }
     .hero-actions {
@@ -1015,9 +1036,9 @@
       padding: 14px 18px;
     }
     .hero-side .secondary {
-      margin-top: 0; margin-left: 0;
-      align-self: flex-start;
-      opacity: 0.96;
+      margin-top: 0;
+      margin-left: 0;
+      width: 100%;
     }
     /* Scroll cue — space is tight on mobile, hide it. */
     .scroll-cue { display: none; }
@@ -1414,7 +1435,7 @@
         <span class="accent">Spotlight does the research.</span>
       </h1>
       <div class="hero-side" data-reveal="body" style="--rd: 1200ms">
-        Turn your agent into an investigative system.
+        <p class="hero-description">Turn your agent into an investigative system.</p>
         <div class="hero-helper">
           A portable skill file that gives your runtime a reporting methodology, an investigator and fact-checker loop, human review gates, and a case archive you can reuse.
         </div>
@@ -1679,6 +1700,10 @@
     // Hero slot — the DOM region through which the scene is visible at the
     // top of the page. Kept as a regular div; we only measure its bounds.
     const heroSlot  = document.getElementById('hero-canvas');
+    const heroSection = document.getElementById('hero');
+    const heroTitle = document.querySelector('#hero .hero-title');
+    const heroSide = document.querySelector('#hero .hero-side');
+    const scrollCue = document.querySelector('#hero .scroll-cue');
     if (!container || !heroSlot || !THREE) return;
     const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -3356,8 +3381,66 @@
     const _cursorPlane  = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
     const _raycaster    = new THREE.Raycaster();
     const _mouseNDC     = new THREE.Vector2();
+    const pointerClient = { x: -1, y: -1 };
+    let cubeCursorActive = false;
+
+    function setCubeCursor(active) {
+      if (cubeCursorActive === active) return;
+      cubeCursorActive = active;
+      document.documentElement.style.cursor = active ? 'pointer' : '';
+    }
+
+    function pointInRect(x, y, el) {
+      if (!el) return false;
+      const rect = el.getBoundingClientRect();
+      return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+    }
+
+    function updateCubeCursor() {
+      const mood = window.__sceneMood || 'chaos';
+      if (
+        pointerClient.x < 0 ||
+        pointerClient.y < 0 ||
+        mood !== 'chaos' ||
+        !heroSection
+      ) {
+        setCubeCursor(false);
+        return;
+      }
+
+      const heroRect = heroSection.getBoundingClientRect();
+      const inHero =
+        pointerClient.x >= heroRect.left &&
+        pointerClient.x <= heroRect.right &&
+        pointerClient.y >= heroRect.top &&
+        pointerClient.y <= heroRect.bottom;
+      if (!inHero) {
+        setCubeCursor(false);
+        return;
+      }
+
+      // Keep the affordance tied to the visible cubes, not over the copy block.
+      if (
+        pointInRect(pointerClient.x, pointerClient.y, heroTitle) ||
+        pointInRect(pointerClient.x, pointerClient.y, heroSide) ||
+        pointInRect(pointerClient.x, pointerClient.y, scrollCue)
+      ) {
+        setCubeCursor(false);
+        return;
+      }
+
+      _mouseNDC.set(
+        (pointerClient.x / window.innerWidth) * 2 - 1,
+        -(pointerClient.y / window.innerHeight) * 2 + 1
+      );
+      _raycaster.setFromCamera(_mouseNDC, camera);
+      const hit = _raycaster.intersectObjects(glasses, false).some(i => i.object.visible);
+      setCubeCursor(hit);
+    }
 
     window.addEventListener('pointermove', (e) => {
+      pointerClient.x = e.clientX;
+      pointerClient.y = e.clientY;
       mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
       mouse.y = (e.clientY / window.innerHeight) * 2 - 1;
       _mouseNDC.set(
@@ -3369,7 +3452,18 @@
         lastMouseMove = performance.now();
       }
     });
-    // Don't deactivate on leave/blur — the auto-orbit keeps the scene alive
+    document.addEventListener('mouseleave', () => {
+      pointerClient.x = -1;
+      pointerClient.y = -1;
+      setCubeCursor(false);
+    });
+    window.addEventListener('blur', () => {
+      pointerClient.x = -1;
+      pointerClient.y = -1;
+      setCubeCursor(false);
+    });
+    // Clear only the hover affordance on leave/blur — the auto-orbit still
+    // keeps the scene alive even when the pointer is gone.
 
     // Click anywhere on the scene = toggle "aligned mode" — only active in
     // 'chaos' mood (hero). In every other mood the scene is driven by the
@@ -3699,7 +3793,10 @@
 
       // Skip the heavy work (compute, render) when no slot is on-screen.
       const anyVisible = slots.some(s => s.visible);
-      if (!anyVisible) return;
+      if (!anyVisible) {
+        setCubeCursor(false);
+        return;
+      }
 
       const dt = params.paused ? 0 : Math.min(clock.getDelta(), 0.05);
       t += dt;
@@ -3818,6 +3915,7 @@
       camera.position.z = Math.sin(azim) * radius * Math.cos(polar);
       camera.position.y = Math.sin(polar) * radius;
       camera.lookAt(0, 0.1, 0);
+      updateCubeCursor();
 
       // —— Per-slot render ————————————————————————————————————————————
       // Every slot renders the SAME main scene. Card slots override the
