@@ -294,6 +294,24 @@ Three tiers. Shape = no border-radius (flat/bordered). The nav Install CTA uses 
 }
 ```
 
+**Hero body copy**:
+```css
+.hero-description {
+  margin: 0;
+  color: rgba(237, 232, 220, 0.92);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+.hero-helper {
+  color: rgba(237, 232, 220, 0.72);
+}
+/* If the hero side uses a backdrop panel over the scene, keep it square. */
+.hero-side::before {
+  border-radius: 0;
+}
+```
+
 **Primary button (solid ink on paper)**:
 ```css
 .btn-primary {
@@ -315,7 +333,31 @@ Three tiers. Shape = no border-radius (flat/bordered). The nav Install CTA uses 
 .btn-ghost:hover { background: var(--paper-fg); color: var(--paper); }
 ```
 
-**Secondary link** (hero "GitHub ↗", card "See cases"): `opacity: 0.55; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;` — hover `opacity: 1; color: var(--accent-warm); border-bottom: 1px solid var(--accent-warm);`.
+**Hero secondary button** (hero "GitHub ↗"): transparent ghost button on dark. Keep the background transparent at rest and on hover so the scene remains visible through it.
+```css
+.hero-side .secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 18px;
+  background: transparent;
+  color: rgba(237, 232, 220, 0.92);
+  border: 1px solid rgba(255, 245, 217, 0.68);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.hero-side .secondary:hover {
+  background: transparent;
+  color: var(--accent-warm);
+  border-color: var(--accent-warm);
+}
+```
+
+**Secondary text link** (card "See cases"): `opacity: 0.55; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;` — hover `opacity: 1; color: var(--accent-warm); border-bottom: 1px solid var(--accent-warm);`.
 
 ### 3.6 Inputs (setup)
 
