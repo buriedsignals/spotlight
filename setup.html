@@ -503,22 +503,35 @@
     color: var(--paper-fg);
     border-color: var(--paper);
     box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+    transition: background 0.3s, border-color 0.3s, color 0.3s, transform 0.2s;
   }
   #generate-btn:hover {
-    background: #fff8eb;
-    color: var(--ink);
-    border-color: #fff8eb;
+    background: var(--accent-warm);
+    color: var(--paper);
+    border-color: var(--accent-warm);
+    transform: translateY(-1px);
   }
   .generate-actions {
     display: flex;
     gap: 12px;
   }
-  .generate-actions > button { min-width: 0; }
+  .generate-actions > button {
+    min-width: 0;
+    min-height: 58px;
+    padding: 18px 24px;
+  }
   .generate-actions #generate-btn { flex: 1.1; }
   #agent-setup-btn {
     flex: 0.9;
     justify-content: center;
     color: var(--paper);
+    transition: color 0.2s, border-color 0.2s, transform 0.2s;
+  }
+  button#agent-setup-btn:hover {
+    background: transparent;
+    color: var(--accent-warm);
+    border-color: var(--accent-warm);
+    transform: translateY(-1px);
   }
 
   /* ── INSTALL OUTPUT (dark reveal) ─────────────────────── */
@@ -782,18 +795,22 @@
   .provider-grid > label {
     cursor: pointer;
     padding: 14px 16px;
-    border-right: 1px solid var(--muted-faint-dark);
+    border: 1px solid transparent;
+    border-right-color: var(--muted-faint-dark);
     background: var(--ink);
     font-size: 12px;
     letter-spacing: 0.05em;
     text-align: center;
-    transition: background 0.15s, color 0.15s;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
   }
   .provider-grid > label:last-child { border-right: none; }
   .provider-grid > label:hover { background: var(--ink-2); }
   .provider-grid > label:has(input:checked) {
-    background: var(--ink);
-    color: var(--paper);
+    background: var(--accent-warm-14);
+    border: 1px solid var(--accent-warm);
+    color: var(--accent-warm);
+    position: relative;
+    z-index: 1;
   }
   .provider-grid input { display: none; }
 
@@ -939,6 +956,9 @@
 
     .generate-bar { grid-template-columns: 1fr; gap: 16px; }
     .generate-actions { flex-direction: column; }
+    .generate-actions > button {
+      width: 100%;
+    }
   }
 
   /* ── REVEAL SYSTEM (subset) ───────────────────────────── */
@@ -1301,8 +1321,8 @@
       <div class="generate-bar">
         <p class="lbl"><em>All set?</em> Generate your installer.</p>
         <div class="generate-actions">
-          <button type="button" class="btn-primary" id="generate-btn">Generate installer <span aria-hidden="true">→</span></button>
           <button type="button" class="btn-ghost" id="agent-setup-btn">Download agent setup <span aria-hidden="true">↓</span></button>
+          <button type="button" class="btn-primary" id="generate-btn">Generate installer <span aria-hidden="true">→</span></button>
         </div>
       </div>
     </form>

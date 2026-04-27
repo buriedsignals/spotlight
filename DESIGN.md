@@ -272,6 +272,16 @@ Contains `.idx` (M-meta), `.card-scene-slot` (200×200 square, WebGL), `.name` (
 ```
 Hover: `border-color: var(--paper-fg)` (no fill). Selected: full inversion, name flips to terracotta.
 
+**Compact option grid** (`.provider-grid`, setup sub-pickers):
+```css
+.provider-grid label:has(input:checked) {
+  background: var(--accent-warm-14);
+  border: 1px solid var(--accent-warm);
+  color: var(--accent-warm);
+}
+```
+Use this for dense radio rows where the input itself is hidden: provider selection, vault app selection, and install-folder presets.
+
 ### 3.5 CTAs
 
 Three tiers. Shape = no border-radius (flat/bordered). The nav Install CTA uses `border-color: currentColor` so the border auto-follows the nav state (paper-fg on paper, paper on dark, #fff on hero) — reuse this pattern if you need a colour-adaptive bordered button, but keep the shape squared.
