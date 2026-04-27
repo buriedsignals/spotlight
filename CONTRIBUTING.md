@@ -98,7 +98,7 @@ node /tmp/setup-test.js  # generates sample scripts for all runtimes, bash -n ea
 - **Every skill has YAML frontmatter** with at least `name`, `description`, `version`, `invocable_by`.
 - **Every integration manifest declares `env_vars`** (empty array if none required) and `requires_key`.
 - **Generated files (scripts, JSON) must be validated.** `tests/eval.sh` runs `jsonschema` on sample case files; add fixtures for new schemas.
-- **No hardcoded personal emails or paths in committed code.** Use env vars (`$CONTACT_EMAIL`, etc.) or configurable placeholders.
+- **No hardcoded personal emails or paths in committed code.** Use env vars (`$UNPAYWALL_EMAIL`, etc.) or configurable placeholders.
 
 ## Commit messages
 

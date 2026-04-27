@@ -27,12 +27,18 @@ search: query="{exact title}" site:researchgate.net
 search: query="{exact title}" site:academia.edu
 ```
 
-### 2. Unpaywall (Academic Papers with DOI)
+### 2. Unpaywall (Academic Papers with DOI, Optional Integration)
 
-Unpaywall requires a contact email on every request — it's a fair-use identifier, not a notification target. The journalist should have set `$CONTACT_EMAIL` in `.env` during setup. If it's missing, skip to step 3.
+Unpaywall is optional. Before using it, confirm the integration is green:
 
 ```
-execute-shell: curl "https://api.unpaywall.org/v2/{DOI}?email=$CONTACT_EMAIL"
+execute-shell: python3 integrations/preflight.py --json
+```
+
+Use Unpaywall only when `unpaywall` is green. It requires `$UNPAYWALL_EMAIL` in `.env`; the email is a fair-use identifier, not a notification target. If the integration is red or missing, skip to step 3.
+
+```
+execute-shell: curl "https://api.unpaywall.org/v2/{DOI}?email=$UNPAYWALL_EMAIL"
 ```
 
 Parse the response for `best_oa_location.url` — if present, it's the legal open-access copy. Also check `oa_locations[]` for mirrors.

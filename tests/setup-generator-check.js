@@ -48,12 +48,14 @@ eval(
 
 const baseCfg = {
   firecrawl_key: "fc-test",
-  contact_email: "test@example.com",
   nav_key: "on-test",
   install_path: "~/Documents/Spotlight",
+  vault_app: "obsidian",
   vault_path: "~/Intelligence",
   int_browseruse: false,
   int_junkipedia: false,
+  int_unpaywall: false,
+  unpaywall_email: "",
 };
 
 const configs = [

@@ -1,0 +1,18 @@
+{
+  "id": "unpaywall",
+  "name": "Unpaywall",
+  "description": "Legal open-access lookup for academic papers by DOI, using Unpaywall's public API.",
+  "category": "academic-open-access",
+  "type": "api",
+  "requires_key": true,
+  "env_vars": ["UNPAYWALL_EMAIL"],
+  "capabilities": [
+    "doi-open-access-lookup",
+    "academic-fulltext-discovery",
+    "legal-pdf-location"
+  ],
+  "invocable_by": ["investigator", "fact-checker"],
+  "homepage": "https://unpaywall.org/",
+  "docs": "https://unpaywall.org/products/api",
+  "rate_limit_note": "Free API. Requires a contact email parameter for fair-use identification."
+}

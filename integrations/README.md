@@ -7,7 +7,7 @@ This framework is the single place Spotlight models external tools. Integrations
 ## Why integrations are separate from skills
 
 - **Skills** are methodology playbooks: how to investigate a person, how to follow the money, how to verify a claim. Runtime-agnostic, no credentials.
-- **Integrations** are specific external tools with credentials and an API contract: Junkipedia's narrative database, OSINT Navigator's tool index, browser-use for AI-driven browser automation.
+- **Integrations** are specific external tools with credentials and an API contract: Junkipedia's narrative database, OSINT Navigator's tool index, Unpaywall's DOI lookup, browser-use for AI-driven browser automation.
 
 An agent invokes a skill to get *guidance*; it calls an integration to get *data*.
 
@@ -19,6 +19,7 @@ An agent invokes a skill to get *guidance*; it calls an integration to get *data
 | `junkipedia` | social-osint | Yes | `JUNKIPEDIA_API_KEY` |
 | `osint-navigator` | tool-discovery | Yes | `OSINT_NAV_API_KEY` |
 | `cojournalist` | monitoring | Yes | `COJOURNALIST_API_KEY` |
+| `unpaywall` | academic-open-access | Yes | `UNPAYWALL_EMAIL` |
 
 See `skills/integrations/SKILL.md` for the routing table agents use to pick the right integration per investigation task.
 

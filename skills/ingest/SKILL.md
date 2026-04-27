@@ -1,6 +1,6 @@
 ---
 name: ingest
-description: Archive investigation findings into an Obsidian vault (or directory) as structured knowledge — entity notes, methodology notes, tool notes, with registries and wikilinks. Works standalone or as part of the Spotlight pipeline.
+description: Archive investigation findings into a Markdown vault (Obsidian, Tolaria, or directory) as structured knowledge — entity notes, methodology notes, tool notes, with registries and wikilinks. Works standalone or as part of the Spotlight pipeline.
 version: "1.0"
 invocable_by: [orchestrator, user]
 requires: []
@@ -26,7 +26,7 @@ Two input modes:
 The orchestrator passes project path and vault config (from `.spotlight-config.json`). All inputs are known:
 
 - `vault_path` — target vault or directory
-- `vault_type` — `"obsidian"` or `"directory"`
+- `vault_type` — `"obsidian"`, `"tolaria"`, or `"directory"`
 - `project` — project slug
 
 Read these case files:
@@ -65,6 +65,7 @@ list-files("{path}/.obsidian")
 ```
 
 - Found: `vault_type = "obsidian"` — wikilinks enabled.
+- If the config already says `vault_type = "tolaria"` — keep `tolaria`; use Markdown files, YAML frontmatter, and wikilinks.
 - Not found: `vault_type = "directory"` — relative markdown links.
 
 **Step 3 — Supplementary files:**
@@ -300,7 +301,7 @@ See `references/registry-spec.md` for exact schemas.
 - Recent Investigations table from investigations registry (sorted by date, newest first)
 - Browse links
 
-For Obsidian vaults: use wikilinks in the investigations table (`[[project-id]]`).
+For Obsidian and Tolaria vaults: use wikilinks in the investigations table (`[[project-id]]`).
 For directory fallback: use relative links (`[project-id](investigations/project-id.md)`).
 
 After Step 7 completes, remove the `.ingest-lock`.
@@ -328,7 +329,7 @@ Frontmatter and registry JSON are identical regardless of vault type.
 2. **No duplicates.** Check registries before creating. Match on `id`. If it exists, update it.
 3. **Tips are curated.** Read existing tips before adding new ones. Only add genuinely novel insights — not rephrased duplicates.
 4. **Frontmatter is the contract.** Every note must have complete frontmatter per `references/entity-model.md`. Agents rely on it programmatically. Never omit or rename fields.
-5. **Wikilinks create the graph.** Use `[[entity-id]]` format in Obsidian vaults for all cross-references.
+5. **Wikilinks create the graph.** Use `[[entity-id]]` format in Obsidian and Tolaria vaults for all cross-references.
 6. **IDs are kebab-case.** Lowercase, hyphens, no spaces. Examples: `swiss-leaks`, `john-doe`, `reverse-image-search`.
 7. **Only confirmed knowledge enters.** No speculative findings, no in-progress research. Low-confidence claims must be explicitly flagged with `> **LOW CONFIDENCE** — {reason}` if included at all.
 
@@ -338,7 +339,7 @@ Frontmatter and registry JSON are identical regardless of vault type.
 
 For runtimes that provide a native `vault-write(vault_path, note_path, content)` verb, prefer it over raw `write-file`. The `vault-write` verb should handle:
 
-- Obsidian-specific formatting (wikilinks, frontmatter validation)
+- Vault-specific formatting (wikilinks, frontmatter validation)
 - Registry update atomicity
 - `.ingest-lock` coordination
 

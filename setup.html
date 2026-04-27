@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Spotlight — Install</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'><path d='M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z'/></svg>">
-<meta name="description" content="Configure your Spotlight install. Local or cloud, integrations, vault — generate the script and run it.">
+<meta name="description" content="Configure your Spotlight install. Cloud or local, integrations, vault — generate the script and run it.">
+<link rel="alternate" type="text/markdown" title="llms.txt" href="/llms.txt">
+<link rel="alternate" type="text/markdown" title="llms_full.txt" href="/llms_full.txt">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -476,7 +478,7 @@
     padding: 32px 0;
     border-top: 1px solid var(--muted-faint-dark);
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+    grid-template-columns: minmax(0, 1fr) minmax(420px, 540px);
     gap: 24px;
     align-items: center;
   }
@@ -506,6 +508,17 @@
     background: #fff8eb;
     color: var(--ink);
     border-color: #fff8eb;
+  }
+  .generate-actions {
+    display: flex;
+    gap: 12px;
+  }
+  .generate-actions > button { min-width: 0; }
+  .generate-actions #generate-btn { flex: 1.1; }
+  #agent-setup-btn {
+    flex: 0.9;
+    justify-content: center;
+    color: var(--paper);
   }
 
   /* ── INSTALL OUTPUT (dark reveal) ─────────────────────── */
@@ -894,6 +907,17 @@
     .sec-header h2 { text-align: left; }
     section.card { padding: 22px 20px; }
 
+    .provider-grid {
+      grid-template-columns: 1fr;
+    }
+    .provider-grid > label {
+      border-right: none;
+      border-bottom: 1px solid var(--muted-faint-dark);
+    }
+    .provider-grid > label:last-child {
+      border-bottom: none;
+    }
+
     .install-options { grid-template-columns: 1fr; }
     .install-option { border-right: none; border-bottom: 1px solid var(--muted-faint-dark); }
     .install-option:last-child { border-bottom: none; }
@@ -914,6 +938,7 @@
     .footer-meta { flex-direction: column; gap: 12px; align-items: flex-start; margin-top: 28px; }
 
     .generate-bar { grid-template-columns: 1fr; gap: 16px; }
+    .generate-actions { flex-direction: column; }
   }
 
   /* ── REVEAL SYSTEM (subset) ───────────────────────────── */
@@ -985,7 +1010,7 @@
       </h1>
     </div>
     <div class="hero-side" data-reveal="body" style="--rd: 1000ms">
-      Pick your runtime, drop in your keys, generate the script. Local or cloud — same skills, same review loop. Install in a single Terminal paste.
+      Pick your runtime, drop in your keys, generate the script. Cloud or local — same skills, same review loop. Install in a single Terminal paste.
     </div>
   </div>
 </section>
@@ -998,17 +1023,17 @@
       <!-- 01 — Mode -->
       <div class="sec-header">
         <span class="chap" data-reveal="meta">01 — Mode <span class="req">Required</span></span>
-        <h2 data-reveal="title">Local or cloud.</h2>
+        <h2 data-reveal="title">Cloud or local.</h2>
       </div>
       <section class="card">
         <div class="radio-group">
-          <label><input type="radio" name="mode" value="local" checked><span class="opt-name"><span class="name">Local</span><span class="desc">Run a fine-tuned journalism model on your own machine. Private by design — nothing leaves your laptop. Uses <strong>pi</strong> (pi.dev) as the agent harness with a model pulled from Hugging Face.</span></span></label>
-          <label><input type="radio" name="mode" value="cloud"><span class="opt-name"><span class="name">Cloud</span><span class="desc">Use a hosted model (Claude Code, Gemini, or Codex). Faster investigations, higher quality, but queries go to the provider.</span></span></label>
+          <label><input type="radio" name="mode" value="cloud" checked><span class="opt-name"><span class="name">Cloud</span><span class="desc">Use a hosted model (Claude Code, Gemini, or Codex). Faster investigations, higher quality, but queries go to the provider.</span></span></label>
+          <label><input type="radio" name="mode" value="local"><span class="opt-name"><span class="name">Local</span><span class="desc">Run a fine-tuned journalism model on your own machine. Private by design — nothing leaves your laptop. Uses <strong>pi</strong> (pi.dev) as the agent harness with a model pulled from Hugging Face.</span></span></label>
         </div>
       </section>
 
       <!-- LOCAL SECTION -->
-      <div id="local-section">
+      <div id="local-section" class="hidden">
         <div class="sec-header">
           <span class="chap" data-reveal="meta">02 — Local model</span>
           <h2 data-reveal="title">Hosted on your Mac.</h2>
@@ -1026,6 +1051,21 @@
           <p class="lede hidden" id="local-lede-lmstudio" style="margin-top: 16px;">
             The installer uses <strong>pi</strong> as the agent harness (<a href="https://pi.dev" target="_blank">pi.dev</a>, MIT) and <strong>LM Studio</strong> (<a href="https://lmstudio.ai" target="_blank">lmstudio.ai</a>) to serve the model locally on <code>127.0.0.1:1234</code>. The app gives you a visual browser for Hugging Face models — no Terminal to pull or switch models.
           </p>
+
+          <div class="fit-row">
+            <button type="button" class="btn-ghost" id="fit-check-btn">Check my Mac and recommend</button>
+            <span class="fit-aside">Quick hardware probe — runs in your browser</span>
+          </div>
+
+          <div id="fit-panel" class="fit-panel idle hidden">
+            <div class="fit-verdict" id="fit-verdict"><span class="icon">—</span><span id="fit-title">—</span></div>
+            <div class="fit-stats" id="fit-stats"></div>
+            <div id="fit-body"></div>
+            <div class="fit-copy-cmd" id="fit-cmd-box" style="display: none;">
+              <code id="fit-cmd">system_profiler SPHardwareDataType | grep Memory</code>
+              <button type="button" id="fit-cmd-copy">Copy</button>
+            </div>
+          </div>
 
           <!-- Model selector — two cards, one gets recommended after fit check -->
           <div class="radio-group" id="model-group">
@@ -1061,21 +1101,6 @@
             <div class="stat"><strong>24 GB+</strong>recommended</div>
           </div>
 
-          <div class="fit-row">
-            <button type="button" class="btn-ghost" id="fit-check-btn">Check my Mac and recommend</button>
-            <span class="fit-aside">Quick hardware probe — runs in your browser</span>
-          </div>
-
-          <div id="fit-panel" class="fit-panel idle hidden">
-            <div class="fit-verdict" id="fit-verdict"><span class="icon">—</span><span id="fit-title">—</span></div>
-            <div class="fit-stats" id="fit-stats"></div>
-            <div id="fit-body"></div>
-            <div class="fit-copy-cmd" id="fit-cmd-box" style="display: none;">
-              <code id="fit-cmd">system_profiler SPHardwareDataType | grep Memory</code>
-              <button type="button" id="fit-cmd-copy">Copy</button>
-            </div>
-          </div>
-
           <p class="note-advisory" id="local-note-ollama">
             Large download (~8 GB for Gemma, ~14 GB for Qwen). Progress streams live in Terminal via Ollama's native UI. If interrupted, re-run <code>ollama pull hf.co/&lt;model-repo&gt;</code> to resume.
           </p>
@@ -1086,7 +1111,7 @@
       </div>
 
       <!-- CLOUD SECTION -->
-      <div id="cloud-section" class="hidden">
+      <div id="cloud-section">
         <div class="sec-header">
           <span class="chap" data-reveal="meta">02 — Cloud provider</span>
           <h2 data-reveal="title">Pick your runtime.</h2>
@@ -1168,19 +1193,9 @@
         <p id="firecrawl_err" class="error hidden">Firecrawl key is required.</p>
       </section>
 
-      <!-- 04 — Contact -->
+      <!-- 04 — OSINT Navigator -->
       <div class="sec-header">
-        <span class="chap" data-reveal="meta">04 — Contact <span class="opt">optional, recommended</span></span>
-        <h2 data-reveal="title">Fair-use identifier.</h2>
-      </div>
-      <section class="card">
-        <label class="block">Your email <span class="hint">— used as a fair-use identifier when Spotlight queries Unpaywall and other open-access APIs. Never shared, never stored by us.</span></label>
-        <input type="text" id="contact_email" placeholder="you@example.com" autocomplete="off">
-      </section>
-
-      <!-- 05 — OSINT Navigator -->
-      <div class="sec-header">
-        <span class="chap" data-reveal="meta">05 — Tool discovery <span class="req">Required</span></span>
+        <span class="chap" data-reveal="meta">04 — Tool discovery <span class="req">Required</span></span>
         <h2 data-reveal="title">OSINT Navigator.</h2>
       </div>
       <section class="card">
@@ -1192,31 +1207,46 @@
         <p id="nav_err" class="error hidden">OSINT Navigator key is required.</p>
       </section>
 
-      <!-- 06 — Vault -->
+      <!-- 05 — Vault -->
       <div class="sec-header">
-        <span class="chap" data-reveal="meta">06 — Vault <span class="req">Required</span></span>
+        <span class="chap" data-reveal="meta">05 — Vault <span class="req">Required</span></span>
         <h2 data-reveal="title">Your investigative memory.</h2>
       </div>
       <section class="card">
         <p class="lede">
-          Spotlight archives verified findings into an Obsidian vault as structured knowledge — entities, methodology, tools — with wikilinks. Over time, the vault becomes your investigative memory.
-        </p>
-        <p class="lede" style="margin-top:8px;">
-          <strong>The installer brew-installs Obsidian</strong> if it isn't already on your Mac, then launches it so you can complete one small step below.
+          Spotlight archives verified findings into a Markdown vault as structured knowledge — entities, methodology, tools — with wikilinks and YAML frontmatter. Over time, the vault becomes your investigative memory.
         </p>
 
-        <div class="step-card warn">
-          <h4>One manual step (Obsidian 1.12+)</h4>
-          <p style="margin:0 0 10px; font-size:13px;">
-            Obsidian's CLI toggle can't be automated — you must click it once after the app launches:
+        <label class="block" style="margin-top: 18px;">Vault app</label>
+        <div class="provider-grid" id="vault-app-grid">
+          <label><input type="radio" name="vault_app" value="obsidian" checked><span class="opt">Obsidian</span></label>
+          <label><input type="radio" name="vault_app" value="tolaria"><span class="opt">Tolaria</span></label>
+        </div>
+
+        <div id="obsidian_vault_note">
+          <p class="lede" style="margin-top:18px;">
+          <strong>The installer brew-installs Obsidian</strong> if it isn't already on your Mac, then launches it so you can complete one small step below.
           </p>
-          <ol>
-            <li>The installer opens Obsidian for you</li>
-            <li>In Obsidian → <strong>Settings</strong> → <strong>General</strong> → <strong>Advanced</strong> → toggle <strong>Command Line Interface</strong> ON</li>
-            <li>That's it. Spotlight detects the <code>obsidian</code> command on its first run and prompts you again if it's missing.</li>
-          </ol>
-          <p style="margin:12px 0 0; font-size:12px; opacity: 0.75;">
-            If Obsidian is already installed and the CLI is on, the installer skips this step. If you haven't opened Obsidian in a while, verify you're on 1.12 or newer (<strong>About</strong> menu).
+
+          <div class="step-card warn">
+            <h4>One manual step (Obsidian 1.12+)</h4>
+            <p style="margin:0 0 10px; font-size:13px;">
+              Obsidian's CLI toggle can't be automated — you must click it once after the app launches:
+            </p>
+            <ol>
+              <li>The installer opens Obsidian for you</li>
+              <li>In Obsidian → <strong>Settings</strong> → <strong>General</strong> → <strong>Advanced</strong> → toggle <strong>Command Line Interface</strong> ON</li>
+              <li>That's it. Spotlight detects the <code>obsidian</code> command on its first run and prompts you again if it's missing.</li>
+            </ol>
+            <p style="margin:12px 0 0; font-size:12px; opacity: 0.75;">
+              If Obsidian is already installed and the CLI is on, the installer skips this step. If you haven't opened Obsidian in a while, verify you're on 1.12 or newer (<strong>About</strong> menu).
+            </p>
+          </div>
+        </div>
+
+        <div id="tolaria_vault_note" class="hidden">
+          <p class="lede" style="margin-top:18px;">
+            <strong>The installer downloads Tolaria on macOS</strong> if it isn't already installed, then opens it. Spotlight writes standard Markdown files with YAML frontmatter, so the same vault remains readable from Tolaria, Git, and your agent tools.
           </p>
         </div>
 
@@ -1236,24 +1266,14 @@
         <p class="hint" style="margin-top: 14px;">Final install path: <code id="install_path_preview">~/Documents/Spotlight</code></p>
         <p id="install_err" class="error hidden">Install folder is required.</p>
 
-        <label class="block" style="margin-top: 18px;">Vault path <span class="hint">— full path to your Obsidian vault folder (or where to create one)</span></label>
+        <label class="block" style="margin-top: 18px;">Vault path <span class="hint">— full path to your Markdown vault folder (or where to create one)</span></label>
         <input type="text" id="vault_path" placeholder="/Users/you/Documents/Intelligence" value="~/Intelligence">
         <p id="vault_err" class="error hidden">Vault path is required.</p>
       </section>
 
-      <!-- 07 — Monitoring -->
+      <!-- 06 — Integrations -->
       <div class="sec-header">
-        <span class="chap" data-reveal="meta">07 — Monitoring <span class="opt">external orchestration</span></span>
-        <h2 data-reveal="title">Case links, not feed engines.</h2>
-      </div>
-      <section class="card">
-        <p class="hint">Spotlight now orchestrates monitoring instead of polling passive feeds locally.</p>
-        <p class="hint">Use Mycroft for passive signal topics and coJournalist for durable scheduled scouts. This setup page configures Spotlight itself; external monitor backends are configured separately.</p>
-      </section>
-
-      <!-- 08 — Integrations -->
-      <div class="sec-header">
-        <span class="chap" data-reveal="meta">08 — Integrations <span class="opt">optional external tools</span></span>
+        <span class="chap" data-reveal="meta">06 — Integrations <span class="opt">optional external tools</span></span>
         <h2 data-reveal="title">Plug-ins.</h2>
       </div>
       <section class="card">
@@ -1268,11 +1288,22 @@
           <label class="block">Junkipedia API key <span class="hint">— <a href="https://www.junkipedia.org/" target="_blank">apply for access</a></span></label>
           <input type="password" id="junkipedia_key" placeholder="..." autocomplete="off">
         </div>
+
+        <div class="checkbox-group" style="margin-top: 12px;">
+          <label><input type="checkbox" id="int_unpaywall"><span class="opt-name"><span class="name">Unpaywall</span><span class="desc">Legal open-access lookup for academic papers with DOIs. Optional; uses a contact email as a fair-use identifier.</span></span></label>
+        </div>
+        <div id="unpaywall_keys" class="hidden" style="margin-top: 16px;">
+          <label class="block">Unpaywall email <span class="hint">— sent to Unpaywall as a fair-use contact; never stored by us.</span></label>
+          <input type="text" id="unpaywall_email" placeholder="you@example.com" autocomplete="off">
+        </div>
       </section>
 
       <div class="generate-bar">
         <p class="lbl"><em>All set?</em> Generate your installer.</p>
-        <button type="button" class="btn-primary" id="generate-btn">Generate installer <span aria-hidden="true">→</span></button>
+        <div class="generate-actions">
+          <button type="button" class="btn-primary" id="generate-btn">Generate installer <span aria-hidden="true">→</span></button>
+          <button type="button" class="btn-ghost" id="agent-setup-btn">Download agent setup <span aria-hidden="true">↓</span></button>
+        </div>
       </div>
     </form>
   </div>
@@ -1353,6 +1384,7 @@
   const cloudKeyLabel = document.getElementById('cloud_key_label');
   const cloudKeyInput = document.getElementById('cloud_key');
   const generateBtn = document.getElementById('generate-btn');
+  const agentSetupBtn = document.getElementById('agent-setup-btn');
   const installOutput = document.getElementById('install-output');
   const scriptPreview = document.getElementById('script-preview');
   const copyBtn = document.getElementById('copy-btn');
@@ -1366,6 +1398,8 @@
   const installCustomWrap = document.getElementById('install_custom_wrap');
   const installCustomBaseInput = document.getElementById('install_custom_base');
   const installPathPreview = document.getElementById('install_path_preview');
+  const obsidianVaultNote = document.getElementById('obsidian_vault_note');
+  const tolariaVaultNote = document.getElementById('tolaria_vault_note');
   let installLocationDirty = false;
 
   // --- Mode switching (Local vs Cloud) ---
@@ -1537,12 +1571,20 @@
   document.querySelectorAll('input[name="cloud_runtime"]').forEach(el => el.addEventListener('change', renderCloud));
   document.querySelectorAll('input[name="opencode_provider"]').forEach(el => el.addEventListener('change', renderCloud));
 
+  function renderVaultApp() {
+    const app = document.querySelector('input[name="vault_app"]:checked').value;
+    obsidianVaultNote.classList.toggle('hidden', app !== 'obsidian');
+    tolariaVaultNote.classList.toggle('hidden', app !== 'tolaria');
+  }
+  document.querySelectorAll('input[name="vault_app"]').forEach(el => el.addEventListener('change', renderVaultApp));
+
   function bindCheckbox(checkboxId, targetId) {
     const cb = document.getElementById(checkboxId);
     const target = document.getElementById(targetId);
     cb.addEventListener('change', () => target.classList.toggle('hidden', !cb.checked));
   }
   bindCheckbox('int_junkipedia', 'junkipedia_keys');
+  bindCheckbox('int_unpaywall', 'unpaywall_keys');
 
   function collectForm() {
     const mode = document.querySelector('input[name="mode"]:checked').value;
@@ -1564,14 +1606,16 @@
       cloud_key: mode === 'cloud' ? document.getElementById('cloud_key').value.trim() : '',
       cloud_key_var: cloudKeyVar,
       firecrawl_key: document.getElementById('firecrawl_key').value.trim(),
-      contact_email: document.getElementById('contact_email').value.trim(),
       nav_key: document.getElementById('nav_key').value.trim(),
       install_path: buildInstallPath(),
+      vault_app: document.querySelector('input[name="vault_app"]:checked').value,
       vault_path: document.getElementById('vault_path').value.trim(),
       model_repo: mode === 'local' ? document.getElementById('model_repo').value.trim() : null,
       int_browseruse: document.getElementById('int_browseruse').checked,
       int_junkipedia: document.getElementById('int_junkipedia').checked,
       junkipedia_key: document.getElementById('junkipedia_key').value.trim(),
+      int_unpaywall: document.getElementById('int_unpaywall').checked,
+      unpaywall_email: document.getElementById('unpaywall_email').value.trim(),
     };
   }
 
@@ -1688,28 +1732,50 @@
       p('ensure_brew  # local mode needs brew for ' + (cfg.local_server === 'lmstudio' ? 'lm-studio' : 'ollama'));
     }
     p('');
-    p('step "Obsidian vault"');
-    p('if [ -d "/Applications/Obsidian.app" ] || [ -d "$HOME/Applications/Obsidian.app" ]; then');
-    p('  printf "%s✓%s Obsidian.app installed\\n" "$_c_green" "$_c_reset"');
-    p('else');
-    p('  ensure_brew');
-    p('  spin "Installing Obsidian via brew cask" brew install --cask obsidian');
-    p('fi');
-    p('');
-    p('if ! command -v obsidian >/dev/null 2>&1; then');
-    p('  printf "%s!%s Opening Obsidian so you can enable the CLI\\n" "$_c_cyan" "$_c_reset"');
-    p('  open -a Obsidian 2>/dev/null || true');
-    p('  echo ""');
-    p('  echo "  ${_c_bold}Enable the Obsidian CLI (one-time):${_c_reset}"');
-    p('  echo "    Settings → General → Advanced → toggle ${_c_bold}Command Line Interface${_c_reset} ON"');
-    p('  echo ""');
-    p('  echo "  The first time you run ${_c_bold}spotlight${_c_reset}, the preflight check will detect"');
-    p('  echo "  whether the CLI is enabled and prompt you again if needed. You can continue"');
-    p('  echo "  the rest of this installer now while Obsidian is open."');
-    p('  echo ""');
-    p('else');
-    p('  printf "%s✓%s obsidian CLI already on PATH\\n" "$_c_green" "$_c_reset"');
-    p('fi');
+    if (cfg.vault_app === 'tolaria') {
+      p('step "Tolaria vault"');
+      p('if [ "$OS" = "Darwin" ]; then');
+      p('  if [ -d "/Applications/Tolaria.app" ] || [ -d "$HOME/Applications/Tolaria.app" ]; then');
+      p('    printf "%s✓%s Tolaria.app installed\\n" "$_c_green" "$_c_reset"');
+      p('  else');
+      p('    tmpdir="$(mktemp -d)"');
+      p('    spin "Downloading Tolaria latest release" curl -L "https://github.com/refactoringhq/tolaria/releases/latest/download/Tolaria.app.tar.gz" -o "$tmpdir/Tolaria.app.tar.gz"');
+      p('    tar -xzf "$tmpdir/Tolaria.app.tar.gz" -C "$tmpdir"');
+      p('    app_path="$(find "$tmpdir" -maxdepth 3 -name "Tolaria.app" -type d | head -1)"');
+      p('    if [ -z "$app_path" ]; then echo "Tolaria.app was not found in the release archive." >&2; exit 1; fi');
+      p('    mkdir -p "$HOME/Applications"');
+      p('    cp -R "$app_path" "$HOME/Applications/Tolaria.app"');
+      p('    rm -rf "$tmpdir"');
+      p('    printf "%s✓%s Tolaria.app installed in ~/Applications\\n" "$_c_green" "$_c_reset"');
+      p('  fi');
+      p('  open -a Tolaria 2>/dev/null || open "$HOME/Applications/Tolaria.app" 2>/dev/null || true');
+      p('else');
+      p('  echo "Tolaria selected. On Linux, install Tolaria from https://tolaria.md/; Spotlight will still write Markdown files to the vault path."');
+      p('fi');
+    } else {
+      p('step "Obsidian vault"');
+      p('if [ -d "/Applications/Obsidian.app" ] || [ -d "$HOME/Applications/Obsidian.app" ]; then');
+      p('  printf "%s✓%s Obsidian.app installed\\n" "$_c_green" "$_c_reset"');
+      p('else');
+      p('  ensure_brew');
+      p('  spin "Installing Obsidian via brew cask" brew install --cask obsidian');
+      p('fi');
+      p('');
+      p('if ! command -v obsidian >/dev/null 2>&1; then');
+      p('  printf "%s!%s Opening Obsidian so you can enable the CLI\\n" "$_c_cyan" "$_c_reset"');
+      p('  open -a Obsidian 2>/dev/null || true');
+      p('  echo ""');
+      p('  echo "  ${_c_bold}Enable the Obsidian CLI (one-time):${_c_reset}"');
+      p('  echo "    Settings → General → Advanced → toggle ${_c_bold}Command Line Interface${_c_reset} ON"');
+      p('  echo ""');
+      p('  echo "  The first time you run ${_c_bold}spotlight${_c_reset}, the preflight check will detect"');
+      p('  echo "  whether the CLI is enabled and prompt you again if needed. You can continue"');
+      p('  echo "  the rest of this installer now while Obsidian is open."');
+      p('  echo ""');
+      p('else');
+      p('  printf "%s✓%s obsidian CLI already on PATH\\n" "$_c_green" "$_c_reset"');
+      p('fi');
+    }
     p('');
     p('step "Spotlight repo"');
     p('if [ -d "$SPOTLIGHT_DIR/.git" ]; then');
@@ -1850,14 +1916,14 @@
     p('# Spotlight environment — generated by setup.html');
     p('FIRECRAWL_API_KEY=' + cfg.firecrawl_key);
     p('OSINT_NAV_API_KEY=' + cfg.nav_key);
-    if (cfg.contact_email) {
-      p('CONTACT_EMAIL=' + cfg.contact_email);
-    }
     if (cfg.cloud_key && cfg.cloud_key_var) {
       p(cfg.cloud_key_var + '=' + cfg.cloud_key);
     }
     if (cfg.int_junkipedia && cfg.junkipedia_key) {
       p('JUNKIPEDIA_API_KEY=' + cfg.junkipedia_key);
+    }
+    if (cfg.int_unpaywall && cfg.unpaywall_email) {
+      p('UNPAYWALL_EMAIL=' + cfg.unpaywall_email);
     }
     if (cfg.mode === 'local') {
       p('MODEL_REPO=' + cfg.model_repo);
@@ -1872,7 +1938,8 @@
     const config = {
       search_library: 'firecrawl',
       vault_path: cfg.vault_path,
-      vault_type: 'obsidian',
+      vault_type: cfg.vault_app === 'tolaria' ? 'tolaria' : 'obsidian',
+      vault_app: cfg.vault_app,
       cases_root: 'cases/',
       install_path: cfg.install_path,
       mode: cfg.mode,
@@ -1883,6 +1950,7 @@
         osint_navigator: true,
         junkipedia: cfg.int_junkipedia,
         browser_use: cfg.int_browseruse,
+        unpaywall: cfg.int_unpaywall,
       },
       created_at: new Date().toISOString(),
       last_used: new Date().toISOString(),
@@ -1991,66 +2059,156 @@
     return (crc ^ 0xffffffff) >>> 0;
   }
 
-  function buildZip(filename, contents) {
-    const fnBytes = new TextEncoder().encode(filename);
-    const dataBytes = new TextEncoder().encode(contents);
-    const crc = crc32(contents);
-    const sz = dataBytes.length;
+  function buildZipEntries(entries) {
+    const encoder = new TextEncoder();
+    const localParts = [];
+    const centralParts = [];
+    let localOffset = 0;
 
-    const lfh = new Uint8Array(30 + fnBytes.length);
-    const dv1 = new DataView(lfh.buffer);
-    dv1.setUint32(0, 0x04034b50, true);
-    dv1.setUint16(4, 20, true);
-    dv1.setUint16(6, 0, true);
-    dv1.setUint16(8, 0, true);
-    dv1.setUint16(10, 0, true);
-    dv1.setUint16(12, 0x21, true);
-    dv1.setUint32(14, crc, true);
-    dv1.setUint32(18, sz, true);
-    dv1.setUint32(22, sz, true);
-    dv1.setUint16(26, fnBytes.length, true);
-    dv1.setUint16(28, 0, true);
-    lfh.set(fnBytes, 30);
+    for (const entry of entries) {
+      const fnBytes = encoder.encode(entry.filename);
+      const dataBytes = encoder.encode(entry.contents);
+      const crc = crc32(entry.contents);
+      const sz = dataBytes.length;
+      const mode = entry.executable ? 0o100755 : 0o100644;
 
-    const cdh = new Uint8Array(46 + fnBytes.length);
-    const dv2 = new DataView(cdh.buffer);
-    dv2.setUint32(0, 0x02014b50, true);
-    dv2.setUint16(4, (3 << 8) | 20, true);
-    dv2.setUint16(6, 20, true);
-    dv2.setUint16(8, 0, true);
-    dv2.setUint16(10, 0, true);
-    dv2.setUint16(12, 0, true);
-    dv2.setUint16(14, 0x21, true);
-    dv2.setUint32(16, crc, true);
-    dv2.setUint32(20, sz, true);
-    dv2.setUint32(24, sz, true);
-    dv2.setUint16(28, fnBytes.length, true);
-    dv2.setUint16(30, 0, true);
-    dv2.setUint16(32, 0, true);
-    dv2.setUint16(34, 0, true);
-    dv2.setUint16(36, 0, true);
-    dv2.setUint32(38, (0o100755 << 16) >>> 0, true);
-    dv2.setUint32(42, 0, true);
-    cdh.set(fnBytes, 46);
+      const lfh = new Uint8Array(30 + fnBytes.length);
+      const dv1 = new DataView(lfh.buffer);
+      dv1.setUint32(0, 0x04034b50, true);
+      dv1.setUint16(4, 20, true);
+      dv1.setUint16(6, 0, true);
+      dv1.setUint16(8, 0, true);
+      dv1.setUint16(10, 0, true);
+      dv1.setUint16(12, 0x21, true);
+      dv1.setUint32(14, crc, true);
+      dv1.setUint32(18, sz, true);
+      dv1.setUint32(22, sz, true);
+      dv1.setUint16(26, fnBytes.length, true);
+      dv1.setUint16(28, 0, true);
+      lfh.set(fnBytes, 30);
 
+      const cdh = new Uint8Array(46 + fnBytes.length);
+      const dv2 = new DataView(cdh.buffer);
+      dv2.setUint32(0, 0x02014b50, true);
+      dv2.setUint16(4, (3 << 8) | 20, true);
+      dv2.setUint16(6, 20, true);
+      dv2.setUint16(8, 0, true);
+      dv2.setUint16(10, 0, true);
+      dv2.setUint16(12, 0, true);
+      dv2.setUint16(14, 0x21, true);
+      dv2.setUint32(16, crc, true);
+      dv2.setUint32(20, sz, true);
+      dv2.setUint32(24, sz, true);
+      dv2.setUint16(28, fnBytes.length, true);
+      dv2.setUint16(30, 0, true);
+      dv2.setUint16(32, 0, true);
+      dv2.setUint16(34, 0, true);
+      dv2.setUint16(36, 0, true);
+      dv2.setUint32(38, (mode << 16) >>> 0, true);
+      dv2.setUint32(42, localOffset, true);
+      cdh.set(fnBytes, 46);
+
+      localParts.push(lfh, dataBytes);
+      centralParts.push(cdh);
+      localOffset += lfh.length + sz;
+    }
+
+    const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
     const eocd = new Uint8Array(22);
     const dv3 = new DataView(eocd.buffer);
     dv3.setUint32(0, 0x06054b50, true);
     dv3.setUint16(4, 0, true);
     dv3.setUint16(6, 0, true);
-    dv3.setUint16(8, 1, true);
-    dv3.setUint16(10, 1, true);
-    dv3.setUint32(12, cdh.length, true);
-    dv3.setUint32(16, lfh.length + sz, true);
+    dv3.setUint16(8, entries.length, true);
+    dv3.setUint16(10, entries.length, true);
+    dv3.setUint32(12, centralSize, true);
+    dv3.setUint32(16, localOffset, true);
     dv3.setUint16(20, 0, true);
 
-    const total = new Uint8Array(lfh.length + sz + cdh.length + eocd.length);
+    const totalSize = localOffset + centralSize + eocd.length;
+    const total = new Uint8Array(totalSize);
     let off = 0;
-    total.set(lfh, off); off += lfh.length;
-    total.set(dataBytes, off); off += sz;
-    total.set(cdh, off); off += cdh.length;
+    for (const part of localParts) { total.set(part, off); off += part.length; }
+    for (const part of centralParts) { total.set(part, off); off += part.length; }
     total.set(eocd, off);
     return total;
+  }
+
+  function buildZip(filename, contents) {
+    return buildZipEntries([{ filename, contents, executable: true }]);
+  }
+
+  function providerEnvVars(cfg) {
+    const vars = ['FIRECRAWL_API_KEY', 'OSINT_NAV_API_KEY'];
+    if (cfg.mode === 'cloud' && cfg.cloud_key_var) vars.push(cfg.cloud_key_var);
+    return vars;
+  }
+
+  function buildAgentManifest(cfg) {
+    return {
+      schema_version: 'spotlight-agent-setup/v1',
+      generated_at: new Date().toISOString(),
+      startup_command: 'spotlight',
+      install_path: cfg.install_path,
+      runtime: {
+        mode: cfg.mode,
+        name: cfg.runtime,
+        local_server: cfg.local_server,
+        opencode_provider: cfg.opencode_provider,
+      },
+      vault: {
+        app: cfg.vault_app,
+        type: cfg.vault_app === 'tolaria' ? 'tolaria' : 'obsidian',
+        path: cfg.vault_path,
+      },
+      env: {
+        required: providerEnvVars(cfg),
+        optional: [
+          ...(cfg.int_junkipedia ? ['JUNKIPEDIA_API_KEY'] : []),
+          ...(cfg.int_unpaywall ? ['UNPAYWALL_EMAIL'] : []),
+        ],
+      },
+      integrations: {
+        osint_navigator: true,
+        browser_use: cfg.int_browseruse,
+        junkipedia: cfg.int_junkipedia,
+        unpaywall: cfg.int_unpaywall,
+      },
+      notes: [
+        'This manifest intentionally contains no API key values.',
+        'Secrets belong in the local .env file created by the Spotlight installer.',
+      ],
+    };
+  }
+
+  function buildAgentPrompt(manifest) {
+    return `# Spotlight Agent Setup
+
+You are helping a user set up and run Spotlight. Use \`spotlight-agent-manifest.json\` as the source of truth for paths, runtime, vault app, selected integrations, and required environment variable names.
+
+## Rules
+
+- Do not ask the user to paste secrets into chat.
+- Do not print secret values from \`.env\`, shell history, or provider CLIs.
+- Verify that required env vars are present by name only.
+- If Spotlight is not installed at \`${manifest.install_path || '<install_path>'}\`, ask the user to run the generated installer first.
+- Once setup is ready, start from the install folder and launch \`${manifest.startup_command}\`.
+
+## Manifest Summary
+
+- Runtime: ${manifest.runtime.mode} / ${manifest.runtime.name}${manifest.runtime.local_server ? ' / ' + manifest.runtime.local_server : ''}
+- Vault: ${manifest.vault.app} at \`${manifest.vault.path || '<vault_path>'}\`
+- Required env vars: ${manifest.env.required.join(', ')}
+- Optional env vars: ${manifest.env.optional.length ? manifest.env.optional.join(', ') : 'none selected'}
+
+## Verification Steps
+
+1. Confirm the install path exists.
+2. Confirm \`.spotlight-config.json\` exists and matches the manifest choices.
+3. Confirm \`.env\` exists and contains the required variable names, without exposing values.
+4. Run \`python3 integrations/preflight.py --text\` from the Spotlight install folder.
+5. Launch \`${manifest.startup_command}\` and tell the agent: "Start a Spotlight investigation on <your lead>".
+`;
   }
 
   generateBtn.addEventListener('click', () => {
@@ -2097,6 +2255,30 @@
     const a = document.createElement('a');
     a.href = url;
     a.download = 'spotlight-setup.zip';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  });
+
+  agentSetupBtn.addEventListener('click', () => {
+    const cfg = collectForm();
+    const manifest = buildAgentManifest(cfg);
+    const zip = buildZipEntries([
+      {
+        filename: 'spotlight-agent-manifest.json',
+        contents: JSON.stringify(manifest, null, 2) + '\n',
+        executable: false,
+      },
+      {
+        filename: 'spotlight-agent-prompt.md',
+        contents: buildAgentPrompt(manifest),
+        executable: false,
+      },
+    ]);
+    const blob = new Blob([zip], { type: 'application/zip' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'spotlight-agent-setup.zip';
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 3000);
   });
@@ -2282,6 +2464,7 @@
   renderSuggestedInstallBase();
   renderMode();
   renderCloud();
+  renderVaultApp();
 
   // --- Reveal system (subset) ---
   const io = new IntersectionObserver((entries) => {

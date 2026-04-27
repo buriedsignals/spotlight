@@ -28,6 +28,7 @@ The skill is cheap to load — it's a routing table, not a deep methodology guid
 | `junkipedia` | social-osint | narrative-tracking, misinformation-search, social-media-monitoring, cross-platform-query | Tracking how a claim spread; finding social posts deleted from origin; cross-platform narrative investigation. |
 | `osint-navigator` | tool-discovery | tool-search-by-keyword, complex-query-synthesis, country-specific-tool-lookup | When the curated 150-tool catalog in `skills/osint/references/tools-by-category.md` doesn't have what you need. |
 | `cojournalist` | monitoring | project-scoped-monitoring, scout-creation, information-unit-retrieval, scheduled-monitoring | Approved monitoring that should keep running after the current investigation cycle. |
+| `unpaywall` | academic-open-access | doi-open-access-lookup, academic-fulltext-discovery, legal-pdf-location | Academic papers with DOIs when the content-access hierarchy needs a legal open-access copy. |
 
 ## Routing decision tree
 
@@ -52,6 +53,10 @@ What's the task?
 ├── "Create a durable monitor / keep watching this after the cycle ends"
 │     → cojournalist  (if green — check preflight)
 │     → fallback: invoke-skill("monitoring") for runtime-native routine guidance
+│
+├── "Find a legal open-access copy of an academic paper with a DOI"
+│     → unpaywall  (if green — check preflight)
+│     → fallback: invoke-skill("content-access") and continue with CORE / Semantic Scholar
 │
 ├── "Chain-of-custody evidence capture (court records, gov portals)"
 │     → dev-browser (separate tool, not an integration — documented in skills/web-archiving)
