@@ -4,7 +4,7 @@ Runtime-agnostic OSINT investigation system for journalists. Verified findings, 
 
 ## Install (for journalists)
 
-**Open [`setup.html`](setup.html) in any browser.** Pick your runtime, paste your Firecrawl API key, optionally select integrations (browser-use, Junkipedia, OSINT Navigator), and click Generate. You'll get two install options:
+**Open [`setup.html`](setup.html) in any browser.** Pick your runtime, paste your Firecrawl API key, optionally select integrations (browser-use, Junkipedia, OSINT Navigator, Unpaywall), and click Generate. You'll get two install options:
 
 - **Copy into Terminal** (simplest) — click Copy, ⌘+Space → Terminal → ⌘+V → Return
 - **Download installer** — `spotlight-setup.zip` → extract → double-click the `.command` file (macOS Gatekeeper first-time: right-click → Open → Confirm)
@@ -38,9 +38,9 @@ Per-runtime wiring: **[docs/runtimes.md](docs/runtimes.md)**.
 - **6 readiness criteria**: enforced before Gate 1 — min findings, source independence, no unresolved disputes, affected perspective, document trail, gap assessment
 - **Evidence grounding**: scrape-before-cite, every source has a `local_file`, archive hierarchy Wayback → Archive.today → local
 - **11 skills**: orchestrator (spotlight), review (post-Gate-1 HTML feedback loop), integrations (routing), ingest, monitoring, web-archiving, content-access, osint, investigate, follow-the-money, social-media-intelligence
-- **3 external integrations shipped**: browser-use (AI browser automation), Junkipedia (narrative tracking), OSINT Navigator (tool discovery). Framework accepts more — see [docs/integrations.md](docs/integrations.md).
+- **4 external integrations shipped**: browser-use (AI browser automation), Junkipedia (narrative tracking), OSINT Navigator (tool discovery), Unpaywall (academic open access). Framework accepts more — see [docs/integrations.md](docs/integrations.md).
 - **Monitoring orchestration**: passive signals from Mycroft plus durable monitors from coJournalist or runtime-native routines
-- **Knowledge vault ingestion**: Obsidian-native (wikilinks) with directory fallback; atomic registry updates; lock-file concurrency
+- **Knowledge vault ingestion**: Markdown vaults for Obsidian or Tolaria, with directory fallback; atomic registry updates; lock-file concurrency
 - **Sensitive mode**: strips `fetch`/`search` from agents; investigation runs local-only
 - **Pi-native + Hermes-native**: zero adapter code needed for these runtimes; markdown-only contract for others
 
@@ -52,6 +52,7 @@ Required:
 Optional:
 - **qmd** — for `query-vault`. `BUN_INSTALL="" qmd query`.
 - **obsidian** CLI — for `vault-write` into an Obsidian vault.
+- **Tolaria** — optional Markdown/YAML vault app; setup.html can download the latest macOS release when selected.
 - **Python 3.11+** — for integrations preflight and optional local helper scripts.
 - **Mycroft source-specific keys** — only if you also use Mycroft passive monitoring; for example `ACLED_API_KEY` + `ACLED_EMAIL` for ACLED in Mycroft.
 - **OSINT_NAV_API_KEY** — for expanded OSINT tool discovery via OSINT Navigator.
@@ -66,7 +67,7 @@ Optional:
 | **[docs/README.md](docs/README.md)** | Start here — entry point and quick-start per runtime |
 | **[docs/structure.md](docs/structure.md)** | Repo layout, 13-verb registry, how to extend |
 | **[docs/runtimes.md](docs/runtimes.md)** | Per-runtime wiring — pi, Hermes, Goose, Codex, Gemini, local OAI |
-| **[docs/integrations.md](docs/integrations.md)** | External tool integrations (browser-use, Junkipedia, OSINT Navigator), setup flow, manifest contract |
+| **[docs/integrations.md](docs/integrations.md)** | External tool integrations (browser-use, Junkipedia, OSINT Navigator, Unpaywall), setup flow, manifest contract |
 | **[docs/investigating.md](docs/investigating.md)** | Pipeline phases, gates, cycles, readiness, stall protocol |
 | **[docs/fact-checking.md](docs/fact-checking.md)** | Independence, SIFT, verdict taxonomy, evidence trails |
 | **[docs/monitoring.md](docs/monitoring.md)** | Monitoring lifecycle across Mycroft, coJournalist, and runtime-native fallbacks |

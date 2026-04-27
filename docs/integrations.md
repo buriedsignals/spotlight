@@ -21,6 +21,7 @@ An agent invokes a **skill** to get *guidance* and calls an **integration** to g
 | `junkipedia` | api | social-osint | `JUNKIPEDIA_API_KEY` | Narrative / misinformation tracking across social platforms. Application-based access. |
 | `osint-navigator` | api | tool-discovery | `OSINT_NAV_API_KEY` | 1,000+ OSINT tools with AI-powered synthesized answers. Complements the curated 150-tool catalog in the `osint` skill. |
 | `cojournalist` | api | monitoring | `COJOURNALIST_API_KEY` | Durable monitoring via existing coJournalist projects, scouts, and information units. |
+| `unpaywall` | api | academic-open-access | `UNPAYWALL_EMAIL` | Legal open-access lookup for academic papers by DOI. Used only when selected in setup and green in preflight. |
 
 ## Deferred integrations (architecture ready)
 
@@ -76,7 +77,7 @@ The intended path from website → working install:
 4. Two install options:
    - **Option A — Copy into Terminal:** click "Copy script", open Terminal (⌘+Space → Terminal), paste (⌘+V), Enter
    - **Option B — Download installer:** click "Download spotlight-setup.zip", extract, double-click the `.command` file
-5. Script installs: firecrawl CLI + chosen runtime + selected integrations + `.env` (chmod 600) + `.spotlight-config.json`; runs preflight for sanity-check
+5. Script installs: firecrawl CLI + chosen runtime + selected integrations + `.env` (chmod 600) + `.spotlight-config.json`; runs preflight for sanity-check. The separate "Download agent setup" action exports a non-secret manifest + prompt zip for another agent to verify and use the install.
 6. Journalist runs the chosen runtime (e.g. `pi`) and starts investigating
 
 The script is identical for both options — only the delivery differs. Keys written into the user's `.env` never leave their machine.

@@ -10,7 +10,7 @@ If you are new to Spotlight, read in this order:
 
 1. **[structure.md](structure.md)** — how this repo is laid out; what each file is for; the 13-verb contract
 2. **[runtimes.md](runtimes.md)** — how to wire Spotlight into pi, Hermes, Goose, Codex, Gemini, or a local OpenAI-compatible fine-tune
-3. **[integrations.md](integrations.md)** — external OSINT tool integrations (browser-use, Junkipedia, OSINT Navigator), manifest contract, preflight
+3. **[integrations.md](integrations.md)** — external OSINT tool integrations (browser-use, Junkipedia, OSINT Navigator, Unpaywall), manifest contract, preflight
 4. **[investigating.md](investigating.md)** — the investigation pipeline: brief, methodology, cycles, gates, readiness, stall protocol
 5. **[fact-checking.md](fact-checking.md)** — the independent verification pass: SIFT, verdict taxonomy, evidence trails
 6. **[monitoring.md](monitoring.md)** — monitoring orchestration across Mycroft, coJournalist, and runtime-native fallbacks

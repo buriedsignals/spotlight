@@ -69,9 +69,9 @@ Agents have access to the following skills by their own `invoke-skill` calls:
 
 When building spawn prompts, remind agents these are available and expected.
 
-### 3.7. Obsidian CLI preflight
+### 3.7. Vault app preflight
 
-Spotlight writes verified findings into an Obsidian vault. The `obsidian` CLI must be on PATH, which requires a one-time toggle in the Obsidian app. Check it here so the user isn't surprised at ingestion time.
+Spotlight writes verified findings into a Markdown vault. If `.spotlight-config.json` sets `vault_type` to `"tolaria"` or `"directory"`, no Obsidian CLI check is required; log the configured vault type and continue. If the vault type is `"obsidian"` or unknown, check the Obsidian CLI so the user isn't surprised at ingestion time.
 
 ```
 execute-shell("command -v obsidian")
@@ -98,9 +98,10 @@ Ask the user:
 
 > "Where should findings be archived when the investigation completes?
 > (a) Obsidian vault — enter path
-> (b) Local directory (defaults to `./vault/`)"
+> (b) Tolaria vault — enter path
+> (c) Local directory (defaults to `./vault/`)"
 
-If the user provides a path, check for `.obsidian/` inside it (`list-files("{path}/.obsidian")`) to detect whether it's an Obsidian vault. Set `vault_type` to `"obsidian"` or `"directory"` accordingly.
+If the user chooses Tolaria, set `vault_type` to `"tolaria"` and keep Markdown/YAML frontmatter plus wikilinks. If the user provides an Obsidian path, check for `.obsidian/` inside it (`list-files("{path}/.obsidian")`) to detect whether it's an Obsidian vault. Set `vault_type` to `"obsidian"` or `"directory"` accordingly.
 
 ### 5. Project setup
 
@@ -134,7 +135,7 @@ Write `.spotlight-config.json` via `write-file`:
 {
   "search_library": "<detected library>",
   "vault_path": "<user-provided path or ./vault/>",
-  "vault_type": "obsidian | directory",
+  "vault_type": "obsidian | tolaria | directory",
   "cases_root": "cases/",
   "integrations": {
     "osint_navigator": false
