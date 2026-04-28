@@ -21,14 +21,13 @@ An **agnostic port** of the `buriedsignals/spotlight@1.2.1` and `buriedsignals/o
 
 | Runtime | Status | How it loads |
 |---|---|---|
-| **pi** (https://pi.dev) | Primary — native support | `mkdir -p ~/.pi/agent/skills && ln -sfn /path/to/spotlight/skills ~/.pi/agent/skills/spotlight`; pi recursively loads every `SKILL.md`. `AGENTS.md` read from `~/.pi/agent/`, parent dirs, and cwd. |
+| **opencode** (https://opencode.ai) | Primary local — native support | `brew install opencode` (CLI) or `brew install --cask opencode-desktop` (GUI). 11-symlink loop into `~/.config/opencode/skills/`. `AGENTS.md`, sub-agents, MCP all native. Pair with `llama.cpp` provider for fully-local Qwen via llama-server. |
 | **Claude Code** | Install package | `npm install -g @anthropic-ai/claude-code`; runs from repo dir |
 | **Codex CLI** | Install package | `npm install -g @openai/codex`; reads `AGENTS.md` natively |
 | **Gemini CLI** | Install package | `npm install -g @google/gemini-cli`; symlink `GEMINI.md → AGENTS.md` |
 | **Hermes** (Mycroft / Mac Mini) | Production | `skills.external_dirs` in `~/.hermes/config.yaml` |
 | **Goose** | Extension pack | `goose extensions install spotlight` |
-| **LM Studio** (https://lmstudio.ai) | Standalone agent — TBD | GUI app with in-app chat + MCP tool surface. Verified path is **LM Studio as pi's inference backend** (see next row). Standalone agent support unverified — see [docs/runtimes.md](docs/runtimes.md#lm-studio). |
-| **pi + local server** | Via harness | pi as agent, with LM Studio (`:1234`), Ollama (`:11434`), or llama-server (`:8080`/`:8081`) as the OpenAI-compatible inference backend — journalist-friendly setup via setup.html. |
+| **pi** (https://pi.dev) | Local — single-context fallback | `mkdir -p ~/.pi/agent/skills && ln -sfn /path/to/spotlight/skills ~/.pi/agent/skills/spotlight`. No native sub-agents, so investigator/fact-checker run in the main session. Use opencode for the full pipeline. |
 
 Per-runtime wiring: **[docs/runtimes.md](docs/runtimes.md)**.
 
@@ -43,7 +42,7 @@ Per-runtime wiring: **[docs/runtimes.md](docs/runtimes.md)**.
 - **Monitoring orchestration**: passive signals from Mycroft plus durable monitors from coJournalist or runtime-native routines
 - **Knowledge vault ingestion**: Markdown vaults for Obsidian or Tolaria, with directory fallback; atomic registry updates; lock-file concurrency
 - **Sensitive mode**: strips `fetch`/`search` from agents; investigation runs local-only
-- **Pi-native + Hermes-native**: zero adapter code needed for these runtimes; markdown-only contract for others
+- **opencode-native + Hermes-native**: zero adapter code needed for these runtimes; markdown-only contract for others
 
 ## Dependencies
 
@@ -59,7 +58,7 @@ Optional:
 - **OSINT_NAV_API_KEY** — for expanded OSINT tool discovery via OSINT Navigator.
 - **JUNKIPEDIA_API_KEY** — for narrative / misinformation tracking (application-based at junkipedia.org).
 - **CORE_API_KEY** — for academic paper access in `content-access` skill.
-- **Ollama** or **LM Studio** (for Local runtime) — `brew install ollama` (CLI-first) or `brew install --cask lm-studio` (GUI, journalist-friendly). Power users: llama.cpp (`brew install llama.cpp`).
+- **Inference backend (for Local runtime)** — `brew install llama.cpp` (lean, what setup.html defaults to) or `brew install ollama` (CLI-first model manager).
 
 ## Documentation
 

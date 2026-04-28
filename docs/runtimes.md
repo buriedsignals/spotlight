@@ -33,13 +33,96 @@ Runtime-specific backings (vary):
 
 ---
 
+## opencode
+
+**What it is:** Terminal-first AI coding agent by Anomaly Innovations (https://opencode.ai). MIT license. Native `AGENTS.md`, `SKILL.md`, sub-agents, MCP, and a built-in `llama.cpp` provider that talks directly to a local llama-server. **The recommended local Spotlight runtime.**
+
+### Install
+
+```bash
+brew install opencode                   # CLI (recommended)
+brew install --cask opencode-desktop    # Optional GUI app
+# or, no Homebrew:
+curl -fsSL https://opencode.ai/install | bash
+```
+
+### Loading this repo
+
+opencode searches **one level deep** in each of these dirs for `<name>/SKILL.md` (verified at https://opencode.ai/docs/skills/):
+
+- Project: `.opencode/skills/<name>/SKILL.md`, `.claude/skills/<name>/SKILL.md`, `.agents/skills/<name>/SKILL.md`
+- Global: `~/.config/opencode/skills/<name>/SKILL.md`, `~/.claude/skills/<name>/SKILL.md`, `~/.agents/skills/<name>/SKILL.md`
+
+The directory name must equal the `name:` field in the SKILL.md frontmatter (validated). So one symlink per sub-skill — opencode does **not** recurse into a `spotlight/spotlight/SKILL.md` two-level layout.
+
+Install Spotlight globally:
+
+```bash
+mkdir -p ~/.config/opencode/skills
+for skill_dir in /path/to/spotlight/skills/*/; do
+  name=$(basename "$skill_dir")
+  ln -sfn "$skill_dir" "$HOME/.config/opencode/skills/$name"
+done
+```
+
+Creates 11 symlinks: `spotlight`, `ingest`, `monitoring`, `web-archiving`, `content-access`, `osint`, `investigate`, `follow-the-money`, `social-media-intelligence`, `integrations`, `review`. Live links — `git pull` in the spotlight repo updates everything.
+
+`AGENTS.md` is loaded as Rules (https://opencode.ai/docs/rules/), walked up from cwd to the git worktree. Drop a project `AGENTS.md` in your investigations directory and opencode picks it up automatically.
+
+### Local llama.cpp provider config
+
+Merge into `~/.config/opencode/opencode.json` (preserves any other providers you have):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "llama.cpp": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "llama-server (local)",
+      "options": { "baseURL": "http://127.0.0.1:8080/v1" },
+      "models": {
+        "qwen35": {
+          "name": "Qwen3.6-35B-A3B (local llama.cpp, UD-Q5_K_XL)",
+          "limit": { "context": 262144, "output": 16384 },
+          "cost": { "input": 0, "output": 0 }
+        }
+      }
+    }
+  }
+}
+```
+
+Start with: `opencode --model llama.cpp/qwen35` (or use the `setup.html`-generated launcher script).
+
+### Verb bindings
+
+opencode ships native `bash`, `read`, `write`, `edit`, `grep`, `glob`, `multi-edit` — covers 8 of the 13 verbs directly. The remaining five shell out:
+
+| Verb | Concrete tool |
+|---|---|
+| `fetch`, `search` | `firecrawl` CLI via `bash` |
+| `query-vault` | `BUN_INSTALL="" qmd query` via `bash` |
+| `vault-write` | `obsidian` CLI via `bash` |
+| `invoke-skill` | opencode's native `skill` tool — agents see available skills and load them on demand |
+
+### Sub-agents
+
+**Native** (https://opencode.ai/docs/agents/) — Spotlight's `investigator` and `fact-checker` map directly to opencode agent files (markdown manifests with frontmatter). Each agent gets its own context, prompt, and optionally its own model.
+
+### Sensitive mode
+
+Enforce at the agent definition: strip `firecrawl` (and any external-fetch shell) from the agent's `allowed-tools` frontmatter. Same pattern as the Claude Code marketplace plugin.
+
+---
+
 ## pi
 
 **What it is:** Minimal TypeScript coding harness by Mario Zechner (https://pi.dev). MIT license. `npm install -g @mariozechner/pi-coding-agent`. Natively supports `AGENTS.md` + `skills/*/SKILL.md`.
 
-### Loading this repo
+**Status:** Local fallback. opencode (above) is the recommended local Spotlight runtime — pi lacks native sub-agents (so investigator + fact-checker run single-context) and needs an extension to talk to llama-server. Use pi only if you already have it set up or specifically want its minimal surface.
 
-Symlink the repo's `skills/` subdirectory into pi's user-level skill dir:
+### Loading this repo
 
 ```bash
 mkdir -p ~/.pi/agent/skills
@@ -47,41 +130,21 @@ ln -sfn /path/to/spotlight/skills ~/.pi/agent/skills/spotlight
 pi
 ```
 
-pi recursively walks two skill directories at startup (verified in `pi-coding-agent/dist/core/skills.js:347-348`):
+pi recursively walks `~/.pi/agent/skills/` (user) and `<cwd>/.pi/skills/` (project) at startup, picking up every `SKILL.md` it finds — verified in `pi-coding-agent/dist/core/skills.js:347-348`. Skill names come from each frontmatter, so the symlink above loads all 11 Spotlight sub-skills by name.
 
-- **User-level** — `~/.pi/agent/skills/` (loaded every session, regardless of `cwd`)
-- **Project-level** — `<cwd>/.pi/skills/` (loaded only when pi runs from a directory that has it)
-
-Every `SKILL.md` under those trees is picked up. Skill names come from each `SKILL.md` frontmatter — not the directory name — so with the symlink above all 11 Spotlight sub-skills (`spotlight`, `ingest`, `monitoring`, `web-archiving`, `content-access`, `osint`, `investigate`, `follow-the-money`, `social-media-intelligence`, `integrations`, `review`) load by name.
-
-`AGENTS.md` is layered into pi's system prompt from `~/.pi/agent/`, parent directories, and the current directory (per [pi.dev docs](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)). To pick up Spotlight's runtime contract when working in a specific investigations directory, drop a small project `AGENTS.md` there that points at `<spotlight-repo>/AGENTS.md`.
-
-**Alternative — project-scoped install** (only loads when cd'd into the dir):
-
-```bash
-mkdir -p /path/to/investigations/.pi/skills
-ln -sfn /path/to/spotlight/skills /path/to/investigations/.pi/skills/spotlight
-```
+`AGENTS.md` is layered into pi's system prompt from `~/.pi/agent/`, parent directories, and the current directory (per [pi.dev docs](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)).
 
 ### Verb bindings
 
-pi ships with most verbs built in: `Read`, `Write`, `Edit`, `Grep`, `Glob`, `Bash` equivalents. The 13-verb contract maps directly to pi's native toolset — no adapter code needed.
-
-Skills in this repo reference verbs by name (e.g. `fetch(url, path)`). pi's model reads the skill and uses its native tools to execute. For example, a skill that says `execute-shell("firecrawl scrape <url>")` becomes a `Bash`-equivalent call in pi.
+pi ships native `Read`, `Write`, `Edit`, `Grep`, `Glob`, `Bash` equivalents. The 13-verb contract maps directly — skills reference verbs by name and pi's model uses its native tools to execute (e.g. `execute-shell("firecrawl scrape <url>")` becomes a `Bash`-equivalent call).
 
 ### Sub-agents
 
-**pi does not ship built-in sub-agents.** Three options:
+**pi does not ship built-in sub-agents.** Workarounds: a `pi-subagent` extension if one exists, tmux-spawn a second pi process via RPC mode, or SDK-mode wrapper. For Spotlight's investigator/fact-checker pattern this is awkward — that's why opencode is the recommended local runtime.
 
-1. **Install a pi extension** that provides sub-agent spawning. Check [pi packages](https://pi.dev/packages) for `pi-subagent`, `pi-sdk-subagent`, or equivalent.
-2. **tmux spawn** — spawn a second `pi` process in a tmux pane; pipe the prompt via RPC mode (`pi -p "<prompt>" --mode json`).
-3. **SDK mode** — programmatically invoke pi as an SDK from a wrapper script that drives the orchestrator loop and calls pi for sub-agents.
+### Local llama-server provider via pi
 
-For our fact-checker/investigator pattern, option 3 (SDK harness + sub-pi calls) is cleanest. Option 2 is simplest to prototype.
-
-### Local fine-tune via pi
-
-pi v0.68 does **not** accept arbitrary OpenAI-compatible providers via `~/.pi/agent/models.json` — the file only extends known providers (OpenAI, Anthropic, Google). To route inference to a local server (llama-server, LM Studio, Ollama, vLLM, hosted Exoscale), write a pi extension that calls `pi.registerProvider("local", { baseUrl, api: "openai-completions", models: [...] })`. Reference: `docs/custom-provider.md` in the pi package, plus the worked example at `examples/extensions/custom-provider-qwen-cli/`.
+pi v0.70 does **not** accept arbitrary OpenAI-compatible providers via `~/.pi/agent/models.json` — only known providers (OpenAI, Anthropic, Google) can be extended there. To route inference to a local server (llama-server, Ollama, vLLM, Exoscale), write a pi extension that calls `pi.registerProvider("local", { baseUrl, api: "openai-completions", models: [...] })`. Reference: `docs/custom-provider.md` in the pi package, plus the worked example at `examples/extensions/custom-provider-qwen-cli/`.
 
 Minimal extension (TypeScript) — ship as a standalone npm package or drop under `~/.pi/agent/extensions/`:
 
@@ -90,23 +153,23 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {
   pi.registerProvider("local", {
-    baseUrl: "http://127.0.0.1:11434/v1",    // Ollama (or 8081 for llama-server)
+    baseUrl: "http://127.0.0.1:8080/v1",     // llama-server (or 11434 for Ollama)
     apiKey: "unused",
     api: "openai-completions",
     models: [{
-      id: "gemma-4-26B-A4B-it",
-      name: "Gemma 4 26B A4B (local)",
-      reasoning: false,
-      input: ["text", "image"],
+      id: "qwen35",
+      name: "Qwen3.6-35B-A3B (local)",
+      reasoning: true,
+      input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 16384,
-      maxTokens: 4096
+      contextWindow: 262144,
+      maxTokens: 16384
     }]
   });
 }
 ```
 
-Then `pi --provider local --model gemma-4-26B-A4B-it`. This pattern works for any OpenAI-compatible server.
+Then `pi --provider local --model qwen35`. opencode's native `llama.cpp` provider does this same job with one JSON block — no extension code.
 
 **Current Spotlight operator model**: `unsloth/gemma-4-26B-A4B-it-GGUF` on Hugging Face (base Gemma 4 26B A4B — we evaluated a journalism fine-tune but the base outperformed it on tool-use + document OCR). Multimodal (text + vision) VLM MoE — 26B total / 4B active. Native vision for scanned court documents, satellite imagery, and screenshots. Recommended quants:
 - `gemma-4-26B-A4B-it-UD-Q6_K_XL.gguf` (~22 GB) + `mmproj-BF16.gguf` (~1.2 GB) — 48GB+ Macs
@@ -329,7 +392,7 @@ CYCLE: {cycle}
 
 ### Sensitive mode and local inference
 
-Codex 0.122 ships a native `--oss` flag that detects Ollama on `127.0.0.1:11434` and LM Studio on `:1234`. Use it instead of a custom `[model_providers.*]` entry — that route is broken in 0.122 because Codex now requires `wire_api = "responses"` (see [codex#7782](https://github.com/openai/codex/discussions/7782)) which Ollama and llama-server do not speak.
+Codex 0.122 ships a native `--oss` flag that detects Ollama on `127.0.0.1:11434`. Use it instead of a custom `[model_providers.*]` entry — that route is broken in 0.122 because Codex now requires `wire_api = "responses"` (see [codex#7782](https://github.com/openai/codex/discussions/7782)) which Ollama and llama-server do not speak.
 
 ```bash
 SPOTLIGHT_SENSITIVE=true codex exec \
@@ -378,40 +441,6 @@ Gemini's sub-agent support is evolving. Until native primitives stabilize, use t
 
 ---
 
-## LM Studio
-
-**What it is:** GUI app from [lmstudio.ai](https://lmstudio.ai) for browsing, downloading, and serving open-weight models. Ships an OpenAI-compatible HTTP server on `127.0.0.1:1234`, a CLI (`lms`), and an in-app chat surface that supports OpenAI-style tool calls and MCP servers. Free for personal use.
-
-**Status:** Verified as a **pi/Hermes/Goose inference backend** (see [Local OpenAI-compatible endpoints](#local-openai-compatible-endpoints) below). Standalone agent support — running Spotlight directly through LM Studio's in-app chat without pi — is **TBD / unverified**; LM Studio's agent surface is in flux as it adds skill/MCP capabilities. The notes below describe both paths honestly so a journalist installing fresh can pick the supported one.
-
-### Two ways to run Spotlight with LM Studio
-
-#### 1. As an inference backend for pi (verified — recommended)
-
-LM Studio serves the model on `:1234`; pi (or Hermes / Goose) drives the agent loop and loads Spotlight's `skills/`. This is what `setup.html` generates when "Local" + "LM Studio" is selected.
-
-Wiring: see [pi → Local fine-tune via pi](#local-fine-tune-via-pi) (write a small pi extension that registers LM Studio as a provider — pi v0.70 does not accept arbitrary OpenAI-compatible providers through `~/.pi/agent/models.json`, so the `pi.registerProvider("lmstudio", { baseUrl: "http://127.0.0.1:1234/v1", … })` extension pattern is the supported route). Hermes and Goose accept the URL directly in their provider config.
-
-#### 2. As a standalone agent — in-app chat with MCP (unverified)
-
-LM Studio's in-app chat supports OpenAI-style tool calls and can connect to MCP servers, but it does **not** currently auto-discover `SKILL.md` files the way pi does. To approximate Spotlight inside LM Studio's UI, you would need to:
-
-- Install MCP servers wrapping `firecrawl`, `qmd`, and the `obsidian` CLI so the model can call the 13 verbs.
-- Manually paste the contents of `AGENTS.md` plus the relevant `skills/<name>/SKILL.md` into the system prompt for each session (or use a custom prompt template that loads them).
-- Drive the orchestrator loop yourself — there is no `invoke-skill` shortcut.
-
-This loses the "load by name" ergonomics. Until LM Studio ships a `~/.lmstudio/skills/` (or equivalent) discovery convention, **option 1 is the supported path**.
-
-### Install
-
-`brew install --cask lm-studio` (macOS) or download from [lmstudio.ai](https://lmstudio.ai). First launch installs the `lms` CLI at `~/.lmstudio/bin/lms`. Use the **Discover** tab to download a model (e.g. `unsloth/Qwen3.6-35B-A3B-GGUF`), then **Developer** tab → **Start Server** — endpoint comes up on `127.0.0.1:1234`. The setup.html generator runs this exact path when "LM Studio" is selected.
-
-### Verbs, sub-agents, sensitive mode
-
-Inherited from the host harness in option 1 (pi/Hermes/Goose handle skill loading, sub-agent spawning, and the sensitive-mode allowlist). Option 2 has no enforcement — sensitive-mode discipline must be self-imposed via the system prompt.
-
----
-
 ## Local OpenAI-compatible endpoints
 
 Any OpenAI-compatible `/v1/chat/completions` endpoint can drive Spotlight as long as the host harness (pi, Hermes, Goose, a thin SDK wrapper) supports the agent loop.
@@ -420,13 +449,10 @@ Any OpenAI-compatible `/v1/chat/completions` endpoint can drive Spotlight as lon
 
 | Backing | URL | Use case |
 |---|---|---|
-| llama-server (llama.cpp) | `http://127.0.0.1:8081/v1` | Local fine-tunes (Gemma 4 journalist, Qwen 3.6, etc.) |
-| Ollama | `http://127.0.0.1:11434/v1` | Quick-switch between models, CLI-first |
-| LM Studio | `http://127.0.0.1:1234/v1` | GUI-first model management — recommended for journalists not at home in Terminal |
+| llama-server (llama.cpp) | `http://127.0.0.1:8080/v1` | Lean, Terminal-only — `brew install llama.cpp`. Default for setup.html's local mode. |
+| Ollama | `http://127.0.0.1:11434/v1` | CLI-first model manager — `brew install ollama`, `ollama pull <repo>`. |
 | Exoscale Dedicated Inference | `https://exoscale-ci-…/v1` | Swiss-sovereign hosted inference |
 | vLLM | `http://localhost:8000/v1` | High-throughput self-hosted |
-
-**LM Studio wiring**: install via `brew install --cask lm-studio` (or download from [lmstudio.ai](https://lmstudio.ai)). On first launch the app installs the `lms` CLI at `~/.lmstudio/bin/lms`. Use the **Discover** tab to search and download GGUF models from Hugging Face (e.g. `unsloth/Qwen3.6-35B-A3B-GGUF`), then open the **Developer** tab and click **Start Server** — the OpenAI-compatible endpoint comes up on `127.0.0.1:1234`. For pi, register LM Studio as a provider via the extension pattern in [Local fine-tune via pi](#local-fine-tune-via-pi) (pi v0.70 does not accept arbitrary OpenAI-compatible providers through `~/.pi/agent/models.json`). Hermes and Goose accept the URL directly in their provider config; LM Studio doesn't authenticate by default, so any non-empty `apiKey` string works. Full standalone-agent treatment is in [LM Studio](#lm-studio).
 
 ### Wiring
 

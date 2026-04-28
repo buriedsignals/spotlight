@@ -82,7 +82,7 @@ The sub-agent writes its structured output to `cases/{project}/data/fact-check.j
 
 ## Sensitive mode / local inference
 
-Codex 0.122 has a native `--oss` flag that detects Ollama or LM Studio on `127.0.0.1:11434` / `:1234`. Use it rather than a custom `model_providers` entry in `config.toml` — Codex 0.122 deprecated `wire_api = "chat"` and requires `"responses"`, which Ollama/llama-server do not speak yet ([codex#7782](https://github.com/openai/codex/discussions/7782)).
+Codex 0.122 has a native `--oss` flag that detects Ollama on `127.0.0.1:11434`. Use it rather than a custom `model_providers` entry in `config.toml` — Codex 0.122 deprecated `wire_api = "chat"` and requires `"responses"`, which Ollama/llama-server do not speak yet ([codex#7782](https://github.com/openai/codex/discussions/7782)).
 
 ```bash
 SPOTLIGHT_SENSITIVE=true codex exec \

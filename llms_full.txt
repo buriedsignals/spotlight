@@ -38,7 +38,8 @@ The public runtime surface documented in `README.md` and `docs/runtimes.md` is:
 - **Gemini CLI:** symlink `GEMINI.md` to `AGENTS.md`
 - **Hermes:** load `skills/` through `skills.external_dirs`
 - **Goose:** package as an extension pack
-- **Local OpenAI-compatible runtimes:** Ollama, LM Studio, llama-server, vLLM, or similar behind a compatible harness
+- **opencode** (recommended local harness): native AGENTS.md, SKILL.md, sub-agents; llama.cpp / Ollama providers built in
+- **Local OpenAI-compatible runtimes:** llama-server, Ollama, vLLM behind opencode (or any compatible harness)
 
 ## 4. Investigation model
 
@@ -289,7 +290,7 @@ Optional dependencies documented in the README:
 - `obsidian`
 - Python 3.11+
 - optional integration keys such as `OSINT_NAV_API_KEY`, `JUNKIPEDIA_API_KEY`, and `CORE_API_KEY`
-- local runtimes such as Ollama or LM Studio
+- local runtimes such as llama-server or Ollama (driven by opencode)
 
 ## 16. Sensitive mode
 
