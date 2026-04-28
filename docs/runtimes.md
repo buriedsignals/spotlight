@@ -39,17 +39,29 @@ Runtime-specific backings (vary):
 
 ### Loading this repo
 
-Drop the agnostic repo into pi's skill-search path, or symlink it:
+Symlink the repo's `skills/` subdirectory into pi's user-level skill dir:
 
 ```bash
-ln -s /Users/you/buried_signals/spotlight ~/.pi/agent/spotlight
+mkdir -p ~/.pi/agent/skills
+ln -sfn /path/to/spotlight/skills ~/.pi/agent/skills/spotlight
 pi
 ```
 
-pi auto-loads:
+pi recursively walks two skill directories at startup (verified in `pi-coding-agent/dist/core/skills.js:347-348`):
 
-- `AGENTS.md` from `~/.pi/agent/`, parent directories, and the current directory (per [pi.dev docs](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent))
-- `SKILL.md` files under the paths configured in pi's skill search
+- **User-level** — `~/.pi/agent/skills/` (loaded every session, regardless of `cwd`)
+- **Project-level** — `<cwd>/.pi/skills/` (loaded only when pi runs from a directory that has it)
+
+Every `SKILL.md` under those trees is picked up. Skill names come from each `SKILL.md` frontmatter — not the directory name — so with the symlink above all 11 Spotlight sub-skills (`spotlight`, `ingest`, `monitoring`, `web-archiving`, `content-access`, `osint`, `investigate`, `follow-the-money`, `social-media-intelligence`, `integrations`, `review`) load by name.
+
+`AGENTS.md` is layered into pi's system prompt from `~/.pi/agent/`, parent directories, and the current directory (per [pi.dev docs](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)). To pick up Spotlight's runtime contract when working in a specific investigations directory, drop a small project `AGENTS.md` there that points at `<spotlight-repo>/AGENTS.md`.
+
+**Alternative — project-scoped install** (only loads when cd'd into the dir):
+
+```bash
+mkdir -p /path/to/investigations/.pi/skills
+ln -sfn /path/to/spotlight/skills /path/to/investigations/.pi/skills/spotlight
+```
 
 ### Verb bindings
 
@@ -366,6 +378,40 @@ Gemini's sub-agent support is evolving. Until native primitives stabilize, use t
 
 ---
 
+## LM Studio
+
+**What it is:** GUI app from [lmstudio.ai](https://lmstudio.ai) for browsing, downloading, and serving open-weight models. Ships an OpenAI-compatible HTTP server on `127.0.0.1:1234`, a CLI (`lms`), and an in-app chat surface that supports OpenAI-style tool calls and MCP servers. Free for personal use.
+
+**Status:** Verified as a **pi/Hermes/Goose inference backend** (see [Local OpenAI-compatible endpoints](#local-openai-compatible-endpoints) below). Standalone agent support — running Spotlight directly through LM Studio's in-app chat without pi — is **TBD / unverified**; LM Studio's agent surface is in flux as it adds skill/MCP capabilities. The notes below describe both paths honestly so a journalist installing fresh can pick the supported one.
+
+### Two ways to run Spotlight with LM Studio
+
+#### 1. As an inference backend for pi (verified — recommended)
+
+LM Studio serves the model on `:1234`; pi (or Hermes / Goose) drives the agent loop and loads Spotlight's `skills/`. This is what `setup.html` generates when "Local" + "LM Studio" is selected.
+
+Wiring: see [pi → Local fine-tune via pi](#local-fine-tune-via-pi) (write a small pi extension that registers LM Studio as a provider — pi v0.70 does not accept arbitrary OpenAI-compatible providers through `~/.pi/agent/models.json`, so the `pi.registerProvider("lmstudio", { baseUrl: "http://127.0.0.1:1234/v1", … })` extension pattern is the supported route). Hermes and Goose accept the URL directly in their provider config.
+
+#### 2. As a standalone agent — in-app chat with MCP (unverified)
+
+LM Studio's in-app chat supports OpenAI-style tool calls and can connect to MCP servers, but it does **not** currently auto-discover `SKILL.md` files the way pi does. To approximate Spotlight inside LM Studio's UI, you would need to:
+
+- Install MCP servers wrapping `firecrawl`, `qmd`, and the `obsidian` CLI so the model can call the 13 verbs.
+- Manually paste the contents of `AGENTS.md` plus the relevant `skills/<name>/SKILL.md` into the system prompt for each session (or use a custom prompt template that loads them).
+- Drive the orchestrator loop yourself — there is no `invoke-skill` shortcut.
+
+This loses the "load by name" ergonomics. Until LM Studio ships a `~/.lmstudio/skills/` (or equivalent) discovery convention, **option 1 is the supported path**.
+
+### Install
+
+`brew install --cask lm-studio` (macOS) or download from [lmstudio.ai](https://lmstudio.ai). First launch installs the `lms` CLI at `~/.lmstudio/bin/lms`. Use the **Discover** tab to download a model (e.g. `unsloth/Qwen3.6-35B-A3B-GGUF`), then **Developer** tab → **Start Server** — endpoint comes up on `127.0.0.1:1234`. The setup.html generator runs this exact path when "LM Studio" is selected.
+
+### Verbs, sub-agents, sensitive mode
+
+Inherited from the host harness in option 1 (pi/Hermes/Goose handle skill loading, sub-agent spawning, and the sensitive-mode allowlist). Option 2 has no enforcement — sensitive-mode discipline must be self-imposed via the system prompt.
+
+---
+
 ## Local OpenAI-compatible endpoints
 
 Any OpenAI-compatible `/v1/chat/completions` endpoint can drive Spotlight as long as the host harness (pi, Hermes, Goose, a thin SDK wrapper) supports the agent loop.
@@ -380,7 +426,7 @@ Any OpenAI-compatible `/v1/chat/completions` endpoint can drive Spotlight as lon
 | Exoscale Dedicated Inference | `https://exoscale-ci-…/v1` | Swiss-sovereign hosted inference |
 | vLLM | `http://localhost:8000/v1` | High-throughput self-hosted |
 
-**LM Studio wiring**: install via `brew install --cask lm-studio` (or download from [lmstudio.ai](https://lmstudio.ai)). On first launch the app installs the `lms` CLI at `~/.lmstudio/bin/lms`. Use the **Discover** tab to search and download GGUF models from Hugging Face (e.g. `unsloth/Qwen3.6-35B-A3B-GGUF`), then open the **Developer** tab and click **Start Server** — the OpenAI-compatible endpoint comes up on `127.0.0.1:1234`. Point pi's `models.json` (or Hermes / Goose provider config) at that URL with any non-empty `apiKey` string (LM Studio doesn't authenticate by default).
+**LM Studio wiring**: install via `brew install --cask lm-studio` (or download from [lmstudio.ai](https://lmstudio.ai)). On first launch the app installs the `lms` CLI at `~/.lmstudio/bin/lms`. Use the **Discover** tab to search and download GGUF models from Hugging Face (e.g. `unsloth/Qwen3.6-35B-A3B-GGUF`), then open the **Developer** tab and click **Start Server** — the OpenAI-compatible endpoint comes up on `127.0.0.1:1234`. For pi, register LM Studio as a provider via the extension pattern in [Local fine-tune via pi](#local-fine-tune-via-pi) (pi v0.70 does not accept arbitrary OpenAI-compatible providers through `~/.pi/agent/models.json`). Hermes and Goose accept the URL directly in their provider config; LM Studio doesn't authenticate by default, so any non-empty `apiKey` string works. Full standalone-agent treatment is in [LM Studio](#lm-studio).
 
 ### Wiring
 

@@ -21,13 +21,14 @@ An **agnostic port** of the `buriedsignals/spotlight@1.2.1` and `buriedsignals/o
 
 | Runtime | Status | How it loads |
 |---|---|---|
-| **pi** (https://pi.dev) | Primary — native support | Symlink repo into `~/.pi/agent/`; pi reads `AGENTS.md` + `skills/*/SKILL.md` natively |
+| **pi** (https://pi.dev) | Primary — native support | `mkdir -p ~/.pi/agent/skills && ln -sfn /path/to/spotlight/skills ~/.pi/agent/skills/spotlight`; pi recursively loads every `SKILL.md`. `AGENTS.md` read from `~/.pi/agent/`, parent dirs, and cwd. |
 | **Claude Code** | Install package | `npm install -g @anthropic-ai/claude-code`; runs from repo dir |
 | **Codex CLI** | Install package | `npm install -g @openai/codex`; reads `AGENTS.md` natively |
 | **Gemini CLI** | Install package | `npm install -g @google/gemini-cli`; symlink `GEMINI.md → AGENTS.md` |
 | **Hermes** (Mycroft / Mac Mini) | Production | `skills.external_dirs` in `~/.hermes/config.yaml` |
 | **Goose** | Extension pack | `goose extensions install spotlight` |
-| **Local OpenAI-compatible** | Via harness | Ollama, LM Studio, or llama-server + pi (or Hermes) — journalist-friendly setup via setup.html |
+| **LM Studio** (https://lmstudio.ai) | Standalone agent — TBD | GUI app with in-app chat + MCP tool surface. Verified path is **LM Studio as pi's inference backend** (see next row). Standalone agent support unverified — see [docs/runtimes.md](docs/runtimes.md#lm-studio). |
+| **pi + local server** | Via harness | pi as agent, with LM Studio (`:1234`), Ollama (`:11434`), or llama-server (`:8080`/`:8081`) as the OpenAI-compatible inference backend — journalist-friendly setup via setup.html. |
 
 Per-runtime wiring: **[docs/runtimes.md](docs/runtimes.md)**.
 
