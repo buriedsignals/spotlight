@@ -1,7 +1,7 @@
 {
   "id": "osint-navigator",
   "name": "OSINT Navigator",
-  "description": "Weekly-updated database of 1,000+ OSINT tools with AI-powered query. Surfaces country-specific registries, niche categories, and recent additions beyond the curated 150-tool catalog in the osint skill.",
+  "description": "Weekly-updated database of 10,000+ OSINT tools with AI-powered query. Surfaces country-specific registries, niche categories, and recent additions beyond the curated 150-tool catalog in the osint skill.",
   "category": "tool-discovery",
   "type": "api",
   "requires_key": true,

@@ -58,7 +58,7 @@ When responding to an investigation query:
 
 ## OSINT Navigator
 
-OSINT Navigator (navigator.indicator.media) is a live tool-discovery API with a weekly-updated database of 1,000+ OSINT tools. **When available, consult Navigator first before using the curated list below.**
+OSINT Navigator (navigator.indicator.media) is a live tool-discovery API with a weekly-updated database of 10,000+ OSINT tools. **When available, consult Navigator first before using the curated list below.**
 
 ### Quick API Access
 
