@@ -1,6 +1,6 @@
 # OSINT Navigator — Tool Discovery API
 
-**What:** A live tool-discovery API maintained by Indicator Media. Weekly-updated database of 1,000+ OSINT tools with AI-powered synthesized answers to investigation-method questions. Complements the curated 150-tool catalog in the `osint` skill's `references/tools-by-category.md`.
+**What:** A live tool-discovery API maintained by Indicator Media. Weekly-updated database of 10,000+ OSINT tools with AI-powered synthesized answers to investigation-method questions. Complements the curated 150-tool catalog in the `osint` skill's `references/tools-by-category.md`.
 
 **When to use:**
 
