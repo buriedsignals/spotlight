@@ -82,8 +82,8 @@ Merge into `~/.config/opencode/opencode.json` (preserves any other providers you
       "name": "llama-server (local)",
       "options": { "baseURL": "http://127.0.0.1:8080/v1" },
       "models": {
-        "qwen35": {
-          "name": "Qwen3.6-35B-A3B (local llama.cpp, UD-Q5_K_XL)",
+        "qwen27": {
+          "name": "Qwen3.6-27B Uncensored (local llama.cpp, Q4_K_P)",
           "limit": { "context": 262144, "output": 16384 },
           "cost": { "input": 0, "output": 0 }
         }
@@ -93,7 +93,7 @@ Merge into `~/.config/opencode/opencode.json` (preserves any other providers you
 }
 ```
 
-Start with: `opencode --model llama.cpp/qwen35` (or use the `setup.html`-generated launcher script).
+Start with: `opencode --model llama.cpp/qwen27` (or use the `setup.html`-generated launcher script).
 
 ### Verb bindings
 
@@ -157,8 +157,8 @@ export default function (pi: ExtensionAPI) {
     apiKey: "unused",
     api: "openai-completions",
     models: [{
-      id: "qwen35",
-      name: "Qwen3.6-35B-A3B (local)",
+      id: "qwen27",
+      name: "Qwen3.6-27B Uncensored (local)",
       reasoning: true,
       input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -169,7 +169,7 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-Then `pi --provider local --model qwen35`. opencode's native `llama.cpp` provider does this same job with one JSON block — no extension code.
+Then `pi --provider local --model qwen27`. opencode's native `llama.cpp` provider does this same job with one JSON block — no extension code.
 
 **Current Spotlight operator model**: `unsloth/gemma-4-26B-A4B-it-GGUF` on Hugging Face (base Gemma 4 26B A4B — we evaluated a journalism fine-tune but the base outperformed it on tool-use + document OCR). Multimodal (text + vision) VLM MoE — 26B total / 4B active. Native vision for scanned court documents, satellite imagery, and screenshots. Recommended quants:
 - `gemma-4-26B-A4B-it-UD-Q6_K_XL.gguf` (~22 GB) + `mmproj-BF16.gguf` (~1.2 GB) — 48GB+ Macs

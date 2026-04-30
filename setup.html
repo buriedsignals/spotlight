@@ -1122,16 +1122,16 @@
 
           <div class="model-info hidden" id="model-info-qwen27b">
             <div class="stat"><strong>27B</strong>Dense — all params active</div>
-            <div class="stat"><strong>~14 GB</strong>disk</div>
+            <div class="stat"><strong>~10 GB</strong>disk</div>
             <div class="stat"><strong>~16 GB</strong>RAM at runtime</div>
             <div class="stat"><strong>24 GB+</strong>recommended</div>
           </div>
 
           <p class="note-advisory" id="local-note-llamacpp">
-            Large download (~8 GB for Gemma, ~14 GB for Qwen). The installer streams the GGUF from Hugging Face via <code>curl</code>; resume-on-interrupt is supported. The model lives at <code>~/Models/&lt;repo-leaf&gt;/</code>; you can swap quants by re-running with <code>MODEL=...</code>.
+            Large download (~8 GB for Gemma, ~10 GB for Qwen). The installer streams the GGUF from Hugging Face via <code>curl</code>; resume-on-interrupt is supported. The model lives at <code>~/Models/&lt;repo-leaf&gt;/</code>; you can swap quants by re-running with <code>MODEL=...</code>.
           </p>
           <p class="note-advisory hidden" id="local-note-ollama">
-            Large download (~8 GB for Gemma, ~14 GB for Qwen). Progress streams live in Terminal via Ollama's native UI. If interrupted, re-run <code>ollama pull hf.co/&lt;model-repo&gt;</code> to resume.
+            Large download (~8 GB for Gemma, ~10 GB for Qwen). Progress streams live in Terminal via Ollama's native UI. If interrupted, re-run <code>ollama pull hf.co/&lt;model-repo&gt;</code> to resume.
           </p>
         </section>
       </div>
@@ -1824,7 +1824,7 @@
       const modelLeaf = cfg.model_repo.split('/').slice(-1)[0];
       const ggufFile = cfg.model_repo.indexOf('gemma-4') >= 0
         ? 'gemma-4-26B-A4B-it-UD-Q4_K_M.gguf'
-        : 'Qwen3.6-35B-A3B-UD-Q4_K_M.gguf';
+        : 'Qwen3.6-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf';
       const port = cfg.local_server === 'llamacpp' ? '8080' : '11434';
       const baseURL = 'http://127.0.0.1:' + port + '/v1';
 
@@ -1856,7 +1856,7 @@
         p('  printf "%s✓%s Ollama already installed\\n" "$_c_green" "$_c_reset"');
         p('fi');
         p('');
-        var ollamaSize = cfg.model_repo.indexOf('gemma-4') >= 0 ? '~8 GB' : '~14 GB';
+        var ollamaSize = cfg.model_repo.indexOf('gemma-4') >= 0 ? '~8 GB' : '~10 GB';
         p('step "Journalism model download (' + ollamaSize + ')"');
         p('echo "Ollama will stream download progress below — grab a coffee, 5–15 min on a typical connection."');
         p('echo ""');
@@ -1905,7 +1905,7 @@
       p('if ! command -v jq >/dev/null 2>&1; then spin "Installing jq via brew" brew install jq; fi');
       p('TMP=$(mktemp)');
       if (cfg.local_server === 'llamacpp') {
-        p('jq --arg base "' + baseURL + '" --arg id "qwen35" --arg name "Qwen3.6-35B-A3B (local llama.cpp)" \\');
+        p('jq --arg base "' + baseURL + '" --arg id "qwen27" --arg name "Qwen3.6-27B Uncensored (local llama.cpp)" \\');
         p('  \'.provider["llama.cpp"] = {"npm":"@ai-sdk/openai-compatible","name":"llama-server (local)","options":{"baseURL":$base},"models":{($id):{"name":$name}}}\' \\');
         p('  "$OC_CFG" > "$TMP" && mv "$TMP" "$OC_CFG"');
       } else {
@@ -1928,14 +1928,14 @@
         p('command -v opencode    >/dev/null 2>&1 || { echo "opencode missing — brew install opencode" >&2; exit 1; }');
         p('[ -f "$MODEL" ] || { echo "Model not found: $MODEL" >&2; exit 1; }');
         p('lsof -ti:8080 >/dev/null 2>&1 && { echo "Port 8080 already in use — kill the existing process first" >&2; exit 1; }');
-        p('llama-server --model "$MODEL" --alias qwen35 --host 127.0.0.1 --port 8080 \\');
+        p('llama-server --model "$MODEL" --alias qwen27 --host 127.0.0.1 --port 8080 \\');
         p('  --ctx-size 65536 --n-gpu-layers 999 --jinja --flash-attn on >/tmp/llama-server-opencode.log 2>&1 &');
         p('SERVER_PID=$!');
         p('cleanup() { kill -TERM "$SERVER_PID" 2>/dev/null || true; }');
         p('trap cleanup EXIT INT TERM HUP');
         p('echo -n "Waiting for llama-server"');
         p('for i in {1..120}; do curl -sf http://127.0.0.1:8080/v1/models >/dev/null && { echo " ready."; break; }; echo -n "."; sleep 1; done');
-        p('opencode --model llama.cpp/qwen35 "$@"');
+        p('opencode --model llama.cpp/qwen27 "$@"');
         p('LAUNCHER_EOF');
         p(')');
         p('chmod +x "$HOME/.local/bin/spotlight-local"');
