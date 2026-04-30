@@ -1806,7 +1806,7 @@
     p('');
     p('step "Spotlight repo"');
     p('if [ -d "$SPOTLIGHT_DIR/.git" ]; then');
-    p('  spin "Updating Spotlight at $SPOTLIGHT_DIR" bash -c \'git -C "$SPOTLIGHT_DIR" fetch origin && git -C "$SPOTLIGHT_DIR" reset --hard origin/main\'');
+    p('  spin "Updating Spotlight at $SPOTLIGHT_DIR" bash -c \'cd "$SPOTLIGHT_DIR" && git pull --no-rebase --autostash origin main\'');
     p('else');
     p('  spin "Cloning Spotlight to $SPOTLIGHT_DIR" git clone "$REPO_URL" "$SPOTLIGHT_DIR"');
     p('fi');
@@ -2052,7 +2052,7 @@
     p('  fi');
     p('  case "${1:-}" in');
     p('    update)');
-    p('      (cd "$dir" && git fetch origin && git reset --hard origin/main && \\');
+    p('      (cd "$dir" && git pull --no-rebase --autostash origin main && \\');
     p('        python3 integrations/preflight.py --text)');
     p('      return $?');
     p('      ;;');
@@ -2065,7 +2065,7 @@
     p('Usage: spotlight [subcommand]');
     p('');
     p('  (no arg)   Launch the configured runtime and start investigating');
-    p('  update     git pull the repo + run both preflights');
+    p('  update     merge upstream updates with git pull --autostash, then run preflight');
     p('  doctor     Run the smoke test (checks structure, schemas, preflights)');
     p('  help       This message');
     p('HELP');

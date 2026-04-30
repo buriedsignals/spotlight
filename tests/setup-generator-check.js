@@ -134,6 +134,16 @@ let pass = 0,
 for (const c of configs) {
   const cfg = { ...baseCfg, ...c };
   const script = buildScript(cfg);
+  if (!script.includes("git pull --no-rebase --autostash origin main")) {
+    console.log(`✗ ${c.label.padEnd(24)} missing safe git pull`);
+    fail++;
+    continue;
+  }
+  if (script.includes("reset --hard")) {
+    console.log(`✗ ${c.label.padEnd(24)} contains reset --hard`);
+    fail++;
+    continue;
+  }
   const tmp = `/tmp/setup-gen-${c.label.replace(/\//g, "-")}.sh`;
   fs.writeFileSync(tmp, script);
   try {
