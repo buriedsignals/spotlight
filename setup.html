@@ -1139,8 +1139,9 @@
       <!-- CLOUD SECTION -->
       <div id="cloud-section">
         <div class="sec-header">
-          <span class="chap" data-reveal="meta">02 — Cloud provider</span>
-          <h2 data-reveal="title">Pick your runtime.</h2>
+          <span class="chap" data-reveal="meta">02 — Runtime</span>
+          <h2 data-reveal="title">Pick your AI agent.</h2>
+          <p class="lede" style="margin-top:8px;">Spotlight is a skill bundle — it runs inside an AI agent runtime you already have. Subscription runtimes (Claude Code, Gemini, Codex) authenticate via their own login: <strong>no API key needed</strong>. Only OpenCode requires a provider key (pay-per-token).</p>
         </div>
         <section class="card">
           <div class="radio-group" id="cloud-group">
@@ -1160,14 +1161,16 @@
             <p class="note-sub">~$0.50–2 per investigation, charged per token by the provider's API.</p>
           </div>
 
-          <div class="key-row">
-            <label class="block" id="cloud_key_label">Anthropic API key <span class="hint">— leave blank if you've already set it globally.</span></label>
-            <input type="password" id="cloud_key" placeholder="sk-ant-..." autocomplete="off">
+          <div class="key-row hidden" id="cloud_key_row">
+            <label class="block" id="cloud_key_label">Provider API key</label>
+            <input type="password" id="cloud_key" placeholder="" autocomplete="off">
+            <p id="cloud_key_err" class="error hidden">Provider API key is required for OpenCode.</p>
           </div>
 
           <div id="cloud-usage-claude" class="step-card">
             <h4>Using Spotlight with Claude Code</h4>
             <ol>
+              <li>First time only: run <code>claude login</code> and sign in with your Claude Max / Pro account — no API key needed</li>
               <li>In any terminal, type <code>spotlight</code> — opens Claude Code in your Spotlight repo with all skills loaded</li>
               <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
               <li>Claude walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
@@ -1178,6 +1181,7 @@
           <div class="step-card hidden" id="cloud-usage-gemini">
             <h4>Using Spotlight with Gemini</h4>
             <ol>
+              <li>First time only: run <code>gemini</code> and sign in with your Google account — no API key needed</li>
               <li>In any terminal, type <code>spotlight</code> — opens Gemini CLI in your Spotlight repo with all skills loaded</li>
               <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
               <li>Gemini walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
@@ -1188,6 +1192,7 @@
           <div class="step-card hidden" id="cloud-usage-codex">
             <h4>Using Spotlight with Codex</h4>
             <ol>
+              <li>First time only: run <code>codex login</code> and sign in with your ChatGPT account — no API key needed</li>
               <li>In any terminal, type <code>spotlight</code> — opens Codex in your Spotlight repo with all skills loaded</li>
               <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
               <li>Codex walks you through Preflight → Brief → Methodology → 5 execution cycles → Gate 1 review → Ingestion into your vault</li>
@@ -1198,6 +1203,7 @@
           <div class="step-card hidden" id="cloud-usage-opencode">
             <h4>Using Spotlight with OpenCode</h4>
             <ol>
+              <li>Paste your provider key above — OpenCode is pay-per-token and needs an API key for OpenRouter / Fireworks / Together</li>
               <li>In any terminal, type <code>spotlight</code> — opens OpenCode in your Spotlight repo with all skills loaded</li>
               <li>First time: type <code>/model</code> and pick a strong default for your provider</li>
               <li>Tell it: <em>"Start a Spotlight investigation on &lt;your lead&gt;"</em></li>
@@ -1418,6 +1424,7 @@
   const downloadBtn = document.getElementById('download-btn');
   const firecrawlErr = document.getElementById('firecrawl_err');
   const navErr = document.getElementById('nav_err');
+  const cloudKeyErr = document.getElementById('cloud_key_err');
   const installErr = document.getElementById('install_err');
   const vaultErr = document.getElementById('vault_err');
   const installNameInput = document.getElementById('install_name');
@@ -1522,42 +1529,32 @@
   document.querySelectorAll('input[name="local_server"]').forEach(el => el.addEventListener('change', renderLocalServer));
 
   // --- Runtime registry (single source of truth) ---
+  // Subscription runtimes (claude/gemini/codex) authenticate via their CLI's OAuth login —
+  // no API key required. We only collect a key for OpenCode + a paid token-billed provider.
   const RUNTIMES = {
     local: {
       name: 'Local model',
       bin: 'pi',
       installPkg: null,
       contextFile: null,
-      keyLabel: null,
-      keyPlaceholder: null,
-      envVar: null,
     },
     claude: {
       name: 'Claude Code',
       bin: 'claude',
       installPkg: '@anthropic-ai/claude-code',
       contextFile: 'CLAUDE.md',
-      keyLabel: 'Anthropic API key',
-      keyPlaceholder: 'sk-ant-...',
-      envVar: 'ANTHROPIC_API_KEY',
     },
     gemini: {
       name: 'Gemini',
       bin: 'gemini',
       installPkg: '@google/gemini-cli',
       contextFile: 'GEMINI.md',
-      keyLabel: 'Gemini API key',
-      keyPlaceholder: 'AIza...',
-      envVar: 'GEMINI_API_KEY',
     },
     codex: {
       name: 'Codex',
       bin: 'codex',
       installPkg: '@openai/codex',
       contextFile: null,
-      keyLabel: 'OpenAI API key',
-      keyPlaceholder: 'sk-...',
-      envVar: 'OPENAI_API_KEY',
     },
     opencode: {
       name: 'OpenCode',
@@ -1574,21 +1571,22 @@
   };
 
   const opencodeProviderSection = document.getElementById('opencode-provider-section');
+  const cloudKeyRow = document.getElementById('cloud_key_row');
 
   function renderCloud() {
     const rt = document.querySelector('input[name="cloud_runtime"]:checked').value;
-    let keyCfg;
     if (rt === 'opencode') {
       opencodeProviderSection.classList.remove('hidden');
       const prov = document.querySelector('input[name="opencode_provider"]:checked').value;
-      keyCfg = OPENCODE_PROVIDERS[prov];
+      const keyCfg = OPENCODE_PROVIDERS[prov];
+      cloudKeyLabel.innerHTML = keyCfg.label + ' <span class="hint">— required, paste a key from ' + keyCfg.label.replace(' API key', '') + '.</span>';
+      cloudKeyInput.placeholder = keyCfg.placeholder;
+      cloudKeyRow.classList.remove('hidden');
     } else {
       opencodeProviderSection.classList.add('hidden');
-      const r = RUNTIMES[rt];
-      keyCfg = { label: r.keyLabel, placeholder: r.keyPlaceholder, envVar: r.envVar };
+      cloudKeyRow.classList.add('hidden');
+      cloudKeyInput.value = '';
     }
-    cloudKeyLabel.innerHTML = keyCfg.label + ' <span class="hint">— leave blank if you\'ve already set it globally.</span>';
-    cloudKeyInput.placeholder = keyCfg.placeholder;
 
     document.querySelectorAll('[id^="cloud-usage-"]').forEach(el => el.classList.add('hidden'));
     const activeUsage = document.getElementById('cloud-usage-' + rt);
@@ -1617,11 +1615,12 @@
     const cloudRt = document.querySelector('input[name="cloud_runtime"]:checked').value;
     const opencodeProv = document.querySelector('input[name="opencode_provider"]:checked').value;
 
+    // Only OpenCode needs a provider API key written to .env.
+    // Claude Code / Gemini CLI / Codex CLI authenticate via their own OAuth login,
+    // covered by Claude Max / Pro, Google AI / Gemini sub, or ChatGPT Plus / Pro / Team.
     let cloudKeyVar = '';
-    if (mode === 'cloud') {
-      cloudKeyVar = cloudRt === 'opencode'
-        ? OPENCODE_PROVIDERS[opencodeProv].envVar
-        : RUNTIMES[cloudRt].envVar;
+    if (mode === 'cloud' && cloudRt === 'opencode') {
+      cloudKeyVar = OPENCODE_PROVIDERS[opencodeProv].envVar;
     }
 
     return {
@@ -2285,6 +2284,7 @@ You are helping a user set up and run Spotlight. Use \`spotlight-agent-manifest.
     let hasErr = false;
     if (!cfg.firecrawl_key) { firecrawlErr.classList.remove('hidden'); hasErr = true; } else firecrawlErr.classList.add('hidden');
     if (!cfg.nav_key) { navErr.classList.remove('hidden'); hasErr = true; } else navErr.classList.add('hidden');
+    if (cfg.runtime === 'opencode' && !cfg.cloud_key) { cloudKeyErr.classList.remove('hidden'); hasErr = true; } else cloudKeyErr.classList.add('hidden');
     if (!cfg.install_path) { installErr.classList.remove('hidden'); hasErr = true; } else installErr.classList.add('hidden');
     if (!cfg.vault_path) { vaultErr.classList.remove('hidden'); hasErr = true; } else vaultErr.classList.add('hidden');
     if (hasErr) {
