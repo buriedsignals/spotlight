@@ -26,6 +26,7 @@
 <meta name="twitter:image" content="https://spotlight.buriedsignals.com/og-image.png">
 <link rel="alternate" type="text/markdown" title="llms.txt" href="/llms.txt">
 <link rel="alternate" type="text/markdown" title="llms_full.txt" href="/llms_full.txt">
+<meta name="feedback-endpoint" content="/api/feedback">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1405,6 +1406,116 @@
     position: relative;
     z-index: 10;
     background: rgba(7, 7, 10, 0);
+  }
+
+  /* ── FEEDBACK WIDGET ───────────────────────────────────────
+     Feedback-only support channel. Uses Spotlight's squared controls,
+     Geist Mono UI tiers, paper/ink surfaces, and terracotta focus states. */
+  .feedback-button {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 80;
+    width: 52px;
+    height: 52px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--muted-faint-dark);
+    background: var(--ink);
+    color: var(--paper);
+    font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    cursor: pointer;
+    transition: background 220ms ease, border-color 220ms ease, color 220ms ease;
+  }
+  .feedback-button:hover,
+  .feedback-button:focus-visible {
+    background: var(--accent-warm);
+    border-color: var(--accent-warm);
+    color: #fff;
+    outline: none;
+  }
+  .feedback-modal[hidden] { display: none; }
+  .feedback-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    display: grid;
+    place-items: end;
+    padding: 24px;
+    background: rgba(7, 7, 10, 0.44);
+  }
+  .feedback-panel {
+    width: min(430px, calc(100vw - 48px));
+    background: var(--paper);
+    color: var(--paper-fg);
+    border: 1px solid var(--muted-faint-light);
+    padding: 28px;
+  }
+  .feedback-head { display: flex; justify-content: space-between; gap: 20px; align-items: start; }
+  .feedback-head h2 {
+    margin: 0;
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 72, "wght" 500;
+    font-size: 32px;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+  }
+  .feedback-head p { margin: 8px 0 0; color: var(--muted-light); font-size: 13px; }
+  .feedback-close {
+    appearance: none;
+    border: 1px solid var(--muted-faint-light);
+    background: transparent;
+    color: inherit;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    font-size: 22px;
+    line-height: 1;
+  }
+  .feedback-form { display: grid; gap: 14px; margin-top: 22px; }
+  .feedback-field { display: grid; gap: 7px; }
+  .feedback-field label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  .feedback-field input,
+  .feedback-field textarea {
+    width: 100%;
+    border: 1px solid var(--muted-faint-light);
+    background: var(--paper-2);
+    color: var(--paper-fg);
+    padding: 11px 12px;
+    font: 13px/1.5 "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    border-radius: 0;
+  }
+  .feedback-field textarea { min-height: 130px; resize: vertical; }
+  .feedback-field input:focus,
+  .feedback-field textarea:focus {
+    outline: 2px solid rgba(193, 106, 52, 0.24);
+    border-color: var(--accent-warm);
+  }
+  .feedback-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; }
+  .feedback-status { margin: 0; font-size: 12px; color: var(--muted-light); }
+  .feedback-submit {
+    appearance: none;
+    border: 1px solid var(--paper-fg);
+    background: var(--paper-fg);
+    color: var(--paper);
+    padding: 11px 15px;
+    font: 500 11px/1 "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .feedback-submit:hover,
+  .feedback-submit:focus-visible { background: var(--accent-warm); border-color: var(--accent-warm); outline: none; }
+  @media (max-width: 760px) {
+    .feedback-modal { place-items: end center; padding: 16px; }
+    .feedback-panel { width: 100%; padding: 22px; }
+    .feedback-button { right: 16px; bottom: 16px; }
   }
 </style>
 </head>
@@ -4297,5 +4408,105 @@
   })();
 </script>
 
+<button id="feedback-button" class="feedback-button" type="button" aria-haspopup="dialog" aria-controls="feedback-modal" aria-label="Send feedback" title="Send feedback">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M7.8 19.4A8.5 8.5 0 1 0 4.6 16L3 21Z"/>
+    <path d="M8 10h8"/>
+    <path d="M8 14h5"/>
+  </svg>
+</button>
+
+<div id="feedback-modal" class="feedback-modal" role="dialog" aria-modal="true" aria-labelledby="feedback-title" hidden data-project-tag="spotlight">
+  <div class="feedback-panel">
+    <div class="feedback-head">
+      <div>
+        <h2 id="feedback-title">Send feedback</h2>
+        <p>Tell Tom what would make Spotlight more useful.</p>
+      </div>
+      <button id="feedback-close" class="feedback-close" type="button" aria-label="Close feedback form">×</button>
+    </div>
+    <form id="feedback-form" class="feedback-form">
+      <div class="feedback-field">
+        <label for="feedback-message">Message</label>
+        <textarea id="feedback-message" name="message" required maxlength="4000" placeholder="What should Tom know?"></textarea>
+      </div>
+      <div class="feedback-field">
+        <label for="feedback-contact">Contact optional</label>
+        <input id="feedback-contact" name="contact" type="text" maxlength="240" autocomplete="email" placeholder="Email or handle if you want a reply">
+      </div>
+      <div class="feedback-field">
+        <label for="feedback-context">Page / context optional</label>
+        <input id="feedback-context" name="context" type="text" maxlength="1200" placeholder="What were you looking at or trying to do?">
+      </div>
+      <div class="feedback-actions">
+        <p id="feedback-status" class="feedback-status" aria-live="polite"></p>
+        <button id="feedback-submit" class="feedback-submit" type="submit">Send</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  const endpoint = document.querySelector('meta[name="feedback-endpoint"]')?.content || '/api/feedback';
+  const button = document.getElementById('feedback-button');
+  const modal = document.getElementById('feedback-modal');
+  const close = document.getElementById('feedback-close');
+  const form = document.getElementById('feedback-form');
+  const status = document.getElementById('feedback-status');
+  const submit = document.getElementById('feedback-submit');
+  let previouslyFocused = null;
+
+  function openModal() {
+    previouslyFocused = document.activeElement;
+    modal.hidden = false;
+    document.getElementById('feedback-message').focus();
+  }
+  function closeModal() {
+    modal.hidden = true;
+    form.reset();
+    status.textContent = '';
+    submit.disabled = false;
+    submit.textContent = 'Send';
+    if (previouslyFocused && previouslyFocused.focus) previouslyFocused.focus();
+  }
+
+  button.addEventListener('click', openModal);
+  close.addEventListener('click', closeModal);
+  modal.addEventListener('click', (event) => { if (event.target === modal) closeModal(); });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !modal.hidden) closeModal(); });
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const data = new FormData(form);
+    const payload = {
+      message: String(data.get('message') || '').trim(),
+      contact: String(data.get('contact') || '').trim(),
+      context: String(data.get('context') || '').trim(),
+      url: location.href,
+      userAgent: navigator.userAgent,
+      projectTag: modal.dataset.projectTag
+    };
+    if (!payload.message) return;
+    submit.disabled = true;
+    submit.textContent = 'Sending…';
+    status.textContent = '';
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error('Feedback endpoint failed');
+      status.textContent = 'Sent. Thank you.';
+      form.reset();
+      setTimeout(closeModal, 1200);
+    } catch (error) {
+      status.textContent = 'Could not send. Try again later.';
+      submit.disabled = false;
+      submit.textContent = 'Send';
+    }
+  });
+}());
+</script>
 </body>
 </html>
