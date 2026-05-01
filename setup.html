@@ -2138,6 +2138,7 @@
     p('cat > "$HOME/.local/bin/spotlight-doctor" <<\'DOCTOR_EOF\'');
     p('#!/usr/bin/env bash');
     p('set -euo pipefail');
+    p('export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"');
     p('expand_path() {');
     p('  local input="$1"');
     p('  if [ "$input" = "~" ]; then printf "%s\\n" "$HOME";');

@@ -179,6 +179,7 @@ for (const c of configs) {
     "write_env_var OSINT_NAV_API_KEY",
     "SPOTLIGHT-BEGIN",
     "awk '",
+    'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"',
   ];
   let ok = true;
   for (const needle of required) ok = assertFragment(script, c.label, needle) && ok;
