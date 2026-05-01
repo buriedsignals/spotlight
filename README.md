@@ -4,12 +4,20 @@ Runtime-agnostic OSINT investigation system for journalists. Verified findings, 
 
 ## Install (for journalists)
 
-**Open [`setup.html`](setup.html) in any browser.** Pick your runtime, paste your Firecrawl API key, optionally select integrations (browser-use, Junkipedia, OSINT Navigator, Unpaywall), and click Generate. You'll get two install options:
+**Open [`setup.html`](setup.html) in any browser.** Pick your runtime, paste your Firecrawl and OSINT Navigator API keys, optionally select integrations (browser-use, Junkipedia, Unpaywall), and click Generate. You'll get two install options:
 
 - **Copy into Terminal** (simplest) — click Copy, ⌘+Space → Terminal → ⌘+V → Return
 - **Download installer** — `spotlight-setup.zip` → extract → double-click the `.command` file (macOS Gatekeeper first-time: right-click → Open → Confirm)
 
-The generated installer handles everything: clones this repo, installs `firecrawl-cli`, installs your chosen runtime, sets up the local model (if Local selected), writes `.env` with your keys (chmod 600), runs preflight. Works on macOS and Linux; Windows requires WSL.
+The generated installer handles everything: clones this repo, installs `firecrawl-cli` and QMD, installs your chosen runtime, sets up the local model (if Local selected), writes `.env` with your keys (chmod 600), creates the vault scaffold, registers the vault for local search, and runs preflight. Works on macOS and Linux; Windows requires WSL.
+
+The separate **Download agent setup** ZIP contains the same local setup choices and API key values in a private manifest. It is meant for a local agent to perform the same installation without asking you to paste secrets into chat. Keep it private like the command installer.
+
+The installer creates:
+
+- `spotlight` — launch the selected runtime from the Spotlight repo
+- `spotlight doctor` — verify install, env names, runtime, vault, QMD, and preflight
+- `spotlight update` — fetch `origin main`, fast-forward only, then run doctor
 
 See [docs/integrations.md](docs/integrations.md) for the full setup flow and what happens behind the scenes.
 
@@ -49,8 +57,10 @@ Per-runtime wiring: **[docs/runtimes.md](docs/runtimes.md)**.
 Required:
 - **firecrawl** CLI — the universal backing for `fetch`/`search`. `npm install -g firecrawl-cli`; set `FIRECRAWL_API_KEY`. (Handled automatically by setup.html's generated installer.)
 
+Also installed by setup:
+- **qmd** — required for `query-vault` and vault memory. `BUN_INSTALL="" qmd query`.
+
 Optional:
-- **qmd** — for `query-vault`. `BUN_INSTALL="" qmd query`.
 - **obsidian** CLI — for `vault-write` into an Obsidian vault.
 - **Tolaria** — optional Markdown/YAML vault app; setup.html can download the latest macOS release when selected.
 - **Python 3.11+** — for integrations preflight and optional local helper scripts.

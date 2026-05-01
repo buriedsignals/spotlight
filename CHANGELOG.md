@@ -18,6 +18,14 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 - `spotlight/monitoring/registry.py` for initializing, normalizing, and migrating `monitoring.json` to schema v2.
 - `integrations/cojournalist/` as the default durable-monitor integration surface.
 - `mycroft/monitoring/` as the passive-monitor single source of truth, including `poll`, `query`, `preflight`, `topic`, and `prune`.
+- Installer-generated `spotlight-doctor` and `spotlight-update` wrappers. Manual updates now fetch `origin/main`, fast-forward only, and run doctor.
+- QMD setup in the installer, including automatic registration of the selected vault as the `spotlight` collection.
+
+### Fixed
+
+- Agent setup ZIP now includes local form-provided API key values in the private manifest and instructs local agents to write `.env` without printing secrets.
+- Local runtime launch now routes through `spotlight-local` instead of the old `pi` fallback.
+- Installer shell startup block is replaced on rerun, so changed runtime, install path, or vault path choices are reflected.
 
 ## [1.0.0] — 2026-04-17
 

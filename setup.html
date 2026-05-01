@@ -1534,7 +1534,7 @@
   const RUNTIMES = {
     local: {
       name: 'Local model',
-      bin: 'pi',
+      bin: 'spotlight-local',
       installPkg: null,
       contextFile: null,
     },
@@ -1659,17 +1659,24 @@
     p('# Mode: ' + cfg.mode + (cfg.mode === 'cloud' ? ' (' + cfg.runtime + (cfg.opencode_provider ? '/' + cfg.opencode_provider : '') + ')' : ''));
     p('set -euo pipefail');
     p('');
+    p('expand_path() {');
+    p('  local input="$1"');
+    p('  if [ "$input" = "~" ]; then printf "%s\\n" "$HOME";');
+    p('  elif [[ "$input" == "~/"* ]]; then printf "%s/%s\\n" "$HOME" "${input#~/}";');
+    p('  else printf "%s\\n" "$input"; fi');
+    p('}');
+    p('');
     p('SPOTLIGHT_DIR_INPUT=' + shellEscape(cfg.install_path));
     p('if [ -n "${SPOTLIGHT_DIR:-}" ]; then');
     p('  SPOTLIGHT_DIR="$SPOTLIGHT_DIR"');
-    p('elif [ "$SPOTLIGHT_DIR_INPUT" = "~" ]; then');
-    p('  SPOTLIGHT_DIR="$HOME"');
-    p('elif [[ "$SPOTLIGHT_DIR_INPUT" == "~/"* ]]; then');
-    p('  SPOTLIGHT_DIR="$HOME/${SPOTLIGHT_DIR_INPUT#~/}"');
     p('else');
-    p('  SPOTLIGHT_DIR="$SPOTLIGHT_DIR_INPUT"');
+    p('  SPOTLIGHT_DIR="$(expand_path "$SPOTLIGHT_DIR_INPUT")"');
     p('fi');
+    p('SPOTLIGHT_VAULT_INPUT=' + shellEscape(cfg.vault_path));
+    p('SPOTLIGHT_VAULT_PATH="$(expand_path "$SPOTLIGHT_VAULT_INPUT")"');
+    p('SPOTLIGHT_CASES_ROOT="$SPOTLIGHT_VAULT_PATH/cases"');
     p('REPO_URL="https://github.com/buriedsignals/spotlight.git"');
+    p('export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"');
     p('');
     p('_c_reset=$\'\\033[0m\'; _c_cyan=$\'\\033[36m\'; _c_green=$\'\\033[32m\'; _c_red=$\'\\033[31m\'; _c_dim=$\'\\033[2m\'; _c_bold=$\'\\033[1m\'');
     p('_spin_frames=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)');
@@ -1735,6 +1742,27 @@
     p('  fi');
     p('  ensure_brew');
     p('  spin "Installing $cmd via brew" brew install "$pkg"');
+    p('}');
+    p('');
+    p('update_repo_ff_only() {');
+    p('  local dir="$1" name="$2" branch="main"');
+    p('  [ -d "$dir/.git" ] || return 1');
+    p('  (');
+    p('    cd "$dir"');
+    p('    if ! git diff --quiet || ! git diff --cached --quiet; then');
+    p('      echo "$name has local uncommitted changes; skipping automatic update."');
+    p('      return 0');
+    p('    fi');
+    p('    before="$(git rev-parse HEAD)"');
+    p('    git fetch origin "$branch"');
+    p('    if git merge-base --is-ancestor HEAD "origin/$branch"; then');
+    p('      git merge --ff-only "origin/$branch"');
+    p('      after="$(git rev-parse HEAD)"');
+    p('      echo "$name $before -> $after"');
+    p('    else');
+    p('      echo "$name has local commits or divergent history; skipping automatic update."');
+    p('    fi');
+    p('  )');
     p('}');
     p('');
     p('if ! command -v git >/dev/null 2>&1; then');
@@ -1805,7 +1833,7 @@
     p('');
     p('step "Spotlight repo"');
     p('if [ -d "$SPOTLIGHT_DIR/.git" ]; then');
-    p('  spin "Updating Spotlight at $SPOTLIGHT_DIR" bash -c \'cd "$SPOTLIGHT_DIR" && git pull --no-rebase --autostash origin main\'');
+    p('  spin "Updating Spotlight at $SPOTLIGHT_DIR" update_repo_ff_only "$SPOTLIGHT_DIR" "Spotlight"');
     p('else');
     p('  spin "Cloning Spotlight to $SPOTLIGHT_DIR" git clone "$REPO_URL" "$SPOTLIGHT_DIR"');
     p('fi');
@@ -1816,6 +1844,12 @@
     p('  spin "Installing firecrawl-cli" npm install -g firecrawl-cli');
     p('else');
     p('  printf "%s✓%s firecrawl-cli already installed\\n" "$_c_green" "$_c_reset"');
+    p('fi');
+    p('');
+    p('if ! command -v qmd >/dev/null 2>&1; then');
+    p('  spin "Installing QMD vault search" npm install -g @tobilu/qmd');
+    p('else');
+    p('  printf "%s✓%s qmd already installed\\n" "$_c_green" "$_c_reset"');
     p('fi');
     p('');
 
@@ -1919,7 +1953,8 @@
       // Write a launcher script that starts the inference server, then opencode
       if (cfg.local_server === 'llamacpp') {
         p('step "Spotlight local launcher"');
-        p('cat > "$HOME/.local/bin/spotlight-local" 2>/dev/null <<\'LAUNCHER_EOF\' || (mkdir -p "$HOME/.local/bin" && cat > "$HOME/.local/bin/spotlight-local" <<\'LAUNCHER_EOF\'');
+        p('mkdir -p "$HOME/.local/bin"');
+        p('cat > "$HOME/.local/bin/spotlight-local" <<\'LAUNCHER_EOF\'');
         p('#!/usr/bin/env bash');
         p('# Start llama-server + opencode for Spotlight investigations.');
         p('set -euo pipefail');
@@ -1937,7 +1972,23 @@
         p('for i in {1..120}; do curl -sf http://127.0.0.1:8080/v1/models >/dev/null && { echo " ready."; break; }; echo -n "."; sleep 1; done');
         p('opencode --model llama.cpp/qwen27 "$@"');
         p('LAUNCHER_EOF');
-        p(')');
+        p('chmod +x "$HOME/.local/bin/spotlight-local"');
+        p('printf "%s✓%s Launcher installed at ~/.local/bin/spotlight-local — add ~/.local/bin to PATH and run \\`spotlight-local\\`\\n" "$_c_green" "$_c_reset"');
+        p('');
+      } else {
+        p('step "Spotlight local launcher"');
+        p('mkdir -p "$HOME/.local/bin"');
+        p('cat > "$HOME/.local/bin/spotlight-local" <<\'LAUNCHER_EOF\'');
+        p('#!/usr/bin/env bash');
+        p('# Start Ollama + opencode for Spotlight investigations.');
+        p('set -euo pipefail');
+        p('command -v ollama   >/dev/null 2>&1 || { echo "ollama missing — brew install ollama" >&2; exit 1; }');
+        p('command -v opencode >/dev/null 2>&1 || { echo "opencode missing — brew install opencode" >&2; exit 1; }');
+        p('MODEL="hf.co/' + cfg.model_repo + '"');
+        p('ollama list >/dev/null 2>&1 || { brew services start ollama 2>/dev/null || ollama serve >/tmp/ollama-spotlight.log 2>&1 & sleep 2; }');
+        p('ollama pull "$MODEL" >/dev/null 2>&1 || true');
+        p('opencode --model "ollama/' + modelLeaf + '" "$@"');
+        p('LAUNCHER_EOF');
         p('chmod +x "$HOME/.local/bin/spotlight-local"');
         p('printf "%s✓%s Launcher installed at ~/.local/bin/spotlight-local — add ~/.local/bin to PATH and run \\`spotlight-local\\`\\n" "$_c_green" "$_c_reset"');
         p('');
@@ -1965,6 +2016,12 @@
       }
       if (cfg.runtime === 'opencode') {
         p('printf "%s✓%s Provider key will be loaded from .env (' + cfg.cloud_key_var + ')\\n" "$_c_green" "$_c_reset"');
+        p('mkdir -p "$HOME/.config/opencode/skills"');
+        p('for skill_dir in "$SPOTLIGHT_DIR/skills/"*/; do');
+        p('  name=$(basename "$skill_dir")');
+        p('  ln -sfn "$skill_dir" "$HOME/.config/opencode/skills/$name"');
+        p('done');
+        p('printf "%s✓%s opencode loads Spotlight skills from $HOME/.config/opencode/skills/\\n" "$_c_green" "$_c_reset"');
       }
     }
     p('');
@@ -1979,52 +2036,191 @@
 
     p('# ── Write .env ──');
     p('echo "→ Writing $SPOTLIGHT_DIR/.env (chmod 600)"');
-    p('cat > "$SPOTLIGHT_DIR/.env" <<\'ENV_EOF\'');
+    p('write_env_var() {');
+    p('  local name="$1" value="$2"');
+    p('  printf "%s=%q\\n" "$name" "$value" >> "$SPOTLIGHT_DIR/.env"');
+    p('}');
+    p('cat > "$SPOTLIGHT_DIR/.env" <<\'ENV_HEADER\'');
     p('# Spotlight environment — generated by setup.html');
-    p('FIRECRAWL_API_KEY=' + cfg.firecrawl_key);
-    p('OSINT_NAV_API_KEY=' + cfg.nav_key);
+    p('ENV_HEADER');
+    p('write_env_var SPOTLIGHT_DIR "$SPOTLIGHT_DIR"');
+    p('write_env_var SPOTLIGHT_VAULT_PATH "$SPOTLIGHT_VAULT_PATH"');
+    p('write_env_var SPOTLIGHT_CASES_ROOT "$SPOTLIGHT_CASES_ROOT"');
+    p('write_env_var FIRECRAWL_API_KEY ' + shellEscape(cfg.firecrawl_key));
+    p('write_env_var OSINT_NAV_API_KEY ' + shellEscape(cfg.nav_key));
     if (cfg.cloud_key && cfg.cloud_key_var) {
-      p(cfg.cloud_key_var + '=' + cfg.cloud_key);
+      p('write_env_var ' + cfg.cloud_key_var + ' ' + shellEscape(cfg.cloud_key));
     }
     if (cfg.int_junkipedia && cfg.junkipedia_key) {
-      p('JUNKIPEDIA_API_KEY=' + cfg.junkipedia_key);
+      p('write_env_var JUNKIPEDIA_API_KEY ' + shellEscape(cfg.junkipedia_key));
     }
     if (cfg.int_unpaywall && cfg.unpaywall_email) {
-      p('UNPAYWALL_EMAIL=' + cfg.unpaywall_email);
+      p('write_env_var UNPAYWALL_EMAIL ' + shellEscape(cfg.unpaywall_email));
     }
     if (cfg.mode === 'local') {
-      p('MODEL_REPO=' + cfg.model_repo);
-      p('LOCAL_SERVER=' + (cfg.local_server || 'llamacpp'));
-      p('LOCAL_ENDPOINT=' + (cfg.local_server === 'llamacpp' ? 'http://127.0.0.1:8080/v1' : 'http://127.0.0.1:11434/v1'));
+      p('write_env_var MODEL_REPO ' + shellEscape(cfg.model_repo));
+      p('write_env_var LOCAL_SERVER ' + shellEscape(cfg.local_server || 'llamacpp'));
+      p('write_env_var LOCAL_ENDPOINT ' + shellEscape(cfg.local_server === 'llamacpp' ? 'http://127.0.0.1:8080/v1' : 'http://127.0.0.1:11434/v1'));
     }
-    p('ENV_EOF');
     p('chmod 600 "$SPOTLIGHT_DIR/.env"');
     p('');
 
     p('step "Writing .spotlight-config.json"');
-    const config = {
-      search_library: 'firecrawl',
-      vault_path: cfg.vault_path,
-      vault_type: cfg.vault_app === 'tolaria' ? 'tolaria' : 'obsidian',
-      vault_app: cfg.vault_app,
-      cases_root: 'cases/',
-      install_path: cfg.install_path,
-      mode: cfg.mode,
-      runtime: cfg.runtime,
-      local_server: cfg.local_server || null,
-      opencode_provider: cfg.opencode_provider || null,
-      integrations: {
-        osint_navigator: true,
-        junkipedia: cfg.int_junkipedia,
-        browser_use: cfg.int_browseruse,
-        unpaywall: cfg.int_unpaywall,
-      },
-      created_at: new Date().toISOString(),
-      last_used: new Date().toISOString(),
-    };
-    p('cat > "$SPOTLIGHT_DIR/.spotlight-config.json" <<\'CONFIG_EOF\'');
-    p(JSON.stringify(config, null, 2));
+    p('cat > "$SPOTLIGHT_DIR/.spotlight-config.json" <<CONFIG_EOF');
+    p('{');
+    p('  "search_library": "firecrawl",');
+    p('  "vault_path": "$SPOTLIGHT_VAULT_PATH",');
+    p('  "vault_type": "' + (cfg.vault_app === 'tolaria' ? 'tolaria' : 'obsidian') + '",');
+    p('  "vault_app": "' + cfg.vault_app + '",');
+    p('  "cases_root": "$SPOTLIGHT_CASES_ROOT",');
+    p('  "install_path": "$SPOTLIGHT_DIR",');
+    p('  "mode": "' + cfg.mode + '",');
+    p('  "runtime": "' + cfg.runtime + '",');
+    p('  "local_server": ' + (cfg.local_server ? JSON.stringify(cfg.local_server) : 'null') + ',');
+    p('  "opencode_provider": ' + (cfg.opencode_provider ? JSON.stringify(cfg.opencode_provider) : 'null') + ',');
+    p('  "integrations": {');
+    p('    "osint_navigator": true,');
+    p('    "junkipedia": ' + (cfg.int_junkipedia ? 'true' : 'false') + ',');
+    p('    "browser_use": ' + (cfg.int_browseruse ? 'true' : 'false') + ',');
+    p('    "unpaywall": ' + (cfg.int_unpaywall ? 'true' : 'false'));
+    p('  },');
+    p('  "created_at": "' + new Date().toISOString() + '",');
+    p('  "last_used": "' + new Date().toISOString() + '"');
+    p('}');
     p('CONFIG_EOF');
+    p('');
+    p('step "Vault scaffold"');
+    p('mkdir -p "$SPOTLIGHT_CASES_ROOT" "$SPOTLIGHT_VAULT_PATH/evidence" "$SPOTLIGHT_VAULT_PATH/captures" "$SPOTLIGHT_VAULT_PATH/briefs" "$SPOTLIGHT_VAULT_PATH/exports" "$SPOTLIGHT_VAULT_PATH/handoff-to-mycroft" "$SPOTLIGHT_VAULT_PATH/_schema"');
+    p('if [ ! -f "$SPOTLIGHT_VAULT_PATH/_index.md" ]; then');
+    p('  cat > "$SPOTLIGHT_VAULT_PATH/_index.md" <<\'INDEX_EOF\'');
+    p('---');
+    p('type: spotlight-index');
+    p('tags: [spotlight, index]');
+    p('---');
+    p('# Spotlight Vault');
+    p('');
+    p('- cases/ — active investigations');
+    p('- evidence/ — verified source material and citations');
+    p('- captures/ — local page/document captures');
+    p('- briefs/ — case summaries and handoffs');
+    p('- exports/ — publishable packets and review artifacts');
+    p('- handoff-to-mycroft/ — durable findings promoted to Mycroft');
+    p('INDEX_EOF');
+    p('fi');
+    p('if [ ! -f "$SPOTLIGHT_CASES_ROOT/_template.md" ]; then');
+    p('  cat > "$SPOTLIGHT_CASES_ROOT/_template.md" <<\'CASE_TEMPLATE_EOF\'');
+    p('---');
+    p('type: spotlight-case');
+    p('status: draft');
+    p('tags: [spotlight, investigation]');
+    p('---');
+    p('# Case Template');
+    p('');
+    p('## Lead');
+    p('');
+    p('## Evidence');
+    p('');
+    p('## Open Questions');
+    p('CASE_TEMPLATE_EOF');
+    p('fi');
+    p('if command -v qmd >/dev/null 2>&1; then');
+    p('  qmd collection add "$SPOTLIGHT_VAULT_PATH" --name spotlight >/dev/null 2>&1 || true');
+    p('  qmd update >/dev/null 2>&1 || true');
+    p('  printf "%s✓%s QMD spotlight collection configured\\n" "$_c_green" "$_c_reset"');
+    p('fi');
+    if (cfg.vault_app === 'obsidian') {
+      p('if [ "$OS" = "Darwin" ]; then open -a Obsidian "$SPOTLIGHT_VAULT_PATH" 2>/dev/null || true; fi');
+    }
+    p('');
+
+    p('step "Spotlight command wrappers"');
+    p('mkdir -p "$HOME/.local/bin" "$SPOTLIGHT_DIR/.spotlight/logs"');
+    p('cat > "$HOME/.local/bin/spotlight-doctor" <<\'DOCTOR_EOF\'');
+    p('#!/usr/bin/env bash');
+    p('set -euo pipefail');
+    p('expand_path() {');
+    p('  local input="$1"');
+    p('  if [ "$input" = "~" ]; then printf "%s\\n" "$HOME";');
+    p('  elif [[ "$input" == "~/"* ]]; then printf "%s/%s\\n" "$HOME" "${input#~/}";');
+    p('  else printf "%s\\n" "$input"; fi');
+    p('}');
+    p('SPOTLIGHT_DIR_DEFAULT_INPUT=' + shellEscape(cfg.install_path));
+    p('SPOTLIGHT_VAULT_INPUT=' + shellEscape(cfg.vault_path));
+    p('SPOTLIGHT_DIR_DEFAULT="$(expand_path "$SPOTLIGHT_DIR_DEFAULT_INPUT")"');
+    p('SPOTLIGHT_DIR="${SPOTLIGHT_DIR:-$SPOTLIGHT_DIR_DEFAULT}"');
+    p('SPOTLIGHT_VAULT_PATH="${SPOTLIGHT_VAULT_PATH:-$(expand_path "$SPOTLIGHT_VAULT_INPUT")}"');
+    p('SPOTLIGHT_CASES_ROOT="${SPOTLIGHT_CASES_ROOT:-$SPOTLIGHT_VAULT_PATH/cases}"');
+    p('fail=0');
+    p('ok() { printf "OK    %s\\n" "$1"; }');
+    p('bad() { printf "FAIL  %s\\n" "$1"; fail=1; }');
+    p('check_path() { [ -e "$1" ] && ok "$2" || bad "$2 missing: $1"; }');
+    p('check_cmd() { command -v "$1" >/dev/null 2>&1 && ok "$2" || bad "$2 missing"; }');
+    p('check_env_name() { grep -q "^$1=" "$SPOTLIGHT_DIR/.env" 2>/dev/null && ok "$1 configured" || bad "$1 missing from .env"; }');
+    p('check_path "$SPOTLIGHT_DIR/.git" "Spotlight repo"');
+    p('check_path "$SPOTLIGHT_DIR/AGENTS.md" "AGENTS runtime contract"');
+    p('check_path "$SPOTLIGHT_DIR/.spotlight-config.json" "Spotlight config"');
+    p('check_path "$SPOTLIGHT_DIR/.env" "Spotlight env"');
+    p('check_env_name FIRECRAWL_API_KEY');
+    p('check_env_name OSINT_NAV_API_KEY');
+    p('check_path "$SPOTLIGHT_VAULT_PATH" "Spotlight vault"');
+    p('check_path "$SPOTLIGHT_CASES_ROOT" "Spotlight cases root"');
+    p('check_cmd firecrawl "Firecrawl CLI"');
+    p('check_cmd qmd "QMD CLI"');
+    p('check_cmd ' + RUNTIMES[cfg.runtime].bin + ' "' + RUNTIMES[cfg.runtime].name + '"');
+    if (cfg.runtime === 'claude') p('check_path "$SPOTLIGHT_DIR/CLAUDE.md" "Claude context link"');
+    if (cfg.runtime === 'gemini') p('check_path "$SPOTLIGHT_DIR/GEMINI.md" "Gemini context link"');
+    if (cfg.cloud_key_var) p('check_env_name ' + cfg.cloud_key_var);
+    if (cfg.int_junkipedia) p('check_env_name JUNKIPEDIA_API_KEY');
+    if (cfg.int_unpaywall) p('check_env_name UNPAYWALL_EMAIL');
+    p('if [ -x "$SPOTLIGHT_DIR/tests/smoke.sh" ]; then (cd "$SPOTLIGHT_DIR" && bash tests/smoke.sh >/dev/null) && ok "Smoke test" || bad "Smoke test failed"; fi');
+    p('if [ -x "$SPOTLIGHT_DIR/integrations/preflight.py" ] || [ -f "$SPOTLIGHT_DIR/integrations/preflight.py" ]; then (cd "$SPOTLIGHT_DIR" && set -a && . .env && set +a && python3 integrations/preflight.py --text >/dev/null) && ok "Integration preflight" || bad "Integration preflight reported issues"; fi');
+    p('if [ "$fail" -eq 0 ]; then printf "\\nSpotlight doctor: OK\\n"; else printf "\\nSpotlight doctor: failed\\n"; fi');
+    p('exit "$fail"');
+    p('DOCTOR_EOF');
+    p('chmod +x "$HOME/.local/bin/spotlight-doctor"');
+    p('');
+    p('cat > "$HOME/.local/bin/spotlight-update" <<\'UPDATE_EOF\'');
+    p('#!/usr/bin/env bash');
+    p('set -euo pipefail');
+    p('expand_path() {');
+    p('  local input="$1"');
+    p('  if [ "$input" = "~" ]; then printf "%s\\n" "$HOME";');
+    p('  elif [[ "$input" == "~/"* ]]; then printf "%s/%s\\n" "$HOME" "${input#~/}";');
+    p('  else printf "%s\\n" "$input"; fi');
+    p('}');
+    p('SPOTLIGHT_DIR_DEFAULT_INPUT=' + shellEscape(cfg.install_path));
+    p('SPOTLIGHT_DIR_DEFAULT="$(expand_path "$SPOTLIGHT_DIR_DEFAULT_INPUT")"');
+    p('SPOTLIGHT_DIR="${SPOTLIGHT_DIR:-$SPOTLIGHT_DIR_DEFAULT}"');
+    p('log_dir="$SPOTLIGHT_DIR/.spotlight/logs"');
+    p('mkdir -p "$log_dir"');
+    p('log="$log_dir/update.log"');
+    p('exec >>"$log" 2>&1');
+    p('echo ""');
+    p('date');
+    p('[ -d "$SPOTLIGHT_DIR/.git" ] || { echo "Spotlight repo missing: $SPOTLIGHT_DIR"; exit 1; }');
+    p('cd "$SPOTLIGHT_DIR"');
+    p('if ! git diff --quiet || ! git diff --cached --quiet; then echo "Spotlight has local uncommitted changes; skipping update."; exit 0; fi');
+    p('before="$(git rev-parse HEAD)"');
+    p('git fetch origin main');
+    p('if git merge-base --is-ancestor HEAD origin/main; then');
+    p('  git merge --ff-only origin/main');
+    p('  after="$(git rev-parse HEAD)"');
+    p('  echo "Spotlight $before -> $after"');
+    p('else');
+    p('  echo "Spotlight has local commits or divergent history; skipping update."');
+    p('  exit 0');
+    p('fi');
+    p('if "$HOME/.local/bin/spotlight-doctor"; then');
+    p('  echo "doctor passed"');
+    p('else');
+    p('  echo "doctor failed after update; rolling back to $before"');
+    p('  git reset --hard "$before"');
+    p('  exit 1');
+    p('fi');
+    p('echo "update complete"');
+    p('UPDATE_EOF');
+    p('chmod +x "$HOME/.local/bin/spotlight-update"');
+    p('printf "%s✓%s spotlight doctor/update wrappers installed\\n" "$_c_green" "$_c_reset"');
     p('');
 
     p('# ── Install spotlight shell command ──');
@@ -2035,14 +2231,21 @@
     p('  *) SHELL_RC="$HOME/.profile" ;;');
     p('esac');
     p('');
-    p('if ! grep -q "# SPOTLIGHT-BEGIN" "$SHELL_RC" 2>/dev/null; then');
-    p('  echo "→ Adding \\"spotlight\\" command to $SHELL_RC"');
-    p('  {');
-    p('    echo ""');
-    p('    echo "# SPOTLIGHT-BEGIN — added by setup.html installer"');
-    p('    printf "export SPOTLIGHT_DIR=%q\\n" "$SPOTLIGHT_DIR"');
-    p('    cat <<\'SHELL_EOF\'');
-    p('export PATH="$HOME/.npm-global/bin:$PATH"');
+    p('touch "$SHELL_RC"');
+    p('tmp_rc="$(mktemp)"');
+    p('awk \'');
+    p('  /^# SPOTLIGHT-BEGIN/ { skip=1; next }');
+    p('  /^# SPOTLIGHT-END/ { skip=0; next }');
+    p('  !skip { print }');
+    p('\' "$SHELL_RC" > "$tmp_rc"');
+    p('mv "$tmp_rc" "$SHELL_RC"');
+    p('echo "→ Writing \\"spotlight\\" command to $SHELL_RC"');
+    p('{');
+    p('  echo ""');
+    p('  echo "# SPOTLIGHT-BEGIN — added by setup.html installer"');
+    p('  printf "export SPOTLIGHT_DIR=%q\\n" "$SPOTLIGHT_DIR"');
+    p('  cat <<\'SHELL_EOF\'');
+    p('export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"');
     p('spotlight() {');
     p('  local dir="${SPOTLIGHT_DIR:-$HOME/spotlight}"');
     p('  if [ ! -d "$dir" ]; then');
@@ -2051,20 +2254,17 @@
     p('  fi');
     p('  case "${1:-}" in');
     p('    update)');
-    p('      (cd "$dir" && git pull --no-rebase --autostash origin main && \\');
-    p('        python3 integrations/preflight.py --text)');
-    p('      return $?');
+    p('      SPOTLIGHT_DIR="$dir" "$HOME/.local/bin/spotlight-update"');
     p('      ;;');
     p('    doctor)');
-    p('      (cd "$dir" && bash tests/smoke.sh)');
-    p('      return $?');
+    p('      SPOTLIGHT_DIR="$dir" "$HOME/.local/bin/spotlight-doctor"');
     p('      ;;');
     p('    --help|-h|help)');
     p('      cat <<HELP');
     p('Usage: spotlight [subcommand]');
     p('');
     p('  (no arg)   Launch the configured runtime and start investigating');
-    p('  update     merge upstream updates with git pull --autostash, then run preflight');
+    p('  update     Fetch origin/main, fast-forward only, then run doctor');
     p('  doctor     Run the smoke test (checks structure, schemas, preflights)');
     p('  help       This message');
     p('HELP');
@@ -2081,10 +2281,7 @@
     p('}');
     p('# SPOTLIGHT-END');
     p('SHELL_EOF');
-    p('  } >> "$SHELL_RC"');
-    p('else');
-    p('  echo "→ \\"spotlight\\" command already present in $SHELL_RC"');
-    p('fi');
+    p('} >> "$SHELL_RC"');
     p('');
 
     p('step "Preflight"');
@@ -2211,6 +2408,23 @@
     return vars;
   }
 
+  function envValues(cfg) {
+    const values = {
+      FIRECRAWL_API_KEY: cfg.firecrawl_key || '',
+      OSINT_NAV_API_KEY: cfg.nav_key || '',
+      SPOTLIGHT_VAULT_PATH: cfg.vault_path || '',
+    };
+    if (cfg.mode === 'cloud' && cfg.cloud_key_var) values[cfg.cloud_key_var] = cfg.cloud_key || '';
+    if (cfg.int_junkipedia) values.JUNKIPEDIA_API_KEY = cfg.junkipedia_key || '';
+    if (cfg.int_unpaywall) values.UNPAYWALL_EMAIL = cfg.unpaywall_email || '';
+    if (cfg.mode === 'local') {
+      values.MODEL_REPO = cfg.model_repo || '';
+      values.LOCAL_SERVER = cfg.local_server || 'llamacpp';
+      values.LOCAL_ENDPOINT = cfg.local_server === 'llamacpp' ? 'http://127.0.0.1:8080/v1' : 'http://127.0.0.1:11434/v1';
+    }
+    return values;
+  }
+
   function buildAgentManifest(cfg) {
     return {
       schema_version: 'spotlight-agent-setup/v1',
@@ -2234,6 +2448,7 @@
           ...(cfg.int_junkipedia ? ['JUNKIPEDIA_API_KEY'] : []),
           ...(cfg.int_unpaywall ? ['UNPAYWALL_EMAIL'] : []),
         ],
+        values: envValues(cfg),
       },
       integrations: {
         osint_navigator: true,
@@ -2242,8 +2457,8 @@
         unpaywall: cfg.int_unpaywall,
       },
       notes: [
-        'This manifest intentionally contains no API key values.',
-        'Secrets belong in the local .env file created by the Spotlight installer.',
+        'This manifest contains local secret values from the setup form.',
+        'Keep this ZIP private. Agents must write secrets to .env without printing them.',
       ],
     };
   }
@@ -2251,30 +2466,62 @@
   function buildAgentPrompt(manifest) {
     return `# Spotlight Agent Setup
 
-You are helping a user set up and run Spotlight. Use \`spotlight-agent-manifest.json\` as the source of truth for paths, runtime, vault app, selected integrations, and required environment variable names.
+Use \`spotlight-agent-manifest.json\` as the source of truth. Handle the setup for the user, then verify it.
+
+The manifest contains local secret values under \`env.values\`. Do not ask the user to paste secrets into chat. Do not print, log, summarize, or expose secret values.
+
+There are two supported setup paths:
+
+1. Agent setup: use this manifest to install or update Spotlight, configure the selected runtime, create the vault scaffold, write local config, and run verification.
+2. Command setup: if the user explicitly prefers the generated \`spotlight-setup.command\`, stop and let that script handle setup instead.
 
 ## Rules
 
 - Do not ask the user to paste secrets into chat.
-- Do not print secret values from \`.env\`, shell history, or provider CLIs.
-- Verify that required env vars are present by name only.
-- If Spotlight is not installed at \`${manifest.install_path || '<install_path>'}\`, ask the user to run the generated installer first.
+- Do not print secret values from \`env.values\`, \`.env\`, shell history, or provider CLIs.
+- Verify env vars by variable name only.
+- Keep Spotlight runtime-agnostic. Configure the selected runtime; do not force Goose.
+- Write generated config only into the install path selected by the user.
 - Once setup is ready, start from the install folder and launch \`${manifest.startup_command}\`.
 
 ## Manifest Summary
 
 - Runtime: ${manifest.runtime.mode} / ${manifest.runtime.name}${manifest.runtime.local_server ? ' / ' + manifest.runtime.local_server : ''}
+- Install path: \`${manifest.install_path || '<install_path>'}\`
 - Vault: ${manifest.vault.app} at \`${manifest.vault.path || '<vault_path>'}\`
 - Required env vars: ${manifest.env.required.join(', ')}
 - Optional env vars: ${manifest.env.optional.length ? manifest.env.optional.join(', ') : 'none selected'}
+- Selected integrations: ${Object.entries(manifest.integrations).filter(([, enabled]) => enabled).map(([id]) => id).join(', ')}
+
+## Setup Steps
+
+1. Install or update Spotlight source from \`https://github.com/buriedsignals/spotlight.git\` at \`${manifest.install_path || '<install_path>'}\`. If the repo exists, fetch \`origin main\` and fast-forward only. If the checkout is dirty or divergent, stop and report that manual review is required.
+2. Install required tools if missing: git, node/npm, Python 3, Firecrawl CLI, QMD. Install optional integration tools only when selected, for example browser-use.
+3. Configure the selected runtime:
+   - Claude Code: install \`@anthropic-ai/claude-code\` if missing and symlink \`CLAUDE.md -> AGENTS.md\`.
+   - Codex: install \`@openai/codex\` if missing. Codex reads \`AGENTS.md\`.
+   - Gemini: install \`@google/gemini-cli\` if missing and symlink \`GEMINI.md -> AGENTS.md\`.
+   - OpenCode cloud: install OpenCode, symlink Spotlight skills into \`~/.config/opencode/skills\`, and rely on the selected provider key from \`.env\`.
+   - Local: install OpenCode plus the selected local server, create or repair \`~/.local/bin/spotlight-local\`, and ensure \`spotlight\` launches it.
+4. Create the vault scaffold at \`${manifest.vault.path || '<vault_path>'}\`: \`cases\`, \`evidence\`, \`captures\`, \`briefs\`, \`exports\`, \`handoff-to-mycroft\`, \`_schema\`, and \`_index.md\`.
+5. Write \`.env\` inside the Spotlight install folder from \`env.values\`. Include required and selected optional variable names. Set file mode \`600\`. Never print values.
+6. Write \`.spotlight-config.json\` with runtime, vault path, cases root, selected integrations, and install path.
+7. Configure QMD with \`qmd collection add <vault_path> --name spotlight\` and run \`qmd update\`.
+8. Install or repair \`~/.local/bin/spotlight-doctor\`, \`~/.local/bin/spotlight-update\`, and the replaceable shell startup block for the \`spotlight\` command.
 
 ## Verification Steps
 
 1. Confirm the install path exists.
 2. Confirm \`.spotlight-config.json\` exists and matches the manifest choices.
-3. Confirm \`.env\` exists and contains the required variable names, without exposing values.
-4. Run \`python3 integrations/preflight.py --text\` from the Spotlight install folder.
-5. Launch \`${manifest.startup_command}\` and tell the agent: "Start a Spotlight investigation on <your lead>".
+3. Confirm \`.env\` exists and contains required and selected optional variable names, without exposing values.
+4. Confirm QMD exists and can run \`qmd status\`.
+5. Run \`spotlight doctor\` or \`~/.local/bin/spotlight-doctor\`.
+6. Run \`python3 integrations/preflight.py --text\` from the Spotlight install folder.
+7. Launch \`${manifest.startup_command}\` and tell the user to start with: "Start a Spotlight investigation on <your lead>".
+
+## Tell The User Next
+
+Setup is complete. Open a new terminal and run \`spotlight\`. Then ask it to start a Spotlight investigation on the lead, claim, entity, document, or website you want to investigate.
 `;
   }
 
@@ -2329,6 +2576,16 @@ You are helping a user set up and run Spotlight. Use \`spotlight-agent-manifest.
 
   agentSetupBtn.addEventListener('click', () => {
     const cfg = collectForm();
+    let hasErr = false;
+    if (!cfg.firecrawl_key) { firecrawlErr.classList.remove('hidden'); hasErr = true; } else firecrawlErr.classList.add('hidden');
+    if (!cfg.nav_key) { navErr.classList.remove('hidden'); hasErr = true; } else navErr.classList.add('hidden');
+    if (cfg.runtime === 'opencode' && !cfg.cloud_key) { cloudKeyErr.classList.remove('hidden'); hasErr = true; } else cloudKeyErr.classList.add('hidden');
+    if (!cfg.install_path) { installErr.classList.remove('hidden'); hasErr = true; } else installErr.classList.add('hidden');
+    if (!cfg.vault_path) { vaultErr.classList.remove('hidden'); hasErr = true; } else vaultErr.classList.add('hidden');
+    if (hasErr) {
+      document.querySelector('.error:not(.hidden)').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
     const manifest = buildAgentManifest(cfg);
     const zip = buildZipEntries([
       {

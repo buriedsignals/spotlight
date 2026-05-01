@@ -77,8 +77,9 @@ The intended path from website → working install:
 4. Two install options:
    - **Option A — Copy into Terminal:** click "Copy script", open Terminal (⌘+Space → Terminal), paste (⌘+V), Enter
    - **Option B — Download installer:** click "Download spotlight-setup.zip", extract, double-click the `.command` file
-5. Script installs: firecrawl CLI + chosen runtime + selected integrations + `.env` (chmod 600) + `.spotlight-config.json`; runs preflight for sanity-check. The separate "Download agent setup" action exports a non-secret manifest + prompt zip for another agent to verify and use the install.
-6. Journalist runs the chosen runtime (e.g. `pi`) and starts investigating
+5. Script installs: firecrawl CLI + QMD + chosen runtime + selected integrations + `.env` (chmod 600) + `.spotlight-config.json`; creates the vault scaffold, registers the vault as the `spotlight` QMD collection, installs `spotlight doctor` / `spotlight update`, and runs preflight for sanity-check.
+6. The separate "Download agent setup" action exports a private manifest + prompt zip. The manifest contains the same local API key values from the browser form so a local agent can perform setup without asking the user to paste secrets into chat. The prompt instructs the agent not to print or log them.
+7. Journalist opens a new terminal, runs `spotlight`, and starts investigating.
 
 The script is identical for both options — only the delivery differs. Keys written into the user's `.env` never leave their machine.
 
