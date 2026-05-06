@@ -26,7 +26,7 @@
 <meta name="twitter:image" content="https://spotlight.buriedsignals.com/og-image.png">
 <link rel="alternate" type="text/markdown" title="llms.txt" href="/llms.txt">
 <link rel="alternate" type="text/markdown" title="llms_full.txt" href="/llms_full.txt">
-<meta name="feedback-endpoint" content="/api/feedback">
+<meta name="feedback-endpoint" content="https://api.buriedsignals.com/v1/feedback">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -4416,7 +4416,7 @@
   </svg>
 </button>
 
-<div id="feedback-modal" class="feedback-modal" role="dialog" aria-modal="true" aria-labelledby="feedback-title" hidden data-project-tag="spotlight">
+<div id="feedback-modal" class="feedback-modal" role="dialog" aria-modal="true" aria-labelledby="feedback-title" hidden data-product="spotlight">
   <div class="feedback-panel">
     <div class="feedback-head">
       <div>
@@ -4448,7 +4448,7 @@
 
 <script>
 (function () {
-  const endpoint = document.querySelector('meta[name="feedback-endpoint"]')?.content || '/api/feedback';
+  const endpoint = document.querySelector('meta[name="feedback-endpoint"]')?.content || 'https://api.buriedsignals.com/v1/feedback';
   const button = document.getElementById('feedback-button');
   const modal = document.getElementById('feedback-modal');
   const close = document.getElementById('feedback-close');
@@ -4484,7 +4484,7 @@
       context: String(data.get('context') || '').trim(),
       url: location.href,
       userAgent: navigator.userAgent,
-      projectTag: modal.dataset.projectTag
+      product: modal.dataset.product
     };
     if (!payload.message) return;
     submit.disabled = true;
