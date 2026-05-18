@@ -14,7 +14,7 @@ spotlight/
 ├── schemas/                  # JSON schemas — 5 case files, all schema_version 1.0
 ├── skills/                   # 11 skills (pi-native SKILL.md format)
 ├── agents/                   # 2 agent prompt bundles (investigator + fact-checker)
-├── integrations/             # External tool integrations (browser-use, Junkipedia, OSINT Navigator, Unpaywall)
+├── integrations/             # External tool integrations (browser-use, Junkipedia, OSINT Navigator, Phantom Tide, Unpaywall)
 ├── docs/                     # You are here. Operator manual.
 ├── monitoring/               # Case-level monitor registry helper + leads queue
 └── cases/                    # Per-investigation output (gitignored)
@@ -80,7 +80,7 @@ Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for larg
 ### Pipeline-support skills (invocable by orchestrator)
 
 - **`review`** — post-Gate-1 HTML review artifact. Renders a self-contained `cases/{project}/review.html` the journalist opens in any browser, submits structured feedback, downloads as JSON. Mode B re-spawns the investigator to process the feedback and regenerates the HTML. No server required.
-- **`integrations`** — routing layer for external tool integrations (browser-use, Junkipedia, OSINT Navigator, Unpaywall). Reads live preflight status, maps investigation tasks to integrations. See `integrations/` at repo root for manifests + per-integration usage docs.
+- **`integrations`** — routing layer for external tool integrations (browser-use, Junkipedia, OSINT Navigator, Phantom Tide, Unpaywall). Reads live preflight status, maps investigation tasks to integrations. See `integrations/` at repo root for manifests + per-integration usage docs.
 - **`ingest`** — archival from case files to vault. 7-step process with `.ingest-lock` concurrency and directory fallback.
 - **`monitoring`** — case-level monitoring orchestration. Coordinates Mycroft passive signals, Scoutpost durable monitors, and runtime-native fallbacks.
 

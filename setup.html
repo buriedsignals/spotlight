@@ -1328,6 +1328,14 @@
           <label class="block">Unpaywall email <span class="hint">— sent to Unpaywall as a fair-use contact; never stored by us.</span></label>
           <input type="text" id="unpaywall_email" placeholder="you@example.com" autocomplete="off">
         </div>
+
+        <div class="checkbox-group" style="margin-top: 12px;">
+          <label><input type="checkbox" id="int_phantom_tide"><span class="opt-name"><span class="name">Phantom Tide</span><span class="desc">Transport intelligence for restricted-airspace crossing candidates and source freshness. Maritime/convergence API support is pending a stable endpoint contract.</span></span></label>
+        </div>
+        <div id="phantom_tide_keys" class="hidden" style="margin-top: 16px;">
+          <label class="block">Phantom Tide API key <span class="hint">— bring your own key; never stored by us.</span></label>
+          <input type="password" id="phantom_tide_key" placeholder="pt_..." autocomplete="off">
+        </div>
       </section>
 
       <div class="generate-bar">
@@ -1609,6 +1617,7 @@
   }
   bindCheckbox('int_junkipedia', 'junkipedia_keys');
   bindCheckbox('int_unpaywall', 'unpaywall_keys');
+  bindCheckbox('int_phantom_tide', 'phantom_tide_keys');
 
   function collectForm() {
     const mode = document.querySelector('input[name="mode"]:checked').value;
@@ -1642,6 +1651,8 @@
       junkipedia_key: document.getElementById('junkipedia_key').value.trim(),
       int_unpaywall: document.getElementById('int_unpaywall').checked,
       unpaywall_email: document.getElementById('unpaywall_email').value.trim(),
+      int_phantom_tide: document.getElementById('int_phantom_tide').checked,
+      phantom_tide_key: document.getElementById('phantom_tide_key').value.trim(),
     };
   }
 
@@ -2057,6 +2068,9 @@
     if (cfg.int_unpaywall && cfg.unpaywall_email) {
       p('write_env_var UNPAYWALL_EMAIL ' + shellEscape(cfg.unpaywall_email));
     }
+    if (cfg.int_phantom_tide && cfg.phantom_tide_key) {
+      p('write_env_var PHANTOM_TIDE_API_KEY ' + shellEscape(cfg.phantom_tide_key));
+    }
     if (cfg.mode === 'local') {
       p('write_env_var MODEL_REPO ' + shellEscape(cfg.model_repo));
       p('write_env_var LOCAL_SERVER ' + shellEscape(cfg.local_server || 'llamacpp'));
@@ -2082,7 +2096,8 @@
     p('    "osint_navigator": true,');
     p('    "junkipedia": ' + (cfg.int_junkipedia ? 'true' : 'false') + ',');
     p('    "browser_use": ' + (cfg.int_browseruse ? 'true' : 'false') + ',');
-    p('    "unpaywall": ' + (cfg.int_unpaywall ? 'true' : 'false'));
+    p('    "unpaywall": ' + (cfg.int_unpaywall ? 'true' : 'false') + ',');
+    p('    "phantom_tide": ' + (cfg.int_phantom_tide ? 'true' : 'false'));
     p('  },');
     p('  "created_at": "' + new Date().toISOString() + '",');
     p('  "last_used": "' + new Date().toISOString() + '"');
@@ -2173,6 +2188,7 @@
     if (cfg.cloud_key_var) p('check_env_name ' + cfg.cloud_key_var);
     if (cfg.int_junkipedia) p('check_env_name JUNKIPEDIA_API_KEY');
     if (cfg.int_unpaywall) p('check_env_name UNPAYWALL_EMAIL');
+    if (cfg.int_phantom_tide) p('check_env_name PHANTOM_TIDE_API_KEY');
     p('if [ -x "$SPOTLIGHT_DIR/tests/smoke.sh" ]; then (cd "$SPOTLIGHT_DIR" && bash tests/smoke.sh >/dev/null) && ok "Smoke test" || bad "Smoke test failed"; fi');
     p('if [ -x "$SPOTLIGHT_DIR/integrations/preflight.py" ] || [ -f "$SPOTLIGHT_DIR/integrations/preflight.py" ]; then (cd "$SPOTLIGHT_DIR" && set -a && . .env && set +a && python3 integrations/preflight.py --text >/dev/null) && ok "Integration preflight" || bad "Integration preflight reported issues"; fi');
     p('if [ "$fail" -eq 0 ]; then printf "\\nSpotlight doctor: OK\\n"; else printf "\\nSpotlight doctor: failed\\n"; fi');
@@ -2418,6 +2434,7 @@
     if (cfg.mode === 'cloud' && cfg.cloud_key_var) values[cfg.cloud_key_var] = cfg.cloud_key || '';
     if (cfg.int_junkipedia) values.JUNKIPEDIA_API_KEY = cfg.junkipedia_key || '';
     if (cfg.int_unpaywall) values.UNPAYWALL_EMAIL = cfg.unpaywall_email || '';
+    if (cfg.int_phantom_tide) values.PHANTOM_TIDE_API_KEY = cfg.phantom_tide_key || '';
     if (cfg.mode === 'local') {
       values.MODEL_REPO = cfg.model_repo || '';
       values.LOCAL_SERVER = cfg.local_server || 'llamacpp';
@@ -2448,6 +2465,7 @@
         optional: [
           ...(cfg.int_junkipedia ? ['JUNKIPEDIA_API_KEY'] : []),
           ...(cfg.int_unpaywall ? ['UNPAYWALL_EMAIL'] : []),
+          ...(cfg.int_phantom_tide ? ['PHANTOM_TIDE_API_KEY'] : []),
         ],
         values: envValues(cfg),
       },
@@ -2456,6 +2474,7 @@
         browser_use: cfg.int_browseruse,
         junkipedia: cfg.int_junkipedia,
         unpaywall: cfg.int_unpaywall,
+        phantom_tide: cfg.int_phantom_tide,
       },
       notes: [
         'This manifest contains local secret values from the setup form.',

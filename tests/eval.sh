@@ -136,6 +136,15 @@ else
 fi
 
 echo ""
+echo "── Preflight regression ──"
+
+if python3 tests/preflight-check.py >/dev/null 2>&1; then
+  ok "integration preflight behavior is stable"
+else
+  fail "integration preflight regression failed"
+fi
+
+echo ""
 if [ $FAIL -eq 0 ]; then
   printf "%s✓ All %d eval checks passed%s\n" "$_c_green" "$PASS" "$_c_reset"
   exit 0

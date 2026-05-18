@@ -81,6 +81,8 @@ const baseCfg = {
   junkipedia_key: "",
   int_unpaywall: false,
   unpaywall_email: "",
+  int_phantom_tide: false,
+  phantom_tide_key: "",
 };
 
 const configs = [
@@ -222,6 +224,8 @@ const manifestCfg = {
   cloud_key_var: "FIREWORKS_API_KEY",
   int_junkipedia: true,
   junkipedia_key: "junk-secret-test",
+  int_phantom_tide: true,
+  phantom_tide_key: "pt-secret-test",
 };
 const manifest = buildAgentManifest(manifestCfg);
 const prompt = buildAgentPrompt(manifest);
@@ -229,11 +233,12 @@ if (
   manifest.env.values.FIRECRAWL_API_KEY !== "fc-test" ||
   manifest.env.values.OSINT_NAV_API_KEY !== "on-test" ||
   manifest.env.values.FIREWORKS_API_KEY !== "fw-secret-test" ||
-  manifest.env.values.JUNKIPEDIA_API_KEY !== "junk-secret-test"
+  manifest.env.values.JUNKIPEDIA_API_KEY !== "junk-secret-test" ||
+  manifest.env.values.PHANTOM_TIDE_API_KEY !== "pt-secret-test"
 ) {
   console.log("✗ agent manifest missing local secret values");
   fail++;
-} else if (prompt.includes("fw-secret-test") || prompt.includes("junk-secret-test")) {
+} else if (prompt.includes("fw-secret-test") || prompt.includes("junk-secret-test") || prompt.includes("pt-secret-test")) {
   console.log("✗ agent prompt printed secret values");
   fail++;
 } else if (!prompt.includes("Handle the setup for the user") || !prompt.includes("env.values")) {

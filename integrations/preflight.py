@@ -22,6 +22,7 @@ import shutil
 import sys
 import urllib.error
 import urllib.request
+import os
 from pathlib import Path
 
 # Import the shared helpers from integrations/ — local single source of truth
@@ -42,6 +43,21 @@ def smoke_test(manifest: dict) -> tuple[bool, str | None]:
     kind = manifest.get("type", "api")
 
     if kind == "api":
+        if manifest.get("id") == "phantom-tide":
+            key = os.environ.get("PHANTOM_TIDE_API_KEY", "")
+            url = "https://phantom.labs.jamessawyer.co.uk/api/public/aircraft/restricted-airspace-crossings?hours=24&limit=1&include_meta=true"
+            headers = {"User-Agent": "Spotlight-Preflight/1.0"}
+            if key:
+                headers["Authorization"] = f"Bearer {key}"
+            try:
+                req = urllib.request.Request(url, method="GET", headers=headers)
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    return (200 <= resp.status < 400), None
+            except urllib.error.HTTPError as e:
+                return False, f"HTTP {e.code}"
+            except Exception as e:
+                return False, f"{type(e).__name__}: {e}"
+
         url = manifest.get("homepage") or manifest.get("docs")
         if not url:
             return True, None
