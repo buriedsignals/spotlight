@@ -99,7 +99,7 @@ if ! python3 -c "import jsonschema" 2>/dev/null; then
   printf "%s⊘%s jsonschema not installed — skipping sample validation%s\n" "$_c_dim" "$_c_reset" "$_c_dim"
   printf "   Install: pip3 install --user jsonschema   (CI installs this automatically)%s\n" "$_c_reset"
 else
-  for pair in "findings.sample.json:findings.schema.json" "fact-check.sample.json:fact-check.schema.json" "evidence-bundle.sample.json:evidence-bundle.schema.json"; do
+  for pair in "findings.sample.json:findings.schema.json" "fact-check.sample.json:fact-check.schema.json" "evidence-bundle.sample.json:evidence-bundle.schema.json" "provenance-manifest.sample.json:provenance-manifest.schema.json"; do
     sample="tests/fixtures/${pair%%:*}"
     schema="schemas/${pair##*:}"
     if python3 -c "
@@ -142,6 +142,15 @@ if python3 tests/shell-safety-check.py >/dev/null 2>&1; then
   ok "hostile shell inputs are rejected"
 else
   fail "shell-safety regression failed"
+fi
+
+echo ""
+echo "── Provenance manifest regression ──"
+
+if python3 tests/provenance-manifest-check.py >/dev/null 2>&1; then
+  ok "provenance manifest builder emits unsigned Noosphere C2PA contract"
+else
+  fail "provenance manifest regression failed"
 fi
 
 echo ""

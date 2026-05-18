@@ -9,7 +9,7 @@ This doc is the operator overview. See `integrations/README.md` for the manifest
 | Concept | Lives at | Example | What it holds |
 |---|---|---|---|
 | **Skill** | `skills/<id>/SKILL.md` | `osint`, `follow-the-money`, `investigate` | Methodology playbook the agent follows. No credentials. |
-| **Integration** | `integrations/<id>/` | `browser-harness`, `browser-use`, `junkipedia`, `osint-navigator`, `phantom-tide` | Specific external tool with its own API contract + credentials. |
+| **Integration** | `integrations/<id>/` | `browser-harness`, `browser-use`, `junkipedia`, `noosphere-c2pa`, `osint-navigator` | Specific external tool with its own API contract + credentials. |
 
 An agent invokes a **skill** to get *guidance* and calls an **integration** to get *direct data from a specific vendor or platform*. Passive feed signals now live in Mycroft, not Spotlight.
 
@@ -20,8 +20,8 @@ An agent invokes a **skill** to get *guidance* and calls an **integration** to g
 | `browser-harness` | cli | browser-automation | No | Preferred v2 browser acquisition fallback after Firecrawl misses material evidence. |
 | `browser-use` | library | browser-automation | No (optional cloud) | Optional/adjacent agent-driven browser automation. Prefer Browser Harness for acquisition evidence. |
 | `junkipedia` | api | social-osint | `JUNKIPEDIA_API_KEY` | Narrative / misinformation tracking across social platforms. Application-based access. |
+| `noosphere-c2pa` | api | provenance-signing | `NOOSPHERE_C2PA_URL` | Optional case-level C2PA/content-credentials signing after Gate 1. |
 | `osint-navigator` | api | tool-discovery | `OSINT_NAV_API_KEY` | 10,000+ OSINT tools with AI-powered synthesized answers. Complements the curated 150-tool catalog in the `osint` skill. |
-| `phantom-tide` | api | transport-intelligence | `PHANTOM_TIDE_API_KEY` | Aircraft restricted-airspace crossing candidates and source-freshness context. Maritime/convergence routes are planned pending a stable API contract. |
 | `scoutpost` | api | monitoring | `SCOUTPOST_API_KEY` | Durable monitoring via existing Scoutpost projects, scouts, and information units. |
 | `unpaywall` | api | academic-open-access | `UNPAYWALL_EMAIL` | Legal open-access lookup for academic papers by DOI. Used only when selected in setup and green in preflight. |
 

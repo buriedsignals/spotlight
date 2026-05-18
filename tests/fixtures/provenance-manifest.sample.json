@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0",
+  "project": "sample-investigation",
+  "generated_at": "2026-04-17T16:00:00+00:00",
+  "status": "unsigned",
+  "signing": {
+    "profile": "noosphere-c2pa",
+    "requires_api_key": false,
+    "requires_signing_credential": true,
+    "credential_id": null,
+    "endpoint": null
+  },
+  "case_artifacts": [
+    {
+      "kind": "findings",
+      "path": "data/findings.json",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bytes": 4096
+    },
+    {
+      "kind": "fact_check",
+      "path": "data/fact-check.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "bytes": 2048
+    },
+    {
+      "kind": "evidence_bundle",
+      "path": "data/evidence-bundle.json",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "bytes": 2048
+    }
+  ],
+  "claims": [
+    {
+      "finding_id": "F1",
+      "claim_text": "Example Corp Ltd is registered at Road Town, Tortola, British Virgin Islands, incorporated on 2019-03-14 with registration number 2019-ABC-123.",
+      "confidence": "high",
+      "fact_check_verdict": "verified",
+      "grounding_strength": "full",
+      "evidence_refs": ["E1"]
+    }
+  ],
+  "sources": [
+    {
+      "evidence_id": "E1",
+      "source_url": "https://bvifsc.example/filings/2019-ABC-123",
+      "accessed": "2026-04-17T12:03:00Z",
+      "acquisition_method": "firecrawl",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "archive_url": "https://web.archive.org/web/20260417120300/https://bvifsc.example/filings/2019-ABC-123",
+      "raw_path": "cases/sample-investigation/research/bvifsc-filing-2019-abc-123.md",
+      "claim_links": [
+        {
+          "finding_id": "F1",
+          "claim_text": "Example Corp Ltd is registered at Road Town, Tortola, British Virgin Islands, incorporated on 2019-03-14 with registration number 2019-ABC-123.",
+          "support_type": "direct"
+        }
+      ],
+      "human_verification_required": false
+    }
+  ]
+}

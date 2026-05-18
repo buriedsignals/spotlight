@@ -1,6 +1,6 @@
 ---
 name: integrations
-description: Routing table for external tool integrations — Browser Harness, browser-use, Junkipedia, OSINT Navigator, Phantom Tide, Scoutpost, and more. Agents invoke this skill to discover which integrations are live and which one fits a given investigation task.
+description: Routing table for external tool integrations — Browser Harness, browser-use, Junkipedia, Noosphere C2PA, OSINT Navigator, Scoutpost, and more. Agents invoke this skill to discover which integrations are live and which one fits a given investigation task.
 version: "1.0"
 invocable_by: [investigator, fact-checker, orchestrator]
 requires: []
@@ -27,8 +27,8 @@ The skill is cheap to load — it's a routing table, not a deep methodology guid
 | `browser-harness` | browser-automation | cdp-browser-control, dynamic-page-acquisition, screenshot-capture, download-capture, visual-verification | Preferred v2 browser fallback after Firecrawl misses material evidence. Use for portals, JS-rendered pages, screenshots, downloads, iframes/shadow DOM, and acquisition evidence bundles. |
 | `browser-use` | browser-automation | form-navigation, search-export, login-driving, multi-step-browsing | Optional legacy/adjacent browser automation. Prefer Browser Harness for Spotlight acquisition evidence. |
 | `junkipedia` | social-osint | narrative-tracking, misinformation-search, social-media-monitoring, cross-platform-query | Tracking how a claim spread; finding social posts deleted from origin; cross-platform narrative investigation. |
+| `noosphere-c2pa` | provenance-signing | case-provenance-manifest, c2pa-content-credentials, optional-signing-receipt | After Gate 1, package and optionally sign the investigation trail. No API key; Noosphere controls signing credentials. |
 | `osint-navigator` | tool-discovery | tool-search-by-keyword, complex-query-synthesis, country-specific-tool-lookup | When the curated 150-tool catalog in `skills/osint/references/tools-by-category.md` doesn't have what you need. |
-| `phantom-tide` | transport-intelligence | aircraft-restricted-airspace-crossings, transport-anomaly-triage, source-freshness-context | Aircraft restricted-airspace crossing candidates and transport anomaly context. Maritime/convergence support is planned but requires a confirmed API contract. |
 | `scoutpost` | monitoring | project-scoped-monitoring, scout-creation, information-unit-retrieval, scheduled-monitoring | Approved monitoring that should keep running after the current investigation cycle. |
 | `unpaywall` | academic-open-access | doi-open-access-lookup, academic-fulltext-discovery, legal-pdf-location | Academic papers with DOIs when the content-access hierarchy needs a legal open-access copy. |
 
@@ -49,11 +49,6 @@ What's the task?
 ├── "Need a tool I don't know for category X" / "Compare tools" / "Niche country-specific tool"
 │     → osint-navigator  (if green — check preflight)
 │     → fallback: skills/osint/references/tools-by-category.md (offline, 150 tools)
-│
-├── "Aircraft crossed restricted/special-use airspace" / "Transport anomaly near a maritime or airspace area"
-│     → phantom-tide  (if green — check preflight)
-│     → use confirmed aircraft restricted-airspace feed today
-│     → for maritime/convergence, use only if Phantom Tide provides endpoint docs; otherwise record as manual/UI context and corroborate externally
 │
 ├── "Static page scrape / web search"
 │     → fetch / search (verbs, no integration needed)

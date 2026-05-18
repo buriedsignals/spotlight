@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "schema_version": "1.0",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "project",
+    "generated_at",
+    "signing",
+    "case_artifacts",
+    "claims",
+    "sources"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "project": { "type": "string" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "status": { "enum": ["unsigned", "signed", "signing_failed"] },
+    "signing": {
+      "type": "object",
+      "required": [
+        "profile",
+        "requires_api_key",
+        "requires_signing_credential",
+        "credential_id"
+      ],
+      "properties": {
+        "profile": { "const": "noosphere-c2pa" },
+        "requires_api_key": { "const": false },
+        "requires_signing_credential": { "type": "boolean" },
+        "credential_id": { "type": ["string", "null"] },
+        "endpoint": { "type": ["string", "null"] },
+        "receipt_path": { "type": "string" },
+        "signed_at": { "type": "string", "format": "date-time" },
+        "error": { "type": "string" }
+      }
+    },
+    "case_artifacts": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/case_artifact" }
+    },
+    "claims": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/claim" }
+    },
+    "sources": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/source" }
+    }
+  },
+  "definitions": {
+    "case_artifact": {
+      "type": "object",
+      "required": ["kind", "path", "sha256", "bytes"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "summary",
+            "summary_json",
+            "findings",
+            "fact_check",
+            "evidence_bundle",
+            "investigation_log",
+            "review_html",
+            "other"
+          ]
+        },
+        "path": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "required": ["finding_id", "claim_text", "confidence", "fact_check_verdict", "evidence_refs"],
+      "properties": {
+        "finding_id": { "type": "string" },
+        "claim_text": { "type": "string" },
+        "confidence": { "enum": ["high", "medium", "low", "unknown"] },
+        "fact_check_verdict": { "enum": ["verified", "unverified", "disputed", "false", "missing"] },
+        "grounding_strength": { "enum": ["full", "partial", "weak", "none", "unknown"] },
+        "evidence_refs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "evidence_id",
+        "source_url",
+        "accessed",
+        "acquisition_method",
+        "human_verification_required"
+      ],
+      "properties": {
+        "evidence_id": { "type": "string" },
+        "source_url": { "type": "string" },
+        "accessed": { "type": "string", "format": "date-time" },
+        "acquisition_method": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "archive_url": { "type": "string" },
+        "raw_path": { "type": "string" },
+        "screenshot_path": { "type": "string" },
+        "downloaded_document_path": { "type": "string" },
+        "claim_links": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["finding_id", "claim_text", "support_type"],
+            "properties": {
+              "finding_id": { "type": "string" },
+              "claim_text": { "type": "string" },
+              "support_type": { "type": "string" }
+            }
+          }
+        },
+        "human_verification_required": { "type": "boolean" }
+      }
+    }
+  }
+}

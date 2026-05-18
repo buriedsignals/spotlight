@@ -1,0 +1,20 @@
+{
+  "id": "noosphere-c2pa",
+  "name": "Noosphere C2PA",
+  "description": "Optional provenance signer for Spotlight case packages using C2PA Content Credentials. No third-party API key is required; a signing credential must be configured on the signer.",
+  "category": "provenance-signing",
+  "type": "api",
+  "requires_key": false,
+  "env_vars": [],
+  "optional_env_vars": ["NOOSPHERE_C2PA_URL", "NOOSPHERE_C2PA_CREDENTIAL_ID"],
+  "capabilities": [
+    "case-provenance-manifest",
+    "c2pa-content-credentials",
+    "tamper-evident-report-package",
+    "optional-signing-receipt"
+  ],
+  "invocable_by": ["orchestrator", "user"],
+  "homepage": "https://c2pa.org/",
+  "docs": "https://spec.c2pa.org/",
+  "rate_limit_note": "No API key is required by this integration contract. Signing availability and credential policy are controlled by the Noosphere C2PA signer deployment."
+}

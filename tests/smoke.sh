@@ -2,14 +2,14 @@
 # Spotlight smoke test — exercises the install contract without spending any API calls.
 #
 # Checks:
-#   1. All 14 skill directories present with SKILL.md
+#   1. All 15 skill directories present with SKILL.md
 #   2. All 2 agent prompts present
-#   3. All 6 schemas parse as valid JSON
+#   3. All 7 schemas parse as valid JSON
 #   4. Integrations preflight runs cleanly
 #   5. Monitoring registry helper runs cleanly
 #   6. No banned Claude-specific syntax in skills/agents
 #   7. No legacy local feed framework remains
-#   8. AGENTS.md has 14 entries in skill registry
+#   8. AGENTS.md has 15 entries in skill registry
 #   9. setup.html exists
 #  10. index.html exists
 #  11. DISCLAIMER.md + LICENSE present
@@ -31,7 +31,7 @@ cd "$ROOT"
 
 echo "── Structure ──"
 
-expected_skills=(spotlight review integrations ingest monitoring acquisition-graduation web-archiving content-access epistemic-grounding shell-safety osint investigate follow-the-money social-media-intelligence)
+expected_skills=(spotlight review integrations ingest monitoring provenance-signing acquisition-graduation web-archiving content-access epistemic-grounding shell-safety osint investigate follow-the-money social-media-intelligence)
 for skill in "${expected_skills[@]}"; do
   if [ -f "skills/$skill/SKILL.md" ]; then
     ok "skills/$skill/SKILL.md present"
@@ -50,7 +50,7 @@ done
 
 echo ""
 echo "── Schemas ──"
-for s in findings fact-check methodology investigation-log summary evidence-bundle; do
+for s in findings fact-check methodology investigation-log summary evidence-bundle provenance-manifest; do
   if [ -f "schemas/$s.schema.json" ]; then
     if python3 -c "import json; json.load(open('schemas/$s.schema.json'))" 2>/dev/null; then
       ok "schemas/$s.schema.json parses"
@@ -99,10 +99,10 @@ fi
 echo ""
 echo "── Contracts ──"
 skill_count=$(grep -cE '^\| `[a-z-]+` \| `skills/' AGENTS.md || echo 0)
-if [ "$skill_count" = "14" ]; then
-  ok "AGENTS.md skill registry has 14 entries"
+if [ "$skill_count" = "15" ]; then
+  ok "AGENTS.md skill registry has 15 entries"
 else
-  fail "AGENTS.md skill registry count off: got $skill_count, want 14"
+  fail "AGENTS.md skill registry count off: got $skill_count, want 15"
 fi
 
 echo ""

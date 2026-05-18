@@ -70,6 +70,7 @@ Agents have access to the following skills by their own `invoke-skill` calls:
 | `content-access` | investigator, fact-checker | Work through paywall hierarchy before marking sources inaccessible |
 | `epistemic-grounding` | investigator, fact-checker | Test whether exact evidence actually supports exact claims; cap confidence when grounding is weak |
 | `shell-safety` | investigator, fact-checker | Validate untrusted values before execute-shell; require probes for destructive operations |
+| `provenance-signing` | orchestrator, user | Build a case provenance manifest and optionally hand it to Noosphere C2PA signing |
 | `osint`, `investigate`, `follow-the-money` | investigator | Tool routing + technique catalog |
 | `social-media-intelligence` | investigator, fact-checker | Account authenticity, coordination detection, narrative tracking |
 
@@ -437,6 +438,24 @@ The user can request follow-up cycles targeting specific findings. If so, re-ent
 
 **Gate: user approves the investigation.**
 
+### Package provenance before HTML review
+
+After approval and before invoking the review skill, invoke `provenance-signing`:
+
+```text
+execute-shell("python3 scripts/build-provenance-manifest.py cases/{project}")
+```
+
+This creates `cases/{project}/data/provenance-manifest.json` with hashes for the case artifacts, claim-to-verdict links, evidence bundle refs, and `requires_api_key: false`.
+
+If `NOOSPHERE_C2PA_URL` is configured, optionally request signing:
+
+```text
+execute-shell("python3 scripts/build-provenance-manifest.py cases/{project} --sign-endpoint \"$NOOSPHERE_C2PA_URL\" --credential-id \"$NOOSPHERE_C2PA_CREDENTIAL_ID\"")
+```
+
+Signing failures do not block review. Preserve the unsigned manifest and report the failure clearly.
+
 ### Generate review artifact
 
 After approval, `invoke-skill("review")` to produce `cases/{project}/review.html` — a self-contained HTML artifact the user can open in any browser to inspect findings and submit structured feedback. See `skills/review/SKILL.md`.
@@ -502,6 +521,7 @@ cases/{project}/
     findings.json                  — Investigator output (cumulative)
     fact-check.json                — Fact-checker output
     investigation-log.json         — Append-only cycle log
+    provenance-manifest.json       — Case artifact hashes + optional C2PA signing status
     monitoring.json                — Scout state and check results
 ```
 

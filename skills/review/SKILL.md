@@ -27,6 +27,7 @@ Inputs:
 - `cases/{project}/data/findings.json`
 - `cases/{project}/data/fact-check.json`
 - `cases/{project}/data/summary.json` (optional)
+- `cases/{project}/data/provenance-manifest.json` (optional)
 - `cases/{project}/summary.md` (optional)
 
 Outputs:
@@ -61,6 +62,7 @@ Outputs:
 read-file("cases/{project}/data/findings.json")
 read-file("cases/{project}/data/fact-check.json")
 read-file("cases/{project}/data/summary.json")      # may not exist
+read-file("cases/{project}/data/provenance-manifest.json")  # may not exist
 read-file("cases/{project}/summary.md")              # may not exist
 ```
 

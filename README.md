@@ -4,7 +4,7 @@ Runtime-agnostic OSINT investigation system for journalists. Verified findings, 
 
 ## Install (for journalists)
 
-**Open [`setup.html`](setup.html) in any browser.** Pick your runtime, paste your Firecrawl and OSINT Navigator API keys, optionally select integrations (browser-use, Junkipedia, Unpaywall, Phantom Tide), and click Generate. Browser Harness is detected by preflight when its CLI is installed. You'll get two install options:
+**Open [`setup.html`](setup.html) in any browser.** Pick your runtime, paste your Firecrawl and OSINT Navigator API keys, optionally select integrations (browser-use, Junkipedia, Unpaywall), and click Generate. Browser Harness is detected by preflight when its CLI is installed. You'll get two install options:
 
 - **Copy into Terminal** (simplest) — click Copy, ⌘+Space → Terminal → ⌘+V → Return
 - **Download installer** — `spotlight-setup.zip` → extract → double-click the `.command` file (macOS Gatekeeper first-time: right-click → Open → Confirm)
@@ -45,8 +45,8 @@ Per-runtime wiring: **[docs/runtimes.md](docs/runtimes.md)**.
 - **Independent fact-checking**: fact-checker spawned per cycle, SIFT methodology, 4-verdict taxonomy
 - **6 readiness criteria**: enforced before Gate 1 — min findings, source independence, no unresolved disputes, affected perspective, document trail, gap assessment
 - **Evidence grounding**: scrape-before-cite, every source has a `local_file`, archive hierarchy Wayback → Archive.today → local
-- **14 skills**: orchestrator (spotlight), review (post-Gate-1 HTML feedback loop), integrations (routing), ingest, monitoring, acquisition-graduation, web-archiving, content-access, epistemic-grounding, shell-safety, osint, investigate, follow-the-money, social-media-intelligence
-- **7 external integrations shipped**: Browser Harness (browser acquisition fallback), browser-use (optional AI browser automation), Junkipedia (narrative tracking), OSINT Navigator (tool discovery), Phantom Tide (transport intelligence), Scoutpost (durable monitoring), Unpaywall (academic open access). Framework accepts more — see [docs/integrations.md](docs/integrations.md).
+- **15 skills**: orchestrator (spotlight), review (post-Gate-1 HTML feedback loop), integrations (routing), ingest, monitoring, provenance-signing, acquisition-graduation, web-archiving, content-access, epistemic-grounding, shell-safety, osint, investigate, follow-the-money, social-media-intelligence
+- **7 external integrations shipped**: Browser Harness (browser acquisition fallback), browser-use (optional AI browser automation), Junkipedia (narrative tracking), Noosphere C2PA (optional case provenance signing), OSINT Navigator (tool discovery), Scoutpost (durable monitoring), Unpaywall (academic open access). Framework accepts more — see [docs/integrations.md](docs/integrations.md).
 - **Monitoring orchestration**: passive signals from Mycroft plus durable monitors from Scoutpost or runtime-native routines
 - **Knowledge vault ingestion**: Markdown vaults for Obsidian or Tolaria, with directory fallback; atomic registry updates; lock-file concurrency
 - **Sensitive mode**: strips `fetch`/`search` from agents; investigation runs local-only
@@ -68,6 +68,7 @@ Optional:
 - **OSINT_NAV_API_KEY** — for expanded OSINT tool discovery via OSINT Navigator.
 - **JUNKIPEDIA_API_KEY** — for narrative / misinformation tracking (application-based at junkipedia.org).
 - **CORE_API_KEY** — for academic paper access in `content-access` skill.
+- **NOOSPHERE_C2PA_URL** — optional local or hosted Noosphere signer endpoint for C2PA provenance signing; no API key is required, but the signer must have its own signing credential configured.
 - **Inference backend (for Local runtime)** — `brew install llama.cpp` (lean, what setup.html defaults to) or `brew install ollama` (CLI-first model manager).
 
 ## Documentation
@@ -77,7 +78,7 @@ Optional:
 | **[docs/README.md](docs/README.md)** | Start here — entry point and quick-start per runtime |
 | **[docs/structure.md](docs/structure.md)** | Repo layout, 13-verb registry, how to extend |
 | **[docs/runtimes.md](docs/runtimes.md)** | Per-runtime wiring — pi, Hermes, Goose, Codex, Gemini, local OAI |
-| **[docs/integrations.md](docs/integrations.md)** | External tool integrations (Browser Harness, browser-use, Junkipedia, OSINT Navigator, Phantom Tide, Unpaywall), setup flow, manifest contract |
+| **[docs/integrations.md](docs/integrations.md)** | External tool integrations (Browser Harness, browser-use, Junkipedia, Noosphere C2PA, OSINT Navigator, Unpaywall), setup flow, manifest contract |
 | **[docs/investigating.md](docs/investigating.md)** | Pipeline phases, gates, cycles, readiness, stall protocol |
 | **[docs/fact-checking.md](docs/fact-checking.md)** | Independence, SIFT, verdict taxonomy, evidence trails |
 | **[docs/monitoring.md](docs/monitoring.md)** | Monitoring lifecycle across Mycroft, Scoutpost, and runtime-native fallbacks |
