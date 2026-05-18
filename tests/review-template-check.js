@@ -13,6 +13,19 @@ const skill = fs.readFileSync(
   "utf8"
 );
 
+const scriptBlocks = [...template.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)];
+const mainScript = scriptBlocks
+  .map((match) => match[1])
+  .find((body) => body.includes("function renderProvenance"));
+
+assert.ok(mainScript, "review HTML includes the main render script");
+assert.doesNotThrow(() => new Function(mainScript), "review HTML inline script is syntactically valid");
+assert.equal(
+  (template.match(/\/\*INVESTIGATION_DATA\*\//g) || []).length,
+  1,
+  "review HTML has exactly one data injection marker"
+);
+
 assert.match(template, /id="provenance-block"/, "review HTML exposes a provenance panel");
 assert.match(template, /Provenance \/ C2PA/, "review HTML labels C2PA provenance state");
 assert.match(template, /function renderProvenance/, "review HTML renders provenance manifests");
