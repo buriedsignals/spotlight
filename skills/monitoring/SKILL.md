@@ -60,9 +60,12 @@ If the user wants to use the updates, include them in the next investigator prom
 
 ## Commands and checks
 
+Invoke `shell-safety` before any `execute-shell` command below that includes a project, topic, target, or filesystem path. Validate project/path values first; pass long topic text through a temp file or JSON when possible.
+
 ### Normalize the case registry
 
 ```text
+execute-shell('python3 scripts/spotlight_safe.py validate-slug "{project}"')
 execute-shell('python3 monitoring/registry.py migrate --project "{project}"')
 ```
 
@@ -75,7 +78,9 @@ execute-shell('test -f ~/.mycroft/monitoring/monitor.py && echo true || echo fal
 ### Query Mycroft passive signals
 
 ```text
-execute-shell('python3 ~/.mycroft/monitoring/monitor.py query --topic "{topic_or_target}" --since 7d --json')
+# Use an allowlisted --since value such as 7d, 24h, or an ISO timestamp.
+write-file("cases/{project}/research/mycroft-query.json", <serialized topic/target JSON>)
+execute-shell('python3 ~/.mycroft/monitoring/monitor.py query --topic-file cases/{project}/research/mycroft-query.json --since 7d --json')
 ```
 
 ### Check integration readiness

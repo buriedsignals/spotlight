@@ -1131,7 +1131,7 @@
             Large download (~8 GB for Gemma, ~10 GB for Qwen). The installer streams the GGUF from Hugging Face via <code>curl</code>; resume-on-interrupt is supported. The model lives at <code>~/Models/&lt;repo-leaf&gt;/</code>; you can swap quants by re-running with <code>MODEL=...</code>.
           </p>
           <p class="note-advisory hidden" id="local-note-ollama">
-            Large download (~8 GB for Gemma, ~10 GB for Qwen). Progress streams live in Terminal via Ollama's native UI. If interrupted, re-run <code>ollama pull hf.co/&lt;model-repo&gt;</code> to resume.
+            Large download (~8 GB for Gemma, ~10 GB for Qwen). Progress streams live in Terminal via Ollama's native UI. Spotlight uses Hugging Face's tagged Ollama artifacts, for example <code>hf.co/unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M</code> or <code>hf.co/HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive:IQ2_M</code>. To use another installed Ollama model later, set <code>OLLAMA_MODEL</code> and <code>SPOTLIGHT_OLLAMA_ALIAS</code> in <code>.env</code>.
           </p>
         </section>
       </div>
@@ -1327,6 +1327,14 @@
         <div id="unpaywall_keys" class="hidden" style="margin-top: 16px;">
           <label class="block">Unpaywall email <span class="hint">— sent to Unpaywall as a fair-use contact; never stored by us.</span></label>
           <input type="text" id="unpaywall_email" placeholder="you@example.com" autocomplete="off">
+        </div>
+
+        <div class="checkbox-group" style="margin-top: 12px;">
+          <label><input type="checkbox" id="int_phantom_tide"><span class="opt-name"><span class="name">Phantom Tide</span><span class="desc">Transport intelligence for restricted-airspace crossing candidates and source freshness. Maritime/convergence API support is pending a stable endpoint contract.</span></span></label>
+        </div>
+        <div id="phantom_tide_keys" class="hidden" style="margin-top: 16px;">
+          <label class="block">Phantom Tide API key <span class="hint">— bring your own key; never stored by us.</span></label>
+          <input type="password" id="phantom_tide_key" placeholder="pt_..." autocomplete="off">
         </div>
       </section>
 
@@ -1609,6 +1617,7 @@
   }
   bindCheckbox('int_junkipedia', 'junkipedia_keys');
   bindCheckbox('int_unpaywall', 'unpaywall_keys');
+  bindCheckbox('int_phantom_tide', 'phantom_tide_keys');
 
   function collectForm() {
     const mode = document.querySelector('input[name="mode"]:checked').value;
@@ -1626,6 +1635,7 @@
     return {
       mode: mode,
       runtime: mode === 'local' ? 'local' : cloudRt,
+      local_model: mode === 'local' ? document.querySelector('input[name="local_model"]:checked').value : null,
       local_server: mode === 'local' ? document.querySelector('input[name="local_server"]:checked').value : null,
       opencode_interface: mode === 'local' ? document.querySelector('input[name="opencode_interface"]:checked').value : null,
       opencode_provider: cloudRt === 'opencode' ? opencodeProv : null,
@@ -1642,6 +1652,8 @@
       junkipedia_key: document.getElementById('junkipedia_key').value.trim(),
       int_unpaywall: document.getElementById('int_unpaywall').checked,
       unpaywall_email: document.getElementById('unpaywall_email').value.trim(),
+      int_phantom_tide: document.getElementById('int_phantom_tide').checked,
+      phantom_tide_key: document.getElementById('phantom_tide_key').value.trim(),
     };
   }
 
@@ -1856,9 +1868,14 @@
     if (cfg.mode === 'local') {
       // Pick a default GGUF filename per model — Q4_K_M (best size/quality tradeoff for journalists)
       const modelLeaf = cfg.model_repo.split('/').slice(-1)[0];
-      const ggufFile = cfg.model_repo.indexOf('gemma-4') >= 0
+      const isGemma = cfg.model_repo.indexOf('gemma-4') >= 0;
+      const ggufFile = isGemma
         ? 'gemma-4-26B-A4B-it-UD-Q4_K_M.gguf'
         : 'Qwen3.6-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf';
+      const ollamaModel = isGemma
+        ? 'hf.co/unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M'
+        : 'hf.co/HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive:IQ2_M';
+      const ollamaAlias = isGemma ? 'spotlight-gemma4-q4' : 'spotlight-qwen36-27b-q4';
       const port = cfg.local_server === 'llamacpp' ? '8080' : '11434';
       const baseURL = 'http://127.0.0.1:' + port + '/v1';
 
@@ -1890,14 +1907,28 @@
         p('  printf "%s✓%s Ollama already installed\\n" "$_c_green" "$_c_reset"');
         p('fi');
         p('');
-        var ollamaSize = cfg.model_repo.indexOf('gemma-4') >= 0 ? '~8 GB' : '~10 GB';
+        var ollamaSize = isGemma ? '~8 GB' : '~10 GB';
         p('step "Journalism model download (' + ollamaSize + ')"');
         p('echo "Ollama will stream download progress below — grab a coffee, 5–15 min on a typical connection."');
         p('echo ""');
-        p('ollama pull ' + shellEscape('hf.co/' + cfg.model_repo) + ' || {');
-        p('  printf "%s⚠%s Model pull failed. The fine-tune may not be published yet at hf.co/' + cfg.model_repo + '.\\n" "$_c_red" "$_c_reset"');
-        p('  printf "   Re-run once live: ollama pull hf.co/<repo>\\n"');
-        p('}');
+        p('OLLAMA_MODEL=' + shellEscape(ollamaModel));
+        p('SPOTLIGHT_OLLAMA_ALIAS=' + shellEscape(ollamaAlias));
+        p('if ! ollama show "$SPOTLIGHT_OLLAMA_ALIAS" >/dev/null 2>&1; then');
+        p('  if ! ollama show "$OLLAMA_MODEL" >/dev/null 2>&1; then');
+        p('    ollama pull "$OLLAMA_MODEL" || {');
+        p('      printf "%s✗%s Ollama could not pull $OLLAMA_MODEL.\\n" "$_c_red" "$_c_reset"');
+        p('      printf "   Edit $SPOTLIGHT_DIR/.env after install or re-run with a working OLLAMA_MODEL.\\n"');
+        p('      printf "   Example: OLLAMA_MODEL=gemma3:27b SPOTLIGHT_OLLAMA_ALIAS=spotlight-local\\n"');
+        p('      exit 1');
+        p('    }');
+        p('  fi');
+        p('  TMP_MODELFILE="$(mktemp)"');
+        p('  printf "FROM %s\\n" "$OLLAMA_MODEL" > "$TMP_MODELFILE"');
+        p('  ollama create "$SPOTLIGHT_OLLAMA_ALIAS" -f "$TMP_MODELFILE"');
+        p('  rm -f "$TMP_MODELFILE"');
+        p('else');
+        p('  printf "%s✓%s Ollama alias $SPOTLIGHT_OLLAMA_ALIAS already exists\\n" "$_c_green" "$_c_reset"');
+        p('fi');
         p('');
       }
 
@@ -1943,7 +1974,7 @@
         p('  \'.provider["llama.cpp"] = {"npm":"@ai-sdk/openai-compatible","name":"llama-server (local)","options":{"baseURL":$base},"models":{($id):{"name":$name}}}\' \\');
         p('  "$OC_CFG" > "$TMP" && mv "$TMP" "$OC_CFG"');
       } else {
-        p('jq --arg base "' + baseURL + '" --arg id "' + modelLeaf + '" --arg name "' + modelLeaf + ' (local Ollama)" \\');
+        p('jq --arg base "' + baseURL + '" --arg id "' + ollamaAlias + '" --arg name "' + modelLeaf + ' (local Ollama)" \\');
         p('  \'.provider["ollama"] = {"npm":"ollama-ai-provider-v2","name":"Ollama (local)","options":{"baseURL":$base},"models":{($id):{"name":$name}}}\' \\');
         p('  "$OC_CFG" > "$TMP" && mv "$TMP" "$OC_CFG"');
       }
@@ -1982,12 +2013,32 @@
         p('#!/usr/bin/env bash');
         p('# Start Ollama + opencode for Spotlight investigations.');
         p('set -euo pipefail');
+        p('expand_path() {');
+        p('  local input="$1"');
+        p('  if [ "$input" = "~" ]; then printf "%s\\n" "$HOME";');
+        p('  elif [[ "$input" == "~/"* ]]; then printf "%s/%s\\n" "$HOME" "${input#~/}";');
+        p('  else printf "%s\\n" "$input"; fi');
+        p('}');
+        p('SPOTLIGHT_DIR_DEFAULT_INPUT=' + shellEscape(cfg.install_path));
+        p('SPOTLIGHT_DIR_DEFAULT="$(expand_path "$SPOTLIGHT_DIR_DEFAULT_INPUT")"');
+        p('SPOTLIGHT_DIR="${SPOTLIGHT_DIR:-$SPOTLIGHT_DIR_DEFAULT}"');
+        p('ENV_FILE="$SPOTLIGHT_DIR/.env"');
+        p('if [ -f "$ENV_FILE" ]; then set -a; . "$ENV_FILE"; set +a; fi');
         p('command -v ollama   >/dev/null 2>&1 || { echo "ollama missing — brew install ollama" >&2; exit 1; }');
         p('command -v opencode >/dev/null 2>&1 || { echo "opencode missing — brew install opencode" >&2; exit 1; }');
-        p('MODEL="hf.co/' + cfg.model_repo + '"');
+        p('OLLAMA_MODEL="${OLLAMA_MODEL:-' + ollamaModel + '}"');
+        p('SPOTLIGHT_OLLAMA_ALIAS="${SPOTLIGHT_OLLAMA_ALIAS:-' + ollamaAlias + '}"');
         p('ollama list >/dev/null 2>&1 || { brew services start ollama 2>/dev/null || ollama serve >/tmp/ollama-spotlight.log 2>&1 & sleep 2; }');
-        p('ollama pull "$MODEL" >/dev/null 2>&1 || true');
-        p('opencode --model "ollama/' + modelLeaf + '" "$@"');
+        p('if ! ollama show "$SPOTLIGHT_OLLAMA_ALIAS" >/dev/null 2>&1; then');
+        p('  if ! ollama show "$OLLAMA_MODEL" >/dev/null 2>&1; then');
+        p('    ollama pull "$OLLAMA_MODEL" || { echo "Could not pull $OLLAMA_MODEL. Set OLLAMA_MODEL in $ENV_FILE to a working Ollama model." >&2; exit 1; }');
+        p('  fi');
+        p('  TMP_MODELFILE="$(mktemp)"');
+        p('  printf "FROM %s\\n" "$OLLAMA_MODEL" > "$TMP_MODELFILE"');
+        p('  ollama create "$SPOTLIGHT_OLLAMA_ALIAS" -f "$TMP_MODELFILE"');
+        p('  rm -f "$TMP_MODELFILE"');
+        p('fi');
+        p('opencode --model "ollama/$SPOTLIGHT_OLLAMA_ALIAS" "$@"');
         p('LAUNCHER_EOF');
         p('chmod +x "$HOME/.local/bin/spotlight-local"');
         p('printf "%s✓%s Launcher installed at ~/.local/bin/spotlight-local — add ~/.local/bin to PATH and run \\`spotlight-local\\`\\n" "$_c_green" "$_c_reset"');
@@ -2057,10 +2108,22 @@
     if (cfg.int_unpaywall && cfg.unpaywall_email) {
       p('write_env_var UNPAYWALL_EMAIL ' + shellEscape(cfg.unpaywall_email));
     }
+    if (cfg.int_phantom_tide && cfg.phantom_tide_key) {
+      p('write_env_var PHANTOM_TIDE_API_KEY ' + shellEscape(cfg.phantom_tide_key));
+    }
     if (cfg.mode === 'local') {
       p('write_env_var MODEL_REPO ' + shellEscape(cfg.model_repo));
       p('write_env_var LOCAL_SERVER ' + shellEscape(cfg.local_server || 'llamacpp'));
       p('write_env_var LOCAL_ENDPOINT ' + shellEscape(cfg.local_server === 'llamacpp' ? 'http://127.0.0.1:8080/v1' : 'http://127.0.0.1:11434/v1'));
+      if (cfg.local_server === 'ollama') {
+        const isGemmaEnv = cfg.model_repo.indexOf('gemma-4') >= 0;
+        const ollamaModelEnv = isGemmaEnv
+          ? 'hf.co/unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M'
+          : 'hf.co/HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive:IQ2_M';
+        const ollamaAliasEnv = isGemmaEnv ? 'spotlight-gemma4-q4' : 'spotlight-qwen36-27b-q4';
+        p('write_env_var OLLAMA_MODEL ' + shellEscape(ollamaModelEnv));
+        p('write_env_var SPOTLIGHT_OLLAMA_ALIAS ' + shellEscape(ollamaAliasEnv));
+      }
     }
     p('chmod 600 "$SPOTLIGHT_DIR/.env"');
     p('');
@@ -2082,7 +2145,8 @@
     p('    "osint_navigator": true,');
     p('    "junkipedia": ' + (cfg.int_junkipedia ? 'true' : 'false') + ',');
     p('    "browser_use": ' + (cfg.int_browseruse ? 'true' : 'false') + ',');
-    p('    "unpaywall": ' + (cfg.int_unpaywall ? 'true' : 'false'));
+    p('    "unpaywall": ' + (cfg.int_unpaywall ? 'true' : 'false') + ',');
+    p('    "phantom_tide": ' + (cfg.int_phantom_tide ? 'true' : 'false'));
     p('  },');
     p('  "created_at": "' + new Date().toISOString() + '",');
     p('  "last_used": "' + new Date().toISOString() + '"');
@@ -2173,6 +2237,7 @@
     if (cfg.cloud_key_var) p('check_env_name ' + cfg.cloud_key_var);
     if (cfg.int_junkipedia) p('check_env_name JUNKIPEDIA_API_KEY');
     if (cfg.int_unpaywall) p('check_env_name UNPAYWALL_EMAIL');
+    if (cfg.int_phantom_tide) p('check_env_name PHANTOM_TIDE_API_KEY');
     p('if [ -x "$SPOTLIGHT_DIR/tests/smoke.sh" ]; then (cd "$SPOTLIGHT_DIR" && bash tests/smoke.sh >/dev/null) && ok "Smoke test" || bad "Smoke test failed"; fi');
     p('if [ -x "$SPOTLIGHT_DIR/integrations/preflight.py" ] || [ -f "$SPOTLIGHT_DIR/integrations/preflight.py" ]; then (cd "$SPOTLIGHT_DIR" && set -a && . .env && set +a && python3 integrations/preflight.py --text >/dev/null) && ok "Integration preflight" || bad "Integration preflight reported issues"; fi');
     p('if [ "$fail" -eq 0 ]; then printf "\\nSpotlight doctor: OK\\n"; else printf "\\nSpotlight doctor: failed\\n"; fi');
@@ -2418,10 +2483,18 @@
     if (cfg.mode === 'cloud' && cfg.cloud_key_var) values[cfg.cloud_key_var] = cfg.cloud_key || '';
     if (cfg.int_junkipedia) values.JUNKIPEDIA_API_KEY = cfg.junkipedia_key || '';
     if (cfg.int_unpaywall) values.UNPAYWALL_EMAIL = cfg.unpaywall_email || '';
+    if (cfg.int_phantom_tide) values.PHANTOM_TIDE_API_KEY = cfg.phantom_tide_key || '';
     if (cfg.mode === 'local') {
       values.MODEL_REPO = cfg.model_repo || '';
       values.LOCAL_SERVER = cfg.local_server || 'llamacpp';
       values.LOCAL_ENDPOINT = cfg.local_server === 'llamacpp' ? 'http://127.0.0.1:8080/v1' : 'http://127.0.0.1:11434/v1';
+      if (cfg.local_server === 'ollama') {
+        const isGemmaEnv = (cfg.model_repo || '').indexOf('gemma-4') >= 0;
+        values.OLLAMA_MODEL = isGemmaEnv
+          ? 'hf.co/unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M'
+          : 'hf.co/HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive:IQ2_M';
+        values.SPOTLIGHT_OLLAMA_ALIAS = isGemmaEnv ? 'spotlight-gemma4-q4' : 'spotlight-qwen36-27b-q4';
+      }
     }
     return values;
   }
@@ -2448,6 +2521,7 @@
         optional: [
           ...(cfg.int_junkipedia ? ['JUNKIPEDIA_API_KEY'] : []),
           ...(cfg.int_unpaywall ? ['UNPAYWALL_EMAIL'] : []),
+          ...(cfg.int_phantom_tide ? ['PHANTOM_TIDE_API_KEY'] : []),
         ],
         values: envValues(cfg),
       },
@@ -2456,6 +2530,7 @@
         browser_use: cfg.int_browseruse,
         junkipedia: cfg.int_junkipedia,
         unpaywall: cfg.int_unpaywall,
+        phantom_tide: cfg.int_phantom_tide,
       },
       notes: [
         'This manifest contains local secret values from the setup form.',

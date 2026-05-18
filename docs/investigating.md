@@ -52,7 +52,7 @@ Purpose: make sure the environment is sane before any research starts. Runs once
 
 1. **Config check** — does `.spotlight-config.json` exist with valid `search_library` and `vault_path`? If yes, skip to step 5.
 2. **Search library detection** — `firecrawl` CLI must be on PATH. Abort with setup instructions if not.
-3. **OSINT skill availability** — confirm `osint`, `investigate`, `follow-the-money`, `social-media-intelligence` skills resolve.
+3. **OSINT skill availability** — confirm `osint`, `investigate`, `follow-the-money`, `epistemic-grounding`, `shell-safety`, `acquisition-graduation`, `social-media-intelligence` skills resolve.
 3.5. **Agent skill inventory** — record which skills each agent has access to (for spawn prompt construction).
 4. **Vault configuration** — ask the user where to archive findings; detect Obsidian vs directory.
 5. **Project setup** — derive slug from lead, create `cases/{project}/{data,research}/`.
@@ -244,8 +244,9 @@ Every finding must be grounded in a scraped file. This is non-negotiable.
 1. **Store all research per-case.** Every scraped file goes to `cases/{project}/research/`.
 2. **Scrape before cite.** A finding without a scraped file is a claim, not a finding.
 3. **Quote verbatim from primary sources.** The `evidence` field contains direct quotes, not paraphrases.
-4. **Link every finding to file.** Every source entry includes `local_file` pointing to `cases/{project}/research/`.
-5. **If you cannot scrape, explain why.** Document the barrier, downgrade confidence. A search snippet alone caps at `low` confidence.
+4. **Ground the exact claim.** Every finding includes a `grounding` object explaining support type, source role, missing assumptions, contradictions, confidence cap, and misgrounding risk.
+5. **Link every finding to file and archive.** Every source entry includes `local_file`, `archive_url`, and `access_method`.
+6. **If you cannot scrape, explain why.** Document the barrier, downgrade confidence. A search snippet alone caps at `low` confidence.
 
 See `skills/spotlight/references/evidence-grounding.md` for the full rule set.
 

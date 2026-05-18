@@ -24,13 +24,14 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "finding_id", "claim_text", "verdict", "evidence_for"],
+        "required": ["id", "finding_id", "claim_text", "verdict", "grounding_assessment", "evidence_for"],
         "properties": {
           "id": { "type": "integer" },
           "finding_id": { "type": "string" },
           "claim_text": { "type": "string" },
           "verdict": { "enum": ["verified","unverified","disputed","false"] },
           "confidence": { "enum": ["high","medium","low"] },
+          "grounding_assessment": { "$ref": "#/definitions/grounding_assessment" },
           "evidence_for": { "type": "array", "items": { "$ref": "#/definitions/evidence_item" } },
           "evidence_against": { "type": "array", "items": { "$ref": "#/definitions/evidence_item" } },
           "sources": { "type": "array", "items": { "type": "string" } },
@@ -41,15 +42,37 @@
     "gaps_for_next_cycle": { "type": "array", "items": { "type": "string" } }
   },
   "definitions": {
+    "grounding_assessment": {
+      "type": "object",
+      "required": [
+        "support_type",
+        "grounding_strength",
+        "claim_elements_checked",
+        "missing_assumptions",
+        "contradiction_search",
+        "confidence_cap",
+        "assessment"
+      ],
+      "properties": {
+        "support_type": { "enum": ["direct","indirect","inferred","contradicted","insufficient"] },
+        "grounding_strength": { "enum": ["full","partial","weak","none"] },
+        "claim_elements_checked": { "type": "array", "items": { "type": "string" } },
+        "missing_assumptions": { "type": "array", "items": { "type": "string" } },
+        "contradiction_search": { "type": "string" },
+        "confidence_cap": { "enum": ["high","medium","low"] },
+        "assessment": { "type": "string" }
+      }
+    },
     "evidence_item": {
       "type": "object",
-      "required": ["description", "source"],
+      "required": ["description", "source", "source_type", "archive_url", "access_method"],
       "properties": {
         "description": { "type": "string" },
         "source": { "type": "string" },
         "source_type": { "enum": ["primary","secondary"] },
         "archive_url": { "type": "string" },
-        "access_method": { "enum": ["full_text","open_access","archive_copy","abstract_only","inaccessible"] }
+        "access_method": { "enum": ["full_text","open_access","archive_copy","abstract_only","inaccessible"] },
+        "local_file": { "type": "string" }
       }
     }
   }

@@ -116,11 +116,14 @@ Skills are markdown playbooks loaded via `invoke-skill(skill_id)`. Each skill li
 |----------|------|-------------|--------------|
 | `spotlight` | `skills/spotlight/SKILL.md` | Investigation orchestrator — pipeline phases, gates, cycle evaluation | orchestrator (top-level) |
 | `review` | `skills/review/SKILL.md` | Post-Gate-1 HTML review artifact + structured feedback loop; re-spawns investigator on feedback submission | orchestrator, user |
-| `integrations` | `skills/integrations/SKILL.md` | Routing layer for external tool integrations — browser-use, Junkipedia, OSINT Navigator, Unpaywall. Reads live preflight status, maps investigation tasks to integrations | investigator, fact-checker, orchestrator |
+| `integrations` | `skills/integrations/SKILL.md` | Routing layer for external tool integrations — Browser Harness, browser-use, Junkipedia, OSINT Navigator, Phantom Tide, Unpaywall. Reads live preflight status, maps investigation tasks to integrations | investigator, fact-checker, orchestrator |
 | `ingest` | `skills/ingest/SKILL.md` | Knowledge archival — vault ingestion from case files | orchestrator, user |
 | `monitoring` | `skills/monitoring/SKILL.md` | Monitoring orchestration — Mycroft passive signals, coJournalist projects/scouts, runtime-native fallbacks | orchestrator |
+| `acquisition-graduation` | `skills/acquisition-graduation/SKILL.md` | Convert repeated Browser Harness acquisitions into durable source/domain guidance without secrets or brittle session details | investigator, fact-checker, orchestrator, user |
 | `web-archiving` | `skills/web-archiving/SKILL.md` | Wayback Machine, Archive.today, local archival with chain of custody | investigator, fact-checker |
 | `content-access` | `skills/content-access/SKILL.md` | Paywall access hierarchy, access_method classification | investigator, fact-checker |
+| `epistemic-grounding` | `skills/epistemic-grounding/SKILL.md` | Claim-to-evidence grounding, confidence caps, and failure routing for weak or adjacent evidence | investigator, fact-checker, orchestrator, user |
+| `shell-safety` | `skills/shell-safety/SKILL.md` | Safe command construction, value validation, and destructive-operation probe rules for execute-shell use | investigator, fact-checker, orchestrator, user |
 | `osint` | `skills/osint/SKILL.md` | OSINT tool routing table + 150-tool catalog + OSINT Navigator integration | investigator, fact-checker, user |
 | `investigate` | `skills/investigate/SKILL.md` | Step-by-step techniques: geolocation, verification, person, platform, transport, archiving | investigator, user |
 | `follow-the-money` | `skills/follow-the-money/SKILL.md` | Financial methodology: UBO, offshore, budget/revenue, asset tracing | investigator, user |
@@ -149,6 +152,7 @@ cases/{project}/
 │   ├── methodology.json         # Schema: schemas/methodology.schema.json
 │   ├── findings.json            # Schema: schemas/findings.schema.json
 │   ├── fact-check.json          # Schema: schemas/fact-check.schema.json
+│   ├── evidence-bundle.json     # Schema: schemas/evidence-bundle.schema.json
 │   ├── investigation-log.json   # Schema: schemas/investigation-log.schema.json
 │   ├── summary.json             # Schema: schemas/summary.schema.json
 │   └── monitoring.json          # (optional) External monitor registry for the case
@@ -157,6 +161,9 @@ cases/{project}/
     ├── *.json                   # Search results
     ├── archived/                # Wayback / Archive.today preservation
     └── media/                   # Images, PDFs, other media
+└── evidence/
+    ├── *.png                    # Screenshots and visual verification captures
+    └── *.pdf                    # Downloaded or preserved source documents
 ```
 
 All schemas are in `schemas/` at the repo root with `schema_version: "1.0"`.
@@ -165,8 +172,9 @@ All schemas are in `schemas/` at the repo root with `schema_version: "1.0"`.
 
 | Schema | Path | Purpose |
 |--------|------|---------|
-| Findings | `schemas/findings.schema.json` | Investigation findings with sources, confidence, connections, monitoring_recommendations |
-| Fact-Check | `schemas/fact-check.schema.json` | Per-claim verdicts with evidence_for/evidence_against trails |
+| Findings | `schemas/findings.schema.json` | Investigation findings with sources, confidence, claim-to-evidence grounding, connections, monitoring_recommendations |
+| Fact-Check | `schemas/fact-check.schema.json` | Per-claim verdicts with evidence_for/evidence_against trails and grounding assessment |
+| Evidence Bundle | `schemas/evidence-bundle.schema.json` | Acquisition artifacts with method, missing-source gate, hashes, and claim links |
 | Methodology | `schemas/methodology.schema.json` | Investigation plan with directions, steps, tools_required, opsec_considerations |
 | Investigation Log | `schemas/investigation-log.schema.json` | Append-only cycle audit trail |
 | Summary | `schemas/summary.schema.json` | Gate 1 summary for review |

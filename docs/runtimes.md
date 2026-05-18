@@ -65,7 +65,7 @@ for skill_dir in /path/to/spotlight/skills/*/; do
 done
 ```
 
-Creates 11 symlinks: `spotlight`, `ingest`, `monitoring`, `web-archiving`, `content-access`, `osint`, `investigate`, `follow-the-money`, `social-media-intelligence`, `integrations`, `review`. Live links — `git pull` in the spotlight repo updates everything.
+Creates symlinks for all skills, including `spotlight`, `ingest`, `monitoring`, `acquisition-graduation`, `web-archiving`, `content-access`, `epistemic-grounding`, `shell-safety`, `osint`, `investigate`, `follow-the-money`, `social-media-intelligence`, `integrations`, and `review`. Live links — `git pull` in the spotlight repo updates everything.
 
 `AGENTS.md` is loaded as Rules (https://opencode.ai/docs/rules/), walked up from cwd to the git worktree. Drop a project `AGENTS.md` in your investigations directory and opencode picks it up automatically.
 
@@ -130,7 +130,7 @@ ln -sfn /path/to/spotlight/skills ~/.pi/agent/skills/spotlight
 pi
 ```
 
-pi recursively walks `~/.pi/agent/skills/` (user) and `<cwd>/.pi/skills/` (project) at startup, picking up every `SKILL.md` it finds — verified in `pi-coding-agent/dist/core/skills.js:347-348`. Skill names come from each frontmatter, so the symlink above loads all 11 Spotlight sub-skills by name.
+pi recursively walks `~/.pi/agent/skills/` (user) and `<cwd>/.pi/skills/` (project) at startup, picking up every `SKILL.md` it finds — verified in `pi-coding-agent/dist/core/skills.js:347-348`. Skill names come from each frontmatter, so the symlink above loads all Spotlight sub-skills by name.
 
 `AGENTS.md` is layered into pi's system prompt from `~/.pi/agent/`, parent directories, and the current directory (per [pi.dev docs](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)).
 
@@ -213,7 +213,7 @@ Restart Hermes:
 launchctl kickstart -k gui/$(id -u)/ai.hermes.gateway
 ```
 
-All 10 Spotlight skills (spotlight, investigator, fact-checker, ingest, monitoring, web-archiving, content-access, osint, investigate, follow-the-money, social-media-intelligence) become available by `invoke-skill` name.
+All Spotlight skills (spotlight, ingest, monitoring, acquisition-graduation, web-archiving, content-access, epistemic-grounding, shell-safety, osint, investigate, follow-the-money, social-media-intelligence, integrations, review) become available by `invoke-skill` name.
 
 ### Verb bindings
 

@@ -9,7 +9,7 @@ This doc is the operator overview. See `integrations/README.md` for the manifest
 | Concept | Lives at | Example | What it holds |
 |---|---|---|---|
 | **Skill** | `skills/<id>/SKILL.md` | `osint`, `follow-the-money`, `investigate` | Methodology playbook the agent follows. No credentials. |
-| **Integration** | `integrations/<id>/` | `browser-use`, `junkipedia`, `osint-navigator` | Specific external tool with its own API contract + credentials. |
+| **Integration** | `integrations/<id>/` | `browser-harness`, `browser-use`, `junkipedia`, `osint-navigator`, `phantom-tide` | Specific external tool with its own API contract + credentials. |
 
 An agent invokes a **skill** to get *guidance* and calls an **integration** to get *direct data from a specific vendor or platform*. Passive feed signals now live in Mycroft, not Spotlight.
 
@@ -17,9 +17,11 @@ An agent invokes a **skill** to get *guidance* and calls an **integration** to g
 
 | ID | Type | Category | Key needed | Purpose |
 |---|---|---|---|---|
-| `browser-use` | library | browser-automation | No (optional cloud) | Agent-driven browser automation — form navigation, JS-rendered extraction, multi-step flows. MIT open source. |
+| `browser-harness` | cli | browser-automation | No | Preferred v2 browser acquisition fallback after Firecrawl misses material evidence. |
+| `browser-use` | library | browser-automation | No (optional cloud) | Optional/adjacent agent-driven browser automation. Prefer Browser Harness for acquisition evidence. |
 | `junkipedia` | api | social-osint | `JUNKIPEDIA_API_KEY` | Narrative / misinformation tracking across social platforms. Application-based access. |
 | `osint-navigator` | api | tool-discovery | `OSINT_NAV_API_KEY` | 10,000+ OSINT tools with AI-powered synthesized answers. Complements the curated 150-tool catalog in the `osint` skill. |
+| `phantom-tide` | api | transport-intelligence | `PHANTOM_TIDE_API_KEY` | Aircraft restricted-airspace crossing candidates and source-freshness context. Maritime/convergence routes are planned pending a stable API contract. |
 | `scoutpost` | api | monitoring | `SCOUTPOST_API_KEY` | Durable monitoring via existing Scoutpost projects, scouts, and information units. |
 | `unpaywall` | api | academic-open-access | `UNPAYWALL_EMAIL` | Legal open-access lookup for academic papers by DOI. Used only when selected in setup and green in preflight. |
 
@@ -60,6 +62,7 @@ Example:
 ```
 ID                   Type       Status   Missing env
 ------------------------------------------------------------------------------
+browser-harness      cli        green    —
 browser-use          library    green    —
 junkipedia           api        red      JUNKIPEDIA_API_KEY
 osint-navigator      api        green    —
@@ -114,7 +117,7 @@ In sensitive mode (`AGENTS.md` → `sensitive: true`):
 - Integrations that require remote API calls (most of them) become unavailable — `fetch`/`search` verbs are stripped and `execute-shell("curl <remote>")` is guarded at the skill layer
 - Preflight still runs; integrations requiring remote APIs report normally (useful as a status check)
 - Pre-cached integration responses in `cases/{project}/research/` remain readable via `read-file`
-- Local-only library integrations (e.g. browser-use against a local HTML file) may still function — see the individual `integration.md` § Sensitive mode
+- Local-only integrations (e.g. Browser Harness against a local browser or browser-use against a local HTML file) may still function — see the individual `integration.md` § Sensitive mode
 
 The orchestrator marks sensitive-mode investigations at Gate 1 noting which integrations were unavailable.
 

@@ -26,23 +26,27 @@ OSINT_NAV_API_KEY=on_xxxxx
 
 ## Verb calls
 
+Invoke `shell-safety` before creating request files or output paths. Write request bodies as JSON files; do not interpolate keywords or questions into curl command strings.
+
 ### Tool search by keyword / category (unlimited on free tier)
 
 ```
+write-file("cases/{project}/research/navigator-search-body.json", <serialized JSON>)
 execute-shell('curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
   -X POST https://navigator.indicator.media/api/tools/search \
   -H "Content-Type: application/json" \
-  -d "{\"query\": \"<keywords>\", \"category\": \"<category_slug>\"}" \
+  --data @cases/{project}/research/navigator-search-body.json \
   -o cases/{project}/research/navigator-search-<slug>.json')
 ```
 
 ### Complex question (10/day free, 50/day pro)
 
 ```
+write-file("cases/{project}/research/navigator-query-body.json", <serialized JSON>)
 execute-shell('curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
   -X POST https://navigator.indicator.media/api/query \
   -H "Content-Type: application/json" \
-  -d "{\"query\": \"How do I <investigation task>?\"}" \
+  --data @cases/{project}/research/navigator-query-body.json \
   -o cases/{project}/research/navigator-query-<slug>.json')
 ```
 

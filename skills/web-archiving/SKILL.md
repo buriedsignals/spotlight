@@ -3,7 +3,7 @@ name: web-archiving
 description: Archive evidence before it disappears — structured preservation with chain of custody for editorial accountability and legal defensibility
 version: "1.0"
 invocable_by: [investigator, fact-checker]
-requires: []
+requires: [shell-safety]
 env_vars: []
 attribution: Adapted from jamditis/claude-skills-journalism (https://github.com/jamditis/claude-skills-journalism). Original author: Jay Amditis. MIT License.
 ---
@@ -25,17 +25,21 @@ Archive evidence sources as you find them, before they disappear. This skill is 
 
 Try in order. Stop when you have a confirmed archived copy.
 
+Before any `execute-shell` call that uses a URL, timestamp, filename, or path, invoke `shell-safety` and validate values with `scripts/spotlight_safe.py`. Use `curl --get --data-urlencode` for URL parameters; do not interpolate untrusted values into shell strings.
+
 ### 1. Wayback Machine (Internet Archive)
 
 Check if already archived:
 
 ```
-execute-shell: curl -s "https://archive.org/wayback/available?url={URL}" | jq '.archived_snapshots.closest'
+execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+execute-shell: curl -s --get "https://archive.org/wayback/available" --data-urlencode "url={URL}"
 ```
 
 Submit for archiving:
 
 ```
+execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
 execute-shell: curl -s -I "https://web.archive.org/save/{URL}"
 ```
 
@@ -44,7 +48,12 @@ The response `Location` header contains the new snapshot URL.
 Find all snapshots (CDX API):
 
 ```
-execute-shell: curl "http://web.archive.org/cdx/search/cdx?url={URL}&output=json&limit=5&fl=timestamp,statuscode,original"
+execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+execute-shell: curl --get "http://web.archive.org/cdx/search/cdx" \
+  --data-urlencode "url={URL}" \
+  --data-urlencode "output=json" \
+  --data-urlencode "limit=5" \
+  --data-urlencode "fl=timestamp,statuscode,original"
 ```
 
 ### 2. Archive.today
@@ -54,7 +63,7 @@ Submit via form:
 ```
 execute-shell: curl -s -L -X POST "https://archive.ph/submit/" \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "url={URL}" \
+  --data-urlencode "url={URL}" \
   -d "anyway=1"
 ```
 
@@ -63,7 +72,8 @@ Follow redirects — the final URL is the archived copy.
 Check for existing copy:
 
 ```
-execute-shell: curl -s "https://archive.ph/newest/{URL}"
+execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+execute-shell: curl -s "https://archive.ph/newest/" --get --data-urlencode "url={URL}"
 ```
 
 ### 3. Local Scrape (Fallback)
@@ -117,13 +127,20 @@ write-file: path=cases/{project}/research/archived/{domain}-{slug}-archived-{YYY
 If the original URL returns 404 or is otherwise gone, check Wayback Machine before marking the source as unavailable:
 
 ```
-execute-shell: curl "http://web.archive.org/cdx/search/cdx?url={URL}&output=json&limit=1&fl=timestamp,statuscode"
+execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+execute-shell: curl --get "http://web.archive.org/cdx/search/cdx" \
+  --data-urlencode "url={URL}" \
+  --data-urlencode "output=json" \
+  --data-urlencode "limit=1" \
+  --data-urlencode "fl=timestamp,statuscode"
 ```
 
 If a snapshot exists, retrieve it:
 
 ```
-execute-shell: curl "https://web.archive.org/web/{TIMESTAMP}/{URL}" -o cases/{project}/research/archived/{filename}.md
+execute-shell: python3 scripts/spotlight_safe.py validate-timestamp "{TIMESTAMP}"
+execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+fetch: url=https://web.archive.org/web/{TIMESTAMP}/{URL}, output_path=cases/{project}/research/archived/{filename}.md
 ```
 
 Only mark a source as `unavailable` after checking all three services.

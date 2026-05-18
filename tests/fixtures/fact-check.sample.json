@@ -18,13 +18,23 @@
       "claim_text": "Example Corp Ltd is registered at Road Town, Tortola, British Virgin Islands, incorporated on 2019-03-14 with registration number 2019-ABC-123.",
       "verdict": "verified",
       "confidence": "high",
+      "grounding_assessment": {
+        "support_type": "direct",
+        "grounding_strength": "full",
+        "claim_elements_checked": ["actor", "registered_address", "incorporation_date", "registration_number"],
+        "missing_assumptions": [],
+        "contradiction_search": "Checked cited registry filing and searched for conflicting registration number/date references; none found in accessible sources.",
+        "confidence_cap": "high",
+        "assessment": "The claim is directly grounded in a primary registry filing and contains no unsupported material elements."
+      },
       "evidence_for": [
         {
           "description": "BVI FSC filing confirms registration date, address, and number verbatim.",
           "source": "https://bvifsc.example/filings/2019-ABC-123",
           "source_type": "primary",
           "archive_url": "https://web.archive.org/web/20260417120300/https://bvifsc.example/filings/2019-ABC-123",
-          "access_method": "full_text"
+          "access_method": "full_text",
+          "local_file": "cases/sample-investigation/research/bvifsc-filing-2019-abc-123.md"
         }
       ],
       "evidence_against": [],
@@ -37,12 +47,23 @@
       "claim_text": "12 of the 43 companies connected to Acme Trust Services share the same ultimate beneficial owner.",
       "verdict": "unverified",
       "confidence": "medium",
+      "grounding_assessment": {
+        "support_type": "indirect",
+        "grounding_strength": "partial",
+        "claim_elements_checked": ["registered_agent", "company_count", "shared_address", "ultimate_beneficial_owner"],
+        "missing_assumptions": ["The cited database cluster reflects one confirmed UBO rather than inferred or aggregated relationships."],
+        "contradiction_search": "Checked cited secondary databases and searched for primary UBO disclosure; no primary disclosure was located.",
+        "confidence_cap": "medium",
+        "assessment": "The agent/address cluster is supported, but the single-UBO assertion remains only partially grounded without a primary record."
+      },
       "evidence_for": [
         {
           "description": "ICIJ Offshore Leaks and OCCRP Aleph both surface the 12-entity cluster.",
           "source": "https://offshoreleaks.icij.org/search?q=acme+trust+services",
           "source_type": "secondary",
-          "access_method": "full_text"
+          "archive_url": "https://web.archive.org/web/20260417123000/https://offshoreleaks.icij.org/search",
+          "access_method": "full_text",
+          "local_file": "cases/sample-investigation/research/offshoreleaks-acme-trust-services.json"
         }
       ],
       "evidence_against": [],

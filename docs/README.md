@@ -1,6 +1,6 @@
 # Spotlight — Documentation
 
-Spotlight is a runtime-agnostic OSINT investigation system — 11 skills, 2 agents, 5 schemas, and investigation-scoped monitoring orchestration. Point your agent runtime (pi, Hermes, Goose, Codex, Gemini, or any OpenAI-compatible harness) at this repo and run full-fidelity investigations end-to-end.
+Spotlight is a runtime-agnostic OSINT investigation system — 14 skills, 2 agents, 6 schemas, and investigation-scoped monitoring orchestration. Point your agent runtime (pi, Hermes, Goose, Codex, Gemini, or any OpenAI-compatible harness) at this repo and run full-fidelity investigations end-to-end.
 
 This `docs/` directory is the operator manual. `AGENTS.md` at the repo root is the machine-readable contract your runtime loads at startup.
 
@@ -10,11 +10,13 @@ If you are new to Spotlight, read in this order:
 
 1. **[structure.md](structure.md)** — how this repo is laid out; what each file is for; the 13-verb contract
 2. **[runtimes.md](runtimes.md)** — how to wire Spotlight into pi, Hermes, Goose, Codex, Gemini, or a local OpenAI-compatible fine-tune
-3. **[integrations.md](integrations.md)** — external OSINT tool integrations (browser-use, Junkipedia, OSINT Navigator, Unpaywall), manifest contract, preflight
+3. **[integrations.md](integrations.md)** — external OSINT tool integrations (Browser Harness, browser-use, Junkipedia, OSINT Navigator, Phantom Tide, Unpaywall), manifest contract, preflight
 4. **[investigating.md](investigating.md)** — the investigation pipeline: brief, methodology, cycles, gates, readiness, stall protocol
 5. **[fact-checking.md](fact-checking.md)** — the independent verification pass: SIFT, verdict taxonomy, evidence trails
-6. **[monitoring.md](monitoring.md)** — monitoring orchestration across Mycroft, Scoutpost, and runtime-native fallbacks
-7. **[recovery.md](recovery.md)** — when things break: agent crashes, corrupted files, stale locks, API failures
+6. **[epistemic-grounding.md](epistemic-grounding.md)** — claim-to-evidence grounding, evidence bundles, confidence caps
+7. **[vulnerabilities.md](vulnerabilities.md)** — shell-safety vulnerabilities and v2 mitigations
+8. **[monitoring.md](monitoring.md)** — monitoring orchestration across Mycroft, Scoutpost, and runtime-native fallbacks
+9. **[recovery.md](recovery.md)** — when things break: agent crashes, corrupted files, stale locks, API failures
 
 ## 60-second quick-start
 
@@ -64,6 +66,8 @@ Every runtime must preserve these — they are the editorial contract:
 - Investigator modes: PLANNING and EXECUTION
 - Fact-checker: SIFT methodology, verdicts `verified | unverified | disputed | false`, independent spawn
 - Evidence grounding: scrape-before-cite, `local_file` on every source, archive before cite
+- Epistemic grounding: every claim records why the evidence supports, partially supports, contradicts, or fails to support it
+- Shell safety: untrusted values are validated before shell execution; destructive operations require probes
 - `access_method` enum and its confidence caps
 - Archive hierarchy: Wayback → Archive.today → local
 

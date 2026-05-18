@@ -63,8 +63,8 @@ Model state is on disk; restarting doesn't lose anything. Your investigation fil
 
 The ingest skill uses a `.ingest-lock` file. If a previous ingestion crashed, the lock may be stale.
 
-1. Check: `ls {vault}/.ingest-lock`
-2. If present but old (check mtime): delete it → `rm {vault}/.ingest-lock`
+1. Check: `python3 scripts/spotlight_safe.py destructive-probe --base {vault} --path .ingest-lock`
+2. If present but old (check mtime): delete the resolved lock path only after the probe confirms it is inside the vault.
 3. Re-run ingestion. It will re-read registries, see what's already written, and skip duplicates (matched by `id` in the relevant registry).
 
 The ingest skill is idempotent at the registry level — you can run it twice without double-entries.
@@ -98,9 +98,9 @@ If a cycle wrote malformed JSON (e.g. the agent was interrupted mid-write):
 
 ## Nuclear option: start fresh
 
-Backup first: `cp -r cases/{project} cases/{project}-backup-$(date +%s)`
+Probe the path first: `python3 scripts/spotlight_safe.py destructive-probe --base cases --path {project}`
 
-Then: `rm -rf cases/{project}/data/` and re-run `spotlight`. The orchestrator will re-enter from Phase 1. Research files in `cases/{project}/research/` survive.
+Backup the resolved case directory, then delete only the resolved `data/` directory after a second probe confirms it is inside that case. Re-run `spotlight`. The orchestrator will re-enter from Phase 1. Research files in `cases/{project}/research/` survive.
 
 ## What never recovers automatically
 

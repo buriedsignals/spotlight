@@ -81,6 +81,8 @@ const baseCfg = {
   junkipedia_key: "",
   int_unpaywall: false,
   unpaywall_email: "",
+  int_phantom_tide: false,
+  phantom_tide_key: "",
 };
 
 const configs = [
@@ -88,7 +90,9 @@ const configs = [
     label: "local/ollama",
     mode: "local",
     runtime: "local",
+    local_model: "gemma",
     local_server: "ollama",
+    opencode_interface: "cli",
     opencode_provider: null,
     cloud_key: "",
     cloud_key_var: "",
@@ -98,7 +102,20 @@ const configs = [
     label: "local/llamacpp",
     mode: "local",
     runtime: "local",
+    local_model: "qwen27b",
     local_server: "llamacpp",
+    opencode_interface: "cli",
+    opencode_provider: null,
+    cloud_key: "",
+    cloud_key_var: "",
+    model_repo: "HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive",
+  },
+  {
+    label: "local/ollama-qwen",
+    mode: "local",
+    runtime: "local",
+    local_model: "qwen27b",
+    local_server: "ollama",
     opencode_interface: "cli",
     opencode_provider: null,
     cloud_key: "",
@@ -191,6 +208,32 @@ for (const c of configs) {
     console.log(`✗ ${c.label.padEnd(24)} local runtime does not install spotlight-local`);
     ok = false;
   }
+  if (c.label === "local/ollama") {
+    const ollamaRequired = [
+      "hf.co/unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M",
+      "SPOTLIGHT_OLLAMA_ALIAS",
+      "spotlight-gemma4-q4",
+      'ollama create "$SPOTLIGHT_OLLAMA_ALIAS" -f "$TMP_MODELFILE"',
+      'opencode --model "ollama/$SPOTLIGHT_OLLAMA_ALIAS" "$@"',
+      'SPOTLIGHT_DIR_DEFAULT="$(expand_path "$SPOTLIGHT_DIR_DEFAULT_INPUT")"',
+      "write_env_var OLLAMA_MODEL",
+    ];
+    for (const needle of ollamaRequired) ok = assertFragment(script, c.label, needle) && ok;
+    if (script.includes('ollama pull "$MODEL" >/dev/null 2>&1 || true')) {
+      console.log(`✗ ${c.label.padEnd(24)} still swallows Ollama pull failure`);
+      ok = false;
+    }
+  }
+  if (c.label === "local/ollama-qwen") {
+    const qwenRequired = [
+      "hf.co/HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive:IQ2_M",
+      "spotlight-qwen36-27b-q4",
+      'ollama create "$SPOTLIGHT_OLLAMA_ALIAS" -f "$TMP_MODELFILE"',
+      'opencode --model "ollama/$SPOTLIGHT_OLLAMA_ALIAS" "$@"',
+      "write_env_var OLLAMA_MODEL",
+    ];
+    for (const needle of qwenRequired) ok = assertFragment(script, c.label, needle) && ok;
+  }
   if (c.runtime === "opencode" && !script.includes("opencode loads Spotlight skills")) {
     console.log(`✗ ${c.label.padEnd(24)} opencode skills not linked`);
     ok = false;
@@ -222,6 +265,8 @@ const manifestCfg = {
   cloud_key_var: "FIREWORKS_API_KEY",
   int_junkipedia: true,
   junkipedia_key: "junk-secret-test",
+  int_phantom_tide: true,
+  phantom_tide_key: "pt-secret-test",
 };
 const manifest = buildAgentManifest(manifestCfg);
 const prompt = buildAgentPrompt(manifest);
@@ -229,11 +274,12 @@ if (
   manifest.env.values.FIRECRAWL_API_KEY !== "fc-test" ||
   manifest.env.values.OSINT_NAV_API_KEY !== "on-test" ||
   manifest.env.values.FIREWORKS_API_KEY !== "fw-secret-test" ||
-  manifest.env.values.JUNKIPEDIA_API_KEY !== "junk-secret-test"
+  manifest.env.values.JUNKIPEDIA_API_KEY !== "junk-secret-test" ||
+  manifest.env.values.PHANTOM_TIDE_API_KEY !== "pt-secret-test"
 ) {
   console.log("✗ agent manifest missing local secret values");
   fail++;
-} else if (prompt.includes("fw-secret-test") || prompt.includes("junk-secret-test")) {
+} else if (prompt.includes("fw-secret-test") || prompt.includes("junk-secret-test") || prompt.includes("pt-secret-test")) {
   console.log("✗ agent prompt printed secret values");
   fail++;
 } else if (!prompt.includes("Handle the setup for the user") || !prompt.includes("env.values")) {

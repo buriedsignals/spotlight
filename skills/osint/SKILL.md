@@ -65,19 +65,23 @@ OSINT Navigator (navigator.indicator.media) is a live tool-discovery API with a 
 If `$OSINT_NAV_API_KEY` is set:
 
 ```
+invoke-skill("shell-safety")
 execute-shell('curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
   -X POST https://navigator.indicator.media/api/tools/search \
   -H "Content-Type: application/json" \
-  -d "{\"query\": \"keyword\", \"category\": \"category_slug\"}"')
+  --data @cases/{project}/research/navigator-query.json')
 ```
+
+Write `navigator-query.json` with a real JSON serializer or `write-file`, never by concatenating untrusted query text into a shell string.
 
 Ask a complex question (10/day free, 50/day pro):
 
 ```
+invoke-skill("shell-safety")
 execute-shell('curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
   -X POST https://navigator.indicator.media/api/query \
   -H "Content-Type: application/json" \
-  -d "{\"query\": \"How do I verify X?\"}"')
+  --data @cases/{project}/research/navigator-question.json')
 ```
 
 Route to Navigator when:

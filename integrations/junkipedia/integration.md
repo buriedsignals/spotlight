@@ -15,13 +15,15 @@
 
 ## Verb calls
 
-Junkipedia is REST API over HTTPS. Use `execute-shell` with curl.
+Junkipedia is REST API over HTTPS. Invoke `shell-safety` before curl calls. Use `--get --data-urlencode` for query values and validate output paths.
 
 ### Search for tracked content
 
 ```
 execute-shell('curl -s -H "Authorization: Bearer $JUNKIPEDIA_API_KEY" \
-  "https://api.junkipedia.org/api/v1/posts?q=<query>&limit=50" \
+  --get "https://api.junkipedia.org/api/v1/posts" \
+  --data-urlencode "q=<query>" \
+  --data-urlencode "limit=50" \
   -o cases/{project}/research/junkipedia-<slug>.json')
 ```
 
@@ -30,6 +32,7 @@ execute-shell('curl -s -H "Authorization: Bearer $JUNKIPEDIA_API_KEY" \
 Junkipedia tags content under "issues" (narratives). Find posts tagged with a specific narrative:
 
 ```
+execute-shell('python3 scripts/spotlight_safe.py validate-slug "<issue_id>"')
 execute-shell('curl -s -H "Authorization: Bearer $JUNKIPEDIA_API_KEY" \
   "https://api.junkipedia.org/api/v1/issues/<issue_id>/posts?limit=100" \
   -o cases/{project}/research/junkipedia-issue-<id>.json')

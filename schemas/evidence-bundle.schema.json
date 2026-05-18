@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "schema_version": "1.0",
+  "type": "object",
+  "required": ["schema_version", "project", "run_id", "created_at", "items"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "project": { "type": "string" },
+    "run_id": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "items": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/evidence_item" }
+    }
+  },
+  "definitions": {
+    "evidence_item": {
+      "type": "object",
+      "required": [
+        "id",
+        "query_or_task",
+        "acquisition_method",
+        "source_url",
+        "accessed",
+        "extraction_confidence",
+        "human_verification_required"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "query_or_task": { "type": "string" },
+        "acquisition_method": { "enum": ["firecrawl", "browser_harness", "manual", "api", "other"] },
+        "source_url": { "type": "string" },
+        "accessed": { "type": "string", "format": "date-time" },
+        "raw_path": { "type": "string" },
+        "screenshot_path": { "type": "string" },
+        "downloaded_document_path": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "claim_links": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["finding_id", "claim_text", "support_type"],
+            "properties": {
+              "finding_id": { "type": "string" },
+              "claim_text": { "type": "string" },
+              "support_type": { "enum": ["direct", "indirect", "inferred", "contradicted", "insufficient"] }
+            }
+          }
+        },
+        "extraction_confidence": { "enum": ["high", "medium", "low"] },
+        "human_verification_required": { "type": "boolean" },
+        "missing_source_gate": {
+          "type": "object",
+          "required": ["requested_source", "returned_artifact", "missing", "fallback_required"],
+          "properties": {
+            "requested_source": { "type": "string" },
+            "returned_artifact": { "type": "string" },
+            "missing": { "type": "string" },
+            "fallback_required": { "type": "boolean" },
+            "fallback_reason": { "type": "string" },
+            "confidence_effect": { "enum": ["none", "cap_medium", "cap_low", "human_verification_required"] }
+          }
+        },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

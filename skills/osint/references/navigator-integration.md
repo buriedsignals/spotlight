@@ -29,10 +29,12 @@ OSINT Navigator is a RAG-powered search engine for OSINT tools, maintained by In
 Use for complex questions that need synthesized answers: "How do I verify company ownership in Denmark?"
 
 ```bash
+# First write request JSON with write-file or a real JSON serializer:
+# cases/{project}/research/navigator-query-body.json
 curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
   -X POST https://navigator.indicator.media/api/query \
   -H "Content-Type: application/json" \
-  -d '{"query": "How do I verify company ownership in Denmark?"}'
+  --data @cases/{project}/research/navigator-query-body.json
 ```
 
 Response:
@@ -62,10 +64,12 @@ Response:
 Use for browsing by keyword or category. Does NOT consume daily quota.
 
 ```bash
+# First write request JSON with write-file or a real JSON serializer:
+# cases/{project}/research/navigator-search-body.json
 curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
   -X POST https://navigator.indicator.media/api/tools/search \
   -H "Content-Type: application/json" \
-  -d '{"query": "corporate registry", "category": "companies"}'
+  --data @cases/{project}/research/navigator-search-body.json
 ```
 
 Response:

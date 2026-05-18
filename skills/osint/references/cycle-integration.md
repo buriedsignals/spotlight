@@ -26,7 +26,7 @@ Query Navigator to inform your methodology. For each investigation direction:
    curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
      -X POST https://navigator.indicator.media/api/tools/search \
      -H "Content-Type: application/json" \
-     -d '{"query": "Danish corporate registry ownership", "category": "companies"}'
+     --data @cases/{project}/research/navigator-search-body.json
    ```
 3. Record selected tools in methodology.json under each direction's `steps[].tool` and `osint_techniques[]` fields
 4. Use `/api/tools/search` (unlimited) for browsing categories. Reserve `/api/query` for complex questions where you need workflow advice.
@@ -46,7 +46,7 @@ If a planned technique fails or a new line of inquiry opens:
 curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
   -X POST https://navigator.indicator.media/api/query \
   -H "Content-Type: application/json" \
-  -d '{"query": "How do I verify the authenticity of a government PDF document?"}'
+  --data @cases/{project}/research/navigator-query-body.json
 ```
 
 Record tool discoveries in investigation-log.json:

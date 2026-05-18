@@ -1,0 +1,22 @@
+{
+  "id": "browser-harness",
+  "name": "Browser Harness",
+  "description": "Local Chrome/CDP acquisition fallback for dynamic pages, portals, screenshots, downloads, iframes, shadow DOM, and visual verification.",
+  "category": "browser-automation",
+  "type": "cli",
+  "requires_key": false,
+  "env_vars": [],
+  "capabilities": [
+    "cdp-browser-control",
+    "dynamic-page-acquisition",
+    "portal-navigation",
+    "screenshot-capture",
+    "download-capture",
+    "network-observation",
+    "visual-verification"
+  ],
+  "invocable_by": ["investigator", "fact-checker"],
+  "homepage": "https://github.com/browser-harness/browser-harness",
+  "docs": "https://github.com/browser-harness/browser-harness",
+  "rate_limit_note": "Local tool; obey source site rate limits and legal boundaries."
+}

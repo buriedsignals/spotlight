@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0",
+  "project": "sample-investigation",
+  "run_id": "sample-investigation-cycle-2",
+  "created_at": "2026-04-17T15:00:00Z",
+  "items": [
+    {
+      "id": "E1",
+      "query_or_task": "Fetch BVI FSC filing for Example Corp Ltd registration number 2019-ABC-123",
+      "acquisition_method": "firecrawl",
+      "source_url": "https://bvifsc.example/filings/2019-ABC-123",
+      "accessed": "2026-04-17T12:03:00Z",
+      "raw_path": "cases/sample-investigation/research/bvifsc-filing-2019-abc-123.md",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "claim_links": [
+        {
+          "finding_id": "F1",
+          "claim_text": "Example Corp Ltd is registered at Road Town, Tortola, British Virgin Islands, incorporated on 2019-03-14 with registration number 2019-ABC-123.",
+          "support_type": "direct"
+        }
+      ],
+      "extraction_confidence": "high",
+      "human_verification_required": false,
+      "missing_source_gate": {
+        "requested_source": "Primary registry filing for Example Corp Ltd",
+        "returned_artifact": "cases/sample-investigation/research/bvifsc-filing-2019-abc-123.md",
+        "missing": "No missing material fields after static fetch.",
+        "fallback_required": false,
+        "confidence_effect": "none"
+      },
+      "notes": "Firecrawl returned the registry text needed for the finding."
+    },
+    {
+      "id": "E2",
+      "query_or_task": "Capture JS-rendered registry document list for Acme Trust Services",
+      "acquisition_method": "browser_harness",
+      "source_url": "https://registry.example/search?q=Acme%20Trust%20Services",
+      "accessed": "2026-04-17T12:47:00Z",
+      "raw_path": "cases/sample-investigation/research/registry-acme-trust-services.html",
+      "screenshot_path": "cases/sample-investigation/evidence/registry-acme-trust-services.png",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "claim_links": [
+        {
+          "finding_id": "F2",
+          "claim_text": "The registered agent Acme Trust Services provides incorporation services for at least 43 other companies sharing the same Tortola address.",
+          "support_type": "indirect"
+        }
+      ],
+      "extraction_confidence": "medium",
+      "human_verification_required": true,
+      "missing_source_gate": {
+        "requested_source": "Primary registry search results for Acme Trust Services",
+        "returned_artifact": "cases/sample-investigation/research/registry-acme-trust-services.html",
+        "missing": "Primary UBO disclosure is still unavailable.",
+        "fallback_required": true,
+        "fallback_reason": "Firecrawl could not render the registry's document table; Browser Harness captured the rendered page and screenshot.",
+        "confidence_effect": "cap_medium"
+      },
+      "notes": "Browser Harness fallback preserved the rendered table, but UBO claims still require primary disclosure."
+    }
+  ]
+}

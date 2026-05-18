@@ -55,34 +55,34 @@ scout units list --project "{project_id}" --since 7d
 
 If the CLI is unavailable but `SCOUTPOST_API_KEY` is set, use the existing HTTP API.
 
+Invoke `shell-safety` first. Write request bodies as JSON files with `write-file` or a real serializer; do not interpolate project names, criteria, or monitor names into curl strings.
+
 Create a project:
 
 ```sh
+write-file("cases/{project}/research/scoutpost-project-body.json", <serialized project JSON>)
 curl -s https://www.scoutpost.ai/api/v1/projects \
   -H "Authorization: Bearer $SCOUTPOST_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"name":"Spotlight: {project}","description":"Linked Spotlight investigation","visibility":"private"}'
+  --data @cases/{project}/research/scoutpost-project-body.json
 ```
 
 Create a scout:
 
 ```sh
+write-file("cases/{project}/research/scoutpost-scout-body.json", <serialized scout JSON>)
 curl -s https://www.scoutpost.ai/api/v1/scouts \
   -H "Authorization: Bearer $SCOUTPOST_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-    "name":"{monitor_name}",
-    "type":"pulse",
-    "criteria":"{criteria}",
-    "project_id":"{project_id}",
-    "schedule":{"regularity":"daily","time":"08:00","day_number":1}
-  }'
+  --data @cases/{project}/research/scoutpost-scout-body.json
 ```
 
 Read units:
 
 ```sh
-curl -s "https://www.scoutpost.ai/api/v1/units?project_id={project_id}&limit=20" \
+curl -s --get "https://www.scoutpost.ai/api/v1/units" \
+  --data-urlencode "project_id={project_id}" \
+  --data-urlencode "limit=20" \
   -H "Authorization: Bearer $SCOUTPOST_API_KEY"
 ```
 

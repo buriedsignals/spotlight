@@ -20,7 +20,7 @@ Before searching for corroborating evidence, the fact-checker evaluates source c
 | Step | Question | What to do |
 |---|---|---|
 | **S** — Stop | Does this source warrant trust at face value? | Note red flags: anonymous authorship, recent domain registration, sensationalist framing |
-| **I** — Investigate the source | Who runs it? What's their track record? | Read the About page, named authors, institutional affiliations. `execute-shell('curl https://api.whois.vu/?q={domain}')` to check domain age if needed |
+| **I** — Investigate the source | Who runs it? What's their track record? | Read the About page, named authors, institutional affiliations. For domain-age checks, invoke `shell-safety` and use `curl --get https://api.whois.vu/ --data-urlencode "q={domain}"` |
 | **F** — Find better coverage | Is this original or secondary? | A news article citing a study is secondary. Trace claims to their origin |
 | **T** — Trace claims back | Are quotes attributed correctly? Do linked sources say what's claimed? | Follow the chain |
 
@@ -48,6 +48,7 @@ Both must be sought. Do not stop at the first agreeing source. This is structura
 
 - **Archive each source** before citing (`invoke-skill("web-archiving")`) — Wayback → Archive.today → local
 - **Paywalled sources** — `invoke-skill("content-access")` and work through the 8-step hierarchy before marking `inaccessible`
+- **Ground every claim** — `invoke-skill("epistemic-grounding")` and assess whether the evidence supports the exact claim elements, not just the topic.
 - **Weight by source type**:
   - Primary (court filings, direct documents, testimony) > secondary (news reports, analysis)
   - Current evidence > potentially outdated evidence
@@ -88,13 +89,23 @@ Every claim produces an evidence trail in `fact-check.json`:
   "claim_text": "Company X paid Y million to Z in 2024",
   "verdict": "verified",
   "confidence": "high",
+  "grounding_assessment": {
+    "support_type": "direct",
+    "grounding_strength": "full",
+    "claim_elements_checked": ["actor", "amount", "recipient", "date"],
+    "missing_assumptions": [],
+    "contradiction_search": "Searched registry updates, court records, and reputable coverage for conflicting award details; none found.",
+    "confidence_cap": "high",
+    "assessment": "The contract record directly grounds the payment, amount, recipient, and 2024 date."
+  },
   "evidence_for": [
     {
       "description": "Contract document on gov.us registry filed 2024-06-15",
       "source": "https://sam.gov/opp/abc123",
       "source_type": "primary",
       "archive_url": "https://web.archive.org/web/20260315/https://sam.gov/...",
-      "access_method": "full_text"
+      "access_method": "full_text",
+      "local_file": "cases/example/research/sam-gov-abc123.md"
     },
     {
       "description": "Reuters coverage confirming the contract award",
@@ -181,7 +192,7 @@ spawn-agent(
   agent_id: "fact-checker",
   prompt: "PROJECT: {project}
 INTEGRATIONS: osint_navigator={config.integrations.osint_navigator}
-SKILLS: web-archiving, content-access
+SKILLS: web-archiving, content-access, epistemic-grounding
 
 Fact-check all claims in cases/{project}/data/findings.json.
 Write to cases/{project}/data/fact-check.json.",

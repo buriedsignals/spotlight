@@ -11,10 +11,10 @@ spotlight/
 ├── setup.html                # Browser-based installer — picks runtime, collects keys, generates install script
 ├── .spotlight-config.json    # Per-session config (search library, vault path, cases root, runtime)
 ├── .gitignore
-├── schemas/                  # JSON schemas — 5 case files, all schema_version 1.0
-├── skills/                   # 11 skills (pi-native SKILL.md format)
+├── schemas/                  # JSON schemas — 6 case files, all schema_version 1.0
+├── skills/                   # 14 skills (pi-native SKILL.md format)
 ├── agents/                   # 2 agent prompt bundles (investigator + fact-checker)
-├── integrations/             # External tool integrations (browser-use, Junkipedia, OSINT Navigator, Unpaywall)
+├── integrations/             # External tool integrations (Browser Harness, browser-use, Junkipedia, OSINT Navigator, Phantom Tide, Unpaywall)
 ├── docs/                     # You are here. Operator manual.
 ├── monitoring/               # Case-level monitor registry helper + leads queue
 └── cases/                    # Per-investigation output (gitignored)
@@ -26,7 +26,7 @@ spotlight/
 
 1. **13-verb registry** — the abstract tool vocabulary every skill instruction uses
 2. **Agent manifests** — `investigator` and `fact-checker` with `allowed_verbs`, `iteration_limit`, `preferred_model`
-3. **Skill registry** — 11 skills with IDs, paths, and which agents can invoke them
+3. **Skill registry** — 14 skills with IDs, paths, and which agents can invoke them
 4. **Cases directory structure** — `cases/{project}/{data,research}/` convention
 5. **Schema reference** — pointers to `schemas/*.json`
 6. **Sensitive mode** — toggle that strips `fetch`/`search` from allowed_verbs
@@ -51,7 +51,7 @@ spotlight/
 
 These are **abstract** — the runtime adapter binds each to a concrete tool. See [integrations.md](integrations.md) for per-runtime mappings.
 
-## schemas/ — 5 case files
+## schemas/ — 6 case files
 
 Every case file validates against a schema. All declare `schema_version: "1.0"`.
 
@@ -60,6 +60,7 @@ Every case file validates against a schema. All declare `schema_version: "1.0"`.
 | `findings.schema.json` | `cases/{project}/data/findings.json` | Investigator output — claims, evidence, sources, confidence, perspective, monitoring_recommendations |
 | `fact-check.schema.json` | `cases/{project}/data/fact-check.json` | Fact-checker output — per-claim verdicts, evidence_for/against, gaps_for_next_cycle |
 | `methodology.schema.json` | `cases/{project}/data/methodology.json` | Investigator PLANNING output — investigation_plan, tools_required, opsec_considerations |
+| `evidence-bundle.schema.json` | `cases/{project}/data/evidence-bundle.json` | Acquisition artifacts, missing-source gates, hashes, and claim links |
 | `investigation-log.schema.json` | `cases/{project}/data/investigation-log.json` | Append-only cycle audit trail |
 | `summary.schema.json` | `cases/{project}/data/summary.json` | Gate 1 summary |
 
@@ -69,7 +70,7 @@ Validate a case file:
 python3 -m jsonschema -i cases/{project}/data/findings.json schemas/findings.schema.json
 ```
 
-## skills/ — 11 skills
+## skills/ — 14 skills
 
 Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for large supporting content).
 
@@ -80,14 +81,17 @@ Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for larg
 ### Pipeline-support skills (invocable by orchestrator)
 
 - **`review`** — post-Gate-1 HTML review artifact. Renders a self-contained `cases/{project}/review.html` the journalist opens in any browser, submits structured feedback, downloads as JSON. Mode B re-spawns the investigator to process the feedback and regenerates the HTML. No server required.
-- **`integrations`** — routing layer for external tool integrations (browser-use, Junkipedia, OSINT Navigator, Unpaywall). Reads live preflight status, maps investigation tasks to integrations. See `integrations/` at repo root for manifests + per-integration usage docs.
+- **`integrations`** — routing layer for external tool integrations (Browser Harness, browser-use, Junkipedia, OSINT Navigator, Phantom Tide, Unpaywall). Reads live preflight status, maps investigation tasks to integrations. See `integrations/` at repo root for manifests + per-integration usage docs.
 - **`ingest`** — archival from case files to vault. 7-step process with `.ingest-lock` concurrency and directory fallback.
 - **`monitoring`** — case-level monitoring orchestration. Coordinates Mycroft passive signals, Scoutpost durable monitors, and runtime-native fallbacks.
+- **`acquisition-graduation`** — turns repeated Browser Harness acquisition successes into durable source/domain guidance without secrets or brittle session details.
 
 ### Agent-support skills (invocable by investigator / fact-checker)
 
 - **`web-archiving`** — Wayback → Archive.today → local scrape hierarchy. Chain of custody blocks.
 - **`content-access`** — 8-step paywall hierarchy. `access_method` enum.
+- **`epistemic-grounding`** — claim-to-evidence grounding, confidence caps, and failure routing for weak or adjacent evidence.
+- **`shell-safety`** — safe command construction, validation helpers, and destructive-operation probe rules.
 - **`osint`** — tool routing table + 150-tool catalog + OSINT Navigator integration.
 - **`investigate`** — step-by-step techniques (geolocation, person, platform, verification, transport).
 - **`follow-the-money`** — financial methodology (UBO, offshore, budget, assets).
@@ -121,8 +125,8 @@ The body is instructions for the runtime's model: what to do when invoked, which
 
 Unlike skills (which are invoked), agents are **spawned**. Their markdown files are prompt bundles consumed by `spawn-agent`.
 
-- **`investigator.md`** — two modes: `PLANNING` (writes `methodology.json`) and `EXECUTION` (writes `findings.json` + appends `investigation-log.json`). Iteration limit 80. Loads skills osint, investigate, follow-the-money, web-archiving, content-access, social-media-intelligence.
-- **`fact-checker.md`** — SIFT methodology, verdict taxonomy, independent from investigator. Iteration limit 50. Loads skills osint, web-archiving, content-access. Cannot `spawn-agent` (no recursive spawning).
+- **`investigator.md`** — two modes: `PLANNING` (writes `methodology.json`) and `EXECUTION` (writes `findings.json` + appends `investigation-log.json`). Iteration limit 80. Loads skills acquisition-graduation, osint, investigate, follow-the-money, web-archiving, content-access, epistemic-grounding, shell-safety, social-media-intelligence.
+- **`fact-checker.md`** — SIFT methodology, verdict taxonomy, independent from investigator. Iteration limit 50. Loads skills osint, web-archiving, content-access, epistemic-grounding, shell-safety. Cannot `spawn-agent` (no recursive spawning).
 
 Frontmatter declares `allowed_verbs`, `preferred_model` (per-runtime mapping), `vault_context` (whether to query the vault before research).
 
@@ -200,3 +204,8 @@ This file is gitignored — each user's config is local.
 | New agent | `agents/<new-id>.md` | YAML frontmatter with `allowed_verbs`, `iteration_limit`, `preferred_model`. Add to `AGENTS.md` agent manifest. Consider: does this agent need a corresponding agent-support skill? |
 
 Changes to the 13-verb registry are breaking and require bumping `runtime_version` in `AGENTS.md`. All other extensions are additive.
+
+## See Also
+
+- [epistemic-grounding.md](epistemic-grounding.md) — claim-to-evidence grounding and evidence bundles.
+- [vulnerabilities.md](vulnerabilities.md) — shell-safety risk model and mitigations.

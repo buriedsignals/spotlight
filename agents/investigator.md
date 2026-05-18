@@ -26,12 +26,15 @@ preferred_model:
   fallback_note: "Investigation quality degrades significantly on lighter models. Local ship: unsloth/gemma-4-26B-A4B-it-GGUF (Q4_K_M for 24GB+ Macs, Q6_K_XL for 48GB+). Includes native vision for scanned docs + satellite imagery."
 
 skills:
+  - acquisition-graduation
   - osint
   - investigate
   - follow-the-money
   - social-media-intelligence
   - web-archiving
   - content-access
+  - epistemic-grounding
+  - shell-safety
 
 vault_context:
   enabled: true
@@ -115,7 +118,10 @@ At the start of every investigation, invoke these skills to load your full toolk
 3. **`invoke-skill("follow-the-money")`** — Financial investigation methodology (when applicable).
 4. **`invoke-skill("web-archiving")`** — Archive evidence before it disappears.
 5. **`invoke-skill("content-access")`** — For paywalled sources: work through the access hierarchy before marking low confidence.
-6. **`invoke-skill("social-media-intelligence")`** *(when applicable)* — Load when the investigation touches social media accounts, viral content, or suspected coordination campaigns. Provides account authenticity assessment, coordination detection, and narrative tracking methodology.
+6. **`invoke-skill("epistemic-grounding")`** — Test whether the exact evidence supports the exact claim before assigning confidence.
+7. **`invoke-skill("shell-safety")`** — Required before any `execute-shell` command that includes user, model, scraped, generated, config, or filesystem values.
+8. **`invoke-skill("acquisition-graduation")`** — Use only when a repeated Browser Harness acquisition path is durable enough to preserve as reusable source guidance.
+9. **`invoke-skill("social-media-intelligence")`** *(when applicable)* — Load when the investigation touches social media accounts, viral content, or suspected coordination campaigns. Provides account authenticity assessment, coordination detection, and narrative tracking methodology.
 
 The `fetch` and `search` verbs are always available (universal backing: firecrawl). No skill load required for search/scrape.
 
@@ -125,8 +131,9 @@ These skills contain the full methodology. Follow them.
 
 1. **`search` / `fetch`** (primary) — web search and scraping. Output to `cases/{project}/research/`.
 2. **`invoke-skill("osint")`** — specialized tool recommendations when the OSINT skill routing table doesn't cover your need.
-3. **`execute-shell("curl ...")`** — direct API calls to public databases and registries. Save responses to `cases/{project}/research/`.
-4. **`grep-files` / `list-files` / `read-file`** — search local files, prior research, existing investigation data in `cases/{project}/research/`.
+3. **Browser Harness fallback** — use only when Firecrawl cannot acquire the needed source because the page is dynamic, interactive, authenticated, download-based, iframe/shadow-DOM heavy, or requires visual verification. Save screenshots/downloads to `cases/{project}/evidence/`.
+4. **`execute-shell("curl ...")`** — direct API calls to public databases and registries. Save responses to `cases/{project}/research/`.
+5. **`grep-files` / `list-files` / `read-file`** — search local files, prior research, existing investigation data in `cases/{project}/research/`.
 
 ### 3. Document Trail
 
@@ -242,8 +249,41 @@ Follow it step-by-step. For each step:
 1. Execute the planned verb with the specified target
 2. Save the result to `cases/{project}/research/` (use a descriptive filename)
 3. Read the result
-4. Extract findings per the evidence-grounding rules
-5. If the step fails, try the fallback; if that also fails, document the failure in `investigation-log.json` under `failed_approaches`
+4. Run the missing-source gate and record the acquisition in `data/evidence-bundle.json`
+5. Extract findings per the evidence-grounding rules
+6. If the step fails, try the fallback; if that also fails, document the failure in `investigation-log.json` under `failed_approaches`
+
+### Missing-Source Gate
+
+After every Firecrawl-backed `search` or `fetch`, answer these questions before deciding whether to use a browser:
+
+- What source was requested?
+- What did Firecrawl return?
+- What artifact path was saved?
+- What is still missing?
+- Does the remaining gap require a browser, authenticated session, download, screenshot, or manual human verification?
+- Does the gap cap confidence or require a human-verification flag?
+
+If Firecrawl returned enough evidence, do not use Browser Harness. Browser Harness is the default browser fallback, not the first acquisition layer.
+
+### Evidence Bundle
+
+Create or update `cases/{project}/data/evidence-bundle.json` during every execution cycle. Each acquisition attempt gets an item with:
+
+- `id` (`E1`, `E2`, ...),
+- `query_or_task`,
+- `acquisition_method`: `firecrawl|browser_harness|manual|api|other`,
+- `source_url`,
+- `accessed`,
+- `raw_path` where available,
+- `screenshot_path` where relevant,
+- `downloaded_document_path` and `sha256` where relevant,
+- `claim_links` to findings,
+- `extraction_confidence`,
+- `human_verification_required`,
+- `missing_source_gate`.
+
+Link each finding to relevant evidence bundle items with `evidence_bundle_refs`.
 
 ### Adapt Only When Stuck
 
@@ -282,6 +322,19 @@ If a planned approach hits a dead end:
       ],
       "confidence": "high|medium|low",
       "confidence_rationale": "why this confidence level",
+      "grounding": {
+        "support_type": "direct|indirect|inferred|contradicted|insufficient",
+        "grounding_strength": "full|partial|weak|none",
+        "source_role": "primary|secondary|contextual",
+        "quote_match": "exact|paraphrase|contextual|none",
+        "claim_elements_supported": ["actor", "action", "date"],
+        "missing_assumptions": [],
+        "contradictions": [],
+        "confidence_cap": "high|medium|low",
+        "misgrounding_risk": "short risk statement",
+        "grounding_rationale": "why the evidence does or does not ground the claim"
+      },
+      "evidence_bundle_refs": ["E1"],
       "perspective": "official|affected_community|independent_observer|corporate|legal"
     }
   ],
@@ -354,6 +407,7 @@ Every finding MUST be grounded in collected evidence files. No exceptions.
 - **Store all research per-case.** All scraped content goes to `cases/{project}/research/` via `fetch(url, "cases/{project}/research/filename.md")`. This makes each case self-contained.
 - **Scrape before you cite.** If you reference a source, you must have scraped it and the content must exist in `cases/{project}/research/`. A finding without a corresponding scraped file is not a finding — it is a claim.
 - **Quote verbatim.** Include the exact text passage from the scraped content that supports each finding in the `evidence` field. Do not paraphrase primary sources.
+- **Ground the claim, not just the source.** `invoke-skill("epistemic-grounding")` and fill the `grounding` object for every finding. Name which material claim elements are supported, what assumptions remain, and the confidence cap. A source-adjacent lead is not a finding.
 - **Link finding to file.** In each source entry, include a `local_file` field pointing to the scraped file where the evidence can be verified:
 
 ```json
@@ -361,6 +415,8 @@ Every finding MUST be grounded in collected evidence files. No exceptions.
   "url": "https://example.org/article/...",
   "type": "news",
   "accessed": "2026-03-02T14:30:00Z",
+  "archive_url": "https://web.archive.org/...",
+  "access_method": "full_text",
   "local_file": "cases/{project}/research/example-article.md"
 }
 ```

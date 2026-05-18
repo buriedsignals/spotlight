@@ -1,6 +1,6 @@
 # browser-use — Agent-Driven Browser Automation
 
-**What:** Open-source Python library (MIT, 88k+ GitHub stars) that lets any LLM control a real Chromium browser. Designed for the "navigate a complex form and export the result" class of OSINT tasks that dev-browser (human-in-the-loop) and firecrawl (static scrape) don't cover.
+**What:** Open-source Python library (MIT, 88k+ GitHub stars) that lets any LLM control a real Chromium browser. In Spotlight v2 this is optional/adjacent automation; Browser Harness is the preferred acquisition fallback when evidence preservation matters.
 
 **When to use:**
 
@@ -12,10 +12,10 @@
 **When NOT to use:**
 
 - Static pages → use `fetch` (firecrawl). Faster, cheaper, more reliable.
-- Authenticated / court-record / gov-portal captures needing chain-of-custody → use `dev-browser` (human-in-the-loop, SHA-256 evidence blocks).
+- Authenticated / court-record / gov-portal captures needing chain-of-custody → use `browser-harness` plus `web-archiving` and record the run in `evidence-bundle.json`.
 - Bulk crawling → use firecrawl's crawl mode.
 
-**Complement, not replacement:** browser-use handles agent-driven automation where chain-of-custody isn't the bar. dev-browser handles evidence capture where it is.
+**Complement, not replacement:** browser-use handles agent-driven automation where chain-of-custody is not the bar. Browser Harness handles acquisition fallback and evidence capture where it is.
 
 ## Setup
 
@@ -34,10 +34,11 @@ export BROWSER_USE_API_KEY=bu-...
 
 ## Invocation
 
-From the agent's perspective, browser-use is a shell-out via `execute-shell`. The wrapper script lives outside this repo — install it on the host so `browser-use` is on PATH, then:
+From the agent's perspective, browser-use is a shell-out via `execute-shell`. Invoke `shell-safety` first. Prefer task files or JSON over interpolating task text into a shell command. The wrapper script lives outside this repo — install it on the host so `browser-use` is on PATH, then:
 
 ```
-execute-shell('browser-use-cli "<task description>" --output cases/{project}/research/browser-use-<slug>.json')
+write-file("cases/{project}/research/browser-use-task.json", <serialized task JSON>)
+execute-shell('browser-use-cli --task-file cases/{project}/research/browser-use-task.json --output cases/{project}/research/browser-use-<slug>.json')
 ```
 
 For programmatic use (Python harness):
@@ -59,7 +60,7 @@ Store the resulting JSON/markdown into `cases/{project}/research/` with a `brows
 
 - Record the exact task string (prompt) sent to browser-use in the source entry under a `task` field, for reproducibility.
 - Record the model used in the source entry.
-- browser-use output is NOT chain-of-custody-grade by default — no timestamped screenshots, no SHA-256 hashes. If the evidence needs legal defensibility, follow up with `dev-browser` or `web-archiving` to produce a canonical preserved copy.
+- browser-use output is NOT chain-of-custody-grade by default. If the evidence needs legal defensibility, follow up with Browser Harness and `web-archiving` to produce a canonical preserved copy and update `evidence-bundle.json`.
 
 ## Sensitive mode
 
@@ -70,6 +71,6 @@ In sensitive mode, browser-use SHOULD NOT run against live external sites (the s
 | Need | Prefer |
 |---|---|
 | Static scrape | `fetch` (firecrawl) |
-| Authenticated evidence capture | `dev-browser` (chain of custody) |
+| Authenticated evidence capture | `browser-harness` + `web-archiving` |
 | Tool discovery for a niche platform | `osint-navigator` integration |
 | Bulk crawl | `firecrawl crawl` mode |

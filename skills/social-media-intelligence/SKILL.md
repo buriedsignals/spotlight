@@ -13,6 +13,8 @@ Systematic approaches for investigating social media: authenticating accounts, d
 
 > **Adapted from** [jamditis/claude-skills-journalism](https://github.com/jamditis/claude-skills-journalism) by Jay Amditis (MIT License). Extended for integration with the OSINT investigation pipeline.
 
+Before running any social-media scraper or CLI with keywords, handles, URLs, dates, or output paths, invoke `shell-safety`. Do not interpolate search text into shell commands; pass it through JSON, stdin, a temp file, or a helper that uses argv safely.
+
 ## When to Use This Skill
 
 - Investigating whether an account is authentic or artificially amplified
@@ -97,7 +99,7 @@ When investigating how a claim spread, reconstruct the propagation chain.
 
 Search for the earliest known instance of the claim or content:
 
-- Wayback Machine CDX API: `execute-shell('curl "http://web.archive.org/cdx/search/cdx?url={URL}&output=json&limit=3&fl=timestamp,original"')`
+- Wayback Machine CDX API: validate `{URL}` with `scripts/spotlight_safe.py`, then use `curl --get ... --data-urlencode "url={URL}" --data-urlencode "output=json" --data-urlencode "limit=3" --data-urlencode "fl=timestamp,original"`
 - `search("<claim keywords>", output_path, limit=20)` with date filters — restrict to the window before the story went viral
 - Check if the claim appears in fringe or low-credibility sources before mainstream ones — a common sign of coordinated seeding
 
@@ -155,10 +157,15 @@ Platform-specific scraping can be configured via the `PLATFORM_SCRAPER` env var.
 If `APIFY_TOKEN` is set, use Apify actors:
 
 ```
-execute-shell('apify call apify/twitter-scraper --input "{\"searchTerms\": [\"keyword\"], \"maxItems\": 100}"')
-execute-shell('apify call apify/instagram-scraper --input "{\"directUrls\": [\"https://instagram.com/username\"]}"')
-execute-shell('apify call apify/tiktok-scraper --input "{\"hashtags\": [\"hashtag\"], \"resultsPerPage\": 50}"')
+write-file("cases/{project}/research/apify-twitter-input.json", <serialized actor input JSON>)
+execute-shell('apify call apify/twitter-scraper --input-file cases/{project}/research/apify-twitter-input.json')
+write-file("cases/{project}/research/apify-instagram-input.json", <serialized actor input JSON>)
+execute-shell('apify call apify/instagram-scraper --input-file cases/{project}/research/apify-instagram-input.json')
+write-file("cases/{project}/research/apify-tiktok-input.json", <serialized actor input JSON>)
+execute-shell('apify call apify/tiktok-scraper --input-file cases/{project}/research/apify-tiktok-input.json')
 ```
+
+If the installed Apify CLI does not support `--input-file`, use a local wrapper that reads JSON from a file and passes it through argv/subprocess without invoking a shell. Do not inline search terms or direct URLs into a shell command.
 
 **Option B — Native platform APIs:**
 

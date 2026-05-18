@@ -3,7 +3,7 @@ name: content-access
 description: Work through the legal access hierarchy for paywalled or restricted sources before marking them inaccessible and downgrading confidence
 version: "1.0"
 invocable_by: [investigator, fact-checker]
-requires: [web-archiving]
+requires: [web-archiving, shell-safety]
 env_vars: [CORE_API_KEY]
 attribution: Adapted from jamditis/claude-skills-journalism (https://github.com/jamditis/claude-skills-journalism). Original author: Jay Amditis. MIT License.
 ---
@@ -15,6 +15,8 @@ When a source is behind a paywall or access barrier, work through this hierarchy
 ## Decision Tree
 
 Try each step in order. Stop as soon as you have the full text.
+
+Before any `execute-shell` command that uses a DOI, URL, query, timestamp, filename, or path, invoke `shell-safety` and validate the value with `scripts/spotlight_safe.py`. Prefer `--data-urlencode` or serialized JSON over interpolating values into shell strings.
 
 ### 1. Free Version Search
 
@@ -38,7 +40,8 @@ execute-shell: python3 integrations/preflight.py --json
 Use Unpaywall only when `unpaywall` is green. It requires `$UNPAYWALL_EMAIL` in `.env`; the email is a fair-use identifier, not a notification target. If the integration is red or missing, skip to step 3.
 
 ```
-execute-shell: curl "https://api.unpaywall.org/v2/{DOI}?email=$UNPAYWALL_EMAIL"
+execute-shell: python3 scripts/spotlight_safe.py validate-doi "{DOI}"
+execute-shell: curl --get "https://api.unpaywall.org/v2/{DOI}" --data-urlencode "email=$UNPAYWALL_EMAIL"
 ```
 
 Parse the response for `best_oa_location.url` — if present, it's the legal open-access copy. Also check `oa_locations[]` for mirrors.
@@ -52,7 +55,9 @@ fetch: url={oa_location_url}, output_path=cases/{project}/research/{filename}.md
 ### 3. CORE (295M Open Access Papers)
 
 ```
-execute-shell: curl "https://api.core.ac.uk/v3/search/works?q={query}&limit=5" \
+execute-shell: curl --get "https://api.core.ac.uk/v3/search/works" \
+  --data-urlencode "q={query}" \
+  --data-urlencode "limit=5" \
   -H "Authorization: Bearer ${CORE_API_KEY}"
 ```
 
@@ -61,7 +66,10 @@ Check `results[].downloadUrl` for PDF links.
 ### 4. Semantic Scholar
 
 ```
-execute-shell: curl "https://api.semanticscholar.org/graph/v1/paper/search?query={query}&fields=title,openAccessPdf,externalIds&limit=5"
+execute-shell: curl --get "https://api.semanticscholar.org/graph/v1/paper/search" \
+  --data-urlencode "query={query}" \
+  --data-urlencode "fields=title,openAccessPdf,externalIds" \
+  --data-urlencode "limit=5"
 ```
 
 Check `openAccessPdf.url`.
@@ -71,17 +79,25 @@ Check `openAccessPdf.url`.
 Check if an archived version is accessible before the paywall went up:
 
 ```
-execute-shell: curl "http://web.archive.org/cdx/search/cdx?url={URL}&output=json&limit=3&fl=timestamp,statuscode"
+execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+execute-shell: curl --get "http://web.archive.org/cdx/search/cdx" \
+  --data-urlencode "url={URL}" \
+  --data-urlencode "output=json" \
+  --data-urlencode "limit=3" \
+  --data-urlencode "fl=timestamp,statuscode"
 ```
 
 ```
-execute-shell: curl -s "https://archive.ph/newest/{URL}"
+execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+execute-shell: curl -s "https://archive.ph/newest/" --get --data-urlencode "url={URL}"
 ```
 
 Early snapshots often predate paywall implementation. If a pre-paywall snapshot is found, retrieve it:
 
 ```
-execute-shell: curl "https://web.archive.org/web/{TIMESTAMP}/{URL}" -o cases/{project}/research/archived/{filename}.md
+execute-shell: python3 scripts/spotlight_safe.py validate-timestamp "{TIMESTAMP}"
+execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+fetch: url=https://web.archive.org/web/{TIMESTAMP}/{URL}, output_path=cases/{project}/research/archived/{filename}.md
 ```
 
 ### 6. Google Scholar

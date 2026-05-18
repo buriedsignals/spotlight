@@ -25,6 +25,19 @@
       ],
       "confidence": "high",
       "confidence_rationale": "Primary registry source, archived, access_method full_text.",
+      "grounding": {
+        "support_type": "direct",
+        "grounding_strength": "full",
+        "source_role": "primary",
+        "quote_match": "exact",
+        "claim_elements_supported": ["actor", "registered_address", "incorporation_date", "registration_number"],
+        "missing_assumptions": [],
+        "contradictions": [],
+        "confidence_cap": "high",
+        "misgrounding_risk": "Low; the claim restates fields from the registry filing.",
+        "grounding_rationale": "The quoted registry filing directly names the company, registration number, incorporation date, registered agent, and location."
+      },
+      "evidence_bundle_refs": ["E1"],
       "perspective": "official"
     },
     {
@@ -44,12 +57,26 @@
           "url": "https://aleph.occrp.org/datasets/companies/acme-trust",
           "type": "ngo_report",
           "accessed": "2026-04-17T12:45:00Z",
+          "archive_url": "https://web.archive.org/web/20260417124500/https://aleph.occrp.org/datasets/companies/acme-trust",
           "access_method": "full_text",
           "local_file": "cases/sample-investigation/research/occrp-aleph-acme-trust.html"
         }
       ],
       "confidence": "high",
       "confidence_rationale": "Two independent investigative databases converge on the same pattern.",
+      "grounding": {
+        "support_type": "indirect",
+        "grounding_strength": "partial",
+        "source_role": "secondary",
+        "quote_match": "paraphrase",
+        "claim_elements_supported": ["registered_agent", "shared_address", "company_count", "entity_cluster"],
+        "missing_assumptions": ["The 12-entity cluster identifies one ultimate beneficial owner from primary disclosure records."],
+        "contradictions": [],
+        "confidence_cap": "medium",
+        "misgrounding_risk": "Secondary databases may aggregate or infer relationships from source records not yet inspected directly.",
+        "grounding_rationale": "The sources support the shared-agent cluster, but primary UBO documentation is still missing, so the UBO portion is only partially grounded."
+      },
+      "evidence_bundle_refs": ["E2"],
       "perspective": "independent_observer"
     }
   ],

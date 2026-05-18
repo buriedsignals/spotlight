@@ -105,7 +105,9 @@ write-file("{vault}/.ingest-lock", "{project-id} {ISO timestamp}")
 Remove the lock when ingestion completes — whether successful or failed. Always clean up:
 
 ```
-execute-shell("rm {vault}/.ingest-lock")
+execute-shell("python3 scripts/spotlight_safe.py destructive-probe --base {vault} --path .ingest-lock")
+execute-shell("python3 scripts/spotlight_safe.py resolve-path --base {vault} --path .ingest-lock")
+execute-shell("rm <resolved-lock-path-from-probe>")
 ```
 
 If the process errors partway through, remove the lock before reporting the error.

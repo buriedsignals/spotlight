@@ -25,7 +25,8 @@ This email is sent to Unpaywall as a fair-use contact identifier. It is not an A
 ## Request
 
 ```bash
-curl "https://api.unpaywall.org/v2/{DOI}?email=${UNPAYWALL_EMAIL}"
+python3 scripts/spotlight_safe.py validate-doi "{DOI}"
+curl --get "https://api.unpaywall.org/v2/{DOI}" --data-urlencode "email=${UNPAYWALL_EMAIL}"
 ```
 
 ## Output Handling

@@ -14,7 +14,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "claim", "sources", "confidence"],
+        "required": ["id", "claim", "evidence", "sources", "confidence", "grounding"],
         "properties": {
           "id": { "type": "string" },
           "claim": { "type": "string" },
@@ -23,11 +23,12 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["url", "accessed"],
+              "required": ["url", "accessed", "archive_url", "access_method", "local_file"],
               "properties": {
                 "url": { "type": "string", "format": "uri" },
                 "type": { "enum": ["court_filing","news","registry","social_media","government","ngo_report","satellite","other"] },
                 "accessed": { "type": "string", "format": "date-time" },
+                "archive_url": { "type": "string" },
                 "local_file": { "type": "string" },
                 "access_method": { "enum": ["full_text","open_access","archive_copy","abstract_only","inaccessible"] }
               }
@@ -35,6 +36,8 @@
           },
           "confidence": { "enum": ["high","medium","low"] },
           "confidence_rationale": { "type": "string" },
+          "grounding": { "$ref": "#/definitions/grounding" },
+          "evidence_bundle_refs": { "type": "array", "items": { "type": "string" } },
           "perspective": { "enum": ["official","affected_community","independent_observer","corporate","legal"] }
         }
       }
@@ -60,6 +63,33 @@
     }
   },
   "definitions": {
+    "grounding": {
+      "type": "object",
+      "required": [
+        "support_type",
+        "grounding_strength",
+        "source_role",
+        "quote_match",
+        "claim_elements_supported",
+        "missing_assumptions",
+        "contradictions",
+        "confidence_cap",
+        "misgrounding_risk",
+        "grounding_rationale"
+      ],
+      "properties": {
+        "support_type": { "enum": ["direct","indirect","inferred","contradicted","insufficient"] },
+        "grounding_strength": { "enum": ["full","partial","weak","none"] },
+        "source_role": { "enum": ["primary","secondary","contextual"] },
+        "quote_match": { "enum": ["exact","paraphrase","contextual","none"] },
+        "claim_elements_supported": { "type": "array", "items": { "type": "string" } },
+        "missing_assumptions": { "type": "array", "items": { "type": "string" } },
+        "contradictions": { "type": "array", "items": { "type": "string" } },
+        "confidence_cap": { "enum": ["high","medium","low"] },
+        "misgrounding_risk": { "type": "string" },
+        "grounding_rationale": { "type": "string" }
+      }
+    },
     "monitoring_recommendation": {
       "type": "object",
       "required": ["id", "target", "scout_type", "criteria", "rationale", "priority"],

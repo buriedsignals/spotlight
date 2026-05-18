@@ -50,6 +50,9 @@ Confirm the following skills resolve via `invoke-skill`:
 - `osint` — tool routing and technique catalog
 - `investigate` — step-by-step techniques
 - `follow-the-money` — financial investigation methodology
+- `epistemic-grounding` — claim-to-evidence grounding and confidence caps
+- `shell-safety` — safe command construction and destructive-operation probes
+- `acquisition-graduation` — reusable Browser Harness acquisition paths
 - `social-media-intelligence` — account authenticity, coordination detection
 
 These ship in `skills/` in this repo. If your runtime cannot resolve them, fix the skill-loading configuration before proceeding.
@@ -62,8 +65,11 @@ Agents have access to the following skills by their own `invoke-skill` calls:
 
 | Skill | Agent(s) | Purpose |
 |---|---|---|
+| `acquisition-graduation` | investigator, fact-checker | Graduate repeated Browser Harness acquisition paths into durable source/domain guidance |
 | `web-archiving` | investigator, fact-checker | Archive all evidence before citing |
 | `content-access` | investigator, fact-checker | Work through paywall hierarchy before marking sources inaccessible |
+| `epistemic-grounding` | investigator, fact-checker | Test whether exact evidence actually supports exact claims; cap confidence when grounding is weak |
+| `shell-safety` | investigator, fact-checker | Validate untrusted values before execute-shell; require probes for destructive operations |
 | `osint`, `investigate`, `follow-the-money` | investigator | Tool routing + technique catalog |
 | `social-media-intelligence` | investigator, fact-checker | Account authenticity, coordination detection, narrative tracking |
 
@@ -111,6 +117,7 @@ Derive a project slug from the user's lead (lowercase, hyphens, no spaces). Crea
 cases/{project}/
 cases/{project}/data/
 cases/{project}/research/
+cases/{project}/evidence/
 ```
 
 ### 6. Duplicate project check
@@ -190,6 +197,7 @@ Display a combined summary to the user so they know which external integrations 
 Typical expectations:
 
 - `firecrawl` ready (checked in step 2 already — Spotlight cannot start without it)
+- Integration `browser-harness` green if the `browser-harness` CLI is available
 - Integration `browser-use` green if `pip install browser-use` was run during setup
 - Integration `osint-navigator` green if `OSINT_NAV_API_KEY` is set
 - Other integrations (junkipedia, future integrations like serus/thinkpol) green only if user has access
@@ -229,7 +237,7 @@ handle = spawn-agent(
 PROJECT: {project}
 VAULT_PATH: {vault_path or 'none'}
 INTEGRATIONS: osint_navigator={config.integrations.osint_navigator}
-SKILLS: web-archiving, content-access, social-media-intelligence (load when investigation touches social media accounts, coordination, or narrative spread)
+SKILLS: acquisition-graduation, web-archiving, content-access, epistemic-grounding, shell-safety, social-media-intelligence (load when investigation touches social media accounts, coordination, or narrative spread)
 
 Approved brief directions:
 {directions}
@@ -268,7 +276,9 @@ PROJECT: {project}
 VAULT_PATH: {vault_path or 'none'}
 INTEGRATIONS: osint_navigator={config.integrations.osint_navigator}
 CYCLE: {N}
-SKILLS: web-archiving (archive all evidence before citing), content-access (paywalled sources — use before marking inaccessible), social-media-intelligence (use for account authenticity, coordination detection, narrative tracking when social media is involved)
+SKILLS: acquisition-graduation (graduate repeated Browser Harness paths only after repeatability is proven), web-archiving (archive all evidence before citing), content-access (paywalled sources — use before marking inaccessible), epistemic-grounding (fill grounding object and cap confidence when support is weak), shell-safety (validate untrusted values before execute-shell), social-media-intelligence (use for account authenticity, coordination detection, narrative tracking when social media is involved)
+
+ACQUISITION: Firecrawl first via search/fetch. After every Firecrawl result, run the missing-source gate. Use Browser Harness only when static acquisition is insufficient for dynamic pages, portals, downloads, screenshots, visual verification, iframes/shadow DOM, or legally appropriate authenticated/local-browser contexts.
 
 {if N > 1: Previous findings gaps:
 {gaps}
@@ -283,6 +293,7 @@ When you identify targets worth persistent monitoring, add them to monitoring_re
 
 Read methodology from cases/{project}/data/methodology.json.
 Write to cases/{project}/data/findings.json.
+Write/update cases/{project}/data/evidence-bundle.json with acquisition attempts, missing-source gate answers, artifact paths, hashes, and claim links.
 Append to cases/{project}/data/investigation-log.json.",
        config: { iteration_limit: 80 }
      )
@@ -296,13 +307,15 @@ Append to cases/{project}/data/investigation-log.json.",
        agent_id: "fact-checker",
        prompt: "PROJECT: {project}
 INTEGRATIONS: osint_navigator={config.integrations.osint_navigator}
-SKILLS: web-archiving (archive sources before issuing verdict), content-access (paywalled sources — use before marking inaccessible)
+SKILLS: web-archiving (archive sources before issuing verdict), content-access (paywalled sources — use before marking inaccessible), epistemic-grounding (judge whether evidence actually grounds each claim), shell-safety (validate untrusted values before execute-shell)
 
 Apply SIFT source credibility check before searching for corroborating evidence.
+Independently assess claim-to-evidence grounding before assigning verdicts or confidence.
 Archive every source before citing it. Work through the content-access hierarchy before marking any source inaccessible.
 If you identify sources worth monitoring for ongoing verification, add them to monitoring_recommendations[] in data/findings.json.
 
 Fact-check all claims in cases/{project}/data/findings.json.
+Read cases/{project}/data/evidence-bundle.json when present and use it to assess acquisition quality, missing-source gates, screenshots/downloads, hashes, and human-verification flags.
 Write to cases/{project}/data/fact-check.json.",
        config: { iteration_limit: 50 }
      )
@@ -312,8 +325,11 @@ Write to cases/{project}/data/fact-check.json.",
 
   5. Run editorial standards check:
      - Do findings have sources with URLs, timestamps, and `local_file`?
+     - Does every finding include a `grounding` object with support type, source role, missing assumptions, and confidence cap?
+     - Does evidence-bundle.json exist with acquisition method, artifact paths, missing-source gate answers, and claim links?
      - Does investigation-log.json have substance (techniques, queries, failed approaches)?
      - Do high-confidence findings have 2+ fact-check sources?
+     - Do fact-check claims include `grounding_assessment`?
      - Are there findings with no fact-check verdict?
      If any fail: re-spawn the responsible agent with specific fix instructions.
      This counts as a cycle.

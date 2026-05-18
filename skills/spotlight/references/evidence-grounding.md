@@ -12,9 +12,25 @@ Evidence grounding rules for the investigation pipeline. Referenced by the orche
 
 3. **Quote verbatim from primary sources.** Evidence fields in findings must contain direct quotes from the scraped material, not paraphrases or summaries.
 
-4. **Link every finding to file.** Each source entry in a finding must include a `local_file` path pointing to the scraped content in `cases/{project}/research/`.
+4. **Ground the exact claim.** A source must support the exact material claim elements: actor, action, object, time, place, amount, relationship, and status. If the source only mentions the topic, the item is a source-adjacent lead, not a finding.
 
-5. **If cannot scrape, explain why.** Document the reason (paywall, geo-block, requires login, site down) and mark the finding's confidence accordingly. A finding that relies on an unscraped source cannot be "high" confidence.
+5. **Link every finding to file and archive.** Each source entry in a finding must include `local_file`, `archive_url`, and `access_method`.
+
+6. **Fill the grounding object.** Every finding must include `grounding.support_type`, `grounding_strength`, `source_role`, `quote_match`, supported claim elements, missing assumptions, contradictions, confidence cap, misgrounding risk, and rationale.
+
+7. **If cannot scrape, explain why.** Document the reason (paywall, geo-block, requires login, site down) and mark the finding's confidence accordingly. A finding that relies on an unscraped source cannot be "high" confidence.
+
+8. **Use epistemic-grounding for confidence caps.** Invoke `epistemic-grounding` when extracting findings or fact-checking. Weak claim-to-evidence fit caps confidence even when a source exists.
+
+## Grounding Ladder
+
+| Level | Meaning | Editorial Status |
+|---|---|---|
+| Unsourced signal | Interesting but no source anchor | Lead only |
+| Source-adjacent lead | Source mentions the topic but not the claim | Lead only |
+| Partially grounded claim | Some elements supported; assumptions remain | At most medium confidence |
+| Directly grounded claim | All material elements directly supported | Finding candidate |
+| Independently verified finding | Direct grounding plus independent corroboration and no unresolved contradiction | Gate-ready finding |
 
 ---
 
