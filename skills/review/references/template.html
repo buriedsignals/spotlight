@@ -157,9 +157,60 @@
   .badge.v-unverified { background: rgba(106,115,130,0.2); color: var(--grey); }
   .badge.v-disputed { background: rgba(217,164,65,0.18); color: var(--amber); }
   .badge.v-false { background: rgba(227,107,107,0.2); color: var(--red); }
+  .badge.g-full { background: rgba(110,191,110,0.18); color: var(--green); }
+  .badge.g-partial { background: rgba(217,164,65,0.18); color: var(--amber); }
+  .badge.g-weak, .badge.g-none { background: rgba(106,115,130,0.2); color: var(--grey); }
+  .badge.support-direct { background: rgba(110,191,110,0.15); color: var(--green); }
+  .badge.support-indirect, .badge.support-inferred { background: rgba(217,164,65,0.15); color: var(--amber); }
+  .badge.support-contradicted, .badge.support-insufficient { background: rgba(227,107,107,0.16); color: var(--red); }
   .badge.perspective { background: var(--bg-3); color: var(--muted); }
   .claim { font-size: 1.05rem; font-weight: 500; margin: 0 0 10px; }
   .evidence { color: var(--muted); font-size: 0.9rem; font-style: italic; margin: 0 0 12px; padding-left: 12px; border-left: 2px solid var(--border); }
+  .grounding-detail, .provenance-panel {
+    margin: 14px 0;
+    padding: 14px;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.88rem;
+  }
+  .grounding-detail h4, .provenance-panel h3 {
+    margin: 0 0 10px;
+    font-size: 0.82rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .grounding-grid, .provenance-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 16px;
+  }
+  @media (max-width: 640px) { .grounding-grid, .provenance-grid { grid-template-columns: 1fr; } }
+  .kv .k {
+    display: block;
+    color: var(--muted);
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+  }
+  .kv .v { color: var(--fg); }
+  .grounding-detail ul, .provenance-panel ul { margin: 4px 0; padding-left: 18px; }
+  .grounding-detail li, .provenance-panel li { margin: 2px 0; }
+  .provenance-panel {
+    margin-bottom: 24px;
+    border-left: 3px solid var(--accent);
+  }
+  .provenance-panel.status-signed { border-left-color: var(--green); }
+  .provenance-panel.status-signing_failed { border-left-color: var(--red); }
+  .provenance-panel.status-unsigned { border-left-color: var(--amber); }
+  .provenance-panel .hash {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: var(--muted);
+    font-size: 0.78rem;
+    word-break: break-all;
+  }
   .sources summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; margin-bottom: 6px; user-select: none; }
   .sources summary:hover { color: var(--fg); }
   .sources table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 8px; }
@@ -325,6 +376,8 @@
 
     <section class="stats" id="stats"></section>
 
+    <div id="provenance-block"></div>
+
     <div id="conclusions-block"></div>
 
     <h2 class="section">Findings</h2>
@@ -417,6 +470,8 @@
     stats.appendChild(el);
   });
 
+  renderProvenance();
+
   // Conclusions block
   if (DATA.summary && Array.isArray(DATA.summary.conclusions) && DATA.summary.conclusions.length) {
     const block = document.createElement('div');
@@ -445,6 +500,8 @@
       '<span class="fid">' + escapeHtml(f.id) + '</span>' +
       (f.confidence ? '<span class="badge conf-' + f.confidence + '">' + f.confidence + '</span>' : '') +
       (f.verdict && f.verdict.verdict ? '<span class="badge v-' + f.verdict.verdict + '">' + f.verdict.verdict + '</span>' : '') +
+      (f.grounding && f.grounding.grounding_strength ? '<span class="badge g-' + f.grounding.grounding_strength + '">grounding ' + f.grounding.grounding_strength + '</span>' : '') +
+      (f.grounding && f.grounding.support_type ? '<span class="badge support-' + f.grounding.support_type + '">' + f.grounding.support_type + '</span>' : '') +
       (f.perspective ? '<span class="badge perspective">' + escapeHtml(f.perspective) + '</span>' : '');
     card.appendChild(hdr);
 
@@ -460,13 +517,16 @@
       card.appendChild(ev);
     }
 
+    const groundingEl = renderGrounding(f);
+    if (groundingEl) card.appendChild(groundingEl);
+
     // Sources
     if (f.sources && f.sources.length) {
       const det = document.createElement('details');
       det.className = 'sources';
       det.innerHTML =
         '<summary>' + f.sources.length + ' source' + (f.sources.length === 1 ? '' : 's') + '</summary>' +
-        '<table><thead><tr><th>Source</th><th>Type</th><th>Access</th></tr></thead><tbody>' +
+        '<table><thead><tr><th>Source</th><th>Type</th><th>Access</th><th>Local file</th></tr></thead><tbody>' +
         f.sources.map(s => {
           const url = s.url || '';
           const arch = s.archive_url ? ' · <a href="' + escapeHtml(s.archive_url) + '" target="_blank" rel="noopener">archive</a>' : '';
@@ -474,6 +534,7 @@
             '<td><a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">' + escapeHtml(url) + '</a>' + arch + '</td>' +
             '<td>' + escapeHtml(s.type || '—') + '</td>' +
             '<td>' + escapeHtml(s.access_method || '—') + '</td>' +
+            '<td>' + escapeHtml(s.local_file || '—') + '</td>' +
             '</tr>';
         }).join('') +
         '</tbody></table>';
@@ -623,6 +684,95 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  function renderList(items) {
+    if (!Array.isArray(items) || items.length === 0) return '<span class="v">—</span>';
+    return '<ul>' + items.map(item => '<li>' + escapeHtml(item) + '</li>').join('') + '</ul>';
+  }
+
+  function renderKv(label, value) {
+    const rendered = (value == null || value === '') ? '—' : value;
+    return '<div class="kv"><span class="k">' + escapeHtml(label) + '</span><span class="v">' + escapeHtml(rendered) + '</span></div>';
+  }
+
+  function renderGrounding(f) {
+    const g = f.grounding || {};
+    const fg = (f.verdict && f.verdict.grounding_assessment) || {};
+    if (!Object.keys(g).length && !Object.keys(fg).length && !(f.evidence_bundle_refs || []).length) return null;
+
+    const box = document.createElement('div');
+    box.className = 'grounding-detail';
+    let html = '<h4>Grounding</h4><div class="grounding-grid">';
+    html += renderKv('support type', g.support_type || fg.support_type);
+    html += renderKv('strength', g.grounding_strength || fg.grounding_strength);
+    html += renderKv('source role', g.source_role);
+    html += renderKv('quote match', g.quote_match);
+    html += renderKv('confidence cap', g.confidence_cap || fg.confidence_cap);
+    html += renderKv('evidence refs', (f.evidence_bundle_refs || []).join(', '));
+    html += '<div class="kv"><span class="k">supported / checked elements</span>' + renderList(g.claim_elements_supported || fg.claim_elements_checked) + '</div>';
+    html += '<div class="kv"><span class="k">missing assumptions</span>' + renderList(g.missing_assumptions || fg.missing_assumptions) + '</div>';
+    html += '<div class="kv"><span class="k">contradictions</span>' + renderList(g.contradictions) + '</div>';
+    html += renderKv('contradiction search', fg.contradiction_search);
+    html += renderKv('misgrounding risk', g.misgrounding_risk);
+    html += renderKv('assessment', fg.assessment || g.grounding_rationale || f.confidence_rationale);
+    html += '</div>';
+    box.innerHTML = html;
+    return box;
+  }
+
+  function shortHash(hash) {
+    if (!hash) return '—';
+    const s = String(hash);
+    return s.length > 16 ? s.slice(0, 12) + '…' + s.slice(-8) : s;
+  }
+
+  function renderProvenance() {
+    const target = document.getElementById('provenance-block');
+    const p = DATA.provenance_manifest || DATA.provenance || null;
+    const panel = document.createElement('section');
+    panel.className = 'provenance-panel status-' + (p && p.status ? p.status : 'unsigned');
+
+    if (!p) {
+      panel.innerHTML =
+        '<h3>Provenance / C2PA</h3>' +
+        '<div class="provenance-grid">' +
+        renderKv('status', 'not generated') +
+        renderKv('meaning', 'No provenance manifest was included with this review artifact.') +
+        '</div>';
+      target.appendChild(panel);
+      return;
+    }
+
+    const signing = p.signing || {};
+    const artifacts = Array.isArray(p.case_artifacts) ? p.case_artifacts : [];
+    const sources = Array.isArray(p.sources) ? p.sources : [];
+    const humanReview = sources.filter(s => s.human_verification_required).length;
+    let html = '<h3>Provenance / C2PA</h3><div class="provenance-grid">';
+    html += renderKv('status', p.status || 'unsigned');
+    html += renderKv('profile', signing.profile || '—');
+    html += renderKv('generated', p.generated_at ? new Date(p.generated_at).toLocaleString() : '—');
+    html += renderKv('receipt', signing.receipt_path || '—');
+    html += renderKv('case artifacts', artifacts.length);
+    html += renderKv('sources hashed', sources.filter(s => s.sha256).length + ' / ' + sources.length);
+    html += renderKv('human review required', humanReview);
+    html += renderKv('credential', signing.credential_id || (signing.requires_signing_credential ? 'required' : 'not required'));
+    html += '</div>';
+
+    if (artifacts.length) {
+      html += '<details class="sources" style="margin-top:12px;"><summary>' + artifacts.length + ' hashed artifact' + (artifacts.length === 1 ? '' : 's') + '</summary><table><thead><tr><th>Kind</th><th>Path</th><th>SHA-256</th></tr></thead><tbody>' +
+        artifacts.map(a => '<tr><td>' + escapeHtml(a.kind || '—') + '</td><td>' + escapeHtml(a.path || '—') + '</td><td class="hash">' + escapeHtml(shortHash(a.sha256)) + '</td></tr>').join('') +
+        '</tbody></table></details>';
+    }
+
+    if (sources.length) {
+      html += '<details class="sources" style="margin-top:12px;"><summary>' + sources.length + ' provenance source' + (sources.length === 1 ? '' : 's') + '</summary><table><thead><tr><th>Evidence</th><th>Source</th><th>Acquired</th><th>SHA-256</th><th>Human check</th></tr></thead><tbody>' +
+        sources.map(s => '<tr><td>' + escapeHtml(s.evidence_id || '—') + '</td><td><a href="' + escapeHtml(s.source_url || '') + '" target="_blank" rel="noopener">' + escapeHtml(s.source_url || '—') + '</a></td><td>' + escapeHtml(s.acquisition_method || '—') + '</td><td class="hash">' + escapeHtml(shortHash(s.sha256)) + '</td><td>' + (s.human_verification_required ? 'yes' : 'no') + '</td></tr>').join('') +
+        '</tbody></table></details>';
+    }
+
+    panel.innerHTML = html;
+    target.appendChild(panel);
   }
 
   updateStatus();

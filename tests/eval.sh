@@ -154,6 +154,15 @@ else
 fi
 
 echo ""
+echo "── Review artifact regression ──"
+
+if node tests/review-template-check.js >/dev/null 2>&1; then
+  ok "review artifact renders grounding and C2PA provenance state"
+else
+  fail "review artifact regression failed"
+fi
+
+echo ""
 if [ $FAIL -eq 0 ]; then
   printf "%s✓ All %d eval checks passed%s\n" "$_c_green" "$PASS" "$_c_reset"
   exit 0
