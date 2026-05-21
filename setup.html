@@ -1059,23 +1059,37 @@
           <h2 data-reveal="title">Hosted on your Mac.</h2>
         </div>
         <section class="card">
-          <label class="block">Local server</label>
+          <label class="block">Inference server</label>
           <div class="radio-group" id="local-server-group">
             <label><input type="radio" name="local_server" value="llamacpp" checked><span class="opt-name"><span class="name">llama-server</span><span class="desc">Lean and Terminal-only. The script installs it via <code>brew install llama.cpp</code>, downloads the model GGUF from Hugging Face, and serves on <code>127.0.0.1:8080</code>.</span></span></label>
             <label><input type="radio" name="local_server" value="ollama"><span class="opt-name"><span class="name">Ollama</span><span class="desc">CLI-first model manager. The script installs it via <code>brew</code>, pulls the model, starts the service — nothing to click.</span></span></label>
           </div>
 
+          <label class="block" style="margin-top: 24px;">Agent harness</label>
+          <div class="radio-group" id="agent-group">
+            <label><input type="radio" name="agent" value="opencode" checked><span class="opt-name"><span class="name">opencode</span><span class="desc">Recommended. Native sub-agents — investigator and fact-checker run in independent contexts, preserving Spotlight's verification independence guarantee.</span></span></label>
+            <label><input type="radio" name="agent" value="pi"><span class="opt-name"><span class="name">Pi</span><span class="desc">Minimal TypeScript harness (<a href="https://pi.dev" target="_blank">pi.dev</a>) with the <code>pi-llama-cpp</code> extension for model browsing. <strong>No native sub-agents</strong> — investigator and fact-checker share one context, weakening independence. Choose this only for a lean install.</span></span></label>
+          </div>
+
+          <div id="opencode-interface-wrap">
           <label class="block" style="margin-top: 24px;">opencode interface</label>
           <div class="radio-group" id="opencode-interface-group">
             <label><input type="radio" name="opencode_interface" value="cli" checked><span class="opt-name"><span class="name">CLI (Terminal)</span><span class="desc">Lighter — installs <code>brew install opencode</code> and runs in your Terminal. Recommended.</span></span></label>
             <label><input type="radio" name="opencode_interface" value="desktop"><span class="opt-name"><span class="name">Desktop GUI</span><span class="desc">Installs <code>brew install --cask opencode-desktop</code> — same agent, point-and-click app.</span></span></label>
           </div>
+          </div>
 
-          <p class="lede" id="local-lede-llamacpp" style="margin-top: 16px;">
+          <p class="lede" id="local-lede-llamacpp-opencode" style="margin-top: 16px;">
             The installer uses <strong>opencode</strong> (<a href="https://opencode.ai" target="_blank">opencode.ai</a>, MIT) as the agent harness with <strong>llama-server</strong> (llama.cpp) serving the model locally on <code>127.0.0.1:8080</code>. opencode reads Spotlight's skills + AGENTS.md natively; native sub-agents handle the investigator/fact-checker pattern.
           </p>
-          <p class="lede hidden" id="local-lede-ollama" style="margin-top: 16px;">
+          <p class="lede hidden" id="local-lede-ollama-opencode" style="margin-top: 16px;">
             The installer uses <strong>opencode</strong> (<a href="https://opencode.ai" target="_blank">opencode.ai</a>, MIT) as the agent harness and <strong>Ollama</strong> to serve the model locally on <code>127.0.0.1:11434</code>. Both install with one command.
+          </p>
+          <p class="lede hidden" id="local-lede-llamacpp-pi" style="margin-top: 16px;">
+            The installer uses <strong>Pi</strong> (<a href="https://pi.dev" target="_blank">pi.dev</a>, MIT) as the agent harness with <strong>llama-server</strong> serving the model on <code>127.0.0.1:8080</code>. The <code>pi-llama-cpp</code> extension lets you browse/load/switch models from inside Pi. Note: Pi has no native sub-agents, so investigator + fact-checker share context.
+          </p>
+          <p class="lede hidden" id="local-lede-ollama-pi" style="margin-top: 16px;">
+            The installer uses <strong>Pi</strong> (<a href="https://pi.dev" target="_blank">pi.dev</a>, MIT) as the agent harness with <strong>Ollama</strong> on <code>127.0.0.1:11434</code>. Pi's <code>pi-llama-cpp</code> extension speaks the same OpenAI-compatible API surface. Note: Pi has no native sub-agents.
           </p>
 
           <div class="fit-row">
@@ -1519,15 +1533,23 @@
   }
   document.querySelectorAll('input[name="local_model"]').forEach(el => el.addEventListener('change', renderLocalModel));
 
-  // --- Local server switching (llama-server vs Ollama) ---
+  // --- Local server + agent switching ---
   function renderLocalServer() {
     const srv = document.querySelector('input[name="local_server"]:checked').value;
-    document.getElementById('local-lede-llamacpp').classList.toggle('hidden', srv !== 'llamacpp');
-    document.getElementById('local-lede-ollama').classList.toggle('hidden', srv !== 'ollama');
+    const agentEl = document.querySelector('input[name="agent"]:checked');
+    const agent = agentEl ? agentEl.value : 'opencode';
+    // Toggle the four lede variants — only the matching (server, agent) pair is shown.
+    ['llamacpp-opencode', 'ollama-opencode', 'llamacpp-pi', 'ollama-pi'].forEach(key => {
+      const want = `${srv}-${agent}`;
+      document.getElementById('local-lede-' + key).classList.toggle('hidden', key !== want);
+    });
     document.getElementById('local-note-llamacpp').classList.toggle('hidden', srv !== 'llamacpp');
     document.getElementById('local-note-ollama').classList.toggle('hidden', srv !== 'ollama');
+    // opencode-interface picker is opencode-only.
+    document.getElementById('opencode-interface-wrap').classList.toggle('hidden', agent !== 'opencode');
   }
   document.querySelectorAll('input[name="local_server"]').forEach(el => el.addEventListener('change', renderLocalServer));
+  document.querySelectorAll('input[name="agent"]').forEach(el => el.addEventListener('change', renderLocalServer));
 
   // --- Runtime registry (single source of truth) ---
   // Subscription runtimes (claude/gemini/codex) authenticate via their CLI's OAuth login —
@@ -1629,6 +1651,7 @@
       runtime: mode === 'local' ? 'local' : cloudRt,
       local_model: mode === 'local' ? document.querySelector('input[name="local_model"]:checked').value : null,
       local_server: mode === 'local' ? document.querySelector('input[name="local_server"]:checked').value : null,
+      agent: mode === 'local' ? document.querySelector('input[name="agent"]:checked').value : null,
       opencode_interface: mode === 'local' ? document.querySelector('input[name="opencode_interface"]:checked').value : null,
       opencode_provider: cloudRt === 'opencode' ? opencodeProv : null,
       cloud_key: mode === 'cloud' ? document.getElementById('cloud_key').value.trim() : '',
@@ -1652,709 +1675,56 @@
     return "'" + String(s).replace(/'/g, "'\\''") + "'";
   }
 
-  function buildScript(cfg) {
-    const lines = [];
-    const p = s => lines.push(s);
+  function buildExportBlock(cfg) {
+    // Built as: export KEY='value'  (single-quote escaped via shellEscape).
+    // install-spotlight.sh decodes this base64 + evals it.
+    const fields = [
+      ['SPOTLIGHT_MODE',                cfg.mode || ''],
+      ['SPOTLIGHT_RUNTIME',             cfg.runtime || ''],
+      ['SPOTLIGHT_LOCAL_SERVER',        cfg.local_server || ''],
+      ['SPOTLIGHT_LOCAL_MODEL',         cfg.local_model || ''],
+      ['SPOTLIGHT_AGENT',               cfg.agent || ''],
+      ['SPOTLIGHT_OPENCODE_INTERFACE',  cfg.opencode_interface || 'cli'],
+      ['SPOTLIGHT_OPENCODE_PROVIDER',   cfg.opencode_provider || ''],
+      ['SPOTLIGHT_CLOUD_KEY_VAR',       cfg.cloud_key_var || ''],
+      ['SPOTLIGHT_CLOUD_KEY',           cfg.cloud_key || ''],
+      ['SPOTLIGHT_DIR_INPUT',           cfg.install_path || ''],
+      ['SPOTLIGHT_VAULT_INPUT',         cfg.vault_path || ''],
+      ['SPOTLIGHT_VAULT_APP',           cfg.vault_app || 'obsidian'],
+      ['SPOTLIGHT_MODEL_REPO',          cfg.model_repo || ''],
+      ['SPOTLIGHT_INT_BROWSERUSE',      cfg.int_browseruse ? 'true' : 'false'],
+      ['SPOTLIGHT_INT_JUNKIPEDIA',      cfg.int_junkipedia ? 'true' : 'false'],
+      ['JUNKIPEDIA_API_KEY',            cfg.junkipedia_key || ''],
+      ['SPOTLIGHT_INT_UNPAYWALL',       cfg.int_unpaywall ? 'true' : 'false'],
+      ['UNPAYWALL_EMAIL',               cfg.unpaywall_email || ''],
+      ['FIRECRAWL_API_KEY',             cfg.firecrawl_key || ''],
+      ['OSINT_NAV_API_KEY',             cfg.nav_key || ''],
+    ];
+    return fields.map(([k, v]) => `export ${k}=${shellEscape(String(v))}`).join('\n');
+  }
 
-    p('#!/usr/bin/env bash');
-    p('# Spotlight installer — generated ' + new Date().toISOString());
-    p('# Mode: ' + cfg.mode + (cfg.mode === 'cloud' ? ' (' + cfg.runtime + (cfg.opencode_provider ? '/' + cfg.opencode_provider : '') + ')' : ''));
-    p('set -euo pipefail');
-    p('');
-    p('expand_path() {');
-    p('  local input="$1"');
-    p('  if [ "$input" = "~" ]; then printf "%s\\n" "$HOME";');
-    p('  elif [[ "$input" == "~/"* ]]; then printf "%s/%s\\n" "$HOME" "${input#~/}";');
-    p('  else printf "%s\\n" "$input"; fi');
-    p('}');
-    p('');
-    p('SPOTLIGHT_DIR_INPUT=' + shellEscape(cfg.install_path));
-    p('if [ -n "${SPOTLIGHT_DIR:-}" ]; then');
-    p('  SPOTLIGHT_DIR="$SPOTLIGHT_DIR"');
-    p('else');
-    p('  SPOTLIGHT_DIR="$(expand_path "$SPOTLIGHT_DIR_INPUT")"');
-    p('fi');
-    p('SPOTLIGHT_VAULT_INPUT=' + shellEscape(cfg.vault_path));
-    p('SPOTLIGHT_VAULT_PATH="$(expand_path "$SPOTLIGHT_VAULT_INPUT")"');
-    p('SPOTLIGHT_CASES_ROOT="$SPOTLIGHT_VAULT_PATH/cases"');
-    p('REPO_URL="https://github.com/buriedsignals/spotlight.git"');
-    p('export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"');
-    p('');
-    p('_c_reset=$\'\\033[0m\'; _c_cyan=$\'\\033[36m\'; _c_green=$\'\\033[32m\'; _c_red=$\'\\033[31m\'; _c_dim=$\'\\033[2m\'; _c_bold=$\'\\033[1m\'');
-    p('_spin_frames=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)');
-    p('');
-    p('spin() {');
-    p('  local msg="$1"; shift');
-    p('  local tmpfile; tmpfile="$(mktemp)"');
-    p('  ( "$@" ) >"$tmpfile" 2>&1 &');
-    p('  local pid=$!');
-    p('  local i=0 n=${#_spin_frames[@]}');
-    p('  printf "\\033[?25l" 2>/dev/null || true');
-    p('  while kill -0 $pid 2>/dev/null; do');
-    p('    printf "\\r\\033[K%s%s%s %s" "$_c_cyan" "${_spin_frames[$((i % n))]}" "$_c_reset" "$msg"');
-    p('    i=$((i + 1))');
-    p('    sleep 0.08');
-    p('  done');
-    p('  wait $pid 2>/dev/null; local status=$?');
-    p('  printf "\\033[?25h" 2>/dev/null || true');
-    p('  if [ $status -eq 0 ]; then');
-    p('    printf "\\r\\033[K%s✓%s %s\\n" "$_c_green" "$_c_reset" "$msg"');
-    p('  else');
-    p('    printf "\\r\\033[K%s✗%s %s\\n" "$_c_red" "$_c_reset" "$msg"');
-    p('    echo "$_c_dim─── output ───$_c_reset"');
-    p('    cat "$tmpfile"');
-    p('  fi');
-    p('  rm -f "$tmpfile"');
-    p('  return $status');
-    p('}');
-    p('');
-    p('step() { printf "\\n%s%s━━ %s ━━%s\\n" "$_c_bold" "$_c_cyan" "$1" "$_c_reset"; }');
-    p('');
-    p('echo ""');
-    p('echo "${_c_bold}${_c_cyan}  ╔════════════════════════════════════════════════╗${_c_reset}"');
-    p('echo "${_c_bold}${_c_cyan}  ║           Spotlight installer                  ║${_c_reset}"');
-    p('echo "${_c_bold}${_c_cyan}  ╚════════════════════════════════════════════════╝${_c_reset}"');
-    p('echo ""');
-    p('');
-    p('OS="$(uname -s)"');
-    p('if [ "$OS" != "Darwin" ] && [ "$OS" != "Linux" ]; then');
-    p('  echo "Unsupported OS: $OS. macOS or Linux required (Windows: use WSL)." >&2');
-    p('  exit 1');
-    p('fi');
-    p('');
-    p('step "Prerequisites"');
-    p('');
-    p('ensure_brew() {');
-    p('  if command -v brew >/dev/null 2>&1; then');
-    p('    printf "%s✓%s Homebrew present\\n" "$_c_green" "$_c_reset"; return 0');
-    p('  fi');
-    p('  echo ""');
-    p('  echo "Homebrew is needed to install other tools. Install it now? [Y/n]"');
-    p('  read -r ans || ans="Y"');
-    p('  if [[ "$ans" =~ ^[Nn] ]]; then echo "Aborted." >&2; exit 1; fi');
-    p('  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"');
-    p('  [ -x /opt/homebrew/bin/brew ] && eval "$(/opt/homebrew/bin/brew shellenv)"');
-    p('  [ -x /usr/local/bin/brew ] && eval "$(/usr/local/bin/brew shellenv)"');
-    p('}');
-    p('');
-    p('ensure_tool() {');
-    p('  local cmd="$1"; local pkg="${2:-$1}"');
-    p('  if command -v "$cmd" >/dev/null 2>&1; then');
-    p('    printf "%s✓%s %s present\\n" "$_c_green" "$_c_reset" "$cmd"; return 0');
-    p('  fi');
-    p('  ensure_brew');
-    p('  spin "Installing $cmd via brew" brew install "$pkg"');
-    p('}');
-    p('');
-    p('update_repo_ff_only() {');
-    p('  local dir="$1" name="$2" branch="main"');
-    p('  [ -d "$dir/.git" ] || return 1');
-    p('  (');
-    p('    cd "$dir"');
-    p('    if ! git diff --quiet || ! git diff --cached --quiet; then');
-    p('      echo "$name has local uncommitted changes; skipping automatic update."');
-    p('      return 0');
-    p('    fi');
-    p('    before="$(git rev-parse HEAD)"');
-    p('    git fetch origin "$branch"');
-    p('    if git merge-base --is-ancestor HEAD "origin/$branch"; then');
-    p('      git merge --ff-only "origin/$branch"');
-    p('      after="$(git rev-parse HEAD)"');
-    p('      echo "$name $before -> $after"');
-    p('    else');
-    p('      echo "$name has local commits or divergent history; skipping automatic update."');
-    p('    fi');
-    p('  )');
-    p('}');
-    p('');
-    p('if ! command -v git >/dev/null 2>&1; then');
-    p('  if [ "$OS" = "Darwin" ]; then');
-    p('    echo "git is not installed. Install Xcode Command Line Tools now? [Y/n]"');
-    p('    read -r ans || ans="Y"');
-    p('    if [[ "$ans" =~ ^[Nn] ]]; then echo "Aborted." >&2; exit 1; fi');
-    p('    xcode-select --install || true');
-    p('    echo "A dialog opened. Complete the install, then re-run this script."');
-    p('    exit 0');
-    p('  else');
-    p('    ensure_tool git');
-    p('  fi');
-    p('else');
-    p('  printf "%s✓%s git present\\n" "$_c_green" "$_c_reset"');
-    p('fi');
-    p('');
-    p('ensure_tool node');
-    p('ensure_tool python3 python@3.12');
-    if (cfg.mode === 'local') {
-      p('ensure_brew  # local mode needs brew for ' + (cfg.local_server === 'llamacpp' ? 'llama.cpp' : 'ollama') + ' + opencode');
-    }
-    p('');
-    if (cfg.vault_app === 'tolaria') {
-      p('step "Tolaria vault"');
-      p('if [ "$OS" = "Darwin" ]; then');
-      p('  if [ -d "/Applications/Tolaria.app" ] || [ -d "$HOME/Applications/Tolaria.app" ]; then');
-      p('    printf "%s✓%s Tolaria.app installed\\n" "$_c_green" "$_c_reset"');
-      p('  else');
-      p('    tmpdir="$(mktemp -d)"');
-      p('    spin "Downloading Tolaria latest release" curl -L "https://github.com/refactoringhq/tolaria/releases/latest/download/Tolaria.app.tar.gz" -o "$tmpdir/Tolaria.app.tar.gz"');
-      p('    tar -xzf "$tmpdir/Tolaria.app.tar.gz" -C "$tmpdir"');
-      p('    app_path="$(find "$tmpdir" -maxdepth 3 -name "Tolaria.app" -type d | head -1)"');
-      p('    if [ -z "$app_path" ]; then echo "Tolaria.app was not found in the release archive." >&2; exit 1; fi');
-      p('    mkdir -p "$HOME/Applications"');
-      p('    cp -R "$app_path" "$HOME/Applications/Tolaria.app"');
-      p('    rm -rf "$tmpdir"');
-      p('    printf "%s✓%s Tolaria.app installed in ~/Applications\\n" "$_c_green" "$_c_reset"');
-      p('  fi');
-      p('  open -a Tolaria 2>/dev/null || open "$HOME/Applications/Tolaria.app" 2>/dev/null || true');
-      p('else');
-      p('  echo "Tolaria selected. On Linux, install Tolaria from https://tolaria.md/; Spotlight will still write Markdown files to the vault path."');
-      p('fi');
-    } else {
-      p('step "Obsidian vault"');
-      p('if [ -d "/Applications/Obsidian.app" ] || [ -d "$HOME/Applications/Obsidian.app" ]; then');
-      p('  printf "%s✓%s Obsidian.app installed\\n" "$_c_green" "$_c_reset"');
-      p('else');
-      p('  ensure_brew');
-      p('  spin "Installing Obsidian via brew cask" brew install --cask obsidian');
-      p('fi');
-      p('');
-      p('if ! command -v obsidian >/dev/null 2>&1; then');
-      p('  printf "%s!%s Opening Obsidian so you can enable the CLI\\n" "$_c_cyan" "$_c_reset"');
-      p('  open -a Obsidian 2>/dev/null || true');
-      p('  echo ""');
-      p('  echo "  ${_c_bold}Enable the Obsidian CLI (one-time):${_c_reset}"');
-      p('  echo "    Settings → General → Advanced → toggle ${_c_bold}Command Line Interface${_c_reset} ON"');
-      p('  echo ""');
-      p('  echo "  The first time you run ${_c_bold}spotlight${_c_reset}, the preflight check will detect"');
-      p('  echo "  whether the CLI is enabled and prompt you again if needed. You can continue"');
-      p('  echo "  the rest of this installer now while Obsidian is open."');
-      p('  echo ""');
-      p('else');
-      p('  printf "%s✓%s obsidian CLI already on PATH\\n" "$_c_green" "$_c_reset"');
-      p('fi');
-    }
-    p('');
-    p('step "Spotlight repo"');
-    p('if [ -d "$SPOTLIGHT_DIR/.git" ]; then');
-    p('  spin "Updating Spotlight at $SPOTLIGHT_DIR" update_repo_ff_only "$SPOTLIGHT_DIR" "Spotlight"');
-    p('else');
-    p('  spin "Cloning Spotlight to $SPOTLIGHT_DIR" git clone "$REPO_URL" "$SPOTLIGHT_DIR"');
-    p('fi');
-    p('cd "$SPOTLIGHT_DIR"');
-    p('');
-    p('step "Core dependencies"');
-    p('if ! command -v firecrawl >/dev/null 2>&1; then');
-    p('  spin "Installing firecrawl-cli" npm install -g firecrawl-cli');
-    p('else');
-    p('  printf "%s✓%s firecrawl-cli already installed\\n" "$_c_green" "$_c_reset"');
-    p('fi');
-    p('');
-    p('if ! command -v qmd >/dev/null 2>&1; then');
-    p('  spin "Installing QMD vault search" npm install -g @tobilu/qmd');
-    p('else');
-    p('  printf "%s✓%s qmd already installed\\n" "$_c_green" "$_c_reset"');
-    p('fi');
-    p('');
+  function utf8Base64(str) {
+    // TextEncoder + manual byte-string → btoa avoids the deprecated unescape() pattern.
+    const bytes = new TextEncoder().encode(str);
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin);
+  }
 
-    if (cfg.mode === 'local') {
-      // Pick a default GGUF filename per model — Q4_K_M (best size/quality tradeoff for journalists)
-      const modelLeaf = cfg.model_repo.split('/').slice(-1)[0];
-      const isGemma = cfg.model_repo.indexOf('gemma-4') >= 0;
-      const ggufFile = isGemma
-        ? 'gemma-4-26B-A4B-it-UD-Q4_K_M.gguf'
-        : 'Qwen3.6-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf';
-      const ollamaModel = isGemma
-        ? 'hf.co/unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M'
-        : 'hf.co/HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive:IQ2_M';
-      const ollamaAlias = isGemma ? 'spotlight-gemma4-q4' : 'spotlight-qwen36-27b-q4';
-      const port = cfg.local_server === 'llamacpp' ? '8080' : '11434';
-      const baseURL = 'http://127.0.0.1:' + port + '/v1';
+  const INSTALLER_URL = 'https://raw.githubusercontent.com/buriedsignals/spotlight/main/install-spotlight.sh';
 
-      if (cfg.local_server === 'llamacpp') {
-        p('step "Local inference (llama-server + opencode)"');
-        p('if ! command -v llama-server >/dev/null 2>&1; then');
-        p('  spin "Installing llama.cpp via brew" brew install llama.cpp');
-        p('else');
-        p('  printf "%s✓%s llama.cpp already installed\\n" "$_c_green" "$_c_reset"');
-        p('fi');
-        p('');
-        p('MODEL_DIR="$HOME/Models/' + modelLeaf + '"');
-        p('mkdir -p "$MODEL_DIR"');
-        p('GGUF_FILE="' + ggufFile + '"');
-        p('if [ ! -f "$MODEL_DIR/$GGUF_FILE" ]; then');
-        p('  spin "Downloading $GGUF_FILE from huggingface.co/' + cfg.model_repo + '" \\');
-        p('    curl -L --fail --retry 3 --continue-at - "https://huggingface.co/' + cfg.model_repo + '/resolve/main/$GGUF_FILE" -o "$MODEL_DIR/$GGUF_FILE"');
-        p('else');
-        p('  printf "%s✓%s Model already downloaded at $MODEL_DIR/$GGUF_FILE\\n" "$_c_green" "$_c_reset"');
-        p('fi');
-        p('');
-      } else {
-        p('step "Local inference (Ollama + opencode)"');
-        p('if ! command -v ollama >/dev/null 2>&1; then');
-        p('  spin "Installing Ollama via brew" brew install ollama');
-        p('  brew services start ollama 2>/dev/null || true');
-        p('  sleep 2');
-        p('else');
-        p('  printf "%s✓%s Ollama already installed\\n" "$_c_green" "$_c_reset"');
-        p('fi');
-        p('');
-        var ollamaSize = isGemma ? '~8 GB' : '~10 GB';
-        p('step "Journalism model download (' + ollamaSize + ')"');
-        p('echo "Ollama will stream download progress below — grab a coffee, 5–15 min on a typical connection."');
-        p('echo ""');
-        p('OLLAMA_MODEL=' + shellEscape(ollamaModel));
-        p('SPOTLIGHT_OLLAMA_ALIAS=' + shellEscape(ollamaAlias));
-        p('if ! ollama show "$SPOTLIGHT_OLLAMA_ALIAS" >/dev/null 2>&1; then');
-        p('  if ! ollama show "$OLLAMA_MODEL" >/dev/null 2>&1; then');
-        p('    ollama pull "$OLLAMA_MODEL" || {');
-        p('      printf "%s✗%s Ollama could not pull $OLLAMA_MODEL.\\n" "$_c_red" "$_c_reset"');
-        p('      printf "   Edit $SPOTLIGHT_DIR/.env after install or re-run with a working OLLAMA_MODEL.\\n"');
-        p('      printf "   Example: OLLAMA_MODEL=gemma3:27b SPOTLIGHT_OLLAMA_ALIAS=spotlight-local\\n"');
-        p('      exit 1');
-        p('    }');
-        p('  fi');
-        p('  TMP_MODELFILE="$(mktemp)"');
-        p('  printf "FROM %s\\n" "$OLLAMA_MODEL" > "$TMP_MODELFILE"');
-        p('  ollama create "$SPOTLIGHT_OLLAMA_ALIAS" -f "$TMP_MODELFILE"');
-        p('  rm -f "$TMP_MODELFILE"');
-        p('else');
-        p('  printf "%s✓%s Ollama alias $SPOTLIGHT_OLLAMA_ALIAS already exists\\n" "$_c_green" "$_c_reset"');
-        p('fi');
-        p('');
-      }
+  function buildOneLiner(cfg) {
+    const block = buildExportBlock(cfg);
+    const b64 = utf8Base64(block);
+    return `curl -fsSL ${INSTALLER_URL} | SPOTLIGHT_CONFIG='${b64}' bash`;
+  }
 
-      // Install opencode (CLI or Desktop based on user choice)
-      if (cfg.opencode_interface === 'desktop') {
-        p('step "Agent harness (opencode Desktop)"');
-        p('if [ ! -d "/Applications/opencode.app" ] && [ ! -d "$HOME/Applications/opencode.app" ]; then');
-        p('  spin "Installing opencode-desktop via brew cask" brew install --cask opencode-desktop');
-        p('else');
-        p('  printf "%s✓%s opencode-desktop already installed\\n" "$_c_green" "$_c_reset"');
-        p('fi');
-        p('');
-        p('# CLI is needed too for the launcher script and skill registration');
-      }
-      p('step "Agent harness (opencode CLI)"');
-      p('if ! command -v opencode >/dev/null 2>&1; then');
-      p('  spin "Installing opencode via brew" brew install opencode || \\');
-      p('    bash -c \'curl -fsSL https://opencode.ai/install | bash\'');
-      p('else');
-      p('  printf "%s✓%s opencode already installed\\n" "$_c_green" "$_c_reset"');
-      p('fi');
-      p('');
-
-      // Symlink Spotlight skills into opencode's global skill dir (one per sub-skill — opencode is one-level glob)
-      p('step "Spotlight skills → opencode"');
-      p('mkdir -p "$HOME/.config/opencode/skills"');
-      p('for skill_dir in "$SPOTLIGHT_DIR/skills/"*/; do');
-      p('  name=$(basename "$skill_dir")');
-      p('  ln -sfn "$skill_dir" "$HOME/.config/opencode/skills/$name"');
-      p('done');
-      p('printf "%s✓%s opencode loads $(ls -1 $HOME/.config/opencode/skills | wc -l | tr -d \" \") Spotlight skills from $HOME/.config/opencode/skills/\\n" "$_c_green" "$_c_reset"');
-      p('');
-
-      // Merge llama.cpp / ollama provider into opencode.json via jq (preserves any existing providers)
-      p('step "opencode provider config"');
-      p('OC_CFG="$HOME/.config/opencode/opencode.json"');
-      p('mkdir -p "$(dirname "$OC_CFG")"');
-      p('[ -f "$OC_CFG" ] || echo \'{"$schema":"https://opencode.ai/config.json","provider":{}}\' > "$OC_CFG"');
-      p('if ! command -v jq >/dev/null 2>&1; then spin "Installing jq via brew" brew install jq; fi');
-      p('TMP=$(mktemp)');
-      if (cfg.local_server === 'llamacpp') {
-        p('jq --arg base "' + baseURL + '" --arg id "qwen27" --arg name "Qwen3.6-27B Uncensored (local llama.cpp)" \\');
-        p('  \'.provider["llama.cpp"] = {"npm":"@ai-sdk/openai-compatible","name":"llama-server (local)","options":{"baseURL":$base},"models":{($id):{"name":$name}}}\' \\');
-        p('  "$OC_CFG" > "$TMP" && mv "$TMP" "$OC_CFG"');
-      } else {
-        p('jq --arg base "' + baseURL + '" --arg id "' + ollamaAlias + '" --arg name "' + modelLeaf + ' (local Ollama)" \\');
-        p('  \'.provider["ollama"] = {"npm":"@ai-sdk/openai-compatible","name":"Ollama (local OpenAI-compatible)","options":{"baseURL":$base},"models":{($id):{"name":$name}}}\' \\');
-        p('  "$OC_CFG" > "$TMP" && mv "$TMP" "$OC_CFG"');
-      }
-      p('printf "%s✓%s opencode.json updated with ' + (cfg.local_server === 'llamacpp' ? 'llama.cpp' : 'ollama') + ' provider\\n" "$_c_green" "$_c_reset"');
-      p('');
-
-      // Write a launcher script that starts the inference server, then opencode
-      if (cfg.local_server === 'llamacpp') {
-        p('step "Spotlight local launcher"');
-        p('mkdir -p "$HOME/.local/bin"');
-        p('cat > "$HOME/.local/bin/spotlight-local" <<\'LAUNCHER_EOF\'');
-        p('#!/usr/bin/env bash');
-        p('# Start llama-server + opencode for Spotlight investigations.');
-        p('set -euo pipefail');
-        p('MODEL="$HOME/Models/' + modelLeaf + '/' + ggufFile + '"');
-        p('command -v llama-server >/dev/null 2>&1 || { echo "llama-server missing — brew install llama.cpp" >&2; exit 1; }');
-        p('command -v opencode    >/dev/null 2>&1 || { echo "opencode missing — brew install opencode" >&2; exit 1; }');
-        p('[ -f "$MODEL" ] || { echo "Model not found: $MODEL" >&2; exit 1; }');
-        p('lsof -ti:8080 >/dev/null 2>&1 && { echo "Port 8080 already in use — kill the existing process first" >&2; exit 1; }');
-        p('llama-server --model "$MODEL" --alias qwen27 --host 127.0.0.1 --port 8080 \\');
-        p('  --ctx-size 65536 --n-gpu-layers 999 --jinja --flash-attn on >/tmp/llama-server-opencode.log 2>&1 &');
-        p('SERVER_PID=$!');
-        p('cleanup() { kill -TERM "$SERVER_PID" 2>/dev/null || true; }');
-        p('trap cleanup EXIT INT TERM HUP');
-        p('echo -n "Waiting for llama-server"');
-        p('for i in {1..120}; do curl -sf http://127.0.0.1:8080/v1/models >/dev/null && { echo " ready."; break; }; echo -n "."; sleep 1; done');
-        p('opencode --model llama.cpp/qwen27 "$@"');
-        p('LAUNCHER_EOF');
-        p('chmod +x "$HOME/.local/bin/spotlight-local"');
-        p('printf "%s✓%s Launcher installed at ~/.local/bin/spotlight-local — add ~/.local/bin to PATH and run \\`spotlight-local\\`\\n" "$_c_green" "$_c_reset"');
-        p('');
-      } else {
-        p('step "Spotlight local launcher"');
-        p('mkdir -p "$HOME/.local/bin"');
-        p('cat > "$HOME/.local/bin/spotlight-local" <<\'LAUNCHER_EOF\'');
-        p('#!/usr/bin/env bash');
-        p('# Start Ollama + opencode for Spotlight investigations.');
-        p('set -euo pipefail');
-        p('expand_path() {');
-        p('  local input="$1"');
-        p('  if [ "$input" = "~" ]; then printf "%s\\n" "$HOME";');
-        p('  elif [[ "$input" == "~/"* ]]; then printf "%s/%s\\n" "$HOME" "${input#~/}";');
-        p('  else printf "%s\\n" "$input"; fi');
-        p('}');
-        p('SPOTLIGHT_DIR_DEFAULT_INPUT=' + shellEscape(cfg.install_path));
-        p('SPOTLIGHT_DIR_DEFAULT="$(expand_path "$SPOTLIGHT_DIR_DEFAULT_INPUT")"');
-        p('SPOTLIGHT_DIR="${SPOTLIGHT_DIR:-$SPOTLIGHT_DIR_DEFAULT}"');
-        p('ENV_FILE="$SPOTLIGHT_DIR/.env"');
-        p('if [ -f "$ENV_FILE" ]; then set -a; . "$ENV_FILE"; set +a; fi');
-        p('command -v ollama   >/dev/null 2>&1 || { echo "ollama missing — brew install ollama" >&2; exit 1; }');
-        p('command -v opencode >/dev/null 2>&1 || { echo "opencode missing — brew install opencode" >&2; exit 1; }');
-        p('OLLAMA_MODEL="${OLLAMA_MODEL:-' + ollamaModel + '}"');
-        p('SPOTLIGHT_OLLAMA_ALIAS="${SPOTLIGHT_OLLAMA_ALIAS:-' + ollamaAlias + '}"');
-        p('ollama list >/dev/null 2>&1 || { brew services start ollama 2>/dev/null || ollama serve >/tmp/ollama-spotlight.log 2>&1 & sleep 2; }');
-        p('if ! ollama show "$SPOTLIGHT_OLLAMA_ALIAS" >/dev/null 2>&1; then');
-        p('  if ! ollama show "$OLLAMA_MODEL" >/dev/null 2>&1; then');
-        p('    ollama pull "$OLLAMA_MODEL" || { echo "Could not pull $OLLAMA_MODEL. Set OLLAMA_MODEL in $ENV_FILE to a working Ollama model." >&2; exit 1; }');
-        p('  fi');
-        p('  TMP_MODELFILE="$(mktemp)"');
-        p('  printf "FROM %s\\n" "$OLLAMA_MODEL" > "$TMP_MODELFILE"');
-        p('  ollama create "$SPOTLIGHT_OLLAMA_ALIAS" -f "$TMP_MODELFILE"');
-        p('  rm -f "$TMP_MODELFILE"');
-        p('fi');
-        p('opencode --model "ollama/$SPOTLIGHT_OLLAMA_ALIAS" "$@"');
-        p('LAUNCHER_EOF');
-        p('chmod +x "$HOME/.local/bin/spotlight-local"');
-        p('printf "%s✓%s Launcher installed at ~/.local/bin/spotlight-local — add ~/.local/bin to PATH and run \\`spotlight-local\\`\\n" "$_c_green" "$_c_reset"');
-        p('');
-      }
-    } else {
-      const r = RUNTIMES[cfg.runtime];
-      const label = cfg.runtime === 'opencode'
-        ? 'OpenCode (provider: ' + cfg.opencode_provider + ')'
-        : 'Runtime: ' + r.name;
-      p('step "' + label + '"');
-      p('if ! command -v ' + r.bin + ' >/dev/null 2>&1; then');
-      if (cfg.runtime === 'gemini') {
-        p('  NPM_PREFIX="$HOME/.npm-global"; mkdir -p "$NPM_PREFIX"');
-        p('  spin "Installing ' + r.installPkg + '" npm install -g --prefix "$NPM_PREFIX" ' + r.installPkg);
-        p('  export PATH="$NPM_PREFIX/bin:$PATH"');
-      } else {
-        p('  spin "Installing ' + r.installPkg + '" npm install -g ' + r.installPkg);
-      }
-      p('else');
-      p('  printf "%s✓%s ' + r.bin + ' already installed\\n" "$_c_green" "$_c_reset"');
-      p('fi');
-      if (r.contextFile) {
-        p('ln -sfn "$SPOTLIGHT_DIR/AGENTS.md" "$SPOTLIGHT_DIR/' + r.contextFile + '"');
-        p('printf "%s✓%s AGENTS.md linked as ' + r.contextFile + '\\n" "$_c_green" "$_c_reset"');
-      }
-      if (cfg.runtime === 'opencode') {
-        p('printf "%s✓%s Provider key will be loaded from .env (' + cfg.cloud_key_var + ')\\n" "$_c_green" "$_c_reset"');
-        p('mkdir -p "$HOME/.config/opencode/skills"');
-        p('for skill_dir in "$SPOTLIGHT_DIR/skills/"*/; do');
-        p('  name=$(basename "$skill_dir")');
-        p('  ln -sfn "$skill_dir" "$HOME/.config/opencode/skills/$name"');
-        p('done');
-        p('printf "%s✓%s opencode loads Spotlight skills from $HOME/.config/opencode/skills/\\n" "$_c_green" "$_c_reset"');
-      }
-    }
-    p('');
-
-    p('step "Python dependencies"');
-    p('spin "Installing jsonschema + requests" bash -c "pip3 install --user --quiet jsonschema requests 2>/dev/null || pip install --user --quiet jsonschema requests"');
-    if (cfg.int_browseruse) {
-      p('spin "Installing browser-use" bash -c "pip3 install --user --quiet browser-use 2>/dev/null || pip install --user --quiet browser-use"');
-      p('spin "Installing Chromium for browser-use" bash -c "python3 -m playwright install chromium 2>/dev/null || true"');
-    }
-    p('');
-
-    p('# ── Write .env ──');
-    p('echo "→ Writing $SPOTLIGHT_DIR/.env (chmod 600)"');
-    p('write_env_var() {');
-    p('  local name="$1" value="$2"');
-    p('  printf "%s=%q\\n" "$name" "$value" >> "$SPOTLIGHT_DIR/.env"');
-    p('}');
-    p('cat > "$SPOTLIGHT_DIR/.env" <<\'ENV_HEADER\'');
-    p('# Spotlight environment — generated by setup.html');
-    p('ENV_HEADER');
-    p('write_env_var SPOTLIGHT_DIR "$SPOTLIGHT_DIR"');
-    p('write_env_var SPOTLIGHT_VAULT_PATH "$SPOTLIGHT_VAULT_PATH"');
-    p('write_env_var SPOTLIGHT_CASES_ROOT "$SPOTLIGHT_CASES_ROOT"');
-    p('write_env_var FIRECRAWL_API_KEY ' + shellEscape(cfg.firecrawl_key));
-    p('write_env_var OSINT_NAV_API_KEY ' + shellEscape(cfg.nav_key));
-    if (cfg.cloud_key && cfg.cloud_key_var) {
-      p('write_env_var ' + cfg.cloud_key_var + ' ' + shellEscape(cfg.cloud_key));
-    }
-    if (cfg.int_junkipedia && cfg.junkipedia_key) {
-      p('write_env_var JUNKIPEDIA_API_KEY ' + shellEscape(cfg.junkipedia_key));
-    }
-    if (cfg.int_unpaywall && cfg.unpaywall_email) {
-      p('write_env_var UNPAYWALL_EMAIL ' + shellEscape(cfg.unpaywall_email));
-    }
-    if (cfg.mode === 'local') {
-      p('write_env_var MODEL_REPO ' + shellEscape(cfg.model_repo));
-      p('write_env_var LOCAL_SERVER ' + shellEscape(cfg.local_server || 'llamacpp'));
-      p('write_env_var LOCAL_ENDPOINT ' + shellEscape(cfg.local_server === 'llamacpp' ? 'http://127.0.0.1:8080/v1' : 'http://127.0.0.1:11434/v1'));
-      if (cfg.local_server === 'ollama') {
-        const isGemmaEnv = cfg.model_repo.indexOf('gemma-4') >= 0;
-        const ollamaModelEnv = isGemmaEnv
-          ? 'hf.co/unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M'
-          : 'hf.co/HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive:IQ2_M';
-        const ollamaAliasEnv = isGemmaEnv ? 'spotlight-gemma4-q4' : 'spotlight-qwen36-27b-q4';
-        p('write_env_var OLLAMA_MODEL ' + shellEscape(ollamaModelEnv));
-        p('write_env_var SPOTLIGHT_OLLAMA_ALIAS ' + shellEscape(ollamaAliasEnv));
-      }
-    }
-    p('chmod 600 "$SPOTLIGHT_DIR/.env"');
-    p('');
-
-    p('step "Writing .spotlight-config.json"');
-    p('cat > "$SPOTLIGHT_DIR/.spotlight-config.json" <<CONFIG_EOF');
-    p('{');
-    p('  "search_library": "firecrawl",');
-    p('  "vault_path": "$SPOTLIGHT_VAULT_PATH",');
-    p('  "vault_type": "' + (cfg.vault_app === 'tolaria' ? 'tolaria' : 'obsidian') + '",');
-    p('  "vault_app": "' + cfg.vault_app + '",');
-    p('  "cases_root": "$SPOTLIGHT_CASES_ROOT",');
-    p('  "install_path": "$SPOTLIGHT_DIR",');
-    p('  "mode": "' + cfg.mode + '",');
-    p('  "runtime": "' + cfg.runtime + '",');
-    p('  "local_server": ' + (cfg.local_server ? JSON.stringify(cfg.local_server) : 'null') + ',');
-    p('  "opencode_provider": ' + (cfg.opencode_provider ? JSON.stringify(cfg.opencode_provider) : 'null') + ',');
-    p('  "integrations": {');
-    p('    "osint_navigator": true,');
-    p('    "junkipedia": ' + (cfg.int_junkipedia ? 'true' : 'false') + ',');
-    p('    "browser_use": ' + (cfg.int_browseruse ? 'true' : 'false') + ',');
-    p('    "unpaywall": ' + (cfg.int_unpaywall ? 'true' : 'false'));
-    p('  },');
-    p('  "created_at": "' + new Date().toISOString() + '",');
-    p('  "last_used": "' + new Date().toISOString() + '"');
-    p('}');
-    p('CONFIG_EOF');
-    p('');
-    p('step "Vault scaffold"');
-    p('mkdir -p "$SPOTLIGHT_CASES_ROOT" "$SPOTLIGHT_VAULT_PATH/evidence" "$SPOTLIGHT_VAULT_PATH/captures" "$SPOTLIGHT_VAULT_PATH/briefs" "$SPOTLIGHT_VAULT_PATH/exports" "$SPOTLIGHT_VAULT_PATH/handoff-to-mycroft" "$SPOTLIGHT_VAULT_PATH/_schema"');
-    p('if [ ! -f "$SPOTLIGHT_VAULT_PATH/_index.md" ]; then');
-    p('  cat > "$SPOTLIGHT_VAULT_PATH/_index.md" <<\'INDEX_EOF\'');
-    p('---');
-    p('type: spotlight-index');
-    p('tags: [spotlight, index]');
-    p('---');
-    p('# Spotlight Vault');
-    p('');
-    p('- cases/ — active investigations');
-    p('- evidence/ — verified source material and citations');
-    p('- captures/ — local page/document captures');
-    p('- briefs/ — case summaries and handoffs');
-    p('- exports/ — publishable packets and review artifacts');
-    p('- handoff-to-mycroft/ — durable findings promoted to Mycroft');
-    p('INDEX_EOF');
-    p('fi');
-    p('if [ ! -f "$SPOTLIGHT_CASES_ROOT/_template.md" ]; then');
-    p('  cat > "$SPOTLIGHT_CASES_ROOT/_template.md" <<\'CASE_TEMPLATE_EOF\'');
-    p('---');
-    p('type: spotlight-case');
-    p('status: draft');
-    p('tags: [spotlight, investigation]');
-    p('---');
-    p('# Case Template');
-    p('');
-    p('## Lead');
-    p('');
-    p('## Evidence');
-    p('');
-    p('## Open Questions');
-    p('CASE_TEMPLATE_EOF');
-    p('fi');
-    p('if command -v qmd >/dev/null 2>&1; then');
-    p('  qmd collection add "$SPOTLIGHT_VAULT_PATH" --name spotlight >/dev/null 2>&1 || true');
-    p('  qmd update >/dev/null 2>&1 || true');
-    p('  printf "%s✓%s QMD spotlight collection configured\\n" "$_c_green" "$_c_reset"');
-    p('fi');
-    if (cfg.vault_app === 'obsidian') {
-      p('if [ "$OS" = "Darwin" ]; then open -a Obsidian "$SPOTLIGHT_VAULT_PATH" 2>/dev/null || true; fi');
-    }
-    p('');
-
-    p('step "Spotlight command wrappers"');
-    p('mkdir -p "$HOME/.local/bin" "$SPOTLIGHT_DIR/.spotlight/logs"');
-    p('cat > "$HOME/.local/bin/spotlight-doctor" <<\'DOCTOR_EOF\'');
-    p('#!/usr/bin/env bash');
-    p('set -euo pipefail');
-    p('export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"');
-    p('expand_path() {');
-    p('  local input="$1"');
-    p('  if [ "$input" = "~" ]; then printf "%s\\n" "$HOME";');
-    p('  elif [[ "$input" == "~/"* ]]; then printf "%s/%s\\n" "$HOME" "${input#~/}";');
-    p('  else printf "%s\\n" "$input"; fi');
-    p('}');
-    p('SPOTLIGHT_DIR_DEFAULT_INPUT=' + shellEscape(cfg.install_path));
-    p('SPOTLIGHT_VAULT_INPUT=' + shellEscape(cfg.vault_path));
-    p('SPOTLIGHT_DIR_DEFAULT="$(expand_path "$SPOTLIGHT_DIR_DEFAULT_INPUT")"');
-    p('SPOTLIGHT_DIR="${SPOTLIGHT_DIR:-$SPOTLIGHT_DIR_DEFAULT}"');
-    p('SPOTLIGHT_VAULT_PATH="${SPOTLIGHT_VAULT_PATH:-$(expand_path "$SPOTLIGHT_VAULT_INPUT")}"');
-    p('SPOTLIGHT_CASES_ROOT="${SPOTLIGHT_CASES_ROOT:-$SPOTLIGHT_VAULT_PATH/cases}"');
-    p('fail=0');
-    p('ok() { printf "OK    %s\\n" "$1"; }');
-    p('bad() { printf "FAIL  %s\\n" "$1"; fail=1; }');
-    p('check_path() { [ -e "$1" ] && ok "$2" || bad "$2 missing: $1"; }');
-    p('check_cmd() { command -v "$1" >/dev/null 2>&1 && ok "$2" || bad "$2 missing"; }');
-    p('check_env_name() { grep -q "^$1=" "$SPOTLIGHT_DIR/.env" 2>/dev/null && ok "$1 configured" || bad "$1 missing from .env"; }');
-    p('check_path "$SPOTLIGHT_DIR/.git" "Spotlight repo"');
-    p('check_path "$SPOTLIGHT_DIR/AGENTS.md" "AGENTS runtime contract"');
-    p('check_path "$SPOTLIGHT_DIR/.spotlight-config.json" "Spotlight config"');
-    p('check_path "$SPOTLIGHT_DIR/.env" "Spotlight env"');
-    p('check_env_name FIRECRAWL_API_KEY');
-    p('check_env_name OSINT_NAV_API_KEY');
-    p('check_path "$SPOTLIGHT_VAULT_PATH" "Spotlight vault"');
-    p('check_path "$SPOTLIGHT_CASES_ROOT" "Spotlight cases root"');
-    p('check_cmd firecrawl "Firecrawl CLI"');
-    p('check_cmd qmd "QMD CLI"');
-    p('check_cmd ' + RUNTIMES[cfg.runtime].bin + ' "' + RUNTIMES[cfg.runtime].name + '"');
-    if (cfg.runtime === 'claude') p('check_path "$SPOTLIGHT_DIR/CLAUDE.md" "Claude context link"');
-    if (cfg.runtime === 'gemini') p('check_path "$SPOTLIGHT_DIR/GEMINI.md" "Gemini context link"');
-    if (cfg.cloud_key_var) p('check_env_name ' + cfg.cloud_key_var);
-    if (cfg.int_junkipedia) p('check_env_name JUNKIPEDIA_API_KEY');
-    if (cfg.int_unpaywall) p('check_env_name UNPAYWALL_EMAIL');
-    p('if [ -x "$SPOTLIGHT_DIR/tests/smoke.sh" ]; then (cd "$SPOTLIGHT_DIR" && bash tests/smoke.sh >/dev/null) && ok "Smoke test" || bad "Smoke test failed"; fi');
-    p('if [ -x "$SPOTLIGHT_DIR/integrations/preflight.py" ] || [ -f "$SPOTLIGHT_DIR/integrations/preflight.py" ]; then (cd "$SPOTLIGHT_DIR" && set -a && . .env && set +a && python3 integrations/preflight.py --text >/dev/null) && ok "Integration preflight" || bad "Integration preflight reported issues"; fi');
-    p('if [ "$fail" -eq 0 ]; then printf "\\nSpotlight doctor: OK\\n"; else printf "\\nSpotlight doctor: failed\\n"; fi');
-    p('exit "$fail"');
-    p('DOCTOR_EOF');
-    p('chmod +x "$HOME/.local/bin/spotlight-doctor"');
-    p('');
-    p('cat > "$HOME/.local/bin/spotlight-update" <<\'UPDATE_EOF\'');
-    p('#!/usr/bin/env bash');
-    p('set -euo pipefail');
-    p('expand_path() {');
-    p('  local input="$1"');
-    p('  if [ "$input" = "~" ]; then printf "%s\\n" "$HOME";');
-    p('  elif [[ "$input" == "~/"* ]]; then printf "%s/%s\\n" "$HOME" "${input#~/}";');
-    p('  else printf "%s\\n" "$input"; fi');
-    p('}');
-    p('SPOTLIGHT_DIR_DEFAULT_INPUT=' + shellEscape(cfg.install_path));
-    p('SPOTLIGHT_DIR_DEFAULT="$(expand_path "$SPOTLIGHT_DIR_DEFAULT_INPUT")"');
-    p('SPOTLIGHT_DIR="${SPOTLIGHT_DIR:-$SPOTLIGHT_DIR_DEFAULT}"');
-    p('log_dir="$SPOTLIGHT_DIR/.spotlight/logs"');
-    p('mkdir -p "$log_dir"');
-    p('log="$log_dir/update.log"');
-    p('exec >>"$log" 2>&1');
-    p('echo ""');
-    p('date');
-    p('[ -d "$SPOTLIGHT_DIR/.git" ] || { echo "Spotlight repo missing: $SPOTLIGHT_DIR"; exit 1; }');
-    p('cd "$SPOTLIGHT_DIR"');
-    p('if ! git diff --quiet || ! git diff --cached --quiet; then echo "Spotlight has local uncommitted changes; skipping update."; exit 0; fi');
-    p('before="$(git rev-parse HEAD)"');
-    p('git fetch origin main');
-    p('if git merge-base --is-ancestor HEAD origin/main; then');
-    p('  git merge --ff-only origin/main');
-    p('  after="$(git rev-parse HEAD)"');
-    p('  echo "Spotlight $before -> $after"');
-    p('else');
-    p('  echo "Spotlight has local commits or divergent history; skipping update."');
-    p('  exit 0');
-    p('fi');
-    p('if "$HOME/.local/bin/spotlight-doctor"; then');
-    p('  echo "doctor passed"');
-    p('else');
-    p('  echo "doctor failed after update; rolling back to $before"');
-    p('  git reset --hard "$before"');
-    p('  exit 1');
-    p('fi');
-    p('echo "update complete"');
-    p('UPDATE_EOF');
-    p('chmod +x "$HOME/.local/bin/spotlight-update"');
-    p('printf "%s✓%s spotlight doctor/update wrappers installed\\n" "$_c_green" "$_c_reset"');
-    p('');
-
-    p('# ── Install spotlight shell command ──');
-    p('SHELL_RC=""');
-    p('case "$SHELL" in');
-    p('  */zsh) SHELL_RC="$HOME/.zshrc" ;;');
-    p('  */bash) SHELL_RC="$HOME/.bashrc" ;;');
-    p('  *) SHELL_RC="$HOME/.profile" ;;');
-    p('esac');
-    p('');
-    p('touch "$SHELL_RC"');
-    p('tmp_rc="$(mktemp)"');
-    p('awk \'');
-    p('  /^# SPOTLIGHT-BEGIN/ { skip=1; next }');
-    p('  /^# SPOTLIGHT-END/ { skip=0; next }');
-    p('  !skip { print }');
-    p('\' "$SHELL_RC" > "$tmp_rc"');
-    p('mv "$tmp_rc" "$SHELL_RC"');
-    p('echo "→ Writing \\"spotlight\\" command to $SHELL_RC"');
-    p('{');
-    p('  echo ""');
-    p('  echo "# SPOTLIGHT-BEGIN — added by setup.html installer"');
-    p('  printf "export SPOTLIGHT_DIR=%q\\n" "$SPOTLIGHT_DIR"');
-    p('  cat <<\'SHELL_EOF\'');
-    p('export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"');
-    p('spotlight() {');
-    p('  local dir="${SPOTLIGHT_DIR:-$HOME/spotlight}"');
-    p('  if [ ! -d "$dir" ]; then');
-    p('    echo "Spotlight not installed at $dir. Re-run the installer." >&2');
-    p('    return 1');
-    p('  fi');
-    p('  case "${1:-}" in');
-    p('    update)');
-    p('      SPOTLIGHT_DIR="$dir" "$HOME/.local/bin/spotlight-update"');
-    p('      ;;');
-    p('    doctor)');
-    p('      SPOTLIGHT_DIR="$dir" "$HOME/.local/bin/spotlight-doctor"');
-    p('      ;;');
-    p('    --help|-h|help)');
-    p('      cat <<HELP');
-    p('Usage: spotlight [subcommand]');
-    p('');
-    p('  (no arg)   Launch the configured runtime and start investigating');
-    p('  update     Fetch origin/main, fast-forward only, then run doctor');
-    p('  doctor     Run the smoke test (checks structure, schemas, preflights)');
-    p('  help       This message');
-    p('HELP');
-    p('      return 0');
-    p('      ;;');
-    p('  esac');
-    p('  (cd "$dir" && { [ -f .env ] && set -a && source .env && set +a; } && \\');
-    p('    case "$(sed -n \'s/.*"runtime": *"\\([^"]*\\)".*/\\1/p\' .spotlight-config.json 2>/dev/null | head -1)" in');
-    Object.entries(RUNTIMES).forEach(([id, r]) => {
-      p('      ' + id + ') ' + r.bin + ' ;;');
-    });
-    p('      *) echo "Unknown runtime in .spotlight-config.json" >&2; return 1 ;;');
-    p('    esac)');
-    p('}');
-    p('# SPOTLIGHT-END');
-    p('SHELL_EOF');
-    p('} >> "$SHELL_RC"');
-    p('');
-
-    p('step "Preflight"');
-    p('set -a; source "$SPOTLIGHT_DIR/.env"; set +a');
-    p('python3 "$SPOTLIGHT_DIR/integrations/preflight.py" --text || true');
-    p('');
-
-    p('echo ""');
-    p('echo "${_c_green}${_c_bold}  ╔════════════════════════════════════════════════╗${_c_reset}"');
-    p('echo "${_c_green}${_c_bold}  ║   ✓  Spotlight installed                       ║${_c_reset}"');
-    p('echo "${_c_green}${_c_bold}  ╚════════════════════════════════════════════════╝${_c_reset}"');
-    p('echo ""');
-    p('echo "  Open a new terminal window and type:"');
-    p('echo ""');
-    p('echo "    ${_c_bold}spotlight${_c_reset}"');
-    p('echo ""');
-    p('echo "  Then tell the agent: ${_c_dim}Start a Spotlight investigation on <your lead>${_c_reset}"');
-    p('echo ""');
-    p('echo "  Docs: $SPOTLIGHT_DIR/docs/README.md"');
-    p('echo ""');
-
-    return lines.join('\n') + '\n';
+  function buildCommandScript(cfg) {
+    // 3-line wrapper for the downloadable .command file. Fetches the same
+    // install-spotlight.sh as the paste path — single source of truth.
+    const block = buildExportBlock(cfg);
+    const b64 = utf8Base64(block);
+    return `#!/usr/bin/env bash\nexport SPOTLIGHT_CONFIG='${b64}'\ncurl -fsSL ${INSTALLER_URL} | bash\n`;
   }
 
   // --- Minimal hand-rolled zip (uncompressed, single file, unix exec bit) ---
@@ -2597,11 +1967,13 @@ Setup is complete. Open a new terminal and run \`spotlight\`. Then ask it to sta
       return;
     }
 
-    const script = buildScript(cfg);
-    scriptPreview.textContent = script;
+    const oneLiner = buildOneLiner(cfg);
+    const commandScript = buildCommandScript(cfg);
+    scriptPreview.textContent = oneLiner;
     installOutput.classList.remove('hidden');
     installOutput.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    installOutput.dataset.script = script;
+    installOutput.dataset.script = oneLiner;
+    installOutput.dataset.command = commandScript;
   });
 
   copyBtn.addEventListener('click', async () => {
@@ -2621,7 +1993,7 @@ Setup is complete. Open a new terminal and run \`spotlight\`. Then ask it to sta
   });
 
   downloadBtn.addEventListener('click', () => {
-    const script = installOutput.dataset.script || '';
+    const script = installOutput.dataset.command || '';
     const zip = buildZip('spotlight-setup.command', script);
     const blob = new Blob([zip], { type: 'application/zip' });
     const url = URL.createObjectURL(blob);

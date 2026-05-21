@@ -29,13 +29,13 @@ An **agnostic port** of the `buriedsignals/spotlight@1.2.1` and `buriedsignals/o
 
 | Runtime | Status | How it loads |
 |---|---|---|
-| **opencode** (https://opencode.ai) | Primary local — native support | `brew install opencode` (CLI) or `brew install --cask opencode-desktop` (GUI). Symlink loop into `~/.config/opencode/skills/`. `AGENTS.md`, sub-agents, MCP all native. Pair with `llama.cpp` provider for fully-local Qwen via llama-server. |
+| **opencode** (https://opencode.ai) | Primary local agent — native sub-agents | `brew install opencode` (CLI) or `brew install --cask opencode-desktop` (GUI). Symlink loop into `~/.config/opencode/skills/`. `AGENTS.md`, sub-agents, MCP all native. Pair with `llama.cpp` provider for fully-local Qwen via llama-server. |
+| **pi** (https://pi.dev) | Alternative local agent — no sub-agents | `npm install -g @mariozechner/pi-coding-agent` + `pi install npm:pi-llama-cpp`. setup.html offers this as a second local agent. Investigator + fact-checker share one context — weaker independence than opencode. |
 | **Claude Code** | Install package | `npm install -g @anthropic-ai/claude-code`; runs from repo dir |
 | **Codex CLI** | Install package | `npm install -g @openai/codex`; reads `AGENTS.md` natively |
 | **Gemini CLI** | Install package | `npm install -g @google/gemini-cli`; symlink `GEMINI.md → AGENTS.md` |
 | **Hermes** (Mycroft / Mac Mini) | Production | `skills.external_dirs` in `~/.hermes/config.yaml` |
 | **Goose** | Extension pack | `goose extensions install spotlight` |
-| **pi** (https://pi.dev) | Local — single-context fallback | `mkdir -p ~/.pi/agent/skills && ln -sfn /path/to/spotlight/skills ~/.pi/agent/skills/spotlight`. No native sub-agents, so investigator/fact-checker run in the main session. Use opencode for the full pipeline. |
 
 Per-runtime wiring: **[docs/runtimes.md](docs/runtimes.md)**.
 
@@ -69,7 +69,7 @@ Optional:
 - **JUNKIPEDIA_API_KEY** — for narrative / misinformation tracking (application-based at junkipedia.org).
 - **CORE_API_KEY** — for academic paper access in `content-access` skill.
 - **NOOSPHERE_C2PA_URL** — optional local or hosted Noosphere signer endpoint for C2PA provenance signing; no API key is required, but the signer must have its own signing credential configured.
-- **Inference backend (for Local runtime)** — `brew install llama.cpp` (lean, what setup.html defaults to) or `brew install ollama` (CLI-first model manager).
+- **Inference backend (for Local mode)** — `brew install llama.cpp` (lean, what setup.html defaults to) or `brew install ollama` (CLI-first model manager). Orthogonal to the agent choice: pick one of each. setup.html offers **opencode** (recommended, native sub-agents) or **Pi** (minimal, `pi install npm:pi-llama-cpp` extension) as the agent layer.
 
 ## Documentation
 

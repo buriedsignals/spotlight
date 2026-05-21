@@ -1,73 +1,57 @@
-// Generator check: extracts the buildScript() function + RUNTIMES + helpers
-// from setup.html and synthesizes install scripts for all runtime+provider
-// configs, verifying each produces syntactically valid bash.
+// Generator check: extracts buildExportBlock / buildOneLiner / buildCommandScript
+// from setup.html and verifies the install one-liner + .command wrapper shape
+// for every supported runtime/agent combo. Also validates the agent-manifest
+// path (separate "let an agent install for you" zip).
 //
 // Run via: node tests/setup-generator-check.js
 //
-// Exits 0 on all pass, 1 if any config fails bash -n.
+// Exits 0 on all pass, 1 if any config fails.
 
 const fs = require("fs");
-const { execSync } = require("child_process");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(ROOT, "setup.html"), "utf8");
 
-const runtimesMatch = html.match(/const RUNTIMES = \{[\s\S]*?\n  \};/);
-const providersMatch = html.match(
-  /const OPENCODE_PROVIDERS = \{[\s\S]*?\n  \};/,
-);
-const shellEscapeMatch = html.match(/function shellEscape[\s\S]*?\n  \}/);
-const buildScriptMatch = html.match(
-  /function buildScript\(cfg\)[\s\S]*?return lines\.join\('\\n'\) \+ '\\n';\n  \}/,
-);
-const providerEnvVarsMatch = html.match(/function providerEnvVars[\s\S]*?\n  \}/);
-const envValuesMatch = html.match(/function envValues[\s\S]*?\n  \}/);
-const buildAgentManifestMatch = html.match(
-  /function buildAgentManifest\(cfg\)[\s\S]*?\n  \}/,
-);
-const buildAgentPromptMatch = html.match(
-  /function buildAgentPrompt\(manifest\)[\s\S]*?\n  \}/,
-);
-
-if (
-  !runtimesMatch ||
-  !providersMatch ||
-  !shellEscapeMatch ||
-  !buildScriptMatch ||
-  !providerEnvVarsMatch ||
-  !envValuesMatch ||
-  !buildAgentManifestMatch ||
-  !buildAgentPromptMatch
-) {
-  console.error("✗ Could not extract required JS blocks from setup.html");
-  console.error("  runtimes:", !!runtimesMatch);
-  console.error("  providers:", !!providersMatch);
-  console.error("  shellEscape:", !!shellEscapeMatch);
-  console.error("  buildScript:", !!buildScriptMatch);
-  console.error("  providerEnvVars:", !!providerEnvVarsMatch);
-  console.error("  envValues:", !!envValuesMatch);
-  console.error("  buildAgentManifest:", !!buildAgentManifestMatch);
-  console.error("  buildAgentPrompt:", !!buildAgentPromptMatch);
-  process.exit(1);
+// --- Extract pure functions from setup.html. We rely on the file's
+// consistent 2-space indentation: each top-level helper is `  function …`
+// and ends with `\n  }`. This avoids needing a real JS parser for what is
+// otherwise a tricky string/regex/template-literal-aware brace match. ---
+function grabFn(name) {
+  const re = new RegExp(`  function ${name}\\b[\\s\\S]*?\\n  \\}`);
+  const m = html.match(re);
+  return m ? m[0] : null;
 }
 
+const fnSources = {
+  shellEscape:        grabFn("shellEscape"),
+  buildExportBlock:   grabFn("buildExportBlock"),
+  utf8Base64:         grabFn("utf8Base64"),
+  buildOneLiner:      grabFn("buildOneLiner"),
+  buildCommandScript: grabFn("buildCommandScript"),
+  buildAgentManifest: grabFn("buildAgentManifest"),
+  buildAgentPrompt:   grabFn("buildAgentPrompt"),
+  providerEnvVars:    grabFn("providerEnvVars"),
+  envValues:          grabFn("envValues"),
+};
+const installerUrlMatch = html.match(/const INSTALLER_URL = '[^']+';/);
+const runtimesMatch     = html.match(/const RUNTIMES = \{[\s\S]*?\n  \};/);
+const providersMatch    = html.match(/const OPENCODE_PROVIDERS = \{[\s\S]*?\n  \};/);
+
+for (const [k, v] of Object.entries(fnSources)) {
+  if (!v) { console.error(`✗ Could not extract function ${k} from setup.html`); process.exit(1); }
+}
+for (const [k, v] of Object.entries({ INSTALLER_URL: installerUrlMatch, RUNTIMES: runtimesMatch, OPENCODE_PROVIDERS: providersMatch })) {
+  if (!v) { console.error(`✗ Could not extract const ${k} from setup.html`); process.exit(1); }
+}
+
+// --- Eval the extracted pieces into this scope. The function declarations
+// here become live bindings on `globalThis` so we can call them below. ---
 eval(
-  runtimesMatch[0] +
-    "\n" +
-    providersMatch[0] +
-    "\n" +
-    shellEscapeMatch[0] +
-    "\n" +
-    buildScriptMatch[0] +
-    "\n" +
-    providerEnvVarsMatch[0] +
-    "\n" +
-    envValuesMatch[0] +
-    "\n" +
-    buildAgentManifestMatch[0] +
-    "\n" +
-    buildAgentPromptMatch[0],
+  runtimesMatch[0] + "\n" +
+  providersMatch[0] + "\n" +
+  installerUrlMatch[0] + "\n" +
+  Object.values(fnSources).join("\n"),
 );
 
 const baseCfg = {
@@ -84,205 +68,172 @@ const baseCfg = {
 };
 
 const configs = [
-  {
-    label: "local/ollama",
-    mode: "local",
-    runtime: "local",
-    local_model: "gemma",
-    local_server: "ollama",
-    opencode_interface: "cli",
-    opencode_provider: null,
-    cloud_key: "",
-    cloud_key_var: "",
-    model_repo: "unsloth/gemma-4-26B-A4B-it-GGUF",
-  },
-  {
-    label: "local/llamacpp",
-    mode: "local",
-    runtime: "local",
-    local_model: "qwen27b",
-    local_server: "llamacpp",
-    opencode_interface: "cli",
-    opencode_provider: null,
-    cloud_key: "",
-    cloud_key_var: "",
-    model_repo: "HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive",
-  },
-  {
-    label: "local/ollama-qwen",
-    mode: "local",
-    runtime: "local",
-    local_model: "qwen27b",
-    local_server: "ollama",
-    opencode_interface: "cli",
-    opencode_provider: null,
-    cloud_key: "",
-    cloud_key_var: "",
-    model_repo: "HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive",
-  },
-  {
-    label: "claude",
-    mode: "cloud",
-    runtime: "claude",
-    opencode_provider: null,
-    cloud_key: "",
-    cloud_key_var: "",
-  },
-  {
-    label: "gemini",
-    mode: "cloud",
-    runtime: "gemini",
-    opencode_provider: null,
-    cloud_key: "",
-    cloud_key_var: "",
-  },
-  {
-    label: "codex",
-    mode: "cloud",
-    runtime: "codex",
-    opencode_provider: null,
-    cloud_key: "",
-    cloud_key_var: "",
-  },
-  {
-    label: "opencode/openrouter",
-    mode: "cloud",
-    runtime: "opencode",
-    opencode_provider: "openrouter",
-    cloud_key: "sk-or-v1-x",
-    cloud_key_var: "OPENROUTER_API_KEY",
-  },
-  {
-    label: "opencode/fireworks",
-    mode: "cloud",
-    runtime: "opencode",
-    opencode_provider: "fireworks",
-    cloud_key: "fw-x",
-    cloud_key_var: "FIREWORKS_API_KEY",
-  },
-  {
-    label: "opencode/together",
-    mode: "cloud",
-    runtime: "opencode",
-    opencode_provider: "together",
-    cloud_key: "tg-x",
-    cloud_key_var: "TOGETHER_API_KEY",
-  },
+  { label: "local/llamacpp/opencode", mode: "local", runtime: "local",
+    local_model: "qwen27b", local_server: "llamacpp", agent: "opencode",
+    opencode_interface: "cli", opencode_provider: null, cloud_key: "", cloud_key_var: "",
+    model_repo: "HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive" },
+  { label: "local/llamacpp/pi", mode: "local", runtime: "local",
+    local_model: "qwen27b", local_server: "llamacpp", agent: "pi",
+    opencode_interface: "cli", opencode_provider: null, cloud_key: "", cloud_key_var: "",
+    model_repo: "HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive" },
+  { label: "local/ollama/opencode", mode: "local", runtime: "local",
+    local_model: "gemma", local_server: "ollama", agent: "opencode",
+    opencode_interface: "cli", opencode_provider: null, cloud_key: "", cloud_key_var: "",
+    model_repo: "unsloth/gemma-4-26B-A4B-it-GGUF" },
+  { label: "local/ollama/pi", mode: "local", runtime: "local",
+    local_model: "gemma", local_server: "ollama", agent: "pi",
+    opencode_interface: "cli", opencode_provider: null, cloud_key: "", cloud_key_var: "",
+    model_repo: "unsloth/gemma-4-26B-A4B-it-GGUF" },
+  { label: "cloud/claude", mode: "cloud", runtime: "claude",
+    agent: null, opencode_provider: null, cloud_key: "", cloud_key_var: "" },
+  { label: "cloud/gemini", mode: "cloud", runtime: "gemini",
+    agent: null, opencode_provider: null, cloud_key: "", cloud_key_var: "" },
+  { label: "cloud/codex", mode: "cloud", runtime: "codex",
+    agent: null, opencode_provider: null, cloud_key: "", cloud_key_var: "" },
+  { label: "cloud/opencode-openrouter", mode: "cloud", runtime: "opencode",
+    agent: null, opencode_provider: "openrouter", cloud_key: "sk-or-v1-x", cloud_key_var: "OPENROUTER_API_KEY" },
+  { label: "cloud/opencode-fireworks", mode: "cloud", runtime: "opencode",
+    agent: null, opencode_provider: "fireworks", cloud_key: "fw-x", cloud_key_var: "FIREWORKS_API_KEY" },
+  { label: "cloud/opencode-together", mode: "cloud", runtime: "opencode",
+    agent: null, opencode_provider: "together", cloud_key: "tg-x", cloud_key_var: "TOGETHER_API_KEY" },
 ];
 
-let pass = 0,
-  fail = 0;
+let pass = 0, fail = 0;
 
-function assertFragment(script, label, needle) {
-  if (!script.includes(needle)) {
-    console.log(`✗ ${label.padEnd(24)} missing ${needle}`);
-    return false;
-  }
-  return true;
+function decodeBlock(oneLiner) {
+  const m = oneLiner.match(/SPOTLIGHT_CONFIG='([^']+)'/);
+  if (!m) return null;
+  return Buffer.from(m[1], "base64").toString("utf8");
+}
+
+function hasExport(block, key, value) {
+  // Matches `export KEY='<value>'` exactly (value is the raw form input).
+  const escaped = "'" + value.replace(/'/g, "'\\''") + "'";
+  return block.includes(`export ${key}=${escaped}`);
 }
 
 for (const c of configs) {
   const cfg = { ...baseCfg, ...c };
-  const script = buildScript(cfg);
-  const required = [
-    "git fetch origin main",
-    "git merge --ff-only origin/main",
-    "spotlight-update",
-    "spotlight-doctor",
-    "qmd collection add \"$SPOTLIGHT_VAULT_PATH\" --name spotlight",
-    "write_env_var FIRECRAWL_API_KEY",
-    "write_env_var OSINT_NAV_API_KEY",
-    "SPOTLIGHT-BEGIN",
-    "awk '",
-    'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"',
-  ];
+  const oneLiner = buildOneLiner(cfg);
+  const cmdScript = buildCommandScript(cfg);
   let ok = true;
-  for (const needle of required) ok = assertFragment(script, c.label, needle) && ok;
-  if (script.includes("git pull --no-rebase --autostash origin main")) {
-    console.log(`✗ ${c.label.padEnd(24)} contains unsafe git pull --autostash`);
+
+  // One-liner shape
+  if (!oneLiner.startsWith("curl -fsSL https://raw.githubusercontent.com/buriedsignals/spotlight/main/install-spotlight.sh")) {
+    console.log(`✗ ${c.label.padEnd(28)} one-liner missing curl URL`);
     ok = false;
   }
-  if (c.runtime === "local" && !script.includes("spotlight-local")) {
-    console.log(`✗ ${c.label.padEnd(24)} local runtime does not install spotlight-local`);
+  if (!oneLiner.includes("SPOTLIGHT_CONFIG='")) {
+    console.log(`✗ ${c.label.padEnd(28)} one-liner missing SPOTLIGHT_CONFIG env`);
     ok = false;
   }
-  if (c.label === "local/ollama") {
-    const ollamaRequired = [
-      "hf.co/unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M",
-      "SPOTLIGHT_OLLAMA_ALIAS",
-      "spotlight-gemma4-q4",
-      'ollama create "$SPOTLIGHT_OLLAMA_ALIAS" -f "$TMP_MODELFILE"',
-      'opencode --model "ollama/$SPOTLIGHT_OLLAMA_ALIAS" "$@"',
-      'SPOTLIGHT_DIR_DEFAULT="$(expand_path "$SPOTLIGHT_DIR_DEFAULT_INPUT")"',
-      "write_env_var OLLAMA_MODEL",
-      '.provider["ollama"] = {"npm":"@ai-sdk/openai-compatible"',
-      '"options":{"baseURL":$base}',
-    ];
-    for (const needle of ollamaRequired) ok = assertFragment(script, c.label, needle) && ok;
-    if (script.includes("ollama-ai-provider-v2")) {
-      console.log(`✗ ${c.label.padEnd(24)} uses Ollama-native provider that calls /v1/chat`);
-      ok = false;
-    }
-    if (script.includes("11434/v1/chat/completions")) {
-      console.log(`✗ ${c.label.padEnd(24)} hard-codes chat/completions into baseURL`);
-      ok = false;
-    }
-    if (script.includes('ollama pull "$MODEL" >/dev/null 2>&1 || true')) {
-      console.log(`✗ ${c.label.padEnd(24)} still swallows Ollama pull failure`);
-      ok = false;
-    }
-  }
-  if (c.label === "local/ollama-qwen") {
-    const qwenRequired = [
-      "hf.co/HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive:IQ2_M",
-      "spotlight-qwen36-27b-q4",
-      'ollama create "$SPOTLIGHT_OLLAMA_ALIAS" -f "$TMP_MODELFILE"',
-      'opencode --model "ollama/$SPOTLIGHT_OLLAMA_ALIAS" "$@"',
-      "write_env_var OLLAMA_MODEL",
-      '.provider["ollama"] = {"npm":"@ai-sdk/openai-compatible"',
-      '"options":{"baseURL":$base}',
-    ];
-    for (const needle of qwenRequired) ok = assertFragment(script, c.label, needle) && ok;
-    if (script.includes("ollama-ai-provider-v2")) {
-      console.log(`✗ ${c.label.padEnd(24)} uses Ollama-native provider that calls /v1/chat`);
-      ok = false;
-    }
-    if (script.includes("11434/v1/chat/completions")) {
-      console.log(`✗ ${c.label.padEnd(24)} hard-codes chat/completions into baseURL`);
-      ok = false;
-    }
-  }
-  if (c.runtime === "opencode" && !script.includes("opencode loads Spotlight skills")) {
-    console.log(`✗ ${c.label.padEnd(24)} opencode skills not linked`);
+  if (!oneLiner.endsWith(" bash")) {
+    console.log(`✗ ${c.label.padEnd(28)} one-liner does not end with 'bash'`);
     ok = false;
   }
-  if (!ok) {
-    fail++;
-    continue;
+
+  // .command wrapper shape (3-line bash that fetches install-spotlight.sh)
+  const cmdLines = cmdScript.trim().split("\n");
+  if (cmdLines.length !== 3 || cmdLines[0] !== "#!/usr/bin/env bash") {
+    console.log(`✗ ${c.label.padEnd(28)} .command wrapper not 3 lines with shebang`);
+    ok = false;
   }
-  const tmp = `/tmp/setup-gen-${c.label.replace(/\//g, "-")}.sh`;
-  fs.writeFileSync(tmp, script);
-  try {
-    execSync(`bash -n "${tmp}"`, { stdio: "pipe" });
-    console.log(`✓ ${c.label.padEnd(24)} ${script.length} bytes`);
+  if (!cmdScript.includes("SPOTLIGHT_CONFIG='")) {
+    console.log(`✗ ${c.label.padEnd(28)} .command wrapper missing config export`);
+    ok = false;
+  }
+
+  // Decode + verify the export block
+  const block = decodeBlock(oneLiner);
+  if (!block) { console.log(`✗ ${c.label.padEnd(28)} cannot decode base64 from one-liner`); ok = false; }
+  else {
+    if (!hasExport(block, "SPOTLIGHT_MODE", cfg.mode)) {
+      console.log(`✗ ${c.label.padEnd(28)} block missing SPOTLIGHT_MODE=${cfg.mode}`);
+      ok = false;
+    }
+    if (!hasExport(block, "SPOTLIGHT_RUNTIME", cfg.runtime)) {
+      console.log(`✗ ${c.label.padEnd(28)} block missing SPOTLIGHT_RUNTIME=${cfg.runtime}`);
+      ok = false;
+    }
+    if (!hasExport(block, "FIRECRAWL_API_KEY", cfg.firecrawl_key)) {
+      console.log(`✗ ${c.label.padEnd(28)} block missing FIRECRAWL_API_KEY`);
+      ok = false;
+    }
+    if (!hasExport(block, "OSINT_NAV_API_KEY", cfg.nav_key)) {
+      console.log(`✗ ${c.label.padEnd(28)} block missing OSINT_NAV_API_KEY`);
+      ok = false;
+    }
+    if (cfg.mode === "local") {
+      if (!hasExport(block, "SPOTLIGHT_LOCAL_SERVER", cfg.local_server)) {
+        console.log(`✗ ${c.label.padEnd(28)} block missing SPOTLIGHT_LOCAL_SERVER=${cfg.local_server}`);
+        ok = false;
+      }
+      if (!hasExport(block, "SPOTLIGHT_AGENT", cfg.agent)) {
+        console.log(`✗ ${c.label.padEnd(28)} block missing SPOTLIGHT_AGENT=${cfg.agent}`);
+        ok = false;
+      }
+      if (!hasExport(block, "SPOTLIGHT_MODEL_REPO", cfg.model_repo)) {
+        console.log(`✗ ${c.label.padEnd(28)} block missing SPOTLIGHT_MODEL_REPO`);
+        ok = false;
+      }
+    }
+    if (cfg.cloud_key_var) {
+      if (!hasExport(block, "SPOTLIGHT_CLOUD_KEY_VAR", cfg.cloud_key_var)) {
+        console.log(`✗ ${c.label.padEnd(28)} block missing SPOTLIGHT_CLOUD_KEY_VAR=${cfg.cloud_key_var}`);
+        ok = false;
+      }
+      if (!hasExport(block, "SPOTLIGHT_CLOUD_KEY", cfg.cloud_key)) {
+        console.log(`✗ ${c.label.padEnd(28)} block missing SPOTLIGHT_CLOUD_KEY`);
+        ok = false;
+      }
+    }
+  }
+
+  if (ok) {
+    console.log(`✓ ${c.label.padEnd(28)} one-liner=${oneLiner.length}B  block=${block ? block.length : "?"}B`);
     pass++;
-  } catch (e) {
-    console.log(
-      `✗ ${c.label.padEnd(24)} ${(e.stderr || e).toString().split("\n")[0]}`,
-    );
+  } else {
     fail++;
   }
 }
 
+// --- Injection-resistance check ---
+const injCfg = {
+  ...baseCfg, mode: "cloud", runtime: "claude", agent: null,
+  opencode_provider: null, cloud_key: "", cloud_key_var: "",
+  firecrawl_key: "fc-with-quote'and$dollar`backtick;rm-rf",
+};
+const injOneLiner = buildOneLiner(injCfg);
+const injBlock = decodeBlock(injOneLiner);
+if (injBlock && hasExport(injBlock, "FIRECRAWL_API_KEY", injCfg.firecrawl_key)) {
+  console.log("✓ injection-resistance         single-quote and shell metas survived round-trip safely");
+  pass++;
+} else {
+  console.log("✗ injection-resistance         malicious key did NOT survive base64+eval intact");
+  console.log("  expected:", injCfg.firecrawl_key);
+  console.log("  block excerpt:", injBlock ? injBlock.split("\n").find(l => l.includes("FIRECRAWL")) : "(no block)");
+  fail++;
+}
+
+// --- UTF-8 round-trip check ---
+const utf8Cfg = { ...baseCfg, mode: "cloud", runtime: "claude", agent: null,
+  opencode_provider: null, cloud_key: "", cloud_key_var: "",
+  vault_path: "/Users/x/Vaults/Schräge·Münzen" };
+const utf8Block = decodeBlock(buildOneLiner(utf8Cfg));
+if (utf8Block && utf8Block.includes("Schräge·Münzen")) {
+  console.log("✓ utf-8 round-trip             vault path preserved through TextEncoder+base64");
+  pass++;
+} else {
+  console.log("✗ utf-8 round-trip             unicode mangled");
+  fail++;
+}
+
+// --- Agent manifest path (unchanged from previous test) ---
 const manifestCfg = {
-  ...baseCfg,
-  mode: "cloud",
-  runtime: "opencode",
-  opencode_provider: "fireworks",
-  cloud_key: "fw-secret-test",
+  ...baseCfg, mode: "cloud", runtime: "opencode",
+  opencode_provider: "fireworks", cloud_key: "fw-secret-test",
   cloud_key_var: "FIREWORKS_API_KEY",
-  int_junkipedia: true,
-  junkipedia_key: "junk-secret-test",
+  int_junkipedia: true, junkipedia_key: "junk-secret-test",
 };
 const manifest = buildAgentManifest(manifestCfg);
 const prompt = buildAgentPrompt(manifest);
@@ -301,7 +252,7 @@ if (
   console.log("✗ agent prompt does not instruct agent setup from manifest values");
   fail++;
 } else {
-  console.log("✓ agent manifest/prompt      values included, prompt redacted");
+  console.log("✓ agent manifest/prompt        values included, prompt redacted");
   pass++;
 }
 

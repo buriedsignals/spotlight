@@ -144,7 +144,7 @@ Enforce at the agent definition: strip `firecrawl` (and any external-fetch shell
 
 **What it is:** Minimal TypeScript coding harness by Mario Zechner (https://pi.dev). MIT license. `npm install -g @mariozechner/pi-coding-agent`. Natively supports `AGENTS.md` + `skills/*/SKILL.md`.
 
-**Status:** Local fallback. opencode (above) is the recommended local Spotlight runtime — pi lacks native sub-agents (so investigator + fact-checker run single-context) and needs an extension to talk to llama-server. Use pi only if you already have it set up or specifically want its minimal surface.
+**Status:** Local alternative. opencode (above) remains the recommended local Spotlight runtime because pi lacks native sub-agents (so investigator + fact-checker run single-context, weakening the verification independence guarantee). Spotlight's installer (`setup.html` → `install-spotlight.sh`) offers pi as an explicit second choice — picked it when you want a leaner install and accept the sub-agent trade-off.
 
 ### Loading this repo
 
@@ -168,32 +168,24 @@ pi ships native `Read`, `Write`, `Edit`, `Grep`, `Glob`, `Bash` equivalents. The
 
 ### Local llama-server provider via pi
 
-pi v0.70 does **not** accept arbitrary OpenAI-compatible providers via `~/.pi/agent/models.json` — only known providers (OpenAI, Anthropic, Google) can be extended there. To route inference to a local server (llama-server, Ollama, vLLM, Exoscale), write a pi extension that calls `pi.registerProvider("local", { baseUrl, api: "openai-completions", models: [...] })`. Reference: `docs/custom-provider.md` in the pi package, plus the worked example at `examples/extensions/custom-provider-qwen-cli/`.
+Use the `pi-llama-cpp` extension — a community package by `gsanhueza` (MIT, v0.4.0 as of May 2026), listed on Pi's official package registry at https://pi.dev/packages/pi-llama-cpp:
 
-Minimal extension (TypeScript) — ship as a standalone npm package or drop under `~/.pi/agent/extensions/`:
-
-```typescript
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-
-export default function (pi: ExtensionAPI) {
-  pi.registerProvider("local", {
-    baseUrl: "http://127.0.0.1:8080/v1",     // llama-server (or 11434 for Ollama)
-    apiKey: "unused",
-    api: "openai-completions",
-    models: [{
-      id: "qwen27",
-      name: "Qwen3.6-27B Uncensored (local)",
-      reasoning: true,
-      input: ["text"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 262144,
-      maxTokens: 16384
-    }]
-  });
-}
+```bash
+pi install npm:pi-llama-cpp
 ```
 
-Then `pi --provider local --model qwen27`. opencode's native `llama.cpp` provider does this same job with one JSON block — no extension code.
+The extension auto-detects models on the running llama-server (`/models` endpoint), supports load/unload/switch via `/models` slash command, and resolves the endpoint URL from any of:
+
+1. `.pi/llama-server.json` in the project root — `{"url":"http://127.0.0.1:8080"}`
+2. `LLAMA_SERVER_URL` env var
+3. `~/.pi/agent/settings.json` — `{"llamaServerUrl":"http://127.0.0.1:8080"}`
+4. Default `http://127.0.0.1:8080`
+
+Spotlight's installer writes option 3 automatically when you pick Pi as the agent harness — pointing at port 8080 for `llamacpp` or 11434 for Ollama. Pi's authentication for the local server (if any) lives in `~/.pi/agent/auth.json` under provider id `llama-server` (displayed as "Llama.cpp" in the Pi UI).
+
+Status indicators on the `/models` browser: 🟢 loaded · 🟡 loading · 🔴 failed · 🔵 sleeping · ⚪ unloaded. The sleeping state requires `llama-server --sleep-idle-seconds <n>` on the server side.
+
+opencode's native `llama.cpp` provider does the same model-browsing job via one JSON block in `opencode.json` — no extension. Either path connects an agent to the same OpenAI-compatible endpoint; pick the agent based on whether you need native sub-agents.
 
 **Current Spotlight operator model**: `unsloth/gemma-4-26B-A4B-it-GGUF` on Hugging Face (base Gemma 4 26B A4B — we evaluated a journalism fine-tune but the base outperformed it on tool-use + document OCR). Multimodal (text + vision) VLM MoE — 26B total / 4B active. Native vision for scanned court documents, satellite imagery, and screenshots. Recommended quants:
 - `gemma-4-26B-A4B-it-UD-Q6_K_XL.gguf` (~22 GB) + `mmproj-BF16.gguf` (~1.2 GB) — 48GB+ Macs
