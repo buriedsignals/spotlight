@@ -395,7 +395,10 @@ if [ "$SPOTLIGHT_MODE" = "local" ]; then
       # Adding both is belt-and-braces (verified: finish_reason flips
       # from "length" to "stop" with these in place).
       case "$SPOTLIGHT_LOCAL_MODEL" in
-        qwen27b)
+        qwen9b|qwen27b)
+          # Both abliterated journalist tunes share the same stop-token bug
+          # class (same training corpus, same Qwen 3.x family). Apply
+          # defensively to both — harmless overhead if not triggered.
           printf 'PARAMETER stop "<|im_end|>"\n' >> "$TMP_MODELFILE"
           printf 'PARAMETER stop "<|endoftext|>"\n' >> "$TMP_MODELFILE"
           ;;
