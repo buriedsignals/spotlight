@@ -106,7 +106,7 @@ check_combo "local/llamacpp/opencode" "${BASE[@]}" \
   SPOTLIGHT_MODE=local SPOTLIGHT_RUNTIME=local \
   SPOTLIGHT_LOCAL_SERVER=llamacpp SPOTLIGHT_LOCAL_MODEL=qwen27b \
   SPOTLIGHT_AGENT=opencode SPOTLIGHT_OPENCODE_INTERFACE=cli \
-  SPOTLIGHT_MODEL_REPO='huihui-ai/Huihui-Qwen3.6-27B-abliterated-MTP-GGUF'
+  SPOTLIGHT_MODEL_REPO='tomvaillant/qwen3.6-27b-abliterated-journalist-GGUF'
 
 # --- 4. local / llamacpp / pi ---
 # The Pi branch prompts interactively (read -r ans </dev/tty), so we feed "y"

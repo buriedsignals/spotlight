@@ -88,11 +88,11 @@ export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
 #             corpus as the gemma4-e4b tune previously offered, but qwen3.5
 #             architecture refused on 0/30 OSINT probes vs gemma's 1/30.
 #
-#   qwen27b — Huihui-ai's Qwen 3.6 27B abliterated. 32 GB Macs.
-#             Ollama-native tag from the abliteration originators. Standard
-#             Q4_K quant (not the K_P imatrix variants that have had Ollama
-#             load issues). Setup form's fit-check enforces 32 GB minimum
-#             before this tier is selectable.
+#   qwen27b — Tom's Qwen 3.6 27B journalist tune. 32 GB Macs.
+#             Same investigative-journalism corpus as the 9B, fine-tuned on
+#             Huihui's abliterated Qwen 3.6 base. Standard Q4_K_M quant.
+#             Setup form's fit-check enforces 32 GB minimum before this
+#             tier is selectable. Runs in thinking mode (see below).
 #
 # Removed in this revision:
 #   - gemma-e4b (Tom's gemma4 E4B journalist) — superseded by qwen9b after
@@ -101,7 +101,9 @@ export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
 #     active-param-vs-file-footprint trap that misled Luc.
 #   - qwen27b @ HauhauCS IQ2_M — failed to load on our test machine
 #     (non-standard K_P quants + mmproj vision file appear Ollama-incompat).
-#     Huihui's variant uses standard Q4_K quants and loads cleanly.
+#   - qwen27b @ raw Huihui abliterated — superseded by Tom's journalist
+#     fine-tune built on the same base. Same on-disk footprint, better
+#     bench scores on investigative-journalism prompts.
 case "$SPOTLIGHT_LOCAL_MODEL" in
   qwen9b)
     GGUF_FILE="model-q4_k_m.gguf"
@@ -110,10 +112,10 @@ case "$SPOTLIGHT_LOCAL_MODEL" in
     OLLAMA_SIZE_LABEL="~6 GB"
     ;;
   qwen27b)
-    GGUF_FILE="model-Q4_K.gguf"
-    OLLAMA_MODEL_DEFAULT="huihui_ai/Qwen3.6-abliterated:27b"
+    GGUF_FILE="qwen3.6-27b-abliterated-journalist-Q4_K_M.gguf"
+    OLLAMA_MODEL_DEFAULT="hf.co/tomvaillant/qwen3.6-27b-abliterated-journalist-GGUF:Q4_K_M"
     OLLAMA_ALIAS_DEFAULT="spotlight-qwen27b"
-    OLLAMA_SIZE_LABEL="~17 GB"
+    OLLAMA_SIZE_LABEL="~15 GB"
     ;;
   *)
     GGUF_FILE=""
@@ -367,41 +369,22 @@ if [ "$SPOTLIGHT_MODE" = "local" ]; then
       fi
       TMP_MODELFILE="$(mktemp)"
       printf "FROM %s\n" "$OLLAMA_MODEL" > "$TMP_MODELFILE"
-      # Qwen 3.6 thinking-mode workaround: the abliterated 27B variants
-      # (Huihui, HauhauCS) default to thinking mode and ignore the
-      # OpenAI-compat `think:false` payload field. Without disabling
-      # thinking, the model dumps reasoning into the `reasoning` field
-      # and leaves `content` empty unless max_tokens is generous (~4k+).
+      # Qwen 3.6 27B runs in thinking mode — DO NOT inject /no_think.
       #
-      # SYSTEM "/no_think" doesn't survive because opencode sends its
-      # own system message (skill prompts + AGENTS.md) which overrides
-      # the Modelfile's SYSTEM. The fix that DOES survive: override the
-      # chat TEMPLATE to inject /no_think at the START of every user
-      # message during rendering. The base Qwen 3.5 RENDERER is left in
-      # place (Ollama ignores TEMPLATE if RENDERER is set to a known
-      # value, but our explicit TEMPLATE here takes precedence in
-      # practice — verified end-to-end with a system+user request that
-      # mirrors opencode's actual traffic).
+      # Earlier revisions overrode the chat TEMPLATE to inject /no_think
+      # into every user message, on the theory that the abliterated 27B
+      # ignores `think:false` and otherwise burns ~10k reasoning tokens.
+      # That premise is correct in mechanism but wrong in consequence:
+      # the abliterated Qwen 3.6 family's /no_think codepath is damaged
+      # (verified empirically on Huihui base + Tom's journalist tune at
+      # Q4_K_M with Qwen-recommended sampling — output collapses to
+      # multilingual token soup and lock-loops within ~200 tokens).
+      # Probable cause: abliteration calibration covered only the
+      # thinking codepath, leaving the no-think branch broken.
       #
-      # The opencode config below also sets `limit.output: 16384` for
-      # this alias so requests carry enough max_tokens budget for the
-      # thinking + content to fit (Qwen burns ~10k tokens on reasoning
-      # for complex OSINT prompts even with /no_think).
-      case "$SPOTLIGHT_LOCAL_MODEL" in
-        qwen27b)
-          cat >> "$TMP_MODELFILE" <<'NOMINK'
-TEMPLATE """{{- if .System }}<|im_start|>system
-{{ .System }}<|im_end|>
-{{ end }}{{- range .Messages }}<|im_start|>{{ .Role }}
-{{ if eq .Role "user" }}/no_think
-{{ end }}{{ .Content }}<|im_end|>
-{{ end }}<|im_start|>assistant
-"""
-PARAMETER stop "<|im_end|>"
-PARAMETER stop "<|im_start|>"
-NOMINK
-          ;;
-      esac
+      # We keep the model's native chat template (thinking on) and
+      # rely on opencode's `limit.output: 16384` to give enough budget
+      # for reasoning + content. Expect ~3-5× slower per-prompt vs 9B.
       ollama create "$SPOTLIGHT_OLLAMA_ALIAS" -f "$TMP_MODELFILE"
       rm -f "$TMP_MODELFILE"
     elif [ "$DRY_RUN" = "1" ]; then

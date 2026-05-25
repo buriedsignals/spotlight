@@ -1103,8 +1103,8 @@
             <label id="model-card-qwen27b">
               <input type="radio" name="local_model" value="qwen27b">
               <span class="opt-name">
-                <span class="name">Qwen 3.6 27B Abliterated <span class="badge req" style="margin-left:6px;">32 GB</span></span>
-                <span class="desc">Heavy tier. 27B dense, abliterated by <a href="https://huggingface.co/huihui-ai" target="_blank" rel="noopener">huihui-ai</a> (the team that pioneered the abliteration technique). Ollama-native tag, standard Q4_K quant. <strong>Needs 32 GB unified memory minimum</strong> — the fit-check below confirms your hardware before this option is enabled.</span>
+                <span class="name">Qwen 3.6 27B Journalist <span class="badge req" style="margin-left:6px;">32 GB</span></span>
+                <span class="desc">Heavy tier. 27B dense, fine-tuned by <a href="https://huggingface.co/tomvaillant" target="_blank" rel="noopener">@tomvaillant</a> on the same investigative-journalism corpus as the 9B, built on Huihui's abliterated Qwen 3.6 base. Runs in thinking mode (the abliterated family's <code>/no_think</code> path is broken). <strong>Needs 32 GB unified memory minimum</strong> — the fit-check below confirms your hardware before this option is enabled.</span>
               </span>
             </label>
           </div>
@@ -1120,16 +1120,16 @@
 
           <div class="model-info hidden" id="model-info-qwen27b">
             <div class="stat"><strong>27B</strong>Dense — all params active</div>
-            <div class="stat"><strong>~17 GB</strong>disk</div>
-            <div class="stat"><strong>~24 GB</strong>RAM at runtime</div>
+            <div class="stat"><strong>~15 GB</strong>disk</div>
+            <div class="stat"><strong>~22 GB</strong>RAM at runtime</div>
             <div class="stat"><strong>32 GB+</strong>required</div>
           </div>
 
           <p class="note-advisory" id="local-note-llamacpp">
-            Download size: ~6 GB for the 9B, ~17 GB for the 27B. The installer streams the GGUF from Hugging Face via <code>curl</code>; resume-on-interrupt is supported. The model lives at <code>~/Models/&lt;repo-leaf&gt;/</code>; you can swap quants by re-running with <code>MODEL=...</code>.
+            Download size: ~6 GB for the 9B, ~15 GB for the 27B. The installer streams the GGUF from Hugging Face via <code>curl</code>; resume-on-interrupt is supported. The model lives at <code>~/Models/&lt;repo-leaf&gt;/</code>; you can swap quants by re-running with <code>MODEL=...</code>.
           </p>
           <p class="note-advisory hidden" id="local-note-ollama">
-            Download size: ~6 GB for the 9B, ~17 GB for the 27B. Progress streams live in Terminal via Ollama's native UI. Spotlight uses Hugging Face's tagged Ollama artifacts for the 9B (<code>hf.co/tomvaillant/qwen3.5-9b-abliterated-journalist-GGUF:Q4_K_M</code>) and the Ollama-native tag for the 27B (<code>huihui_ai/Qwen3.6-abliterated:27b</code>). To use another installed Ollama model later, set <code>OLLAMA_MODEL</code> and <code>SPOTLIGHT_OLLAMA_ALIAS</code> in <code>.env</code>.
+            Download size: ~6 GB for the 9B, ~15 GB for the 27B. Progress streams live in Terminal via Ollama's native UI. Spotlight uses Hugging Face's tagged Ollama artifacts for both tiers: <code>hf.co/tomvaillant/qwen3.5-9b-abliterated-journalist-GGUF:Q4_K_M</code> (9B) and <code>hf.co/tomvaillant/qwen3.6-27b-abliterated-journalist-GGUF:Q4_K_M</code> (27B). To use another installed Ollama model later, set <code>OLLAMA_MODEL</code> and <code>SPOTLIGHT_OLLAMA_ALIAS</code> in <code>.env</code>.
           </p>
         </section>
       </div>
@@ -1497,7 +1497,7 @@
   // --- Model repo map (HF repo path, used by the llamacpp install path) ---
   const MODEL_REPOS = {
     qwen9b:  'tomvaillant/qwen3.5-9b-abliterated-journalist-GGUF',
-    qwen27b: 'huihui-ai/Huihui-Qwen3.6-27B-abliterated-MTP-GGUF',
+    qwen27b: 'tomvaillant/qwen3.6-27b-abliterated-journalist-GGUF',
   };
   // RAM minimum per model (in GB) — used by fit-check enforcement on heavy tier.
   const MODEL_MIN_RAM = { qwen9b: 16, qwen27b: 32 };
@@ -1842,9 +1842,10 @@
             alias: 'spotlight-qwen9b',
           },
           qwen27b: {
-            // Native Ollama tag from the abliteration originators — standard
-            // Q4_K quant, no HF indirection, loads cleanly via Ollama.
-            model: 'huihui_ai/Qwen3.6-abliterated:27b',
+            // Tom's journalist fine-tune on Huihui's abliterated Qwen 3.6
+            // base — same investigative-journalism corpus as the 9B,
+            // standard Q4_K_M quant via Ollama's HF passthrough.
+            model: 'hf.co/tomvaillant/qwen3.6-27b-abliterated-journalist-GGUF:Q4_K_M',
             alias: 'spotlight-qwen27b',
           },
         };
@@ -2051,7 +2052,7 @@ Setup is complete. Open a new terminal and run \`spotlight\`. Then ask it to sta
   };
   const ORIGINAL_COPY = {
     qwen9b:  'Default. 9B dense, abliterated, investigative-journalism fine-tune by <a href="https://huggingface.co/tomvaillant" target="_blank" rel="noopener">@tomvaillant</a>. Fits 16 GB Macs comfortably (~6 GB on disk, ~8 GB at runtime). Bench-tested: 100% refusal-resistance on OSINT-grade prompts, leads with the answer 100% of the time.',
-    qwen27b: 'Heavy tier. 27B dense, abliterated by <a href="https://huggingface.co/huihui-ai" target="_blank" rel="noopener">huihui-ai</a> (the team that pioneered the abliteration technique). Ollama-native tag, standard Q4_K quant. <strong>Needs 32 GB unified memory minimum</strong> — the fit-check below confirms your hardware before this option is enabled.',
+    qwen27b: 'Heavy tier. 27B dense, fine-tuned by <a href="https://huggingface.co/tomvaillant" target="_blank" rel="noopener">@tomvaillant</a> on the same investigative-journalism corpus as the 9B, built on Huihui\'s abliterated Qwen 3.6 base. Runs in thinking mode (the abliterated family\'s <code>/no_think</code> path is broken). <strong>Needs 32 GB unified memory minimum</strong> — the fit-check below confirms your hardware before this option is enabled.',
   };
 
   function recommendModel(recommended) {

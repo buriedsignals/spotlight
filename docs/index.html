@@ -532,7 +532,7 @@
         <p>OpenCode pointed at a local Ollama endpoint keeps everything on the journalist's machine. The installer ships two abliterated journalism models:</p>
         <ul>
           <li><strong>Default — Qwen 3.5 9B Journalist</strong> (<code>tomvaillant/qwen3.5-9b-abliterated-journalist-GGUF:Q4_K_M</code>). 9B dense, ~6 GB on disk, fits 16 GB Macs comfortably. Bench-tested at 100% refusal-resistance on OSINT-grade prompts.</li>
-          <li><strong>Heavy tier — Huihui Qwen 3.6 27B Abliterated</strong> (<code>huihui_ai/Qwen3.6-abliterated:27b</code>). 27B dense, ~17 GB on disk, ~24 GB resident at runtime. <strong>Needs 32 GB unified memory minimum</strong> — the setup form's fit-check enforces this before the option commits.</li>
+          <li><strong>Heavy tier — Qwen 3.6 27B Journalist</strong> (<code>tomvaillant/qwen3.6-27b-abliterated-journalist-GGUF:Q4_K_M</code>). 27B dense, fine-tuned on the same investigative-journalism corpus as the 9B, on Huihui's abliterated Qwen 3.6 base. ~15 GB on disk, ~22 GB resident at runtime. Runs in thinking mode (the abliterated <code>/no_think</code> path produces token soup). <strong>Needs 32 GB unified memory minimum</strong> — the setup form's fit-check enforces this before the option commits.</li>
         </ul>
         <p>Local runtimes are slower than cloud runtimes — the 9B does an investigation in ~15 min vs ~5 min on cloud; the 27B takes 45–90 min. They're the right choice when material can't leave the machine.</p>
 

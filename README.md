@@ -28,7 +28,7 @@ When you pick **Local** mode in the setup form, you get a choice of two ablitera
 | Tier | Model | RAM | Notes |
 |------|-------|-----|-------|
 | **Default** | [`tomvaillant/qwen3.5-9b-abliterated-journalist-GGUF:Q4_K_M`](https://huggingface.co/tomvaillant/qwen3.5-9b-abliterated-journalist-GGUF) | 16 GB | 9B dense, ~6 GB on disk, ~8 GB at runtime |
-| **Heavy** (fit-check gated) | [`huihui_ai/Qwen3.6-abliterated:27b`](https://ollama.com/huihui_ai/Qwen3.6-abliterated) | 32 GB minimum | 27B dense, ~17 GB on disk, ~24 GB at runtime |
+| **Heavy** (fit-check gated) | [`tomvaillant/qwen3.6-27b-abliterated-journalist-GGUF:Q4_K_M`](https://huggingface.co/tomvaillant/qwen3.6-27b-abliterated-journalist-GGUF) | 32 GB minimum | 27B dense, ~15 GB on disk, ~22 GB at runtime, thinking mode |
 
 ### Why these two
 
@@ -36,27 +36,24 @@ Both are **abliterated** — the refusal-vector has been removed so the model an
 
 The 9B is Tom's own fine-tune on the [investigative-journalism-training corpus](https://huggingface.co/datasets/tomvaillant/investigative-journalism-training): SIFT methodology, primary-source preference, OPSEC awareness, OSINT tool recall. On a 30-prompt eval against the bundled `eval/prompts.jsonl` suite (tool recommendations, methodology, ethics-opsec, refusal probes), the 9B scored **83.5 / 100** composite — 100% refusal-resistance, 100% directness. It outscored Tom's own 8B Gemma 4 E4B fine-tune (82.3) primarily on hedging behavior, and was the strongest model in its RAM tier we could measure.
 
-The 27B is huihui-ai's Qwen 3.6 abliteration. We picked it over the popular [HauhauCS variant](https://huggingface.co/HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive) for install reliability — HauhauCS uses non-standard K_P imatrix quants with a multimodal mmproj projection file, and the IQ2_M quant failed to load via Ollama in our testing. Huihui-ai is the team that pioneered the abliteration technique HauhauCS is downstream of, ships a native Ollama tag (no `hf.co/` indirection), and uses standard Q4_K quants.
+The 27B is Tom's journalist fine-tune on the same investigative-journalism corpus as the 9B, built on huihui-ai's abliterated Qwen 3.6 base (the team that pioneered the abliteration technique). Ships as a HuggingFace GGUF; Ollama pulls it via the `hf.co/` passthrough using the standard Q4_K_M quant.
 
-Head-to-head on a 5-prompt subset of the same eval suite (with the `/no_think` workaround described below): **27B scored 100.0 composite vs the 9B's 91.2.** Same 100% refusal-resistance, same 100% directness, but the 27B emits ~3× more tool URLs per response (mean 5.2 vs 1.8), zero hedge markers, and slightly more concise responses (480 median words vs 752). The size cost is justified when the journalist has the hardware.
+Head-to-head on a 5-prompt subset of the same eval suite, **the raw Huihui 27B base scored 100.0 composite vs the 9B's 91.2.** Same 100% refusal-resistance, same 100% directness, but ~3× more tool URLs per response (mean 5.2 vs 1.8), zero hedge markers, slightly more concise (480 median words vs 752). The journalist fine-tune inherits that base behavior and adds the corpus-specific tool/methodology recall. The size cost is justified when the journalist has the hardware.
 
-### 27B thinking-mode workaround (built into the installer)
+### 27B runs in thinking mode (was: /no_think; we reversed)
 
-Qwen 3.6 abliterated variants default to thinking mode and ignore the OpenAI-compat `think: false` payload field. Without disabling thinking, the model dumps reasoning into the API's `reasoning` field and leaves `content` empty unless `max_tokens` is generous (~16k+). On our first bench run the 27B returned 15/15 empty responses; with the fix below, end-to-end queries return ~7k chars of OSINT methodology with `finish_reason: stop`.
+Earlier revisions of this installer wrote an Ollama Modelfile TEMPLATE override that injected `/no_think` into every user message, plus opencode's `limit.output: 16384` to cap reasoning budget. We removed the TEMPLATE override and kept only the output limit.
 
-The fix is two-part because Qwen's `/no_think` soft-switch alone isn't enough — the model still does substantial reasoning even when instructed not to:
+**The abliterated Qwen 3.6 family's `/no_think` codepath is damaged** — verified empirically on Huihui base + Tom's journalist fine-tune at Q4_K_M with Qwen-recommended sampling: output collapses into multilingual token soup and lock-loops within ~200 tokens. Probable cause: abliteration calibration covered only the thinking codepath, leaving the no-think branch with broken refusal-direction subtraction; quantization amplifies it.
 
-1. **TEMPLATE override in the Ollama Modelfile** — the installer rewrites the chat template for the `spotlight-qwen27b` alias to inject `/no_think` at the start of every user message during rendering. The naive approach of setting `SYSTEM "/no_think"` doesn't survive opencode/pi sending their own system message (skill prompts + AGENTS.md); the TEMPLATE-level injection is the layer that does. The base Qwen 3.5 RENDERER is preserved; our explicit TEMPLATE takes precedence in practice.
-
-2. **opencode `limit.output: 16384`** — the installer writes a per-model output cap into opencode's provider config so requests carry enough max_tokens for Qwen's ~10k reasoning + ~5k content footprint. Without this, opencode's default cap truncates inside the reasoning phase and `content` comes back empty.
-
-Both pieces are written automatically when `SPOTLIGHT_LOCAL_MODEL=qwen27b` flows through `install-spotlight.sh`. End-to-end verified against a real bench prompt with a harness-shaped system message before merge.
+We now keep the model's native chat template (thinking on) and rely on opencode's `limit.output: 16384` to give enough budget for Qwen's ~10k reasoning + ~5k content. Expect ~3-5× slower per-prompt vs the 9B. If reasoning blocks crowd out content, raise the output limit further.
 
 ### What got dropped, and why
 
 - `unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M` — 17 GB MoE blob that OOMs on 16 GB Macs despite "active params" being 3.8B (all experts have to stay resident). The previous "Minimum Spotlight" label was misleading.
 - `tomvaillant/gemma4-e4b-abliterated-journalist-GGUF` — superseded by the 9B; same RAM tier, marginally worse bench score, more verbose responses with one refusal hedge in 30 prompts.
-- `HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive:IQ2_M` — failed to load via Ollama on our test machine. Likely IQ2_M+mmproj incompatibility rather than the model itself being broken (the variant has 341 likes and works via llama.cpp directly), but the install-form contract is "user pulls the recommended model and it just works." Huihui's variant clears that bar.
+- `HauhauCS/Qwen3.6-27B-Uncensored-HauhauCS-Aggressive:IQ2_M` — failed to load via Ollama on our test machine. Likely IQ2_M+mmproj incompatibility rather than the model itself being broken (the variant has 341 likes and works via llama.cpp directly), but the install-form contract is "user pulls the recommended model and it just works."
+- `huihui_ai/Qwen3.6-abliterated:27b` (raw Huihui base via Ollama-native tag) — superseded by Tom's journalist fine-tune on the same base. Same on-disk footprint, better bench scores on investigative-journalism prompts, identical thinking-mode behavior.
 
 ### Heavy-tier fit-check enforcement
 
