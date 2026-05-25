@@ -385,6 +385,21 @@ if [ "$SPOTLIGHT_MODE" = "local" ]; then
       # We keep the model's native chat template (thinking on) and
       # rely on opencode's `limit.output: 16384` to give enough budget
       # for reasoning + content. Expect ~3-5× slower per-prompt vs 9B.
+      #
+      # Stop-token workaround: the abliterated journalist fine-tune emits
+      # <|endoftext|> at the end of assistant turns rather than the
+      # chat-template's <|im_end|>. Ollama's auto-derived stop list reads
+      # tokenizer.ggml.eos_token_id from the GGUF (= <|im_end|>) and does
+      # NOT include <|endoftext|>, so without these explicit stops the
+      # model rambles past its own end-of-turn into a fake user message.
+      # Adding both is belt-and-braces (verified: finish_reason flips
+      # from "length" to "stop" with these in place).
+      case "$SPOTLIGHT_LOCAL_MODEL" in
+        qwen27b)
+          printf 'PARAMETER stop "<|im_end|>"\n' >> "$TMP_MODELFILE"
+          printf 'PARAMETER stop "<|endoftext|>"\n' >> "$TMP_MODELFILE"
+          ;;
+      esac
       ollama create "$SPOTLIGHT_OLLAMA_ALIAS" -f "$TMP_MODELFILE"
       rm -f "$TMP_MODELFILE"
     elif [ "$DRY_RUN" = "1" ]; then
