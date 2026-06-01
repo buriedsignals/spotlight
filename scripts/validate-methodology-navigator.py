@@ -117,7 +117,11 @@ def validate_required(methodology: dict[str, Any], status: str) -> list[str]:
     if not isinstance(tools_required, list):
         errors.append("methodology.json: tools_required must be a list")
         tools_required = []
-    missing_tools = selected_tools - set(tools_required)
+    missing_tools = {
+        tool
+        for tool in selected_tools
+        if not any(tool == required or tool in required for required in tools_required)
+    }
     if missing_tools:
         errors.append(f"methodology.json: tools_required missing Navigator-selected tools {sorted(missing_tools)}")
 

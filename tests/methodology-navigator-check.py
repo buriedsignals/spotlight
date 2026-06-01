@@ -98,7 +98,7 @@ def methodology_with_navigator() -> dict:
                 ],
             }
         ],
-        "tools_required": ["OpenCorporates", "OCCRP Aleph"],
+        "tools_required": ["Navigator: OpenCorporates", "OCCRP Aleph"],
     }
 
 
