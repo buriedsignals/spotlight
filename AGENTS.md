@@ -8,11 +8,9 @@ sensitive: false
 
 # Spotlight — Runtime Contract
 
-This file defines the portable contract for the Spotlight investigation system. Any runtime that can (a) read this file + the skills in `skills/`, (b) dispatch the 13 verbs to native tools, and (c) spawn sub-agents can run Spotlight investigations.
+## Session Preflight
 
-Target runtimes: **pi** (https://pi.dev — native AGENTS.md + SKILL.md support), **Hermes** (production Mycroft agent), **Goose** (served as an extension pack), **Codex CLI**, **Gemini CLI**, and any harness driving a local OpenAI-compatible endpoint (llama-server, Ollama, Exoscale, vLLM). Claude Code users stay on the existing marketplace plugin at `~/buried_signals/tools/skills/spotlight/` — this repo exists for non-Claude runtimes.
-
-Per-runtime wiring is documented in `docs/integrations.md`.
+Before coding in this project, read `/Users/tomvaillant/buried_signals/kit/coding-rules/SKILL.md`. It is the canonical source for workflow routing, coding standards, Jujutsu/version-control rules, GitHub operations, and parallel-agent isolation. Local instructions below add project-specific constraints.
 
 ## Tool Verb Registry
 
