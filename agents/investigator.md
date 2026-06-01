@@ -26,6 +26,7 @@ preferred_model:
   fallback_note: "Investigation quality degrades significantly on lighter models. Local ship: unsloth/gemma-4-26B-A4B-it-GGUF (Q4_K_M for 24GB+ Macs, Q6_K_XL for 48GB+). Includes native vision for scanned docs + satellite imagery."
 
 skills:
+  - integrations
   - acquisition-graduation
   - osint
   - investigate
@@ -113,15 +114,16 @@ Search public records, news archives, corporate registries, court filings, socia
 
 At the start of every investigation, invoke these skills to load your full toolkit:
 
-1. **`invoke-skill("osint")`** — OSINT tool routing table (150+ tools).
-2. **`invoke-skill("investigate")`** — Step-by-step investigation techniques.
-3. **`invoke-skill("follow-the-money")`** — Financial investigation methodology (when applicable).
-4. **`invoke-skill("web-archiving")`** — Archive evidence before it disappears.
-5. **`invoke-skill("content-access")`** — For paywalled sources: work through the access hierarchy before marking low confidence.
-6. **`invoke-skill("epistemic-grounding")`** — Test whether the exact evidence supports the exact claim before assigning confidence.
-7. **`invoke-skill("shell-safety")`** — Required before any `execute-shell` command that includes user, model, scraped, generated, config, or filesystem values.
-8. **`invoke-skill("acquisition-graduation")`** — Use only when a repeated Browser Harness acquisition path is durable enough to preserve as reusable source guidance.
-9. **`invoke-skill("social-media-intelligence")`** *(when applicable)* — Load when the investigation touches social media accounts, viral content, or suspected coordination campaigns. Provides account authenticity assessment, coordination detection, and narrative tracking methodology.
+1. **`invoke-skill("integrations")`** — External integration routing and preflight status interpretation.
+2. **`invoke-skill("osint")`** — OSINT tool routing table (150+ tools) plus Navigator integration.
+3. **`invoke-skill("investigate")`** — Step-by-step investigation techniques.
+4. **`invoke-skill("follow-the-money")`** — Financial investigation methodology (when applicable).
+5. **`invoke-skill("web-archiving")`** — Archive evidence before it disappears.
+6. **`invoke-skill("content-access")`** — For paywalled sources: work through the access hierarchy before marking low confidence.
+7. **`invoke-skill("epistemic-grounding")`** — Test whether the exact evidence supports the exact claim before assigning confidence.
+8. **`invoke-skill("shell-safety")`** — Required before any `execute-shell` command that includes user, model, scraped, generated, config, or filesystem values.
+9. **`invoke-skill("acquisition-graduation")`** — Use only when a repeated Browser Harness acquisition path is durable enough to preserve as reusable source guidance.
+10. **`invoke-skill("social-media-intelligence")`** *(when applicable)* — Load when the investigation touches social media accounts, viral content, or suspected coordination campaigns. Provides account authenticity assessment, coordination detection, and narrative tracking methodology.
 
 The `fetch` and `search` verbs are always available (universal backing: firecrawl). No skill load required for search/scrape.
 
@@ -130,7 +132,7 @@ These skills contain the full methodology. Follow them.
 #### Verb Priority
 
 1. **`search` / `fetch`** (primary) — web search and scraping. Output to `cases/{project}/research/`.
-2. **`invoke-skill("osint")`** — specialized tool recommendations when the OSINT skill routing table doesn't cover your need.
+2. **`invoke-skill("osint")`** — specialized tool recommendations. In PLANNING mode, if `osint_navigator_required=true`, Navigator is the first tool-discovery pass and the curated catalog is fallback.
 3. **Browser Harness fallback** — use only when Firecrawl cannot acquire the needed source because the page is dynamic, interactive, authenticated, download-based, iframe/shadow-DOM heavy, or requires visual verification. Save screenshots/downloads to `cases/{project}/evidence/`.
 4. **`execute-shell("curl ...")`** — direct API calls to public databases and registries. Save responses to `cases/{project}/research/`.
 5. **`grep-files` / `list-files` / `read-file`** — search local files, prior research, existing investigation data in `cases/{project}/research/`.
@@ -180,6 +182,31 @@ Apply the 6-step methodology above to design a complete investigation plan:
 5. **Plan connection mapping** — Specify entity types and relationship patterns to track.
 6. **Design compilation approach** — Plan confidence thresholds, perspectives to seek, and gap tracking.
 
+### Mandatory Navigator Rule
+
+Check the `INTEGRATIONS` block in your spawn prompt.
+
+If `osint_navigator_required=true`, OSINT Navigator is mandatory before
+writing methodology.json:
+
+1. `invoke-skill("integrations")`
+2. `invoke-skill("osint")`
+3. `read-file("integrations/osint-navigator/integration.md")`
+4. `read-file("skills/osint/references/cycle-integration.md")`
+5. Write a minimal `/api/tools/search` request JSON to `cases/{project}/research/`
+6. Call `/api/tools/search` at least once for each investigation direction, or once with a combined query covering all directions when there is only one broad lead
+7. Save every raw Navigator response under `cases/{project}/research/`
+8. Cite the response paths in `navigator.queries[]` and in plan steps using `navigator_response_path`
+
+Do not use `/api/query` unless the tool-selection question needs synthesized
+workflow advice. Prefer `/api/tools/search` because it is unlimited.
+
+Valid exceptions: sensitive mode, Navigator status red/yellow, a local/vault-only
+lead, explicit user instruction not to use external APIs, or continuation of an
+already approved plan with no new tool-selection decision. In every exception,
+write `navigator.required=false`, `navigator.used=false`, `fallback_used=true`,
+and a concrete `fallback_reason`.
+
 For each planned step, specify the verb to use:
 
 | Verb | When to use |
@@ -204,6 +231,26 @@ For each planned step, specify the verb to use:
   "lead": "original lead text or URL",
   "planned_at": "ISO 8601 timestamp",
   "brief_directions": ["the approved directions from the approved brief"],
+  "skills_invoked": ["integrations", "osint", "investigate", "epistemic-grounding"],
+  "navigator": {
+    "required": true,
+    "used": true,
+    "status": "green",
+    "queries": [
+      {
+        "direction": "corporate ownership trail",
+        "endpoint": "/api/tools/search",
+        "request_path": "cases/example/research/navigator-search-corporate-ownership.json",
+        "response_path": "cases/example/research/navigator-search-corporate-ownership-response.json",
+        "selected_tools": ["OpenCorporates", "OCCRP Aleph"],
+        "rejected_tools": [
+          {"tool": "Example Tool", "reason": "paid-only or not relevant"}
+        ]
+      }
+    ],
+    "fallback_used": false,
+    "fallback_reason": ""
+  },
   "investigation_plan": [
     {
       "direction": "name of investigation direction",
@@ -215,7 +262,9 @@ For each planned step, specify the verb to use:
           "tool": "search|fetch|execute-shell|grep-files|list-files|invoke-skill|query-vault",
           "target": "specific URL, database, query, or source to check",
           "expected_evidence": "what kind of evidence this should produce",
-          "fallback": "alternative approach if primary fails"
+          "fallback": "alternative approach if primary fails",
+          "tool_source": "navigator|curated-catalog|prior-vault|user-specified",
+          "navigator_response_path": "cases/{project}/research/navigator-search-....json"
         }
       ],
       "osint_techniques": ["pivot chain|google dorking|reverse image search|corporate registry lookup|etc"],

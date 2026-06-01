@@ -60,6 +60,12 @@ When responding to an investigation query:
 
 OSINT Navigator (navigator.indicator.media) is a live tool-discovery API with a weekly-updated database of 10,000+ OSINT tools. **When available, consult Navigator first before using the curated list below.**
 
+Payload boundary: Navigator requests may include only the minimal tool-selection
+query, country/region, source type, and investigation direction needed to pick
+tools. Do not send full case notes, raw source dumps, unpublished allegations,
+private source material, credentials, vault contents, or unnecessary personal
+data unless the user explicitly approves that disclosure.
+
 ### Quick API Access
 
 If `$OSINT_NAV_API_KEY` is set:
@@ -97,6 +103,9 @@ See `references/navigator-integration.md` for full API details and `references/c
 ## Offline Fallback
 
 If working offline or without `$OSINT_NAV_API_KEY`, the tools listed in this skill and its reference files cover the most common investigation scenarios. For niche needs, note your requirements and check OSINT Navigator at navigator.indicator.media when you are back online.
+
+In sensitive mode, Navigator is disabled unless the user explicitly overrides
+the restriction. Use the curated catalog and local vault context instead.
 
 ## Operational Security Reminder
 

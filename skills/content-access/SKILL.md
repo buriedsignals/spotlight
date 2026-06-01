@@ -18,6 +18,13 @@ Try each step in order. Stop as soon as you have the full text.
 
 Before any `execute-shell` command that uses a DOI, URL, query, timestamp, filename, or path, invoke `shell-safety` and validate the value with `scripts/spotlight_safe.py`. Prefer `--data-urlencode` or serialized JSON over interpolating values into shell strings.
 
+External-access boundary: Unpaywall, CORE, Semantic Scholar, web archives, and
+similar services may receive only the minimum DOI, title/query, URL, or
+timestamp needed to retrieve the source. Do not send case notes, raw source
+dumps, unpublished allegations, private source material, credentials, vault
+contents, or unnecessary personal data. In sensitive mode, remote access
+services are disabled unless the user explicitly approves an override.
+
 ### 1. Free Version Search
 
 Many paywalled articles have freely distributed copies. Search for them:

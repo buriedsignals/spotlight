@@ -1,0 +1,150 @@
+{
+  "schema_version": "1.0",
+  "description": "Maintenance and test contract for Spotlight skill loading. AGENTS.md remains the runtime contract.",
+  "skills": [
+    {
+      "id": "spotlight",
+      "role": "parent",
+      "phases": ["phase-0-preflight", "phase-1-brief", "phase-2-methodology", "phase-3-execution", "phase-4-gate-1", "phase-5-report", "ingest"],
+      "may_make_external_calls": false,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "integrations",
+      "role": "core-child",
+      "phases": ["phase-0-preflight", "phase-2-methodology"],
+      "may_make_external_calls": true,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "osint",
+      "role": "core-child",
+      "phases": ["phase-2-methodology", "phase-3-execution"],
+      "may_make_external_calls": true,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "investigate",
+      "role": "core-child",
+      "phases": ["phase-2-methodology", "phase-3-execution"],
+      "may_make_external_calls": false,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "epistemic-grounding",
+      "role": "core-child",
+      "phases": ["phase-2-methodology", "phase-3-execution", "phase-3-fact-check", "phase-5-report"],
+      "may_make_external_calls": false,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "shell-safety",
+      "role": "core-child",
+      "phases": ["phase-0-preflight", "phase-3-execution", "phase-3-fact-check"],
+      "may_make_external_calls": false,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "web-archiving",
+      "role": "core-child",
+      "phases": ["phase-3-execution", "phase-3-fact-check"],
+      "may_make_external_calls": true,
+      "disabled_in_sensitive_mode": true
+    },
+    {
+      "id": "content-access",
+      "role": "conditional-child",
+      "phases": ["phase-2-methodology", "phase-3-execution", "phase-3-fact-check"],
+      "may_make_external_calls": true,
+      "disabled_in_sensitive_mode": true
+    },
+    {
+      "id": "follow-the-money",
+      "role": "conditional-child",
+      "phases": ["phase-2-methodology", "phase-3-execution"],
+      "may_make_external_calls": false,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "social-media-intelligence",
+      "role": "conditional-child",
+      "phases": ["phase-2-methodology", "phase-3-execution", "phase-3-fact-check"],
+      "may_make_external_calls": true,
+      "disabled_in_sensitive_mode": true
+    },
+    {
+      "id": "acquisition-graduation",
+      "role": "conditional-child",
+      "phases": ["phase-3-execution"],
+      "may_make_external_calls": false,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "review",
+      "role": "core-child",
+      "phases": ["phase-4-gate-1"],
+      "may_make_external_calls": false,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "report-drafting",
+      "role": "core-child",
+      "phases": ["phase-5-report"],
+      "may_make_external_calls": false,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "provenance-signing",
+      "role": "conditional-child",
+      "phases": ["phase-5-report"],
+      "may_make_external_calls": true,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "ingest",
+      "role": "core-child",
+      "phases": ["ingest"],
+      "may_make_external_calls": false,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "monitoring",
+      "role": "conditional-child",
+      "phases": ["phase-0-preflight", "phase-4-gate-1"],
+      "may_make_external_calls": true,
+      "disabled_in_sensitive_mode": true
+    }
+  ],
+  "phase_requirements": {
+    "phase-0-preflight": {
+      "required": ["integrations"],
+      "conditional": ["shell-safety"],
+      "validation": ".spotlight-config.json stores full integration status, not only booleans."
+    },
+    "phase-2-methodology": {
+      "required": ["integrations", "osint", "investigate", "epistemic-grounding"],
+      "conditional": ["follow-the-money", "social-media-intelligence", "content-access"],
+      "validation": "methodology.json includes skills_invoked[] and required Navigator fields when green."
+    },
+    "phase-3-execution": {
+      "required": ["epistemic-grounding", "shell-safety", "web-archiving"],
+      "conditional": ["content-access", "acquisition-graduation", "social-media-intelligence"],
+      "validation": "findings contain evidence refs, archives, and confidence caps."
+    },
+    "phase-3-fact-check": {
+      "required": ["epistemic-grounding", "content-access", "shell-safety"],
+      "conditional": ["osint", "social-media-intelligence", "web-archiving"],
+      "validation": "fact-check output independently checks investigator claims."
+    },
+    "phase-5-report": {
+      "required": ["report-drafting", "epistemic-grounding"],
+      "conditional": ["provenance-signing"],
+      "validation": "report claims map to evidence ledger."
+    },
+    "ingest": {
+      "required": ["ingest"],
+      "conditional": [],
+      "validation": "only verified or explicitly caveated material enters vault."
+    }
+  }
+}

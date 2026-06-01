@@ -9,6 +9,46 @@
     "lead": { "type": "string" },
     "planned_at": { "type": "string", "format": "date-time" },
     "brief_directions": { "type": "array", "items": { "type": "string" } },
+    "skills_invoked": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Skills explicitly loaded while designing the methodology."
+    },
+    "navigator": {
+      "type": "object",
+      "required": ["required", "used"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "used": { "type": "boolean" },
+        "status": { "enum": ["green", "yellow", "red", "missing", "unknown"] },
+        "queries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["direction", "endpoint", "request_path", "response_path"],
+            "properties": {
+              "direction": { "type": "string" },
+              "endpoint": { "enum": ["/api/tools/search", "/api/query"] },
+              "request_path": { "type": "string" },
+              "response_path": { "type": "string" },
+              "selected_tools": { "type": "array", "items": { "type": "string" } },
+              "rejected_tools": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "tool": { "type": "string" },
+                    "reason": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "fallback_used": { "type": "boolean" },
+        "fallback_reason": { "type": "string" }
+      }
+    },
     "investigation_plan": {
       "type": "array",
       "items": {
@@ -17,6 +57,7 @@
         "properties": {
           "direction": { "type": "string" },
           "questions": { "type": "array", "items": { "type": "string" } },
+          "navigator_not_applicable_reason": { "type": "string" },
           "steps": {
             "type": "array",
             "items": {
@@ -28,7 +69,11 @@
                 "tool": { "type": "string" },
                 "target": { "type": "string" },
                 "expected_evidence": { "type": "string" },
-                "fallback": { "type": "string" }
+                "fallback": { "type": "string" },
+                "tool_source": {
+                  "enum": ["navigator", "curated-catalog", "prior-vault", "user-specified"]
+                },
+                "navigator_response_path": { "type": "string" }
               }
             }
           },

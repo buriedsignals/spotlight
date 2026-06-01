@@ -29,7 +29,7 @@ The skill is cheap to load — it's a routing table, not a deep methodology guid
 | `browser-use` | browser-automation | form-navigation, search-export, login-driving, multi-step-browsing | Optional legacy/adjacent browser automation. Prefer Browser Harness for Spotlight acquisition evidence. |
 | `junkipedia` | social-osint | narrative-tracking, misinformation-search, social-media-monitoring, cross-platform-query | Tracking how a claim spread; finding social posts deleted from origin; cross-platform narrative investigation. |
 | `noosphere-c2pa` | provenance-signing | case-provenance-manifest, c2pa-content-credentials, optional-signing-receipt | After Gate 1, package and optionally sign the investigation trail. No API key; Noosphere controls signing credentials. |
-| `osint-navigator` | tool-discovery | tool-search-by-keyword, complex-query-synthesis, country-specific-tool-lookup | When the curated 150-tool catalog in `skills/osint/references/tools-by-category.md` doesn't have what you need. |
+| `osint-navigator` | tool-discovery | tool-search-by-keyword, complex-query-synthesis, country-specific-tool-lookup | First tool-discovery pass during Phase 2 methodology when preflight is green and sensitive mode is false. Otherwise fallback to the curated 150-tool catalog. |
 | `scoutpost` | monitoring | project-scoped-monitoring, scout-creation, information-unit-retrieval, scheduled-monitoring | Approved monitoring that should keep running after the current investigation cycle. |
 | `unpaywall` | academic-open-access | doi-open-access-lookup, academic-fulltext-discovery, legal-pdf-location | Academic papers with DOIs when the content-access hierarchy needs a legal open-access copy. |
 
@@ -48,8 +48,8 @@ What's the task?
 │     → junkipedia  (if green — check preflight)
 │     → fallback: search() + social-media-intelligence skill (limited without Junkipedia's archive)
 │
-├── "Need a tool I don't know for category X" / "Compare tools" / "Niche country-specific tool"
-│     → osint-navigator  (if green — check preflight)
+├── "Phase 2 methodology tool selection" / "Need a tool I don't know for category X" / "Compare tools" / "Niche country-specific tool"
+│     → osint-navigator  (mandatory first pass if green and sensitive mode is false)
 │     → fallback: skills/osint/references/tools-by-category.md (offline, 150 tools)
 │
 ├── "Static page scrape / web search"

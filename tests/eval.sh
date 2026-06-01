@@ -145,6 +145,24 @@ else
 fi
 
 echo ""
+echo "── Skills manifest regression ──"
+
+if python3 tests/skills-manifest-check.py >/dev/null 2>&1; then
+  ok "skills-manifest.json matches skill dirs and AGENTS.md registry"
+else
+  fail "skills-manifest regression failed"
+fi
+
+echo ""
+echo "── Methodology Navigator regression ──"
+
+if python3 tests/methodology-navigator-check.py >/dev/null 2>&1; then
+  ok "Navigator-green methodology requires saved Navigator evidence"
+else
+  fail "methodology Navigator regression failed"
+fi
+
+echo ""
 echo "── Provenance manifest regression ──"
 
 if python3 tests/provenance-manifest-check.py >/dev/null 2>&1; then
@@ -160,6 +178,15 @@ if node tests/review-template-check.js >/dev/null 2>&1; then
   ok "review artifact renders grounding and C2PA provenance state"
 else
   fail "review artifact regression failed"
+fi
+
+echo ""
+echo "── Report template safety regression ──"
+
+if python3 tests/report-template-safety-check.py >/dev/null 2>&1; then
+  ok "report template contains no hidden HTML comments"
+else
+  fail "report template safety regression failed"
 fi
 
 echo ""

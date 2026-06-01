@@ -6,6 +6,7 @@ metadata:
   type: orchestration-subskill
   parent: data-detective
   phase: 5
+invocable_by: [orchestrator, user]
 ---
 
 # report-drafting — Phase 5 synthesis

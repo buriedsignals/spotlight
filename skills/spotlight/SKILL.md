@@ -76,6 +76,21 @@ Agents have access to the following skills by their own `invoke-skill` calls:
 
 When building spawn prompts, remind agents these are available and expected.
 
+### 3.6. Parent/child phase contract
+
+Spotlight keeps a one-level physical skill layout, but phase execution has
+mandatory child-skill loading. Use `skills-manifest.json` as the maintenance
+contract and apply this runtime table:
+
+| Parent phase | Required child skills | Conditional child skills | Validation |
+|---|---|---|---|
+| Phase 0 Preflight | `integrations` | `shell-safety` if preflight executes dynamic shell values | `.spotlight-config.json` stores full integration status, not only booleans. |
+| Phase 2 Methodology | `integrations`, `osint`, `investigate`, `epistemic-grounding` | `follow-the-money`, `social-media-intelligence`, `content-access` | `methodology.json` includes `skills_invoked[]` and required Navigator fields when green. |
+| Phase 3 Execution | `epistemic-grounding`, `shell-safety`, `web-archiving` | `content-access`, `acquisition-graduation`, `social-media-intelligence` | findings contain evidence refs, archives, confidence caps. |
+| Phase 3 Fact-check | `epistemic-grounding`, `content-access`, `shell-safety` | `osint`, `social-media-intelligence`, `web-archiving` | fact-check output independently checks investigator claims. |
+| Phase 5 Report | `report-drafting`, `epistemic-grounding` | `provenance-signing` | report claims map to evidence ledger. |
+| Ingest | `ingest` | none | only verified or explicitly caveated material enters vault. |
+
 ### 3.7. Vault app preflight
 
 Spotlight writes verified findings into a Markdown vault. If `.spotlight-config.json` sets `vault_type` to `"tolaria"` or `"directory"`, no Obsidian CLI check is required; log the configured vault type and continue. If the vault type is `"obsidian"` or unknown, check the Obsidian CLI so the user isn't surprised at ingestion time.
@@ -146,8 +161,15 @@ Write `.spotlight-config.json` via `write-file`:
   "vault_type": "obsidian | tolaria | directory",
   "cases_root": "cases/",
   "integrations": {
-    "osint_navigator": false
+    "osint_navigator": {
+      "status": "unknown",
+      "checked_at": "<ISO timestamp>",
+      "source": "not checked yet",
+      "required_in_phase_2": false,
+      "reason": "preflight not run yet"
+    }
   },
+  "sensitive": false,
   "created_at": "<ISO timestamp>",
   "last_used": "<ISO timestamp>",
   "active_project": "<project slug>"
@@ -156,22 +178,40 @@ Write `.spotlight-config.json` via `write-file`:
 
 ### 9. Integration checks
 
-Check for optional API integrations. None are required — investigations work without them.
+Check for optional API integrations. None are required for Spotlight to start,
+but a green OSINT Navigator result becomes mandatory during Phase 2 tool
+selection when sensitive mode is false.
 
-**OSINT Navigator** (optional — expanded OSINT tool database):
-
-```
-execute-shell('test -n "$OSINT_NAV_API_KEY" && echo true || echo false')
-```
-
-If set, verify the API is reachable:
+Run the manifest-based preflight and parse the `osint-navigator` entry:
 
 ```
-execute-shell('curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" https://navigator.indicator.media/api/openapi.json')
+execute-shell("python3 integrations/preflight.py --json")
 ```
 
-If the spec fetch succeeds, set `integrations.osint_navigator: true` in the config. If it fails, mark `"degraded"` and warn:
-> "Warning: `$OSINT_NAV_API_KEY` is set but Navigator API did not respond. Integration marked as degraded."
+Update `.spotlight-config.json` with the full status, not a boolean:
+
+```json
+{
+  "integrations": {
+    "osint_navigator": {
+      "status": "green|yellow|red",
+      "checked_at": "<ISO timestamp>",
+      "source": "integrations/preflight.py --json",
+      "required_in_phase_2": true,
+      "reason": ""
+    }
+  }
+}
+```
+
+Set `required_in_phase_2: true` only when:
+
+- `sensitive` is false, and
+- the `osint-navigator` preflight entry has `status: "green"`.
+
+Set `required_in_phase_2: false` and preserve a concrete `reason` when
+Navigator is red/yellow, sensitive mode is active, the lead is local-only, or
+the user explicitly forbids external APIs.
 
 ### 9.5. Review feedback check (resume only)
 
@@ -238,8 +278,23 @@ handle = spawn-agent(
 PROJECT: {project}
 PROFILE: {profile}
 VAULT_PATH: {vault_path or 'none'}
-INTEGRATIONS: osint_navigator={config.integrations.osint_navigator}
-SKILLS: acquisition-graduation, web-archiving, content-access, epistemic-grounding, shell-safety, social-media-intelligence (load when investigation touches social media accounts, coordination, or narrative spread)
+INTEGRATIONS:
+  osint_navigator_status={config.integrations.osint_navigator.status}
+  osint_navigator_required={config.integrations.osint_navigator.required_in_phase_2}
+SKILLS: integrations, osint, investigate, epistemic-grounding, acquisition-graduation, web-archiving, content-access, shell-safety, social-media-intelligence (load when investigation touches social media accounts, coordination, or narrative spread)
+
+MANDATORY NAVIGATOR RULE:
+If osint_navigator_required=true, before writing methodology.json:
+1. invoke-skill("integrations")
+2. invoke-skill("osint")
+3. read-file("integrations/osint-navigator/integration.md")
+4. read-file("skills/osint/references/cycle-integration.md")
+5. write a minimal Navigator request JSON to cases/{project}/research/
+6. call /api/tools/search at least once for each investigation direction, or once with a combined query covering all directions when there is only one broad lead
+7. save every raw Navigator response to cases/{project}/research/
+8. cite those response paths in methodology.json
+
+Do not use /api/query unless the tool-selection question needs synthesized workflow advice. Prefer /api/tools/search because it is unlimited.
 
 Approved brief directions:
 {directions}
@@ -248,6 +303,7 @@ You may recommend monitoring targets in your methodology (see skills/monitoring 
 If the investigation involves social media, plan to invoke social-media-intelligence for account authenticity and coordination detection.
 
 Write methodology to cases/{project}/data/methodology.json.
+Include skills_invoked[] and the navigator block required by schemas/methodology.schema.json.
 Do NOT execute the investigation.",
   config: { iteration_limit: 80 }
 )
@@ -257,9 +313,20 @@ output = wait-agent(handle)
 When the agent completes:
 
 1. `read-file("cases/{project}/data/methodology.json")`
-2. Present a summary of the proposed methodology to the user
-3. **Gate: user approves the methodology.** Iterate if the user has changes.
-4. After approval and before Phase 3 research begins, remind the user:
+2. Run the Navigator methodology gate:
+
+   ```
+   execute-shell("python3 scripts/validate-methodology-navigator.py cases/{project} --config .spotlight-config.json")
+   ```
+
+   If validation fails, do not present the methodology for approval. Re-spawn
+   or re-prompt the investigator:
+
+   > "Navigator was green in preflight, but methodology.json does not show Navigator use. Revise the methodology. Use /api/tools/search before returning. Save response paths and cite them in navigator.queries[]."
+
+3. Present a summary of the proposed methodology to the user
+4. **Gate: user approves the methodology.** Iterate if the user has changes.
+5. After approval and before Phase 3 research begins, remind the user:
 
    > **AI assistance notice:** Spotlight is designed to help surface, organize, and cross-check information, but AI can make mistakes. You are responsible for verifying sources, confirming authenticity, assessing risks, and deciding what is publishable.
 
@@ -280,7 +347,9 @@ CYCLE N (N starts at 1):
 PROJECT: {project}
 PROFILE: {profile}
 VAULT_PATH: {vault_path or 'none'}
-INTEGRATIONS: osint_navigator={config.integrations.osint_navigator}
+INTEGRATIONS:
+  osint_navigator_status={config.integrations.osint_navigator.status}
+  osint_navigator_required={config.integrations.osint_navigator.required_in_phase_2}
 CYCLE: {N}
 SKILLS: acquisition-graduation (graduate repeated Browser Harness paths only after repeatability is proven), web-archiving (archive all evidence before citing), content-access (paywalled sources — use before marking inaccessible), epistemic-grounding (fill grounding object and cap confidence when support is weak), shell-safety (validate untrusted values before execute-shell), social-media-intelligence (use for account authenticity, coordination detection, narrative tracking when social media is involved)
 
@@ -326,7 +395,9 @@ Append to cases/{project}/data/investigation-log.json.",
        agent_id: "fact-checker",
        prompt: "PROJECT: {project}
 PROFILE: {profile}
-INTEGRATIONS: osint_navigator={config.integrations.osint_navigator}
+INTEGRATIONS:
+  osint_navigator_status={config.integrations.osint_navigator.status}
+  osint_navigator_required={config.integrations.osint_navigator.required_in_phase_2}
 SKILLS: web-archiving (archive sources before issuing verdict), content-access (paywalled sources — use before marking inaccessible), epistemic-grounding (judge whether evidence actually grounds each claim), shell-safety (validate untrusted values before execute-shell)
 
 Apply SIFT source credibility check before searching for corroborating evidence.
@@ -445,6 +516,37 @@ What was investigated and what was out of scope.
 - Limitation 1
 - Limitation 2
 ```
+
+Also write `cases/{project}/data/summary.json` as the machine contract for
+review, report drafting, and ingest:
+
+```json
+{
+  "schema_version": "1.0",
+  "project": "{project}",
+  "title": "{Investigation Title}",
+  "generated_at": "ISO 8601 timestamp",
+  "status": "pending_review",
+  "cycles": 3,
+  "verified_findings": 3,
+  "summary": "2-3 paragraph narrative overview.",
+  "key_conclusions": ["Conclusion 1", "Conclusion 2"],
+  "limitations": ["Limitation 1", "Limitation 2"],
+  "methodology_summary": "Techniques and tools used, drawn from data/investigation-log.json.",
+  "findings": [
+    {
+      "id": "F1",
+      "claim": "specific finding claim",
+      "confidence": "high",
+      "fact_check_verdict": "verified",
+      "source_count": 3
+    }
+  ]
+}
+```
+
+`summary.md` is the human artifact; `data/summary.json` is the machine
+contract. Generate both.
 
 ### Present to user
 

@@ -4,28 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{INVESTIGATION TITLE}} — {{OUTLET}}</title>
-<!--
-  REPORT-DRAFTING TEMPLATE (Phase 5, Spotlight)
-
-  This is a working skeleton. The CSS is production-ready and battle-tested.
-  Customization points are marked with HTML comments and {{PLACEHOLDERS}}.
-
-  AGENT INSTRUCTIONS:
-    1. Copy this file to cases/{project}/report.html.
-    2. Replace {{PLACEHOLDERS}} with investigation-specific content.
-    3. Duplicate the <section class="finding"> block once per verified finding.
-    4. Duplicate the <div class="phase"> block once per executed Spotlight phase.
-       If invoked via data-detective handover, ALSO add one .phase block per
-       upstream data-detective phase that produced the lead.
-    5. Fill .path blocks (mandatory per finding) with archived URLs + source documents.
-       Use Spotlight phase vocabulary in .step labels — see report-drafting SKILL.md.
-    6. Fill .sources strips (mandatory per finding) with primary-source URLs.
-    7. Keep the AI assistance notice directly under the byline and before TL;DR.
-    8. Place the fact-check verdict table INSIDE the Phase 3 .phase block — never
-       as a separate top-level section.
-    9. Do NOT add max-width overrides per element — the template enforces typography.
-    10. Edit with anchored read+edit. Never greedy regex.
--->
 <style>
   :root{
     --ink:#1a1815;--paper:#fbf8f1;--rule:#d4cdc0;--rule-strong:#2a2620;
@@ -183,7 +161,6 @@
 <body>
 <div class="wrap">
 
-  <!-- ════════════════════════ MASTHEAD + HERO ════════════════════════ -->
   <div class="masthead">
     <span class="pub">{{OUTLET}}</span>
     <span class="meta">{{INVESTIGATION SLUG}} · {{DATE}}</span>
@@ -201,34 +178,18 @@
     <p><strong>AI assistance notice:</strong> Spotlight is designed to help surface, organize, and cross-check information, but AI can make mistakes. You are responsible for verifying sources, confirming authenticity, assessing risks, and deciding what is publishable.</p>
   </section>
 
-  <!-- ════════════════════════ TL;DR STRIP ════════════════════════ -->
   <section class="tldr" aria-label="findings summary">
-    <!-- Duplicate .tldr-item per finding. Link to anchor. Inline pills. -->
     <div class="tldr-item">
       <div class="tldr-num">F-001 <span class="pill pill-novel">novel</span> <span class="pill pill-high">high</span></div>
       <div class="tldr-claim"><a href="#f-001"><strong>{{Finding 1 one-line claim}}</strong>{{1-sentence detail}}</a></div>
     </div>
-    <!-- ... more tldr items ... -->
   </section>
 
-  <!-- ════════════════════════ FINDINGS ════════════════════════ -->
-
-  <!--
-    FINDING TEMPLATE — duplicate per verified finding.
-    Required elements (in order):
-      1. <div class="finding-meta"> with pill-id + pill-novel|connected + pill-high|med|low + cat
-      2. <h2> with one-sentence claim
-      3. body paragraphs (3-6, prose)
-      4. <div class="stats"> if quantitative
-      5. <div class="path"> MANDATORY — replication trail
-      6. <div class="sources"> MANDATORY — primary-source URLs
-      7. <div class="flag"> if legal qualification needed
-  -->
   <section class="finding" id="f-NNN">
     <div class="finding-meta">
       <span class="pill pill-id">F-NNN</span>
-      <span class="pill pill-novel">novel</span> <!-- or pill-connected -->
-      <span class="pill pill-high">high</span> <!-- or pill-med / pill-low -->
+      <span class="pill pill-novel">novel</span>
+      <span class="pill pill-high">high</span>
       <span class="cat">{{category, e.g. "Lobbying · LDA"}}</span>
     </div>
 
@@ -240,20 +201,15 @@
     <p>{{Body paragraph 2 — the evidence, with inline citations to filings / records.}}</p>
     <p>{{Body paragraph 3 — the so-what / why it matters.}}</p>
 
-    <!-- Optional: quantitative spine -->
     <div class="stats cols-3">
       <div class="stat"><span class="stat-v">{{$N.NM}}</span><span class="stat-l">{{Metric 1}}</span></div>
       <div class="stat"><span class="stat-v">{{N}}</span><span class="stat-l">{{Metric 2}}</span></div>
       <div class="stat"><span class="stat-v">{{N×}}</span><span class="stat-l">{{Metric 3}}</span></div>
     </div>
 
-    <!-- MANDATORY: replication path. .step labels use Spotlight phase vocabulary.
-         If invoked via data-detective handover, prefix upstream steps with "P*upstream". -->
     <div class="path" aria-label="How we got here">
-      <!-- HYBRID (data-detective handover) — uncomment if applicable:
       <div class="step">P3 upstream detect</div><div class="what">{{data-detective detector + SQL hash that flagged the lead}}</div>
       <div class="step">P6 upstream handover</div><div class="what">{{data-detective spotlight-handoff brief that triggered this Spotlight cycle}}</div>
-      -->
       <div class="step">P1 brief</div><div class="what">{{What scope the user approved}}</div>
       <div class="step">P2 method</div><div class="what">{{What the investigator's planning phase decided to pursue}}</div>
       <div class="step">P3 cycle 1</div><div class="what">{{Which detector / search / source was queried}}</div>
@@ -261,13 +217,11 @@
       <div class="step">P3 fact-check</div><div class="what">{{What the fact-checker added or corrected}}</div>
     </div>
 
-    <!-- Optional: legal flag -->
     <div class="flag">
       <span class="flag-label">Legal qualification</span>
       <p>{{Specific statutory citation in <code>2 U.S.C. § 1602(8)</code> form, what is alleged, what is not.}}</p>
     </div>
 
-    <!-- MANDATORY: sources strip -->
     <div class="sources">
       <span class="label">Sources</span>
       <a href="{{URL}}">{{Primary source 1}}</a>
@@ -278,27 +232,11 @@
     </div>
   </section>
 
-  <!-- ... more findings ... -->
-
-  <!-- ════════════════════════ METHODOLOGY (FULL RUN) ════════════════════════ -->
-
-  <!--
-    METHODOLOGY PATTERN (critical):
-    - This section serves a dual purpose: it documents the skill AND logs the run.
-    - One <div class="phase"> per executed phase, in phase order.
-    - DO NOT break adversarial fact-check and spotlight-handoff into separate
-      top-level sections — they read out of phase order. Place them INSIDE
-      the relevant phase block (P3 and P6 respectively).
-  -->
   <section id="method">
     <div class="kicker">Methodology · how the full run was executed</div>
     <h2 style="margin-top:36px">How <code style="font-size:.7em;background:var(--bg-soft);padding:2px 8px;border-radius:4px">spotlight</code> works — phase by phase.</h2>
 
     <p class="lede">{{2-3 sentence framing — what scope the investigation covered, what it produced.}}</p>
-
-    <!-- ════════ HYBRID MODE (data-detective handover) ════════
-         If invoked via data-detective handover, uncomment this block and fill from the
-         upstream case-trace at cases/{project}/data-detective-handover/.
 
     <div class="phase">
       <div class="phase-head"><span class="phase-id">Upstream · data-detective P0/P1 ingest</span><h4 class="phase-title">{{What ingest produced upstream}}</h4></div>
@@ -314,7 +252,6 @@
       <div class="phase-head"><span class="phase-id">Upstream · data-detective P6 handover</span><h4 class="phase-title">spotlight-handoff brief OS-NNN</h4></div>
       <p>{{The brief that triggered this Spotlight investigation.}}</p>
     </div>
-    -->
 
     <div class="phase">
       <div class="phase-head"><span class="phase-id">Phase 0 · preflight</span><h4 class="phase-title">Project setup, search-library detection, vault config.</h4></div>
@@ -340,7 +277,6 @@
         <li>{{Primary document or OSINT discovery}}.</li>
       </ul>
 
-      <!-- ADVERSARIAL FACT-CHECK VERDICTS — INSIDE PHASE 3, NOT SEPARATE -->
       <p><strong>Adversarial fact-check verdicts</strong> (independent fact-checker):</p>
       <table>
         <tr><th>Claim</th><th>Verdict</th><th>Key fact-checker contribution</th></tr>
@@ -364,7 +300,6 @@
     </div>
   </section>
 
-  <!-- ════════════════════════ OPEN MONITORING TARGETS ════════════════════════ -->
   <section id="next">
     <div class="kicker">Open monitoring targets</div>
     <h2 style="margin-top:36px">What the next cycle should close.</h2>
@@ -374,14 +309,12 @@
     </table>
   </section>
 
-  <!-- ════════════════════════ FOOTER ════════════════════════ -->
   <footer>
     <p><strong>Submission contents</strong> at <code>submission/</code>: {{enumerate deliverables}}.</p>
     <p><strong>Conflicts of interest:</strong> {{disclosure or "None."}}</p>
     <p class="databases">
       <span>{{database 1}}</span>
       <span>{{database 2}}</span>
-      <!-- one chip per data source touched -->
     </p>
   </footer>
 
