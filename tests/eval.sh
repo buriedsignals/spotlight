@@ -154,6 +154,15 @@ else
 fi
 
 echo ""
+echo "── SkillOpt-lite harness regression ──"
+
+if bash evals/skillopt-lite.sh --self-test >/dev/null 2>&1; then
+  ok "SkillOpt-lite harness self-test passes"
+else
+  fail "SkillOpt-lite harness self-test failed"
+fi
+
+echo ""
 echo "── Methodology Navigator regression ──"
 
 if python3 tests/methodology-navigator-check.py >/dev/null 2>&1; then
