@@ -224,9 +224,11 @@ policy. Runtime docs should carry model notes and fit checks.
 
 ## Attribution
 
-- Web Archiving, Content Access, and Social Media Intelligence skills adapt work
-  from [jamditis/claude-skills-journalism](https://github.com/jamditis/claude-skills-journalism)
-  by Jay Amditis.
+- Content Access and Social Media Intelligence skills adapt work from
+  [jamditis/claude-skills-journalism](https://github.com/jamditis/claude-skills-journalism)
+  by Joe Amditis (Center for Cooperative Media). Web Archiving, originally adapted
+  from the same collection, is now a full rewrite whose methodology is inspired by
+  OpenSanctions evidence-preservation practice.
 - Follow the Money synthesizes public investigative-finance methodology from
   Jim Shultz, GIJN, EBU, and related training material.
 - Investigate includes methodology influenced by Bellingcat training material.

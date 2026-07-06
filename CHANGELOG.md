@@ -4,6 +4,12 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed
+- Attribution corrections: "Jay Amditis" -> **Joe Amditis** everywhere (name was wrong);
+  `web-archiving` re-attributed to OpenSanctions-inspired methodology (full rewrite, 0%
+  verbatim upstream text — diff-verified); `content-access` + `social-media-intelligence`
+  keep their Amditis attribution. Added `NOTICE.md`.
+
 > **Next tag will be [2.0.0]** (SemVer major bump): the `grounding` object schema
 > drops three fields and `findings.sources` demotes three required fields to
 > optional. Both are breaking changes for downstream consumers parsing
@@ -312,7 +318,7 @@ Initial public release. Runtime-agnostic OSINT investigation system for journali
 - 8 user-facing docs under `docs/` (README, structure, runtimes, integrations, investigating, fact-checking, monitoring, recovery)
 - `CONTRIBUTING.md` with drop-in patterns for new runtimes, integrations, feed sources, skills
 - `DISCLAIMER.md` — editorial responsibility, OPSEC scope, third-party ToS, data handling
-- `LICENSE` — MIT, with methodology attributions to Bellingcat, GIJN, Jim Shultz, Jay Amditis, OCCRP/ICIJ
+- `LICENSE` — MIT, with methodology attributions to Bellingcat, GIJN, Jim Shultz, Joe Amditis, OCCRP/ICIJ
 
 ### Tests
 
@@ -326,7 +332,7 @@ Methodology synthesized from:
 - Bellingcat training materials (investigate skill)
 - GIJN publications (follow-the-money skill)
 - Jim Shultz, *Follow the Money* (Revenue Watch / Open Society Institute, 2005)
-- Jay Amditis, [claude-skills-journalism](https://github.com/jamditis/claude-skills-journalism) — MIT (web-archiving, content-access, social-media-intelligence)
+- Joe Amditis, [claude-skills-journalism](https://github.com/jamditis/claude-skills-journalism) — MIT (web-archiving, content-access, social-media-intelligence)
 - Derek Bowler, EBU Eurovision News Spotlight (follow-the-money)
 - OCCRP / ICIJ investigative practice
 

@@ -92,7 +92,15 @@ def claim_entries(findings: dict[str, Any], fact_check: dict[str, Any]) -> list[
     return claims
 
 
-def source_entries(evidence_bundle: dict[str, Any], findings: dict[str, Any]) -> list[dict[str, Any]]:
+# Path-valued evidence_item fields whose referenced files we hash so the captured
+# artifact bytes (e.g. Tier-0 MHTML + full-page screenshot) are tamper-evident inside
+# the signed manifest, not just the item's self-reported sha256.
+ARTIFACT_PATH_KEYS = ("raw_path", "screenshot_path", "downloaded_document_path")
+
+
+def source_entries(
+    evidence_bundle: dict[str, Any], findings: dict[str, Any], case_dir: Path
+) -> list[dict[str, Any]]:
     archive_by_url = {}
     for finding in findings.get("findings", []):
         for source in finding.get("sources", []):
@@ -111,9 +119,21 @@ def source_entries(evidence_bundle: dict[str, Any], findings: dict[str, Any]) ->
             "human_verification_required": bool(item.get("human_verification_required", False)),
             "claim_links": item.get("claim_links", []),
         }
-        for key in ("sha256", "raw_path", "screenshot_path", "downloaded_document_path"):
+        for key in ("sha256", *ARTIFACT_PATH_KEYS):
             if item.get(key):
                 entry[key] = item[key]
+        # Hash the referenced artifact files (case-relative). Emit <key>_sha256/_bytes so
+        # the actual captured bytes are covered by the signature. Missing files are skipped
+        # (path is still recorded) — a stale path must not break manifest generation.
+        for key in ARTIFACT_PATH_KEYS:
+            rel = item.get(key)
+            if not rel:
+                continue
+            artifact_path = (case_dir / rel).resolve()
+            if artifact_path.is_file():
+                digest, size = sha256_file(artifact_path)
+                entry[f"{key}_sha256"] = digest
+                entry[f"{key}_bytes"] = size
         if archive_by_url.get(url):
             entry["archive_url"] = archive_by_url[url]
         sources.append(entry)
@@ -146,7 +166,7 @@ def build_manifest(case_dir: Path, credential_id: str | None, endpoint: str | No
         },
         "case_artifacts": artifact_entries(case_dir),
         "claims": claim_entries(findings, fact_check),
-        "sources": source_entries(evidence_bundle, findings),
+        "sources": source_entries(evidence_bundle, findings, case_dir),
     }
 
 

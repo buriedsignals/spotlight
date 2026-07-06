@@ -9,7 +9,7 @@ This file is the source of truth for packages the Spotlight setup flow may insta
 | Ecosystem | Package | Version | Binary | Install Policy |
 |---|---:|---:|---|---|
 | npm | `firecrawl-cli` | `1.3.1` | `firecrawl` | Installed by setup if missing or if a different global npm version is present. |
-| npm | `@tobilu/qmd` | `2.0.1` | `qmd` | Installed by setup if missing or if a different global npm version is present. |
+| npm | `@tobilu/qmd` | `2.5.3` | `qmd` | Installed by setup if missing or if a different global npm version is present. |
 | PyPI | `jsonschema` | `4.25.1` | n/a | Installed into the user Python environment for schema validation. |
 | PyPI | `requests` | `2.32.5` | n/a | Installed into the user Python environment for helper scripts. |
 

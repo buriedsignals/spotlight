@@ -5,12 +5,12 @@ version: "1.1"
 invocable_by: [investigator, fact-checker]
 requires: [shell-safety]
 env_vars: []
-attribution: "Adapted from jamditis/claude-skills-journalism (https://github.com/jamditis/claude-skills-journalism). Original author: Jay Amditis. MIT License."
+attribution: "Methodology inspired by OpenSanctions evidence-preservation practice. Full Buried Signals rewrite; no upstream text remains."
 ---
 
 # Web Archiving
 
-> **Adapted from** [jamditis/claude-skills-journalism](https://github.com/jamditis/claude-skills-journalism) by Jay Amditis (MIT License).
+> Methodology inspired by [OpenSanctions](https://www.opensanctions.org/) evidence-preservation practice.
 
 Archive evidence sources as you find them, before they disappear. This skill is for investigators and fact-checkers who need to preserve sources for editorial accountability, legal defensibility, and reproducibility.
 
@@ -230,4 +230,4 @@ Run `scripts/validate-case.py` after writing. `build-provenance-manifest.py` has
 
 ## Credits
 
-Adapted from [claude-skills-journalism](https://github.com/jamditis/claude-skills-journalism) by **Jay Amditis**, released under MIT License.
+Methodology inspired by **OpenSanctions** evidence-preservation practice. An early version of this skill was adapted from Joe Amditis's `web-archiving` skill (MIT); the current version is a full rewrite with no upstream text remaining (verified by diff, 2026-07-06).

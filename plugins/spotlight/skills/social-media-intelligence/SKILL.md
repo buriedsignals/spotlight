@@ -4,14 +4,14 @@ description: Account authenticity assessment, coordination detection, and narrat
 version: "1.0"
 invocable_by: [investigator, fact-checker, user]
 requires: [web-archiving]
-attribution: Adapted from jamditis/claude-skills-journalism (https://github.com/jamditis/claude-skills-journalism). Original author: Jay Amditis. MIT License.
+attribution: "Adapted from jamditis/claude-skills-journalism (https://github.com/jamditis/claude-skills-journalism). Original author: Joe Amditis. MIT License."
 ---
 
 # Social Media Intelligence
 
 Systematic approaches for investigating social media: authenticating accounts, detecting coordinated behavior, and tracking how narratives spread.
 
-> **Adapted from** [jamditis/claude-skills-journalism](https://github.com/jamditis/claude-skills-journalism) by Jay Amditis (MIT License). Extended for integration with the OSINT investigation pipeline.
+> **Adapted from** [jamditis/claude-skills-journalism](https://github.com/jamditis/claude-skills-journalism) by Joe Amditis (MIT License). Extended for integration with the OSINT investigation pipeline.
 
 Before running any social-media scraper or CLI with keywords, handles, URLs, dates, or output paths, invoke `shell-safety`. Do not interpolate search text into shell commands; pass it through JSON, stdin, a temp file, or a helper that uses argv safely.
 
@@ -225,4 +225,4 @@ Flag findings that rest on socially amplified claims: note in `confidence_ration
 
 ## Credits
 
-Adapted from [claude-skills-journalism](https://github.com/jamditis/claude-skills-journalism) by **Jay Amditis**, released under MIT License. Methodology for account authenticity assessment, coordination detection, and narrative tracking is based on his original `social-media-intelligence` skill, adapted here for integration with the Spotlight investigation pipeline.
+Adapted from [claude-skills-journalism](https://github.com/jamditis/claude-skills-journalism) by **Joe Amditis**, released under MIT License. Methodology for account authenticity assessment, coordination detection, and narrative tracking is based on his original `social-media-intelligence` skill, adapted here for integration with the Spotlight investigation pipeline.

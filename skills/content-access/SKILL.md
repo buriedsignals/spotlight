@@ -5,7 +5,7 @@ version: "1.0"
 invocable_by: [investigator, fact-checker]
 requires: [web-archiving, shell-safety]
 env_vars: [CORE_API_KEY]
-attribution: Adapted from jamditis/claude-skills-journalism (https://github.com/jamditis/claude-skills-journalism). Original author: Jay Amditis. MIT License.
+attribution: "Adapted from jamditis/claude-skills-journalism (https://github.com/jamditis/claude-skills-journalism). Original author: Joe Amditis. MIT License."
 ---
 
 # Content Access
@@ -198,4 +198,4 @@ A finding that rests on an `inaccessible` source must say so explicitly in `conf
 
 ## Credits
 
-Adapted from [claude-skills-journalism](https://github.com/jamditis/claude-skills-journalism) by **Jay Amditis**, released under MIT License.
+Adapted from [claude-skills-journalism](https://github.com/jamditis/claude-skills-journalism) by **Joe Amditis**, released under MIT License.

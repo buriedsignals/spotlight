@@ -48,20 +48,20 @@ curl -fsSL https://opencode.ai/install | bash
 
 ### Loading this repo
 
-opencode searches **one level deep** in each of these dirs for `<name>/SKILL.md` (verified at https://opencode.ai/docs/skills/):
+opencode discovers `SKILL.md` files **recursively** under each of these roots (the binary globs `skills/**/SKILL.md`; verified on opencode 1.17.5):
 
-- Project: `.opencode/skills/<name>/SKILL.md`, `.claude/skills/<name>/SKILL.md`, `.agents/skills/<name>/SKILL.md`
-- Global: `~/.config/opencode/skills/<name>/SKILL.md`, `~/.claude/skills/<name>/SKILL.md`, `~/.agents/skills/<name>/SKILL.md`
+- Project: `.opencode/skills/`, `.claude/skills/`, `.agents/skills/`
+- Global: `~/.config/opencode/skills/`, `~/.claude/skills/`, `~/.agents/skills/`
 
-The directory name must equal the `name:` field in the SKILL.md frontmatter (validated). So one symlink per sub-skill — opencode does **not** recurse into a `spotlight/spotlight/SKILL.md` two-level layout.
+The **leaf** directory holding `SKILL.md` must equal the `name:` field in the frontmatter (validated); intermediate directories are ignored. So a per-product namespace subdir works: `~/.config/opencode/skills/spotlight/<skill>/SKILL.md` is discovered exactly like a top-level `<skill>/SKILL.md`.
 
-Install Spotlight globally:
+Install Spotlight globally (namespaced under `spotlight/`, matching the engine's `<root>/<product>/<skill>` shape):
 
 ```bash
-mkdir -p ~/.config/opencode/skills
+mkdir -p ~/.config/opencode/skills/spotlight
 for skill_dir in /path/to/spotlight/skills/*/; do
   name=$(basename "$skill_dir")
-  ln -sfn "$skill_dir" "$HOME/.config/opencode/skills/$name"
+  ln -sfn "$skill_dir" "$HOME/.config/opencode/skills/spotlight/$name"
 done
 ```
 
@@ -142,7 +142,7 @@ Enforce at the agent definition: strip `firecrawl` (and any external-fetch shell
 
 ## pi
 
-**What it is:** Minimal TypeScript coding harness by Mario Zechner (https://pi.dev). MIT license. Spotlight setup installs the reviewed `@mariozechner/pi-coding-agent@0.73.1` pin when Pi is selected. Natively supports `AGENTS.md` + `skills/*/SKILL.md`.
+**What it is:** Minimal TypeScript coding harness by Mario Zechner (https://pi.dev). MIT license. Spotlight setup installs the reviewed `@earendil-works/pi-coding-agent@0.79.6` pin when Pi is selected. Natively supports `AGENTS.md` + `skills/*/SKILL.md`.
 
 **Status:** Local alternative. opencode (above) remains the recommended local Spotlight runtime because pi lacks native sub-agents (so investigator + fact-checker run single-context, weakening the verification independence guarantee). Spotlight's installer (`install-spotlight.sh`, with the runtime picked in the local configurator) offers pi as an explicit second choice — picked it when you want a leaner install and accept the sub-agent trade-off.
 
@@ -289,7 +289,7 @@ requires:
   cli_tools:
     - firecrawl   # reviewed setup pin: firecrawl-cli@1.3.1
     - obsidian    # Obsidian app (optional, for vault-write)
-    - qmd         # reviewed setup pin: @tobilu/qmd@2.0.1
+    - qmd         # reviewed setup pin: @tobilu/qmd@2.5.3
   env_vars:
     required: [FIRECRAWL_API_KEY]
     optional: [OSINT_NAV_API_KEY, CORE_API_KEY]
