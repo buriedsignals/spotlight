@@ -898,6 +898,21 @@
     border-color: var(--accent-warm);
     color: var(--accent-warm);
   }
+  .footer-ack {
+    margin-top: 44px;
+    padding-top: 24px;
+    border-top: 1px solid var(--muted-faint-dark);
+  }
+  .footer-ack__tag {
+    display: block;
+    font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
+    opacity: 0.5;
+    margin-bottom: 14px;
+  }
+  .footer-ack ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+  .footer-ack li { font-size: 12.5px; line-height: 1.6; color: var(--muted-dark); }
+  .footer-ack a { border-bottom: 1px solid var(--muted-faint-dark); transition: color 0.2s ease, border-color 0.2s ease; }
+  .footer-ack a:hover { color: var(--accent-warm); border-bottom-color: var(--accent-warm); }
   .footer-meta {
     display: flex; justify-content: space-between; align-items: baseline;
     font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
@@ -1760,42 +1775,6 @@
 </section>
 
 <!-- ── FOOTER ───────────────────────────────────────────── -->
-<section id="attribution" data-screen-label="07.5 Attribution" data-nav-theme="dark" data-scene-mood="calm">
-  <div class="header">
-    <span class="chap" data-reveal="meta">Ch. 05 — Acknowledgements</span>
-    <h2 class="title" data-reveal="title" style="--rd: 120ms">Standing on open work.</h2>
-  </div>
-
-  <p class="attr-lede" data-reveal="body" style="--rd: 120ms">Spotlight adapts <em>published craft</em>. The people and projects it learns from, credited.</p>
-
-  <div class="credits" data-reveal="credit-row" data-stagger-idx="0">
-    <div class="role" data-reveal="meta">Adapted skills</div>
-    <div class="entities">
-      <span class="entity"><a href="https://github.com/jamditis/claude-skills-journalism" target="_blank" rel="noopener">Joe Amditis</a><span class="ext">MIT</span></span>
-      <p class="sub">content-access and social-media-intelligence, adapted from claude-skills-journalism (Center for Cooperative Media, Montclair State University).</p>
-    </div>
-  </div>
-
-  <div class="credits" data-reveal="credit-row" data-stagger-idx="1">
-    <div class="role" data-reveal="meta">Methodology</div>
-    <div class="entities">
-      <span class="entity"><a href="https://hapgood.us/2019/06/19/sift-the-four-moves/" target="_blank" rel="noopener">Mike Caulfield</a><span class="ext">SIFT</span></span>
-      <span class="entity"><a href="https://www.bellingcat.com/" target="_blank" rel="noopener">Bellingcat</a><span class="ext">techniques</span></span>
-      <span class="entity"><a href="https://gijn.org/" target="_blank" rel="noopener">GIJN — Patrucic &amp; Cosic</a><span class="ext">CC BY-ND</span></span>
-      <span class="entity">Jim Shultz<span class="ext">follow the money</span></span>
-      <span class="entity"><a href="https://www.ebu.ch/" target="_blank" rel="noopener">Derek Bowler · EBU</a><span class="ext">ownership tracing</span></span>
-    </div>
-  </div>
-
-  <div class="credits" data-reveal="credit-row" data-stagger-idx="2">
-    <div class="role" data-reveal="meta">Open tooling</div>
-    <div class="entities">
-      <span class="entity"><a href="https://www.npmjs.com/package/@tobilu/qmd" target="_blank" rel="noopener">QMD</a><span class="ext">tobilu</span></span>
-      <p class="sub">Local markdown search across the intelligence vault. Full dependency and license record in the repo's NOTICE.md.</p>
-    </div>
-  </div>
-</section>
-
 <section id="footer" data-screen-label="08 Footer" data-nav-theme="dark" data-scene-mood="calm">
   <div class="footer-simple">
     <p class="footer-summary" data-reveal="body" data-stagger-idx="0">
@@ -1807,6 +1786,19 @@
       <a href="https://buriedsignals.com/consulting" target="_blank" rel="noopener">Work with me ↗</a>
       <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals ↗</a>
     </div>
+  </div>
+
+  <div class="footer-ack" data-reveal="body" data-stagger-idx="2">
+    <span class="footer-ack__tag">Standing on open work</span>
+    <ul role="list">
+      <li><a href="https://github.com/jamditis/claude-skills-journalism" target="_blank" rel="noopener">Joe Amditis</a> — content-access + social-media-intelligence, adapted · MIT</li>
+      <li><a href="https://hapgood.us/2019/06/19/sift-the-four-moves/" target="_blank" rel="noopener">Mike Caulfield</a> — the SIFT verification method</li>
+      <li><a href="https://www.bellingcat.com/" target="_blank" rel="noopener">Bellingcat</a> — investigation techniques</li>
+      <li><a href="https://gijn.org/" target="_blank" rel="noopener">GIJN</a> — Patrucic &amp; Cosic, Following the Money · CC BY-ND</li>
+      <li>Jim Shultz — Follow the Money</li>
+      <li><a href="https://www.ebu.ch/" target="_blank" rel="noopener">Derek Bowler · EBU</a> — beneficial-ownership tracing</li>
+      <li><a href="https://www.npmjs.com/package/@tobilu/qmd" target="_blank" rel="noopener">QMD</a> — tobilu · local vault search</li>
+    </ul>
   </div>
 
   <div class="footer-meta">
