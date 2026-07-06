@@ -1324,6 +1324,18 @@ if git merge-base --is-ancestor HEAD origin/main; then
   git merge --ff-only origin/main
   after="\$(git rev-parse HEAD)"
   echo "Spotlight \$before -> \$after"
+  # Re-place skills per the placement contract: new manifest ids gain
+  # canonical links; the runtime adapters point at the canonical dir and
+  # need no touch. (Stale ids linger until the installer re-runs.)
+  CANON="\$HOME/.agents/skills/spotlight"
+  mkdir -p "\$CANON"
+  if [ -s "\$SPOTLIGHT_DIR/skills.manifest" ]; then
+    while IFS= read -r sid; do
+      { [ -n "\$sid" ] && [ -d "\$SPOTLIGHT_DIR/skills/\$sid" ]; } || continue
+      ln -sfn "\$SPOTLIGHT_DIR/skills/\$sid" "\$CANON/\$sid"
+    done < "\$SPOTLIGHT_DIR/skills.manifest"
+    echo "skills re-placed from skills.manifest"
+  fi
 else
   echo "Spotlight has local commits or divergent history; skipping update."
   exit 0
