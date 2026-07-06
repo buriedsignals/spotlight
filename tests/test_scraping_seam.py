@@ -17,6 +17,24 @@ from integrations.scraping.mapping import _extract_markdown, map_crawl_result  #
 from integrations.scraping.scrape import scrape  # noqa: E402
 from integrations.scraping.scrape_types import ScrapeError, ScrapeResult  # noqa: E402
 import integrations.scraping.crawl4ai_provider as c4a  # noqa: E402
+import integrations.scraping.scrapling_provider as scr  # noqa: E402
+
+
+def _mk(markdown, provider="crawl4ai", status=200):
+    return ScrapeResult(markdown=markdown, requested_url="u", source_url="u", fetched_at="t", provider=provider, status_code=status)
+
+
+def _run_with(c4a_fetch, scr_fetch, call):
+    o1, o2 = c4a.fetch, scr.fetch
+    c4a.fetch, scr.fetch = c4a_fetch, scr_fetch
+    try:
+        return call()
+    finally:
+        c4a.fetch, scr.fetch = o1, o2
+
+
+_STEALTH = ScrapeResult(markdown="recovered via stealth", requested_url="u", source_url="u", fetched_at="t", provider="scrapling")
+_BOOM = lambda *a, **k: (_ for _ in ()).throw(AssertionError("scrapling must not be called"))  # noqa: E731
 
 
 class _FakeMarkdown:
@@ -81,6 +99,48 @@ def test_seam_unknown_provider_raises():
     except ScrapeError:
         return
     raise AssertionError("expected ScrapeError for an unknown provider")
+
+
+def test_escalation_on_empty_result():
+    r = _run_with(lambda url, timeout_ms=45_000: _mk("   "),
+                  lambda url, timeout_ms=45_000: _STEALTH,
+                  lambda: scrape("https://x"))
+    assert r.provider == "scrapling" and r.markdown == "recovered via stealth"
+
+
+def test_escalation_on_block_status():
+    r = _run_with(lambda url, timeout_ms=45_000: _mk("body", status=403),
+                  lambda url, timeout_ms=45_000: _STEALTH,
+                  lambda: scrape("https://x"))
+    assert r.provider == "scrapling"
+
+
+def test_escalation_on_block_error():
+    def raise_block(url, timeout_ms=45_000):
+        raise ScrapeError("blocked", status_code=429)
+    r = _run_with(raise_block, lambda url, timeout_ms=45_000: _STEALTH, lambda: scrape("https://x"))
+    assert r.provider == "scrapling"
+
+
+def test_no_escalation_on_success():
+    r = _run_with(lambda url, timeout_ms=45_000: _mk("clean body", status=200), _BOOM, lambda: scrape("https://x"))
+    assert r.provider == "crawl4ai" and r.markdown == "clean body"
+
+
+def test_non_block_error_does_not_escalate():
+    def raise_other(url, timeout_ms=45_000):
+        raise ScrapeError("crawl4ai is not installed")  # no status_code -> not a block
+    try:
+        _run_with(raise_other, _BOOM, lambda: scrape("https://x"))
+    except ScrapeError as e:
+        assert "not installed" in str(e)
+        return
+    raise AssertionError("a non-block ScrapeError must propagate, not escalate")
+
+
+def test_escalate_false_disables_ladder():
+    r = _run_with(lambda url, timeout_ms=45_000: _mk(""), _BOOM, lambda: scrape("https://x", escalate=False))
+    assert r.is_empty() and r.provider == "crawl4ai"
 
 
 if __name__ == "__main__":
