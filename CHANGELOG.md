@@ -5,6 +5,16 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Changed
+- Skill placement converged on the engine placement contract (`engine
+  docs/skill-placement-contract.md`): canonical `~/.agents/skills/spotlight/` store for every
+  runtime + ONE product-level adapter symlink for opencode/pi/Claude Code (which now receives
+  skills for the first time); legacy per-skill dirs migrate in place; `spotlight update`
+  re-places skills after a fast-forward.
+- `content-access` + `social-media-intelligence` reconciled against upstream @ `2097d218`:
+  2026 platform-API facts (Meta Content Library replaces CrowdTangle, X pay-per-use, TikTok
+  Research API, Bluesky Jetstream, Threads/Mastodon/Telegram), EU DSA Art. 40 access section,
+  external-tooling status block, X collection-authority caveat, OpenAlex step + fixed archive.ph
+  command, hard-vs-metered paywall corrections; deliberate-divergence footers added.
 - Attribution corrections: "Jay Amditis" -> **Joe Amditis** everywhere (name was wrong);
   `web-archiving` re-attributed to OpenSanctions-inspired methodology (full rewrite, 0%
   verbatim upstream text — diff-verified); `content-access` + `social-media-intelligence`
