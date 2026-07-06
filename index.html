@@ -898,21 +898,24 @@
     border-color: var(--accent-warm);
     color: var(--accent-warm);
   }
-  .footer-ack {
-    margin-top: 44px;
-    padding-top: 24px;
-    border-top: 1px solid var(--muted-faint-dark);
+  #acknowledgements {
+    background: rgba(7, 7, 10, 0);
+    color: var(--paper);
+    padding: 88px 48px 20px;
+    position: relative;
+    overflow: hidden;
+    z-index: 10;
   }
-  .footer-ack__tag {
+  .ack__tag {
     display: block;
     font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
     opacity: 0.5;
     margin-bottom: 14px;
   }
-  .footer-ack ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
-  .footer-ack li { font-size: 12.5px; line-height: 1.6; color: var(--muted-dark); }
-  .footer-ack a { border-bottom: 1px solid var(--muted-faint-dark); transition: color 0.2s ease, border-color 0.2s ease; }
-  .footer-ack a:hover { color: var(--accent-warm); border-bottom-color: var(--accent-warm); }
+  .ack__list { list-style: none; margin: 0; padding: 24px 0 0; display: grid; gap: 7px; border-top: 1px solid var(--muted-faint-dark); }
+  .ack__list li { font-size: 12.5px; line-height: 1.6; color: var(--muted-dark); }
+  .ack__list a { border-bottom: 1px solid var(--muted-faint-dark); transition: color 0.2s ease, border-color 0.2s ease; }
+  .ack__list a:hover { color: var(--accent-warm); border-bottom-color: var(--accent-warm); }
   .footer-meta {
     display: flex; justify-content: space-between; align-items: baseline;
     font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
@@ -1775,6 +1778,19 @@
 </section>
 
 <!-- ── FOOTER ───────────────────────────────────────────── -->
+<section id="acknowledgements" data-screen-label="07.5 Acknowledgements" data-nav-theme="dark" data-scene-mood="calm">
+  <span class="ack__tag" data-reveal="meta">Standing on open work</span>
+  <ul class="ack__list" role="list" data-reveal="body" data-stagger-idx="0">
+    <li><a href="https://github.com/jamditis/claude-skills-journalism" target="_blank" rel="noopener">Joe Amditis</a> — content-access + social-media-intelligence, adapted · MIT</li>
+    <li><a href="https://hapgood.us/2019/06/19/sift-the-four-moves/" target="_blank" rel="noopener">Mike Caulfield</a> — the SIFT verification method</li>
+    <li><a href="https://www.bellingcat.com/" target="_blank" rel="noopener">Bellingcat</a> — investigation techniques</li>
+    <li><a href="https://gijn.org/" target="_blank" rel="noopener">GIJN</a> — Patrucic &amp; Cosic, Following the Money · CC BY-ND</li>
+    <li>Jim Shultz — Follow the Money</li>
+    <li><a href="https://www.ebu.ch/" target="_blank" rel="noopener">Derek Bowler · EBU</a> — beneficial-ownership tracing</li>
+    <li><a href="https://www.npmjs.com/package/@tobilu/qmd" target="_blank" rel="noopener">QMD</a> — tobilu · local vault search</li>
+  </ul>
+</section>
+
 <section id="footer" data-screen-label="08 Footer" data-nav-theme="dark" data-scene-mood="calm">
   <div class="footer-simple">
     <p class="footer-summary" data-reveal="body" data-stagger-idx="0">
@@ -1786,19 +1802,6 @@
       <a href="https://buriedsignals.com/consulting" target="_blank" rel="noopener">Work with me ↗</a>
       <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals ↗</a>
     </div>
-  </div>
-
-  <div class="footer-ack" data-reveal="body" data-stagger-idx="2">
-    <span class="footer-ack__tag">Standing on open work</span>
-    <ul role="list">
-      <li><a href="https://github.com/jamditis/claude-skills-journalism" target="_blank" rel="noopener">Joe Amditis</a> — content-access + social-media-intelligence, adapted · MIT</li>
-      <li><a href="https://hapgood.us/2019/06/19/sift-the-four-moves/" target="_blank" rel="noopener">Mike Caulfield</a> — the SIFT verification method</li>
-      <li><a href="https://www.bellingcat.com/" target="_blank" rel="noopener">Bellingcat</a> — investigation techniques</li>
-      <li><a href="https://gijn.org/" target="_blank" rel="noopener">GIJN</a> — Patrucic &amp; Cosic, Following the Money · CC BY-ND</li>
-      <li>Jim Shultz — Follow the Money</li>
-      <li><a href="https://www.ebu.ch/" target="_blank" rel="noopener">Derek Bowler · EBU</a> — beneficial-ownership tracing</li>
-      <li><a href="https://www.npmjs.com/package/@tobilu/qmd" target="_blank" rel="noopener">QMD</a> — tobilu · local vault search</li>
-    </ul>
   </div>
 
   <div class="footer-meta">
