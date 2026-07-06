@@ -137,16 +137,23 @@ Fast spread (viral in hours) vs. slow build (days/weeks) tells you different thi
 
 ## Platform Tools
 
+Status as of 2026 — platform APIs change fast; verify pricing/access before designing collection around any one path.
+
 | Platform | Best approach | Notes |
 |---|---|---|
-| X (Twitter) | Advanced search, Apify X scraper | API severely restricted; Apify actor bypasses this for public data |
-| Facebook | CrowdTangle (academic) or Apify | Direct API effectively closed; pages and public groups accessible |
-| Instagram | Apify Instagram scraper | No public search API; stories disappear in 24h — archive immediately |
-| TikTok | Exolyt, Pentos, Apify TikTok scraper | Limited historical data |
-| Reddit | Pushshift (partial), Arctic Shift | Historical data access varies |
-| YouTube | YouTube Data API v3 | Good metadata; search `YOUTUBE_API_KEY` in env |
-| Bluesky | AT Protocol Firehose | Open, real-time, no auth required for public data |
-| Telegram | TGStat, Telemetrio, Telepathy | Public channels searchable; private groups inaccessible |
+| X (Twitter) | Official API (pay-per-use since Feb 2026, replaced Basic/Pro tiers); X Pro Search (Premium+); Apify X scraper | Free research tier ended 2023. Post-2023 ToS prohibits scraping even public posts — Apify collection is a ToS-violating path; record the risk in `access_notes` |
+| Facebook / Instagram | Meta Content Library + Library API (research); Junkipedia (free); Apify | CrowdTangle shut down Aug 14, 2024 — it no longer exists. MCL applications go through Meta's portal directly (since Dec 2025); eligibility favors academic/nonprofit affiliation |
+| TikTok | Research API (developers.tiktok.com — academic/nonprofit; EU via DSA Art. 40); Exolyt, Pentos, Apify | Limited historical data; Commercial Content endpoints expanded 2026 |
+| Reddit | Reddit API (free, non-commercial); Arctic Shift (Pushshift successor, free dumps) | Pushshift is moderator-only since 2023 — not a research path |
+| YouTube | YouTube Data API v3 | 10,000 units/day default; each search costs 100 units (~100 searches/day) |
+| Bluesky | Jetstream (filtered JSON over WebSocket, no auth) or raw AT Protocol firehose | Jetstream ~850 MB/day filtered; raw firehose 4-8 GB/hour |
+| Threads | Meta Content Library (research) | Public-profile discovery threshold lowered to 100 followers, Mar 2026 |
+| Mastodon / Fediverse | Per-instance public-timeline API; search.noc.social | Many instances set DISALLOW_UNAUTHENTICATED_API_ACCESS; cross-instance search is fragmented |
+| Telegram | Bot API + MTProto; t.me/s/<channel> previews; TGStat, Telemetrio, Telegago, Telepathy, TelegramDB | Public channels legal to collect in most jurisdictions; private groups off-limits |
+
+### EU DSA Article 40 access
+
+EU-based researchers have stronger platform-data access rights on TikTok and Meta platforms under the Digital Services Act than researchers elsewhere. Non-EU journalists may qualify through an EU institutional partner (university or vetted research nonprofit). A real path, not a workaround.
 
 ### Pluggable platform scraping
 
@@ -167,6 +174,8 @@ execute-shell('apify call apify/tiktok-scraper --input-file {CASE_DIR}/research/
 
 If the installed Apify CLI does not support `--input-file`, use a local wrapper that reads JSON from a file and passes it through argv/subprocess without invoking a shell. Do not inline search terms or direct URLs into a shell command.
 
+For X specifically, Apify collection violates the post-2023 ToS even for public posts. Where the story could face legal scrutiny, prefer the official API or a licensed broker, and record the collection authority in `access_notes` for every capture.
+
 **Option B — Native platform APIs:**
 
 When the platform offers a direct API (YouTube Data API v3, Bluesky AT Protocol, Telegram TGStat), prefer it. Document which backing was used in `access_notes` on each source entry.
@@ -176,6 +185,19 @@ When the platform offers a direct API (YouTube Data API v3, Bluesky AT Protocol,
 If no scraper is configured, use `fetch(profile_url, ...)` + manual review. Lower throughput but no auth dependency.
 
 ---
+
+## External Tooling (status: 2026)
+
+Verify operational status before citing any tool in reporting.
+
+- Botometer X — archival only since June 2023; cannot score accounts created or active after May 31, 2023
+- CooRTweet (R) — coordinated-behavior analysis; successor to CooRnet (discontinued Aug 2024)
+- Hoaxy2 — claim-spread visualization; now covers Mastodon search and Bluesky real-time
+- Bot Sentinel — offline through 2025, relaunch announced 2026; verify before citing
+- InVID-WeVerify plugin — maintained under EU vera.ai; beta synthetic-image and voice-clone detectors added 2025
+- Bellingcat Online Investigation Toolkit — bellingcat.gitbook.io/toolkit (continuously updated)
+- WITNESS Deepfakes Rapid Response Force — pairs reporters with media-forensics experts on deadline
+- Note: Stanford Internet Observatory dismantled June 2024; First Draft closed 2022 (successor: Information Futures Lab, Brown SPH)
 
 ## Evidence Preservation
 
@@ -222,6 +244,15 @@ In `findings.json`, add social media evidence using the standard source schema w
 Flag findings that rest on socially amplified claims: note in `confidence_rationale` whether the account shows authenticity red flags or is part of a suspected coordination cluster.
 
 ---
+
+## Deliberate divergences from upstream
+
+- Upstream's Python monitoring/network-analysis library code replaced with checklist-driven manual assessment and explicit scoring thresholds tied to confidence grading.
+- Evidence flows into the `findings.json` source schema (`type: "social_media"`, `authenticity_flags`, `coordination_signals`) with `confidence_rationale` tie-ins — no upstream equivalent.
+- Pluggable scraper backends (Apify / native API / manual) via `PLATFORM_SCRAPER` under shell-safety discipline; Apify remains a deliberate collection path with the ToS risk documented rather than avoided.
+- Archiving mechanics deferred to the `web-archiving` skill instead of inline wrappers.
+
+Reconciled against upstream @ `2097d218` (2026-07-06).
 
 ## Credits
 

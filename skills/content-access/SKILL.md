@@ -4,7 +4,7 @@ description: Work through the legal access hierarchy for paywalled or restricted
 version: "1.0"
 invocable_by: [investigator, fact-checker]
 requires: [web-archiving, shell-safety]
-env_vars: [CORE_API_KEY]
+env_vars: [CORE_API_KEY, OPENALEX_API_KEY]
 attribution: "Adapted from jamditis/claude-skills-journalism (https://github.com/jamditis/claude-skills-journalism). Original author: Joe Amditis. MIT License."
 ---
 
@@ -72,6 +72,8 @@ Check `results[].downloadUrl` for PDF links.
 
 ### 4. Semantic Scholar
 
+Unkeyed access now sits behind a low shared rate limit and is unreliable for batch lookups. For more than ad-hoc calls, request a free key at semanticscholar.org/product/api and send it as `x-api-key`; on 429, move to step 5 rather than retrying.
+
 ```
 execute-shell: curl --get "https://api.semanticscholar.org/graph/v1/paper/search" \
   --data-urlencode "query={query}" \
@@ -80,6 +82,17 @@ execute-shell: curl --get "https://api.semanticscholar.org/graph/v1/paper/search
 ```
 
 Check `openAccessPdf.url`.
+
+### 4b. OpenAlex (250M+ scholarly works)
+
+The de-facto open scholarly backbone since Microsoft Academic Graph was retired. API-key-required since 2026-02-13 (credit-based rate model — verify at docs.openalex.org). Skip if `$OPENALEX_API_KEY` is unset.
+
+execute-shell: curl --get "https://api.openalex.org/works" \
+  --data-urlencode "search={query}" \
+  --data-urlencode "per-page=5" \
+  -H "Authorization: Bearer ${OPENALEX_API_KEY}"
+
+Check `results[].open_access.oa_url` and `oa_status` (gold/green/hybrid/bronze/closed).
 
 ### 5. Archive Copy
 
@@ -96,10 +109,12 @@ execute-shell: curl --get "http://web.archive.org/cdx/search/cdx" \
 
 ```
 execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
-execute-shell: curl -s "https://archive.ph/newest/" --get --data-urlencode "url={URL}"
+execute-shell: curl -sI "https://archive.ph/newest/{URL}" | grep -i '^location:'
+
+A Location pointing at a snapshot (no `/newest/` in it) is the hit; no Location or a `/newest/` Location means no snapshot or CAPTCHA rate-limiting — do not retry in a loop.
 ```
 
-Early snapshots often predate paywall implementation. If a pre-paywall snapshot is found, retrieve it:
+Early snapshots often predate paywall implementation. Archive.today caveat (2026): the FBI subpoenaed its registrar in Oct 2025 and Wikipedia stopped accepting it as a citation source in Feb 2026. Prefer Wayback snapshots for anything cited in `findings.json`; use archive.ph only as fallback and record that in `access_notes`. If a pre-paywall snapshot is found, retrieve it:
 
 ```
 execute-shell: python3 scripts/spotlight_safe.py validate-timestamp "{TIMESTAMP}"
@@ -117,7 +132,7 @@ search: query="{exact title}" site:scholar.google.com
 
 ### 7. Reader Mode (Metered Paywalls)
 
-For publications with free article limits (e.g., Financial Times, Bloomberg):
+For publications with metered paywalls (free article limits). Note: FT, Bloomberg, NYT, and WSJ are hard-paywalled — reader mode reveals nothing there; go to step 5 or 8 instead. For metered outlets:
 
 - Safari: `Cmd-Shift-R` or View > Show Reader
 - Firefox: `F9` or the reader icon in the address bar
@@ -138,7 +153,7 @@ Note the outreach in `access_notes` and set `access_method` to `author_request_p
 ## Do Not
 
 - Use browser extension bypasses (Bypass Paywalls Clean, Unpaywall browser extension in bypass mode)
-- Use Sci-Hub or similar sites for current journalism work — legal and reputational risk
+- Use Sci-Hub, LibGen, Anna's Archive, or paywall-redirector services (12ft.io, removepaywall.com) — same legal and reputational exposure
 - Scrape paywalled pages by rotating user agents or sessions — ToS violation
 - Pretend to be an institutional user to access licensed databases
 
@@ -195,6 +210,15 @@ A finding that rests on an `inaccessible` source must say so explicitly in `conf
 - **Date-check archived copies.** An archived copy from 5 years ago may not reflect the current version of a document. Note the snapshot date.
 
 ---
+
+## Deliberate divergences from upstream
+
+- Condensed to an executable decision tree wired to `spotlight_safe.py` shell-safety validation and `{CASE_DIR}` outputs, replacing upstream's Python library code.
+- Adds the `access_method` vocabulary and confidence-cap table feeding `findings.json`/`fact-check.json` — no upstream equivalent.
+- Adds an external-service data-minimization boundary and sensitive-mode gate absent upstream.
+- Drops upstream's VPN/geo-blocking, library-database, and US fair-use material as out of pipeline scope.
+
+Reconciled against upstream @ `2097d218` (2026-07-06).
 
 ## Credits
 
