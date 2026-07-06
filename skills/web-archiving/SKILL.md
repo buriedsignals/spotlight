@@ -49,11 +49,13 @@ record schema: `references/snapshot-record.md`. In brief:
 - **Access wall** — a no-session headless capture of a paywalled/authed page records the *wall*,
   not the content. If `access_wall` is true, mark the item `human_verification_required` and do
   not present it as content evidence.
-- **No dev-browser?** Degrade to a firecrawl scrape (raw HTML + full-page screenshot), record
-  `acquisition_method: firecrawl`, no MHTML — then continue to Tier 1.
+- **No dev-browser?** Degrade to the open-source scraping seam (Crawl4AI by default, no API
+  key; it escalates to Scrapling stealth on a bot-block), record
+  `acquisition_method: crawl4ai` (or `scrapling` if it escalated — the CLI reports which via
+  `--json` `.provider`), no MHTML — then continue to Tier 1.
 
   ```
-  fetch: url={URL}, output_path={CASE_DIR}/evidence/snapshots/{slug}.html
+  execute-shell: python3 -m integrations.scraping {URL} --out {CASE_DIR}/evidence/snapshots/{slug}.md
   ```
 
 ### 1. Wayback Machine (Internet Archive)
@@ -106,7 +108,7 @@ execute-shell: curl -s "https://archive.ph/newest/" --get --data-urlencode "url=
 ```
 
 > The old standalone "local markdown scrape" tier is removed — it is subsumed by the Tier-0
-> first-party snapshot (and its firecrawl fallback), which is higher fidelity.
+> first-party snapshot (and its Crawl4AI fallback), which is higher fidelity.
 
 ## Evidence Storage
 
@@ -129,7 +131,7 @@ Embed this header in every archived file. It is the provenance record.
 ---
 archived_at: 2026-03-15T14:22:00Z
 original_url: https://example.com/article/path
-capturer: dev_browser                                  # Tier 0: dev_browser | firecrawl
+capturer: dev_browser                                  # Tier 0: dev_browser | crawl4ai
 snapshot_sha256: 9f2c…ab                               # Tier-0 MHTML artifact (content-addressed)
 snapshot_path: evidence/snapshots/9f2c…ab.mhtml
 access_wall: false                                     # true ⇒ wall captured, not content

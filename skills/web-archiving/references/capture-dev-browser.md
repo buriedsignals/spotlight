@@ -10,7 +10,7 @@ SHA-256. No Docker/Postgres/service — real Chrome via the local `dev-browser` 
 
 ## Preconditions
 
-- `dev-browser` on PATH (`command -v dev-browser`). If absent, use the firecrawl fallback
+- `dev-browser` on PATH (`command -v dev-browser`). If absent, use the Crawl4AI seam fallback (`python3 -m integrations.scraping <url>`)
   (see SKILL.md) — do not block.
 - Sensitive mode: do **not** run a live capture. The `web-archiving` skill is disabled in
   sensitive mode; if reached, fall back to Tier 1 (Wayback) or require explicit egress approval.
