@@ -1,0 +1,6 @@
+# Flue build + runtime artifacts (not source)
+dist/
+.flue-vite/
+# Runtime state: durability DB + per-run case output
+data/
+cases/
