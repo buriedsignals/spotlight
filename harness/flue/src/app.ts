@@ -11,9 +11,11 @@ registerProvider('local', {
 	apiKey: 'local', // llama-server ignores it, but the OpenAI wire protocol requires a non-empty key
 	// Custom (non-catalog) providers have no catalog metadata, so maxTokens falls
 	// back to 0 → a 1-token output cap. Declare them so the thinking Gemma gets a
-	// real output budget. contextWindow matches llama-server's -c.
-	contextWindow: 8192,
-	maxTokens: 4096,
+	// real output budget. contextWindow MUST match llama-server's -c (the launcher
+	// sets SPOTLIGHT_LOCAL_CTX to the same value): a full investigation loop reaches
+	// ~26K tokens by synthesis, so 8192 truncates the run mid-loop.
+	contextWindow: Number(process.env.SPOTLIGHT_LOCAL_CTX ?? 32768),
+	maxTokens: 8192,
 });
 
 // Cloud non-frontier tier: Fireworks GLM-5.2 (ZDR), OpenAI-compatible. Registered
