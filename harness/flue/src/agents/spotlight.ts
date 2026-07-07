@@ -1,4 +1,5 @@
 import { defineAgent, defineAgentProfile } from '@flue/runtime';
+import { local } from '@flue/runtime/node';
 import { roleBody, FLUE_VERB_ADAPTER } from '../lib/roles.ts';
 
 // The local/cloud tier model. llama-server serves the Gemma GGUF as `local/…`;
@@ -28,6 +29,11 @@ const factChecker = defineAgentProfile({
 // directly — it delegates to the subagents and manages the phase pipeline (the `spotlight` skill).
 export default defineAgent(() => ({
 	model: MODEL,
+	// Real host filesystem + shell at the case dir (subagents inherit this sandbox, U8):
+	// the agents run bash / the scraping seam / qmd and persist evidence to real files.
+	// cwd is also where Flue discovers .agents/skills (the engine-placed store).
+	sandbox: local(),
+	cwd: process.env.SPOTLIGHT_CWD ?? process.cwd(),
 	instructions: `${FLUE_VERB_ADAPTER}
 
 You are the Spotlight orchestrator. You NEVER investigate directly. You delegate all research to the \`investigator\` subagent and all verification to the \`fact-checker\` subagent (via the \`task\` tool), then evaluate results, manage gates, and synthesise for the user. Follow the \`spotlight\` skill for the phase pipeline (brief → methodology → research cycles → fact-check → report).`,
