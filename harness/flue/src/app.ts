@@ -26,6 +26,21 @@ if (process.env.FIREWORKS_API_KEY) {
 	});
 }
 
+// Validation-only tier: OpenRouter serving `google/gemma-4-31b-it`. Per the testing
+// ladder (invariant 8), the 31B's harness *logic* is iterated here — it produces output
+// reliably on OpenRouter and this isolates harness bugs from local serving bugs.
+// Custom provider, so contextWindow+maxTokens are mandatory (else max_completion_tokens:1).
+// Model string: `openrouter/google/gemma-4-31b-it` (provider = first path segment).
+if (process.env.OPENROUTER_API_KEY) {
+	registerProvider('openrouter', {
+		api: 'openai-completions',
+		baseUrl: 'https://openrouter.ai/api/v1',
+		apiKey: process.env.OPENROUTER_API_KEY,
+		contextWindow: 131072, // Gemma-4 native 128K window
+		maxTokens: 8192,
+	});
+}
+
 const app = new Hono();
 app.route('/', flue());
 
