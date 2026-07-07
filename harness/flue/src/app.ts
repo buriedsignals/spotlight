@@ -7,7 +7,10 @@ import { Hono } from 'hono';
 // local models (loop U6/U10).
 registerProvider('local', {
 	api: 'openai-completions',
-	baseUrl: 'http://127.0.0.1:8080/v1', // llama-server --jinja (tool-calling)
+	// llama-server --jinja (tool-calling). Default = local; SPOTLIGHT_LOCAL_BASEURL points it
+	// at a remote llama-server (e.g. a RunPod pod proxy `https://<id>-8080.proxy.runpod.net/v1`)
+	// for on-policy sampling (U20a) without a code edit.
+	baseUrl: process.env.SPOTLIGHT_LOCAL_BASEURL ?? 'http://127.0.0.1:8080/v1',
 	apiKey: 'local', // llama-server ignores it, but the OpenAI wire protocol requires a non-empty key
 	// Custom (non-catalog) providers have no catalog metadata, so maxTokens falls
 	// back to 0 → a 1-token output cap. Declare them so the thinking Gemma gets a

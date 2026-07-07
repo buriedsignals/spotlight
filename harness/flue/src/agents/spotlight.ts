@@ -13,16 +13,24 @@ const MODEL = process.env.SPOTLIGHT_FLUE_MODEL ?? 'local/gemma-4-12b-it';
 // all are available by name, bodies loaded on-invoke (D1). This natively delivers the
 // per-agent "lightening" (D2) — no agent holds skill bodies up front. `harness/composition.json`
 // (U2) remains the documented intent; each role's instructions steer which it actually uses.
+// Subagents must NEVER delegate. The shared adapter maps spawn-agent→task, and Flue exposes
+// the `task` tool to them, so an undisciplined 12B subagent will re-delegate → task:task:task
+// recursion → DelegationDepthExceededError → the whole run fails. Only the orchestrator delegates.
+const WORKER_GUARD = `
+
+## CRITICAL — you are a WORKER subagent, not an orchestrator
+Do the task YOURSELF with your own tools (bash, search, fetch, browse, read, write, the RLM). You have NO subagents. **NEVER call the \`task\` tool, never "spawn-agent", never "delegate"** — you are the one who was delegated to. Delegating from here recurses (task→task→task) and hard-fails the run. The "spawn-agent → task" mapping in the adapter above applies ONLY to the orchestrator, not to you. If the task is large, do it step by step yourself.`;
+
 const investigator = defineAgentProfile({
 	name: 'investigator',
 	description: 'Plans and executes OSINT research cycles. Delegate all research here.',
-	instructions: `${FLUE_VERB_ADAPTER}\n\n${roleBody('investigator')}`,
+	instructions: `${FLUE_VERB_ADAPTER}\n\n${roleBody('investigator')}${WORKER_GUARD}`,
 });
 
 const factChecker = defineAgentProfile({
 	name: 'fact-checker',
 	description: 'Independent SIFT verification of findings, in its own context. Delegate verification here.',
-	instructions: `${FLUE_VERB_ADAPTER}\n\n${roleBody('fact-checker')}`,
+	instructions: `${FLUE_VERB_ADAPTER}\n\n${roleBody('fact-checker')}${WORKER_GUARD}`,
 });
 
 // The orchestrator is the discovered agent (`flue run spotlight`). It NEVER investigates
