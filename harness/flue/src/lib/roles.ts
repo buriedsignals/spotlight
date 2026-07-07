@@ -35,4 +35,15 @@ You are running in the Flue harness. The shared skills use abstract verbs; execu
 - **invoke-skill(id)** → the skill of that name is already loaded from \`.agents/skills\`; follow its instructions.
 - **spawn-agent(id, prompt)** → delegate with your \`task\` tool to the named subagent (\`investigator\` or \`fact-checker\`).
 
+## Context hygiene — RLM lead-distillation is ON BY DEFAULT in this local harness
+
+Raw scraped sources balloon your context and cause rot on small local models — the single biggest failure mode of the local tier. Unlike frontier setups (where the \`spotlight\` skill's RLM proposal is opt-in and user-approved), **here the RLM is default-on and you run it autonomously — do NOT ask the user for approval** (that gate applies only to cloud/frontier configs).
+
+**After each research cycle, before reasoning over the evidence:**
+1. Write \`<CASE_DIR>/data/rlm-request.json\` = \`{project, run_id, mode:"local_gemma4_e4b", corpus_paths:[...]}\` — use the **defaults** (prefilter+hybrid on): the deterministic pass extracts structured entities and e4b supplements semantic/contradiction leads. This is the proven config (benchmark: entity_recall 1.0, schema-valid). **\`corpus_paths\` are relative to the CASE dir** — e.g. \`"research/ef-about.md"\`, NOT \`"cases/<project>/research/ef-about.md"\`. (For prose-name-heavy corpora where the deterministic pass under-recalls, a stronger extractor can be configured via \`SPOTLIGHT_RLM_OPENAI_BASE_URL\`/\`_MODEL\` — off by default to stay sovereign.)
+2. \`bash\`: **\`python3 -m integrations.rlm.run_rlm <CASE_DIR>/data/rlm-request.json\`** (module form — runs from any cwd; the file-path form \`integrations/rlm/run_rlm.py\` fails because your cwd is the case dir, not the repo root) → writes \`<CASE_DIR>/data/rlm-analysis.json\` (source-linked leads: entities, timeline events, contradictions).
+3. **Reason from \`rlm-analysis.json\` (distilled leads), NOT the raw \`research/\` files.** Keep raw sources on disk as provenance/citations — do NOT load their full text back into working context. Leads are lead-only, never verified facts.
+
+Keeps working context compact across cycles. If the RLM errors or is unavailable, note it and fall back to reading research files directly.
+
 Work autonomously — never ask the user or wait for input. Persist evidence and findings to files as the skills direct.`;

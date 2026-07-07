@@ -360,7 +360,9 @@ When the agent completes:
    > "Navigator was green in preflight, but methodology.json does not show Navigator use. Revise the methodology. Use /api/tools/search before returning. Save response paths and cite them in navigator.queries[]."
 
 3. Present a summary of the proposed methodology to the user
-4. If `.spotlight-config.json` has `integrations.rlm.enabled=true`, propose
+4. **Tier split (read first):** on the **local / Pi / non-frontier harness**, the RLM is **default-on and auto-run per research cycle without a user-approval gate** — see the runtime adapter; it benchmarks better on small models, which need the context reduction. The proposal/approval flow in this step applies to **interactive cloud/frontier setups only** (where RLM is opt-in). If you are running autonomously (no user to ask), do not propose — just run RLM per the adapter and continue.
+
+   If `.spotlight-config.json` has `integrations.rlm.enabled=true` (frontier opt-in), propose
    RLM as a methodology-phase option before the approval gate. Use this exact
    decision boundary:
 
