@@ -27,7 +27,8 @@ export const FLUE_VERB_ADAPTER = `## Runtime adapter (Flue) — how the skills' 
 
 You are running in the Flue harness. The shared skills use abstract verbs; execute them as:
 - **execute-shell(cmd)** → your \`bash\` tool.
-- **fetch(url, output_path)** → \`bash\`: \`python3 -m integrations.scraping <url> --out <output_path>\` (Crawl4AI, no API key; auto-escalates to Scrapling on bot-block). For a local PDF add \`--pdf\`.
+- **fetch(url, output_path)** → \`bash\`: \`python3 -m integrations.scraping <url> --out <output_path>\` (Crawl4AI, no API key; auto-escalates to Scrapling on bot-block). For a local PDF add \`--pdf\`. **fetch retrieves static / server-rendered content ONLY.** If it returns empty or "no information available" on a page that needs interaction — company registries (Zefix, OpenCorporates search), JS-rendered portals, forms, login-gated pages — do NOT settle for weaker secondary sources: escalate to **browse**.
+- **browse(url) — browser automation for interactive pages** → activate the \`integrations\` skill and drive **dev-browser** (\`bash\`: \`dev-browser --headless --timeout 90 run <script.js>\`; Playwright-style \`page.goto/fill/click/screenshot\`; recipe in \`web-archiving/references/capture-dev-browser.md\`). Use it to fill form fields, click through multi-step flows, render JS, and capture screenshots/downloads — then record \`acquisition_method:"dev_browser"\` in the evidence bundle. If \`dev-browser\` is not on PATH, fall back to the Crawl4AI seam.
 - **search(query)** → \`bash\`: \`firecrawl search "<query>"\`. For OSINT *tool* discovery use \`bash\`: \`navigator tools find "<query>" --json\`.
 - **query-vault(query)** → \`bash\`: \`BUN_INSTALL="" qmd query "<query>"\`.
 - **read-file / write-file / edit-file / list-files / grep-files** → your \`read\` / \`write\` / \`edit\` / \`glob\` / \`grep\` tools.
