@@ -361,7 +361,11 @@ def local_gemma_extract(
             ]
             return artifacts, {"fake_local": True, "semantic_only": True}
         return lite_extract(chunks), {"fake_local": True}
-    if not ollama_model_available(MODEL):
+    # Configurable capable extractor: point at the main model's llama-server (sovereign local
+    # tier) or OpenRouter (cloud tier) instead of the weak local gemma4:e4b. Env-gated; default
+    # stays ollama/e4b. The 12B/31B emit valid JSON where e4b fails.
+    _openai_base = os.environ.get("SPOTLIGHT_RLM_OPENAI_BASE_URL")
+    if not _openai_base and not ollama_model_available(MODEL):
         raise RLMError(f"Ollama model {MODEL} is not available; run benchmark with --pull-missing only after explicit approval")
     prompt = {
         "task": (
@@ -394,6 +398,36 @@ def local_gemma_extract(
     }
     if semantic_only:
         prompt["rules"].append("Only emit kind=contradiction or kind=lead artifacts; skip simple emails, URLs, handles, and dates.")
+    if _openai_base:
+        _model = os.environ.get("SPOTLIGHT_RLM_MODEL", MODEL)
+        _headers = {"Content-Type": "application/json"}
+        _key = os.environ.get("SPOTLIGHT_RLM_API_KEY")
+        if _key:
+            _headers["Authorization"] = f"Bearer {_key}"
+        _oai_body = json.dumps({
+            "model": _model,
+            "temperature": 0,
+            "max_tokens": num_predict or 8192,  # thinking models need room to reason THEN emit JSON
+            "messages": [
+                {"role": "system", "content": 'You produce strict JSON for source-linked OSINT lead extraction. Output ONLY a JSON object {"artifacts":[...]}.'},
+                {"role": "user", "content": json.dumps(prompt)},
+            ],
+        }).encode("utf-8")
+        _base = _openai_base.rstrip("/")
+        _url = _base + ("/chat/completions" if _base.endswith("/v1") else "/v1/chat/completions")
+        _oai_req = urllib.request.Request(_url, data=_oai_body, headers=_headers)
+        with urllib.request.urlopen(_oai_req, timeout=300) as _resp:
+            _oai_raw = json.loads(_resp.read().decode("utf-8"))
+        _content = ((_oai_raw.get("choices") or [{}])[0].get("message", {}) or {}).get("content") or ""
+        _s, _e = _content.find("{"), _content.rfind("}")
+        if _s == -1 or _e == -1:
+            raise RLMError(f"Extractor returned no JSON object; preview={_content[:200]!r}")
+        _parsed = json.loads(_content[_s:_e + 1])
+        _raw_artifacts = _parsed.get("artifacts", [])
+        if not isinstance(_raw_artifacts, list):
+            raise RLMError("Extractor response missing artifacts list")
+        _artifacts = [normalize_model_artifact(item, index) for index, item in enumerate(_raw_artifacts, start=1) if isinstance(item, dict)]
+        return _artifacts, {"extractor": "openai", "extractor_model": _model, "num_ctx": num_ctx, "semantic_only": semantic_only}
     options: dict[str, Any] = {"temperature": 0, "num_ctx": num_ctx}
     if num_predict:
         options["num_predict"] = num_predict

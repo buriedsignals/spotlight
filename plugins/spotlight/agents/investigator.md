@@ -133,7 +133,7 @@ At the start of every investigation, invoke these skills to load your full toolk
 9. **`invoke-skill("acquisition-graduation")`** — Use only when a repeated dev-browser acquisition path is durable enough to preserve as reusable source guidance.
 10. **`invoke-skill("social-media-intelligence")`** *(when applicable)* — Load when the investigation touches social media accounts, viral content, or suspected coordination campaigns. Provides account authenticity assessment, coordination detection, and narrative tracking methodology.
 
-The `fetch` and `search` verbs are always available (universal backing: firecrawl). No skill load required for search/scrape.
+The `fetch` and `search` verbs are always available (sovereign backing: `fetch` → Crawl4AI via `integrations.scraping`, `search` → SearXNG via `integrations.search`; Firecrawl only as an optional fallback when its key is present). No skill load required for search/scrape.
 
 These skills contain the full methodology. Follow them.
 

@@ -28,7 +28,7 @@
       "properties": {
         "id": { "type": "string" },
         "query_or_task": { "type": "string" },
-        "acquisition_method": { "enum": ["firecrawl", "dev_browser", "browse", "browser_harness", "browser_use", "manual", "api", "other"] },
+        "acquisition_method": { "enum": ["dev_browser", "crawl4ai", "scrapling", "firecrawl", "browse", "browser_harness", "browser_use", "manual", "api", "other"] },
         "source_url": { "type": "string" },
         "accessed": { "type": "string", "format": "date-time" },
         "raw_path": { "type": "string" },

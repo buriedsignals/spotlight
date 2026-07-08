@@ -75,6 +75,13 @@ def copy_docs() -> None:
             shutil.copy2(source, destination / filename)
 
 
+# Full Python seam packages that back the sovereign verbs (U2b): the plugin/Codex
+# runtime runs `python -m integrations.scraping` / `integrations.search`, so it needs
+# the whole package (not just integration.md/manifest.json/run_*.py). Without these
+# the plugin has no Crawl4AI/SearXNG backing and fetch/search fall back to Firecrawl.
+SEAM_PACKAGES = ("scraping", "search")
+
+
 def copy_integrations() -> None:
     destination = PLUGIN / "integrations"
     reset_dir(destination)
@@ -84,6 +91,14 @@ def copy_integrations() -> None:
             shutil.copy2(source, destination / filename)
     for integration_dir in sorted((ROOT / "integrations").iterdir()):
         if not integration_dir.is_dir():
+            continue
+        if integration_dir.name in SEAM_PACKAGES:
+            # Ship the whole seam package (all *.py), minus caches.
+            shutil.copytree(
+                integration_dir,
+                destination / integration_dir.name,
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".pytest_cache", ".DS_Store"),
+            )
             continue
         files = [
             integration_dir / "integration.md",

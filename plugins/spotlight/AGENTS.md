@@ -18,8 +18,8 @@ Fixed vocabulary of abstract operations. Every runtime adapter MUST implement al
 
 | Verb | Signature | Semantics | Universal backing |
 |------|-----------|-----------|-------------------|
-| `fetch` | `fetch(url, output_path)` | Scrape URL content, save to file | `firecrawl scrape` |
-| `search` | `search(query, output_path, limit)` | Web search, save results to file | `firecrawl search` |
+| `fetch` | `fetch(url, output_path)` | Scrape URL content, save to file | `integrations.scraping` (Crawl4AI; Firecrawl fallback if keyed) |
+| `search` | `search(query, output_path, limit)` | Web search, save results to file | `integrations.search` (SearXNG; Firecrawl union optional) |
 | `read-file` | `read-file(path)` | Read file contents | filesystem |
 | `write-file` | `write-file(path, content)` | Write file (full overwrite) | filesystem |
 | `edit-file` | `edit-file(path, old, new)` | Targeted string replacement | filesystem |
@@ -57,8 +57,8 @@ preferred_model:
   claude: opus
   gemini: gemini-2.5-pro
   gpt: gpt-4o
-  local: gemma4:31b-it-qat
-  fallback_note: Two-tier local fleet, both need 32 GB+ unified memory. Default — Gemma 4 31B (official Ollama gemma4:31b-it-qat tag), top-scoring model at its size on our OSINT benchmark (0.881) and clears the ethics probe cleanly, ~18 GB on disk, no HF download / no abliteration / no thinking-mode workaround. Heavy tier — Qwen 3.6 27B Journalist (tomvaillant/qwen3.6-27b-abliterated-journalist-GGUF:Q4_K_M), Tom's abliterated investigative-journalism fine-tune, ~15 GB on disk, ~22 GB at runtime, runs in thinking mode (abliterated /no_think path is broken). No small local tier — nothing under this size drives Spotlight's orchestration reliably, so <32 GB devices use Frontier/cloud mode. Bench-validated against the eval suite in tools/fine-tuning/eval/.
+  local: hf.co/tomvaillant/qwen3.6-27b-abliterated-journalist-GGUF:Q4_K_M
+  fallback_note: Two-tier local fleet, both Tom's journalism fine-tunes. Default — Qwen 3.5 9B Journalist (tomvaillant/qwen3.5-9b-abliterated-journalist-GGUF:Q4_K_M) for 16 GB Macs, ~6 GB on disk. Heavy tier — Qwen 3.6 27B Journalist (tomvaillant/qwen3.6-27b-abliterated-journalist-GGUF:Q4_K_M) for 32 GB+ Macs, ~15 GB on disk, ~22 GB at runtime, runs in thinking mode (abliterated /no_think path is broken). The setup form's fit-check enforces the 32 GB minimum before the 27B option commits. Bench-validated against the eval suite in tools/fine-tuning/eval/.
 vault_context:
   enabled: true
   query_on_load: true
@@ -141,6 +141,20 @@ A sensitive investigation cannot satisfy the "document trail" readiness criterio
 
 To activate: set `sensitive: true` in this file or issue a runtime command.
 To deactivate: set `sensitive: false` or issue a runtime command.
+
+### Anonymized fetch (Tor) — a distinct posture
+
+`sensitive` mode and **anonymized fetch** are two *different* postures; do not conflate them:
+
+- **`sensitive: true`** = **no external egress.** `fetch`/`search` are stripped; research is local-only.
+- **anonymized fetch (Tor)** = **egress still happens, but the operator's IP is hidden.** Use it when you *must* scrape a target-of-investigation without revealing that the investigation is looking (KTD8 / U7). The `fetch` seam routes the Crawl4AI browser through the local Tor SOCKS proxy (`socks5://127.0.0.1:9050`).
+
+Triggering (per-run is the default posture):
+
+- **Per-run:** set `SPOTLIGHT_ANONYMIZE_FETCH=true` (or `anonymize_fetch: true` in this manifest's frontmatter) — every `fetch` in the run egresses via Tor.
+- **Per-fetch override:** pass `--tor` / `--no-tor` to a single `integrations.scraping` call.
+
+A Tor-proxied fetch **never silently falls back to a direct (de-anonymizing) fetch** — on a Tor failure the seam raises, and the operator chooses to re-run `--no-tor` (revealing their IP) or abort. Tor exits are widely blocklisted, so an anonymized fetch of a hard target may simply fail; that is by design, not a bug.
 
 ## Cases Directory Structure
 

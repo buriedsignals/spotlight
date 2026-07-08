@@ -66,43 +66,38 @@ tools. Do not send full case notes, raw source dumps, unpublished allegations,
 private source material, credentials, vault contents, or unnecessary personal
 data unless the user explicitly approves that disclosure.
 
-### Quick API Access
+### Tool discovery via the Navigator CLI
 
-If `$OSINT_NAV_API_KEY` is set:
-
-```
-invoke-skill("shell-safety")
-execute-shell('curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
-  -X POST https://navigator.indicator.media/api/tools/search \
-  -H "Content-Type: application/json" \
-  --data @{CASE_DIR}/research/navigator-query.json')
-```
-
-Write `navigator-query.json` with a real JSON serializer or `write-file`, never by concatenating untrusted query text into a shell string.
-
-Ask a complex question (10/day free, 50/day pro):
+`navigator tools` searches the OSINT tool catalogue by meaning. Call the CLI
+directly — no `execute-shell` curl, no request-body JSON to hand-build:
 
 ```
-invoke-skill("shell-safety")
-execute-shell('curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
-  -X POST https://navigator.indicator.media/api/query \
-  -H "Content-Type: application/json" \
-  --data @{CASE_DIR}/research/navigator-question.json')
+navigator tools find "<what you need, in plain words>" --json
+  # -> {"tools":[{"tool_id","tool_name","tool_url","short_description","category","tags"}, ...]}
+navigator tools show "<tool_id>"
+  # full record + usage docs for one tool
 ```
 
-Route to Navigator when:
+**Auth is one-time.** `navigator tools` needs a membership PAT: run
+`navigator auth login` once (a magic link stores the PAT in the OS keychain; it
+is reused after, no re-auth). Non-interactive installs skip the browser by setting
+`NAVIGATOR_PAT` (or reusing `$OSINT_NAV_API_KEY`) in the environment. If the CLI
+reports "Not logged in", surface that — do not fall back to raw curl.
+
+Route to `navigator tools find` when:
 
 - **Country-specific tools** — regional databases and registries not in the curated list
-- **Detailed tool documentation** — usage guides, limitations, pricing
+- **Detailed tool documentation** — usage guides, limitations, pricing (`show`)
 - **Comparing alternatives** — side-by-side evaluation
 - **Niche categories** — blockchain forensics, wildlife trade, conflict monitoring
 - **Recent additions** — tools from the weekly crawl cycle
 
-See `references/navigator-integration.md` for full API details and `references/cycle-integration.md` for integration with investigation cycles.
+See `references/navigator-integration.md` for CLI details and
+`references/cycle-integration.md` for integration with investigation cycles.
 
 ## Offline Fallback
 
-If working offline or without `$OSINT_NAV_API_KEY`, the tools listed in this skill and its reference files cover the most common investigation scenarios. For niche needs, note your requirements and check OSINT Navigator at navigator.indicator.media when you are back online.
+If working offline, or if `navigator` is not installed or authenticated, the tools listed in this skill and its reference files cover the most common investigation scenarios. For niche needs, note your requirements and run `navigator tools find` when you are back online and logged in.
 
 In sensitive mode, Navigator is disabled unless the user explicitly overrides
 the restriction. Use the curated catalog and local vault context instead.

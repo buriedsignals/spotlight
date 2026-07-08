@@ -24,7 +24,7 @@ Emitted alongside the artifacts — in the archived file's YAML header and the s
 {
   "url": "https://example.com/article",
   "captured_at": "2026-06-17T14:22:00Z",   // UTC, ISO-8601
-  "capturer": "dev_browser",                // dev_browser | firecrawl  (UNDERSCORE — matches the evidence enum)
+  "capturer": "dev_browser",                // dev_browser | crawl4ai | scrapling | firecrawl  (UNDERSCORE — matches the evidence enum)
   "http_status": 200,
   "headers": { "content-type": "text/html; charset=utf-8" },  // response headers
   "condition": "load",                      // load | domcontentloaded | networkidle | selector:<css>
@@ -49,7 +49,7 @@ Tier 0 does **not** invent new evidence-bundle fields. Map the snapshot onto a s
 |--------------------------------|----------------|
 | `id`                           | `snap-<first 8 hex of mhtml sha>` |
 | `query_or_task`                | `"web-archiving Tier-0 snapshot: <url>"` |
-| `acquisition_method`           | `"dev_browser"` (or `"firecrawl"` on fallback) |
+| `acquisition_method`           | `"dev_browser"` (or `"crawl4ai"`/`"firecrawl"` on the seam fallback) |
 | `source_url`                   | the URL |
 | `accessed`                     | `captured_at` |
 | `sha256`                       | the **MHTML** artifact hash (64 hex) |

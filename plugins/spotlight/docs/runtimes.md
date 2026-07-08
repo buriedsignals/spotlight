@@ -17,7 +17,7 @@ Universal backings (never change):
 
 | Verb | Concrete tool |
 |---|---|
-| `fetch`, `search` | `firecrawl` CLI (`firecrawl scrape`, `firecrawl search`) |
+| `fetch`, `search` | `fetch` → Crawl4AI via `integrations.scraping`; `search` → SearXNG via `integrations.search` (Firecrawl = optional fallback when `FIRECRAWL_API_KEY` is set) |
 | `query-vault` | `BUN_INSTALL="" qmd query <vault> "<query>"` |
 | `vault-write` | `obsidian` CLI (Obsidian app must be running) |
 | `execute-shell` | native shell subprocess |
@@ -125,7 +125,7 @@ opencode ships native `bash`, `read`, `write`, `edit`, `grep`, `glob`, `multi-ed
 
 | Verb | Concrete tool |
 |---|---|
-| `fetch`, `search` | `firecrawl` CLI via `bash` |
+| `fetch`, `search` | `integrations.scraping` (Crawl4AI) / `integrations.search` (SearXNG) via `bash`; Firecrawl optional fallback |
 | `query-vault` | `BUN_INSTALL="" qmd query` via `bash` |
 | `vault-write` | `obsidian` CLI via `bash` |
 | `invoke-skill` | opencode's native `skill` tool — agents see available skills and load them on demand |
@@ -235,7 +235,7 @@ All Spotlight skills (spotlight, ingest, monitoring, acquisition-graduation, web
 
 | Verb | Hermes tool |
 |---|---|
-| `fetch`, `search` | shell call to `firecrawl` CLI |
+| `fetch`, `search` | shell call to `integrations.scraping` (Crawl4AI) / `integrations.search` (SearXNG); Firecrawl optional fallback |
 | `read-file`, `write-file`, `edit-file` | Hermes filesystem tools |
 | `execute-shell` | Hermes terminal |
 | `query-vault` | `BUN_INSTALL="" qmd query` via terminal |
@@ -323,7 +323,7 @@ This should wire:
 
 | Verb | Goose equivalent |
 |---|---|
-| `fetch`, `search` | Goose tool call to `firecrawl` (either as MCP server or raw subprocess) |
+| `fetch`, `search` | Goose runs `integrations.scraping` (Crawl4AI) / `integrations.search` (SearXNG); Firecrawl optional fallback |
 | `read-file`, `write-file`, `edit-file` | Goose filesystem tools |
 | `execute-shell` | Goose developer-mode shell or restricted subprocess |
 | `spawn-agent` | Goose recipe invocation — spawn a new session with the agent prompt |
@@ -364,7 +364,7 @@ Point Codex at the repo root as its working directory. `AGENTS.md` is loaded aut
 | `read-file`, `list-files`, `grep-files` | native file tools (no config needed) |
 | `write-file`, `edit-file` | native edit tools — require `--sandbox workspace-write` or higher |
 | `execute-shell` | `bash -lc` tool — require `--sandbox workspace-write` or higher |
-| `fetch`, `search` | `execute-shell` wrapping the `firecrawl` CLI |
+| `fetch`, `search` | `execute-shell` running `python -m integrations.scraping` (Crawl4AI) / `integrations.search` (SearXNG); Firecrawl optional fallback |
 | `query-vault` | `execute-shell` wrapping `BUN_INSTALL="" qmd query` |
 | `vault-write` | `execute-shell` wrapping the `obsidian` CLI |
 | `invoke-skill` | natively loads `skills/{skill}/SKILL.md` when referenced |
@@ -494,6 +494,17 @@ When `sensitive: true` is set in `AGENTS.md` (or via a runtime command), every a
 | Local-endpoint wrappers | Orchestrator refuses to call the verb backing; wrapper blocks the shell call |
 
 A sensitive investigation cannot satisfy the "document trail" readiness criterion from external sources. The orchestrator marks the investigation as **sensitive-mode constrained** at Gate 1, and the Gate 1 summary notes which readiness criteria could not be evaluated live.
+
+### Two distinct egress postures — do not conflate
+
+`sensitive` mode and **anonymized fetch (Tor)** solve different problems:
+
+| Posture | Trigger | Egress | Use when |
+|---|---|---|---|
+| **`sensitive: true`** | `AGENTS.md` frontmatter / `SPOTLIGHT_SENSITIVE=true` | **None** — `fetch`/`search` stripped, research is local-only | The *material* must not leave the machine (working with sensitive documents; a frontier model would ship context to a third party) |
+| **Anonymized fetch (Tor)** | `SPOTLIGHT_ANONYMIZE_FETCH=true` (per-run) or `--tor`/`--no-tor` (per-fetch) | **Yes, via Tor** — Crawl4AI routes through `socks5://127.0.0.1:9050`; the operator's IP is hidden from the target | You *must* scrape a target-of-investigation without revealing that someone is looking (KTD8 / U7) |
+
+They compose: an investigation can be `sensitive` (no egress) *or* anonymized (egress via Tor) *or* neither — but a `sensitive` run has no `fetch` to anonymize, so the two are rarely on together. A Tor-proxied fetch **never silently falls back to a direct (de-anonymizing) fetch** — on a Tor failure the seam raises and the operator re-runs `--no-tor` (revealing their IP) or aborts. Tor exits are widely blocklisted, so an anonymized fetch of a hard anti-bot target may simply fail — by design. The Spotlight installer provisions Tor when `SPOTLIGHT_TOR=1` (opt-in).
 
 ---
 
