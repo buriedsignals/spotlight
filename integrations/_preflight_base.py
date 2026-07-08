@@ -95,6 +95,7 @@ def summarize(reports: list[dict]) -> dict:
         "green": sum(1 for report in reports if report["status"] == "green"),
         "yellow": sum(1 for report in reports if report["status"] == "yellow"),
         "red": sum(1 for report in reports if report["status"] == "red"),
+        "dismissed": sum(1 for report in reports if report["status"] == "dismissed"),
     }
 
 
@@ -132,8 +133,15 @@ def run_preflight(
     report_extra_fields: Callable[[dict], dict] | None = None,
     text_columns: list[tuple[str, str, int]] | None = None,
     description: str = "Spotlight preflight",
+    dismiss_when_constrained: bool = False,
 ) -> None:
-    """CLI entry point for manifest-based preflight scripts."""
+    """CLI entry point for manifest-based preflight scripts.
+
+    dismiss_when_constrained: opt-in (integrations preflight only). When set and
+    --model-tier is `12b`, every entry is marked `dismissed` regardless of keys —
+    the constrained tier runs on native capabilities + the local osint-tools SQL
+    index only. No-op for other callers/tiers, so it is backward-compatible.
+    """
     dotenv_dir = root.resolve()
     while dotenv_dir != dotenv_dir.parent:
         if (dotenv_dir / ".env").is_file():
@@ -145,6 +153,8 @@ def run_preflight(
     parser.add_argument("--smoke-test", action="store_true", help="Also run a minimal probe against each entry")
     parser.add_argument("--json", action="store_true", help="Emit JSON (default)")
     parser.add_argument("--text", action="store_true", help="Emit human-readable table")
+    parser.add_argument("--model-tier", default=None,
+                        help="Model tier (12b|26b|31b|frontier|api); on 12b all integrations are dismissed")
     args = parser.parse_args()
 
     manifests = discover_manifests(root)
@@ -158,6 +168,13 @@ def run_preflight(
         effective_smoke = smoke_fn if (args.smoke_test or always_probe) else None
         reports.append(build_report(manifest, smoke_fn=effective_smoke, extra_fields=extra))
 
+    dismissed = dismiss_when_constrained and args.model_tier == "12b"
+    if dismissed:
+        for report in reports:
+            report["status"] = "dismissed"
+            report["reason"] = ("12b tier — integrations dismissed; native capabilities "
+                                "(dev-browser, Crawl4AI seam) + osint-tools SQL index only")
+
     summary = summarize(reports)
     output = {result_key: reports, "summary": summary}
 
@@ -167,4 +184,5 @@ def run_preflight(
     else:
         print(json.dumps(output, indent=2))
 
-    sys.exit(0 if (summary["green"] > 0 or sum(summary.values()) == 0) else 1)
+    # dismissed is an intentional 12b state, not a failure -> exit 0.
+    sys.exit(0 if (dismissed or summary["green"] > 0 or sum(summary.values()) == 0) else 1)

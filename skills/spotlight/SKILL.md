@@ -197,7 +197,7 @@ selection when sensitive mode is false.
 Run the manifest-based preflight and parse the `osint-navigator` entry:
 
 ```
-execute-shell("python3 integrations/preflight.py --json")
+execute-shell("python3 integrations/preflight.py --model-tier {config.model_tier} --json")
 ```
 
 Update `.spotlight-config.json` with the full status, not a boolean:
@@ -216,14 +216,20 @@ Update `.spotlight-config.json` with the full status, not a boolean:
 }
 ```
 
-Set `required_in_phase_2: true` only when:
+Set `required_in_phase_2: true` only when ALL hold:
 
+- `model_tier` is NOT `12b` (the constrained tier dismisses every integration — see below), and
 - `sensitive` is false, and
-- the `osint-navigator` preflight entry has `status: "green"`.
+- the `osint-navigator` preflight entry has `status: "green"` (needs a subscription entitlement — `OSINT_NAV_API_KEY`).
 
 Set `required_in_phase_2: false` and preserve a concrete `reason` when
-Navigator is red/yellow, sensitive mode is active, the lead is local-only, or
-the user explicitly forbids external APIs.
+`model_tier` is `12b`, Navigator is red/yellow, sensitive mode is active, the
+lead is local-only, or the user explicitly forbids external APIs. On the open
+tier, Phase-2 tool discovery uses `scripts/osint-tools.py find` (local SQL index).
+
+**Integration tiering (`model_tier`):**
+- `12b` — ALL integrations dismissed; native capabilities only (dev-browser, Crawl4AI seam, `osint-tools` SQL, native verbs). `integrations/preflight.py --model-tier 12b` forces every integration `status: "dismissed"`.
+- `26b` / `31b` / `frontier` / `api` — integrations on by default EXCEPT `scoutpost` and `unpaywall` (opt-in at config), Navigator (entitlement-gated), and Noosphere (opt-in key, pending).
 
 Also preserve any existing `integrations.rlm` setup block from
 `.spotlight-config.json`. If it is absent, treat RLM as not installed:
@@ -264,7 +270,7 @@ If `review-feedback.json` exists AND `review-feedback-processed.json` is absent 
 Run integration preflight and check whether Mycroft passive monitoring is installed:
 
 ```
-execute-shell("python3 integrations/preflight.py --json")
+execute-shell("python3 integrations/preflight.py --model-tier {config.model_tier} --json")
 execute-shell('test -f ~/.mycroft/monitoring/monitor.py && echo true || echo false')
 ```
 
@@ -319,8 +325,9 @@ INTEGRATIONS:
   osint_navigator_required={config.integrations.osint_navigator.required_in_phase_2}
 SKILLS: integrations, osint, investigate, epistemic-grounding, acquisition-graduation, web-archiving, content-access, shell-safety, social-media-intelligence (load when investigation touches social media accounts, coordination, or narrative spread)
 
-MANDATORY NAVIGATOR RULE:
-If osint_navigator_required=true, before writing methodology.json:
+TOOL DISCOVERY (tier-aware — pick ONE path by osint_navigator_required):
+
+If osint_navigator_required=true (subscription / entitled deployments), before writing methodology.json:
 1. invoke-skill("integrations")
 2. invoke-skill("osint")
 3. read-file("integrations/osint-navigator/integration.md")
@@ -328,9 +335,15 @@ If osint_navigator_required=true, before writing methodology.json:
 5. write a minimal Navigator request JSON to {CASE_DIR}/research/
 6. call /api/tools/search at least once for each investigation direction, or once with a combined query covering all directions when there is only one broad lead
 7. save every raw Navigator response to {CASE_DIR}/research/
-8. cite those response paths in methodology.json
-
+8. cite those response paths in methodology.json (navigator.queries[])
 Do not use /api/query unless the tool-selection question needs synthesized workflow advice. Prefer /api/tools/search because it is unlimited.
+
+If osint_navigator_required=false (local / open-weights deployments — no Navigator entitlement), discover tools from the LOCAL index — no external call, no mandatory reads:
+- execute-shell("python3 scripts/osint-tools.py find \"<lead-derived keywords>\" [--category <cat>] [--limit 8]")
+  Derive keywords from the lead = entity type + geography + task. Scope with --category when the direction is clear (`python3 scripts/osint-tools.py categories` lists them). Examples:
+    Swiss foundation leadership  ->  find "switzerland swiss zug registry" --category public_records   ;   find "people directory" --category people
+    crypto wallet tracing        ->  find "ethereum wallet blockchain" --category cryptocurrency
+- list the tools you chose in methodology.json tools_required[]; set navigator:{required:false, used:false, fallback_reason:"local osint-tools index (no Navigator entitlement)"} — or omit the navigator block entirely.
 
 Approved brief directions:
 {directions}
@@ -349,16 +362,17 @@ output = wait-agent(handle)
 When the agent completes:
 
 1. `read-file("{CASE_DIR}/data/methodology.json")`
-2. Run the Navigator methodology gate:
+2. Run the methodology gate (tier-aware — the validator enforces the Navigator contract ONLY when osint_navigator_required=true; on the open tier it just checks the navigator block is absent or consistent):
 
    ```
    execute-shell("python3 scripts/validate-methodology-navigator.py {CASE_DIR} --config .spotlight-config.json")
    ```
 
-   If validation fails, do not present the methodology for approval. Re-spawn
-   or re-prompt the investigator:
+   If validation fails, do not present the methodology for approval. Re-spawn or
+   re-prompt the investigator with the fix the validator prints:
 
-   > "Navigator was green in preflight, but methodology.json does not show Navigator use. Revise the methodology. Use /api/tools/search before returning. Save response paths and cite them in navigator.queries[]."
+   > (Navigator entitled) "methodology.json does not show Navigator use. Use /api/tools/search before returning; save response paths and cite them in navigator.queries[]."
+   > (local / open tier) "Fix the navigator block per the validator: set navigator:{required:false, used:false, fallback_reason:...} or omit it, and ensure tools_required[] lists the tools osint-tools returned."
 
 3. Present a summary of the proposed methodology to the user
 4. **Tier split (read first):** on the **local / Pi / non-frontier harness**, the RLM is **default-on and auto-run per research cycle without a user-approval gate** — see the runtime adapter; it benchmarks better on small models, which need the context reduction. The proposal/approval flow in this step applies to **interactive cloud/frontier setups only** (where RLM is opt-in). If you are running autonomously (no user to ask), do not propose — just run RLM per the adapter and continue.

@@ -91,6 +91,7 @@ def main():
         report_extra_fields=lambda m: {"type": m.get("type", "api")},
         text_columns=[("id", "ID", 20), ("type", "Type", 10), ("status", "Status", 8)],
         description="Preflight check for Spotlight external tool integrations",
+        dismiss_when_constrained=True,
     )
 
 

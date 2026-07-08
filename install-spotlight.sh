@@ -210,6 +210,11 @@ MAIGRET_VERSION="0.4.4"
 : "${SPOTLIGHT_RUNTIME:=claude}"
 : "${SPOTLIGHT_LOCAL_SERVER:=}"
 : "${SPOTLIGHT_LOCAL_MODEL:=gemma}"
+# model_tier drives integration dismissal: `12b` = constrained (ALL integrations off;
+# native dev-browser + Crawl4AI seam + osint-tools SQL only). 26b|31b|frontier|api =
+# integrations on by default. Defaults preserve existing behavior; set 12b explicitly
+# for the constrained local tune tier.
+: "${SPOTLIGHT_MODEL_TIER:=$([ "$SPOTLIGHT_MODE" = "local" ] && echo 26b || echo frontier)}"
 : "${SPOTLIGHT_AGENT:=opencode}"
 : "${SPOTLIGHT_OPENCODE_INTERFACE:=cli}"
 : "${SPOTLIGHT_OPENCODE_PROVIDER:=}"
@@ -1161,6 +1166,7 @@ except Exception:
   "cases_root": "$SPOTLIGHT_CASES_ROOT",
   "install_path": "$SPOTLIGHT_DIR",
   "mode": "$SPOTLIGHT_MODE",
+  "model_tier": "$SPOTLIGHT_MODEL_TIER",
   "runtime": "$SPOTLIGHT_RUNTIME",
   "local_server": $([ -n "$SPOTLIGHT_LOCAL_SERVER" ] && printf '"%s"' "$SPOTLIGHT_LOCAL_SERVER" || echo null),
   "agent": $([ "$SPOTLIGHT_MODE" = "local" ] && printf '"%s"' "$SPOTLIGHT_AGENT" || echo null),
@@ -1202,6 +1208,20 @@ except Exception:
   "last_used": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 CONFIG_EOF
+fi
+
+step "OSINT tool index (local SQL — replaces the inline catalogue for tool discovery)"
+if [ "$DRY_RUN" != "1" ]; then
+  if command -v uv >/dev/null 2>&1; then
+    _osint_build="uv run --quiet --with datasets --with pandas python3 scripts/osint-tools.py build"
+  else
+    _osint_build="python3 scripts/osint-tools.py build"
+  fi
+  if (cd "$SPOTLIGHT_DIR" && eval "$_osint_build"); then
+    printf "OK    OSINT tool index built — 'osint-tools find' is ready\n"
+  else
+    printf "WARN  OSINT tool index not built (needs datasets+pandas). Run in %s:\n      %s\n" "$SPOTLIGHT_DIR" "$_osint_build"
+  fi
 fi
 
 step "Case workspace and vault scaffold"

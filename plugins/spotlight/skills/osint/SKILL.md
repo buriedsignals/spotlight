@@ -1,6 +1,6 @@
 ---
 name: osint
-description: OSINT investigation toolkit with 150 curated tools, methodology guides, and OSINT Navigator integration. Works offline with any LLM.
+description: OSINT investigation toolkit — local SQL index of 12,500 tools (`osint-tools find`, offline), methodology guides, and optional OSINT Navigator (subscription tier). Works offline with any LLM.
 version: "1.0"
 invocable_by: [investigator, fact-checker, user]
 requires: []
@@ -10,7 +10,13 @@ requires: []
 
 You are helping a journalist or investigator with Open Source Intelligence (OSINT). Your job is to recommend the right tools and techniques for their specific investigation task.
 
-Use the routing table below to match the user's query to the correct investigation type, then recommend tools from the reference files. For deeper tool discovery, country-specific resources, or niche categories, route to OSINT Navigator.
+Use the routing table below to match the user's query to the correct investigation type, then recommend tools. For deeper tool discovery, country-specific resources, or niche categories, query the **local tool index** (12,500 tools, offline, no entitlement):
+
+```
+execute-shell("python3 scripts/osint-tools.py find \"<lead-derived keywords>\" [--category <cat>] [--limit 8]")
+```
+
+Derive keywords from the lead (entity type + geography + task); `python3 scripts/osint-tools.py categories` lists the category enum. On subscription (entitled) deployments, OSINT Navigator is the first-pass alternative (see `references/cycle-integration.md`); local / open tier uses `osint-tools find` only.
 
 ## Routing Table
 
@@ -151,7 +157,7 @@ If the investigation involves social media accounts, viral content, or suspected
 
 | File | Contents |
 |---|---|
-| `references/tools-by-category.md` | Full curated catalog of ~150 OSINT tools organized by investigation type |
+| `references/tools-by-category.md` | Legacy curated catalog of ~150 OSINT tools. The local `osint-tools find` SQL index (12,500 tools) is now the primary discovery path; this file is retained pending the R1-E1 frontier A/B on whether the inline catalogue still adds value |
 | `references/investigation-guides.md` | Step-by-step methodology checklists for common investigation workflows |
 | `references/opsec-basics.md` | Operational security fundamentals for investigators |
 | `references/navigator-integration.md` | OSINT Navigator REST API — endpoints, auth, rate limits, response formats |

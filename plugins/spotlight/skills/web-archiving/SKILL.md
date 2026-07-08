@@ -49,10 +49,13 @@ record schema: `references/snapshot-record.md`. In brief:
 - **Access wall** — a no-session headless capture of a paywalled/authed page records the *wall*,
   not the content. If `access_wall` is true, mark the item `human_verification_required` and do
   not present it as content evidence.
-- **No dev-browser?** Degrade to the open-source scraping seam (Crawl4AI by default, no API
-  key; on a bot-block it escalates to Firecrawl only when FIRECRAWL_API_KEY is set), record
-  `acquisition_method: crawl4ai` (or `firecrawl` if it escalated — the CLI reports which via
-  `--json` `.provider`), no MHTML — then continue to Tier 1.
+- **No dev-browser for this capture?** dev-browser and the Crawl4AI scraping seam are **distinct
+  native capabilities, not substitutes** — dev-browser produces chain-of-custody MHTML; Crawl4AI
+  extracts content only. Without dev-browser you cannot produce a provenance-grade Tier-0 archive;
+  you may still extract the content via the Crawl4AI seam (no API key; on a bot-block it escalates
+  to Firecrawl only when FIRECRAWL_API_KEY is set), record `acquisition_method: crawl4ai` (or
+  `firecrawl` if it escalated — the CLI reports which via `--json` `.provider`) — but it is
+  **content-only, no MHTML**; mark it accordingly and continue to Tier 1.
 
   ```
   execute-shell: python3 -m integrations.scraping {URL} --out {CASE_DIR}/evidence/snapshots/{slug}.md
