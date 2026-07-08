@@ -1,7 +1,7 @@
 """Provider-agnostic scraping contract for Spotlight (loop U14 / PRD Workstream G).
 
 One result shape regardless of backend — Crawl4AI (default, open-source, no API
-key), Firecrawl (opt-in), Scrapling stealth (U17 escalation) — so skills and the
+key), Firecrawl (opt-in bot-block escape hatch) — so skills and the
 evidence pipeline never couple to a vendor. Lifted from the Scoutpost migration
 (tools/scoutpost-scrape): raw_markdown, NOT fit_markdown (KTD7) — main-content
 filtering destroys evidence pages, and Spotlight persists scraped markdown as
@@ -44,5 +44,5 @@ class ScrapeResult:
 
     def is_empty(self) -> bool:
         """True when the fetch returned no usable body — the U17 escalation
-        signal (Crawl4AI bot-blocked/empty -> Scrapling stealth)."""
+        signal (Crawl4AI bot-blocked/empty -> optional Firecrawl)."""
         return not self.markdown.strip()

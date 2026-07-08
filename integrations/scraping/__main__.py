@@ -3,11 +3,13 @@
     python3 -m integrations.scraping <url>                   # markdown to stdout
     python3 -m integrations.scraping <url> --out page.md      # ... to a file
     python3 -m integrations.scraping <url> --provider firecrawl
-    python3 -m integrations.scraping <url> --no-escalate      # disable Scrapling fallback
+    python3 -m integrations.scraping <url> --no-escalate      # disable Firecrawl fallback
+    python3 -m integrations.scraping <url> --tor              # route via Tor (U7, anonymize)
     python3 -m integrations.scraping <path.pdf> --pdf         # parse a local PDF
     python3 -m integrations.scraping <url> --json             # full ScrapeResult + hash
 
-Default provider is Crawl4AI (open-source, no API key). Exit 0 on success; 3 on a
+Default provider is Crawl4AI (open-source, no API key); on a bot-block it escalates
+to Firecrawl only when FIRECRAWL_API_KEY is set. Exit 0 on success; 3 on a
 scrape/parse failure (unreachable, bot-blocked, needs-OCR, backend not installed),
 with the error on stderr.
 """
@@ -28,10 +30,17 @@ def main(argv: list[str] | None = None) -> int:
         description="Fetch a URL (or parse a local PDF) to evidence markdown via the scraping seam.",
     )
     ap.add_argument("target", help="URL to scrape, or a local .pdf path with --pdf")
-    ap.add_argument("--provider", default=None, help="crawl4ai (default) | firecrawl | scrapling")
+    ap.add_argument("--provider", default=None, help="crawl4ai (default) | firecrawl")
     ap.add_argument("--pdf", action="store_true", help="treat target as a local PDF path (pdftotext)")
     ap.add_argument("--out", default=None, help="write output to this path instead of stdout")
-    ap.add_argument("--no-escalate", action="store_true", help="disable the Scrapling stealth escalation")
+    ap.add_argument("--no-escalate", action="store_true", help="disable the Firecrawl bot-block escalation")
+    # Tor (U7): --tor anonymizes this fetch; --no-tor forces direct even when
+    # SPOTLIGHT_ANONYMIZE_FETCH is set for the run. Neither = defer to the env.
+    tor = ap.add_mutually_exclusive_group()
+    tor.add_argument("--tor", dest="anonymize", action="store_true", default=None,
+                     help="route this fetch through Tor SOCKS (hide operator IP)")
+    tor.add_argument("--no-tor", dest="anonymize", action="store_false",
+                     help="force a direct fetch even if SPOTLIGHT_ANONYMIZE_FETCH is set")
     ap.add_argument("--json", action="store_true", help="emit the full ScrapeResult (with content_sha256) as JSON")
     args = ap.parse_args(argv)
 
@@ -41,7 +50,8 @@ def main(argv: list[str] | None = None) -> int:
 
             result = parse_pdf(args.target)
         else:
-            result = scrape(args.target, provider=args.provider, escalate=not args.no_escalate)
+            result = scrape(args.target, provider=args.provider,
+                            escalate=not args.no_escalate, anonymize=args.anonymize)
     except ScrapeError as exc:
         print(f"scrape failed: {exc}", file=sys.stderr)
         return 3

@@ -17,7 +17,7 @@ Two absolute rules:
 1. **NEVER investigate directly.** All research is delegated to agents. You orchestrate, evaluate, and present.
 2. **Gates require the user's explicit approval before proceeding.** No exceptions.
 
-All tool operations use abstract **verbs** defined in `AGENTS.md`. Your runtime adapter binds each verb to a native tool (e.g. `fetch` → firecrawl CLI, `spawn-agent` → your runtime's sub-agent primitive). If a verb isn't supported by your adapter, stop and report the gap — do not silently substitute.
+All tool operations use abstract **verbs** defined in `AGENTS.md`. Your runtime adapter binds each verb to a native tool (e.g. `fetch` → Crawl4AI via `integrations.scraping`, `search` → SearXNG via `integrations.search`, `spawn-agent` → your runtime's sub-agent primitive). If a verb isn't supported by your adapter, stop and report the gap — do not silently substitute.
 
 ---
 
@@ -31,19 +31,20 @@ Use `read-file` on `.spotlight-config.json` in the working directory. If it exis
 
 `case_workspace_root` is the active investigation workspace. `vault_path` is the durable knowledge vault. Do not write active case files into the vault. At case start, query the vault for prior context; at case end, ask before ingesting verified material into the vault.
 
-### 2. Search library detection
+### 2. Search/scrape backing detection
 
-Spotlight requires **firecrawl** (the universal contract) for `fetch` and `search` verb backings. Check with:
+Spotlight is **sovereign by default**: `fetch` → Crawl4AI (`integrations.scraping`, no API key), `search` → SearXNG (`integrations.search`, self-hosted). Firecrawl is an **optional** escape hatch (scrape fallback on a hard bot-block, or a `--union` search engine) enabled only when `FIRECRAWL_API_KEY` is present. Check the sovereign backings with:
 
 ```
-execute-shell("command -v firecrawl")
+execute-shell("command -v crwl || command -v uvx")   # Crawl4AI (or uvx cold-start)
+execute-shell("curl -s -o /dev/null -w '%{http_code}' \"${SEARXNG_URL:-http://localhost:8899}/search?q=ping&format=json\"")   # SearXNG
 ```
 
-If not found:
+If Crawl4AI is missing:
 
-> "No firecrawl CLI detected. Spotlight's `fetch` and `search` verbs require firecrawl. Run `install-spotlight.sh` so setup installs the reviewed `firecrawl-cli` version from `VALIDATED_DEPENDENCIES.md`, then set `FIRECRAWL_API_KEY`."
+> "No Crawl4AI detected. Spotlight's `fetch` verb uses Crawl4AI. Run `install-spotlight.sh` (provisions `crawl4ai` + `crawl4ai-setup`), or set `FIRECRAWL_API_KEY` to use the Firecrawl fallback."
 
-**STOP.** Do not proceed without firecrawl. (Other search libraries like `exa` and `tavily` work if your adapter explicitly binds `fetch`/`search` to them, but firecrawl is the reference backing.)
+If SearXNG is unreachable, `search` falls back to Firecrawl when `FIRECRAWL_API_KEY` is set; otherwise report the gap. Proceed once at least one search + one fetch backing is available — a pure-sovereign install (no Firecrawl key) is fully supported.
 
 ### 3. OSINT skill availability
 
@@ -271,7 +272,7 @@ Display a combined summary to the user so they know which external integrations 
 
 Typical expectations:
 
-- `firecrawl` ready (checked in step 2 already — Spotlight cannot start without it)
+- Sovereign search + fetch backing ready (checked in step 2: Crawl4AI + SearXNG; `firecrawl` optional, only if `FIRECRAWL_API_KEY` is set)
 - Integration `dev-browser` green if the `dev-browser` CLI is available
 - Integration `osint-navigator` green if `OSINT_NAV_API_KEY` is set
 - Other integrations (junkipedia, future integrations like serus/thinkpol) green only if user has access

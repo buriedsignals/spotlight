@@ -90,6 +90,10 @@ def validate_payload_sync() -> None:
     for copied_doc in sorted(path for path in (PLUGIN / "docs").iterdir() if path.is_file()):
         compare_file(ROOT / "docs" / copied_doc.name, copied_doc)
 
+    # Full Python seam packages that back the sovereign verbs (U2b): the plugin
+    # ships the whole `scraping`/`search` package so `python -m integrations.*`
+    # runs (Crawl4AI/SearXNG). __pycache__ is excluded by the build.
+    seam_packages = {"scraping", "search"}
     for copied in sorted(path for path in (PLUGIN / "integrations").rglob("*") if path.is_file()):
         allowed_root = copied.parent == PLUGIN / "integrations" and copied.name in {
             "README.md",
@@ -100,7 +104,12 @@ def validate_payload_sync() -> None:
         allowed_integration = copied.parent.parent == PLUGIN / "integrations" and (
             copied.name in {"integration.md", "manifest.json"} or copied.name.startswith("run_") and copied.suffix == ".py"
         )
-        if not (allowed_root or allowed_integration):
+        allowed_seam = (
+            copied.parent.parent == PLUGIN / "integrations"
+            and copied.parent.name in seam_packages
+            and copied.suffix == ".py"
+        )
+        if not (allowed_root or allowed_integration or allowed_seam):
             fail(f"plugin integration payload includes non-contract file: {copied.relative_to(ROOT)}")
         compare_file(ROOT / copied.relative_to(PLUGIN), copied)
 

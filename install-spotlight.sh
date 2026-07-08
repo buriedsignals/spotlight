@@ -1046,6 +1046,23 @@ fi
 step "Python dependencies"
 install_python_reviewed_deps
 
+# Opt-in opsec (U7): the anonymized `fetch` (`--tor` / SPOTLIGHT_ANONYMIZE_FETCH)
+# routes Crawl4AI through a local Tor SOCKS proxy on 9050 so scraping a target of
+# investigation never reveals the operator's IP. Off by default; enable with
+# SPOTLIGHT_TOR=1. Best-effort — a missing Tor only disables the anonymized path.
+step "Tor (anonymized fetch, opt-in)"
+if [ "${SPOTLIGHT_TOR:-0}" = "1" ]; then
+  if command -v tor >/dev/null 2>&1; then
+    printf "%s✓%s tor present (SOCKS 9050)\n" "$_c_green" "$_c_reset"
+  elif [ "$DRY_RUN" = "1" ]; then
+    printf 'DRY-RUN: install tor (SOCKS 9050) for anonymized fetch\n'
+  else
+    ensure_tool tor || printf "%s→%s tor install skipped; --tor fetch unavailable until 'tor' is on PATH (SOCKS 9050)\n" "$_c_yellow" "$_c_reset"
+  fi
+else
+  printf "%s→%s Tor not selected (SPOTLIGHT_TOR!=1); anonymized --tor fetch stays off\n" "$_c_yellow" "$_c_reset"
+fi
+
 step "Browser acquisition"
 if [ "$SPOTLIGHT_INT_DEVBROWSER" = "true" ]; then
   ensure_npm_global_exact dev-browser dev-browser

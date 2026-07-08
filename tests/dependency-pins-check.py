@@ -14,13 +14,13 @@ MANIFEST = MANIFEST_PATH.read_text()
 
 EXPECTED = {
     "firecrawl-cli": "1.3.1",
-    "@tobilu/qmd": "2.0.1",
+    "@tobilu/qmd": "2.5.3",
     "dev-browser": "0.2.8",
     "@anthropic-ai/claude-code": "2.1.169",
     "@google/gemini-cli": "0.45.2",
     "@openai/codex": "0.138.0",
-    "opencode-ai": "1.16.2",
-    "@mariozechner/pi-coding-agent": "0.73.1",
+    "opencode-ai": "1.17.7",
+    "@earendil-works/pi-coding-agent": "0.79.6",
     "jsonschema": "4.25.1",
     "requests": "2.32.5",
     "maigret": "0.4.4",
@@ -46,7 +46,7 @@ LOOSE_NPM_INSTALLS = [
     "@google/gemini-cli",
     "@openai/codex",
     "opencode-ai",
-    "@mariozechner/pi-coding-agent",
+    "@earendil-works/pi-coding-agent",
 ]
 
 

@@ -18,8 +18,8 @@ Fixed vocabulary of abstract operations. Every runtime adapter MUST implement al
 
 | Verb | Signature | Semantics | Universal backing |
 |------|-----------|-----------|-------------------|
-| `fetch` | `fetch(url, output_path)` | Scrape URL content, save to file | `firecrawl scrape` |
-| `search` | `search(query, output_path, limit)` | Web search, save results to file | `firecrawl search` |
+| `fetch` | `fetch(url, output_path)` | Scrape URL content, save to file | `integrations.scraping` (Crawl4AI; Firecrawl fallback if keyed) |
+| `search` | `search(query, output_path, limit)` | Web search, save results to file | `integrations.search` (SearXNG; Firecrawl union optional) |
 | `read-file` | `read-file(path)` | Read file contents | filesystem |
 | `write-file` | `write-file(path, content)` | Write file (full overwrite) | filesystem |
 | `edit-file` | `edit-file(path, old, new)` | Targeted string replacement | filesystem |
@@ -141,6 +141,20 @@ A sensitive investigation cannot satisfy the "document trail" readiness criterio
 
 To activate: set `sensitive: true` in this file or issue a runtime command.
 To deactivate: set `sensitive: false` or issue a runtime command.
+
+### Anonymized fetch (Tor) — a distinct posture
+
+`sensitive` mode and **anonymized fetch** are two *different* postures; do not conflate them:
+
+- **`sensitive: true`** = **no external egress.** `fetch`/`search` are stripped; research is local-only.
+- **anonymized fetch (Tor)** = **egress still happens, but the operator's IP is hidden.** Use it when you *must* scrape a target-of-investigation without revealing that the investigation is looking (KTD8 / U7). The `fetch` seam routes the Crawl4AI browser through the local Tor SOCKS proxy (`socks5://127.0.0.1:9050`).
+
+Triggering (per-run is the default posture):
+
+- **Per-run:** set `SPOTLIGHT_ANONYMIZE_FETCH=true` (or `anonymize_fetch: true` in this manifest's frontmatter) — every `fetch` in the run egresses via Tor.
+- **Per-fetch override:** pass `--tor` / `--no-tor` to a single `integrations.scraping` call.
+
+A Tor-proxied fetch **never silently falls back to a direct (de-anonymizing) fetch** — on a Tor failure the seam raises, and the operator chooses to re-run `--no-tor` (revealing their IP) or abort. Tor exits are widely blocklisted, so an anonymized fetch of a hard target may simply fail; that is by design, not a bug.
 
 ## Cases Directory Structure
 

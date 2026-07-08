@@ -17,7 +17,7 @@ from .scrape_types import ScrapeError, ScrapeResult
 DEFAULT_TIMEOUT_MS = 45_000
 
 
-async def _afetch(url: str, timeout_ms: int) -> ScrapeResult:  # pragma: no cover - live path
+async def _afetch(url: str, timeout_ms: int, proxy: str | None = None) -> ScrapeResult:  # pragma: no cover - live path
     try:
         from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
     except ImportError as exc:  # not provisioned yet
@@ -26,7 +26,12 @@ async def _afetch(url: str, timeout_ms: int) -> ScrapeResult:  # pragma: no cove
             "or select SCRAPE_PROVIDER=firecrawl"
         ) from exc
 
-    async with AsyncWebCrawler(config=BrowserConfig(headless=True, verbose=False)) as crawler:
+    # proxy (U7): a Tor SOCKS endpoint routes the browser's egress so the target
+    # never sees the operator's IP. Passed straight to Playwright's launch proxy.
+    browser_kwargs = {"headless": True, "verbose": False}
+    if proxy:
+        browser_kwargs["proxy"] = proxy
+    async with AsyncWebCrawler(config=BrowserConfig(**browser_kwargs)) as crawler:
         result = await crawler.arun(
             url=url,
             config=CrawlerRunConfig(cache_mode=CacheMode.BYPASS, page_timeout=timeout_ms),
@@ -39,5 +44,5 @@ async def _afetch(url: str, timeout_ms: int) -> ScrapeResult:  # pragma: no cove
     return map_crawl_result(result, url, provider="crawl4ai")
 
 
-def fetch(url: str, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> ScrapeResult:  # pragma: no cover - live path
-    return asyncio.run(_afetch(url, timeout_ms))
+def fetch(url: str, timeout_ms: int = DEFAULT_TIMEOUT_MS, proxy: str | None = None) -> ScrapeResult:  # pragma: no cover - live path
+    return asyncio.run(_afetch(url, timeout_ms, proxy))

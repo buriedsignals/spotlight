@@ -49,7 +49,7 @@ Tier 0 does **not** invent new evidence-bundle fields. Map the snapshot onto a s
 |--------------------------------|----------------|
 | `id`                           | `snap-<first 8 hex of mhtml sha>` |
 | `query_or_task`                | `"web-archiving Tier-0 snapshot: <url>"` |
-| `acquisition_method`           | `"dev_browser"` (or `"crawl4ai"`/`"scrapling"` on the seam fallback) |
+| `acquisition_method`           | `"dev_browser"` (or `"crawl4ai"`/`"firecrawl"` on the seam fallback) |
 | `source_url`                   | the URL |
 | `accessed`                     | `captured_at` |
 | `sha256`                       | the **MHTML** artifact hash (64 hex) |

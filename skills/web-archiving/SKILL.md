@@ -50,8 +50,8 @@ record schema: `references/snapshot-record.md`. In brief:
   not the content. If `access_wall` is true, mark the item `human_verification_required` and do
   not present it as content evidence.
 - **No dev-browser?** Degrade to the open-source scraping seam (Crawl4AI by default, no API
-  key; it escalates to Scrapling stealth on a bot-block), record
-  `acquisition_method: crawl4ai` (or `scrapling` if it escalated — the CLI reports which via
+  key; on a bot-block it escalates to Firecrawl only when FIRECRAWL_API_KEY is set), record
+  `acquisition_method: crawl4ai` (or `firecrawl` if it escalated — the CLI reports which via
   `--json` `.provider`), no MHTML — then continue to Tier 1.
 
   ```
