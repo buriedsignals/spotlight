@@ -39,7 +39,10 @@ if (process.env.FIREWORKS_API_KEY) {
 if (process.env.OPENROUTER_API_KEY) {
 	registerProvider('openrouter', {
 		api: 'openai-completions',
-		baseUrl: 'https://openrouter.ai/api/v1',
+		// Point at the local inject-proxy (SPOTLIGHT_OPENROUTER_BASEURL=http://127.0.0.1:8091/v1)
+		// to add `reasoning:{enabled:true}` so Gemma-4's thought returns in a separate field
+		// instead of leaking `<channel>` into content/tool-calls (the bug that sent us local).
+		baseUrl: process.env.SPOTLIGHT_OPENROUTER_BASEURL ?? 'https://openrouter.ai/api/v1',
 		apiKey: process.env.OPENROUTER_API_KEY,
 		contextWindow: 131072, // Gemma-4 native 128K window
 		maxTokens: 8192,
