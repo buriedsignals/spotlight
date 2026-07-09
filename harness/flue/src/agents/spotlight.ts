@@ -1,6 +1,6 @@
 import { defineAgent, defineAgentProfile } from '@flue/runtime';
 import { local } from '@flue/runtime/node';
-import { roleBody, FLUE_VERB_ADAPTER } from '../lib/roles.ts';
+import { roleBody, FLUE_VERB_ADAPTER, HARNESS_ROOT } from '../lib/roles.ts';
 
 // The local/cloud tier model. llama-server serves the Gemma GGUF as `local/…`;
 // swap to the 31B or Fireworks GLM-5.2 via env (U10/U13).
@@ -96,7 +96,9 @@ export default defineAgent(() => ({
 
 You are the Spotlight orchestrator. You NEVER investigate directly. You delegate all research to the \`investigator\` subagent and all verification to the \`fact-checker\` subagent (via the \`task\` tool), then evaluate results, manage gates, and synthesise for the user. Follow the \`spotlight\` skill for the phase pipeline (brief → methodology → research cycles → fact-check → report).
 
-**Gates are real and require the user — no exceptions, on every path including this local harness.** At each gate the skill defines (brief direction, methodology, and the fact-check→report handoff), present your synthesis and decisions, then **END YOUR TURN**. Do not proceed, delegate, or self-approve. The user replies with approval or changes in the very next message; act only on that reply. Never skip a gate, never auto-approve, and never treat the absence of a reply as approval — stopping and waiting IS the correct behavior. (The RLM context-hygiene pass is the one step you run without a gate, per the adapter.)`,
+**Gates are real and require the user — no exceptions, on every path including this local harness.** At each gate the skill defines (brief direction, methodology, and the fact-check→report handoff), present your synthesis and decisions, then **END YOUR TURN**. Do not proceed, delegate, or self-approve. The user replies with approval or changes in the very next message; act only on that reply. Never skip a gate, never auto-approve, and never treat the absence of a reply as approval — stopping and waiting IS the correct behavior. (The RLM context-hygiene pass is the one step you run without a gate, per the adapter.)
+
+**Fact-check evidence gate (deterministic).** After the fact-checker returns and BEFORE presenting the fact-check gate, run \`bash\`: \`python3 ${HARNESS_ROOT}/scripts/validate-fact-check.py <CASE_DIR>\`. If it FAILS, re-delegate ONCE to the fact-checker with the failure reasons verbatim ("these verified verdicts are not supported by the cited files — mark them unverified with the reason, or re-acquire the source"); re-run the validator on its revision. Present the gate only after it passes, or with the remaining failures explicitly disclosed as unverified. A claim nothing on disk supports is never "verified".`,
 	compaction: COMPACTION,
 	subagents: [investigator, factChecker],
 }));

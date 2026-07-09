@@ -848,7 +848,18 @@ SESSION="\${1:?usage: spotlight-local <session-id> \"<message>\"}"
 shift || true
 MSG="\${*:?usage: spotlight-local <session-id> \"<message>\"}"
 INPUT_JSON="\$(MSG="\$MSG" python3 -c 'import json,os; print(json.dumps({"message": os.environ["MSG"]}))')"
-"\$FLUE" run spotlight --id "\$SESSION" --input "\$INPUT_JSON"
+
+# Empty-turn guard: a small local orchestrator occasionally ends a long turn with an
+# EMPTY final message (and then mirrors the empty on the next turn — grounded in the
+# 2026-07-10 chain test). An orchestrator turn must never legitimately end empty (it
+# always owes the user a gate presentation), so one automatic nudge is always safe
+# and demonstrably breaks the mirror. tee keeps live streaming in the terminal.
+OUT="\$("\$FLUE" run spotlight --id "\$SESSION" --input "\$INPUT_JSON" | tee /dev/stderr)"
+if printf '%s\\n' "\$OUT" | tail -3 | grep -q '"text":""'; then
+  echo "(empty final reply — auto-nudging once)" >&2
+  NUDGE='{"message":"You returned an empty reply. Respond with text now: present your synthesis or status for the current gate, then stop and wait for approval."}'
+  exec "\$FLUE" run spotlight --id "\$SESSION" --input "\$NUDGE"
+fi
 LAUNCHER_EOF
     chmod +x "$HOME/.local/bin/spotlight-local"
     printf "%s✓%s Launcher installed at ~/.local/bin/spotlight-local (llama.cpp + flue run spotlight)\n" "$_c_green" "$_c_reset"

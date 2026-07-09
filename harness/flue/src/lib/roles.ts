@@ -13,7 +13,7 @@ const AGENTS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..
 // Injected into the adapter so `-m integrations.*` calls (PYTHONPATH) and case files
 // (absolute CASE_DIR) are cwd-independent — kills the "No module named integrations"
 // seam failure AND the `cases/X/cases/X` nesting when a subagent's cwd is the case dir.
-const HARNESS_ROOT = resolve(AGENTS_DIR, '..');
+export const HARNESS_ROOT = resolve(AGENTS_DIR, '..');
 
 // The Python interpreter for the `integrations.*` seams (crawl4ai / RLM).
 // MUST be the Spotlight venv's python — NOT bare `python3` (which resolves to the
