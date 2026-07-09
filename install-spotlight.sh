@@ -209,12 +209,19 @@ MAIGRET_VERSION="0.4.4"
 : "${SPOTLIGHT_MODE:=cloud}"
 : "${SPOTLIGHT_RUNTIME:=claude}"
 : "${SPOTLIGHT_LOCAL_SERVER:=}"
-: "${SPOTLIGHT_LOCAL_MODEL:=gemma}"
-# model_tier drives integration dismissal: `12b` = constrained (ALL integrations off;
-# native dev-browser + Crawl4AI seam + osint-tools SQL only). 26b|31b|frontier|api =
-# integrations on by default. Defaults preserve existing behavior; set 12b explicitly
-# for the constrained local tune tier.
-: "${SPOTLIGHT_MODEL_TIER:=$([ "$SPOTLIGHT_MODE" = "local" ] && echo 26b || echo frontier)}"
+: "${SPOTLIGHT_LOCAL_MODEL:=gemma12b}"
+# model_tier drives integration dismissal (`12b` = constrained: native dev-browser +
+# Crawl4AI seam + osint-tools SQL only; 26b|31b|frontier|api = integrations on), the
+# harness compaction profile, and the launcher's reasoning budget. The configurator
+# sends it; when unset, derive it from the model choice.
+if [ -z "${SPOTLIGHT_MODEL_TIER:-}" ]; then
+  case "${SPOTLIGHT_LOCAL_MODEL:-}" in
+    gemma12b) SPOTLIGHT_MODEL_TIER="12b" ;;
+    gemma26b) SPOTLIGHT_MODEL_TIER="26b" ;;
+    gemma31b) SPOTLIGHT_MODEL_TIER="31b" ;;
+    *) SPOTLIGHT_MODEL_TIER="$([ "$SPOTLIGHT_MODE" = "local" ] && echo 26b || echo frontier)" ;;
+  esac
+fi
 : "${SPOTLIGHT_AGENT:=opencode}"
 : "${SPOTLIGHT_OPENCODE_INTERFACE:=cli}"
 : "${SPOTLIGHT_OPENCODE_PROVIDER:=}"
@@ -227,11 +234,20 @@ MAIGRET_VERSION="0.4.4"
 : "${JUNKIPEDIA_API_KEY:=}"
 : "${SPOTLIGHT_INT_UNPAYWALL:=false}"
 : "${UNPAYWALL_EMAIL:=}"
-: "${SPOTLIGHT_INT_RLM:=false}"
-: "${SPOTLIGHT_RLM_MODE:=off}"
+# RLM is runtime-auto on the local tier (PRD): `fetch` distills every scraped page
+# through the local e4b AND the harness uses it as the conversation-compaction
+# summarizer. Cloud/frontier keep it opt-in (distillation is a skill-gated proposal there).
+: "${SPOTLIGHT_INT_RLM:=$([ "$SPOTLIGHT_MODE" = "local" ] && echo true || echo false)}"
+: "${SPOTLIGHT_RLM_MODE:=$([ "$SPOTLIGHT_MODE" = "local" ] && echo local_llamacpp_e4b || echo off)}"
 : "${SPOTLIGHT_RLM_MODEL:=}"
 : "${SPOTLIGHT_RLM_PREFILTER:=}"
 : "${SPOTLIGHT_RLM_HYBRID:=}"
+# The RLM GGUF source (HF repo + file). Defaults to the stock instruction-tuned e4b
+# (verified public on HF). Empty = no download; the launcher serves the RLM only when
+# SPOTLIGHT_RLM_GGUF_PATH (written to .env) exists, and degrades gracefully (raw
+# fetches, session-model compaction) when it doesn't.
+: "${SPOTLIGHT_RLM_REPO:=unsloth/gemma-4-E4B-it-GGUF}"
+: "${SPOTLIGHT_RLM_GGUF:=gemma-4-E4B-it-Q4_K_M.gguf}"
 : "${FIRECRAWL_API_KEY:?firecrawl key missing from config}"
 : "${OSINT_NAV_API_KEY:?osint-navigator key missing from config}"
 
@@ -244,75 +260,40 @@ fi
 
 # Derive model artifact names from the model selection.
 #
-# Two tiers, both abliterated journalist tunes, both Ollama-native + HF GGUF
-# available for the llamacpp path:
+# Roster (2026-07-09): the Gemma-4 sovereign tiers, all llama.cpp GGUFs (repo +
+# filename pairs verified against the HF API; the configurator sends the repo via
+# SPOTLIGHT_MODEL_REPO — see install/setup_server.py MODEL_REPOS):
 #
-# RECOMMENDED tier:
-#   gemma31b — Google Gemma 4 31B (Q4). 32 GB Macs. RECOMMENDED default.
-#             Top of the locally-runnable pack on the OSINT benchmark
-#             (facet 0.881 vs the 27B tune's 0.825), lowest hallucination
-#             of all 18 models (1.2%), and correctly REFUSES the doorstep/
-#             children ethics probe. Non-abliterated, no thinking mode, no
-#             stop-token workaround. Ollama path uses gemma4:31b-it-qat; the
-#             llama-server path downloads the unsloth Q4_K_M GGUF (which the
-#             current Ollama cannot import). Slower prompt-processing than the
-#             27B at long context — expect patience on deep investigations.
+#   gemma12b — Spotlight procedure-tuned orchestrator (buriedsignals v3, Q4_K_M,
+#              ~7 GB). Default; the speed pick; 16 GB min, 24 GB for the full
+#              stack with the RLM. Trained on real Spotlight runs to drive the
+#              gated pipeline (see going-sovereign.html).
+#   gemma26b — unsloth gemma-4-26B-A4B MoE (UD-Q4_K_M, ~18 GB). 26B knowledge,
+#              4B active per token — near-12B decode speed. 32 GB min.
+#   gemma31b — unsloth gemma-4-31B (Q4_K_M, ~18 GB). Strongest local tier on the
+#              OSINT benchmark (facet 0.881 at Q4, lowest hallucination). Dense —
+#              slower prompt-processing on deep investigations. 48 GB for the
+#              full stack.
 #
-#   qwen27b — Tom's Qwen 3.6 27B journalist tune. 32 GB Macs. Alternative.
-#             Fine-tuned for the investigative format, refuses the ethics
-#             probe, Ollama-compatible, faster than Gemma 31B. Runs in
-#             thinking mode (see below).
-#             Same investigative-journalism corpus as the 9B, fine-tuned on
-#             Huihui's abliterated Qwen 3.6 base. Standard Q4_K_M quant.
-#             Setup form's fit-check enforces 32 GB minimum before this
-#             tier is selectable. Runs in thinking mode (see below).
-#
-# Removed in this revision:
-#   - qwen9b (Tom's qwen3.5-9B journalist tune) — REMOVED for ethics failure:
-#     on the doorstep/children probe it COMPLIES (compiles the targeting info)
-#     rather than refusing. No small local model can safely replace it (a
-#     vanilla 12B collapses on Spotlight's investigator prompt), so the small
-#     local tier is dropped — <32 GB devices use Frontier/cloud mode. The HF
-#     repo has been deleted.
-#   - gemma-e4b (Tom's gemma4 E4B journalist) — REMOVED for the same ethics
-#     failure (worse: emits family-surveillance tradecraft). HF repo deleted.
-#   - gemma (unsloth gemma-4-26B-A4B MoE) — 17 GB OOMs on 16 GB Macs; the
-#     active-param-vs-file-footprint trap that misled Luc.
-#   - qwen27b @ HauhauCS IQ2_M — failed to load on our test machine
-#     (non-standard K_P quants + mmproj vision file appear Ollama-incompat).
-#   - qwen27b @ raw Huihui abliterated — superseded by Tom's journalist
-#     fine-tune built on the same base. Same on-disk footprint, better
-#     bench scores on investigative-journalism prompts.
+# Removed earlier for ethics failures (doorstep/children probe): qwen9b + the
+# abliterated e4b journalist (HF repos deleted). qwen27b retired with the Ollama
+# path (its no-think codepath is damaged; needs Ollama stop-token workarounds).
 case "$SPOTLIGHT_LOCAL_MODEL" in
-  gemma31b)
-    GGUF_FILE="gemma-4-31B-it-Q4_K_M.gguf"
-    # Ollama path uses the OFFICIAL Gemma-4 31B QAT tag (loads cleanly); the
-    # unsloth GGUF used on the llama-server path does NOT import into current
-    # Ollama, so the two paths intentionally use different sources of the same
-    # Q4 Gemma-4 31B. Gemma has no thinking mode and no stop-token bug, so it
-    # needs none of the qwen27b workarounds below.
-    OLLAMA_MODEL_DEFAULT="gemma4:31b-it-qat"
-    OLLAMA_ALIAS_DEFAULT="spotlight-gemma31b"
-    OLLAMA_SIZE_LABEL="~18 GB"
-    ;;
-  qwen27b)
-    GGUF_FILE="qwen3.6-27b-abliterated-journalist-Q4_K_M.gguf"
-    OLLAMA_MODEL_DEFAULT="hf.co/tomvaillant/qwen3.6-27b-abliterated-journalist-GGUF:Q4_K_M"
-    OLLAMA_ALIAS_DEFAULT="spotlight-qwen27b"
-    OLLAMA_SIZE_LABEL="~15 GB"
-    ;;
-  *)
-    GGUF_FILE=""
-    OLLAMA_MODEL_DEFAULT=""
-    OLLAMA_ALIAS_DEFAULT=""
-    OLLAMA_SIZE_LABEL=""
-    ;;
+  gemma12b) GGUF_FILE="gemma-4-12b-spotlight-orchestrator-Q4_K_M.gguf" ;;
+  gemma26b) GGUF_FILE="gemma-4-26B-A4B-it-UD-Q4_K_M.gguf" ;;
+  gemma31b) GGUF_FILE="gemma-4-31B-it-Q4_K_M.gguf" ;;
+  *)        GGUF_FILE="" ;;
 esac
 
+# Local serving is llama.cpp, full stop: the Flue/Pi harness needs llama-server's
+# --jinja tool-calling grammar, which Ollama cannot expose for these models (verified
+# U6: "does not support tools"). An Ollama setup choice is coerced with a notice.
+if [ "$SPOTLIGHT_MODE" = "local" ] && [ "$SPOTLIGHT_LOCAL_SERVER" != "llamacpp" ]; then
+  printf '→ Local serving runs on llama.cpp (the harness needs --jinja tool-calling; Ollama cannot serve tools for these models). Overriding SPOTLIGHT_LOCAL_SERVER=%s.\n' "${SPOTLIGHT_LOCAL_SERVER:-<unset>}"
+  SPOTLIGHT_LOCAL_SERVER="llamacpp"
+fi
 if [ "$SPOTLIGHT_LOCAL_SERVER" = "llamacpp" ]; then
   LOCAL_PORT="8080"
-elif [ "$SPOTLIGHT_LOCAL_SERVER" = "ollama" ]; then
-  LOCAL_PORT="11434"
 else
   LOCAL_PORT=""
 fi
@@ -667,9 +648,12 @@ ensure_npm_global_exact qmd @tobilu/qmd
 # =====================================================================
 if [ "$SPOTLIGHT_MODE" = "local" ]; then
 
-  # ---- Inference server (llama-server OR Ollama) ----
-  if [ "$SPOTLIGHT_LOCAL_SERVER" = "llamacpp" ]; then
+  # ---- Inference server: llama.cpp (the launcher serves orchestrator + RLM) ----
     step "Local inference (llama-server)"
+    if [ -z "$MODEL_LEAF" ] || [ -z "$GGUF_FILE" ]; then
+      echo "No GGUF model selected (SPOTLIGHT_MODEL_REPO / SPOTLIGHT_LOCAL_MODEL). Re-run setup.html and pick a llama.cpp model." >&2
+      exit 1
+    fi
     if ! command -v llama-server >/dev/null 2>&1; then
       spin "Installing llama.cpp via brew" brew install llama.cpp
     else
@@ -688,253 +672,78 @@ if [ "$SPOTLIGHT_MODE" = "local" ]; then
     else
       printf "%s✓%s Model already downloaded at %s\n" "$_c_green" "$_c_reset" "$MODEL_DIR/$GGUF_FILE"
     fi
-  else
-    step "Local inference (Ollama)"
-    if ! command -v ollama >/dev/null 2>&1; then
-      spin "Installing Ollama via brew" brew install ollama
-      run brew services start ollama 2>/dev/null || true
-      [ "$DRY_RUN" = "1" ] || sleep 2
+  # ---- RLM model (context hygiene: fetch distillation + compaction summarizer) ----
+  # Runtime-auto on the local tier: served by the launcher on its own llama.cpp so
+  # `fetch --rlm` distills every scraped page (~99% token saving) AND the harness
+  # summarizes conversation compactions cheaply instead of blocking the session model.
+  SPOTLIGHT_RLM_GGUF_PATH=""
+  if [ "$SPOTLIGHT_INT_RLM" = "true" ] && [ -n "$SPOTLIGHT_RLM_REPO" ] && [ -n "$SPOTLIGHT_RLM_GGUF" ]; then
+    step "RLM model (context hygiene)"
+    RLM_DIR="$HOME/Models/${SPOTLIGHT_RLM_REPO##*/}"
+    run mkdir -p "$RLM_DIR"
+    if [ ! -f "$RLM_DIR/$SPOTLIGHT_RLM_GGUF" ]; then
+      spin "Downloading $SPOTLIGHT_RLM_GGUF from huggingface.co/$SPOTLIGHT_RLM_REPO" \
+        curl -L --fail --retry 3 --continue-at - \
+          "https://huggingface.co/$SPOTLIGHT_RLM_REPO/resolve/main/$SPOTLIGHT_RLM_GGUF" \
+          -o "$RLM_DIR/$SPOTLIGHT_RLM_GGUF.part"
+      run mv "$RLM_DIR/$SPOTLIGHT_RLM_GGUF.part" "$RLM_DIR/$SPOTLIGHT_RLM_GGUF"
     else
-      printf "%s✓%s Ollama already installed\n" "$_c_green" "$_c_reset"
+      printf "%s✓%s RLM model already downloaded at %s\n" "$_c_green" "$_c_reset" "$RLM_DIR/$SPOTLIGHT_RLM_GGUF"
     fi
-
-    step "Journalism model download ($OLLAMA_SIZE_LABEL)"
-    echo "Ollama will stream download progress below — grab a coffee, 5–15 min on a typical connection."
-    echo ""
-    OLLAMA_MODEL="$OLLAMA_MODEL_DEFAULT"
-    SPOTLIGHT_OLLAMA_ALIAS="$OLLAMA_ALIAS_DEFAULT"
-    if [ "$DRY_RUN" != "1" ] && ! ollama show "$SPOTLIGHT_OLLAMA_ALIAS" >/dev/null 2>&1; then
-      if ! ollama show "$OLLAMA_MODEL" >/dev/null 2>&1; then
-        ollama pull "$OLLAMA_MODEL" || {
-          printf "%s✗%s Ollama could not pull %s.\n" "$_c_red" "$_c_reset" "$OLLAMA_MODEL"
-          printf "   Edit %s/.env after install or re-run with a working OLLAMA_MODEL.\n" "$SPOTLIGHT_DIR"
-          printf "   Example: OLLAMA_MODEL=gemma3:27b SPOTLIGHT_OLLAMA_ALIAS=spotlight-local\n"
-          exit 1
-        }
-      fi
-      TMP_MODELFILE="$(mktemp)"
-      printf "FROM %s\n" "$OLLAMA_MODEL" > "$TMP_MODELFILE"
-      # Qwen 3.6 27B runs in thinking mode — DO NOT inject /no_think.
-      #
-      # Earlier revisions overrode the chat TEMPLATE to inject /no_think
-      # into every user message, on the theory that the abliterated 27B
-      # ignores `think:false` and otherwise burns ~10k reasoning tokens.
-      # That premise is correct in mechanism but wrong in consequence:
-      # the abliterated Qwen 3.6 family's /no_think codepath is damaged
-      # (verified empirically on Huihui base + Tom's journalist tune at
-      # Q4_K_M with Qwen-recommended sampling — output collapses to
-      # multilingual token soup and lock-loops within ~200 tokens).
-      # Probable cause: abliteration calibration covered only the
-      # thinking codepath, leaving the no-think branch broken.
-      #
-      # We keep the model's native chat template (thinking on) and
-      # rely on opencode's `limit.output: 16384` to give enough budget
-      # for reasoning + content. Expect ~3-5× slower per-prompt vs 9B.
-      #
-      # Stop-token workaround: the abliterated journalist fine-tune emits
-      # <|endoftext|> at the end of assistant turns rather than the
-      # chat-template's <|im_end|>. Ollama's auto-derived stop list reads
-      # tokenizer.ggml.eos_token_id from the GGUF (= <|im_end|>) and does
-      # NOT include <|endoftext|>, so without these explicit stops the
-      # model rambles past its own end-of-turn into a fake user message.
-      # Adding both is belt-and-braces (verified: finish_reason flips
-      # from "length" to "stop" with these in place).
-      case "$SPOTLIGHT_LOCAL_MODEL" in
-        qwen27b)
-          # The abliterated Qwen journalist tune emits <|endoftext|> at end of
-          # turn instead of <|im_end|>; Ollama's auto stop list misses it, so
-          # add both. Gemma-4 needs neither (clean stop tokens, no thinking).
-          printf 'PARAMETER stop "<|im_end|>"\n' >> "$TMP_MODELFILE"
-          printf 'PARAMETER stop "<|endoftext|>"\n' >> "$TMP_MODELFILE"
-          ;;
-      esac
-      ollama create "$SPOTLIGHT_OLLAMA_ALIAS" -f "$TMP_MODELFILE"
-      rm -f "$TMP_MODELFILE"
-    elif [ "$DRY_RUN" = "1" ]; then
-      printf 'DRY-RUN: ollama pull %s + create alias %s\n' "$OLLAMA_MODEL" "$SPOTLIGHT_OLLAMA_ALIAS"
-    else
-      printf "%s✓%s Ollama alias %s already exists\n" "$_c_green" "$_c_reset" "$SPOTLIGHT_OLLAMA_ALIAS"
-    fi
+    SPOTLIGHT_RLM_GGUF_PATH="$RLM_DIR/$SPOTLIGHT_RLM_GGUF"
+  elif [ "$SPOTLIGHT_INT_RLM" = "true" ]; then
+    printf "%s→%s RLM enabled but no SPOTLIGHT_RLM_REPO/SPOTLIGHT_RLM_GGUF given; set SPOTLIGHT_RLM_GGUF_PATH in %s/.env to serve an on-disk GGUF. Without it the harness degrades gracefully (raw fetches, session-model compaction).\n" "$_c_yellow" "$_c_reset" "$SPOTLIGHT_DIR"
   fi
 
-  # ---- Agent harness: opencode OR pi ----
-  if [ "$SPOTLIGHT_AGENT" = "pi" ]; then
-    # Pi has no native sub-agents. Warn before installing.
-    echo ""
-    printf "%s⚠ Pi has no native sub-agents.%s\n" "$_c_red" "$_c_reset"
-    echo "  Spotlight's investigator and fact-checker will share one context,"
-    echo "  weakening the verification independence guarantee."
-    echo "  opencode is the recommended agent for full Spotlight semantics."
-    echo ""
-    if [ "$DRY_RUN" != "1" ]; then
-      echo "  Continue with Pi anyway? [y/N]"
-      read -r ans </dev/tty || ans="N"
-      if [[ ! "$ans" =~ ^[Yy] ]]; then
-        echo "Aborted. Re-run setup.html and pick opencode for the recommended setup."
-        exit 1
-      fi
-    fi
-
-    step "Agent harness (Pi)"
-    ensure_npm_global_exact pi @earendil-works/pi-coding-agent
-
-    step "pi-llama-cpp extension (model browser for llama-server)"
-    spin "Installing pi-llama-cpp" pi install npm:pi-llama-cpp
-
-    # Symlink Spotlight skills into pi's global skill dir, namespaced under spotlight/
-    # (engine-matching <root>/<product>/<skill> shape; pi recurses to discover them).
-    step "Spotlight skills → pi"
-    link_spotlight_adapter "$HOME/.pi/agent/skills/spotlight"
-    [ "$DRY_RUN" = "1" ] || printf "%s✓%s pi loads Spotlight skills via ~/.pi/agent/skills/spotlight → %s\n" "$_c_green" "$_c_reset" "$SPOTLIGHT_CANONICAL_SKILLS"
-
-    # Tell pi where the OpenAI-compatible endpoint is.
-    step "Pi inference endpoint config"
-    PI_SETTINGS="$HOME/.pi/agent/settings.json"
-    run mkdir -p "$(dirname "$PI_SETTINGS")"
-    if [ "$DRY_RUN" = "1" ]; then
-      printf 'DRY-RUN: write %s with llamaServerUrl=http://127.0.0.1:%s\n' "$PI_SETTINGS" "$LOCAL_PORT"
-    else
-      if ! command -v jq >/dev/null 2>&1; then spin "Installing jq via brew" brew install jq; fi
-      [ -f "$PI_SETTINGS" ] || echo '{}' > "$PI_SETTINGS"
-      TMP=$(mktemp)
-      jq --arg url "http://127.0.0.1:$LOCAL_PORT" '.llamaServerUrl = $url' "$PI_SETTINGS" > "$TMP" && mv "$TMP" "$PI_SETTINGS"
-      printf "%s✓%s Pi llamaServerUrl set to http://127.0.0.1:%s\n" "$_c_green" "$_c_reset" "$LOCAL_PORT"
-    fi
-
-  else
-    # opencode (default)
-    if [ "$SPOTLIGHT_OPENCODE_INTERFACE" = "desktop" ]; then
-      step "Agent harness (opencode Desktop)"
-      if [ ! -d "/Applications/opencode.app" ] && [ ! -d "$HOME/Applications/opencode.app" ]; then
-        spin "Installing opencode-desktop via brew cask" brew install --cask opencode-desktop
-      else
-        printf "%s✓%s opencode-desktop already installed\n" "$_c_green" "$_c_reset"
-      fi
-      # CLI is needed too for the launcher script and skill registration
-    fi
-    step "Agent harness (opencode CLI)"
-    if ! command -v opencode >/dev/null 2>&1; then
-      spin "Installing opencode via brew" brew install opencode || \
-        bash -c 'curl -fsSL https://opencode.ai/install | bash'
-    else
-      printf "%s✓%s opencode already installed\n" "$_c_green" "$_c_reset"
-    fi
-
-    step "Spotlight skills → opencode"
-    link_spotlight_adapter "$HOME/.config/opencode/skills/spotlight"
-    [ "$DRY_RUN" = "1" ] || printf "%s✓%s opencode loads Spotlight skills via ~/.config/opencode/skills/spotlight → %s\n" "$_c_green" "$_c_reset" "$SPOTLIGHT_CANONICAL_SKILLS"
-
-    step "opencode provider config"
-    OC_CFG="$HOME/.config/opencode/opencode.json"
-    run mkdir -p "$(dirname "$OC_CFG")"
-    if [ "$DRY_RUN" = "1" ]; then
-      printf 'DRY-RUN: merge %s provider into %s with baseURL=%s\n' "$SPOTLIGHT_LOCAL_SERVER" "$OC_CFG" "$LOCAL_BASE_URL"
-    else
-      [ -f "$OC_CFG" ] || echo '{"$schema":"https://opencode.ai/config.json","provider":{}}' > "$OC_CFG"
-      if ! command -v jq >/dev/null 2>&1; then spin "Installing jq via brew" brew install jq; fi
-      TMP=$(mktemp)
-      if [ "$SPOTLIGHT_LOCAL_SERVER" = "llamacpp" ]; then
-        jq --arg base "$LOCAL_BASE_URL" --arg id "qwen27" --arg name "Qwen3.6-27B Uncensored (local llama.cpp)" \
-          '.provider["llama.cpp"] = {"npm":"@ai-sdk/openai-compatible","name":"llama-server (local)","options":{"baseURL":$base},"models":{($id):{"name":$name}}}' \
-          "$OC_CFG" > "$TMP" && mv "$TMP" "$OC_CFG"
-      else
-        # Per-model `limit.output` for the 27B because Qwen 3.6 thinking
-        # burns ~10k tokens of reasoning even with /no_think injected;
-        # without a generous output budget, content comes back empty.
-        # The 9B doesn't need this (no thinking mode), so we leave its
-        # limit unset and inherit opencode's default.
-        if [ "$SPOTLIGHT_LOCAL_MODEL" = "qwen27b" ]; then
-          jq --arg base "$LOCAL_BASE_URL" --arg id "$OLLAMA_ALIAS_DEFAULT" --arg name "$MODEL_LEAF (local Ollama)" \
-            '.provider["ollama"] = {"npm":"@ai-sdk/openai-compatible","name":"Ollama (local OpenAI-compatible)","options":{"baseURL":$base},"models":{($id):{"name":$name,"limit":{"output":16384}}}}' \
-            "$OC_CFG" > "$TMP" && mv "$TMP" "$OC_CFG"
-        else
-          jq --arg base "$LOCAL_BASE_URL" --arg id "$OLLAMA_ALIAS_DEFAULT" --arg name "$MODEL_LEAF (local Ollama)" \
-            '.provider["ollama"] = {"npm":"@ai-sdk/openai-compatible","name":"Ollama (local OpenAI-compatible)","options":{"baseURL":$base},"models":{($id):{"name":$name}}}' \
-            "$OC_CFG" > "$TMP" && mv "$TMP" "$OC_CFG"
-        fi
-      fi
-      printf "%s✓%s opencode.json updated with %s provider\n" "$_c_green" "$_c_reset" "$SPOTLIGHT_LOCAL_SERVER"
-    fi
+  # ---- Agent harness: Flue on Pi (ONE harness — the repo's harness/flue) ----
+  # The installed harness IS the checkout's harness/flue (source-of-truth invariant:
+  # local eval == user experience; no parallel harness). Flue runs on Pi and gives the
+  # orchestrator native subagents (investigator / fact-checker in their own child
+  # sessions), workspace-discovered skills, and conversation compaction. The launcher
+  # below starts llama.cpp serving and runs `flue run spotlight` against it.
+  step "Agent harness (Flue on Pi)"
+  NODE_MAJOR="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1 || echo 0)"
+  if [ "${NODE_MAJOR:-0}" -lt 22 ]; then
+    spin "Installing Node 22+ via brew (Flue needs ≥22.19)" brew install node
   fi
+  if [ "$DRY_RUN" = "1" ]; then
+    printf 'DRY-RUN: npm install in %s/harness/flue + link .agents/skills\n' "$SPOTLIGHT_DIR"
+  else
+    ( cd "$SPOTLIGHT_DIR/harness/flue" && spin "Installing Flue harness deps" npm install --no-audit --no-fund )
+    # Flue discovers Agent Skills from <cwd>/.agents/skills at context init; link the
+    # repo's own skills dir there (same shape the harness is developed and evaled with).
+    run mkdir -p "$SPOTLIGHT_DIR/.agents"
+    run ln -sfn "$SPOTLIGHT_DIR/skills" "$SPOTLIGHT_DIR/.agents/skills"
+    printf "%s✓%s Flue harness ready (%s/harness/flue; skills via .agents/skills → skills/)\n" "$_c_green" "$_c_reset" "$SPOTLIGHT_DIR"
+  fi
+  # Keep the cross-runtime canonical store contract satisfied too.
+  place_spotlight_skills_canonical
 
   # ---- Local launcher script ----
+  # SCOPE: the efficiency flags in this launcher (--cache-type-k/v q8_0, --flash-attn,
+  # --no-cache-idle-slots --parallel 2) apply ONLY to the constrained LOCAL-serving tier
+  # (local GGUF via llama.cpp on consumer devices). API/frontier deployments run in
+  # SPOTLIGHT_MODE=cloud with a provider config and NO local llama-server, so they are
+  # unaffected and serve normally (provider-managed KV, full precision).
   step "Spotlight local launcher"
   run mkdir -p "$HOME/.local/bin"
   if [ "$DRY_RUN" = "1" ]; then
-    printf 'DRY-RUN: write ~/.local/bin/spotlight-local for %s/%s\n' "$SPOTLIGHT_LOCAL_SERVER" "$SPOTLIGHT_AGENT"
+    printf 'DRY-RUN: write ~/.local/bin/spotlight-local (llama.cpp serving + flue run spotlight)\n'
   else
-    if [ "$SPOTLIGHT_LOCAL_SERVER" = "llamacpp" ]; then
-      if [ "$SPOTLIGHT_AGENT" = "pi" ]; then
-        cat > "$HOME/.local/bin/spotlight-local" <<LAUNCHER_EOF
+    cat > "$HOME/.local/bin/spotlight-local" <<LAUNCHER_EOF
 #!/usr/bin/env bash
-# Start llama-server + pi for Spotlight investigations.
-set -euo pipefail
-MODEL="\$HOME/Models/$MODEL_LEAF/$GGUF_FILE"
-command -v llama-server >/dev/null 2>&1 || { echo "llama-server missing — brew install llama.cpp" >&2; exit 1; }
-command -v pi           >/dev/null 2>&1 || { echo "pi missing — install reviewed @earendil-works/pi-coding-agent@$PI_CODING_AGENT_VERSION with install-spotlight.sh" >&2; exit 1; }
-[ -f "\$MODEL" ] || { echo "Model not found: \$MODEL" >&2; exit 1; }
-lsof -ti:8080 >/dev/null 2>&1 && { echo "Port 8080 already in use — kill the existing process first" >&2; exit 1; }
-llama-server --model "\$MODEL" --alias qwen27 --host 127.0.0.1 --port 8080 \\
-  --ctx-size 65536 --n-gpu-layers 999 --jinja --flash-attn on >/tmp/llama-server-pi.log 2>&1 &
-SERVER_PID=\$!
-cleanup() { kill -TERM "\$SERVER_PID" 2>/dev/null || true; }
-trap cleanup EXIT INT TERM HUP
-echo -n "Waiting for llama-server"
-READY=0
-for i in {1..120}; do curl -sf http://127.0.0.1:8080/v1/models >/dev/null && { echo " ready."; READY=1; break; }; echo -n "."; sleep 1; done
-[ "\$READY" = "1" ] || { echo " llama-server did not become ready after 120s — see /tmp/llama-server-*.log" >&2; exit 1; }
-pi "\$@"
-LAUNCHER_EOF
-      else
-        cat > "$HOME/.local/bin/spotlight-local" <<LAUNCHER_EOF
-#!/usr/bin/env bash
-# Start llama-server + opencode for Spotlight investigations.
-set -euo pipefail
-MODEL="\$HOME/Models/$MODEL_LEAF/$GGUF_FILE"
-command -v llama-server >/dev/null 2>&1 || { echo "llama-server missing — brew install llama.cpp" >&2; exit 1; }
-command -v opencode     >/dev/null 2>&1 || { echo "opencode missing — brew install opencode" >&2; exit 1; }
-[ -f "\$MODEL" ] || { echo "Model not found: \$MODEL" >&2; exit 1; }
-lsof -ti:8080 >/dev/null 2>&1 && { echo "Port 8080 already in use — kill the existing process first" >&2; exit 1; }
-llama-server --model "\$MODEL" --alias qwen27 --host 127.0.0.1 --port 8080 \\
-  --ctx-size 65536 --n-gpu-layers 999 --jinja --flash-attn on >/tmp/llama-server-opencode.log 2>&1 &
-SERVER_PID=\$!
-cleanup() { kill -TERM "\$SERVER_PID" 2>/dev/null || true; }
-trap cleanup EXIT INT TERM HUP
-echo -n "Waiting for llama-server"
-READY=0
-for i in {1..120}; do curl -sf http://127.0.0.1:8080/v1/models >/dev/null && { echo " ready."; READY=1; break; }; echo -n "."; sleep 1; done
-[ "\$READY" = "1" ] || { echo " llama-server did not become ready after 120s — see /tmp/llama-server-*.log" >&2; exit 1; }
-opencode --model llama.cpp/qwen27 "\$@"
-LAUNCHER_EOF
-      fi
-    else
-      # Ollama branch
-      if [ "$SPOTLIGHT_AGENT" = "pi" ]; then
-        cat > "$HOME/.local/bin/spotlight-local" <<LAUNCHER_EOF
-#!/usr/bin/env bash
-# Start Ollama + pi for Spotlight investigations.
-set -euo pipefail
-SPOTLIGHT_DIR="\${SPOTLIGHT_DIR:-$SPOTLIGHT_DIR}"
-ENV_FILE="\$SPOTLIGHT_DIR/.env"
-if [ -f "\$ENV_FILE" ]; then set -a; . "\$ENV_FILE"; set +a; fi
-command -v ollama >/dev/null 2>&1 || { echo "ollama missing — brew install ollama" >&2; exit 1; }
-command -v pi     >/dev/null 2>&1 || { echo "pi missing — install reviewed @earendil-works/pi-coding-agent@$PI_CODING_AGENT_VERSION with install-spotlight.sh" >&2; exit 1; }
-OLLAMA_MODEL="\${OLLAMA_MODEL:-$OLLAMA_MODEL_DEFAULT}"
-SPOTLIGHT_OLLAMA_ALIAS="\${SPOTLIGHT_OLLAMA_ALIAS:-$OLLAMA_ALIAS_DEFAULT}"
-ollama list >/dev/null 2>&1 || { brew services start ollama 2>/dev/null || ollama serve >/tmp/ollama-spotlight.log 2>&1 & sleep 2; }
-if ! ollama show "\$SPOTLIGHT_OLLAMA_ALIAS" >/dev/null 2>&1; then
-  ollama show "\$OLLAMA_MODEL" >/dev/null 2>&1 || ollama pull "\$OLLAMA_MODEL"
-  TMP_MODELFILE="\$(mktemp)"
-  printf "FROM %s\\n" "\$OLLAMA_MODEL" > "\$TMP_MODELFILE"
-  ollama create "\$SPOTLIGHT_OLLAMA_ALIAS" -f "\$TMP_MODELFILE"
-  rm -f "\$TMP_MODELFILE"
-fi
-pi "\$@"
-LAUNCHER_EOF
-      else
-        cat > "$HOME/.local/bin/spotlight-local" <<LAUNCHER_EOF
-#!/usr/bin/env bash
-# Start Ollama + opencode for Spotlight investigations.
+# Spotlight local launcher — llama.cpp serving (orchestrator + RLM) + the Flue/Pi harness.
+# ONE harness: this runs the same \`flue run spotlight\` app the evals exercise
+# (harness/flue in the Spotlight checkout) — local test == user experience.
+#
+# Usage:
+#   spotlight-local <session-id> "<message>"   start or resume a session; answer each
+#                                              gate by re-running with the SAME id
+#   spotlight-local --raw [flue run args...]   pass through to \`flue run spotlight\`
+#   spotlight-local --stop                     stop the llama.cpp servers
+#
+# Servers stay resident between invocations (llama-server prefix-caches the
+# conversation, so gate replies re-prefill fast); --stop tears them down.
 set -euo pipefail
 expand_path() {
   local input="\$1"
@@ -947,26 +756,102 @@ SPOTLIGHT_DIR_DEFAULT="\$(expand_path "\$SPOTLIGHT_DIR_DEFAULT_INPUT")"
 SPOTLIGHT_DIR="\${SPOTLIGHT_DIR:-\$SPOTLIGHT_DIR_DEFAULT}"
 ENV_FILE="\$SPOTLIGHT_DIR/.env"
 if [ -f "\$ENV_FILE" ]; then set -a; . "\$ENV_FILE"; set +a; fi
-command -v ollama   >/dev/null 2>&1 || { echo "ollama missing — brew install ollama" >&2; exit 1; }
-command -v opencode >/dev/null 2>&1 || { echo "opencode missing — brew install opencode" >&2; exit 1; }
-OLLAMA_MODEL="\${OLLAMA_MODEL:-$OLLAMA_MODEL_DEFAULT}"
-SPOTLIGHT_OLLAMA_ALIAS="\${SPOTLIGHT_OLLAMA_ALIAS:-$OLLAMA_ALIAS_DEFAULT}"
-ollama list >/dev/null 2>&1 || { brew services start ollama 2>/dev/null || ollama serve >/tmp/ollama-spotlight.log 2>&1 & sleep 2; }
-if ! ollama show "\$SPOTLIGHT_OLLAMA_ALIAS" >/dev/null 2>&1; then
-  if ! ollama show "\$OLLAMA_MODEL" >/dev/null 2>&1; then
-    ollama pull "\$OLLAMA_MODEL" || { echo "Could not pull \$OLLAMA_MODEL. Set OLLAMA_MODEL in \$ENV_FILE to a working Ollama model." >&2; exit 1; }
-  fi
-  TMP_MODELFILE="\$(mktemp)"
-  printf "FROM %s\\n" "\$OLLAMA_MODEL" > "\$TMP_MODELFILE"
-  ollama create "\$SPOTLIGHT_OLLAMA_ALIAS" -f "\$TMP_MODELFILE"
-  rm -f "\$TMP_MODELFILE"
+
+if [ "\${1:-}" = "--stop" ]; then
+  for p in 8080 8095; do lsof -ti:"\$p" | xargs kill -TERM 2>/dev/null || true; done
+  echo "Spotlight llama.cpp servers stopped."
+  exit 0
 fi
-opencode --model "ollama/\$SPOTLIGHT_OLLAMA_ALIAS" "\$@"
+
+# Model + tier come from .env at RUNTIME (switching 12b↔26b↔31b = edit .env, no
+# reinstall): SPOTLIGHT_GGUF_PATH overrides the install-time default; the tier picks
+# the reasoning budget (bigger models get a longer thinking leash) and the harness's
+# compaction profile. SPOTLIGHT_REASONING_BUDGET overrides the tier default.
+MODEL="\${SPOTLIGHT_GGUF_PATH:-\$HOME/Models/$MODEL_LEAF/$GGUF_FILE}"
+TIER="\${SPOTLIGHT_MODEL_TIER:-12b}"
+case "\$TIER" in
+  26b) RB_DEFAULT=800 ;;
+  31b) RB_DEFAULT=1024 ;;
+  *)   RB_DEFAULT=400 ;;
+esac
+RB="\${SPOTLIGHT_REASONING_BUDGET:-\$RB_DEFAULT}"
+FLUE="\$SPOTLIGHT_DIR/harness/flue/node_modules/.bin/flue"
+command -v llama-server >/dev/null 2>&1 || { echo "llama-server missing — brew install llama.cpp" >&2; exit 1; }
+[ -x "\$FLUE" ] || { echo "Flue harness missing — re-run install-spotlight.sh (npm install in harness/flue)" >&2; exit 1; }
+[ -f "\$MODEL" ] || { echo "Model not found: \$MODEL (set SPOTLIGHT_GGUF_PATH in \$ENV_FILE)" >&2; exit 1; }
+
+# Orchestrator model: TWO resident slots (orchestrator + the active subagent), q8_0 KV
+# + flash-attn (≈½ KV memory), NO idle-slot save/restore (the delegation
+# restore-failure), reasoning budget capped per tier (gemma-4 unbounded thinking
+# spends the whole budget and returns EMPTY content). Per-slot context = 81920/2 =
+# 40960 — SPOTLIGHT_LOCAL_CTX below MUST match it.
+if ! lsof -ti:8080 >/dev/null 2>&1; then
+  llama-server --model "\$MODEL" --alias spotlight-local --host 127.0.0.1 --port 8080 \\
+    --ctx-size 81920 --parallel 2 --no-cache-idle-slots --n-gpu-layers 999 --jinja \\
+    --flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 --reasoning-budget "\$RB" \\
+    >/tmp/llama-server-spotlight.log 2>&1 &
+else
+  echo "Reusing llama-server on :8080 — run 'spotlight-local --stop' first if you changed the model in .env"
+fi
+
+# RLM (context hygiene): the small distiller on its OWN llama.cpp — \`fetch\`
+# distillation (~99% token saving on scraped pages) AND the conversation-compaction
+# summarizer. --reasoning-budget 0: a distiller/summarizer must answer, not think.
+# Optional: without an RLM GGUF the harness degrades gracefully (raw fetches,
+# session-model compaction).
+if [ -n "\${SPOTLIGHT_RLM_GGUF_PATH:-}" ] && [ -f "\${SPOTLIGHT_RLM_GGUF_PATH:-}" ]; then
+  if ! lsof -ti:8095 >/dev/null 2>&1; then
+    llama-server --model "\$SPOTLIGHT_RLM_GGUF_PATH" --alias rlm-e4b --host 127.0.0.1 --port 8095 \\
+      --ctx-size 24576 --n-gpu-layers 999 --jinja --flash-attn on \\
+      --cache-type-k q8_0 --cache-type-v q8_0 --reasoning-budget 0 \\
+      >/tmp/llama-server-rlm.log 2>&1 &
+  fi
+  export SPOTLIGHT_RLM_OPENAI_BASE_URL="http://127.0.0.1:8095/v1"
+  export SPOTLIGHT_RLM_OPENAI_MODEL="rlm-e4b"
+  export SPOTLIGHT_RLM_CTX=24576
+else
+  echo "No RLM GGUF (SPOTLIGHT_RLM_GGUF_PATH) — running without fetch distillation / cheap compaction"
+fi
+
+echo -n "Waiting for llama-server"
+READY=0
+for i in {1..180}; do curl -sf http://127.0.0.1:8080/v1/models >/dev/null && { echo " ready."; READY=1; break; }; echo -n "."; sleep 1; done
+[ "\$READY" = "1" ] || { echo " llama-server did not become ready after 180s — see /tmp/llama-server-spotlight.log" >&2; exit 1; }
+if [ -n "\${SPOTLIGHT_RLM_OPENAI_BASE_URL:-}" ]; then
+  for i in {1..60}; do curl -sf http://127.0.0.1:8095/v1/models >/dev/null && break; sleep 1; done
+fi
+
+export SPOTLIGHT_LOCAL_BASEURL="http://127.0.0.1:8080/v1"
+export SPOTLIGHT_LOCAL_CTX=40960
+export SPOTLIGHT_FLUE_MODEL="local/spotlight-local"
+export SPOTLIGHT_MODEL_TIER="\$TIER"
+export SPOTLIGHT_CWD="\$SPOTLIGHT_DIR"
+export SPOTLIGHT_PYTHON="\${SPOTLIGHT_PYTHON:-\$SPOTLIGHT_DIR/.venv/bin/python}"
+export FLUE_DB="\${FLUE_DB:-\$SPOTLIGHT_DIR/harness/flue/data/flue.db}"
+
+cd "\$SPOTLIGHT_DIR/harness/flue"
+if [ "\$#" -eq 0 ]; then
+  cat <<USAGE
+Spotlight local harness is up (tier: \$TIER, model: \$(basename "\$MODEL"), RLM: \${SPOTLIGHT_RLM_OPENAI_BASE_URL:-off}).
+
+Start or continue an investigation (one command per turn; answer each gate the same way):
+  spotlight my-case "Investigate <target>: <what you want to know>"
+  spotlight my-case "Approved, proceed."
+  spotlight --stop        # stop the local model servers
+
+Sessions are durable (harness/flue/data) — the same id resumes where it left off.
+USAGE
+  exit 0
+fi
+if [ "\${1:-}" = "--raw" ]; then shift; "\$FLUE" run spotlight "\$@"; exit \$?; fi
+SESSION="\${1:?usage: spotlight-local <session-id> \"<message>\"}"
+shift || true
+MSG="\${*:?usage: spotlight-local <session-id> \"<message>\"}"
+INPUT_JSON="\$(MSG="\$MSG" python3 -c 'import json,os; print(json.dumps({"message": os.environ["MSG"]}))')"
+"\$FLUE" run spotlight --id "\$SESSION" --input "\$INPUT_JSON"
 LAUNCHER_EOF
-      fi
-    fi
     chmod +x "$HOME/.local/bin/spotlight-local"
-    printf "%s✓%s Launcher installed at ~/.local/bin/spotlight-local\n" "$_c_green" "$_c_reset"
+    printf "%s✓%s Launcher installed at ~/.local/bin/spotlight-local (llama.cpp + flue run spotlight)\n" "$_c_green" "$_c_reset"
   fi
 
 # =====================================================================
@@ -1118,10 +1003,15 @@ ENV_HEADER
     write_env_var MODEL_REPO "$SPOTLIGHT_MODEL_REPO"
     write_env_var LOCAL_SERVER "$SPOTLIGHT_LOCAL_SERVER"
     write_env_var LOCAL_ENDPOINT "$LOCAL_BASE_URL"
-    write_env_var SPOTLIGHT_AGENT "$SPOTLIGHT_AGENT"
-    if [ "$SPOTLIGHT_LOCAL_SERVER" = "ollama" ]; then
-      write_env_var OLLAMA_MODEL "$OLLAMA_MODEL_DEFAULT"
-      write_env_var SPOTLIGHT_OLLAMA_ALIAS "$OLLAMA_ALIAS_DEFAULT"
+    # Runtime model selection — the launcher reads these each run, so switching
+    # 12b↔26b↔31b is an .env edit (path + tier), NOT a reinstall. The tier picks
+    # the reasoning budget and the harness compaction profile.
+    write_env_var SPOTLIGHT_MODEL_TIER "$SPOTLIGHT_MODEL_TIER"
+    write_env_var SPOTLIGHT_GGUF_PATH "$HOME/Models/$MODEL_LEAF/$GGUF_FILE"
+    # The launcher serves the RLM (fetch distillation + compaction summarizer) only
+    # when this points at an existing GGUF; absent = graceful degradation.
+    if [ -n "${SPOTLIGHT_RLM_GGUF_PATH:-}" ]; then
+      write_env_var SPOTLIGHT_RLM_GGUF_PATH "$SPOTLIGHT_RLM_GGUF_PATH"
     fi
   fi
   chmod 600 "$SPOTLIGHT_DIR/.env"
@@ -1169,7 +1059,7 @@ except Exception:
   "model_tier": "$SPOTLIGHT_MODEL_TIER",
   "runtime": "$SPOTLIGHT_RUNTIME",
   "local_server": $([ -n "$SPOTLIGHT_LOCAL_SERVER" ] && printf '"%s"' "$SPOTLIGHT_LOCAL_SERVER" || echo null),
-  "agent": $([ "$SPOTLIGHT_MODE" = "local" ] && printf '"%s"' "$SPOTLIGHT_AGENT" || echo null),
+  "agent": $([ "$SPOTLIGHT_MODE" = "local" ] && printf '"flue"' || echo null),
   "opencode_provider": $([ -n "$SPOTLIGHT_OPENCODE_PROVIDER" ] && printf '"%s"' "$SPOTLIGHT_OPENCODE_PROVIDER" || echo null),
   "integrations": {
     "osint_navigator": {
@@ -1310,11 +1200,9 @@ DOCTOR_EOF
   # Append runtime-specific checks
   case "$SPOTLIGHT_RUNTIME" in
     local)
-      if [ "$SPOTLIGHT_AGENT" = "pi" ]; then
-        echo 'check_cmd pi "pi (local agent)"' >> "$HOME/.local/bin/spotlight-doctor"
-      else
-        echo 'check_cmd opencode "opencode (local agent)"' >> "$HOME/.local/bin/spotlight-doctor"
-      fi
+      echo 'check_cmd llama-server "llama.cpp server"' >> "$HOME/.local/bin/spotlight-doctor"
+      echo 'check_cmd node "Node.js (Flue harness)"' >> "$HOME/.local/bin/spotlight-doctor"
+      echo 'check_path "$SPOTLIGHT_DIR/harness/flue/node_modules/.bin/flue" "Flue harness (npm install)"' >> "$HOME/.local/bin/spotlight-doctor"
       echo 'check_cmd spotlight-local "Spotlight local launcher"' >> "$HOME/.local/bin/spotlight-doctor"
       ;;
     claude)   echo 'check_cmd claude "Claude Code"' >> "$HOME/.local/bin/spotlight-doctor"; echo 'check_path "$SPOTLIGHT_DIR/CLAUDE.md" "Claude context link"' >> "$HOME/.local/bin/spotlight-doctor" ;;
@@ -1437,23 +1325,28 @@ spotlight() {
   case "\${1:-}" in
     update)
       SPOTLIGHT_DIR="\$dir" "\$HOME/.local/bin/spotlight-update"
+      return \$?
       ;;
     doctor)
       SPOTLIGHT_DIR="\$dir" "\$HOME/.local/bin/spotlight-doctor"
+      return \$?
       ;;
     --help|-h|help)
       cat <<HELP
-Usage: spotlight [subcommand]
+Usage: spotlight [subcommand | session-id "message"]
 
-  (no arg)   Launch the configured runtime and start investigating
-  update     Fetch origin/main, fast-forward only, then run doctor
-  doctor     Run the smoke test (checks structure, schemas, preflights)
-  help       This message
+  (no arg)                  Launch the configured runtime (local: start the model
+                            servers and print how to open a session)
+  <session-id> "<message>"  Local runtime: send one investigation turn; re-run with
+                            the same id to answer each gate. --stop stops the servers.
+  update                    Fetch origin/main, fast-forward only, then run doctor
+  doctor                    Run the smoke test (structure, schemas, preflights)
+  help                      This message
 HELP
       return 0
       ;;
   esac
-  (cd "\$dir" && { [ -f .env ] && set -a && source .env && set +a; } && $LAUNCH_BIN)
+  (cd "\$dir" && { [ -f .env ] && set -a && source .env && set +a; } && $LAUNCH_BIN "\$@")
 }
 # SPOTLIGHT-END
 SHELL_EOF

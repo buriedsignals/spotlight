@@ -217,23 +217,7 @@
   <div class="local-only">
     <p class="num">02 — Agent</p>
     <h2>Harness + <em>model.</em></h2>
-    <p class="sec-lead"><strong>Pick the harness, then the model that matches your hardware.</strong> The installer preconfigures the inference server underneath — you never touch it.</p>
-    <div class="grid-2">
-      <label class="item radio-card">
-        <div class="item__head">
-          <span class="item__title"><input type="radio" name="local_agent" value="opencode" checked style="margin-right:8px;">Open<em>Code.</em></span>
-          <span class="badge req">default</span>
-        </div>
-        <p class="item__lede">Recommended. Native sub-agents — investigator and fact-checker run in independent contexts, preserving Spotlight's verification independence. Installer preconfigures <strong>Ollama</strong> as the inference server.</p>
-      </label>
-      <label class="item radio-card">
-        <div class="item__head">
-          <span class="item__title"><input type="radio" name="local_agent" value="pi" style="margin-right:8px;">Pi<em>.</em></span>
-          <span class="badge">minimal</span>
-        </div>
-        <p class="item__lede">Minimal TypeScript harness. <strong>No native sub-agents</strong> — investigator and fact-checker share one context, weakening independence. Installer preconfigures <strong>llama.cpp</strong> as the inference server.</p>
-      </label>
-    </div>
+    <p class="sec-lead"><strong>One harness, pick the model that matches your hardware.</strong> Every local install runs the <strong>Flue-on-Pi harness</strong> over llama.cpp: the orchestrator delegates to an independent investigator and fact-checker (verification independence is structural), sessions are durable and resumable, scraped pages are auto-distilled by a resident RLM, and long conversations compact automatically. The installer preconfigures all of it — you never touch the serving layer.</p>
 
     <div style="margin-top:18px;">
       <button type="button" class="mini-btn" id="fitCheckBtn">Check my computer and recommend</button>
@@ -250,19 +234,26 @@
     </div>
 
     <div class="grid-2" style="margin-top:14px;">
-      <label class="item radio-card" id="modelCard-qwen9b">
+      <label class="item radio-card" id="modelCard-gemma12b">
         <div class="item__head">
-          <span class="item__title"><input type="radio" name="local_model" value="qwen9b" checked style="margin-right:8px;">Qwen 3.5 9B<br><em>Journalist.</em></span>
+          <span class="item__title"><input type="radio" name="local_model" value="gemma12b" checked style="margin-right:8px;">Gemma 4 12B<br><em>Spotlight orchestrator.</em></span>
           <span class="badge">16 GB</span>
         </div>
-        <p class="item__lede">Default. 9B dense, abliterated, investigative-journalism fine-tune. ~6 GB download, ~8 GB RAM at runtime — fits any 16 GB machine comfortably. Bench-tested: 100% refusal-resistance on OSINT-grade prompts.</p>
+        <p class="item__lede">Default — the speed pick. Procedure-tuned on real Spotlight investigations to drive the gated pipeline (delegate → verify → stop at gates). ~7 GB download. Runs on any 16 GB machine; 24 GB runs the full stack with the RLM research distiller.</p>
       </label>
-      <label class="item radio-card" id="modelCard-qwen27b">
+      <label class="item radio-card" id="modelCard-gemma26b">
         <div class="item__head">
-          <span class="item__title"><input type="radio" name="local_model" value="qwen27b" style="margin-right:8px;">Qwen 3.6 27B<br><em>Journalist.</em></span>
+          <span class="item__title"><input type="radio" name="local_model" value="gemma26b" style="margin-right:8px;">Gemma 4 26B-A4B<br><em>Mixture-of-experts.</em></span>
           <span class="badge req">32 GB</span>
         </div>
-        <p class="item__lede">Heavy tier. Same investigative-journalism corpus as the 9B, maximum reasoning depth, 3–5× slower responses. ~15 GB download, ~22 GB RAM at runtime — needs 32 GB unified memory minimum.</p>
+        <p class="item__lede">Mid tier. 26B of knowledge with 4B active per token — near-12B response speed with more reasoning headroom. ~18 GB download. Needs 32 GB unified memory; comfortable at 48 GB.</p>
+      </label>
+      <label class="item radio-card" id="modelCard-gemma31b">
+        <div class="item__head">
+          <span class="item__title"><input type="radio" name="local_model" value="gemma31b" style="margin-right:8px;">Gemma 4 31B<br><em>Maximum quality.</em></span>
+          <span class="badge req">48 GB</span>
+        </div>
+        <p class="item__lede">Quality tier. Strongest local model on our OSINT benchmark (0.881 facet at Q4, lowest hallucination of the pack). Dense — noticeably slower on deep investigations. ~18 GB download; needs 48 GB unified memory for the full stack.</p>
       </label>
     </div>
     <p class="hint">The installer streams the model download with resume-on-interrupt and registers it with the inference server. Progress shows live in the terminal.</p>
@@ -505,13 +496,14 @@ bindCheckbox('int_unpaywall', 'unpaywallKeys');
 bindCheckbox('int_rlm', 'rlmOptions');
 
 /* Hardware fit check — browser-only probe, ported from the old setup page.
-   Recommends a model tier and auto-selects it; auto-runs when the 27B is
-   picked without a prior check. */
+   Recommends a model tier CONSERVATIVELY (the fastest model that comfortably
+   fits with the RLM sidecar + KV growth, not the biggest that barely loads)
+   and auto-selects it; auto-runs when a heavy tier is picked without a check. */
 function recommendModel(recommended) {
   if (!recommended) return;
   const radio = document.querySelector(`input[name="local_model"][value="${recommended}"]`);
   if (radio) radio.checked = true;
-  ['qwen9b', 'qwen27b'].forEach(key => {
+  ['gemma12b', 'gemma26b', 'gemma31b'].forEach(key => {
     document.getElementById('modelCard-' + key).classList.toggle('recommended', key === recommended);
   });
 }
@@ -567,23 +559,36 @@ async function runFitCheck() {
   let verdict = 'amber';
   let titleText = 'Model recommendation based on your hardware';
   let bodyHtml = '';
-  let recommended = null; // 'qwen9b' | 'qwen27b' | null
+  let recommended = null; // 'gemma12b' | 'gemma26b' | 'gemma31b' | null
   const currentSel = document.querySelector('input[name="local_model"]:checked')?.value;
 
-  if (deviceMemGB && deviceMemGB >= 32) {
+  // Conservative assignment, optimised for speed: recommend the FASTEST model that
+  // comfortably fits weights + KV growth + the RLM sidecar, not the biggest that
+  // barely loads. Full-stack footprints (Q4 + quantised KV + e4b RLM): 12B ≈ 17 GB,
+  // 26B-A4B ≈ 27 GB, 31B ≈ 30 GB — plus OS headroom.
+  if (deviceMemGB && deviceMemGB >= 48) {
     verdict = 'green';
-    titleText = 'Qwen 3.6 27B — your machine can run it';
-    bodyHtml = 'You have <b>' + deviceMemGB + ' GB+</b> RAM. The 27B loads cleanly with headroom for the orchestration pipeline. The 9B is also a fine pick if you want faster responses — both work here.';
-    recommended = 'qwen27b';
+    titleText = 'Gemma 4 26B-A4B — the sweet spot for your machine';
+    bodyHtml = 'You have <b>' + deviceMemGB + ' GB+</b> RAM. The <strong>26B-A4B</strong> is the recommended pick: 26B knowledge at near-12B speed (4B active per token), full stack with headroom. The <strong>31B</strong> also fits if you want maximum quality and accept slower deep investigations; the <strong>12B</strong> is the fastest option.';
+    recommended = 'gemma26b';
+  } else if (deviceMemGB && deviceMemGB >= 32) {
+    verdict = currentSel === 'gemma31b' ? 'red' : 'green';
+    titleText = currentSel === 'gemma31b'
+      ? 'The 31B needs 48 GB — pick the 26B-A4B'
+      : 'Gemma 4 26B-A4B — fits your hardware';
+    bodyHtml = currentSel === 'gemma31b'
+      ? 'You have <b>~' + deviceMemGB + ' GB</b> RAM. The 31B\'s full stack (weights + context growth + the RLM distiller) wants 48 GB — at 32 GB it will swap or OOM mid-investigation. The <strong>26B-A4B</strong> fits with headroom and is much faster.'
+      : 'You have <b>~' + deviceMemGB + ' GB</b> RAM. The <strong>26B-A4B</strong> fits with room for the full stack. The <strong>12B</strong> is the faster pick if you value response speed over reasoning headroom. The 31B needs 48 GB — don\'t pick it here.';
+    recommended = 'gemma26b';
   } else if (deviceMemGB && deviceMemGB >= 16) {
-    verdict = currentSel === 'qwen27b' ? 'red' : 'green';
-    titleText = currentSel === 'qwen27b'
-      ? 'Insufficient RAM for the 27B — pick the 9B'
-      : 'Qwen 3.5 9B — fits your hardware';
-    bodyHtml = currentSel === 'qwen27b'
-      ? 'You have <b>~' + deviceMemGB + ' GB</b> RAM. The 27B needs 32 GB minimum. Switch to the <strong>Qwen 3.5 9B Journalist</strong> — same abliterated journalism corpus, much smaller footprint, bench-equivalent on refusal-resistance.'
-      : 'You have <b>~' + deviceMemGB + ' GB</b> RAM. The 9B Journalist leaves plenty of headroom for the orchestration pipeline. The 27B needs 32 GB+ and will OOM on your machine — keep the 9B selected.';
-    recommended = 'qwen9b';
+    verdict = (currentSel === 'gemma26b' || currentSel === 'gemma31b') ? 'red' : 'green';
+    titleText = (currentSel === 'gemma26b' || currentSel === 'gemma31b')
+      ? 'Not enough RAM for that tier — pick the 12B'
+      : 'Gemma 4 12B Spotlight orchestrator — fits your hardware';
+    bodyHtml = (currentSel === 'gemma26b' || currentSel === 'gemma31b')
+      ? 'You have <b>~' + deviceMemGB + ' GB</b> RAM. The 26B needs 32 GB and the 31B needs 48 GB. Switch to the <strong>12B Spotlight orchestrator</strong> — it\'s procedure-tuned for exactly this pipeline and is the fastest tier anyway.'
+      : 'You have <b>~' + deviceMemGB + ' GB</b> RAM. The <strong>12B</strong> fits. Note: at 16 GB the RLM research distiller runs tight — 24 GB runs the full stack comfortably. The bigger tiers need 32/48 GB.';
+    recommended = 'gemma12b';
   } else if (deviceMemGB) {
     verdict = 'red';
     titleText = 'No local model — switch to Frontier';
@@ -591,19 +596,19 @@ async function runFitCheck() {
     recommended = null;
   } else if (isAppleSilicon && cores >= 8) {
     verdict = 'amber';
-    titleText = 'Confirm your RAM — defaulting to the 9B';
-    bodyHtml = 'Apple Silicon with <b>' + cores + ' cores</b> typically has 16+ GB unified memory, but the browser can\'t confirm it. Defaulting to the <strong>Qwen 3.5 9B Journalist</strong> (safe on any 16 GB+ Mac). Run the command below to check your actual RAM — at 32+ GB you can use the 27B instead.';
-    recommended = 'qwen9b';
+    titleText = 'Confirm your RAM — defaulting to the 12B';
+    bodyHtml = 'Apple Silicon with <b>' + cores + ' cores</b> typically has 16+ GB unified memory, but the browser can\'t confirm it. Defaulting to the <strong>12B Spotlight orchestrator</strong> (safe on any 16 GB+ Mac, and the fastest tier). Run the command below to check your actual RAM — at 32+ GB pick the 26B-A4B, at 48+ GB the 26B or 31B.';
+    recommended = 'gemma12b';
   } else if (isMac && arch === 'x86') {
     verdict = 'red';
     titleText = 'Intel Mac — use Frontier mode';
-    bodyHtml = 'Intel Macs don\'t have Apple Silicon\'s unified memory advantage. Neither local model will handle Spotlight\'s orchestration well. We recommend switching to <strong>Frontier</strong> mode.';
+    bodyHtml = 'Intel Macs don\'t have Apple Silicon\'s unified memory advantage. No local tier will handle Spotlight\'s orchestration well. We recommend switching to <strong>Frontier</strong> mode.';
     recommended = null;
   } else if (isLinux) {
     verdict = 'amber';
-    titleText = 'Check your GPU/VRAM — defaulting to the 9B';
-    bodyHtml = 'On Linux, the 9B runs on 16 GB RAM CPU-only or any 8+ GB NVIDIA/AMD GPU. For the 27B you need 32+ GB system RAM or 24+ GB VRAM. Confirm your specs with the command below.';
-    recommended = 'qwen9b';
+    titleText = 'Check your GPU/VRAM — defaulting to the 12B';
+    bodyHtml = 'On Linux, the 12B runs on 16 GB RAM CPU-only or any 12+ GB NVIDIA/AMD GPU. The 26B-A4B wants 32+ GB system RAM or 24+ GB VRAM; the 31B wants 48+ GB / dual-GPU. Confirm your specs with the command below.';
+    recommended = 'gemma12b';
   } else {
     verdict = 'red';
     titleText = 'Browser detection limited — use Frontier mode';
@@ -636,9 +641,9 @@ document.getElementById('fitCmdCopy').addEventListener('click', async () => {
   } catch {}
 });
 document.querySelectorAll('input[name="local_model"]').forEach(el => el.addEventListener('change', () => {
-  // Heavy-tier enforcement: picking the 27B without a prior fit-check
+  // Heavy-tier enforcement: picking the 26B/31B without a prior fit-check
   // auto-triggers one, so nobody proceeds onto a 16 GB Mac by accident.
-  if (el.checked && el.value === 'qwen27b' && !fitRan) runFitCheck();
+  if (el.checked && (el.value === 'gemma26b' || el.value === 'gemma31b') && !fitRan) runFitCheck();
 }));
 
 function readForm() {
@@ -651,7 +656,7 @@ function readForm() {
     cloudRuntime: r('cloud_runtime'),
     opencodeProvider: r('opencode_provider'),
     cloudKey: v('cloud_key'),
-    localAgent: r('local_agent'),
+    localAgent: 'flue',
     localModel: r('local_model'),
     firecrawlKey: v('firecrawl_key'),
     navKey: v('nav_key'),

@@ -8,6 +8,14 @@ sensitive: false
 
 # Spotlight — Runtime Contract
 
+> **TODO (Tom, 2026-07-10):** run the **26b + e4b RLM full-investigation co-residency test**
+> on the M4 Pro 48 GB (and sanity-check the 31b tier the same way) — the last unknown before
+> calling the sovereign-local mid tier real. Switch = edit `SPOTLIGHT_GGUF_PATH` +
+> `SPOTLIGHT_MODEL_TIER=26b` in `$SPOTLIGHT_DIR/.env`, `spotlight-local --stop`, then
+> `spotlight <case> "<brief>"`. Watch: RAM headroom under KV growth + subagents, compaction
+> fires at the 26b profile (~24.5k) on the e4b, `fetch --rlm` distills. Record results in
+> `tools/fine-tuning/docs/local-serving-efficiency.md` (experiment log) and delete this TODO.
+
 ## Session Preflight
 
 Before coding in this project on a Buried Signals dev machine, read the shared `coding-rules` skill (`kit/coding-rules/SKILL.md` in the sibling shared-skills repo, if present). It is the canonical source for workflow routing, coding standards, Jujutsu/version-control rules, GitHub operations, and parallel-agent isolation. Local instructions below add project-specific constraints.

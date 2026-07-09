@@ -33,6 +33,16 @@ export function roleBody(name: string): string {
 	return raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '').trim();
 }
 
+// Tier-conditional raw-source affordance: the 12b must never bulk-load raw pages
+// (context rot is its #1 failure mode); the more capable local tiers (26b/31b) may
+// selectively read a `.raw` when the distilled leads look thin — a longer leash on
+// the same harness, not a different harness.
+const MODEL_TIER = process.env.SPOTLIGHT_MODEL_TIER ?? '12b';
+const RAW_AFFORDANCE =
+	MODEL_TIER === '12b'
+		? 'Do NOT load `.raw` files into working context (provenance/citations only).'
+		: 'Prefer the distilled leads. You MAY selectively read a specific `.raw` file when the leads look thin or you need exact wording for a citation — read only the relevant section (grep/head it first), never bulk-load raw pages.';
+
 /**
  * The Flue runtime adapter for AGENTS.md's abstract verbs. The shared skills call
  * verbs (execute-shell, fetch, invoke-skill, spawn-agent…); this preamble tells the
@@ -47,23 +57,20 @@ You are running in the Flue harness. Your **harness root** is \`${HARNESS_ROOT}\
 
 The shared skills use abstract verbs; execute them as:
 - **execute-shell(cmd)** → your \`bash\` tool.
-- **fetch(url, output_path)** → \`bash\`: \`PYTHONPATH=${HARNESS_ROOT} ${SPOTLIGHT_PYTHON} -m integrations.scraping <url> --out <output_path>\` (Crawl4AI, no API key; on a bot-block escalates to Firecrawl only if FIRECRAWL_API_KEY is set, else surfaces the block; add \`--tor\` to anonymize via Tor; give an ABSOLUTE \`output_path\` under \`${HARNESS_ROOT}/cases/<project>/research/\`). **Do NOT hand-roll \`curl\`** — the seam returns cleaned markdown; \`curl\` dumps raw HTML that balloons context. For a local PDF add \`--pdf\`. **fetch retrieves static / server-rendered content ONLY.** If it returns empty or "no information available" on a page that needs interaction — company registries (Zefix, OpenCorporates search), JS-rendered portals, forms, login-gated pages — do NOT settle for weaker secondary sources: escalate to **browse**.
+- **fetch(url, output_path)** → \`bash\`: \`PYTHONPATH=${HARNESS_ROOT} ${SPOTLIGHT_PYTHON} -m integrations.scraping <url> --out <output_path> --rlm\` (Crawl4AI, no API key; on a bot-block escalates to Firecrawl only if FIRECRAWL_API_KEY is set, else surfaces the block; add \`--tor\` to anonymize via Tor; give an ABSOLUTE \`output_path\` under \`${HARNESS_ROOT}/cases/<project>/research/\`). **Do NOT hand-roll \`curl\`** — the seam returns cleaned markdown; \`curl\` dumps raw HTML that balloons context. For a local PDF add \`--pdf\`. **fetch retrieves static / server-rendered content ONLY.** If it returns empty or "no information available" on a page that needs interaction — company registries (Zefix, OpenCorporates search), JS-rendered portals, forms, login-gated pages — do NOT settle for weaker secondary sources: escalate to **browse**.
 - **browse(url) — browser automation for interactive pages** → activate the \`integrations\` skill and drive **dev-browser** (\`bash\`: \`dev-browser --headless --timeout 90 run <script.js>\`; Playwright-style \`page.goto/fill/click/screenshot\`; recipe in \`web-archiving/references/capture-dev-browser.md\`). Use it to fill form fields, click through multi-step flows, render JS, and capture screenshots/downloads — then record \`acquisition_method:"dev_browser"\` in the evidence bundle. If \`dev-browser\` is not on PATH, fall back to the Crawl4AI seam.
-- **search(query)** → \`bash\`: \`PYTHONPATH=${HARNESS_ROOT} ${SPOTLIGHT_PYTHON} -m integrations.search "<query>"\` (SearXNG, self-hosted, no API key; paginates the long tail so obscure sources stay reachable; add \`--limit N\`, \`--union\` for exhaustive recall, or \`--categories news --time-range month\` for recency). For OSINT *tool* discovery use \`bash\`: \`navigator tools find "<query>" --json\`.
+- **search(query)** → \`bash\`: \`PYTHONPATH=${HARNESS_ROOT} ${SPOTLIGHT_PYTHON} -m integrations.search "<query>"\` (SearXNG, self-hosted, no API key; paginates the long tail so obscure sources stay reachable; add \`--limit N\`, \`--union\` for exhaustive recall, or \`--categories news --time-range month\` for recency). For OSINT *tool* discovery: local / open tier → \`bash\`: \`python3 scripts/osint-tools.py find "<query>" [--category X] [--limit 8]\` (local SQLite+FTS index, 12,500 tools, offline, no entitlement); subscription tier (Navigator entitled) → \`bash\`: \`navigator tools find "<query>" --json\`.
 - **query-vault(query)** → \`bash\`: \`BUN_INSTALL="" qmd query "<query>"\`.
 - **read-file / write-file / edit-file / list-files / grep-files** → your \`read\` / \`write\` / \`edit\` / \`glob\` / \`grep\` tools.
 - **invoke-skill(id)** → the skill of that name is already loaded from \`.agents/skills\`; follow its instructions.
 - **spawn-agent(id, prompt)** → delegate with your \`task\` tool to the named subagent (\`investigator\` or \`fact-checker\`).
 
-## Context hygiene — RLM lead-distillation is ON BY DEFAULT in this local harness
+## Context hygiene — RLM lead-distillation is AUTOMATIC in \`fetch\` on this local harness
 
-Raw scraped sources balloon your context and cause rot on small local models — the single biggest failure mode of the local tier. Unlike frontier setups (where the \`spotlight\` skill's RLM proposal is opt-in and user-approved), **here the RLM is default-on and you run it autonomously — do NOT ask the user for approval** (that gate applies only to cloud/frontier configs).
+Raw scraped sources balloon your context and cause rot on small local models — the single biggest failure mode of the local tier (a raw page is ~40k tokens; its distilled leads are ~600 — a ~99% saving). **You do NOT run the RLM yourself.** \`fetch(..., --rlm)\` (default on this harness) distills every page automatically via the local e4b: \`<output_path>\` receives the **compact leads** (what you read); the raw source is kept at \`<output_path>.raw\` for citations/provenance only. Requires the RLM endpoint env (\`SPOTLIGHT_RLM_OPENAI_BASE_URL\`) — set by the local launcher.
 
-**After each research cycle, before reasoning over the evidence:**
-1. Write \`${HARNESS_ROOT}/cases/<project>/data/rlm-request.json\` = \`{project, run_id, mode:"local_gemma4_e4b", corpus_paths:[...]}\` — use the **defaults** (prefilter+hybrid on): the deterministic pass extracts structured entities and e4b supplements semantic/contradiction leads. This is the proven config (benchmark: entity_recall 1.0, schema-valid). **\`corpus_paths\` are relative to the CASE DIR (the project root \`${HARNESS_ROOT}/cases/<project>\`), NOT to the request file's folder** — e.g. \`"research/ef-about.md"\`. NO \`..\`, NO absolute: \`run_rlm\` resolves each path against the case dir and rejects \`..\` as an unsafe segment. (The request JSON itself may sit in \`data/\`; \`corpus_paths\` still resolve from the case-dir root.) (For prose-name-heavy corpora where the deterministic pass under-recalls, a stronger extractor can be configured via \`SPOTLIGHT_RLM_OPENAI_BASE_URL\`/\`_MODEL\` — off by default to stay sovereign.)
-2. \`bash\`: **\`PYTHONPATH=${HARNESS_ROOT} ${SPOTLIGHT_PYTHON} -m integrations.rlm.run_rlm ${HARNESS_ROOT}/cases/<project>/data/rlm-request.json\`** (both the \`PYTHONPATH\` prefix and the \`${SPOTLIGHT_PYTHON}\` venv interpreter are REQUIRED — bare \`python3\` or the file-path form fails) → writes \`${HARNESS_ROOT}/cases/<project>/data/rlm-analysis.json\` (source-linked leads: entities, timeline events, contradictions).
-3. **Reason from \`rlm-analysis.json\` (distilled leads), NOT the raw \`research/\` files.** Keep raw sources on disk as provenance/citations — do NOT load their full text back into working context. Leads are lead-only, never verified facts.
+**So: just \`fetch\` and read \`<output_path>\` — it is already compact leads.** ${RAW_AFFORDANCE} Leads are unverified pointers, never facts. (The RLM proposal/gate in the \`spotlight\` skill applies only to cloud/frontier setups, where distillation is opt-in.)
 
 Keeps working context compact across cycles. If the RLM errors or is unavailable, note it and fall back to reading research files directly.
 
-Work autonomously — never ask the user or wait for input. Persist evidence and findings to files as the skills direct.`;
+Persist evidence and findings to files as the skills direct. **Whether you pause for the user at a gate is role-specific — follow your role instructions below** (the orchestrator gates to the user; delegated workers never do).`;

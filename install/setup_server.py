@@ -106,15 +106,27 @@ def pick_folder_natively(prompt):
 
 # Choice → installer-value tables. Pins live in install-spotlight.sh only;
 # this server (and configure.html) carry choices, never versions.
+# Roster (2026-07-09): the Gemma-4 sovereign tiers. Repo + Q4 filename pairs are
+# verified against the HF API; the 12b is the Spotlight procedure-tuned orchestrator.
 MODEL_REPOS = {
-    "qwen9b": "tomvaillant/qwen3.5-9b-abliterated-journalist-GGUF",
-    "qwen27b": "tomvaillant/qwen3.6-27b-abliterated-journalist-GGUF",
+    "gemma12b": "buriedsignals/gemma4-12b-spotlight-orchestrator-v3-GGUF",
+    "gemma26b": "unsloth/gemma-4-26B-A4B-it-GGUF",
+    "gemma31b": "unsloth/gemma-4-31B-it-GGUF",
 }
 MODEL_LABELS = {
-    "qwen9b": "Qwen 3.5 9B Journalist",
-    "qwen27b": "Qwen 3.6 27B Journalist",
+    "gemma12b": "Gemma 4 12B — Spotlight orchestrator (procedure-tuned)",
+    "gemma26b": "Gemma 4 26B-A4B (MoE)",
+    "gemma31b": "Gemma 4 31B",
 }
-SERVER_FOR_AGENT = {"opencode": "ollama", "pi": "llamacpp"}
+# Tier drives the harness compaction profile, the launcher's reasoning budget,
+# and integration dismissal (12b: constrained set).
+MODEL_TIERS = {"gemma12b": "12b", "gemma26b": "26b", "gemma31b": "31b"}
+# The RLM (fetch distillation + compaction summarizer), served by the launcher on
+# its own llama.cpp. Stock instruction-tuned e4b — verified public on HF.
+RLM_REPO = "unsloth/gemma-4-E4B-it-GGUF"
+RLM_GGUF = "gemma-4-E4B-it-Q4_K_M.gguf"
+# Local serving is llama.cpp only (the Flue/Pi harness needs --jinja tool-calling).
+SERVER_FOR_AGENT = {"flue": "llamacpp"}
 CLOUD_KEY_VARS = {
     "openrouter": "OPENROUTER_API_KEY",
     "fireworks": "FIREWORKS_API_KEY",
@@ -149,8 +161,8 @@ def normalize(payload):
         "mode": enum("mode", ("cloud", "local"), "cloud"),
         "cloudRuntime": enum("cloudRuntime", ("claude", "gemini", "codex", "opencode"), "claude"),
         "opencodeProvider": enum("opencodeProvider", tuple(CLOUD_KEY_VARS), "openrouter"),
-        "localAgent": enum("localAgent", tuple(SERVER_FOR_AGENT), "opencode"),
-        "localModel": enum("localModel", tuple(MODEL_REPOS), "qwen9b"),
+        "localAgent": enum("localAgent", tuple(SERVER_FOR_AGENT), "flue"),
+        "localModel": enum("localModel", tuple(MODEL_REPOS), "gemma12b"),
         "vaultApp": enum("vaultApp", ("obsidian", "tolaria"), "obsidian"),
         "rlmMode": enum("rlmMode", ("lite", "local_gemma4_e4b"), "lite"),
         # No silent defaults here: an emptied path must fail validation,
@@ -180,10 +192,12 @@ def derived(d):
     opencode_cloud = (not local) and d["cloudRuntime"] == "opencode"
     return {
         "runtime": "local" if local else d["cloudRuntime"],
-        "agent": d["localAgent"] if local else "",
-        "localServer": SERVER_FOR_AGENT[d["localAgent"]] if local else "",
+        # One local harness: Flue on Pi over llama.cpp (docs/runtimes.md, canonical).
+        "agent": "flue" if local else "",
+        "localServer": "llamacpp" if local else "",
         "localModel": d["localModel"] if local else "",
         "modelRepo": MODEL_REPOS[d["localModel"]] if local else "",
+        "modelTier": MODEL_TIERS[d["localModel"]] if local else "",
         "opencodeProvider": d["opencodeProvider"] if opencode_cloud else "",
         "cloudKeyVar": CLOUD_KEY_VARS[d["opencodeProvider"]] if opencode_cloud else "",
         "needsCloudKey": opencode_cloud,
@@ -314,12 +328,16 @@ def build_setup_config(d):
     minus the secrets (which live in the staged .env).
     """
     der = derived(d)
-    rlm_gemma = d["intRlm"] and d["rlmMode"] == "local_gemma4_e4b"
+    local = d["mode"] == "local"
+    # Local tier: the RLM is runtime-auto (fetch distillation + compaction summarizer),
+    # served by the launcher on its own llama.cpp from a verified public GGUF.
+    rlm_local = local and d["intRlm"]
     fields = [
         ("SPOTLIGHT_MODE", d["mode"]),
         ("SPOTLIGHT_RUNTIME", der["runtime"]),
         ("SPOTLIGHT_LOCAL_SERVER", der["localServer"]),
         ("SPOTLIGHT_LOCAL_MODEL", der["localModel"]),
+        ("SPOTLIGHT_MODEL_TIER", der["modelTier"]),
         ("SPOTLIGHT_AGENT", der["agent"]),
         ("SPOTLIGHT_OPENCODE_INTERFACE", "cli"),
         ("SPOTLIGHT_OPENCODE_PROVIDER", der["opencodeProvider"]),
@@ -335,10 +353,10 @@ def build_setup_config(d):
         ("SPOTLIGHT_INT_UNPAYWALL", "true" if d["intUnpaywall"] else "false"),
         ("UNPAYWALL_EMAIL", d["unpaywallEmail"]),
         ("SPOTLIGHT_INT_RLM", "true" if d["intRlm"] else "false"),
-        ("SPOTLIGHT_RLM_MODE", (d["rlmMode"] or "lite") if d["intRlm"] else "off"),
-        ("SPOTLIGHT_RLM_MODEL", "gemma4:e4b" if rlm_gemma else ""),
-        ("SPOTLIGHT_RLM_PREFILTER", "true" if rlm_gemma else ""),
-        ("SPOTLIGHT_RLM_HYBRID", "true" if rlm_gemma else ""),
+        ("SPOTLIGHT_RLM_MODE", "local_llamacpp_e4b" if rlm_local else ((d["rlmMode"] or "lite") if d["intRlm"] else "off")),
+        ("SPOTLIGHT_RLM_MODEL", "rlm-e4b" if rlm_local else ""),
+        ("SPOTLIGHT_RLM_REPO", RLM_REPO if rlm_local else ""),
+        ("SPOTLIGHT_RLM_GGUF", RLM_GGUF if rlm_local else ""),
     ]
     lines = ["# Spotlight setup choices — generated by the local configurator (no secrets)"]
     lines += [f"{name}={shlex.quote(value)}" for name, value in fields]
@@ -464,9 +482,7 @@ def esc(s):
 def build_getting_started(d):
     der = derived(d)
     if d["mode"] == "local":
-        server_label = "Ollama" if der["localServer"] == "ollama" else "llama.cpp"
-        agent_label = "OpenCode" if d["localAgent"] == "opencode" else "Pi"
-        mode_label = f"Local · {MODEL_LABELS[d['localModel']]} via {server_label} ({agent_label} harness) · runs on your machine"
+        mode_label = f"Local · {MODEL_LABELS[d['localModel']]} via llama.cpp (Flue/Pi harness) · runs on your machine"
     elif der["needsCloudKey"]:
         mode_label = f"Frontier · OpenCode via {PROVIDER_LABELS[d['opencodeProvider']]} (pay per token)"
     else:
@@ -480,7 +496,10 @@ def build_getting_started(d):
     if d["intUnpaywall"]:
         integrations.append("Unpaywall (open-access lookup)")
     if d["intRlm"]:
-        integrations.append(f"Case-corpus lead extraction ({'Gemma4 E4B' if d['rlmMode'] == 'local_gemma4_e4b' else 'Lite'} mode)")
+        if d["mode"] == "local":
+            integrations.append("RLM (Gemma4 E4B): automatic scrape distillation + conversation compaction")
+        else:
+            integrations.append(f"Case-corpus lead extraction ({'Gemma4 E4B' if d['rlmMode'] == 'local_gemma4_e4b' else 'Lite'} mode)")
 
     if d["mode"] == "local":
         launch_note = ("The <code>spotlight</code> command starts your local inference server, loads the "

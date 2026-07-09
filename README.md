@@ -202,10 +202,15 @@ curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash -s --
 
 ## Runtimes
 
-Spotlight can run under any agent harness that can read `AGENTS.md`, load the
-skills, and bind the abstract operations to real tools. Current runtime paths
-include opencode, pi, Claude Code, Codex CLI, Gemini CLI, Hermes/Mycroft, and
-Goose.
+Two shapes, one source of truth (the skills + `agents/*.md` role files):
+
+- **Frontier runtimes** (Claude Code, Codex CLI, Gemini CLI): the runtime *is* the
+  harness — it loads the skills natively, gates are chat turns, nothing else installs.
+- **Non-frontier** (local GGUFs and API providers like Fireworks/OpenRouter): the
+  repo's **Flue-on-Pi harness** (`harness/flue/`) provides orchestration — native
+  investigator/fact-checker subagents, durable resumable sessions, RLM distillation,
+  and conversation compaction. The installer deploys the *same* harness the evals
+  exercise.
 
 Per-runtime wiring lives in [docs/runtimes.md](docs/runtimes.md). The
 machine-readable contract lives in [AGENTS.md](AGENTS.md).
@@ -214,7 +219,12 @@ machine-readable contract lives in [AGENTS.md](AGENTS.md).
 
 Local model selection is an implementation detail, not the product. Spotlight
 can use cloud, ZDR, or local inference depending on the runtime and newsroom
-policy. Runtime docs should carry model notes and fit checks.
+policy. On the local tier the day-to-day interface is one command per
+investigation turn — `spotlight <case-id> "<message>"` (re-run with the same id
+to answer each gate; `spotlight-local --stop` stops the model servers) — and
+switching model tiers (12b/26b/31b) is an `.env` edit
+(`SPOTLIGHT_GGUF_PATH` + `SPOTLIGHT_MODEL_TIER`), not a reinstall. Details and
+fit checks: [docs/runtimes.md](docs/runtimes.md).
 
 ## Documentation
 

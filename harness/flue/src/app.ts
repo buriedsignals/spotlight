@@ -49,6 +49,29 @@ if (process.env.OPENROUTER_API_KEY) {
 	});
 }
 
+// RLM / compaction-summarizer tier: the Gemma e4b served by its OWN llama.cpp
+// (SPOTLIGHT_RLM_OPENAI_BASE_URL, e.g. http://127.0.0.1:8095/v1 — the SAME endpoint the
+// Python `fetch --rlm` seam distills scraped pages through). Registered as a Flue provider so
+// the local tier can use it as the CHEAP compaction summarizer (agents/spotlight.ts) instead of
+// spending minutes summarizing with the slow session 12b/26b at every gate — the thrash that
+// turned the gold-investigation eval into a crawl. Registered only when the endpoint is set, so
+// cloud/frontier deployments (no local e4b) never reference it. See docs/local-serving-efficiency.md.
+if (process.env.SPOTLIGHT_RLM_OPENAI_BASE_URL) {
+	const rlmBase = process.env.SPOTLIGHT_RLM_OPENAI_BASE_URL.replace(/\/$/, '');
+	registerProvider('rlm', {
+		api: 'openai-completions',
+		baseUrl: rlmBase.endsWith('/v1') ? rlmBase : `${rlmBase}/v1`,
+		apiKey: 'local', // llama-server ignores it; the OpenAI wire protocol requires a non-empty key
+		// MUST match the e4b llama-server's --ctx-size (launcher exports SPOTLIGHT_RLM_CTX).
+		// 24576 fits the largest compaction-summarizer input (serialized since-last-cut
+		// transcript, tool results truncated to 2000 chars, + prompt + previous summary)
+		// with headroom; a structured checkpoint summary is short, but generateSummary caps
+		// maxTokens at min(0.8*reserveTokens, 16000) so declare real output budget.
+		contextWindow: Number(process.env.SPOTLIGHT_RLM_CTX ?? 24576),
+		maxTokens: 16000,
+	});
+}
+
 const app = new Hono();
 app.route('/', flue());
 
