@@ -28,6 +28,18 @@ sensitive: false
 > escalating to `browse` (the U20a gap); (4) empty-assistant mirroring after degenerate
 > turns (see `tools/fine-tuning/docs/tuning-12b.md`).
 >
+> **Chain-test verdict (2026-07-10 00:18, neutral approvals only):** turn 1 = full cycle +
+> gate stop (15.5 min); turn 2 = 52 min of REAL work (research cycle, fact-check
+> delegation, findings.json + evidence-bundle.json written; compaction fired 3× incl.
+> inside a subagent — the context system held) but the **closing gate presentation came
+> back empty**; turn 3 mirrored the empty (1 token) → stall. So the v2 behavioral target
+> is exactly: *end every turn with a non-empty gate presentation; never mirror a prior
+> empty turn.* A one-line user nudge ("You returned an empty reply — respond with text…")
+> demonstrably breaks the mirror → **guard #0 (no training): auto-nudge once from the
+> launcher/driver when the final text is empty** (an orchestrator turn should never end
+> empty, so the retry is always safe). Log: scratchpad chain-test.log; run db
+> `harness/flue/data/gold-gold-inv-ef-0.db`.
+>
 > **How to train it FAST — reuse, don't re-run (no 100-loop grind):**
 > 1. **Ship the deterministic guard first (no training, today):** validate
 >    `fact-check.json` on write — any `status:"verified"` whose
