@@ -1,4 +1,22 @@
+<div align="center">
+
 # Spotlight
+
+### OSINT investigation orchestrator for AI agents
+
+**Turns a lead into a structured case file — scoped brief, approved methodology, sourced findings, independent fact-checking, and provenance records. 16 skills, 7 runtimes, local-capable.**
+
+[Install](#install) | [Workflow](#investigation-workflow) | [Integrations](#integrations) | [Runtimes](#runtimes) | [Website](https://spotlight.buriedsignals.com/)
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-00c853?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)[![16 Skills](https://img.shields.io/badge/skills-16-0080ff?style=for-the-badge&logo=bookstack&logoColor=white)](https://github.com/buriedsignals/spotlight/tree/main/plugins/spotlight/skills)[![7 Runtimes](https://img.shields.io/badge/runtimes-7-aa00ff?style=for-the-badge&logo=windowsterminal&logoColor=white)](#runtimes)[![Sovereign](https://img.shields.io/badge/sovereign_mode-SearXNG_+_Crawl4AI_+_local_models-00bfa5?style=for-the-badge&logo=shield&logoColor=white)](#source-acquisition)
+
+[![Stars](https://img.shields.io/github/stars/buriedsignals/spotlight?style=flat-square&logo=github&label=Stars)](https://github.com/buriedsignals/spotlight/stargazers)[![Issues](https://img.shields.io/github/issues/buriedsignals/spotlight?style=flat-square&logo=github&label=Issues)](https://github.com/buriedsignals/spotlight/issues)[![Last Commit](https://img.shields.io/github/last-commit/buriedsignals/spotlight?style=flat-square&logo=github&label=Last%20Commit)](https://github.com/buriedsignals/spotlight/commits)[![Contributors](https://img.shields.io/github/contributors/buriedsignals/spotlight?style=flat-square&logo=github&label=Contributors)](https://github.com/buriedsignals/spotlight/graphs/contributors)
+
+Built by [**Buried Signals**](https://buriedsignals.com/) • [tom@buriedsignals.com](mailto:tom@buriedsignals.com)
+
+</div>
+
+---
 
 Spotlight turns an investigation lead into a structured case file: scoped brief,
 approved methodology, sourced findings, independent fact-checking, review
@@ -232,6 +250,26 @@ policy. Runtime docs should carry model notes and fit checks.
 - Follow the Money synthesizes public investigative-finance methodology from
   Jim Shultz, GIJN, EBU, and related training material.
 - Investigate includes methodology influenced by Bellingcat training material.
+
+## Acknowledgements
+
+Spotlight stands on open work — community-maintained open-source projects and
+open methods. A sincere thank-you to every project below — Spotlight would not
+exist without them. *(Listing does not imply affiliation or endorsement.)*
+
+| Category | Projects we're grateful to |
+|----------|----------------------------|
+| **Loop harness** | [pi](https://pi.dev/) (Mario Zechner, MIT — the loop-harness coding agent) · [Flue](https://github.com/withastro/flue) (Apache-2.0 — the harness runtime) |
+| **Sovereign search & scraping** | [SearXNG](https://github.com/searxng/searxng) (AGPL-3.0) · [Crawl4AI](https://github.com/unclecode/crawl4ai) (unclecode, Apache-2.0) · [Playwright](https://playwright.dev/) (browser automation) · [Poppler](https://poppler.freedesktop.org/) (`pdftotext` — PDF extraction) · [Tor](https://www.torproject.org/) (opt-in anonymous fetching) |
+| **Local inference** | [llama.cpp](https://github.com/ggml-org/llama.cpp) (ggml, MIT) · [Unsloth](https://unsloth.ai/) (GGUF quants of the local operator model) |
+| **OSINT tooling** | [Maigret](https://github.com/soxoj/maigret) (soxoj, MIT) · [Sherlock](https://github.com/sherlock-project/sherlock) (MIT) · [Holehe](https://github.com/megadose/holehe) (GPL-3.0) · [ExifTool](https://exiftool.org/) (Phil Harvey) · [Unpaywall](https://unpaywall.org/) (OurResearch — open-access paper lookup) |
+| **Evidence & provenance** | [Internet Archive / Wayback Machine](https://web.archive.org/) · [Archive.today](https://archive.today/) · [C2PA](https://c2pa.org/) (content-provenance standard for case packages) · [OpenSanctions](https://www.opensanctions.org/) (evidence-preservation methodology) |
+| **Knowledge vault** | [Obsidian](https://obsidian.md/) (the vault app) · [QMD](https://www.npmjs.com/package/@tobilu/qmd) (tobilu — local vault search) |
+| **Reports & site** | [Mermaid](https://github.com/mermaid-js/mermaid) (MIT — report diagrams) · [Three.js](https://github.com/mrdoob/three.js) (mrdoob, MIT — the landing scene) |
+| **Methodology** | [Joe Amditis](https://github.com/jamditis/claude-skills-journalism) (MIT) · [SIFT — Mike Caulfield](https://hapgood.us/2019/06/19/sift-the-four-moves/) · [Bellingcat](https://www.bellingcat.com/) · [GIJN](https://gijn.org/) (Patrucic & Cosic, CC BY-ND) · Jim Shultz — Follow the Money · [Derek Bowler · EBU](https://www.ebu.ch/) |
+
+> Built something here we should credit, or want a listing changed or removed?
+> Open an issue or PR — we'll fix it fast.
 
 ## License
 
