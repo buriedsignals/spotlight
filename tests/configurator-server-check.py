@@ -61,7 +61,6 @@ class UnitChecks(unittest.TestCase):
     def test_structural_validation(self):
         self.assertEqual(errs(BASE), [])
         cases = [
-            ({"firecrawlKey": ""}, "firecrawl_key"),
             ({"navKey": ""}, "nav_key"),
             ({"vaultPath": "   "}, "vault_path"),
             ({"installPath": ""}, "install_path"),
@@ -69,6 +68,8 @@ class UnitChecks(unittest.TestCase):
         for overrides, field in cases:
             errors = errs({**BASE, **overrides})
             self.assertTrue(any(e["field"] == field for e in errors), field)
+        # Firecrawl is an optional fallback; the sovereign stack needs no key.
+        self.assertEqual(errs({**BASE, "firecrawlKey": ""}), [])
 
     def test_cloud_key_requirement(self):
         # opencode without a cloud key errors; with one it passes
@@ -161,6 +162,10 @@ class UnitChecks(unittest.TestCase):
             # --skip-key-validation bypasses every probe
             srv.probe = lambda url, headers: (_ for _ in ()).throw(AssertionError("probed"))
             self.assertEqual(srv.validate_keys(d, skip=True), ([], []))
+            seen = []
+            srv.probe = lambda url, headers: seen.append(url) or "ok"
+            srv.validate_keys(srv.normalize({**BASE, "firecrawlKey": ""}))
+            self.assertFalse(any("firecrawl" in url for url in seen))
         finally:
             srv.probe = orig
 
@@ -390,10 +395,10 @@ class ServerChecks(unittest.TestCase):
 
         # 4. structural validation blocks with field errors
         with self.assertRaises(urllib.error.HTTPError) as ctx:
-            self.post("/submit", {**BASE, "token": self.token, "firecrawlKey": ""})
+            self.post("/submit", {**BASE, "token": self.token, "navKey": ""})
         self.assertEqual(ctx.exception.code, 400)
         body = json.loads(ctx.exception.read())
-        self.assertTrue(any(e["field"] == "firecrawl_key" for e in body["errors"]))
+        self.assertTrue(any(e["field"] == "nav_key" for e in body["errors"]))
 
         # 5. good submit writes the three artifacts and exits 0
         resp = self.post("/submit", {**BASE, "token": self.token})

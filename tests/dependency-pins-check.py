@@ -13,7 +13,7 @@ MANIFEST_PATH = ROOT / "VALIDATED_DEPENDENCIES.md"
 MANIFEST = MANIFEST_PATH.read_text()
 
 EXPECTED = {
-    "firecrawl-cli": "1.3.1",
+    "firecrawl-cli": "1.9.8",
     "@tobilu/qmd": "2.5.3",
     "dev-browser": "0.2.8",
     "@anthropic-ai/claude-code": "2.1.169",
@@ -24,6 +24,8 @@ EXPECTED = {
     "jsonschema": "4.25.1",
     "requests": "2.32.5",
     "maigret": "0.4.4",
+    "crawl4ai": "0.9.0",
+    "navigator-cli": "0.1.0",
 }
 
 DOCKER_ARTIFACTS = [
@@ -145,6 +147,8 @@ for token in [
     "ensure_npm_global_exact qmd @tobilu/qmd",
     "ensure_npm_global_exact dev-browser dev-browser",
     "install_python_reviewed_deps",
+    '"crawl4ai==$CRAWL4AI_VERSION"',
+    '"navigator-cli==$NAVIGATOR_CLI_VERSION"',
 ]:
     if token not in INSTALLER:
         fail(f"installer missing reviewed dependency path: {token}")

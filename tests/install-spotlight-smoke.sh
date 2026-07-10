@@ -6,10 +6,10 @@
 #
 # The headless path reads pre-exported env vars directly (the retired
 # SPOTLIGHT_CONFIG base64 blob is a contract-checked hard error below), so
-# each combo is passed as KEY=VAL pairs through env(1). SPOTLIGHT_DIR is
-# pinned to a sandbox dir because the installer cd's there even in dry-run,
-# and because expand_path's ${input#~/} does not strip ~/ on bash 3.2
-# (pre-existing body behavior, deliberately characterized, not fixed).
+# each combo is passed as KEY=VAL pairs through env(1). The submitted install
+# path is an absolute sandbox path because the installer cd's there even in
+# dry-run. Ambient SPOTLIGHT_DIR is explicitly removed: the submitted path is
+# authoritative and has its own regression test.
 #
 # Usage: bash tests/install-spotlight-smoke.sh
 
@@ -38,8 +38,8 @@ check_combo() {
   local label="$1"; shift
   local out
   if ! out=$(env -u SPOTLIGHT_INGEST_TARGET -u SPOTLIGHT_SOVEREIGNTY_INHERITS_MYCROFT \
-                 -u SPOTLIGHT_VAULT_PATH -u OSINT_NAV_API_KEY \
-                 SPOTLIGHT_DIR="$SANDBOX_DIR" "$@" \
+                 -u SPOTLIGHT_VAULT_PATH -u OSINT_NAV_API_KEY -u SPOTLIGHT_DIR \
+                 "$@" \
                  bash "$INSTALLER" --headless --dry-run 2>&1); then
     echo "✗ $label  installer exited non-zero"
     echo "$out" | tail -10 | sed 's/^/    /'
@@ -65,8 +65,8 @@ check_combo() {
 
 # Common base config — every combo needs these vars.
 BASE=(
-  SPOTLIGHT_DIR_INPUT='~/Code/spotlight-test'
-  SPOTLIGHT_VAULT_INPUT='~/Vaults/spotlight-test'
+  "SPOTLIGHT_DIR_INPUT=$SANDBOX_DIR"
+  "SPOTLIGHT_VAULT_INPUT=$SANDBOX/vault"
   SPOTLIGHT_VAULT_APP='obsidian'
   SPOTLIGHT_INT_DEVBROWSER='false'
   SPOTLIGHT_INT_JUNKIPEDIA='false'
@@ -139,21 +139,23 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# --- Contract: headless run without FIRECRAWL_API_KEY hits the :? guard ---
+# --- Contract: headless run without FIRECRAWL_API_KEY stays sovereign ---
 NOKEY=()
 for kv in "${BASE[@]}"; do
   case "$kv" in FIRECRAWL_API_KEY=*) ;; *) NOKEY+=("$kv") ;; esac
 done
 out=$(env -u SPOTLIGHT_INGEST_TARGET -u SPOTLIGHT_SOVEREIGNTY_INHERITS_MYCROFT \
-          -u SPOTLIGHT_VAULT_PATH -u OSINT_NAV_API_KEY -u FIRECRAWL_API_KEY \
-          SPOTLIGHT_DIR="$SANDBOX_DIR" "${NOKEY[@]}" \
+          -u SPOTLIGHT_VAULT_PATH -u OSINT_NAV_API_KEY -u FIRECRAWL_API_KEY -u SPOTLIGHT_DIR \
+          "${NOKEY[@]}" \
           SPOTLIGHT_MODE=cloud SPOTLIGHT_RUNTIME=claude \
           bash "$INSTALLER" --headless --dry-run 2>&1) && rc=0 || rc=$?
-if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -qF "FIRECRAWL_API_KEY"; then
-  echo "✓ headless missing-key guard  :? failure names FIRECRAWL_API_KEY"
+if [ "$rc" -eq 0 ] \
+  && printf '%s' "$out" | grep -qF "Firecrawl not configured; using sovereign SearXNG + Crawl4AI only" \
+  && printf '%s' "$out" | grep -qF "SearXNG sovereign search"; then
+  echo "✓ headless keyless install  sovereign SearXNG + Crawl4AI"
   PASS=$((PASS + 1))
 else
-  echo "✗ headless missing-key guard  expected non-zero exit naming FIRECRAWL_API_KEY (rc=$rc)"
+  echo "✗ headless keyless install  expected sovereign dry-run success (rc=$rc)"
   echo "$out" | tail -5 | sed 's/^/    /'
   FAIL=$((FAIL + 1))
 fi
