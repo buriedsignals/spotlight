@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Going Sovereign — running an investigation with the model on my laptop. The quest to Gemma 12B.</title>
+<title>Going Sovereign — investigations that never leave my laptop. The quest to Gemma 12B.</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'><path d='M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z'/></svg>">
 <meta name="description" content="How I got Spotlight — a gated, multi-agent OSINT investigation system — running on a fine-tuned 12B model on a laptop. Dynamic skill loading, harness engineering, RLM context distillation, conversation compaction, procedure tuning, and KV-cache optimisation.">
 
@@ -283,6 +283,7 @@
   .split-right { min-width: 0; } /* grid item — keep wide diagrams from forcing overflow */
   .step { justify-content: flex-start; min-height: 70vh; }
   .step .step-title { max-width: 26ch; }
+  .step h1 { max-width: 22ch; }
   .step p, .step ul { max-width: 70ch; }
   .step .callout { max-width: 72ch; }
   .step .breakout { display: block; width: auto; margin-left: 0; }
@@ -528,7 +529,7 @@
 
 <p class="kicker">Engineering log · Sovereign local tier</p>
 
-<h1>Running an investigation with the model on my laptop.<br><span class="accent">The quest to Gemma 12B.</span></h1>
+<h1>Investigations that never leave my laptop.<br><span class="accent">The quest to Gemma 12B.</span></h1>
 
 <div class="callout">
   <span class="label">The quest</span>
@@ -538,12 +539,14 @@
 </div>
 
 <p class="standfirst">
-Spotlight has shipped with local models from the start — but speaking candidly, they never worked well for me.<br>
-Capable models wanted a bigger machine than my 48&nbsp;GB MacBook. Models that fit drowned mid-investigation.<br>
-So I embarked on a quest. Weeks of iteration. An embarrassing number of tokens.<br>
-It happened — and it threw off efficiency leaps any newsroom can reuse: workflows that repeat,
-costs that stay flat, sources that never leave the room.<br>
-This is how.
+Spotlight has shipped with local models from the start — but speaking candidly, they never
+worked well for me. 😅 Capable models wanted a bigger machine than my 48&nbsp;GB MacBook, and
+the ones that fit drowned mid-investigation.
+</p>
+<p class="standfirst">
+So I embarked on a quest. Weeks of iteration and an embarrassing number of tokens later — it
+happened. 🎉 Along the way it threw off efficiency leaps any newsroom can reuse: workflows that
+repeat, costs that stay flat 📉, sources that never leave the room. 🔒 This is how. 👇
 </p>
 
 <div class="breakout">
