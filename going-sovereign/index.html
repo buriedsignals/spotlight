@@ -488,13 +488,65 @@
   .st.train { color: var(--accent-cool-2); border-color: rgba(52,111,168,0.6); }
   .versions.levers .vcard .v { font-size: 16px; }
 
+  /* Shared footer — matches the landing + setup pages for consistency. */
   #footer {
-    max-width: 76ch; margin: 40px auto 0; padding: 28px 24px 48px;
-    border-top: 1px solid var(--line-faint);
-    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px;
-    font-size: 13px; color: var(--muted-2);
+    color: var(--paper);
+    padding: 96px 48px 32px;
+    position: relative;
+    overflow: hidden;
+    z-index: 10;
   }
-  #footer .links { display: flex; gap: 16px; flex-wrap: wrap; }
+  .footer-simple {
+    display: grid;
+    grid-template-columns: minmax(0, 56ch) auto;
+    align-items: start;
+    gap: 32px;
+    padding-top: 28px;
+    border-top: 1px solid var(--muted-faint-dark);
+  }
+  .footer-summary {
+    margin: 0;
+    max-width: 56ch;
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+  .footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    justify-content: flex-end;
+    align-content: flex-start;
+  }
+  .footer-links a {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 14px;
+    border: 1px solid var(--muted-faint-dark);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  }
+  .footer-links a:hover {
+    background: var(--accent-warm-14);
+    border-color: var(--accent-warm);
+    color: var(--accent-warm);
+  }
+  .footer-meta {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+    opacity: 0.5;
+    margin-top: 30px;
+  }
+  .footer-meta .brand-mini { display: flex; align-items: center; gap: 10px; }
+  .footer-meta .brand-mini svg { width: 14px; height: 14px; opacity: 0.7; }
+  @media (max-width: 640px) {
+    #footer { padding: 64px 20px 28px; }
+    .footer-simple { grid-template-columns: 1fr; gap: 20px; }
+    .footer-links { justify-content: flex-start; }
+    .footer-meta { flex-direction: column; gap: 8px; margin-top: 24px; }
+  }
 
   @media (max-width: 640px) {
     article { padding-top: 48px; }
@@ -1195,29 +1247,35 @@ flowchart LR
   Own the model. Own the harness. Own the data. That's sovereignty — and it now fits on a laptop.
 </div>
 
-<p>
-Spotlight is open source — harness, installer, skills, and this entire optimisation stack are in
-the <a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">repo</a>;
-the local tier installs with one script from <a href="../setup.html">the setup page</a>. If you're
-a newsroom going sovereign and you hit a wall, write to me — this log exists so you don't pay for
-the same lessons twice.
-</p>
-
     </article>
 
   </div>
 </div>
 </section>
 
-<footer id="footer">
-  <div>Spotlight — an open-source OSINT investigation system by <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals</a>.</div>
-  <div class="links">
-    <a href="../index.html">Home</a>
-    <a href="../docs/index.html">Docs</a>
-    <a href="../setup.html">Install</a>
-    <a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a>
+<section id="footer">
+  <div class="footer-simple">
+    <p class="footer-summary">
+      An open-source investigative system for AI agents, built for journalists. One agent reports, one agent checks, and you stay the editor. Local when the case is too sensitive for the cloud.
+    </p>
+    <div class="footer-links">
+      <a href="../docs/index.html">Docs</a>
+      <a href="../setup.html">Install</a>
+      <a href="https://buriedsignals.com/consulting" target="_blank" rel="noopener">Work with me ↗</a>
+      <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals ↗</a>
+    </div>
   </div>
-</footer>
+
+  <div class="footer-meta">
+    <div class="brand-mini">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z"/>
+      </svg>
+      <span>Spotlight · v1.0</span>
+    </div>
+    <span>© 2026 Buried Signals — MIT licensed</span>
+  </div>
+</section>
 
 <script type="module">
   import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
