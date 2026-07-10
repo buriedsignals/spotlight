@@ -30,6 +30,7 @@
     --paper: #f2efe9;
     --muted: rgba(242, 239, 233, 0.72);
     --muted-2: rgba(242, 239, 233, 0.5);
+    --muted-faint-dark: rgba(237, 232, 220, 0.18); /* landing-page hairline token */
     --line: rgba(242, 239, 233, 0.14);
     --line-faint: rgba(242, 239, 233, 0.08);
     --accent-warm: #c16a34;   /* deep terracotta — primary site accent */
@@ -38,8 +39,6 @@
     --accent-warm-14: rgba(193, 106, 52, 0.14);
     --good: #7da87b;
     --good-2: #9cc79a;        /* readable green on dark */
-    --rail-x: 19px;           /* timeline rail centre */
-    --tl-pad: 66px;           /* node content offset from rail */
   }
   html, body { margin: 0; padding: 0; background: var(--ink); color: var(--paper); overflow-x: clip; }
   body {
@@ -115,50 +114,193 @@
     color: var(--accent-warm); margin-bottom: 8px;
   }
 
-  /* ---------- Timeline ---------- */
-  .timeline { position: relative; margin-top: 48px; }
-  .timeline::before {
-    content: ""; position: absolute; left: var(--rail-x); top: 8px; bottom: 8px;
-    width: 2px; background: linear-gradient(180deg, rgba(193,106,52,0.55), rgba(193,106,52,0.18));
+  /* ══════════════════════════════════════════════════════════════════
+     SPLIT-SCROLL — ported from the landing page (index.html, "WHAT IT
+     DOES" section). Keep these rules in sync with the landing page; the
+     post-specific deviations live in the OVERRIDES block below.
+     ══════════════════════════════════════════════════════════════════ */
+  .split-scroll {
+    display: grid;
+    /* Counter | step text */
+    grid-template-columns: 200px 1fr;
+    gap: 60px;
+    padding: 0 48px;
   }
-  .tl-node { position: relative; padding-left: var(--tl-pad); margin: 0 0 56px; }
-  .tl-node:last-child { margin-bottom: 24px; }
-  .tl-chip {
-    position: absolute; left: 0; top: -2px; width: 40px; height: 40px;
-    display: flex; align-items: center; justify-content: center;
-    border: 1px solid var(--accent-warm); border-radius: 999px;
-    background: var(--ink-2); color: var(--accent-warm);
-    font-size: 13.5px; font-weight: 600; letter-spacing: 0.05em;
-    box-shadow: 0 0 0 6px var(--ink);
+  /* Sentinel — only used on mobile to detect when .split-left becomes sticky. */
+  .split-left-sentinel { display: none; }
+  .split-left {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 60px 0;
+    border-right: 1px solid var(--muted-faint-dark);
+    padding-right: 24px;
   }
-  .tl-chip.star { font-size: 17px; background: var(--accent-warm); color: var(--ink); }
-  .tl-kicker {
-    font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase;
-    color: var(--muted-2); margin: 0 0 2px;
+  .split-left .counter {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 144, "wght" 400;
+    font-size: 140px;
+    line-height: 0.85;
+    color: var(--accent-warm);
+    font-feature-settings: "lnum";
+    transition: color 0.5s;
+  }
+  .split-left .counter.active { color: var(--accent-warm); }
+  .split-left .counter-label {
+    font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+    opacity: 0.55;
+    margin-top: 14px;
+    min-height: 16px;
+    transition: opacity 0.4s;
+  }
+  .split-left .progress {
+    margin-top: 40px;
+    height: 1px;
+    background: var(--muted-faint-dark);
+    position: relative;
+  }
+  .split-left .progress .fill {
+    position: absolute; top: 0; left: 0; height: 100%;
+    background: var(--accent-warm);
+    transition: width 0.3s;
   }
 
-  /* narrative beats between nodes: "but it wasn't enough…" */
-  .tl-beat { position: relative; padding-left: var(--tl-pad); margin: 0 0 56px; }
-  .tl-beat .b-chip {
-    position: absolute; left: calc(var(--rail-x) - 12px); top: 6px;
-    width: 26px; height: 26px;
-    display: flex; align-items: center; justify-content: center;
-    border: 1px dashed rgba(193,106,52,0.65); border-radius: 999px;
-    background: var(--ink); color: var(--accent-warm); font-size: 12px;
-    box-shadow: 0 0 0 5px var(--ink);
+  .split-right {
+    padding: 60px 0 80px;
   }
-  .tl-beat p {
-    margin: 0; font-family: "Fraunces", serif; font-style: italic; font-weight: 400;
-    font-size: 18.5px; line-height: 1.6; color: var(--muted);
+  .step {
+    min-height: 85vh;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 40px 0;
+    opacity: 0.3;
+    transition: opacity 0.5s;
   }
-  .tl-beat p strong { font-style: normal; color: var(--paper); }
-  .tl-beat .emoji { font-style: normal; display: inline-block; }
-  .tl-beat.success .b-chip {
-    border: 1px solid rgba(125,168,123,0.8); color: var(--good-2);
-    background: rgba(125,168,123,0.12);
+  .step.active { opacity: 1; }
+  .step .step-title {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 72, "wght" 500;
+    font-size: clamp(28px, 3.8vw, 48px);
+    line-height: 1.1;
+    letter-spacing: -0.015em;
+    margin: 0 0 20px;
+    max-width: 18ch;
   }
-  .tl-beat.success p { color: var(--good-2); font-size: 24px; }
-  .tl-beat.success p strong { color: var(--good-2); }
+  .step .step-body {
+    font-size: 15px;
+    line-height: 1.65;
+    max-width: 54ch;
+    opacity: 0.75;
+  }
+  .step-meta {
+    display: none;
+    margin-bottom: 20px;
+  }
+  .step-meta .step-num {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 72, "wght" 500;
+    font-size: 34px;
+    line-height: 0.9;
+    color: var(--accent-warm);
+  }
+  .step-meta .step-label {
+    margin-top: 10px;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    opacity: 0.62;
+  }
+
+  @media (max-width: 1100px) {
+    .split-scroll {
+      grid-template-columns: 160px 1fr;
+      gap: 36px;
+      padding: 0 32px;
+    }
+    .split-left .counter { font-size: 110px; }
+  }
+
+  @media (max-width: 760px) {
+    /* Compact sticky ticker instead of stacked counter (ported from landing). */
+    .split-scroll { grid-template-columns: 1fr; gap: 0; padding: 0; }
+    .split-left-sentinel { display: block; height: 1px; }
+    .split-left {
+      position: sticky; top: 0;
+      display: flex; flex-direction: row; align-items: center;
+      gap: 16px;
+      height: auto;
+      padding: 72px 22px 12px;
+      background: transparent;
+      z-index: 15;
+      border-right: none;
+      border-bottom: 1px solid transparent;
+      transition: background 200ms ease, border-color 200ms ease;
+    }
+    .split-left.is-stuck {
+      background: var(--ink);
+      border-bottom-color: var(--muted-faint-dark);
+    }
+    .split-left > div:first-child {
+      display: flex; align-items: baseline; gap: 10px;
+      flex: 0 0 auto;
+    }
+    .split-left .counter { font-size: 34px; line-height: 1; margin: 0; }
+    .split-left .counter-label { margin-top: 0; font-size: 10px; min-height: 0; opacity: 0.75; }
+    .split-left .progress { flex: 1; margin-top: 0; }
+
+    .split-right {
+      padding: 16px 20px 64px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .step {
+      min-height: clamp(420px, calc(100svh - 132px), 640px);
+      padding: 28px 20px;
+      opacity: 0.38;
+      border: 1px solid var(--muted-faint-dark);
+      background: rgba(12, 12, 16, 0.3);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      transition: opacity 0.35s ease, border-color 0.35s ease, background 0.35s ease;
+    }
+    .step.active {
+      opacity: 1;
+      border-color: rgba(237, 232, 220, 0.3);
+      background: rgba(12, 12, 16, 0.78);
+    }
+    .step:last-child { border-bottom: 1px solid var(--muted-faint-dark); }
+    .step .step-title { font-size: clamp(28px, 7vw, 40px); max-width: 100%; margin-bottom: 16px; }
+    .step .step-body { font-size: 14px; max-width: 100%; }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     SPLIT-SCROLL — post-specific OVERRIDES (this page only).
+     The chapters are long-form (charts, cards, diagrams), unlike the
+     landing's one-paragraph steps, so: titles get a wider measure,
+     steps top-align instead of centering, and prose keeps a readable
+     column while charts use the full width.
+     ══════════════════════════════════════════════════════════════════ */
+  .split-right { min-width: 0; } /* grid item — keep wide diagrams from forcing overflow */
+  .step { justify-content: flex-start; min-height: 70vh; }
+  .step .step-title { max-width: 26ch; }
+  .step p, .step ul { max-width: 64ch; }
+  .step > .ledger { margin: 26px 0 6px; max-width: 920px; }
+  .step .mega, .step .scores { max-width: 960px; }
+  .step .breakout { display: block; width: auto; margin-left: 0; }
+  .step .breakout > .frame { width: 100%; }
+
+  /* narrative beats — the "but it wasn't enough…" openers inside steps */
+  .step .beat {
+    font-family: "Fraunces", serif; font-style: italic; font-weight: 400;
+    font-size: clamp(20px, 2.2vw, 28px); line-height: 1.55;
+    color: var(--muted); margin: 0 0 38px; max-width: 44ch;
+  }
+  .step .beat strong { font-style: normal; color: var(--paper); }
+  .step .beat .emoji { font-style: normal; display: inline-block; }
+  .step .beat.success { color: var(--good-2); font-size: clamp(28px, 3.2vw, 42px); }
+  .step .beat.success strong { color: var(--good-2); }
 
   /* unlocked win chips */
   .wins { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 20px 0 0; }
@@ -171,13 +313,11 @@
     font-size: 12px; letter-spacing: 0.04em; white-space: nowrap;
   }
 
-  /* ---------- Breakout blocks (wider than the editorial column) ---------- */
+  /* ---------- Breakout blocks (article scope — used by the scoreboard) ---------- */
   article .breakout {
     width: 100vw; margin-left: calc(50% - 50vw);
     display: flex; justify-content: center;
   }
-  /* inside a timeline node the content column's centre sits --tl-pad/2 right of the viewport centre */
-  .tl-node .breakout { margin-left: calc(50% - 50vw - var(--tl-pad) / 2); }
   article .breakout > .frame { width: min(1100px, calc(100vw - 32px)); }
 
   /* ---------- Pan-zoom diagram stages ---------- */
@@ -220,6 +360,7 @@
     font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase;
     color: var(--muted-2); margin: 14px 0 0; text-align: center;
   }
+  .step .lb-caption { text-align: left; }
 
   /* ---------- Scoreboard / interlude panel ---------- */
   .interlude {
@@ -258,6 +399,7 @@
     background: var(--accent-warm-14); color: var(--paper); font-size: 12.5px; white-space: nowrap;
   }
   .quest .q-body { max-width: 76ch; margin: 0 auto; }
+  .quest .q-body p { max-width: none; }
 
   /* before → after ledger */
   .ledger { margin: 26px auto 6px; display: grid; gap: 14px; max-width: 860px; }
@@ -349,8 +491,6 @@
   @media (max-width: 640px) {
     article { padding-top: 48px; }
     nav.topnav .links { gap: 14px; }
-    :root { --rail-x: 14px; --tl-pad: 48px; }
-    .tl-chip { width: 30px; height: 30px; font-size: 12px; box-shadow: 0 0 0 4px var(--ink); }
     .stage { height: 380px; }
     .lg-row, .score-row { grid-template-columns: 1fr; gap: 6px; }
     .lg-win, .score-row .val { text-align: left; }
@@ -449,216 +589,227 @@ almost every "the model can't do this" was <strong>an engineering problem wearin
 costume</strong>.
 </p>
 
-<!-- ================= TIMELINE ================= -->
-<div class="timeline">
+</article>
 
-<section class="tl-node">
-  <span class="tl-chip">01</span>
-  <p class="tl-kicker">Efficiency unlock · the context floor</p>
-  <h2>Dynamic skill loading — collapse the floor</h2>
-  <p>
-  Where it started: the frontier-shaped harness loaded every skill body and the full tool
-  catalogue before the first user word.
-  </p>
-  <ul>
-    <li><strong>The damage:</strong> ~55,000 tokens of floor. ~34 s to first token. The context
-    window half-spent at "hello".</li>
-    <li><strong>The fix:</strong> dynamic loading. Skills are <em>discovered</em> by name +
-    description; bodies load on invocation.</li>
-  </ul>
-
-  <div class="mega">
-    <div class="mega-row">
-      <div>
-        <div class="mega-label">Context floor — tokens before the first user word</div>
-        <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>~55,000 tok</em></div>
-        <div class="lg-bar after"><span class="track"><span class="fill" style="width:1.5%"></span></span><em>~817 tok</em></div>
-      </div>
-      <div class="mega-x">67×<small>smaller</small></div>
+<!-- ================= QUEST LOG (split-scroll, ported from landing) ================= -->
+<section id="quest-log">
+<div class="split-scroll">
+  <div class="split-left-sentinel" aria-hidden="true"></div>
+  <div class="split-left">
+    <div>
+      <div class="counter" id="counter">01</div>
+      <div class="counter-label" id="counter-label">The context floor</div>
     </div>
-    <div class="mega-row">
-      <div>
-        <div class="mega-label">Prompt processing — time to first token</div>
-        <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>~34 s</em></div>
-        <div class="lg-bar after"><span class="track"><span class="fill" style="width:1.5%"></span></span><em>~0.46 s</em></div>
+    <div class="progress"><div class="fill" id="progress-fill" style="width: 14.3%"></div></div>
+  </div>
+  <div class="split-right" id="steps">
+
+    <article class="step active" data-label="The context floor" data-num="01">
+      <div class="step-meta">
+        <div class="step-num">01</div>
+        <div class="step-label">The context floor</div>
       </div>
-      <div class="mega-x">74×<small>faster</small></div>
-    </div>
-  </div>
+      <h2 class="step-title">Dynamic skill loading — collapse the floor</h2>
+      <p>
+      Where it started: the frontier-shaped harness loaded every skill body and the full tool
+      catalogue before the first user word.
+      </p>
+      <ul>
+        <li><strong>The damage:</strong> ~55,000 tokens of floor. ~34 s to first token. The
+        context window half-spent at "hello".</li>
+        <li><strong>The fix:</strong> dynamic loading. Skills are <em>discovered</em> by name +
+        description; bodies load on invocation.</li>
+      </ul>
 
-  <p><em>(Paying a cloud per token? The same change is ≈25× cheaper per turn.)</em></p>
-  <div class="wins"><span class="wins-label">Unlocked</span>
-    <span class="win-chip">67× smaller floor</span>
-    <span class="win-chip">74× faster first token</span>
-  </div>
-</section>
-
-<div class="tl-beat">
-  <span class="b-chip">✗</span>
-  <p><strong>But it wasn't enough.</strong> The 12B still collapsed. Every scrape dumped ~40,000
-  tokens of boilerplate into a context the model stops behaving in past ~16k.</p>
-</div>
-
-<section class="tl-node">
-  <span class="tl-chip">02</span>
-  <p class="tl-kicker">Efficiency unlock · the RLM</p>
-  <h2>Scrapes never enter context raw</h2>
-  <p>
-  So I dove into the <strong>RLM — a research language model</strong>: a second, tiny model
-  living beside the orchestrator (Gemma e4b on its own llama.cpp). Its whole job: read the noise
-  so the investigator doesn't have to.
-  </p>
-  <ul>
-    <li><strong>The problem:</strong> a scraped page ≈ 40,000 tokens of chrome around ~600
-    tokens of leads.</li>
-    <li><strong>The fix:</strong> every <code>fetch</code> pipes through the RLM automatically →
-    a compact, source-linked lead list. The raw page stays on disk as a <code>.raw</code>
-    sidecar — compression never destroys evidence.</li>
-    <li><strong>Tip for builders:</strong> wire distillation into the runtime, not the skill
-    list. Anything a small model <em>must</em> do to survive shouldn't depend on its judgment —
-    that's a harness job.</li>
-  </ul>
-
-  <div class="mega">
-    <div class="mega-row">
-      <div>
-        <div class="mega-label">Early benchmark — Wikipedia: Ethereum Foundation, in-harness</div>
-        <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>172,402 B raw</em></div>
-        <div class="lg-bar after"><span class="track"><span class="fill" style="width:1.5%"></span></span><em>1,919 B distilled</em></div>
+      <div class="mega">
+        <div class="mega-row">
+          <div>
+            <div class="mega-label">Context floor — tokens before the first user word</div>
+            <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>~55,000 tok</em></div>
+            <div class="lg-bar after"><span class="track"><span class="fill" style="width:1.5%"></span></span><em>~817 tok</em></div>
+          </div>
+          <div class="mega-x">67×<small>smaller</small></div>
+        </div>
+        <div class="mega-row">
+          <div>
+            <div class="mega-label">Prompt processing — time to first token</div>
+            <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>~34 s</em></div>
+            <div class="lg-bar after"><span class="track"><span class="fill" style="width:1.5%"></span></span><em>~0.46 s</em></div>
+          </div>
+          <div class="mega-x">74×<small>faster</small></div>
+        </div>
       </div>
-      <div class="mega-x">−98.9%<small>per fetch</small></div>
-    </div>
-  </div>
 
-  <h3>Double duty: the conversation itself was crashing the model</h3>
-  <p>
-  Lean fetches weren't the whole story. The transcript alone — reasoning, delegations, tool
-  results — was enough to take the 12B down after a single gate. The RLM fixes that too: past a
-  fold threshold it rewrites the conversation into a structured checkpoint. The phase artifacts
-  on disk <em>are</em> the state; the transcript is disposable.
-  </p>
-
-  <div class="mega">
-    <div class="mega-row">
-      <div>
-        <div class="mega-label">Orchestrator context at a stalled gate — measured on a real run</div>
-        <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>40,180 tok · thrashing</em></div>
-        <div class="lg-bar after"><span class="track"><span class="fill" style="width:25%"></span></span><em>~10,200 tok after the fold</em></div>
+      <p><em>(Paying a cloud per token? The same change is ≈25× cheaper per turn.)</em></p>
+      <div class="wins"><span class="wins-label">Unlocked</span>
+        <span class="win-chip">67× smaller floor</span>
+        <span class="win-chip">74× faster first token</span>
       </div>
-      <div class="mega-x">4×<small>smaller</small></div>
-    </div>
-  </div>
+    </article>
 
-  <p>
-  The model that had been looping uselessly delegated correctly on its very next turn. Depth
-  kills discipline; compaction restores it.
-  </p>
+    <article class="step" data-label="The RLM" data-num="02">
+      <div class="step-meta">
+        <div class="step-num">02</div>
+        <div class="step-label">The RLM</div>
+      </div>
+      <p class="beat"><strong>But it wasn't enough.</strong> The 12B still collapsed. Every
+      scrape dumped ~40,000 tokens of boilerplate into a context the model stops behaving in
+      past ~16k.</p>
+      <h2 class="step-title">Scrapes never enter context raw</h2>
+      <p>
+      So I dove into the <strong>RLM — a research language model</strong>: a second, tiny model
+      living beside the orchestrator (Gemma e4b on its own llama.cpp). Its whole job: read the
+      noise so the investigator doesn't have to.
+      </p>
+      <ul>
+        <li><strong>The problem:</strong> a scraped page ≈ 40,000 tokens of chrome around ~600
+        tokens of leads.</li>
+        <li><strong>The fix:</strong> every <code>fetch</code> pipes through the RLM
+        automatically → a compact, source-linked lead list. The raw page stays on disk as a
+        <code>.raw</code> sidecar — compression never destroys evidence.</li>
+        <li><strong>Tip for builders:</strong> wire distillation into the runtime, not the skill
+        list. Anything a small model <em>must</em> do to survive shouldn't depend on its
+        judgment — that's a harness job.</li>
+      </ul>
 
-  <figure class="diagram breakout">
-    <div class="frame">
-      <div class="stage-frame">
-        <div class="stage">
-          <pre class="mermaid">
+      <div class="mega">
+        <div class="mega-row">
+          <div>
+            <div class="mega-label">Early benchmark — Wikipedia: Ethereum Foundation, in-harness</div>
+            <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>172,402 B raw</em></div>
+            <div class="lg-bar after"><span class="track"><span class="fill" style="width:1.5%"></span></span><em>1,919 B distilled</em></div>
+          </div>
+          <div class="mega-x">−98.9%<small>per fetch</small></div>
+        </div>
+      </div>
+
+      <h3>Double duty: the conversation itself was crashing the model</h3>
+      <p>
+      Lean fetches weren't the whole story. The transcript alone — reasoning, delegations, tool
+      results — was enough to take the 12B down after a single gate. The RLM fixes that too:
+      past a fold threshold it rewrites the conversation into a structured checkpoint. The phase
+      artifacts on disk <em>are</em> the state; the transcript is disposable.
+      </p>
+
+      <div class="mega">
+        <div class="mega-row">
+          <div>
+            <div class="mega-label">Orchestrator context at a stalled gate — measured on a real run</div>
+            <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>40,180 tok · thrashing</em></div>
+            <div class="lg-bar after"><span class="track"><span class="fill" style="width:25%"></span></span><em>~10,200 tok after the fold</em></div>
+          </div>
+          <div class="mega-x">4×<small>smaller</small></div>
+        </div>
+      </div>
+
+      <p>
+      The model that had been looping uselessly delegated correctly on its very next turn. Depth
+      kills discipline; compaction restores it.
+      </p>
+
+      <figure class="diagram breakout">
+        <div class="frame">
+          <div class="stage-frame">
+            <div class="stage">
+              <pre class="mermaid">
 flowchart LR
   F["fetch / search / browse<br/>raw page ~40k tok"] --> R["RLM · Gemma e4b<br/>resident on llama-server :8095"]
   R --> L["source-linked lead list<br/>~600 tok"] --> A["agent context"]
   F -. "kept on disk" .-> P[".raw sidecar<br/>provenance + citations"]
   T["conversation past fold threshold<br/>12b ~16k · 26b ~24.5k · 31b ~28.5k"] --> R
   R --> K["structured checkpoint<br/>goal · progress · decisions · next"] --> A
-          </pre>
+              </pre>
+            </div>
+            <div class="stage-controls">
+              <button data-z="in" aria-label="Zoom in">+</button>
+              <button data-z="out" aria-label="Zoom out">−</button>
+              <button data-z="reset" aria-label="Reset view">⟲</button>
+            </div>
+            <span class="stage-hint">drag to pan · pinch / ⌘-scroll to zoom</span>
+          </div>
+          <figcaption>One tiny resident model, two jobs: distill everything fetched, fold the conversation at thresholds.</figcaption>
         </div>
-        <div class="stage-controls">
-          <button data-z="in" aria-label="Zoom in">+</button>
-          <button data-z="out" aria-label="Zoom out">−</button>
-          <button data-z="reset" aria-label="Reset view">⟲</button>
+      </figure>
+
+      <div class="wins"><span class="wins-label">Unlocked</span>
+        <span class="win-chip">−98.9% per fetch</span>
+        <span class="win-chip">40k → 10k folds</span>
+      </div>
+    </article>
+
+    <article class="step" data-label="The harness" data-num="03">
+      <div class="step-meta">
+        <div class="step-num">03</div>
+        <div class="step-label">The harness</div>
+      </div>
+      <p class="beat"><span class="emoji">😑</span> <strong>Still not enough!</strong> Fetches
+      were lean — but the failure log kept filling. And most of the "model failures" weren't
+      even the model. The harness was lying to it.</p>
+      <h2 class="step-title">Harness engineering — one harness, real subagents</h2>
+      <p>
+      So I dove into the harness — a <a href="https://flueframework.com" target="_blank" rel="noopener">Flue</a>
+      app built on <a href="https://pi.dev" target="_blank" rel="noopener">Pi</a>.
+      </p>
+      <p>Four failure classes, four structural fixes:</p>
+
+      <div class="ledger">
+        <div class="lg-row">
+          <div class="lg-label">Delegation</div>
+          <div class="lg-cat">
+            <span class="no">prompt-promised — a 12B recurses <code>task→task→task</code> until the run dies</span>
+            <span class="yes">real child sessions + a never-re-delegate guard</span>
+          </div>
+          <div class="lg-win tick">✓</div>
         </div>
-        <span class="stage-hint">drag to pan · pinch / ⌘-scroll to zoom</span>
+        <div class="lg-row">
+          <div class="lg-label">Tool calls</div>
+          <div class="lg-cat">
+            <span class="no">wrong path resolution → the model falls back to raw <code>curl</code> and looks stupid</span>
+            <span class="yes">abstract verbs bound to absolute paths by a runtime adapter</span>
+          </div>
+          <div class="lg-win tick">✓</div>
+        </div>
+        <div class="lg-row">
+          <div class="lg-label">Crashes</div>
+          <div class="lg-cat">
+            <span class="no">a crash or a closed lid lost the investigation</span>
+            <span class="yes">SQLite-durable sessions — the same id resumes at the gate</span>
+          </div>
+          <div class="lg-win tick">✓</div>
+        </div>
+        <div class="lg-row">
+          <div class="lg-label">Eval honesty</div>
+          <div class="lg-cat">
+            <span class="no">dev harness ≠ shipped harness → phantom "model failures"</span>
+            <span class="yes">one harness — the app the evals test is the app you install</span>
+          </div>
+          <div class="lg-win tick">✓</div>
+        </div>
       </div>
-      <figcaption>One tiny resident model, two jobs: distill everything fetched, fold the conversation at thresholds.</figcaption>
-    </div>
-  </figure>
 
-  <div class="wins"><span class="wins-label">Unlocked</span>
-    <span class="win-chip">−98.9% per fetch</span>
-    <span class="win-chip">40k → 10k folds</span>
-  </div>
-</section>
+      <p>
+      And the context overhead dropped again. The OSINT tool catalogue used to sit in permanent
+      context — <strong>11,800 tokens the orchestrator re-read on every single turn</strong>.
+      It's now a SQLite full-text index on disk: one shell query when the model needs a tool,
+      zero tokens when it doesn't.
+      </p>
 
-<div class="tl-beat">
-  <span class="b-chip">✗</span>
-  <p><span class="emoji">😑</span> <strong>Still not enough!</strong> Fetches were lean — but the
-  failure log kept filling. And most of the "model failures" weren't even the model. The harness
-  was lying to it.</p>
-</div>
-
-<section class="tl-node">
-  <span class="tl-chip">03</span>
-  <p class="tl-kicker">Efficiency unlock · the harness</p>
-  <h2>Harness engineering — one harness, real subagents</h2>
-  <p>
-  So I dove into the harness — a <a href="https://flueframework.com" target="_blank" rel="noopener">Flue</a>
-  app built on <a href="https://pi.dev" target="_blank" rel="noopener">Pi</a>.
-  </p>
-  <p>Four failure classes, four structural fixes:</p>
-
-  <div class="ledger">
-    <div class="lg-row">
-      <div class="lg-label">Delegation</div>
-      <div class="lg-cat">
-        <span class="no">prompt-promised — a 12B recurses <code>task→task→task</code> until the run dies</span>
-        <span class="yes">real child sessions + a never-re-delegate guard</span>
+      <div class="mega">
+        <div class="mega-row">
+          <div>
+            <div class="mega-label">Tool catalogue — tokens carried into every turn</div>
+            <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>11,800 tok, always in context</em></div>
+            <div class="lg-bar after"><span class="track"><span class="fill" style="width:0%"></span></span><em>0 tok — 12,500 tools queried on demand</em></div>
+          </div>
+          <div class="mega-x">→ 0<small>resident tokens</small></div>
+        </div>
       </div>
-      <div class="lg-win tick">✓</div>
-    </div>
-    <div class="lg-row">
-      <div class="lg-label">Tool calls</div>
-      <div class="lg-cat">
-        <span class="no">wrong path resolution → the model falls back to raw <code>curl</code> and looks stupid</span>
-        <span class="yes">abstract verbs bound to absolute paths by a runtime adapter</span>
-      </div>
-      <div class="lg-win tick">✓</div>
-    </div>
-    <div class="lg-row">
-      <div class="lg-label">Crashes</div>
-      <div class="lg-cat">
-        <span class="no">a crash or a closed lid lost the investigation</span>
-        <span class="yes">SQLite-durable sessions — the same id resumes at the gate</span>
-      </div>
-      <div class="lg-win tick">✓</div>
-    </div>
-    <div class="lg-row">
-      <div class="lg-label">Eval honesty</div>
-      <div class="lg-cat">
-        <span class="no">dev harness ≠ shipped harness → phantom "model failures"</span>
-        <span class="yes">one harness — the app the evals test is the app you install</span>
-      </div>
-      <div class="lg-win tick">✓</div>
-    </div>
-  </div>
 
-  <p>
-  And the context overhead dropped again. The OSINT tool catalogue used to sit in permanent
-  context — <strong>11,800 tokens the orchestrator re-read on every single turn</strong>. It's
-  now a SQLite full-text index on disk: one shell query when the model needs a tool, zero tokens
-  when it doesn't.
-  </p>
-
-  <div class="mega">
-    <div class="mega-row">
-      <div>
-        <div class="mega-label">Tool catalogue — tokens carried into every turn</div>
-        <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>11,800 tok, always in context</em></div>
-        <div class="lg-bar after"><span class="track"><span class="fill" style="width:0%"></span></span><em>0 tok — 12,500 tools queried on demand</em></div>
-      </div>
-      <div class="mega-x">→ 0<small>resident tokens</small></div>
-    </div>
-  </div>
-
-  <figure class="diagram breakout">
-    <div class="frame">
-      <div class="stage-frame">
-        <div class="stage">
-          <pre class="mermaid">
+      <figure class="diagram breakout">
+        <div class="frame">
+          <div class="stage-frame">
+            <div class="stage">
+              <pre class="mermaid">
 flowchart LR
   U["Reporter<br/>(gates)"] <--> O["Orchestrator<br/>12B · tuned"]
   O -- "task" --> I["Investigator<br/>child session"]
@@ -668,359 +819,358 @@ flowchart LR
   O -. "compaction summaries" .-> R
   O === LS["llama-server :8080<br/>2 resident slots"]
   R === LR["llama-server :8095"]
-          </pre>
+              </pre>
+            </div>
+            <div class="stage-controls">
+              <button data-z="in" aria-label="Zoom in">+</button>
+              <button data-z="out" aria-label="Zoom out">−</button>
+              <button data-z="reset" aria-label="Reset view">⟲</button>
+            </div>
+            <span class="stage-hint">drag to pan · pinch / ⌘-scroll to zoom</span>
+          </div>
+          <figcaption>The sovereign topology: two llama.cpp servers, three agent contexts, one human.</figcaption>
         </div>
-        <div class="stage-controls">
-          <button data-z="in" aria-label="Zoom in">+</button>
-          <button data-z="out" aria-label="Zoom out">−</button>
-          <button data-z="reset" aria-label="Reset view">⟲</button>
-        </div>
-        <span class="stage-hint">drag to pan · pinch / ⌘-scroll to zoom</span>
+      </figure>
+
+      <div class="wins"><span class="wins-label">Unlocked</span>
+        <span class="win-chip">3 isolated agent contexts</span>
+        <span class="win-chip">eval == production</span>
+        <span class="win-chip">catalogue → index</span>
       </div>
-      <figcaption>The sovereign topology: two llama.cpp servers, three agent contexts, one human.</figcaption>
-    </div>
-  </figure>
+    </article>
 
-  <div class="wins"><span class="wins-label">Unlocked</span>
-    <span class="win-chip">3 isolated agent contexts</span>
-    <span class="win-chip">eval == production</span>
-    <span class="win-chip">catalogue → index</span>
+    <article class="step" data-label="The tune" data-num="04">
+      <div class="step-meta">
+        <div class="step-num">04</div>
+        <div class="step-label">The tune</div>
+      </div>
+      <p class="beat"><span class="emoji">😤</span> <strong>STILL. NOT. ENOUGH!!</strong> The
+      plumbing was honest, the context lean — and the model WOULD NOT hold the procedure.
+      Re-activating skills it had already read. Researching instead of delegating. Blowing
+      straight through gates!</p>
+      <h2 class="step-title">Model fine-tuning on Spotlight procedures</h2>
+      <p>
+      Here I learned about <strong>procedure tuning</strong> — a different animal from the
+      capability tuning I'd always done:
+      </p>
+      <ul>
+        <li><strong>Capability tuning</strong> teaches knowledge: domain facts, formats, styles.
+        Useless here — Gemma-4 12B already <em>knows</em> what a commercial registry is.</li>
+        <li><strong>Procedure tuning</strong> teaches behaviour: activate the methodology skill
+        <em>once</em> · advance on a bare "approved" · delegate instead of researching itself ·
+        stop at the gate. Behaviours are learnable from a tiny dataset — if the data is shaped
+        right.</li>
+        <li><strong>What went into teaching it:</strong></li>
+      </ul>
+
+      <div class="ingredients">
+        <span class="ing">12 gold trajectories</span>
+        <span class="ing">30–46k tokens each</span>
+        <span class="ing">real runs · human-approved gates</span>
+        <span class="ing">assistant-masked loss</span>
+        <span class="ing">~$10 of rented H100</span>
+      </div>
+
+      <div class="breakout">
+      <div class="frame">
+      <div class="versions">
+        <div class="vcard">
+          <span class="v">v1</span>
+          <span class="loss">QLoRA · full-text loss · 3.00</span>
+          <span class="note">Learned the <em>style</em> — 2.8× faster to a correct first-turn
+          brief — then stalled the pipeline. Tool outputs dilute the signal.</span>
+          <span class="st bad">✗ stalled</span>
+        </div>
+        <div class="vcard">
+          <span class="v">v2</span>
+          <span class="loss">assistant-masked · 0.79</span>
+          <span class="note">Learns <em>decisions</em>, not tool noise. Then an adapter merged
+          in a mismatched stack produced garbage GGUF.</span>
+          <span class="st bad">✗ corrupted merge</span>
+        </div>
+        <div class="vcard">
+          <span class="v">v2-fixed</span>
+          <span class="loss">matched train/merge stack</span>
+          <span class="note">Coherent again — a milder stall, and every eval learning banked. A
+          five-second coherence check now runs before quantisation.</span>
+          <span class="st mid">△ milder stall</span>
+        </div>
+        <div class="vcard">
+          <span class="v">v3</span>
+          <span class="loss">shipping orchestrator</span>
+          <span class="note">The model the installer pulls today. Total spend across every
+          iteration: <strong>about ten dollars</strong>.</span>
+          <span class="st good">✓ ships</span>
+        </div>
+        <div class="vcard candidate">
+          <span class="v">v4</span>
+          <span class="loss">the successful candidate</span>
+          <span class="note">Simulated trajectories drilling the exact failure modes the evals
+          exposed: phase-advance on bare approval, recovery from a degenerate turn.</span>
+          <span class="st good">✓ candidate</span>
+        </div>
+      </div>
+      </div>
+      </div>
+
+      <p>
+      The model:
+      <a href="https://huggingface.co/buriedsignals/gemma4-12b-spotlight-orchestrator-v3-GGUF" target="_blank" rel="noopener">gemma4-12b-spotlight-orchestrator-v3-GGUF</a>
+      (Q4_K_M, ~7&nbsp;GB), trained from
+      <a href="https://huggingface.co/datasets/buriedsignals/spotlight-orchestrator-gold" target="_blank" rel="noopener">spotlight-orchestrator-gold</a>.
+      </p>
+      <div class="wins"><span class="wins-label">Unlocked</span>
+        <span class="win-chip">loss 3.00 → 0.79</span>
+        <span class="win-chip">~$10 total training</span>
+      </div>
+    </article>
+
+    <article class="step" data-label="Serving" data-num="05">
+      <div class="step-meta">
+        <div class="step-num">05</div>
+        <div class="step-label">Serving</div>
+      </div>
+      <p class="beat"><span class="emoji">🤬</span> <strong>AND EVEN THEN IT KEPT DYING!!!</strong>
+      At the methodology gate. Mid-investigation. EVERY. SINGLE. EVAL. I started to despair —
+      until the server logs confessed: this time it wasn't a model capability issue…</p>
+      <h2 class="step-title">KV-cache and serving — the invisible half of local</h2>
+      <p>
+      <code>failed to find available cells in kv cache</code> ·
+      <code>failed to restore state with size ~971MB</code><br>
+      The model was fine. The <em>serving layer</em> was wiping its memory on every delegation.
+      The fix took me deeper into how the model is served than I ever planned to go. A couple
+      dozen iterations later, this is the serving recipe I landed on — learning what each of
+      these levers even was along the way:
+      </p>
+
+      <div class="breakout">
+      <div class="frame">
+      <div class="versions levers">
+        <div class="vcard">
+          <span class="v">Resident slots</span>
+          <span class="loss">the fix</span>
+          <span class="note"><code>--parallel 2 --no-cache-idle-slots</code><br>Orchestrator +
+          active subagent each keep a live slot. Nothing saved or restored on delegation. And
+          one slot is <em>worse</em> than two.</span>
+          <span class="st good">✓ 0 crashes</span>
+        </div>
+        <div class="vcard">
+          <span class="v">KV quantisation</span>
+          <span class="loss">2× context, same RAM</span>
+          <span class="note"><code>--cache-type-k/v q8_0</code> + <code>--flash-attn on</code><br>
+          ≈½ the KV memory per token, near-lossless.</span>
+          <span class="st good">✓ ½ memory</span>
+        </div>
+        <div class="vcard">
+          <span class="v">Context geometry</span>
+          <span class="loss">headroom</span>
+          <span class="note"><code>--ctx-size 81920</code> ÷ 2 slots = 40,960 tokens per agent —
+          past anything the bounded pipeline reaches.</span>
+          <span class="st good">✓ 40,960 / agent</span>
+        </div>
+        <div class="vcard">
+          <span class="v">Reasoning budget</span>
+          <span class="loss">think briefly, then act</span>
+          <span class="note"><code>--reasoning-budget 400</code> (12B)<br>Unbounded thinking
+          spends the whole output budget and returns an <em>empty</em> reply. 800 for the 26B,
+          1024 for the 31B.</span>
+          <span class="st good">✓ no empty turns</span>
+        </div>
+        <div class="vcard">
+          <span class="v">RLM serving</span>
+          <span class="loss">no thinking</span>
+          <span class="note"><code>--reasoning-budget 0</code><br>A distiller must answer,
+          not think.</span>
+          <span class="st good">✓ instant distills</span>
+        </div>
+      </div>
+      </div>
+      </div>
+
+      <p>
+      <strong>API tiers are exempt:</strong> the harness detects the tier and serves frontier
+      models unrestricted. The constraints live exactly where the constraint exists — on the
+      device.
+      </p>
+      <div class="wins"><span class="wins-label">Unlocked</span>
+        <span class="win-chip">0 KV save/restores</span>
+        <span class="win-chip">2 resident slots</span>
+      </div>
+    </article>
+
+    <article class="step" data-label="Sovereignty" data-num="06">
+      <div class="step-meta">
+        <div class="step-num">06</div>
+        <div class="step-label">Sovereignty</div>
+      </div>
+      <p class="beat"><span class="emoji">🚀🥲</span> <strong>It ran! It was fast!</strong> But it
+      still wasn't sovereign — every fetch and every search went through a paid API key. One
+      last dependency to cut.</p>
+      <h2 class="step-title">Cutting the last commercial dependency</h2>
+      <p>
+      Search and scraping ran on Firecrawl — a paid, closed API on the critical path of a tool
+      meant to run locally and privately.
+      </p>
+      <ul>
+        <li><strong>The swap:</strong> <code>fetch</code> → <a href="https://github.com/unclecode/crawl4ai" target="_blank" rel="noopener">Crawl4AI</a>
+        (Apache-2.0, local Playwright browser) · <code>search</code> → <a href="https://github.com/searxng/searxng" target="_blank" rel="noopener">SearXNG</a>
+        (self-hosted metasearch). Firecrawl demoted to optional fallback.</li>
+        <li><strong>The surprise:</strong> the gap didn't just close. On our 8 hardest registry
+        and civic-monitoring cases, the open stack <em>leads</em>.</li>
+      </ul>
+
+      <div class="scores">
+        <div class="score-row open">
+          <span class="name">Crawl4AI <em>open source · local · now the default</em></span>
+          <span class="track"><span class="fill" style="width:100%"></span></span>
+          <span class="val">100%</span>
+        </div>
+        <div class="score-row open">
+          <span class="name">Scrapling <em>open source · stealth fallback</em></span>
+          <span class="track"><span class="fill" style="width:100%"></span></span>
+          <span class="val">100%</span>
+        </div>
+        <div class="score-row paid">
+          <span class="name">Firecrawl <em>commercial API · what we had before</em></span>
+          <span class="track"><span class="fill" style="width:79%"></span></span>
+          <span class="val">79%</span>
+        </div>
+      </div>
+      <p class="lb-caption">Scraping success · 8 hostile registry/civic cases · <a href="https://benchmarks.buriedsignals.com" target="_blank" rel="noopener">benchmarks.buriedsignals.com</a></p>
+
+      <p>
+      <em>(Firecrawl's miss is instructive: on one municipal homepage its main-content filter
+      stripped the entire page down to image markdown.)</em>
+      </p>
+
+      <p>
+      <strong>Search tells the same story.</strong> SearXNG — self-hosted, no key, no per-query
+      bill — edges out the commercial APIs on source quality:
+      </p>
+
+      <div class="scores">
+        <div class="score-row open">
+          <span class="name">SearXNG <em>open source · self-hosted · now the default</em></span>
+          <span class="track"><span class="fill" style="width:92%"></span></span>
+          <span class="val">92%</span>
+        </div>
+        <div class="score-row paid">
+          <span class="name">Firecrawl search <em>commercial API · what we had before</em></span>
+          <span class="track"><span class="fill" style="width:88%"></span></span>
+          <span class="val">88%</span>
+        </div>
+        <div class="score-row paid">
+          <span class="name">Exa <em>commercial API</em></span>
+          <span class="track"><span class="fill" style="width:79%"></span></span>
+          <span class="val">79%</span>
+        </div>
+      </div>
+      <p class="lb-caption">Search source-quality · 8 investigative queries, scored on reaching canonical sources · <a href="https://benchmarks.buriedsignals.com" target="_blank" rel="noopener">benchmarks.buriedsignals.com</a></p>
+
+      <div class="wins"><span class="wins-label">Unlocked</span>
+        <span class="win-chip">0 paid keys on the critical path</span>
+        <span class="win-chip">100% on hostile cases</span>
+      </div>
+    </article>
+
+    <article class="step" data-label="Quest achieved" data-num="✦">
+      <div class="step-meta">
+        <div class="step-num">✦</div>
+        <div class="step-label">Quest achieved</div>
+      </div>
+      <p class="beat success">And then… <span class="emoji">🎉</span> <strong>SUCCESS!!!</strong></p>
+
+      <div class="breakout">
+      <div class="frame">
+      <div class="quest">
+        <p class="q-kicker">The goal, reached</p>
+        <p class="q-title"><span class="star">✦</span> Quest achieved <span class="star">✦</span></p>
+        <div class="q-stats">
+          <span class="q-stat">Full gated pipeline</span>
+          <span class="q-stat">12B · Q4 · 48 GB laptop</span>
+          <span class="q-stat">~$10 total training</span>
+          <span class="q-stat">$0 per run</span>
+          <span class="q-stat">0 commercial APIs</span>
+          <span class="q-stat">Nothing left the machine</span>
+        </div>
+
+        <div class="ledger">
+          <div class="lg-row">
+            <div class="lg-label">Context floor (skills + tools)</div>
+            <div class="lg-bars">
+              <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>55,000 tok · 34 s</em></div>
+              <div class="lg-bar after"><span class="track"><span class="fill" style="width:1.5%"></span></span><em>817 tok · 0.46 s</em></div>
+            </div>
+            <div class="lg-win">67×</div>
+          </div>
+          <div class="lg-row">
+            <div class="lg-label">A scraped source in context</div>
+            <div class="lg-bars">
+              <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>~40,000 tok raw</em></div>
+              <div class="lg-bar after"><span class="track"><span class="fill" style="width:1.5%"></span></span><em>~600-tok lead list</em></div>
+            </div>
+            <div class="lg-win">66×</div>
+          </div>
+          <div class="lg-row">
+            <div class="lg-label">Conversation depth</div>
+            <div class="lg-bars">
+              <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>40k+ · thrashing</em></div>
+              <div class="lg-bar after"><span class="track"><span class="fill" style="width:25%"></span></span><em>folds to ~10k</em></div>
+            </div>
+            <div class="lg-win">4×</div>
+          </div>
+          <div class="lg-row">
+            <div class="lg-label">KV memory</div>
+            <div class="lg-cat">
+              <span class="no">f16 · save/restore crashes at ~29k</span>
+              <span class="yes">q8_0 · 2 resident slots · zero restores</span>
+            </div>
+            <div class="lg-win tick">✓</div>
+          </div>
+          <div class="lg-row">
+            <div class="lg-label">Orchestration discipline</div>
+            <div class="lg-cat">
+              <span class="no">skill re-activation loops · empty turns</span>
+              <span class="yes">reason → delegate → synthesise → stop at gate</span>
+            </div>
+            <div class="lg-win tick">✓</div>
+          </div>
+          <div class="lg-row">
+            <div class="lg-label">Search &amp; scraping</div>
+            <div class="lg-cat">
+              <span class="no">paid API key on the critical path</span>
+              <span class="yes">Crawl4AI + SearXNG · 100% on hostile cases</span>
+            </div>
+            <div class="lg-win tick">✓</div>
+          </div>
+        </div>
+
+        <div class="q-body">
+        <p>
+        A concrete run, from last night: resuming a real investigation, the tuned 12B — on a
+        bare <em>"Approved, proceed."</em> — reviewed the corpus, delegated, produced a correct
+        synthesis (the target organisation's president, co-executive directors, legal form and
+        domicile), and stopped at the review gate. On my laptop. The marginal cost was
+        electricity.
+        </p>
+        <p>
+        To be precise: not "a 12B is as good as a frontier model." It's that a 12B <strong>inside
+        a deeply engineered procedure</strong> runs gated multi-agent investigations at usable
+        speed, with the human at the gates. Every optimisation transfers upward — the 26B and
+        31B tiers inherit the same harness with looser leashes and run <em>better</em> for it.
+        Tune the procedure for the smallest model; the bigger ones get it for free.
+        </p>
+        </div>
+      </div>
+      </div>
+      </div>
+    </article>
+
   </div>
-</section>
-
-<div class="tl-beat">
-  <span class="b-chip">✗</span>
-  <p><span class="emoji">😤</span> <strong>STILL. NOT. ENOUGH!!</strong> The plumbing was honest,
-  the context lean — and the model WOULD NOT hold the procedure. Re-activating skills it had
-  already read. Researching instead of delegating. Blowing straight through gates!</p>
 </div>
-
-<section class="tl-node">
-  <span class="tl-chip">04</span>
-  <p class="tl-kicker">Efficiency unlock · the tune</p>
-  <h2>Model fine-tuning on Spotlight procedures</h2>
-  <p>
-  Here I learned about <strong>procedure tuning</strong> — a different animal from the
-  capability tuning I'd always done:
-  </p>
-  <ul>
-    <li><strong>Capability tuning</strong> teaches knowledge: domain facts, formats, styles.
-    Useless here — Gemma-4 12B already <em>knows</em> what a commercial registry is.</li>
-    <li><strong>Procedure tuning</strong> teaches behaviour: activate the methodology skill
-    <em>once</em> · advance on a bare "approved" · delegate instead of researching itself ·
-    stop at the gate. Behaviours are learnable from a tiny dataset — if the data is shaped
-    right.</li>
-    <li><strong>What went into teaching it:</strong></li>
-  </ul>
-
-  <div class="ingredients">
-    <span class="ing">12 gold trajectories</span>
-    <span class="ing">30–46k tokens each</span>
-    <span class="ing">real runs · human-approved gates</span>
-    <span class="ing">assistant-masked loss</span>
-    <span class="ing">~$10 of rented H100</span>
-  </div>
-
-  <div class="breakout">
-  <div class="frame">
-  <div class="versions">
-    <div class="vcard">
-      <span class="v">v1</span>
-      <span class="loss">QLoRA · full-text loss · 3.00</span>
-      <span class="note">Learned the <em>style</em> — 2.8× faster to a correct first-turn brief —
-      then stalled the pipeline. Tool outputs dilute the signal.</span>
-      <span class="st bad">✗ stalled</span>
-    </div>
-    <div class="vcard">
-      <span class="v">v2</span>
-      <span class="loss">assistant-masked · 0.79</span>
-      <span class="note">Learns <em>decisions</em>, not tool noise. Then an adapter merged in a
-      mismatched stack produced garbage GGUF.</span>
-      <span class="st bad">✗ corrupted merge</span>
-    </div>
-    <div class="vcard">
-      <span class="v">v2-fixed</span>
-      <span class="loss">matched train/merge stack</span>
-      <span class="note">Coherent again — a milder stall, and every eval learning banked. A
-      five-second coherence check now runs before quantisation.</span>
-      <span class="st mid">△ milder stall</span>
-    </div>
-    <div class="vcard">
-      <span class="v">v3</span>
-      <span class="loss">shipping orchestrator</span>
-      <span class="note">The model the installer pulls today. Total spend across every iteration:
-      <strong>about ten dollars</strong>.</span>
-      <span class="st good">✓ ships</span>
-    </div>
-    <div class="vcard candidate">
-      <span class="v">v4</span>
-      <span class="loss">the successful candidate</span>
-      <span class="note">Simulated trajectories drilling the exact failure modes the evals
-      exposed: phase-advance on bare approval, recovery from a degenerate turn.</span>
-      <span class="st good">✓ candidate</span>
-    </div>
-  </div>
-  </div>
-  </div>
-
-  <p>
-  The model:
-  <a href="https://huggingface.co/buriedsignals/gemma4-12b-spotlight-orchestrator-v3-GGUF" target="_blank" rel="noopener">gemma4-12b-spotlight-orchestrator-v3-GGUF</a>
-  (Q4_K_M, ~7&nbsp;GB), trained from
-  <a href="https://huggingface.co/datasets/buriedsignals/spotlight-orchestrator-gold" target="_blank" rel="noopener">spotlight-orchestrator-gold</a>.
-  </p>
-  <div class="wins"><span class="wins-label">Unlocked</span>
-    <span class="win-chip">loss 3.00 → 0.79</span>
-    <span class="win-chip">~$10 total training</span>
-  </div>
 </section>
 
-<div class="tl-beat">
-  <span class="b-chip">✗</span>
-  <p><span class="emoji">🤬</span> <strong>AND EVEN THEN IT KEPT DYING!!!</strong> At the
-  methodology gate. Mid-investigation. EVERY. SINGLE. EVAL. I started to despair — until the
-  server logs confessed: this time it wasn't a model capability issue…</p>
-</div>
-
-<section class="tl-node">
-  <span class="tl-chip">05</span>
-  <p class="tl-kicker">Efficiency unlock · serving</p>
-  <h2>KV-cache and serving — the invisible half of local</h2>
-  <p>
-  <code>failed to find available cells in kv cache</code> ·
-  <code>failed to restore state with size ~971MB</code><br>
-  The model was fine. The <em>serving layer</em> was wiping its memory on every delegation. The
-  fix took me deeper into how the model is served than I ever planned to go. A couple dozen
-  iterations later, this is the serving recipe I landed on — learning what each of these levers
-  even was along the way:
-  </p>
-
-  <div class="breakout">
-  <div class="frame">
-  <div class="versions levers">
-    <div class="vcard">
-      <span class="v">Resident slots</span>
-      <span class="loss">the fix</span>
-      <span class="note"><code>--parallel 2 --no-cache-idle-slots</code><br>Orchestrator + active
-      subagent each keep a live slot. Nothing saved or restored on delegation. And one slot is
-      <em>worse</em> than two.</span>
-      <span class="st good">✓ 0 crashes</span>
-    </div>
-    <div class="vcard">
-      <span class="v">KV quantisation</span>
-      <span class="loss">2× context, same RAM</span>
-      <span class="note"><code>--cache-type-k/v q8_0</code> + <code>--flash-attn on</code><br>
-      ≈½ the KV memory per token, near-lossless.</span>
-      <span class="st good">✓ ½ memory</span>
-    </div>
-    <div class="vcard">
-      <span class="v">Context geometry</span>
-      <span class="loss">headroom</span>
-      <span class="note"><code>--ctx-size 81920</code> ÷ 2 slots = 40,960 tokens per agent —
-      past anything the bounded pipeline reaches.</span>
-      <span class="st good">✓ 40,960 / agent</span>
-    </div>
-    <div class="vcard">
-      <span class="v">Reasoning budget</span>
-      <span class="loss">think briefly, then act</span>
-      <span class="note"><code>--reasoning-budget 400</code> (12B)<br>Unbounded thinking spends
-      the whole output budget and returns an <em>empty</em> reply. 800 for the 26B, 1024 for
-      the 31B.</span>
-      <span class="st good">✓ no empty turns</span>
-    </div>
-    <div class="vcard">
-      <span class="v">RLM serving</span>
-      <span class="loss">no thinking</span>
-      <span class="note"><code>--reasoning-budget 0</code><br>A distiller must answer,
-      not think.</span>
-      <span class="st good">✓ instant distills</span>
-    </div>
-  </div>
-  </div>
-  </div>
-
-  <p>
-  <strong>API tiers are exempt:</strong> the harness detects the tier and serves frontier models
-  unrestricted. The constraints live exactly where the constraint exists — on the device.
-  </p>
-  <div class="wins"><span class="wins-label">Unlocked</span>
-    <span class="win-chip">0 KV save/restores</span>
-    <span class="win-chip">2 resident slots</span>
-  </div>
-</section>
-
-<div class="tl-beat">
-  <span class="b-chip">✂️</span>
-  <p><span class="emoji">🚀🥲</span> <strong>It ran! It was fast!</strong> But it still wasn't
-  sovereign — every fetch and every search went through a paid API key. One last dependency
-  to cut.</p>
-</div>
-
-<section class="tl-node">
-  <span class="tl-chip">06</span>
-  <p class="tl-kicker">Efficiency unlock · sovereignty</p>
-  <h2>Cutting the last commercial dependency</h2>
-  <p>
-  Search and scraping ran on Firecrawl — a paid, closed API on the critical path of a tool meant
-  to run locally and privately.
-  </p>
-  <ul>
-    <li><strong>The swap:</strong> <code>fetch</code> → <a href="https://github.com/unclecode/crawl4ai" target="_blank" rel="noopener">Crawl4AI</a>
-    (Apache-2.0, local Playwright browser) · <code>search</code> → <a href="https://github.com/searxng/searxng" target="_blank" rel="noopener">SearXNG</a>
-    (self-hosted metasearch). Firecrawl demoted to optional fallback.</li>
-    <li><strong>The surprise:</strong> the gap didn't just close. On our 8 hardest registry and
-    civic-monitoring cases, the open stack <em>leads</em>.</li>
-  </ul>
-
-  <div class="scores">
-    <div class="score-row open">
-      <span class="name">Crawl4AI <em>open source · local · now the default</em></span>
-      <span class="track"><span class="fill" style="width:100%"></span></span>
-      <span class="val">100%</span>
-    </div>
-    <div class="score-row open">
-      <span class="name">Scrapling <em>open source · stealth fallback</em></span>
-      <span class="track"><span class="fill" style="width:100%"></span></span>
-      <span class="val">100%</span>
-    </div>
-    <div class="score-row paid">
-      <span class="name">Firecrawl <em>commercial API · what we had before</em></span>
-      <span class="track"><span class="fill" style="width:79%"></span></span>
-      <span class="val">79%</span>
-    </div>
-  </div>
-  <p class="lb-caption">Scraping success · 8 hostile registry/civic cases · <a href="https://benchmarks.buriedsignals.com" target="_blank" rel="noopener">benchmarks.buriedsignals.com</a></p>
-
-  <p>
-  <em>(Firecrawl's miss is instructive: on one municipal homepage its main-content filter
-  stripped the entire page down to image markdown.)</em>
-  </p>
-
-  <p>
-  <strong>Search tells the same story.</strong> SearXNG — self-hosted, no key, no per-query
-  bill — edges out the commercial APIs on source quality:
-  </p>
-
-  <div class="scores">
-    <div class="score-row open">
-      <span class="name">SearXNG <em>open source · self-hosted · now the default</em></span>
-      <span class="track"><span class="fill" style="width:92%"></span></span>
-      <span class="val">92%</span>
-    </div>
-    <div class="score-row paid">
-      <span class="name">Firecrawl search <em>commercial API · what we had before</em></span>
-      <span class="track"><span class="fill" style="width:88%"></span></span>
-      <span class="val">88%</span>
-    </div>
-    <div class="score-row paid">
-      <span class="name">Exa <em>commercial API</em></span>
-      <span class="track"><span class="fill" style="width:79%"></span></span>
-      <span class="val">79%</span>
-    </div>
-  </div>
-  <p class="lb-caption">Search source-quality · 8 investigative queries, scored on reaching canonical sources · <a href="https://benchmarks.buriedsignals.com" target="_blank" rel="noopener">benchmarks.buriedsignals.com</a></p>
-  <div class="wins"><span class="wins-label">Unlocked</span>
-    <span class="win-chip">0 paid keys on the critical path</span>
-    <span class="win-chip">100% on hostile cases</span>
-  </div>
-</section>
-
-<div class="tl-beat success">
-  <span class="b-chip">✓</span>
-  <p>And then… <span class="emoji">🎉</span> <strong>SUCCESS!!!</strong></p>
-</div>
-
-<!-- ================= FINALE ================= -->
-<section class="tl-node">
-  <span class="tl-chip star">✦</span>
-  <p class="tl-kicker">Final unlock</p>
-
-  <div class="breakout">
-  <div class="frame">
-  <div class="quest">
-    <p class="q-kicker">The goal, reached</p>
-    <p class="q-title"><span class="star">✦</span> Quest achieved <span class="star">✦</span></p>
-    <div class="q-stats">
-      <span class="q-stat">Full gated pipeline</span>
-      <span class="q-stat">12B · Q4 · 48 GB laptop</span>
-      <span class="q-stat">~$10 total training</span>
-      <span class="q-stat">$0 per run</span>
-      <span class="q-stat">0 commercial APIs</span>
-      <span class="q-stat">Nothing left the machine</span>
-    </div>
-
-    <div class="ledger">
-      <div class="lg-row">
-        <div class="lg-label">Context floor (skills + tools)</div>
-        <div class="lg-bars">
-          <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>55,000 tok · 34 s</em></div>
-          <div class="lg-bar after"><span class="track"><span class="fill" style="width:1.5%"></span></span><em>817 tok · 0.46 s</em></div>
-        </div>
-        <div class="lg-win">67×</div>
-      </div>
-      <div class="lg-row">
-        <div class="lg-label">A scraped source in context</div>
-        <div class="lg-bars">
-          <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>~40,000 tok raw</em></div>
-          <div class="lg-bar after"><span class="track"><span class="fill" style="width:1.5%"></span></span><em>~600-tok lead list</em></div>
-        </div>
-        <div class="lg-win">66×</div>
-      </div>
-      <div class="lg-row">
-        <div class="lg-label">Conversation depth</div>
-        <div class="lg-bars">
-          <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>40k+ · thrashing</em></div>
-          <div class="lg-bar after"><span class="track"><span class="fill" style="width:25%"></span></span><em>folds to ~10k</em></div>
-        </div>
-        <div class="lg-win">4×</div>
-      </div>
-      <div class="lg-row">
-        <div class="lg-label">KV memory</div>
-        <div class="lg-cat">
-          <span class="no">f16 · save/restore crashes at ~29k</span>
-          <span class="yes">q8_0 · 2 resident slots · zero restores</span>
-        </div>
-        <div class="lg-win tick">✓</div>
-      </div>
-      <div class="lg-row">
-        <div class="lg-label">Orchestration discipline</div>
-        <div class="lg-cat">
-          <span class="no">skill re-activation loops · empty turns</span>
-          <span class="yes">reason → delegate → synthesise → stop at gate</span>
-        </div>
-        <div class="lg-win tick">✓</div>
-      </div>
-      <div class="lg-row">
-        <div class="lg-label">Search &amp; scraping</div>
-        <div class="lg-cat">
-          <span class="no">paid API key on the critical path</span>
-          <span class="yes">Crawl4AI + SearXNG · 100% on hostile cases</span>
-        </div>
-        <div class="lg-win tick">✓</div>
-      </div>
-    </div>
-
-    <div class="q-body">
-    <p>
-    A concrete run, from last night: resuming a real investigation, the tuned 12B — on a bare
-    <em>"Approved, proceed."</em> — reviewed the corpus, delegated, produced a correct synthesis
-    (the target organisation's president, co-executive directors, legal form and domicile), and
-    stopped at the review gate. On my laptop. The marginal cost was electricity.
-    </p>
-    <p>
-    To be precise: not "a 12B is as good as a frontier model." It's that a 12B <strong>inside a
-    deeply engineered procedure</strong> runs gated multi-agent investigations at usable speed,
-    with the human at the gates. Every optimisation transfers upward — the 26B and 31B tiers
-    inherit the same harness with looser leashes and run <em>better</em> for it. Tune the
-    procedure for the smallest model; the bigger ones get it for free.
-    </p>
-    </div>
-  </div>
-  </div>
-  </div>
-</section>
-
-</div><!-- /timeline -->
+<article>
 
 <div class="callout">
   <span class="label">The recipe, for newsrooms</span>
@@ -1171,6 +1321,50 @@ the same lessons twice.
     window.addEventListener("resize", fit);
     fit();
   }
+</script>
+
+<script>
+  // ── Split-scroll: track which step is centered ───────────────────────────
+  // Ported from the landing page (index.html). One deviation, commented below:
+  // these steps are multi-screen chapters, so the active step is the LAST one
+  // whose top has crossed the mid line (nearest-centre misbehaves on steps
+  // taller than the viewport).
+  (function() {
+    const steps = document.querySelectorAll('#steps .step');
+    const counterEl = document.getElementById('counter');
+    const labelEl = document.getElementById('counter-label');
+    const fillEl = document.getElementById('progress-fill');
+    const total = steps.length;
+    function update() {
+      const isMobile = window.innerWidth <= 760;
+      const mid = window.innerHeight * (isMobile ? 0.64 : 0.5);
+      let active = 0;
+      steps.forEach((s, i) => {
+        if (s.getBoundingClientRect().top <= mid) active = i;
+      });
+      steps.forEach((s, i) => s.classList.toggle('active', i === active));
+      const step = steps[active];
+      counterEl.textContent = step.dataset.num;
+      labelEl.textContent = step.dataset.label;
+      fillEl.style.width = ((active + 1) / total * 100) + '%';
+    }
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update, { passive: true });
+    update();
+  })();
+
+  // Mobile sticky ticker — toggles .is-stuck on .split-left when the
+  // sentinel above it scrolls out of view (i.e., the ticker hits top:0).
+  (function () {
+    const sentinel = document.querySelector('.split-left-sentinel');
+    const stickyEl = document.querySelector('.split-left');
+    if (!sentinel || !stickyEl) return;
+    const io = new IntersectionObserver(
+      ([entry]) => stickyEl.classList.toggle('is-stuck', !entry.isIntersecting),
+      { threshold: 0 }
+    );
+    io.observe(sentinel);
+  })();
 </script>
 
 </body>
