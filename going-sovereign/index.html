@@ -64,12 +64,23 @@
     color: var(--paper); border-bottom: none;
   }
   nav.topnav .brand svg { width: 18px; height: 18px; }
-  nav.topnav .links { display: flex; gap: 22px; font-size: 12.5px; letter-spacing: 0.04em; }
+  nav.topnav .links { display: flex; gap: 22px; align-items: center; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; }
   nav.topnav .links a { color: var(--paper); opacity: 0.85; border-bottom: none; }
   nav.topnav .links a:hover { color: var(--accent-warm); opacity: 1; }
-  nav.topnav .links a.cta {
-    padding: 5px 13px; border: 1px solid var(--accent-warm);
-    border-radius: 999px; color: var(--accent-warm); background: var(--accent-warm-14);
+  /* Install — bordered pill in the topnav (same rule as the landing + setup pages). */
+  nav.topnav .links a[href$="setup.html"] {
+    display: inline-flex; align-items: center;
+    padding: 9px 14px;
+    border: 1px solid currentColor;
+    opacity: 1;
+    letter-spacing: 0.22em;
+    font-weight: 500;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  }
+  nav.topnav .links a[href$="setup.html"]:hover {
+    background: var(--accent-warm-14);
+    border-color: var(--accent-warm);
+    color: var(--accent-warm);
   }
 
   .kicker {
@@ -489,73 +500,7 @@
   .st.train { color: var(--accent-cool-2); border-color: rgba(52,111,168,0.6); }
   .versions.levers .vcard .v { font-size: 16px; }
 
-  /* Shared footer — the same element as the landing + setup pages (verbatim). */
-  #footer {
-    background: rgba(7, 7, 10, 0);
-    color: var(--paper);
-    padding: 96px 48px 32px;
-    position: relative;
-    overflow: hidden;
-    z-index: 10;
-  }
-  .footer-simple {
-    display: grid;
-    grid-template-columns: minmax(0, 56ch) auto;
-    align-items: start;
-    gap: 32px;
-    padding-top: 28px;
-    border-top: 1px solid var(--muted-faint-dark);
-  }
-  .footer-summary {
-    margin: 0;
-    max-width: 56ch;
-    font-size: 14px;
-    line-height: 1.7;
-    color: var(--muted-dark);
-  }
-  .footer-links {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 14px;
-    justify-content: flex-end;
-    align-content: flex-start;
-  }
-  .footer-links a {
-    display: inline-flex;
-    align-items: center;
-    padding: 10px 14px;
-    border: 1px solid var(--muted-faint-dark);
-    font-size: 11px;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-  }
-  .footer-links a:hover {
-    background: var(--accent-warm-14);
-    border-color: var(--accent-warm);
-    color: var(--accent-warm);
-  }
-  .footer-meta {
-    display: flex; justify-content: space-between; align-items: baseline;
-    font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
-    opacity: 0.5;
-    margin-top: 30px;
-  }
-  .footer-meta .brand-mini { display: flex; align-items: center; gap: 10px; }
-  .footer-meta .brand-mini svg { width: 14px; height: 14px; opacity: 0.7; }
-  @media (max-width: 640px) {
-    #footer { padding: 64px 20px 28px; }
-    .footer-simple {
-      grid-template-columns: 1fr;
-      gap: 18px;
-    }
-    .footer-summary { font-size: 13px; }
-    .footer-links {
-      gap: 10px;
-      justify-content: flex-start;
-    }
-    .footer-meta { flex-direction: column; gap: 12px; align-items: flex-start; margin-top: 28px; }
-  }
+  /* Footer lives in the shared <site-footer> component (components/site-footer.js). */
 
   @media (max-width: 640px) {
     article { padding-top: 48px; }
@@ -1262,28 +1207,8 @@ flowchart LR
 </div>
 </section>
 
-<section id="footer" data-nav-theme="dark" data-scene-mood="calm">
-  <div class="footer-simple">
-    <p class="footer-summary" data-reveal="body" data-stagger-idx="0">
-      An open-source investigative system for AI agents, built for journalists. One agent reports, one agent checks, and you stay the editor. Local when the case is too sensitive for the cloud.
-    </p>
-    <div class="footer-links" data-reveal="body" data-stagger-idx="1">
-      <a href="../setup.html">Install</a>
-      <a href="https://buriedsignals.com/consulting" target="_blank" rel="noopener">Work with me ↗</a>
-      <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals ↗</a>
-    </div>
-  </div>
-
-  <div class="footer-meta">
-    <div class="brand-mini">
-      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z"/>
-      </svg>
-      <span>Spotlight · v1.0</span>
-    </div>
-    <span>© 2026 Buried Signals — MIT licensed</span>
-  </div>
-</section>
+<site-footer id="footer" data-nav-theme="dark" data-scene-mood="calm"></site-footer>
+<script src="/components/site-footer.js" defer></script>
 
 <script type="module">
   import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
