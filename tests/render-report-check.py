@@ -94,6 +94,7 @@ def build_case(root: Path) -> Path:
                 "evidence_for": [{
                     "description": "The official record confirms the appointment.",
                     "source": "https://example.org/official_record(v1)",
+                    "access_method": "full_text",
                     "local_file": "research/official-record.md",
                 }],
             },
@@ -274,6 +275,16 @@ def main() -> int:
         )
         assert inaccessible.returncode == 3, inaccessible.stdout
 
+        case = build_case(Path(tmp) / "missing-access-method")
+        fact_check_path = case / "data" / "fact-check.json"
+        fact_check = json.loads(fact_check_path.read_text())
+        fact_check["claims"][0]["evidence_for"][0].pop("access_method")
+        write_json(fact_check_path, fact_check)
+        missing_access = subprocess.run(
+            [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
+        )
+        assert missing_access.returncode == 3, missing_access.stdout
+
         # Canonical bundles require structured, claim-exact links.
         case = build_case(Path(tmp) / "loose-bundle-link")
         bundle_path = case / "data" / "evidence-bundle.json"
@@ -295,10 +306,34 @@ def main() -> int:
         )
         assert incomplete_bundle.returncode == 3, incomplete_bundle.stdout
 
-        # Blank lines or a BOM cannot disguise an RLM-derived lead file as source evidence.
+        # Legacy evidence[] metadata may be preserved, but cannot itself verify a claim.
+        case = build_case(Path(tmp) / "legacy-bundle-anchor")
+        fact_check_path = case / "data" / "fact-check.json"
+        fact_check = json.loads(fact_check_path.read_text())
+        fact_check["claims"][0]["evidence_for"][0].pop("local_file")
+        fact_check["claims"][0]["evidence_for"][0]["evidence_bundle_id"] = "E1"
+        write_json(fact_check_path, fact_check)
+        bundle_path = case / "data" / "evidence-bundle.json"
+        bundle = json.loads(bundle_path.read_text())
+        item = bundle["items"][0]
+        write_json(bundle_path, {
+            "schema_version": "1.0",
+            "project": bundle["project"],
+            "evidence": [{
+                "id": item["id"],
+                "finding_id": "F1",
+                "path": item["raw_path"],
+            }],
+        })
+        legacy_bundle = subprocess.run(
+            [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
+        )
+        assert legacy_bundle.returncode == 3, legacy_bundle.stdout
+
+        # A prefix, blank line, or BOM cannot disguise an RLM-derived lead as source evidence.
         case = build_case(Path(tmp) / "derived-lead-anchor")
         (case / "research" / "official-record.md").write_text(
-            "\ufeff\n# RLM-distilled leads from source.raw\nAda Lovelace is President.\n"
+            "\ufeffAcquisition note\n\n# RLM-distilled leads from source.raw\nAda Lovelace is President.\n"
         )
         derived = subprocess.run(
             [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True

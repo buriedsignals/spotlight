@@ -894,6 +894,31 @@ flowchart LR
         <span class="ing">~$10 of rented GPUs</span>
       </div>
 
+      <h3>How many orchestrator submissions to finish?</h3>
+      <div class="scores">
+        <div class="score-row paid">
+          <span class="name">Base 12B <em>repeated loops · operator forcing · no valid finish</em></span>
+          <span class="track"><span class="fill" style="width:100%"></span></span>
+          <span class="val">35+ · stalled</span>
+        </div>
+        <div class="score-row open">
+          <span class="name">Tuned 12B · v5 <em>pass after guarded recovery</em></span>
+          <span class="track"><span class="fill" style="width:26%"></span></span>
+          <span class="val">9 · pass</span>
+        </div>
+        <div class="score-row open">
+          <span class="name">26B-A4B <em>pass after one report-phase bounce</em></span>
+          <span class="track"><span class="fill" style="width:31%"></span></span>
+          <span class="val">11 · pass</span>
+        </div>
+        <div class="score-row open">
+          <span class="name">31B reference <em>clean full-pipeline pass</em></span>
+          <span class="track"><span class="fill" style="width:17%"></span></span>
+          <span class="val">6 · pass</span>
+        </div>
+      </div>
+      <p class="lb-caption">Same real Ethereum Foundation investigation · lower is better · every gate approval and guardrail-recovery turn counts. The base 12B reached 35 submissions with report repair still unfinished. Wall time for the successful RunPod runs: tuned 12B v5 35.5 min; 26B 20.5 min. The 31B duration was not captured.</p>
+
       <div class="breakout">
       <div class="frame">
       <div class="versions">

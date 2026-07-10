@@ -309,16 +309,26 @@ def validate_fact_check(data: dict[str, Any]) -> list[str]:
                     evidence_for = claim.get("evidence_for")
                     if not isinstance(evidence_for, list) or not evidence_for:
                         errors.append(f"{prefix}: positive verdict needs evidence_for")
-                    elif not any(
-                        isinstance(item, dict) and (
-                            nonempty_string(item.get("local_file"))
-                            or isinstance(item.get("source_ref"), dict)
-                            or nonempty_string(item.get("evidence_bundle_id"))
+                    else:
+                        allowed_access = {"full_text", "open_access", "archive_copy"}
+                        if verdict == "partially_verified":
+                            allowed_access.add("abstract_only")
+                        has_anchor = any(
+                            isinstance(item, dict) and (
+                                nonempty_string(item.get("evidence_bundle_id"))
+                                or (
+                                    item.get("access_method") in allowed_access
+                                    and (
+                                        nonempty_string(item.get("local_file"))
+                                        or isinstance(item.get("source_ref"), dict)
+                                    )
+                                )
+                            )
+                            for item in evidence_for
                         )
-                        for item in evidence_for
-                    ):
+                    if isinstance(evidence_for, list) and evidence_for and not has_anchor:
                         errors.append(
-                            f"{prefix}: positive verdict needs a case-local evidence anchor"
+                            f"{prefix}: positive verdict needs an accessible case-local evidence anchor"
                         )
 
     if "summary" in data:

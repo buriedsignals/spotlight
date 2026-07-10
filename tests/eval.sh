@@ -122,6 +122,7 @@ invalid = []
 d = deepcopy(base); d['fact_checks'] = []; invalid.append(d)
 d = deepcopy(base); d['claims'][0]['claim'] = d['claims'][0]['claim_text']; invalid.append(d)
 d = deepcopy(base); d['claims'][0]['evidence_for'][0]['local_file'] = None; invalid.append(d)
+d = deepcopy(base); d['claims'][0]['evidence_for'][0].pop('access_method'); invalid.append(d)
 for value in invalid:
     try: validate(instance=value, schema=s)
     except ValidationError: continue

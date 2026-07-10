@@ -28,7 +28,7 @@ import setup_server as srv  # noqa: E402
 
 BASE = {
     "mode": "cloud", "cloudRuntime": "claude", "opencodeProvider": "openrouter",
-    "cloudKey": "", "localAgent": "opencode", "localModel": "qwen9b",
+    "cloudKey": "", "localAgent": "flue", "localModel": "gemma12b",
     "firecrawlKey": "fc-secret-test", "navKey": "on-secret-test",
     "vaultApp": "obsidian",
     "installPath": "~/Documents/Spotlight", "vaultPath": "~/Intelligence",
@@ -134,7 +134,7 @@ class UnitChecks(unittest.TestCase):
         # enum choices may default…
         self.assertEqual(d["mode"], "cloud")
         self.assertEqual(d["cloudRuntime"], "claude")
-        self.assertEqual(d["localModel"], "qwen9b")
+        self.assertEqual(d["localModel"], "gemma12b")
         self.assertEqual(d["vaultApp"], "obsidian")
         # …but emptied paths must NOT be silently defaulted
         self.assertEqual(d["installPath"], "")
@@ -206,8 +206,8 @@ class UnitChecks(unittest.TestCase):
                        "SPOTLIGHT_INT_DEVBROWSER=true", "SPOTLIGHT_INT_JUNKIPEDIA=true",
                        "SPOTLIGHT_INT_UNPAYWALL=true", "UNPAYWALL_EMAIL=reporter@example.com",
                        "SPOTLIGHT_INT_RLM=true", "SPOTLIGHT_RLM_MODE=local_gemma4_e4b",
-                       "SPOTLIGHT_RLM_MODEL=gemma4:e4b", "SPOTLIGHT_RLM_PREFILTER=true",
-                       "SPOTLIGHT_RLM_HYBRID=true"]:
+                       "SPOTLIGHT_RLM_MODEL=''", "SPOTLIGHT_RLM_REPO=''",
+                       "SPOTLIGHT_RLM_GGUF=''"]:
             self.assertIn(needle, cfg)
         self.assertNotIn("OSINT_NAVIGATOR", cfg)
         for secret in SECRETS:
@@ -230,21 +230,22 @@ class UnitChecks(unittest.TestCase):
     def test_setup_config_local(self):
         cfg = srv.build_setup_config(srv.normalize(LOCAL))
         for needle in ["SPOTLIGHT_MODE=local", "SPOTLIGHT_RUNTIME=local",
-                       "SPOTLIGHT_AGENT=opencode", "SPOTLIGHT_LOCAL_SERVER=ollama",
-                       "SPOTLIGHT_LOCAL_MODEL=qwen9b",
-                       "SPOTLIGHT_MODEL_REPO=tomvaillant/qwen3.5-9b-abliterated-journalist-GGUF"]:
+                       "SPOTLIGHT_AGENT=flue", "SPOTLIGHT_LOCAL_SERVER=llamacpp",
+                       "SPOTLIGHT_LOCAL_MODEL=gemma12b", "SPOTLIGHT_MODEL_TIER=12b",
+                       "SPOTLIGHT_MODEL_REPO=tomvaillant/gemma4-12b-spotlight-orchestrator-v5-GGUF",
+                       "SPOTLIGHT_RLM_MODE=local_llamacpp_e4b", "SPOTLIGHT_RLM_MODEL=rlm-e4b"]:
             self.assertIn(needle, cfg)
-        pi = srv.build_setup_config(srv.normalize({**LOCAL, "localAgent": "pi", "localModel": "qwen27b"}))
-        self.assertIn("SPOTLIGHT_AGENT=pi", pi)
-        self.assertIn("SPOTLIGHT_LOCAL_SERVER=llamacpp", pi)
-        self.assertIn("SPOTLIGHT_MODEL_REPO=tomvaillant/qwen3.6-27b-abliterated-journalist-GGUF", pi)
+        quality = srv.build_setup_config(srv.normalize({**LOCAL, "localModel": "gemma31b"}))
+        self.assertIn("SPOTLIGHT_AGENT=flue", quality)
+        self.assertIn("SPOTLIGHT_MODEL_TIER=31b", quality)
+        self.assertIn("SPOTLIGHT_MODEL_REPO=unsloth/gemma-4-31B-it-GGUF", quality)
 
     def test_setup_config_rlm_variants(self):
         off = srv.build_setup_config(srv.normalize({**BASE, "intRlm": False}))
         self.assertIn("SPOTLIGHT_RLM_MODE=off", off)
         self.assertIn("SPOTLIGHT_RLM_MODEL=''", off)
-        self.assertIn("SPOTLIGHT_RLM_PREFILTER=''", off)
-        self.assertIn("SPOTLIGHT_RLM_HYBRID=''", off)
+        self.assertIn("SPOTLIGHT_RLM_REPO=''", off)
+        self.assertIn("SPOTLIGHT_RLM_GGUF=''", off)
         lite = srv.build_setup_config(srv.normalize({**BASE, "rlmMode": "lite"}))
         self.assertIn("SPOTLIGHT_RLM_MODE=lite", lite)
         self.assertIn("SPOTLIGHT_RLM_MODEL=''", lite)
@@ -272,8 +273,8 @@ class UnitChecks(unittest.TestCase):
         for secret in SECRETS:
             self.assertNotIn(secret, guide)
         local = srv.build_getting_started(srv.normalize({**LOCAL, "vaultApp": "obsidian"}))
-        self.assertIn("Qwen 3.5 9B Journalist", local)
-        self.assertIn("Ollama", local)
+        self.assertIn("Gemma 4 12B", local)
+        self.assertIn("llama.cpp", local)
         tolaria = srv.build_getting_started(srv.normalize({**BASE, "vaultApp": "tolaria"}))
         self.assertIn("Tolaria", tolaria)
         self.assertNotIn("Command Line Interface: ON", tolaria)
@@ -313,7 +314,7 @@ class UnitChecks(unittest.TestCase):
 
 
 class ServerChecks(unittest.TestCase):
-    PORT = 8842
+    PORT = 0
 
     @classmethod
     def setUpClass(cls):
@@ -321,7 +322,7 @@ class ServerChecks(unittest.TestCase):
         cls.proc = subprocess.Popen(
             [sys.executable, os.path.join(ROOT, "install", "setup_server.py"),
              "--profile-dir", cls.tmp, "--repo-dir", ROOT,
-             "--port", str(cls.PORT), "--no-browser", "--skip-key-validation"],
+             "--port", "0", "--no-browser", "--skip-key-validation"],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         # GET is token-gated, so the token comes from the printed URL.
         cls.token = None
@@ -330,12 +331,14 @@ class ServerChecks(unittest.TestCase):
             line = cls.proc.stdout.readline()
             if not line:
                 break
-            m = re.search(r"\?t=([A-Za-z0-9_-]+)", line)
+            m = re.search(r"http://127\.0\.0\.1:(\d+)/\?t=([A-Za-z0-9_-]+)", line)
             if m:
-                cls.token = m.group(1)
+                cls.PORT = int(m.group(1))
+                cls.token = m.group(2)
                 break
         if not cls.token:
-            raise RuntimeError("configurator never printed its token URL")
+            remainder = cls.proc.stdout.read()
+            raise RuntimeError(f"configurator never printed its token URL: {remainder}")
         deadline = time.time() + 10
         while time.time() < deadline:
             try:

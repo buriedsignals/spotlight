@@ -58,28 +58,28 @@
         "allOf": [
           {
             "if": {
-              "required": ["verdict"],
-              "properties": {
-                "verdict": { "enum": ["verified", "partially_verified"] }
-              }
+              "properties": { "verdict": { "const": "verified" } }
             },
             "then": {
               "required": ["finding_id", "evidence_for"],
               "properties": {
                 "evidence_for": {
                   "minItems": 1,
-                  "contains": {
-                    "anyOf": [
-                      {
-                        "required": ["local_file"],
-                        "properties": {
-                          "local_file": { "type": "string", "minLength": 1 }
-                        }
-                      },
-                      { "required": ["source_ref"] },
-                      { "required": ["evidence_bundle_id"] }
-                    ]
-                  }
+                  "contains": { "$ref": "#/definitions/verified_anchor" }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": { "verdict": { "const": "partially_verified" } }
+            },
+            "then": {
+              "required": ["finding_id", "evidence_for"],
+              "properties": {
+                "evidence_for": {
+                  "minItems": 1,
+                  "contains": { "$ref": "#/definitions/partial_anchor" }
                 }
               }
             }
@@ -131,30 +131,67 @@
       "allOf": [
         {
           "if": {
-            "properties": {
-              "status": { "enum": ["verified", "partially_verified"] }
-            }
+            "properties": { "status": { "const": "verified" } }
           },
           "then": {
             "required": ["finding_id", "evidence_for"],
             "properties": {
               "evidence_for": {
                 "minItems": 1,
-                "contains": {
-                  "anyOf": [
-                    {
-                      "required": ["local_file"],
-                      "properties": {
-                        "local_file": { "type": "string", "minLength": 1 }
-                      }
-                    },
-                    { "required": ["source_ref"] },
-                    { "required": ["evidence_bundle_id"] }
-                  ]
-                }
+                "contains": { "$ref": "#/definitions/verified_anchor" }
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": { "status": { "const": "partially_verified" } }
+          },
+          "then": {
+            "required": ["finding_id", "evidence_for"],
+            "properties": {
+              "evidence_for": {
+                "minItems": 1,
+                "contains": { "$ref": "#/definitions/partial_anchor" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "verified_anchor": {
+      "anyOf": [
+        { "required": ["evidence_bundle_id"] },
+        {
+          "required": ["access_method"],
+          "properties": {
+            "access_method": { "enum": ["full_text", "open_access", "archive_copy"] }
+          },
+          "anyOf": [
+            {
+              "required": ["local_file"],
+              "properties": { "local_file": { "type": "string", "minLength": 1 } }
+            },
+            { "required": ["source_ref"] }
+          ]
+        }
+      ]
+    },
+    "partial_anchor": {
+      "anyOf": [
+        { "required": ["evidence_bundle_id"] },
+        {
+          "required": ["access_method"],
+          "properties": {
+            "access_method": { "enum": ["full_text", "open_access", "archive_copy", "abstract_only"] }
+          },
+          "anyOf": [
+            {
+              "required": ["local_file"],
+              "properties": { "local_file": { "type": "string", "minLength": 1 } }
+            },
+            { "required": ["source_ref"] }
+          ]
         }
       ]
     },

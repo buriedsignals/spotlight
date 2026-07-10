@@ -90,7 +90,6 @@ check_combo "cloud/claude" "${BASE[@]}" \
 # --- 2. cloud / opencode-openrouter ---
 ASSERTIONS=(
   "━━ OpenCode (provider: openrouter) ━━"
-  "DRY-RUN: symlink"
   ".config/opencode/skills/"
   "DRY-RUN: write .env"
   "Spotlight installed"
@@ -101,39 +100,33 @@ check_combo "cloud/opencode-openrouter" "${BASE[@]}" \
   SPOTLIGHT_CLOUD_KEY_VAR=OPENROUTER_API_KEY \
   SPOTLIGHT_CLOUD_KEY=sk-or-test
 
-# --- 3. local / llamacpp / opencode ---
+# --- 3. local / llama.cpp / Gemma 12B / Flue ---
 ASSERTIONS=(
   "━━ Local inference (llama-server) ━━"
-  "━━ Agent harness (opencode CLI) ━━"
-  "DRY-RUN: merge llamacpp provider into"
-  "127.0.0.1:8080/v1"
-  "DRY-RUN: write ~/.local/bin/spotlight-local for llamacpp/opencode"
+  "━━ Agent harness (Flue on Pi) ━━"
+  "DRY-RUN: npm install"
+  "DRY-RUN: write ~/.local/bin/spotlight-local (llama.cpp serving + flue run spotlight)"
   "Spotlight installed"
 )
-check_combo "local/llamacpp/opencode" "${BASE[@]}" \
+check_combo "local/llamacpp/gemma12b" "${BASE[@]}" \
   SPOTLIGHT_MODE=local SPOTLIGHT_RUNTIME=local \
-  SPOTLIGHT_LOCAL_SERVER=llamacpp SPOTLIGHT_LOCAL_MODEL=qwen27b \
-  SPOTLIGHT_AGENT=opencode SPOTLIGHT_OPENCODE_INTERFACE=cli \
-  SPOTLIGHT_MODEL_REPO='tomvaillant/qwen3.6-27b-abliterated-journalist-GGUF'
+  SPOTLIGHT_LOCAL_SERVER=llamacpp SPOTLIGHT_LOCAL_MODEL=gemma12b \
+  SPOTLIGHT_MODEL_TIER=12b SPOTLIGHT_AGENT=flue \
+  SPOTLIGHT_MODEL_REPO='tomvaillant/gemma4-12b-spotlight-orchestrator-v5-GGUF'
 
-# --- 4. local / llamacpp / pi ---
-# The Pi branch prompts interactively (read -r ans </dev/tty), so we feed "y"
-# on stdin via process substitution to confirm proceeding past the warning.
-# But under --dry-run the prompt is skipped. Verify the warning still prints.
+# --- 4. local / llama.cpp / Gemma 31B / same Flue harness ---
 ASSERTIONS=(
   "━━ Local inference (llama-server) ━━"
-  "Pi has no native sub-agents."
-  "weakening the verification independence guarantee"
-  "━━ Agent harness (Pi) ━━"
-  "DRY-RUN: write"
-  "spotlight-local for llamacpp/pi"
+  "━━ Agent harness (Flue on Pi) ━━"
+  "DRY-RUN: npm install"
+  "DRY-RUN: write ~/.local/bin/spotlight-local (llama.cpp serving + flue run spotlight)"
   "Spotlight installed"
 )
-check_combo "local/llamacpp/pi" "${BASE[@]}" \
+check_combo "local/llamacpp/gemma31b" "${BASE[@]}" \
   SPOTLIGHT_MODE=local SPOTLIGHT_RUNTIME=local \
-  SPOTLIGHT_LOCAL_SERVER=llamacpp SPOTLIGHT_LOCAL_MODEL=qwen9b \
-  SPOTLIGHT_AGENT=pi SPOTLIGHT_OPENCODE_INTERFACE=cli \
-  SPOTLIGHT_MODEL_REPO='tomvaillant/qwen3.5-9b-abliterated-journalist-GGUF'
+  SPOTLIGHT_LOCAL_SERVER=llamacpp SPOTLIGHT_LOCAL_MODEL=gemma31b \
+  SPOTLIGHT_MODEL_TIER=31b SPOTLIGHT_AGENT=flue \
+  SPOTLIGHT_MODEL_REPO='unsloth/gemma-4-31B-it-GGUF'
 
 # --- Contract: retired SPOTLIGHT_CONFIG channel fails loud ---
 out=$(SPOTLIGHT_CONFIG=x bash "$INSTALLER" --dry-run 2>&1) && rc=0 || rc=$?

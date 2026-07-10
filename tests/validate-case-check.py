@@ -225,6 +225,7 @@ def main() -> int:
     check("fact-check: bad assessment cap", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["grounding_assessment"].__setitem__("confidence_cap", "none"))), True)
     check("fact-check: evidence item missing source", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["evidence_for"][0].pop("source"))), True)
     check("fact-check: bad access_method", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["evidence_for"][0].__setitem__("access_method", "stolen"))), True)
+    check("fact-check: positive anchor missing access_method", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["evidence_for"][0].pop("access_method"))), True)
     check("fact-check: bad source_ref path", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["evidence_for"][0]["source_ref"].__setitem__("path", ""))), True)
     check("fact-check: mixed source_ref locators", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["evidence_for"][0]["source_ref"].update({"line_start": 1, "line_end": 1}))), True)
     check("fact-check: bad source_ref pointer", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["evidence_for"][0]["source_ref"].__setitem__("json_pointer", "record/title"))), True)

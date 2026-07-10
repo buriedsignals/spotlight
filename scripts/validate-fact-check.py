@@ -130,8 +130,10 @@ def rlm_lead_failure(path: Path) -> str | None:
             opening_lines = [handle.readline() for _ in range(8)]
     except OSError as exc:
         return f"cannot inspect {path.name}: {exc}"
-    first_content = next((line.lstrip("\ufeff").strip() for line in opening_lines if line.strip("\ufeff\r\n\t ")), "")
-    if first_content.startswith(RLM_LEAD_MARKER):
+    if any(
+        line.lstrip("\ufeff").strip().startswith(RLM_LEAD_MARKER)
+        for line in opening_lines
+    ):
         raw = path.with_name(path.name + ".raw")
         guidance = f"; cite {raw.name} instead" if raw.is_file() else ""
         return f"{path.name} is an RLM-distilled lead file, not source evidence{guidance}"
@@ -353,10 +355,6 @@ def validate_evidence_entry(
     local: Path | None = None
 
     access_method = entry.get("access_method")
-    if access_method == "inaccessible":
-        failures.append("inaccessible evidence cannot anchor a positive verdict")
-    elif access_method == "abstract_only" and verdict == "verified":
-        failures.append("abstract-only evidence cannot anchor a fully verified verdict")
 
     raw_local = entry.get("local_file")
     if normalized(raw_local):
@@ -383,6 +381,11 @@ def validate_evidence_entry(
         bundle = bundles.get(bundle_id)
         if bundle is None:
             failures.append(f"evidence_bundle_id {bundle_id!r} does not resolve")
+        elif not canonical_bundle:
+            failures.append(
+                "legacy evidence bundles cannot anchor a positive verdict; migrate the bundle "
+                "or cite its case-local artifact with local_file/source_ref"
+            )
         else:
             bundle_paths, bundle_failures = validate_bundle_item(
                 case_dir,
@@ -409,6 +412,15 @@ def validate_evidence_entry(
             failures.append("sha256 has no case-local artifact to hash")
         elif not any(sha256_file(path) == expected_hash for path in paths):
             failures.append("sha256 does not match the referenced case-local artifact")
+
+    if paths and not bundle_id:
+        allowed = {"full_text", "open_access", "archive_copy"}
+        if verdict == "partially_verified":
+            allowed.add("abstract_only")
+        if access_method not in allowed:
+            failures.append(
+                f"access_method must be one of {sorted(allowed)} for a {verdict} anchor"
+            )
     return paths, failures
 
 
