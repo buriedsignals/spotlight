@@ -47,6 +47,20 @@ For every finding or claim:
 6. Search for contradictions before raising confidence.
 7. Apply the confidence cap.
 
+## Contradiction Categories
+
+Classify a material contradiction before investigating it. Categories help route the next check; they never choose a winner automatically.
+
+| Category | Question to test |
+|---|---|
+| `value_mismatch` | Do sources give incompatible values for the same attribute, scope, and time? |
+| `time_impossible` | Can the asserted events coexist in the stated chronology, allowing for clock and publication differences? |
+| `existence_dispute` | Does one source assert presence while another asserts absence—and is the latter complete enough to establish absence? |
+| `connection_paradox` | Are two asserted relationships genuinely mutually exclusive, or merely different roles/scopes/times? |
+| `location_impossible` | Could the subject plausibly occupy both locations, accounting for travel, scheduled publication, proxies, relays, and metadata error? |
+
+Preserve both evidence trails. Check whether normalization, scope, identity resolution, time windows, extraction errors, or source dependence explain the conflict. Do not resolve a contradiction by counting sources, ranking providers, or applying a trust score. If the material conflict remains, mark the claim disputed and cap confidence accordingly.
+
 ## Confidence Caps
 
 Use these caps even if the claim sounds plausible:
@@ -95,3 +109,7 @@ When a finding feels wrong, do not patch the wording first. Diagnose the groundi
 - Evidence conflicts with another reliable source: mark disputed and preserve both trails.
 
 Read `references/failure-router.md` for deeper failure classes. Read `references/grounding-theory.md` when designing or revising grounding policy.
+
+## Attribution
+
+The contradiction category prompts are adapted from [CTI Expert](https://github.com/7onez/cti-expert) by Hieu Ngo / chongluadao.vn (GitHub: 7onez; MIT License with upstream Ethical Use Addendum). Spotlight intentionally omits its trust scores, severity ranking, majority preference, and automatic conflict resolution.

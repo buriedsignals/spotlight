@@ -27,8 +27,9 @@ import argparse
 import json
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 
 VERDICTS = {"verified", "partially_verified", "unverified", "mischaracterized", "disputed", "false"}
@@ -46,6 +47,17 @@ RLM_MODES = {"lite", "local_gemma4_e4b"}
 RLM_PROVIDERS = {"deterministic", "ollama"}
 RLM_STATUSES = {"needs_verification"}
 RLM_KINDS = {"entity", "timeline_event", "contradiction", "lead", "discarded"}
+TECHNICAL_INDICATOR_TYPES = {
+    "ipv4",
+    "ipv6",
+    "domain",
+    "url",
+    "md5",
+    "sha1",
+    "sha256",
+    "bitcoin",
+    "ethereum",
+}
 
 
 def load_json(path: Path) -> tuple[Any, list[str]]:
@@ -70,6 +82,16 @@ def string_list(value: Any) -> bool:
 
 def optional_string(value: Any) -> bool:
     return value is None or isinstance(value, str)
+
+
+def parse_datetime(value: Any) -> Optional[datetime]:
+    if not nonempty_string(value):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
 
 
 def validate_findings(data: dict[str, Any]) -> list[str]:
@@ -123,6 +145,58 @@ def validate_findings(data: dict[str, Any]) -> list[str]:
         if grounding is not None:
             errors.extend(validate_grounding(grounding, prefix))
 
+    indicators = data.get("technical_indicators")
+    if indicators is not None:
+        if not isinstance(indicators, list):
+            errors.append("findings.json: 'technical_indicators' must be a list")
+        else:
+            finding_ids = {
+                finding.get("id")
+                for finding in data["findings"]
+                if isinstance(finding, dict) and nonempty_string(finding.get("id"))
+            }
+            indicator_ids: set[str] = set()
+            for index, indicator in enumerate(indicators):
+                prefix = f"findings.json.technical_indicators[{index}]"
+                if not isinstance(indicator, dict):
+                    errors.append(f"{prefix}: must be an object")
+                    continue
+                indicator_id = indicator.get("id")
+                if not nonempty_string(indicator_id):
+                    errors.append(f"{prefix}.id: must be a non-empty string")
+                elif indicator_id in indicator_ids:
+                    errors.append(f"{prefix}.id: duplicate technical indicator id {indicator_id!r}")
+                else:
+                    indicator_ids.add(indicator_id)
+                finding_id = indicator.get("finding_id")
+                if not nonempty_string(finding_id):
+                    errors.append(f"{prefix}.finding_id: must be a non-empty string")
+                elif finding_id not in finding_ids:
+                    errors.append(f"{prefix}.finding_id: must reference an existing finding")
+                indicator_type = indicator.get("type")
+                if not isinstance(indicator_type, str) or indicator_type not in TECHNICAL_INDICATOR_TYPES:
+                    errors.append(f"{prefix}.type: must be one of {sorted(TECHNICAL_INDICATOR_TYPES)}")
+                for key in ("value", "context"):
+                    if not nonempty_string(indicator.get(key)):
+                        errors.append(f"{prefix}.{key}: must be a non-empty string")
+                sources = indicator.get("sources")
+                if not isinstance(sources, list) or not sources or not all(nonempty_string(source) for source in sources):
+                    errors.append(f"{prefix}.sources: must be a non-empty list of non-empty strings")
+                observed: dict[str, datetime] = {}
+                for key in ("first_observed", "last_observed"):
+                    if key in indicator:
+                        parsed = parse_datetime(indicator.get(key))
+                        if parsed is None:
+                            errors.append(f"{prefix}.{key}: must be an ISO 8601 timestamp with timezone")
+                        else:
+                            observed[key] = parsed
+                if (
+                    "first_observed" in observed
+                    and "last_observed" in observed
+                    and observed["last_observed"] < observed["first_observed"]
+                ):
+                    errors.append(f"{prefix}: last_observed must not precede first_observed")
+
     return errors
 
 
@@ -174,6 +248,12 @@ def validate_fact_check(data: dict[str, Any]) -> list[str]:
                     errors.append(f"{prefix}: 'confidence' must be one of {sorted(FACT_CHECK_CONFIDENCES)}")
                 if "finding_id" in claim and not nonempty_string(claim.get("finding_id")):
                     errors.append(f"{prefix}: 'finding_id' must be a non-empty string when present")
+                if "technical_indicator_ids" in claim:
+                    indicator_ids = claim.get("technical_indicator_ids")
+                    if not string_list(indicator_ids) or not all(nonempty_string(item) for item in indicator_ids):
+                        errors.append(f"{prefix}: 'technical_indicator_ids' must be a list of non-empty strings")
+                    elif len(indicator_ids) != len(set(indicator_ids)):
+                        errors.append(f"{prefix}: 'technical_indicator_ids' must not contain duplicates")
                 if "sources" in claim and not string_list(claim.get("sources")):
                     errors.append(f"{prefix}: 'sources' must be a list of strings")
                 if "notes" in claim and not isinstance(claim.get("notes"), str):
@@ -245,17 +325,51 @@ def validate_fact_evidence_item(data: Any, prefix: str) -> list[str]:
 
 
 def cross_reference(findings_data: dict[str, Any] | None, factcheck_data: dict[str, Any] | None) -> list[str]:
-    """Cross-file: every fact-check claim's finding_id should resolve to a finding."""
+    """Cross-file: fact-check finding and explicit-indicator links must resolve."""
     errors: list[str] = []
     if findings_data is None or factcheck_data is None:
         return errors
-    finding_ids = {f.get("id") for f in findings_data.get("findings", []) if isinstance(f, dict)}
+    finding_ids = {
+        finding.get("id")
+        for finding in findings_data.get("findings", [])
+        if isinstance(finding, dict) and nonempty_string(finding.get("id"))
+    }
+    indicators = {
+        indicator.get("id"): indicator
+        for indicator in findings_data.get("technical_indicators", [])
+        if isinstance(indicator, dict) and nonempty_string(indicator.get("id"))
+    }
     for i, claim in enumerate(factcheck_data.get("claims", []) or []):
         if not isinstance(claim, dict):
             continue
         fid = claim.get("finding_id")
-        if fid and fid not in finding_ids:
+        if nonempty_string(fid) and fid not in finding_ids:
             errors.append(f"fact-check.json.claims[{i}]: 'finding_id' {fid!r} does not match any id in findings.json")
+        technical_ids = claim.get("technical_indicator_ids", [])
+        if not isinstance(technical_ids, list):
+            continue
+        for technical_id in technical_ids:
+            if not nonempty_string(technical_id):
+                continue
+            indicator = indicators.get(technical_id)
+            if indicator is None:
+                errors.append(
+                    f"fact-check.json.claims[{i}]: technical_indicator_id {technical_id!r} "
+                    "does not match findings.json"
+                )
+                continue
+            if fid != indicator.get("finding_id"):
+                errors.append(
+                    f"fact-check.json.claims[{i}]: technical indicator {technical_id!r} "
+                    "belongs to a different finding_id"
+                )
+            value = indicator.get("value")
+            claim_text = claim.get("claim_text")
+            if nonempty_string(value) and nonempty_string(claim_text) and value not in claim_text:
+                errors.append(
+                    f"fact-check.json.claims[{i}]: claim_text must contain the exact value "
+                    f"for technical indicator {technical_id!r}"
+                )
     return errors
 
 

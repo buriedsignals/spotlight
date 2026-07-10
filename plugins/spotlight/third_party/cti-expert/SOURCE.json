@@ -1,0 +1,9 @@
+{
+  "name": "CTI Expert",
+  "repository": "https://github.com/7onez/cti-expert",
+  "author": "Hieu Ngo - chongluadao.vn",
+  "active_revision": "f9ecc9b0258caff78d26c0b779d1687f4431749f",
+  "license": "MIT with non-restrictive Ethical Use Addendum",
+  "adapted": true,
+  "notice": "Selected methodology was substantially rewritten for Spotlight's editorial verification, evidence, and cross-runtime dynamic-skill architecture. No affiliation or endorsement is implied."
+}

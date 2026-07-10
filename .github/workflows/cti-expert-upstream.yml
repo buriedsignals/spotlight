@@ -1,0 +1,89 @@
+name: CTI Expert upstream drift
+
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: cti-expert-upstream-drift
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compare upstream HEAD and persist review state
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { exitCode, stdout, stderr } = await exec.getExecOutput(
+              "python3",
+              ["scripts/check-cti-expert-upstream.py", "--json"]
+            );
+            if (exitCode !== 0) {
+              throw new Error(stderr || stdout || `checker exited ${exitCode}`);
+            }
+
+            const drift = JSON.parse(stdout);
+            const title = "CTI Expert upstream review pending";
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "all",
+              per_page: 100,
+            });
+            const existing = issues.find(
+              issue => !issue.pull_request && issue.title === title
+            );
+
+            if (drift.status === "current") {
+              if (existing?.state === "open") {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existing.number,
+                  state: "closed",
+                });
+              }
+              core.info("The reviewed CTI Expert revision matches upstream HEAD.");
+              return;
+            }
+
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              "The daily read-only watcher found an upstream revision that is not active in Spotlight.",
+              "",
+              `- Status: \`${drift.status}\``,
+              `- Active reviewed SHA: \`${drift.active_sha}\``,
+              `- Last acknowledged SHA: \`${drift.seen_sha}\``,
+              `- Current upstream HEAD: \`${drift.upstream_head}\``,
+              `- Workflow run: ${runUrl}`,
+              "",
+              "No upstream content was executed or activated. Follow `upstreams/cti-expert/review-policy.md` before promotion.",
+            ].join("\n");
+
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                state: "open",
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+              });
+            }

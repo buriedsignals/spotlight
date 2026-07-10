@@ -1,6 +1,6 @@
 # Spotlight — Documentation
 
-Spotlight is a runtime-agnostic OSINT investigation system — 14 skills, 2 agents, 6 schemas, and investigation-scoped monitoring orchestration. Point your agent runtime (pi, Hermes, Goose, Codex, Gemini, or any OpenAI-compatible harness) at this repo and run full-fidelity investigations end-to-end.
+Spotlight is a runtime-agnostic OSINT investigation system with 17 skills, 2 agents, 8 schemas, and investigation-scoped monitoring orchestration. Point your agent runtime (pi, Hermes, Goose, Codex, Gemini, or any OpenAI-compatible harness) at this repo and run full-fidelity investigations end-to-end.
 
 This `docs/` directory is the operator manual. `AGENTS.md` at the repo root is the machine-readable contract your runtime loads at startup.
 
@@ -12,12 +12,13 @@ If you are new to Spotlight, read in this order:
 2. **[runtimes.md](runtimes.md)** — how to wire Spotlight into pi, Hermes, Goose, Codex, Gemini, or a local OpenAI-compatible fine-tune
 3. **[integrations.md](integrations.md)** — external OSINT tool integrations (dev-browser, Junkipedia, Noosphere C2PA, OSINT Navigator, Scoutpost, Unpaywall), manifest contract, preflight
 4. **[investigating.md](investigating.md)** — the investigation pipeline: brief, methodology, cycles, gates, readiness, stall protocol
-5. **[fact-checking.md](fact-checking.md)** — the independent verification pass: SIFT, verdict taxonomy, evidence trails
-6. **[epistemic-grounding.md](epistemic-grounding.md)** — claim-to-evidence grounding, evidence bundles, confidence caps
-7. **[vulnerabilities.md](vulnerabilities.md)** — shell-safety vulnerabilities and v2 mitigations
-8. **[sensitivity.md](sensitivity.md)** — design doc (not yet implemented): protecting sensitive material via physical separation, escalation, and one-way declassification
-9. **[monitoring.md](monitoring.md)** — monitoring orchestration across Mycroft, Scoutpost, and runtime-native fallbacks
-10. **[recovery.md](recovery.md)** — when things break: agent crashes, corrupted files, stale locks, API failures
+5. **[technical-investigation.md](technical-investigation.md)** — CTI-derived methods, tier loading, case contracts, verified export, source review, and update policy
+6. **[fact-checking.md](fact-checking.md)** — the independent verification pass: SIFT, verdict taxonomy, evidence trails
+7. **[epistemic-grounding.md](epistemic-grounding.md)** — claim-to-evidence grounding, evidence bundles, confidence caps
+8. **[vulnerabilities.md](vulnerabilities.md)** — shell-safety vulnerabilities and v2 mitigations
+9. **[sensitivity.md](sensitivity.md)** — design doc (not yet implemented): protecting sensitive material via physical separation, escalation, and one-way declassification
+10. **[monitoring.md](monitoring.md)** — monitoring orchestration across Mycroft, Scoutpost, and runtime-native fallbacks
+11. **[recovery.md](recovery.md)** — when things break: agent crashes, corrupted files, stale locks, API failures
 
 ## 60-second quick-start
 

@@ -4,6 +4,15 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- `technical-investigation`, a dynamically loaded CTI capability adapted from
+  CTI Expert by Hieu Ngo / chongluadao.vn (GitHub: 7onez): passive indicator and infrastructure history, local
+  document/raw-email metadata, public GitHub history, and verified technical-
+  indicator export. Compact references keep the 12B manifest-floor increase
+  within the 100-token ceiling; reviewed-source locks, daily drift detection, source maps,
+  the upstream MIT license, and acknowledgements preserve provenance.
+
 ### Changed
 - Skill placement converged on the engine placement contract (`engine
   docs/skill-placement-contract.md`): canonical `~/.agents/skills/spotlight/` store for every

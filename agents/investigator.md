@@ -32,6 +32,7 @@ skills:
   - investigate
   - follow-the-money
   - social-media-intelligence
+  - technical-investigation
   - web-archiving
   - content-access
   - epistemic-grounding
@@ -132,6 +133,7 @@ At the start of every investigation, invoke these skills to load your full toolk
 8. **`invoke-skill("shell-safety")`** — Required before any `execute-shell` command that includes user, model, scraped, generated, config, or filesystem values.
 9. **`invoke-skill("acquisition-graduation")`** — Use only when a repeated dev-browser acquisition path is durable enough to preserve as reusable source guidance.
 10. **`invoke-skill("social-media-intelligence")`** *(when applicable)* — Load when the investigation touches social media accounts, viral content, or suspected coordination campaigns. Provides account authenticity assessment, coordination detection, and narrative tracking methodology.
+11. **`invoke-skill("technical-investigation")`** *(when applicable)* — Load for domains, IPs, URLs, hashes, infrastructure history, local document/email metadata, public GitHub history, or verified technical indicators. Follow the skill's model-tier rule and load exactly one task reference.
 
 The `fetch` and `search` verbs are always available (sovereign backing: `fetch` → Crawl4AI via `integrations.scraping`, `search` → SearXNG via `integrations.search`; Firecrawl only as an optional fallback when its key is present). No skill load required for search/scrape.
 

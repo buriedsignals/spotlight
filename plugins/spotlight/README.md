@@ -1,7 +1,13 @@
 # Spotlight Plugin
 
 This plugin installs Spotlight's agent-facing skills, agents, schemas, and
-operator documentation.
+operator documentation. Selected methods are adapted from
+[CTI Expert](https://github.com/7onez/cti-expert) by Hieu Ngo /
+chongluadao.vn (GitHub: 7onez), reviewed at `f9ecc9b`, under the MIT License with
+the upstream Ethical Use Addendum. The full record is preserved in `NOTICE.md`
+and `third_party/`.
+CTI updates arrive only through reviewed Spotlight releases; raw upstream
+instructions are never fetched or activated by the plugin at runtime.
 
 Plugin install does not install runtime packages. It must not run `pip install`,
 `npm install`, `uv tool install`, `npx`, or equivalent dependency commands.

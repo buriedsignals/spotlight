@@ -16,6 +16,8 @@ COPY_TREES = {
     "schemas": ROOT / "schemas",
     "scripts": ROOT / "scripts",
     "monitoring": ROOT / "monitoring",
+    "third_party": ROOT / "third_party",
+    "upstreams": ROOT / "upstreams",
 }
 
 GENERATED_FILES = {
@@ -24,6 +26,7 @@ GENERATED_FILES = {
     "skills-manifest.json": ROOT / "skills-manifest.json",
     "LICENSE": ROOT / "LICENSE",
     "DISCLAIMER.md": ROOT / "DISCLAIMER.md",
+    "NOTICE.md": ROOT / "NOTICE.md",
 }
 
 DOC_FILES = [
@@ -40,6 +43,7 @@ DOC_FILES = [
     "sensitivity.md",
     "spotlight-flow-vertical-visual.html",
     "structure.md",
+    "technical-investigation.md",
     "vulnerabilities.md",
 ]
 

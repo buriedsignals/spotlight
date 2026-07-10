@@ -14,6 +14,35 @@
       "items": { "type": "string" },
       "description": "Skills explicitly loaded while designing the methodology."
     },
+    "method_provenance": {
+      "type": "array",
+      "description": "Reviewed third-party method adaptations selected for this case; not factual source citations.",
+      "items": {
+        "type": "object",
+        "required": ["skill_id", "method", "upstream", "active_sha", "reference"],
+        "properties": {
+          "skill_id": { "const": "technical-investigation" },
+          "method": {
+            "enum": ["indicator-triage", "infrastructure-history", "document-message-forensics", "github-public", "verified-indicator-export"]
+          },
+          "upstream": { "const": "7onez/cti-expert" },
+          "active_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+          "reference": {
+            "enum": [
+              "indicator-triage-compact.md",
+              "indicator-triage.md",
+              "infrastructure-history-compact.md",
+              "infrastructure-history.md",
+              "document-message-forensics-compact.md",
+              "document-message-forensics.md",
+              "github-public-compact.md",
+              "github-public.md",
+              "verified-indicator-export.md"
+            ]
+          }
+        }
+      }
+    },
     "navigator": {
       "type": "object",
       "required": ["required", "used"],

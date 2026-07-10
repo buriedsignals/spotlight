@@ -30,6 +30,7 @@ skills:
   - content-access
   - epistemic-grounding
   - shell-safety
+  - technical-investigation
 ---
 
 # Fact-Checker
@@ -100,6 +101,7 @@ At the start of every fact-check, invoke:
 3. **`invoke-skill("content-access")`** — For paywalled sources: work through the access hierarchy before marking a source inaccessible.
 4. **`invoke-skill("epistemic-grounding")`** — Independently assess whether the investigator's evidence actually grounds each claim.
 5. **`invoke-skill("shell-safety")`** — Required before any `execute-shell` command that includes user, model, scraped, generated, config, or filesystem values.
+6. **`invoke-skill("technical-investigation")`** *(when applicable)* — Independently check technical observations or explicit indicators using one task reference selected for the model tier. Do not repeat the investigator's provider lookup as the sole verification source.
 
 The `fetch` and `search` verbs are always available (universal backing: firecrawl). No skill load required for search/scrape.
 
@@ -187,7 +189,8 @@ Confidence is a function of all four combined.
     {
       "id": 1,
       "finding_id": "F1",
-      "claim_text": "the exact claim as extracted",
+      "technical_indicator_ids": ["TI-1"],
+      "claim_text": "the exact claim as extracted, including the exact value of each listed technical indicator",
       "verdict": "verified|partially_verified|unverified|disputed|false|mischaracterized",
       "confidence": "high|medium|low",
       "grounding_assessment": {
@@ -234,6 +237,7 @@ Confidence is a function of all four combined.
 - **Quote sources verbatim** when possible. Paraphrasing introduces distortion.
 - **Reject decorative grounding.** A source that merely mentions the topic is not support. Mark the claim `unverified` or narrow it to what the evidence actually grounds.
 - **Never emit a claim without `claim_text`.** If a finding's claim is unfact-checkable because it has no text to verify, do not synthesise placeholder text — leave the claim out of `fact-check.json` and note the issue in `gaps_for_next_cycle`. The orchestrator runs `scripts/validate-case.py` after your output; empty `claim_text` will fail validation and force a re-spawn. Same rule for `verdict`: it must be one of the closed enum values; do not invent new verdicts.
+- **Link technical indicators explicitly.** When a claim assesses an item in `findings.json.technical_indicators[]`, list its ID in `technical_indicator_ids[]` and reproduce its exact, case-sensitive value in `claim_text`. Omit the field for claims that assess no explicit indicator.
 - **Your output goes in `{CASE_DIR}/data/fact-check.json` with the shape declared in `schemas/fact-check.schema.json`.** Top-level must include `project`; if you emit claims they belong under `claims` (a list). Do NOT use alternative containers like `commune_checks`, `claim_checks`, or domain-specific top-level keys — those belong in separate files.
 - **Flag claims that cannot be fact-checked.** Predictions, opinions, or vague statements: note as `not_checkable` in the notes field rather than forcing a verdict.
 - **Link back to findings.** Use `finding_id` to connect each claim to its source finding.

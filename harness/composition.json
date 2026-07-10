@@ -1,7 +1,7 @@
 {
   "version": 1,
   "runtime": "pi",
-  "description": "Per-agent skill bundles for the Pi+Flue harness (PRD D2). Each sub-agent is composed with ONLY its subset — no agent holds all 15 — and bodies load on invoke (D1). Grounded in agents/*.md invoke-skill() calls + the orchestrator's skill-inventory table (skills/spotlight/SKILL.md §3.5). Consumed by U7 (Flue subagents) and measured by U13.",
+  "description": "Per-agent skill bundles for the Pi+Flue harness (PRD D2). Each sub-agent is composed with only its role-relevant subset of the catalog, and bodies load on invoke (D1). Grounded in agents/*.md invoke-skill() calls + the orchestrator's skill-inventory table (skills/spotlight/SKILL.md §3.5). Consumed by U7 (Flue subagents) and measured by U13.",
   "agents": {
     "orchestrator": {
       "role": "skills/spotlight/SKILL.md",
@@ -11,6 +11,7 @@
         "report-drafting",
         "review",
         "provenance-signing",
+        "technical-investigation",
         "integrations"
       ]
     },
@@ -26,7 +27,8 @@
         "epistemic-grounding",
         "shell-safety",
         "acquisition-graduation",
-        "social-media-intelligence"
+        "social-media-intelligence",
+        "technical-investigation"
       ]
     },
     "fact-checker": {
@@ -38,7 +40,8 @@
         "epistemic-grounding",
         "shell-safety",
         "acquisition-graduation",
-        "social-media-intelligence"
+        "social-media-intelligence",
+        "technical-investigation"
       ]
     }
   }

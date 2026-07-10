@@ -88,10 +88,10 @@ contract and apply this runtime table:
 | Parent phase | Required child skills | Conditional child skills | Validation |
 |---|---|---|---|
 | Phase 0 Preflight | `integrations` | `shell-safety` if preflight executes dynamic shell values | `.spotlight-config.json` stores full integration status, not only booleans. |
-| Phase 2 Methodology | `integrations`, `osint`, `investigate`, `epistemic-grounding` | `follow-the-money`, `social-media-intelligence`, `content-access` | `methodology.json` includes `skills_invoked[]` and required Navigator fields when green. |
-| Phase 3 Execution | `epistemic-grounding`, `shell-safety`, `web-archiving` | `content-access`, `acquisition-graduation`, `social-media-intelligence` | findings contain evidence refs, archives, confidence caps. |
-| Phase 3 Fact-check | `epistemic-grounding`, `content-access`, `shell-safety` | `osint`, `social-media-intelligence`, `web-archiving` | fact-check output independently checks investigator claims. |
-| Phase 5 Report | `report-drafting`, `epistemic-grounding` | `provenance-signing` | report claims map to evidence ledger. |
+| Phase 2 Methodology | `integrations`, `osint`, `investigate`, `epistemic-grounding` | `follow-the-money`, `social-media-intelligence`, `technical-investigation`, `content-access` | `methodology.json` includes `skills_invoked[]` and required Navigator fields when green. |
+| Phase 3 Execution | `epistemic-grounding`, `shell-safety`, `web-archiving` | `content-access`, `acquisition-graduation`, `social-media-intelligence`, `technical-investigation` | findings contain evidence refs, archives, confidence caps. |
+| Phase 3 Fact-check | `epistemic-grounding`, `content-access`, `shell-safety` | `osint`, `social-media-intelligence`, `technical-investigation`, `web-archiving` | fact-check output independently checks investigator claims. |
+| Phase 5 Report | `report-drafting`, `epistemic-grounding` | `provenance-signing`, `technical-investigation` | report claims map to evidence ledger. |
 | Ingest | `ingest` | none | only verified or explicitly caveated material enters vault. |
 
 ### 3.7. Vault app preflight
@@ -317,13 +317,14 @@ handle = spawn-agent(
   prompt: "MODE: PLANNING
 PROJECT: {project}
 PROFILE: {profile}
+TIER: {config.model_tier}
 CASE_ROOT: {CASE_ROOT}
 CASE_DIR: {CASE_DIR}
 VAULT_PATH: {vault_path or 'none'}
 INTEGRATIONS:
   osint_navigator_status={config.integrations.osint_navigator.status}
   osint_navigator_required={config.integrations.osint_navigator.required_in_phase_2}
-SKILLS: integrations, osint, investigate, epistemic-grounding, acquisition-graduation, web-archiving, content-access, shell-safety, social-media-intelligence (load when investigation touches social media accounts, coordination, or narrative spread)
+SKILLS: integrations, osint, investigate, epistemic-grounding, acquisition-graduation, web-archiving, content-access, shell-safety, social-media-intelligence (social investigations), technical-investigation (technical leads)
 
 TOOL DISCOVERY (tier-aware — pick ONE path by osint_navigator_required):
 
@@ -460,6 +461,7 @@ CYCLE N (N starts at 1):
        prompt: "MODE: EXECUTION
 PROJECT: {project}
 PROFILE: {profile}
+TIER: {config.model_tier}
 CASE_ROOT: {CASE_ROOT}
 CASE_DIR: {CASE_DIR}
 VAULT_PATH: {vault_path or 'none'}
@@ -469,7 +471,7 @@ INTEGRATIONS:
   rlm_approved={methodology.rlm.approved}
   rlm_analysis_path={methodology.rlm.analysis_path or 'none'}
 CYCLE: {N}
-SKILLS: acquisition-graduation (graduate repeated dev-browser paths only after repeatability is proven), web-archiving (archive all evidence before citing), content-access (paywalled sources — use before marking inaccessible), epistemic-grounding (fill grounding object and cap confidence when support is weak), shell-safety (validate untrusted values before execute-shell), social-media-intelligence (use for account authenticity, coordination detection, narrative tracking when social media is involved)
+SKILLS: acquisition-graduation (graduate repeated dev-browser paths only after repeatability is proven), web-archiving (archive all evidence before citing), content-access (paywalled sources — use before marking inaccessible), epistemic-grounding (fill grounding object and cap confidence when support is weak), shell-safety (validate untrusted values before execute-shell), social-media-intelligence (social investigations), technical-investigation (technical leads)
 
 ACQUISITION: Firecrawl first via search/fetch. After every Firecrawl result, run the missing-source gate. Use dev-browser when static acquisition is insufficient for dynamic pages, portals, downloads, screenshots, visual verification, forms, or legally appropriate authenticated/local-browser contexts.
 
@@ -516,12 +518,13 @@ Append to {CASE_DIR}/data/investigation-log.json.",
        agent_id: "fact-checker",
        prompt: "PROJECT: {project}
 PROFILE: {profile}
+TIER: {config.model_tier}
 CASE_ROOT: {CASE_ROOT}
 CASE_DIR: {CASE_DIR}
 INTEGRATIONS:
   osint_navigator_status={config.integrations.osint_navigator.status}
   osint_navigator_required={config.integrations.osint_navigator.required_in_phase_2}
-SKILLS: web-archiving (archive sources before issuing verdict), content-access (paywalled sources — use before marking inaccessible), epistemic-grounding (judge whether evidence actually grounds each claim), shell-safety (validate untrusted values before execute-shell)
+SKILLS: web-archiving (archive sources before issuing verdict), content-access (paywalled sources — use before marking inaccessible), epistemic-grounding (judge whether evidence actually grounds each claim), shell-safety (validate untrusted values before execute-shell), technical-investigation (technical claims)
 
 Apply SIFT source credibility check before searching for corroborating evidence.
 Independently assess claim-to-evidence grounding before assigning verdicts or confidence.
@@ -741,6 +744,8 @@ After Gate 1 approval, offer the user the public-facing report:
 > (b) No — skip to ingestion. (`review.html` already covers editorial review.)"
 
 If (a): `invoke-skill("report-drafting")` — produces `{CASE_DIR}/report.html` (designed deliverable), `findings-report.md` (narrative audit), and `evidence-map.json` (machine-readable ledger). See `skills/report-drafting/SKILL.md`.
+
+`technical_indicators` present: invoke `technical-investigation`; offer verified JSON, CSV, or STIX.
 
 ### Hybrid mode (data-detective handover)
 

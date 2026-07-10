@@ -63,6 +63,27 @@
     },
     "gaps": { "type": "array", "items": { "type": "string" } },
     "next_steps": { "type": "array", "items": { "type": "string" } },
+    "technical_indicators": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "finding_id", "type", "value", "context", "sources"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "finding_id": { "type": "string", "minLength": 1 },
+          "type": { "enum": ["ipv4", "ipv6", "domain", "url", "md5", "sha1", "sha256", "bitcoin", "ethereum"] },
+          "value": { "type": "string", "minLength": 1 },
+          "context": { "type": "string", "minLength": 1 },
+          "sources": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "first_observed": { "type": "string", "format": "date-time" },
+          "last_observed": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
     "monitoring_recommendations": {
       "type": "array",
       "items": { "$ref": "#/definitions/monitoring_recommendation" }

@@ -73,6 +73,13 @@
       "disabled_in_sensitive_mode": true
     },
     {
+      "id": "technical-investigation",
+      "role": "conditional-child",
+      "phases": ["phase-2-methodology", "phase-3-execution", "phase-3-fact-check", "phase-5-report"],
+      "may_make_external_calls": true,
+      "disabled_in_sensitive_mode": false
+    },
+    {
       "id": "acquisition-graduation",
       "role": "conditional-child",
       "phases": ["phase-3-execution"],
@@ -123,22 +130,22 @@
     },
     "phase-2-methodology": {
       "required": ["integrations", "osint", "investigate", "epistemic-grounding"],
-      "conditional": ["follow-the-money", "social-media-intelligence", "content-access"],
+      "conditional": ["follow-the-money", "social-media-intelligence", "technical-investigation", "content-access"],
       "validation": "methodology.json includes skills_invoked[] and required Navigator fields when green."
     },
     "phase-3-execution": {
       "required": ["epistemic-grounding", "shell-safety", "web-archiving"],
-      "conditional": ["content-access", "acquisition-graduation", "social-media-intelligence"],
+      "conditional": ["content-access", "acquisition-graduation", "social-media-intelligence", "technical-investigation"],
       "validation": "findings contain evidence refs, archives, and confidence caps."
     },
     "phase-3-fact-check": {
       "required": ["epistemic-grounding", "content-access", "shell-safety"],
-      "conditional": ["osint", "social-media-intelligence", "web-archiving"],
+      "conditional": ["osint", "social-media-intelligence", "technical-investigation", "web-archiving"],
       "validation": "fact-check output independently checks investigator claims."
     },
     "phase-5-report": {
       "required": ["report-drafting", "epistemic-grounding"],
-      "conditional": ["provenance-signing"],
+      "conditional": ["provenance-signing", "technical-investigation"],
       "validation": "report claims map to evidence ledger."
     },
     "ingest": {
