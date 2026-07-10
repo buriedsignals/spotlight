@@ -58,6 +58,28 @@ def build_case(root: Path) -> Path:
         ],
         "gaps": ["Acquire an authoritative source for F2."],
     })
+    write_json(data / "evidence-bundle.json", {
+        "schema_version": "1.0",
+        "project": "Northwind review",
+        "run_id": "fixture-run",
+        "created_at": "2026-07-10T12:00:00Z",
+        "items": [{
+            "id": "E1",
+            "query_or_task": "Acquire the official record",
+            "acquisition_method": "api",
+            "source_url": "https://example.org/official_record(v1)",
+            "accessed": "2026-07-10T12:00:00Z",
+            "raw_path": "research/official-record.md",
+            "sha256": sha(research / "official-record.md"),
+            "claim_links": [{
+                "finding_id": "F1",
+                "claim_text": "Ada Lovelace is President of Northwind Research Cooperative.",
+                "support_type": "direct",
+            }],
+            "extraction_confidence": "high",
+            "human_verification_required": False,
+        }],
+    })
     # Current schema: claims/verdict, not the older fact_checks/status shape.
     write_json(data / "fact-check.json", {
         "schema_version": "1.0",
@@ -78,7 +100,7 @@ def build_case(root: Path) -> Path:
             {
                 "id": 2,
                 "finding_id": "F2",
-                "claim_text": "An unsupported second claim.",
+                "claim_text": "<script>alert('unsafe')</script> An unsupported second claim.",
                 "verdict": "unverified",
                 "confidence": "high",
                 "notes": "No source supports this claim.",
@@ -215,6 +237,18 @@ def main() -> int:
         )
         assert mismatch.returncode == 3, mismatch.stdout
 
+        # Legacy aliases cannot override the canonical fields in claims[].
+        case = build_case(Path(tmp) / "mixed-claim-aliases")
+        fact_check_path = case / "data" / "fact-check.json"
+        fact_check = json.loads(fact_check_path.read_text())
+        fact_check["claims"][0]["claim"] = fact_check["claims"][0]["claim_text"]
+        fact_check["claims"][0]["claim_text"] = "A different claim."
+        write_json(fact_check_path, fact_check)
+        mixed_aliases = subprocess.run(
+            [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
+        )
+        assert mixed_aliases.returncode == 3, mixed_aliases.stdout
+
         # An absolute source outside the case cannot anchor a verified verdict.
         case = build_case(Path(tmp) / "path-escape")
         outside = Path(tmp) / "outside.md"
@@ -228,6 +262,48 @@ def main() -> int:
             [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
         )
         assert escaped.returncode == 3, escaped.stdout
+
+        # An honestly marked inaccessible artifact cannot anchor a positive verdict.
+        case = build_case(Path(tmp) / "inaccessible-anchor")
+        fact_check_path = case / "data" / "fact-check.json"
+        fact_check = json.loads(fact_check_path.read_text())
+        fact_check["claims"][0]["evidence_for"][0]["access_method"] = "inaccessible"
+        write_json(fact_check_path, fact_check)
+        inaccessible = subprocess.run(
+            [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
+        )
+        assert inaccessible.returncode == 3, inaccessible.stdout
+
+        # Canonical bundles require structured, claim-exact links.
+        case = build_case(Path(tmp) / "loose-bundle-link")
+        bundle_path = case / "data" / "evidence-bundle.json"
+        bundle = json.loads(bundle_path.read_text())
+        bundle["items"][0]["claim_links"] = ["F1"]
+        write_json(bundle_path, bundle)
+        loose_bundle = subprocess.run(
+            [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
+        )
+        assert loose_bundle.returncode == 3, loose_bundle.stdout
+
+        case = build_case(Path(tmp) / "incomplete-canonical-bundle")
+        bundle_path = case / "data" / "evidence-bundle.json"
+        bundle = json.loads(bundle_path.read_text())
+        bundle["items"][0].pop("source_url")
+        write_json(bundle_path, bundle)
+        incomplete_bundle = subprocess.run(
+            [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
+        )
+        assert incomplete_bundle.returncode == 3, incomplete_bundle.stdout
+
+        # Blank lines or a BOM cannot disguise an RLM-derived lead file as source evidence.
+        case = build_case(Path(tmp) / "derived-lead-anchor")
+        (case / "research" / "official-record.md").write_text(
+            "\ufeff\n# RLM-distilled leads from source.raw\nAda Lovelace is President.\n"
+        )
+        derived = subprocess.run(
+            [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
+        )
+        assert derived.returncode == 3, derived.stdout
 
         # Every prose block must stay attached to a known fact-checked finding.
         case = build_case(Path(tmp) / "unknown-reference")
@@ -268,6 +344,11 @@ def main() -> int:
         for claim in fact_check["claims"]:
             claim["finding_id"] = replacements[claim["finding_id"]]
         write_json(fact_check_path, fact_check)
+        bundle_path = case / "data" / "evidence-bundle.json"
+        bundle = json.loads(bundle_path.read_text())
+        for link in bundle["items"][0]["claim_links"]:
+            link["finding_id"] = replacements[link["finding_id"]]
+        write_json(bundle_path, bundle)
         draft_path = case / "data" / "report-draft.json"
         draft = json.loads(draft_path.read_text())
         draft["framing_finding_ids"] = [replacements[item] for item in draft["framing_finding_ids"]]

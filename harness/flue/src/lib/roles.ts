@@ -40,7 +40,7 @@ export function roleBody(name: string): string {
 const MODEL_TIER = process.env.SPOTLIGHT_MODEL_TIER ?? '12b';
 const RAW_AFFORDANCE =
 	MODEL_TIER === '12b'
-		? 'Do NOT load `.raw` files into working context (provenance/citations only).'
+		? 'Do NOT bulk-load `.raw` files. For fact-checking, you MUST inspect only the exact source passage: grep for a distinctive locator, then read a bounded line range (or resolve a JSON Pointer) and record that range/pointer in `source_ref`.'
 		: 'Prefer the distilled leads. You MAY selectively read a specific `.raw` file when the leads look thin or you need exact wording for a citation — read only the relevant section (grep/head it first), never bulk-load raw pages.';
 
 /**

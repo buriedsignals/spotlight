@@ -112,6 +112,25 @@ validate(instance=json.load(open('$sample')), schema=json.load(open('$schema')))
       fail "$(basename "$sample") fails validation against $(basename "$schema")"
     fi
   done
+  if python3 -c "
+import json
+from copy import deepcopy
+from jsonschema import ValidationError, validate
+s = json.load(open('schemas/fact-check.schema.json'))
+base = json.load(open('tests/fixtures/fact-check.sample.json'))
+invalid = []
+d = deepcopy(base); d['fact_checks'] = []; invalid.append(d)
+d = deepcopy(base); d['claims'][0]['claim'] = d['claims'][0]['claim_text']; invalid.append(d)
+d = deepcopy(base); d['claims'][0]['evidence_for'][0]['local_file'] = None; invalid.append(d)
+for value in invalid:
+    try: validate(instance=value, schema=s)
+    except ValidationError: continue
+    raise SystemExit(1)
+" 2>/dev/null; then
+    ok "fact-check schema rejects container, alias, and null-anchor ambiguity"
+  else
+    fail "fact-check schema accepts a runtime-invalid ambiguity"
+  fi
 fi
 
 echo ""

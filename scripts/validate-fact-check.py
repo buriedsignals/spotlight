@@ -1,363 +1,587 @@
 #!/usr/bin/env python3
-"""Fact-check evidence validator — verification rigor, enforced deterministically.
+"""Validate fact-check evidence through language-neutral, case-local anchors.
 
-A `status:"verified"` verdict is only as good as its evidence trail. A small local
-fact-checker will sometimes FABRICATE the trail (grounded 2026-07-09, gold-inv-ef-0:
-a verdict cited "corporate registry (Zefix)" as confirmation when the in-run Zefix
-fetch returned a bot-wall, and "official bylaws" that were never fetched). This
-validator makes that structurally impossible to pass:
+The validator deliberately does not tokenize, translate, or semantically grade prose.
+For every ``verified`` or ``partially_verified`` verdict it proves that:
 
-  ANCHOR  every verified verdict's finding must cite on-disk source files
-          (findings.json sources[].local_file) that exist AND contain the claim's
-          key terms — a claim nothing on disk supports cannot be "verified".
-  METHOD  every source the verdict NAMES in verification_evidence that maps to a
-          research file (by name-stem) must itself support the claim — citing a
-          bot-walled or empty fetch as confirmation is a hard fail.
+* the fact-check claim exactly matches its linked finding after Unicode/whitespace
+  normalization;
+* at least one fact-check evidence item resolves to a file inside the case;
+* declared line ranges, JSON Pointers, exact quotes, and SHA-256 values are valid;
+* every evidence-bundle reference resolves to an intact case-local artifact; and
+* no referenced bundle item is flagged for fallback or human verification.
 
-Usage:
-  python3 scripts/validate-fact-check.py <CASE_DIR> [--json]
+RLM/E4B extraction may supply ``source_ref`` locations, but the underlying stored
+scrape or JSON value is the anchor. RLM prose is never treated as verified evidence.
+These checks prove provenance and integrity, not semantic entailment; the independent
+fact-checker and human editorial gate remain responsible for interpreting the source.
 
-Exit codes: 0 = all verified verdicts anchored; 3 = at least one failure (report on
-stdout, one line per verdict). Non-"verified" statuses (unverified/disputed/...) are
-never failed for lacking evidence — honesty about uncertainty is the desired behavior.
-
-Dual use: (a) run at the fact-check gate — the orchestrator bounces failures back to
-the fact-checker ONCE with the reasons; (b) gold-dataset filter — a trajectory only
-enters the tune set if its fact-check passes (tools/fine-tuning, v4 data QA).
+Exit codes: 0 = evidence anchors pass; 3 = at least one failure.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
+import subprocess
 import sys
+import unicodedata
 from pathlib import Path
+from typing import Any
 
-STOPWORDS = {
-    "the", "a", "an", "is", "are", "was", "were", "has", "have", "had", "its", "their",
-    "and", "or", "of", "in", "on", "at", "as", "by", "to", "for", "with", "from",
-    "that", "this", "these", "those", "it", "be", "been", "which", "who", "whose",
-    "current", "currently", "also", "both", "including", "organized", "organised",
-    "structured", "headquartered", "located", "based", "known", "named",
-    # verification-speak that must not be mistaken for source identifiers
-    "confirmed", "verified", "official", "documentation", "cross", "reference",
-    "registry", "corporate", "source", "sources", "via",
-    "legally", "registered",
+
+VERDICTS = {
+    "verified",
+    "partially_verified",
+    "unverified",
+    "disputed",
+    "false",
+    "mischaracterized",
 }
-VERDICTS = {"verified", "partially_verified", "unverified", "disputed", "false", "mischaracterized"}
+ANCHORED_VERDICTS = {"verified", "partially_verified"}
+ARTIFACT_PATH_KEYS = ("raw_path", "downloaded_document_path", "screenshot_path", "path")
+SCRIPT_DIR = Path(__file__).resolve().parent
+RLM_LEAD_MARKER = "# RLM-distilled leads from"
 
 
-def claim_terms(claim: str) -> list[str]:
-    """Key terms for the ANCHOR check: capitalized runs (entities) + distinctive
-    long words. Both matter — 'Zug'/'Ethereum Foundation' anchor the who/where,
-    'volunteer'/'council' anchor the what (the part small models hallucinate)."""
-    entities = re.findall(r"\b(?:[A-Z][\w''-]+(?:\s+[A-Z][\w''-]+)*)\b", claim)
-    # Strip leading stopword tokens from entity phrases ("The Ethereum Foundation" →
-    # "Ethereum Foundation") so sentence-initial capitalization doesn't poison matching.
-    entities = [" ".join(w.strip("'\"") for i, w in enumerate(e.split())
-                         if i > 0 or w.lower() not in STOPWORDS) or e
-                for e in entities]
-    entities = [e for e in entities if e.lower() not in STOPWORDS and len(e) > 2]
-    words = [w.lower().removesuffix("'s").strip("'")
-             for w in re.findall(r"[A-Za-z][A-Za-z''-]{4,}", claim)]
-    words = [w for w in words if w not in STOPWORDS]
-    # Adjacent content-word BIGRAMS are the discriminating unit for compound claims —
-    # 'council' and 'volunteer' appearing separately somewhere is not "a volunteer
-    # council" (grounded: FC2's hallucinated governance phrase slipped a bag-of-words
-    # check). Matching is punctuation-normalized, so "Zug, Switzerland" ≈ "Zug Switzerland".
-    tokens = [w.lower().removesuffix("'s").strip("'")
-              for w in re.findall(r"[A-Za-z][A-Za-z''-]+", claim)]
-    # Only join words that were adjacent in the claim. Joining across removed
-    # stopwords manufactured phrases such as "Miyaguchi president" from
-    # "Miyaguchi is the President", which a directly supporting source should not
-    # be expected to contain.
-    bigrams = [f"{a} {b}" for a, b in zip(tokens, tokens[1:])
-               if a not in STOPWORDS and b not in STOPWORDS]
-    seen, terms = set(), []
-    for t in entities + words + bigrams:
-        k = t.lower()
-        if k not in seen:
-            seen.add(k)
-            terms.append(t)
-    return terms
+def normalized(value: Any) -> str:
+    text = value if isinstance(value, str) else ""
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", text)).strip()
 
 
-def _norm(s: str) -> str:
-    s = re.sub(r"\b([\w-]+)['’]s\b", r"\1", s.lower())
-    return re.sub(r"\s+", " ", re.sub(r"[^\w\s'-]", " ", s))
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def read_corpus(paths: list[Path]) -> str:
-    """A cited file and its `.raw` provenance sidecar are ONE acquired source: the
-    leads file is a lossy RLM distillation (grounded: the e4b dropped 'Zug' from the
-    Wikipedia leads while the .raw contains it), so evidence checks must consult
-    both — that is precisely what the sidecar exists for."""
-    out = []
-    for p in paths:
-        for f in (p, p.with_name(p.name + ".raw")):
-            if f.is_symlink():
-                continue
-            try:
-                out.append(f.read_text(errors="replace").lower())
-            except OSError:
-                pass
-    return "\n".join(out)
+def load_object(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text())
+    except FileNotFoundError:
+        raise ValueError(f"missing {path}") from None
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
+        raise ValueError(f"invalid {path.name}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"{path.name} must contain a JSON object")
+    return value
 
 
-def term_coverage(terms: list[str], corpus: str) -> tuple[float, list[str]]:
-    if not terms:
-        return 0.0, []
-    corpus = _norm(corpus)
-    missing = [t for t in terms if _norm(t) not in corpus]
-    return 1 - len(missing) / len(terms), missing
-
-
-def name_stems(text: str) -> list[str]:
-    """Source-ish identifiers named in verification_evidence: capitalized words and
-    domain-like tokens, lowercased, for fuzzy matching against research filenames."""
-    toks = re.findall(r"\b[A-Z][A-Za-z0-9-]{2,}\b|\b[\w-]+\.(?:md|pdf|json|txt)\b", text)
-    return sorted({t.lower().removesuffix(".md") for t in toks if t.lower() not in STOPWORDS})
-
-
-def canonical_fact_checks(document: dict) -> list[dict]:
-    """Accept both the legacy ``fact_checks`` and current ``claims`` contracts.
-
-    The current schema names the verdict field ``verdict`` and the claim text field
-    ``claim_text``. Treating only the older names meant a current-schema file passed
-    with zero checks performed.
-    """
-    raw = document.get("fact_checks")
-    if not isinstance(raw, list):
-        raw = document.get("claims")
-    if not isinstance(raw, list):
-        raw = document.get("verdicts")
+def canonical_fact_checks(document: dict[str, Any]) -> list[dict[str, Any]]:
+    container = next(
+        (key for key in ("claims", "fact_checks", "verdicts") if isinstance(document.get(key), list)),
+        "",
+    )
+    raw = document.get(container)
     if not isinstance(raw, list):
         return []
 
-    checks = []
+    checks: list[dict[str, Any]] = []
     for index, item in enumerate(raw, 1):
         if not isinstance(item, dict):
             continue
-        normalized = dict(item)
-        normalized["id"] = item.get("id", f"FC{index}")
-        normalized["status"] = str(item.get("status") or item.get("verdict") or "").strip().lower()
-        normalized["claim"] = item.get("claim") or item.get("claim_text") or ""
-        if not normalized.get("verification_evidence"):
-            evidence = []
-            if item.get("notes"):
-                evidence.append(str(item["notes"]))
-            grounding = item.get("grounding_assessment")
-            if isinstance(grounding, dict) and grounding.get("assessment"):
-                evidence.append(str(grounding["assessment"]))
-            for entry in item.get("evidence_for", []):
-                if not isinstance(entry, dict):
-                    continue
-                evidence.extend(str(entry.get(key)) for key in ("description", "source", "local_file")
-                                if entry.get(key))
-            normalized["verification_evidence"] = "; ".join(evidence)
-        checks.append(normalized)
+        check = dict(item)
+        check["id"] = item.get("id", f"FC{index}")
+        if container == "claims":
+            check["status"] = normalized(item.get("verdict")).lower()
+            check["claim"] = item.get("claim_text") or ""
+        elif container == "fact_checks":
+            check["status"] = normalized(item.get("status")).lower()
+            check["claim"] = item.get("claim") or ""
+        else:
+            current = "claim_text" in item or "verdict" in item
+            check["status"] = normalized(item.get("verdict") if current else item.get("status")).lower()
+            check["claim"] = (item.get("claim_text") if current else item.get("claim")) or ""
+        checks.append(check)
     return checks
 
 
-def case_evidence_path(case_dir: Path, value: object) -> Path | None:
-    """Resolve a source only inside this case's research/evidence roots."""
-    raw = str(value or "").strip()
+def case_evidence_path(case_dir: Path, value: Any) -> Path | None:
+    """Resolve an artifact only within this case's research/evidence roots."""
+    # A path is an identifier, not prose: preserve its Unicode representation and
+    # internal whitespace exactly. NFKC/whitespace normalization is only for text
+    # comparisons and can otherwise rewrite valid non-Latin filenames.
+    raw = value.strip() if isinstance(value, str) else ""
     if not raw:
         return None
+    case_real = case_dir.resolve()
     roots = [(case_dir / name).resolve() for name in ("research", "evidence")]
     supplied = Path(raw).expanduser()
     candidates = [supplied if supplied.is_absolute() else case_dir / supplied]
-    candidates.extend(root / supplied.name for root in roots)
     for candidate in candidates:
         try:
             resolved = candidate.resolve()
         except OSError:
             continue
-        if not resolved.is_file():
+        if not resolved.is_file() or resolved.is_symlink():
             continue
-        for root in roots:
-            try:
-                resolved.relative_to(root)
-                return resolved
-            except ValueError:
-                pass
+        try:
+            resolved.relative_to(case_real)
+        except ValueError:
+            continue
+        if any(_is_relative_to(resolved, root) for root in roots):
+            return resolved
     return None
 
 
-def validate(case_dir: Path) -> tuple[list[dict], int]:
-    data = case_dir / "data"
-    fc_path = data / "fact-check.json"
-    fd_path = data / "findings.json"
-    if not fc_path.exists():
-        return [{"id": "-", "ok": False, "reason": f"missing {fc_path}"}], 3
-
+def rlm_lead_failure(path: Path) -> str | None:
+    """RLM summaries locate evidence; only their stored raw sidecars may anchor it."""
     try:
-        fact_checks = canonical_fact_checks(json.loads(fc_path.read_text()))
-    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
-        return [{"id": "-", "ok": False, "reason": f"invalid fact-check.json: {exc}"}], 3
-    findings = {}
-    structural_failures = []
-    if fd_path.exists():
-        try:
-            findings_document = json.loads(fd_path.read_text())
-        except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
-            return [{"id": "-", "ok": False, "reason": f"invalid findings.json: {exc}"}], 3
-        raw_findings = findings_document.get("findings", []) if isinstance(findings_document, dict) else []
-        if not isinstance(raw_findings, list) or not raw_findings:
-            structural_failures.append("findings.json contains no findings")
+        with path.open(errors="replace") as handle:
+            opening_lines = [handle.readline() for _ in range(8)]
+    except OSError as exc:
+        return f"cannot inspect {path.name}: {exc}"
+    first_content = next((line.lstrip("\ufeff").strip() for line in opening_lines if line.strip("\ufeff\r\n\t ")), "")
+    if first_content.startswith(RLM_LEAD_MARKER):
+        raw = path.with_name(path.name + ".raw")
+        guidance = f"; cite {raw.name} instead" if raw.is_file() else ""
+        return f"{path.name} is an RLM-distilled lead file, not source evidence{guidance}"
+    return None
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def json_pointer(document: Any, pointer: str) -> Any:
+    if pointer == "":
+        return document
+    if not pointer.startswith("/"):
+        raise ValueError("must start with '/'")
+    current = document
+    for encoded in pointer[1:].split("/"):
+        token = encoded.replace("~1", "/").replace("~0", "~")
+        if isinstance(current, dict) and token in current:
+            current = current[token]
+        elif isinstance(current, list) and token.isdigit() and int(token) < len(current):
+            current = current[int(token)]
         else:
-            for index, finding in enumerate(raw_findings):
-                if not isinstance(finding, dict):
-                    structural_failures.append(f"findings.json[{index}] is not an object")
-                    continue
-                fid = finding.get("id")
-                claim = finding.get("claim")
-                if not isinstance(fid, str) or not fid.strip():
-                    structural_failures.append(f"findings.json[{index}] has no non-empty id")
-                    continue
-                if fid in findings:
-                    structural_failures.append(f"findings.json contains duplicate id {fid}")
-                if not isinstance(claim, str) or not claim.strip():
-                    structural_failures.append(f"finding {fid} has no non-empty claim")
-                findings[fid] = finding
-    else:
-        structural_failures.append(f"missing {fd_path}")
-    if not fact_checks:
+            raise ValueError(f"does not resolve at {token!r}")
+    return current
+
+
+def selected_source_text(path: Path, source_ref: dict[str, Any]) -> tuple[str | None, str | None]:
+    pointer = source_ref.get("json_pointer")
+    if isinstance(pointer, str):
+        try:
+            document = json.loads(path.read_text())
+            value = json_pointer(document, pointer)
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError, ValueError) as exc:
+            return None, f"JSON pointer {pointer!r} in {path.name} {exc}"
+        if isinstance(value, str):
+            return value, None
+        return json.dumps(value, ensure_ascii=False, sort_keys=True), None
+
+    start = source_ref.get("line_start")
+    end = source_ref.get("line_end")
+    if not isinstance(start, int) or not isinstance(end, int) or start < 1 or end < start:
+        return None, "source_ref needs a valid line_start/line_end or json_pointer"
+    try:
+        lines = path.read_text(errors="replace").splitlines()
+    except OSError as exc:
+        return None, f"cannot read {path.name}: {exc}"
+    if end > len(lines):
+        return None, f"source_ref lines {start}-{end} exceed {path.name} ({len(lines)} lines)"
+    return "\n".join(lines[start - 1:end]), None
+
+
+def validate_source_ref(
+    case_dir: Path,
+    source_ref: Any,
+    quote: Any,
+) -> tuple[set[Path], list[str]]:
+    if not isinstance(source_ref, dict):
+        return set(), ["source_ref must be an object"]
+    path = case_evidence_path(case_dir, source_ref.get("path"))
+    if path is None:
+        return set(), [
+            f"source_ref path {source_ref.get('path')!r} does not resolve to a case-local file"
+        ]
+    lead_failure = rlm_lead_failure(path)
+    if lead_failure:
+        return {path}, [lead_failure]
+    selected, error = selected_source_text(path, source_ref)
+    if error:
+        return {path}, [error]
+    wanted = normalized(quote)
+    if wanted and wanted not in normalized(selected):
+        return {path}, [f"exact quote is not present in the selected source_ref from {path.name}"]
+    return {path}, []
+
+
+def bundle_items(
+    document: dict[str, Any] | None,
+) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    if document is None:
+        return {}, []
+    raw = document.get("items")
+    if not isinstance(raw, list):
+        raw = document.get("evidence")
+    if not isinstance(raw, list):
+        return {}, []
+    indexed: dict[str, dict[str, Any]] = {}
+    failures: list[str] = []
+    for item in raw:
+        if not isinstance(item, dict) or not normalized(item.get("id")):
+            continue
+        evidence_id = normalized(item.get("id"))
+        if evidence_id in indexed:
+            failures.append(f"evidence bundle contains duplicate id {evidence_id!r}")
+            continue
+        indexed[evidence_id] = item
+    return indexed, failures
+
+
+def bundle_finding_ids(item: dict[str, Any]) -> set[str]:
+    ids: set[str] = set()
+    if normalized(item.get("finding_id")):
+        ids.add(normalized(item.get("finding_id")))
+    links = item.get("claim_links")
+    if isinstance(links, list):
+        for link in links:
+            if isinstance(link, dict) and normalized(link.get("finding_id")):
+                ids.add(normalized(link.get("finding_id")))
+            elif isinstance(link, str) and normalized(link):
+                ids.add(normalized(link))
+    return ids
+
+
+def validate_bundle_item(
+    case_dir: Path,
+    item: dict[str, Any],
+    finding_id: str,
+    finding_claim: str,
+    *,
+    canonical: bool,
+) -> tuple[set[Path], list[str]]:
+    evidence_id = normalized(item.get("id")) or "?"
+    failures: list[str] = []
+    claim_links = item.get("claim_links")
+    linked = bundle_finding_ids(item)
+    if canonical:
+        linked = {
+            normalized(link.get("finding_id"))
+            for link in claim_links or []
+            if isinstance(link, dict) and normalized(link.get("finding_id"))
+        } if isinstance(claim_links, list) else set()
+    if not linked:
+        failures.append(f"evidence bundle {evidence_id} has no explicit finding link")
+    elif finding_id not in linked:
+        failures.append(f"evidence bundle {evidence_id} is not linked to finding {finding_id}")
+    if canonical and not isinstance(claim_links, list):
+        failures.append(f"evidence bundle {evidence_id} needs structured claim_links")
+    if isinstance(claim_links, list):
+        matching_links = [
+            link for link in claim_links
+            if isinstance(link, dict) and normalized(link.get("finding_id")) == finding_id
+        ]
+        if canonical and not matching_links:
+            failures.append(
+                f"evidence bundle {evidence_id} has no structured link to finding {finding_id}"
+            )
+        for link in matching_links:
+            if normalized(link.get("claim_text")) != normalized(finding_claim):
+                failures.append(
+                    f"evidence bundle {evidence_id} claim link does not exactly match finding {finding_id}"
+                )
+            if link.get("support_type") not in {"direct", "indirect"}:
+                failures.append(
+                    f"evidence bundle {evidence_id} links finding {finding_id} as "
+                    f"{link.get('support_type')!r}, not positive evidence"
+                )
+    if canonical and item.get("human_verification_required") is not False:
+        failures.append(
+            f"evidence bundle {evidence_id} must set human_verification_required to false"
+        )
+    elif item.get("human_verification_required") is True:
+        failures.append(f"evidence bundle {evidence_id} requires human verification")
+    gate = item.get("missing_source_gate")
+    if canonical and isinstance(gate, bool):
+        failures.append(f"evidence bundle {evidence_id} has malformed missing_source_gate")
+    if gate is not None and not isinstance(gate, (dict, bool)):
+        failures.append(f"evidence bundle {evidence_id} has malformed missing_source_gate")
+    if isinstance(gate, dict):
+        if not isinstance(gate.get("fallback_required"), bool):
+            failures.append(
+                f"evidence bundle {evidence_id} missing_source_gate needs boolean fallback_required"
+            )
+        elif gate["fallback_required"]:
+            failures.append(f"evidence bundle {evidence_id} still requires a source fallback")
+
+    declared = [item.get(key) for key in ARTIFACT_PATH_KEYS if normalized(item.get(key))]
+    if not declared:
+        failures.append(f"evidence bundle {evidence_id} has no stored artifact path")
+        return set(), failures
+
+    paths: set[Path] = set()
+    for raw_path in declared:
+        path = case_evidence_path(case_dir, raw_path)
+        if path is None:
+            failures.append(
+                f"evidence bundle {evidence_id} path {raw_path!r} does not resolve to a case-local file"
+            )
+        else:
+            paths.add(path)
+            lead_failure = rlm_lead_failure(path)
+            if lead_failure:
+                failures.append(f"evidence bundle {evidence_id}: {lead_failure}")
+
+    expected_hash = normalized(item.get("sha256")).lower()
+    if expected_hash:
+        if not re.fullmatch(r"[a-f0-9]{64}", expected_hash):
+            failures.append(f"evidence bundle {evidence_id} sha256 is not 64 hexadecimal characters")
+        elif paths and not any(sha256_file(path) == expected_hash for path in paths):
+            failures.append(f"evidence bundle {evidence_id} sha256 does not match its artifact")
+    return paths, failures
+
+
+def validate_evidence_entry(
+    case_dir: Path,
+    entry: dict[str, Any],
+    finding_id: str,
+    finding_claim: str,
+    bundles: dict[str, dict[str, Any]],
+    *,
+    canonical_bundle: bool,
+    verdict: str,
+) -> tuple[set[Path], list[str]]:
+    failures: list[str] = []
+    paths: set[Path] = set()
+    local: Path | None = None
+
+    access_method = entry.get("access_method")
+    if access_method == "inaccessible":
+        failures.append("inaccessible evidence cannot anchor a positive verdict")
+    elif access_method == "abstract_only" and verdict == "verified":
+        failures.append("abstract-only evidence cannot anchor a fully verified verdict")
+
+    raw_local = entry.get("local_file")
+    if normalized(raw_local):
+        local = case_evidence_path(case_dir, raw_local)
+        if local is None:
+            failures.append(f"local_file {raw_local!r} does not resolve to a case-local file")
+        else:
+            paths.add(local)
+            lead_failure = rlm_lead_failure(local)
+            if lead_failure:
+                failures.append(lead_failure)
+
+    if "source_ref" in entry:
+        ref_paths, ref_failures = validate_source_ref(
+            case_dir, entry.get("source_ref"), entry.get("quote")
+        )
+        paths.update(ref_paths)
+        failures.extend(ref_failures)
+        if local is not None and ref_paths and local not in ref_paths:
+            failures.append("local_file and source_ref.path identify different artifacts")
+
+    bundle_id = normalized(entry.get("evidence_bundle_id"))
+    if bundle_id:
+        bundle = bundles.get(bundle_id)
+        if bundle is None:
+            failures.append(f"evidence_bundle_id {bundle_id!r} does not resolve")
+        else:
+            bundle_paths, bundle_failures = validate_bundle_item(
+                case_dir,
+                bundle,
+                finding_id,
+                finding_claim,
+                canonical=canonical_bundle,
+            )
+            paths.update(bundle_paths)
+            failures.extend(bundle_failures)
+
+    quote = normalized(entry.get("quote"))
+    if quote and "source_ref" not in entry:
+        if not paths:
+            failures.append("exact quote has no case-local file or source_ref")
+        elif not any(quote in normalized(path.read_text(errors="replace")) for path in paths):
+            failures.append("exact quote is not present in the referenced case-local file")
+
+    expected_hash = normalized(entry.get("sha256")).lower()
+    if expected_hash:
+        if not re.fullmatch(r"[a-f0-9]{64}", expected_hash):
+            failures.append("sha256 must contain 64 hexadecimal characters")
+        elif not paths:
+            failures.append("sha256 has no case-local artifact to hash")
+        elif not any(sha256_file(path) == expected_hash for path in paths):
+            failures.append("sha256 does not match the referenced case-local artifact")
+    return paths, failures
+
+
+def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
+    data_dir = case_dir / "data"
+    structure = subprocess.run(
+        [sys.executable, str(SCRIPT_DIR / "validate-case.py"), str(case_dir), "--fact-check-only"],
+        capture_output=True,
+        text=True,
+    )
+    if structure.returncode != 0:
+        detail = structure.stderr.strip() or structure.stdout.strip()
+        return [{"id": "-", "ok": False, "reason": f"fact-check structure invalid: {detail}"}], 3
+    try:
+        findings_doc = load_object(data_dir / "findings.json")
+        fact_check_doc = load_object(data_dir / "fact-check.json")
+    except ValueError as exc:
+        return [{"id": "-", "ok": False, "reason": str(exc)}], 3
+
+    bundle_doc: dict[str, Any] | None = None
+    bundle_error: str | None = None
+    bundle_path = data_dir / "evidence-bundle.json"
+    if bundle_path.is_file():
+        try:
+            bundle_doc = load_object(bundle_path)
+        except ValueError as exc:
+            bundle_error = str(exc)
+    bundles, bundle_index_failures = bundle_items(bundle_doc)
+    canonical_bundle = bool(bundle_doc and isinstance(bundle_doc.get("items"), list))
+
+    raw_findings = findings_doc.get("findings")
+    if not isinstance(raw_findings, list) or not raw_findings:
+        return [{"id": "-", "ok": False, "reason": "findings.json contains no findings"}], 3
+    findings: dict[str, dict[str, Any]] = {}
+    structural: list[str] = []
+    for index, finding in enumerate(raw_findings):
+        if not isinstance(finding, dict):
+            structural.append(f"findings.json[{index}] is not an object")
+            continue
+        finding_id = normalized(finding.get("id"))
+        if not finding_id:
+            structural.append(f"findings.json[{index}] has no non-empty id")
+            continue
+        if finding_id in findings:
+            structural.append(f"findings.json contains duplicate id {finding_id}")
+        if not normalized(finding.get("claim")):
+            structural.append(f"finding {finding_id} has no non-empty claim")
+        findings[finding_id] = finding
+    if structural:
+        return [{"id": "-", "ok": False, "reason": reason} for reason in structural], 3
+
+    checks = canonical_fact_checks(fact_check_doc)
+    if not checks:
         return [{"id": "-", "ok": False,
                  "reason": "fact-check file contains no verdicts — nothing was validated"}], 3
-    if structural_failures:
-        return [{"id": "-", "ok": False, "reason": reason} for reason in structural_failures], 3
 
-    # Research corpus files, keyed by name stem, for METHOD-check mapping.
-    research_files = {
-        p.name.lower(): p
-        for d in (case_dir / "research", case_dir / "evidence")
-        if d.is_dir()
-        for p in d.rglob("*")
-        if p.is_file() and not p.name.endswith(".raw")
-    }
-
-    # Discriminative-term filter: the case's subject entity ("Ethereum Foundation")
-    # appears in nearly every research file, so it carries no verification power —
-    # coverage must be earned on the claim's DISTINCTIVE terms (the ones a small
-    # model hallucinates: "volunteer council", "Zug"). A term present in >70% of
-    # research files is dropped from the denominator (unless nothing else remains).
-    file_texts = {p: read_corpus([p]) for p in research_files.values()}
-
-    def distinctive(terms: list[str]) -> list[str]:
-        if not file_texts:
-            return terms
-        n = len(file_texts)
-        kept = [t for t in terms
-                if sum(t.lower() in txt for txt in file_texts.values()) <= 0.7 * n]
-        return kept or terms
-
-    results, failed = [], 0
-    for fc in fact_checks:
-        vid = fc.get("id", "?")
-        status = fc.get("status")
-        finding = findings.get(fc.get("finding_id"))
-        reasons = []
+    results: list[dict[str, Any]] = []
+    failed = 0
+    for check in checks:
+        check_id = check.get("id", "?")
+        finding_id = normalized(check.get("finding_id"))
+        status = check.get("status")
+        finding = findings.get(finding_id)
+        failures: list[str] = []
         if status not in VERDICTS:
-            reasons.append(f"unknown fact-check status {status!r}")
+            failures.append(f"unknown fact-check status {status!r}")
         if finding is None:
-            reasons.append(f"finding_id={fc.get('finding_id')!r} does not resolve to a finding")
-        if not isinstance(fc.get("claim"), str) or not fc.get("claim", "").strip():
-            reasons.append("fact-check claim text is missing")
-        if reasons:
+            failures.append(f"finding_id={finding_id!r} does not resolve to a finding")
+        if not normalized(check.get("claim")):
+            failures.append("fact-check claim text is missing")
+        elif (finding is not None and status in ANCHORED_VERDICTS
+              and normalized(check.get("claim")) != normalized(finding.get("claim"))):
+            failures.append("fact-check claim text does not exactly match the linked finding")
+        if failures:
             failed += 1
-            results.append({"id": vid, "ok": False, "reason": "; ".join(reasons)})
-            continue
-        if status != "verified":
-            results.append({"id": vid, "ok": True, "reason": f"status={fc.get('status')} (not checked)"})
+            results.append({"id": check_id, "ok": False, "reason": "; ".join(failures)})
             continue
 
-        # A verdict upgrades the linked FINDING, so validate the canonical finding
-        # claim. Validating the fact-checker's potentially narrower/replaced text
-        # lets an unrelated easy claim confer "verified" on a different report claim.
-        claim = finding.get("claim", "")
-        terms = distinctive(claim_terms(claim))
+        if status not in ANCHORED_VERDICTS:
+            results.append({"id": check_id, "ok": True,
+                            "reason": f"status={status} (evidence anchor not required)"})
+            continue
 
-        # ANCHOR — the linked finding's on-disk sources must exist and support the claim.
-        anchors = []
-        for s in finding.get("sources", []):
-            if isinstance(s, dict):
-                lf = s.get("local_file")
-                p = case_evidence_path(case_dir, lf)
-                if p:
-                    anchors.append(p)
-        if not anchors:
-            reasons.append("no existing on-disk source file behind the linked finding "
-                           f"(finding_id={fc.get('finding_id')}) — a verified verdict needs a local evidence trail")
-        else:
-            cov, missing = term_coverage(terms, read_corpus(anchors))
-            if cov < 0.75 or (terms and len(missing) == len(terms)):
-                reasons.append(
-                    f"cited source files do not support the claim (term coverage {cov:.0%}; "
-                    f"missing: {', '.join(missing[:5])}) — files: {', '.join(a.name for a in anchors)}")
+        assert finding is not None
+        if bundle_error and finding.get("evidence_bundle_refs"):
+            failures.append(bundle_error)
+        failures.extend(bundle_index_failures)
 
-        # METHOD — sources NAMED in the evidence string that map to research files
-        # must themselves contain the claim; citing a bot-wall/empty fetch is a fail.
-        evidence_text = fc.get("verification_evidence", "") or ""
-        for stem in name_stems(evidence_text):
-            # An honestly-disclaimed source ("the Zefix search returned a bot-wall and
-            # could NOT be used") is the DESIRED behavior — skip stems whose mention
-            # sits in a negation window instead of failing them.
-            lowered = evidence_text.lower()
-            idx = lowered.find(stem)
-            window = lowered[max(0, idx - 120): idx + len(stem) + 120]
-            if re.search(r"\b(not|no|never|couldn'?t|could not|failed|unable|unavailable|"
-                         r"bot-?wall(?:ed)?|excluded|rejected|blocked|empty)\b", window):
+        # All declared finding source paths must be real, but they do not satisfy the
+        # independent fact-check anchor on their own.
+        for source in finding.get("sources", []):
+            if not isinstance(source, dict) or not normalized(source.get("local_file")):
                 continue
-            exact = [p for name, p in research_files.items()
-                     if Path(name).stem == stem]
-            hits = exact or [p for name, p in research_files.items() if stem in name]
-            for p in hits:
-                # Same bar as ANCHOR: a page that merely ECHOES the entity name (a
-                # bot-wall echoing the search query, an empty result page) must not
-                # count as confirmation — grounded on gold-inv-ef-0 FC1/Zefix (40%
-                # coverage from query echo alone, zero distinctive claim terms). Bar 0.75:
-                # a false fail costs one bounce with explicit reasons — healthy discipline.
-                cov, _ = term_coverage(terms, read_corpus([p]))
-                if cov < 0.75:
-                    reasons.append(
-                        f"verification_evidence cites '{stem}' → {p.name}, but that file does not "
-                        f"support the claim (term coverage {cov:.0%}) — likely a failed/bot-walled "
-                        "fetch cited as confirmation; mark unverified or re-acquire the source")
+            if case_evidence_path(case_dir, source.get("local_file")) is None:
+                failures.append(
+                    f"finding source {source.get('local_file')!r} does not resolve to a case-local file"
+                )
 
-        ok = not reasons
+        for evidence_id in finding.get("evidence_bundle_refs", []):
+            normalized_id = normalized(evidence_id)
+            item = bundles.get(normalized_id)
+            if item is None:
+                failures.append(f"evidence bundle ref {normalized_id!r} does not resolve")
+                continue
+            _, item_failures = validate_bundle_item(
+                case_dir,
+                item,
+                finding_id,
+                normalized(finding.get("claim")),
+                canonical=canonical_bundle,
+            )
+            failures.extend(item_failures)
+
+        evidence_for = check.get("evidence_for")
+        if not isinstance(evidence_for, list):
+            evidence_for = []
+        fact_check_paths: set[Path] = set()
+        for index, entry in enumerate(evidence_for):
+            if not isinstance(entry, dict):
+                failures.append(f"evidence_for[{index}] must be an object")
+                continue
+            entry_paths, entry_failures = validate_evidence_entry(
+                case_dir,
+                entry,
+                finding_id,
+                normalized(finding.get("claim")),
+                bundles,
+                canonical_bundle=canonical_bundle,
+                verdict=status,
+            )
+            fact_check_paths.update(entry_paths)
+            failures.extend(f"evidence_for[{index}]: {reason}" for reason in entry_failures)
+        if not fact_check_paths:
+            failures.append(
+                "verified verdict has no case-local fact-check evidence anchor; add local_file, "
+                "source_ref, or evidence_bundle_id to evidence_for"
+            )
+
+        ok = not failures
         failed += 0 if ok else 1
-        results.append({"id": vid, "ok": ok,
-                        "reason": "anchored" if ok else "; ".join(reasons),
-                        "claim": claim})
+        results.append({
+            "id": check_id,
+            "ok": ok,
+            "reason": "case-local evidence anchors validated" if ok else "; ".join(failures),
+            "claim": finding.get("claim"),
+        })
 
-    assessed = {fc.get("finding_id") for fc in fact_checks if fc.get("finding_id")}
-    missing = sorted(str(fid) for fid in findings if fid and fid not in assessed)
-    for fid in missing:
+    assessed = {normalized(check.get("finding_id")) for check in checks if normalized(check.get("finding_id"))}
+    for finding_id in sorted(set(findings) - assessed):
         failed += 1
         results.append({
-            "id": f"missing:{fid}",
+            "id": f"missing:{finding_id}",
             "ok": False,
-            "reason": f"finding {fid} has no fact-check verdict — every reported finding must be assessed",
+            "reason": f"finding {finding_id} has no fact-check verdict — every finding must be assessed",
         })
     return results, (3 if failed else 0)
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("case_dir", help="the case directory (contains data/, research/)")
-    ap.add_argument("--json", action="store_true", help="emit the full report as JSON")
-    args = ap.parse_args()
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument("case_dir", help="case directory containing data/ and research/")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
     results, code = validate(Path(args.case_dir))
     if args.json:
-        print(json.dumps({"ok": code == 0, "verdicts": results}, indent=2))
+        print(json.dumps({"ok": code == 0, "verdicts": results}, indent=2, ensure_ascii=False))
     else:
-        for r in results:
-            print(f"{'PASS' if r['ok'] else 'FAIL'}  {r['id']}: {r['reason']}")
-        print(f"\nfact-check evidence: {'OK' if code == 0 else 'FAILED — bounce to the fact-checker with the reasons above'}")
+        for result in results:
+            print(f"{'PASS' if result['ok'] else 'FAIL'}  {result['id']}: {result['reason']}")
+        outcome = "OK" if code == 0 else "FAILED — bounce to the fact-checker with the reasons above"
+        print(f"\nfact-check evidence: {outcome}")
     return code
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

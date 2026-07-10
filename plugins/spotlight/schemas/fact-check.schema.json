@@ -31,6 +31,12 @@
       "items": {
         "type": "object",
         "required": ["claim_text", "verdict"],
+        "not": {
+          "anyOf": [
+            { "required": ["claim"] },
+            { "required": ["status"] }
+          ]
+        },
         "properties": {
           "id": { "type": ["integer", "string"] },
           "finding_id": { "type": "string" },
@@ -48,13 +54,110 @@
           "evidence_against": { "type": "array", "items": { "$ref": "#/definitions/evidence_item" } },
           "sources": { "type": "array", "items": { "type": "string" } },
           "notes": { "type": "string" }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": ["verdict"],
+              "properties": {
+                "verdict": { "enum": ["verified", "partially_verified"] }
+              }
+            },
+            "then": {
+              "required": ["finding_id", "evidence_for"],
+              "properties": {
+                "evidence_for": {
+                  "minItems": 1,
+                  "contains": {
+                    "anyOf": [
+                      {
+                        "required": ["local_file"],
+                        "properties": {
+                          "local_file": { "type": "string", "minLength": 1 }
+                        }
+                      },
+                      { "required": ["source_ref"] },
+                      { "required": ["evidence_bundle_id"] }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ]
       }
     },
-    "verdicts": { "type": "array" },
+    "fact_checks": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/legacy_fact_check" }
+    },
+    "verdicts": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/properties/claims/items" },
+          { "$ref": "#/definitions/legacy_fact_check" }
+        ]
+      }
+    },
     "gaps_for_next_cycle": { "type": "array", "items": { "type": "string" } }
   },
+  "allOf": [
+    { "not": { "required": ["claims", "fact_checks"] } },
+    { "not": { "required": ["claims", "verdicts"] } },
+    { "not": { "required": ["fact_checks", "verdicts"] } }
+  ],
   "definitions": {
+    "legacy_fact_check": {
+      "type": "object",
+      "required": ["claim", "status"],
+      "not": {
+        "anyOf": [
+          { "required": ["claim_text"] },
+          { "required": ["verdict"] }
+        ]
+      },
+      "properties": {
+        "id": { "type": ["integer", "string"] },
+        "finding_id": { "type": "string" },
+        "claim": { "type": "string" },
+        "status": { "enum": ["verified","partially_verified","unverified","disputed","false","mischaracterized"] },
+        "confidence": { "enum": ["high","medium","low"] },
+        "evidence_for": { "type": "array", "items": { "$ref": "#/definitions/evidence_item" } },
+        "evidence_against": { "type": "array", "items": { "$ref": "#/definitions/evidence_item" } },
+        "sources": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": { "enum": ["verified", "partially_verified"] }
+            }
+          },
+          "then": {
+            "required": ["finding_id", "evidence_for"],
+            "properties": {
+              "evidence_for": {
+                "minItems": 1,
+                "contains": {
+                  "anyOf": [
+                    {
+                      "required": ["local_file"],
+                      "properties": {
+                        "local_file": { "type": "string", "minLength": 1 }
+                      }
+                    },
+                    { "required": ["source_ref"] },
+                    { "required": ["evidence_bundle_id"] }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
     "grounding_assessment": {
       "type": "object",
       "required": [
@@ -81,8 +184,34 @@
         "source_type": { "enum": ["primary","secondary"] },
         "archive_url": { "type": ["string", "null"] },
         "access_method": { "enum": ["full_text","open_access","archive_copy","abstract_only","inaccessible"] },
-        "local_file": { "type": ["string", "null"] }
+        "local_file": { "type": ["string", "null"] },
+        "evidence_bundle_id": { "type": "string", "minLength": 1 },
+        "source_ref": { "$ref": "#/definitions/source_ref" },
+        "quote": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" }
       }
+    },
+    "source_ref": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "line_start": { "type": "integer", "minimum": 1 },
+        "line_end": { "type": "integer", "minimum": 1 },
+        "json_pointer": { "type": "string", "pattern": "^(?:/.*)?$" }
+      },
+      "oneOf": [
+        { "required": ["line_start", "line_end"], "not": { "required": ["json_pointer"] } },
+        {
+          "required": ["json_pointer"],
+          "not": {
+            "anyOf": [
+              { "required": ["line_start"] },
+              { "required": ["line_end"] }
+            ]
+          }
+        }
+      ]
     }
   }
 }

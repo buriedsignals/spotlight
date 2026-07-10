@@ -37,9 +37,17 @@ def make_case(root: Path) -> Path:
     )
     (case / "evidence-map.json").write_text("{}\n")
     (data / "findings.json").write_text(json.dumps({
-        "findings": [{"id": "F1", "claim": "The Ethereum Foundation is based in Zug."}]
+        "project": "ethereum-fixture",
+        "findings": [{
+            "id": "F1",
+            "claim": "The Ethereum Foundation is based in Zug.",
+            "evidence": "No verified local evidence in this fixture.",
+            "sources": [{"url": "https://example.org/unverified", "type": "other"}],
+            "confidence": "low",
+        }]
     }))
     (data / "fact-check.json").write_text(json.dumps({
+        "project": "ethereum-fixture",
         "fact_checks": [{
             "id": "FC1",
             "finding_id": "F1",

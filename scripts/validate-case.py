@@ -221,6 +221,27 @@ def validate_grounding(grounding: Any, prefix: str) -> list[str]:
     return errors
 
 
+def fact_check_rows(data: dict[str, Any]) -> tuple[str, Any]:
+    for key in ("claims", "fact_checks", "verdicts"):
+        if key in data:
+            return key, data[key]
+    return "claims", None
+
+
+def fact_check_values(container: str, row: dict[str, Any]) -> tuple[Any, Any]:
+    if container == "claims":
+        return row.get("claim_text"), row.get("verdict")
+    if container == "fact_checks":
+        return row.get("claim"), row.get("status")
+    current = "claim_text" in row or "verdict" in row
+    legacy = "claim" in row or "status" in row
+    if current and not legacy:
+        return row.get("claim_text"), row.get("verdict")
+    if legacy and not current:
+        return row.get("claim"), row.get("status")
+    return None, None
+
+
 def validate_fact_check(data: dict[str, Any]) -> list[str]:
     errors: list[str] = []
 
@@ -230,20 +251,34 @@ def validate_fact_check(data: dict[str, Any]) -> list[str]:
     if not nonempty_string(data.get("project")):
         errors.append("fact-check.json: missing or empty top-level 'project'")
 
-    # 'claims' is now optional at schema level (some legacy use 'verdicts'), but if present, validate
-    if "claims" in data:
-        if not isinstance(data["claims"], list):
-            errors.append("fact-check.json: 'claims' must be a list")
+    containers = [key for key in ("claims", "fact_checks", "verdicts") if key in data]
+    if len(containers) > 1:
+        errors.append(
+            "fact-check.json: use exactly one verdict container; found "
+            + ", ".join(containers)
+        )
+    container, rows = fact_check_rows(data)
+    if rows is not None:
+        if not isinstance(rows, list):
+            errors.append(f"fact-check.json: '{container}' must be a list")
         else:
-            for i, claim in enumerate(data["claims"]):
-                prefix = f"fact-check.json.claims[{i}]"
+            for i, claim in enumerate(rows):
+                prefix = f"fact-check.json.{container}[{i}]"
                 if not isinstance(claim, dict):
                     errors.append(f"{prefix}: must be an object")
                     continue
-                if not nonempty_string(claim.get("claim_text")):
-                    errors.append(f"{prefix}: missing or empty 'claim_text' — every claim must have text. Skip the claim entirely if you can't articulate one.")
-                if claim.get("verdict") not in VERDICTS:
-                    errors.append(f"{prefix}: 'verdict' must be one of {sorted(VERDICTS)} (got {claim.get('verdict')!r})")
+                if container == "claims" and ("claim" in claim or "status" in claim):
+                    errors.append(f"{prefix}: legacy claim/status aliases are not allowed in claims[]")
+                if container == "fact_checks" and ("claim_text" in claim or "verdict" in claim):
+                    errors.append(f"{prefix}: current claim_text/verdict aliases are not allowed in fact_checks[]")
+                claim_text, verdict = fact_check_values(container, claim)
+                if not nonempty_string(claim_text):
+                    errors.append(f"{prefix}: missing or empty claim text")
+                if verdict not in VERDICTS:
+                    errors.append(
+                        f"{prefix}: verdict/status must be one of {sorted(VERDICTS)} "
+                        f"(got {verdict!r})"
+                    )
                 if "confidence" in claim and claim.get("confidence") not in FACT_CHECK_CONFIDENCES:
                     errors.append(f"{prefix}: 'confidence' must be one of {sorted(FACT_CHECK_CONFIDENCES)}")
                 if "finding_id" in claim and not nonempty_string(claim.get("finding_id")):
@@ -268,6 +303,23 @@ def validate_fact_check(data: dict[str, Any]) -> list[str]:
                         continue
                     for j, item in enumerate(claim[key]):
                         errors.extend(validate_fact_evidence_item(item, f"{prefix}.{key}[{j}]"))
+                if verdict in {"verified", "partially_verified"}:
+                    if not nonempty_string(claim.get("finding_id")):
+                        errors.append(f"{prefix}: positive verdict needs a finding_id")
+                    evidence_for = claim.get("evidence_for")
+                    if not isinstance(evidence_for, list) or not evidence_for:
+                        errors.append(f"{prefix}: positive verdict needs evidence_for")
+                    elif not any(
+                        isinstance(item, dict) and (
+                            nonempty_string(item.get("local_file"))
+                            or isinstance(item.get("source_ref"), dict)
+                            or nonempty_string(item.get("evidence_bundle_id"))
+                        )
+                        for item in evidence_for
+                    ):
+                        errors.append(
+                            f"{prefix}: positive verdict needs a case-local evidence anchor"
+                        )
 
     if "summary" in data:
         summary = data["summary"]
@@ -321,6 +373,42 @@ def validate_fact_evidence_item(data: Any, prefix: str) -> list[str]:
         errors.append(f"{prefix}.access_method: must be one of {sorted(ACCESS_METHODS)}")
     if "local_file" in data and not optional_string(data.get("local_file")):
         errors.append(f"{prefix}.local_file: must be a string or null")
+    if "evidence_bundle_id" in data and not nonempty_string(data.get("evidence_bundle_id")):
+        errors.append(f"{prefix}.evidence_bundle_id: must be a non-empty string")
+    if "quote" in data and not nonempty_string(data.get("quote")):
+        errors.append(f"{prefix}.quote: must be a non-empty string")
+    if "sha256" in data and (
+        not isinstance(data.get("sha256"), str)
+        or not re.fullmatch(r"[A-Fa-f0-9]{64}", data["sha256"])
+    ):
+        errors.append(f"{prefix}.sha256: must be 64 hexadecimal characters")
+    if "source_ref" in data:
+        source_ref = data.get("source_ref")
+        if not isinstance(source_ref, dict):
+            errors.append(f"{prefix}.source_ref: must be an object")
+        else:
+            if not nonempty_string(source_ref.get("path")):
+                errors.append(f"{prefix}.source_ref.path: must be a non-empty string")
+            has_pointer = "json_pointer" in source_ref
+            has_lines = "line_start" in source_ref or "line_end" in source_ref
+            if has_pointer == has_lines:
+                errors.append(
+                    f"{prefix}.source_ref: use either json_pointer or line_start/line_end"
+                )
+            if has_pointer and (
+                not isinstance(source_ref.get("json_pointer"), str)
+                or (source_ref["json_pointer"] and not source_ref["json_pointer"].startswith("/"))
+            ):
+                errors.append(f"{prefix}.source_ref.json_pointer: must be empty or start with '/'")
+            if has_lines:
+                start = source_ref.get("line_start")
+                end = source_ref.get("line_end")
+                if not isinstance(start, int) or start < 1:
+                    errors.append(f"{prefix}.source_ref.line_start: must be an integer >= 1")
+                if not isinstance(end, int) or not isinstance(start, int) or end < start:
+                    errors.append(
+                        f"{prefix}.source_ref.line_end: must be an integer >= line_start"
+                    )
     return errors
 
 
@@ -339,12 +427,13 @@ def cross_reference(findings_data: dict[str, Any] | None, factcheck_data: dict[s
         for indicator in findings_data.get("technical_indicators", [])
         if isinstance(indicator, dict) and nonempty_string(indicator.get("id"))
     }
-    for i, claim in enumerate(factcheck_data.get("claims", []) or []):
+    container, rows = fact_check_rows(factcheck_data)
+    for i, claim in enumerate(rows if isinstance(rows, list) else []):
         if not isinstance(claim, dict):
             continue
         fid = claim.get("finding_id")
         if nonempty_string(fid) and fid not in finding_ids:
-            errors.append(f"fact-check.json.claims[{i}]: 'finding_id' {fid!r} does not match any id in findings.json")
+            errors.append(f"fact-check.json.{container}[{i}]: 'finding_id' {fid!r} does not match any id in findings.json")
         technical_ids = claim.get("technical_indicator_ids", [])
         if not isinstance(technical_ids, list):
             continue
@@ -354,20 +443,20 @@ def cross_reference(findings_data: dict[str, Any] | None, factcheck_data: dict[s
             indicator = indicators.get(technical_id)
             if indicator is None:
                 errors.append(
-                    f"fact-check.json.claims[{i}]: technical_indicator_id {technical_id!r} "
+                    f"fact-check.json.{container}[{i}]: technical_indicator_id {technical_id!r} "
                     "does not match findings.json"
                 )
                 continue
             if fid != indicator.get("finding_id"):
                 errors.append(
-                    f"fact-check.json.claims[{i}]: technical indicator {technical_id!r} "
+                    f"fact-check.json.{container}[{i}]: technical indicator {technical_id!r} "
                     "belongs to a different finding_id"
                 )
             value = indicator.get("value")
-            claim_text = claim.get("claim_text")
+            claim_text, _ = fact_check_values(container, claim)
             if nonempty_string(value) and nonempty_string(claim_text) and value not in claim_text:
                 errors.append(
-                    f"fact-check.json.claims[{i}]: claim_text must contain the exact value "
+                    f"fact-check.json.{container}[{i}]: claim_text must contain the exact value "
                     f"for technical indicator {technical_id!r}"
                 )
     return errors
@@ -556,6 +645,11 @@ def main() -> int:
     parser.add_argument("case_dir", help="Path to {CASE_DIR}/")
     parser.add_argument("--strict", action="store_true", help="Treat warnings as errors")
     parser.add_argument("--include-rlm", action="store_true", help="Also validate optional data/rlm-analysis.json if present")
+    parser.add_argument(
+        "--fact-check-only",
+        action="store_true",
+        help="validate findings, fact-check, and their cross-references only",
+    )
     args = parser.parse_args()
 
     case_dir = Path(args.case_dir).expanduser().resolve()
@@ -593,18 +687,24 @@ def main() -> int:
     evidence_bundle_path = case_dir / "data" / "evidence-bundle.json"
     if evidence_bundle_path.exists():
         evidence_bundle_data, errs = load_json(evidence_bundle_path)
-        all_errors.extend(errs)
-        if evidence_bundle_data is not None:
-            all_errors.extend(validate_evidence_bundle(evidence_bundle_data))
+        if errs:
+            all_errors.extend(errs)
+        elif not args.fact_check_only or (
+            isinstance(evidence_bundle_data, dict)
+            and isinstance(evidence_bundle_data.get("items"), list)
+        ):
+            if evidence_bundle_data is not None:
+                all_errors.extend(validate_evidence_bundle(evidence_bundle_data))
 
-    investigation_log_path = case_dir / "data" / "investigation-log.json"
-    if investigation_log_path.exists():
-        investigation_log_data, errs = load_json(investigation_log_path)
-        all_errors.extend(errs)
-        if investigation_log_data is not None:
-            all_errors.extend(validate_investigation_log(investigation_log_data))
+    if not args.fact_check_only:
+        investigation_log_path = case_dir / "data" / "investigation-log.json"
+        if investigation_log_path.exists():
+            investigation_log_data, errs = load_json(investigation_log_path)
+            all_errors.extend(errs)
+            if investigation_log_data is not None:
+                all_errors.extend(validate_investigation_log(investigation_log_data))
 
-    if args.include_rlm:
+    if args.include_rlm and not args.fact_check_only:
         rlm_path = case_dir / "data" / "rlm-analysis.json"
         if rlm_path.exists():
             rlm_data, errs = load_json(rlm_path)
@@ -619,7 +719,7 @@ def main() -> int:
         print(file=sys.stderr)
         return 1
 
-    suffix = " + RLM" if args.include_rlm else ""
+    suffix = " (fact-check only)" if args.fact_check_only else (" + RLM" if args.include_rlm else "")
     print(f"✓ {case_dir.name} validates against case schemas{suffix}")
     return 0
 

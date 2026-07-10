@@ -86,8 +86,16 @@ def valid_fact_check() -> dict:
             "confidence": "high",
             "finding_id": "F1",
             "sources": ["https://example.org/x"],
-            "evidence_for": [{"description": "filing", "source": "https://example.org/x",
-                              "source_type": "primary", "access_method": "full_text"}],
+            "evidence_for": [{
+                "description": "filing",
+                "source": "https://example.org/x",
+                "source_type": "primary",
+                "access_method": "full_text",
+                "local_file": "research/filing.json",
+                "source_ref": {"path": "research/filing.json", "json_pointer": "/record/title"},
+                "quote": "Acme paid Doe.",
+                "sha256": "a" * 64,
+            }],
             "grounding_assessment": {
                 "support_type": "direct",
                 "claim_elements_checked": ["amount"],
@@ -209,6 +217,7 @@ def main() -> int:
 
     # --- fact-check ---
     check("fact-check: valid baseline", vc.validate_fact_check(valid_fact_check()), False)
+    check("fact-check: conflicting verdict containers", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d.__setitem__("fact_checks", []))), True)
     check("fact-check: bad verdict", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0].__setitem__("verdict", "true"))), True)
     check("fact-check: empty claim_text", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0].__setitem__("claim_text", ""))), True)
     check("fact-check: bad confidence", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0].__setitem__("confidence", "disputed"))), True)
@@ -216,6 +225,10 @@ def main() -> int:
     check("fact-check: bad assessment cap", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["grounding_assessment"].__setitem__("confidence_cap", "none"))), True)
     check("fact-check: evidence item missing source", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["evidence_for"][0].pop("source"))), True)
     check("fact-check: bad access_method", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["evidence_for"][0].__setitem__("access_method", "stolen"))), True)
+    check("fact-check: bad source_ref path", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["evidence_for"][0]["source_ref"].__setitem__("path", ""))), True)
+    check("fact-check: mixed source_ref locators", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["evidence_for"][0]["source_ref"].update({"line_start": 1, "line_end": 1}))), True)
+    check("fact-check: bad source_ref pointer", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["evidence_for"][0]["source_ref"].__setitem__("json_pointer", "record/title"))), True)
+    check("fact-check: bad anchor hash", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["evidence_for"][0].__setitem__("sha256", "zz"))), True)
     check("fact-check: summary count non-int", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["summary"].__setitem__("verified", "1"))), True)
     check("fact-check: cycle zero", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d.__setitem__("cycle", 0))), True)
     check("fact-check: valid technical indicator IDs", vc.validate_fact_check(fact_check_with_indicator()), False)
@@ -231,6 +244,8 @@ def main() -> int:
     case_sensitive_url = mutate(findings_with_indicator(), lambda d: d["technical_indicators"][0].update({"type": "url", "value": "https://observed.example/Reset"}))
     case_folded_claim = mutate(fact_check_with_indicator(), lambda d: d["claims"][0].__setitem__("claim_text", "https://observed.example/reset was checked."))
     check("cross-ref: URL path remains case-sensitive", vc.cross_reference(case_sensitive_url, case_folded_claim), True)
+    legacy_indicator = {"project": "p", "fact_checks": [{"finding_id": "F1", "claim": "https://observed.example/Reset was checked.", "status": "verified", "technical_indicator_ids": ["TI-1"]}]}
+    check("cross-ref: legacy technical indicator claim", vc.cross_reference(case_sensitive_url, legacy_indicator), False)
 
     # --- evidence bundle ---
     check("evidence: valid baseline", vc.validate_evidence_bundle(valid_evidence_bundle()), False)

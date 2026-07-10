@@ -544,11 +544,16 @@ Write to {CASE_DIR}/data/fact-check.json.",
 
      ```
      execute-shell("python3 scripts/validate-case.py {CASE_DIR}")
+     execute-shell("python3 scripts/validate-fact-check.py {CASE_DIR}")
      ```
 
-     Same rules as 2.5 — if validation fails, re-spawn the fact-checker with
-     the errors quoted in the prompt and a "fix the shape only" directive.
-     Loop until the validator passes.
+     If the structural validator fails, use the same shape-only correction rules
+     as 2.5. If the evidence validator fails, re-spawn the fact-checker once with
+     its reasons quoted verbatim: repair the named case-local path, line range,
+     JSON Pointer, quote, or hash; otherwise downgrade the verdict and explain the
+     gap. Never ask it to change prose merely to satisfy a language heuristic.
+     Present Gate 1 only after the evidence validator passes, or explicitly disclose
+     the remaining claim as unverified.
 
   5. Run editorial standards check:
      - Do findings have sources with URLs, timestamps, and `local_file`?

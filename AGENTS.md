@@ -43,9 +43,9 @@ sensitive: false
 > **How to train it FAST — reuse, don't re-run (no 100-loop grind):**
 > 1. **Ship the deterministic guard first (no training, today):** validate
 >    `fact-check.json` on write — any `status:"verified"` whose
->    `verification_evidence` doesn't reference an existing file under
->    `{CASE_DIR}/research|evidence/` containing the claim's entities gets bounced back
->    to the fact-checker ONCE with the rejection reason (extend
+>    evidence does not resolve to a case-local file, evidence-bundle item, exact
+>    line range, or stored JSON element gets bounced back to the fact-checker ONCE
+>    with the rejection reason (extend
 >    `scripts/validate-case.py`; the schemas already exist). This both blocks fabricated
 >    verdicts in production and *generates corrected-turn training pairs for free*.
 > 2. **Mine the runs we already have:** the durable dbs (`harness/flue/data/gold-*.db`)
@@ -64,7 +64,8 @@ sensitive: false
 >    override + `train_on_responses_only` + Unsloth-native merge — all proven); mix with
 >    the 12 gold + empty-turn-recovery examples. One RunPod cycle, ~$3–5.
 > 6. **Eval without loops:** extend the neutral-approval chain-test driver with a rigor
->    grader (every verified claim → cited file exists + contains the claim tokens);
+>    grader (every verified claim → cited artifact/pointer exists and optional exact
+>    quote/hash checks pass, independent of the report language);
 >    gold cases are the fixtures. Pass/fail per run, no manual reading.
 
 ## Session Preflight

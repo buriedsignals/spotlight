@@ -207,7 +207,15 @@ Confidence is a function of all four combined.
           "source_type": "primary|secondary",
           "archive_url": "Wayback Machine or Archive.today URL",
           "access_method": "full_text|open_access|archive_copy|abstract_only|inaccessible",
-          "local_file": "{CASE_DIR}/research/source.md"
+          "local_file": "{CASE_DIR}/research/source.md",
+          "evidence_bundle_id": "E1 (optional alternative pointer)",
+          "source_ref": {
+            "path": "research/source.md",
+            "line_start": 12,
+            "line_end": 16
+          },
+          "quote": "an exact source passage in any language",
+          "sha256": "optional 64-character hash of the stored artifact"
         }
       ],
       "evidence_against": [
@@ -235,6 +243,9 @@ Confidence is a function of all four combined.
 - **Distinguish "unverified" from "false" with precision.** "Unverified" = evidence absent. "False" = evidence actively contradicts. Conflating these is a critical failure.
 - **Do not editorialize.** Verdicts are about factual accuracy, not importance or moral significance.
 - **Quote sources verbatim** when possible. Paraphrasing introduces distortion.
+- **Anchor positive verdicts to stored evidence.** Every `verified` or `partially_verified` claim needs at least one `evidence_for` item with a case-local `local_file`, `source_ref`, or `evidence_bundle_id`. Prefer `source_ref` plus an exact `quote`; use `json_pointer` instead of line numbers for stored JSON. The deterministic gate checks paths, ranges/pointers, quotes, and hashes without assuming any language.
+- **Copy the canonical finding claim exactly for positive verdicts.** For `verified` and `partially_verified`, `claim_text` must equal the linked `findings.json` claim after Unicode and whitespace normalization. Narrow or split the finding first rather than verifying an easier paraphrase under the same `finding_id`.
+- **RLM/E4B output is a locator, never evidence.** You may reuse a `source_ref` discovered in `data/rlm-analysis.json`, but cite and independently assess the underlying stored scrape or JSON element. Never cite the RLM artifact text itself as verification.
 - **Reject decorative grounding.** A source that merely mentions the topic is not support. Mark the claim `unverified` or narrow it to what the evidence actually grounds.
 - **Never emit a claim without `claim_text`.** If a finding's claim is unfact-checkable because it has no text to verify, do not synthesise placeholder text — leave the claim out of `fact-check.json` and note the issue in `gaps_for_next_cycle`. The orchestrator runs `scripts/validate-case.py` after your output; empty `claim_text` will fail validation and force a re-spawn. Same rule for `verdict`: it must be one of the closed enum values; do not invent new verdicts.
 - **Link technical indicators explicitly.** When a claim assesses an item in `findings.json.technical_indicators[]`, list its ID in `technical_indicator_ids[]` and reproduce its exact, case-sensitive value in `claim_text`. Omit the field for claims that assess no explicit indicator.
@@ -270,5 +281,5 @@ When `sensitive: true` is active, the adapter strips `fetch` and `search` from y
 - Use `read-file`, `grep-files`, `list-files`, `query-vault` only
 - Mark verdicts explicitly as **sensitive-mode constrained** when evidence gathering was limited by the mode
 RLM artifacts, when present, are not evidence. Validate claims from `findings.json`
-against cited source material; ignore raw `data/rlm-analysis.json` except as context
-for what the investigator may have considered.
+against cited source material. Their `source_refs` may locate passages, but only the
+underlying case-local scrape or stored JSON element can anchor a verdict.
