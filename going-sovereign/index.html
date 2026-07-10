@@ -31,6 +31,7 @@
     --muted: rgba(242, 239, 233, 0.72);
     --muted-2: rgba(242, 239, 233, 0.5);
     --muted-faint-dark: rgba(237, 232, 220, 0.18); /* landing-page hairline token */
+    --muted-dark: rgba(237, 232, 220, 0.55);       /* shared footer body token (landing/setup) */
     --line: rgba(242, 239, 233, 0.14);
     --line-faint: rgba(242, 239, 233, 0.08);
     --accent-warm: #c16a34;   /* deep terracotta — primary site accent */
@@ -488,8 +489,9 @@
   .st.train { color: var(--accent-cool-2); border-color: rgba(52,111,168,0.6); }
   .versions.levers .vcard .v { font-size: 16px; }
 
-  /* Shared footer — matches the landing + setup pages for consistency. */
+  /* Shared footer — the same element as the landing + setup pages (verbatim). */
   #footer {
+    background: rgba(7, 7, 10, 0);
     color: var(--paper);
     padding: 96px 48px 32px;
     position: relative;
@@ -509,7 +511,7 @@
     max-width: 56ch;
     font-size: 14px;
     line-height: 1.7;
-    color: var(--muted);
+    color: var(--muted-dark);
   }
   .footer-links {
     display: flex;
@@ -543,9 +545,16 @@
   .footer-meta .brand-mini svg { width: 14px; height: 14px; opacity: 0.7; }
   @media (max-width: 640px) {
     #footer { padding: 64px 20px 28px; }
-    .footer-simple { grid-template-columns: 1fr; gap: 20px; }
-    .footer-links { justify-content: flex-start; }
-    .footer-meta { flex-direction: column; gap: 8px; margin-top: 24px; }
+    .footer-simple {
+      grid-template-columns: 1fr;
+      gap: 18px;
+    }
+    .footer-summary { font-size: 13px; }
+    .footer-links {
+      gap: 10px;
+      justify-content: flex-start;
+    }
+    .footer-meta { flex-direction: column; gap: 12px; align-items: flex-start; margin-top: 28px; }
   }
 
   @media (max-width: 640px) {
@@ -571,7 +580,7 @@
   <div class="links">
     <a href="../docs/index.html">Docs</a>
     <a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a>
-    <a href="../setup.html" class="cta">Install</a>
+    <a href="../setup.html">Install</a>
   </div>
 </nav>
 
@@ -1253,13 +1262,12 @@ flowchart LR
 </div>
 </section>
 
-<section id="footer">
+<section id="footer" data-nav-theme="dark" data-scene-mood="calm">
   <div class="footer-simple">
-    <p class="footer-summary">
+    <p class="footer-summary" data-reveal="body" data-stagger-idx="0">
       An open-source investigative system for AI agents, built for journalists. One agent reports, one agent checks, and you stay the editor. Local when the case is too sensitive for the cloud.
     </p>
-    <div class="footer-links">
-      <a href="../docs/index.html">Docs</a>
+    <div class="footer-links" data-reveal="body" data-stagger-idx="1">
       <a href="../setup.html">Install</a>
       <a href="https://buriedsignals.com/consulting" target="_blank" rel="noopener">Work with me ↗</a>
       <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals ↗</a>
