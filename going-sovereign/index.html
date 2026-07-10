@@ -152,6 +152,7 @@
     font-size: 18.5px; line-height: 1.6; color: var(--muted);
   }
   .tl-beat p strong { font-style: normal; color: var(--paper); }
+  .tl-beat .emoji { font-style: normal; display: inline-block; }
   .tl-beat.success .b-chip {
     border: 1px solid rgba(125,168,123,0.8); color: var(--good-2);
     background: rgba(125,168,123,0.12);
@@ -261,20 +262,20 @@
   /* before → after ledger */
   .ledger { margin: 26px auto 6px; display: grid; gap: 14px; max-width: 860px; }
   .lg-row {
-    display: grid; grid-template-columns: minmax(130px, 21ch) 1fr 6ch;
-    gap: 14px; align-items: center; font-size: 12.5px;
+    display: grid; grid-template-columns: minmax(140px, 22ch) 1fr 6ch;
+    gap: 14px; align-items: center; font-size: 13.5px;
   }
-  .lg-label { color: rgba(242,239,233,0.8); line-height: 1.4; }
-  .lg-bars { display: grid; gap: 5px; }
+  .lg-label { color: rgba(242,239,233,0.85); line-height: 1.4; }
+  .lg-bars { display: grid; gap: 6px; }
   .lg-bar { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; }
-  .lg-bar .track { height: 12px; background: rgba(242,239,233,0.07); border-radius: 3px; overflow: hidden; }
-  .lg-bar .fill { display: block; height: 100%; border-radius: 3px; min-width: 3px; }
+  .lg-bar .track { height: 18px; background: rgba(242,239,233,0.07); border-radius: 4px; overflow: hidden; }
+  .lg-bar .fill { display: block; height: 100%; border-radius: 4px; min-width: 3px; }
   .lg-bar.before .fill { background: var(--accent-warm); }
   .lg-bar.after .fill { background: var(--good); }
-  .lg-bar em { font-style: normal; font-size: 11.5px; color: rgba(242,239,233,0.8); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .lg-bar em { font-style: normal; font-size: 13px; color: rgba(242,239,233,0.85); white-space: nowrap; font-variant-numeric: tabular-nums; }
   .lg-bar.after em { color: var(--good-2); }
   .lg-win { text-align: right; color: var(--good-2); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .lg-cat { display: grid; gap: 3px; font-size: 12.5px; line-height: 1.5; }
+  .lg-cat { display: grid; gap: 4px; font-size: 13.5px; line-height: 1.5; }
   .lg-cat .no { color: rgba(242,239,233,0.62); }
   .lg-cat .no::before { content: "✗ "; color: var(--accent-warm); }
   .lg-cat .yes { color: var(--paper); }
@@ -285,10 +286,10 @@
   .mega { margin: 30px 0; display: grid; gap: 26px; }
   .mega-row { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; }
   .mega-label {
-    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
-    color: rgba(242,239,233,0.7); margin-bottom: 9px;
+    font-size: 12.5px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: rgba(242,239,233,0.78); margin-bottom: 10px;
   }
-  .mega-row .lg-bar + .lg-bar { margin-top: 5px; }
+  .mega-row .lg-bar + .lg-bar { margin-top: 6px; }
   .mega-x {
     font-family: "Fraunces", serif; font-weight: 700; line-height: 0.95;
     font-size: clamp(36px, 5vw, 58px); color: var(--good-2); white-space: nowrap;
@@ -296,15 +297,15 @@
   .mega-x small { display: block; font-family: "Geist Mono", monospace; font-weight: 400; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted-2); margin-top: 6px; }
 
   /* single-bar score rows (tool benchmarks) */
-  .scores { margin: 26px 0 4px; display: grid; gap: 12px; }
-  .score-row { display: grid; grid-template-columns: minmax(150px, 24ch) 1fr 6ch; gap: 14px; align-items: center; font-size: 12.5px; }
-  .score-row .name { color: rgba(242,239,233,0.85); line-height: 1.35; }
-  .score-row .name em { font-style: normal; display: block; font-size: 11px; color: var(--muted-2); }
-  .score-row .val { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .scores { margin: 26px 0 4px; display: grid; gap: 14px; }
+  .score-row { display: grid; grid-template-columns: minmax(160px, 24ch) 1fr 6ch; gap: 14px; align-items: center; font-size: 13.5px; }
+  .score-row .name { color: rgba(242,239,233,0.88); line-height: 1.35; }
+  .score-row .name em { font-style: normal; display: block; font-size: 12px; color: var(--muted-2); }
+  .score-row .val { text-align: right; font-weight: 600; font-size: 15px; font-variant-numeric: tabular-nums; }
   .score-row.open .val { color: var(--good-2); }
   .score-row.paid .val { color: var(--accent-warm); }
-  .score-row .track { height: 13px; background: rgba(242,239,233,0.07); border-radius: 3px; overflow: hidden; }
-  .score-row .fill { display: block; height: 100%; border-radius: 3px; }
+  .score-row .track { height: 20px; background: rgba(242,239,233,0.07); border-radius: 4px; overflow: hidden; }
+  .score-row .fill { display: block; height: 100%; border-radius: 4px; }
   .score-row.open .fill { background: var(--good); }
   .score-row.paid .fill { background: var(--accent-warm); }
 
@@ -321,6 +322,7 @@
     display: flex; flex-direction: column;
   }
   .vcard.training { border: 1px dashed rgba(52,111,168,0.6); }
+  .vcard.candidate { border: 1px dashed rgba(125,168,123,0.6); }
   .vcard .v { font-family: "Fraunces", serif; font-size: 21px; font-weight: 600; margin-bottom: 2px; }
   .vcard .loss { font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 8px; font-variant-numeric: tabular-nums; }
   .vcard .note { color: var(--muted); flex: 1; }
@@ -387,9 +389,9 @@
 </div>
 
 <p class="standfirst">
-Spotlight has shipped with local models from the start. Honestly? They never worked well for me.<br>
+Spotlight has shipped with local models from the start — but speaking candidly, they never worked well for me.<br>
 Capable models wanted a bigger machine than my 48&nbsp;GB MacBook. Models that fit drowned mid-investigation.<br>
-So I embarked on the quest. Weeks of iteration. An embarrassing number of tokens.<br>
+So I embarked on a quest. Weeks of iteration. An embarrassing number of tokens.<br>
 It happened — and it threw off efficiency leaps any newsroom can reuse: workflows that repeat,
 costs that stay flat, sources that never leave the room.<br>
 This is how.
@@ -512,8 +514,9 @@ costume</strong>.
     <li><strong>The fix:</strong> every <code>fetch</code> pipes through the RLM automatically →
     a compact, source-linked lead list. The raw page stays on disk as a <code>.raw</code>
     sidecar — compression never destroys evidence.</li>
-    <li><strong>The lesson:</strong> automatic beats opt-in. Offered as a skill, the 12B never
-    invoked it — and drowned.</li>
+    <li><strong>Tip for builders:</strong> wire distillation into the runtime, not the skill
+    list. Anything a small model <em>must</em> do to survive shouldn't depend on its judgment —
+    that's a harness job.</li>
   </ul>
 
   <div class="mega">
@@ -525,21 +528,30 @@ costume</strong>.
       </div>
       <div class="mega-x">−98.9%<small>per fetch</small></div>
     </div>
+  </div>
+
+  <h3>Double duty: the conversation itself was crashing the model</h3>
+  <p>
+  Lean fetches weren't the whole story. The transcript alone — reasoning, delegations, tool
+  results — was enough to take the 12B down after a single gate. The RLM fixes that too: past a
+  fold threshold it rewrites the conversation into a structured checkpoint. The phase artifacts
+  on disk <em>are</em> the state; the transcript is disposable.
+  </p>
+
+  <div class="mega">
     <div class="mega-row">
       <div>
-        <div class="mega-label">Early benchmark — first benchmark page, ~43k tokens</div>
-        <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>171 KB raw</em></div>
-        <div class="lg-bar after"><span class="track"><span class="fill" style="width:1.5%"></span></span><em>2.4 KB · 617 tok</em></div>
+        <div class="mega-label">Orchestrator context at a stalled gate — measured on a real run</div>
+        <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>40,180 tok · thrashing</em></div>
+        <div class="lg-bar after"><span class="track"><span class="fill" style="width:25%"></span></span><em>~10,200 tok after the fold</em></div>
       </div>
-      <div class="mega-x">−99%<small>per fetch</small></div>
+      <div class="mega-x">4×<small>smaller</small></div>
     </div>
   </div>
 
   <p>
-  <strong>Double duty:</strong> past ~16k tokens, the same RLM folds the conversation into a
-  structured checkpoint — the phase artifacts on disk <em>are</em> the state, the transcript is
-  disposable. Real stalled run: <strong>40,180 → ~10,200 tokens</strong>, and the thrashing model
-  delegated correctly on its next turn. Depth kills discipline; compaction restores it.
+  The model that had been looping uselessly delegated correctly on its very next turn. Depth
+  kills discipline; compaction restores it.
   </p>
 
   <figure class="diagram breakout">
@@ -574,8 +586,9 @@ flowchart LR
 
 <div class="tl-beat">
   <span class="b-chip">✗</span>
-  <p><strong>Still not enough!</strong> Fetches were lean — but the failure log kept filling. And
-  half the "model failures" weren't even the model. The harness was lying to it. 😑</p>
+  <p><span class="emoji">😑</span> <strong>Still not enough!</strong> Fetches were lean — but the
+  failure log kept filling. And most of the "model failures" weren't even the model. The harness
+  was lying to it.</p>
 </div>
 
 <section class="tl-node">
@@ -584,28 +597,58 @@ flowchart LR
   <h2>Harness engineering — one harness, real subagents</h2>
   <p>
   So I dove into the harness — a <a href="https://flueframework.com" target="_blank" rel="noopener">Flue</a>
-  app built on <a href="https://pi.dev" target="_blank" rel="noopener">Pi</a>. The app my evals
-  test is the app you install. No parallel dev harness, ever.
+  app built on <a href="https://pi.dev" target="_blank" rel="noopener">Pi</a>.
   </p>
-  <ul>
-    <li><strong>Real delegation:</strong> investigator + fact-checker run in their own child
-    sessions. Fact-check independence is structural, not a prompt promise.</li>
-    <li><strong>A verb adapter:</strong> skills speak verbs (<code>fetch</code>,
-    <code>search</code>, <code>spawn-agent</code>); the adapter binds them to real tools,
-    absolute paths baked in. The nastiest "model failures"? Wrong path resolution — the model
-    fell back to raw <code>curl</code> and <em>looked</em> stupid.</li>
-    <li><strong>Durable sessions:</strong> everything persists to SQLite. Crash, closed lid —
-    the same session id resumes. Gates become ordinary turns.</li>
-    <li><strong>Guard rails:</strong> a never-re-delegate guard (a 12B will recurse
-    <code>task→task→task</code> until the run dies); gates enforced on every path.</li>
-  </ul>
+  <p>Four failure classes, four structural fixes:</p>
+
+  <div class="ledger">
+    <div class="lg-row">
+      <div class="lg-label">Delegation</div>
+      <div class="lg-cat">
+        <span class="no">prompt-promised — a 12B recurses <code>task→task→task</code> until the run dies</span>
+        <span class="yes">real child sessions + a never-re-delegate guard</span>
+      </div>
+      <div class="lg-win tick">✓</div>
+    </div>
+    <div class="lg-row">
+      <div class="lg-label">Tool calls</div>
+      <div class="lg-cat">
+        <span class="no">wrong path resolution → the model falls back to raw <code>curl</code> and looks stupid</span>
+        <span class="yes">abstract verbs bound to absolute paths by a runtime adapter</span>
+      </div>
+      <div class="lg-win tick">✓</div>
+    </div>
+    <div class="lg-row">
+      <div class="lg-label">Crashes</div>
+      <div class="lg-cat">
+        <span class="no">a crash or a closed lid lost the investigation</span>
+        <span class="yes">SQLite-durable sessions — the same id resumes at the gate</span>
+      </div>
+      <div class="lg-win tick">✓</div>
+    </div>
+    <div class="lg-row">
+      <div class="lg-label">Eval honesty</div>
+      <div class="lg-cat">
+        <span class="no">dev harness ≠ shipped harness → phantom "model failures"</span>
+        <span class="yes">one harness — the app the evals test is the app you install</span>
+      </div>
+      <div class="lg-win tick">✓</div>
+    </div>
+  </div>
+
+  <p>
+  And the context overhead dropped again. The OSINT tool catalogue used to sit in permanent
+  context — <strong>11,800 tokens the orchestrator re-read on every single turn</strong>. It's
+  now a SQLite full-text index on disk: one shell query when the model needs a tool, zero tokens
+  when it doesn't.
+  </p>
 
   <div class="mega">
     <div class="mega-row">
       <div>
-        <div class="mega-label">Bonus — tool catalogue, permanent context</div>
-        <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>11,800 tok resident</em></div>
-        <div class="lg-bar after"><span class="track"><span class="fill" style="width:0%"></span></span><em>0 tok · 12,500 tools indexed on disk</em></div>
+        <div class="mega-label">Tool catalogue — tokens carried into every turn</div>
+        <div class="lg-bar before"><span class="track"><span class="fill" style="width:100%"></span></span><em>11,800 tok, always in context</em></div>
+        <div class="lg-bar after"><span class="track"><span class="fill" style="width:0%"></span></span><em>0 tok — 12,500 tools queried on demand</em></div>
       </div>
       <div class="mega-x">→ 0<small>resident tokens</small></div>
     </div>
@@ -647,22 +690,26 @@ flowchart LR
 
 <div class="tl-beat">
   <span class="b-chip">✗</span>
-  <p><strong>STILL. NOT. ENOUGH!!</strong> 😤 The plumbing was honest, the context lean — and the
-  model WOULD NOT hold the procedure. Re-activating skills it had already read. Researching
-  instead of delegating. Blowing straight through gates!</p>
+  <p><span class="emoji">😤</span> <strong>STILL. NOT. ENOUGH!!</strong> The plumbing was honest,
+  the context lean — and the model WOULD NOT hold the procedure. Re-activating skills it had
+  already read. Researching instead of delegating. Blowing straight through gates!</p>
 </div>
 
 <section class="tl-node">
   <span class="tl-chip">04</span>
   <p class="tl-kicker">Efficiency unlock · the tune</p>
-  <h2>Procedure tuning, not capability tuning</h2>
+  <h2>Model fine-tuning on Spotlight procedures</h2>
   <p>
-  So I stopped capability tuning — my old habit — and tuned the procedure.
-  <strong>Don't tune what the model knows. Tune what it does.</strong>
+  Here I learned about <strong>procedure tuning</strong> — a different animal from the
+  capability tuning I'd always done:
   </p>
   <ul>
-    <li><strong>What it couldn't do:</strong> activate the methodology skill <em>once</em> ·
-    advance on a bare "approved" · delegate instead of researching itself · stop at the gate.</li>
+    <li><strong>Capability tuning</strong> teaches knowledge: domain facts, formats, styles.
+    Useless here — Gemma-4 12B already <em>knows</em> what a commercial registry is.</li>
+    <li><strong>Procedure tuning</strong> teaches behaviour: activate the methodology skill
+    <em>once</em> · advance on a bare "approved" · delegate instead of researching itself ·
+    stop at the gate. Behaviours are learnable from a tiny dataset — if the data is shaped
+    right.</li>
     <li><strong>What went into teaching it:</strong></li>
   </ul>
 
@@ -705,12 +752,12 @@ flowchart LR
       <strong>about ten dollars</strong>.</span>
       <span class="st good">✓ ships</span>
     </div>
-    <div class="vcard training">
+    <div class="vcard candidate">
       <span class="v">v4</span>
-      <span class="loss">in training now</span>
+      <span class="loss">the successful candidate</span>
       <span class="note">Simulated trajectories drilling the exact failure modes the evals
       exposed: phase-advance on bare approval, recovery from a degenerate turn.</span>
-      <span class="st train">⟳ training</span>
+      <span class="st good">✓ candidate</span>
     </div>
   </div>
   </div>
@@ -730,9 +777,9 @@ flowchart LR
 
 <div class="tl-beat">
   <span class="b-chip">✗</span>
-  <p><strong>AND EVEN THEN IT KEPT DYING!!!</strong> 🤬 At the methodology gate. Mid-investigation.
-  EVERY. SINGLE. EVAL. I started to despair — until the server logs confessed: it wasn't the
-  model at all…</p>
+  <p><span class="emoji">🤬</span> <strong>AND EVEN THEN IT KEPT DYING!!!</strong> At the
+  methodology gate. Mid-investigation. EVERY. SINGLE. EVAL. I started to despair — until the
+  server logs confessed: this time it wasn't a model capability issue…</p>
 </div>
 
 <section class="tl-node">
@@ -743,7 +790,9 @@ flowchart LR
   <code>failed to find available cells in kv cache</code> ·
   <code>failed to restore state with size ~971MB</code><br>
   The model was fine. The <em>serving layer</em> was wiping its memory on every delegation. The
-  fix took me deeper into how the model is served than I ever planned to go:
+  fix took me deeper into how the model is served than I ever planned to go. A couple dozen
+  iterations later, this is the serving recipe I landed on — learning what each of these levers
+  even was along the way:
   </p>
 
   <div class="breakout">
@@ -802,8 +851,9 @@ flowchart LR
 
 <div class="tl-beat">
   <span class="b-chip">✂️</span>
-  <p><strong>It ran! It was fast!</strong> But it still wasn't sovereign — every fetch and every
-  search went through a paid API key. One last dependency to cut.</p>
+  <p><span class="emoji">🚀🥲</span> <strong>It ran! It was fast!</strong> But it still wasn't
+  sovereign — every fetch and every search went through a paid API key. One last dependency
+  to cut.</p>
 </div>
 
 <section class="tl-node">
@@ -845,6 +895,30 @@ flowchart LR
   <em>(Firecrawl's miss is instructive: on one municipal homepage its main-content filter
   stripped the entire page down to image markdown.)</em>
   </p>
+
+  <p>
+  <strong>Search tells the same story.</strong> SearXNG — self-hosted, no key, no per-query
+  bill — edges out the commercial APIs on source quality:
+  </p>
+
+  <div class="scores">
+    <div class="score-row open">
+      <span class="name">SearXNG <em>open source · self-hosted · now the default</em></span>
+      <span class="track"><span class="fill" style="width:92%"></span></span>
+      <span class="val">92%</span>
+    </div>
+    <div class="score-row paid">
+      <span class="name">Firecrawl search <em>commercial API · what we had before</em></span>
+      <span class="track"><span class="fill" style="width:88%"></span></span>
+      <span class="val">88%</span>
+    </div>
+    <div class="score-row paid">
+      <span class="name">Exa <em>commercial API</em></span>
+      <span class="track"><span class="fill" style="width:79%"></span></span>
+      <span class="val">79%</span>
+    </div>
+  </div>
+  <p class="lb-caption">Search source-quality · 8 investigative queries, scored on reaching canonical sources · <a href="https://benchmarks.buriedsignals.com" target="_blank" rel="noopener">benchmarks.buriedsignals.com</a></p>
   <div class="wins"><span class="wins-label">Unlocked</span>
     <span class="win-chip">0 paid keys on the critical path</span>
     <span class="win-chip">100% on hostile cases</span>
@@ -853,7 +927,7 @@ flowchart LR
 
 <div class="tl-beat success">
   <span class="b-chip">✓</span>
-  <p>And then… 🎉 <strong>SUCCESS!!!</strong></p>
+  <p>And then… <span class="emoji">🎉</span> <strong>SUCCESS!!!</strong></p>
 </div>
 
 <!-- ================= FINALE ================= -->
