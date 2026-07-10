@@ -109,7 +109,7 @@ def pick_folder_natively(prompt):
 # Roster (2026-07-09): the Gemma-4 sovereign tiers. Repo + Q4 filename pairs are
 # verified against the HF API; the 12b is the Spotlight procedure-tuned orchestrator.
 MODEL_REPOS = {
-    "gemma12b": "buriedsignals/gemma4-12b-spotlight-orchestrator-v3-GGUF",
+    "gemma12b": "tomvaillant/gemma4-12b-spotlight-orchestrator-v4-GGUF",
     "gemma26b": "unsloth/gemma-4-26B-A4B-it-GGUF",
     "gemma31b": "unsloth/gemma-4-31B-it-GGUF",
 }
