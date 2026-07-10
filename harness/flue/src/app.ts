@@ -2,6 +2,39 @@ import { registerProvider } from '@flue/runtime';
 import { flue } from '@flue/runtime/routing';
 import { Hono } from 'hono';
 
+// DIAGNOSTIC + MITIGATION (2026-07-10): @flue/runtime 1.0.0-beta.9 intermittently
+// terminalizes a submission with "Connection error." and a SWALLOWED cause (~50-75%
+// of submissions on a 46MB event-stream DB; the request dies in the internal loopback
+// hop without reaching any llama-server). Until the upstream fix: wrap global fetch to
+// (a) LOG the real underlying cause (undici error code) so the failure is diagnosable,
+// (b) RETRY pure network-layer failures — a request that never got a response — up to
+// 3x with backoff. Safe here: bodies are JSON strings (re-sendable) and the hop is
+// local. Deliberate aborts and stream bodies are never retried. Remove when the
+// runtime surfaces causes and retries internally.
+const _fetch = globalThis.fetch;
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+	for (let attempt = 1; ; attempt++) {
+		try {
+			return await _fetch(input, init);
+		} catch (err) {
+			const e = err as Error & { cause?: { code?: string; message?: string } };
+			const url =
+				typeof input === 'string' ? input : ((input as Request)?.url ?? String(input));
+			console.error(
+				`[fetch-retry] attempt ${attempt} failed: ${url} — ${e?.message}; cause: ${
+					e?.cause?.code ?? e?.cause?.message ?? e?.cause ?? 'none'
+				}`,
+			);
+			const aborted =
+				e?.name === 'AbortError' || (init?.signal as AbortSignal | undefined)?.aborted;
+			const streamBody =
+				typeof (init?.body as { getReader?: unknown } | undefined)?.getReader === 'function';
+			if (aborted || streamBody || attempt >= 3) throw err;
+			await new Promise((r) => setTimeout(r, 500 * attempt));
+		}
+	}
+}) as typeof fetch;
+
 // Non-frontier local tier: local llama-server (--jinja tool-calling) serving the Gemma
 // GGUFs, no API key. Pi+Flue replacing opencode for
 // local models (loop U6/U10).
