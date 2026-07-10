@@ -82,7 +82,7 @@ What's the task?
 ## How to check preflight status mid-execution
 
 ```
-execute-shell("python3 integrations/preflight.py --json")
+execute-shell("python3 integrations/preflight.py --model-tier {config.model_tier} --json")
 ```
 
 Parse the JSON output. `summary.green` tells you how many integrations are usable. `integrations[].status` tells you per-integration. Only route to `green` integrations; log a note and fall back for `red`/`yellow`.

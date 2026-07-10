@@ -710,11 +710,24 @@ if [ "$SPOTLIGHT_MODE" = "local" ]; then
     printf 'DRY-RUN: npm install in %s/harness/flue + link .agents/skills\n' "$SPOTLIGHT_DIR"
   else
     ( cd "$SPOTLIGHT_DIR/harness/flue" && spin "Installing Flue harness deps" npm install --no-audit --no-fund )
-    # Flue discovers Agent Skills from <cwd>/.agents/skills at context init; link the
-    # repo's own skills dir there (same shape the harness is developed and evaled with).
+    # Flue discovers Agent Skills from <cwd>/.agents/skills at context init. Link
+    # ONLY the manifest-listed skills — never the whole skills/ tree — so the
+    # catalog/manifest is the actual discovery boundary, not just documentation.
+    # (A skill absent from skills.manifest is invisible to Flue, which is what
+    # makes tier-/role-filtered manifests enforceable later.)
     run mkdir -p "$SPOTLIGHT_DIR/.agents"
-    run ln -sfn "$SPOTLIGHT_DIR/skills" "$SPOTLIGHT_DIR/.agents/skills"
-    printf "%s✓%s Flue harness ready (%s/harness/flue; skills via .agents/skills → skills/)\n" "$_c_green" "$_c_reset" "$SPOTLIGHT_DIR"
+    if [ -L "$SPOTLIGHT_DIR/.agents/skills" ]; then run rm "$SPOTLIGHT_DIR/.agents/skills"; fi
+    run mkdir -p "$SPOTLIGHT_DIR/.agents/skills"
+    while IFS= read -r _sid; do
+      { [ -n "$_sid" ] && [ -d "$SPOTLIGHT_DIR/skills/$_sid" ]; } || continue
+      run ln -sfn "$SPOTLIGHT_DIR/skills/$_sid" "$SPOTLIGHT_DIR/.agents/skills/$_sid"
+    done < "$SPOTLIGHT_DIR/skills.manifest"
+    # Prune managed links that fell out of the manifest (user-owned files untouched).
+    for _lnk in "$SPOTLIGHT_DIR/.agents/skills"/*; do
+      [ -L "$_lnk" ] || continue
+      grep -qx "$(basename "$_lnk")" "$SPOTLIGHT_DIR/skills.manifest" || run rm "$_lnk"
+    done
+    printf "%s✓%s Flue harness ready (%s/harness/flue; skills via .agents/skills, manifest-scoped)\n" "$_c_green" "$_c_reset" "$SPOTLIGHT_DIR"
   fi
   # Keep the cross-runtime canonical store contract satisfied too.
   place_spotlight_skills_canonical
