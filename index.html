@@ -122,6 +122,46 @@
     border-color: var(--accent-warm);
     color: var(--accent-warm);
   }
+  /* Going Sovereign — new-post pill: filled orange, pulsing dot signals the update. */
+  nav.topnav .links a.new-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 14px;
+    background: var(--accent-warm);
+    border: 1px solid var(--accent-warm);
+    color: var(--ink);
+    opacity: 1;
+    letter-spacing: 0.22em;
+    font-weight: 600;
+    transition: background 0.2s ease, border-color 0.2s ease;
+  }
+  nav.topnav .links a.new-pill:hover {
+    background: #d87f45;
+    border-color: #d87f45;
+    color: var(--ink);
+  }
+  nav.topnav .links a.new-pill .dot {
+    width: 7px; height: 7px; border-radius: 999px;
+    background: var(--ink);
+    animation: newPillPulse 2.2s ease-in-out infinite;
+  }
+  @keyframes newPillPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.35; transform: scale(0.8); }
+  }
+  /* The filled pill would be colour-inverted by the nav's mix-blend-mode: difference,
+     and a child cannot opt out of its parent's blend group. So the blended nav keeps an
+     invisible spacer pill (layout only), and a mirrored non-blended overlay nav paints
+     the real pill in exactly the same flex position. */
+  nav.topnav:not(.topnav-overlay) .new-pill { visibility: hidden; }
+  nav.topnav.topnav-overlay {
+    mix-blend-mode: normal;
+    background: transparent;
+    border-bottom: none;
+    pointer-events: none;
+  }
+  nav.topnav.topnav-overlay .brand,
+  nav.topnav.topnav-overlay .links a:not(.new-pill) { visibility: hidden; }
+  nav.topnav.topnav-overlay .links a.new-pill { visibility: visible; pointer-events: auto; }
 
   /* ── DEV PANEL ───────────────────────────────────────────
      Tiny floating toggles, bottom-right, for showing the lil-gui and
@@ -912,8 +952,9 @@
     opacity: 0.5;
     margin-bottom: 14px;
   }
-  .ack__list { list-style: none; margin: 0; padding: 24px 0 0; display: grid; gap: 7px; border-top: 1px solid var(--muted-faint-dark); }
-  .ack__list li { font-size: 12.5px; line-height: 1.6; color: var(--muted-dark); }
+  .ack__list { list-style: none; margin: 0; padding: 24px 0 0; border-top: 1px solid var(--muted-faint-dark); column-count: 2; column-gap: 56px; }
+  .ack__list li { font-size: 12.5px; line-height: 1.6; color: var(--muted-dark); break-inside: avoid; margin-bottom: 7px; }
+  @media (max-width: 900px) { .ack__list { column-count: 1; } }
   .ack__list a { border-bottom: 1px solid var(--muted-faint-dark); transition: color 0.2s ease, border-color 0.2s ease; }
   .ack__list a:hover { color: var(--accent-warm); border-bottom-color: var(--accent-warm); }
   .footer-meta {
@@ -1553,7 +1594,23 @@
   <div class="links">
     <a href="docs/index.html">Docs</a>
     <a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a>
+    <a href="going-sovereign/" class="new-pill"><span class="dot" aria-hidden="true"></span>Going Sovereign</a>
     <a href="setup.html">Install</a>
+  </div>
+</nav>
+<!-- Non-blended mirror of the topnav — paints only the Going Sovereign pill (see CSS note). -->
+<nav class="topnav topnav-overlay" aria-hidden="false">
+  <a href="index.html" class="brand" aria-hidden="true" tabindex="-1">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z"/>
+    </svg>
+    Spotlight
+  </a>
+  <div class="links">
+    <a href="docs/index.html" aria-hidden="true" tabindex="-1">Docs</a>
+    <a href="https://github.com/buriedsignals/spotlight" aria-hidden="true" tabindex="-1">GitHub ↗</a>
+    <a href="going-sovereign/" class="new-pill"><span class="dot" aria-hidden="true"></span>Going Sovereign</a>
+    <a href="setup.html" aria-hidden="true" tabindex="-1">Install</a>
   </div>
 </nav>
 
@@ -4556,6 +4613,22 @@
     }
   });
 }());
+</script>
+<script>
+  // Keep the non-blended overlay nav in lockstep with #topnav's JS-driven classes
+  // (.in entrance, .on-hero/.on-dark themes) so the Going Sovereign pill animates
+  // and positions identically to the blended nav it mirrors.
+  (function () {
+    const src = document.getElementById('topnav');
+    const dst = document.querySelector('nav.topnav-overlay');
+    if (!src || !dst) return;
+    const sync = () => {
+      dst.className = 'topnav topnav-overlay ' +
+        [...src.classList].filter(c => c !== 'topnav').join(' ');
+    };
+    new MutationObserver(sync).observe(src, { attributes: true, attributeFilter: ['class'] });
+    sync();
+  }());
 </script>
 </body>
 </html>
