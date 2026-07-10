@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Going Sovereign — investigations that never leave my laptop. The quest to Gemma 12B.</title>
+<title>The quest to Gemma 12B — investigations that never leave my laptop · Spotlight</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'><path d='M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z'/></svg>">
 <meta name="description" content="How I got Spotlight — a gated, multi-agent OSINT investigation system — running on a fine-tuned 12B model on a laptop. Dynamic skill loading, harness engineering, RLM context distillation, conversation compaction, procedure tuning, and KV-cache optimisation.">
 
@@ -75,12 +75,27 @@
     font-size: 11.5px; letter-spacing: 0.22em; text-transform: uppercase;
     color: var(--accent-warm); margin-bottom: 18px;
   }
+  /* Two-tone hero title, matching the landing hero: top white, bottom orange italic —
+     exceptionally larger on this page for hierarchy. */
   h1 {
-    font-family: "Fraunces", serif; font-weight: 600;
-    font-size: clamp(30px, 5.4vw, 46px); line-height: 1.12;
-    margin: 0 0 18px;
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 144;
+    font-weight: 500;
+    font-size: clamp(44px, 5.8vw, 84px);
+    line-height: 0.98;
+    letter-spacing: -0.025em;
+    margin: 0 0 22px;
   }
-  h1 .accent { color: var(--accent-warm); }
+  h1 .accent {
+    font-style: italic;
+    font-variation-settings: "opsz" 144, "wght" 400;
+    color: var(--accent-warm);
+    display: block;
+    font-size: 0.52em;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    margin-top: 12px;
+  }
   .standfirst {
     font-size: 16.5px; line-height: 1.9; color: rgba(242, 239, 233, 0.92);
     margin: 28px 0 8px;
@@ -529,7 +544,7 @@
 
 <p class="kicker">Engineering log · Sovereign local tier</p>
 
-<h1>Investigations that never leave my laptop.<br><span class="accent">The quest to Gemma 12B.</span></h1>
+<h1>The quest to Gemma 12B.<span class="accent">Investigations that never leave my laptop.</span></h1>
 
 <div class="callout">
   <span class="label">The quest</span>
