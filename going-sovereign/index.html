@@ -561,13 +561,15 @@
 
 <p class="standfirst">
 Spotlight has shipped with local models from the start — but speaking candidly, they never
-worked well for me. 😅 Capable models wanted a bigger machine than my 48&nbsp;GB MacBook, and
+worked well for me. Capable models wanted a bigger machine than my 48&nbsp;GB MacBook, and
 the ones that fit drowned mid-investigation.
 </p>
 <p class="standfirst">
 So I embarked on a quest. Weeks of iteration and an embarrassing number of tokens later — it
-happened. 🎉 Along the way it threw off efficiency leaps any newsroom can reuse: workflows that
-repeat, costs that stay flat 📉, sources that never leave the room. 🔒 This is how. 👇
+happened. Along the way it threw off efficiency leaps any newsroom can reuse: workflows that
+repeat, costs that stay flat, sources that never leave the room.<br>
+This is how.<br>
+👇
 </p>
 
 <div class="breakout">
@@ -884,11 +886,12 @@ flowchart LR
       </ul>
 
       <div class="ingredients">
-        <span class="ing">12 gold trajectories</span>
-        <span class="ing">30–46k tokens each</span>
+        <span class="ing">26 training examples</span>
+        <span class="ing">14 real gold trajectories</span>
+        <span class="ing">12 targeted correction continuations</span>
         <span class="ing">real runs · human-approved gates</span>
         <span class="ing">assistant-masked loss</span>
-        <span class="ing">~$10 of rented H100</span>
+        <span class="ing">~$10 of rented GPUs</span>
       </div>
 
       <div class="breakout">
@@ -945,7 +948,7 @@ flowchart LR
       <a href="https://huggingface.co/tomvaillant/gemma4-12b-spotlight-orchestrator-v5-GGUF" target="_blank" rel="noopener">gemma4-12b-spotlight-orchestrator-v5-GGUF</a>
       (Q4_K_M, ~7&nbsp;GB — final) and its
       <a href="https://huggingface.co/tomvaillant/gemma4-12b-spotlight-orchestrator-v5" target="_blank" rel="noopener">v5 LoRA adapter</a>, trained from
-      <a href="https://huggingface.co/datasets/buriedsignals/spotlight-orchestrator-gold" target="_blank" rel="noopener">spotlight-orchestrator-gold</a>.
+      14 real gold trajectories and 12 targeted correction continuations.
       </p>
       <div class="wins"><span class="wins-label">Unlocked</span>
         <span class="win-chip">loss 3.00 → 0.79</span>
@@ -1138,11 +1141,13 @@ flowchart LR
           </div>
           <div class="vcard training">
             <span class="v">12B · v5</span>
-            <span class="loss">release gate passed · E2E next</span>
-            <span class="note">The preserved file-edit failure now closes through a compact model-authored editorial plan plus byte-identical safe rendering. The fresh RunPod E2E remains the post-release system check.</span>
-            <span class="st good">✓ final model</span>
+            <span class="loss">20.9 min active · 35.5 min wall</span>
+            <span class="note">Completed the real investigation and independent fact-check. Guarded recovery repaired the evidence paths and report plan; the model-authored framing and deterministic render now pass every evidence and report validator.</span>
+            <span class="st good">✓ passes after guarded recovery</span>
           </div>
         </div>
+
+        <p class="lb-caption">The deterministic checks enforce phase completion, intact evidence anchors and safe rendering. They do not decide whether a source proves a claim; the investigator, independent fact-checker and human gates still do that.</p>
 
         <div class="ledger">
           <div class="lg-row">
@@ -1197,11 +1202,11 @@ flowchart LR
 
         <div class="q-body">
         <p>
-        A concrete run, from last night: resuming a real investigation, the tuned 12B — on a
-        bare <em>"Approved, proceed."</em> — reviewed the corpus, delegated, produced a correct
-        synthesis (the target organisation's president, co-executive directors, legal form and
-        domicile), and stopped at the review gate. On my laptop. The marginal cost was
-        electricity.
+        In the final v5 E2E, the tuned 12B reviewed a real corpus, delegated the investigation
+        and independent fact-check, and produced the correct leadership, legal-form and domicile
+        findings. It still needed guarded recovery to repair evidence paths and finish the report
+        plan. The resulting fact-check, model-authored framing and rendered report all pass their
+        validators.
         </p>
         <p>
         To be precise: not "a 12B is as good as a frontier model." It's that a 12B <strong>inside
@@ -1222,8 +1227,8 @@ flowchart LR
   checkpoints; artifacts on disk are the state.<br>
   3 — Engineer the harness: real subagents, absolute paths, durable sessions, one harness for
   eval and production.<br>
-  4 — Tune the procedure, not the capability: a dozen real trajectories with masked loss beat any
-  amount of domain data. Budget: tens of dollars.<br>
+  4 — Tune the procedure, not the capability: real trajectories plus targeted correction
+  continuations, trained with masked loss. Budget: tens of dollars.<br>
   5 — Serve deliberately: resident slots, quantised KV, capped reasoning.<br>
   6 — Cut the paid dependencies: open-source search &amp; scraping, benchmarked past parity.<br><br>
   Own the model. Own the harness. Own the data. That's sovereignty — and it now fits on a laptop.
