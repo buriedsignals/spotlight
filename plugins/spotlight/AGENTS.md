@@ -8,6 +8,65 @@ sensitive: false
 
 # Spotlight — Runtime Contract
 
+> **TODO (Tom, 2026-07-10):** run the **26b + e4b RLM full-investigation co-residency test**
+> on the M4 Pro 48 GB (and sanity-check the 31b tier the same way) — the last unknown before
+> calling the sovereign-local mid tier real. Switch = edit `SPOTLIGHT_GGUF_PATH` +
+> `SPOTLIGHT_MODEL_TIER=26b` in `$SPOTLIGHT_DIR/.env`, `spotlight-local --stop`, then
+> `spotlight <case> "<brief>"`. Watch: RAM headroom under KV growth + subagents, compaction
+> fires at the 26b profile (~24.5k) on the e4b, `fetch --rlm` distills. Also: fresh-install
+> smoke test of the new launcher path, and run the **v3 tune + 26b through the OSINT facet
+> benchmark** (the going-sovereign page has a placeholder for the tuned facet number).
+> Record results in `tools/fine-tuning/docs/local-serving-efficiency.md` (experiment log)
+> and delete this TODO.
+>
+> **TODO — verification rigor (the v2 tune focus, observed 2026-07-09 chain test):** the
+> 12b now *executes* the pipeline on bare approvals; what it fabricates is **verification
+> evidence**. Grounded failures from run `GOLD-gold-inv-ef-0`: (1) fact-check verdict FC1
+> cites "corporate registry (Zefix)" as confirming a claim when the in-run Zefix fetch
+> returned a bot-wall/0 results; (2) FC2 cites "official bylaws" that were never fetched;
+> (3) the investigator read the Zefix bot-wall as "no entity registered" instead of
+> escalating to `browse` (the U20a gap); (4) empty-assistant mirroring after degenerate
+> turns (see `tools/fine-tuning/docs/tuning-12b.md`).
+>
+> **Chain-test verdict (2026-07-10 00:18, neutral approvals only):** turn 1 = full cycle +
+> gate stop (15.5 min); turn 2 = 52 min of REAL work (research cycle, fact-check
+> delegation, findings.json + evidence-bundle.json written; compaction fired 3× incl.
+> inside a subagent — the context system held) but the **closing gate presentation came
+> back empty**; turn 3 mirrored the empty (1 token) → stall. So the v2 behavioral target
+> is exactly: *end every turn with a non-empty gate presentation; never mirror a prior
+> empty turn.* A one-line user nudge ("You returned an empty reply — respond with text…")
+> demonstrably breaks the mirror → **guard #0 (no training): auto-nudge once from the
+> launcher/driver when the final text is empty** (an orchestrator turn should never end
+> empty, so the retry is always safe). Log: scratchpad chain-test.log; run db
+> `harness/flue/data/gold-gold-inv-ef-0.db`.
+>
+> **How to train it FAST — reuse, don't re-run (no 100-loop grind):**
+> 1. **Ship the deterministic guard first (no training, today):** validate
+>    `fact-check.json` on write — any `status:"verified"` whose
+>    `verification_evidence` doesn't reference an existing file under
+>    `{CASE_DIR}/research|evidence/` containing the claim's entities gets bounced back
+>    to the fact-checker ONCE with the rejection reason (extend
+>    `scripts/validate-case.py`; the schemas already exist). This both blocks fabricated
+>    verdicts in production and *generates corrected-turn training pairs for free*.
+> 2. **Mine the runs we already have:** the durable dbs (`harness/flue/data/gold-*.db`)
+>    hold this week's real trajectories — good turns AND the exact failure contexts.
+>    Extract the failure turns; no new investigations needed.
+> 3. **Teacher-correct at the turn level:** replay each failure context through the 31B
+>    on OpenRouter (the proven harness-logic ladder) with a rigor-focused fact-checker
+>    prompt to produce the corrected turn ("unverified — source unavailable (bot-wall);
+>    escalating to browse" / verdicts that cite real on-disk files). Turn-level
+>    relabeling = dozens of contrastive pairs in hours for a few dollars.
+> 4. **Machine-checkable gold filter:** a trajectory enters the v2 dataset only if every
+>    "verified" verdict passes the guard from (1) — data QA becomes automatic, killing
+>    the eyeball-loop iteration cost that burned v1/v2.
+> 5. **Role-scoped masked SFT:** train on fact-checker (and investigator-escalation)
+>    turns with the existing Unsloth pipeline (`scripts/gemma4-12b/`, transformers
+>    override + `train_on_responses_only` + Unsloth-native merge — all proven); mix with
+>    the 12 gold + empty-turn-recovery examples. One RunPod cycle, ~$3–5.
+> 6. **Eval without loops:** extend the neutral-approval chain-test driver with a rigor
+>    grader (every verified claim → cited file exists + contains the claim tokens);
+>    gold cases are the fixtures. Pass/fail per run, no manual reading.
+
 ## Session Preflight
 
 Before coding in this project on a Buried Signals dev machine, read the shared `coding-rules` skill (`kit/coding-rules/SKILL.md` in the sibling shared-skills repo, if present). It is the canonical source for workflow routing, coding standards, Jujutsu/version-control rules, GitHub operations, and parallel-agent isolation. Local instructions below add project-specific constraints.
@@ -128,7 +187,8 @@ Skills are markdown playbooks loaded via `invoke-skill(skill_id)`. Each skill li
 | `shell-safety` | `skills/shell-safety/SKILL.md` | Safe command construction, value validation, and destructive-operation probe rules for execute-shell use | investigator, fact-checker, orchestrator, user |
 | `osint` | `skills/osint/SKILL.md` | OSINT tool routing table + 150-tool catalog + OSINT Navigator integration | investigator, fact-checker, user |
 | `investigate` | `skills/investigate/SKILL.md` | Step-by-step techniques: geolocation, verification, person, platform, transport, archiving | investigator, user |
-| `follow-the-money` | `skills/follow-the-money/SKILL.md` | Financial methodology: UBO, offshore, budget/revenue, asset tracing | investigator, user |
+| `follow-the-money` | `skills/follow-the-money/SKILL.md` | Financial methodology: UBO, offshore, budgets, assets, public blockchain tracing | investigator, user |
+| `technical-investigation` | `skills/technical-investigation/SKILL.md` | Passive technical investigation: indicators, infrastructure history, local document/email metadata, public GitHub history, verified indicator export | investigator, fact-checker, orchestrator, user |
 | `social-media-intelligence` | `skills/social-media-intelligence/SKILL.md` | Account authenticity, coordination detection, narrative tracking | investigator, fact-checker, user |
 
 ## Sensitive Mode

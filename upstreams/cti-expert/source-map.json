@@ -1,0 +1,100 @@
+{
+  "schema_version": "1.0",
+  "upstream": "https://github.com/7onez/cti-expert",
+  "active_sha": "f9ecc9b0258caff78d26c0b779d1687f4431749f",
+  "author": "Hieu Ngo - chongluadao.vn (GitHub: 7onez)",
+  "license": "MIT with non-restrictive Ethical Use Addendum",
+  "adaptations": [
+    {
+      "adapted": true,
+      "upstream_paths": [
+        "techniques/threat-intel.md",
+        "techniques/scam-check.md",
+        "techniques/fx-http-fingerprint.md"
+      ],
+      "spotlight_paths": [
+        "skills/technical-investigation/references/indicator-triage-compact.md",
+        "skills/technical-investigation/references/indicator-triage.md"
+      ],
+      "treatment": "Rewritten as passive lead triage; removed majority-vote verdicts, risk scores, auto-install, breach data, and active scanning."
+    },
+    {
+      "adapted": true,
+      "upstream_paths": [
+        "techniques/fx-dns-cert-history.md",
+        "techniques/whois-universal.md",
+        "techniques/web-dns-forensics.md"
+      ],
+      "spotlight_paths": [
+        "skills/technical-investigation/references/infrastructure-history-compact.md",
+        "skills/technical-investigation/references/infrastructure-history.md"
+      ],
+      "treatment": "Rewritten around passive, dated infrastructure observations and Spotlight evidence artifacts."
+    },
+    {
+      "adapted": true,
+      "upstream_paths": [
+        "techniques/fx-document-forensics.md",
+        "techniques/fx-email-header-analysis.md"
+      ],
+      "spotlight_paths": [
+        "skills/technical-investigation/references/document-message-forensics-compact.md",
+        "skills/technical-investigation/references/document-message-forensics.md"
+      ],
+      "treatment": "Rewritten as local-first document metadata and raw-header analysis with hashes and explicit confidence limits."
+    },
+    {
+      "adapted": true,
+      "upstream_paths": ["techniques/github-osint.md"],
+      "spotlight_paths": [
+        "skills/technical-investigation/references/github-public-compact.md",
+        "skills/technical-investigation/references/github-public.md"
+      ],
+      "treatment": "Restricted to public profile, repository, commit, fork, and release history; removed credential hunting and personality inference."
+    },
+    {
+      "adapted": true,
+      "upstream_paths": [
+        "validation/coverage-matrix.md",
+        "validation/verification-checklist.md"
+      ],
+      "spotlight_paths": [
+        "skills/investigate/references/coverage-discipline.md",
+        "skills/investigate/SKILL.md"
+      ],
+      "treatment": "Adapted attempted/skipped/null-path discipline without numerical publishability scoring."
+    },
+    {
+      "adapted": true,
+      "upstream_paths": ["engine/conflict-resolver.md"],
+      "spotlight_paths": ["skills/epistemic-grounding/SKILL.md"],
+      "treatment": "Adapted contradiction categories only; removed trust-score resolution and automatic conflict closure."
+    },
+    {
+      "adapted": true,
+      "upstream_paths": ["techniques/blockchain-investigation.md"],
+      "spotlight_paths": [
+        "skills/follow-the-money/references/blockchain-tracing.md",
+        "skills/follow-the-money/SKILL.md"
+      ],
+      "treatment": "Rewritten as public-ledger lead tracing with heuristic and provider-label limitations."
+    },
+    {
+      "adapted": true,
+      "upstream_paths": ["techniques/ioc-export.md"],
+      "spotlight_paths": [
+        "skills/technical-investigation/references/verified-indicator-export.md",
+        "scripts/export-verified-indicators.py",
+        "schemas/findings.schema.json"
+      ],
+      "treatment": "Reimplemented against explicit Spotlight technical indicators and verified fact-check verdicts; PII selectors excluded."
+    }
+  ],
+  "deliberately_excluded": [
+    "upstream agent/orchestrator/workspace contracts",
+    "installers and automatic dependency acquisition",
+    "credential, breach, stealer-log, and secret-scanning workflows",
+    "face, phone, Wi-Fi, darknet, private-person correlation, and active scanning",
+    "numeric trust, exposure, identity-merge, and publishability scoring"
+  ]
+}

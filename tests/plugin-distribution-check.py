@@ -83,9 +83,12 @@ def validate_payload_sync() -> None:
     compare_tree(ROOT / "schemas", PLUGIN / "schemas", ("*.json",))
     compare_tree(ROOT / "scripts", PLUGIN / "scripts", ("*.py",))
     compare_tree(ROOT / "monitoring", PLUGIN / "monitoring", ("*.py", ".gitkeep"))
+    compare_tree(ROOT / "third_party", PLUGIN / "third_party", ("*",))
+    compare_tree(ROOT / "upstreams", PLUGIN / "upstreams", ("*.json", "*.md"))
     compare_file(ROOT / "AGENTS.md", PLUGIN / "AGENTS.md")
     compare_file(ROOT / "VALIDATED_DEPENDENCIES.md", PLUGIN / "VALIDATED_DEPENDENCIES.md")
     compare_file(ROOT / "skills-manifest.json", PLUGIN / "skills-manifest.json")
+    compare_file(ROOT / "NOTICE.md", PLUGIN / "NOTICE.md")
 
     for copied_doc in sorted(path for path in (PLUGIN / "docs").iterdir() if path.is_file()):
         compare_file(ROOT / "docs" / copied_doc.name, copied_doc)

@@ -14,7 +14,7 @@ spotlight/
 ├── .spotlight-config.json    # Per-session config (search library, vault path, cases root, runtime)
 ├── .gitignore
 ├── schemas/                  # JSON schemas — 8 case files, all schema_version 1.0
-├── skills/                   # 16 skills (pi-native SKILL.md format)
+├── skills/                   # 17 skills (pi-native SKILL.md format)
 ├── agents/                   # 2 agent prompt bundles (investigator + fact-checker)
 ├── integrations/             # External tool integrations (dev-browser, Junkipedia, Noosphere C2PA, OSINT Navigator, Unpaywall)
 ├── docs/                     # You are here. Operator manual.
@@ -28,7 +28,7 @@ spotlight/
 
 1. **13-verb registry** — the abstract tool vocabulary every skill instruction uses
 2. **Agent manifests** — `investigator` and `fact-checker` with `allowed_verbs`, `iteration_limit`, `preferred_model`
-3. **Skill registry** — 16 skills with IDs, paths, and which agents can invoke them
+3. **Skill registry** — 17 skills with IDs, paths, and which agents can invoke them
 4. **Cases directory structure** — `{CASE_DIR}/{data,research}/` convention
 5. **Schema reference** — pointers to `schemas/*.json`
 6. **Sensitive mode** — toggle that strips `fetch`/`search` from allowed_verbs
@@ -59,7 +59,7 @@ Every case file validates against a schema. All declare `schema_version: "1.0"`.
 
 | Schema | Case file | Role |
 |---|---|---|
-| `findings.schema.json` | `{CASE_DIR}/data/findings.json` | Investigator output — claims, evidence, sources, confidence, perspective, monitoring_recommendations |
+| `findings.schema.json` | `{CASE_DIR}/data/findings.json` | Investigator output — claims, evidence, sources, confidence, perspective, optional explicit technical indicators, monitoring recommendations |
 | `fact-check.schema.json` | `{CASE_DIR}/data/fact-check.json` | Fact-checker output — per-claim verdicts, evidence_for/against, gaps_for_next_cycle |
 | `methodology.schema.json` | `{CASE_DIR}/data/methodology.json` | Investigator PLANNING output — investigation_plan, tools_required, opsec_considerations |
 | `evidence-bundle.schema.json` | `{CASE_DIR}/data/evidence-bundle.json` | Acquisition artifacts, missing-source gates, hashes, and claim links |
@@ -74,7 +74,7 @@ Validate a case file:
 python3 -m jsonschema -i {CASE_DIR}/data/findings.json schemas/findings.schema.json
 ```
 
-## skills/ — 16 skills
+## skills/ — 17 skills
 
 Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for large supporting content).
 
@@ -89,6 +89,7 @@ Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for larg
 - **`ingest`** — archival from case files to vault. 8-step process with `.ingest-lock` concurrency and directory fallback. Step 6 extracts eligibility-gated claim records (verdict `verified`/`partially_verified`, grounding above `low`, sources present) into `{vault}/claims/` with a claims registry, a generated alias index (`entities/_aliases.json`), and human-gated merge proposals.
 - **`monitoring`** — case-level monitoring orchestration. Coordinates Mycroft passive signals, Scoutpost durable monitors, and runtime-native fallbacks.
 - **`acquisition-graduation`** — turns repeated dev-browser acquisition successes into durable source/domain guidance without secrets or brittle session details.
+- **`report-drafting`** — post-Gate-1 public report drafting with methodology and evidence ledgers.
 
 ### Agent-support skills (invocable by investigator / fact-checker)
 
@@ -98,8 +99,12 @@ Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for larg
 - **`shell-safety`** — safe command construction, validation helpers, and destructive-operation probe rules.
 - **`osint`** — tool routing table + 150-tool catalog + OSINT Navigator integration.
 - **`investigate`** — step-by-step techniques (geolocation, person, platform, verification, transport).
-- **`follow-the-money`** — financial methodology (UBO, offshore, budget, assets).
+- **`follow-the-money`** — financial methodology (UBO, offshore, budgets, assets, public blockchain tracing).
 - **`social-media-intelligence`** — account authenticity, coordination detection, narrative tracking.
+- **`technical-investigation`** — passive technical indicators and infrastructure history, local document/email metadata, public GitHub history, and verified-indicator export.
+
+See [technical-investigation.md](technical-investigation.md) for tier loading,
+case fields, verified export, source provenance, and upstream maintenance.
 
 ### Per-skill anatomy
 
@@ -129,8 +134,8 @@ The body is instructions for the runtime's model: what to do when invoked, which
 
 Unlike skills (which are invoked), agents are **spawned**. Their markdown files are prompt bundles consumed by `spawn-agent`.
 
-- **`investigator.md`** — two modes: `PLANNING` (writes `methodology.json`) and `EXECUTION` (writes `findings.json` + appends `investigation-log.json`). Iteration limit 80. Loads skills acquisition-graduation, osint, investigate, follow-the-money, web-archiving, content-access, epistemic-grounding, shell-safety, social-media-intelligence.
-- **`fact-checker.md`** — SIFT methodology, verdict taxonomy, independent from investigator. Iteration limit 50. Loads skills osint, web-archiving, content-access, epistemic-grounding, shell-safety. Cannot `spawn-agent` (no recursive spawning).
+- **`investigator.md`** — two modes: `PLANNING` (writes `methodology.json`) and `EXECUTION` (writes `findings.json` + appends `investigation-log.json`). Iteration limit 80. Loads skills acquisition-graduation, osint, investigate, follow-the-money, web-archiving, content-access, epistemic-grounding, shell-safety, social-media-intelligence, and technical-investigation.
+- **`fact-checker.md`** — SIFT methodology, verdict taxonomy, independent from investigator. Iteration limit 50. Loads skills osint, web-archiving, content-access, epistemic-grounding, shell-safety, and technical-investigation. Cannot `spawn-agent` (no recursive spawning).
 
 Frontmatter declares `allowed_verbs`, `preferred_model` (per-runtime mapping), `vault_context` (whether to query the vault before research).
 

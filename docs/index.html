@@ -602,7 +602,7 @@
 
       <!-- ── 03 Skills ───────────────────────────────── -->
       <section id="skills">
-        <h2><span class="num">03 — Skills inside Spotlight</span>15 skills that compose the pipeline.</h2>
+        <h2><span class="num">03 — Skills inside Spotlight</span>17 skills that compose the pipeline.</h2>
         <p>Each skill is a markdown file with a frontmatter contract (name, description, allowed verbs). The agent loads them at runtime. You can edit any of them.</p>
 
         <div class="skill-grid">
@@ -613,6 +613,7 @@
           <div class="skill-card"><div class="sk-name">epistemic-grounding</div><div class="sk-desc">Claim-to-evidence grounding. Confidence caps by access method.</div></div>
           <div class="skill-card"><div class="sk-name">osint</div><div class="sk-desc">Tool lookup via OSINT Navigator. Country-specific registries.</div></div>
           <div class="skill-card"><div class="sk-name">follow-the-money</div><div class="sk-desc">Corporate filings, beneficial-ownership chains, registry walks.</div></div>
+          <div class="skill-card"><div class="sk-name">technical-investigation</div><div class="sk-desc">Passive indicators, infrastructure history, document/email metadata, public GitHub.</div></div>
           <div class="skill-card"><div class="sk-name">social-media-intelligence</div><div class="sk-desc">Platform-specific scraping, archive-first capture.</div></div>
           <div class="skill-card"><div class="sk-name">content-access</div><div class="sk-desc">Legal access hierarchy for paywalled or restricted sources.</div></div>
           <div class="skill-card"><div class="sk-name">web-archiving</div><div class="sk-desc">Wayback / Archive.today / local archive chain, chain-of-custody.</div></div>
@@ -620,6 +621,7 @@
           <div class="skill-card"><div class="sk-name">integrations</div><div class="sk-desc">External tool manifests, preflight, dev-browser, Junkipedia, Unpaywall.</div></div>
           <div class="skill-card"><div class="sk-name">monitoring</div><div class="sk-desc">Persistent monitoring tied to a case — Scoutpost, Mycroft, runtime-native.</div></div>
           <div class="skill-card"><div class="sk-name">provenance-signing</div><div class="sk-desc">Noosphere C2PA provenance manifest for published findings.</div></div>
+          <div class="skill-card"><div class="sk-name">report-drafting</div><div class="sk-desc">Post-gate public report with an evidence ledger and reproducible methods.</div></div>
           <div class="skill-card"><div class="sk-name">shell-safety</div><div class="sk-desc">Validates untrusted input before any shell execution; probes for destructive ops.</div></div>
         </div>
 
@@ -788,6 +790,7 @@ SPOTLIGHT_INT_DEVBROWSER=true   # dev-browser for interactive browser acquisitio
           <li><a href="https://github.com/buriedsignals/spotlight/blob/main/docs/runtimes.md">runtimes.md</a> — wiring Spotlight into each agent runtime</li>
           <li><a href="https://github.com/buriedsignals/spotlight/blob/main/docs/integrations.md">integrations.md</a> — external tool manifests + preflight</li>
           <li><a href="https://github.com/buriedsignals/spotlight/blob/main/docs/investigating.md">investigating.md</a> — pipeline detail, gate criteria, stall protocol</li>
+          <li><a href="https://github.com/buriedsignals/spotlight/blob/main/docs/technical-investigation.md">technical-investigation.md</a> — CTI-derived methods, model-tier loading, verified export, and source review</li>
           <li><a href="https://github.com/buriedsignals/spotlight/blob/main/docs/fact-checking.md">fact-checking.md</a> — independent verification pass</li>
           <li><a href="https://github.com/buriedsignals/spotlight/blob/main/docs/epistemic-grounding.md">epistemic-grounding.md</a> — claim-to-evidence grounding, confidence caps</li>
           <li><a href="https://github.com/buriedsignals/spotlight/blob/main/docs/sensitivity.md">sensitivity.md</a> — design spec for the sensitive vault (this page summarizes it)</li>
@@ -803,7 +806,12 @@ SPOTLIGHT_INT_DEVBROWSER=true   # dev-browser for interactive browser acquisitio
         <p>Two Spotlight skills — <code>content-access</code> and <code>social-media-intelligence</code> —
         are adapted from <a href="https://github.com/jamditis/claude-skills-journalism" target="_blank" rel="noopener">claude-skills-journalism</a>
         by Joe Amditis (Center for Cooperative Media, Montclair State University), MIT licensed.
-        Methodology throughout draws on Bellingcat and GIJN training material, Jim Shultz's
+        <a href="https://github.com/7onez/cti-expert" target="_blank" rel="noopener">CTI Expert</a>
+        by Hieu Ngo / chongluadao.vn (GitHub: 7onez) is the source for selected
+        passive technical-investigation, coverage, contradiction, and public-ledger
+        methods. Spotlight substantially adapts the reviewed <code>f9ecc9b</code>
+        revision under the MIT License with the upstream Ethical Use Addendum.
+        Methodology throughout also draws on Bellingcat and GIJN training material, Jim Shultz's
         follow-the-money work, and OpenSanctions' evidence-preservation practice. The full record
         lives in <a href="https://github.com/buriedsignals/spotlight/blob/main/NOTICE.md" target="_blank" rel="noopener">NOTICE.md</a>.</p>
       </section>

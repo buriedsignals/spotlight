@@ -12,6 +12,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR = ROOT / "scripts" / "validate-methodology-navigator.py"
+CTI_ACTIVE_SHA = json.loads(
+    (ROOT / "upstreams" / "cti-expert" / "source.lock.json").read_text(encoding="utf-8")
+)["active_sha"]
+OLD_REVIEWED_SHA = "1" * 40
 
 
 def write_json(path: Path, payload: dict) -> None:
@@ -19,9 +23,9 @@ def write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
-def run(case_dir: Path, config_path: Path) -> subprocess.CompletedProcess[str]:
+def run(case_dir: Path, config_path: Path, *extra: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(VALIDATOR), str(case_dir), "--config", str(config_path)],
+        [sys.executable, str(VALIDATOR), str(case_dir), "--config", str(config_path), *extra],
         text=True,
         capture_output=True,
         check=False,
@@ -30,6 +34,7 @@ def run(case_dir: Path, config_path: Path) -> subprocess.CompletedProcess[str]:
 
 def base_config(required: bool) -> dict:
     return {
+        "model_tier": "frontier",
         "search_library": "firecrawl",
         "vault_path": "./vault",
         "vault_type": "directory",
@@ -54,7 +59,7 @@ def methodology_without_navigator() -> dict:
                 "direction": "corporate ownership trail",
                 "questions": ["Who owns Example Corp?"],
                 "steps": [{"order": 1, "action": "Search registries", "tool": "search"}],
-            }
+            },
         ],
         "tools_required": ["OpenCorporates"],
     }
@@ -132,6 +137,72 @@ def main() -> int:
         fallback = run(case_dir, config)
         if fallback.returncode != 0:
             raise AssertionError(f"navigator-not-required fixture should pass\nSTDOUT:\n{fallback.stdout}\nSTDERR:\n{fallback.stderr}")
+
+        technical = methodology_without_navigator()
+        technical["skills_invoked"] = ["technical-investigation"]
+        write_json(methodology_path, technical)
+        missing_provenance = run(case_dir, config)
+        if missing_provenance.returncode == 0 or "requires non-empty method_provenance" not in missing_provenance.stderr:
+            raise AssertionError("technical methodology without provenance should fail")
+
+        technical["method_provenance"] = [
+            {
+                "skill_id": "technical-investigation",
+                "method": "infrastructure-history",
+                "upstream": "7onez/cti-expert",
+                "active_sha": CTI_ACTIVE_SHA,
+                "reference": "infrastructure-history.md",
+            }
+        ]
+        write_json(methodology_path, technical)
+        valid_technical = run(case_dir, config)
+        if valid_technical.returncode != 0:
+            raise AssertionError(f"valid technical provenance should pass\n{valid_technical.stderr}")
+
+        local_config = base_config(required=False)
+        local_config["model_tier"] = "12b"
+        write_json(config, local_config)
+        wrong_density = run(case_dir, config)
+        if wrong_density.returncode == 0 or "must be compact for model_tier 12b" not in wrong_density.stderr:
+            raise AssertionError("12b expanded reference should fail")
+
+        technical["method_provenance"][0]["reference"] = "infrastructure-history-compact.md"
+        write_json(methodology_path, technical)
+        compact = run(case_dir, config)
+        if compact.returncode != 0:
+            raise AssertionError(f"12b compact reference should pass\n{compact.stderr}")
+
+        technical["method_provenance"][0]["active_sha"] = "0" * 40
+        write_json(methodology_path, technical)
+        stale = run(case_dir, config)
+        if stale.returncode == 0 or "not in the reviewed CTI revision catalog" not in stale.stderr:
+            raise AssertionError("unreviewed CTI revision should fail")
+
+        historical_catalog = tmp / "reviewed-revisions.json"
+        catalog = json.loads(
+            (ROOT / "upstreams" / "cti-expert" / "reviewed-revisions.json").read_text(encoding="utf-8")
+        )
+        catalog["revisions"].append({"sha": OLD_REVIEWED_SHA})
+        write_json(historical_catalog, catalog)
+        technical["method_provenance"][0]["active_sha"] = OLD_REVIEWED_SHA
+        write_json(methodology_path, technical)
+        historical = run(
+            case_dir,
+            config,
+            "--cti-revisions",
+            str(historical_catalog),
+            "--allow-historical-cti",
+        )
+        if historical.returncode != 0:
+            raise AssertionError(f"historical reviewed revision should remain valid\n{historical.stderr}")
+        new_plan = run(
+            case_dir,
+            config,
+            "--cti-revisions",
+            str(historical_catalog),
+        )
+        if new_plan.returncode == 0 or "must match the current reviewed CTI revision" not in new_plan.stderr:
+            raise AssertionError("new methodology should require the current reviewed revision")
 
     print("methodology navigator checks: OK")
     return 0

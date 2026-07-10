@@ -30,6 +30,7 @@ Use the routing table below to match the user's query to the correct reference f
 | High-res image recovery | "original resolution", "download full quality", "Instagram full-res" | `references/archiving-recovery.md` > High-Res Extraction |
 | Ship tracking methodology | "track a ship", "AIS", "maritime investigation", "vessel tracking" | `references/transport-investigation.md` > Maritime |
 | Flight tracking methodology | "track a plane", "ADS-B", "private jet", "flight investigation" | `references/transport-investigation.md` > Aviation |
+| Investigation coverage | "what did we skip", "blind spots", "coverage ledger", "null result" | `references/coverage-discipline.md` |
 
 ## How to Guide an Investigation
 
@@ -44,6 +45,8 @@ Use the routing table below to match the user's query to the correct reference f
 5. **Point to the osint skill for tool alternatives.** If the user needs to compare tools or find alternatives, say: "For a full comparison of [category] tools, `invoke-skill(\"osint\")`."
 
 6. **Escalate to OSINT Navigator for niche needs.** Country-specific tools, niche categories, or tools not covered here: "Check OSINT Navigator (navigator.indicator.media) for [specific need]."
+
+7. **Keep a coverage ledger.** For every material research path record whether it was attempted, observed, null, skipped, or blocked. A null result documents due diligence but does not raise confidence or prove absence. Read `references/coverage-discipline.md`.
 
 ## When to Use follow-the-money
 
@@ -73,6 +76,7 @@ If the user needs financial investigation methodology rather than person/geo/pla
 | `references/person-investigation.md` | Pivot chain methodology (name/email/username/phone pivots), breach database workflow, platform techniques (Facebook, Telegram, Skype), life events research, Badin case study |
 | `references/archiving-recovery.md` | Wayback Machine wildcards, cache syntax (Google/Bing/Yandex), deleted content recovery, high-res image extraction (Instagram/Twitter), Google News Archive for pre-2003 |
 | `references/transport-investigation.md` | Maritime AIS methodology, flight tracking (ADS-B Exchange), transponder deception detection, Hudaydah port case study |
+| `references/coverage-discipline.md` | Question-led coverage ledger, null-result handling, documented skips, and gap reporting without numerical completeness scores |
 
 ## Related Skills
 
@@ -80,3 +84,8 @@ If the user needs financial investigation methodology rather than person/geo/pla
 |---|---|
 | `osint` | Tool catalog, tool comparison, OSINT Navigator integration |
 | `follow-the-money` | Financial investigation: corporate ownership, offshore structures, budget monitoring, asset tracing |
+| `technical-investigation` | Passive technical pivots: indicators, infrastructure history, document/email metadata, and public GitHub history |
+
+## Additional Attribution
+
+The coverage-state discipline is adapted from [CTI Expert](https://github.com/7onez/cti-expert) by Hieu Ngo / chongluadao.vn (GitHub: 7onez; MIT License with upstream Ethical Use Addendum). Spotlight removes fixed path quotas, breach/exposure checks, active enumeration, and numerical coverage thresholds; coverage documents scope and gaps, not publishability.

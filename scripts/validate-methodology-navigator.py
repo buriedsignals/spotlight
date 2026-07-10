@@ -16,6 +16,19 @@ from typing import Any
 
 
 REQUIRED_PLANNING_SKILLS = {"integrations", "osint", "investigate", "epistemic-grounding"}
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_CTI_LOCK = ROOT / "upstreams" / "cti-expert" / "source.lock.json"
+DEFAULT_CTI_REVISIONS = ROOT / "upstreams" / "cti-expert" / "reviewed-revisions.json"
+CTI_REFERENCES = {
+    "indicator-triage": {"indicator-triage-compact.md", "indicator-triage.md"},
+    "infrastructure-history": {"infrastructure-history-compact.md", "infrastructure-history.md"},
+    "document-message-forensics": {
+        "document-message-forensics-compact.md",
+        "document-message-forensics.md",
+    },
+    "github-public": {"github-public-compact.md", "github-public.md"},
+    "verified-indicator-export": {"verified-indicator-export.md"},
+}
 
 
 def load_json(path: Path) -> Any:
@@ -44,7 +57,7 @@ def validate_required(methodology: dict[str, Any], status: str) -> list[str]:
     if not isinstance(skills, list):
         errors.append("methodology.json: skills_invoked must be a list")
         skills = []
-    missing_skills = REQUIRED_PLANNING_SKILLS - set(skills)
+    missing_skills = REQUIRED_PLANNING_SKILLS - {skill for skill in skills if isinstance(skill, str)}
     if missing_skills:
         errors.append(f"methodology.json: missing required planning skills {sorted(missing_skills)}")
 
@@ -141,10 +154,71 @@ def validate_not_required(methodology: dict[str, Any]) -> list[str]:
     return []
 
 
+def validate_method_provenance(
+    methodology: dict[str, Any],
+    model_tier: str,
+    active_sha: str,
+    reviewed_shas: set[str],
+    require_current: bool,
+) -> list[str]:
+    errors: list[str] = []
+    skills = methodology.get("skills_invoked", [])
+    technical_invoked = isinstance(skills, list) and "technical-investigation" in skills
+    provenance = methodology.get("method_provenance")
+
+    if not technical_invoked and provenance is None:
+        return []
+    if not technical_invoked:
+        errors.append("methodology.json: method_provenance requires technical-investigation in skills_invoked")
+    if not isinstance(provenance, list) or not provenance:
+        return errors + ["methodology.json: technical-investigation requires non-empty method_provenance"]
+
+    for index, entry in enumerate(provenance):
+        prefix = f"methodology.json: method_provenance[{index}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{prefix} must be an object")
+            continue
+        if entry.get("skill_id") != "technical-investigation":
+            errors.append(f"{prefix}.skill_id must be 'technical-investigation'")
+        if entry.get("upstream") != "7onez/cti-expert":
+            errors.append(f"{prefix}.upstream must be '7onez/cti-expert'")
+        entry_sha = entry.get("active_sha")
+        if entry_sha not in reviewed_shas:
+            errors.append(f"{prefix}.active_sha is not in the reviewed CTI revision catalog")
+        elif require_current and entry_sha != active_sha:
+            errors.append(f"{prefix}.active_sha must match the current reviewed CTI revision")
+        method = entry.get("method")
+        reference = entry.get("reference")
+        allowed_references = CTI_REFERENCES.get(method) if isinstance(method, str) else None
+        if allowed_references is None:
+            errors.append(f"{prefix}.method is not recognized")
+            continue
+        if reference not in allowed_references:
+            errors.append(f"{prefix}.reference does not match method {method!r}")
+            continue
+        if method == "verified-indicator-export":
+            continue
+        compact = isinstance(reference, str) and reference.endswith("-compact.md")
+        if model_tier == "12b" and not compact:
+            errors.append(f"{prefix}.reference must be compact for model_tier 12b")
+        if model_tier in {"26b", "31b", "frontier", "api", ""} and compact:
+            tier_label = model_tier or "desktop/default"
+            errors.append(f"{prefix}.reference must be expanded for model_tier {tier_label}")
+
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("case_dir", help="Path to {CASE_DIR}")
     parser.add_argument("--config", default=".spotlight-config.json", help="Spotlight config path")
+    parser.add_argument("--cti-lock", type=Path, default=DEFAULT_CTI_LOCK)
+    parser.add_argument("--cti-revisions", type=Path, default=DEFAULT_CTI_REVISIONS)
+    parser.add_argument(
+        "--allow-historical-cti",
+        action="store_true",
+        help="Allow archived cases to cite any catalogued CTI revision instead of the current revision",
+    )
     args = parser.parse_args()
 
     case_dir = Path(args.case_dir).expanduser().resolve()
@@ -166,19 +240,38 @@ def main() -> int:
     try:
         config = load_json(config_path)
         methodology = load_json(methodology_path)
+        cti_lock = load_json(args.cti_lock.expanduser().resolve())
+        cti_revisions = load_json(args.cti_revisions.expanduser().resolve())
     except (OSError, json.JSONDecodeError) as exc:
         print(f"FAIL  {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
 
     required, status = navigator_status(config)
     errors = validate_required(methodology, status) if required else validate_not_required(methodology)
+    active_sha = str(cti_lock.get("active_sha", ""))
+    reviewed_shas = {
+        item.get("sha")
+        for item in cti_revisions.get("revisions", [])
+        if isinstance(item, dict) and isinstance(item.get("sha"), str)
+    }
+    if cti_revisions.get("active_sha") != active_sha or active_sha not in reviewed_shas:
+        errors.append("CTI source lock and reviewed-revisions catalog disagree")
+    errors.extend(
+        validate_method_provenance(
+            methodology,
+            str(config.get("model_tier", "")),
+            active_sha,
+            reviewed_shas,
+            not args.allow_historical_cti,
+        )
+    )
 
     if errors:
         for error in errors:
             print(f"FAIL  {error}", file=sys.stderr)
         return 1
 
-    print("methodology navigator contract: OK")
+    print("methodology contract: OK")
     return 0
 
 

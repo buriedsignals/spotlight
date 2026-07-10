@@ -1,6 +1,6 @@
 ---
 name: follow-the-money
-description: Financial investigation methodology for journalists — corporate ownership tracing, offshore structures, budget monitoring, and asset tracing.
+description: Financial investigation methodology for journalists — corporate ownership, offshore structures, budgets, assets, and public blockchain tracing.
 version: "1.0"
 invocable_by: [investigator, user]
 requires: []
@@ -20,6 +20,7 @@ Use the routing table below to match the user's query to the correct reference f
 | Offshore investigation | "offshore", "secrecy jurisdiction", "tax haven", "Panama Papers", "Paradise Papers", "nominee", "shell company in BVI", "leaked documents" | `references/offshore-structures.md` |
 | Budget & revenue monitoring | "government budget", "extractive industry", "oil revenues", "public spending", "resource curse", "where did the money go", "EITI", "budget analysis" | `references/budget-revenue-monitoring.md` |
 | Asset tracing | "property ownership", "land registry", "non-profit", "court documents", "trade data", "sanctions", "art laundering", "import export" | `references/asset-tracing.md` |
+| Public blockchain tracing | "trace this wallet", "transaction flow", "crypto payment", "exchange label", "wallet cluster" | `references/blockchain-tracing.md` |
 
 ## How to Guide a Financial Investigation
 
@@ -44,6 +45,7 @@ Use the routing table below to match the user's query to the correct reference f
 | Person behind the company identified — need to build their profile | `invoke-skill("investigate")` — pivot chains, platform techniques, life events research |
 | Which tools exist for a specific financial task | `invoke-skill("osint")` — tool catalog with 150+ OSINT tools |
 | Country-specific company registries | OSINT Navigator (navigator.indicator.media) |
+| A domain, IP, URL, hash, document, email header, or public repository is the starting point | `invoke-skill("technical-investigation")` — passive technical investigation |
 | Financial investigation methodology | Stay in `follow-the-money` |
 
 ## Key Terminology
@@ -67,6 +69,7 @@ Before starting any financial investigation, understand these terms:
 | `references/offshore-structures.md` | Secrecy jurisdictions, ICIJ Offshore Leaks, OCCRP Aleph, shell company patterns, the subsidiary trick, domain registration as ownership signal |
 | `references/budget-revenue-monitoring.md` | Government budget analysis, extractive industry oversight, revenue transparency frameworks, investigative questions for budget data |
 | `references/asset-tracing.md` | Property registries, US non-profit investigation, court documents, trade data, art/antiquities laundering, OCCRP ID for global registries |
+| `references/blockchain-tracing.md` | Public-ledger transaction tracing, temporal flow tables, provider-label limits, wallet-clustering cautions, and off-ramp leads |
 
 ## Credits & Attribution
 
@@ -76,5 +79,6 @@ Primary sources synthesized in this skill:
 - Jelter, "Follow the Money" (presentation). Company registries spreadsheet and corporate ownership methodology.
 - Miranda Patrucic & Jelena Cosic, "Introduction to Investigative Journalism: Following the Money," GIJN, November 2024. Licensed under CC BY-ND 4.0.
 - Derek Bowler, "Tracing Beneficial Ownership with OSINT for Financial Crime," EBU Eurovision News Spotlight, December 2025.
+- Hieu Ngo / chongluadao.vn (GitHub: 7onez), [CTI Expert](https://github.com/7onez/cti-expert), blockchain investigation method (MIT License with upstream Ethical Use Addendum). Adapted to remove darknet research, fixed confidence ratings, raw shell recipes, and automatic entity attribution.
 
 Tool discovery: OSINT Navigator (navigator.indicator.media)

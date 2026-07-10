@@ -82,13 +82,14 @@ def main() -> int:
     # Floor projection: role + bundle DESCRIPTIONS (bodies load on invoke).
     role_tok = {ag: approx_tokens(open(os.path.join(ROOT, spec["role"])).read())
                 for ag, spec in agents.items()}
-    all_bodies = sum(body_tok.values()) - body_tok.get("spotlight", 0)  # 15 on-invoke bodies
+    on_invoke_count = full - 1
+    all_bodies = sum(body_tok.values()) - body_tok.get("spotlight", 0)
     old_floor = role_tok["investigator"] + all_bodies  # heaviest agent, old model
     print(f"{'agent':<16}{'role~tok':<10}{'+bundle desc~tok':<18}{'= manifest floor':<18}")
     for ag, spec in agents.items():
         d = sum(desc_tok[s] for s in spec["skills"])
         print(f"{ag:<16}{role_tok[ag]:<10}{d:<18}{role_tok[ag] + d}")
-    print(f"\nOLD floor (an agent + ALL 15 bodies up-front): ~{old_floor} tok")
+    print(f"\nOLD floor (an agent + ALL {on_invoke_count} bodies up-front): ~{old_floor} tok")
     worst_new = max(role_tok[ag] + sum(desc_tok[s] for s in agents[ag]["skills"]) for ag in agents)
     print(f"NEW worst-agent manifest floor (composition + on-invoke): ~{worst_new} tok  "
           f"(target ≤ ~20K) -> {'MEETS' if worst_new <= 20000 else 'MISSES'} target")

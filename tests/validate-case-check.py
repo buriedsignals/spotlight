@@ -64,6 +64,19 @@ def valid_findings() -> dict:
     }
 
 
+def findings_with_indicator() -> dict:
+    findings = valid_findings()
+    findings["technical_indicators"] = [{
+        "id": "TI-1",
+        "finding_id": "F1",
+        "type": "domain",
+        "value": "observed.example",
+        "context": "Observed in a preserved passive record.",
+        "sources": ["research/passive-record.json"],
+    }]
+    return findings
+
+
 def valid_fact_check() -> dict:
     return {
         "project": "test-case",
@@ -87,6 +100,13 @@ def valid_fact_check() -> dict:
         "cycle": 1,
         "gaps_for_next_cycle": [],
     }
+
+
+def fact_check_with_indicator() -> dict:
+    fact_check = valid_fact_check()
+    fact_check["claims"][0]["technical_indicator_ids"] = ["TI-1"]
+    fact_check["claims"][0]["claim_text"] = "The domain observed.example was independently observed."
+    return fact_check
 
 
 def valid_evidence_bundle() -> dict:
@@ -168,6 +188,15 @@ def main() -> int:
     check("findings: missing evidence", vc.validate_findings(mutate(valid_findings(), lambda d: d["findings"][0].pop("evidence"))), True)
     check("findings: empty sources", vc.validate_findings(mutate(valid_findings(), lambda d: d["findings"][0].__setitem__("sources", []))), True)
     check("findings: bad confidence", vc.validate_findings(mutate(valid_findings(), lambda d: d["findings"][0].__setitem__("confidence", "certain"))), True)
+    check("findings: valid technical indicator", vc.validate_findings(findings_with_indicator()), False)
+    check("findings: PII indicator type rejected", vc.validate_findings(mutate(findings_with_indicator(), lambda d: d["technical_indicators"][0].__setitem__("type", "email"))), True)
+    check("findings: dangling indicator finding", vc.validate_findings(mutate(findings_with_indicator(), lambda d: d["technical_indicators"][0].__setitem__("finding_id", "F9"))), True)
+    check("findings: non-string indicator finding", vc.validate_findings(mutate(findings_with_indicator(), lambda d: d["technical_indicators"][0].__setitem__("finding_id", ["F1"]))), True)
+    check("findings: non-string indicator type", vc.validate_findings(mutate(findings_with_indicator(), lambda d: d["technical_indicators"][0].__setitem__("type", ["domain"]))), True)
+    check("findings: indicator sources required", vc.validate_findings(mutate(findings_with_indicator(), lambda d: d["technical_indicators"][0].__setitem__("sources", []))), True)
+    check("findings: duplicate indicator id", vc.validate_findings(mutate(findings_with_indicator(), lambda d: d["technical_indicators"].append(dict(d["technical_indicators"][0])))), True)
+    check("findings: invalid indicator timestamp", vc.validate_findings(mutate(findings_with_indicator(), lambda d: d["technical_indicators"][0].__setitem__("first_observed", "yesterday"))), True)
+    check("findings: reversed indicator window", vc.validate_findings(mutate(findings_with_indicator(), lambda d: d["technical_indicators"][0].update({"first_observed": "2026-07-10T10:00:00Z", "last_observed": "2026-07-10T09:00:00Z"}))), True)
 
     # --- grounding ---
     check("grounding: valid baseline", vc.validate_grounding(valid_grounding(), "g"), False)
@@ -189,10 +218,19 @@ def main() -> int:
     check("fact-check: bad access_method", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["evidence_for"][0].__setitem__("access_method", "stolen"))), True)
     check("fact-check: summary count non-int", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["summary"].__setitem__("verified", "1"))), True)
     check("fact-check: cycle zero", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d.__setitem__("cycle", 0))), True)
+    check("fact-check: valid technical indicator IDs", vc.validate_fact_check(fact_check_with_indicator()), False)
+    check("fact-check: technical indicator IDs not a list", vc.validate_fact_check(mutate(fact_check_with_indicator(), lambda d: d["claims"][0].__setitem__("technical_indicator_ids", "TI-1"))), True)
+    check("fact-check: duplicate technical indicator IDs", vc.validate_fact_check(mutate(fact_check_with_indicator(), lambda d: d["claims"][0].__setitem__("technical_indicator_ids", ["TI-1", "TI-1"]))), True)
 
     # --- cross reference ---
     check("cross-ref: resolves", vc.cross_reference(valid_findings(), valid_fact_check()), False)
     check("cross-ref: dangling finding_id", vc.cross_reference(valid_findings(), mutate(valid_fact_check(), lambda d: d["claims"][0].__setitem__("finding_id", "F9"))), True)
+    check("cross-ref: technical indicator resolves", vc.cross_reference(findings_with_indicator(), fact_check_with_indicator()), False)
+    check("cross-ref: dangling technical indicator", vc.cross_reference(findings_with_indicator(), mutate(fact_check_with_indicator(), lambda d: d["claims"][0].__setitem__("technical_indicator_ids", ["TI-404"]))), True)
+    check("cross-ref: technical indicator exact value required", vc.cross_reference(findings_with_indicator(), mutate(fact_check_with_indicator(), lambda d: d["claims"][0].__setitem__("claim_text", "A different domain was checked."))), True)
+    case_sensitive_url = mutate(findings_with_indicator(), lambda d: d["technical_indicators"][0].update({"type": "url", "value": "https://observed.example/Reset"}))
+    case_folded_claim = mutate(fact_check_with_indicator(), lambda d: d["claims"][0].__setitem__("claim_text", "https://observed.example/reset was checked."))
+    check("cross-ref: URL path remains case-sensitive", vc.cross_reference(case_sensitive_url, case_folded_claim), True)
 
     # --- evidence bundle ---
     check("evidence: valid baseline", vc.validate_evidence_bundle(valid_evidence_bundle()), False)

@@ -1,0 +1,20 @@
+{
+  "upstream": "https://github.com/7onez/cti-expert",
+  "author": "Hieu Ngo - chongluadao.vn (GitHub: 7onez)",
+  "license": "MIT with non-restrictive Ethical Use Addendum",
+  "reviewed_revision": "f9ecc9b0258caff78d26c0b779d1687f4431749f",
+  "adapted_subjects": {
+    "passive indicator triage": ["techniques/threat-intel.md", "techniques/scam-check.md", "techniques/fx-http-fingerprint.md"],
+    "passive infrastructure history": ["techniques/fx-dns-cert-history.md", "techniques/whois-universal.md", "techniques/web-dns-forensics.md"],
+    "local document and raw-email analysis": ["techniques/fx-document-forensics.md", "techniques/fx-email-header-analysis.md"],
+    "public GitHub history": ["techniques/github-osint.md"],
+    "verified technical-indicator export": ["techniques/ioc-export.md"]
+  },
+  "excluded": [
+    "upstream runtime and installers",
+    "automatic dependency acquisition",
+    "credential, breach, stealer-log, and secret-scanning workflows",
+    "face, phone, Wi-Fi, darknet, private-person correlation, and active scanning",
+    "numeric trust, identity-merge, exposure, and publishability scoring"
+  ]
+}

@@ -4,11 +4,11 @@
 
 ### OSINT investigation orchestrator for AI agents
 
-**Turns a lead into a structured case file — scoped brief, approved methodology, sourced findings, independent fact-checking, and provenance records. 16 skills, 7 runtimes, local-capable.**
+**Turns a lead into a structured case file — scoped brief, approved methodology, sourced findings, independent fact-checking, and provenance records. 17 skills, 7 runtimes, local-capable.**
 
 [Install](#install) | [Workflow](#investigation-workflow) | [Integrations](#integrations) | [Runtimes](#runtimes) | [Website](https://spotlight.buriedsignals.com/)
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-00c853?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)[![16 Skills](https://img.shields.io/badge/skills-16-0080ff?style=for-the-badge&logo=bookstack&logoColor=white)](https://github.com/buriedsignals/spotlight/tree/main/plugins/spotlight/skills)[![7 Runtimes](https://img.shields.io/badge/runtimes-7-aa00ff?style=for-the-badge&logo=windowsterminal&logoColor=white)](#runtimes)[![Sovereign](https://img.shields.io/badge/sovereign_mode-SearXNG_+_Crawl4AI_+_local_models-00bfa5?style=for-the-badge&logo=shield&logoColor=white)](#source-acquisition)
+[![License: MIT](https://img.shields.io/badge/license-MIT-00c853?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)[![17 Skills](https://img.shields.io/badge/skills-17-0080ff?style=for-the-badge&logo=bookstack&logoColor=white)](https://github.com/buriedsignals/spotlight/tree/main/plugins/spotlight/skills)[![7 Runtimes](https://img.shields.io/badge/runtimes-7-aa00ff?style=for-the-badge&logo=windowsterminal&logoColor=white)](#runtimes)[![Sovereign](https://img.shields.io/badge/sovereign_mode-SearXNG_+_Crawl4AI_+_local_models-00bfa5?style=for-the-badge&logo=shield&logoColor=white)](#source-acquisition)
 
 [![Stars](https://img.shields.io/github/stars/buriedsignals/spotlight?style=flat-square&logo=github&label=Stars)](https://github.com/buriedsignals/spotlight/stargazers)[![Issues](https://img.shields.io/github/issues/buriedsignals/spotlight?style=flat-square&logo=github&label=Issues)](https://github.com/buriedsignals/spotlight/issues)[![Last Commit](https://img.shields.io/github/last-commit/buriedsignals/spotlight?style=flat-square&logo=github&label=Last%20Commit)](https://github.com/buriedsignals/spotlight/commits)[![Contributors](https://img.shields.io/github/contributors/buriedsignals/spotlight?style=flat-square&logo=github&label=Contributors)](https://github.com/buriedsignals/spotlight/graphs/contributors)
 
@@ -260,6 +260,17 @@ fit checks: [docs/runtimes.md](docs/runtimes.md).
 - Follow the Money synthesizes public investigative-finance methodology from
   Jim Shultz, GIJN, EBU, and related training material.
 - Investigate includes methodology influenced by Bellingcat training material.
+- Technical Investigation, investigation-coverage discipline, contradiction
+  categories, public-ledger tracing, and verified technical-indicator export
+  adapt reviewed methods from [CTI Expert](https://github.com/7onez/cti-expert)
+  by Hieu Ngo / chongluadao.vn (GitHub: 7onez), reviewed at
+  [`f9ecc9b`](https://github.com/7onez/cti-expert/tree/f9ecc9b0258caff78d26c0b779d1687f4431749f)
+  under the MIT License with the upstream Ethical Use Addendum. Spotlight ships
+  source-mapped rewrites, not CTI Expert's runtime, installers, active techniques,
+  or scoring system. [Implementation details](docs/technical-investigation.md).
+  A daily read-only watcher records upstream drift in a review issue; online
+  Spotlight installs and updates receive the latest reviewed adaptation, while
+  offline installs remain reproducibly pinned.
 
 ## Acknowledgements
 
@@ -276,7 +287,7 @@ exist without them. *(Listing does not imply affiliation or endorsement.)*
 | **Evidence & provenance** | [Internet Archive / Wayback Machine](https://web.archive.org/) · [Archive.today](https://archive.today/) · [C2PA](https://c2pa.org/) (content-provenance standard for case packages) · [OpenSanctions](https://www.opensanctions.org/) (evidence-preservation methodology) |
 | **Knowledge vault** | [Obsidian](https://obsidian.md/) (the vault app) · [QMD](https://www.npmjs.com/package/@tobilu/qmd) (tobilu — local vault search) |
 | **Reports & site** | [Mermaid](https://github.com/mermaid-js/mermaid) (MIT — report diagrams) · [Three.js](https://github.com/mrdoob/three.js) (mrdoob, MIT — the landing scene) |
-| **Methodology** | [Joe Amditis](https://github.com/jamditis/claude-skills-journalism) (MIT) · [SIFT — Mike Caulfield](https://hapgood.us/2019/06/19/sift-the-four-moves/) · [Bellingcat](https://www.bellingcat.com/) · [GIJN](https://gijn.org/) (Patrucic & Cosic, CC BY-ND) · Jim Shultz — Follow the Money · [Derek Bowler · EBU](https://www.ebu.ch/) |
+| **Methodology** | [CTI Expert](https://github.com/7onez/cti-expert) by Hieu Ngo / chongluadao.vn (GitHub: 7onez; selected methods substantially adapted at `f9ecc9b`; MIT + upstream Ethical Use Addendum) · [Joe Amditis](https://github.com/jamditis/claude-skills-journalism) (MIT) · [SIFT — Mike Caulfield](https://hapgood.us/2019/06/19/sift-the-four-moves/) · [Bellingcat](https://www.bellingcat.com/) · [GIJN](https://gijn.org/) (Patrucic & Cosic, CC BY-ND) · Jim Shultz — Follow the Money · [Derek Bowler · EBU](https://www.ebu.ch/) |
 
 > Built something here we should credit, or want a listing changed or removed?
 > Open an issue or PR — we'll fix it fast.

@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "active_sha": "f9ecc9b0258caff78d26c0b779d1687f4431749f",
+  "revisions": [
+    {
+      "sha": "f9ecc9b0258caff78d26c0b779d1687f4431749f",
+      "reviewed_at": "2026-07-10T10:30:43Z",
+      "repository": "https://github.com/7onez/cti-expert",
+      "license": "MIT with non-restrictive Ethical Use Addendum",
+      "license_sha256": "ceb578dc6f370a04129ecf2183715464f5d47e725643de12a609c75021037769",
+      "source_map": "upstreams/cti-expert/source-map.json"
+    }
+  ]
+}

@@ -34,6 +34,12 @@
         "properties": {
           "id": { "type": ["integer", "string"] },
           "finding_id": { "type": "string" },
+          "technical_indicator_ids": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true,
+            "description": "Explicit technical indicators assessed by this claim. Values must appear in claim_text and resolve to the same finding_id."
+          },
           "claim_text": { "type": "string" },
           "verdict": { "enum": ["verified","partially_verified","unverified","disputed","false","mischaracterized"] },
           "confidence": { "enum": ["high","medium","low"] },

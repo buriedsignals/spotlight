@@ -2,7 +2,7 @@
 # Spotlight smoke test — exercises the install contract without spending any API calls.
 #
 # Checks:
-#   1. All 15 skill directories present with SKILL.md
+#   1. All 17 skill directories present with SKILL.md
 #   2. All 2 agent prompts present
 #   3. All schemas parse as valid JSON
 #   4. Integrations preflight runs cleanly
@@ -37,7 +37,7 @@ cd "$ROOT"
 
 echo "── Structure ──"
 
-expected_skills=(spotlight review integrations ingest report-drafting monitoring provenance-signing acquisition-graduation web-archiving content-access epistemic-grounding shell-safety osint investigate follow-the-money social-media-intelligence)
+expected_skills=(spotlight review integrations ingest report-drafting monitoring provenance-signing acquisition-graduation web-archiving content-access epistemic-grounding shell-safety osint investigate follow-the-money social-media-intelligence technical-investigation)
 for skill in "${expected_skills[@]}"; do
   if [ -f "skills/$skill/SKILL.md" ]; then
     ok "skills/$skill/SKILL.md present"
@@ -124,7 +124,7 @@ fi
 
 echo ""
 echo "── Validators and helpers ──"
-for t in validate-case-check monitoring-registry-check preflight-check; do
+for t in validate-case-check monitoring-registry-check preflight-check cti-upstream-check technical-investigation-check verified-indicator-export-check; do
   python3 "tests/$t.py" >/dev/null 2>&1
   rc=$?
   if [ $rc -eq 0 ]; then

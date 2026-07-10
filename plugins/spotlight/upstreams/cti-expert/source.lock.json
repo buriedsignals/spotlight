@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "name": "cti-expert",
+  "repository": "https://github.com/7onez/cti-expert",
+  "default_branch": "main",
+  "active_sha": "f9ecc9b0258caff78d26c0b779d1687f4431749f",
+  "seen_sha": "f9ecc9b0258caff78d26c0b779d1687f4431749f",
+  "checked_at": "2026-07-10T10:30:43Z",
+  "license": "MIT with non-restrictive Ethical Use Addendum",
+  "license_path": "third_party/cti-expert/LICENSE",
+  "reviewed_revisions_path": "upstreams/cti-expert/reviewed-revisions.json",
+  "author": "Hieu Ngo - chongluadao.vn",
+  "activation_policy": "reviewed-adaptation-only"
+}

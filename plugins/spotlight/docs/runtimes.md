@@ -33,9 +33,82 @@ Runtime-specific backings (vary):
 
 ---
 
+## Flue on Pi — the local & cloud non-frontier harness (CANONICAL, 2026-07-09)
+
+**What it is:** the repo's `harness/flue/` — a [Flue](https://flueframework.com) app (TypeScript
+harness framework built on Pi, by the Astro team) that IS the Spotlight orchestration for every
+non-frontier deployment. **One harness**: the evals exercise the same app the installer deploys
+(`local test == user experience`). It gives the orchestrator native subagents (investigator +
+fact-checker in their own child sessions — real verification independence), workspace-discovered
+skills from `<cwd>/.agents/skills/` with bodies loaded on-invoke, durable sqlite sessions
+(resume-on-crash), and threshold **conversation compaction** summarized by the resident RLM e4b.
+
+### How to launch (local)
+
+The installer writes everything; day-to-day is one command per investigation turn:
+
+```bash
+spotlight                          # start the model servers, print usage (no session)
+spotlight my-case "Investigate <target>: <what you want to know>"   # open a session
+spotlight my-case "Approved, proceed."                              # answer each gate
+spotlight-local --stop             # stop the llama.cpp servers
+spotlight doctor                   # health checks
+```
+
+Sessions are durable (`harness/flue/data/`): the same session-id resumes exactly where it left
+off, including after a crash or laptop sleep. Gates are real turns — the orchestrator stops and
+waits; you answer by re-running with the same id.
+
+Under the hood, `spotlight` (shell function) sources `$SPOTLIGHT_DIR/.env` and runs
+`spotlight-local`, which (a) serves the orchestrator GGUF on :8080 (llama.cpp, `--jinja`
+tool-calling, q8_0 KV + flash-attn, two resident slots `--parallel 2 --no-cache-idle-slots`,
+tier-capped `--reasoning-budget`), (b) serves the RLM e4b on :8095 when `SPOTLIGHT_RLM_GGUF_PATH`
+exists (`--reasoning-budget 0`; powers `fetch --rlm` distillation AND the compaction summarizer),
+(c) exports the env, and (d) runs `flue run spotlight --id <session>` from `harness/flue`.
+Servers stay resident between turns (warm prefix cache).
+
+### Model tiers — switching is an `.env` edit, not a reinstall
+
+`$SPOTLIGHT_DIR/.env` drives the launcher each run:
+
+| Var | Meaning |
+|---|---|
+| `SPOTLIGHT_GGUF_PATH` | orchestrator GGUF served on :8080 |
+| `SPOTLIGHT_MODEL_TIER` | `12b` \| `26b` \| `31b` — picks reasoning budget (400/800/1024), compaction profile (fold at ~16k/24.5k/28.5k, keep 4k/6k/8k recent), and the `.raw` affordance (12b: leads only; 26b+: may selectively read raw) |
+| `SPOTLIGHT_RLM_GGUF_PATH` | e4b GGUF for the RLM; absent = graceful degradation (raw fetches, session-model compaction) |
+| `SPOTLIGHT_REASONING_BUDGET`, `SPOTLIGHT_COMPACT_AT`, `SPOTLIGHT_COMPACT_KEEP` | optional overrides of the tier defaults |
+
+To switch tiers: edit `SPOTLIGHT_GGUF_PATH` + `SPOTLIGHT_MODEL_TIER`, run
+`spotlight-local --stop`, then launch normally.
+
+### Cloud non-frontier (API providers) through the same harness
+
+`harness/flue/src/app.ts` registers providers by env: **Fireworks** (`FIREWORKS_API_KEY`, GLM-5.2
+ZDR) and **OpenRouter** (`OPENROUTER_API_KEY`). Select with
+`SPOTLIGHT_FLUE_MODEL=fireworks/…` or `openrouter/…` and run `flue run spotlight` the same way —
+no llama.cpp, no KV flags, flue-default compaction (the local restrictions fall away
+structurally). Any OpenAI-compatible endpoint is one `registerProvider` block; custom providers
+MUST declare `contextWindow` + `maxTokens` (else flue sends `max_completion_tokens:1` → empty
+output).
+
+### Verb bindings, sub-agents, sensitive mode
+
+The `FLUE_VERB_ADAPTER` (`harness/flue/src/lib/roles.ts`) maps every contract verb to flue's
+native tools and injects the absolute-path rules (PYTHONPATH + venv python for `integrations.*`,
+absolute `CASE_DIR`). Sub-agents are **native** (`defineAgentProfile` + `task` delegation, own
+child sessions). Role instructions come from the same runtime-agnostic `agents/<role>.md` files
+the frontier path uses. Sensitive mode follows the skills (same as other runtimes).
+
+---
+
 ## opencode
 
-**What it is:** Terminal-first AI coding agent by Anomaly Innovations (https://opencode.ai). MIT license. Native `AGENTS.md`, `SKILL.md`, sub-agents, MCP, and a built-in `llama.cpp` provider that talks directly to a local llama-server. **The recommended local Spotlight runtime.**
+**Status: RETIRED as the local Spotlight runtime (2026-07-09)** — the Flue-on-Pi harness above
+replaced it (native subagents + compaction + RLM in one app; the installer no longer writes an
+opencode launcher for local mode). opencode remains usable as a generic runtime for the skills
+(the wiring below is kept for reference) and as a cloud runtime choice.
+
+**What it is:** Terminal-first AI coding agent by Anomaly Innovations (https://opencode.ai). MIT license. Native `AGENTS.md`, `SKILL.md`, sub-agents, MCP, and a built-in `llama.cpp` provider that talks directly to a local llama-server.
 
 ### Install
 
@@ -142,9 +215,12 @@ Enforce at the agent definition: strip `firecrawl` (and any external-fetch shell
 
 ## pi
 
-**What it is:** Minimal TypeScript coding harness by Mario Zechner (https://pi.dev). MIT license. Spotlight setup installs the reviewed `@earendil-works/pi-coding-agent@0.79.6` pin when Pi is selected. Natively supports `AGENTS.md` + `skills/*/SKILL.md`.
+**What it is:** Minimal TypeScript coding harness by Mario Zechner (https://pi.dev). MIT license. Natively supports `AGENTS.md` + `skills/*/SKILL.md`.
 
-**Status:** Local alternative. opencode (above) remains the recommended local Spotlight runtime because pi lacks native sub-agents (so investigator + fact-checker run single-context, weakening the verification independence guarantee). Spotlight's installer (`install-spotlight.sh`, with the runtime picked in the local configurator) offers pi as an explicit second choice — picked it when you want a leaner install and accept the sub-agent trade-off.
+**Status: SUPERSEDED as a direct runtime (2026-07-09)** — pi is now the **engine under Flue**
+(the canonical harness above is a Flue app, and Flue is built on Pi), which resolves the old
+"pi lacks native sub-agents" objection: subagents, compaction, and durability come from the Flue
+layer. Do not wire pi directly for Spotlight; the notes below are kept for reference.
 
 ### Loading this repo
 

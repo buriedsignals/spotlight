@@ -3,7 +3,7 @@
 **Status:** scoped handoff; no implementation included
 **Date:** 2026-07-10
 **Baseline:** Spotlight `f15817b2` plus an active harness/v4-validation worktree
-**Related PRD:** [cti-expert-integration-prd.md](cti-expert-integration-prd.md)
+**Related implementation:** [technical-investigation.md](technical-investigation.md)
 
 ## Read this first
 
