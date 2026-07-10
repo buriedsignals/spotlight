@@ -1256,7 +1256,14 @@ the same lessons twice.
     svg.style.transformOrigin = "0 0";
 
     let s = 1, tx = 0, ty = 0;
-    const apply = () => { svg.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`; };
+    // Crisp vectors at any zoom: CSS `zoom` re-rasterizes the SVG at scale s (sharp),
+    // whereas `transform: scale()` magnifies a fixed raster → pixelates on desktop.
+    // Pan (tx,ty) stays in screen px; translate resolves in the element's zoomed
+    // coordinate space, so divide by s to keep the existing fit/zoomAt/pan math intact.
+    const apply = () => {
+      svg.style.zoom = s;
+      svg.style.transform = `translate(${tx / s}px, ${ty / s}px)`;
+    };
     const maxH = window.matchMedia("(max-width: 640px)").matches ? 420 : 560;
     const fit = () => {
       // size the stage to the diagram's aspect so flat diagrams don't float in empty space
