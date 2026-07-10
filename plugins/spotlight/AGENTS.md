@@ -177,7 +177,7 @@ Skills are markdown playbooks loaded via `invoke-skill(skill_id)`. Each skill li
 | `review` | `skills/review/SKILL.md` | Post-Gate-1 HTML review artifact + structured feedback loop; re-spawns investigator on feedback submission | orchestrator, user |
 | `integrations` | `skills/integrations/SKILL.md` | Routing layer for external tool integrations — dev-browser, Junkipedia, Noosphere C2PA, OSINT Navigator, Scoutpost, Unpaywall. Reads live preflight status, maps investigation tasks to integrations | investigator, fact-checker, orchestrator |
 | `ingest` | `skills/ingest/SKILL.md` | Knowledge archival — vault ingestion from case files | orchestrator, user |
-| `report-drafting` | `skills/report-drafting/SKILL.md` | Post-Gate-1 public-facing report.html drafting — phase-by-phase methodology, replication blocks, evidence ledger. Distinct from `review` (editorial loop) and `ingest` (vault archival). | orchestrator, user |
+| `report-drafting` | `skills/report-drafting/SKILL.md` | Post-Gate-1 hybrid report: model-authored localized framing and priority in `data/report-draft.json`; deterministic finding-reference, verdict, confidence, escaping, and artifact rendering. | orchestrator, user |
 | `monitoring` | `skills/monitoring/SKILL.md` | Monitoring orchestration — Mycroft passive signals, coJournalist projects/scouts, runtime-native fallbacks | orchestrator |
 | `provenance-signing` | `skills/provenance-signing/SKILL.md` | Build a case-level provenance manifest and optionally hand it to Noosphere C2PA signing before final report delivery | orchestrator, user |
 | `acquisition-graduation` | `skills/acquisition-graduation/SKILL.md` | Convert repeated dev-browser acquisitions into durable source/domain guidance without secrets or brittle session details | investigator, fact-checker, orchestrator, user |
@@ -231,6 +231,9 @@ as `CASE_DIR`. Do not infer the case path from the knowledge vault path.
 │   ├── methodology.json         # Schema: schemas/methodology.schema.json
 │   ├── findings.json            # Schema: schemas/findings.schema.json
 │   ├── fact-check.json          # Schema: schemas/fact-check.schema.json
+│   ├── report-draft.json        # Schema: schemas/report-draft.schema.json (when report requested)
+│   ├── report-declined.json     # Explicit Phase 5 decline marker (when report skipped)
+│   ├── ingestion.json           # Case-local Phase 6 transition/receipt
 │   ├── evidence-bundle.json     # Schema: schemas/evidence-bundle.schema.json
 │   ├── investigation-log.json   # Schema: schemas/investigation-log.schema.json
 │   ├── summary.json             # Schema: schemas/summary.schema.json

@@ -56,7 +56,7 @@ done
 
 echo ""
 echo "── Schemas ──"
-for s in findings fact-check methodology investigation-log summary evidence-bundle provenance-manifest rlm-analysis; do
+for s in findings fact-check report-draft methodology investigation-log summary evidence-bundle provenance-manifest rlm-analysis; do
   if [ -f "schemas/$s.schema.json" ]; then
     if python3 -c "import json; json.load(open('schemas/$s.schema.json'))" 2>/dev/null; then
       ok "schemas/$s.schema.json parses"

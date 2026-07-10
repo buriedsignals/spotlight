@@ -880,11 +880,11 @@ INPUT_JSON="\$(MSG="\$MSG" python3 -c 'import json,os; print(json.dumps({"messag
 # and demonstrably breaks the mirror. tee keeps live streaming in the terminal.
 OUT="\$("\$FLUE" run spotlight --id "\$SESSION" --input "\$INPUT_JSON" | tee /dev/stderr)"
 
-# Deterministic report fallback. As soon as both structured inputs exist, the
-# launcher materializes the derived artifacts. Human approval still governs their
-# presentation/publication; local file construction no longer depends on the model.
+# Safe report build. The model first authors data/report-draft.json (framing,
+# priority, and prose); once all three structured inputs exist, code validates that
+# plan and renders the final files. Human approval still governs publication.
 if ! "\$SPOTLIGHT_PYTHON" "\$SPOTLIGHT_DIR/scripts/finalize-report.py" "\$CASE_DIR" --if-ready; then
-  echo "Spotlight stopped: the deterministic report finalizer failed. Fix the structured inputs named above; do not hand-edit report.html." >&2
+  echo "Spotlight stopped: report finalization failed. Fix the named structured input; do not hand-edit generated HTML or Markdown." >&2
   exit 3
 fi
 if printf '%s\\n' "\$OUT" | tail -3 | grep -q '"text":""'; then
@@ -1390,6 +1390,19 @@ HELP
       ;;
   esac
   (cd "\$dir" && { [ -f .env ] && set -a && source .env && set +a; } && $LAUNCH_BIN "\$@")
+  local runtime_status=\$?
+  if [ "$SPOTLIGHT_RUNTIME" != "local" ]; then
+    # Frontier CLI exit backstop (not per-response middleware): agent instructions run
+    # the same finalizer before presenting the report; this catches an omitted call when
+    # the interactive process returns. API embedders must wire finalize-report.py into
+    # their own response hook because an installer cannot intercept arbitrary API hosts.
+    local active_case
+    active_case="\$(python3 -c 'import json,sys; from pathlib import Path; d=Path(sys.argv[1]); p=d/".spotlight-config.json"; c=json.loads(p.read_text()) if p.is_file() else {}; r=Path(c.get("case_workspace_root") or c.get("cases_root") or "cases"); r=r if r.is_absolute() else d/r; a=c.get("active_project") or ""; print(r/a if a else "")' "\$dir" 2>/dev/null)"
+    if [ -n "\$active_case" ]; then
+      python3 "\$dir/scripts/finalize-report.py" "\$active_case" --if-ready || return 3
+    fi
+  fi
+  return \$runtime_status
 }
 # SPOTLIGHT-END
 SHELL_EOF

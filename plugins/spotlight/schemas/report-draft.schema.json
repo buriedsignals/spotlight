@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spotlight.buriedsignals.com/schemas/report-draft.schema.json",
+  "title": "Spotlight model-authored report plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "title",
+    "deck",
+    "framing_finding_ids",
+    "finding_order",
+    "finding_treatments",
+    "caveats",
+    "next_steps"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "language": {"type": "string", "minLength": 2, "maxLength": 35},
+    "title": {"type": "string", "minLength": 1, "maxLength": 180},
+    "deck": {"type": "string", "minLength": 1, "maxLength": 900},
+    "framing_finding_ids": {"$ref": "#/$defs/findingIds"},
+    "finding_order": {"$ref": "#/$defs/findingIds"},
+    "finding_treatments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding_id", "headline", "summary", "why_it_matters"],
+        "properties": {
+          "finding_id": {"$ref": "#/$defs/findingId"},
+          "headline": {"type": "string", "minLength": 1, "maxLength": 240},
+          "summary": {"type": "string", "minLength": 1, "maxLength": 1400},
+          "why_it_matters": {"type": "string", "minLength": 1, "maxLength": 900}
+        }
+      }
+    },
+    "caveats": {"$ref": "#/$defs/editorialItems"},
+    "next_steps": {"$ref": "#/$defs/editorialItems"}
+  },
+  "$defs": {
+    "findingIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/findingId"}
+    },
+    "findingId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S(?:.*\\S)?$"
+    },
+    "editorialItems": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "finding_ids"],
+        "properties": {
+          "text": {"type": "string", "minLength": 1, "maxLength": 700},
+          "finding_ids": {"$ref": "#/$defs/findingIds"}
+        }
+      }
+    }
+  }
+}

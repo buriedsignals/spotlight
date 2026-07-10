@@ -7,12 +7,15 @@ import importlib.util
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR_PATH = ROOT / "scripts" / "validate-report.py"
 TEMPLATE = ROOT / "skills" / "report-drafting" / "references" / "report-template.html"
+FINALIZER = ROOT / "scripts" / "finalize-report.py"
 
 
 def load_validator():
@@ -46,6 +49,21 @@ def make_case(root: Path) -> Path:
             "verification_evidence": "Unverified in this fixture.",
         }]
     }))
+    (data / "report-draft.json").write_text(json.dumps({
+        "schema_version": "1.0",
+        "title": "Ethereum Foundation: Unverified Claim",
+        "deck": "The Ethereum Foundation is based in Zug. This claim remains unverified.",
+        "framing_finding_ids": ["F1"],
+        "finding_order": ["F1"],
+        "finding_treatments": [{
+            "finding_id": "F1",
+            "headline": "Ethereum Foundation Claim: Unverified",
+            "summary": "The Ethereum Foundation is based in Zug. This claim remains unverified.",
+            "why_it_matters": "This unverified claim requires verification.",
+        }],
+        "caveats": [{"text": "This claim remains unverified.", "finding_ids": ["F1"]}],
+        "next_steps": [{"text": "Verify the Ethereum Foundation claim.", "finding_ids": ["F1"]}],
+    }))
     return case
 
 
@@ -54,6 +72,12 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="validate-report-") as tmp:
         case = make_case(Path(tmp))
         report = case / "report.html"
+
+        built = subprocess.run(
+            [sys.executable, str(FINALIZER), str(case)], capture_output=True, text=True
+        )
+        assert built.returncode == 0, built.stdout + built.stderr
+        assert not validator.check(case), validator.check(case)
 
         shutil.copyfile(TEMPLATE, report)
         failures = validator.check(case)
@@ -70,10 +94,13 @@ def main() -> int:
         failures = validator.check(case)
         assert any("unresolved template placeholder" in failure for failure in failures), failures
 
-        report.write_text(
-            "<!doctype html><html><head><title>Ethereum Foundation — Buried Signals</title>"
-            "</head><body><h1>Ethereum Foundation</h1><p>Grounded case report.</p></body></html>"
+        failures = validator.check(case)
+        assert any("artifact hashes" in failure for failure in failures), failures
+
+        rebuilt = subprocess.run(
+            [sys.executable, str(FINALIZER), str(case)], capture_output=True, text=True
         )
+        assert rebuilt.returncode == 0, rebuilt.stdout + rebuilt.stderr
         failures = validator.check(case)
         assert not failures, failures
 

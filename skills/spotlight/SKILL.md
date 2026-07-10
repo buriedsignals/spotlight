@@ -741,9 +741,9 @@ After Gate 1 approval, offer the user the public-facing report:
 
 > "Draft the public-facing journalist-grade report now?
 > (a) Yes — invoke report-drafting to produce report.html + findings-report.md + evidence-map.json.
-> (b) No — skip to ingestion. (`review.html` already covers editorial review.)"
+> (b) No — run `python3 scripts/decline-report.py {CASE_DIR}`, then skip to ingestion. (`review.html` already covers editorial review.)"
 
-If (a): invoke `report-drafting`, then run `execute-shell("python3 scripts/finalize-report.py {CASE_DIR}")`. This deterministically produces `{CASE_DIR}/report.html`, `findings-report.md`, and `evidence-map.json` from the validated structured data. Do not ask the model to copy or edit the HTML template. Present completion only when the finalizer passes.
+If (a): invoke `report-drafting`. The orchestrator authors `data/report-draft.json` to choose localized title, deck, finding order, editorial summaries, emphasis, caveats, and next steps. Then run `execute-shell("python3 scripts/finalize-report.py {CASE_DIR}")`; deterministic code validates finding references, attaches canonical verdict/confidence, and safely renders `report.html`, `findings-report.md`, and `evidence-map.json`. Semantic accuracy remains part of the independent fact-check and final human editorial gate. Do not hand-edit generated HTML or Markdown. Present completion only when the finalizer passes.
 
 `technical_indicators` present: invoke `technical-investigation`; offer verified JSON, CSV, or STIX.
 
@@ -757,14 +757,20 @@ When `{CASE_DIR}/data-detective-handover/` exists (i.e. this Spotlight run was t
 
 After report drafting (or after Gate 1 if drafting was skipped):
 
+Before entering this phase, write `data/ingestion.json` with
+`{"schema_version":"1.0","status":"pending"}` and run
+`python3 scripts/finalize-report.py {CASE_DIR} --if-ready`. This case-local transition
+marker makes a skipped Phase 5 visible even if ingestion writes only to an external
+vault. Stop if the finalizer fails.
+
 Remind the user before asking for ingestion confirmation:
 
 > **AI assistance notice:** Spotlight is designed to help surface, organize, and cross-check information, but AI can make mistakes. You are responsible for verifying sources, confirming authenticity, assessing risks, and deciding what is publishable.
 
 > "Investigation complete. Ingest confirmed findings into your knowledge base?"
 
-- If yes: `invoke-skill("ingest")` — pass project path and vault config from `.spotlight-config.json`.
-- If no: pipeline ends.
+- If yes: update `data/ingestion.json` to status `requested`, then `invoke-skill("ingest")` — pass project path and vault config from `.spotlight-config.json`.
+- If no: update `data/ingestion.json` to status `declined`; pipeline ends.
 
 ---
 

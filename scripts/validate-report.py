@@ -31,6 +31,7 @@ verbatim) BEFORE presenting artifacts as ready.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -40,6 +41,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 TEMPLATE = SCRIPT_DIR.parent / "skills/report-drafting/references/report-template.html"
 FACT_CHECK_VALIDATOR = SCRIPT_DIR / "validate-fact-check.py"
+REPORT_DRAFT_VALIDATOR = SCRIPT_DIR / "validate-report-draft.py"
 MIN_REPORT_BYTES = 500
 TEMPLATE_PLACEHOLDER_RE = re.compile(r"\{\{[^{}]*\}\}")
 
@@ -52,8 +54,13 @@ def find_artifact(case: Path, name: str) -> Path | None:
     return None
 
 
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def check(case: Path) -> list[str]:
     fails: list[str] = []
+    evidence_map_doc: dict | None = None
 
     # ARTIFACTS
     report_md = find_artifact(case, "findings-report.md")
@@ -69,7 +76,11 @@ def check(case: Path) -> list[str]:
                      f"({report_md.stat().st_size} bytes < {MIN_REPORT_BYTES}) — not a drafted report")
     if evidence_map:
         try:
-            json.loads(evidence_map.read_text())
+            loaded = json.loads(evidence_map.read_text())
+            if isinstance(loaded, dict):
+                evidence_map_doc = loaded
+            else:
+                fails.append("ARTIFACTS: evidence-map.json must contain a JSON object")
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             fails.append(f"ARTIFACTS: evidence-map.json is not valid JSON ({e})")
 
@@ -91,15 +102,36 @@ def check(case: Path) -> list[str]:
                     f"template placeholder(s) (first: {sample}) — populate them or remove "
                     "unused template blocks"
                 )
-            # Case-specific content: at least one finding claim's leading entity
-            # must appear in the HTML (weak but cheap; catches near-empty edits).
-            findings = _load_findings(case)
-            if findings:
-                html_text = html_text.lower()
-                entities = [e.lower() for e in _leading_entities(findings)]
-                if entities and not any(e in html_text for e in entities):
-                    fails.append("TEMPLATE: report.html contains none of the findings' entities "
-                                 f"({', '.join(sorted(set(entities))[:4])}) — populated with wrong/no content")
+
+    # GENERATED — exact finding coverage and hashes replace language-specific prose
+    # heuristics. This works identically for every writing system.
+    if evidence_map_doc is not None:
+        findings = _load_findings(case)
+        expected_ids = [str(item.get("id", "")).strip() for item in findings
+                        if isinstance(item, dict) and str(item.get("id", "")).strip()]
+        claims = evidence_map_doc.get("claims")
+        actual_ids = ([str(item.get("id", "")).strip() for item in claims
+                       if isinstance(item, dict)] if isinstance(claims, list) else [])
+        if len(actual_ids) != len(set(actual_ids)) or set(actual_ids) != set(expected_ids):
+            fails.append(
+                "GENERATED: evidence-map finding IDs do not exactly match data/findings.json"
+            )
+
+        expected_inputs: dict[str, str] = {}
+        for name in ("findings.json", "fact-check.json", "report-draft.json", "methodology.json"):
+            path = case / "data" / name
+            if path.is_file():
+                expected_inputs[f"data/{name}"] = sha256(path)
+        if evidence_map_doc.get("input_sha256") != expected_inputs:
+            fails.append("GENERATED: evidence-map input hashes are stale or incomplete")
+
+        expected_outputs = {
+            name: sha256(path)
+            for name, path in (("findings-report.md", report_md), ("report.html", report_html))
+            if path is not None
+        }
+        if evidence_map_doc.get("output_sha256") != expected_outputs:
+            fails.append("GENERATED: report artifact hashes do not match evidence-map.json")
 
     # PHANTOM — every case/data path the report references must exist.
     if report_md:
@@ -122,43 +154,33 @@ def check(case: Path) -> list[str]:
             fails.append(f"CHAIN: validate-fact-check.py FAILS on this case — fix the evidence "
                          f"trail before presenting the report ({detail})")
 
-    # CONFIDENCE — High-confidence table rows need a verified fact-check verdict.
-    if report_md and fc.is_file():
-        try:
-            checks = _fact_check_statuses(json.loads(fc.read_text()))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            checks = {}
-        for fid, conf in re.findall(r"^\|\s*(F\d+)\s*\|.*\|\s*(High|Medium|Low)\s*\|\s*$",
-                                    report_md.read_text(errors="replace"), re.MULTILINE):
-            if conf == "High" and checks and checks.get(fid) != "verified":
-                fails.append(f"CONFIDENCE: {fid} is presented at High confidence but its "
-                             f"fact-check status is {checks.get(fid) or 'MISSING'} — downgrade "
-                             f"the confidence or fix the fact-check")
+    # EDITORIAL — model framing is required and must remain bound to the
+    # fact-checked finding set. This keeps synthesis in the model without giving
+    # it ownership of unsafe HTML/Markdown file construction.
+    draft = case / "data" / "report-draft.json"
+    if not draft.is_file():
+        fails.append("EDITORIAL: data/report-draft.json is missing — the model must author framing and priority")
+    elif REPORT_DRAFT_VALIDATOR.is_file():
+        res = subprocess.run([sys.executable, str(REPORT_DRAFT_VALIDATOR), str(case)],
+                             capture_output=True, text=True)
+        if res.returncode != 0:
+            detail = " | ".join(line for line in res.stdout.splitlines() if line.startswith("FAIL"))[:400]
+            fails.append(f"EDITORIAL: validate-report-draft.py FAILS ({detail})")
+
+    # CONFIDENCE — inspect the language-neutral ledger rather than parsing English
+    # display labels from Markdown.
+    if evidence_map_doc is not None and isinstance(evidence_map_doc.get("claims"), list):
+        for claim in evidence_map_doc["claims"]:
+            if not isinstance(claim, dict):
+                continue
+            if (str(claim.get("report_confidence", "")).lower() == "high"
+                    and str(claim.get("fact_check_status", "")).lower() != "verified"):
+                fails.append(
+                    f"CONFIDENCE: {claim.get('id') or 'finding'} is High confidence but "
+                    f"its fact-check status is {claim.get('fact_check_status') or 'MISSING'}"
+                )
 
     return fails
-
-
-def _fact_check_statuses(document: dict) -> dict[str, str]:
-    """Read verdicts from either shipped fact-check schema."""
-    raw = document.get("fact_checks")
-    if not isinstance(raw, list):
-        raw = document.get("claims")
-    if not isinstance(raw, list):
-        raw = document.get("verdicts")
-    if not isinstance(raw, list):
-        return {}
-    statuses: dict[str, list[str]] = {}
-    for check in raw:
-        if not isinstance(check, dict) or not check.get("finding_id"):
-            continue
-        statuses.setdefault(str(check["finding_id"]), []).append(
-            str(check.get("status") or check.get("verdict") or "unverified").strip().lower()
-        )
-    return {
-        finding_id: ("verified" if values and all(value == "verified" for value in values)
-                     else "mixed/non-verified")
-        for finding_id, values in statuses.items()
-    }
 
 
 def _load_findings(case: Path) -> list[dict]:
@@ -169,21 +191,6 @@ def _load_findings(case: Path) -> list[dict]:
         return json.loads(p.read_text()).get("findings", [])
     except (json.JSONDecodeError, UnicodeDecodeError):
         return []
-
-
-def _leading_entities(findings: list[dict]) -> list[str]:
-    ents = []
-    for f in findings:
-        m = re.search(r"\b[A-Z][\w'-]+(?:\s+[A-Z][\w'-]+)+\b", f.get("claim", ""))
-        if m:
-            # Strip sentence-initial articles ("The Ethereum Foundation" → "Ethereum
-            # Foundation") so capitalization noise can't false-fail the content check.
-            ent = re.sub(r"^(?:The|A|An)\s+", "", m.group(0)).rstrip("'s").strip()
-            if len(ent.split()) >= 2:
-                ents.append(ent)
-    return ents
-
-
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("case_dir")

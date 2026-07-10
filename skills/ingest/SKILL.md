@@ -29,6 +29,10 @@ The orchestrator passes project path and vault config (from `.spotlight-config.j
 - `vault_type` — `"obsidian"`, `"tolaria"`, or `"directory"`
 - `project` — project slug
 
+At entry, write `{CASE_DIR}/data/ingestion.json` with
+`{"schema_version":"1.0","status":"requested"}`. This receipt is case-local even
+when every durable output is written to an external vault.
+
 Read these case files:
 
 ```
@@ -346,6 +350,10 @@ See `references/registry-spec.md` for exact schemas.
 Use relative markdown links in the investigations table (`[project-id](investigations/project-id.md)`).
 
 After Step 8 completes, remove the `.ingest-lock`. Include the claim exclusion log from Step 6 in the ingest summary reported to the user: claims written, claims updated, and each excluded finding with its reason.
+
+In pipeline mode, update `{CASE_DIR}/data/ingestion.json` to
+`{"schema_version":"1.0","status":"completed"}` after the lock is removed. If
+ingestion fails, write status `failed` before reporting the failure.
 
 ---
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Render Spotlight's three report artifacts from validated structured case data.
+"""Render Spotlight reports from validated evidence plus a model-authored editorial plan.
 
-The report phase is a build step, not a prose/file-editing task for the model. Given
-``data/findings.json`` and ``data/fact-check.json``, this script deterministically
-writes:
+The model owns prioritization, framing, and prose in ``data/report-draft.json``.
+This script owns safe, byte-deterministic file construction from that draft plus
+``data/findings.json`` and ``data/fact-check.json``.
 
 * ``findings-report.md`` — claim-by-claim editorial audit
 * ``report.html`` — designed reader artifact (using the canonical template CSS)
@@ -21,6 +21,8 @@ import html
 import json
 import os
 import re
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -29,6 +31,7 @@ from urllib.parse import urlparse
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 TEMPLATE = SCRIPT_DIR.parent / "skills/report-drafting/references/report-template.html"
+DRAFT_VALIDATOR = SCRIPT_DIR / "validate-report-draft.py"
 AI_NOTICE = (
     "Spotlight is designed to help surface, organize, and cross-check information, "
     "but AI can make mistakes. You are responsible for verifying sources, confirming "
@@ -238,12 +241,14 @@ def source_label(source: dict[str, str]) -> str:
 
 
 def md_cell(value: Any) -> str:
-    return md_safe(value).replace("|", "\\|").replace("\n", " ")
+    return md_safe(value)
 
 
 def md_safe(value: Any) -> str:
-    """Render case-controlled text as inert Markdown text (no raw HTML)."""
-    return html.escape(text(value), quote=False)
+    """Render case-controlled prose as one inert CommonMark text span."""
+    escaped = html.escape(text(value), quote=False)
+    escaped = re.sub(r"\s*[\r\n]+\s*", " ", escaped)
+    return re.sub(r"([\\`*_\[\](){}#+.!|>\-])", r"\\\1", escaped)
 
 
 def md_code(value: Any) -> str:
@@ -253,9 +258,9 @@ def md_code(value: Any) -> str:
 def markdown_source(source: dict[str, str]) -> str:
     parts = []
     if source.get("url"):
-        parts.append(f"<{md_safe(source['url'])}>")
+        parts.append(f"<{source['url']}>")
     if source.get("archive_url"):
-        parts.append(f"archive: <{md_safe(source['archive_url'])}>")
+        parts.append(f"archive: <{source['archive_url']}>")
     if source.get("local_file"):
         parts.append(md_code(source["local_file"]))
     return " — ".join(parts)
@@ -283,10 +288,31 @@ def input_hashes(paths: list[Path]) -> dict[str, str]:
     return {f"data/{path.name}": hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
 
 
-def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[str, Any],
-                    checks: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+def ordered_findings(findings_doc: dict[str, Any], draft: dict[str, Any]) -> list[dict[str, Any]]:
     findings = [item for item in findings_doc.get("findings", []) if isinstance(item, dict)]
-    title = text(findings_doc.get("project")) or case.name
+    by_id = {text(item.get("id")): item for item in findings}
+    order = [text(fid) for fid in draft.get("finding_order", [])]
+    return [by_id[fid] for fid in order if fid in by_id]
+
+
+def treatment_map(draft: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        text(item.get("finding_id")): item
+        for item in draft.get("finding_treatments", [])
+        if isinstance(item, dict) and text(item.get("finding_id"))
+    }
+
+
+def editorial_items(draft: dict[str, Any], field: str) -> list[dict[str, Any]]:
+    return [item for item in draft.get(field, []) if isinstance(item, dict)]
+
+
+def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[str, Any],
+                    draft: dict[str, Any], checks: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    findings = ordered_findings(findings_doc, draft)
+    treatments = treatment_map(draft)
+    title = text(draft.get("title"))
+    deck = text(draft.get("deck"))
     lead = text(findings_doc.get("lead") or methodology.get("lead"))
     rendered: list[dict[str, Any]] = []
     lines = [
@@ -294,8 +320,13 @@ def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[
         "",
         "> **AI assistance notice:** " + AI_NOTICE,
         "",
-        "This report was rendered deterministically from `data/findings.json` and "
-        "`data/fact-check.json`. Confidence is capped by the recorded fact-check verdicts.",
+        "The model authored the editorial framing and priority in `data/report-draft.json`; "
+        "deterministic code rendered and escaped the files. Confidence remains capped by "
+        "the recorded fact-check verdicts.",
+        "",
+        "## Editorial Summary",
+        "",
+        md_safe(deck),
     ]
     if lead:
         lines += ["", "## Scope", "", md_safe(lead)]
@@ -305,23 +336,30 @@ def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[
 
     for index, finding in enumerate(findings, 1):
         fid = text(finding.get("id")) or f"F{index}"
+        treatment = treatments[fid]
         verdict = aggregate_verdict(finding, checks)
         sources = source_records(case, finding, verdict)
-        record = {"id": fid, "finding": finding, "verdict": verdict, "sources": sources}
+        record = {"id": fid, "finding": finding, "treatment": treatment,
+                  "verdict": verdict, "sources": sources}
         rendered.append(record)
         lines.append(
-            f"| {md_cell(fid)} | {md_cell(finding.get('claim'))} | "
+            f"| {md_cell(fid)} | {md_cell(treatment.get('headline'))} | "
             f"{VERDICT_LABEL.get(verdict['status'], verdict['status'].title())} | "
             f"{verdict['confidence'].title()} |"
         )
 
     lines += ["", "## Detailed Findings"]
     for record in rendered:
-        finding, verdict, sources = record["finding"], record["verdict"], record["sources"]
+        finding, treatment = record["finding"], record["treatment"]
+        verdict, sources = record["verdict"], record["sources"]
         lines += [
             "",
-            f"### {md_safe(record['id'])}: {md_safe(finding.get('claim'))}",
+            f"### {md_safe(record['id'])}: {md_safe(treatment.get('headline'))}",
             "",
+            md_safe(treatment.get("summary")),
+            "",
+            f"- **Canonical fact-checked claim:** {md_safe(finding.get('claim'))}",
+            f"- **Why it matters:** {md_safe(treatment.get('why_it_matters'))}",
             f"- **Verdict:** {VERDICT_LABEL.get(verdict['status'], verdict['status'].title())}",
             f"- **Report confidence:** {verdict['confidence'].title()}",
         ]
@@ -362,11 +400,23 @@ def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[
     else:
         lines.append("No structured methodology steps were recorded.")
 
-    gaps = list_of_text(findings_doc.get("gaps")) + list_of_text(findings_doc.get("next_steps"))
+    verdict_by_id = {record["id"]: record["verdict"] for record in rendered}
+    caveats = editorial_items(draft, "caveats")
+    next_steps = editorial_items(draft, "next_steps")
+
+    def editorial_line(item: dict[str, Any]) -> str:
+        refs = [text(ref) for ref in item.get("finding_ids", [])]
+        labels = [
+            f"{ref} — {VERDICT_LABEL.get(verdict_by_id[ref]['status'], verdict_by_id[ref]['status'].title())}"
+            for ref in refs if ref in verdict_by_id
+        ]
+        suffix = f" *({'; '.join(labels)})*" if labels else ""
+        return md_safe(item.get("text")) + suffix
+
+    lines += ["", "## Editorial Caveats", ""]
+    lines.extend(f"- {editorial_line(item)}" for item in caveats)
     lines += ["", "## Open Questions and Next Steps", ""]
-    lines.extend(f"- {md_safe(item)}" for item in dict.fromkeys(gaps))
-    if not gaps:
-        lines.append("- No open question was recorded in the structured findings.")
+    lines.extend(f"- {editorial_line(item)}" for item in next_steps)
     lines += ["", "## Deliverables", "",
               "- `findings-report.md`", "- `report.html`", "- `evidence-map.json`", ""]
     return "\n".join(lines), rendered
@@ -384,9 +434,9 @@ def template_css() -> str:
 
 
 def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str, Any],
-                rendered: list[dict[str, Any]], hashes: dict[str, str]) -> str:
-    title = text(findings_doc.get("project")) or case.name
-    lead = text(findings_doc.get("lead") or methodology.get("lead")) or "Structured investigation findings"
+                draft: dict[str, Any], rendered: list[dict[str, Any]], hashes: dict[str, str]) -> str:
+    title = text(draft.get("title"))
+    lead = text(draft.get("deck"))
     report_date = text(findings_doc.get("investigated_at") or methodology.get("planned_at"))
     verified_count = sum(record["verdict"]["status"] == "verified" for record in rendered)
     source_count = len({source.get("url") or source.get("local_file")
@@ -394,15 +444,16 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
 
     summary_items = []
     finding_sections = []
-    for record in rendered:
-        fid, finding, verdict, sources = record["id"], record["finding"], record["verdict"], record["sources"]
-        anchor = re.sub(r"[^a-z0-9_-]+", "-", fid.lower()).strip("-") or "finding"
+    for index, record in enumerate(rendered, 1):
+        fid, finding, treatment = record["id"], record["finding"], record["treatment"]
+        verdict, sources = record["verdict"], record["sources"]
+        anchor = f"finding-{index}-{hashlib.sha256(fid.encode()).hexdigest()[:8]}"
         label = VERDICT_LABEL.get(verdict["status"], verdict["status"].title())
         pill = "high" if verdict["confidence"] == "high" else ("med" if verdict["confidence"] == "medium" else "low")
         summary_items.append(
             '<div class="tldr-item">'
             f'<div class="tldr-num">{h(fid)} <span class="pill pill-{pill}">{h(verdict["confidence"])}</span></div>'
-            f'<div class="tldr-claim"><a href="#{h(anchor)}"><strong>{h(finding.get("claim"))}</strong>'
+            f'<div class="tldr-claim"><a href="#{h(anchor)}"><strong>{h(treatment.get("headline"))}</strong>'
             f'{h(label)}</a></div></div>'
         )
         source_html = '<span class="sep">·</span>'.join(html_source(source) for source in sources)
@@ -413,8 +464,10 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
         finding_sections.append(f'''
   <section class="finding" id="{h(anchor)}">
     <div class="finding-meta"><span class="pill pill-id">{h(fid)}</span><span class="pill pill-{pill}">{h(verdict['confidence'])}</span><span class="cat">{h(label)}</span></div>
-    <h2>{h(finding.get('claim'))}</h2>
-    <p class="lede">{h(evidence or assessment)}</p>
+    <h2>{h(treatment.get('headline'))}</h2>
+    <p class="lede">{h(treatment.get('summary'))}</p>
+    <p><strong>Canonical fact-checked claim:</strong> {h(finding.get('claim'))}</p>
+    <p><strong>Why it matters:</strong> {h(treatment.get('why_it_matters'))}</p>
     <p><strong>Independent fact-check:</strong> {h(assessment)}</p>
     <div class="path" aria-label="How we got here">
       <div class="step">Structured claim</div><div class="what"><code>data/findings.json</code> · {h(fid)}</div>
@@ -444,14 +497,34 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
     if not methodology_sections:
         methodology_sections.append('<div class="phase"><p>No structured methodology steps were recorded.</p></div>')
 
-    gaps = list(dict.fromkeys(list_of_text(findings_doc.get("gaps")) + list_of_text(findings_doc.get("next_steps"))))
-    gap_rows = "".join(f"<tr><td>{h(item)}</td><td>Recorded in data/findings.json</td></tr>" for item in gaps)
-    if not gap_rows:
-        gap_rows = "<tr><td>No open question recorded</td><td>—</td></tr>"
+    verdict_by_id = {record["id"]: record["verdict"] for record in rendered}
+
+    def html_editorial_item(item: dict[str, Any]) -> str:
+        refs = [text(ref) for ref in item.get("finding_ids", [])]
+        labels = [
+            f"{ref} — {VERDICT_LABEL.get(verdict_by_id[ref]['status'], verdict_by_id[ref]['status'].title())}"
+            for ref in refs if ref in verdict_by_id
+        ]
+        return f"{h(item.get('text'))}<br><small>{h('; '.join(labels))}</small>"
+
+    caveat_items = "".join(
+        f"<li>{html_editorial_item(item)}</li>" for item in editorial_items(draft, "caveats")
+    ) or "<li>No editorial caveat was recorded.</li>"
+    next_rows = "".join(
+        f"<tr><td>{html_editorial_item(item)}</td><td>Model-authored · finding-linked</td></tr>"
+        for item in editorial_items(draft, "next_steps")
+    ) or "<tr><td>No next step was recorded</td><td>—</td></tr>"
+    framing_labels = []
+    for fid in draft.get("framing_finding_ids", []):
+        if fid in verdict_by_id:
+            verdict = verdict_by_id[fid]
+            framing_labels.append(
+                f"{fid} — {VERDICT_LABEL.get(verdict['status'], verdict['status'].title())}"
+            )
     hash_badges = "".join(f"<span>{h(path)} · sha256:{h(digest[:12])}</span>" for path, digest in hashes.items())
 
     return f'''<!doctype html>
-<html lang="en">
+<html lang="{h(draft.get('language') or 'und')}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -465,8 +538,8 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
   <div class="masthead"><span class="pub">Spotlight</span><span class="meta">{h(case.name)}{f' · {h(report_date)}' if report_date else ''}</span></div>
   <h1>{h(title)}</h1>
   <p class="deck">{h(lead)}</p>
-  <p class="byline"><strong>Deterministic case report</strong><br>{verified_count} verified finding(s) · {source_count} accessible source record(s)</p>
-  <section class="honesty" aria-label="AI assistance notice"><p><strong>AI assistance notice:</strong> {h(AI_NOTICE)}</p><p>This artifact was rendered from validated structured case data. Non-verified findings are capped at Low confidence.</p></section>
+  <p class="byline"><strong>Model-authored editorial synthesis · deterministically rendered</strong><br>{verified_count} verified finding(s) · {source_count} accessible source record(s)</p>
+  <section class="honesty" aria-label="AI assistance notice"><p><strong>AI assistance notice:</strong> {h(AI_NOTICE)}</p><p>The model chose localized framing and priority. Deterministic checks bind every prose block to finding IDs and place canonical verdicts beside it; they do not claim semantic entailment.</p><p><strong>Framing references:</strong> {h('; '.join(framing_labels))}</p></section>
   <section class="tldr" aria-label="findings summary">{''.join(summary_items)}</section>
   {''.join(finding_sections)}
   <section id="method">
@@ -474,9 +547,10 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
     <h2>How the investigation was carried out.</h2>
     {''.join(methodology_sections)}
     <div class="phase"><div class="phase-head"><span class="phase-id">Phase 3 · fact-check</span><h4 class="phase-title">Independent verdict boundary</h4></div><p>Report confidence is computed from the recorded verdicts and confidence caps; it is not authored during rendering.</p></div>
-    <div class="phase"><div class="phase-head"><span class="phase-id">Phase 5 · report</span><h4 class="phase-title">Deterministic renderer</h4></div><p><code>findings-report.md</code>, <code>report.html</code>, and <code>evidence-map.json</code> were generated from the same validated inputs.</p></div>
+    <div class="phase"><div class="phase-head"><span class="phase-id">Phase 5 · report</span><h4 class="phase-title">Editorial model + deterministic renderer</h4></div><p>The model authored <code>data/report-draft.json</code>; code validated its finding-reference coverage and output structure, then generated all three deliverables.</p></div>
   </section>
-  <section id="next"><div class="kicker">Open questions</div><h2>What a later cycle should close.</h2><table><tr><th>Target</th><th>Provenance</th></tr>{gap_rows}</table></section>
+  <section id="caveats"><div class="kicker">Editorial caveats</div><h2>What readers should keep in view.</h2><ul>{caveat_items}</ul></section>
+  <section id="next"><div class="kicker">Open questions</div><h2>What a later cycle should close.</h2><table><tr><th>Target</th><th>Provenance</th></tr>{next_rows}</table></section>
   <footer><p><strong>Deliverables:</strong> <code>findings-report.md</code>, <code>report.html</code>, <code>evidence-map.json</code>.</p><p class="databases">{hash_badges}</p></footer>
 </div>
 </body>
@@ -484,13 +558,24 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
 '''
 
 
-def evidence_map(case: Path, rendered: list[dict[str, Any]], hashes: dict[str, str]) -> dict[str, Any]:
+def evidence_map(
+    case: Path,
+    draft: dict[str, Any],
+    rendered: list[dict[str, Any]],
+    hashes: dict[str, str],
+    output_hashes: dict[str, str],
+) -> dict[str, Any]:
     claims = []
     for record in rendered:
         finding, verdict = record["finding"], record["verdict"]
         claims.append({
             "id": record["id"],
             "claim": text(finding.get("claim")),
+            "editorial": {
+                "headline": text(record["treatment"].get("headline")),
+                "summary": text(record["treatment"].get("summary")),
+                "why_it_matters": text(record["treatment"].get("why_it_matters")),
+            },
             "fact_check_status": verdict["status"],
             "report_confidence": verdict["confidence"],
             "fact_check_ids": [check["id"] for check in verdict["checks"]],
@@ -502,6 +587,14 @@ def evidence_map(case: Path, rendered: list[dict[str, Any]], hashes: dict[str, s
         "case_ref": case.name,
         "generator": "scripts/render-report.py",
         "input_sha256": hashes,
+        "output_sha256": output_hashes,
+        "editorial_plan": {
+            "title": text(draft.get("title")),
+            "deck": text(draft.get("deck")),
+            "framing_finding_ids": draft.get("framing_finding_ids", []),
+            "caveats": editorial_items(draft, "caveats"),
+            "next_steps": editorial_items(draft, "next_steps"),
+        },
         "claims": claims,
     }
 
@@ -550,9 +643,11 @@ def render(case: Path) -> dict[str, Any]:
     findings_path = case / "data" / "findings.json"
     fact_check_path = case / "data" / "fact-check.json"
     methodology_path = case / "data" / "methodology.json"
+    draft_path = case / "data" / "report-draft.json"
     findings_doc = load_object(findings_path)
     fact_check = load_object(fact_check_path)
     methodology = load_object(methodology_path) if methodology_path.is_file() else {}
+    draft = load_object(draft_path)
     findings = findings_doc.get("findings")
     if not isinstance(findings, list) or not findings:
         raise RenderError(f"no findings to render in {findings_path}")
@@ -568,11 +663,27 @@ def render(case: Path) -> dict[str, Any]:
         seen_ids.add(fid)
 
     checks = canonical_checks(fact_check)
-    inputs = [findings_path, fact_check_path] + ([methodology_path] if methodology_path.is_file() else [])
+    inputs = [findings_path, fact_check_path, draft_path] + ([methodology_path] if methodology_path.is_file() else [])
     hashes = input_hashes(inputs)
-    markdown, rendered = render_markdown(case, findings_doc, methodology, checks)
-    html_report = render_html(case, findings_doc, methodology, rendered, hashes)
-    ledger = json.dumps(evidence_map(case, rendered, hashes), indent=2, ensure_ascii=False) + "\n"
+    markdown, rendered = render_markdown(case, findings_doc, methodology, draft, checks)
+    rendered_ids = [record["id"] for record in rendered]
+    expected_order = [text(fid) for fid in draft.get("finding_order", [])]
+    if rendered_ids != expected_order or set(rendered_ids) != seen_ids:
+        raise RenderError(
+            "rendered finding IDs do not exactly match finding_order and findings.json"
+        )
+    html_report = render_html(case, findings_doc, methodology, draft, rendered, hashes)
+    output_hashes = {
+        "findings-report.md": hashlib.sha256(
+            (markdown + ("" if markdown.endswith("\n") else "\n")).encode()
+        ).hexdigest(),
+        "report.html": hashlib.sha256(html_report.encode()).hexdigest(),
+    }
+    ledger = json.dumps(
+        evidence_map(case, draft, rendered, hashes, output_hashes),
+        indent=2,
+        ensure_ascii=False,
+    ) + "\n"
 
     outputs = {
         "findings-report.md": markdown + ("" if markdown.endswith("\n") else "\n"),
@@ -596,6 +707,12 @@ def main() -> int:
     case = Path(args.case_dir)
     if not case.is_dir():
         print(f"FAIL  case dir not found: {case}")
+        return 3
+    validation = subprocess.run(
+        [sys.executable, str(DRAFT_VALIDATOR), str(case)], capture_output=True, text=True
+    )
+    if validation.returncode != 0:
+        print(validation.stdout.strip() or validation.stderr.strip())
         return 3
     try:
         result = render(case)
