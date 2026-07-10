@@ -573,7 +573,7 @@
         </div>
 
         <h3>Preflight</h3>
-        <p>Runtime check, vault check, integrations check. Spotlight refuses to start if Firecrawl is missing, the vault is unreadable, or a required external tool isn't responding. Failures here are surfaced in plain English; no work happens until the environment is sound.</p>
+        <p>Runtime check, vault check, integrations check. Spotlight refuses to start if the vault is unreadable, the bundled scraping/search stack (Crawl4AI + SearXNG) isn't responding, or a required external tool is missing. Failures here are surfaced in plain English; no work happens until the environment is sound.</p>
 
         <h3>Brief</h3>
         <p>The agent restates the lead in its own words, names the affected parties, sets a scope, and writes a hypothesis. You read it back. If the agent has misunderstood the lead, you correct it here — it's faster to redirect in two sentences of prose than three execution cycles later.</p>
@@ -655,13 +655,13 @@
         <h3>Required</h3>
 <pre><code>SPOTLIGHT_VAULT_PATH=~/Obsidian/main          # durable knowledge vault for search/ingest
 SPOTLIGHT_CASES_ROOT=~/Documents/Spotlight/cases  # active case workspace
-FIRECRAWL_API_KEY=fc-...                      # web scraping (free tier ok)
 OSINT_NAV_API_KEY=on_...                      # tool lookup (free tier ok)</code></pre>
+        <p>Search and scraping need no key: <code>fetch</code> runs on Crawl4AI and <code>search</code> on SearXNG, both open-source and installed locally. <code>FIRECRAWL_API_KEY=fc-...</code> is optional — set it only to enable Firecrawl as an explicit fallback provider.</p>
 
         <h3>Runtime selection</h3>
 <pre><code>SPOTLIGHT_RUNTIME=local                       # or claude / gemini / codex / opencode
-SPOTLIGHT_LOCAL_MODEL=qwen9b                  # qwen9b (16 GB) / qwen27b (32 GB+)
-SPOTLIGHT_LOCAL_SERVER=ollama                 # ollama / llamacpp</code></pre>
+SPOTLIGHT_MODEL_TIER=12b                      # 12b / 26b / 31b — sets reasoning budget + compaction profile
+SPOTLIGHT_LOCAL_SERVER=llamacpp               # llamacpp (:8080) / ollama (:11434)</code></pre>
 
         <h3>Optional — sensitive mode</h3>
 <pre><code># Runtime-level sensitive mode is controlled by AGENTS.md.
@@ -712,7 +712,7 @@ SPOTLIGHT_INT_DEVBROWSER=true   # dev-browser for interactive browser acquisitio
         <details>
           <summary>Is Spotlight a SaaS?</summary>
           <div class="answer">
-            <p>No. Spotlight is a markdown skill bundle you check out from GitHub and point your existing agent at. There's no Spotlight server, no Spotlight account, no Spotlight API key. The tools it leans on (Firecrawl, OSINT Navigator) each have their own free tier.</p>
+            <p>No. Spotlight is a markdown skill bundle you check out from GitHub and point your existing agent at. There's no Spotlight server, no Spotlight account, no Spotlight API key. Search and scraping run on bundled open-source tools (SearXNG, Crawl4AI) with no account at all; OSINT Navigator has its own free tier.</p>
           </div>
         </details>
 
@@ -723,9 +723,9 @@ SPOTLIGHT_INT_DEVBROWSER=true   # dev-browser for interactive browser acquisitio
             <ul>
               <li><strong>Claude Code / Gemini CLI / Codex CLI</strong> — covered by your existing subscription (Claude Max, Gemini Advanced, ChatGPT Plus/Pro/Team).</li>
               <li><strong>OpenCode</strong> — pay-per-token through OpenRouter / Fireworks / Together. Roughly $0.50–$2 per investigation.</li>
-              <li><strong>Local model</strong> — free at runtime; one-time disk cost for the model weights (~5 GB for E4B, ~10 GB for Qwen3.6 27B).</li>
+              <li><strong>Local model</strong> — free at runtime; one-time disk cost for the model weights (~7 GB for the tuned Gemma-4 12B Q4, ~18–22 GB for the 26B tier).</li>
             </ul>
-            <p>Firecrawl and OSINT Navigator have free tiers sufficient for normal newsroom volume.</p>
+            <p>Search and scraping are open-source and free (SearXNG + Crawl4AI; Firecrawl is an optional keyed fallback). OSINT Navigator's free tier covers normal newsroom volume.</p>
           </div>
         </details>
 

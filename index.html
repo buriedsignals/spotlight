@@ -122,6 +122,32 @@
     border-color: var(--accent-warm);
     color: var(--accent-warm);
   }
+  /* Going Sovereign — new-post pill: filled orange, pulsing dot signals the update. */
+  nav.topnav .links a.new-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 14px;
+    background: var(--accent-warm);
+    border: 1px solid var(--accent-warm);
+    color: var(--ink);
+    opacity: 1;
+    letter-spacing: 0.22em;
+    font-weight: 600;
+    transition: background 0.2s ease, border-color 0.2s ease;
+  }
+  nav.topnav .links a.new-pill:hover {
+    background: #d87f45;
+    border-color: #d87f45;
+    color: var(--ink);
+  }
+  nav.topnav .links a.new-pill .dot {
+    width: 7px; height: 7px; border-radius: 999px;
+    background: var(--ink);
+    animation: newPillPulse 2.2s ease-in-out infinite;
+  }
+  @keyframes newPillPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.35; transform: scale(0.8); }
+  }
 
   /* ── DEV PANEL ───────────────────────────────────────────
      Tiny floating toggles, bottom-right, for showing the lil-gui and
@@ -1553,6 +1579,7 @@
   <div class="links">
     <a href="docs/index.html">Docs</a>
     <a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a>
+    <a href="going-sovereign/" class="new-pill"><span class="dot" aria-hidden="true"></span>Going Sovereign</a>
     <a href="setup.html">Install</a>
   </div>
 </nav>
