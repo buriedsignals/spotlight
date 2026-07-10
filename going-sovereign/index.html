@@ -71,8 +71,6 @@
     border-radius: 999px; color: var(--accent-warm); background: var(--accent-warm-14);
   }
 
-  article { max-width: 76ch; margin: 0 auto; padding: 72px 24px 40px; }
-
   .kicker {
     font-size: 11.5px; letter-spacing: 0.22em; text-transform: uppercase;
     color: var(--accent-warm); margin-bottom: 18px;
@@ -285,10 +283,11 @@
   .split-right { min-width: 0; } /* grid item — keep wide diagrams from forcing overflow */
   .step { justify-content: flex-start; min-height: 70vh; }
   .step .step-title { max-width: 26ch; }
-  .step p, .step ul { max-width: 64ch; }
+  .step p, .step ul { max-width: 70ch; }
+  .step .callout { max-width: 72ch; }
+  .step .breakout { display: block; width: auto; margin-left: 0; }
   .step > .ledger { margin: 26px 0 6px; max-width: 920px; }
   .step .mega, .step .scores { max-width: 960px; }
-  .step .breakout { display: block; width: auto; margin-left: 0; }
   .step .breakout > .frame { width: 100%; }
 
   /* narrative beats — the "but it wasn't enough…" openers inside steps */
@@ -312,13 +311,6 @@
     background: rgba(125,168,123,0.08); color: var(--good-2);
     font-size: 12px; letter-spacing: 0.04em; white-space: nowrap;
   }
-
-  /* ---------- Breakout blocks (article scope — used by the scoreboard) ---------- */
-  article .breakout {
-    width: 100vw; margin-left: calc(50% - 50vw);
-    display: flex; justify-content: center;
-  }
-  article .breakout > .frame { width: min(1100px, calc(100vw - 32px)); }
 
   /* ---------- Pan-zoom diagram stages ---------- */
   figure { margin: 48px 0; }
@@ -515,7 +507,24 @@
   </div>
 </nav>
 
-<article>
+<!-- ================= QUEST LOG (split-scroll, ported from landing) ================= -->
+<section id="quest-log">
+<div class="split-scroll">
+  <div class="split-left-sentinel" aria-hidden="true"></div>
+  <div class="split-left">
+    <div>
+      <div class="counter" id="counter"></div>
+      <div class="counter-label" id="counter-label">The quest</div>
+    </div>
+    <div class="progress"><div class="fill" id="progress-fill" style="width: 12.5%"></div></div>
+  </div>
+  <div class="split-right" id="steps">
+
+    <article class="step active" data-label="The quest" data-num="">
+      <div class="step-meta">
+        <div class="step-num"></div>
+        <div class="step-label">The quest</div>
+      </div>
 
 <p class="kicker">Engineering log · Sovereign local tier</p>
 
@@ -589,22 +598,9 @@ almost every "the model can't do this" was <strong>an engineering problem wearin
 costume</strong>.
 </p>
 
-</article>
+    </article>
 
-<!-- ================= QUEST LOG (split-scroll, ported from landing) ================= -->
-<section id="quest-log">
-<div class="split-scroll">
-  <div class="split-left-sentinel" aria-hidden="true"></div>
-  <div class="split-left">
-    <div>
-      <div class="counter" id="counter">01</div>
-      <div class="counter-label" id="counter-label">The context floor</div>
-    </div>
-    <div class="progress"><div class="fill" id="progress-fill" style="width: 14.3%"></div></div>
-  </div>
-  <div class="split-right" id="steps">
-
-    <article class="step active" data-label="The context floor" data-num="01">
+    <article class="step" data-label="The context floor" data-num="01">
       <div class="step-meta">
         <div class="step-num">01</div>
         <div class="step-label">The context floor</div>
@@ -1164,13 +1160,6 @@ flowchart LR
       </div>
       </div>
       </div>
-    </article>
-
-  </div>
-</div>
-</section>
-
-<article>
 
 <div class="callout">
   <span class="label">The recipe, for newsrooms</span>
@@ -1194,7 +1183,11 @@ a newsroom going sovereign and you hit a wall, write to me — this log exists s
 the same lessons twice.
 </p>
 
-</article>
+    </article>
+
+  </div>
+</div>
+</section>
 
 <footer id="footer">
   <div>Spotlight — an open-source OSINT investigation system by <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals</a>.</div>
