@@ -32,11 +32,14 @@ const COMPACTION = MODEL.startsWith('local/')
 	? {
 			reserveTokens: Math.max(8192, LOCAL_CTX - COMPACT_AT),
 			keepRecentTokens: Number(process.env.SPOTLIGHT_COMPACT_KEEP ?? tierCompact.keep),
-			// Cheap summarizer only when the local launcher serves the e4b (app.ts registers
-			// `rlm` on the same env); otherwise fall back to the session model.
-			...(process.env.SPOTLIGHT_RLM_OPENAI_BASE_URL
-				? { model: `rlm/${process.env.SPOTLIGHT_RLM_OPENAI_MODEL ?? 'rlm-e4b'}` }
-				: {}),
+			// Summarizer = SESSION MODEL (the runtime default), deliberately. Setting the
+			// cheap e4b here (`model: rlm/…`) kills the submission the moment threshold
+			// compaction fires: the summarizer call dies inside the runtime's internal
+			// hop with a swallowed "Connection error" — it never reaches any server —
+			// while the SAME rlm provider works fine as a session model (@flue/runtime
+			// 1.0.0-beta.9, reproducer: data/gold-gold-inv-ef-0.db + one turn, fails <10s;
+			// grounded 2026-07-10). Session-model summaries are slower at gate boundaries
+			// but correct. Re-add the rlm override only after the upstream fix.
 		}
 	: undefined;
 
