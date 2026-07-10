@@ -214,6 +214,22 @@ else
   fail "installer dry-run matrix failed with rc=$rc"
 fi
 
+bash tests/install-spotlight-audit-check.sh >/dev/null 2>&1
+rc=$?
+if [ $rc -eq 0 ]; then
+  ok "install-audit regressions hold"
+else
+  fail "install-audit regression check failed with rc=$rc"
+fi
+
+python3 tests/local-model-identity-check.py >/dev/null 2>&1
+rc=$?
+if [ $rc -eq 0 ]; then
+  ok "local model identity contract holds"
+else
+  fail "local model identity check failed with rc=$rc"
+fi
+
 echo ""
 echo "── Entry points ──"
 for f in setup.html index.html DISCLAIMER.md LICENSE VALIDATED_DEPENDENCIES.md; do

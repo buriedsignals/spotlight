@@ -208,8 +208,6 @@ def derived(d):
 
 def validate_choices(d):
     errors, warnings = [], []
-    if not d["firecrawlKey"]:
-        errors.append({"field": "firecrawl_key", "message": "Firecrawl API key is required — every web-capable skill depends on it. Get a free key at firecrawl.dev."})
     if not d["navKey"]:
         errors.append({"field": "nav_key", "message": "OSINT Navigator API key is required — get one at navigator.indicator.media."})
     if derived(d)["needsCloudKey"] and not d["cloudKey"]:
@@ -238,6 +236,8 @@ def validate_choices(d):
         warnings.append("Junkipedia is enabled without an API key; the integration stays dormant until you add JUNKIPEDIA_API_KEY to .env.")
     if d["intUnpaywall"] and not d["unpaywallEmail"]:
         warnings.append("Unpaywall is enabled without a contact email; the integration stays dormant until you add UNPAYWALL_EMAIL to .env.")
+    if not d["firecrawlKey"]:
+        warnings.append("Firecrawl is not configured; Spotlight will use sovereign SearXNG search and Crawl4AI scraping without a managed fallback.")
     return errors, warnings
 
 
