@@ -794,7 +794,11 @@ ensure_tool node
 ensure_python_runtime
 prepare_npm_prefix
 if [ "$SPOTLIGHT_MODE" = "local" ]; then
-  ensure_brew  # local mode needs brew for the inference server + agent
+  if [ "$OS" = "Darwin" ]; then
+    ensure_brew  # macOS local mode uses brew for the inference server + agent
+  elif [ "$DRY_RUN" = "1" ]; then
+    printf 'DRY-RUN: Linux local mode will use the system llama.cpp package; Homebrew is not required\n'
+  fi
 fi
 
 if [ "$SPOTLIGHT_VAULT_APP" = "tolaria" ]; then
@@ -870,7 +874,17 @@ if [ "$SPOTLIGHT_MODE" = "local" ]; then
       exit 1
     fi
     if ! command -v llama-server >/dev/null 2>&1; then
-      spin "Installing llama.cpp via brew" brew install llama.cpp
+      if [ "$DRY_RUN" = "1" ] && [ "$OS" = "Linux" ]; then
+        # CI and users can inspect a Linux dry-run without having llama.cpp
+        # preinstalled. A real Linux install still fails in ensure_tool-style
+        # fashion with an actionable package-manager message below.
+        printf 'DRY-RUN: install llama.cpp via the Linux package manager (llama-server)\n'
+      elif [ "$OS" = "Linux" ]; then
+        echo "llama-server is required for local mode. Install llama.cpp with your Linux package manager, then re-run Spotlight." >&2
+        exit 1
+      else
+        spin "Installing llama.cpp via brew" brew install llama.cpp
+      fi
     else
       printf "%s✓%s llama.cpp already installed\n" "$_c_green" "$_c_reset"
     fi
