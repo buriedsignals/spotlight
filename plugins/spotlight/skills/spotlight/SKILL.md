@@ -743,7 +743,7 @@ After Gate 1 approval, offer the user the public-facing report:
 > (a) Yes — invoke report-drafting to produce report.html + findings-report.md + evidence-map.json.
 > (b) No — skip to ingestion. (`review.html` already covers editorial review.)"
 
-If (a): `invoke-skill("report-drafting")` — produces `{CASE_DIR}/report.html` (designed deliverable), `findings-report.md` (narrative audit), and `evidence-map.json` (machine-readable ledger). See `skills/report-drafting/SKILL.md`.
+If (a): invoke `report-drafting`, then run `execute-shell("python3 scripts/finalize-report.py {CASE_DIR}")`. This deterministically produces `{CASE_DIR}/report.html`, `findings-report.md`, and `evidence-map.json` from the validated structured data. Do not ask the model to copy or edit the HTML template. Present completion only when the finalizer passes.
 
 `technical_indicators` present: invoke `technical-investigation`; offer verified JSON, CSV, or STIX.
 

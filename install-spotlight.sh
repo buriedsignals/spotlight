@@ -264,7 +264,7 @@ fi
 # filename pairs verified against the HF API; the configurator sends the repo via
 # SPOTLIGHT_MODEL_REPO — see install/setup_server.py MODEL_REPOS):
 #
-#   gemma12b — Spotlight procedure-tuned orchestrator (buriedsignals v3, Q4_K_M,
+#   gemma12b — Spotlight procedure-tuned orchestrator (v5, Q4_K_M,
 #              ~7 GB). Default; the speed pick; 16 GB min, 24 GB for the full
 #              stack with the RLM. Trained on real Spotlight runs to drive the
 #              gated pipeline (see going-sovereign.html).
@@ -859,7 +859,18 @@ fi
 if [ "\${1:-}" = "--raw" ]; then shift; "\$FLUE" run spotlight "\$@"; exit \$?; fi
 SESSION="\${1:?usage: spotlight-local <session-id> \"<message>\"}"
 shift || true
+case "\$SESSION" in
+  ""|"."|".."|*[!A-Za-z0-9._-]*)
+    echo "Invalid session id: use letters, numbers, dot, underscore, or hyphen (not . or ..)." >&2
+    exit 2
+    ;;
+esac
+CASE_ROOT="\$(expand_path "\${SPOTLIGHT_CASES_ROOT:-$SPOTLIGHT_CASES_ROOT}")"
+CASE_DIR="\$CASE_ROOT/\$SESSION"
 MSG="\${*:?usage: spotlight-local <session-id> \"<message>\"}"
+MSG="\$MSG
+
+Runtime case contract: use the exact project slug '\$SESSION' and exact CASE_DIR '\$CASE_DIR'. Do not derive a different slug or case path."
 INPUT_JSON="\$(MSG="\$MSG" python3 -c 'import json,os; print(json.dumps({"message": os.environ["MSG"]}))')"
 
 # Empty-turn guard: a small local orchestrator occasionally ends a long turn with an
@@ -868,6 +879,14 @@ INPUT_JSON="\$(MSG="\$MSG" python3 -c 'import json,os; print(json.dumps({"messag
 # always owes the user a gate presentation), so one automatic nudge is always safe
 # and demonstrably breaks the mirror. tee keeps live streaming in the terminal.
 OUT="\$("\$FLUE" run spotlight --id "\$SESSION" --input "\$INPUT_JSON" | tee /dev/stderr)"
+
+# Deterministic report fallback. As soon as both structured inputs exist, the
+# launcher materializes the derived artifacts. Human approval still governs their
+# presentation/publication; local file construction no longer depends on the model.
+if ! "\$SPOTLIGHT_PYTHON" "\$SPOTLIGHT_DIR/scripts/finalize-report.py" "\$CASE_DIR" --if-ready; then
+  echo "Spotlight stopped: the deterministic report finalizer failed. Fix the structured inputs named above; do not hand-edit report.html." >&2
+  exit 3
+fi
 if printf '%s\\n' "\$OUT" | tail -3 | grep -q '"text":""'; then
   echo "(empty final reply — auto-nudging once)" >&2
   NUDGE='{"message":"You returned an empty reply. Respond with text now: present your synthesis or status for the current gate, then stop and wait for approval."}'

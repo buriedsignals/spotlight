@@ -1,6 +1,6 @@
 ---
 name: report-drafting
-description: "Phase 5 synthesis sub-skill — draft the journalist-grade findings report: findings-report.md, report.html (from the report-template.html skeleton), and evidence-map.json, with per-finding replication paths + sources strip, confidence/novelty pills, phase-by-phase methodology, and interactive mermaid network/money-flow diagrams. Use at Phase 5 after Gate 1, before the spotlight handoff. Triggers on draft the report, build the HTML report, findings report, evidence map, synthesis phase, journalist-grade output, network diagram, money-flow diagram."
+description: "Phase 5 deterministic synthesis — finalize findings-report.md, report.html, and evidence-map.json from validated findings.json and fact-check.json. The renderer, not the language model, owns report file construction and confidence mapping."
 license: MIT
 metadata:
   type: orchestration-subskill
@@ -11,48 +11,44 @@ invocable_by: [orchestrator, user]
 
 # report-drafting — Phase 5 synthesis
 
-You are at Phase 5. Gate 1 has approved verified findings. Ship the three deliverables editors actually read, building the HTML **from the template, not from scratch**.
-
-**This skill is a workflow plus a set of references you load ON DEMAND** — read each `references/*.md` only when you reach the step that needs it; do NOT read them all up front. That keeps your working context small during the most context-heavy phase.
+You are at Phase 5. Gate 1 has approved the structured findings and independent verdicts. Report construction is a **deterministic build step**. Do not copy, populate, regex, or hand-edit the HTML template.
 
 ## Deliverables (all three required)
 
 | File | Audience | What it is |
 |---|---|---|
-| `case/findings-report.md` | editor / fact-checker | narrative audit, one section per finding — the authoritative claim-by-claim record |
-| `case/report.html` | publication / reader | designed journalism artifact, built from `references/report-template.html` |
-| `case/evidence-map.json` | audit / replication | machine-readable ledger: claim → cards → query hashes → URLs (see data-detective `references/evidence-map-format.md`) |
+| `case/findings-report.md` | editor / fact-checker | canonical claim-by-claim audit generated from structured inputs |
+| `case/report.html` | publication / reader | designed artifact using the canonical template stylesheet |
+| `case/evidence-map.json` | audit / replication | machine-readable claim → verdict → source ledger |
 
 ## Mandatory AI-assistance notice (verbatim, in report.html)
 
-Top of the page, in the template's `.honesty` block, after the byline and before the TL;DR — do not soften:
+The renderer places this at the top of the page. Do not soften:
 > **AI assistance notice:** Spotlight is designed to help surface, organize, and cross-check information, but AI can make mistakes. You are responsible for verifying sources, confirming authenticity, assessing risks, and deciding what is publishable.
 
-## Workflow (open the referenced file when you reach that step)
+## Workflow
 
-1. Copy `references/report-template.html` → `case/report.html`. Fill header (title, deck, byline, lede) + the AI notice + the TL;DR table from `findings.json`.
-2. **Before any finding, build its citation manifest and obey the citation rule** → read **`references/citation-discipline.md`** (CRITICAL: the synthesis layer must NEVER originate a UUID/URL/quote — every one traces to a ground-truth file; write each finding's allowed set to `/tmp/c-NNN-citations.txt`).
-3. For each verified finding: draft the `<section class="finding">` per **`references/finding-structure.md`** (header+pills, deck, body with quoted primary text, mandatory `.path` replication block + `.sources` strip). Style per **`references/design-discipline.md`** (CSS vars, max-widths, pill semantics — don't reinvent).
-4. Methodology: one `<div class="phase">` per phase (P0–P7) → **`references/methodology-pattern.md`** (fact-check verdict table INSIDE Phase 3; spotlight-handoff table INSIDE Phase 6; strict phase order).
-5. If the case has relational structure (**default** — networks / money-flows / funnels, ≥3 actors with directed relationships): build interactive diagram section(s) per **`references/interactive-diagrams.md`** (follow it exactly — the "simpler" version clips labels and pixelates). Skip only if genuinely no relational structure, and say so in the run log.
-6. Write `findings-report.md` (narrative, no styling, every claim from the same allowed-set manifest) and `evidence-map.json`.
-7. **Run the citation closure script** (in `references/citation-discipline.md`) — every UUID and URL in the three files must trace to ground-truth; fix orphans. Then validate + smoke-test per **`references/html-protocol.md`**.
-8. Append `synthesis_complete` + `draft_paths` + `citation_closure_passed` to `investigation-log.json`.
+1. Confirm `{CASE_DIR}/data/findings.json` and `{CASE_DIR}/data/fact-check.json` exist. Do not synthesize missing fields.
+2. Run:
 
-**Whenever you edit `report.html`:** never greedy-regex it → **`references/html-protocol.md`** (anchored `Read`+`Edit` only; a greedy `re.sub` once destroyed a whole report). Review **`references/anti-patterns.md`** if unsure.
+   ```sh
+   python3 scripts/finalize-report.py {CASE_DIR}
+   ```
+
+   The finalizer first validates the fact-check evidence chain, then renders all three artifacts, then runs the report gate. It will not overwrite existing deliverables when the evidence chain fails.
+3. If the fact-check stage fails, return to the fact-checker or downgrade the unsupported verdict. If rendering fails, fix only the named structured input. **Never repair `report.html` by hand.**
+4. Present the final gate only when the command prints `report finalizer: PASSED`. Completion is the finalizer result, not the model's narrative.
+
+The renderer is byte-deterministic for identical inputs, HTML-escapes all case text, permits links only to HTTP(S) sources or existing files within the case, and caps every non-verified finding at Low confidence.
 
 ## Inputs / Outputs
 
-**Reads:** `case/data/{findings,fact-check,investigation-log}.json`, `case/anomalies/*/provenance.json`, `case-trace/spotlight/results/*/`.
+**Reads:** `case/data/{findings,fact-check,methodology}.json` and case-local source paths named by those files.
 **Writes:** `case/findings-report.md`, `case/report.html`, `case/evidence-map.json`.
 
-## References (load on demand — do not preload)
+## References
 
-- `references/report-template.html` — the HTML skeleton (step 1)
-- `references/citation-discipline.md` — the hard citation rule, manifest build, closure script (steps 2, 7) **← highest-stakes**
-- `references/finding-structure.md` — per-finding HTML structure (step 3)
-- `references/design-discipline.md` — CSS vars, max-widths, pill semantics (step 3)
-- `references/methodology-pattern.md` — the phase-ordered methodology (step 4)
-- `references/interactive-diagrams.md` — the full mermaid recipe + headless smoke test (step 5)
-- `references/html-protocol.md` — safe HTML editing + validation (whenever editing report.html)
-- `references/anti-patterns.md` — the learned failure modes
+- `references/report-template.html` — canonical stylesheet and legacy manual skeleton; the renderer reads its CSS.
+- `references/citation-discipline.md` — editorial rationale behind source-closure rules.
+- `references/design-discipline.md` — design semantics retained by the renderer.
+- `references/anti-patterns.md` — historical failures that motivated deterministic finalization.

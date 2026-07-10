@@ -37,6 +37,9 @@ includes install-spotlight.sh '--headless) HEADLESS=1 ;;'
 includes install-spotlight.sh 'ensure_npm_global_exact dev-browser dev-browser'
 # Doctor/updater/launcher heredocs bake the unexpanded input literal
 includes install-spotlight.sh "SPOTLIGHT_DIR_DEFAULT_INPUT='\$SPOTLIGHT_DIR_INPUT'"
+includes install-spotlight.sh 'Runtime case contract: use the exact project slug'
+includes install-spotlight.sh 'scripts/finalize-report.py" "\$CASE_DIR" --if-ready'
+includes install-spotlight.sh '*[!A-Za-z0-9._-]*'
 # No blob/eval head remnants
 excludes install-spotlight.sh 'base64 -d'
 excludes install-spotlight.sh "SPOTLIGHT_CONFIG='"

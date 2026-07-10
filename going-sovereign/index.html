@@ -917,17 +917,24 @@ flowchart LR
         </div>
         <div class="vcard">
           <span class="v">v3</span>
-          <span class="loss">shipping orchestrator</span>
-          <span class="note">The model the installer pulls today. Total spend across every
+          <span class="loss">first shipping orchestrator</span>
+          <span class="note">The first public local-tier release. Total spend across every
           iteration: <strong>about ten dollars</strong>.</span>
           <span class="st good">✓ ships</span>
         </div>
-        <div class="vcard candidate">
+        <div class="vcard">
           <span class="v">v4</span>
-          <span class="loss">the successful candidate</span>
+          <span class="loss">3/4 focused probes</span>
           <span class="note">Simulated trajectories drilling the exact failure modes the evals
-          exposed: phase-advance on bare approval, recovery from a degenerate turn.</span>
-          <span class="st good">✓ candidate</span>
+          exposed. It reasoned about report repair correctly, but fumbled the file execution.</span>
+          <span class="st mid">△ report asterisk</span>
+        </div>
+        <div class="vcard candidate">
+          <span class="v">v5 · final</span>
+          <span class="loss">masked loss · 0.751</span>
+          <span class="note">The final 12B adapter. Report construction moved out of the model:
+          validated JSON now renders deterministically into all three deliverables.</span>
+          <span class="st good">✓ release gate</span>
         </div>
       </div>
       </div>
@@ -935,10 +942,9 @@ flowchart LR
 
       <p>
       The models:
-      <a href="https://huggingface.co/tomvaillant/gemma4-12b-spotlight-orchestrator-v4-GGUF" target="_blank" rel="noopener">gemma4-12b-spotlight-orchestrator-v4-GGUF</a>
-      (Q4_K_M, ~7&nbsp;GB — shipping) and
-      <a href="https://huggingface.co/tomvaillant/gemma4-12b-spotlight-orchestrator-v4-GGUF" target="_blank" rel="noopener">gemma4-12b-spotlight-orchestrator-v4-GGUF</a>
-      (the candidate), both trained from
+      <a href="https://huggingface.co/tomvaillant/gemma4-12b-spotlight-orchestrator-v5-GGUF" target="_blank" rel="noopener">gemma4-12b-spotlight-orchestrator-v5-GGUF</a>
+      (Q4_K_M, ~7&nbsp;GB — final) and its
+      <a href="https://huggingface.co/tomvaillant/gemma4-12b-spotlight-orchestrator-v5" target="_blank" rel="noopener">v5 LoRA adapter</a>, trained from
       <a href="https://huggingface.co/datasets/buriedsignals/spotlight-orchestrator-gold" target="_blank" rel="noopener">spotlight-orchestrator-gold</a>.
       </p>
       <div class="wins"><span class="wins-label">Unlocked</span>
@@ -1114,6 +1120,28 @@ flowchart LR
           <span class="q-stat">$0 per run</span>
           <span class="q-stat">0 commercial APIs</span>
           <span class="q-stat">Nothing left the machine</span>
+        </div>
+
+        <p class="lb-caption">Full-investigation benchmark · same Ethereum Foundation brief · grounded from run artifacts and deterministic validators</p>
+        <div class="versions">
+          <div class="vcard">
+            <span class="v">31B reference</span>
+            <span class="loss">full invariant-9 pipeline</span>
+            <span class="note">Completed the investigation with independent adversarial re-scrapes and good phase discipline.</span>
+            <span class="st good">✓ passes</span>
+          </div>
+          <div class="vcard candidate">
+            <span class="v">26B-A4B</span>
+            <span class="loss">17.1 min active · 20.5 min wall</span>
+            <span class="note">Fact-check evidence passed first try. It skipped report drafting after an invalid delegation; the deterministic guard bounced once, then both validators passed.</span>
+            <span class="st good">✓ passes after 1 bounce</span>
+          </div>
+          <div class="vcard training">
+            <span class="v">12B · v5</span>
+            <span class="loss">release gate passed · E2E next</span>
+            <span class="note">The preserved report failure now closes deterministically with no model correction turn; repeat rendering is byte-identical. The fresh RunPod E2E remains the post-release system check.</span>
+            <span class="st good">✓ final model</span>
+          </div>
         </div>
 
         <div class="ledger">
