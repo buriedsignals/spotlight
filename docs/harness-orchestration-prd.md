@@ -43,7 +43,7 @@ Shared substrate (already built): catalog → `bsig skills resolve --runtime` �
 ## 3. Objectives / non-goals
 
 **Objectives**
-- **O1** — Cut the harness-mode context floor from ~53K to **≤ ~15–20K** via on-demand skill-body loading + per-agent composition. *(U1 measured baseline, 2026-07-06: **~53.8K** = roles ~19.8K [investigator 7.0K + fact-checker 3.9K + orchestrator 8.9K] + 15 on-invoke-eligible skill bodies **~34.0K**. The ~34K is what D1/D2 removes. See `skills/README.md`.)*
+- **O1** — Cut the harness-mode context floor from ~53K to **≤ ~15–20K** via on-demand skill-body loading + per-agent composition. *(U1 measured baseline, 2026-07-06: **~53.8K** = roles ~19.8K [investigator 7.0K + fact-checker 3.9K + orchestrator 8.9K] + 15 on-invoke-eligible skill bodies **~34.0K**. The ~34K is what D1/D2 removes.)*
 - **O2** — A **Flue-on-Pi** harness running Spotlight's orchestrator/investigator/fact-checker as composed agents against a local (or cloud) model, consuming the placed skills.
 - **O3** — **Validate on Gemma 31B (the control)**: confirm the floor drop + a measurable speed gain, no quality/ethics regression — *before* investing in the 12B tune.
 - **O4** — **The `spotlight` command works identically across OSes.** One command → right runtime → right orchestration mode, verified on macOS + Ubuntu/Debian + WSL, ideally routed through `tools/engine` rather than the Homebrew-dependent shell installer.

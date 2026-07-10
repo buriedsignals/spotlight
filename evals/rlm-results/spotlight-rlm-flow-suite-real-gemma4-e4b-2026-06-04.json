@@ -68,7 +68,7 @@
             "wall_time_seconds": 45.75
           },
           "rlm_result": {
-            "analysis_path": "/Users/tomvaillant/buried_signals/tools/spotlight-rlm/cases/fixture-rlm-flow-001/data/rlm-analysis.json",
+            "analysis_path": "cases/fixture-rlm-flow-001/data/rlm-analysis.json",
             "artifact_count": 9,
             "status": "ok"
           },
@@ -108,7 +108,7 @@
             "wall_time_seconds": 11.108
           },
           "rlm_result": {
-            "analysis_path": "/Users/tomvaillant/buried_signals/tools/spotlight-rlm/cases/fixture-rlm-flow-001/data/rlm-analysis.json",
+            "analysis_path": "cases/fixture-rlm-flow-001/data/rlm-analysis.json",
             "artifact_count": 5,
             "status": "ok"
           },
@@ -185,7 +185,7 @@
             "wall_time_seconds": 37.219
           },
           "rlm_result": {
-            "analysis_path": "/Users/tomvaillant/buried_signals/tools/spotlight-rlm/cases/fixture-rlm-flow-multidoc-001/data/rlm-analysis.json",
+            "analysis_path": "cases/fixture-rlm-flow-multidoc-001/data/rlm-analysis.json",
             "artifact_count": 8,
             "status": "ok"
           },
@@ -224,7 +224,7 @@
             "wall_time_seconds": 11.856
           },
           "rlm_result": {
-            "analysis_path": "/Users/tomvaillant/buried_signals/tools/spotlight-rlm/cases/fixture-rlm-flow-multidoc-001/data/rlm-analysis.json",
+            "analysis_path": "cases/fixture-rlm-flow-multidoc-001/data/rlm-analysis.json",
             "artifact_count": 4,
             "status": "ok"
           },
@@ -306,7 +306,7 @@
             "wall_time_seconds": 22.313
           },
           "rlm_result": {
-            "analysis_path": "/Users/tomvaillant/buried_signals/tools/spotlight-rlm/cases/fixture-rlm-flow-noisy-001/data/rlm-analysis.json",
+            "analysis_path": "cases/fixture-rlm-flow-noisy-001/data/rlm-analysis.json",
             "artifact_count": 4,
             "status": "ok"
           },
@@ -345,7 +345,7 @@
             "wall_time_seconds": 0.016
           },
           "rlm_result": {
-            "analysis_path": "/Users/tomvaillant/buried_signals/tools/spotlight-rlm/cases/fixture-rlm-flow-noisy-001/data/rlm-analysis.json",
+            "analysis_path": "cases/fixture-rlm-flow-noisy-001/data/rlm-analysis.json",
             "artifact_count": 4,
             "status": "ok"
           },
@@ -421,7 +421,7 @@
             "wall_time_seconds": 27.857
           },
           "rlm_result": {
-            "analysis_path": "/Users/tomvaillant/buried_signals/tools/spotlight-rlm/cases/fixture-rlm-flow-sparse-001/data/rlm-analysis.json",
+            "analysis_path": "cases/fixture-rlm-flow-sparse-001/data/rlm-analysis.json",
             "artifact_count": 3,
             "status": "ok"
           },
@@ -459,7 +459,7 @@
             "wall_time_seconds": 0.016
           },
           "rlm_result": {
-            "analysis_path": "/Users/tomvaillant/buried_signals/tools/spotlight-rlm/cases/fixture-rlm-flow-sparse-001/data/rlm-analysis.json",
+            "analysis_path": "cases/fixture-rlm-flow-sparse-001/data/rlm-analysis.json",
             "artifact_count": 3,
             "status": "ok"
           },
