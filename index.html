@@ -805,6 +805,11 @@
     justify-content: flex-end;
     gap: 12px;
   }
+  .offer-footer--newsletter {
+    margin-top: 36px;
+    padding-top: 24px;
+    border-top: 1px solid var(--muted-faint-dark);
+  }
   .offer-footer .actions {
     margin-top: 0;
   }
@@ -869,6 +874,91 @@
     background: rgba(237, 232, 220, 0.06);
   }
   .offer-signup-form input[type="email"]:disabled { opacity: 0.65; }
+  .offer-newsletter-options {
+    display: grid;
+    gap: 8px;
+  }
+  .offer-newsletter-heading {
+    margin: 0;
+    color: var(--muted-dark);
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  .offer-newsletter-toggle {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr);
+    align-items: start;
+    gap: 10px;
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--muted-faint-dark);
+    background: transparent;
+    color: var(--muted-dark);
+    cursor: pointer;
+    text-align: left;
+  }
+  .offer-newsletter-toggle[aria-pressed="true"] {
+    border-color: var(--accent-warm);
+    background: var(--accent-warm-14);
+    color: var(--warm);
+  }
+  .offer-newsletter-toggle:focus-visible {
+    outline: 2px solid var(--accent-warm);
+    outline-offset: 2px;
+  }
+  .offer-newsletter-check {
+    display: inline-grid;
+    width: 13px;
+    height: 13px;
+    place-items: center;
+    border: 1px solid currentColor;
+    font-size: 9px;
+    line-height: 1;
+  }
+  .offer-newsletter-copy {
+    display: grid;
+    gap: 4px;
+  }
+  .offer-newsletter-title {
+    color: var(--paper);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .offer-newsletter-description {
+    color: var(--muted-dark);
+    font-size: 12px;
+    letter-spacing: 0;
+    line-height: 1.5;
+  }
+  .offer .indicator-lab-link {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 8px;
+    width: auto;
+    max-width: 100%;
+    padding: 0 0 4px;
+    border: 0;
+    border-bottom: 1px solid var(--muted-faint-dark);
+    background: transparent;
+    color: var(--muted-dark);
+    font-size: 10px;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+  .offer .indicator-lab-link:hover {
+    border-color: var(--accent-warm);
+    background: transparent;
+    color: var(--accent-warm);
+  }
+  .offer .indicator-lab-link span {
+    transition: transform 0.2s ease;
+  }
+  .offer .indicator-lab-link:hover span {
+    transform: translateX(4px);
+  }
   .offer-signup-error {
     margin: 0;
     font-size: 12px;
@@ -1778,25 +1868,38 @@
   <div class="offers-grid">
     <article class="offer" data-reveal="card" data-stagger-idx="0">
       <div class="kicker">
-        <span>Membership</span>
-        <span class="launch">Launching May 2026</span>
+        <span>Indicator Lab</span>
+        <span class="launch">Launching September 2026</span>
       </div>
       <h3>Investigations with AI. The tools to run your own.</h3>
-      <ul>
-        <li>Collaborative investigations with shared leads, data, and methodology</li>
-        <li>Live bootcamps, workshops, and events</li>
-        <li>Hosted Pro access to Spotlight, Scoutpost, Navigator, and DataHound</li>
-        <li>Investigation methods and AI techniques, in depth</li>
-      </ul>
-      <div class="offer-footer">
+      <p class="lede">Indicator Lab combines the Buried Signals tool suite with a monthly investigation debrief, a practical Case Note, and office hours every two weeks.</p>
+      <a class="indicator-lab-link" href="https://buriedsignals.com/join">Explore Indicator Lab <span aria-hidden="true">→</span></a>
+      <div class="offer-footer offer-footer--newsletter">
         <p class="offer-signup-error hidden" id="newsletter-error"></p>
-        <p class="offer-signup-success hidden" id="newsletter-success">
+        <p class="offer-signup-success hidden" id="newsletter-success" role="status">
           <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor"/>
           </svg>
-          <span>You're in. I'll ping you at launch.</span>
+          <span id="newsletter-success-message">You're subscribed.</span>
         </p>
-        <p class="offer-disclaimer" id="newsletter-disclaimer">700+ journalists already reading</p>
+        <p class="offer-newsletter-heading">Newsletters</p>
+        <div class="offer-newsletter-options" id="newsletter-options" aria-label="Newsletter choices">
+          <button class="offer-newsletter-toggle" type="button" data-newsletter="buried_signals" aria-pressed="true">
+            <span class="offer-newsletter-check" aria-hidden="true">✓</span>
+            <span class="offer-newsletter-copy">
+              <span class="offer-newsletter-title">Buried Signals</span>
+              <span class="offer-newsletter-description">Monthly dispatches on investigations and the changing practice of journalism with AI in the loop.</span>
+            </span>
+          </button>
+          <button class="offer-newsletter-toggle" type="button" data-newsletter="indicator_media" aria-pressed="true">
+            <span class="offer-newsletter-check" aria-hidden="true">✓</span>
+            <span class="offer-newsletter-copy">
+              <span class="offer-newsletter-title">Indicator Briefing</span>
+              <span class="offer-newsletter-description">Weekly news, research, OSINT tools, and techniques for investigating digital deception.</span>
+            </span>
+          </button>
+        </div>
+        <p class="offer-disclaimer" id="newsletter-disclaimer">1,000+ journalists already reading.</p>
         <form class="offer-signup-form" id="newsletter-signup-form">
           <input
             type="email"
@@ -4455,15 +4558,39 @@
     const submitBtn = document.getElementById('newsletter-submit');
     const errorEl = document.getElementById('newsletter-error');
     const successEl = document.getElementById('newsletter-success');
+    const successMessage = document.getElementById('newsletter-success-message');
+    const optionsEl = document.getElementById('newsletter-options');
     const disclaimerEl = document.getElementById('newsletter-disclaimer');
-    if (!form || !emailInput || !submitBtn || !errorEl || !successEl || !disclaimerEl) return;
+    const newsletterToggles = Array.from(document.querySelectorAll('#newsletter-options [data-newsletter]'));
+    if (!form || !emailInput || !submitBtn || !errorEl || !successEl || !successMessage || !optionsEl || !disclaimerEl || !newsletterToggles.length) return;
 
     const NEWSLETTER_ENDPOINT = 'https://navigator.indicator.media/api/newsletter/subscribe';
+    const newsletterLabels = {
+      buried_signals: 'Buried Signals',
+      indicator_media: 'Indicator Briefing'
+    };
+
+    function selectedNewsletters() {
+      return newsletterToggles
+        .filter((toggle) => toggle.getAttribute('aria-pressed') === 'true')
+        .map((toggle) => toggle.dataset.newsletter);
+    }
+
+    newsletterToggles.forEach((toggle) => {
+      toggle.addEventListener('click', () => {
+        const isSelected = toggle.getAttribute('aria-pressed') === 'true';
+        if (isSelected && selectedNewsletters().length === 1) return;
+
+        toggle.setAttribute('aria-pressed', String(!isSelected));
+        toggle.querySelector('.offer-newsletter-check').textContent = isSelected ? '' : '✓';
+      });
+    });
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       const value = emailInput.value.trim();
-      if (!value) return;
+      const newsletters = selectedNewsletters();
+      if (!value || !newsletters.length) return;
 
       submitBtn.disabled = true;
       emailInput.disabled = true;
@@ -4474,15 +4601,19 @@
         const res = await fetch(NEWSLETTER_ENDPOINT, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: value, newsletters: ['buried_signals'] })
+          body: JSON.stringify({ email: value, newsletters })
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           throw new Error(data.error || data.detail || 'Something went wrong. Please try again.');
         }
         form.classList.add('hidden');
+        optionsEl.classList.add('hidden');
+        successMessage.textContent = newsletters.length === 2
+          ? "You're subscribed to both newsletters."
+          : `You're subscribed to ${newsletterLabels[newsletters[0]]}.`;
         successEl.classList.remove('hidden');
-        disclaimerEl.textContent = 'Joining 700+ journalists already reading.';
+        disclaimerEl.textContent = '1,000+ journalists already reading.';
       } catch (error) {
         errorEl.textContent = error instanceof Error ? error.message : 'Something went wrong. Please try again.';
         errorEl.classList.remove('hidden');
