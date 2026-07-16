@@ -2,6 +2,13 @@
 
 **The synthesis layer must NEVER originate a primary-source citation.** Every UUID, every external URL, every filing reference, every direct quote MUST be copied verbatim from a ground-truth file written by an earlier phase. If a citation is not already in the trail, do not invent it — go fetch it.
 
+For activated Spotlight cases, direct quotations are stricter: select only an
+`expression_id` in `report-draft.json`. Do not retype passage text or attribution.
+The renderer owns the published quotation and resolves it from the validated active
+record in `data/source-expressions.json`. These structural checks prove passage
+integrity and traceability, not semantic entailment; fact-check and human editorial
+review remain responsible for whether the framing is justified.
+
 This is the same class of rule as Firecrawl-only. The failure mode it prevents: a synthesis pass that "looks right" but contains URLs and UUIDs the LLM generated from semantic memory, that 404 or resolve to the wrong filing under adversarial review. This is the most common way investigative-journalism submissions get killed.
 
 ## Build the per-finding citation manifest FIRST

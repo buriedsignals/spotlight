@@ -70,6 +70,30 @@ passage, locator, or hash. Passage selection is deliberate; the pilot does not
 add automatic extraction or deterministic entailment checking. If the mode is
 absent, the default remains legacy `1.0` output with no expression artifact.
 
+In pilot mode, the expression file is evaluated as a side artifact only. Its
+presence does not make the legacy verdict pipeline strict, and it must not be
+described as activated protection. In activated mode, the fact-checker must
+preserve the existing `1.1` receipt-bound bundle; it cannot create, remove, or
+downgrade activation.
+
+### What deterministic expression checks prove
+
+The validators can establish that:
+
+- selected text exactly matches a case-local line range or JSON Pointer;
+- anchor and original-artifact hashes match the recorded files;
+- expression, finding, evidence, and verdict references resolve;
+- immutable fingerprints and lifecycle/supersession rules remain coherent;
+- a positive activated verdict has an active supporting relation; and
+- report quotations come from the canonical expression rather than generated
+  quote text.
+
+They cannot establish source authenticity, factual truth, entailment,
+completeness, attribution fairness, or whether a passage has been stripped of
+material context. A structurally valid expression may still be weak or
+misleading evidence. SIFT, adversarial contradiction search, grounding
+assessment, and human editorial review therefore remain mandatory.
+
 ### Source handling
 
 - **Archive each source** before citing (`invoke-skill("web-archiving")`) — Wayback → Archive.today → local

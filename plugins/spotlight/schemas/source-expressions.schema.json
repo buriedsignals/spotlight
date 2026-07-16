@@ -1,0 +1,169 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://buriedsignals.com/schemas/source-expressions.schema.json",
+  "schema_version": "1.0",
+  "title": "Spotlight source expressions",
+  "description": "Case-local exact source passages. Finding links own passage polarity; findings remain the verdict unit.",
+  "$comment": "Fingerprint canonicalization is normative: serialize the specified payload as UTF-8 JSON with keys sorted lexicographically, compact separators (',' and ':'), ensure_ascii=false, and no Unicode normalization; then encode the lowercase SHA-256 digest as 64 hexadecimal characters.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project", "created_at", "expressions"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "project": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "expressions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/definitions/source_expression" }
+    }
+  },
+  "definitions": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source_ref": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "line_start": { "type": "integer", "minimum": 1 },
+        "line_end": { "type": "integer", "minimum": 1 },
+        "json_pointer": { "type": "string", "pattern": "^(?:/.*)?$" }
+      },
+      "oneOf": [
+        {
+          "required": ["line_start", "line_end"],
+          "not": { "required": ["json_pointer"] }
+        },
+        {
+          "required": ["json_pointer"],
+          "not": {
+            "anyOf": [
+              { "required": ["line_start"] },
+              { "required": ["line_end"] }
+            ]
+          }
+        }
+      ]
+    },
+    "finding_link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "finding_fingerprint",
+        "relation",
+        "link_fingerprint"
+      ],
+      "properties": {
+        "finding_id": { "type": "string", "minLength": 1 },
+        "finding_fingerprint": { "$ref": "#/definitions/sha256" },
+        "relation": { "enum": ["supports", "contradicts", "context"] },
+        "link_fingerprint": {
+          "allOf": [{ "$ref": "#/definitions/sha256" }],
+          "description": "SHA-256 of canonical JSON containing exactly expression_fingerprint, finding_fingerprint, finding_id, and relation. It identifies this relation and is not part of expression_fingerprint."
+        }
+      }
+    },
+    "lifecycle_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event", "timestamp", "actor", "reason"],
+      "properties": {
+        "event": { "enum": ["activated", "superseded", "withdrawn"] },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "actor": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "successor_expression_id": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["event"],
+            "properties": { "event": { "const": "superseded" } }
+          },
+          "then": { "required": ["successor_expression_id"] }
+        },
+        {
+          "if": {
+            "required": ["event"],
+            "properties": { "event": { "enum": ["activated", "withdrawn"] } }
+          },
+          "then": { "not": { "required": ["successor_expression_id"] } }
+        }
+      ]
+    },
+    "source_expression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text",
+        "anchor_ref",
+        "anchor_sha256",
+        "original_evidence_bundle_id",
+        "original_artifact_sha256",
+        "expression_fingerprint",
+        "finding_links",
+        "lifecycle_events",
+        "created_by",
+        "cycle"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "text": { "type": "string", "minLength": 1 },
+        "anchor_ref": { "$ref": "#/definitions/source_ref" },
+        "anchor_sha256": {
+          "allOf": [{ "$ref": "#/definitions/sha256" }],
+          "description": "Hash of the stored text derivative bytes selected by anchor_ref; distinct from original_artifact_sha256."
+        },
+        "original_evidence_bundle_id": { "type": "string", "minLength": 1 },
+        "original_artifact_sha256": {
+          "allOf": [{ "$ref": "#/definitions/sha256" }],
+          "description": "Hash of the original acquired artifact represented by original_evidence_bundle_id."
+        },
+        "expression_fingerprint": {
+          "allOf": [{ "$ref": "#/definitions/sha256" }],
+          "description": "SHA-256 of canonical JSON containing exactly the present passage-core fields: text, anchor_ref, anchor_sha256, original_evidence_bundle_id, original_artifact_sha256, language, attribution, direct_quote, derived_from_expression_id, and derivative_type. It excludes id, finding_links, lifecycle_events, created_by, and cycle."
+        },
+        "finding_links": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/finding_link" }
+        },
+        "lifecycle_events": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/lifecycle_event" },
+          "contains": {
+            "type": "object",
+            "required": ["event"],
+            "properties": { "event": { "const": "activated" } }
+          }
+        },
+        "created_by": { "enum": ["investigator", "fact-checker", "human"] },
+        "cycle": { "type": "integer", "minimum": 1 },
+        "language": {
+          "type": "string",
+          "minLength": 2,
+          "pattern": "^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$"
+        },
+        "attribution": { "type": "string", "minLength": 1 },
+        "direct_quote": { "type": "boolean" },
+        "supersedes_expression_id": { "type": "string", "minLength": 1 },
+        "derived_from_expression_id": { "type": "string", "minLength": 1 },
+        "derivative_type": {
+          "enum": ["ocr", "transcript", "caption", "translation", "normalized_text"]
+        }
+      },
+      "dependencies": {
+        "derived_from_expression_id": ["derivative_type"],
+        "derivative_type": ["derived_from_expression_id"]
+      }
+    }
+  }
+}

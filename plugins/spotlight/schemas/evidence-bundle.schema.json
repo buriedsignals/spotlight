@@ -34,7 +34,15 @@
         "raw_path": { "type": "string" },
         "screenshot_path": { "type": "string" },
         "downloaded_document_path": { "type": "string" },
-        "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$",
+          "description": "Hash of the original acquired artifact. A text/OCR/transcript derivative has its own path and hash in text_derivatives."
+        },
+        "text_derivatives": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/text_derivative" }
+        },
         "claim_links": {
           "type": "array",
           "items": {
@@ -62,6 +70,29 @@
           }
         },
         "notes": { "type": "string" }
+      }
+    },
+    "text_derivative": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "derivative_type",
+        "path",
+        "sha256",
+        "human_verification_required"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "derivative_type": { "enum": ["text_extraction", "ocr", "transcript", "caption"] },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "human_verification_required": { "type": "boolean" },
+        "language": {
+          "type": "string",
+          "minLength": 2,
+          "pattern": "^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$"
+        }
       }
     }
   }

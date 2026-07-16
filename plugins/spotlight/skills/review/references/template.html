@@ -166,6 +166,74 @@
   .badge.perspective { background: var(--bg-3); color: var(--muted); }
   .claim { font-size: 1.05rem; font-weight: 500; margin: 0 0 10px; }
   .evidence { color: var(--muted); font-size: 0.9rem; font-style: italic; margin: 0 0 12px; padding-left: 12px; border-left: 2px solid var(--border); }
+  .expression-chain {
+    margin: 14px 0;
+    padding: 14px;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .expression-chain > h4 {
+    margin: 0 0 10px;
+    font-size: 0.82rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .source-expression {
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--grey);
+    border-radius: 6px;
+    margin-top: 10px;
+    background: var(--bg-2);
+  }
+  .source-expression.relation-supports { border-left-color: var(--green); }
+  .source-expression.relation-contradicts { border-left-color: var(--red); }
+  .source-expression.relation-context { border-left-color: var(--accent); }
+  .source-expression.lifecycle-superseded,
+  .source-expression.lifecycle-withdrawn { opacity: 0.78; }
+  .expression-path {
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin-bottom: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .expression-text {
+    margin: 8px 0 12px;
+    padding-left: 12px;
+    border-left: 2px solid var(--border);
+    white-space: pre-wrap;
+  }
+  .expression-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 16px;
+  }
+  @media (max-width: 640px) { .expression-meta { grid-template-columns: 1fr; } }
+  .expression-history summary { cursor: pointer; color: var(--muted); font-size: 0.8rem; margin-top: 8px; }
+  .expression-feedback { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border); }
+  .expression-feedback label { display: block; color: var(--muted); font-size: 0.8rem; margin: 6px 0 4px; }
+  .expression-feedback select {
+    width: 100%;
+    background: var(--bg-3);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 9px;
+  }
+  .expression-feedback textarea {
+    width: 100%;
+    min-height: 60px;
+    margin-top: 8px;
+    background: var(--bg-3);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: inherit;
+    resize: vertical;
+  }
   .grounding-detail, .provenance-panel {
     margin: 14px 0;
     padding: 14px;
@@ -516,6 +584,9 @@
       card.appendChild(ev);
     }
 
+    const expressionsEl = renderSourceExpressions(f);
+    if (expressionsEl) card.appendChild(expressionsEl);
+
     const groundingEl = renderGrounding(f);
     if (groundingEl) card.appendChild(groundingEl);
 
@@ -611,6 +682,11 @@
   function countFeedback() {
     let n = 0;
     document.querySelectorAll('textarea[data-fid]').forEach(ta => { if (ta.value.trim()) n++; });
+    document.querySelectorAll('.expression-feedback').forEach(group => {
+      const category = group.querySelector('select').value;
+      const comment = group.querySelector('textarea').value.trim();
+      if (category || comment) n++;
+    });
     if (document.getElementById('general_feedback').value.trim()) n++;
     if (document.getElementById('missing_angles').value.trim()) n++;
     return n;
@@ -629,14 +705,19 @@
       updateStatus();
     }
   });
+  document.addEventListener('change', (e) => {
+    if (e.target.matches('.expression-feedback select')) updateStatus();
+  });
 
   clearBtn.addEventListener('click', () => {
     document.querySelectorAll('textarea').forEach(ta => { ta.value = ''; ta.classList.remove('hasvalue'); });
+    document.querySelectorAll('.expression-feedback select').forEach(select => { select.value = ''; });
     updateStatus();
   });
 
   submitBtn.addEventListener('click', () => {
     const findingsFeedback = [];
+    const expressionsFeedback = [];
     const perFinding = {};
     document.querySelectorAll('textarea[data-fid]').forEach(ta => {
       const fid = ta.dataset.fid;
@@ -649,12 +730,25 @@
     });
     Object.values(perFinding).forEach(f => findingsFeedback.push(f));
 
+    document.querySelectorAll('.expression-feedback').forEach(group => {
+      const category = group.querySelector('select').value;
+      const comment = group.querySelector('textarea').value.trim();
+      if (!category && !comment) return;
+      expressionsFeedback.push({
+        expression_id: group.dataset.expressionId,
+        finding_id: group.dataset.findingId,
+        category: category || 'other',
+        comment: comment
+      });
+    });
+
     const payload = {
       schema_version: '1.0',
       project: DATA.project || '',
       submitted_at: new Date().toISOString(),
       reviewer: document.getElementById('reviewer').value.trim() || undefined,
       findings_feedback: findingsFeedback,
+      expressions_feedback: expressionsFeedback,
       general_feedback: document.getElementById('general_feedback').value.trim() || undefined,
       missing_angles: document.getElementById('missing_angles').value.trim() || undefined,
       ingest_preference: (document.querySelector('input[name="ingest"]:checked') || {}).value || 'proceed'
@@ -714,6 +808,116 @@
     html += '</div>';
     box.innerHTML = html;
     return box;
+  }
+
+  function expressionStatus(expression) {
+    const events = Array.isArray(expression.lifecycle_events) ? expression.lifecycle_events : [];
+    for (let i = events.length - 1; i >= 0; i--) {
+      if (events[i].event === 'withdrawn' || events[i].event === 'superseded') return events[i].event;
+    }
+    return 'active';
+  }
+
+  function expressionLocator(anchor) {
+    if (!anchor) return '—';
+    if (anchor.json_pointer != null) return anchor.path + '#' + anchor.json_pointer;
+    if (anchor.line_start != null) {
+      return anchor.path + ':L' + anchor.line_start + (anchor.line_end !== anchor.line_start ? '-L' + anchor.line_end : '');
+    }
+    return anchor.path || '—';
+  }
+
+  function expressionsForFinding(findingId) {
+    const expressions = Array.isArray(DATA.source_expressions) ? DATA.source_expressions : [];
+    return expressions.flatMap(expression => {
+      const links = Array.isArray(expression.finding_links) ? expression.finding_links : [];
+      return links
+        .filter(link => link.finding_id === findingId)
+        .map(link => ({ expression, link }));
+    });
+  }
+
+  function renderSourceExpressions(f) {
+    const joined = expressionsForFinding(f.id);
+    if (!joined.length) return null;
+
+    joined.sort((a, b) => {
+      const historyOrder = Number(expressionStatus(a.expression) !== 'active') - Number(expressionStatus(b.expression) !== 'active');
+      return historyOrder || String(a.expression.id).localeCompare(String(b.expression.id));
+    });
+
+    const section = document.createElement('section');
+    section.className = 'expression-chain';
+    const title = document.createElement('h4');
+    title.textContent = 'Source expression → finding → verdict';
+    section.appendChild(title);
+
+    joined.forEach(({ expression, link }) => {
+      const status = expressionStatus(expression);
+      const relation = ['supports', 'contradicts', 'context'].includes(link.relation) ? link.relation : 'context';
+      const item = document.createElement('article');
+      item.className = 'source-expression relation-' + relation + ' lifecycle-' + status;
+
+      const path = document.createElement('div');
+      path.className = 'expression-path';
+      path.textContent = expression.id + ' → ' + f.id + ' → ' + ((f.verdict && f.verdict.verdict) || 'not checked');
+      item.appendChild(path);
+
+      const quote = document.createElement('blockquote');
+      quote.className = 'expression-text';
+      quote.textContent = expression.text || '(no expression text)';
+      item.appendChild(quote);
+
+      const meta = document.createElement('div');
+      meta.className = 'expression-meta';
+      meta.innerHTML =
+        renderKv('relation', relation) +
+        renderKv('lifecycle', status) +
+        renderKv('source', expression.original_evidence_bundle_id) +
+        renderKv('locator', expressionLocator(expression.anchor_ref)) +
+        renderKv('attribution', expression.attribution) +
+        renderKv('language', expression.language) +
+        renderKv('expression hash', shortHash(expression.expression_fingerprint)) +
+        renderKv('anchor hash', shortHash(expression.anchor_sha256)) +
+        renderKv('grounding', (f.grounding && f.grounding.support_type) || (f.verdict && f.verdict.grounding_assessment && f.verdict.grounding_assessment.support_type));
+      item.appendChild(meta);
+
+      const events = Array.isArray(expression.lifecycle_events) ? expression.lifecycle_events : [];
+      if (events.length) {
+        const history = document.createElement('details');
+        history.className = 'expression-history';
+        history.innerHTML = '<summary>Lifecycle history (' + events.length + ')</summary>' + renderList(events.map(event =>
+          event.event + ' · ' + event.timestamp + ' · ' + event.actor + ' — ' + event.reason +
+          (event.successor_expression_id ? ' → ' + event.successor_expression_id : '')
+        ));
+        item.appendChild(history);
+      }
+
+      const feedback = document.createElement('div');
+      feedback.className = 'expression-feedback';
+      feedback.dataset.expressionId = expression.id;
+      feedback.dataset.findingId = f.id;
+      const label = document.createElement('label');
+      label.textContent = 'Challenge this source expression';
+      feedback.appendChild(label);
+      const select = document.createElement('select');
+      select.setAttribute('aria-label', 'Feedback category for ' + expression.id);
+      ['', 'omitted_context', 'attribution_error', 'wrong_relation', 'mistranscription', 'bad_locator', 'stale_source', 'other'].forEach(value => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = value ? value.replace(/_/g, ' ') : 'Choose a category (optional)';
+        select.appendChild(option);
+      });
+      feedback.appendChild(select);
+      const textarea = document.createElement('textarea');
+      textarea.placeholder = 'Explain the issue or verification needed';
+      textarea.setAttribute('aria-label', 'Feedback on ' + expression.id + ' for ' + f.id);
+      feedback.appendChild(textarea);
+      item.appendChild(feedback);
+
+      section.appendChild(item);
+    });
+    return section;
   }
 
   function shortHash(hash) {

@@ -32,7 +32,12 @@
           "finding_id": {"$ref": "#/$defs/findingId"},
           "headline": {"type": "string", "minLength": 1, "maxLength": 240},
           "summary": {"type": "string", "minLength": 1, "maxLength": 1400},
-          "why_it_matters": {"type": "string", "minLength": 1, "maxLength": 900}
+          "why_it_matters": {"type": "string", "minLength": 1, "maxLength": 900},
+          "quote_selections": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/quoteSelection"}
+          }
         }
       }
     },
@@ -50,6 +55,18 @@
       "type": "string",
       "minLength": 1,
       "pattern": "^\\S(?:.*\\S)?$"
+    },
+    "quoteSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expression_id"],
+      "properties": {
+        "expression_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^\\S(?:.*\\S)?$"
+        }
+      }
     },
     "editorialItems": {
       "type": "array",

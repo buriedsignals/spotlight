@@ -97,6 +97,31 @@ Every `findings.json` finding must include:
 
 Every fact-check claim must include a `grounding_assessment` explaining whether the cited evidence actually grounds the claim.
 
+## Source-Expression Discipline
+
+When a Spotlight case explicitly enables source-expression pilot or activated
+mode, preserve the inspectable layer between source artifacts and normalized
+findings:
+
+- The acquiring agent records the expression; another agent may add its own
+  independently acquired expression but must not rewrite the first agent's
+  passage core.
+- `text` is the exact original-language selection at `anchor_ref`. Translation,
+  normalization, and paraphrase are separate derivatives, never replacements.
+- The expression-to-finding relation is explicit: `supports`, `contradicts`, or
+  `context`. One expression may link to several findings, and one finding may
+  depend on several expressions.
+- For non-text evidence, hash and preserve the original artifact separately
+  from its OCR, transcript, caption, or text extraction. The expression anchors
+  the inspectable derivative and retains the original evidence identity.
+- If the exact stored selection is unavailable, do not produce an expression.
+  Record a gap and apply the confidence cap. Search snippets, model recall, and
+  RLM output are not recoverable anchors.
+
+This is human- or agent-selected capture, not automatic extraction or semantic
+entailment. Deterministic validation can prove identity, integrity, relation,
+and lifecycle state; it cannot prove that a passage makes a claim true.
+
 ## Failure Routing
 
 When a finding feels wrong, do not patch the wording first. Diagnose the grounding failure:

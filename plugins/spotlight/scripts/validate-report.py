@@ -118,12 +118,53 @@ def check(case: Path) -> list[str]:
             )
 
         expected_inputs: dict[str, str] = {}
-        for name in ("findings.json", "fact-check.json", "report-draft.json", "methodology.json"):
+        input_names = ["findings.json", "fact-check.json", "report-draft.json", "methodology.json"]
+        if (case / "data" / "case-contract.json").is_file():
+            input_names.append("source-expressions.json")
+        for name in input_names:
             path = case / "data" / name
             if path.is_file():
                 expected_inputs[f"data/{name}"] = sha256(path)
         if evidence_map_doc.get("input_sha256") != expected_inputs:
             fails.append("GENERATED: evidence-map input hashes are stale or incomplete")
+
+        if "source-expressions.json" in input_names:
+            source_path = case / "data" / "source-expressions.json"
+            try:
+                source_doc = json.loads(source_path.read_text())
+            except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+                fails.append(f"GENERATED: source-expressions.json is unreadable ({exc})")
+            else:
+                expected_expression_ids = [
+                    str(item.get("id", "")).strip()
+                    for item in source_doc.get("expressions", [])
+                    if isinstance(item, dict) and str(item.get("id", "")).strip()
+                ]
+                ledger_expressions = evidence_map_doc.get("source_expressions")
+                actual_expression_ids = [
+                    str(item.get("id", "")).strip()
+                    for item in ledger_expressions
+                    if isinstance(item, dict)
+                ] if isinstance(ledger_expressions, list) else []
+                if (
+                    len(actual_expression_ids) != len(set(actual_expression_ids))
+                    or set(actual_expression_ids) != set(expected_expression_ids)
+                ):
+                    fails.append(
+                        "GENERATED: evidence-map source expression IDs do not match "
+                        "data/source-expressions.json"
+                    )
+                required_expression_fields = {
+                    "id", "text", "anchor_ref", "anchor_sha256",
+                    "original_evidence_bundle_id", "original_artifact_sha256",
+                    "expression_fingerprint", "finding_links", "lifecycle", "lifecycle_state",
+                }
+                for expression in ledger_expressions if isinstance(ledger_expressions, list) else []:
+                    if isinstance(expression, dict) and not required_expression_fields <= set(expression):
+                        fails.append(
+                            f"GENERATED: evidence-map source expression "
+                            f"{expression.get('id') or '?'} is incomplete"
+                        )
 
         expected_outputs = {
             name: sha256(path)

@@ -1,0 +1,158 @@
+{
+  "schema_version": "1.0",
+  "record_type": "source_expression_storage_pilot",
+  "recorded_at": "2026-07-16",
+  "status": "not_approved",
+  "activation_recommendation": "NOT APPROVED",
+  "fixture_subset": {
+    "path": "tests/fixtures/source-expression-producer-cases.json",
+    "findings": 2,
+    "source_records": 4,
+    "source_expressions": 5,
+    "expression_finding_links": 6,
+    "coverage": [
+      "one passage linked to multiple findings",
+      "multiple passages linked to one finding",
+      "original-language text",
+      "non-text original with transcript derivative",
+      "translation derivative",
+      "supporting and contradicting passages"
+    ],
+    "limitations": [
+      "synthetic fixture rather than newsroom casework",
+      "one validation run rather than longitudinal locator testing",
+      "no timed human review sessions",
+      "no same-fixture legacy migration exercise"
+    ]
+  },
+  "alternatives": [
+    {
+      "id": "separate_source_expressions_artifact",
+      "description": "Canonical passage cores and finding links live in data/source-expressions.json; evidence and fact-check records refer to them.",
+      "implementation_status": "fixture_validated",
+      "metrics": {
+        "reviewer_correction_yield": {
+          "status": "unmeasured",
+          "reason": "No human review sessions have been run."
+        },
+        "reviewer_time": {
+          "status": "unmeasured",
+          "reason": "No timed human review sessions have been run."
+        },
+        "duplication": {
+          "status": "measured_on_fixture",
+          "canonical_passage_records": 5,
+          "redundant_passage_core_records": 0,
+          "rate": 0.0
+        },
+        "write_failures": {
+          "status": "partially_measured",
+          "injected_failures": 1,
+          "detected_failures": 1,
+          "reason": "The unavailable-anchor negative fixture is detected; interrupted or concurrent newsroom writes were not exercised."
+        },
+        "unresolved_links": {
+          "status": "measured_on_fixture",
+          "count": 0,
+          "rate": 0.0
+        },
+        "locator_stability": {
+          "status": "unmeasured_longitudinally",
+          "initial_resolution": "5/5",
+          "reason": "The fixture resolves once but has not been revalidated after source-file evolution."
+        },
+        "migration_effort": {
+          "status": "unmeasured",
+          "reason": "The representative producer fixture was not migrated from a clean legacy case."
+        }
+      }
+    },
+    {
+      "id": "embedded_in_findings",
+      "description": "Each finding embeds the complete passage records that bear on it.",
+      "implementation_status": "modeled_only",
+      "metrics": {
+        "reviewer_correction_yield": {
+          "status": "unmeasured"
+        },
+        "reviewer_time": {
+          "status": "unmeasured"
+        },
+        "duplication": {
+          "status": "modeled_on_same_fixture",
+          "stored_passage_records": 6,
+          "redundant_passage_core_records": 1,
+          "rate": 0.1667,
+          "reason": "SX1 would be copied into both F1 and F2."
+        },
+        "write_failures": {
+          "status": "unmeasured"
+        },
+        "unresolved_links": {
+          "status": "not_applicable_to_modeled_shape",
+          "reason": "Embedding removes the cross-file finding link but was not implemented or validated."
+        },
+        "locator_stability": {
+          "status": "unmeasured"
+        },
+        "migration_effort": {
+          "status": "unmeasured"
+        }
+      }
+    },
+    {
+      "id": "richer_evidence_and_fact_check_records",
+      "description": "Evidence records own passage cores while fact-check records own the finding/verdict relations.",
+      "implementation_status": "modeled_only",
+      "metrics": {
+        "reviewer_correction_yield": {
+          "status": "unmeasured"
+        },
+        "reviewer_time": {
+          "status": "unmeasured"
+        },
+        "duplication": {
+          "status": "modeled_on_same_fixture",
+          "canonical_passage_records": 5,
+          "redundant_passage_core_records": 0,
+          "rate": 0.0,
+          "reason": "This assumes evidence records own each core once and fact-check records contain references only."
+        },
+        "write_failures": {
+          "status": "unmeasured",
+          "reason": "The split ownership shape has no implementation or atomic-write test."
+        },
+        "unresolved_links": {
+          "status": "unmeasured"
+        },
+        "locator_stability": {
+          "status": "unmeasured"
+        },
+        "migration_effort": {
+          "status": "unmeasured"
+        }
+      }
+    }
+  ],
+  "threshold_assessment": {
+    "locator_revalidation_at_least_95_percent": "not_evaluable_longitudinally",
+    "zero_fabricated_migration_locators": "not_evaluable_on_same_fixture",
+    "reviewer_can_recover_exact_wording": "not_evaluable_without_human_review",
+    "zero_quote_drift": "passes_single_fixture_run",
+    "duplicate_rate_below_10_percent": "passes_separate_artifact_fixture_only",
+    "unresolved_link_rate_below_5_percent": "passes_separate_artifact_fixture_only",
+    "legacy_cases_unchanged": "covered_by_automated_regression_tests"
+  },
+  "decision": {
+    "candidate": "separate_source_expressions_artifact",
+    "reason": "It is the only option currently validated end to end and avoids passage-core duplication on the representative fixture.",
+    "blocking_evidence": [
+      "timed human review and correction-yield results",
+      "longitudinal locator stability",
+      "same-fixture migration effort",
+      "interrupted and concurrent producer-write behavior",
+      "implemented comparison of the two alternative storage shapes"
+    ],
+    "activation_status": "NOT APPROVED"
+  }
+}

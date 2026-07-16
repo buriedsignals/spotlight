@@ -451,6 +451,43 @@ When the agent completes:
 
 With approved methodology, begin the execution loop. No user involvement between cycles — decide autonomously.
 
+### Source-expression release mode
+
+Resolve this once before the first cycle and preserve it on every investigator
+and fact-checker spawn:
+
+1. If `data/case-contract.json` validates, findings use contract `1.1`, and
+   `python3 scripts/validate-case.py {CASE_DIR}` passes, set
+   `SOURCE_EXPRESSION_MODE: activated`.
+2. Otherwise, set `SOURCE_EXPRESSION_MODE: pilot` only when the operator has
+   explicitly selected this case for the source-expression pilot. Record or
+   preserve a clean pre-pilot legacy bundle for later comparison/recovery.
+3. In every other case, omit the field. This is the default and preserves
+   findings contract `1.0`; do not create `data/source-expressions.json`.
+
+Never infer activation from `source-expressions.json`, findings version, or a
+migration audit alone. `data/case-contract.json` is the sole activation
+authority. Pilot output is a side artifact and cannot be promoted in place by
+the current migration command. Activation of a clean legacy case is a separate
+operator-reviewed dry-run/apply flow:
+
+```text
+python3 scripts/migrate-source-expressions.py {CASE_DIR}
+python3 scripts/migrate-source-expressions.py {CASE_DIR} --apply
+python3 scripts/validate-case.py {CASE_DIR}
+python3 scripts/validate-fact-check.py {CASE_DIR}
+```
+
+The checked-in comparison is
+`docs/source-expression-pilot-results.json`. Its activation status is **NOT
+APPROVED** because timed human review, correction yield, longitudinal locator
+stability, and same-fixture migration effort remain unmeasured. Do not enable
+`1.1` as the new-case default.
+
+Expression validation proves exact-text, locator, hash, reference, lifecycle,
+and status integrity. It does not prove truth, entailment, completeness, or
+editorial fairness.
+
 ```
 CYCLE N (N starts at 1):
 
@@ -464,6 +501,7 @@ PROFILE: {profile}
 TIER: {config.model_tier}
 CASE_ROOT: {CASE_ROOT}
 CASE_DIR: {CASE_DIR}
+{if source_expression_mode: SOURCE_EXPRESSION_MODE: {source_expression_mode}}
 VAULT_PATH: {vault_path or 'none'}
 INTEGRATIONS:
   osint_navigator_status={config.integrations.osint_navigator.status}
@@ -521,6 +559,7 @@ PROFILE: {profile}
 TIER: {config.model_tier}
 CASE_ROOT: {CASE_ROOT}
 CASE_DIR: {CASE_DIR}
+{if source_expression_mode: SOURCE_EXPRESSION_MODE: {source_expression_mode}}
 INTEGRATIONS:
   osint_navigator_status={config.integrations.osint_navigator.status}
   osint_navigator_required={config.integrations.osint_navigator.required_in_phase_2}
@@ -818,18 +857,42 @@ All state lives in files. If context is lost mid-investigation, re-read:
     methodology.json               — Approved investigation plan
     findings.json                  — Investigator output (cumulative)
     fact-check.json                — Fact-checker output
+    source-expressions.json        — Pilot side artifact or activated passage chain
+    case-contract.json             — Sole authoritative activation receipt
+    source-expression-migration.json — Migration audit only; never activation
     investigation-log.json         — Append-only cycle log
     provenance-manifest.json       — Case artifact hashes + optional C2PA signing status
     monitoring.json                — Scout state and check results
 ```
 
-Determine where the pipeline left off:
+First classify the case contract:
+
+- A valid `case-contract.json`, findings contract `1.1`, and matching artifact
+  hashes means **activated**. Run `scripts/validate-case.py`, resume only with
+  `SOURCE_EXPRESSION_MODE: activated`, and never downgrade it.
+- Findings contract `1.0` plus an explicitly recorded pilot side artifact means
+  **pilot**. Resume only with `SOURCE_EXPRESSION_MODE: pilot`. File presence
+  alone is not enough to infer that operator choice.
+- Findings `1.1`, source-expression refs, or migration outputs without a valid
+  contract is an interrupted/partial migration. Stop. Restore the known clean
+  legacy bundle, then rerun migration dry-run/apply; do not delete fields until
+  the case merely looks legacy.
+- A valid receipt with missing or hash-mismatched activated artifacts is stale
+  or damaged. Stop and restore the matching bundle or use the supported
+  supersession/revalidation flow. Never fall back to legacy interpretation.
+- Otherwise the case is **legacy**, and source-expression mode stays omitted.
+
+Then determine where the pipeline left off:
 
 - No `brief-directions.txt` → restart at Phase 1
 - No `data/methodology.json` → restart at Phase 2
 - No `data/findings.json` → restart at Phase 3, cycle 1
 - Has `data/findings.json` but no `summary.md` → restart at Phase 3, evaluate current cycle
 - Has `summary.md` → Gate 1 review
+
+An older runtime that cannot validate contract `1.1` must refuse an activated
+case. Rollback may disable future activation only; existing activated cases
+remain strict.
 
 For wider failure modes — API hiccups, Ollama restarts, Obsidian lock files, corrupted case JSON, stale review-feedback markers — see `docs/recovery.md`.
 

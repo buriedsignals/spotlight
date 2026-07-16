@@ -13,7 +13,7 @@ spotlight/
 ├── install/                  # Local configurator — collects runtime, keys, and vault paths on 127.0.0.1
 ├── .spotlight-config.json    # Per-session config (search library, vault path, cases root, runtime)
 ├── .gitignore
-├── schemas/                  # JSON schemas — 8 case files, all schema_version 1.0
+├── schemas/                  # JSON schemas — case artifacts, activation, migration, and reports
 ├── skills/                   # 17 skills (pi-native SKILL.md format)
 ├── agents/                   # 2 agent prompt bundles (investigator + fact-checker)
 ├── integrations/             # External tool integrations (dev-browser, Junkipedia, Noosphere C2PA, OSINT Navigator, Unpaywall)
@@ -53,20 +53,46 @@ spotlight/
 
 These are **abstract** — the runtime adapter binds each to a concrete tool. See [integrations.md](integrations.md) for per-runtime mappings.
 
-## schemas/ — 8 case files
+## schemas/ — case contracts
 
-Every case file validates against a schema. All declare `schema_version: "1.0"`.
+Every structured case file validates against a schema. The default findings
+contract is `1.0`; activated cases use findings contract `1.1` plus a separate
+activation receipt. Other artifacts retain their schema-specific versions.
 
 | Schema | Case file | Role |
 |---|---|---|
 | `findings.schema.json` | `{CASE_DIR}/data/findings.json` | Investigator output — claims, evidence, sources, confidence, perspective, optional explicit technical indicators, monitoring recommendations |
 | `fact-check.schema.json` | `{CASE_DIR}/data/fact-check.json` | Fact-checker output — per-claim verdicts, evidence_for/against, gaps_for_next_cycle |
+| `source-expressions.schema.json` | `{CASE_DIR}/data/source-expressions.json` | Opt-in exact passages, locators, hashes, lifecycle, and finding relations |
+| `case-contract.schema.json` | `{CASE_DIR}/data/case-contract.json` | Sole authoritative activation receipt for findings contract `1.1` |
+| `source-expression-migration.schema.json` | `{CASE_DIR}/data/source-expression-migration.json` | Migration dry-run/apply audit; never an activation signal |
 | `methodology.schema.json` | `{CASE_DIR}/data/methodology.json` | Investigator PLANNING output — investigation_plan, tools_required, opsec_considerations |
 | `evidence-bundle.schema.json` | `{CASE_DIR}/data/evidence-bundle.json` | Acquisition artifacts, missing-source gates, hashes, and claim links |
 | `investigation-log.schema.json` | `{CASE_DIR}/data/investigation-log.json` | Append-only cycle audit trail |
 | `summary.schema.json` | `{CASE_DIR}/data/summary.json` | Gate 1 summary |
 | `rlm-analysis.schema.json` | `{CASE_DIR}/data/rlm-analysis.json` | Optional RLM case-corpus analysis — leads only, every artifact `needs_verification` |
 | `provenance-manifest.schema.json` | `{CASE_DIR}/data/provenance-manifest.json` | Case artifact hashes, claim/verdict links, evidence refs, optional C2PA signing metadata |
+
+### Source-expression ownership
+
+`data/source-expressions.json` owns immutable passage cores and their
+many-to-many `supports`, `contradicts`, or `context` finding links.
+`evidence-bundle.json` owns acquisition artifacts and text derivatives.
+`fact-check.json` records which immutable expression/finding relation informed
+a verdict. Reports and provenance refer to the same expression identities.
+This avoids copying source wording into several independently mutable records.
+
+The release modes are deliberately explicit:
+
+| Mode | Authoritative state | Meaning |
+|---|---|---|
+| Legacy | Findings contract `1.0`, no valid case contract | Default. Expression protection is not claimed. |
+| Pilot | Legacy state plus an explicitly requested side artifact | Evaluation only. Artifact presence never activates a case. |
+| Activated | Findings contract `1.1` plus valid `case-contract.json` with matching hashes | Strict expression validation applies and cannot be downgraded. |
+
+See `source-expression-pilot-results.json` for the current comparative result.
+Activation remains **NOT APPROVED** until the missing human and longitudinal
+measurements are recorded.
 
 Validate a case file:
 
@@ -175,6 +201,9 @@ decision.
 │   ├── methodology.json
 │   ├── findings.json
 │   ├── fact-check.json
+│   ├── source-expressions.json  # pilot or activated cases
+│   ├── case-contract.json       # activated cases only
+│   ├── source-expression-migration.json # migration audit only
 │   ├── investigation-log.json
 │   ├── summary.json
 │   └── monitoring.json       # optional external-monitor registry

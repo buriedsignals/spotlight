@@ -125,6 +125,47 @@ def validate_boundaries() -> None:
         fail("plugin README must point runtime installs to setup.html and dependency pins")
     if "lead-only and never verified or publishable evidence" not in readme:
         fail("plugin README must preserve RLM evidence boundary")
+    pilot_path = PLUGIN / "docs" / "source-expression-pilot-results.json"
+    pilot = load_json(pilot_path)
+    if pilot.get("activation_recommendation") != "NOT APPROVED":
+        fail("source-expression pilot must not approve activation without measured evidence")
+    alternatives = {item.get("id"): item for item in pilot.get("alternatives", [])}
+    expected_alternatives = {
+        "separate_source_expressions_artifact",
+        "embedded_in_findings",
+        "richer_evidence_and_fact_check_records",
+    }
+    if set(alternatives) != expected_alternatives:
+        fail("source-expression pilot must compare all three storage alternatives")
+    for name, alternative in alternatives.items():
+        metrics = alternative.get("metrics", {})
+        required_metrics = {
+            "reviewer_correction_yield",
+            "reviewer_time",
+            "duplication",
+            "write_failures",
+            "unresolved_links",
+            "locator_stability",
+            "migration_effort",
+        }
+        if set(metrics) != required_metrics:
+            fail(f"source-expression pilot metrics incomplete for {name}")
+    separate_metrics = alternatives["separate_source_expressions_artifact"]["metrics"]
+    if separate_metrics["reviewer_correction_yield"].get("status") != "unmeasured":
+        fail("source-expression pilot must not fabricate reviewer correction yield")
+    if separate_metrics["reviewer_time"].get("status") != "unmeasured":
+        fail("source-expression pilot must not fabricate reviewer time")
+
+    spotlight_skill = (PLUGIN / "skills" / "spotlight" / "SKILL.md").read_text(encoding="utf-8")
+    if "Do not enable\n`1.1` as the new-case default" not in spotlight_skill:
+        fail("plugin orchestrator must keep new-case source-expression activation disabled")
+    for relative in (
+        "schemas/source-expressions.schema.json",
+        "schemas/case-contract.schema.json",
+        "schemas/source-expression-migration.schema.json",
+        "scripts/migrate-source-expressions.py",
+    ):
+        assert_file(PLUGIN / relative)
 
     forbidden = [
         PLUGIN / "cases",

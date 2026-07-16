@@ -172,6 +172,9 @@ as `CASE_DIR`. Do not infer the case path from the knowledge vault path.
 │   ├── methodology.json         # Schema: schemas/methodology.schema.json
 │   ├── findings.json            # Schema: schemas/findings.schema.json
 │   ├── fact-check.json          # Schema: schemas/fact-check.schema.json
+│   ├── source-expressions.json  # Opt-in pilot side artifact; required by activated 1.1 cases
+│   ├── case-contract.json       # Sole authoritative 1.1 activation receipt
+│   ├── source-expression-migration.json # Dry-run audit only; never activates a case
 │   ├── report-draft.json        # Schema: schemas/report-draft.schema.json (when report requested)
 │   ├── report-declined.json     # Explicit Phase 5 decline marker (when report skipped)
 │   ├── ingestion.json           # Case-local Phase 6 transition/receipt
@@ -190,7 +193,9 @@ as `CASE_DIR`. Do not infer the case path from the knowledge vault path.
     └── *.pdf                    # Downloaded or preserved source documents
 ```
 
-All schemas are in `schemas/` at the repo root with `schema_version: "1.0"`.
+All schemas are in `schemas/` at the repo root. The default findings contract
+remains `1.0`; source-expression and activation documents use their own
+schema versions as declared below.
 
 ## Schema Reference
 
@@ -198,8 +203,32 @@ All schemas are in `schemas/` at the repo root with `schema_version: "1.0"`.
 |--------|------|---------|
 | Findings | `schemas/findings.schema.json` | Investigation findings with sources, confidence, claim-to-evidence grounding, connections, monitoring_recommendations |
 | Fact-Check | `schemas/fact-check.schema.json` | Per-claim verdicts with evidence_for/evidence_against trails and grounding assessment |
+| Source Expressions | `schemas/source-expressions.schema.json` | Exact case-local passages, locators, hashes, lifecycle, and many-to-many finding relations |
+| Case Contract | `schemas/case-contract.schema.json` | Append-only receipt that solely determines whether a case is activated as findings contract `1.1` |
+| Source-Expression Migration | `schemas/source-expression-migration.schema.json` | Dry-run/apply audit record; informative only and never an activation signal |
 | Evidence Bundle | `schemas/evidence-bundle.schema.json` | Acquisition artifacts with method, missing-source gate, hashes, and claim links |
 | Provenance Manifest | `schemas/provenance-manifest.schema.json` | Case artifact hashes, claim/verdict links, evidence refs, and optional Noosphere C2PA signing metadata |
 | Methodology | `schemas/methodology.schema.json` | Investigation plan with directions, steps, tools_required, opsec_considerations |
 | Investigation Log | `schemas/investigation-log.schema.json` | Append-only cycle audit trail |
 | Summary | `schemas/summary.schema.json` | Gate 1 summary for review |
+
+## Source-Expression Release Modes
+
+- **Legacy (default):** `findings.json` stays at contract `1.0`; producer spawn
+  prompts omit `SOURCE_EXPRESSION_MODE`; no expression protection is claimed.
+- **Pilot (explicit opt-in):** pass `SOURCE_EXPRESSION_MODE: pilot` to both
+  producers. `data/source-expressions.json` is an experimental side artifact;
+  it does not upgrade the findings contract and never activates the case.
+- **Activated:** a valid `data/case-contract.json` plus matching findings
+  contract `1.1` is authoritative. File presence, a migration audit, or a
+  findings version alone is insufficient. Activated cases remain strict and
+  must never be treated as legacy during recovery or rollback.
+
+Deterministic checks establish exact-text, locator, hash, lifecycle, reference,
+and status integrity. They do not establish truth, entailment, completeness, or
+fair editorial framing. Independent fact-checking and human review remain
+required.
+
+The pilot decision is recorded in
+`docs/source-expression-pilot-results.json`. Its current activation status is
+**NOT APPROVED**; new-case emission therefore remains legacy `1.0` by default.

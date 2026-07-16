@@ -96,9 +96,11 @@ Each investigation gets an isolated working directory under the configured
 ├── summary.md
 ├── review.html
 ├── data/
-│   ├── methodology.json
-│   ├── findings.json
-│   ├── fact-check.json
+  │   ├── methodology.json
+  │   ├── findings.json
+  │   ├── fact-check.json
+│   ├── source-expressions.json  # opt-in pilot or activated cases
+│   ├── case-contract.json       # activated 1.1 cases only
 │   ├── evidence-bundle.json
 │   ├── investigation-log.json
 │   ├── summary.json
@@ -116,6 +118,37 @@ Each investigation gets an isolated working directory under the configured
 The JSON files validate against schemas in [schemas/](schemas/). The markdown
 and HTML files are for human review. The evidence and research folders preserve
 the local trail behind the claims.
+
+### Source-expression pilot
+
+Spotlight can preserve an exact source passage as a first-class
+`SourceExpression`: original wording, case-local locator, hashes, attribution,
+language, lifecycle, and explicit links to one or more findings. This layer
+does not replace findings or fact-check verdicts.
+
+The pilot-capable release has three distinct states:
+
+- **Legacy (default):** new cases emit findings contract `1.0` and do not
+  produce source expressions.
+- **Pilot (explicit opt-in):** producers write `data/source-expressions.json`
+  as a side artifact while the case remains legacy `1.0`. File presence does
+  not activate the case.
+- **Activated:** findings contract `1.1` and a valid append-only
+  `data/case-contract.json` are both present. The receipt is the sole activation
+  authority; activated cases cannot silently fall back to legacy handling.
+
+The checks are deliberately bounded. They can prove that selected text,
+locators, hashes, references, lifecycle state, and rendered quotations agree.
+They cannot prove that a passage is true, entails a finding, captures all
+relevant context, or is framed fairly. Independent fact-checking and human
+editorial review still own those judgments.
+
+The comparative pilot record is
+[`docs/source-expression-pilot-results.json`](docs/source-expression-pilot-results.json).
+Human correction yield and review time have not yet been measured, so strict
+activation is **NOT APPROVED** and default new-case emission remains `1.0`.
+Recovery, migration, and mode-selection instructions are in
+[`docs/investigating.md`](docs/investigating.md#source-expression-mode).
 
 ## Source Acquisition
 
