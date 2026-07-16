@@ -577,7 +577,7 @@ def main() -> int:
         (legacy / "data" / "fact-check.json").write_text(json.dumps(valid_fact_check()))
         (legacy / "data" / "source-expressions.json").write_text("{}")
         rc = subprocess.run([sys.executable, str(SCRIPT), str(legacy)], capture_output=True).returncode
-        check("e2e: expression file alone does not activate legacy case", [] if rc == 0 else [f"rc={rc}"], False)
+        check("e2e: invalid pilot expression file is rejected without activation", [] if rc == 1 else [f"rc={rc}"], False)
 
     print(f"\n{PASS} passed, {FAIL} failed")
     return 1 if FAIL else 0

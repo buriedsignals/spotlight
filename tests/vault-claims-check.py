@@ -454,10 +454,24 @@ def build_case(case: Path) -> tuple[str, str, str]:
     write_json(data / "findings.json", findings)
     write_json(data / "fact-check.json", checked)
     write_json(data / "source-expressions.json", source_doc)
-    source_hash = sha((data / "source-expressions.json").read_bytes())
+    write_json(data / "evidence-bundle.json", {})
+    hashes = {
+        "findings_sha256": sha((data / "findings.json").read_bytes()),
+        "fact_check_sha256": sha((data / "fact-check.json").read_bytes()),
+        "evidence_bundle_sha256": sha((data / "evidence-bundle.json").read_bytes()),
+        "source_expressions_sha256": sha((data / "source-expressions.json").read_bytes()),
+    }
     write_json(data / "case-contract.json", {
         "schema_version": "1.0", "project": "test-case", "current_contract_version": "1.1",
-        "activation_events": [{"activated_artifact_hashes": {"source_expressions_sha256": source_hash}}],
+        "activation_events": [{
+            "event_id": "activate-vault-fixture",
+            "previous_contract_version": "1.0",
+            "activated_contract_version": "1.1",
+            "activated_at": "2026-07-16T00:00:00Z",
+            "tool_version": "test/1",
+            "prior_input_hashes": {key: value for key, value in hashes.items() if key != "source_expressions_sha256"},
+            "activated_artifact_hashes": hashes,
+        }],
     })
     write_json(data / "ingestion.json", {"schema_version": "1.0", "status": "completed"})
     return expression_fps

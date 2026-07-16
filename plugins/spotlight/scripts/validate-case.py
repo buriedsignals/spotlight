@@ -24,7 +24,6 @@ Exit code:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import sys
@@ -42,6 +41,11 @@ from evidence_anchors import (
     rlm_lead_failure,
     selected_source_text,
     sha256_file,
+)
+from source_expression_contract import (
+    POSITIVE_VERDICTS,
+    canonical_fingerprint,
+    passage_core,
 )
 
 
@@ -71,12 +75,6 @@ TECHNICAL_INDICATOR_TYPES = {
     "bitcoin",
     "ethereum",
 }
-PASSAGE_CORE_FIELDS = (
-    "text", "anchor_ref", "anchor_sha256", "original_evidence_bundle_id",
-    "original_artifact_sha256", "language", "attribution", "direct_quote",
-    "derived_from_expression_id", "derivative_type",
-)
-POSITIVE_VERDICTS = {"verified", "partially_verified"}
 
 
 def load_json(path: Path) -> tuple[Any, list[str]]:
@@ -111,13 +109,6 @@ def parse_datetime(value: Any) -> Optional[datetime]:
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else None
-
-
-def canonical_fingerprint(payload: dict[str, Any]) -> str:
-    encoded = json.dumps(
-        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def validate_case_contract(data: Any) -> list[str]:
@@ -195,12 +186,27 @@ def _graph_cycles(edges: dict[str, str], label: str) -> list[str]:
     return sorted(set(errors))
 
 
+def expression_refs(evidence_rows: list[Any]) -> list[dict[str, Any]]:
+    return [
+        ref
+        for evidence in evidence_rows
+        if isinstance(evidence, dict)
+        for ref in (
+            evidence.get("source_expression_refs", [])
+            if isinstance(evidence.get("source_expression_refs", []), list)
+            else []
+        )
+        if isinstance(ref, dict)
+    ]
+
+
 def validate_source_expressions(
     case_dir: Path,
     data: Any,
     findings_data: dict[str, Any],
     factcheck_data: dict[str, Any] | None,
     evidence_data: dict[str, Any] | None,
+    enforce_positive_verdicts: bool = True,
 ) -> list[str]:
     """Validate the full activated expression chain; never infer semantic truth."""
     if not isinstance(data, dict):
@@ -265,7 +271,7 @@ def validate_source_expressions(
             errors.append(f"{prefix}: created_by is invalid")
         if not isinstance(expression.get("cycle"), int) or expression.get("cycle") < 1:
             errors.append(f"{prefix}: cycle must be an integer >= 1")
-        core = {key: expression[key] for key in PASSAGE_CORE_FIELDS if key in expression}
+        core = passage_core(expression)
         if canonical_fingerprint(core) != expression.get("expression_fingerprint"):
             errors.append(f"{prefix}: expression_fingerprint mismatch")
         anchor_ref = expression.get("anchor_ref")
@@ -300,6 +306,9 @@ def validate_source_expressions(
             derivatives = bundle.get("text_derivatives", [])
             if bundle.get("human_verification_required") is True:
                 blocked_support.add(expression_id)
+            gate = bundle.get("missing_source_gate")
+            if isinstance(gate, dict) and gate.get("fallback_required") is not False:
+                blocked_support.add(expression_id)
             if anchor_path is not None and original_paths:
                 known_paths = {
                     path for value in original_paths
@@ -330,6 +339,20 @@ def validate_source_expressions(
             for event_index, event in enumerate(lifecycle):
                 event_name = event.get("event") if isinstance(event, dict) else None
                 timestamp = parse_datetime(event.get("timestamp")) if isinstance(event, dict) else None
+                if not isinstance(event, dict):
+                    errors.append(f"{prefix}: lifecycle event {event_index} must be an object")
+                    continue
+                unknown = set(event) - {
+                    "event", "timestamp", "actor", "reason", "successor_expression_id"
+                }
+                if unknown:
+                    errors.append(
+                        f"{prefix}: lifecycle event {event_index} has unknown fields {sorted(unknown)}"
+                    )
+                if not nonempty_string(event.get("actor")):
+                    errors.append(f"{prefix}: lifecycle event {event_index} needs actor")
+                if not nonempty_string(event.get("reason")):
+                    errors.append(f"{prefix}: lifecycle event {event_index} needs reason")
                 if timestamp is None:
                     errors.append(f"{prefix}: lifecycle event {event_index} has invalid timestamp")
                 else:
@@ -347,6 +370,10 @@ def validate_source_expressions(
                         errors.append(f"{prefix}: superseded event needs successor_expression_id")
                     else:
                         successor_edges[expression_id] = successor
+                elif "successor_expression_id" in event:
+                    errors.append(
+                        f"{prefix}: lifecycle event {event_index} cannot name a successor"
+                    )
             if timestamps != sorted(timestamps):
                 errors.append(f"{prefix}: lifecycle timestamps are not monotonic")
         if state == "activated":
@@ -355,11 +382,16 @@ def validate_source_expressions(
         if not isinstance(links, list) or not links:
             errors.append(f"{prefix}: finding_links must be a non-empty list")
             links = []
+        linked_findings: set[str] = set()
         for link_index, link in enumerate(links):
             if not isinstance(link, dict):
                 errors.append(f"{prefix}: finding_links[{link_index}] must be an object")
                 continue
             finding_id = link.get("finding_id")
+            if nonempty_string(finding_id) and finding_id in linked_findings:
+                errors.append(f"{prefix}: duplicate finding link for {finding_id!r}")
+            elif nonempty_string(finding_id):
+                linked_findings.add(finding_id)
             if link.get("relation") not in {"supports", "contradicts", "context"}:
                 errors.append(f"{prefix}: finding link {finding_id!r} has invalid relation")
             finding = findings.get(finding_id)
@@ -407,22 +439,8 @@ def validate_source_expressions(
             evidence_for = []
         if not isinstance(evidence_against, list):
             evidence_against = []
-        all_refs = [
-            ref for evidence_key in ("evidence_for", "evidence_against")
-            for evidence in (evidence_for if evidence_key == "evidence_for" else evidence_against)
-            if isinstance(evidence, dict)
-            for ref in (
-                evidence.get("source_expression_refs", [])
-                if isinstance(evidence.get("source_expression_refs", []), list) else []
-            ) if isinstance(ref, dict)
-        ]
-        refs = [
-            ref for evidence in evidence_for if isinstance(evidence, dict)
-            for ref in (
-                evidence.get("source_expression_refs", [])
-                if isinstance(evidence.get("source_expression_refs", []), list) else []
-            ) if isinstance(ref, dict)
-        ]
+        refs = expression_refs(evidence_for)
+        all_refs = refs + expression_refs(evidence_against)
         eligible = False
         valid_ref_ids: set[str] = set()
         for ref in all_refs:
@@ -440,7 +458,7 @@ def validate_source_expressions(
                 errors.append(f"fact-check.json.{container}[{index}]: stale expression ref {expression_id!r}")
                 continue
             valid_ref_ids.add(expression_id)
-        if verdict not in POSITIVE_VERDICTS:
+        if not enforce_positive_verdicts or verdict not in POSITIVE_VERDICTS:
             continue
         for ref in refs:
             expression_id = ref.get("expression_id")
@@ -1109,6 +1127,20 @@ def main() -> int:
                 all_errors.append(f"case-contract.json: activated artifact {path.name} is missing")
             elif latest.get(key) != sha256_file(path):
                 all_errors.append(f"case-contract.json: {key} does not match the activated artifact")
+    elif findings_version == "1.0":
+        expressions_path = case_dir / "data" / "source-expressions.json"
+        if expressions_path.exists():
+            expressions_data, errs = load_json(expressions_path)
+            all_errors.extend(errs)
+            if expressions_data is not None:
+                all_errors.extend(validate_source_expressions(
+                    case_dir,
+                    expressions_data,
+                    findings_data,
+                    factcheck_data,
+                    evidence_bundle_data,
+                    enforce_positive_verdicts=False,
+                ))
 
     if not args.fact_check_only:
         investigation_log_path = case_dir / "data" / "investigation-log.json"

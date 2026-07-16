@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from source_expression_contract import lifecycle_state
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 TEMPLATE = SCRIPT_DIR.parent / "skills/report-drafting/references/report-template.html"
@@ -305,10 +307,9 @@ def treatment_map(draft: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def expression_state(expression: dict[str, Any]) -> str:
-    lifecycle = expression.get("lifecycle_events")
-    if not isinstance(lifecycle, list) or not lifecycle or not isinstance(lifecycle[-1], dict):
+    event = lifecycle_state(expression)
+    if event is None:
         return "invalid"
-    event = text(lifecycle[-1].get("event"))
     return "active" if event == "activated" else event
 
 
@@ -346,6 +347,10 @@ def selected_expressions(
             raise RenderError(f"quote selection {expression_id!r} does not resolve")
         if expression_state(expression) != "active":
             raise RenderError(f"quote selection {expression_id!r} is not active")
+        if expression.get("direct_quote") is not True:
+            raise RenderError(f"quote selection {expression_id!r} is not a direct quotation")
+        if expression.get("derivative_type") == "translation":
+            raise RenderError(f"quote selection {expression_id!r} is a translation")
         if expression_link(expression, finding_id) is None:
             raise RenderError(
                 f"quote selection {expression_id!r} is not linked to finding {finding_id!r}"
@@ -354,14 +359,18 @@ def selected_expressions(
     return selected
 
 
-def linked_expressions(
-    finding_id: str, expressions: dict[str, dict[str, Any]]
-) -> list[dict[str, Any]]:
-    return [
-        expression
-        for expression in expressions.values()
-        if expression_link(expression, finding_id) is not None
-    ]
+def expressions_by_finding(
+    expressions: dict[str, dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    result: dict[str, list[dict[str, Any]]] = {}
+    for expression in expressions.values():
+        for link in expression.get("finding_links", []):
+            if not isinstance(link, dict):
+                continue
+            finding_id = text(link.get("finding_id"))
+            if finding_id:
+                result.setdefault(finding_id, []).append(expression)
+    return result
 
 
 def md_exact_quote(value: Any) -> str:
@@ -385,6 +394,7 @@ def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[
     lead = text(findings_doc.get("lead") or methodology.get("lead"))
     rendered: list[dict[str, Any]] = []
     expressions = expression_index(expressions_doc)
+    linked_by_finding = expressions_by_finding(expressions)
     lines = [
         f"# Investigation Report: {md_safe(title)}",
         "",
@@ -412,7 +422,7 @@ def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[
         quotes = selected_expressions(treatment, fid, expressions)
         record = {"id": fid, "finding": finding, "treatment": treatment,
                   "verdict": verdict, "sources": sources, "quotes": quotes,
-                  "source_expressions": linked_expressions(fid, expressions)}
+                  "source_expressions": linked_by_finding.get(fid, [])}
         rendered.append(record)
         lines.append(
             f"| {md_cell(fid)} | {md_cell(treatment.get('headline'))} | "

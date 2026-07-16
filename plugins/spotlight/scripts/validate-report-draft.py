@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from source_expression_contract import lifecycle_state
+
 
 MAX_TEXT = {
     "title": 180,
@@ -108,14 +110,7 @@ def active_expression_ids(expressions: dict[str, Any]) -> set[str]:
     for expression in expressions.get("expressions", []):
         if not isinstance(expression, dict):
             continue
-        lifecycle = expression.get("lifecycle_events")
-        if (
-            isinstance(lifecycle, list)
-            and lifecycle
-            and isinstance(lifecycle[-1], dict)
-            and lifecycle[-1].get("event") == "activated"
-            and clean(expression.get("id"))
-        ):
+        if lifecycle_state(expression) == "activated" and clean(expression.get("id")):
             active.add(clean(expression["id"]))
     return active
 
@@ -178,6 +173,14 @@ def validate_quote_selections(
         if expression_id not in active:
             failures.append(
                 f"STRUCTURE: {item_label} references inactive source expression {expression_id!r}"
+            )
+        if expression.get("direct_quote") is not True:
+            failures.append(
+                f"STRUCTURE: {item_label} requires a direct_quote source expression"
+            )
+        if expression.get("derivative_type") == "translation":
+            failures.append(
+                f"STRUCTURE: {item_label} cannot publish a translation as a direct quotation"
             )
         linked = any(
             isinstance(link, dict) and clean(link.get("finding_id")) == finding_id

@@ -11,12 +11,19 @@ import argparse
 import hashlib
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from source_expression_contract import canonical_fingerprint, fact_check_rows, lifecycle_state
 
 
 ARTIFACTS = [
@@ -51,14 +58,7 @@ def load_json(path: Path, required: bool = True) -> dict[str, Any]:
     return value
 
 
-def canonical_bytes(value: Any) -> bytes:
-    return json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
-
-
-def canonical_hash(value: Any) -> str:
-    return hashlib.sha256(canonical_bytes(value)).hexdigest()
+canonical_hash = canonical_fingerprint
 
 
 def rendered_bytes(value: Any) -> bytes:
@@ -121,11 +121,6 @@ def artifact_entries(case_dir: Path) -> list[dict[str, Any]]:
     return entries
 
 
-def expression_status(expression: dict[str, Any]) -> str:
-    events = expression.get("lifecycle_events", [])
-    return str(events[-1].get("event", "")) if events else ""
-
-
 def fact_check_expression_ids(checked: dict[str, Any]) -> set[str]:
     ids: set[str] = set()
     for side in ("evidence_for", "evidence_against"):
@@ -144,7 +139,7 @@ def claim_entries(
 ) -> list[dict[str, Any]]:
     verdict_by_finding = {
         str(claim.get("finding_id")): claim
-        for claim in fact_check.get("claims", [])
+        for claim in fact_check_rows(fact_check)
         if claim.get("finding_id")
     }
     expressions_by_id = {
@@ -184,7 +179,7 @@ def claim_entries(
                     raise ValueError(
                         f"claim {finding_id} references missing source expression {expression_id}"
                     )
-                if expression_status(expression) != "activated":
+                if lifecycle_state(expression) != "activated":
                     raise ValueError(
                         f"claim {finding_id} references inactive source expression {expression_id}"
                     )
@@ -259,6 +254,7 @@ def manifest_body(
     credential_id: str | None,
     endpoint: str | None,
     source_expressions: dict[str, Any] | None = None,
+    case_artifacts: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     project = (
         findings.get("project")
@@ -277,7 +273,9 @@ def manifest_body(
             "credential_id": credential_id,
             "endpoint": endpoint,
         },
-        "case_artifacts": artifact_entries(case_dir),
+        "case_artifacts": (
+            case_artifacts if case_artifacts is not None else artifact_entries(case_dir)
+        ),
         "claims": claim_entries(findings, fact_check, source_expressions),
         "sources": source_entries(evidence_bundle, findings, case_dir),
     }
@@ -289,6 +287,18 @@ def load_case(case_dir: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str,
         load_json(case_dir / "data/fact-check.json"),
         load_json(case_dir / "data/evidence-bundle.json"),
     )
+
+
+def require_valid_activated_case(case_dir: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT_DIR / "validate-case.py"), str(case_dir), "--fact-check-only"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        raise ValueError(f"activated case validation failed: {detail}")
 
 
 def build_manifest(
@@ -413,9 +423,9 @@ def build_revision(
             credential_id,
             endpoint,
             expressions,
+            artifacts,
         ),
     }
-    revision["case_artifacts"] = artifacts
     revision_bytes = rendered_bytes(revision)
     write_immutable(revision_path, revision_bytes)
     pointer = {
@@ -546,6 +556,8 @@ def main() -> int:
         findings, fact_check, evidence_bundle = load_case(case_dir)
         activated = findings.get("schema_version") == "1.1"
         if activated:
+            if not output.is_file():
+                require_valid_activated_case(case_dir)
             revision, pointer = build_revision(
                 case_dir,
                 output,

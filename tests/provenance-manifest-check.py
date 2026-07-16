@@ -62,12 +62,16 @@ def activate_case(case_dir: Path) -> None:
     anchor = case_dir / "research" / "filing.txt"
     anchor.write_text(finding["claim"] + "\n", encoding="utf-8")
     anchor_sha = hashlib.sha256(anchor.read_bytes()).hexdigest()
+    evidence_bundle = json.loads((data / "evidence-bundle.json").read_text(encoding="utf-8"))
+    evidence_bundle["items"][0]["raw_path"] = "research/filing.txt"
+    evidence_bundle["items"][0]["sha256"] = anchor_sha
+    write_json(data / "evidence-bundle.json", evidence_bundle)
     expression_core = {
         "text": finding["claim"],
         "anchor_ref": {"path": "research/filing.txt", "line_start": 1, "line_end": 1},
         "anchor_sha256": anchor_sha,
         "original_evidence_bundle_id": "E1",
-        "original_artifact_sha256": "a" * 64,
+        "original_artifact_sha256": anchor_sha,
         "language": "en",
         "attribution": "BVI FSC filing",
         "direct_quote": True,
@@ -111,6 +115,26 @@ def activate_case(case_dir: Path) -> None:
         "link_fingerprint": link["link_fingerprint"],
     }]
     write_json(data / "fact-check.json", fact_check)
+    hashes = {
+        "findings_sha256": hashlib.sha256((data / "findings.json").read_bytes()).hexdigest(),
+        "fact_check_sha256": hashlib.sha256((data / "fact-check.json").read_bytes()).hexdigest(),
+        "evidence_bundle_sha256": hashlib.sha256((data / "evidence-bundle.json").read_bytes()).hexdigest(),
+        "source_expressions_sha256": hashlib.sha256((data / "source-expressions.json").read_bytes()).hexdigest(),
+    }
+    write_json(data / "case-contract.json", {
+        "schema_version": "1.0",
+        "project": findings["project"],
+        "current_contract_version": "1.1",
+        "activation_events": [{
+            "event_id": "activate-provenance-fixture",
+            "previous_contract_version": "1.0",
+            "activated_contract_version": "1.1",
+            "activated_at": "2026-07-16T12:00:00Z",
+            "tool_version": "test/1",
+            "prior_input_hashes": {key: value for key, value in hashes.items() if key != "source_expressions_sha256"},
+            "activated_artifact_hashes": hashes,
+        }],
+    })
 
 
 def run_builder(case_dir: Path, *args: str, ok: bool = True) -> subprocess.CompletedProcess[str]:
@@ -151,6 +175,14 @@ def main() -> int:
         assert legacy_manifest["status"] == "unsigned"
         assert legacy_manifest["claims"] and legacy_manifest["sources"]
         assert_schema(legacy_manifest)
+        secret_endpoint = run_builder(
+            legacy,
+            "--sign-endpoint",
+            "https://user:secret@signer.example/sign",
+            ok=False,
+        )
+        assert secret_endpoint.returncode == 2
+        assert "must not contain credentials" in secret_endpoint.stderr
 
         case_dir = copy_fixture_case(tmp / "activated")
         activate_case(case_dir)
@@ -171,7 +203,9 @@ def main() -> int:
         assert expression["expression_id"] == "SX1"
         assert expression["relation"] == "supports"
         assert expression["anchor_sha256"]
-        assert expression["original_artifact_sha256"] == "a" * 64
+        assert expression["original_artifact_sha256"] == hashlib.sha256(
+            (case_dir / "research" / "filing.txt").read_bytes()
+        ).hexdigest()
         assert revision["claims"][0]["finding_fingerprint"]
         assert revision["claims"][0]["fact_check_fingerprint"]
         assert_schema(pointer)

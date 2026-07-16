@@ -36,6 +36,10 @@ from evidence_anchors import (  # noqa: E402
     selected_source_text,
     sha256_file,
 )
+from source_expression_contract import (  # noqa: E402
+    POSITIVE_VERDICTS,
+    canonical_fingerprint,
+)
 
 
 TOOL_VERSION = "spotlight-source-expression-migration/1"
@@ -48,19 +52,6 @@ OUTPUT_FILES = {
     **INPUT_FILES,
     "source_expressions_sha256": "source-expressions.json",
 }
-POSITIVE_VERDICTS = {"verified", "partially_verified"}
-PASSAGE_CORE_FIELDS = (
-    "text",
-    "anchor_ref",
-    "anchor_sha256",
-    "original_evidence_bundle_id",
-    "original_artifact_sha256",
-    "language",
-    "attribution",
-    "direct_quote",
-    "derived_from_expression_id",
-    "derivative_type",
-)
 ORIGINAL_PATH_KEYS = ("raw_path", "downloaded_document_path", "screenshot_path", "path")
 
 
@@ -88,11 +79,7 @@ def canonical_bytes(value: Any) -> bytes:
     )
 
 
-def fingerprint(value: Any) -> str:
-    encoded = json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+fingerprint = canonical_fingerprint
 
 
 def bytes_sha256(value: bytes) -> str:

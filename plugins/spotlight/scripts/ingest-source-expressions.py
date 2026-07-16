@@ -13,11 +13,18 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import sys
 from pathlib import Path
 from typing import Any, Callable
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from source_expression_contract import canonical_json_bytes, fact_check_rows, lifecycle_state
 
 
 TOOL_VERSION = "spotlight-source-expression-ingest/1"
@@ -43,12 +50,6 @@ SNAPSHOT_FIELDS = (
 
 class IngestError(RuntimeError):
     """A deterministic precondition or publication failure."""
-
-
-def canonical_bytes(value: Any) -> bytes:
-    return json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
 
 
 def rendered_json(value: Any) -> bytes:
@@ -133,13 +134,10 @@ def render_managed_block(text: str, block: dict[str, Any]) -> bytes:
 
 
 def expression_state(expression: dict[str, Any]) -> str:
-    events = expression.get("lifecycle_events")
-    if not isinstance(events, list) or not events:
-        raise IngestError(f"expression {expression.get('id')} has no lifecycle events")
-    state = events[-1].get("event") if isinstance(events[-1], dict) else None
-    if state not in {"activated", "superseded", "withdrawn"}:
+    state = lifecycle_state(expression)
+    if state is None:
         raise IngestError(f"expression {expression.get('id')} has invalid lifecycle state")
-    return str(state)
+    return state
 
 
 def eligibility_reason(finding: dict[str, Any] | None, checked: dict[str, Any] | None) -> str | None:
@@ -207,6 +205,16 @@ def build_snapshot(
 
 def verify_activation(case_dir: Path, source_hash: str, project: str) -> None:
     contract = load_object(case_dir / "data" / "case-contract.json")
+    spec = importlib.util.spec_from_file_location(
+        "spotlight_validate_case", SCRIPT_DIR / "validate-case.py"
+    )
+    if spec is None or spec.loader is None:
+        raise IngestError("cannot load activated-case validator")
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+    contract_errors = validator.validate_case_contract(contract)
+    if contract_errors:
+        raise IngestError("invalid case contract: " + "; ".join(contract_errors))
     if contract.get("project") != project or contract.get("current_contract_version") != "1.1":
         raise IngestError("source-expression ingest requires a matching activated 1.1 case")
     events = contract.get("activation_events")
@@ -215,6 +223,15 @@ def verify_activation(case_dir: Path, source_hash: str, project: str) -> None:
     hashes = events[-1].get("activated_artifact_hashes", {})
     if hashes.get("source_expressions_sha256") != source_hash:
         raise IngestError("source-expressions.json does not match the activated artifact hash")
+    artifact_paths = {
+        "findings_sha256": case_dir / "data" / "findings.json",
+        "fact_check_sha256": case_dir / "data" / "fact-check.json",
+        "evidence_bundle_sha256": case_dir / "data" / "evidence-bundle.json",
+        "source_expressions_sha256": case_dir / "data" / "source-expressions.json",
+    }
+    for key, path in artifact_paths.items():
+        if not path.is_file() or hashes.get(key) != sha256_bytes(path.read_bytes()):
+            raise IngestError(f"{path.name} does not match the activated artifact hash")
 
 
 def build_updates(case_dir: Path, vault: Path) -> tuple[dict[Path, bytes], dict[str, Any]]:
@@ -235,7 +252,7 @@ def build_updates(case_dir: Path, vault: Path) -> tuple[dict[Path, bytes], dict[
     findings = {str(item.get("id")): item for item in findings_doc.get("findings", [])}
     checked = {
         str(item.get("finding_id")): item
-        for item in checked_doc.get("claims", checked_doc.get("verdicts", []))
+        for item in fact_check_rows(checked_doc)
         if item.get("finding_id")
     }
 
@@ -243,7 +260,7 @@ def build_updates(case_dir: Path, vault: Path) -> tuple[dict[Path, bytes], dict[
     registry_entries = {
         str(entry.get("id")): entry for entry in registry.get("claims", []) if entry.get("id")
     }
-    claims_by_finding: dict[str, tuple[str, Path, str, dict[str, Any]]] = {}
+    claims_by_finding: dict[str, tuple[str, Path, str]] = {}
     for claim_id, entry in registry_entries.items():
         if entry.get("project") != project:
             continue
@@ -261,7 +278,7 @@ def build_updates(case_dir: Path, vault: Path) -> tuple[dict[Path, bytes], dict[
         reason = eligibility_reason(findings.get(finding_id), checked.get(finding_id))
         if reason:
             raise IngestError(f"vault claim {claim_id} no longer passes eligibility: {reason}")
-        claims_by_finding[finding_id] = (claim_id, note_path, note_text, entry)
+        claims_by_finding[finding_id] = (claim_id, note_path, note_text)
 
     snapshots_by_claim: dict[str, list[dict[str, Any]]] = {}
     skipped: list[dict[str, str]] = []
@@ -269,7 +286,6 @@ def build_updates(case_dir: Path, vault: Path) -> tuple[dict[Path, bytes], dict[
         if not isinstance(expression, dict):
             raise IngestError("source expression entry must be an object")
         expression_id = str(expression.get("id", ""))
-        matched = False
         for link in expression.get("finding_links", []):
             finding_id = str(link.get("finding_id", ""))
             target = claims_by_finding.get(finding_id)
@@ -281,7 +297,6 @@ def build_updates(case_dir: Path, vault: Path) -> tuple[dict[Path, bytes], dict[
                     "reason": reason or "no eligible vault claim",
                 })
                 continue
-            matched = True
             claim_id = target[0]
             snapshots_by_claim.setdefault(claim_id, []).append(
                 build_snapshot(project, finding_id, expression, link)
@@ -292,17 +307,11 @@ def build_updates(case_dir: Path, vault: Path) -> tuple[dict[Path, bytes], dict[
                 "finding_id": "",
                 "reason": "no finding links",
             })
-        elif not matched and not any(item["expression_id"] == expression_id for item in skipped):
-            skipped.append({
-                "expression_id": expression_id,
-                "finding_id": "",
-                "reason": "no eligible vault claim",
-            })
 
     updates: dict[Path, bytes] = {}
     written_snapshot_ids: list[str] = []
     claim_ids: list[str] = []
-    for finding_id, (claim_id, note_path, note_text, _entry) in sorted(claims_by_finding.items()):
+    for finding_id, (claim_id, note_path, note_text) in sorted(claims_by_finding.items()):
         incoming = snapshots_by_claim.get(claim_id, [])
         if not incoming:
             continue  # Keep legacy expression-less claims byte-for-byte intact.
@@ -346,7 +355,7 @@ def build_updates(case_dir: Path, vault: Path) -> tuple[dict[Path, bytes], dict[
             "snapshot_ids": sorted(snapshot["snapshot_id"] for snapshot in accepted),
         }
         event = {
-            "event_id": sha256_bytes(canonical_bytes(event_payload)),
+            "event_id": sha256_bytes(canonical_json_bytes(event_payload)),
             "event": "source_expressions_ingested",
             **event_payload,
         }
