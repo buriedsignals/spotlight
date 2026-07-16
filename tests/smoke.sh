@@ -56,7 +56,7 @@ done
 
 echo ""
 echo "── Schemas ──"
-for s in findings fact-check report-draft methodology investigation-log summary evidence-bundle provenance-manifest rlm-analysis; do
+for s in findings fact-check report-draft methodology investigation-log summary evidence-bundle provenance-manifest rlm-analysis source-expressions case-contract; do
   if [ -f "schemas/$s.schema.json" ]; then
     if python3 -c "import json; json.load(open('schemas/$s.schema.json'))" 2>/dev/null; then
       ok "schemas/$s.schema.json parses"
@@ -124,7 +124,7 @@ fi
 
 echo ""
 echo "── Validators and helpers ──"
-for t in validate-case-check validate-report-check render-report-check monitoring-registry-check preflight-check cti-upstream-check technical-investigation-check verified-indicator-export-check; do
+for t in validate-case-check validate-fact-check-check validate-report-check render-report-check monitoring-registry-check preflight-check cti-upstream-check technical-investigation-check verified-indicator-export-check; do
   python3 "tests/$t.py" >/dev/null 2>&1
   rc=$?
   if [ $rc -eq 0 ]; then

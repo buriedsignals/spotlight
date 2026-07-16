@@ -4,7 +4,7 @@
   "type": "object",
   "required": ["project", "findings"],
   "properties": {
-    "schema_version": { "const": "1.0" },
+    "schema_version": { "enum": ["1.0", "1.1"] },
     "project": { "type": "string" },
     "lead": { "type": "string" },
     "investigated_at": { "type": "string", "format": "date-time" },
@@ -18,6 +18,11 @@
         "properties": {
           "id": { "type": "string" },
           "claim": { "type": "string" },
+          "finding_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "SHA-256 of canonical UTF-8 JSON containing exactly the claim field, with sorted keys, compact separators, ensure_ascii=false, and no Unicode normalization."
+          },
           "evidence": {
             "oneOf": [
               { "type": "string" },
@@ -89,6 +94,22 @@
       "items": { "$ref": "#/definitions/monitoring_recommendation" }
     }
   },
+  "oneOf": [
+    {
+      "description": "Legacy contract. Omitted schema_version remains valid for backward compatibility.",
+      "properties": { "schema_version": { "const": "1.0" } }
+    },
+    {
+      "description": "Source-expression-aware findings contract.",
+      "required": ["schema_version"],
+      "properties": {
+        "schema_version": { "const": "1.1" },
+        "findings": {
+          "items": { "required": ["finding_fingerprint"] }
+        }
+      }
+    }
+  ],
   "definitions": {
     "grounding": {
       "type": "object",
