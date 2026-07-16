@@ -130,6 +130,11 @@ All registries use `schema_version: "1.0"`.
 
 Registry entries stay minimal — claim text, evidence, and sources live in the note body. `verdict` is restricted to `verified` and `partially_verified` (the only verdicts that pass the claim eligibility gate in `entity-model.md`); `layer` must be consistent with `verdict` (`verified` → `durable`, `partially_verified` → `lead`).
 
+Source-expression snapshots are embedded in eligible claim notes and are
+absent from this registry and the master registry. Their identity is `(project,
+expression_id, expression_fingerprint)`; the case-local ingestion receipt holds
+the source input hash and written/skipped IDs.
+
 ### 7. Alias Index (generated artifact)
 
 **Path:** `{vault}/entities/_aliases.json`
@@ -192,6 +197,7 @@ How Spotlight case files map to vault notes and registries.
 | fact-check.json `summary` | Verdict stats | Investigation note frontmatter |
 | fact-check.json `claims[]` | Per-claim verdicts | Investigation note annotations |
 | findings.json `findings[]` ⋈ fact-check.json `claims[]` (joined on finding ID, eligibility-gated) | Verified claims with verdicts, grounding, sources | Claim notes + claims registry |
+| source-expressions.json `expressions[].finding_links[]` ⋈ eligible claims | Exact passages and lifecycle history | Managed block in the claim note + case-local ingestion receipt |
 | summary.json | Title, scope, conclusions | Investigation note frontmatter + summary |
 
 ---
@@ -206,6 +212,7 @@ How Spotlight case files map to vault notes and registries.
 6. **The claims layer is stricter still.** A claim note requires verdict `verified` or `partially_verified`, grounding `confidence_cap` above `low`, at least one source ref, and non-RLM origin (full gate in `entity-model.md`). Excluded findings are logged with their exclusion reason during ingest — filtering is visible, never silent.
 7. **Supersession is append-only.** Claim notes are never rewritten by later investigations; re-verification and supersession append dated rows to the claim's Supersession History.
 8. **Aliases are derived, merges are human-gated.** `entities/_aliases.json` is rebuilt from entity frontmatter on every ingest and never hand-edited. Alias collisions produce entries in `entities/_merge-proposals.json` for human review; ingest never merges entities on its own.
+9. **Expressions have no standalone registry.** The deterministic writer copies them only into eligible claims, preserving inactive snapshots as history and leaving legacy claims unchanged.
 
 ---
 

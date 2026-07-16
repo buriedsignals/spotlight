@@ -42,6 +42,9 @@ Read these case files:
 {CASE_DIR}/data/summary.json
 ```
 
+For an activated `1.1` case, also read
+`data/case-contract.json` and `data/source-expressions.json`.
+
 Skip to the Ingestion Process.
 
 ### Mode B — Standalone
@@ -324,6 +327,24 @@ For each finding in `findings.json`, join its matching fact-check entry from `fa
 - Same project re-ingest: update the note idempotently — identical inputs must produce identical output, no duplicate registry entries.
 - Different project re-verifying or superseding: **never rewrite the existing note's claim, evidence, or history.** Append one dated row to the Supersession History table (`re-verified` / `strengthened` / `superseded`), update frontmatter `verified`/`verified_by` to the latest verification, and promote `layer` to `durable` if the new verdict is `verified`. History is append-only.
 
+#### Step 6a — Attach activated source-expression snapshots
+
+For an activated `1.1` case, complete Step 7 so eligible claim notes and
+`claims/_registry.json` both exist, then run the deterministic writer before
+Step 8 while the project-owned vault lock is still held:
+
+```
+execute-shell("python3 scripts/ingest-source-expressions.py --case-dir {CASE_DIR} --vault {vault} --lock-held")
+```
+
+Never author its managed claim blocks directly. The writer verifies activation
+and claim eligibility, embeds snapshots only in matching claims, retains
+inactive lifecycle history, and writes a content-addressed ingest event. It
+also extends `data/ingestion.json` with the source input hash and written/skipped
+IDs. Re-ingest is byte-identical; publication failure is rolled back. There is
+no standalone expression registry, and legacy expression-less claims remain
+unchanged.
+
 ### Step 7 — Update ALL Registries
 
 This is mandatory. Update every registry affected by the ingestion.
@@ -349,7 +370,9 @@ See `references/registry-spec.md` for exact schemas.
 
 Use relative markdown links in the investigations table (`[project-id](investigations/project-id.md)`).
 
-After Step 8 completes, remove the `.ingest-lock`. Include the claim exclusion log from Step 6 in the ingest summary reported to the user: claims written, claims updated, and each excluded finding with its reason.
+After Step 8 and, when applicable, Step 6a complete, remove the `.ingest-lock`.
+Include both the claim exclusions and source-expression written/skipped IDs in
+the ingest summary.
 
 In pipeline mode, update `{CASE_DIR}/data/ingestion.json` to
 `{"schema_version":"1.0","status":"completed"}` after the lock is removed. If
@@ -386,6 +409,7 @@ Frontmatter and registry JSON are identical regardless of vault type.
 8. **The claims layer admits verified intelligence only.** Verdict `verified` or `partially_verified`, grounding cap above `low`, sources present, non-RLM origin. Every exclusion is logged with its reason in the ingest summary.
 9. **Claim history is append-only.** Re-verification and supersession append dated rows; existing claim content is never rewritten by a later investigation.
 10. **Aliases are derived, merges are human-gated.** Rebuild `entities/_aliases.json` from entity frontmatter every run; alias collisions become merge proposals, never automatic merges.
+11. **Expression mutation is deterministic.** Only `scripts/ingest-source-expressions.py` may write managed source-expression blocks, under the project-owned vault lock. Never create an expression registry.
 
 ---
 
@@ -409,6 +433,8 @@ Reads from:
   {CASE_DIR}/data/fact-check.json
   {CASE_DIR}/data/investigation-log.json
   {CASE_DIR}/data/summary.json
+  {CASE_DIR}/data/case-contract.json         (activated 1.1 cases)
+  {CASE_DIR}/data/source-expressions.json    (activated 1.1 cases)
   {vault}/_registry.json
   {vault}/investigations/_registry.json
   {vault}/entities/_registry.json
@@ -433,4 +459,5 @@ Writes to:
   {vault}/claims/_registry.json
   {vault}/_registry.json                   (master)
   {vault}/index.md
+  {CASE_DIR}/data/ingestion.json           (source-expression receipt)
 ```
