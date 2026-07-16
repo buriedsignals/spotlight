@@ -20,6 +20,7 @@ Phase 2 — Methodology
 Phase 3 — Execution (cycles, max 5)
     FOR each cycle:
         spawn investigator (EXECUTION) → writes findings.json + investigation-log.json
+        opt-in pilot/activated cases → acquiring agent records source-expressions.json
         spawn fact-checker → writes fact-check.json
         editorial standards check
         process monitoring_recommendations (if any)
@@ -133,6 +134,29 @@ After the investigator writes `methodology.json`, the orchestrator presents a su
 
 Cycles are autonomous. The orchestrator runs up to 5 without user intervention, then either advances to Gate 1 (all readiness criteria met) or triggers the Stall Protocol.
 
+### Source-expression mode
+
+Source expressions are opt-in during the pilot-capable release. The orchestrator
+passes `SOURCE_EXPRESSION_MODE: pilot|activated` to producer agents only for a
+selected case. If the field is absent, agents retain legacy `1.0` output and do
+not emit `data/source-expressions.json`.
+
+- `pilot` records the experimental side artifact without upgrading or
+  activating the case. It is used to measure duplicate expressions, unresolved
+  links, locator stability, and reviewer value.
+- `activated` means the case already follows the `1.1` case contract. Agents
+  preserve that contract; activation receipts are owned by orchestration or
+  migration, not by producer prompts.
+
+The agent that acquired a source records its expressions. Text is copied exactly
+in the source language and linked many-to-many to findings with `supports`,
+`contradicts`, or `context`. Translations are separately labeled derivatives.
+For audio, video, images, and scans, the evidence bundle preserves the original
+artifact while a separately hashed transcript, caption, OCR, or extraction is
+the expression anchor. Unavailable sources and unrecoverable exact passages are
+recorded as gaps, never reconstructed from snippets or model memory. There is no
+automatic passage extraction or entailment judgment in this release.
+
 ### A cycle
 
 ```
@@ -245,6 +269,8 @@ Every finding must be grounded in a scraped file. This is non-negotiable.
 1. **Store all research per-case.** Every scraped file goes to `{CASE_DIR}/research/`.
 2. **Scrape before cite.** A finding without a scraped file is a claim, not a finding.
 3. **Quote verbatim from primary sources.** The `evidence` field contains direct quotes, not paraphrases.
+   In an explicitly enabled source-expression case, preserve the same exact
+   original-language selection and locator in `data/source-expressions.json`.
 4. **Ground the exact claim.** Every finding includes a `grounding` object explaining support type, source role, missing assumptions, contradictions, confidence cap, and misgrounding risk.
 5. **Link every finding to file and archive.** Every source entry includes `local_file`, `archive_url`, and `access_method`.
 6. **If you cannot scrape, explain why.** Document the barrier, downgrade confidence. A search snippet alone caps at `low` confidence.
@@ -300,6 +326,10 @@ All pipeline state lives in files. If context is lost mid-investigation, the orc
 | `data/methodology.json` but no findings | Phase 3 cycle 1 |
 | `data/findings.json` but no `summary.md` | Phase 3, evaluate current cycle's readiness |
 | `summary.md` present | Phase 4 review |
+
+The presence of `data/source-expressions.json` alone never changes recovery or
+activates a legacy case. Activation is determined only by the explicit `1.1`
+case contract and its receipt.
 
 No database, no daemon — files are the source of truth.
 
