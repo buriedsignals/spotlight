@@ -32,6 +32,7 @@ from urllib.parse import urlparse
 SCRIPT_DIR = Path(__file__).resolve().parent
 TEMPLATE = SCRIPT_DIR.parent / "skills/report-drafting/references/report-template.html"
 DRAFT_VALIDATOR = SCRIPT_DIR / "validate-report-draft.py"
+CASE_VALIDATOR = SCRIPT_DIR / "validate-case.py"
 AI_NOTICE = (
     "Spotlight is designed to help surface, organize, and cross-check information, "
     "but AI can make mistakes. You are responsible for verifying sources, confirming "
@@ -303,18 +304,87 @@ def treatment_map(draft: dict[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
 
+def expression_state(expression: dict[str, Any]) -> str:
+    lifecycle = expression.get("lifecycle_events")
+    if not isinstance(lifecycle, list) or not lifecycle or not isinstance(lifecycle[-1], dict):
+        return "invalid"
+    event = text(lifecycle[-1].get("event"))
+    return "active" if event == "activated" else event
+
+
+def expression_index(expressions_doc: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    if expressions_doc is None:
+        return {}
+    return {
+        text(item.get("id")): item
+        for item in expressions_doc.get("expressions", [])
+        if isinstance(item, dict) and text(item.get("id"))
+    }
+
+
+def expression_link(expression: dict[str, Any], finding_id: str) -> dict[str, Any] | None:
+    return next(
+        (
+            link
+            for link in expression.get("finding_links", [])
+            if isinstance(link, dict) and text(link.get("finding_id")) == finding_id
+        ),
+        None,
+    )
+
+
+def selected_expressions(
+    treatment: dict[str, Any],
+    finding_id: str,
+    expressions: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    selected: list[dict[str, Any]] = []
+    for selection in treatment.get("quote_selections", []):
+        expression_id = text(selection.get("expression_id")) if isinstance(selection, dict) else ""
+        expression = expressions.get(expression_id)
+        if expression is None:
+            raise RenderError(f"quote selection {expression_id!r} does not resolve")
+        if expression_state(expression) != "active":
+            raise RenderError(f"quote selection {expression_id!r} is not active")
+        if expression_link(expression, finding_id) is None:
+            raise RenderError(
+                f"quote selection {expression_id!r} is not linked to finding {finding_id!r}"
+            )
+        selected.append(expression)
+    return selected
+
+
+def linked_expressions(
+    finding_id: str, expressions: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    return [
+        expression
+        for expression in expressions.values()
+        if expression_link(expression, finding_id) is not None
+    ]
+
+
+def md_exact_quote(value: Any) -> str:
+    raw = value if isinstance(value, str) else str(value)
+    escaped = html.escape(raw, quote=False).replace("\r\n", "\n").replace("\r", "\n")
+    escaped = re.sub(r"([\\`*_\[\](){}#+.!|>\-])", r"\\\1", escaped)
+    return escaped.replace("\n", "\n> ")
+
+
 def editorial_items(draft: dict[str, Any], field: str) -> list[dict[str, Any]]:
     return [item for item in draft.get(field, []) if isinstance(item, dict)]
 
 
 def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[str, Any],
-                    draft: dict[str, Any], checks: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+                    draft: dict[str, Any], checks: list[dict[str, Any]],
+                    expressions_doc: dict[str, Any] | None = None) -> tuple[str, list[dict[str, Any]]]:
     findings = ordered_findings(findings_doc, draft)
     treatments = treatment_map(draft)
     title = text(draft.get("title"))
     deck = text(draft.get("deck"))
     lead = text(findings_doc.get("lead") or methodology.get("lead"))
     rendered: list[dict[str, Any]] = []
+    expressions = expression_index(expressions_doc)
     lines = [
         f"# Investigation Report: {md_safe(title)}",
         "",
@@ -339,8 +409,10 @@ def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[
         treatment = treatments[fid]
         verdict = aggregate_verdict(finding, checks)
         sources = source_records(case, finding, verdict)
+        quotes = selected_expressions(treatment, fid, expressions)
         record = {"id": fid, "finding": finding, "treatment": treatment,
-                  "verdict": verdict, "sources": sources}
+                  "verdict": verdict, "sources": sources, "quotes": quotes,
+                  "source_expressions": linked_expressions(fid, expressions)}
         rendered.append(record)
         lines.append(
             f"| {md_cell(fid)} | {md_cell(treatment.get('headline'))} | "
@@ -371,6 +443,13 @@ def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[
         rationale = text(finding.get("confidence_rationale"))
         if rationale:
             lines += ["- **Investigator rationale:** " + md_safe(rationale)]
+        if record["quotes"]:
+            lines += ["", "**Selected source quotations**", ""]
+            for expression in record["quotes"]:
+                attribution = text(expression.get("attribution"))
+                lines += [f"> “{md_exact_quote(expression.get('text', ''))}”"]
+                if attribution:
+                    lines += [">", f"> — {md_safe(attribution)}"]
         lines += ["", "**Replication path**", "",
                   f"1. Read the structured claim in `data/findings.json` ({md_safe(record['id'])}).",
                   "2. Inspect the existing case-local source files listed below.",
@@ -461,6 +540,16 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
             source_html = "No accessible source URL or case-local evidence file was recorded."
         evidence = " ".join(list_of_text(finding.get("evidence")))
         assessment = verdict["assessment"] or "No fact-check narrative was recorded."
+        quotations = "".join(
+            '<blockquote class="source-expression">'
+            f'<p>“{html.escape(expression.get("text", ""), quote=True)}”</p>'
+            + (
+                f'<footer>— {h(expression.get("attribution"))}</footer>'
+                if text(expression.get("attribution")) else ""
+            )
+            + '</blockquote>'
+            for expression in record["quotes"]
+        )
         finding_sections.append(f'''
   <section class="finding" id="{h(anchor)}">
     <div class="finding-meta"><span class="pill pill-id">{h(fid)}</span><span class="pill pill-{pill}">{h(verdict['confidence'])}</span><span class="cat">{h(label)}</span></div>
@@ -469,6 +558,7 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
     <p><strong>Canonical fact-checked claim:</strong> {h(finding.get('claim'))}</p>
     <p><strong>Why it matters:</strong> {h(treatment.get('why_it_matters'))}</p>
     <p><strong>Independent fact-check:</strong> {h(assessment)}</p>
+    {quotations}
     <div class="path" aria-label="How we got here">
       <div class="step">Structured claim</div><div class="what"><code>data/findings.json</code> · {h(fid)}</div>
       <div class="step">Evidence</div><div class="what">{len(sources)} accessible source record(s) retained below</div>
@@ -582,7 +672,17 @@ def evidence_map(
             "evidence_bundle_refs": list_of_text(finding.get("evidence_bundle_refs")),
             "sources": record["sources"],
         })
-    return {
+        if record["source_expressions"]:
+            selected_ids = {text(item.get("id")) for item in record["quotes"]}
+            claims[-1]["source_expression_refs"] = [
+                {
+                    "expression_id": text(expression.get("id")),
+                    "relation": text(expression_link(expression, record["id"]).get("relation")),
+                    "selected_quote": text(expression.get("id")) in selected_ids,
+                }
+                for expression in record["source_expressions"]
+            ]
+    result = {
         "schema_version": "1.0",
         "case_ref": case.name,
         "generator": "scripts/render-report.py",
@@ -597,6 +697,31 @@ def evidence_map(
         },
         "claims": claims,
     }
+    expressions_by_id = {
+        text(expression.get("id")): expression
+        for record in rendered
+        for expression in record["source_expressions"]
+    }
+    if expressions_by_id:
+        result["source_expressions"] = [
+            {
+                "id": expression_id,
+                "text": expression.get("text", ""),
+                "attribution": expression.get("attribution"),
+                "language": expression.get("language"),
+                "direct_quote": expression.get("direct_quote"),
+                "anchor_ref": expression.get("anchor_ref"),
+                "anchor_sha256": expression.get("anchor_sha256"),
+                "original_evidence_bundle_id": expression.get("original_evidence_bundle_id"),
+                "original_artifact_sha256": expression.get("original_artifact_sha256"),
+                "expression_fingerprint": expression.get("expression_fingerprint"),
+                "finding_links": expression.get("finding_links", []),
+                "lifecycle": expression.get("lifecycle_events", []),
+                "lifecycle_state": expression_state(expression),
+            }
+            for expression_id, expression in expressions_by_id.items()
+        ]
+    return result
 
 
 def publish_outputs(case: Path, outputs: dict[str, str]) -> None:
@@ -644,10 +769,13 @@ def render(case: Path) -> dict[str, Any]:
     fact_check_path = case / "data" / "fact-check.json"
     methodology_path = case / "data" / "methodology.json"
     draft_path = case / "data" / "report-draft.json"
+    expressions_path = case / "data" / "source-expressions.json"
     findings_doc = load_object(findings_path)
     fact_check = load_object(fact_check_path)
     methodology = load_object(methodology_path) if methodology_path.is_file() else {}
     draft = load_object(draft_path)
+    activated = findings_doc.get("schema_version") == "1.1"
+    expressions_doc = load_object(expressions_path) if activated else None
     findings = findings_doc.get("findings")
     if not isinstance(findings, list) or not findings:
         raise RenderError(f"no findings to render in {findings_path}")
@@ -664,8 +792,12 @@ def render(case: Path) -> dict[str, Any]:
 
     checks = canonical_checks(fact_check)
     inputs = [findings_path, fact_check_path, draft_path] + ([methodology_path] if methodology_path.is_file() else [])
+    if activated:
+        inputs.append(expressions_path)
     hashes = input_hashes(inputs)
-    markdown, rendered = render_markdown(case, findings_doc, methodology, draft, checks)
+    markdown, rendered = render_markdown(
+        case, findings_doc, methodology, draft, checks, expressions_doc
+    )
     rendered_ids = [record["id"] for record in rendered]
     expected_order = [text(fid) for fid in draft.get("finding_order", [])]
     if rendered_ids != expected_order or set(rendered_ids) != seen_ids:
@@ -714,6 +846,20 @@ def main() -> int:
     if validation.returncode != 0:
         print(validation.stdout.strip() or validation.stderr.strip())
         return 3
+    try:
+        findings_doc = load_object(case / "data" / "findings.json")
+    except RenderError as exc:
+        print(f"FAIL  report render: {exc}")
+        return 3
+    if findings_doc.get("schema_version") == "1.1":
+        case_validation = subprocess.run(
+            [sys.executable, str(CASE_VALIDATOR), str(case), "--fact-check-only"],
+            capture_output=True,
+            text=True,
+        )
+        if case_validation.returncode != 0:
+            print(case_validation.stderr.strip() or case_validation.stdout.strip())
+            return 3
     try:
         result = render(case)
     except (OSError, RenderError) as exc:
