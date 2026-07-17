@@ -2,6 +2,7 @@
 name: epistemic-grounding
 description: Portable claim-to-evidence grounding for knowledge work, fact-checking, and Spotlight investigations. Use when extracting claims or findings, assigning confidence, diagnosing weak support, or deciding whether material is a lead, partially grounded claim, verified finding, disputed claim, or false claim.
 version: "2.0"
+invocable_by: [orchestrator, investigator, fact-checker]
 ---
 
 # Epistemic Grounding

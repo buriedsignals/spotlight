@@ -2,6 +2,7 @@
 name: shell-safety
 description: Portable safe command construction for any agent skill or recipe. Use before a shell call containing user, model, scraped, configuration, filesystem, or generated values.
 version: "2.0"
+invocable_by: [orchestrator, investigator, fact-checker]
 ---
 
 # Shell Safety
