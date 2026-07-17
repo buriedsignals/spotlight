@@ -1085,7 +1085,9 @@ export SPOTLIGHT_LOCAL_BASEURL="http://127.0.0.1:8080/v1"
 export SPOTLIGHT_LOCAL_CTX=40960
 export SPOTLIGHT_FLUE_MODEL="local/\$MODEL_ALIAS"
 export SPOTLIGHT_MODEL_TIER="\$TIER"
-export SPOTLIGHT_CWD="\$SPOTLIGHT_DIR"
+# Engine/OpenKnowledge may bind the Flue skill-discovery cwd to the selected
+# knowledge project. Standalone installs retain the Spotlight checkout default.
+export SPOTLIGHT_CWD="\${SPOTLIGHT_WORKSPACE_PATH:-\$SPOTLIGHT_DIR}"
 export FLUE_DB="\${FLUE_DB:-\$SPOTLIGHT_DIR/harness/flue/data/flue.db}"
 
 cd "\$SPOTLIGHT_DIR/harness/flue"
