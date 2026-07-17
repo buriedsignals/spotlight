@@ -50,14 +50,22 @@
         "required": { "type": "boolean" },
         "used": { "type": "boolean" },
         "status": { "enum": ["green", "yellow", "red", "missing", "unknown"] },
+		"interface": { "enum": ["cli", "api_fallback", "none"] },
+		"capabilities": { "type": "array", "items": { "enum": ["osint_tools", "data_sources"] } },
         "queries": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["direction", "endpoint", "request_path", "response_path"],
+			"required": ["direction", "response_path"],
             "properties": {
               "direction": { "type": "string" },
-              "endpoint": { "enum": ["/api/tools/search", "/api/query"] },
+			  "mode": { "enum": ["tool_discovery", "data_source"] },
+			  "interface": { "enum": ["cli", "api_fallback"] },
+			  "command": { "type": "string" },
+			  "catalog_id": { "type": "string" },
+			  "catalog_version": { "type": "string" },
+			  "retrieved_at": { "type": "string", "format": "date-time" },
+			  "endpoint": { "enum": ["/api/tools/search", "/api/query"] },
               "request_path": { "type": "string" },
               "response_path": { "type": "string" },
               "selected_tools": { "type": "array", "items": { "type": "string" } },
@@ -76,6 +84,42 @@
         },
         "fallback_used": { "type": "boolean" },
         "fallback_reason": { "type": "string" }
+		,"data_sources": {
+		  "type": "array",
+		  "items": {
+			"type": "object",
+			"required": ["direction", "considered", "selected", "reason"],
+			"properties": {
+			  "direction": { "type": "string" },
+			  "considered": { "type": "array", "items": { "type": "string" } },
+			  "selected": { "type": "array", "items": { "type": "string" } },
+			  "unavailable_capability": { "type": "string" },
+			  "reason": { "type": "string" },
+			  "playbook_path": { "type": "string" },
+			  "retrieved_at": { "type": "string", "format": "date-time" },
+			  "results": {
+				"type": "array",
+				"description": "Structured Navigator query artifacts recorded after execution.",
+				"items": {
+				  "type": "object",
+				  "required": ["source_id", "interface", "parameters", "executed_at", "source_urls", "warnings", "output_path", "output_sha256"],
+				  "properties": {
+					"source_id": { "type": "string" },
+					"interface": { "enum": ["cli", "api_fallback"] },
+					"command": { "type": "string" },
+					"endpoint": { "enum": ["/api/query"] },
+					"parameters": { "type": "object" },
+					"executed_at": { "type": "string", "format": "date-time" },
+					"source_urls": { "type": "array", "items": { "type": "string" } },
+					"warnings": { "type": "array", "items": { "type": "string" } },
+					"output_path": { "type": "string" },
+					"output_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+				  }
+				}
+			  }
+			}
+		  }
+		}
       }
     },
     "rlm": {
@@ -112,6 +156,7 @@
           "direction": { "type": "string" },
           "questions": { "type": "array", "items": { "type": "string" } },
           "navigator_not_applicable_reason": { "type": "string" },
+		  "navigator_data_not_applicable_reason": { "type": "string" },
           "steps": {
             "type": "array",
             "items": {
@@ -128,6 +173,8 @@
                   "enum": ["navigator", "curated-catalog", "prior-vault", "user-specified"]
                 },
                 "navigator_response_path": { "type": "string" }
+				,"navigator_catalog_id": { "type": "string" }
+				,"navigator_retrieved_at": { "type": "string", "format": "date-time" }
               }
             }
           },

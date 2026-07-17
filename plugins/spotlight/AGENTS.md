@@ -29,8 +29,8 @@ Fixed vocabulary of abstract operations. Every runtime adapter MUST implement al
 | `spawn-agent` | `spawn-agent(agent_id, prompt, config)` | Launch sub-agent with prompt and config | runtime-specific |
 | `wait-agent` | `wait-agent(handle)` | Block until agent completes, return output | runtime-specific |
 | `invoke-skill` | `invoke-skill(skill_id)` | Load skill instructions into current context | runtime-specific |
-| `query-vault` | `query-vault(vault_path, query)` | Search knowledge vault for context | `BUN_INSTALL="" qmd query` |
-| `vault-write` | `vault-write(vault_path, note_path, content)` | Write note to vault and update registry | `obsidian` CLI |
+| `query-vault` | `query-vault(workspace_path, query)` | Search durable knowledge through the Knowledge Workspace Port | OpenKnowledge MCP `search`; explicit Markdown recovery on backend failure |
+| `vault-write` | `vault-write(workspace_path, note_path, content)` | Journal an approved durable write in the declared logical space | OpenKnowledge MCP `write`; no automatic write fallback |
 
 ## Agent Manifests
 

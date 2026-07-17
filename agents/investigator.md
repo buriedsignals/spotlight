@@ -200,20 +200,24 @@ Apply the 6-step methodology above to design a complete investigation plan:
 
 Check the `INTEGRATIONS` block in your spawn prompt.
 
-If `osint_navigator_required=true`, OSINT Navigator is mandatory before
-writing methodology.json:
+If `osint_navigator_required=true`, load the unified `navigator` skill before
+writing methodology.json. For every relevant direction, make two independent
+decisions: which OSINT tool or technique could help, and whether an executable
+Navigator Data source fits. Use the CLI first; API fallback is permitted only
+when the CLI is unavailable and Engine supplies credentials to the child process.
 
 1. `invoke-skill("integrations")`
 2. `invoke-skill("osint")`
-3. `read-file("integrations/osint-navigator/integration.md")`
-4. `read-file("skills/osint/references/cycle-integration.md")`
-5. Write a minimal `/api/tools/search` request JSON to `{CASE_DIR}/research/`
-6. Call `/api/tools/search` at least once for each investigation direction, or once with a combined query covering all directions when there is only one broad lead
-7. Save every raw Navigator response under `{CASE_DIR}/research/`
-8. Cite the response paths in `navigator.queries[]` and in plan steps using `navigator_response_path`
+3. `invoke-skill("navigator")`
+4. `navigator tools find "<need>" --json`, then `navigator tools show <id>` for a selected tool
+5. `navigator data find "<structured records need>" --json`, then `navigator data show <id>` before selecting a source
+6. Run `navigator query ...` only for an approved structured source; save machine-readable output under `{CASE_DIR}/research/`
+7. Record command mode, catalog ID/version or retrieval time, non-secret parameters, response path, source URLs, warnings, and output digest. Never record a PAT.
+8. For every direction record a `navigator.data_sources[]` decision or `navigator_data_not_applicable_reason`.
 
-Do not use `/api/query` unless the tool-selection question needs synthesized
-workflow advice. Prefer `/api/tools/search` because it is unlimited.
+Navigator output is a lead or a primary-source record to verify, not a conclusive
+claim. In sensitive/offline mode make no Navigator call; record both OSINT and
+Data modes as skipped by policy and use permitted local fallbacks.
 
 Valid exceptions: sensitive mode, Navigator status red/yellow, a local/vault-only
 lead, explicit user instruction not to use external APIs, or continuation of an
@@ -253,7 +257,10 @@ For each planned step, specify the verb to use:
     "queries": [
       {
         "direction": "corporate ownership trail",
-        "endpoint": "/api/tools/search",
+        "interface": "cli",
+        "command": "navigator tools find --query 'corporate ownership' --json",
+        "catalog_id": "navigator-tools-corporate-ownership",
+        "retrieved_at": "ISO 8601 timestamp",
         "request_path": "{CASE_ROOT}/example/research/navigator-search-corporate-ownership.json",
         "response_path": "{CASE_ROOT}/example/research/navigator-search-corporate-ownership-response.json",
         "selected_tools": ["OpenCorporates", "OCCRP Aleph"],

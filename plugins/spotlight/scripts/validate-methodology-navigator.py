@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the v2.1 OSINT Navigator methodology contract.
+"""Validate the Navigator CLI-first methodology contract.
 
 The gate is intentionally narrow: when Phase 0 preflight marks Navigator green
 and required for Phase 2, methodology.json must prove Navigator was used before
@@ -89,11 +89,21 @@ def validate_required(methodology: dict[str, Any], status: str) -> list[str]:
             query_directions.add(direction)
         else:
             errors.append(f"{prefix}.direction is required")
-        if query.get("endpoint") != "/api/tools/search":
-            errors.append(f"{prefix}.endpoint must be /api/tools/search")
-        for key in ("request_path", "response_path"):
-            if not nonempty_string(query.get(key)):
-                errors.append(f"{prefix}.{key} is required")
+        interface = query.get("interface", "api_fallback" if query.get("endpoint") else "cli")
+        if interface == "cli":
+            if not nonempty_string(query.get("command")):
+                errors.append(f"{prefix}.command is required for CLI use")
+            for key in ("catalog_id", "retrieved_at", "response_path"):
+                if not nonempty_string(query.get(key)):
+                    errors.append(f"{prefix}.{key} is required for CLI use")
+        elif interface == "api_fallback":
+            if query.get("endpoint") not in {"/api/tools/search", "/api/query"}:
+                errors.append(f"{prefix}.endpoint must identify the documented API fallback")
+            for key in ("request_path", "response_path"):
+                if not nonempty_string(query.get(key)):
+                    errors.append(f"{prefix}.{key} is required for API fallback")
+        else:
+            errors.append(f"{prefix}.interface must be cli or api_fallback")
         tools = query.get("selected_tools", [])
         if not isinstance(tools, list):
             errors.append(f"{prefix}.selected_tools must be a list")
@@ -125,6 +135,52 @@ def validate_required(methodology: dict[str, Any], status: str) -> list[str]:
                         errors.append(f"{prefix}.steps[{step_index}].navigator_response_path is required when tool_source is navigator")
         if not not_applicable and direction_name not in query_directions and not step_has_nav:
             errors.append(f"{prefix}: cite a Navigator response or set navigator_not_applicable_reason")
+
+    data_sources = nav.get("data_sources", [])
+    if data_sources is not None and not isinstance(data_sources, list):
+        errors.append("methodology.json: navigator.data_sources must be a list")
+        data_sources = []
+    data_by_direction = {
+        item.get("direction"): item
+        for item in data_sources
+        if isinstance(item, dict) and nonempty_string(item.get("direction"))
+    }
+    for index, direction in enumerate(plan):
+        if not isinstance(direction, dict):
+            continue
+        name = direction.get("direction")
+        if name in data_by_direction:
+            item = data_by_direction[name]
+            for key in ("considered", "selected", "reason"):
+                if key not in item or (isinstance(item[key], str) and not item[key].strip()):
+                    errors.append(f"methodology.json: navigator.data_sources[{name!r}].{key} is required")
+            results = item.get("results", [])
+            if results is not None and not isinstance(results, list):
+                errors.append(f"methodology.json: navigator.data_sources[{name!r}].results must be a list")
+                results = []
+            for result_index, result in enumerate(results):
+                result_prefix = f"methodology.json: navigator.data_sources[{name!r}].results[{result_index}]"
+                if not isinstance(result, dict):
+                    errors.append(result_prefix + " must be an object")
+                    continue
+                for key in ("source_id", "interface", "parameters", "executed_at", "source_urls", "warnings", "output_path", "output_sha256"):
+                    if key not in result or (isinstance(result[key], str) and not result[key].strip()):
+                        errors.append(f"{result_prefix}.{key} is required")
+                if result.get("interface") == "cli" and not nonempty_string(result.get("command")):
+                    errors.append(f"{result_prefix}.command is required for CLI output")
+                if result.get("interface") == "api_fallback" and result.get("endpoint") != "/api/query":
+                    errors.append(f"{result_prefix}.endpoint must identify the API fallback")
+                if not isinstance(result.get("parameters"), dict):
+                    errors.append(f"{result_prefix}.parameters must be an object")
+                if not isinstance(result.get("source_urls"), list) or not all(nonempty_string(url) for url in result.get("source_urls", [])):
+                    errors.append(f"{result_prefix}.source_urls must be a list of source URLs")
+                if not isinstance(result.get("warnings"), list):
+                    errors.append(f"{result_prefix}.warnings must be a list")
+                digest = result.get("output_sha256")
+                if not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+                    errors.append(f"{result_prefix}.output_sha256 must be a lowercase SHA-256 digest")
+        elif not nonempty_string(direction.get("navigator_data_not_applicable_reason")):
+            errors.append(f"methodology.json: investigation_plan[{index}] must record a data-source decision or navigator_data_not_applicable_reason")
 
     tools_required = methodology.get("tools_required", [])
     if not isinstance(tools_required, list):

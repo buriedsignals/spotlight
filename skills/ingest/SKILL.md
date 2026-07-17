@@ -1,6 +1,6 @@
 ---
 name: ingest
-description: Archive investigation findings into a Markdown vault (Obsidian, Tolaria, or directory) as structured knowledge — entity notes, methodology notes, tool notes, with registries and wikilinks. Works standalone or as part of the Spotlight pipeline.
+description: Stage and commit approved investigation findings through the Knowledge Workspace Port into the spotlight namespace.
 version: "1.0"
 invocable_by: [orchestrator, user]
 requires: []
@@ -8,7 +8,9 @@ requires: []
 
 # Ingest — Knowledge Archival
 
-You are archiving confirmed investigation findings into a structured knowledge base.
+You are archiving confirmed investigation findings into the shared knowledge workspace. Active case files and raw evidence remain case-local.
+
+All durable mutations use the Knowledge Workspace Port. Set `logical_space: spotlight_verified`, actor type `spotlight`, the case and editorial decision IDs, classification, request ID, idempotency key, and expected versions. Never infer a destination from prose and never fall back to a different write backend. The destination path must resolve below `<workspace>/spotlight/`; the intelligence vault is always denied.
 
 This skill instructs. You — the host runtime — execute. You read investigation files, write vault notes, update registries, and maintain the knowledge graph. The user sees the result; you do the work.
 
@@ -25,8 +27,7 @@ Two input modes:
 
 The orchestrator passes project path and vault config (from `.spotlight-config.json`). All inputs are known:
 
-- `vault_path` — target vault or directory
-- `vault_type` — `"obsidian"`, `"tolaria"`, or `"directory"`
+- `knowledge_destination` — typed target from `.spotlight-config.json`
 - `project` — project slug
 
 At entry, write `{CASE_DIR}/data/ingestion.json` with
@@ -61,19 +62,11 @@ The user requests ingestion directly.
 
 **STOP.**
 
-**Step 2 — Vault target:**
+**Step 2 — Knowledge destination:**
 
-> "Which vault or directory should I archive to?"
+> "Which configured Knowledge Workspace should receive this approved package?"
 
-Check if the path contains `.obsidian/`:
-
-```
-list-files("{path}/.obsidian")
-```
-
-- Found: `vault_type = "obsidian"` — wikilinks enabled.
-- If the config already says `vault_type = "tolaria"` — keep `tolaria`; use Markdown files, YAML frontmatter, and wikilinks.
-- Not found: `vault_type = "directory"` — relative markdown links.
+Require a typed destination (`openknowledge`, `markdown`, or `obsidian_legacy`) and namespace `spotlight`. Standalone ingestion still requires an explicit editorial approval record; a bare filesystem path is insufficient.
 
 **Step 3 — Supplementary files:**
 
@@ -87,9 +80,11 @@ Proceed to the Ingestion Process with whatever files were found.
 
 ---
 
-## Concurrency Lock
+## Staging, journal, and concurrency
 
-Before starting the ingestion process, check for a lock file:
+Before mutation, use `batch_stage` to validate the exact Markdown and JSON registry package. Record its hash in the case-local receipt and show additions, updates, and exclusions to the journalist. Require approval of that exact hash. Then call `batch_commit` with the stable idempotency key; the port creates the checkpoint and durable journal.
+
+If a pending journal exists, resume or restore that exact operation. Never start a second ingest over partial state. A filesystem lock is only an additional local guard, not the transaction mechanism.
 
 ```
 list-files("{vault}/.ingest-lock")
@@ -124,6 +119,8 @@ If the process errors partway through, remove the lock before reporting the erro
 ## Ingestion Process
 
 Eight steps. Execute in order. Do not skip steps.
+
+In the steps below, examples written as `read-file` and `write-file` describe document construction only. Read durable state with port `read`; collect every proposed `write-file` result in the staged package instead of writing immediately. Publish them together only through the approved `batch_commit`. Reconcile hashes, registry IDs, and links before marking the case-local receipt committed.
 
 ### Step 1 — Read Current Vault State
 

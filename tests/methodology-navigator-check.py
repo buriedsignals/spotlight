@@ -77,9 +77,12 @@ def methodology_with_navigator() -> dict:
             "status": "green",
             "queries": [
                 {
-                    "direction": "corporate ownership trail",
-                    "endpoint": "/api/tools/search",
-                    "request_path": "cases/sample/research/navigator-search-corporate-ownership.json",
+                "direction": "corporate ownership trail",
+					"mode": "tool_discovery",
+					"interface": "cli",
+					"command": "navigator tools find 'corporate ownership registry' --json",
+					"catalog_id": "opencorporates",
+					"retrieved_at": "2026-07-17T12:00:00Z",
                     "response_path": response,
                     "selected_tools": ["OpenCorporates", "OCCRP Aleph"],
                     "rejected_tools": [{"tool": "Example Tool", "reason": "not relevant"}],
@@ -87,11 +90,18 @@ def methodology_with_navigator() -> dict:
             ],
             "fallback_used": False,
             "fallback_reason": "",
+			"data_sources": [{
+				"direction": "corporate ownership trail",
+				"considered": ["company registry"],
+				"selected": [],
+				"reason": "No executable structured source fits this fixture."
+			}],
         },
         "investigation_plan": [
             {
                 "direction": "corporate ownership trail",
                 "questions": ["Who owns Example Corp?"],
+				"navigator_data_not_applicable_reason": "Recorded in navigator.data_sources.",
                 "steps": [
                     {
                         "order": 1,
@@ -124,6 +134,29 @@ def main() -> int:
         valid = run(case_dir, config)
         if valid.returncode != 0:
             raise AssertionError(f"valid navigator fixture should pass\nSTDOUT:\n{valid.stdout}\nSTDERR:\n{valid.stderr}")
+
+        structured = methodology_with_navigator()
+        structured["navigator"]["data_sources"][0]["results"] = [{
+            "source_id": "global/procurement",
+            "interface": "cli",
+            "command": "navigator query global/procurement --input '{...}'",
+            "parameters": {"supplier": "Example Corp"},
+            "executed_at": "2026-07-17T12:01:00Z",
+            "source_urls": ["https://example.test/award/1"],
+            "warnings": [],
+            "output_path": "cases/sample/research/navigator-procurement.json",
+            "output_sha256": "a" * 64,
+        }]
+        write_json(methodology_path, structured)
+        structured_valid = run(case_dir, config)
+        if structured_valid.returncode != 0:
+            raise AssertionError(f"valid structured result should pass\n{structured_valid.stderr}")
+
+        structured["navigator"]["data_sources"][0]["results"][0].pop("output_sha256")
+        write_json(methodology_path, structured)
+        malformed_result = run(case_dir, config)
+        if malformed_result.returncode == 0 or "output_sha256 is required" not in malformed_result.stderr:
+            raise AssertionError("structured Navigator output without digest should fail")
 
         write_json(config, base_config(required=False))
         skipped = methodology_without_navigator()

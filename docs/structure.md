@@ -48,7 +48,7 @@ spotlight/
 | `spawn-agent` | `spawn-agent(agent_id, prompt, config)` | Launch sub-agent |
 | `wait-agent` | `wait-agent(handle)` | Block until agent completes |
 | `invoke-skill` | `invoke-skill(skill_id)` | Load skill instructions into context |
-| `query-vault` | `query-vault(vault_path, query)` | Search vault (backing: `qmd query`) |
+| `query-vault` | `query-vault(workspace_path, query)` | Search durable knowledge through the Knowledge Workspace Port; OpenKnowledge primary, explicit Markdown recovery reads |
 | `vault-write` | `vault-write(vault_path, note_path, content)` | Write vault note + update registry |
 
 These are **abstract** — the runtime adapter binds each to a concrete tool. See [integrations.md](integrations.md) for per-runtime mappings.
@@ -221,7 +221,13 @@ Per-machine config created during Phase 0. Fields:
 {
   "search_library": "firecrawl",
   "vault_path": "/Users/you/Documents/intelligence/",
-  "vault_type": "obsidian|tolaria|directory",
+  "knowledge_destination": {
+    "type": "openknowledge|markdown|obsidian_legacy|none",
+    "workspace_path": "/Users/you/Documents/OpenKnowledge",
+    "namespace": "spotlight",
+    "project_id": "<OpenKnowledge project identity>",
+    "legacy_mode": "compare|fallback_read|off"
+  },
   "case_workspace_root": "/Users/you/Documents/Spotlight/cases",
   "cases_root": "/Users/you/Documents/Spotlight/cases",
   "integrations": {

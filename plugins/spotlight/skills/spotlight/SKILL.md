@@ -326,18 +326,17 @@ INTEGRATIONS:
   osint_navigator_required={config.integrations.osint_navigator.required_in_phase_2}
 SKILLS: integrations, osint, investigate, epistemic-grounding, acquisition-graduation, web-archiving, content-access, shell-safety, social-media-intelligence (social investigations), technical-investigation (technical leads)
 
-TOOL DISCOVERY (tier-aware — pick ONE path by osint_navigator_required):
+NAVIGATOR ROUTING (CLI-first — make TWO independent decisions per direction):
 
 If osint_navigator_required=true (subscription / entitled deployments), before writing methodology.json:
 1. invoke-skill("integrations")
 2. invoke-skill("osint")
-3. read-file("integrations/osint-navigator/integration.md")
-4. read-file("skills/osint/references/cycle-integration.md")
-5. write a minimal Navigator request JSON to {CASE_DIR}/research/
-6. call /api/tools/search at least once for each investigation direction, or once with a combined query covering all directions when there is only one broad lead
-7. save every raw Navigator response to {CASE_DIR}/research/
-8. cite those response paths in methodology.json (navigator.queries[])
-Do not use /api/query unless the tool-selection question needs synthesized workflow advice. Prefer /api/tools/search because it is unlimited.
+3. invoke-skill("navigator")
+4. run `navigator tools find` and inspect chosen tools with `navigator tools show`
+5. independently run `navigator data find` and inspect a relevant source with `navigator data show`
+6. run `navigator query` only for an approved structured source and save machine-readable output to {CASE_DIR}/research/
+7. record CLI/API mode, catalog ID/version or retrieval time, non-secret parameters, warnings, source URLs, digest, and a per-direction data-source decision or skip reason
+In sensitive/offline mode make no Navigator request; record both modes as policy-skipped and use allowed local fallbacks.
 
 If osint_navigator_required=false (local / open-weights deployments — no Navigator entitlement), discover tools from the LOCAL index — no external call, no mandatory reads:
 - execute-shell("python3 scripts/osint-tools.py find \"<lead-derived keywords>\" [--category <cat>] [--limit 8]")
@@ -372,7 +371,7 @@ When the agent completes:
    If validation fails, do not present the methodology for approval. Re-spawn or
    re-prompt the investigator with the fix the validator prints:
 
-   > (Navigator entitled) "methodology.json does not show Navigator use. Use /api/tools/search before returning; save response paths and cite them in navigator.queries[]."
+   > (Navigator entitled) "methodology.json does not show a CLI-first Navigator decision. Record tool and data-source decisions, provenance, and any policy/entitlement skip."
    > (local / open tier) "Fix the navigator block per the validator: set navigator:{required:false, used:false, fallback_reason:...} or omit it, and ensure tools_required[] lists the tools osint-tools returned."
 
 3. Present a summary of the proposed methodology to the user

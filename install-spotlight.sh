@@ -265,7 +265,10 @@ fi
 : "${SPOTLIGHT_RLM_REPO:=unsloth/gemma-4-E4B-it-GGUF}"
 : "${SPOTLIGHT_RLM_GGUF:=gemma-4-E4B-it-Q4_K_M.gguf}"
 : "${FIRECRAWL_API_KEY:=}"
-: "${OSINT_NAV_API_KEY:?osint-navigator key missing from config}"
+# Compatibility installer only: Engine-managed installs use `bsig auth login`
+# and never ask for this value. Keep the legacy key path until Engine is the
+# required installer, but make its distinction explicit at every failure point.
+: "${OSINT_NAV_API_KEY:?Navigator compatibility API key missing; use Engine browser authentication (bsig auth login) for managed installs}"
 
 if [ "$SPOTLIGHT_INT_RLM" != "true" ]; then
   SPOTLIGHT_RLM_MODE="off"
