@@ -35,8 +35,8 @@ def validate_url(value: str) -> str:
         raise SafetyError("url must include a host")
     if parsed.username is not None or parsed.password is not None:
         raise SafetyError("url must not contain credentials")
-    if parsed.query or parsed.fragment:
-        raise SafetyError("url must not contain query parameters or fragments")
+    if parsed.fragment:
+        raise SafetyError("url must not contain fragments")
     return value
 
 
