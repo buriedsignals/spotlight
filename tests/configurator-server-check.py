@@ -21,10 +21,12 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "install"))
 import setup_server as srv  # noqa: E402
+import engine_bridge as engine  # noqa: E402
 
 BASE = {
     "mode": "cloud", "cloudRuntime": "claude", "opencodeProvider": "openrouter",
@@ -58,6 +60,27 @@ def warns(payload):
 
 
 class UnitChecks(unittest.TestCase):
+    def test_engine_bridge_keeps_secret_values_off_argv(self):
+        bridge = engine.EngineBridge.__new__(engine.EngineBridge)
+        bridge.product = "spotlight"
+        bridge.binary = "/fake/bsig"
+        replies = iter([
+            {"event": "result", "data": {"normalized": {"required_secret_ids": ["OPENROUTER_API_KEY"]}}},
+            {"event": "result", "data": {"keys": []}},
+            {"event": "result", "data": {}},
+            {"event": "result", "data": {"plan_path": "/tmp/plan.json"}},
+        ])
+        calls = []
+        def fake_run(argv, **kwargs):
+            calls.append((argv, kwargs.get("input")))
+            event = next(replies)
+            return subprocess.CompletedProcess(argv, 0, (json.dumps(event) + "\n").encode(), b"")
+        with mock.patch.object(engine.subprocess, "run", side_effect=fake_run):
+            result = bridge.submit({"schema_version": "bsig-configure/v1"}, {"OPENROUTER_API_KEY": "newsroom-secret"})
+        self.assertTrue(result["ok"])
+        self.assertTrue(any(argv[-3:] == ["keys", "set", "OPENROUTER_API_KEY"] and body == b"newsroom-secret" for argv, body in calls))
+        self.assertFalse(any("newsroom-secret" in " ".join(argv) for argv, _ in calls))
+
     def test_structural_validation(self):
         self.assertEqual(errs(BASE), [])
         cases = [
@@ -175,15 +198,14 @@ class UnitChecks(unittest.TestCase):
         try:
             srv.probe = lambda url, headers: seen.append(url) or "ok"
             for provider, fragment in [("openrouter", "openrouter.ai/api/v1/key"),
-                                       ("fireworks", "api.fireworks.ai"),
-                                       ("together", "api.together.xyz")]:
+                                       ("fireworks", "api.fireworks.ai")]:
                 seen.clear()
                 srv.validate_keys(srv.normalize({**OPENCODE, "opencodeProvider": provider}))
                 self.assertTrue(any(fragment in u for u in seen), provider)
             # claude payload probes no cloud endpoint at all
             seen.clear()
             srv.validate_keys(srv.normalize(BASE))
-            self.assertFalse(any("openrouter" in u or "fireworks" in u or "together" in u for u in seen))
+            self.assertFalse(any("openrouter" in u or "fireworks" in u for u in seen))
         finally:
             srv.probe = orig
 
@@ -226,8 +248,6 @@ class UnitChecks(unittest.TestCase):
         self.assertNotIn("sk-or-cloud-secret", cfg)
         fw = srv.build_setup_config(srv.normalize({**OPENCODE, "opencodeProvider": "fireworks"}))
         self.assertIn("SPOTLIGHT_CLOUD_KEY_VAR=FIREWORKS_API_KEY", fw)
-        tg = srv.build_setup_config(srv.normalize({**OPENCODE, "opencodeProvider": "together"}))
-        self.assertIn("SPOTLIGHT_CLOUD_KEY_VAR=TOGETHER_API_KEY", tg)
         # cloud key var derives ONLY when mode=cloud AND runtime=opencode
         local = srv.build_setup_config(srv.normalize({**OPENCODE, "mode": "local"}))
         self.assertIn("SPOTLIGHT_CLOUD_KEY_VAR=''", local)

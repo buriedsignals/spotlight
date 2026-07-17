@@ -4,16 +4,16 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test src/lib/*.test.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@flue/runtime": "^1.0.0-beta.9"
+	"@flue/runtime": "1.0.0-beta.9"
   },
   "devDependencies": {
-    "@flue/cli": "^1.0.0-beta.9"
+	"@flue/cli": "1.0.0-beta.9"
   },
   "type": "module"
 }
