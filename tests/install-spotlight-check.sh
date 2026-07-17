@@ -48,6 +48,7 @@ includes install-spotlight.sh '*[!A-Za-z0-9._-]*'
 includes install-spotlight.sh 'export SPOTLIGHT_CWD="\${SPOTLIGHT_WORKSPACE_PATH:-\$SPOTLIGHT_DIR}"'
 includes harness/flue/src/agents/spotlight.ts 'cwd: process.env.SPOTLIGHT_CWD ?? process.cwd()'
 includes harness/flue/src/agents/spotlight.ts 'flat skill names rather than a product namespace'
+[ -f harness/flue/package-lock.json ] || note 'harness/flue/package-lock.json missing: Engine npm_project_install requires a committed lockfile'
 # No blob/eval head remnants
 excludes install-spotlight.sh 'base64 -d'
 excludes install-spotlight.sh "SPOTLIGHT_CONFIG='"
