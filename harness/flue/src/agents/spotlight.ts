@@ -45,8 +45,9 @@ const COMPACTION = MODEL.startsWith('local/')
 
 // Investigator + fact-checker run as delegated subagents in their OWN child sessions
 // (fact-check independence, U8). Skill subsets are the U2 composition (harness/composition.json);
-// the skills themselves are discovered from <cwd>/.agents/skills/spotlight.
-// Skills are workspace-discovered from <cwd>/.agents/skills (the engine-placed store):
+// the skills themselves are discovered from <cwd>/.agents/skills.
+// Skills are workspace-discovered from <cwd>/.agents/skills (the Engine/OpenKnowledge
+// projection store), using flat skill names rather than a product namespace:
 // all are available by name, bodies loaded on-invoke (D1). This natively delivers the
 // per-agent "lightening" (D2) — no agent holds skill bodies up front. `harness/composition.json`
 // (U2) remains the documented intent; each role's instructions steer which it actually uses.

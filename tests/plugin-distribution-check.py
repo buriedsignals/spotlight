@@ -78,7 +78,10 @@ def validate_marketplaces() -> None:
 
 
 def validate_payload_sync() -> None:
-    compare_tree(ROOT / "skills", PLUGIN / "skills", ("*.md",))
+    # Skill bundles include executable helpers as well as instructions. Keeping
+    # both in the payload comparison prevents a plugin release from advertising
+    # a portable skill while omitting or drifting its bundled safety helper.
+    compare_tree(ROOT / "skills", PLUGIN / "skills", ("*.md", "*.py"))
     compare_tree(ROOT / "agents", PLUGIN / "agents", ("*.md",))
     compare_tree(ROOT / "schemas", PLUGIN / "schemas", ("*.json",))
     compare_tree(ROOT / "scripts", PLUGIN / "scripts", ("*.py",))

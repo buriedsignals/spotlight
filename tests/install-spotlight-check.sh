@@ -43,6 +43,11 @@ includes install-spotlight.sh 'data/report-draft.json'
 includes install-spotlight.sh 'Frontier CLI exit backstop (not per-response middleware)'
 includes install-spotlight.sh 'finalize-report.py" "\$active_case" --if-ready'
 includes install-spotlight.sh '*[!A-Za-z0-9._-]*'
+# Engine/OpenKnowledge can select the knowledge project at launch time; the
+# Flue harness must discover the flat .agents skill projections from that cwd.
+includes install-spotlight.sh 'export SPOTLIGHT_CWD="\${SPOTLIGHT_WORKSPACE_PATH:-\$SPOTLIGHT_DIR}"'
+includes harness/flue/src/agents/spotlight.ts 'cwd: process.env.SPOTLIGHT_CWD ?? process.cwd()'
+includes harness/flue/src/agents/spotlight.ts 'flat skill names rather than a product namespace'
 # No blob/eval head remnants
 excludes install-spotlight.sh 'base64 -d'
 excludes install-spotlight.sh "SPOTLIGHT_CONFIG='"

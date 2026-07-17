@@ -1,19 +1,37 @@
 ---
 name: epistemic-grounding
-description: Claim-to-evidence grounding for Spotlight investigations. Use when extracting findings, assigning confidence, fact-checking claims, diagnosing weak support, or deciding whether a signal is a lead, partially grounded claim, verified finding, disputed claim, or false claim.
-version: "1.0"
-invocable_by: [investigator, fact-checker, orchestrator, user]
+description: Portable claim-to-evidence grounding for knowledge work, fact-checking, and Spotlight investigations. Use when extracting claims or findings, assigning confidence, diagnosing weak support, or deciding whether material is a lead, partially grounded claim, verified finding, disputed claim, or false claim.
+version: "2.0"
 ---
 
 # Epistemic Grounding
 
-Use this skill whenever Spotlight turns source material into claims or evaluates whether a claim is ready for editorial use.
+Use this skill whenever an agent turns source material into a claim or decides
+whether a claim is ready to file, brief, investigate, fact-check, or publish.
 
 The core question is:
 
 > Does this exact evidence justify believing this exact claim?
 
 A source is only an anchor. Grounding is the relationship between the claim and the anchor.
+
+## Task profiles
+
+The grounding doctrine below is universal. Select the output profile from the
+calling task; do not replace this skill with a runtime-specific variant.
+
+- **knowledge-work** — routine Mycroft vault, brief, ingestion, and synthesis
+  work. Apply the ladder and caps; emit the task's light `confidence:` tag and
+  source reference. Do not manufacture a heavyweight schema for ordinary notes.
+- **fact-check** — publication or editor-review work. Emit the task's complete
+  grounding/provenance object, evidence references, and human-review state.
+- **investigation-findings** — Spotlight casework. Every `findings.json`
+  finding carries the grounding object below; preserve contradiction and
+  source-expression obligations when that case mode is enabled.
+
+Generated URLs, citations, statute IDs, and database paths are leads—not
+grounds—until fetched or otherwise verified. This is especially important for
+local or fine-tuned models, but applies to every model.
 
 ## Grounding Ladder
 
@@ -79,7 +97,7 @@ Use these caps even if the claim sounds plausible:
 
 Never upgrade a claim beyond the weakest material element. If the amount is directly supported but the date is inferred, the whole claim is only partially grounded.
 
-## Output Contract
+## Investigation-Findings Output Contract
 
 Every `findings.json` finding must include:
 
@@ -95,13 +113,16 @@ Every `findings.json` finding must include:
 }
 ```
 
-Every fact-check claim must include a `grounding_assessment` explaining whether the cited evidence actually grounds the claim.
+Every fact-check claim must include a `grounding_assessment` explaining whether
+the cited evidence actually grounds the claim. The **fact-check** profile may
+add its task-specific provenance fields; the **knowledge-work** profile may use
+the lighter confidence/source form instead.
 
 ## Source-Expression Discipline
 
-When a Spotlight case explicitly enables source-expression pilot or activated
-mode, preserve the inspectable layer between source artifacts and normalized
-findings:
+When an investigation case explicitly enables source-expression pilot or
+activated mode, preserve the inspectable layer between source artifacts and
+normalized findings:
 
 - The acquiring agent records the expression; another agent may add its own
   independently acquired expression but must not rewrite the first agent's
