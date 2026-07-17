@@ -151,10 +151,10 @@ else
 fi
 
 provider_values=$(grep -oE 'name="opencode_provider" value="[^"]+"' install/configure.html | sed 's/.*value="\([^"]*\)".*/\1/' | sort -u | tr '\n' ' ' | sed 's/ $//')
-expected_providers="fireworks openrouter together"
+expected_providers="fireworks openrouter"
 
 if [ "$provider_values" = "$expected_providers" ]; then
-  ok "opencode_provider radios cover openrouter/fireworks/together"
+  ok "legacy fallback provider radios cover openrouter/fireworks"
 else
   fail "opencode_provider radio drift in install/configure.html"
   printf "%s  radios:   %s%s\n" "$_c_dim" "$provider_values" "$_c_reset"

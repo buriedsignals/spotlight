@@ -651,13 +651,13 @@
 
       <!-- ── 05 Config ──────────────────────────────── -->
       <section id="config">
-        <h2><span class="num">05 — Configuration</span>One install, a handful of env vars.</h2>
-        <p>Install is <a href="../setup.html">one static command</a> — <code>curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash</code>. Configuration happens locally: the installer serves a configurator page from <code>127.0.0.1</code> that collects runtime, keys, and vault paths. Runtime config lives in <code>$SPOTLIGHT_DIR/.env</code>; you can edit it after install to reconfigure.</p>
+        <h2><span class="num">05 — Configuration</span>One install, browser-connected research.</h2>
+        <p>Engine configuration opens a browser sign-in for Navigator and stores its revocable credential in the system keychain. No Navigator API key is pasted into Spotlight configuration. The authenticated <code>navigator</code> CLI is the research route; legacy REST integration is a compatibility fallback only.</p>
 
         <h3>Required</h3>
 <pre><code>SPOTLIGHT_VAULT_PATH=~/Obsidian/main          # durable knowledge vault for search/ingest
 SPOTLIGHT_CASES_ROOT=~/Documents/Spotlight/cases  # active case workspace
-OSINT_NAV_API_KEY=on_...                      # tool lookup (free tier ok)</code></pre>
+</code></pre>
         <p>Search and scraping need no key: <code>fetch</code> runs on Crawl4AI and <code>search</code> on SearXNG, both open-source and installed locally. <code>FIRECRAWL_API_KEY=fc-...</code> is optional — set it only to enable Firecrawl as an explicit fallback provider.</p>
 
         <h3>Runtime selection</h3>

@@ -1,10 +1,11 @@
-# OSINT Navigator — Tool Discovery API
+# Navigator — CLI-first research routing
 
-**What:** A live tool-discovery API maintained by Indicator Media. Weekly-updated database of 10,000+ OSINT tools with AI-powered synthesized answers to investigation-method questions. Complements the curated 150-tool catalog in the `osint` skill's `references/tools-by-category.md`.
+**What:** A live Navigator capability maintained by Indicator Media. It routes both OSINT tool discovery and executable structured public-data sources. It complements Spotlight's offline tool catalog and ordinary web acquisition.
 
 **When to use:**
 
 - You need a tool for a niche category not in the curated catalog (e.g. Argentine corporate registry, wildlife trade monitoring, specific cryptocurrency forensics)
+- You need a reproducible structured source for filings, procurement, sanctions, PEP, lobbying, legislation, or public registries
 - You need to compare multiple tools for a given task (e.g. "which free satellite imagery source is strongest for East Africa?")
 - You want a synthesized, natural-language answer to an investigation-method question ("How do I verify the authenticity of a leaked document?")
 - You're looking for recently published tools that may not be in the curated list yet
@@ -14,56 +15,37 @@
 - The curated 150-tool catalog in `skills/osint/references/tools-by-category.md` covers the request → use that first (offline, no rate limit)
 - You know the exact tool you need — just use it; don't round-trip through Navigator
 
-## Setup
+## Setup and commands
 
-Request an API key from Indicator Media: https://navigator.indicator.media/
+Engine-managed installations connect an account through `bsig auth login`; do
+not ask a journalist to create or paste an API key. Load the portable
+`navigator` skill, then use the CLI:
 
-Set in `.env`:
-
-```
-OSINT_NAV_API_KEY=on_xxxxx
-```
-
-## Verb calls
-
-Invoke `shell-safety` before creating request files or output paths. Write request bodies as JSON files; do not interpolate keywords or questions into curl command strings.
-
-### Tool search by keyword / category (unlimited on free tier)
-
-```
-write-file("{CASE_DIR}/research/navigator-search-body.json", <serialized JSON>)
-execute-shell('curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
-  -X POST https://navigator.indicator.media/api/tools/search \
-  -H "Content-Type: application/json" \
-  --data @{CASE_DIR}/research/navigator-search-body.json \
-  -o {CASE_DIR}/research/navigator-search-<slug>.json')
+```bash
+navigator tools find "company registry Argentina" --json
+navigator tools show <tool-id>
+navigator data find "public procurement awards" --json
+navigator data show <source-id>
+navigator query <source-id> --help
 ```
 
-### Complex question (10/day free, 50/day pro)
+Inspect a selected tool or source playbook before execution. Save the CLI's
+machine-readable output under `{CASE_DIR}/research/`; record the command mode,
+catalog ID/version or retrieval time, non-secret parameters, source URLs,
+warnings, and output digest in methodology/evidence records.
 
-```
-write-file("{CASE_DIR}/research/navigator-query-body.json", <serialized JSON>)
-execute-shell('curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
-  -X POST https://navigator.indicator.media/api/query \
-  -H "Content-Type: application/json" \
-  --data @{CASE_DIR}/research/navigator-query-body.json \
-  -o {CASE_DIR}/research/navigator-query-<slug>.json')
-```
-
-### Health check (used by preflight)
-
-```
-execute-shell('curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
-  https://navigator.indicator.media/api/openapi.json')
-```
+The direct API is a compatibility fallback only when the CLI is unavailable and
+Engine has injected the credential into the managed child process. Never put a
+PAT in `.env`, argv, saved scripts, or methodology data.
 
 ## Full API reference
 
-Complete endpoint catalog, response schemas, and per-endpoint examples live at:
+The portable unified skill and CLI are the agent-facing contract:
 
-**`skills/osint/references/navigator-integration.md`**
+**`navigator skill print`**
 
-This integration's purpose is to make Navigator **discoverable** as a Spotlight integration (preflight, the install configurator, skills/integrations/SKILL.md routing). The agent-facing how-to-use lives alongside the OSINT skill proper since Navigator is tightly coupled to OSINT methodology.
+This integration makes Navigator discoverable to Spotlight. It does not own a
+second copy of Navigator instructions.
 
 ## Cycle integration
 

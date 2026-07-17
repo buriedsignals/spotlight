@@ -18,8 +18,8 @@ Universal backings (never change):
 | Verb | Concrete tool |
 |---|---|
 | `fetch`, `search` | `fetch` → Crawl4AI via `integrations.scraping`; `search` → SearXNG via `integrations.search` (Firecrawl = optional fallback when `FIRECRAWL_API_KEY` is set) |
-| `query-vault` | `BUN_INSTALL="" qmd query <vault> "<query>"` |
-| `vault-write` | `obsidian` CLI (Obsidian app must be running) |
+| `query-vault` | Knowledge Workspace Port (`OpenKnowledge search`; explicit Markdown recovery reads) |
+| `vault-write` | Knowledge Workspace Port (journaled, approved writes; no automatic fallback) |
 | `execute-shell` | native shell subprocess |
 | `read-file`, `write-file`, `edit-file` | filesystem (runtime-native) |
 | `list-files`, `grep-files` | glob + ripgrep (runtime-native) |
@@ -199,8 +199,8 @@ opencode ships native `bash`, `read`, `write`, `edit`, `grep`, `glob`, `multi-ed
 | Verb | Concrete tool |
 |---|---|
 | `fetch`, `search` | `integrations.scraping` (Crawl4AI) / `integrations.search` (SearXNG) via `bash`; Firecrawl optional fallback |
-| `query-vault` | `BUN_INSTALL="" qmd query` via `bash` |
-| `vault-write` | `obsidian` CLI via `bash` |
+| `query-vault` | Knowledge Workspace Port via the Engine-managed OpenKnowledge MCP adapter |
+| `vault-write` | Knowledge Workspace Port via the Engine-managed journaled write adapter |
 | `invoke-skill` | opencode's native `skill` tool — agents see available skills and load them on demand |
 
 ### Sub-agents
@@ -314,8 +314,8 @@ All Spotlight skills (spotlight, ingest, monitoring, acquisition-graduation, web
 | `fetch`, `search` | shell call to `integrations.scraping` (Crawl4AI) / `integrations.search` (SearXNG); Firecrawl optional fallback |
 | `read-file`, `write-file`, `edit-file` | Hermes filesystem tools |
 | `execute-shell` | Hermes terminal |
-| `query-vault` | `BUN_INSTALL="" qmd query` via terminal |
-| `vault-write` | `obsidian` CLI via terminal |
+| `query-vault` | Knowledge Workspace Port via OpenKnowledge MCP |
+| `vault-write` | Knowledge Workspace Port with explicit approval and journal reconciliation |
 | `spawn-agent` | `delegate_task()` with the agent prompt + iteration_limit |
 | `wait-agent` | `delegate_task` is synchronous by default; handle = task id |
 | `invoke-skill` | Hermes reads the SKILL.md file and injects into the active prompt |
@@ -364,8 +364,7 @@ entry:
 requires:
   cli_tools:
     - firecrawl   # reviewed setup pin: firecrawl-cli@1.3.1
-    - obsidian    # Obsidian app (optional, for vault-write)
-    - qmd         # reviewed setup pin: @tobilu/qmd@2.5.3
+    - openknowledge # Engine-catalog-pinned knowledge adapter and MCP server
   env_vars:
     required: [FIRECRAWL_API_KEY]
     optional: [OSINT_NAV_API_KEY, CORE_API_KEY]
@@ -441,8 +440,8 @@ Point Codex at the repo root as its working directory. `AGENTS.md` is loaded aut
 | `write-file`, `edit-file` | native edit tools — require `--sandbox workspace-write` or higher |
 | `execute-shell` | `bash -lc` tool — require `--sandbox workspace-write` or higher |
 | `fetch`, `search` | `execute-shell` running `python -m integrations.scraping` (Crawl4AI) / `integrations.search` (SearXNG); Firecrawl optional fallback |
-| `query-vault` | `execute-shell` wrapping `BUN_INSTALL="" qmd query` |
-| `vault-write` | `execute-shell` wrapping the `obsidian` CLI |
+| `query-vault` | Engine-managed Knowledge Workspace Port / OpenKnowledge MCP |
+| `vault-write` | Engine-managed Knowledge Workspace Port; approved and journaled only |
 | `invoke-skill` | natively loads `skills/{skill}/SKILL.md` when referenced |
 | `spawn-agent`, `wait-agent` | `execute-shell` spawning a second `codex exec` subprocess — see below |
 

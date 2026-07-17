@@ -41,6 +41,7 @@ DOC_FILES = [
     "rlm-benchmark-audit.md",
     "runtimes.md",
     "sensitivity.md",
+    "source-expression-pilot-results.json",
     "spotlight-flow-vertical-visual.html",
     "structure.md",
     "technical-investigation.md",

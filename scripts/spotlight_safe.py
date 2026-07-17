@@ -33,6 +33,10 @@ def validate_url(value: str) -> str:
         raise SafetyError("url scheme must be http or https")
     if not parsed.netloc:
         raise SafetyError("url must include a host")
+    if parsed.username is not None or parsed.password is not None:
+        raise SafetyError("url must not contain credentials")
+    if parsed.fragment:
+        raise SafetyError("url must not contain fragments")
     return value
 
 

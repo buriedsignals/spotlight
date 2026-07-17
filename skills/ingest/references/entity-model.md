@@ -190,7 +190,18 @@ Findings that fail the gate stay in the investigation note (flagged, as today) a
 
 5. **Connections** — relative markdown links to `[entity-id](../entities/entity-id.md)`s and the originating `[project-id](../investigations/project-id.md)`.
 
+6. **Source Expressions** — optional deterministic managed block for activated
+   `1.1` cases. Snapshots are keyed by `(project, expression_id,
+   expression_fingerprint)` and carry the exact passage, anchor/original hashes,
+   finding relation, and append-only lifecycle and ingest events. Only
+   `scripts/ingest-source-expressions.py` writes this block.
+
+Snapshots inherit the claim eligibility gate. Inactive snapshots remain as
+history; ineligible findings and legacy expression-less claims have no block.
+
 **Sensitive-vault parity:** when a sensitive vault is enabled, it carries the same `claims/` structure; the existing rule that the two vaults never cross-link applies to claim notes unchanged.
+Expression snapshots store case-relative evidence references as data, not links
+to another vault, so they do not create cross-vault edges.
 
 ---
 

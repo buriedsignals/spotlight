@@ -1,6 +1,6 @@
 ---
 name: ingest
-description: Archive investigation findings into a Markdown vault (Obsidian, Tolaria, or directory) as structured knowledge — entity notes, methodology notes, tool notes, with registries and wikilinks. Works standalone or as part of the Spotlight pipeline.
+description: Stage and commit approved investigation findings through the Knowledge Workspace Port into the spotlight namespace.
 version: "1.0"
 invocable_by: [orchestrator, user]
 requires: []
@@ -8,7 +8,9 @@ requires: []
 
 # Ingest — Knowledge Archival
 
-You are archiving confirmed investigation findings into a structured knowledge base.
+You are archiving confirmed investigation findings into the shared knowledge workspace. Active case files and raw evidence remain case-local.
+
+All durable mutations use the Knowledge Workspace Port. Set `logical_space: spotlight_verified`, actor type `spotlight`, the case and editorial decision IDs, classification, request ID, idempotency key, and expected versions. Never infer a destination from prose and never fall back to a different write backend. The destination path must resolve below `<workspace>/spotlight/`; the intelligence vault is always denied.
 
 This skill instructs. You — the host runtime — execute. You read investigation files, write vault notes, update registries, and maintain the knowledge graph. The user sees the result; you do the work.
 
@@ -25,8 +27,7 @@ Two input modes:
 
 The orchestrator passes project path and vault config (from `.spotlight-config.json`). All inputs are known:
 
-- `vault_path` — target vault or directory
-- `vault_type` — `"obsidian"`, `"tolaria"`, or `"directory"`
+- `knowledge_destination` — typed target from `.spotlight-config.json`
 - `project` — project slug
 
 At entry, write `{CASE_DIR}/data/ingestion.json` with
@@ -41,6 +42,9 @@ Read these case files:
 {CASE_DIR}/data/investigation-log.json
 {CASE_DIR}/data/summary.json
 ```
+
+For an activated `1.1` case, also read
+`data/case-contract.json` and `data/source-expressions.json`.
 
 Skip to the Ingestion Process.
 
@@ -58,19 +62,11 @@ The user requests ingestion directly.
 
 **STOP.**
 
-**Step 2 — Vault target:**
+**Step 2 — Knowledge destination:**
 
-> "Which vault or directory should I archive to?"
+> "Which configured Knowledge Workspace should receive this approved package?"
 
-Check if the path contains `.obsidian/`:
-
-```
-list-files("{path}/.obsidian")
-```
-
-- Found: `vault_type = "obsidian"` — wikilinks enabled.
-- If the config already says `vault_type = "tolaria"` — keep `tolaria`; use Markdown files, YAML frontmatter, and wikilinks.
-- Not found: `vault_type = "directory"` — relative markdown links.
+Require a typed destination (`openknowledge`, `markdown`, or `obsidian_legacy`) and namespace `spotlight`. Standalone ingestion still requires an explicit editorial approval record; a bare filesystem path is insufficient.
 
 **Step 3 — Supplementary files:**
 
@@ -84,9 +80,11 @@ Proceed to the Ingestion Process with whatever files were found.
 
 ---
 
-## Concurrency Lock
+## Staging, journal, and concurrency
 
-Before starting the ingestion process, check for a lock file:
+Before mutation, use `batch_stage` to validate the exact Markdown and JSON registry package. Record its hash in the case-local receipt and show additions, updates, and exclusions to the journalist. Require approval of that exact hash. Then call `batch_commit` with the stable idempotency key; the port creates the checkpoint and durable journal.
+
+If a pending journal exists, resume or restore that exact operation. Never start a second ingest over partial state. A filesystem lock is only an additional local guard, not the transaction mechanism.
 
 ```
 list-files("{vault}/.ingest-lock")
@@ -121,6 +119,8 @@ If the process errors partway through, remove the lock before reporting the erro
 ## Ingestion Process
 
 Eight steps. Execute in order. Do not skip steps.
+
+In the steps below, examples written as `read-file` and `write-file` describe document construction only. Read durable state with port `read`; collect every proposed `write-file` result in the staged package instead of writing immediately. Publish them together only through the approved `batch_commit`. Reconcile hashes, registry IDs, and links before marking the case-local receipt committed.
 
 ### Step 1 — Read Current Vault State
 
@@ -324,6 +324,24 @@ For each finding in `findings.json`, join its matching fact-check entry from `fa
 - Same project re-ingest: update the note idempotently — identical inputs must produce identical output, no duplicate registry entries.
 - Different project re-verifying or superseding: **never rewrite the existing note's claim, evidence, or history.** Append one dated row to the Supersession History table (`re-verified` / `strengthened` / `superseded`), update frontmatter `verified`/`verified_by` to the latest verification, and promote `layer` to `durable` if the new verdict is `verified`. History is append-only.
 
+#### Step 6a — Attach activated source-expression snapshots
+
+For an activated `1.1` case, complete Step 7 so eligible claim notes and
+`claims/_registry.json` both exist, then run the deterministic writer before
+Step 8 while the project-owned vault lock is still held:
+
+```
+execute-shell("python3 scripts/ingest-source-expressions.py --case-dir {CASE_DIR} --vault {vault} --lock-held")
+```
+
+Never author its managed claim blocks directly. The writer verifies activation
+and claim eligibility, embeds snapshots only in matching claims, retains
+inactive lifecycle history, and writes a content-addressed ingest event. It
+also extends `data/ingestion.json` with the source input hash and written/skipped
+IDs. Re-ingest is byte-identical; publication failure is rolled back. There is
+no standalone expression registry, and legacy expression-less claims remain
+unchanged.
+
 ### Step 7 — Update ALL Registries
 
 This is mandatory. Update every registry affected by the ingestion.
@@ -349,7 +367,9 @@ See `references/registry-spec.md` for exact schemas.
 
 Use relative markdown links in the investigations table (`[project-id](investigations/project-id.md)`).
 
-After Step 8 completes, remove the `.ingest-lock`. Include the claim exclusion log from Step 6 in the ingest summary reported to the user: claims written, claims updated, and each excluded finding with its reason.
+After Step 8 and, when applicable, Step 6a complete, remove the `.ingest-lock`.
+Include both the claim exclusions and source-expression written/skipped IDs in
+the ingest summary.
 
 In pipeline mode, update `{CASE_DIR}/data/ingestion.json` to
 `{"schema_version":"1.0","status":"completed"}` after the lock is removed. If
@@ -386,6 +406,7 @@ Frontmatter and registry JSON are identical regardless of vault type.
 8. **The claims layer admits verified intelligence only.** Verdict `verified` or `partially_verified`, grounding cap above `low`, sources present, non-RLM origin. Every exclusion is logged with its reason in the ingest summary.
 9. **Claim history is append-only.** Re-verification and supersession append dated rows; existing claim content is never rewritten by a later investigation.
 10. **Aliases are derived, merges are human-gated.** Rebuild `entities/_aliases.json` from entity frontmatter every run; alias collisions become merge proposals, never automatic merges.
+11. **Expression mutation is deterministic.** Only `scripts/ingest-source-expressions.py` may write managed source-expression blocks, under the project-owned vault lock. Never create an expression registry.
 
 ---
 
@@ -409,6 +430,8 @@ Reads from:
   {CASE_DIR}/data/fact-check.json
   {CASE_DIR}/data/investigation-log.json
   {CASE_DIR}/data/summary.json
+  {CASE_DIR}/data/case-contract.json         (activated 1.1 cases)
+  {CASE_DIR}/data/source-expressions.json    (activated 1.1 cases)
   {vault}/_registry.json
   {vault}/investigations/_registry.json
   {vault}/entities/_registry.json
@@ -433,4 +456,5 @@ Writes to:
   {vault}/claims/_registry.json
   {vault}/_registry.json                   (master)
   {vault}/index.md
+  {CASE_DIR}/data/ingestion.json           (source-expression receipt)
 ```

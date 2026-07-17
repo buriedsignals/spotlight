@@ -1,0 +1,151 @@
+{
+  "project": "source-expression-pilot",
+  "findings": [
+    {
+      "id": "F1",
+      "claim": "Acme a payé Doe et un témoin a confirmé le paiement."
+    },
+    {
+      "id": "F2",
+      "claim": "Le contrat a été signé en juin."
+    }
+  ],
+  "sources": [
+    {
+      "id": "E1",
+      "source_url": "https://example.org/registre",
+      "original_path": "research/registre-fr.txt",
+      "original_content": "Acme a payé Doe.\nLe contrat a été signé en juin.\n",
+      "anchor_path": "research/registre-fr.txt",
+      "anchor_content": "Acme a payé Doe.\nLe contrat a été signé en juin.\n",
+      "anchor_type": "text_extraction",
+      "language": "fr"
+    },
+    {
+      "id": "E2",
+      "source_url": "https://example.org/entretien",
+      "original_path": "evidence/entretien-audio.media",
+      "original_content": "fixture representation of original audio bytes\n",
+      "anchor_path": "research/entretien-transcript-fr.txt",
+      "anchor_content": "J'ai vu Acme payer Doe.\n",
+      "anchor_type": "transcript",
+      "language": "fr"
+    },
+    {
+      "id": "E3",
+      "source_url": "manual://reviewed-translation",
+      "original_path": "research/registre-translation-en.txt",
+      "original_content": "Acme paid Doe.\n",
+      "anchor_path": "research/registre-translation-en.txt",
+      "anchor_content": "Acme paid Doe.\n",
+      "anchor_type": "text_extraction",
+      "language": "en"
+    },
+    {
+      "id": "E4",
+      "source_url": "https://example.org/audit",
+      "original_path": "research/audit-fr.txt",
+      "original_content": "Le registre ne contient aucun paiement à Doe.\n",
+      "anchor_path": "research/audit-fr.txt",
+      "anchor_content": "Le registre ne contient aucun paiement à Doe.\n",
+      "anchor_type": "text_extraction",
+      "language": "fr"
+    }
+  ],
+  "expressions": [
+    {
+      "id": "SX1",
+      "source_id": "E1",
+      "text": "Acme a payé Doe.",
+      "line_start": 1,
+      "line_end": 1,
+      "created_by": "investigator",
+      "language": "fr",
+      "attribution": "Registre public",
+      "direct_quote": true,
+      "finding_links": [
+        {"finding_id": "F1", "relation": "supports"},
+        {"finding_id": "F2", "relation": "context"}
+      ]
+    },
+    {
+      "id": "SX2",
+      "source_id": "E1",
+      "text": "Le contrat a été signé en juin.",
+      "line_start": 2,
+      "line_end": 2,
+      "created_by": "investigator",
+      "language": "fr",
+      "attribution": "Registre public",
+      "direct_quote": true,
+      "finding_links": [
+        {"finding_id": "F2", "relation": "supports"}
+      ]
+    },
+    {
+      "id": "SX3",
+      "source_id": "E2",
+      "text": "J'ai vu Acme payer Doe.",
+      "line_start": 1,
+      "line_end": 1,
+      "created_by": "investigator",
+      "language": "fr",
+      "attribution": "Témoin interviewé",
+      "direct_quote": true,
+      "finding_links": [
+        {"finding_id": "F1", "relation": "supports"}
+      ]
+    },
+    {
+      "id": "SX4",
+      "source_id": "E3",
+      "text": "Acme paid Doe.",
+      "line_start": 1,
+      "line_end": 1,
+      "created_by": "human",
+      "language": "en",
+      "attribution": "Reviewed English translation of SX1",
+      "direct_quote": false,
+      "derived_from_expression_id": "SX1",
+      "derivative_type": "translation",
+      "finding_links": [
+        {"finding_id": "F1", "relation": "context"}
+      ]
+    },
+    {
+      "id": "SX5",
+      "source_id": "E4",
+      "text": "Le registre ne contient aucun paiement à Doe.",
+      "line_start": 1,
+      "line_end": 1,
+      "created_by": "fact-checker",
+      "language": "fr",
+      "attribution": "Audit indépendant",
+      "direct_quote": true,
+      "finding_links": [
+        {"finding_id": "F1", "relation": "contradicts"}
+      ]
+    }
+  ],
+  "verdicts": [
+    {
+      "finding_id": "F1",
+      "verdict": "disputed",
+      "evidence_for": ["SX1", "SX3"],
+      "evidence_against": ["SX5"]
+    },
+    {
+      "finding_id": "F2",
+      "verdict": "verified",
+      "evidence_for": ["SX2"],
+      "evidence_against": []
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unavailable source is rejected",
+      "remove_path": "research/registre-fr.txt",
+      "expected_error": "anchor_ref does not resolve to a case-local file"
+    }
+  ]
+}

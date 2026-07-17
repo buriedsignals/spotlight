@@ -197,7 +197,7 @@
           <span class="item__title"><input type="radio" name="cloud_runtime" value="opencode" style="margin-right:8px;">Open<em>Code.</em></span>
           <span class="badge">pay per token</span>
         </div>
-        <p class="item__lede">Pick a provider below — OpenRouter, Fireworks, or Together. Typically ~$0.50–2 per investigation, charged per token.</p>
+        <p class="item__lede">Pick OpenRouter or Fireworks below. Engine-managed installs additionally offer OpenCode Go. Typically ~$0.50–2 per investigation, charged per token.</p>
       </label>
     </div>
 
@@ -206,7 +206,6 @@
       <div class="chip-row">
         <label><input type="radio" name="opencode_provider" value="openrouter" checked> OpenRouter</label>
         <label><input type="radio" name="opencode_provider" value="fireworks"> Fireworks</label>
-        <label><input type="radio" name="opencode_provider" value="together"> Together</label>
       </div>
       <label class="field-label" for="cloud_key" id="cloudKeyLabel" style="margin-top:14px;">OPENROUTER_API_KEY</label>
       <input class="fld" type="password" id="cloud_key" placeholder="sk-or-v1-..." autocomplete="off" spellcheck="false">
@@ -459,7 +458,6 @@ applyMode();
 const PROVIDER_FIELDS = {
   openrouter: { label: 'OPENROUTER_API_KEY', placeholder: 'sk-or-v1-...' },
   fireworks: { label: 'FIREWORKS_API_KEY', placeholder: 'fw-...' },
-  together: { label: 'TOGETHER_API_KEY', placeholder: '...' },
 };
 function applyCloudRuntime() {
   const rt = document.querySelector('input[name="cloud_runtime"]:checked').value;
@@ -717,6 +715,128 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
     btn.textContent = 'Save & continue install →';
   }
 });
+</script>
+<script>
+/* Engine-v2 enhancement: signed Engine choices replace legacy managed choices when available. */
+(async function activateEngineConfigurator() {
+  let descriptor;
+  try {
+    const response = await fetch('/engine-descriptor?t=' + encodeURIComponent(TOKEN), {cache: 'no-store'});
+    if (!response.ok) return;
+    descriptor = await response.json();
+  } catch (_) { return; }
+
+  const form = document.getElementById('form');
+  form.replaceChildren();
+  const intro = document.createElement('div');
+  intro.className = 'callout';
+  intro.innerHTML = '<strong>Engine-managed configuration</strong><p>Provider, model, privacy, and local-runtime choices come from the signed Engine catalog. Saving creates a sealed plan for review; it does not silently install or change an existing model.</p>';
+  const fieldsRoot = document.createElement('div');
+  const secretsRoot = document.createElement('div');
+  const status = document.createElement('div');
+  status.style.marginTop = '18px';
+  const submit = document.createElement('button');
+  submit.type = 'button'; submit.textContent = 'Create reviewable install plan →';
+  submit.style.marginTop = '24px';
+  form.append(intro, fieldsRoot, secretsRoot, status, submit);
+
+  const controls = new Map(), values = {};
+  for (const field of descriptor.fields) values[field.id] = field.default;
+  const active = field => (field.conditions || []).every(c => values[c.field] === c.equals);
+  const selected = field => (field.options || []).find(o => o.id === values[field.id]);
+
+  function renderSecrets() {
+    const prior = {};
+    secretsRoot.querySelectorAll('input[data-secret]').forEach(i => prior[i.dataset.secret] = i.value);
+    const ids = new Set(descriptor.required_secret_ids || []);
+    for (const field of descriptor.fields) {
+      if (!active(field) || field.kind !== 'choice') continue;
+      for (const id of (selected(field)?.secret_ids || [])) ids.add(id);
+    }
+    secretsRoot.replaceChildren();
+    if (!ids.size) return;
+    const heading = document.createElement('h3'); heading.textContent = 'Credentials';
+    secretsRoot.appendChild(heading);
+    for (const id of [...ids].sort()) {
+      const label = document.createElement('label'); label.className = 'field-label';
+      label.textContent = id + ' (leave blank to reuse Keychain)';
+      const input = document.createElement('input'); input.type = 'password';
+      input.autocomplete = 'off'; input.dataset.secret = id; input.value = prior[id] || '';
+      secretsRoot.append(label, input);
+    }
+  }
+  function refresh() {
+    const modelField = descriptor.fields.find(f => f.id === 'cloud_model');
+    const modelControl = controls.get('cloud_model');
+    if (modelField && modelControl && active(modelField)) {
+      const available = (modelField.options || []).filter(option => (option.routes || []).some(route =>
+        route.provider_id === values.provider && (!(route.adapters || []).length || route.adapters.includes(values.runtime))));
+      for (const item of modelControl.input.options) {
+        const allowed = available.some(option => option.id === item.value);
+        item.hidden = !allowed; item.disabled = !allowed;
+      }
+      if (!available.some(option => option.id === values.cloud_model)) {
+        values.cloud_model = (available.find(option => option.recommendation === 'default') || available[0] || {}).id || '';
+        modelControl.input.value = values.cloud_model;
+      }
+    }
+    for (const field of descriptor.fields) {
+      const control = controls.get(field.id);
+      control.row.hidden = !active(field);
+      const option = selected(field);
+      control.privacy.textContent = option?.privacy
+        ? option.privacy.tier.replace('-', ' ') + ' — ' + option.privacy.disclosure
+        : (option?.description || '');
+    }
+    renderSecrets();
+  }
+
+  for (const field of descriptor.fields) {
+    const row = document.createElement('section'); row.style.marginTop = '26px';
+    const label = document.createElement('label'); label.className = 'field-label'; label.textContent = field.label;
+    let input;
+    if (field.kind === 'choice') {
+      input = document.createElement('select');
+      for (const option of field.options || []) {
+        const item = document.createElement('option'); item.value = option.id; item.textContent = option.label;
+        input.appendChild(item);
+      }
+      input.value = values[field.id] ?? '';
+    } else if (field.kind === 'toggle') {
+      input = document.createElement('input'); input.type = 'checkbox'; input.checked = Boolean(values[field.id]);
+    } else {
+      input = document.createElement('input'); input.type = field.kind === 'email' ? 'email' : 'text';
+      input.value = values[field.id] ?? '';
+    }
+    const privacy = document.createElement('p'); privacy.className = 'hint';
+    input.addEventListener('change', () => {
+      values[field.id] = field.kind === 'toggle' ? input.checked : input.value; refresh();
+    });
+    row.append(label, input, privacy); fieldsRoot.appendChild(row); controls.set(field.id, {row, input, privacy});
+  }
+  refresh();
+
+  submit.addEventListener('click', async () => {
+    submit.disabled = true; status.textContent = 'Validating with Engine…';
+    const activeValues = {};
+    for (const field of descriptor.fields) if (active(field)) activeValues[field.id] = values[field.id];
+    const secretValues = {};
+    secretsRoot.querySelectorAll('input[data-secret]').forEach(i => { if (i.value) secretValues[i.dataset.secret] = i.value; });
+    const request = {schema_version: descriptor.schema_version, product: descriptor.product,
+      descriptor_digest: descriptor.descriptor_digest, values: activeValues};
+    try {
+      const response = await fetch('/engine-submit', {method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:TOKEN, request, secrets:secretValues})});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.errors?.[0]?.message || 'Engine rejected the configuration.');
+      const path = String(data.plan?.plan_path || 'the Engine plans directory').replace(/[&<>]/g, '');
+      status.innerHTML = '<strong>Plan created.</strong> Review <code>' + path + '</code>, then run <code>bsig apply &quot;' + path + '&quot;</code>.';
+      submit.textContent = 'Plan ready';
+    } catch (error) {
+      status.textContent = error.message; submit.disabled = false;
+    }
+  });
+})();
 </script>
 </body>
 </html>

@@ -1,18 +1,16 @@
 # Investigation Cycle Integration
 
-How and when to use OSINT Navigator during Spotlight investigation cycles.
+How and when to use the unified Navigator skill during Spotlight investigation cycles.
 
 ---
 
 ## Availability Check
 
-Your spawn prompt includes an `INTEGRATIONS` line. If `osint_navigator=true`, you have access. If false or absent, skip Navigator calls and use the curated tool list in this skill.
-
-```bash
-# Verify access (optional — only if you need to confirm mid-execution)
-curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
-  https://navigator.indicator.media/api/health
-```
+Your spawn prompt includes an `INTEGRATIONS` line. If Navigator is green and
+the case is not sensitive/offline, load `navigator` and use its CLI. If it is
+absent, capability-limited, or policy-disabled, record the reason and use the
+curated local tool list where permitted. Do not make a raw health/API request
+or expose an authentication token.
 
 ---
 
@@ -21,15 +19,13 @@ curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
 Query Navigator to inform your methodology. For each investigation direction:
 
 1. Identify what type of OSINT task each step requires (corporate lookup, image verification, etc.)
-2. Query Navigator for the best tools:
-   ```bash
-   curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
-     -X POST https://navigator.indicator.media/api/tools/search \
-     -H "Content-Type: application/json" \
-     --data @{CASE_DIR}/research/navigator-search-body.json
-   ```
-3. Record selected tools in methodology.json under each direction's `steps[].tool` and `osint_techniques[]` fields
-4. Use `/api/tools/search` (unlimited) for browsing categories. Reserve `/api/query` for complex questions where you need workflow advice.
+2. Run `navigator tools find "<need>" --json`, then inspect a candidate with
+   `navigator tools show <tool-id>` before choosing it.
+3. Independently run `navigator data find "<structured records need>" --json`
+   and inspect a candidate with `navigator data show <source-id>` where a
+   reproducible public-data source may fit.
+4. Record selected tools and the data-source decision (including a concise skip
+   reason) per direction. Preserve catalog ID/version or retrieval time.
 
 ---
 
@@ -39,15 +35,9 @@ Query Navigator to inform your methodology. For each investigation direction:
 Query Navigator for any tools needed by the approved methodology that you don't already know how to use.
 
 ### Mid-cycle (when hitting a wall)
-If a planned technique fails or a new line of inquiry opens:
-
-```bash
-# Example: planned approach to verify a document failed, need alternatives
-curl -s -H "Authorization: Bearer $OSINT_NAV_API_KEY" \
-  -X POST https://navigator.indicator.media/api/query \
-  -H "Content-Type: application/json" \
-  --data @{CASE_DIR}/research/navigator-query-body.json
-```
+If a planned technique fails or a new line of inquiry opens, repeat the CLI
+discovery loop. Run `navigator query <source-id> ...` only after inspecting the
+source playbook and saving its structured output under `{CASE_DIR}/research/`.
 
 Record tool discoveries in investigation-log.json:
 
@@ -79,13 +69,15 @@ Query Navigator to find verification tools appropriate to the claim type:
 | Financial claims | "financial records public filings" | `companies` or `public_records` |
 | Location claims | "geolocation verification from photo" | `geolocation_mapping` |
 
-Use `/api/tools/search` with the appropriate category for targeted lookups. Use `/api/query` when the verification approach itself is unclear.
+Use `navigator tools find --query "…" --json` for targeted tool discovery and
+`navigator tools show <tool-id> --json` to preserve a selected tool's details.
+Use the authenticated Navigator CLI first; the REST API is a compatibility
+fallback only when the CLI is unavailable, and record that fallback in the methodology.
 
 ---
 
 ## Rate Limit Awareness
 
-- `/api/tools/search`: **Unlimited** — use freely for browsing and discovery
-- `/api/query`: **10/day (free) or 50/day (pro)** — use for complex, synthesized questions only
-- The response includes `rate_limit.queries_remaining` — check this before making `/api/query` calls in later cycles
-- If quota is exhausted, fall back to the curated tool list in this skill
+- `navigator tools find`: use for browsing and discovery
+- `navigator data find` / `navigator data query`: use when structured datasets can answer a direction; preserve the source id and result artifact
+- If the CLI reports an entitlement or quota limit, record the result and fall back to the curated tool list in this skill

@@ -122,6 +122,7 @@ else
       mkdir -p "$TMP_ASSETS/install"
       curl -fsSL https://spotlight.buriedsignals.com/install/setup_server.py -o "$TMP_ASSETS/install/setup_server.py"
       curl -fsSL https://spotlight.buriedsignals.com/install/configure.html -o "$TMP_ASSETS/install/configure.html"
+      curl -fsSL https://spotlight.buriedsignals.com/install/engine_bridge.py -o "$TMP_ASSETS/install/engine_bridge.py"
       if ! grep -q "CONFIGURATOR_VERSION = \"$CONFIGURATOR_VERSION\"" "$TMP_ASSETS/install/setup_server.py" \
         || ! grep -q "configurator-version\" content=\"$CONFIGURATOR_VERSION\"" "$TMP_ASSETS/install/configure.html"; then
         echo "" >&2
@@ -146,6 +147,10 @@ else
     echo "  Your choices and API keys go to a local server on 127.0.0.1 only and are"
     echo "  staged in $SPOTLIGHT_PROFILE_DIR — nothing is uploaded anywhere."
     python3 "$CONFIGURATOR_DIR/install/setup_server.py" --profile-dir "$SPOTLIGHT_PROFILE_DIR" --repo-dir "$CONFIGURATOR_DIR"
+    if [ -f "$SPOTLIGHT_PROFILE_DIR/engine-plan.ready" ]; then
+      printf '✓ Engine wrote a sealed Spotlight plan. Review and apply the plan path shown in the browser with: bsig apply <plan-path>\n'
+      exit 0
+    fi
     if [ ! -f "$SETUP_CONFIG" ] || [ ! -f "$STAGED_ENV" ]; then
       echo "Configuration was not completed; re-run the installer to try again." >&2
       exit 1
@@ -260,7 +265,10 @@ fi
 : "${SPOTLIGHT_RLM_REPO:=unsloth/gemma-4-E4B-it-GGUF}"
 : "${SPOTLIGHT_RLM_GGUF:=gemma-4-E4B-it-Q4_K_M.gguf}"
 : "${FIRECRAWL_API_KEY:=}"
-: "${OSINT_NAV_API_KEY:?osint-navigator key missing from config}"
+# Compatibility installer only: Engine-managed installs use `bsig auth login`
+# and never ask for this value. Keep the legacy key path until Engine is the
+# required installer, but make its distinction explicit at every failure point.
+: "${OSINT_NAV_API_KEY:?Navigator compatibility API key missing; use Engine browser authentication (bsig auth login) for managed installs}"
 
 if [ "$SPOTLIGHT_INT_RLM" != "true" ]; then
   SPOTLIGHT_RLM_MODE="off"

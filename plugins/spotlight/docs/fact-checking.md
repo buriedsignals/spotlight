@@ -44,6 +44,56 @@ For each claim the fact-checker searches for:
 
 Both must be sought. Do not stop at the first agreeing source. This is structural — the finder bias only gets neutralized if you actively look for disconfirmation.
 
+### Source expressions in opt-in cases
+
+When the orchestrator explicitly passes
+`SOURCE_EXPRESSION_MODE: pilot|activated`, the fact-checker records exact
+passages from sources it independently acquires. It appends its expressions to
+the case artifact without rewriting investigator-owned passage cores.
+
+Each expression preserves original-language text, an exact case-local locator,
+the acquiring role and cycle, and an explicit `supports`, `contradicts`, or
+`context` link. Contradicting expressions are referenced from
+`evidence_against`; positive activated verdicts need an active supporting
+expression and cannot rely on contradiction or context alone. Shared passages
+may link to several findings, and a finding may cite several expressions.
+
+Non-text evidence keeps two identities: the original media/document and its
+separately hashed transcript, caption, OCR, or extraction. The expression
+anchors the derivative but retains the original evidence-bundle identity and
+hash. A translation is a separate, labeled expression pointing to its
+original-language expression; it is not a direct quote from the source.
+
+An unavailable source, search snippet, RLM lead, or remembered wording cannot
+become an expression. The fact-checker records the gap rather than fabricating a
+passage, locator, or hash. Passage selection is deliberate; the pilot does not
+add automatic extraction or deterministic entailment checking. If the mode is
+absent, the default remains legacy `1.0` output with no expression artifact.
+
+In pilot mode, the expression file is evaluated as a side artifact only. Its
+presence does not make the legacy verdict pipeline strict, and it must not be
+described as activated protection. In activated mode, the fact-checker must
+preserve the existing `1.1` receipt-bound bundle; it cannot create, remove, or
+downgrade activation.
+
+### What deterministic expression checks prove
+
+The validators can establish that:
+
+- selected text exactly matches a case-local line range or JSON Pointer;
+- anchor and original-artifact hashes match the recorded files;
+- expression, finding, evidence, and verdict references resolve;
+- immutable fingerprints and lifecycle/supersession rules remain coherent;
+- a positive activated verdict has an active supporting relation; and
+- report quotations come from the canonical expression rather than generated
+  quote text.
+
+They cannot establish source authenticity, factual truth, entailment,
+completeness, attribution fairness, or whether a passage has been stripped of
+material context. A structurally valid expression may still be weak or
+misleading evidence. SIFT, adversarial contradiction search, grounding
+assessment, and human editorial review therefore remain mandatory.
+
 ### Source handling
 
 - **Archive each source** before citing (`invoke-skill("web-archiving")`) — Wayback → Archive.today → local

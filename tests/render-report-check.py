@@ -154,6 +154,130 @@ def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def fingerprint(value: object) -> str:
+    canonical = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode()
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def activate_case(case: Path) -> None:
+    data = case / "data"
+    findings_path = data / "findings.json"
+    fact_check_path = data / "fact-check.json"
+    bundle_path = data / "evidence-bundle.json"
+    source_path = data / "source-expressions.json"
+    anchor_path = case / "research" / "official-record.md"
+
+    # Include hostile-looking source text to prove quotations are resolved from
+    # the canonical expression and escaped, never accepted from model prose.
+    expression_text = (
+        "Northwind <em>Research</em> Cooperative appointed Ada Lovelace as its President."
+    )
+    anchor_path.write_text(expression_text + "\n")
+
+    findings = json.loads(findings_path.read_text())
+    findings["schema_version"] = "1.1"
+    finding_fingerprints: dict[str, str] = {}
+    for finding in findings["findings"]:
+        finding_fp = fingerprint({"claim": finding["claim"]})
+        finding["finding_fingerprint"] = finding_fp
+        finding_fingerprints[finding["id"]] = finding_fp
+    write_json(findings_path, findings)
+
+    bundle = json.loads(bundle_path.read_text())
+    bundle["items"][0]["sha256"] = sha(anchor_path)
+    write_json(bundle_path, bundle)
+
+    core = {
+        "text": expression_text,
+        "anchor_ref": {
+            "path": "research/official-record.md",
+            "line_start": 1,
+            "line_end": 1,
+        },
+        "anchor_sha256": sha(anchor_path),
+        "original_evidence_bundle_id": "E1",
+        "original_artifact_sha256": sha(anchor_path),
+        "language": "en",
+        "attribution": "Northwind registry <editor>",
+        "direct_quote": True,
+    }
+    expression_fp = fingerprint(core)
+    link_payload = {
+        "expression_fingerprint": expression_fp,
+        "finding_fingerprint": finding_fingerprints["F1"],
+        "finding_id": "F1",
+        "relation": "supports",
+    }
+    link_fp = fingerprint(link_payload)
+    write_json(source_path, {
+        "schema_version": "1.0",
+        "project": findings["project"],
+        "created_at": "2026-07-16T12:00:00Z",
+        "expressions": [{
+            "id": "SX1",
+            **core,
+            "expression_fingerprint": expression_fp,
+            "finding_links": [{**link_payload, "link_fingerprint": link_fp}],
+            "lifecycle_events": [{
+                "event": "activated",
+                "timestamp": "2026-07-16T12:00:00Z",
+                "actor": "investigator",
+                "reason": "Exact registry passage captured.",
+            }],
+            "created_by": "investigator",
+            "cycle": 1,
+        }],
+    })
+
+    fact_check = json.loads(fact_check_path.read_text())
+    fact_check["claims"][0]["evidence_for"][0]["source_expression_refs"] = [{
+        "expression_id": "SX1",
+        "expression_fingerprint": expression_fp,
+        "finding_fingerprint": finding_fingerprints["F1"],
+        "link_fingerprint": link_fp,
+    }]
+    write_json(fact_check_path, fact_check)
+
+    draft_path = data / "report-draft.json"
+    draft = json.loads(draft_path.read_text())
+    next(item for item in draft["finding_treatments"] if item["finding_id"] == "F1")[
+        "quote_selections"
+    ] = [{"expression_id": "SX1"}]
+    write_json(draft_path, draft)
+
+    artifact_hashes = {
+        "findings_sha256": sha(findings_path),
+        "fact_check_sha256": sha(fact_check_path),
+        "evidence_bundle_sha256": sha(bundle_path),
+        "source_expressions_sha256": sha(source_path),
+    }
+    write_json(data / "case-contract.json", {
+        "schema_version": "1.0",
+        "project": findings["project"],
+        "current_contract_version": "1.1",
+        "activation_events": [{
+            "event_id": "ACT1",
+            "previous_contract_version": "1.0",
+            "activated_contract_version": "1.1",
+            "activated_at": "2026-07-16T12:10:00Z",
+            "tool_version": "test-1",
+            "prior_input_hashes": artifact_hashes,
+            "activated_artifact_hashes": artifact_hashes,
+        }],
+    })
+
+
+def refresh_expression_contract_hash(case: Path) -> None:
+    contract_path = case / "data" / "case-contract.json"
+    contract = json.loads(contract_path.read_text())
+    contract["activation_events"][-1]["activated_artifact_hashes"][
+        "source_expressions_sha256"
+    ] = sha(case / "data" / "source-expressions.json")
+    write_json(contract_path, contract)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="render-report-") as tmp:
         case = build_case(Path(tmp))
@@ -209,6 +333,165 @@ def main() -> int:
         again = subprocess.run([sys.executable, str(FINALIZER), str(case)], capture_output=True, text=True)
         assert again.returncode == 0, again.stdout + again.stderr
         assert [sha(path) for path in outputs] == literal_hashes
+
+        # Activated reports resolve expression-ID-only selections to canonical,
+        # escaped source text and preserve passage-level evidence-map provenance.
+        activated = build_case(Path(tmp) / "activated-report")
+        activate_case(activated)
+        activated_result = subprocess.run(
+            [sys.executable, str(FINALIZER), str(activated)], capture_output=True, text=True
+        )
+        assert activated_result.returncode == 0, activated_result.stdout + activated_result.stderr
+        activated_outputs = [
+            activated / "findings-report.md",
+            activated / "report.html",
+            activated / "evidence-map.json",
+        ]
+        activated_html = activated_outputs[1].read_text()
+        activated_markdown = activated_outputs[0].read_text()
+        activated_ledger = json.loads(activated_outputs[2].read_text())
+        assert "Northwind <em>Research</em>" not in activated_html
+        assert "Northwind &lt;em&gt;Research&lt;/em&gt;" in activated_html
+        assert "Northwind &lt;em&gt;Research&lt;/em&gt;" in activated_markdown
+        assert "Northwind registry &lt;editor&gt;" in activated_html
+        assert activated_ledger["input_sha256"]["data/source-expressions.json"] == sha(
+            activated / "data" / "source-expressions.json"
+        )
+        expression_ledger = activated_ledger["source_expressions"][0]
+        assert expression_ledger["id"] == "SX1"
+        assert expression_ledger["anchor_ref"]["line_start"] == 1
+        assert expression_ledger["anchor_sha256"] == sha(
+            activated / "research" / "official-record.md"
+        )
+        assert expression_ledger["lifecycle_state"] == "active"
+        expression_ref = next(
+            item for item in activated_ledger["claims"] if item["id"] == "F1"
+        )["source_expression_refs"][0]
+        assert expression_ref == {
+            "expression_id": "SX1",
+            "relation": "supports",
+            "selected_quote": True,
+        }
+        activated_hashes = [sha(path) for path in activated_outputs]
+        activated_again = subprocess.run(
+            [sys.executable, str(FINALIZER), str(activated)], capture_output=True, text=True
+        )
+        assert activated_again.returncode == 0, activated_again.stdout + activated_again.stderr
+        assert [sha(path) for path in activated_outputs] == activated_hashes
+
+        # Tampering with an activated anchor blocks finalization and cannot replace
+        # the last valid artifacts.
+        (activated / "research" / "official-record.md").write_text("tampered\n")
+        tampered = subprocess.run(
+            [sys.executable, str(FINALIZER), str(activated)], capture_output=True, text=True
+        )
+        assert tampered.returncode == 3, tampered.stdout + tampered.stderr
+        assert [sha(path) for path in activated_outputs] == activated_hashes
+
+        # The model can select an ID only; quote text or attribution cannot enter
+        # through report-draft.json.
+        injected_quote = build_case(Path(tmp) / "injected-expression-quote")
+        activate_case(injected_quote)
+        draft_path = injected_quote / "data" / "report-draft.json"
+        draft = json.loads(draft_path.read_text())
+        selection = next(
+            item for item in draft["finding_treatments"] if item["finding_id"] == "F1"
+        )["quote_selections"][0]
+        selection["text"] = "model-authored replacement"
+        write_json(draft_path, draft)
+        injected = subprocess.run(
+            [sys.executable, str(FINALIZER), str(injected_quote)], capture_output=True, text=True
+        )
+        assert injected.returncode == 3, injected.stdout + injected.stderr
+        assert "expression_id only" in injected.stdout
+        assert not (injected_quote / "report.html").exists()
+
+        dangling_quote = build_case(Path(tmp) / "dangling-expression-quote")
+        activate_case(dangling_quote)
+        draft_path = dangling_quote / "data" / "report-draft.json"
+        draft = json.loads(draft_path.read_text())
+        next(
+            item for item in draft["finding_treatments"] if item["finding_id"] == "F1"
+        )["quote_selections"] = [{"expression_id": "SX404"}]
+        write_json(draft_path, draft)
+        dangling = subprocess.run(
+            [sys.executable, str(FINALIZER), str(dangling_quote)], capture_output=True, text=True
+        )
+        assert dangling.returncode == 3, dangling.stdout + dangling.stderr
+        assert "unknown source expression" in dangling.stdout
+        assert not (dangling_quote / "report.html").exists()
+
+        missing_expression = build_case(Path(tmp) / "missing-source-expressions")
+        activate_case(missing_expression)
+        (missing_expression / "data" / "source-expressions.json").unlink()
+        missing_expression_result = subprocess.run(
+            [sys.executable, str(FINALIZER), str(missing_expression)],
+            capture_output=True,
+            text=True,
+        )
+        assert missing_expression_result.returncode == 3
+        assert "source-expressions.json" in (
+            missing_expression_result.stdout + missing_expression_result.stderr
+        )
+        assert not (missing_expression / "report.html").exists()
+
+        withdrawn_case = build_case(Path(tmp) / "withdrawn-expression")
+        activate_case(withdrawn_case)
+        expressions_path = withdrawn_case / "data" / "source-expressions.json"
+        expressions = json.loads(expressions_path.read_text())
+        expressions["expressions"][0]["lifecycle_events"].append({
+            "event": "withdrawn",
+            "timestamp": "2026-07-16T13:00:00Z",
+            "actor": "human",
+            "reason": "Source passage was withdrawn from use.",
+        })
+        write_json(expressions_path, expressions)
+        refresh_expression_contract_hash(withdrawn_case)
+        withdrawn = subprocess.run(
+            [sys.executable, str(FINALIZER), str(withdrawn_case)],
+            capture_output=True,
+            text=True,
+        )
+        assert withdrawn.returncode == 3, withdrawn.stdout + withdrawn.stderr
+        assert "no active supporting source expression" in (
+            withdrawn.stdout + withdrawn.stderr
+        )
+        assert not (withdrawn_case / "report.html").exists()
+
+        superseded_case = build_case(Path(tmp) / "superseded-expression")
+        activate_case(superseded_case)
+        expressions_path = superseded_case / "data" / "source-expressions.json"
+        expressions = json.loads(expressions_path.read_text())
+        old_expression = expressions["expressions"][0]
+        old_expression["lifecycle_events"].append({
+            "event": "superseded",
+            "timestamp": "2026-07-16T13:00:00Z",
+            "actor": "human",
+            "reason": "A replacement expression was reviewed.",
+            "successor_expression_id": "SX2",
+        })
+        successor = json.loads(json.dumps(old_expression))
+        successor["id"] = "SX2"
+        successor["supersedes_expression_id"] = "SX1"
+        successor["lifecycle_events"] = [{
+            "event": "activated",
+            "timestamp": "2026-07-16T13:00:00Z",
+            "actor": "human",
+            "reason": "Replacement expression activated.",
+        }]
+        expressions["expressions"].append(successor)
+        write_json(expressions_path, expressions)
+        refresh_expression_contract_hash(superseded_case)
+        superseded = subprocess.run(
+            [sys.executable, str(FINALIZER), str(superseded_case)],
+            capture_output=True,
+            text=True,
+        )
+        assert superseded.returncode == 3, superseded.stdout + superseded.stderr
+        assert "no active supporting source expression" in (
+            superseded.stdout + superseded.stderr
+        )
+        assert not (superseded_case / "report.html").exists()
 
         # Current-schema completeness is enforced: silently dropping F2 is a fail.
         fact_check_path = case / "data" / "fact-check.json"

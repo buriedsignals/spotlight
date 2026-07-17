@@ -31,6 +31,11 @@ A null result is not evidence that the subject or event does not exist unless th
 
 1. Confirm every material brief question has at least one relevant path or an explicit scope decision.
 2. Link observed paths to artifacts/findings and ensure null paths record the actual scope searched.
+   In an explicitly enabled source-expression pilot or activated case, also
+   link each relied-on observed passage to its case-local expression. Preserve
+   original-language text and explicit support, contradiction, or context
+   polarity. A missing or unavailable anchor remains a gap; never fabricate one
+   to make a coverage row look complete.
 3. Review planned and blocked paths by expected evidentiary value, not by how easy they are to complete.
 4. Carry material gaps into `gaps` and the limitations section.
 5. Do not calculate a completion percentage or use path count to raise a claim's confidence. Invoke `epistemic-grounding` for confidence.

@@ -326,18 +326,17 @@ INTEGRATIONS:
   osint_navigator_required={config.integrations.osint_navigator.required_in_phase_2}
 SKILLS: integrations, osint, investigate, epistemic-grounding, acquisition-graduation, web-archiving, content-access, shell-safety, social-media-intelligence (social investigations), technical-investigation (technical leads)
 
-TOOL DISCOVERY (tier-aware — pick ONE path by osint_navigator_required):
+NAVIGATOR ROUTING (CLI-first — make TWO independent decisions per direction):
 
 If osint_navigator_required=true (subscription / entitled deployments), before writing methodology.json:
 1. invoke-skill("integrations")
 2. invoke-skill("osint")
-3. read-file("integrations/osint-navigator/integration.md")
-4. read-file("skills/osint/references/cycle-integration.md")
-5. write a minimal Navigator request JSON to {CASE_DIR}/research/
-6. call /api/tools/search at least once for each investigation direction, or once with a combined query covering all directions when there is only one broad lead
-7. save every raw Navigator response to {CASE_DIR}/research/
-8. cite those response paths in methodology.json (navigator.queries[])
-Do not use /api/query unless the tool-selection question needs synthesized workflow advice. Prefer /api/tools/search because it is unlimited.
+3. invoke-skill("navigator")
+4. run `navigator tools find` and inspect chosen tools with `navigator tools show`
+5. independently run `navigator data find` and inspect a relevant source with `navigator data show`
+6. run `navigator query` only for an approved structured source and save machine-readable output to {CASE_DIR}/research/
+7. record CLI/API mode, catalog ID/version or retrieval time, non-secret parameters, warnings, source URLs, digest, and a per-direction data-source decision or skip reason
+In sensitive/offline mode make no Navigator request; record both modes as policy-skipped and use allowed local fallbacks.
 
 If osint_navigator_required=false (local / open-weights deployments — no Navigator entitlement), discover tools from the LOCAL index — no external call, no mandatory reads:
 - execute-shell("python3 scripts/osint-tools.py find \"<lead-derived keywords>\" [--category <cat>] [--limit 8]")
@@ -372,7 +371,7 @@ When the agent completes:
    If validation fails, do not present the methodology for approval. Re-spawn or
    re-prompt the investigator with the fix the validator prints:
 
-   > (Navigator entitled) "methodology.json does not show Navigator use. Use /api/tools/search before returning; save response paths and cite them in navigator.queries[]."
+   > (Navigator entitled) "methodology.json does not show a CLI-first Navigator decision. Record tool and data-source decisions, provenance, and any policy/entitlement skip."
    > (local / open tier) "Fix the navigator block per the validator: set navigator:{required:false, used:false, fallback_reason:...} or omit it, and ensure tools_required[] lists the tools osint-tools returned."
 
 3. Present a summary of the proposed methodology to the user
@@ -451,6 +450,43 @@ When the agent completes:
 
 With approved methodology, begin the execution loop. No user involvement between cycles — decide autonomously.
 
+### Source-expression release mode
+
+Resolve this once before the first cycle and preserve it on every investigator
+and fact-checker spawn:
+
+1. If `data/case-contract.json` validates, findings use contract `1.1`, and
+   `python3 scripts/validate-case.py {CASE_DIR}` passes, set
+   `SOURCE_EXPRESSION_MODE: activated`.
+2. Otherwise, set `SOURCE_EXPRESSION_MODE: pilot` only when the operator has
+   explicitly selected this case for the source-expression pilot. Record or
+   preserve a clean pre-pilot legacy bundle for later comparison/recovery.
+3. In every other case, omit the field. This is the default and preserves
+   findings contract `1.0`; do not create `data/source-expressions.json`.
+
+Never infer activation from `source-expressions.json`, findings version, or a
+migration audit alone. `data/case-contract.json` is the sole activation
+authority. Pilot output is a side artifact and cannot be promoted in place by
+the current migration command. Activation of a clean legacy case is a separate
+operator-reviewed dry-run/apply flow:
+
+```text
+python3 scripts/migrate-source-expressions.py {CASE_DIR}
+python3 scripts/migrate-source-expressions.py {CASE_DIR} --apply
+python3 scripts/validate-case.py {CASE_DIR}
+python3 scripts/validate-fact-check.py {CASE_DIR}
+```
+
+The checked-in comparison is
+`docs/source-expression-pilot-results.json`. Its activation status is **NOT
+APPROVED** because timed human review, correction yield, longitudinal locator
+stability, and same-fixture migration effort remain unmeasured. Do not enable
+`1.1` as the new-case default.
+
+Expression validation proves exact-text, locator, hash, reference, lifecycle,
+and status integrity. It does not prove truth, entailment, completeness, or
+editorial fairness.
+
 ```
 CYCLE N (N starts at 1):
 
@@ -464,6 +500,7 @@ PROFILE: {profile}
 TIER: {config.model_tier}
 CASE_ROOT: {CASE_ROOT}
 CASE_DIR: {CASE_DIR}
+{if source_expression_mode: SOURCE_EXPRESSION_MODE: {source_expression_mode}}
 VAULT_PATH: {vault_path or 'none'}
 INTEGRATIONS:
   osint_navigator_status={config.integrations.osint_navigator.status}
@@ -521,6 +558,7 @@ PROFILE: {profile}
 TIER: {config.model_tier}
 CASE_ROOT: {CASE_ROOT}
 CASE_DIR: {CASE_DIR}
+{if source_expression_mode: SOURCE_EXPRESSION_MODE: {source_expression_mode}}
 INTEGRATIONS:
   osint_navigator_status={config.integrations.osint_navigator.status}
   osint_navigator_required={config.integrations.osint_navigator.required_in_phase_2}
@@ -818,18 +856,42 @@ All state lives in files. If context is lost mid-investigation, re-read:
     methodology.json               — Approved investigation plan
     findings.json                  — Investigator output (cumulative)
     fact-check.json                — Fact-checker output
+    source-expressions.json        — Pilot side artifact or activated passage chain
+    case-contract.json             — Sole authoritative activation receipt
+    source-expression-migration.json — Migration audit only; never activation
     investigation-log.json         — Append-only cycle log
     provenance-manifest.json       — Case artifact hashes + optional C2PA signing status
     monitoring.json                — Scout state and check results
 ```
 
-Determine where the pipeline left off:
+First classify the case contract:
+
+- A valid `case-contract.json`, findings contract `1.1`, and matching artifact
+  hashes means **activated**. Run `scripts/validate-case.py`, resume only with
+  `SOURCE_EXPRESSION_MODE: activated`, and never downgrade it.
+- Findings contract `1.0` plus an explicitly recorded pilot side artifact means
+  **pilot**. Resume only with `SOURCE_EXPRESSION_MODE: pilot`. File presence
+  alone is not enough to infer that operator choice.
+- Findings `1.1`, source-expression refs, or migration outputs without a valid
+  contract is an interrupted/partial migration. Stop. Restore the known clean
+  legacy bundle, then rerun migration dry-run/apply; do not delete fields until
+  the case merely looks legacy.
+- A valid receipt with missing or hash-mismatched activated artifacts is stale
+  or damaged. Stop and restore the matching bundle or use the supported
+  supersession/revalidation flow. Never fall back to legacy interpretation.
+- Otherwise the case is **legacy**, and source-expression mode stays omitted.
+
+Then determine where the pipeline left off:
 
 - No `brief-directions.txt` → restart at Phase 1
 - No `data/methodology.json` → restart at Phase 2
 - No `data/findings.json` → restart at Phase 3, cycle 1
 - Has `data/findings.json` but no `summary.md` → restart at Phase 3, evaluate current cycle
 - Has `summary.md` → Gate 1 review
+
+An older runtime that cannot validate contract `1.1` must refuse an activated
+case. Rollback may disable future activation only; existing activated cases
+remain strict.
 
 For wider failure modes — API hiccups, Ollama restarts, Obsidian lock files, corrupted case JSON, stale review-feedback markers — see `docs/recovery.md`.
 

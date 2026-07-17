@@ -1,0 +1,181 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://buriedsignals.com/schemas/source-expression-migration.schema.json",
+  "schema_version": "1.0",
+  "title": "Spotlight source-expression migration audit",
+  "description": "A dry-run proposal and audit record. This file never activates a case; only data/case-contract.json is authoritative.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project",
+    "migration_id",
+    "tool_version",
+    "source_contract_version",
+    "target_contract_version",
+    "created_at",
+    "input_hashes",
+    "eligible",
+    "candidate_mappings",
+    "skips",
+    "blocking_reasons",
+    "proposed_output_hashes"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "project": { "type": "string", "minLength": 1 },
+    "migration_id": { "type": "string", "pattern": "^SEM-[a-f0-9]{20}$" },
+    "tool_version": { "type": "string", "minLength": 1 },
+    "source_contract_version": { "const": "1.0" },
+    "target_contract_version": { "const": "1.1" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "input_hashes": { "$ref": "#/definitions/input_hashes" },
+    "eligible": { "type": "boolean" },
+    "candidate_mappings": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/definitions/candidate_mapping" }
+    },
+    "skips": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/definitions/skip" }
+    },
+    "blocking_reasons": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/definitions/blocking_reason" }
+    },
+    "proposed_output_hashes": { "$ref": "#/definitions/output_hashes" }
+  },
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "input_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["findings_sha256", "fact_check_sha256", "evidence_bundle_sha256"],
+      "properties": {
+        "findings_sha256": { "$ref": "#/definitions/sha256" },
+        "fact_check_sha256": { "$ref": "#/definitions/sha256" },
+        "evidence_bundle_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "output_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "findings_sha256",
+        "fact_check_sha256",
+        "evidence_bundle_sha256",
+        "source_expressions_sha256",
+        "case_contract_sha256"
+      ],
+      "properties": {
+        "findings_sha256": { "$ref": "#/definitions/sha256" },
+        "fact_check_sha256": { "$ref": "#/definitions/sha256" },
+        "evidence_bundle_sha256": { "$ref": "#/definitions/sha256" },
+        "source_expressions_sha256": { "$ref": "#/definitions/sha256" },
+        "case_contract_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "source_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "line_start": { "type": "integer", "minimum": 1 },
+        "line_end": { "type": "integer", "minimum": 1 },
+        "json_pointer": { "type": "string", "pattern": "^(?:/.*)?$" }
+      },
+      "oneOf": [
+        { "required": ["line_start", "line_end"], "not": { "required": ["json_pointer"] } },
+        {
+          "required": ["json_pointer"],
+          "not": { "anyOf": [{ "required": ["line_start"] }, { "required": ["line_end"] }] }
+        }
+      ]
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_check_path", "relation"],
+      "properties": {
+        "fact_check_path": { "type": "string", "minLength": 1 },
+        "relation": { "enum": ["supports", "contradicts"] }
+      }
+    },
+    "candidate_mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expression_id",
+        "expression_fingerprint",
+        "anchor_ref",
+        "anchor_sha256",
+        "original_evidence_bundle_id",
+        "finding_ids",
+        "usages"
+      ],
+      "properties": {
+        "expression_id": { "type": "string", "minLength": 1 },
+        "expression_fingerprint": { "$ref": "#/definitions/sha256" },
+        "anchor_ref": { "$ref": "#/definitions/source_ref" },
+        "anchor_sha256": { "$ref": "#/definitions/sha256" },
+        "original_evidence_bundle_id": { "type": "string", "minLength": 1 },
+        "finding_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "usages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/usage" }
+        }
+      }
+    },
+    "skip": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_check_path", "reason", "detail"],
+      "properties": {
+        "finding_id": { "type": "string", "minLength": 1 },
+        "fact_check_path": { "type": "string", "minLength": 1 },
+        "reason": {
+          "enum": [
+            "missing_finding_id",
+            "unknown_finding",
+            "ambiguous_relation",
+            "missing_exact_quote",
+            "missing_source_ref",
+            "invalid_source_ref",
+            "quote_not_exact_selected_text",
+            "missing_evidence_bundle_id",
+            "unknown_evidence_bundle",
+            "unowned_anchor",
+            "stale_anchor_hash",
+            "missing_original_artifact",
+            "stale_original_hash",
+            "pending_human_verification",
+            "missing_structured_finding_link",
+            "relation_conflict"
+          ]
+        },
+        "detail": { "type": "string", "minLength": 1 }
+      }
+    },
+    "blocking_reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["finding_id", "reason", "detail"],
+      "properties": {
+        "finding_id": { "type": "string", "minLength": 1 },
+        "reason": { "const": "positive_verdict_without_exact_support" },
+        "detail": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

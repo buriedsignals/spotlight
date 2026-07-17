@@ -26,6 +26,7 @@ Inputs:
 
 - `{CASE_DIR}/data/findings.json`
 - `{CASE_DIR}/data/fact-check.json`
+- `{CASE_DIR}/data/source-expressions.json` (optional for legacy cases; required by activated cases)
 - `{CASE_DIR}/data/summary.json` (optional)
 - `{CASE_DIR}/data/provenance-manifest.json` (optional)
 - `{CASE_DIR}/summary.md` (optional)
@@ -43,11 +44,13 @@ Inputs:
 - `{CASE_DIR}/data/review-feedback.json`
 - `{CASE_DIR}/data/findings.json` (current state)
 - `{CASE_DIR}/data/fact-check.json` (current state)
+- `{CASE_DIR}/data/source-expressions.json` (when present)
 
 Outputs:
 
 - Targeted investigator spawn prompt (constructed by the skill)
 - Updated `{CASE_DIR}/data/findings.json` (after investigator runs)
+- Updated `{CASE_DIR}/data/source-expressions.json` (after investigator runs, when expression feedback requires supersession or withdrawal)
 - Updated `{CASE_DIR}/data/fact-check.json` (after fact-checker runs)
 - Regenerated `{CASE_DIR}/review.html` (Mode A runs automatically after processing)
 - `{CASE_DIR}/data/review-feedback-processed.json` — marker file recording when feedback was processed
@@ -61,6 +64,7 @@ Outputs:
 ```
 read-file("{CASE_DIR}/data/findings.json")
 read-file("{CASE_DIR}/data/fact-check.json")
+read-file("{CASE_DIR}/data/source-expressions.json")  # may not exist for legacy cases
 read-file("{CASE_DIR}/data/summary.json")      # may not exist
 read-file("{CASE_DIR}/data/provenance-manifest.json")  # may not exist
 read-file("{CASE_DIR}/summary.md")              # may not exist
@@ -123,6 +127,20 @@ Assemble a single JSON object with the shape expected by the template (see `refe
       }
     }
   ],
+  "source_expressions": [
+    {
+      "id": "SX1",
+      "text": "Exact source wording",
+      "anchor_ref": {"path": "research/source.txt", "line_start": 4, "line_end": 4},
+      "anchor_sha256": "<sha256>",
+      "original_evidence_bundle_id": "E1",
+      "expression_fingerprint": "<sha256>",
+      "language": "en",
+      "attribution": "Printed attribution",
+      "finding_links": [{"finding_id": "F1", "relation": "supports", "link_fingerprint": "<sha256>"}],
+      "lifecycle_events": [{"event": "activated", "timestamp": "<ISO 8601>", "actor": "investigator", "reason": "Captured at acquisition"}]
+    }
+  ],
   "provenance_manifest": {
     "status": "unsigned|signed|signing_failed",
     "generated_at": "<ISO 8601>",
@@ -143,7 +161,7 @@ Assemble a single JSON object with the shape expected by the template (see `refe
 }
 ```
 
-Join each finding with its matching fact-check claim by `finding_id`. Preserve the investigator's `grounding`, the fact-checker's `grounding_assessment`, source `local_file` fields, and `evidence_bundle_refs`. If `data/provenance-manifest.json` exists, include it as `provenance_manifest`; if it does not exist, set `provenance_manifest: null` so the template can show that signing has not been generated yet.
+Join each finding with its matching fact-check claim by `finding_id`. Include the complete `expressions` array from `data/source-expressions.json` as `source_expressions`; the template joins every active, superseded, and withdrawn expression to each authoritative `finding_links[].finding_id`. Preserve the investigator's `grounding`, the fact-checker's `grounding_assessment`, source `local_file` fields, and `evidence_bundle_refs`. For legacy cases without the expression artifact, use an empty array and retain the existing finding-level review. If `data/provenance-manifest.json` exists, include it as `provenance_manifest`; if it does not exist, set `provenance_manifest: null` so the template can show that signing has not been generated yet.
 
 ### 4. Inject payload into the template
 
@@ -155,7 +173,9 @@ The template contains a single marker:
 </script>
 ```
 
-Replace `/*INVESTIGATION_DATA*/` with the JSON payload from step 3. Use `edit-file` with `old="/*INVESTIGATION_DATA*/"` and `new=<json-payload>`.
+Serialize the payload for an HTML script-data context before replacing the marker. After JSON serialization, replace every literal `<` with `\u003c`, U+2028 with `\u2028`, and U+2029 with `\u2029`. This prevents exact source text such as `</script><script>…` from terminating the inert JSON element. Do not build payload JSON by string concatenation.
+
+Replace `/*INVESTIGATION_DATA*/` with that safe JSON payload. Use `edit-file` with `old="/*INVESTIGATION_DATA*/"` and `new=<safe-json-payload>`.
 
 ### 5. Write the artifact
 
@@ -194,7 +214,9 @@ If `review-feedback.json` exists AND `review-feedback-processed.json` does NOT e
 read-file("{CASE_DIR}/data/review-feedback.json")
 ```
 
-Validate it against the schema in `references/feedback-schema.md`. Required fields: `schema_version`, `project`, `submitted_at`, and at least one of `findings_feedback[]`, `general_feedback`, `missing_angles`.
+Validate it against the schema in `references/feedback-schema.md`. Required fields: `schema_version`, `project`, `submitted_at`, and at least one of `findings_feedback[]`, `expressions_feedback[]`, `general_feedback`, `missing_angles`.
+
+For each expression-targeted entry, resolve both `expression_id` and the authoritative `finding_links[].finding_id` pair in the current source-expression artifact. If either target is missing, log a warning naming both IDs and skip that entry; never retarget feedback heuristically. Accept only the documented category enum.
 
 ### 3. Build investigator spawn prompt
 
@@ -218,6 +240,22 @@ explicitly in the cycle notes.
 
 For `general_feedback` and `missing_angles`, add a "general directives" section to the prompt.
 
+For each valid expression-targeted entry, add:
+
+```
+Source expression {expression_id} linked to finding {finding_id}
+Category: {category}
+Reviewer note: {comment}
+
+Action: inspect the canonical anchor and original evidence artifact. Do not
+mutate an existing expression core or finding link in place. If its passage,
+locator, attribution, relation, or source is wrong or stale, withdraw or
+supersede the old expression and create a corrected expression under the
+source-expression contract. Record changed and superseded expression IDs and
+the affected finding IDs in the cycle notes. This annotation does not change a
+verdict.
+```
+
 ### 4. Spawn investigator in EXECUTION mode
 
 ```
@@ -235,15 +273,27 @@ full feedback. Focus narrowly on the items listed above.
 
 Read methodology from {CASE_DIR}/data/methodology.json.
 Write merged findings to {CASE_DIR}/data/findings.json.
+Read and, when required, append lifecycle/corrected records to
+{CASE_DIR}/data/source-expressions.json without mutating existing cores or links.
 Append to {CASE_DIR}/data/investigation-log.json with focus='review-feedback'.",
   config: { iteration_limit: 80 }
 )
 wait-agent(handle)
 ```
 
-### 5. Spawn fact-checker (re-verify affected claims)
+### 5. Validate expression changes
 
-Only for findings whose feedback requested deeper verification OR where the investigator updated evidence:
+Run the case validator after the investigator completes and before re-fact-check:
+
+```
+execute-shell("python3 scripts/validate-case.py {CASE_DIR}")
+```
+
+If validation fails, do not regenerate review and do not ask the fact-checker to consume invalid state. Return the named expression defects to the investigator for repair. Reviewer annotations never write verdicts directly.
+
+### 6. Spawn fact-checker (re-verify affected claims)
+
+Re-verify every finding targeted by valid expression feedback, plus findings whose feedback requested deeper verification or whose evidence was updated. The fact-checker is the only actor in this loop that may change a verdict:
 
 ```
 handle = spawn-agent(
@@ -251,9 +301,10 @@ handle = spawn-agent(
   prompt: "PROJECT: {project}
 CYCLE: <current cycle>
 
-Re-fact-check findings that were updated in response to editorial
-feedback. Specifically: {list of affected F-IDs}. Read the current
-findings.json and apply SIFT per the usual methodology.
+Independently re-fact-check findings affected by editorial or source-expression
+feedback. Specifically: {list of affected F-IDs}. Inspect the current
+findings.json, source-expressions.json, and canonical anchors and apply SIFT per
+the usual methodology. Do not inherit a verdict from the feedback annotation.
 
 Write to {CASE_DIR}/data/fact-check.json (merge with existing).",
   config: { iteration_limit: 50 }
@@ -261,18 +312,22 @@ Write to {CASE_DIR}/data/fact-check.json (merge with existing).",
 wait-agent(handle)
 ```
 
-### 6. Write the processed marker
+### 7. Validate re-fact-checked state
+
+Run `python3 scripts/validate-case.py {CASE_DIR}` again after fact-checking. Do not write the processed marker or regenerate review unless the final findings, expressions, and verdict references validate together.
+
+### 8. Write the processed marker
 
 ```
 write-file("{CASE_DIR}/data/review-feedback-processed.json",
-  '{"processed_at": "<ISO 8601>", "feedback_file": "review-feedback.json", "cycles_added": 1, "findings_updated": [<ids>]}')
+  '{"schema_version": "1.0", "processed_at": "<ISO 8601>", "feedback_file": "review-feedback.json", "feedback_submitted_at": "<ISO 8601 from feedback>", "cycles_added": 1, "findings_updated": [<ids>], "expressions_updated": [<ids>], "expressions_superseded": [<ids>]}')
 ```
 
-### 7. Regenerate the review artifact
+### 9. Regenerate the review artifact
 
 Re-enter Mode A (generate) to produce a fresh `review.html` reflecting the updated findings.
 
-### 8. Report to user
+### 10. Report to user
 
 ```
 "Feedback processed. {N} findings updated.
@@ -321,7 +376,10 @@ Key invariants:
 - `schema_version: "1.0"` required
 - `project` must match the active case
 - `findings_feedback[].finding_id` must reference an existing finding ID
-- All feedback text is free-form — no enum constraints on sentiment or category
+- `expressions_feedback[].expression_id` and `.finding_id` must resolve to a current authoritative expression link
+- `expressions_feedback[].category` is one of `omitted_context`, `attribution_error`, `wrong_relation`, `mistranscription`, `bad_locator`, `stale_source`, `other`
+- Expression feedback is an annotation routed through validation and independent re-fact-check; it never changes a verdict directly
+- Feedback comments and existing finding fields remain free-form; only the expression category uses a fixed enum
 
 ---
 
@@ -332,8 +390,10 @@ The self-contained template lives at `references/template.html`. Characteristics
 - Single file, inline CSS and JS, no external assets, no CDN
 - Renders summary + findings + per-claim verdicts in a clean two-column layout
 - Renders grounding granularity per finding: support type, source role, confidence cap, checked elements, missing assumptions, and misgrounding risk (contradiction-search outcome is rolled into the grounding rationale)
+- Renders active and historical source expressions as an exact expression → finding → verdict chain, including source/locator, attribution/language, relation, hashes, lifecycle, and grounding
 - Renders case-level provenance/C2PA state from `data/provenance-manifest.json`, including signing status, artifacts, source hashes, evidence refs, and whether human verification is still required
 - Per-finding feedback form: `challenge`, `deeper_verification`, `alternative_framing`
+- Per-expression feedback form: category plus optional note, bound to both expression and finding IDs
 - Overall form: `general_feedback`, `missing_angles`
 - Submit button serializes feedback into a Blob and triggers download via `<a download>`
 - Dark-mode readable, no JavaScript framework dependencies
@@ -349,6 +409,7 @@ The template has exactly one substitution marker: `/*INVESTIGATION_DATA*/` insid
 Reads from:
   {CASE_DIR}/data/findings.json
   {CASE_DIR}/data/fact-check.json
+  {CASE_DIR}/data/source-expressions.json     (optional for legacy cases)
   {CASE_DIR}/data/summary.json              (optional)
   {CASE_DIR}/summary.md                      (optional)
   {CASE_DIR}/data/review-feedback.json      (Mode B only)
@@ -359,6 +420,7 @@ Writes to:
   {CASE_DIR}/review.html
   {CASE_DIR}/data/review-feedback-processed.json  (Mode B)
   {CASE_DIR}/data/findings.json              (Mode B, via spawned investigator)
+  {CASE_DIR}/data/source-expressions.json    (Mode B, via spawned investigator when required)
   {CASE_DIR}/data/fact-check.json            (Mode B, via spawned fact-checker)
   {CASE_DIR}/data/investigation-log.json     (Mode B, appended)
 ```

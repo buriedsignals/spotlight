@@ -34,6 +34,8 @@ import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from engine_bridge import EngineBridge, EngineUnavailable
+
 # Asserted by install-spotlight.sh against the literal in configure.html and
 # its own copy — a mismatch means the Pages CDN is mid-propagation.
 CONFIGURATOR_VERSION = "1"
@@ -130,7 +132,6 @@ SERVER_FOR_AGENT = {"flue": "llamacpp"}
 CLOUD_KEY_VARS = {
     "openrouter": "OPENROUTER_API_KEY",
     "fireworks": "FIREWORKS_API_KEY",
-    "together": "TOGETHER_API_KEY",
 }
 RUNTIME_LABELS = {
     "claude": "Claude Code",
@@ -141,7 +142,6 @@ RUNTIME_LABELS = {
 PROVIDER_LABELS = {
     "openrouter": "OpenRouter",
     "fireworks": "Fireworks AI",
-    "together": "Together AI",
 }
 
 
@@ -283,7 +283,6 @@ def validate_keys(d, skip=False):
             # /api/v1/key is the endpoint that genuinely 401s on a bad key.
             "openrouter": "https://openrouter.ai/api/v1/key",
             "fireworks": "https://api.fireworks.ai/inference/v1/models",
-            "together": "https://api.together.xyz/v1/models",
         }
         checks.append(("cloud_key", der["cloudKeyVar"], True,
                        provider_probe_urls[d["opencodeProvider"]],
@@ -599,6 +598,12 @@ def main():
     page = page.replace("__PLATFORM__", detect_platform())
     done = threading.Event()
     result = {"written": False}
+    try:
+        engine_bridge = EngineBridge("spotlight")
+        engine_descriptor = engine_bridge.descriptor()
+    except (EngineUnavailable, RuntimeError, KeyError):
+        engine_bridge = None
+        engine_descriptor = None
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -624,11 +629,13 @@ def main():
                 return
             if parsed.path == "/":
                 self._send(200, page, "text/html")
+            elif parsed.path == "/engine-descriptor" and engine_descriptor is not None:
+                self._send(200, json.dumps(engine_descriptor))
             else:
                 self._send(404, "not found", "text/plain")
 
         def do_POST(self):
-            if self.path not in ("/submit", "/pick-folder"):
+            if self.path not in ("/submit", "/pick-folder", "/engine-submit"):
                 self._send(404, "not found", "text/plain")
                 return
             try:
@@ -647,6 +654,22 @@ def main():
                 path, error = pick_folder_natively(prompt)
                 self._send(200, json.dumps({"path": path, "error": error}))
                 return
+            if self.path == "/engine-submit":
+                if engine_bridge is None:
+                    self._send(409, json.dumps({"errors":[{"field":"","message":"A compatible Engine descriptor is unavailable; reload to use the legacy installer."}]})); return
+                try:
+                    response = engine_bridge.submit(payload.get("request") or {}, payload.get("secrets") or {})
+                    marker = os.path.join(args.profile_dir, "engine-plan.ready")
+                    os.makedirs(args.profile_dir, mode=0o700, exist_ok=True); os.chmod(args.profile_dir, 0o700)
+                    tmp = marker + ".tmp-" + secrets.token_hex(4)
+                    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    with os.fdopen(fd, "w", encoding="utf-8") as handle: json.dump(response["plan"], handle)
+                    os.replace(tmp, marker)
+                except Exception as e:
+                    self._send(400, json.dumps({"errors":[{"field":"","message":str(e)}]})); return
+                result["written"] = True
+                self._send(200, json.dumps(response))
+                threading.Timer(0.5, done.set).start(); return
             d = normalize(payload)
             errors, warnings = validate_choices(d)
             if not errors:

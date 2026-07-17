@@ -1,6 +1,7 @@
 import { registerProvider } from '@flue/runtime';
 import { flue } from '@flue/runtime/routing';
 import { Hono } from 'hono';
+import { installFixedRequestBodyPolicy, parseFixedRequestBody } from './lib/provider-policy.ts';
 
 // DIAGNOSTIC + MITIGATION (2026-07-10): @flue/runtime 1.0.0-beta.9 intermittently
 // terminalizes a submission with "Connection error." and a SWALLOWED cause (~50-75%
@@ -56,29 +57,28 @@ registerProvider('local', {
 
 // Cloud non-frontier tier: Fireworks GLM-5.2 (ZDR), OpenAI-compatible. Registered
 // only when the key is present; exercised in U10.
-if (process.env.FIREWORKS_API_KEY) {
-	registerProvider('fireworks', {
+const managedProvider = process.env.SPOTLIGHT_FLUE_PROVIDER;
+if (managedProvider) {
+	const baseUrl = process.env.SPOTLIGHT_FLUE_BASE_URL;
+	const apiKey = process.env.SPOTLIGHT_PROVIDER_API_KEY;
+	if (!baseUrl || !apiKey || process.env.SPOTLIGHT_FLUE_API !== 'openai-chat') {
+		throw new Error('Engine-managed provider configuration is incomplete; refusing to start Flue');
+	}
+	const fixedRequestBody = parseFixedRequestBody(process.env.SPOTLIGHT_FLUE_REQUEST_BODY);
+	if (process.env.SPOTLIGHT_PRIVACY_ENFORCEMENT === 'request-enforced') {
+		const provider = fixedRequestBody?.provider;
+		if (typeof provider !== 'object' || provider === null || Array.isArray(provider) ||
+			(provider as Record<string, unknown>).zdr !== true) {
+			throw new Error('request-ZDR provider configuration lacks provider.zdr=true; refusing to start Flue');
+		}
+	}
+	globalThis.fetch = installFixedRequestBodyPolicy(baseUrl, fixedRequestBody, globalThis.fetch);
+	registerProvider(managedProvider, {
 		api: 'openai-completions',
-		baseUrl: 'https://api.fireworks.ai/inference/v1',
-		apiKey: process.env.FIREWORKS_API_KEY,
-	});
-}
-
-// Validation-only tier: OpenRouter serving `google/gemma-4-31b-it`. Per the testing
-// ladder (invariant 8), the 31B's harness *logic* is iterated here — it produces output
-// reliably on OpenRouter and this isolates harness bugs from local serving bugs.
-// Custom provider, so contextWindow+maxTokens are mandatory (else max_completion_tokens:1).
-// Model string: `openrouter/google/gemma-4-31b-it` (provider = first path segment).
-if (process.env.OPENROUTER_API_KEY) {
-	registerProvider('openrouter', {
-		api: 'openai-completions',
-		// Point at the local inject-proxy (SPOTLIGHT_OPENROUTER_BASEURL=http://127.0.0.1:8091/v1)
-		// to add `reasoning:{enabled:true}` so Gemma-4's thought returns in a separate field
-		// instead of leaking `<channel>` into content/tool-calls (the bug that sent us local).
-		baseUrl: process.env.SPOTLIGHT_OPENROUTER_BASEURL ?? 'https://openrouter.ai/api/v1',
-		apiKey: process.env.OPENROUTER_API_KEY,
-		contextWindow: 131072, // Gemma-4 native 128K window
-		maxTokens: 8192,
+		baseUrl,
+		apiKey,
+		contextWindow: Number(process.env.SPOTLIGHT_FLUE_CONTEXT_WINDOW ?? 131072),
+		maxTokens: Number(process.env.SPOTLIGHT_FLUE_MAX_TOKENS ?? 8192),
 	});
 }
 

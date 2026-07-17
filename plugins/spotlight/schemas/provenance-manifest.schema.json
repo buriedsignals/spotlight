@@ -1,28 +1,26 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "schema_version": "1.0",
-  "type": "object",
-  "required": [
-    "schema_version",
-    "project",
-    "generated_at",
-    "signing",
-    "case_artifacts",
-    "claims",
-    "sources"
+  "$id": "https://buriedsignals.com/schemas/provenance-manifest.schema.json",
+  "schema_version": "1.1",
+  "title": "Spotlight provenance manifest or current pointer",
+  "description": "Legacy 1.0 manifests remain valid. Activated cases use immutable 1.1 revisions and a derived current pointer.",
+  "oneOf": [
+    { "$ref": "#/definitions/legacy_manifest" },
+    { "$ref": "#/definitions/revision" },
+    { "$ref": "#/definitions/current_pointer" }
   ],
-  "properties": {
-    "schema_version": { "const": "1.0" },
-    "project": { "type": "string" },
-    "generated_at": { "type": "string", "format": "date-time" },
-    "status": { "enum": ["unsigned", "signed", "signing_failed"] },
+  "definitions": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
     "signing": {
       "type": "object",
-      "required": [
-        "profile",
-        "requires_api_key",
-        "requires_signing_credential"
-      ],
+      "required": ["profile", "requires_api_key", "requires_signing_credential"],
       "properties": {
         "profile": { "const": "noosphere-c2pa" },
         "requires_api_key": { "const": false },
@@ -31,42 +29,44 @@
         "endpoint": { "type": ["string", "null"] },
         "receipt_path": { "type": "string" },
         "signed_at": { "type": "string", "format": "date-time" },
-        "error": { "type": "string" }
+        "error": { "type": "string" },
+        "attempt_path": { "type": "string" }
       }
     },
-    "case_artifacts": {
-      "type": "array",
-      "items": { "$ref": "#/definitions/case_artifact" }
-    },
-    "claims": {
-      "type": "array",
-      "items": { "$ref": "#/definitions/claim" }
-    },
-    "sources": {
-      "type": "array",
-      "items": { "$ref": "#/definitions/source" }
-    }
-  },
-  "definitions": {
     "case_artifact": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["kind", "path", "sha256", "bytes"],
       "properties": {
         "kind": {
           "enum": [
-            "summary",
-            "summary_json",
-            "findings",
-            "fact_check",
-            "evidence_bundle",
-            "investigation_log",
-            "review_html",
-            "other"
+            "summary", "summary_json", "findings", "fact_check",
+            "source_expressions", "evidence_bundle", "investigation_log",
+            "review_html", "report_markdown", "report_html", "evidence_map", "other"
           ]
         },
         "path": { "type": "string" },
-        "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "sha256": { "$ref": "#/definitions/sha256" },
         "bytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "expression_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expression_id", "expression_fingerprint", "finding_fingerprint",
+        "relation", "link_fingerprint", "anchor_sha256",
+        "original_evidence_bundle_id", "original_artifact_sha256"
+      ],
+      "properties": {
+        "expression_id": { "type": "string", "minLength": 1 },
+        "expression_fingerprint": { "$ref": "#/definitions/fingerprint" },
+        "finding_fingerprint": { "$ref": "#/definitions/fingerprint" },
+        "relation": { "enum": ["supports", "contradicts", "context"] },
+        "link_fingerprint": { "$ref": "#/definitions/fingerprint" },
+        "anchor_sha256": { "$ref": "#/definitions/sha256" },
+        "original_evidence_bundle_id": { "type": "string", "minLength": 1 },
+        "original_artifact_sha256": { "$ref": "#/definitions/sha256" }
       }
     },
     "claim": {
@@ -76,30 +76,39 @@
         "finding_id": { "type": "string" },
         "claim_text": { "type": "string" },
         "confidence": { "enum": ["high", "medium", "low", "unknown"] },
-        "fact_check_verdict": { "enum": ["verified", "unverified", "disputed", "false", "missing"] },
+        "fact_check_verdict": {
+          "enum": ["verified", "partially_verified", "unverified", "disputed", "false", "mischaracterized", "missing"]
+        },
         "support_type": { "enum": ["direct", "indirect", "inferred", "contradicted", "insufficient", "unknown"] },
-        "evidence_refs": { "type": "array", "items": { "type": "string" } }
+        "evidence_refs": { "type": "array", "items": { "type": "string" } },
+        "finding_fingerprint": { "$ref": "#/definitions/fingerprint" },
+        "fact_check_fingerprint": { "$ref": "#/definitions/fingerprint" },
+        "source_expressions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/expression_ref" }
+        }
       }
     },
     "source": {
       "type": "object",
-      "required": [
-        "evidence_id",
-        "source_url",
-        "accessed",
-        "acquisition_method",
-        "human_verification_required"
-      ],
+      "required": ["evidence_id", "source_url", "accessed", "acquisition_method", "human_verification_required"],
       "properties": {
         "evidence_id": { "type": "string" },
         "source_url": { "type": "string" },
         "accessed": { "type": "string", "format": "date-time" },
         "acquisition_method": { "type": "string" },
-        "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "sha256": { "$ref": "#/definitions/sha256" },
         "archive_url": { "type": "string" },
         "raw_path": { "type": "string" },
+        "raw_path_sha256": { "$ref": "#/definitions/sha256" },
+        "raw_path_bytes": { "type": "integer", "minimum": 0 },
         "screenshot_path": { "type": "string" },
+        "screenshot_path_sha256": { "$ref": "#/definitions/sha256" },
+        "screenshot_path_bytes": { "type": "integer", "minimum": 0 },
         "downloaded_document_path": { "type": "string" },
+        "downloaded_document_path_sha256": { "$ref": "#/definitions/sha256" },
+        "downloaded_document_path_bytes": { "type": "integer", "minimum": 0 },
         "claim_links": {
           "type": "array",
           "items": {
@@ -113,6 +122,81 @@
           }
         },
         "human_verification_required": { "type": "boolean" }
+      }
+    },
+    "manifest_body": {
+      "type": "object",
+      "required": ["project", "generated_at", "signing", "case_artifacts", "claims", "sources"],
+      "properties": {
+        "project": { "type": "string" },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "status": { "enum": ["unsigned", "signed", "signing_failed"] },
+        "signing": { "$ref": "#/definitions/signing" },
+        "case_artifacts": { "type": "array", "items": { "$ref": "#/definitions/case_artifact" } },
+        "claims": { "type": "array", "items": { "$ref": "#/definitions/claim" } },
+        "sources": { "type": "array", "items": { "$ref": "#/definitions/source" } }
+      }
+    },
+    "legacy_manifest": {
+      "allOf": [
+        { "$ref": "#/definitions/manifest_body" },
+        {
+          "type": "object",
+          "required": ["schema_version"],
+          "properties": { "schema_version": { "const": "1.0" } }
+        }
+      ]
+    },
+    "revision": {
+      "allOf": [
+        { "$ref": "#/definitions/manifest_body" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version", "kind", "revision_id", "input_set_hash",
+            "parent_revision_id", "parent_input_set_hash", "project", "generated_at",
+            "status", "signing", "case_artifacts", "claims", "sources"
+          ],
+          "properties": {
+            "schema_version": { "const": "1.1" },
+            "kind": { "const": "provenance_manifest_revision" },
+            "revision_id": { "type": "string", "pattern": "^PM-[a-f0-9]{64}$" },
+            "input_set_hash": { "$ref": "#/definitions/fingerprint" },
+            "parent_revision_id": { "type": ["string", "null"], "pattern": "^PM-[a-f0-9]{64}$" },
+            "parent_input_set_hash": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+            "project": { "type": "string" },
+            "generated_at": { "type": "string", "format": "date-time" },
+            "status": { "const": "unsigned" },
+            "signing": { "$ref": "#/definitions/signing" },
+            "case_artifacts": { "type": "array", "items": { "$ref": "#/definitions/case_artifact" } },
+            "claims": { "type": "array", "items": { "$ref": "#/definitions/claim" } },
+            "sources": { "type": "array", "items": { "$ref": "#/definitions/source" } }
+          }
+        }
+      ]
+    },
+    "current_pointer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "kind", "project", "revision_id", "revision_path",
+        "revision_sha256", "input_set_hash", "derived_status", "signing_status", "updated_at"
+      ],
+      "properties": {
+        "schema_version": { "const": "1.1" },
+        "kind": { "const": "provenance_current_pointer" },
+        "project": { "type": "string" },
+        "revision_id": { "type": "string", "pattern": "^PM-[a-f0-9]{64}$" },
+        "revision_path": { "type": "string", "minLength": 1 },
+        "revision_sha256": { "$ref": "#/definitions/fingerprint" },
+        "input_set_hash": { "$ref": "#/definitions/fingerprint" },
+        "derived_status": { "enum": ["current", "stale"] },
+        "signing_status": { "enum": ["unsigned", "signed", "signing_failed"] },
+        "receipt_path": { "type": "string" },
+        "attempt_path": { "type": "string" },
+        "error": { "type": "string" },
+        "updated_at": { "type": "string", "format": "date-time" }
       }
     }
   }

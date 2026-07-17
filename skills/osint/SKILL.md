@@ -64,7 +64,7 @@ When responding to an investigation query:
 
 ## OSINT Navigator
 
-OSINT Navigator (navigator.indicator.media) is a live tool-discovery API with a weekly-updated database of 10,000+ OSINT tools. **When available, consult Navigator first before using the curated list below.**
+Navigator is a live CLI-first capability for OSINT tool discovery and structured public-data source routing. **When available, load the portable `navigator` skill before using the curated list below.**
 
 Payload boundary: Navigator requests may include only the minimal tool-selection
 query, country/region, source type, and investigation direction needed to pick
@@ -84,11 +84,11 @@ navigator tools show "<tool_id>"
   # full record + usage docs for one tool
 ```
 
-**Auth is one-time.** `navigator tools` needs a membership PAT: run
-`navigator auth login` once (a magic link stores the PAT in the OS keychain; it
-is reused after, no re-auth). Non-interactive installs skip the browser by setting
-`NAVIGATOR_PAT` (or reusing `$OSINT_NAV_API_KEY`) in the environment. If the CLI
-reports "Not logged in", surface that — do not fall back to raw curl.
+**Engine-managed auth is browser-mediated.** Use `bsig auth login` to connect
+Navigator; Engine supplies the credential only to the managed child process. If
+the CLI reports that it is disconnected or capability-limited, surface the
+recovery path and use permitted local fallbacks — do not fall back to raw curl
+or ask the user to paste a key.
 
 Route to `navigator tools find` when:
 
@@ -160,7 +160,7 @@ If the investigation involves social media accounts, viral content, or suspected
 | `references/tools-by-category.md` | Legacy curated catalog of ~150 OSINT tools. The local `osint-tools find` SQL index (12,500 tools) is now the primary discovery path; this file is retained pending the R1-E1 frontier A/B on whether the inline catalogue still adds value |
 | `references/investigation-guides.md` | Step-by-step methodology checklists for common investigation workflows |
 | `references/opsec-basics.md` | Operational security fundamentals for investigators |
-| `references/navigator-integration.md` | OSINT Navigator REST API — endpoints, auth, rate limits, response formats |
+| `references/navigator-integration.md` | Navigator CLI discovery and fallback boundaries |
 | `references/cycle-integration.md` | When and how to use Navigator during Spotlight investigation cycles |
 
 ## Related Skills

@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from source_expression_contract import lifecycle_state
+
 
 MAX_TEXT = {
     "title": 180,
@@ -103,6 +105,94 @@ def validate_editorial_list(
         validate_refs(f"{field}[{index}].finding_ids", item.get("finding_ids"), known_ids, failures)
 
 
+def active_expression_ids(expressions: dict[str, Any]) -> set[str]:
+    active: set[str] = set()
+    for expression in expressions.get("expressions", []):
+        if not isinstance(expression, dict):
+            continue
+        if lifecycle_state(expression) == "activated" and clean(expression.get("id")):
+            active.add(clean(expression["id"]))
+    return active
+
+
+def validate_quote_selections(
+    treatment: dict[str, Any],
+    index: int,
+    finding_id: str,
+    activated: bool,
+    expressions: dict[str, Any] | None,
+    failures: list[str],
+) -> None:
+    selections = treatment.get("quote_selections")
+    if selections is None:
+        return
+    label = f"finding_treatments[{finding_id or index}].quote_selections"
+    if not isinstance(selections, list):
+        failures.append(f"STRUCTURE: {label} must be an array")
+        return
+    if not activated or expressions is None:
+        failures.append(
+            f"STRUCTURE: {label} requires an activated 1.1 case with source expressions"
+        )
+        return
+    by_id = {
+        clean(item.get("id")): item
+        for item in expressions.get("expressions", [])
+        if isinstance(item, dict) and clean(item.get("id"))
+    }
+    active = active_expression_ids(expressions)
+    seen: set[str] = set()
+    for selection_index, selection in enumerate(selections):
+        item_label = f"{label}[{selection_index}]"
+        if not isinstance(selection, dict):
+            failures.append(f"STRUCTURE: {item_label} must be an object")
+            continue
+        unknown = sorted(set(selection) - {"expression_id"})
+        if unknown:
+            failures.append(
+                f"STRUCTURE: {item_label} may contain expression_id only; unknown field(s): {unknown}"
+            )
+        expression_id = clean(selection.get("expression_id"))
+        if not expression_id:
+            failures.append(f"STRUCTURE: {item_label}.expression_id must be non-empty")
+            continue
+        if selection.get("expression_id") != expression_id:
+            failures.append(
+                f"STRUCTURE: {item_label}.expression_id has surrounding whitespace; "
+                f"use {expression_id!r}"
+            )
+        if expression_id in seen:
+            failures.append(f"STRUCTURE: {label} contains duplicate expression IDs")
+        seen.add(expression_id)
+        expression = by_id.get(expression_id)
+        if expression is None:
+            failures.append(
+                f"STRUCTURE: {item_label} references unknown source expression {expression_id!r}"
+            )
+            continue
+        if expression_id not in active:
+            failures.append(
+                f"STRUCTURE: {item_label} references inactive source expression {expression_id!r}"
+            )
+        if expression.get("direct_quote") is not True:
+            failures.append(
+                f"STRUCTURE: {item_label} requires a direct_quote source expression"
+            )
+        if expression.get("derivative_type") == "translation":
+            failures.append(
+                f"STRUCTURE: {item_label} cannot publish a translation as a direct quotation"
+            )
+        linked = any(
+            isinstance(link, dict) and clean(link.get("finding_id")) == finding_id
+            for link in expression.get("finding_links", [])
+        )
+        if not linked:
+            failures.append(
+                f"STRUCTURE: source expression {expression_id!r} is not linked to finding "
+                f"{finding_id!r}"
+            )
+
+
 def check(case: Path) -> list[str]:
     failures: list[str] = []
     try:
@@ -116,6 +206,15 @@ def check(case: Path) -> list[str]:
     known_ids = {clean(row.get("id")) for row in findings if clean(row.get("id"))}
     if not known_ids:
         return ["STRUCTURE: findings.json has no findings to present"]
+    activated = findings_doc.get("schema_version") == "1.1" and (
+        case / "data" / "case-contract.json"
+    ).is_file()
+    expressions: dict[str, Any] | None = None
+    if activated:
+        try:
+            expressions = load_object(case / "data" / "source-expressions.json")
+        except ValueError as exc:
+            failures.append(f"STRUCTURE: {exc}")
 
     allowed_top = {
         "schema_version", "language", "title", "deck", "framing_finding_ids",
@@ -145,7 +244,10 @@ def check(case: Path) -> list[str]:
             continue
         fid = clean(item.get("finding_id"))
         treatment_ids.append(fid)
-        unknown = sorted(set(item) - {"finding_id", "headline", "summary", "why_it_matters"})
+        unknown = sorted(
+            set(item)
+            - {"finding_id", "headline", "summary", "why_it_matters", "quote_selections"}
+        )
         if unknown:
             failures.append(f"STRUCTURE: finding_treatments[{index}] has unknown field(s): {unknown}")
         if fid not in known_ids:
@@ -162,6 +264,7 @@ def check(case: Path) -> list[str]:
                 MAX_TEXT[field],
                 failures,
             )
+        validate_quote_selections(item, index, fid, activated, expressions, failures)
     if len(treatment_ids) != len(set(treatment_ids)):
         failures.append("STRUCTURE: finding_treatments contains duplicate finding IDs")
     if treatment_ids != order:

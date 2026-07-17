@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://buriedsignals.com/schemas/case-contract.schema.json",
+  "schema_version": "1.0",
+  "title": "Spotlight case contract activation",
+  "description": "The sole authoritative activation-state artifact for a Spotlight case. Migration receipts are audit records and never activate a case.",
+  "$comment": "A case is activated only by a valid data/case-contract.json. Its findings.json must then use the matching 1.1 contract, but findings version or source-expression file presence alone never activates a case. Supported writers append activation_events and never remove or rewrite prior events.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project",
+    "current_contract_version",
+    "activation_events"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "project": { "type": "string", "minLength": 1 },
+    "current_contract_version": { "const": "1.1" },
+    "activation_events": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/definitions/activation_event" }
+    }
+  },
+  "definitions": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "artifact_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "findings_sha256",
+        "fact_check_sha256",
+        "evidence_bundle_sha256"
+      ],
+      "properties": {
+        "findings_sha256": { "$ref": "#/definitions/sha256" },
+        "fact_check_sha256": { "$ref": "#/definitions/sha256" },
+        "evidence_bundle_sha256": { "$ref": "#/definitions/sha256" },
+        "source_expressions_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "activation_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "previous_contract_version",
+        "activated_contract_version",
+        "activated_at",
+        "tool_version",
+        "prior_input_hashes",
+        "activated_artifact_hashes"
+      ],
+      "properties": {
+        "event_id": { "type": "string", "minLength": 1 },
+        "previous_contract_version": { "const": "1.0" },
+        "activated_contract_version": { "const": "1.1" },
+        "activated_at": { "type": "string", "format": "date-time" },
+        "tool_version": { "type": "string", "minLength": 1 },
+        "prior_input_hashes": {
+          "allOf": [{ "$ref": "#/definitions/artifact_hashes" }],
+          "description": "Hashes read before activation. source_expressions_sha256 is optional because the artifact may not yet have existed."
+        },
+        "activated_artifact_hashes": {
+          "allOf": [{ "$ref": "#/definitions/artifact_hashes" }],
+          "required": ["source_expressions_sha256"],
+          "description": "Hashes of the complete activated artifact set after source expressions and references were written and validated."
+        }
+      }
+    }
+  }
+}

@@ -20,6 +20,7 @@ Phase 2 — Methodology
 Phase 3 — Execution (cycles, max 5)
     FOR each cycle:
         spawn investigator (EXECUTION) → writes findings.json + investigation-log.json
+        opt-in pilot/activated cases → acquiring agent records source-expressions.json
         spawn fact-checker → writes fact-check.json
         editorial standards check
         process monitoring_recommendations (if any)
@@ -133,6 +134,74 @@ After the investigator writes `methodology.json`, the orchestrator presents a su
 
 Cycles are autonomous. The orchestrator runs up to 5 without user intervention, then either advances to Gate 1 (all readiness criteria met) or triggers the Stall Protocol.
 
+### Source-expression mode
+
+Source expressions are opt-in during the pilot-capable release. The orchestrator
+passes `SOURCE_EXPRESSION_MODE: pilot|activated` to producer agents only for a
+selected case. If the field is absent, agents retain legacy `1.0` output and do
+not emit `data/source-expressions.json`.
+
+- `pilot` records the experimental side artifact without upgrading or
+  activating the case. It is used to measure duplicate expressions, unresolved
+  links, locator stability, and reviewer value.
+- `activated` means the case already follows the `1.1` case contract. Agents
+  preserve that contract; activation receipts are owned by orchestration or
+  migration, not by producer prompts.
+
+The orchestrator must pass the same explicit mode to the investigator and
+fact-checker spawn prompts. It must not infer a mode from file presence. Pilot
+selection is per case and is not a global default.
+
+The agent that acquired a source records its expressions. Text is copied exactly
+in the source language and linked many-to-many to findings with `supports`,
+`contradicts`, or `context`. Translations are separately labeled derivatives.
+For audio, video, images, and scans, the evidence bundle preserves the original
+artifact while a separately hashed transcript, caption, OCR, or extraction is
+the expression anchor. Unavailable sources and unrecoverable exact passages are
+recorded as gaps, never reconstructed from snippets or model memory. There is no
+automatic passage extraction or entailment judgment in this release.
+
+#### Pilot, activation, and migration procedure
+
+Use `pilot` only to evaluate the storage and review experience. Keep a copy of
+the clean legacy inputs before the pilot begins. A pilot artifact is not a
+partially activated case, and the current migration command does not promote it
+in place.
+
+To activate a recoverable **clean legacy** case, first create and inspect the
+deterministic migration proposal:
+
+```bash
+python3 scripts/migrate-source-expressions.py {CASE_DIR}
+```
+
+The command records skips and blockers in
+`data/source-expression-migration.json`; that audit never activates the case.
+Only after inspection, apply the unchanged proposal:
+
+```bash
+python3 scripts/migrate-source-expressions.py {CASE_DIR} --apply
+python3 scripts/validate-case.py {CASE_DIR}
+python3 scripts/validate-fact-check.py {CASE_DIR}
+```
+
+Apply publishes the validated findings, fact-check, and expression bundle,
+then writes `data/case-contract.json` last. If inputs changed after the dry run,
+apply refuses. It also refuses ambiguous locators, invented passages, an
+already activated case, and pilot/partial artifacts without a valid receipt.
+
+To move from a pilot to an activation attempt, archive the pilot result for
+comparison, restore the known clean pre-pilot legacy findings, fact-check, and
+evidence bundle, and then use the dry-run/apply sequence above. Do not delete
+individual pilot fields until a case merely looks legacy; mixed state must be
+treated as a recovery event.
+
+The comparative record at `docs/source-expression-pilot-results.json` covers
+the separate artifact, embedded-findings, and richer evidence/fact-check
+alternatives on the same fixture subset. Human correction yield and review time
+remain unmeasured, so activation of default new-case emission is **NOT
+APPROVED**.
+
 ### A cycle
 
 ```
@@ -245,6 +314,8 @@ Every finding must be grounded in a scraped file. This is non-negotiable.
 1. **Store all research per-case.** Every scraped file goes to `{CASE_DIR}/research/`.
 2. **Scrape before cite.** A finding without a scraped file is a claim, not a finding.
 3. **Quote verbatim from primary sources.** The `evidence` field contains direct quotes, not paraphrases.
+   In an explicitly enabled source-expression case, preserve the same exact
+   original-language selection and locator in `data/source-expressions.json`.
 4. **Ground the exact claim.** Every finding includes a `grounding` object explaining support type, source role, missing assumptions, contradictions, confidence cap, and misgrounding risk.
 5. **Link every finding to file and archive.** Every source entry includes `local_file`, `archive_url`, and `access_method`.
 6. **If you cannot scrape, explain why.** Document the barrier, downgrade confidence. A search snippet alone caps at `low` confidence.
@@ -300,6 +371,25 @@ All pipeline state lives in files. If context is lost mid-investigation, the orc
 | `data/methodology.json` but no findings | Phase 3 cycle 1 |
 | `data/findings.json` but no `summary.md` | Phase 3, evaluate current cycle's readiness |
 | `summary.md` present | Phase 4 review |
+
+Before choosing a phase, classify the source-expression contract:
+
+| State | Recovery action |
+|---|---|
+| No valid `case-contract.json`; findings `1.0`; no expression refs | Resume as legacy. |
+| No valid contract; findings `1.0`; explicitly recorded pilot artifact | Resume only with `SOURCE_EXPRESSION_MODE: pilot`; never infer activation. |
+| Valid contract; findings `1.1`; activated hashes match | Resume as activated and pass `SOURCE_EXPRESSION_MODE: activated` to both producers. |
+| Findings `1.1`, expression refs, or migration outputs without a valid contract | Stop: interrupted/partial migration. Restore the known legacy bundle and rerun dry-run/apply. |
+| Valid contract but an activated artifact is missing or hash-mismatched | Stop: do not downgrade or regenerate heuristically. Restore the matching artifact or use the supported supersession/revalidation flow. |
+
+Run `python3 scripts/validate-case.py {CASE_DIR}` before resuming any activated
+case. An older runtime that does not understand contract `1.1` must refuse the
+case. Rollback may stop future activations, but it never weakens an existing
+activated case.
+
+The presence of `data/source-expressions.json` or
+`data/source-expression-migration.json` alone never changes recovery or
+activates a legacy case.
 
 No database, no daemon — files are the source of truth.
 

@@ -69,6 +69,10 @@ In EXECUTION mode, check your prompt for:
 - **Previous findings** — If provided, build on them. Do not re-investigate what is already verified.
 - **Previous fact-check verdicts** — Target gaps: claims that were `unverified` or `disputed`.
 - **Specific gaps to fill** — Focus your effort on these. Do not repeat broad scans.
+- **SOURCE_EXPRESSION_MODE** — `pilot` or `activated` enables the case-local
+  source-expression producer contract below. If it is absent or any other
+  value, preserve legacy `1.0` behavior and do not emit
+  `data/source-expressions.json`.
 
 ## Vault Context Loading
 
@@ -196,20 +200,24 @@ Apply the 6-step methodology above to design a complete investigation plan:
 
 Check the `INTEGRATIONS` block in your spawn prompt.
 
-If `osint_navigator_required=true`, OSINT Navigator is mandatory before
-writing methodology.json:
+If `osint_navigator_required=true`, load the unified `navigator` skill before
+writing methodology.json. For every relevant direction, make two independent
+decisions: which OSINT tool or technique could help, and whether an executable
+Navigator Data source fits. Use the CLI first; API fallback is permitted only
+when the CLI is unavailable and Engine supplies credentials to the child process.
 
 1. `invoke-skill("integrations")`
 2. `invoke-skill("osint")`
-3. `read-file("integrations/osint-navigator/integration.md")`
-4. `read-file("skills/osint/references/cycle-integration.md")`
-5. Write a minimal `/api/tools/search` request JSON to `{CASE_DIR}/research/`
-6. Call `/api/tools/search` at least once for each investigation direction, or once with a combined query covering all directions when there is only one broad lead
-7. Save every raw Navigator response under `{CASE_DIR}/research/`
-8. Cite the response paths in `navigator.queries[]` and in plan steps using `navigator_response_path`
+3. `invoke-skill("navigator")`
+4. `navigator tools find "<need>" --json`, then `navigator tools show <id>` for a selected tool
+5. `navigator data find "<structured records need>" --json`, then `navigator data show <id>` before selecting a source
+6. Run `navigator query ...` only for an approved structured source; save machine-readable output under `{CASE_DIR}/research/`
+7. Record command mode, catalog ID/version or retrieval time, non-secret parameters, response path, source URLs, warnings, and output digest. Never record a PAT.
+8. For every direction record a `navigator.data_sources[]` decision or `navigator_data_not_applicable_reason`.
 
-Do not use `/api/query` unless the tool-selection question needs synthesized
-workflow advice. Prefer `/api/tools/search` because it is unlimited.
+Navigator output is a lead or a primary-source record to verify, not a conclusive
+claim. In sensitive/offline mode make no Navigator call; record both OSINT and
+Data modes as skipped by policy and use permitted local fallbacks.
 
 Valid exceptions: sensitive mode, Navigator status red/yellow, a local/vault-only
 lead, explicit user instruction not to use external APIs, or continuation of an
@@ -249,7 +257,10 @@ For each planned step, specify the verb to use:
     "queries": [
       {
         "direction": "corporate ownership trail",
-        "endpoint": "/api/tools/search",
+        "interface": "cli",
+        "command": "navigator tools find --query 'corporate ownership' --json",
+        "catalog_id": "navigator-tools-corporate-ownership",
+        "retrieved_at": "ISO 8601 timestamp",
         "request_path": "{CASE_ROOT}/example/research/navigator-search-corporate-ownership.json",
         "response_path": "{CASE_ROOT}/example/research/navigator-search-corporate-ownership-response.json",
         "selected_tools": ["OpenCorporates", "OCCRP Aleph"],
@@ -309,8 +320,10 @@ Follow it step-by-step. For each step:
 2. Save the result to `{CASE_DIR}/research/` (use a descriptive filename)
 3. Read the result
 4. Run the missing-source gate and record the acquisition in `data/evidence-bundle.json`
-5. Extract findings per the evidence-grounding rules
-6. If the step fails, try the fallback; if that also fails, document the failure in `investigation-log.json` under `failed_approaches`
+5. In source-expression mode, capture inspectable source expressions for the
+   passages used by findings
+6. Extract findings per the evidence-grounding rules
+7. If the step fails, try the fallback; if that also fails, document the failure in `investigation-log.json` under `failed_approaches`
 
 ### Missing-Source Gate
 
@@ -343,6 +356,53 @@ Create or update `{CASE_DIR}/data/evidence-bundle.json` during every execution c
 - `missing_source_gate`.
 
 Link each finding to relevant evidence bundle items with `evidence_bundle_refs`.
+
+### Source Expressions (opt-in pilot and activated cases)
+
+This contract applies only when `SOURCE_EXPRESSION_MODE` is explicitly
+`pilot` or `activated`. An absent mode remains a legacy `1.0` run: do not create
+the expression artifact and do not change the default findings version.
+
+The agent that acquires a source owns expression creation for that source. For
+each exact passage used to support, contradict, or contextualize a finding:
+
+1. Preserve the exact selected text in its original language. Do not translate,
+   normalize, summarize, or silently fix spelling inside that expression.
+2. Store the passage in a case-local text artifact and record an exact line
+   range or JSON Pointer in `anchor_ref`. The selected range must reproduce
+   `text` exactly.
+3. Link the expression to every applicable finding with an explicit
+   `supports`, `contradicts`, or `context` relation. Reuse one expression across
+   findings when the same passage genuinely bears on each; use multiple
+   expressions when a finding depends on multiple passages.
+4. Record `created_by: investigator` and the acquisition cycle. Preserve
+   expressions created by another actor; never rewrite their immutable passage
+   core or claim authorship for them.
+5. For audio, video, images, or scanned documents, keep the original artifact
+   and its hash on the evidence-bundle item. Store the transcript, caption, OCR,
+   or text extraction as a separate `text_derivatives[]` item with its own path,
+   hash, language, and human-verification state. Anchor the expression to that
+   derivative while retaining the original evidence-bundle ID and original
+   artifact hash.
+6. Store a translation only as a separate expression with
+   `derivative_type: translation`, `derived_from_expression_id` pointing to the
+   original-language expression, and `direct_quote: false`. A translation never
+   replaces the original expression.
+
+Write or merge `{CASE_DIR}/data/source-expressions.json` using
+`schemas/source-expressions.schema.json`. Compute passage, finding, and link
+fingerprints exactly as that schema specifies. In `pilot` mode this is an
+experimental side artifact and does not activate or upgrade a legacy case. In
+`activated` mode, preserve the existing `1.1` contract; the orchestrator or
+migration workflow owns the activation receipt.
+
+Expression capture is deliberate, not automatic extraction. Select only a
+passage you inspected in the stored artifact. Never invent text, a locator, a
+hash, an attribution, or a derivative to make validation pass. If the source is
+unavailable, a binary source has no inspectable text derivative, or the exact
+passage cannot be recovered, emit no expression for it and record the gap and
+confidence effect. File presence, snippets, model recall, and RLM output are not
+source expressions.
 
 ### Adapt Only When Stuck
 
@@ -463,6 +523,10 @@ Every finding MUST be grounded in collected evidence files. No exceptions.
 - **Store all research per-case.** All scraped content goes to `{CASE_DIR}/research/` via `fetch(url, "{CASE_DIR}/research/filename.md")`. This makes each case self-contained.
 - **Scrape before you cite.** If you reference a source, you must have scraped it and the content must exist in `{CASE_DIR}/research/`. A finding without a corresponding scraped file is not a finding — it is a claim.
 - **Quote verbatim.** Include the exact text passage from the scraped content that supports each finding in the `evidence` field. Do not paraphrase primary sources.
+- **Preserve the expression chain when enabled.** In explicit `pilot` or
+  `activated` mode, the acquiring agent also records the exact stored passage
+  in `data/source-expressions.json`; the finding remains the normalized verdict
+  unit.
 - **Ground the claim, not just the source.** `invoke-skill("epistemic-grounding")` and fill the `grounding` object for every finding. Name which material claim elements are supported, what assumptions remain, and the confidence cap. A source-adjacent lead is not a finding.
 - **Never emit a finding without claim text.** If you cannot articulate what the finding asserts, **skip the finding entirely** rather than write a placeholder. The orchestrator runs `scripts/validate-case.py` after your output — empty `claim` strings will fail validation and force a re-spawn. Same rule for any required field: `id`, `evidence`, `sources`, `confidence` must all be present and non-empty.
 - **Your output goes in `{CASE_DIR}/data/findings.json` with the shape declared in `schemas/findings.schema.json`.** Top-level must include `project` and `findings` (a list of finding objects). Do NOT emit alternative top-level shapes like `claim_checks`, `commune_checks`, `verdicts`, or domain-specific containers — if your investigation produces a different document type, write it to a separate file (e.g. `data/commune-checks.json`) and reference it from `findings.json`'s `next_steps` or `gaps`.
@@ -515,6 +579,8 @@ Do not force recommendations. If nothing warrants monitoring, omit the array ent
 - Reads prior fact-checks from: `{CASE_DIR}/data/fact-check.json`
 - Writes methodology to: `{CASE_DIR}/data/methodology.json` (PLANNING mode)
 - Writes findings to: `{CASE_DIR}/data/findings.json` (EXECUTION mode)
+- Writes source expressions to: `{CASE_DIR}/data/source-expressions.json`
+  (EXECUTION mode only when explicitly enabled)
 - Appends to: `{CASE_DIR}/data/investigation-log.json` (EXECUTION mode)
 - Reads from: `{VAULT_PATH}` registries and notes (PLANNING and EXECUTION modes — if `VAULT_PATH` is not `"none"`)
 

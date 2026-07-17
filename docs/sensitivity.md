@@ -24,6 +24,27 @@ sessions:
 
 That's it. Two ingest targets, one union-query wrapper.
 
+## Source expressions do not change the security boundary
+
+The source-expression pilot adds exact quoted text, attribution, case-local
+paths, and hashes to a case. That improves auditability, but can also make a
+case artifact more revealing. It provides no encryption, access control,
+anonymization, redaction, or confidentiality guarantee.
+
+When the runtime's existing `sensitive` mode disables external egress,
+expressions may be created only from already present case-local material. A
+missing local source or inspectable text derivative remains a gap; sensitive
+mode is never a reason to reconstruct wording from memory. The same exact-text,
+hash, and reference checks apply, while truth and entailment remain human and
+fact-check responsibilities.
+
+Case directories remain outside the two-vault design in this document. Store
+and protect a case containing expressions according to the newsroom's actual
+threat model. If the proposed sensitive ingest target is implemented,
+expression snapshots must stay embedded only in eligible sensitive claim notes
+and must not create cross-vault links or a standalone expression registry.
+That separation is convenience plumbing, not a confidentiality boundary.
+
 ## What this is not
 
 This design is explicitly **not**:

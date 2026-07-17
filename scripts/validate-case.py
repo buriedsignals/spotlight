@@ -31,6 +31,23 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from evidence_anchors import (
+    case_evidence_path,
+    normalized,
+    rlm_lead_failure,
+    selected_source_text,
+    sha256_file,
+)
+from source_expression_contract import (
+    POSITIVE_VERDICTS,
+    canonical_fingerprint,
+    passage_core,
+)
+
 
 VERDICTS = {"verified", "partially_verified", "unverified", "mischaracterized", "disputed", "false"}
 CONFIDENCES = {"high", "medium", "low", "disputed"}
@@ -92,6 +109,371 @@ def parse_datetime(value: Any) -> Optional[datetime]:
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else None
+
+
+def validate_case_contract(data: Any) -> list[str]:
+    prefix = "case-contract.json"
+    if not isinstance(data, dict):
+        return [f"{prefix}: top-level must be an object"]
+    errors: list[str] = []
+    allowed_top = {"schema_version", "project", "current_contract_version", "activation_events"}
+    if set(data) - allowed_top:
+        errors.append(f"{prefix}: unknown fields {sorted(set(data) - allowed_top)}")
+    if data.get("schema_version") != "1.0":
+        errors.append(f"{prefix}: schema_version must be 1.0")
+    if not nonempty_string(data.get("project")):
+        errors.append(f"{prefix}: project must be a non-empty string")
+    if data.get("current_contract_version") != "1.1":
+        errors.append(f"{prefix}: current_contract_version must be 1.1")
+    events = data.get("activation_events")
+    if not isinstance(events, list) or not events:
+        return errors + [f"{prefix}: activation_events must be a non-empty list"]
+    event_ids: set[str] = set()
+    for index, event in enumerate(events):
+        item = f"{prefix}.activation_events[{index}]"
+        if not isinstance(event, dict):
+            errors.append(f"{item}: must be an object")
+            continue
+        allowed_event = {
+            "event_id", "previous_contract_version", "activated_contract_version",
+            "activated_at", "tool_version", "prior_input_hashes",
+            "activated_artifact_hashes",
+        }
+        if set(event) - allowed_event:
+            errors.append(f"{item}: unknown fields {sorted(set(event) - allowed_event)}")
+        event_id = event.get("event_id")
+        if not nonempty_string(event_id):
+            errors.append(f"{item}.event_id: must be a non-empty string")
+        elif event_id in event_ids:
+            errors.append(f"{item}.event_id: duplicate {event_id!r}")
+        else:
+            event_ids.add(event_id)
+        if event.get("previous_contract_version") != "1.0" or event.get("activated_contract_version") != "1.1":
+            errors.append(f"{item}: must record the 1.0 to 1.1 transition")
+        if parse_datetime(event.get("activated_at")) is None:
+            errors.append(f"{item}.activated_at: must be a timezone-aware ISO timestamp")
+        if not nonempty_string(event.get("tool_version")):
+            errors.append(f"{item}.tool_version: must be a non-empty string")
+        for key, require_expressions in (("prior_input_hashes", False), ("activated_artifact_hashes", True)):
+            hashes = event.get(key)
+            required = {"findings_sha256", "fact_check_sha256", "evidence_bundle_sha256"}
+            if require_expressions:
+                required.add("source_expressions_sha256")
+            if not isinstance(hashes, dict):
+                errors.append(f"{item}.{key}: must be an object")
+                continue
+            allowed_hashes = required | ({"source_expressions_sha256"} if not require_expressions else set())
+            if set(hashes) - allowed_hashes:
+                errors.append(f"{item}.{key}: unknown fields {sorted(set(hashes) - allowed_hashes)}")
+            for field in required:
+                value = hashes.get(field)
+                if not isinstance(value, str) or not re.fullmatch(r"[a-f0-9]{64}", value):
+                    errors.append(f"{item}.{key}.{field}: must be lowercase SHA-256")
+    return errors
+
+
+def _graph_cycles(edges: dict[str, str], label: str) -> list[str]:
+    errors: list[str] = []
+    for start in edges:
+        seen: set[str] = set()
+        current = start
+        while current in edges:
+            if current in seen:
+                errors.append(f"source-expressions.json: {label} cycle includes expression {current}")
+                break
+            seen.add(current)
+            current = edges[current]
+    return sorted(set(errors))
+
+
+def expression_refs(evidence_rows: list[Any]) -> list[dict[str, Any]]:
+    return [
+        ref
+        for evidence in evidence_rows
+        if isinstance(evidence, dict)
+        for ref in (
+            evidence.get("source_expression_refs", [])
+            if isinstance(evidence.get("source_expression_refs", []), list)
+            else []
+        )
+        if isinstance(ref, dict)
+    ]
+
+
+def validate_source_expressions(
+    case_dir: Path,
+    data: Any,
+    findings_data: dict[str, Any],
+    factcheck_data: dict[str, Any] | None,
+    evidence_data: dict[str, Any] | None,
+    enforce_positive_verdicts: bool = True,
+) -> list[str]:
+    """Validate the full activated expression chain; never infer semantic truth."""
+    if not isinstance(data, dict):
+        return ["source-expressions.json: top-level must be an object"]
+    errors: list[str] = []
+    if data.get("schema_version") != "1.0":
+        errors.append("source-expressions.json: schema_version must be 1.0")
+    if data.get("project") != findings_data.get("project"):
+        errors.append("source-expressions.json: project must match findings.json")
+    raw_findings = findings_data.get("findings", [])
+    findings = {
+        item.get("id"): item for item in raw_findings
+        if isinstance(item, dict) and nonempty_string(item.get("id"))
+    }
+    raw_bundles = (evidence_data or {}).get("items", [])
+    if not isinstance(raw_bundles, list):
+        raw_bundles = []
+    bundles = {
+        item.get("id"): item for item in raw_bundles
+        if isinstance(item, dict) and nonempty_string(item.get("id"))
+    }
+    expressions_raw = data.get("expressions")
+    if not isinstance(expressions_raw, list):
+        return errors + ["source-expressions.json: expressions must be a list"]
+    expressions: dict[str, dict[str, Any]] = {}
+    derivative_edges: dict[str, str] = {}
+    successor_edges: dict[str, str] = {}
+    active: set[str] = set()
+    blocked_support: set[str] = set()
+    support_links: set[tuple[str, str]] = set()
+    finding_ids = [
+        item.get("id") for item in raw_findings
+        if isinstance(item, dict) and nonempty_string(item.get("id"))
+    ]
+    if len(finding_ids) != len(set(finding_ids)):
+        errors.append("findings.json: activated cases require unique finding IDs")
+    for index, expression in enumerate(expressions_raw):
+        expression_id = expression.get("id") if isinstance(expression, dict) else "?"
+        prefix = f"source-expressions.json expression {expression_id!r}"
+        if not isinstance(expression, dict):
+            errors.append(f"source-expressions.json[{index}]: must be an object")
+            continue
+        if not nonempty_string(expression_id):
+            errors.append(f"{prefix}: id must be a non-empty string")
+            continue
+        if expression_id in expressions:
+            errors.append(f"{prefix}: duplicate expression ID")
+            continue
+        expressions[expression_id] = expression
+        required_fields = {
+            "id", "text", "anchor_ref", "anchor_sha256",
+            "original_evidence_bundle_id", "original_artifact_sha256",
+            "expression_fingerprint", "finding_links", "lifecycle_events",
+            "created_by", "cycle",
+        }
+        missing = sorted(required_fields - set(expression))
+        if missing:
+            errors.append(f"{prefix}: missing required fields {missing}")
+        if not nonempty_string(expression.get("text")):
+            errors.append(f"{prefix}: text must be a non-empty string")
+        if expression.get("created_by") not in {"investigator", "fact-checker", "human"}:
+            errors.append(f"{prefix}: created_by is invalid")
+        if not isinstance(expression.get("cycle"), int) or expression.get("cycle") < 1:
+            errors.append(f"{prefix}: cycle must be an integer >= 1")
+        core = passage_core(expression)
+        if canonical_fingerprint(core) != expression.get("expression_fingerprint"):
+            errors.append(f"{prefix}: expression_fingerprint mismatch")
+        anchor_ref = expression.get("anchor_ref")
+        anchor_path = case_evidence_path(case_dir, anchor_ref.get("path") if isinstance(anchor_ref, dict) else None)
+        if anchor_path is None:
+            errors.append(f"{prefix}: anchor_ref does not resolve to a case-local file")
+        else:
+            selected, selection_error = selected_source_text(anchor_path, anchor_ref)
+            if selection_error:
+                errors.append(f"{prefix}: {selection_error}")
+            elif selected != expression.get("text"):
+                errors.append(f"{prefix}: text does not exactly match the selected anchor")
+            if sha256_file(anchor_path) != expression.get("anchor_sha256"):
+                errors.append(f"{prefix}: anchor_sha256 does not match anchor artifact")
+            lead_failure = rlm_lead_failure(anchor_path)
+            if lead_failure:
+                errors.append(f"{prefix}: {lead_failure}")
+                blocked_support.add(expression_id)
+        bundle = bundles.get(expression.get("original_evidence_bundle_id"))
+        if bundle is None:
+            errors.append(f"{prefix}: original_evidence_bundle_id does not resolve")
+        else:
+            if normalized(bundle.get("sha256")).lower() != expression.get("original_artifact_sha256"):
+                errors.append(f"{prefix}: original_artifact_sha256 does not match evidence bundle")
+            original_paths = [bundle.get(key) for key in ("raw_path", "downloaded_document_path", "screenshot_path", "path") if bundle.get(key)]
+            if not original_paths or not any(
+                (path := case_evidence_path(case_dir, value)) is not None
+                and sha256_file(path) == expression.get("original_artifact_sha256")
+                for value in original_paths
+            ):
+                errors.append(f"{prefix}: original evidence artifact path/hash is not intact")
+            derivatives = bundle.get("text_derivatives", [])
+            if bundle.get("human_verification_required") is True:
+                blocked_support.add(expression_id)
+            gate = bundle.get("missing_source_gate")
+            if isinstance(gate, dict) and gate.get("fallback_required") is not False:
+                blocked_support.add(expression_id)
+            if anchor_path is not None and original_paths:
+                known_paths = {
+                    path for value in original_paths
+                    if (path := case_evidence_path(case_dir, value)) is not None
+                }
+                known_paths.update(
+                    path for item in derivatives if isinstance(item, dict)
+                    if (path := case_evidence_path(case_dir, item.get("path"))) is not None
+                )
+                if anchor_path not in known_paths:
+                    errors.append(f"{prefix}: anchor_ref is not owned by its evidence bundle")
+                if any(
+                    isinstance(item, dict)
+                    and case_evidence_path(case_dir, item.get("path")) == anchor_path
+                    and item.get("human_verification_required") is True
+                    for item in derivatives
+                ):
+                    blocked_support.add(expression_id)
+        parent = expression.get("derived_from_expression_id")
+        if nonempty_string(parent):
+            derivative_edges[expression_id] = parent
+        lifecycle = expression.get("lifecycle_events")
+        state = ""
+        if not isinstance(lifecycle, list) or not lifecycle:
+            errors.append(f"{prefix}: lifecycle_events must be non-empty")
+        else:
+            timestamps: list[datetime] = []
+            for event_index, event in enumerate(lifecycle):
+                event_name = event.get("event") if isinstance(event, dict) else None
+                timestamp = parse_datetime(event.get("timestamp")) if isinstance(event, dict) else None
+                if not isinstance(event, dict):
+                    errors.append(f"{prefix}: lifecycle event {event_index} must be an object")
+                    continue
+                unknown = set(event) - {
+                    "event", "timestamp", "actor", "reason", "successor_expression_id"
+                }
+                if unknown:
+                    errors.append(
+                        f"{prefix}: lifecycle event {event_index} has unknown fields {sorted(unknown)}"
+                    )
+                if not nonempty_string(event.get("actor")):
+                    errors.append(f"{prefix}: lifecycle event {event_index} needs actor")
+                if not nonempty_string(event.get("reason")):
+                    errors.append(f"{prefix}: lifecycle event {event_index} needs reason")
+                if timestamp is None:
+                    errors.append(f"{prefix}: lifecycle event {event_index} has invalid timestamp")
+                else:
+                    timestamps.append(timestamp)
+                if event_index == 0 and event_name != "activated":
+                    errors.append(f"{prefix}: lifecycle must begin with activated")
+                elif event_index > 0 and event_name not in {"superseded", "withdrawn"}:
+                    errors.append(f"{prefix}: illegal lifecycle transition to {event_name!r}")
+                if state in {"superseded", "withdrawn"}:
+                    errors.append(f"{prefix}: lifecycle continues after terminal state {state}")
+                state = event_name or state
+                if event_name == "superseded":
+                    successor = event.get("successor_expression_id")
+                    if not nonempty_string(successor):
+                        errors.append(f"{prefix}: superseded event needs successor_expression_id")
+                    else:
+                        successor_edges[expression_id] = successor
+                elif "successor_expression_id" in event:
+                    errors.append(
+                        f"{prefix}: lifecycle event {event_index} cannot name a successor"
+                    )
+            if timestamps != sorted(timestamps):
+                errors.append(f"{prefix}: lifecycle timestamps are not monotonic")
+        if state == "activated":
+            active.add(expression_id)
+        links = expression.get("finding_links")
+        if not isinstance(links, list) or not links:
+            errors.append(f"{prefix}: finding_links must be a non-empty list")
+            links = []
+        linked_findings: set[str] = set()
+        for link_index, link in enumerate(links):
+            if not isinstance(link, dict):
+                errors.append(f"{prefix}: finding_links[{link_index}] must be an object")
+                continue
+            finding_id = link.get("finding_id")
+            if nonempty_string(finding_id) and finding_id in linked_findings:
+                errors.append(f"{prefix}: duplicate finding link for {finding_id!r}")
+            elif nonempty_string(finding_id):
+                linked_findings.add(finding_id)
+            if link.get("relation") not in {"supports", "contradicts", "context"}:
+                errors.append(f"{prefix}: finding link {finding_id!r} has invalid relation")
+            finding = findings.get(finding_id)
+            if finding is None:
+                errors.append(f"{prefix}: finding link {finding_id!r} does not resolve")
+                continue
+            finding_fp = canonical_fingerprint({"claim": finding.get("claim")})
+            if finding.get("finding_fingerprint") != finding_fp or link.get("finding_fingerprint") != finding_fp:
+                errors.append(f"{prefix}: finding_fingerprint mismatch for {finding_id}")
+            link_payload = {
+                "expression_fingerprint": expression.get("expression_fingerprint"),
+                "finding_fingerprint": link.get("finding_fingerprint"),
+                "finding_id": finding_id,
+                "relation": link.get("relation"),
+            }
+            if canonical_fingerprint(link_payload) != link.get("link_fingerprint"):
+                errors.append(f"{prefix}: link_fingerprint mismatch for {finding_id}")
+            if link.get("relation") == "supports":
+                support_links.add((expression_id, finding_id))
+    for expression_id, parent in derivative_edges.items():
+        if parent not in expressions:
+            errors.append(f"source-expressions.json expression {expression_id!r}: derivative parent does not resolve")
+    for expression_id, successor in successor_edges.items():
+        target = expressions.get(successor)
+        if target is None:
+            errors.append(f"source-expressions.json expression {expression_id!r}: successor does not resolve")
+        elif target.get("supersedes_expression_id") != expression_id:
+            errors.append(f"source-expressions.json expression {expression_id!r}: successor back-reference mismatch")
+    for expression_id, expression in expressions.items():
+        predecessor = expression.get("supersedes_expression_id")
+        if nonempty_string(predecessor) and successor_edges.get(predecessor) != expression_id:
+            errors.append(f"source-expressions.json expression {expression_id!r}: supersedes back-reference has no matching lifecycle event")
+    errors.extend(_graph_cycles(derivative_edges, "derivative"))
+    errors.extend(_graph_cycles(successor_edges, "lifecycle"))
+
+    container, rows = fact_check_rows(factcheck_data or {})
+    for index, row in enumerate(rows if isinstance(rows, list) else []):
+        if not isinstance(row, dict):
+            continue
+        _, verdict = fact_check_values(container, row)
+        finding_id = row.get("finding_id")
+        evidence_for = row.get("evidence_for")
+        evidence_against = row.get("evidence_against")
+        if not isinstance(evidence_for, list):
+            evidence_for = []
+        if not isinstance(evidence_against, list):
+            evidence_against = []
+        refs = expression_refs(evidence_for)
+        all_refs = refs + expression_refs(evidence_against)
+        eligible = False
+        valid_ref_ids: set[str] = set()
+        for ref in all_refs:
+            expression_id = ref.get("expression_id")
+            expression = expressions.get(expression_id)
+            link = next((item for item in (expression or {}).get("finding_links", []) if isinstance(item, dict) and item.get("finding_id") == finding_id), None)
+            if expression is None or link is None:
+                errors.append(f"fact-check.json.{container}[{index}]: expression ref {expression_id!r} does not resolve for finding {finding_id}")
+                continue
+            if any(ref.get(key) != expected for key, expected in (
+                ("expression_fingerprint", expression.get("expression_fingerprint")),
+                ("finding_fingerprint", link.get("finding_fingerprint")),
+                ("link_fingerprint", link.get("link_fingerprint")),
+            )):
+                errors.append(f"fact-check.json.{container}[{index}]: stale expression ref {expression_id!r}")
+                continue
+            valid_ref_ids.add(expression_id)
+        if not enforce_positive_verdicts or verdict not in POSITIVE_VERDICTS:
+            continue
+        for ref in refs:
+            expression_id = ref.get("expression_id")
+            if (
+                expression_id in valid_ref_ids
+                and expression_id in active
+                and expression_id not in blocked_support
+                and (expression_id, finding_id) in support_links
+            ):
+                eligible = True
+            elif expression_id in blocked_support:
+                errors.append(f"fact-check.json.{container}[{index}]: source expression {expression_id!r} is pending human verification or not source evidence")
+        if not eligible:
+            errors.append(f"fact-check.json.{container}[{index}]: positive verdict for {finding_id!r} has no active supporting source expression")
+    return errors
 
 
 def validate_findings(data: dict[str, Any]) -> list[str]:
@@ -694,6 +1076,7 @@ def main() -> int:
 
     all_errors.extend(cross_reference(findings_data, factcheck_data))
 
+    evidence_bundle_data = None
     evidence_bundle_path = case_dir / "data" / "evidence-bundle.json"
     if evidence_bundle_path.exists():
         evidence_bundle_data, errs = load_json(evidence_bundle_path)
@@ -705,6 +1088,59 @@ def main() -> int:
         ):
             if evidence_bundle_data is not None:
                 all_errors.extend(validate_evidence_bundle(evidence_bundle_data))
+
+    contract_path = case_dir / "data" / "case-contract.json"
+    contract_data = None
+    contract_errors: list[str] = []
+    if contract_path.exists():
+        contract_data, contract_errors = load_json(contract_path)
+        all_errors.extend(contract_errors)
+        if contract_data is not None:
+            contract_errors = validate_case_contract(contract_data)
+            all_errors.extend(contract_errors)
+    findings_version = findings_data.get("schema_version", "1.0") if isinstance(findings_data, dict) else "1.0"
+    activated = contract_data is not None and not contract_errors and findings_version == "1.1"
+    if contract_data is not None and not contract_errors and findings_version != "1.1":
+        all_errors.append("case-contract.json: valid 1.1 activation requires findings.json schema_version 1.1")
+    if findings_version == "1.1" and not activated:
+        all_errors.append("findings.json: schema_version 1.1 requires a valid data/case-contract.json")
+
+    if activated:
+        if contract_data.get("project") != findings_data.get("project"):
+            all_errors.append("case-contract.json: project must match findings.json")
+        expressions_path = case_dir / "data" / "source-expressions.json"
+        expressions_data, errs = load_json(expressions_path)
+        all_errors.extend(errs)
+        if expressions_data is not None:
+            all_errors.extend(validate_source_expressions(
+                case_dir, expressions_data, findings_data, factcheck_data, evidence_bundle_data
+            ))
+        latest = contract_data["activation_events"][-1].get("activated_artifact_hashes", {})
+        artifact_paths = {
+            "findings_sha256": findings_path,
+            "fact_check_sha256": factcheck_path,
+            "evidence_bundle_sha256": evidence_bundle_path,
+            "source_expressions_sha256": expressions_path,
+        }
+        for key, path in artifact_paths.items():
+            if not path.is_file():
+                all_errors.append(f"case-contract.json: activated artifact {path.name} is missing")
+            elif latest.get(key) != sha256_file(path):
+                all_errors.append(f"case-contract.json: {key} does not match the activated artifact")
+    elif findings_version == "1.0":
+        expressions_path = case_dir / "data" / "source-expressions.json"
+        if expressions_path.exists():
+            expressions_data, errs = load_json(expressions_path)
+            all_errors.extend(errs)
+            if expressions_data is not None:
+                all_errors.extend(validate_source_expressions(
+                    case_dir,
+                    expressions_data,
+                    findings_data,
+                    factcheck_data,
+                    evidence_bundle_data,
+                    enforce_positive_verdicts=False,
+                ))
 
     if not args.fact_check_only:
         investigation_log_path = case_dir / "data" / "investigation-log.json"

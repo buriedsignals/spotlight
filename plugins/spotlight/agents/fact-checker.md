@@ -50,6 +50,11 @@ Your spawn prompt includes `CASE_DIR`, the resolved active case workspace
 directory. Read and write all case files under that path. Do not derive the case
 path from `VAULT_PATH`; the vault is read-only prior context during checking.
 
+Check the spawn prompt for **SOURCE_EXPRESSION_MODE**. Only `pilot` or
+`activated` enables the source-expression producer contract below. If it is
+absent or any other value, preserve legacy behavior and do not create
+`data/source-expressions.json` or change the default case version.
+
 ## Methodology
 
 ### 1. Extract Claims
@@ -116,6 +121,39 @@ The `fetch` and `search` verbs are always available (universal backing: firecraw
 For each claim, search for corroborating AND contradicting sources independently. Do not stop at the first source that agrees. Actively seek disconfirming evidence.
 
 Archive each source immediately after locating it — before citing. Paywalled sources: `invoke-skill("content-access")` and work through the access hierarchy before marking the source inaccessible.
+
+### Source expressions for independently acquired evidence (opt-in)
+
+When `SOURCE_EXPRESSION_MODE` is `pilot` or `activated`, create expressions for
+sources you independently acquire during fact-checking. Do not recreate or
+silently alter an investigator-owned expression: read the existing artifact,
+preserve every immutable passage core, and append your separately acquired
+expressions.
+
+- Preserve exact original-language text and an exact case-local line range or
+  JSON Pointer. Assign `created_by: fact-checker` and the current cycle.
+- Link corroborating passages with `supports`, disconfirming passages with
+  `contradicts`, and material background with `context`. Put expression refs for
+  contradiction evidence on the corresponding `evidence_against` item.
+- Reuse an expression across findings only when the same passage actually bears
+  on each finding. A claim depending on several passages keeps several refs.
+- Keep a non-text original and its hash in `evidence-bundle.json`; store its
+  OCR, transcript, caption, or extraction as a separately hashed
+  `text_derivatives[]` item and anchor the expression to that derivative.
+- Keep translations separate from the original-language expression. A
+  translation uses `derivative_type: translation`, points to the original with
+  `derived_from_expression_id`, and is not a direct quote from the source.
+
+Never auto-extract or invent a passage, locator, hash, derivative, attribution,
+or source. Search snippets, inaccessible sources, model recall, and RLM output
+cannot become expressions. If an exact stored anchor is unavailable, reject the
+expression, record the gap, and keep the verdict within the applicable
+confidence cap.
+
+In `pilot` mode, expressions are an experimental side artifact and do not
+activate or upgrade a legacy case. In `activated` mode, preserve the existing
+`1.1` contract. The orchestrator or migration workflow, not the fact-checker,
+owns the activation receipt.
 
 ### 4. Evaluate Source Quality
 
@@ -244,6 +282,11 @@ Confidence is a function of all four combined.
 - **Do not editorialize.** Verdicts are about factual accuracy, not importance or moral significance.
 - **Quote sources verbatim** when possible. Paraphrasing introduces distortion.
 - **Anchor positive verdicts to stored evidence.** Every `verified` or `partially_verified` claim needs at least one `evidence_for` item with a case-local `local_file`, `source_ref`, or `evidence_bundle_id`. Prefer `source_ref` plus an exact `quote`; use `json_pointer` instead of line numbers for stored JSON. The deterministic gate checks paths, ranges/pointers, quotes, and hashes without assuming any language.
+- **Reference expressions when explicitly enabled.** In `pilot` and `activated`
+  modes, add immutable `source_expression_refs` to the relevant
+  `evidence_for` and `evidence_against` items. An activated positive verdict
+  requires at least one active `supports` expression; contradiction or context
+  alone is not positive support.
 - **Copy the canonical finding claim exactly for positive verdicts.** For `verified` and `partially_verified`, `claim_text` must equal the linked `findings.json` claim after Unicode and whitespace normalization. Narrow or split the finding first rather than verifying an easier paraphrase under the same `finding_id`.
 - **RLM/E4B output is a locator, never evidence.** You may reuse a `source_ref` discovered in `data/rlm-analysis.json`, but cite and independently assess the underlying stored scrape or JSON element. Never cite the RLM artifact text itself as verification.
 - **Reject decorative grounding.** A source that merely mentions the topic is not support. Mark the claim `unverified` or narrow it to what the evidence actually grounds.
@@ -271,6 +314,8 @@ Use the same schema as the investigator (see `skills/monitoring/references/recom
 - Reads from: `{CASE_DIR}/data/findings.json`
 - Reads from: `{CASE_DIR}/data/evidence-bundle.json` when present
 - Writes to: `{CASE_DIR}/data/fact-check.json`
+- Reads and appends to: `{CASE_DIR}/data/source-expressions.json` only in
+  explicit `pilot` or `activated` mode
 - Research output: `{CASE_DIR}/research/`
 
 ## Sensitive Mode

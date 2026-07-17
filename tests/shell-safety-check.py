@@ -33,6 +33,7 @@ def main():
         "javascript:alert(1)",
         "https://example.org/$(touch bad)",
         "https://example.org/a\nb",
+        "https://example.org/path#fragment",
     ]:
         assert_reject("validate-url", hostile)
 

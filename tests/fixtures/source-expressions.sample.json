@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0",
+  "project": "test-case",
+  "created_at": "2026-07-16T12:00:00Z",
+  "expressions": [
+    {
+      "id": "SX1",
+      "text": "Acme paid Doe.",
+      "anchor_ref": {
+        "path": "research/filing.txt",
+        "line_start": 12,
+        "line_end": 12
+      },
+      "anchor_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "original_evidence_bundle_id": "E1",
+      "original_artifact_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expression_fingerprint": "777ccbf691ef9f04783a61fc9b6acaac136969b1c6f4f6ed12ea61b5db82cc7f",
+      "finding_links": [
+        {
+          "finding_id": "F1",
+          "finding_fingerprint": "283888ef86f207741644f723da3389e257a6e6a8149b6d115a137415c99a8b5e",
+          "relation": "supports",
+          "link_fingerprint": "acce0bc591dc32ec2890aded60e5162670c14a2e017795f099a439a73f0283d3"
+        },
+        {
+          "finding_id": "F2",
+          "finding_fingerprint": "878f58016fc66f543941f2ad5f9ef7ffbc85505af49abaca1f4c1f578adbb118",
+          "relation": "context",
+          "link_fingerprint": "c25fdfd514e239d1430094e4a6fba7c9ca38bbc3b02e6e8b6d46eddf6f83aa35"
+        }
+      ],
+      "lifecycle_events": [
+        {
+          "event": "activated",
+          "timestamp": "2026-07-16T12:00:00Z",
+          "actor": "investigator",
+          "reason": "Exact passage captured during acquisition."
+        }
+      ],
+      "created_by": "investigator",
+      "cycle": 1,
+      "language": "en",
+      "attribution": "Registry filing",
+      "direct_quote": true
+    },
+    {
+      "id": "SX2",
+      "text": "Acme a payé Doe.",
+      "anchor_ref": {
+        "path": "research/filing-fr.txt",
+        "line_start": 4,
+        "line_end": 4
+      },
+      "anchor_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "original_evidence_bundle_id": "E1",
+      "original_artifact_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expression_fingerprint": "fd7b759501528ea2d29ea65558cd4e94edb5859dfb64abfb76579aadaf9ebf9b",
+      "finding_links": [
+        {
+          "finding_id": "F1",
+          "finding_fingerprint": "283888ef86f207741644f723da3389e257a6e6a8149b6d115a137415c99a8b5e",
+          "relation": "supports",
+          "link_fingerprint": "e05010a336ec4673beec0891a07bbeeac2f7dd596dcac5902fbf4b3c10be4fc7"
+        }
+      ],
+      "lifecycle_events": [
+        {
+          "event": "activated",
+          "timestamp": "2026-07-16T12:05:00Z",
+          "actor": "human",
+          "reason": "Reviewed translation stored as a labeled derivative."
+        }
+      ],
+      "created_by": "human",
+      "cycle": 1,
+      "language": "fr",
+      "attribution": "Translation of registry filing",
+      "direct_quote": false,
+      "derived_from_expression_id": "SX1",
+      "derivative_type": "translation"
+    }
+  ]
+}
