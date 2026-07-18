@@ -368,7 +368,7 @@ else:
 print(json.dumps({"event": "result", "data": data}))
 """)
         os.chmod(cls.fake_bsig, 0o755)
-        env = {**os.environ, "BSIG_BINARY": cls.fake_bsig}
+        env = {**os.environ, "BSIG_BIN": cls.fake_bsig}
         cls.proc = subprocess.Popen(
             [sys.executable, os.path.join(ROOT, "install", "setup_server.py"),
              "--profile-dir", cls.tmp, "--repo-dir", ROOT,
@@ -455,7 +455,9 @@ print(json.dumps({"event": "result", "data": data}))
         marker = os.path.join(self.tmp, "engine-plan.ready")
         self.assertEqual(stat.S_IMODE(os.stat(marker).st_mode), 0o600)
         with open(marker, encoding="utf-8") as handle:
-            self.assertEqual(json.load(handle)["plan_path"], "/tmp/spotlight-install.json")
+            marker_data = json.load(handle)
+        self.assertEqual(marker_data["plan"]["plan_path"], "/tmp/spotlight-install.json")
+        self.assertEqual(marker_data["engine_binary"], self.fake_bsig)
         self.assertEqual(set(os.listdir(self.tmp)), {"bsig", "engine-plan.ready"})
 
 
