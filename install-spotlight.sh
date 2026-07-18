@@ -147,8 +147,10 @@ else
     echo "→ Opening the Spotlight configurator in your browser."
     echo "  Your choices and API keys go to a local server on 127.0.0.1 only and are"
     echo "  staged in $SPOTLIGHT_PROFILE_DIR — nothing is uploaded anywhere."
+    ENGINE_PLAN_MARKER="$SPOTLIGHT_PROFILE_DIR/engine-plan.ready"
+    rm -f "$ENGINE_PLAN_MARKER"
     python3 "$CONFIGURATOR_DIR/install/setup_server.py" --profile-dir "$SPOTLIGHT_PROFILE_DIR" --repo-dir "$CONFIGURATOR_DIR"
-    if [ -f "$SPOTLIGHT_PROFILE_DIR/engine-plan.ready" ]; then
+    if [ -f "$ENGINE_PLAN_MARKER" ]; then
       printf '✓ Engine wrote a sealed Spotlight plan. Review and apply the plan path shown in the browser with: bsig apply <plan-path>\n'
       exit 0
     fi

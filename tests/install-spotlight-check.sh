@@ -22,9 +22,11 @@ excludes() {
 # ── install-spotlight.sh: configurator head contract ──
 # Configurator phase: local server collects config, installer sources artifacts
 includes install-spotlight.sh 'python3 "$CONFIGURATOR_DIR/install/setup_server.py" --profile-dir "$SPOTLIGHT_PROFILE_DIR" --repo-dir "$CONFIGURATOR_DIR"'
+includes install-spotlight.sh 'rm -f "$ENGINE_PLAN_MARKER"'
+includes install-spotlight.sh 'if [ -f "$ENGINE_PLAN_MARKER" ]; then'
+excludes install/setup_server.py 'reload to use the legacy installer'
 # Engine marker gate: server exit code alone is not trusted and the legacy
 # Obsidian/QMD installer is never used as a silent fallback.
-includes install-spotlight.sh 'if [ -f "$SPOTLIGHT_PROFILE_DIR/engine-plan.ready" ]; then'
 includes install-spotlight.sh 'no legacy Obsidian/QMD fallback was applied'
 includes install-spotlight.sh 'if ! command -v bsig >/dev/null 2>&1; then'
 # Version handshake with install/setup_server.py + install/configure.html

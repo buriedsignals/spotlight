@@ -344,11 +344,30 @@ class ServerChecks(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp()
+        cls.fake_bsig = os.path.join(cls.tmp, "bsig")
+        with open(cls.fake_bsig, "w", encoding="utf-8") as handle:
+            handle.write("""#!/usr/bin/env python3
+import json, sys
+args = sys.argv[1:]
+if args[:2] == ["configure", "describe"]:
+    data = {"descriptor": {"schema_version": "bsig-configure-descriptor/v1", "product": "spotlight", "fields": []}}
+elif args[:2] == ["configure", "validate"]:
+    json.load(sys.stdin); data = {"normalized": {"required_secret_ids": []}}
+elif args[:2] == ["keys", "list"]:
+    data = {"keys": []}
+elif args[:2] == ["configure", "plan"]:
+    json.load(sys.stdin); data = {"plan_path": "/tmp/spotlight-install.json"}
+else:
+    sys.exit(4)
+print(json.dumps({"event": "result", "data": data}))
+""")
+        os.chmod(cls.fake_bsig, 0o755)
+        env = {**os.environ, "BSIG_BINARY": cls.fake_bsig}
         cls.proc = subprocess.Popen(
             [sys.executable, os.path.join(ROOT, "install", "setup_server.py"),
              "--profile-dir", cls.tmp, "--repo-dir", ROOT,
              "--port", "0", "--no-browser", "--skip-key-validation"],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
         # GET is token-gated, so the token comes from the printed URL.
         cls.token = None
         deadline = time.time() + 10
@@ -407,36 +426,31 @@ class ServerChecks(unittest.TestCase):
                 urllib.request.urlopen(url, timeout=5)
             self.assertEqual(ctx.exception.code, 403, url)
 
-        # 3. bad token is rejected on both POST endpoints
-        for path in ("/submit", "/pick-folder"):
+        # 3. bad token is rejected on both active POST endpoints
+        for path in ("/engine-submit", "/pick-folder"):
             with self.assertRaises(urllib.error.HTTPError) as ctx:
                 self.post(path, {**BASE, "token": "wrong", "field": "vault_path"})
             self.assertEqual(ctx.exception.code, 403, path)
 
-        # 4. structural validation blocks with field errors
+        # 4. the legacy writer endpoint is retired
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             self.post("/submit", {**BASE, "token": self.token, "navKey": ""})
-        self.assertEqual(ctx.exception.code, 400)
-        body = json.loads(ctx.exception.read())
-        self.assertTrue(any(e["field"] == "nav_key" for e in body["errors"]))
+        self.assertEqual(ctx.exception.code, 410)
 
-        # 5. good submit writes the three artifacts and exits 0
-        resp = self.post("/submit", {**BASE, "token": self.token})
+        # 5. Engine submit writes only the sealed-plan marker and exits 0
+        resp = self.post("/engine-submit", {
+            "token": self.token,
+            "request": {"schema_version": "bsig-configure/v1"},
+            "secrets": {},
+        })
         self.assertTrue(resp["ok"])
         self.assertEqual(self.proc.wait(timeout=10), 0)
         self.assertEqual(stat.S_IMODE(os.stat(self.tmp).st_mode), 0o700)
-        expected = {".env": 0o600, "setup-config.env": 0o600, "getting-started.html": 0o644}
-        self.assertEqual(set(os.listdir(self.tmp)), set(expected))
-        for name, mode in expected.items():
-            path = os.path.join(self.tmp, name)
-            self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), mode, name)
-        guide = read(os.path.join(self.tmp, "getting-started.html"))
-        cfg = read(os.path.join(self.tmp, "setup-config.env"))
-        for secret in SECRETS:
-            self.assertNotIn(secret, guide)
-            self.assertNotIn(secret, cfg)
-        self.assertIn("SPOTLIGHT_DIR_INPUT='~/Documents/Spotlight'", cfg)
-        self.assertIn("SPOTLIGHT_VAULT_INPUT='~/Intelligence'", cfg)
+        marker = os.path.join(self.tmp, "engine-plan.ready")
+        self.assertEqual(stat.S_IMODE(os.stat(marker).st_mode), 0o600)
+        with open(marker, encoding="utf-8") as handle:
+            self.assertEqual(json.load(handle)["plan_path"], "/tmp/spotlight-install.json")
+        self.assertEqual(set(os.listdir(self.tmp)), {"bsig", "engine-plan.ready"})
 
 
 if __name__ == "__main__":
