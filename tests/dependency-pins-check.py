@@ -17,7 +17,6 @@ EXPECTED = {
     "@tobilu/qmd": "2.5.3",
     "dev-browser": "0.2.8",
     "@anthropic-ai/claude-code": "2.1.169",
-    "@google/gemini-cli": "0.45.2",
     "@openai/codex": "0.138.0",
     "opencode-ai": "1.17.7",
     "@earendil-works/pi-coding-agent": "0.79.6",
@@ -45,7 +44,6 @@ LOOSE_NPM_INSTALLS = [
     "@tobilu/qmd",
     "dev-browser",
     "@anthropic-ai/claude-code",
-    "@google/gemini-cli",
     "@openai/codex",
     "opencode-ai",
     "@earendil-works/pi-coding-agent",
@@ -64,6 +62,10 @@ for relpath in DOCKER_ARTIFACTS:
 for package, version in EXPECTED.items():
     if f"`{package}`" not in MANIFEST or f"`{version}`" not in MANIFEST:
         fail(f"{MANIFEST_PATH.name} missing {package}@{version}")
+
+for removed in ["@google/gemini-cli", "GEMINI_CLI_VERSION"]:
+    if removed in INSTALLER:
+        fail(f"installer still exposes removed Gemini runtime dependency: {removed}")
 
 # The installer is the single pin authority. setup.html is a static landing
 # page and install/configure.html is the local configurator — neither

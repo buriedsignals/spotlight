@@ -237,7 +237,7 @@ curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash -s --
 
 Two shapes, one source of truth (the skills + `agents/*.md` role files):
 
-- **Frontier runtimes** (Claude Code, Codex CLI, Gemini CLI): the runtime *is* the
+- **Frontier runtimes** (Claude Code, Codex CLI, Pi): the runtime *is* the
   harness — it loads the skills natively, gates are chat turns, nothing else installs.
 - **Non-frontier** (local GGUFs and API providers like Fireworks/OpenRouter): the
   repo's **Flue-on-Pi harness** (`harness/flue/`) provides orchestration — native

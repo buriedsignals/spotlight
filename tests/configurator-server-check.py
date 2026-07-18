@@ -40,6 +40,7 @@ BASE = {
     "intRlm": True, "rlmMode": "local_gemma4_e4b",
 }
 OPENCODE = {**BASE, "cloudRuntime": "opencode", "cloudKey": "sk-or-cloud-secret"}
+PI = {**BASE, "cloudRuntime": "pi"}
 LOCAL = {**BASE, "mode": "local", "intJunkipedia": False, "junkipediaKey": ""}
 SECRETS = ["fc-secret-test", "on-secret-test", "sk-or-cloud-secret", "jk-secret-test"]
 
@@ -98,8 +99,9 @@ class UnitChecks(unittest.TestCase):
         # opencode without a cloud key errors; with one it passes
         self.assertTrue(any(e["field"] == "cloud_key" for e in errs({**OPENCODE, "cloudKey": ""})))
         self.assertEqual(errs(OPENCODE), [])
-        # claude (subscription login) never needs a cloud key
+        # Subscription runtimes never need a cloud key.
         self.assertEqual(errs(BASE), [])
+        self.assertEqual(errs(PI), [])
         # local mode never needs a cloud key either
         self.assertEqual(errs({**LOCAL, "cloudKey": ""}), [])
 
@@ -297,6 +299,10 @@ class UnitChecks(unittest.TestCase):
             self.assertIn(needle, guide)
         for secret in SECRETS:
             self.assertNotIn(secret, guide)
+        pi = srv.build_getting_started(srv.normalize(PI))
+        self.assertIn("Pi", pi)
+        self.assertIn("/login", pi)
+        self.assertNotIn("Flue", pi)
         local = srv.build_getting_started(srv.normalize({**LOCAL, "vaultApp": "obsidian"}))
         self.assertIn("Gemma 4 12B", local)
         self.assertIn("llama.cpp", local)

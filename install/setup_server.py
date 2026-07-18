@@ -135,8 +135,8 @@ CLOUD_KEY_VARS = {
 }
 RUNTIME_LABELS = {
     "claude": "Claude Code",
-    "gemini": "Gemini",
     "codex": "Codex",
+    "pi": "Pi",
     "opencode": "OpenCode",
 }
 PROVIDER_LABELS = {
@@ -159,7 +159,7 @@ def normalize(payload):
 
     return {
         "mode": enum("mode", ("cloud", "local"), "cloud"),
-        "cloudRuntime": enum("cloudRuntime", ("claude", "gemini", "codex", "opencode"), "claude"),
+        "cloudRuntime": enum("cloudRuntime", ("claude", "codex", "pi", "opencode"), "claude"),
         "opencodeProvider": enum("opencodeProvider", tuple(CLOUD_KEY_VARS), "openrouter"),
         "localAgent": enum("localAgent", tuple(SERVER_FOR_AGENT), "flue"),
         "localModel": enum("localModel", tuple(MODEL_REPOS), "gemma12b"),
@@ -185,7 +185,7 @@ def derived(d):
     """Installer-facing values derived from the canonical choice dict.
 
     Mirrors setup.html's collectForm()/buildExportBlock() derivations:
-    runtime, agent/server (opencode→ollama, pi→llamacpp), model repo, and
+    runtime, local agent/server, model repo, and
     the provider env-var name the body keys the cloud-key write on.
     """
     local = d["mode"] == "local"
@@ -509,7 +509,7 @@ def build_getting_started(d):
                        "First time: type <code>/model</code> and pick a strong default for your provider.")
     else:
         runtime = RUNTIME_LABELS[d["cloudRuntime"]]
-        login_cmd = {"claude": "claude login", "gemini": "gemini", "codex": "codex login"}[d["cloudRuntime"]]
+        login_cmd = {"claude": "claude login", "codex": "codex login", "pi": "pi  # then /login"}[d["cloudRuntime"]]
         launch_note = (f"The <code>spotlight</code> command opens {esc(runtime)} inside your Spotlight folder with every skill loaded. "
                        f"First time only: run <code>{esc(login_cmd)}</code> and sign in with your subscription account — no API key needed.")
 

@@ -212,7 +212,6 @@ FIRECRAWL_CLI_VERSION="1.9.8"
 QMD_VERSION="2.5.3"
 DEV_BROWSER_VERSION="0.2.8"
 CLAUDE_CODE_VERSION="2.1.169"
-GEMINI_CLI_VERSION="0.45.2"
 OPENAI_CODEX_VERSION="0.138.0"
 OPENCODE_AI_VERSION="1.17.7"
 PI_CODING_AGENT_VERSION="0.79.6"
@@ -572,7 +571,6 @@ reviewed_npm_version() {
     @tobilu/qmd) echo "$QMD_VERSION" ;;
     dev-browser) echo "$DEV_BROWSER_VERSION" ;;
     @anthropic-ai/claude-code) echo "$CLAUDE_CODE_VERSION" ;;
-    @google/gemini-cli) echo "$GEMINI_CLI_VERSION" ;;
     @openai/codex) echo "$OPENAI_CODEX_VERSION" ;;
     opencode-ai) echo "$OPENCODE_AI_VERSION" ;;
     @earendil-works/pi-coding-agent) echo "$PI_CODING_AGENT_VERSION" ;;
@@ -1151,11 +1149,11 @@ LAUNCHER_EOF
 # CLOUD MODE — pick a hosted runtime
 # =====================================================================
 else
-  # SPOTLIGHT_RUNTIME ∈ {claude, gemini, codex, opencode}
+  # SPOTLIGHT_RUNTIME ∈ {claude, codex, pi, opencode}
   case "$SPOTLIGHT_RUNTIME" in
     claude)   RT_BIN=claude;   RT_PKG="@anthropic-ai/claude-code"; RT_CTX="CLAUDE.md";  RT_NAME="Claude Code" ;;
-    gemini)   RT_BIN=gemini;   RT_PKG="@google/gemini-cli";        RT_CTX="GEMINI.md";  RT_NAME="Gemini" ;;
     codex)    RT_BIN=codex;    RT_PKG="@openai/codex";             RT_CTX="";           RT_NAME="Codex" ;;
+    pi)       RT_BIN=pi;       RT_PKG="@earendil-works/pi-coding-agent"; RT_CTX="";     RT_NAME="Pi" ;;
     opencode) RT_BIN=opencode; RT_PKG="opencode-ai";               RT_CTX="";           RT_NAME="OpenCode" ;;
     *) echo "Unknown SPOTLIGHT_RUNTIME: $SPOTLIGHT_RUNTIME" >&2; exit 1 ;;
   esac
@@ -1165,21 +1163,7 @@ else
     RT_LABEL="OpenCode (provider: $SPOTLIGHT_OPENCODE_PROVIDER)"
 
   step "$RT_LABEL"
-  if ! command -v "$RT_BIN" >/dev/null 2>&1; then
-    if [ "$SPOTLIGHT_RUNTIME" = "gemini" ]; then
-      NPM_PREFIX="$HOME/.npm-global"; run mkdir -p "$NPM_PREFIX"
-      ensure_npm_global_exact "$RT_BIN" "$RT_PKG" "$NPM_PREFIX"
-    else
-      ensure_npm_global_exact "$RT_BIN" "$RT_PKG"
-    fi
-  else
-    if [ "$SPOTLIGHT_RUNTIME" = "gemini" ]; then
-      NPM_PREFIX="$HOME/.npm-global"
-      ensure_npm_global_exact "$RT_BIN" "$RT_PKG" "$NPM_PREFIX"
-    else
-      ensure_npm_global_exact "$RT_BIN" "$RT_PKG"
-    fi
-  fi
+  ensure_npm_global_exact "$RT_BIN" "$RT_PKG"
   if [ -n "$RT_CTX" ]; then
     run ln -sfn "$SPOTLIGHT_DIR/AGENTS.md" "$SPOTLIGHT_DIR/$RT_CTX"
     printf "%s✓%s AGENTS.md linked as %s\n" "$_c_green" "$_c_reset" "$RT_CTX"
@@ -1187,7 +1171,7 @@ else
 
   # Placement contract: every runtime shares the canonical store; Claude Code
   # additionally reads ~/.claude/skills, so it gets the adapter symlink.
-  # codex/gemini discover skills via the AGENTS.md contract + in-repo tree.
+  # Codex discovers skills via its project contract; Pi receives its native projection.
   step "Spotlight skills → canonical store"
   if [ "$SPOTLIGHT_RUNTIME" = "claude" ]; then
     link_spotlight_adapter "$HOME/.claude/skills/spotlight"
@@ -1195,6 +1179,10 @@ else
   else
     place_spotlight_skills_canonical
     [ "$DRY_RUN" = "1" ] || printf "%s✓%s Spotlight skills placed at %s\n" "$_c_green" "$_c_reset" "$SPOTLIGHT_CANONICAL_SKILLS"
+  fi
+  if [ "$SPOTLIGHT_RUNTIME" = "pi" ]; then
+    link_spotlight_adapter "$HOME/.pi/agent/skills/spotlight"
+    [ "$DRY_RUN" = "1" ] || printf "%s✓%s Pi loads Spotlight skills via ~/.pi/agent/skills/spotlight → %s\n" "$_c_green" "$_c_reset" "$SPOTLIGHT_CANONICAL_SKILLS"
   fi
   if [ "$SPOTLIGHT_RUNTIME" = "opencode" ]; then
     printf "%s✓%s Provider key will be loaded from .env (%s)\n" "$_c_green" "$_c_reset" "$SPOTLIGHT_CLOUD_KEY_VAR"
@@ -1511,8 +1499,8 @@ DOCTOR_EOF
       echo 'check_cmd spotlight-local "Spotlight local launcher"' >> "$HOME/.local/bin/spotlight-doctor"
       ;;
     claude)   echo 'check_cmd claude "Claude Code"' >> "$HOME/.local/bin/spotlight-doctor"; echo 'check_path "$SPOTLIGHT_DIR/CLAUDE.md" "Claude context link"' >> "$HOME/.local/bin/spotlight-doctor" ;;
-    gemini)   echo 'check_cmd gemini "Gemini"' >> "$HOME/.local/bin/spotlight-doctor"; echo 'check_path "$SPOTLIGHT_DIR/GEMINI.md" "Gemini context link"' >> "$HOME/.local/bin/spotlight-doctor" ;;
     codex)    echo 'check_cmd codex "Codex"' >> "$HOME/.local/bin/spotlight-doctor" ;;
+    pi)       echo 'check_cmd pi "Pi"' >> "$HOME/.local/bin/spotlight-doctor" ;;
     opencode) echo 'check_cmd opencode "OpenCode"' >> "$HOME/.local/bin/spotlight-doctor" ;;
   esac
   [ -n "$SPOTLIGHT_CLOUD_KEY_VAR" ] && echo "check_env_name $SPOTLIGHT_CLOUD_KEY_VAR" >> "$HOME/.local/bin/spotlight-doctor"
@@ -1610,8 +1598,8 @@ else
       LAUNCH_BIN="spotlight-local"
       ;;
     claude)   LAUNCH_BIN="claude" ;;
-    gemini)   LAUNCH_BIN="gemini" ;;
     codex)    LAUNCH_BIN="codex" ;;
+    pi)       LAUNCH_BIN="pi" ;;
     opencode) LAUNCH_BIN="opencode" ;;
   esac
 
