@@ -51,7 +51,10 @@ navigator tools show "<tool_id>"
 
 `navigator tools` needs a membership PAT (Tools mode is a pro-tier feature):
 
-- **Interactive:** run `navigator auth login` once. A magic link stores the PAT
+- **Engine-managed installs:** run `bsig auth login` during configuration.
+  Engine keeps the PAT in its credential store and injects it only into a
+  Mycroft or Spotlight child process that claims the Navigator skill.
+- **Standalone compatibility:** run `navigator auth login` once. A magic link stores the PAT
   in the OS keychain; every later `find`/`show` reuses it — no re-auth.
 - **Non-interactive (Docker/CI/headless):** set `NAVIGATOR_PAT` (or reuse
   `$OSINT_NAV_API_KEY`, format `on_xxxxx`) in the environment — the CLI uses it

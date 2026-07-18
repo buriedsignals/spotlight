@@ -28,24 +28,13 @@ EXPAND_PATH_DEF="$(awk '/^expand_path\(\)/ { capture=1 } capture { print } captu
 expanded="$(HOME="$SANDBOX/home" bash -c "$EXPAND_PATH_DEF"$'\n''expand_path "~/Code/spotlight"')"
 check "F51: literal tilde expands under HOME" test "$expanded" = "$SANDBOX/home/Code/spotlight"
 
-# A submitted path must beat an unrelated SPOTLIGHT_DIR inherited from the
-# caller's shell. The old behavior clones into $SANDBOX/ambient.
-run_out="$(env \
-  HOME="$SANDBOX/home" \
-  SPOTLIGHT_DIR="$SANDBOX/ambient" \
-  SPOTLIGHT_DIR_INPUT="$SANDBOX/expected" \
-  SPOTLIGHT_VAULT_INPUT="$SANDBOX/vault" \
-  SPOTLIGHT_VAULT_APP=obsidian \
-  SPOTLIGHT_MODE=cloud \
-  SPOTLIGHT_RUNTIME=claude \
-  SPOTLIGHT_INT_DEVBROWSER=false \
-  SPOTLIGHT_INT_JUNKIPEDIA=false \
-  SPOTLIGHT_INT_UNPAYWALL=false \
-  FIRECRAWL_API_KEY=fc-test \
-  OSINT_NAV_API_KEY=on-test \
-  bash install-spotlight.sh --headless --dry-run 2>&1 || true)"
-check "F56: submitted install path beats ambient SPOTLIGHT_DIR" \
-  grep -qF "Cloning Spotlight to $SANDBOX/expected" <<<"$run_out"
+# Public headless installs are now submitted through Engine's normalized,
+# sealed configuration API; the compatibility shell writer must not run.
+run_out="$(HOME="$SANDBOX/home" PATH="/usr/bin:/bin" bash install-spotlight.sh --headless --dry-run 2>&1 || true)"
+check "F56: legacy headless writer is retired in favor of Engine" \
+  grep -qF "Buried Signals Engine (bsig) is required" <<<"$run_out"
+check "F56: public install exits before legacy mutation" \
+  source_has 'no legacy Obsidian/QMD fallback was applied'
 
 check "F50: Linux has an explicit directory-vault path" \
   source_has 'Linux uses the selected directory as a Markdown vault'

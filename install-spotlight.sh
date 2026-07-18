@@ -51,6 +51,16 @@ SETUP_CONFIG="$SPOTLIGHT_PROFILE_DIR/setup-config.env"
 SPOTLIGHT_INSTALL_DONE=0
 CONFIGURATOR_RAN=0
 
+if ! command -v bsig >/dev/null 2>&1; then
+  echo "Buried Signals Engine (bsig) is required for the public OpenKnowledge installer." >&2
+  echo "Install/open the Indicator Labs desktop app, or install the signed bsig standalone release, then re-run Spotlight." >&2
+  exit 1
+fi
+if [ "$HEADLESS" = "1" ]; then
+  echo "The legacy headless installer is retired. Use 'bsig configure describe spotlight', then submit the sealed configuration with 'bsig configure plan spotlight'." >&2
+  exit 1
+fi
+
 if [ "$HEADLESS" = "1" ]; then
   echo "→ Headless install: reading configuration from pre-exported environment variables."
 else
@@ -68,16 +78,7 @@ else
   fi
   REUSED=0
   if [ -n "$REUSE_CANDIDATE" ] && [ -f "$REUSE_CANDIDATE/.spotlight-config.json" ] && [ -f "$REUSE_CANDIDATE/.env" ]; then
-    echo "Found an existing Spotlight install at $REUSE_CANDIDATE. Reuse its configuration? [Y/n]"
-    read -r ans </dev/tty || ans="Y"
-    if [[ ! "$ans" =~ ^[Nn] ]]; then
-      set -a
-      . "$REUSE_CANDIDATE/.env"
-      if [ -f "$SETUP_CONFIG" ]; then . "$SETUP_CONFIG"; fi
-      set +a
-      REUSED=1
-      echo "→ Reusing configuration from $REUSE_CANDIDATE/.env"
-    fi
+    echo "→ Existing Spotlight install found at $REUSE_CANDIDATE; Engine will produce a reviewable update plan."
   fi
 
   if [ "$REUSED" != "1" ]; then
@@ -151,10 +152,9 @@ else
       printf '✓ Engine wrote a sealed Spotlight plan. Review and apply the plan path shown in the browser with: bsig apply <plan-path>\n'
       exit 0
     fi
-    if [ ! -f "$SETUP_CONFIG" ] || [ ! -f "$STAGED_ENV" ]; then
-      echo "Configuration was not completed; re-run the installer to try again." >&2
-      exit 1
-    fi
+    echo "Engine did not produce a sealed plan; no legacy Obsidian/QMD fallback was applied." >&2
+    echo "Run 'bsig auth login' if Navigator is enabled, then re-run the installer." >&2
+    exit 1
     set -a
     . "$SETUP_CONFIG"
     . "$STAGED_ENV"

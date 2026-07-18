@@ -22,8 +22,11 @@ excludes() {
 # ── install-spotlight.sh: configurator head contract ──
 # Configurator phase: local server collects config, installer sources artifacts
 includes install-spotlight.sh 'python3 "$CONFIGURATOR_DIR/install/setup_server.py" --profile-dir "$SPOTLIGHT_PROFILE_DIR" --repo-dir "$CONFIGURATOR_DIR"'
-# Double gate: server exit code alone is not trusted — artifacts must exist
-includes install-spotlight.sh 'if [ ! -f "$SETUP_CONFIG" ] || [ ! -f "$STAGED_ENV" ]; then'
+# Engine marker gate: server exit code alone is not trusted and the legacy
+# Obsidian/QMD installer is never used as a silent fallback.
+includes install-spotlight.sh 'if [ -f "$SPOTLIGHT_PROFILE_DIR/engine-plan.ready" ]; then'
+includes install-spotlight.sh 'no legacy Obsidian/QMD fallback was applied'
+includes install-spotlight.sh 'if ! command -v bsig >/dev/null 2>&1; then'
 # Version handshake with install/setup_server.py + install/configure.html
 includes install-spotlight.sh 'CONFIGURATOR_VERSION="1"'
 # Staged secrets never persist in two places, and never orphan on abort
@@ -31,8 +34,9 @@ includes install-spotlight.sh 'rm -f "$STAGED_ENV"'
 includes install-spotlight.sh 'trap cleanup_staged_env EXIT'
 # Retired SPOTLIGHT_CONFIG channel fails loud
 includes install-spotlight.sh 'no longer accepts SPOTLIGHT_CONFIG'
-# Headless / CI path
+# Legacy headless flag is recognized but redirected to Engine's sealed API.
 includes install-spotlight.sh '--headless) HEADLESS=1 ;;'
+includes install-spotlight.sh "The legacy headless installer is retired."
 # dev-browser installs through the reviewed-pin path
 includes install-spotlight.sh 'ensure_npm_global_exact dev-browser dev-browser'
 # Doctor/updater/launcher heredocs bake the unexpanded input literal

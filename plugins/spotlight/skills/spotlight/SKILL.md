@@ -94,39 +94,27 @@ contract and apply this runtime table:
 | Phase 5 Report | `report-drafting`, `epistemic-grounding` | `provenance-signing`, `technical-investigation` | report claims map to evidence ledger. |
 | Ingest | `ingest` | none | only verified or explicitly caveated material enters vault. |
 
-### 3.7. Vault app preflight
+### 3.7. Knowledge workspace preflight
 
-Spotlight writes verified findings into a Markdown vault. If `.spotlight-config.json` sets `vault_type` to `"tolaria"` or `"directory"`, no Obsidian CLI check is required; log the configured vault type and continue. If the vault type is `"obsidian"` or unknown, check the Obsidian CLI so the user isn't surprised at ingestion time.
+Engine-managed Spotlight uses OpenKnowledge as its canonical knowledge store.
+Confirm that the selected workspace contains `.openknowledge/config.json` and
+that `ok --cwd "{workspace_path}" config validate` succeeds. If either check
+fails, stop with the exact repair command from Engine/OpenKnowledge; do not
+silently switch to a different directory or legacy vault backend.
 
-```
-execute-shell("command -v obsidian")
-```
-
-If the command returns nothing:
-
-```
-execute-shell("test -d /Applications/Obsidian.app || ls -d ~/Applications/Obsidian.app >/dev/null 2>&1")
-```
-
-- If Obsidian.app is installed but CLI isn't enabled, stop and prompt:
-  > "Obsidian is installed, but the CLI isn't enabled. Open Obsidian → Settings → General → Advanced → toggle **Command Line Interface** ON. Then tell me 'ready' and I'll continue."
-  Wait for the user's confirmation. Re-check; if still missing, repeat once more; if still missing, abort with guidance to verify Obsidian version (1.12+ required).
-- If Obsidian.app isn't installed, stop and instruct:
-  > "Obsidian isn't installed. Install it (via `brew install --cask obsidian` or from obsidian.md), enable the Command Line Interface in Settings, then tell me 'ready'."
-  Wait. Re-check. Abort if still missing after one retry.
-
-If the `obsidian` CLI is on PATH, log `✓ obsidian CLI present` and continue.
+`obsidian_legacy` remains an explicit migration-only backend. Run an Obsidian
+CLI check only when that exact backend is recorded in `.spotlight-config.json`.
 
 ### 4. Vault configuration
 
 Ask the user:
 
-> "Where should findings be archived when the investigation completes?
-> (a) Obsidian vault — enter path
-> (b) Tolaria vault — enter path
-> (c) Local directory (defaults to `./vault/`)"
+> "Which OpenKnowledge workspace should archive verified findings?"
 
-If the user chooses Tolaria, set `vault_type` to `"tolaria"` and keep Markdown/YAML frontmatter plus wikilinks. If the user provides an Obsidian path, check for `.obsidian/` inside it (`list-files("{path}/.obsidian")`) to detect whether it's an Obsidian vault. Set `vault_type` to `"obsidian"` or `"directory"` accordingly.
+Use the Engine-selected workspace by default. Keep Markdown/YAML frontmatter
+and relative links portable. Tolaria and `obsidian_legacy` may be selected only
+through explicit migration configuration; never infer them from directory
+contents.
 
 ### 5. Project setup
 
@@ -161,7 +149,7 @@ Write `.spotlight-config.json` via `write-file`:
 {
   "search_library": "<detected library>",
   "vault_path": "<user-provided path or ./vault/>",
-  "vault_type": "obsidian | tolaria | directory",
+  "vault_type": "openknowledge | tolaria | obsidian_legacy | directory",
   "case_workspace_root": "cases/",
   "cases_root": "cases/",
   "integrations": {
