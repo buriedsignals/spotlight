@@ -1,6 +1,6 @@
 ---
 name: integrations
-description: Use when an investigation step may need an external integration such as browser acquisition, Maigret account discovery, Junkipedia narrative tracking, Scoutpost monitoring, OSINT Navigator tool discovery, Noosphere C2PA signing, or Unpaywall access lookup.
+description: Use when an investigation step may need an external integration such as browser acquisition, Maigret account discovery, Junkipedia narrative tracking, OSINT Navigator tool discovery, Noosphere C2PA signing, or Unpaywall access lookup.
 version: "1.0"
 invocable_by: [investigator, fact-checker, orchestrator]
 requires: []
@@ -32,7 +32,6 @@ The skill is cheap to load — it's a routing table, not a deep methodology guid
 | `maigret` | social-osint | username-search, account-discovery, profile-url-collection | Username-led account discovery. Produces candidate profile leads only; never use as attribution proof. |
 | `noosphere-c2pa` | provenance-signing | case-provenance-manifest, c2pa-content-credentials, optional-signing-receipt | **PENDING integration — opt-in (key).** After Gate 1, the base provenance path always writes `status: unsigned` and proceeds; signing runs ONLY when a Noosphere signer endpoint + credential are configured (opt-in). Never a mandatory or blocking step. |
 | `osint-navigator` | tool-discovery | tool-search-by-keyword, complex-query-synthesis, country-specific-tool-lookup | Entitlement-gated (subscription tier): first tool-discovery pass in Phase 2 when green + sensitive mode false. Local/open tier and all fallbacks use `scripts/osint-tools.py find` (local SQL index, 12,500 tools). |
-| `scoutpost` | monitoring | project-scoped-monitoring, scout-creation, information-unit-retrieval, scheduled-monitoring | Approved monitoring that should keep running after the current investigation cycle. |
 | `unpaywall` | academic-open-access | doi-open-access-lookup, academic-fulltext-discovery, legal-pdf-location | Academic papers with DOIs when the content-access hierarchy needs a legal open-access copy. |
 
 ## Routing decision tree
@@ -64,9 +63,9 @@ What's the task?
 ├── "Static page scrape / web search"
 │     → fetch / search (verbs, no integration needed)
 │
-├── "Create a durable monitor / keep watching this after the cycle ends"
-│     → scoutpost  (if green — check preflight)
-│     → fallback: invoke-skill("monitoring") for runtime-native routine guidance
+├── "Keep watching this after the cycle ends"
+│     → invoke-skill("monitoring") to present a recommendation and, with
+│       explicit approval, hand it to Mycroft. Spotlight never calls Scoutpost.
 │
 ├── "Find a legal open-access copy of an academic paper with a DOI"
 │     → unpaywall  (if green — check preflight)

@@ -31,7 +31,6 @@ These are installed only when the setup choices require that runtime and the bin
 | Runtime | Ecosystem | Package | Version | Binary |
 |---|---|---:|---:|---|
 | Claude Code | npm | `@anthropic-ai/claude-code` | `2.1.169` | `claude` |
-| Gemini CLI | npm | `@google/gemini-cli` | `0.45.2` | `gemini` |
 | Codex CLI | npm | `@openai/codex` | `0.138.0` | `codex` |
 | OpenCode | npm | `opencode-ai` | `1.17.7` | `opencode` |
 | Pi | npm | `@earendil-works/pi-coding-agent` | `0.79.6` | `pi` |

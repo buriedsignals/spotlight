@@ -17,7 +17,7 @@
 - [Investigation pipeline](https://spotlight.buriedsignals.com/docs/investigating.md): brief, methodology, cycles, Gate 1, ingestion, and readiness criteria
 - [Fact-checking model](https://spotlight.buriedsignals.com/docs/fact-checking.md): independent verification pass, SIFT workflow, verdict taxonomy, and evidence trails
 - [Monitoring](https://spotlight.buriedsignals.com/docs/monitoring.md): how ongoing monitoring feeds new leads back into investigations
-- [Integrations](https://spotlight.buriedsignals.com/docs/integrations.md): dev-browser, Junkipedia, OSINT Navigator, Scoutpost, and manifest/preflight behavior
+- [Integrations](https://spotlight.buriedsignals.com/docs/integrations.md): dev-browser, Junkipedia, OSINT Navigator, and manifest/preflight behavior
 - [Runtime wiring](https://spotlight.buriedsignals.com/docs/runtimes.md): pi, Hermes, Goose, Codex, Gemini, and local OpenAI-compatible setups
 
 ## Core concepts

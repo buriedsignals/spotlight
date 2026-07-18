@@ -78,14 +78,6 @@ else
   fail "integrations/preflight.py failed with rc=$rc"
 fi
 
-python3 monitoring/registry.py schema --json >/dev/null 2>&1
-rc=$?
-if [ $rc -eq 0 ]; then
-  ok "monitoring/registry.py runs"
-else
-  fail "monitoring/registry.py failed with rc=$rc"
-fi
-
 echo ""
 echo "── RLM ──"
 python3 tests/rlm-helper-check.py >/dev/null 2>&1
@@ -124,7 +116,7 @@ fi
 
 echo ""
 echo "── Validators and helpers ──"
-for t in validate-case-check validate-fact-check-check source-expression-producer-contract-check migrate-source-expressions-check validate-report-check render-report-check provenance-manifest-check monitoring-registry-check preflight-check cti-upstream-check technical-investigation-check verified-indicator-export-check; do
+for t in validate-case-check validate-fact-check-check source-expression-producer-contract-check migrate-source-expressions-check validate-report-check render-report-check provenance-manifest-check preflight-check scoutpost-boundary-check cti-upstream-check technical-investigation-check verified-indicator-export-check; do
   python3 "tests/$t.py" >/dev/null 2>&1
   rc=$?
   if [ $rc -eq 0 ]; then

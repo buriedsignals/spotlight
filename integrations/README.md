@@ -21,7 +21,6 @@ An agent invokes a skill to get *guidance*; it calls an integration to get *data
 | `junkipedia` | social-osint | Yes | `JUNKIPEDIA_API_KEY` |
 | `noosphere-c2pa` | provenance-signing | No | `NOOSPHERE_C2PA_URL`, `NOOSPHERE_C2PA_CREDENTIAL_ID` (optional) |
 | `osint-navigator` | tool-discovery | Yes | `OSINT_NAV_API_KEY` |
-| `scoutpost` | monitoring | Yes | `SCOUTPOST_API_KEY` |
 | `unpaywall` | academic-open-access | Yes | `UNPAYWALL_EMAIL` |
 
 See `skills/integrations/SKILL.md` for the routing table agents use to pick the right integration per investigation task.

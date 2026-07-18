@@ -1,164 +1,60 @@
 ---
 name: monitoring
-description: Investigation-scoped monitoring orchestration. Agents recommend targets; the orchestrator links them to Mycroft passive topics, Scoutpost projects/scouts, or runtime-native routines.
-version: "2.0"
+description: Turn investigation findings into explicit, user-approved monitoring recommendations. Spotlight recommends; Mycroft owns any Scoutpost action.
+version: "3.0"
 invocable_by: [orchestrator]
 requires: []
 ---
 
 # Investigation Monitoring
 
-Spotlight no longer owns a local feed engine. Monitoring is now a coordination layer across three surfaces:
+Spotlight owns active casework, not persistent monitoring. It may identify
+targets worth watching and record them in `monitoring_recommendations[]` in
+`data/findings.json`. It never installs Scoutpost, reads its credentials,
+creates a scout, queries a scout, or stores Scoutpost identifiers in a case.
 
-- **Mycroft** for passive open-intelligence signals (GDELT, RSS, GDACS, ACLED)
-- **Scoutpost** for durable scheduled scouts and later information units
-- **Runtime-native routines** when Scoutpost is unavailable or declined
+## Lifecycle
 
-Agents still recommend targets in `monitoring_recommendations[]`. The orchestrator handles approval, creation, persistence, and later checks.
+1. Investigators and fact-checkers recommend a target, rationale, priority, and
+   proposed monitoring shape.
+2. The orchestrator presents those recommendations to the user. Nothing is
+   created automatically.
+3. If approved and Mycroft is available, hand the recommendation to Mycroft in
+   plain language. Mycroft's selected integrations decide whether a Scoutpost
+   scout is appropriate and ask for any further confirmation.
+4. Otherwise, leave the recommendation in the case for the user to revisit or
+   create a runtime-native reminder themselves.
 
-## Conventions
+## User handoff
 
-- **Case reference:** use `spotlight:{project}` as the cross-tool handle wherever possible.
-- **User gate:** no durable monitor is created without explicit approval.
-- **Default durable target:** prefer `scoutpost` when it is available and green in integration preflight.
-- **Passive signals:** if Mycroft is installed, Spotlight may register/update case-linked topics there; Spotlight never owns passive feed polling itself.
+Use one clear handoff, never a direct Scoutpost command:
 
-## Monitoring lifecycle
+> "This investigation suggests monitoring **{target}** for **{criteria}**.
+> Would you like to hand this to Mycroft for monitoring setup?"
 
-### 1. Recommend
+When the answer is yes, include the target, rationale, cadence preference, and
+case reference in the Mycroft prompt. The Mycroft skill owns authentication,
+Scoutpost CLI/API selection, scout creation, and durable monitoring state.
 
-Investigators and fact-checkers add `monitoring_recommendations[]` to `data/findings.json` when they identify something worth watching after the current cycle.
+## Case record
 
-They recommend. They do not create monitors.
-
-### 2. Configure
-
-When the user approves a recommendation, the orchestrator chooses one or both of:
-
-- **Passive topic in Mycroft** when the recommendation benefits from ambient feed coverage
-- **Durable monitor in Scoutpost** when the recommendation should keep running and return later updates
-
-If Scoutpost is unavailable or declined, the orchestrator falls back to a runtime-native routine:
-
-- Codex: Codex Automation
-- Claude: Claude routine
-- Hermes / OpenClaw: cron or recipe
-
-### 3. Check on resume
-
-At the start of a resumed investigation, the orchestrator checks:
-
-- **Mycroft topics** if `~/.mycroft/monitoring/monitor.py` exists and the case has linked topic slugs
-- **Scoutpost units and scout state** if `monitoring.json` has a stored `project_id` or `scout_id`
-- **Runtime-native routines** by retrieving task output when supported, or by asking the user whether updates were detected
-
-The orchestrator then presents a short monitoring briefing and asks whether to fold those updates into the next cycle.
-
-### 4. Ingest into the next cycle
-
-If the user wants to use the updates, include them in the next investigator prompt under `Monitoring results since last cycle:`.
-
-## Commands and checks
-
-Invoke `shell-safety` before any `execute-shell` command below that includes a project, topic, target, or filesystem path. Validate project/path values first; pass long topic text through a temp file or JSON when possible.
-
-### Normalize the case registry
-
-```text
-execute-shell('python3 scripts/spotlight_safe.py validate-slug "{project}"')
-execute-shell('python3 monitoring/registry.py migrate --project "{project}"')
-```
-
-### Check Mycroft availability
-
-```text
-execute-shell('test -f ~/.mycroft/monitoring/monitor.py && echo true || echo false')
-```
-
-### Query Mycroft passive signals
-
-```text
-# Use an allowlisted --since value such as 7d, 24h, or an ISO timestamp.
-write-file("{CASE_DIR}/research/mycroft-query.json", <serialized topic/target JSON>)
-execute-shell('python3 ~/.mycroft/monitoring/monitor.py query --topic-file {CASE_DIR}/research/mycroft-query.json --since 7d --json')
-```
-
-### Check integration readiness
-
-```text
-execute-shell("python3 integrations/preflight.py --json")
-```
-
-### Preferred Scoutpost path
-
-Read the integration guide first:
-
-```text
-read-file("integrations/scoutpost/integration.md")
-```
-
-Then create or reuse a project, create scouts under that `project_id`, and later fetch updates back by `project_id`.
-
-## `monitoring.json` v2
-
-This file is Spotlight-owned case state. It is no longer a feed-config file.
+`monitoring_recommendations[]` is evidence-adjacent case context, not a live
+monitor registry. Keep only the recommendation and the user's decision:
 
 ```json
 {
-  "schema_version": "2",
-  "case_ref": "spotlight:{project}",
-  "mycroft": {
-    "topic_slugs": ["example-topic"],
-    "last_checked_at": "ISO 8601"
-  },
-  "scoutpost": {
-    "project_id": "uuid",
-    "project_name": "Spotlight: {project}",
-    "scouts": [
-      {
-        "scout_id": "uuid",
-        "monitor_kind": "web|pulse|social|civic",
-        "target": "https://...",
-        "criteria": "what to watch"
-      }
-    ],
-    "last_checked_at": "ISO 8601"
-  },
-  "fallback_routines": [
-    {
-      "runtime": "codex|claude|hermes|openclaw",
-      "handle": "provider-specific identifier",
-      "monitor_kind": "web|pulse|social|civic",
-      "target": "https://...",
-      "criteria": "what to watch"
-    }
-  ],
-  "checks": [
-    {
-      "checked_at": "ISO 8601",
-      "source": "mycroft|scoutpost|runtime-routine",
-      "summary": "human-readable summary",
-      "items": []
-    }
-  ]
+  "target": "Example organisation",
+  "priority": "high",
+  "rationale": "New procurement notices could change the finding.",
+  "criteria": "new contracts, ownership changes, enforcement action",
+  "status": "recommended|handed_to_mycroft|declined"
 }
 ```
 
-If Spotlight encounters the old feed-oriented `monitoring.json` shape, treat it as legacy and migrate or ignore it safely rather than assuming it is current.
+Do not write API keys, project IDs, scout IDs, remote-monitor results, or
+runtime task handles into Spotlight case state.
 
 ## Sensitive mode
 
-In sensitive mode:
-
-- do not create new live Mycroft or Scoutpost monitors;
-- do not query live remote monitoring backends;
-- you may still read previously exported or cached monitoring artifacts under the case directory.
-
-## Reference
-
-| File | Purpose |
-|---|---|
-| `monitoring/registry.py` | Normalizes and updates `{CASE_DIR}/data/monitoring.json` |
-| `integrations/scoutpost/integration.md` | Durable monitor creation and retrieval via existing Scoutpost surfaces |
-| `references/recommendation-schema.md` | Agent output schema for `monitoring_recommendations[]` |
-| `references/source-catalog.md` | Passive feed sources now owned by Mycroft |
+In sensitive mode, record recommendations only. Do not hand anything to an
+external monitoring system unless the user explicitly resumes that choice.

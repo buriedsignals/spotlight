@@ -227,10 +227,9 @@ CYCLE N:
 
   4. process monitoring_recommendations
      - If any exist in findings.json, present to user (priority-ordered)
-     - Register passive topics in Mycroft when useful
-     - Create durable monitors in Scoutpost when approved
-     - Fall back to runtime-native routines if Scoutpost is unavailable
-     - Log all created links in data/monitoring.json
+     - With explicit approval, offer a Mycroft handoff for monitoring setup
+     - Otherwise keep the recommendation in case context
+     - Never create a Scoutpost project or scout from Spotlight
 
   5. evaluate 6 readiness criteria
 
@@ -404,7 +403,7 @@ This separation protects the vault from half-formed findings. The vault holds co
 ## See also
 
 - [fact-checking.md](fact-checking.md) — detailed fact-checker methodology, SIFT, verdicts
-- [monitoring.md](monitoring.md) — monitoring orchestration, case registry, scout lifecycle
+- [monitoring.md](monitoring.md) — monitoring recommendations and Mycroft handoff
 - [structure.md](structure.md) — repo layout, verb registry, schema reference
 - [integrations.md](integrations.md) — per-runtime wiring
 - `skills/spotlight/SKILL.md` — the orchestrator playbook (authoritative)

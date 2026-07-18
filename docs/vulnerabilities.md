@@ -84,7 +84,7 @@ The v2 audit covered:
 - social media intelligence,
 - OSINT Navigator calls,
 - Junkipedia calls,
-- Scoutpost calls,
+- Mycroft handoff prompts for optional monitoring,
 - Unpaywall calls,
 - ingest lock cleanup,
 - recovery docs.

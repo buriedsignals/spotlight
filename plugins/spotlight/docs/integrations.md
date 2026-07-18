@@ -24,7 +24,6 @@ An agent invokes a **skill** to get *guidance* and calls an **integration** to g
 | `maigret` | cli | social-osint | No | Username-led account discovery. Produces unverified profile leads only, not attribution proof. |
 | `noosphere-c2pa` | api | provenance-signing | `NOOSPHERE_C2PA_URL` | Optional case-level C2PA/content-credentials signing after Gate 1. |
 | `osint-navigator` | api | tool-discovery | `OSINT_NAV_API_KEY` | 10,000+ OSINT tools with AI-powered synthesized answers. Complements the curated 150-tool catalog in the `osint` skill. |
-| `scoutpost` | api | monitoring | `SCOUTPOST_API_KEY` | Durable monitoring via existing Scoutpost projects, scouts, and information units. |
 | `unpaywall` | api | academic-open-access | `UNPAYWALL_EMAIL` | Legal open-access lookup for academic papers by DOI. Used only when selected in setup and green in preflight. |
 
 ## Deferred integrations (architecture ready)
