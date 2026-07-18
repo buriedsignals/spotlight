@@ -1,165 +1,41 @@
 #!/usr/bin/env bash
-# Smoke test: run install-spotlight.sh --headless --dry-run against four
-# fixture configs covering the cartesian product the installer must support.
-# Assertions check that each combo prints the right key install actions
-# without touching the filesystem or running brew/npm/curl.
-#
-# The headless path reads pre-exported env vars directly (the retired
-# SPOTLIGHT_CONFIG base64 blob is a contract-checked hard error below), so
-# each combo is passed as KEY=VAL pairs through env(1). The submitted install
-# path is an absolute sandbox path because the installer cd's there even in
-# dry-run. Ambient SPOTLIGHT_DIR is explicitly removed: the submitted path is
-# authoritative and has its own regression test.
-#
-# Usage: bash tests/install-spotlight-smoke.sh
-
+# Public installer boundary checks. Product matrices now belong to Engine's
+# sealed planner suite; this compatibility shell must never execute them.
 set -euo pipefail
-
 cd "$(dirname "$0")/.."
-INSTALLER="$(pwd)/install-spotlight.sh"
-[ -f "$INSTALLER" ] || { echo "install-spotlight.sh not found at $INSTALLER" >&2; exit 1; }
 
-SANDBOX="$(mktemp -d -t spotlight-install-smoke.XXXXXX)"
-trap 'rm -rf "$SANDBOX"' EXIT
-SANDBOX_DIR="$SANDBOX/spotlight-test"
-mkdir -p "$SANDBOX_DIR"
-
-PASS=0
-FAIL=0
-
-# Every combo must print the headless notice and open the configurator's
-# getting-started guide (dry-run prints the action instead).
-COMMON_ASSERTIONS=(
-  "→ Headless install: reading configuration from pre-exported environment variables."
-  "DRY-RUN: open $HOME/.config/spotlight/getting-started.html"
-)
-
-check_combo() {
-  local label="$1"; shift
-  local out
-  if ! out=$(env -u SPOTLIGHT_INGEST_TARGET -u SPOTLIGHT_SOVEREIGNTY_INHERITS_MYCROFT \
-                 -u SPOTLIGHT_VAULT_PATH -u OSINT_NAV_API_KEY -u SPOTLIGHT_DIR \
-                 "$@" \
-                 bash "$INSTALLER" --headless --dry-run 2>&1); then
-    echo "✗ $label  installer exited non-zero"
-    echo "$out" | tail -10 | sed 's/^/    /'
-    FAIL=$((FAIL + 1))
-    return
-  fi
-  # Run the per-combo assertions passed via global ASSERTIONS array.
-  local missing=()
-  for needle in "${COMMON_ASSERTIONS[@]}" "${ASSERTIONS[@]}"; do
-    if ! printf '%s' "$out" | grep -qF "$needle"; then
-      missing+=("$needle")
-    fi
-  done
-  if [ ${#missing[@]} -ne 0 ]; then
-    echo "✗ $label  missing expected output:"
-    for m in "${missing[@]}"; do echo "    - $m"; done
-    FAIL=$((FAIL + 1))
+pass=0
+fail=0
+check() {
+  local label="$1" expected="$2"; shift 2
+  local out rc
+  out=$("$@" 2>&1) && rc=0 || rc=$?
+  if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -qF "$expected"; then
+    printf '✓ %s\n' "$label"
+    pass=$((pass + 1))
   else
-    echo "✓ $label  $(( ${#ASSERTIONS[@]} + ${#COMMON_ASSERTIONS[@]} )) assertions matched"
-    PASS=$((PASS + 1))
+    printf '✗ %s (rc=%s)\n%s\n' "$label" "$rc" "$out" >&2
+    fail=$((fail + 1))
   fi
 }
 
-# Common base config — every combo needs these vars.
-BASE=(
-  "SPOTLIGHT_DIR_INPUT=$SANDBOX_DIR"
-  "SPOTLIGHT_VAULT_INPUT=$SANDBOX/vault"
-  SPOTLIGHT_VAULT_APP='obsidian'
-  SPOTLIGHT_INT_DEVBROWSER='false'
-  SPOTLIGHT_INT_JUNKIPEDIA='false'
-  SPOTLIGHT_INT_UNPAYWALL='false'
-  FIRECRAWL_API_KEY='fc-test'
-  OSINT_NAV_API_KEY='nav-test'
-)
+tmp="$(mktemp -d -t spotlight-public-install.XXXXXX)"
+trap 'rm -rf "$tmp"' EXIT
 
-# --- 1. cloud / claude ---
-ASSERTIONS=(
-  "━━ Prerequisites ━━"
-  "━━ Claude Code ━━"
-  "AGENTS.md linked as CLAUDE.md"
-  "DRY-RUN: write .env"
-  "DRY-RUN: write spotlight-doctor"
-  "Spotlight installed"
-)
-check_combo "cloud/claude" "${BASE[@]}" \
-  SPOTLIGHT_MODE=cloud SPOTLIGHT_RUNTIME=claude
+check "missing Engine fails before mutation" \
+  "Buried Signals Engine (bsig) is required" \
+  env HOME="$tmp/home" PATH="/usr/bin:/bin" bash install-spotlight.sh --dry-run
 
-# --- 2. cloud / opencode-openrouter ---
-ASSERTIONS=(
-  "━━ OpenCode (provider: openrouter) ━━"
-  ".config/opencode/skills/"
-  "DRY-RUN: write .env"
-  "Spotlight installed"
-)
-check_combo "cloud/opencode-openrouter" "${BASE[@]}" \
-  SPOTLIGHT_MODE=cloud SPOTLIGHT_RUNTIME=opencode \
-  SPOTLIGHT_OPENCODE_PROVIDER=openrouter \
-  SPOTLIGHT_CLOUD_KEY_VAR=OPENROUTER_API_KEY \
-  SPOTLIGHT_CLOUD_KEY=sk-or-test
+mkdir -p "$tmp/bin"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/bsig"
+chmod +x "$tmp/bin/bsig"
+check "legacy headless writer is retired" \
+  "The legacy headless installer is retired" \
+  env HOME="$tmp/home" PATH="$tmp/bin:/usr/bin:/bin" bash install-spotlight.sh --headless --dry-run
 
-# --- 3. local / llama.cpp / Gemma 12B / Flue ---
-ASSERTIONS=(
-  "━━ Local inference (llama-server) ━━"
-  "━━ Agent harness (Flue on Pi) ━━"
-  "DRY-RUN: npm install"
-  "DRY-RUN: write ~/.local/bin/spotlight-local (llama.cpp serving + flue run spotlight)"
-  "Spotlight installed"
-)
-check_combo "local/llamacpp/gemma12b" "${BASE[@]}" \
-  SPOTLIGHT_MODE=local SPOTLIGHT_RUNTIME=local \
-  SPOTLIGHT_LOCAL_SERVER=llamacpp SPOTLIGHT_LOCAL_MODEL=gemma12b \
-  SPOTLIGHT_MODEL_TIER=12b SPOTLIGHT_AGENT=flue \
-  SPOTLIGHT_MODEL_REPO='tomvaillant/gemma4-12b-spotlight-orchestrator-v5-GGUF'
+check "retired base64 channel still fails loud" \
+  "no longer accepts SPOTLIGHT_CONFIG" \
+  env SPOTLIGHT_CONFIG=x HOME="$tmp/home" PATH="$tmp/bin:/usr/bin:/bin" bash install-spotlight.sh --dry-run
 
-# --- 4. local / llama.cpp / Gemma 31B / same Flue harness ---
-ASSERTIONS=(
-  "━━ Local inference (llama-server) ━━"
-  "━━ Agent harness (Flue on Pi) ━━"
-  "DRY-RUN: npm install"
-  "DRY-RUN: write ~/.local/bin/spotlight-local (llama.cpp serving + flue run spotlight)"
-  "Spotlight installed"
-)
-check_combo "local/llamacpp/gemma31b" "${BASE[@]}" \
-  SPOTLIGHT_MODE=local SPOTLIGHT_RUNTIME=local \
-  SPOTLIGHT_LOCAL_SERVER=llamacpp SPOTLIGHT_LOCAL_MODEL=gemma31b \
-  SPOTLIGHT_MODEL_TIER=31b SPOTLIGHT_AGENT=flue \
-  SPOTLIGHT_MODEL_REPO='unsloth/gemma-4-31B-it-GGUF'
-
-# --- Contract: retired SPOTLIGHT_CONFIG channel fails loud ---
-out=$(SPOTLIGHT_CONFIG=x bash "$INSTALLER" --dry-run 2>&1) && rc=0 || rc=$?
-if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -qF "no longer accepts SPOTLIGHT_CONFIG"; then
-  echo "✓ SPOTLIGHT_CONFIG retirement  exit 1 + retirement message"
-  PASS=$((PASS + 1))
-else
-  echo "✗ SPOTLIGHT_CONFIG retirement  expected exit 1 + retirement message (rc=$rc)"
-  echo "$out" | tail -5 | sed 's/^/    /'
-  FAIL=$((FAIL + 1))
-fi
-
-# --- Contract: headless run without FIRECRAWL_API_KEY stays sovereign ---
-NOKEY=()
-for kv in "${BASE[@]}"; do
-  case "$kv" in FIRECRAWL_API_KEY=*) ;; *) NOKEY+=("$kv") ;; esac
-done
-out=$(env -u SPOTLIGHT_INGEST_TARGET -u SPOTLIGHT_SOVEREIGNTY_INHERITS_MYCROFT \
-          -u SPOTLIGHT_VAULT_PATH -u OSINT_NAV_API_KEY -u FIRECRAWL_API_KEY -u SPOTLIGHT_DIR \
-          "${NOKEY[@]}" \
-          SPOTLIGHT_MODE=cloud SPOTLIGHT_RUNTIME=claude \
-          bash "$INSTALLER" --headless --dry-run 2>&1) && rc=0 || rc=$?
-if [ "$rc" -eq 0 ] \
-  && printf '%s' "$out" | grep -qF "Firecrawl not configured; using sovereign SearXNG + Crawl4AI only" \
-  && printf '%s' "$out" | grep -qF "SearXNG sovereign search"; then
-  echo "✓ headless keyless install  sovereign SearXNG + Crawl4AI"
-  PASS=$((PASS + 1))
-else
-  echo "✗ headless keyless install  expected sovereign dry-run success (rc=$rc)"
-  echo "$out" | tail -5 | sed 's/^/    /'
-  FAIL=$((FAIL + 1))
-fi
-
-echo ""
-echo "$PASS passed, $FAIL failed"
-exit "$FAIL"
+printf '%s passed, %s failed\n' "$pass" "$fail"
+exit "$fail"
