@@ -23,7 +23,7 @@ tmp="$(mktemp -d -t spotlight-public-install.XXXXXX)"
 trap 'rm -rf "$tmp"' EXIT
 
 check "fresh bootstrap stops before configuration when prerequisites are absent" \
-  "python3 is required for Spotlight's local configurator" \
+  "Spotlight:" \
   env -u BSIG_BIN HOME="$tmp/home" PATH="/bin" /bin/bash install-spotlight.sh
 
 mkdir -p "$tmp/bin"
