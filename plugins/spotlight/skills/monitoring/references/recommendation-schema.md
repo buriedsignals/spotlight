@@ -43,16 +43,17 @@ The schema is unchanged. What changed is how Spotlight routes approved recommend
 
 Spotlight keeps the same recommendation schema and applies this routing:
 
-| Recommendation | Passive path | Durable path |
-|---|---|---|
-| `web` | Optional Mycroft topic if broad ambient coverage helps | Scoutpost `web` scout or runtime-native routine |
-| `pulse` | Mycroft topic for passive feed coverage | Scoutpost beat/pulse scout or runtime-native routine |
-| `social` | None | Scoutpost `social` scout or runtime-native routine |
-| `civic` | Optional Mycroft topic when passive alerts help | Scoutpost `civic` scout or runtime-native routine |
+| Recommendation | Handoff after explicit approval |
+|---|---|
+| `web` | Ask Mycroft to consider a durable web monitor. |
+| `pulse` | Ask Mycroft to consider passive beat coverage. |
+| `social` | Ask Mycroft to consider an appropriate social monitor. |
+| `civic` | Ask Mycroft to consider a civic watch. |
 
 ## Spotlight-side normalization
 
-Keep any vendor naming mismatch inside Spotlight. For example, if a durable backend calls the same concept `beat` where Spotlight says `pulse`, translate it in the adapter rather than changing the agent schema.
+Spotlight records the journalist-facing recommendation only. Mycroft owns any
+vendor-specific normalization, authentication, and durable-monitor state.
 
 ## When NOT to recommend
 

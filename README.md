@@ -174,8 +174,7 @@ important integrations are:
 | Firecrawl | Search and scrape public web sources into local case files. |
 | dev-browser | Interactive or headless browser acquisition with screenshots, HTML, metadata, hashes, and journalist-controlled authentication. |
 | OSINT Navigator | Tool discovery and method routing when the built-in catalog is not enough. |
-| Scoutpost | Durable monitoring for leads, sources, and follow-up developments. |
-| Mycroft | Passive signals, vault memory, and handoff into durable newsroom knowledge. |
+| Mycroft | Passive signals, vault memory, and the optional handoff into durable monitoring. |
 | Junkipedia | Narrative and misinformation tracking when the newsroom has access. |
 | Unpaywall | Legal open-access lookup for academic papers. |
 | Noosphere C2PA | Optional provenance signing for case-level packages. |
@@ -267,7 +266,7 @@ fit checks: [docs/runtimes.md](docs/runtimes.md).
 | [docs/investigating.md](docs/investigating.md) | Pipeline phases, gates, cycles, readiness, and stall protocol. |
 | [docs/fact-checking.md](docs/fact-checking.md) | Independent verification, SIFT, verdict taxonomy, and evidence trails. |
 | [docs/epistemic-grounding.md](docs/epistemic-grounding.md) | Claim-to-evidence grounding and confidence caps. |
-| [docs/monitoring.md](docs/monitoring.md) | Monitoring lifecycle across Mycroft, Scoutpost, and runtime fallbacks. |
+| [docs/monitoring.md](docs/monitoring.md) | Monitoring recommendations and explicit Mycroft handoff. |
 | [docs/structure.md](docs/structure.md) | Repo layout, schemas, skills, agents, and extension points. |
 | [docs/runtimes.md](docs/runtimes.md) | Runtime wiring. |
 | [docs/integrations.md](docs/integrations.md) | External tools and preflight. |
@@ -280,8 +279,8 @@ fit checks: [docs/runtimes.md](docs/runtimes.md).
 - **Mycroft** is durable newsroom memory and publishing support: source records,
   wiki notes, recurring briefings, draft checks, story material, and Spotlight
   handoffs.
-- **Scoutpost** is hosted monitoring: scouts, information units, alerts, and
-  durable follow-up on leads.
+- **Scoutpost** is an optional Mycroft-owned monitoring integration. A
+  standalone Spotlight install never configures or invokes it.
 
 ## Attribution
 

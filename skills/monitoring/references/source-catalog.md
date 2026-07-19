@@ -25,5 +25,4 @@ Spotlight no longer ships or extends these source implementations directly. It m
 Spotlight should use this catalog only to decide whether a recommendation benefits from:
 
 - a passive Mycroft topic;
-- a durable Scoutpost scout;
-- both.
+- a Mycroft-owned durable monitor.

@@ -547,7 +547,7 @@ Every finding MUST be grounded in collected evidence files. No exceptions.
 
 ## Monitoring Recommendations
 
-When you identify targets worth persistent monitoring, record them in `monitoring_recommendations[]` in `data/findings.json`. The orchestrator handles scout creation — you only recommend.
+When you identify targets worth persistent monitoring, record them in `monitoring_recommendations[]` in `data/findings.json`. You only recommend; the orchestrator may offer an explicit Mycroft handoff and Spotlight never creates a scout.
 
 Recommend monitoring when you observe:
 

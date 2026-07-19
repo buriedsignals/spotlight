@@ -22,15 +22,15 @@ check() {
 tmp="$(mktemp -d -t spotlight-public-install.XXXXXX)"
 trap 'rm -rf "$tmp"' EXIT
 
-check "missing Engine fails before mutation" \
-  "Buried Signals Engine (bsig) is required" \
-  env HOME="$tmp/home" PATH="/usr/bin:/bin" bash install-spotlight.sh --dry-run
+check "fresh bootstrap stops before configuration when prerequisites are absent" \
+  "python3 is required for Spotlight's local configurator" \
+  env -u BSIG_BIN HOME="$tmp/home" PATH="/bin" /bin/bash install-spotlight.sh
 
 mkdir -p "$tmp/bin"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/bsig"
 chmod +x "$tmp/bin/bsig"
-check "legacy headless writer is retired" \
-  "The legacy headless installer is retired" \
+check "headless path is delegated to Engine" \
+  "public Spotlight bootstrap is interactive" \
   env HOME="$tmp/home" PATH="$tmp/bin:/usr/bin:/bin" bash install-spotlight.sh --headless --dry-run
 
 check "retired base64 channel still fails loud" \

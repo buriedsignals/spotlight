@@ -113,7 +113,7 @@ Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for larg
 - **`review`** — post-Gate-1 HTML review artifact. Renders a self-contained `{CASE_DIR}/review.html` the journalist opens in any browser, submits structured feedback, downloads as JSON. Mode B re-spawns the investigator to process the feedback and regenerates the HTML. No server required.
 - **`integrations`** — routing layer for external tool integrations (dev-browser, Junkipedia, Noosphere C2PA, OSINT Navigator, Unpaywall). Reads live preflight status, maps investigation tasks to integrations. See `integrations/` at repo root for manifests + per-integration usage docs.
 - **`ingest`** — archival from case files to vault. 8-step process with `.ingest-lock` concurrency and directory fallback. Step 6 extracts eligibility-gated claim records (verdict `verified`/`partially_verified`, grounding above `low`, sources present) into `{vault}/claims/` with a claims registry, a generated alias index (`entities/_aliases.json`), and human-gated merge proposals.
-- **`monitoring`** — case-level monitoring orchestration. Coordinates Mycroft passive signals, Scoutpost durable monitors, and runtime-native fallbacks.
+- **`monitoring`** — case-level monitoring recommendations and explicit Mycroft handoff.
 - **`acquisition-graduation`** — turns repeated dev-browser acquisition successes into durable source/domain guidance without secrets or brittle session details.
 - **`report-drafting`** — post-Gate-1 public report drafting with methodology and evidence ledgers.
 
@@ -167,7 +167,9 @@ Frontmatter declares `allowed_verbs`, `preferred_model` (per-runtime mapping), `
 
 ## monitoring/ — case registry helpers
 
-Spotlight no longer ships a passive feed engine. Passive polling lives in Mycroft; durable always-on scouts live in Scoutpost. Spotlight keeps only the investigation-scoped linkage and handoff state.
+Spotlight no longer ships a passive feed engine or a durable-monitor backend.
+It keeps only investigation-scoped recommendations and may hand them to
+Mycroft after explicit user approval.
 
 ```
 monitoring/
@@ -181,8 +183,7 @@ monitoring/
 - initialize a v2 external-monitor registry for a case
 - normalize or migrate legacy feed-oriented `monitoring.json`
 - record linked Mycroft topic slugs
-- record linked Scoutpost `project_id` and `scout_id` values
-- record runtime-native fallback handles and resume-time checks
+- record the user's recommendation decision and any Mycroft handoff
 
 See [monitoring.md](monitoring.md) for the lifecycle and registry fields.
 

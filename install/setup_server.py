@@ -664,7 +664,7 @@ def main():
                     os.makedirs(args.profile_dir, mode=0o700, exist_ok=True); os.chmod(args.profile_dir, 0o700)
                     tmp = marker + ".tmp-" + secrets.token_hex(4)
                     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                    with os.fdopen(fd, "w", encoding="utf-8") as handle: json.dump(response["plan"], handle)
+                    with os.fdopen(fd, "w", encoding="utf-8") as handle: json.dump(response, handle)
                     os.replace(tmp, marker)
                 except Exception as e:
                     self._send(400, json.dumps({"errors":[{"field":"","message":str(e)}]})); return

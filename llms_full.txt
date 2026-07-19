@@ -149,11 +149,9 @@ Archive order is documented as:
 
 ## 8. Monitoring model
 
-Spotlight can turn findings into ongoing monitoring. It supports:
-
-- passive signals from Mycroft
-- durable monitoring through Scoutpost
-- runtime-native fallbacks when Scoutpost is unavailable
+Spotlight can turn findings into monitoring recommendations. With explicit
+approval it hands those recommendations to Mycroft, which owns any durable
+monitoring integration.
 
 Monitoring recommendations can come from the investigator or the fact-checker and are logged into the case output.
 
@@ -163,7 +161,7 @@ The public skill registry documented in `AGENTS.md` is:
 
 - `spotlight`: investigation orchestrator and gate logic
 - `review`: post-Gate-1 HTML review artifact and feedback loop
-- `integrations`: routing layer for dev-browser, Junkipedia, OSINT Navigator, Scoutpost, and other external tools
+- `integrations`: routing layer for dev-browser, Junkipedia, OSINT Navigator, and other external tools
 - `ingest`: knowledge archival into a vault
 - `monitoring`: monitoring orchestration
 - `web-archiving`: evidence preservation workflows

@@ -217,7 +217,7 @@ tier, Phase-2 tool discovery uses `scripts/osint-tools.py find` (local SQL index
 
 **Integration tiering (`model_tier`):**
 - `12b` — ALL integrations dismissed; native capabilities only (dev-browser, Crawl4AI seam, `osint-tools` SQL, native verbs). `integrations/preflight.py --model-tier 12b` forces every integration `status: "dismissed"`.
-- `26b` / `31b` / `frontier` / `api` — integrations on by default EXCEPT `scoutpost` and `unpaywall` (opt-in at config), Navigator (entitlement-gated), and Noosphere (opt-in key, pending).
+- `26b` / `31b` / `frontier` / `api` — integrations on by default except Unpaywall (opt-in), Navigator (entitlement-gated), and Noosphere (opt-in, pending). Scoutpost is not a Spotlight integration.
 
 Also preserve any existing `integrations.rlm` setup block from
 `.spotlight-config.json`. If it is absent, treat RLM as not installed:
@@ -604,9 +604,12 @@ Write to {CASE_DIR}/data/fact-check.json.",
         > Approve, modify, or skip each?"
 
      2. For approved recommendations, invoke-skill("monitoring") to:
-        - register passive topics in Mycroft when useful,
-        - create durable monitors in Scoutpost by project_id when available,
-        - or fall back to runtime-native routines.
+        - present a clear Mycroft handoff when durable monitoring is wanted,
+        - otherwise retain the recommendation as case context.
+
+        Spotlight never creates a Scoutpost project or scout, reads Scoutpost
+        credentials, or records Scoutpost identifiers. Mycroft owns that
+        optional integration after a separate explicit confirmation.
 
      3. Log all created monitor links to {CASE_DIR}/data/monitoring.json
 
@@ -849,7 +852,7 @@ All state lives in files. If context is lost mid-investigation, re-read:
     source-expression-migration.json — Migration audit only; never activation
     investigation-log.json         — Append-only cycle log
     provenance-manifest.json       — Case artifact hashes + optional C2PA signing status
-    monitoring.json                — Scout state and check results
+    monitoring_recommendations[]   — case-local recommendations in findings.json
 ```
 
 First classify the case contract:
