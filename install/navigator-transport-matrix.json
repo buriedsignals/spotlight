@@ -44,8 +44,14 @@
     {
       "os": "windows",
       "arch": "amd64",
-      "runtimes": ["claude-desktop", "codex-desktop"],
+      "runtimes": ["codex-desktop"],
       "transport": "api/mcp"
+    },
+    {
+      "os": "windows",
+      "arch": "amd64",
+      "runtimes": ["claude-desktop"],
+      "transport": "locked-only"
     }
   ]
 }

@@ -10,6 +10,9 @@ lacks() { ! grep -qF -- "$1" "$2"; }
 
 check "public installer does not bootstrap Engine" lacks 'bootstrap_engine' install-spotlight.sh
 check "public installer never invokes bsig" lacks '"$ENGINE_BINARY"' install-spotlight.sh
+check "public installer contains no Engine bridge asset" lacks 'engine_bridge.py' install-spotlight.sh
+check "public installer contains no Engine binary locator" lacks 'BSIG_BIN' install-spotlight.sh
+check "public installer contains no Engine repository URL" lacks 'buriedsignals/engine' install-spotlight.sh
 check "public installer keeps canonical install body" has 'step "Spotlight repo"' install-spotlight.sh
 check "public configurator has direct member connection" has 'Yes, authenticate' install/configure.html
 check "public configurator has explicit skip" has 'Continue without Navigator' install/configure.html

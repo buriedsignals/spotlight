@@ -704,10 +704,12 @@ async function navigatorPost(path, extra = {}) {
 }
 function navigatorConnected(data) {
   navigatorChoice = 'connect'; navigatorFlow = '';
-  navigatorBadge.textContent = data.tier === 'lab' ? 'Lab connected' : 'Pro connected';
+  navigatorBadge.textContent = data.tier === 'lab' ? 'Lab connected' : (data.tier === 'member' ? 'Member connected' : 'Pro connected');
   navigatorStatus.textContent = data.tier === 'lab'
     ? 'Connected: OSINT Navigator and the Data Navigator tool are available.'
-    : 'Connected: OSINT Navigator is available. Data Navigator requires Lab.';
+    : (data.tier === 'member'
+      ? 'Connected. Navigator will expose OSINT and, for Lab members, the Data Navigator tool.'
+      : 'Connected: OSINT Navigator is available. Data Navigator requires Lab.');
 }
 async function pollNavigator() {
   if (!navigatorFlow) return;
@@ -729,13 +731,11 @@ document.getElementById('navigatorConnect').addEventListener('click', async () =
   if (!email) { navigatorStatus.textContent = 'Enter the email on your membership first.'; return; }
   try {
     const data = await navigatorPost('/navigator/start', {email});
-    if (data.status === 'oauth-required') {
-      navigatorChoice = 'connect'; navigatorBadge.textContent = 'OAuth available';
-      navigatorStatus.textContent = 'Connect the remote MCP endpoint in your desktop runtime: ' + data.mcp_url; return;
-    }
     if (data.status !== 'pending') throw new Error(data.detail || 'No secure Navigator transport is available.');
     navigatorFlow = data.flow_id; navigatorChoice = ''; navigatorBadge.textContent = 'Waiting';
-    navigatorStatus.textContent = 'Check your email and confirm the Navigator sign-in. This page will finish automatically.';
+    navigatorStatus.textContent = data.transport === 'api/mcp'
+      ? 'Finish Navigator OAuth in the browser opened by your desktop runtime. This page will finish automatically.'
+      : 'Check your email and confirm the Navigator sign-in. This page will finish automatically.';
     pollNavigator();
   } catch (error) { navigatorBadge.textContent = 'Offline'; navigatorStatus.textContent = error.message; }
 });

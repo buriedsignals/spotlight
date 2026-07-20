@@ -34,7 +34,15 @@ import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from engine_bridge import EngineBridge, EngineUnavailable
+try:
+    from engine_bridge import EngineBridge, EngineUnavailable
+except ModuleNotFoundError:
+    class EngineUnavailable(RuntimeError):
+        pass
+
+    class EngineBridge:  # type: ignore[no-redef]
+        def __init__(self, _product: str):
+            raise EngineUnavailable("Engine bridge is unavailable in the public installer")
 from navigator_bridge import NavigatorBridgeError, NavigatorInstallerBridge
 
 # Asserted by install-spotlight.sh against the literal in configure.html and

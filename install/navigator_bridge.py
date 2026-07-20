@@ -35,6 +35,7 @@ class NavigatorInstallerBridge:
         self.transport = self._select_transport()
         self.origin = str(self.contract["auth_origin"]).rstrip("/")
         self._flows: dict[str, str] = {}
+        self._mcp_flows: dict[str, subprocess.Popen] = {}
         self._lock = threading.Lock()
 
     @staticmethod
@@ -65,11 +66,7 @@ class NavigatorInstallerBridge:
 
     def existing_status(self) -> dict:
         if self.transport == "api/mcp":
-            return {
-                "status": "available",
-                "transport": "api/mcp",
-                "mcp_url": self.contract["mcp_url"],
-            }
+            return self._mcp_status()
         executable = self._navigator_executable(existing_only=True)
         if executable is None:
             return {"status": "locked", "transport": self.transport}
@@ -101,11 +98,7 @@ class NavigatorInstallerBridge:
                 "detail": "No secure Navigator transport is available on this host yet.",
             }
         if self.transport == "api/mcp":
-            return {
-                "status": "oauth-required",
-                "transport": self.transport,
-                "mcp_url": self.contract["mcp_url"],
-            }
+            return self._start_mcp_oauth()
         body = self._json_request("POST", "/auth/cli/start", {"email": email})
         remote_flow = body.get("flow_id")
         if not isinstance(remote_flow, str) or not remote_flow:
@@ -121,6 +114,18 @@ class NavigatorInstallerBridge:
         }
 
     def poll(self, local_flow: str) -> dict:
+        with self._lock:
+            mcp_process = self._mcp_flows.get(local_flow)
+        if mcp_process is not None:
+            if mcp_process.poll() is None:
+                return {"status": "pending", "flow_id": local_flow, "transport": "api/mcp"}
+            with self._lock:
+                self._mcp_flows.pop(local_flow, None)
+            if mcp_process.returncode == 0:
+                status = self._mcp_status()
+                if status.get("status") == "connected":
+                    return status
+            return {"status": "failed", "transport": "api/mcp"}
         with self._lock:
             remote_flow = self._flows.get(local_flow)
         if remote_flow is None:
@@ -157,11 +162,86 @@ class NavigatorInstallerBridge:
 
     def cancel(self, local_flow: str) -> dict:
         with self._lock:
+            mcp_process = self._mcp_flows.pop(local_flow, None)
+        if mcp_process is not None:
+            if mcp_process.poll() is None:
+                mcp_process.terminate()
+            return {"status": "cancelled"}
+        with self._lock:
             remote_flow = self._flows.pop(local_flow, None)
         if remote_flow is None:
             return {"status": "expired"}
         self._json_request("POST", f"/auth/cli/cancel/{remote_flow}", allow_status={410})
         return {"status": "cancelled"}
+
+    def _codex_executable(self) -> str | None:
+        return shutil.which("codex") or os.environ.get("CODEX_CLI_PATH")
+
+    def _mcp_entries(self, codex: str) -> list[dict]:
+        result = subprocess.run(
+            [codex, "mcp", "list", "--json"],
+            stdin=subprocess.DEVNULL, capture_output=True, timeout=30, check=False,
+        )
+        try:
+            servers = json.loads(result.stdout)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return []
+        return servers if isinstance(servers, list) else []
+
+    def _mcp_status(self) -> dict:
+        if self.runtime != "codex-desktop":
+            return {"status": "locked", "transport": "locked-only"}
+        codex = self._codex_executable()
+        if not codex:
+            return {"status": "locked", "transport": "api/mcp", "detail": "Codex is not installed."}
+        servers = self._mcp_entries(codex)
+        canonical = next((item for item in servers if item.get("name") == "navigator"), None)
+        legacy = next((item for item in servers if item.get("name") == "osint-navigator"), None)
+        entry = canonical or legacy
+        if not isinstance(entry, dict):
+            return {"status": "available", "transport": "api/mcp", "mcp_url": self.contract["mcp_url"]}
+        transport = entry.get("transport") or {}
+        if transport.get("url", "").rstrip("/") != self.contract["mcp_url"].rstrip("/"):
+            return {"status": "locked", "transport": "api/mcp", "detail": "A different Navigator MCP entry already exists."}
+        if entry.get("auth_status") == "oauth":
+            return {
+                "status": "connected", "transport": "api/mcp", "tier": "member",
+                "capabilities": [], "mcp_url": self.contract["mcp_url"],
+                "detail": "Connected. Navigator enforces OSINT and Lab-only Data access at the service.",
+            }
+        return {"status": "available", "transport": "api/mcp", "mcp_url": self.contract["mcp_url"]}
+
+    def _start_mcp_oauth(self) -> dict:
+        codex = self._codex_executable()
+        if self.runtime != "codex-desktop" or not codex:
+            return {"status": "locked-only", "transport": "locked-only", "detail": "No secure Navigator transport is available on this host yet."}
+        status = self._mcp_status()
+        if status.get("status") == "connected":
+            return status
+        if status.get("status") == "locked":
+            return status
+        entries = self._mcp_entries(codex)
+        existing = next((item for item in entries if item.get("name") in {"navigator", "osint-navigator"}), None)
+        server_name = str(existing.get("name")) if isinstance(existing, dict) else "navigator"
+        if existing is None:
+            add_result = subprocess.run(
+                [codex, "mcp", "add", "navigator", "--url", self.contract["mcp_url"]],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=30, check=False,
+            )
+            if add_result.returncode != 0:
+                raise NavigatorBridgeError("Codex could not register Navigator securely")
+        local_flow = secrets.token_urlsafe(18)
+        process = subprocess.Popen(
+            [codex, "mcp", "login", server_name],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        with self._lock:
+            self._mcp_flows[local_flow] = process
+        return {
+            "status": "pending", "flow_id": local_flow, "transport": "api/mcp",
+            "poll_interval_seconds": 3, "mcp_url": self.contract["mcp_url"],
+        }
 
     def _navigator_executable(self, *, existing_only: bool) -> Path | None:
         found = shutil.which("navigator")
