@@ -20,10 +20,13 @@ check() {
 
 tmp="$(mktemp -d -t spotlight-public-install.XXXXXX)"
 trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/preflight-bin"
+printf '#!/bin/sh\nprintf "Linux\\n"\n' > "$tmp/preflight-bin/uname"
+chmod +x "$tmp/preflight-bin/uname"
 
 check "fresh bootstrap stops before configuration when prerequisites are absent" \
   "python3 is required for the configurator" \
-  env -u BSIG_BIN HOME="$tmp/home" PATH="/bin" /bin/bash install-spotlight.sh
+  env -u BSIG_BIN HOME="$tmp/home" PATH="$tmp/preflight-bin" /bin/bash install-spotlight.sh
 
 mkdir -p "$tmp/bin"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/bsig"
