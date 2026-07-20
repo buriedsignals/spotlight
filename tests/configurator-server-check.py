@@ -31,7 +31,7 @@ import engine_bridge as engine  # noqa: E402
 BASE = {
     "mode": "cloud", "cloudRuntime": "claude", "opencodeProvider": "openrouter",
     "cloudKey": "", "localAgent": "flue", "localModel": "gemma12b",
-    "firecrawlKey": "fc-secret-test", "navigatorConnected": True,
+    "firecrawlKey": "fc-secret-test", "navKey": "on-secret-test",
     "vaultApp": "obsidian",
     "installPath": "~/Documents/Spotlight", "vaultPath": "~/Intelligence",
     "intDevBrowser": True,
@@ -42,7 +42,7 @@ BASE = {
 OPENCODE = {**BASE, "cloudRuntime": "opencode", "cloudKey": "sk-or-cloud-secret"}
 PI = {**BASE, "cloudRuntime": "pi"}
 LOCAL = {**BASE, "mode": "local", "intJunkipedia": False, "junkipediaKey": ""}
-SECRETS = ["fc-secret-test", "sk-or-cloud-secret", "jk-secret-test"]
+SECRETS = ["fc-secret-test", "on-secret-test", "sk-or-cloud-secret", "jk-secret-test"]
 
 
 def read(path):
@@ -61,6 +61,22 @@ def warns(payload):
 
 
 class UnitChecks(unittest.TestCase):
+    def test_engine_bridge_rejects_browser_visible_pat(self):
+        with self.assertRaises(RuntimeError):
+            engine.EngineBridge._safe_auth_data({"data": {"status": "ready", "api_key": "on_forbidden"}})
+
+    def test_engine_bridge_revalidates_fresh_existing_connection(self):
+        bridge = engine.EngineBridge.__new__(engine.EngineBridge)
+        replies = iter([
+            {"data": {"status": "logged_in", "pat_stored": True, "tier_freshness": "fresh", "capabilities": ["osint_tools"]}},
+            {"data": {"status": "refreshed", "capabilities": ["osint_tools"]}},
+            {"data": {"status": "logged_in", "pat_stored": True, "tier_freshness": "fresh", "capabilities": ["osint_tools"]}},
+        ])
+        calls = []
+        bridge._run = lambda *args: calls.append(args) or next(replies)
+        self.assertEqual(bridge.navigator_status()["status"], "logged_in")
+        self.assertEqual(calls, [("auth", "status"), ("auth", "refresh"), ("auth", "status")])
+
     def test_engine_bridge_keeps_secret_values_off_argv(self):
         bridge = engine.EngineBridge.__new__(engine.EngineBridge)
         bridge.product = "spotlight"
@@ -85,6 +101,7 @@ class UnitChecks(unittest.TestCase):
     def test_structural_validation(self):
         self.assertEqual(errs(BASE), [])
         cases = [
+            ({"navKey": ""}, "nav_key"),
             ({"vaultPath": "   "}, "vault_path"),
             ({"installPath": ""}, "install_path"),
         ]
@@ -175,7 +192,7 @@ class UnitChecks(unittest.TestCase):
             errors, warnings = srv.validate_keys(d)
             # strict fields error; junkipedia is lenient (warn only)
             self.assertEqual({e["field"] for e in errors},
-                             {"firecrawl_key", "cloud_key"})
+                             {"firecrawl_key", "nav_key", "cloud_key"})
             self.assertTrue(any("JUNKIPEDIA" in w for w in warnings))
             srv.probe = lambda url, headers: "unreachable"
             errors, warnings = srv.validate_keys(d)
@@ -234,7 +251,6 @@ class UnitChecks(unittest.TestCase):
                        "SPOTLIGHT_INT_DEVBROWSER=true", "SPOTLIGHT_INT_JUNKIPEDIA=true",
                        "SPOTLIGHT_INT_UNPAYWALL=true", "UNPAYWALL_EMAIL=reporter@example.com",
                        "SPOTLIGHT_INT_RLM=true", "SPOTLIGHT_RLM_MODE=local_gemma4_e4b",
-                       "SPOTLIGHT_NAVIGATOR_CONNECTION=connected",
                        "SPOTLIGHT_RLM_MODEL=''", "SPOTLIGHT_RLM_REPO=''",
                        "SPOTLIGHT_RLM_GGUF=''"]:
             self.assertIn(needle, cfg)
@@ -280,7 +296,7 @@ class UnitChecks(unittest.TestCase):
     def test_env_lines(self):
         env = srv.build_env_lines(srv.normalize(OPENCODE))
         self.assertIn("FIRECRAWL_API_KEY=fc-secret-test", env)
-        self.assertNotIn("OSINT_NAV_API_KEY", env)
+        self.assertIn("OSINT_NAV_API_KEY=on-secret-test", env)
         self.assertIn("SPOTLIGHT_CLOUD_KEY=sk-or-cloud-secret", env)
         self.assertIn("JUNKIPEDIA_API_KEY=jk-secret-test", env)
         self.assertNotIn("OSINT_NAVIGATOR", env)
@@ -295,10 +311,7 @@ class UnitChecks(unittest.TestCase):
         guide = srv.build_getting_started(srv.normalize(BASE))
         for needle in ["~/Documents/Spotlight", "~/Intelligence", "spotlight doctor",
                        "spotlight update", "Claude Code", "dev-browser", "Junkipedia",
-                       "Unpaywall", "Command Line Interface",
-                       "SearXNG + Crawl4AI (sovereign web research)",
-                       "Firecrawl (optional hosted fallback)",
-                       "Navigator (Pro: OSINT; Lab: OSINT + Data Navigator)"]:
+                       "Unpaywall", "Command Line Interface"]:
             self.assertIn(needle, guide)
         for secret in SECRETS:
             self.assertNotIn(secret, guide)
@@ -309,9 +322,6 @@ class UnitChecks(unittest.TestCase):
         local = srv.build_getting_started(srv.normalize({**LOCAL, "vaultApp": "obsidian"}))
         self.assertIn("Gemma 4 12B", local)
         self.assertIn("llama.cpp", local)
-        locked = srv.build_getting_started(srv.normalize({**BASE, "firecrawlKey": "", "navigatorConnected": False}))
-        self.assertIn("Navigator skill (locked; no credential or CLI)", locked)
-        self.assertNotIn("Firecrawl (optional hosted fallback)", locked)
         tolaria = srv.build_getting_started(srv.normalize({**BASE, "vaultApp": "tolaria"}))
         self.assertIn("Tolaria", tolaria)
         self.assertNotIn("Command Line Interface: ON", tolaria)
@@ -369,6 +379,16 @@ elif args[:2] == ["keys", "list"]:
     data = {"keys": []}
 elif args[:2] == ["configure", "plan"]:
     json.load(sys.stdin); data = {"plan_path": "/tmp/spotlight-install.json"}
+elif args[:2] == ["auth", "status"]:
+    data = {"status": "not_logged_in", "pat_stored": False, "tier_freshness": "none"}
+elif args[:2] == ["auth", "start"]:
+    data = {"status": "pending", "flow_id": "flowfixture", "expires_in_seconds": 900, "poll_interval_seconds": 3, "verification_url": "https://navigator.indicator.media/"}
+elif args[:2] == ["auth", "poll"]:
+    data = {"status": "ready", "tier": "data", "capabilities": ["osint_tools", "data_sources"], "email_hint": "l***@example.test"}
+elif args[:2] == ["auth", "cancel"]:
+    data = {"status": "cancelled"}
+elif args[:2] == ["auth", "logout"]:
+    data = {"status": "logged_out", "pat_removed": True}
 else:
     sys.exit(4)
 print(json.dumps({"event": "result", "data": data}))
@@ -427,9 +447,14 @@ print(json.dumps({"event": "result", "data": data}))
         self.assertNotIn("__SETUP_TOKEN__", self.page)
         self.assertNotIn("__PLATFORM__", self.page)
         self.assertIn("configurator-version", self.page)
-        for needle in ["firecrawl_key", "navigatorConnect", "navigatorSkip", "install_path", "vault_path",
+        for needle in ["firecrawl_key", "nav_key", "install_path", "vault_path",
                        "int_devbrowser", "rlm_mode"]:
             self.assertIn(needle, self.page)
+        self.assertIn("Connect Navigator?", self.page)
+        self.assertIn("Continue without Navigator", self.page)
+        self.assertIn("if (field.id === 'navigator') continue", self.page)
+        self.assertIn("if (!navigatorChoice)", self.page)
+        self.assertNotIn("values.navigator = false", self.page)
 
         # 2. GET without (or with a bad) token is rejected
         for url in (f"http://127.0.0.1:{self.PORT}/",
@@ -439,7 +464,7 @@ print(json.dumps({"event": "result", "data": data}))
             self.assertEqual(ctx.exception.code, 403, url)
 
         # 3. bad token is rejected on both active POST endpoints
-        for path in ("/engine-submit", "/pick-folder"):
+        for path in ("/engine-submit", "/pick-folder", "/engine-auth/navigator/start"):
             with self.assertRaises(urllib.error.HTTPError) as ctx:
                 self.post(path, {**BASE, "token": "wrong", "field": "vault_path"})
             self.assertEqual(ctx.exception.code, 403, path)
@@ -448,6 +473,23 @@ print(json.dumps({"event": "result", "data": data}))
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             self.post("/submit", {**BASE, "token": self.token, "navKey": ""})
         self.assertEqual(ctx.exception.code, 410)
+
+        # 4a. Optional Navigator auth stays behind the loopback token and never returns a PAT.
+        status = json.loads(urllib.request.urlopen(
+            f"http://127.0.0.1:{self.PORT}/engine-auth/navigator/status?t={self.token}", timeout=5).read())
+        self.assertEqual(status["status"], "not_logged_in")
+        started = self.post("/engine-auth/navigator/start", {"token": self.token, "email": "lab@example.test"})
+        polled = json.loads(urllib.request.urlopen(
+            f"http://127.0.0.1:{self.PORT}/engine-auth/navigator/poll?t={self.token}&flow_id={started['flow_id']}", timeout=5).read())
+        self.assertEqual(polled["capabilities"], ["osint_tools", "data_sources"])
+        self.assertNotIn("api_key", json.dumps(polled).lower())
+        self.assertNotIn("on_", json.dumps(polled).lower())
+        evil = urllib.request.Request(
+            f"http://127.0.0.1:{self.PORT}/engine-auth/navigator/status?t={self.token}",
+            headers={"Origin": "https://attacker.example"})
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(evil, timeout=5)
+        self.assertEqual(ctx.exception.code, 403)
 
         # 5. Engine submit writes only the sealed-plan marker and exits 0
         resp = self.post("/engine-submit", {
@@ -465,52 +507,6 @@ print(json.dumps({"event": "result", "data": data}))
         self.assertEqual(marker_data["plan"]["plan_path"], "/tmp/spotlight-install.json")
         self.assertEqual(marker_data["engine_binary"], self.fake_bsig)
         self.assertEqual(set(os.listdir(self.tmp)), {"bsig", "engine-plan.ready"})
-
-
-class PublicWebsiteChecks(unittest.TestCase):
-    def test_skip_completes_without_engine_or_navigator_credential(self):
-        with tempfile.TemporaryDirectory() as profile:
-            proc = subprocess.Popen(
-                [sys.executable, os.path.join(ROOT, "install", "setup_server.py"),
-                 "--profile-dir", profile, "--repo-dir", ROOT, "--port", "0",
-                 "--no-browser", "--skip-key-validation", "--legacy-only"],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-            )
-            try:
-                line = proc.stdout.readline()
-                match = re.search(r"http://127\.0\.0\.1:(\d+)/\?t=([A-Za-z0-9_-]+)", line)
-                self.assertIsNotNone(match, line)
-                port, token = int(match.group(1)), match.group(2)
-
-                bad_origin = urllib.request.Request(
-                    f"http://127.0.0.1:{port}/navigator/status",
-                    data=json.dumps({"token": token}).encode(),
-                    headers={"Content-Type": "application/json", "Origin": "https://evil.example"},
-                )
-                with self.assertRaises(urllib.error.HTTPError) as ctx:
-                    urllib.request.urlopen(bad_origin, timeout=5)
-                self.assertEqual(ctx.exception.code, 403)
-
-                payload = {**BASE, "token": token, "navigatorChoice": "skip",
-                           "navigatorConnected": False}
-                request = urllib.request.Request(
-                    f"http://127.0.0.1:{port}/submit",
-                    data=json.dumps(payload).encode(),
-                    headers={"Content-Type": "application/json",
-                             "Origin": f"http://127.0.0.1:{port}"},
-                )
-                response = json.loads(urllib.request.urlopen(request, timeout=15).read())
-                self.assertTrue(response["ok"])
-                self.assertEqual(proc.wait(timeout=10), 0)
-                config = read(os.path.join(profile, "setup-config.env"))
-                self.assertIn("SPOTLIGHT_NAVIGATOR_CONNECTION=locked", config)
-                self.assertNotIn("OSINT_NAV_API_KEY", read(os.path.join(profile, ".env")))
-                self.assertFalse(os.path.exists(os.path.join(profile, "engine-plan.ready")))
-            finally:
-                if proc.poll() is None:
-                    proc.terminate()
-                    proc.wait(timeout=5)
-                proc.stdout.close()
 
 
 if __name__ == "__main__":

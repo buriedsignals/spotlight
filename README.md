@@ -190,12 +190,16 @@ curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash
 ```
 
 One static, reviewable script ([`install-spotlight.sh`](install-spotlight.sh))
-for every install. It applies a product-specific signed bundle exported by
-Engine at release time; the public path never downloads or executes Engine.
-It opens a local configurator page in the browser — served
+for every install; no Buried Signals account is required. It verifies and
+installs the signed headless Engine, then opens a local configurator page in the
+browser — served
 from `127.0.0.1` by `install/setup_server.py`. Runtime, API keys, optional
 integrations, and install/vault paths (with a native folder picker) are all
-collected there; keys are verified live with each provider and written to local
+collected there. Navigator is an explicit connect-or-skip choice: the unified
+skill is installed in both cases, while OSINT requires membership and Data
+Navigator requires Lab access. Credentials are
+stored directly by Engine in the protected OS credential store; other provider
+keys are verified live and written to local
 files with owner-only permissions. **API keys never transit Buried Signals
 infrastructure and never exist in any downloadable artifact.** The hosted pages
 are static and contain no forms; the configurator accepts POSTs only on the
