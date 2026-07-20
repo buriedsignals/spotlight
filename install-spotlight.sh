@@ -991,6 +991,7 @@ if [ "$SPOTLIGHT_MODE" = "local" ]; then
   else
     cat > "$HOME/.local/bin/spotlight-local" <<LAUNCHER_EOF
 #!/usr/bin/env bash
+# Managed by the Spotlight public installer.
 # Spotlight local launcher — llama.cpp serving (orchestrator + RLM) + the Flue/Pi harness.
 # ONE harness: this runs the same \`flue run spotlight\` app the evals exercise
 # (harness/flue in the Spotlight checkout) — local test == user experience.
@@ -1468,6 +1469,7 @@ if [ "$DRY_RUN" = "1" ]; then
 else
   cat > "$HOME/.local/bin/spotlight-doctor" <<DOCTOR_EOF
 #!/usr/bin/env bash
+# Managed by the Spotlight public installer.
 set -euo pipefail
 export PATH="\$HOME/.local/bin:\$HOME/.npm-global/bin:\$PATH"
 expand_path() {
@@ -1534,6 +1536,7 @@ DOCTOR_TAIL
 
   cat > "$HOME/.local/bin/spotlight-update" <<UPDATE_EOF
 #!/usr/bin/env bash
+# Managed by the Spotlight public installer.
 set -euo pipefail
 expand_path() {
   local input="\$1"
