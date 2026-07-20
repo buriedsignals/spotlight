@@ -190,7 +190,9 @@ curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash
 ```
 
 One static, reviewable script ([`install-spotlight.sh`](install-spotlight.sh))
-for every install. It opens a local configurator page in the browser — served
+for every install. It applies a product-specific signed bundle exported by
+Engine at release time; the public path never downloads or executes Engine.
+It opens a local configurator page in the browser — served
 from `127.0.0.1` by `install/setup_server.py`. Runtime, API keys, optional
 integrations, and install/vault paths (with a native folder picker) are all
 collected there; keys are verified live with each provider and written to local
@@ -211,6 +213,12 @@ The installer:
 - registers the vault for local search,
 - installs `spotlight`, `spotlight doctor`, and `spotlight update`,
 - runs preflight and opens a personalized getting-started guide.
+
+`spotlight update` applies the latest signed public release rather than tracking
+`origin/main`. `spotlight uninstall` removes only unchanged installer-owned
+files and preserves case/profile data unless `--remove-data` is explicit.
+Navigator is optional: Skip keeps the unified skill locked, Pro unlocks OSINT
+Navigator, and Lab additionally unlocks the Data Navigator tool.
 
 ### Local Install
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Static contract checks for the intentionally small public bootstrap.
+# Static contract checks for the public Spotlight installer.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -10,23 +10,29 @@ excludes() { if grep -qF -- "$2" "$1"; then note "$1 stale fragment present: $2"
 
 bash -n install-spotlight.sh || { echo "install-spotlight.sh does not parse"; exit 1; }
 
-includes install-spotlight.sh 'bootstrap_engine || exit 1'
-includes install-spotlight.sh 'python3 "$TMP_ASSETS/install/setup_server.py" --profile-dir "$SPOTLIGHT_PROFILE_DIR" --repo-dir "$TMP_ASSETS"'
-includes install-spotlight.sh "ENGINE_PUBLIC_KEY='RWRVGhTzAGx7pqB8NEMCPW8uMr10Koa3wSoIH9OCqoCkL4GUqhQcwtU6'"
-includes install-spotlight.sh 'minisign -Vm "$archive" -P "$ENGINE_PUBLIC_KEY"'
-includes install-spotlight.sh '"$ENGINE_BINARY" apply "$ENGINE_PLAN_PATH"'
-includes install-spotlight.sh '"$ENGINE_BINARY" welcome spotlight'
-includes install-spotlight.sh 'no legacy Obsidian/QMD fallback was applied'
+includes install-spotlight.sh '--legacy-only'
+includes install-spotlight.sh 'navigator_bridge.py'
+includes install-spotlight.sh 'navigator-transport-matrix.json'
+includes install-spotlight.sh 'ensure_npm_global_exact open-knowledge @inkeep/open-knowledge'
+includes install-spotlight.sh 'ensure_npm_global_exact qmd @tobilu/qmd'
+includes install-spotlight.sh 'spotlight-navigator'
+includes install-spotlight.sh ': "${SPOTLIGHT_NAVIGATOR_CONNECTION:=locked}"'
+includes install-spotlight.sh '[ -n "$OSINT_NAV_API_KEY" ] && write_env_var OSINT_NAV_API_KEY'
 includes install-spotlight.sh 'CONFIGURATOR_VERSION="1"'
 includes install-spotlight.sh 'no longer accepts SPOTLIGHT_CONFIG'
+excludes install-spotlight.sh 'bootstrap_engine'
+excludes install-spotlight.sh 'minisign -Vm'
+excludes install-spotlight.sh 'navigator-cli=='
+excludes install-spotlight.sh 'OSINT_NAV_API_KEY:?'
 excludes install-spotlight.sh 'base64 -d'
-excludes install-spotlight.sh 'qmd'
-excludes install-spotlight.sh 'obsidian'
 
-includes install/setup_server.py 'json.dump(response, handle)'
-includes install/engine_bridge.py '"engine_binary": self.binary'
-includes install/configure.html '<meta name="configurator-version" content="1">'
-includes install/configure.html '__SETUP_TOKEN__'
+includes install/setup_server.py 'NavigatorInstallerBridge'
+includes install/setup_server.py 'navigator_choice not in {"connect", "skip"}'
+includes install/configure.html 'Yes, authenticate'
+includes install/configure.html 'Continue without Navigator'
+includes install/configure.html 'Data Navigator requires Lab'
+includes skills/navigator/SKILL.md 'Data Navigator'
+includes scripts/navigator-connect 'NavigatorInstallerBridge'
 
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck -S error install-spotlight.sh || fail=1

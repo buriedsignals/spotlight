@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+setup="$HOME/.config/spotlight/setup-config.env"
+if [ -f "$setup" ]; then
+  set -a
+  . "$setup"
+  set +a
+fi
+expand_path() {
+  case "$1" in
+    "~") printf '%s\n' "$HOME" ;;
+    "~/"*) printf '%s/%s\n' "$HOME" "${1#\~/}" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+product_root="$(expand_path "${SPOTLIGHT_DIR_INPUT:-${SPOTLIGHT_DIR:-$HOME/spotlight}}")"
+runtime="${SPOTLIGHT_RUNTIME:-claude}"
+channel="$HOME/.local/share/buriedsignals/public-installer/spotlight"
+bootstrap="$channel/bootstrap.sh"
+if [ ! -f "$bootstrap" ]; then
+  echo "Spotlight uninstall receipt channel is missing; no files were removed." >&2
+  exit 1
+fi
+args=(--product spotlight --runtime "$runtime" --product-root "$product_root" --action uninstall)
+for arg in "$@"; do
+  case "$arg" in
+    --remove-data|--force|--dry-run) args+=("$arg") ;;
+    *) echo "usage: spotlight-uninstall [--remove-data] [--force] [--dry-run]" >&2; exit 2 ;;
+  esac
+done
+bash "$bootstrap" "${args[@]}"

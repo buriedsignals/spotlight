@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+"""Reconnect Navigator without reinstalling Spotlight."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "install"))
+
+from navigator_bridge import NavigatorBridgeError, NavigatorInstallerBridge  # noqa: E402
+
+
+def emit(value: dict) -> None:
+    print(json.dumps(value, indent=2, sort_keys=True))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Connect Spotlight to Navigator membership")
+    parser.add_argument("--status", action="store_true")
+    parser.add_argument("--email")
+    parser.add_argument("--timeout", type=int, default=600, help=argparse.SUPPRESS)
+    args = parser.parse_args()
+    bridge = NavigatorInstallerBridge(ROOT / "install" / "navigator-transport-matrix.json", "claude-code")
+    current = bridge.existing_status()
+    if args.status or current.get("status") == "connected":
+        emit(current)
+        return 0 if current.get("status") == "connected" else 1
+    email = (args.email or input("Email on your Navigator membership: ")).strip()
+    if not email:
+        print("Navigator connection cancelled: email is required", file=sys.stderr)
+        return 2
+    flow_id = ""
+    try:
+        started = bridge.start(email)
+        if started.get("status") == "oauth-required":
+            emit(started)
+            print("Add the listed MCP endpoint in your runtime and complete its browser OAuth flow.")
+            return 0
+        if started.get("status") != "pending":
+            emit(started)
+            return 1
+        flow_id = str(started["flow_id"])
+        print("Check your email and confirm the Navigator sign-in.")
+        deadline = time.monotonic() + args.timeout
+        interval = max(1, int(started.get("poll_interval_seconds") or 3))
+        while time.monotonic() < deadline:
+            result = bridge.poll(flow_id)
+            if result.get("status") == "pending":
+                time.sleep(interval)
+                continue
+            emit(result)
+            return 0 if result.get("status") == "connected" else 1
+        bridge.cancel(flow_id)
+        print("Navigator connection expired; no credential was stored.", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        if flow_id:
+            bridge.cancel(flow_id)
+        print("\nNavigator connection cancelled; no credential was stored.", file=sys.stderr)
+        return 130
+    except NavigatorBridgeError as error:
+        print(f"Navigator connection failed: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
