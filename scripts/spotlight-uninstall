@@ -23,10 +23,72 @@ if [ ! -f "$bootstrap" ]; then
   exit 1
 fi
 args=(--product spotlight --runtime "$runtime" --product-root "$product_root" --action uninstall)
+dry_run=0
 for arg in "$@"; do
   case "$arg" in
-    --remove-data|--force|--dry-run) args+=("$arg") ;;
+    --dry-run) dry_run=1; args+=("$arg") ;;
+    --remove-data|--force) args+=("$arg") ;;
     *) echo "usage: spotlight-uninstall [--remove-data] [--force] [--dry-run]" >&2; exit 2 ;;
   esac
 done
 bash "$bootstrap" "${args[@]}"
+
+remove_owned_link() {
+  local path="$1" expected_target="$2"
+  [ -L "$path" ] || return 0
+  if [ "$(readlink "$path")" != "$expected_target" ]; then
+    printf 'Preserving non-Spotlight symlink: %s\n' "$path" >&2
+    return 0
+  fi
+  if [ "$dry_run" = "1" ]; then
+    printf 'DRY-RUN: remove Spotlight symlink %s\n' "$path"
+  else
+    rm -f "$path"
+  fi
+}
+
+remove_owned_file() {
+  local path="$1" anchor_one="$2" anchor_two="$3"
+  [ -f "$path" ] && [ ! -L "$path" ] || return 0
+  if ! grep -qF -- "$anchor_one" "$path" || ! grep -qF -- "$anchor_two" "$path"; then
+    printf 'Preserving file without Spotlight ownership markers: %s\n' "$path" >&2
+    return 0
+  fi
+  if [ "$dry_run" = "1" ]; then
+    printf 'DRY-RUN: remove Spotlight wrapper %s\n' "$path"
+  else
+    rm -f "$path"
+  fi
+}
+
+remove_shell_block() {
+  local rc="$1" tmp_rc
+  [ -f "$rc" ] || return 0
+  grep -q '^# SPOTLIGHT-BEGIN' "$rc" || return 0
+  if ! grep -q '^# SPOTLIGHT-END' "$rc"; then
+    printf 'Preserving shell file with incomplete Spotlight markers: %s\n' "$rc" >&2
+    return 0
+  fi
+  if [ "$dry_run" = "1" ]; then
+    printf 'DRY-RUN: remove Spotlight shell block from %s\n' "$rc"
+    return 0
+  fi
+  tmp_rc="$(mktemp)"
+  awk '
+    /^# SPOTLIGHT-BEGIN/ { skip=1; next }
+    /^# SPOTLIGHT-END/ { skip=0; next }
+    !skip { print }
+  ' "$rc" > "$tmp_rc"
+  cat "$tmp_rc" > "$rc"
+  rm -f "$tmp_rc"
+}
+
+bin="$HOME/.local/bin"
+remove_owned_link "$bin/spotlight-navigator" "$product_root/scripts/navigator-connect"
+remove_owned_link "$bin/spotlight-uninstall" "$product_root/scripts/spotlight-uninstall"
+remove_owned_file "$bin/spotlight-doctor" 'SPOTLIGHT_DIR_DEFAULT_INPUT=' 'Spotlight doctor:'
+remove_owned_file "$bin/spotlight-update" 'SPOTLIGHT_DIR_DEFAULT_INPUT=' 'signed public update channel is missing'
+remove_owned_file "$bin/spotlight-local" 'Spotlight local launcher' 'SPOTLIGHT_DIR_DEFAULT_INPUT='
+remove_shell_block "$HOME/.zshrc"
+remove_shell_block "$HOME/.bashrc"
+remove_shell_block "$HOME/.profile"

@@ -9,8 +9,13 @@ includes() { grep -qF -- "$2" "$1" || note "$1 missing fragment: $2"; }
 excludes() { if grep -qF -- "$2" "$1"; then note "$1 stale fragment present: $2"; fi; }
 
 bash -n install-spotlight.sh || { echo "install-spotlight.sh does not parse"; exit 1; }
+bash -n scripts/spotlight-uninstall || { echo "scripts/spotlight-uninstall does not parse"; exit 1; }
+bash tests/spotlight-uninstall-check.sh || { echo "Spotlight uninstall cleanup checks failed"; exit 1; }
 [ -x scripts/spotlight-uninstall ] || note "scripts/spotlight-uninstall must be executable so install does not dirty the checkout"
 includes .gitignore '.venv/'
+includes scripts/spotlight-uninstall 'remove_owned_link "$bin/spotlight-uninstall"'
+includes scripts/spotlight-uninstall 'remove_owned_file "$bin/spotlight-doctor"'
+includes scripts/spotlight-uninstall 'remove_shell_block "$HOME/.zshrc"'
 
 includes install-spotlight.sh '--legacy-only'
 includes install-spotlight.sh 'navigator_bridge.py'
