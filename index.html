@@ -561,6 +561,19 @@
     font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.85;
     color: var(--accent-warm);
   }
+  .int-card .access-pill {
+    align-self: flex-start;
+    margin-top: 12px;
+    padding: 5px 10px;
+    border: 1px solid color-mix(in srgb, var(--accent-warm) 62%, transparent);
+    border-radius: 999px;
+    color: var(--paper);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    line-height: 1;
+    text-transform: uppercase;
+  }
   .int-card .name {
     font-family: "Fraunces", serif;
     font-variation-settings: "opsz" 72, "wght" 500;
@@ -1712,7 +1725,7 @@
     <div class="hero-grid">
       <h1 class="hero-title" data-reveal="title" style="--rd: 600ms">
         You lead the investigation.
-        <span class="accent">Spotlight does the research.</span>
+        <span class="accent">Spotlight does the research</span>
       </h1>
       <div class="hero-side" data-reveal="body" style="--rd: 1200ms">
         <p class="hero-description">Turn your agent into an investigative system.</p>
@@ -1736,7 +1749,7 @@
 <section id="what" data-screen-label="03 What it does" data-nav-theme="dark" data-scene-mood="aligned">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 01 — What it does</span>
-    <h2 class="title" data-reveal="title" style="--rd: 120ms">How a case moves.</h2>
+    <h2 class="title" data-reveal="title" style="--rd: 120ms">How a case moves</h2>
   </div>
   <div class="split-scroll">
     <div class="split-left-sentinel" aria-hidden="true"></div>
@@ -1753,15 +1766,15 @@
           <div class="step-num">01</div>
           <div class="step-label">Lead</div>
         </div>
-        <h3 class="step-title">Start with a lead. Spotlight proposes the methodology before the research starts.</h3>
-        <p class="step-body">You approve the plan first. Members can connect <a href="https://navigator.indicator.media/" target="_blank" rel="noreferrer">Navigator</a>: Pro adds OSINT tool discovery, while Lab also adds structured public-record research through Data Navigator.</p>
+        <h3 class="step-title">Start with a lead. Spotlight proposes the methodology before the research starts</h3>
+        <p class="step-body">You approve the plan first. Indicator members can connect <a href="https://navigator.indicator.media/" target="_blank" rel="noreferrer">Navigator</a>: Pro adds OSINT tool discovery, while Lab also adds structured public-record research through Data Navigator.</p>
       </article>
       <article class="step" data-label="Cycles" data-num="02">
         <div class="step-meta">
           <div class="step-num">02</div>
           <div class="step-label">Cycles</div>
         </div>
-        <h3 class="step-title">The investigator works the lead. The fact-checker comes after each cycle.</h3>
+        <h3 class="step-title">The investigator works the lead. The fact-checker comes after each cycle</h3>
         <p class="step-body">One agent pushes the reporting forward. A second agent checks the claims, looks for contradictions, and flags what still does not hold.</p>
       </article>
       <article class="step" data-label="Findings" data-num="03">
@@ -1769,7 +1782,7 @@
           <div class="step-num">03</div>
           <div class="step-label">Findings</div>
         </div>
-        <h3 class="step-title">Findings arrive with evidence attached.</h3>
+        <h3 class="step-title">Findings arrive with evidence attached</h3>
         <p class="step-body">Primary documents captured locally. Independent sourcing where possible. Disputes, weak points, and missing perspectives made explicit.</p>
       </article>
       <article class="step" data-label="Review" data-num="04">
@@ -1777,7 +1790,7 @@
           <div class="step-num">04</div>
           <div class="step-label">Review</div>
         </div>
-        <h3 class="step-title">You stay the editor at every gate.</h3>
+        <h3 class="step-title">You stay the editor at every gate</h3>
         <p class="step-body">You approve the methodology, review the findings, challenge weak points, and decide what deserves another cycle. Nothing clears the gate without a human decision.</p>
       </article>
       <article class="step" data-label="Vault" data-num="05">
@@ -1785,7 +1798,7 @@
           <div class="step-num">05</div>
           <div class="step-label">Vault</div>
         </div>
-        <h3 class="step-title">When the case is solid, it becomes infrastructure for the next one.</h3>
+        <h3 class="step-title">When the case is solid, it becomes infrastructure for the next one</h3>
         <p class="step-body">Evidence stays archived, the case goes into your vault, and ongoing monitoring can feed new leads back into the workflow.</p>
       </article>
     </div>
@@ -1796,52 +1809,61 @@
 <section id="integrations" data-screen-label="04 Integrations" data-nav-theme="dark" data-scene-mood="drift">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 02 — Integrations</span>
-    <h2 class="title" data-reveal="title" style="--rd: 120ms">End-to-end investigation workflow.</h2>
+    <h2 class="title" data-reveal="title" style="--rd: 120ms">End-to-end investigation workflow</h2>
   </div>
   <div class="integrations-grid">
     <div class="int-card" data-reveal="card" data-stagger-idx="0">
       <div class="idx">01 / 09</div>
+      <div class="access-pill">Public</div>
       <div class="name">Agent runtimes</div>
       <div class="desc">Claude Code, Codex, Pi, OpenCode, or the local Flue-on-Pi harness. Use the configured runtime that fits the investigation.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="1">
       <div class="idx">02 / 09</div>
+      <div class="access-pill">Public</div>
       <div class="name">Local and offline</div>
       <div class="desc">Run sensitive investigations on local models, keep context on your machine, and avoid sending reporting data through third-party APIs when the case calls for it.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="2">
       <div class="idx">03 / 09</div>
+      <div class="access-pill">Indicator members</div>
       <div class="name">OSINT Navigator</div>
-      <div class="desc">Pro and Lab members can authenticate locally to surface current OSINT tools and methods for the task in front of them.</div>
+      <div class="desc">Indicator Pro and Lab members can authenticate locally to surface current OSINT tools and methods for the task in front of them.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="3">
       <div class="idx">04 / 09</div>
+      <div class="access-pill">Indicator members · Lab</div>
       <div class="name">Data Navigator</div>
-      <div class="desc">Lab members can discover and query structured public-record sources, including registries, court records, archives, and other research datasets.</div>
+      <div class="desc">Indicator Lab members can discover and query structured public-record sources, including registries, court records, archives, and other research datasets.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="4">
       <div class="idx">05 / 09</div>
+      <div class="access-pill">Public</div>
       <div class="name">Sovereign web research</div>
       <div class="desc">SearXNG search and Crawl4AI scraping work without an account. Firecrawl remains an optional hosted fallback for difficult targets.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="5">
       <div class="idx">06 / 09</div>
+      <div class="access-pill">Public</div>
       <div class="name">Evidence archiving</div>
       <div class="desc">Every source gets captured locally before it becomes evidence. Search and scraping are built into the workflow.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="6">
       <div class="idx">07 / 09</div>
+      <div class="access-pill">Free · Indicator members</div>
       <div class="name">Scoutpost monitoring</div>
       <div class="desc">The free monitoring tier includes MuckRock sources. Spotlight recommends monitors and hands them to Mycroft, which owns the direct Scoutpost integration; Indicator membership is handled through Navigator.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="7">
       <div class="idx">08 / 09</div>
+      <div class="access-pill">Public</div>
       <div class="name">Knowledge vault</div>
       <div class="desc">Investigations are archived in an OpenKnowledge case workspace you can search, reuse, and build on, while active case files remain separate until approved for ingestion.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="8">
-      <div class="idx">09 / 09 · COMING SEPTEMBER 2026</div>
-      <div class="name">Splash for Visual Journalism</div>
+      <div class="idx">09 / 09</div>
+      <div class="access-pill">Coming September 2026</div>
+      <div class="name">Splash</div>
       <div class="desc">A forthcoming visual-journalism workflow for turning verified reporting into charts, maps, explainers, and publication-ready visual stories.</div>
     </div>
   </div>
@@ -1852,7 +1874,7 @@
 <section id="works-with" data-screen-label="05 Works with" data-nav-theme="dark" data-scene-mood="sparse">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 03 — Works with</span>
-    <h2 class="title" data-reveal="title" style="--rd: 120ms">Choose your agent runtime.</h2>
+    <h2 class="title" data-reveal="title" style="--rd: 120ms">Choose your agent runtime</h2>
   </div>
   <div class="works-chips" data-reveal="body" style="--rd: 200ms">
     <a class="works-chip" href="https://claude.com/claude-code" target="_blank" rel="noopener">Claude Code</a>
@@ -1870,7 +1892,7 @@
 <section id="offers" data-screen-label="07 Offers" data-nav-theme="dark" data-scene-mood="split">
   <div class="header">
     <span class="chap" data-reveal="meta">Ch. 04 — Work with me</span>
-    <h2 class="title" data-reveal="title" style="--rd: 120ms">Work with me.</h2>
+    <h2 class="title" data-reveal="title" style="--rd: 120ms">Work with me</h2>
   </div>
 
   <p class="about-bs" data-reveal="body" style="--rd: 120ms">
@@ -1883,7 +1905,7 @@
         <span>Indicator Lab</span>
         <span class="launch">Launching September 2026</span>
       </div>
-      <h3>Investigations with AI. The tools to run your own.</h3>
+      <h3>Investigations with AI. The tools to run your own</h3>
       <p class="lede">Indicator Lab combines the Buried Signals tool suite with a monthly investigation debrief, a practical Case Note, and office hours every two weeks.</p>
       <a class="indicator-lab-link" href="https://buriedsignals.com/join">Explore Indicator Lab <span aria-hidden="true">→</span></a>
       <div class="offer-footer offer-footer--newsletter">
@@ -1929,7 +1951,7 @@
       <div class="kicker">
         <span>Consulting</span>
       </div>
-      <h3>I train newsrooms to investigate with AI.</h3>
+      <h3>I train newsrooms to investigate with AI</h3>
       <p class="lede">Workshops, custom tooling, and investigation collaborations.</p>
       <ul>
         <li>Le Temps</li>
