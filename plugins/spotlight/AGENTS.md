@@ -8,6 +8,22 @@ sensitive: false
 
 # Spotlight — Runtime Contract
 
+## Landing Site Deployment
+
+The production landing site is GitHub Pages at
+`https://spotlight.buriedsignals.com/`. GitHub Pages is configured in legacy
+branch mode with `main` and the repository root (`/`) as its source. There is
+no Render service and no in-repository deployment workflow for the landing
+site: merging or pushing the intended site changes to `main` triggers the
+Pages build.
+
+Before merging, validate the affected static HTML and the repository checks
+appropriate to the change. After merging, confirm the Pages source and status
+with `gh api repos/buriedsignals/spotlight/pages`, inspect the newest
+`github-pages` deployment for the merged SHA, and verify the changed copy at
+the production URL. GitHub Pages may serve cached content for up to ten
+minutes, so do not treat an immediately stale response as a failed deploy.
+
 ## Session Preflight
 
 Before coding in this project on a Buried Signals dev machine, read the shared `coding-rules` skill (`kit/coding-rules/SKILL.md` in the sibling shared-skills repo, if present). It is the canonical source for workflow routing, coding standards, Jujutsu/version-control rules, GitHub operations, and parallel-agent isolation. Local instructions below add project-specific constraints.

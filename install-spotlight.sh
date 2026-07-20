@@ -316,7 +316,7 @@ if [ -n "$SPOTLIGHT_MODEL_REPO" ]; then
 fi
 
 if [ "$PUBLIC_BUNDLE_PHASE" = "0" ] && [ "$DRY_RUN" = "0" ]; then
-  PUBLIC_RELEASE_BASE="https://github.com/buriedsignals/spotlight/releases/download/v2.1.0"
+  PUBLIC_RELEASE_BASE="https://github.com/buriedsignals/spotlight/releases/download/v2.1.1"
   PUBLIC_BOOTSTRAP_SHA256="ebe0a8b707f4b891e2b9c87fe6b65da5e31f6a4140361faf0d99400c4f9a47a7"
   command -v curl >/dev/null 2>&1 || { echo "Spotlight installer: curl is required" >&2; exit 1; }
   command -v openssl >/dev/null 2>&1 || { echo "Spotlight installer: OpenSSL is required" >&2; exit 1; }
