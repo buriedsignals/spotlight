@@ -9,6 +9,7 @@ includes() { grep -qF -- "$2" "$1" || note "$1 missing fragment: $2"; }
 excludes() { if grep -qF -- "$2" "$1"; then note "$1 stale fragment present: $2"; fi; }
 
 bash -n install-spotlight.sh || { echo "install-spotlight.sh does not parse"; exit 1; }
+[ -x scripts/spotlight-uninstall ] || note "scripts/spotlight-uninstall must be executable so install does not dirty the checkout"
 
 includes install-spotlight.sh '--legacy-only'
 includes install-spotlight.sh 'navigator_bridge.py'
