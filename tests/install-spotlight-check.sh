@@ -31,6 +31,8 @@ includes install/setup_server.py 'navigator_choice not in {"connect", "skip"}'
 includes install/configure.html 'Yes, authenticate'
 includes install/configure.html 'Continue without Navigator'
 includes install/configure.html 'Data Navigator requires Lab'
+includes install/configure.html 'Splash for'
+includes index.html 'MuckRock sources'
 includes skills/navigator/SKILL.md 'Data Navigator'
 includes scripts/navigator-connect 'NavigatorInstallerBridge'
 

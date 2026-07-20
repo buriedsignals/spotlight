@@ -486,7 +486,13 @@ def build_getting_started(d):
     else:
         mode_label = f"Frontier · {RUNTIME_LABELS[d['cloudRuntime']]} (covered by your subscription)"
 
-    integrations = ["Firecrawl (web research)", "OSINT Navigator (tool discovery)"]
+    integrations = ["SearXNG + Crawl4AI (sovereign web research)"]
+    if d["firecrawlKey"]:
+        integrations.append("Firecrawl (optional hosted fallback)")
+    if d["navigatorConnected"]:
+        integrations.append("Navigator (Pro: OSINT; Lab: OSINT + Data Navigator)")
+    else:
+        integrations.append("Navigator skill (locked; no credential or CLI)")
     if d["intDevBrowser"]:
         integrations.append("dev-browser (browser automation)")
     if d["intJunkipedia"]:
