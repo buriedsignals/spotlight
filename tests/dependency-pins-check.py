@@ -1,44 +1,33 @@
 #!/usr/bin/env python3
-"""Guard the public Spotlight bootstrap against independent provisioning."""
+"""Guard reviewed pins and the public/member installer boundary."""
 
 from pathlib import Path
-import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-INSTALLER = (ROOT / "install-spotlight.sh").read_text()
-SETUP = (ROOT / "setup.html").read_text()
-CONFIGURE = (ROOT / "install" / "configure.html").read_text()
+installer = (ROOT / "install-spotlight.sh").read_text()
+configure = (ROOT / "install" / "configure.html").read_text()
 
 
-def fail(message: str) -> None:
-    print(f"FAIL: {message}", file=sys.stderr)
-    raise SystemExit(1)
+def require(token: str, body: str, where: str) -> None:
+    if token not in body:
+        print(f"FAIL: {where} is missing {token!r}", file=sys.stderr)
+        raise SystemExit(1)
 
 
 for token in [
-    "bootstrap_engine || exit 1",
-    "minisign -Vm",
-    '"$ENGINE_BINARY" apply "$ENGINE_PLAN_PATH"',
-    '"$ENGINE_BINARY" welcome spotlight',
+    'QMD_VERSION="2.5.3"',
+    'OPEN_KNOWLEDGE_VERSION="0.34.0"',
+    'CRAWL4AI_VERSION="0.9.0"',
+    'ensure_npm_global_exact open-knowledge @inkeep/open-knowledge',
 ]:
-    if token not in INSTALLER:
-        fail(f"public bootstrap is missing {token!r}")
+    require(token, installer, "public installer")
 
-# The bootstrap may install only the verified Engine archive. Package, model,
-# and runtime pins come from its signed catalog and sealed plan, never from a
-# second product-specific writer.
-for token in ["npm install", "pip install", "\nbrew install", "qmd", "obsidian", "Tolaria"]:
-    if token in INSTALLER:
-        fail(f"public bootstrap still provisions {token!r} outside Engine")
+for forbidden in ["bootstrap_engine", "minisign -Vm", "navigator-cli==", "OSINT_NAV_API_KEY:?"]:
+    if forbidden in installer:
+        print(f"FAIL: public installer contains forbidden member/legacy token {forbidden!r}", file=sys.stderr)
+        raise SystemExit(1)
 
-if "@google/gemini-cli" in INSTALLER or "GEMINI_CLI_VERSION" in INSTALLER:
-    fail("public bootstrap exposes the removed Gemini runtime")
-
-pin_pattern = re.compile(r"@\d+\.\d+\.\d+|==\d+\.\d+\.\d+")
-for page_name, page in [("setup.html", SETUP), ("install/configure.html", CONFIGURE)]:
-    match = pin_pattern.search(page)
-    if match:
-        fail(f"{page_name} carries a dependency pin ({match.group(0)})")
-
-print("Engine-owned dependency policy ok")
+require("Yes, authenticate", configure, "configurator")
+require("Continue without Navigator", configure, "configurator")
+print("public installer dependency and entitlement policy ok")

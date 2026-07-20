@@ -271,14 +271,16 @@
         <input class="fld" type="password" id="firecrawl_key" placeholder="fc-..." autocomplete="off" spellcheck="false">
       </div>
     </div>
-    <div class="item">
-      <div class="item__head"><span class="item__title">OSINT <em>Navigator.</em></span><span class="badge req">required</span></div>
-      <p class="item__lede">Live database of 10,000+ OSINT tools with AI-powered lookup — essential for country-specific registries and niche techniques.</p>
-      <a class="mini-btn" href="https://navigator.indicator.media/" target="_blank" rel="noreferrer">Get API key →</a>
-      <div>
-        <label class="field-label" for="nav_key">OSINT_NAV_API_KEY</label>
-        <input class="fld" type="password" id="nav_key" placeholder="on_..." autocomplete="off" spellcheck="false">
+    <div class="item" id="navigator">
+      <div class="item__head"><span class="item__title"><em>Navigator.</em></span><span class="badge" id="navigatorBadge">Optional</span></div>
+      <p class="item__lede">The unified Navigator skill is always installed. Members can connect now: Pro unlocks OSINT Navigator; Lab also unlocks the Data Navigator tool.</p>
+      <label class="field-label" for="navigator_email">Membership email</label>
+      <input class="fld" type="email" id="navigator_email" placeholder="you@example.com" autocomplete="email" spellcheck="false">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="mini-btn" type="button" id="navigatorConnect">Yes, authenticate</button>
+        <button class="mini-btn" type="button" id="navigatorSkip">Continue without Navigator</button>
       </div>
+      <p class="hint" id="navigatorStatus">Choose one option before continuing. Non-members can install Spotlight with Navigator locked.</p>
     </div>
   </div>
 
@@ -657,7 +659,8 @@ function readForm() {
     localAgent: 'flue',
     localModel: r('local_model'),
     firecrawlKey: v('firecrawl_key'),
-    navKey: v('nav_key'),
+    navigatorConnected: navigatorChoice === 'connect',
+    navigatorChoice,
     vaultApp: r('vault_app'),
     installPath: v('install_path'),
     vaultPath: v('vault_path'),
@@ -685,6 +688,69 @@ function showErrors(errors) {
   });
   if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
+
+let navigatorChoice = '';
+let navigatorFlow = '';
+let navigatorTimer = null;
+const navigatorStatus = document.getElementById('navigatorStatus');
+const navigatorBadge = document.getElementById('navigatorBadge');
+
+async function navigatorPost(path, extra = {}) {
+  const response = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({token:TOKEN, ...extra})});
+  const data = await response.json().catch(() => ({status:'failed', detail:'Unexpected local setup response.'}));
+  if (!response.ok) throw new Error(data.detail || data.errors?.[0]?.message || 'Navigator connection failed.');
+  return data;
+}
+function navigatorConnected(data) {
+  navigatorChoice = 'connect'; navigatorFlow = '';
+  navigatorBadge.textContent = data.tier === 'lab' ? 'Lab connected' : 'Pro connected';
+  navigatorStatus.textContent = data.tier === 'lab'
+    ? 'Connected: OSINT Navigator and the Data Navigator tool are available.'
+    : 'Connected: OSINT Navigator is available. Data Navigator requires Lab.';
+}
+async function pollNavigator() {
+  if (!navigatorFlow) return;
+  try {
+    const data = await navigatorPost('/navigator/poll', {flow_id:navigatorFlow});
+    if (data.status === 'pending') { navigatorTimer = setTimeout(pollNavigator, 3000); return; }
+    if (data.status === 'connected') { navigatorConnected(data); return; }
+    navigatorFlow = ''; navigatorChoice = ''; navigatorBadge.textContent = 'Not connected';
+    navigatorStatus.textContent = data.status === 'denied_tier'
+      ? 'This account has no Navigator member capability. You can continue without Navigator.'
+      : 'Navigator did not connect (' + String(data.status || 'failed') + '). Retry or continue without it.';
+  } catch (error) {
+    navigatorFlow = ''; navigatorChoice = ''; navigatorBadge.textContent = 'Offline';
+    navigatorStatus.textContent = error.message + ' You can continue without Navigator.';
+  }
+}
+document.getElementById('navigatorConnect').addEventListener('click', async () => {
+  const email = document.getElementById('navigator_email').value.trim();
+  if (!email) { navigatorStatus.textContent = 'Enter the email on your membership first.'; return; }
+  try {
+    const data = await navigatorPost('/navigator/start', {email});
+    if (data.status === 'oauth-required') {
+      navigatorChoice = 'connect'; navigatorBadge.textContent = 'OAuth available';
+      navigatorStatus.textContent = 'Connect the remote MCP endpoint in your desktop runtime: ' + data.mcp_url; return;
+    }
+    if (data.status !== 'pending') throw new Error(data.detail || 'No secure Navigator transport is available.');
+    navigatorFlow = data.flow_id; navigatorChoice = ''; navigatorBadge.textContent = 'Waiting';
+    navigatorStatus.textContent = 'Check your email and confirm the Navigator sign-in. This page will finish automatically.';
+    pollNavigator();
+  } catch (error) { navigatorBadge.textContent = 'Offline'; navigatorStatus.textContent = error.message; }
+});
+document.getElementById('navigatorSkip').addEventListener('click', async () => {
+  if (navigatorTimer) clearTimeout(navigatorTimer);
+  if (navigatorFlow) { try { await navigatorPost('/navigator/cancel', {flow_id:navigatorFlow}); } catch (_) {} }
+  navigatorFlow = ''; navigatorChoice = 'skip'; navigatorBadge.textContent = 'Skipped';
+  navigatorStatus.textContent = 'Spotlight will continue with the unified Navigator skill in locked mode.';
+});
+(async () => {
+  try {
+    const data = await navigatorPost('/navigator/status');
+    if (data.status === 'connected') navigatorConnected(data);
+  } catch (_) {}
+})();
 
 document.getElementById('submitBtn').addEventListener('click', async () => {
   const btn = document.getElementById('submitBtn');

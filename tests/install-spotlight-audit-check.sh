@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Regression checks for the public signed-bootstrap boundary.
+# Regression checks for the public/member boundary.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 fail=0
 check() { local label="$1"; shift; if "$@"; then printf 'OK    %s\n' "$label"; else printf 'FAIL  %s\n' "$label" >&2; fail=1; fi; }
-has() { grep -qF -- "$1" install-spotlight.sh; }
-lacks() { ! grep -qF -- "$1" install-spotlight.sh; }
+has() { grep -qF -- "$1" "$2"; }
+lacks() { ! grep -qF -- "$1" "$2"; }
 
-check "signed Engine bootstrap is mandatory" has 'bootstrap_engine || exit 1'
-check "Minisign verifies the selected archive" has 'minisign -Vm "$archive" -P "$ENGINE_PUBLIC_KEY"'
-check "release metadata is not trusted for integrity" has 'Minisign authenticates the bytes'
-check "sealed plan is applied by its recorded binary" has '"$ENGINE_BINARY" apply "$ENGINE_PLAN_PATH"'
-check "successful install opens Spotlight onboarding" has '"$ENGINE_BINARY" welcome spotlight'
-check "legacy writer is absent" lacks 'ensure_npm_global_exact'
-check "Obsidian/QMD writer is absent" lacks 'install_obsidian'
-check "shell never sees product credentials" lacks 'FIRECRAWL_API_KEY'
+check "public installer does not bootstrap Engine" lacks 'bootstrap_engine' install-spotlight.sh
+check "public installer never invokes bsig" lacks '"$ENGINE_BINARY"' install-spotlight.sh
+check "public installer keeps canonical install body" has 'step "Spotlight repo"' install-spotlight.sh
+check "public configurator has direct member connection" has 'Yes, authenticate' install/configure.html
+check "public configurator has explicit skip" has 'Continue without Navigator' install/configure.html
+check "non-members do not receive Navigator CLI" lacks 'navigator-cli==' install-spotlight.sh
+check "Navigator skill remains in manifest" has 'navigator' skills.manifest
+check "Data Navigator is identified as Lab-only" has 'Data Navigator requires Lab' install/configure.html
 
 exit "$fail"

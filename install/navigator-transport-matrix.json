@@ -1,0 +1,51 @@
+{
+  "schema_version": "navigator-transport-matrix/v1",
+  "auth_origin": "https://navigator.indicator.media",
+  "cli_package": "navigator-cli",
+  "cli_version": "0.1.0",
+  "mcp_url": "https://navigator.indicator.media/mcp",
+  "rows": [
+    {
+      "os": "darwin",
+      "arch": "arm64",
+      "runtimes": ["goose", "claude-code", "claude-desktop", "codex-cli", "codex-desktop", "opencode", "pi", "pi-flue", "other-subscription"],
+      "transport": "cli"
+    },
+    {
+      "os": "darwin",
+      "arch": "amd64",
+      "runtimes": ["goose", "claude-code", "claude-desktop", "codex-cli", "codex-desktop", "opencode", "pi", "pi-flue", "other-subscription"],
+      "transport": "cli"
+    },
+    {
+      "os": "linux",
+      "arch": "arm64",
+      "runtimes": ["goose", "claude-code", "codex-cli", "opencode", "pi", "pi-flue", "other-subscription"],
+      "transport": "cli"
+    },
+    {
+      "os": "linux",
+      "arch": "amd64",
+      "runtimes": ["goose", "claude-code", "codex-cli", "opencode", "pi", "pi-flue", "other-subscription"],
+      "transport": "cli"
+    },
+    {
+      "os": "wsl2",
+      "arch": "arm64",
+      "runtimes": ["goose", "claude-code", "codex-cli", "opencode", "pi", "pi-flue", "other-subscription"],
+      "transport": "cli"
+    },
+    {
+      "os": "wsl2",
+      "arch": "amd64",
+      "runtimes": ["goose", "claude-code", "codex-cli", "opencode", "pi", "pi-flue", "other-subscription"],
+      "transport": "cli"
+    },
+    {
+      "os": "windows",
+      "arch": "amd64",
+      "runtimes": ["claude-desktop", "codex-desktop"],
+      "transport": "api/mcp"
+    }
+  ]
+}
