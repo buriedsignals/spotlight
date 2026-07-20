@@ -26,6 +26,7 @@ __pycache__/
 patch-spotlight-low-ram.sh
 
 # Dependencies and build outputs
+.venv/
 node_modules/
 dist/
 coverage/
