@@ -24,6 +24,13 @@
       "disabled_in_sensitive_mode": false
     },
     {
+      "id": "navigator",
+      "role": "conditional-child",
+      "phases": ["phase-2-methodology", "phase-3-execution", "phase-3-fact-check"],
+      "may_make_external_calls": true,
+      "disabled_in_sensitive_mode": true
+    },
+    {
       "id": "investigate",
       "role": "core-child",
       "phases": ["phase-2-methodology", "phase-3-execution"],
@@ -130,7 +137,7 @@
     },
     "phase-2-methodology": {
       "required": ["integrations", "osint", "investigate", "epistemic-grounding"],
-      "conditional": ["follow-the-money", "social-media-intelligence", "technical-investigation", "content-access"],
+      "conditional": ["navigator", "follow-the-money", "social-media-intelligence", "technical-investigation", "content-access"],
       "validation": "methodology.json includes skills_invoked[] and required Navigator fields when green."
     },
     "phase-3-execution": {
@@ -140,7 +147,7 @@
     },
     "phase-3-fact-check": {
       "required": ["epistemic-grounding", "content-access", "shell-safety"],
-      "conditional": ["osint", "social-media-intelligence", "technical-investigation", "web-archiving"],
+      "conditional": ["navigator", "osint", "social-media-intelligence", "technical-investigation", "web-archiving"],
       "validation": "fact-check output independently checks investigator claims."
     },
     "phase-5-report": {

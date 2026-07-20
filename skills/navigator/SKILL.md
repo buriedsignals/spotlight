@@ -1,6 +1,9 @@
 ---
 name: navigator
 description: Route investigative research to Navigator when it needs OSINT tool discovery or reproducible structured public records. Use for finding investigative tools, company registries, court records, procurement, sanctions or PEP screening, campaign finance, legislation, registries, and entity resolution.
+version: "1.0"
+invocable_by: [investigator, fact-checker, orchestrator, user]
+requires: []
 ---
 
 # Navigator
