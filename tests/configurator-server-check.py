@@ -295,7 +295,10 @@ class UnitChecks(unittest.TestCase):
         guide = srv.build_getting_started(srv.normalize(BASE))
         for needle in ["~/Documents/Spotlight", "~/Intelligence", "spotlight doctor",
                        "spotlight update", "Claude Code", "dev-browser", "Junkipedia",
-                       "Unpaywall", "Command Line Interface"]:
+                       "Unpaywall", "Command Line Interface",
+                       "SearXNG + Crawl4AI (sovereign web research)",
+                       "Firecrawl (optional hosted fallback)",
+                       "Navigator (Pro: OSINT; Lab: OSINT + Data Navigator)"]:
             self.assertIn(needle, guide)
         for secret in SECRETS:
             self.assertNotIn(secret, guide)
@@ -306,6 +309,9 @@ class UnitChecks(unittest.TestCase):
         local = srv.build_getting_started(srv.normalize({**LOCAL, "vaultApp": "obsidian"}))
         self.assertIn("Gemma 4 12B", local)
         self.assertIn("llama.cpp", local)
+        locked = srv.build_getting_started(srv.normalize({**BASE, "firecrawlKey": "", "navigatorConnected": False}))
+        self.assertIn("Navigator skill (locked; no credential or CLI)", locked)
+        self.assertNotIn("Firecrawl (optional hosted fallback)", locked)
         tolaria = srv.build_getting_started(srv.normalize({**BASE, "vaultApp": "tolaria"}))
         self.assertIn("Tolaria", tolaria)
         self.assertNotIn("Command Line Interface: ON", tolaria)
