@@ -271,14 +271,16 @@
         <input class="fld" type="password" id="firecrawl_key" placeholder="fc-..." autocomplete="off" spellcheck="false">
       </div>
     </div>
-    <div class="item">
-      <div class="item__head"><span class="item__title">OSINT <em>Navigator.</em></span><span class="badge req">required</span></div>
-      <p class="item__lede">Live database of 10,000+ OSINT tools with AI-powered lookup — essential for country-specific registries and niche techniques.</p>
-      <a class="mini-btn" href="https://navigator.indicator.media/" target="_blank" rel="noreferrer">Get API key →</a>
-      <div>
-        <label class="field-label" for="nav_key">OSINT_NAV_API_KEY</label>
-        <input class="fld" type="password" id="nav_key" placeholder="on_..." autocomplete="off" spellcheck="false">
+    <div class="item" id="navigator">
+      <div class="item__head"><span class="item__title"><em>Navigator.</em></span><span class="badge" id="navigatorBadge">Optional</span></div>
+      <p class="item__lede">The unified Navigator skill is always installed. Members can connect now: Pro unlocks OSINT tool discovery; Lab unlocks both OSINT Navigator and structured public-record research through Data Navigator. Skip keeps the skill locked and installs no Navigator credential or CLI.</p>
+      <label class="field-label" for="navigator_email">Membership email</label>
+      <input class="fld" type="email" id="navigator_email" placeholder="you@example.com" autocomplete="email" spellcheck="false">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="mini-btn" type="button" id="navigatorConnect">Yes, authenticate</button>
+        <button class="mini-btn" type="button" id="navigatorSkip">Continue without Navigator</button>
       </div>
+      <p class="hint" id="navigatorStatus">Choose one option before continuing. Non-members can install Spotlight with Navigator locked.</p>
     </div>
   </div>
 
@@ -657,7 +659,8 @@ function readForm() {
     localAgent: 'flue',
     localModel: r('local_model'),
     firecrawlKey: v('firecrawl_key'),
-    navKey: v('nav_key'),
+    navigatorConnected: navigatorChoice === 'connect',
+    navigatorChoice,
     vaultApp: r('vault_app'),
     installPath: v('install_path'),
     vaultPath: v('vault_path'),
@@ -685,6 +688,69 @@ function showErrors(errors) {
   });
   if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
+
+let navigatorChoice = '';
+let navigatorFlow = '';
+let navigatorTimer = null;
+const navigatorStatus = document.getElementById('navigatorStatus');
+const navigatorBadge = document.getElementById('navigatorBadge');
+
+async function navigatorPost(path, extra = {}) {
+  const response = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({token:TOKEN, ...extra})});
+  const data = await response.json().catch(() => ({status:'failed', detail:'Unexpected local setup response.'}));
+  if (!response.ok) throw new Error(data.detail || data.errors?.[0]?.message || 'Navigator connection failed.');
+  return data;
+}
+function navigatorConnected(data) {
+  navigatorChoice = 'connect'; navigatorFlow = '';
+  navigatorBadge.textContent = data.tier === 'lab' ? 'Lab connected' : (data.tier === 'member' ? 'Member connected' : 'Pro connected');
+  navigatorStatus.textContent = data.tier === 'lab'
+    ? 'Connected: OSINT Navigator and the Data Navigator tool are available.'
+    : (data.tier === 'member'
+      ? 'Connected. Navigator will expose OSINT and, for Lab members, the Data Navigator tool.'
+      : 'Connected: OSINT Navigator is available. Data Navigator requires Lab.');
+}
+async function pollNavigator() {
+  if (!navigatorFlow) return;
+  try {
+    const data = await navigatorPost('/navigator/poll', {flow_id:navigatorFlow});
+    if (data.status === 'pending') { navigatorTimer = setTimeout(pollNavigator, 3000); return; }
+    if (data.status === 'connected') { navigatorConnected(data); return; }
+    navigatorFlow = ''; navigatorChoice = ''; navigatorBadge.textContent = 'Not connected';
+    navigatorStatus.textContent = data.status === 'denied_tier'
+      ? 'This account has no Navigator member capability. You can continue without Navigator.'
+      : 'Navigator did not connect (' + String(data.status || 'failed') + '). Retry or continue without it.';
+  } catch (error) {
+    navigatorFlow = ''; navigatorChoice = ''; navigatorBadge.textContent = 'Offline';
+    navigatorStatus.textContent = error.message + ' You can continue without Navigator.';
+  }
+}
+document.getElementById('navigatorConnect').addEventListener('click', async () => {
+  const email = document.getElementById('navigator_email').value.trim();
+  if (!email) { navigatorStatus.textContent = 'Enter the email on your membership first.'; return; }
+  try {
+    const data = await navigatorPost('/navigator/start', {email});
+    if (data.status !== 'pending') throw new Error(data.detail || 'No secure Navigator transport is available.');
+    navigatorFlow = data.flow_id; navigatorChoice = ''; navigatorBadge.textContent = 'Waiting';
+    navigatorStatus.textContent = data.transport === 'api/mcp'
+      ? 'Finish Navigator OAuth in the browser opened by your desktop runtime. This page will finish automatically.'
+      : 'Check your email and confirm the Navigator sign-in. This page will finish automatically.';
+    pollNavigator();
+  } catch (error) { navigatorBadge.textContent = 'Offline'; navigatorStatus.textContent = error.message; }
+});
+document.getElementById('navigatorSkip').addEventListener('click', async () => {
+  if (navigatorTimer) clearTimeout(navigatorTimer);
+  if (navigatorFlow) { try { await navigatorPost('/navigator/cancel', {flow_id:navigatorFlow}); } catch (_) {} }
+  navigatorFlow = ''; navigatorChoice = 'skip'; navigatorBadge.textContent = 'Skipped';
+  navigatorStatus.textContent = 'Spotlight will continue with the unified Navigator skill in locked mode.';
+});
+(async () => {
+  try {
+    const data = await navigatorPost('/navigator/status');
+    if (data.status === 'connected') navigatorConnected(data);
+  } catch (_) {}
+})();
 
 document.getElementById('submitBtn').addEventListener('click', async () => {
   const btn = document.getElementById('submitBtn');
@@ -733,34 +799,12 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
   intro.innerHTML = '<strong>Engine-managed configuration</strong><p>Provider, model, privacy, and local-runtime choices come from the signed Engine catalog. Saving creates a sealed plan for review; it does not silently install or change an existing model.</p>';
   const fieldsRoot = document.createElement('div');
   const secretsRoot = document.createElement('div');
-  const navigatorCard = document.createElement('section'); navigatorCard.id = 'navigatorConnectionCard'; navigatorCard.className = 'callout'; navigatorCard.style.marginTop = '22px';
-  const navigatorMeta = (descriptor.connections || []).find(item => item.id === 'navigator') || {label:'Connect Navigator?', description:'Members can connect OSINT Navigator; Lab members also receive Data Navigator. Spotlight works without it. The unified Navigator skill is installed either way, so you can connect later without reinstalling.'};
-  const navigatorHeading = document.createElement('strong'); navigatorHeading.textContent = navigatorMeta.label;
-  const navigatorDescription = document.createElement('p'); navigatorDescription.textContent = navigatorMeta.description;
-  const navigatorState = document.createElement('p'); navigatorState.id = 'navigatorConnectionState';
-  const navigatorEmail = document.createElement('input'); navigatorEmail.type = 'email'; navigatorEmail.placeholder = 'Member email'; navigatorEmail.autocomplete = 'email'; navigatorEmail.id = 'navigatorMemberEmail';
-  const connectNavigator = document.createElement('button'); connectNavigator.type = 'button'; connectNavigator.textContent = 'Connect Navigator'; connectNavigator.id = 'connectNavigator';
-  const skipNavigator = document.createElement('button'); skipNavigator.type = 'button'; skipNavigator.textContent = 'Continue without Navigator'; skipNavigator.id = 'skipNavigator'; skipNavigator.style.marginLeft = '8px';
-  const cancelNavigator = document.createElement('button'); cancelNavigator.type = 'button'; cancelNavigator.textContent = 'Cancel connection'; cancelNavigator.hidden = true; cancelNavigator.style.marginLeft = '8px';
-  const disconnectNavigator = document.createElement('button'); disconnectNavigator.type = 'button'; disconnectNavigator.textContent = 'Disconnect'; disconnectNavigator.hidden = true; disconnectNavigator.style.marginLeft = '8px';
-  navigatorCard.append(navigatorHeading, navigatorDescription, navigatorState, navigatorEmail, connectNavigator, skipNavigator, cancelNavigator, disconnectNavigator);
   const status = document.createElement('div');
   status.style.marginTop = '18px';
   const submit = document.createElement('button');
   submit.type = 'button'; submit.textContent = 'Create reviewable install plan →';
   submit.style.marginTop = '24px';
-  form.append(intro, navigatorCard, fieldsRoot, secretsRoot, status, submit);
-
-  let navigatorChoice = null, navigatorFlow = null, navigatorPollTimer = null;
-  const authPost = async (path, body={}) => { const response = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token:TOKEN, ...body}), cache:'no-store'}); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Navigator connection failed.'); return data; };
-  function showNavigatorChoice(message) { navigatorState.textContent = message || 'Choose one option before creating the install plan.'; navigatorEmail.hidden = false; connectNavigator.hidden = false; connectNavigator.textContent = 'Connect Navigator'; skipNavigator.hidden = false; cancelNavigator.hidden = true; disconnectNavigator.hidden = true; }
-  function showNavigatorConnected(data, selected=false) { const modes = (data.capabilities || []).includes('data_sources') ? 'OSINT discovery and Data Navigator' : 'OSINT discovery; Data Navigator requires Lab access'; navigatorState.textContent = 'Navigator connected — ' + modes + '.'; navigatorEmail.hidden = true; connectNavigator.hidden = false; connectNavigator.textContent = selected ? 'Connection selected' : 'Use existing connection'; skipNavigator.hidden = false; cancelNavigator.hidden = true; disconnectNavigator.hidden = false; }
-  async function pollNavigator() { if (!navigatorFlow) return; try { const response = await fetch('/engine-auth/navigator/poll?t=' + encodeURIComponent(TOKEN) + '&flow_id=' + encodeURIComponent(navigatorFlow), {cache:'no-store'}); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Navigator connection failed.'); if (data.status === 'pending') { navigatorPollTimer = setTimeout(pollNavigator, 3000); return; } navigatorFlow = null; if (data.status === 'ready') { navigatorChoice = 'connected'; showNavigatorConnected(data, true); return; } showNavigatorChoice(data.status === 'denied_tier' ? 'This account is not eligible for Navigator service access. You can continue without Navigator.' : 'The Navigator connection ended. You can retry or continue without Navigator.'); } catch (error) { navigatorFlow = null; showNavigatorChoice(error.message + ' You can retry or continue without Navigator.'); } }
-  connectNavigator.addEventListener('click', async () => { if (connectNavigator.textContent === 'Use existing connection') { navigatorChoice = 'connected'; connectNavigator.textContent = 'Connection selected'; return; } if (navigatorChoice === 'skipped') { navigatorChoice = null; showNavigatorChoice('Enter your member email to connect Navigator.'); return; } const email = navigatorEmail.value.trim(); if (!email) { navigatorState.textContent = 'Enter your member email, or continue without Navigator.'; return; } try { const data = await authPost('/engine-auth/navigator/start', {email}); navigatorFlow = data.flow_id; navigatorState.textContent = 'Check your email and confirm the Navigator sign-in.'; connectNavigator.hidden = true; skipNavigator.hidden = true; navigatorEmail.hidden = true; cancelNavigator.hidden = false; if (data.verification_url) window.open(data.verification_url, '_blank', 'noopener'); navigatorPollTimer = setTimeout(pollNavigator, Math.max(1000, Number(data.poll_interval_seconds || 3) * 1000)); } catch (error) { showNavigatorChoice(error.message + ' You can continue without Navigator.'); } });
-  skipNavigator.addEventListener('click', () => { navigatorChoice = 'skipped'; navigatorState.textContent = 'Navigator skill will be installed — service access is not connected. You can connect later without reinstalling.'; navigatorEmail.hidden = true; connectNavigator.hidden = false; connectNavigator.textContent = 'Connect Navigator'; skipNavigator.hidden = true; cancelNavigator.hidden = true; });
-  cancelNavigator.addEventListener('click', async () => { clearTimeout(navigatorPollTimer); try { if (navigatorFlow) await authPost('/engine-auth/navigator/cancel', {flow_id:navigatorFlow}); } catch (_) {} navigatorFlow = null; navigatorChoice = null; showNavigatorChoice('Navigator connection cancelled. You can retry or continue without Navigator.'); });
-  disconnectNavigator.addEventListener('click', async () => { try { await authPost('/engine-auth/navigator/logout'); } catch (error) { navigatorState.textContent = error.message; return; } navigatorChoice = null; showNavigatorChoice('Navigator disconnected. Choose whether to reconnect or continue without Navigator.'); });
-  try { const response = await fetch('/engine-auth/navigator/status?t=' + encodeURIComponent(TOKEN), {cache:'no-store'}); const data = await response.json(); if (response.ok && data.status === 'logged_in' && data.tier_freshness === 'fresh' && data.pat_stored && (data.capabilities || []).includes('osint_tools')) showNavigatorConnected(data); else showNavigatorChoice(); } catch (_) { showNavigatorChoice(); }
+  form.append(intro, fieldsRoot, secretsRoot, status, submit);
 
   const controls = new Map(), values = {};
   for (const field of descriptor.fields) values[field.id] = field.default;
@@ -804,7 +848,6 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
     }
     for (const field of descriptor.fields) {
       const control = controls.get(field.id);
-      if (!control) continue;
       control.row.hidden = !active(field);
       const option = selected(field);
       control.privacy.textContent = option?.privacy
@@ -815,7 +858,6 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
   }
 
   for (const field of descriptor.fields) {
-    if (field.id === 'navigator') continue;
     const row = document.createElement('section'); row.style.marginTop = '26px';
     const label = document.createElement('label'); label.className = 'field-label'; label.textContent = field.label;
     let input;
@@ -841,7 +883,6 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
   refresh();
 
   submit.addEventListener('click', async () => {
-    if (!navigatorChoice) { navigatorState.textContent = 'Choose Connect Navigator or Continue without Navigator before creating the plan.'; navigatorCard.scrollIntoView({behavior:'smooth'}); return; }
     submit.disabled = true; status.textContent = 'Validating with Engine…';
     const activeValues = {};
     for (const field of descriptor.fields) if (active(field)) activeValues[field.id] = values[field.id];

@@ -51,38 +51,6 @@ class EngineBridge:
     def descriptor(self) -> dict[str, Any]:
         return self._run("configure", "describe", self.product, timeout=3)["data"]["descriptor"]
 
-    @staticmethod
-    def _safe_auth_data(event: dict[str, Any]) -> dict[str, Any]:
-        data = event.get("data") or {}
-        def unsafe(value: Any) -> bool:
-            if isinstance(value, dict):
-                return any(str(key).lower() in {"api_key", "pat"} or unsafe(item) for key, item in value.items())
-            if isinstance(value, list):
-                return any(unsafe(item) for item in value)
-            return isinstance(value, str) and value.startswith("on_")
-        if unsafe(data):
-            raise RuntimeError("Engine returned unsafe Navigator authentication data")
-        return data
-
-    def navigator_status(self) -> dict[str, Any]:
-        status = self._safe_auth_data(self._run("auth", "status"))
-        if status.get("status") == "logged_in" and status.get("tier_freshness") == "fresh" and status.get("pat_stored"):
-            self._safe_auth_data(self._run("auth", "refresh"))
-            status = self._safe_auth_data(self._run("auth", "status"))
-        return status
-
-    def navigator_start(self, email: str) -> dict[str, Any]:
-        return self._safe_auth_data(self._run("auth", "start", email))
-
-    def navigator_poll(self, flow_id: str, email: str) -> dict[str, Any]:
-        return self._safe_auth_data(self._run("auth", "poll", flow_id, email))
-
-    def navigator_cancel(self, flow_id: str) -> dict[str, Any]:
-        return self._safe_auth_data(self._run("auth", "cancel", flow_id))
-
-    def navigator_logout(self) -> dict[str, Any]:
-        return self._safe_auth_data(self._run("auth", "logout"))
-
     def submit(self, request: dict[str, Any], secrets: dict[str, str]) -> dict[str, Any]:
         body = json.dumps(request, separators=(",", ":")).encode()
         validated = self._run("configure", "validate", self.product, stdin=body)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard the Engine-owned dependency and public/member installer boundary."""
+"""Guard reviewed pins and the public/member installer boundary."""
 
 from pathlib import Path
 import sys
@@ -16,25 +16,18 @@ def require(token: str, body: str, where: str) -> None:
 
 
 for token in [
-    "bootstrap_engine || exit 1",
-    'minisign -Vm "$archive" -P "$ENGINE_PUBLIC_KEY"',
-    '"$ENGINE_BINARY" apply "$ENGINE_PLAN_PATH"',
+    'QMD_VERSION="2.5.3"',
+    'OPEN_KNOWLEDGE_VERSION="0.34.0"',
+    'CRAWL4AI_VERSION="0.9.0"',
+    'ensure_npm_global_exact open-knowledge @inkeep/open-knowledge',
 ]:
     require(token, installer, "public installer")
 
-for forbidden in [
-    'QMD_VERSION=',
-    'OPEN_KNOWLEDGE_VERSION=',
-    'CRAWL4AI_VERSION=',
-    'ensure_npm_global_exact',
-    'navigator_bridge.py',
-    'navigator-cli==',
-    'OSINT_NAV_API_KEY:?',
-]:
+for forbidden in ["bootstrap_engine", "minisign -Vm", "navigator-cli==", "OSINT_NAV_API_KEY:?"]:
     if forbidden in installer:
-        print(f"FAIL: public installer contains Engine-owned or legacy token {forbidden!r}", file=sys.stderr)
+        print(f"FAIL: public installer contains forbidden member/legacy token {forbidden!r}", file=sys.stderr)
         raise SystemExit(1)
 
-require("Connect Navigator", configure, "configurator")
+require("Yes, authenticate", configure, "configurator")
 require("Continue without Navigator", configure, "configurator")
-print("Engine-owned public installer dependency and entitlement policy ok")
+print("public installer dependency and entitlement policy ok")
