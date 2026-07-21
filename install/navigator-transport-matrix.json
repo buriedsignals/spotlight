@@ -2,7 +2,7 @@
   "schema_version": "navigator-transport-matrix/v1",
   "auth_origin": "https://navigator.indicator.media",
   "cli_package": "navigator-cli",
-  "cli_version": "0.1.0",
+  "cli_version": "0.1.1",
   "mcp_url": "https://navigator.indicator.media/mcp",
   "rows": [
     {
