@@ -47,11 +47,76 @@ from navigator_bridge import NavigatorBridgeError, NavigatorInstallerBridge
 
 # Asserted by install-spotlight.sh against the literal in configure.html and
 # its own copy — a mismatch means the Pages CDN is mid-propagation.
-CONFIGURATOR_VERSION = "1"
+CONFIGURATOR_VERSION = "2"
 
 SUBMIT_TIMEOUT_SECONDS = 30 * 60
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+NAVIGATOR_RUNTIME_IDS = {
+    "claude": "claude-code",
+    "codex": "codex-cli",
+    "pi": "pi",
+    "opencode": "opencode",
+    "local": "pi-flue",
+}
+
+
+def navigator_runtime_id(choice):
+    """Map Spotlight's persisted runtime choice to Navigator's contract ID."""
+    runtime = NAVIGATOR_RUNTIME_IDS.get(str(choice or "").strip())
+    if runtime is None:
+        raise NavigatorBridgeError("Choose a supported Spotlight runtime before connecting Navigator")
+    return runtime
+
+
+class NavigatorBridgeRouter:
+    """Keep auth flows bound to the runtime selected when each flow starts."""
+
+    def __init__(self, contract_path):
+        self.contract_path = contract_path
+        self._bridges = {}
+        self._flows = {}
+        self._lock = threading.Lock()
+
+    def _bridge(self, choice):
+        runtime = navigator_runtime_id(choice)
+        with self._lock:
+            bridge = self._bridges.get(runtime)
+            if bridge is None:
+                bridge = NavigatorInstallerBridge(self.contract_path, runtime)
+                self._bridges[runtime] = bridge
+        return bridge
+
+    def status(self, choice):
+        return self._bridge(choice).existing_status()
+
+    def start(self, choice, email):
+        bridge = self._bridge(choice)
+        result = bridge.start(email)
+        flow_id = result.get("flow_id")
+        if isinstance(flow_id, str) and flow_id:
+            with self._lock:
+                self._flows[flow_id] = bridge
+        return result
+
+    def poll(self, flow_id):
+        with self._lock:
+            bridge = self._flows.get(flow_id)
+        if bridge is None:
+            return {"status": "expired"}
+        result = bridge.poll(flow_id)
+        if result.get("status") != "pending":
+            with self._lock:
+                self._flows.pop(flow_id, None)
+        return result
+
+    def cancel(self, flow_id):
+        with self._lock:
+            bridge = self._flows.pop(flow_id, None)
+        if bridge is None:
+            return {"status": "expired"}
+        return bridge.cancel(flow_id)
 
 
 def detect_platform():
@@ -613,9 +678,8 @@ def main():
             engine_descriptor = engine_bridge.descriptor()
         except (EngineUnavailable, RuntimeError, KeyError):
             pass
-    navigator_bridge = NavigatorInstallerBridge(
-        os.path.join(args.repo_dir, "install", "navigator-transport-matrix.json"),
-        "claude-code",
+    navigator_router = NavigatorBridgeRouter(
+        os.path.join(args.repo_dir, "install", "navigator-transport-matrix.json")
     )
 
     class Handler(BaseHTTPRequestHandler):
@@ -671,23 +735,28 @@ def main():
                 self._send(403, json.dumps({"errors": [{"field": "", "message": "Cross-origin setup request rejected."}]}))
                 return
             if parsed_path == "/navigator/status":
-                self._send(200, json.dumps(navigator_bridge.existing_status()))
+                try:
+                    self._send(200, json.dumps(navigator_router.status(payload.get("runtime"))))
+                except NavigatorBridgeError as error:
+                    self._send(400, json.dumps({"status": "locked-only", "detail": str(error)}))
                 return
             if parsed_path == "/navigator/start":
                 try:
-                    self._send(200, json.dumps(navigator_bridge.start(str(payload.get("email") or "").strip())))
+                    self._send(200, json.dumps(navigator_router.start(
+                        payload.get("runtime"), str(payload.get("email") or "").strip()
+                    )))
                 except NavigatorBridgeError as error:
                     self._send(503, json.dumps({"status": "offline", "detail": str(error)}))
                 return
             if parsed_path == "/navigator/poll":
                 try:
-                    self._send(200, json.dumps(navigator_bridge.poll(str(payload.get("flow_id") or ""))))
+                    self._send(200, json.dumps(navigator_router.poll(str(payload.get("flow_id") or ""))))
                 except NavigatorBridgeError as error:
                     self._send(503, json.dumps({"status": "failed", "detail": str(error)}))
                 return
             if parsed_path == "/navigator/cancel":
                 try:
-                    self._send(200, json.dumps(navigator_bridge.cancel(str(payload.get("flow_id") or ""))))
+                    self._send(200, json.dumps(navigator_router.cancel(str(payload.get("flow_id") or ""))))
                 except NavigatorBridgeError as error:
                     self._send(503, json.dumps({"status": "failed", "detail": str(error)}))
                 return
@@ -723,9 +792,15 @@ def main():
             if navigator_choice not in {"connect", "skip"}:
                 self._send(400, json.dumps({"errors": [{"field": "navigator", "message": "Choose Connect Navigator or Continue without Navigator."}]}))
                 return
-            if navigator_choice == "connect" and navigator_bridge.existing_status().get("status") != "connected":
-                self._send(400, json.dumps({"errors": [{"field": "navigator", "message": "Navigator is not connected. Finish sign-in or choose Continue without Navigator."}]}))
-                return
+            if navigator_choice == "connect":
+                try:
+                    status = navigator_router.status(derived(d)["runtime"])
+                except NavigatorBridgeError as error:
+                    self._send(400, json.dumps({"errors": [{"field": "navigator", "message": str(error)}]}))
+                    return
+                if status.get("status") != "connected":
+                    self._send(400, json.dumps({"errors": [{"field": "navigator", "message": "Navigator is not connected for the selected runtime. Finish sign-in or choose Continue without Navigator."}]}))
+                    return
             d["navigatorConnected"] = navigator_choice == "connect"
             errors, warnings = validate_choices(d)
             if not errors:

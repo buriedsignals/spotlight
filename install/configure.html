@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="configurator-version" content="1">
+<meta name="configurator-version" content="2">
 <title>Spotlight — Configure your install</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23c16a34'><path d='M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z'/></svg>">
 <style>
@@ -695,6 +695,12 @@ let navigatorTimer = null;
 const navigatorStatus = document.getElementById('navigatorStatus');
 const navigatorBadge = document.getElementById('navigatorBadge');
 
+function navigatorRuntimeChoice() {
+  const mode = (document.querySelector('input[name="mode"]:checked') || {}).value || '';
+  if (mode === 'local') return 'local';
+  return (document.querySelector('input[name="cloud_runtime"]:checked') || {}).value || '';
+}
+
 async function navigatorPost(path, extra = {}) {
   const response = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({token:TOKEN, ...extra})});
@@ -730,7 +736,7 @@ document.getElementById('navigatorConnect').addEventListener('click', async () =
   const email = document.getElementById('navigator_email').value.trim();
   if (!email) { navigatorStatus.textContent = 'Enter the email on your membership first.'; return; }
   try {
-    const data = await navigatorPost('/navigator/start', {email});
+    const data = await navigatorPost('/navigator/start', {email, runtime:navigatorRuntimeChoice()});
     if (data.status !== 'pending') throw new Error(data.detail || 'No secure Navigator transport is available.');
     navigatorFlow = data.flow_id; navigatorChoice = ''; navigatorBadge.textContent = 'Waiting';
     navigatorStatus.textContent = data.transport === 'api/mcp'
@@ -740,17 +746,25 @@ document.getElementById('navigatorConnect').addEventListener('click', async () =
   } catch (error) { navigatorBadge.textContent = 'Offline'; navigatorStatus.textContent = error.message; }
 });
 document.getElementById('navigatorSkip').addEventListener('click', async () => {
-  if (navigatorTimer) clearTimeout(navigatorTimer);
+  if (navigatorTimer) { clearTimeout(navigatorTimer); navigatorTimer = null; }
   if (navigatorFlow) { try { await navigatorPost('/navigator/cancel', {flow_id:navigatorFlow}); } catch (_) {} }
   navigatorFlow = ''; navigatorChoice = 'skip'; navigatorBadge.textContent = 'Skipped';
   navigatorStatus.textContent = 'Spotlight will continue with the unified Navigator skill in locked mode.';
 });
-(async () => {
+async function refreshNavigatorStatus() {
   try {
-    const data = await navigatorPost('/navigator/status');
+    const data = await navigatorPost('/navigator/status', {runtime:navigatorRuntimeChoice()});
     if (data.status === 'connected') navigatorConnected(data);
   } catch (_) {}
-})();
+}
+document.querySelectorAll('input[name="mode"], input[name="cloud_runtime"]').forEach(el => el.addEventListener('change', async () => {
+  if (navigatorTimer) { clearTimeout(navigatorTimer); navigatorTimer = null; }
+  if (navigatorFlow) { try { await navigatorPost('/navigator/cancel', {flow_id:navigatorFlow}); } catch (_) {} }
+  navigatorFlow = ''; navigatorChoice = ''; navigatorBadge.textContent = 'Optional';
+  navigatorStatus.textContent = 'Runtime changed. Connect Navigator for this runtime, or continue without it.';
+  await refreshNavigatorStatus();
+}));
+refreshNavigatorStatus();
 
 document.getElementById('submitBtn').addEventListener('click', async () => {
   const btn = document.getElementById('submitBtn');

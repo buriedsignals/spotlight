@@ -10,6 +10,7 @@ validation is skipped (--skip-key-validation) — its routing is unit-tested
 directly against validate_keys.
 """
 
+import importlib.util
 import json
 import os
 import re
@@ -21,6 +22,8 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+from importlib.machinery import SourceFileLoader
+from pathlib import Path
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -81,6 +84,72 @@ class UnitChecks(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertTrue(any(argv[-3:] == ["keys", "set", "OPENROUTER_API_KEY"] and body == b"newsroom-secret" for argv, body in calls))
         self.assertFalse(any("newsroom-secret" in " ".join(argv) for argv, _ in calls))
+
+    def test_navigator_runtime_mapping_and_flow_routing(self):
+        expected = {
+            "claude": "claude-code",
+            "codex": "codex-cli",
+            "pi": "pi",
+            "opencode": "opencode",
+            "local": "pi-flue",
+        }
+        for choice, runtime in expected.items():
+            self.assertEqual(srv.navigator_runtime_id(choice), runtime)
+        with self.assertRaises(srv.NavigatorBridgeError):
+            srv.navigator_runtime_id("")
+        with self.assertRaises(srv.NavigatorBridgeError):
+            srv.navigator_runtime_id("unknown")
+
+        instances = []
+
+        class FakeBridge:
+            def __init__(self, contract_path, runtime):
+                self.contract_path = contract_path
+                self.runtime = runtime
+                instances.append(self)
+
+            def existing_status(self):
+                return {"status": "connected", "runtime": self.runtime}
+
+            def start(self, _email):
+                return {"status": "pending", "flow_id": "flow-" + self.runtime}
+
+            def poll(self, _flow_id):
+                return {"status": "connected", "runtime": self.runtime}
+
+            def cancel(self, _flow_id):
+                return {"status": "cancelled", "runtime": self.runtime}
+
+        with mock.patch.object(srv, "NavigatorInstallerBridge", FakeBridge):
+            router = srv.NavigatorBridgeRouter("matrix.json")
+            self.assertEqual(router.status("codex")["runtime"], "codex-cli")
+            started = router.start("local", "reporter@example.com")
+            self.assertEqual(started["flow_id"], "flow-pi-flue")
+            self.assertEqual(router.poll(started["flow_id"])["runtime"], "pi-flue")
+            self.assertEqual(router.poll(started["flow_id"])["status"], "expired")
+            cancelled = router.start("opencode", "reporter@example.com")
+            self.assertEqual(router.cancel(cancelled["flow_id"])["runtime"], "opencode")
+        self.assertEqual([bridge.runtime for bridge in instances], ["codex-cli", "pi-flue", "opencode"])
+
+    def test_navigator_reconnect_uses_saved_or_explicit_runtime(self):
+        script = os.path.join(ROOT, "scripts", "navigator-connect")
+        loader = SourceFileLoader("spotlight_navigator_connect", script)
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as root:
+            module.ROOT = Path(root)
+            Path(root, ".spotlight-config.json").write_text(
+                json.dumps({"runtime": "codex"}), encoding="utf-8"
+            )
+            self.assertEqual(module.selected_runtime(None), "codex-cli")
+            self.assertEqual(module.selected_runtime("opencode"), "opencode")
+            with mock.patch.dict(os.environ, {"SPOTLIGHT_RUNTIME": "pi"}):
+                self.assertEqual(module.selected_runtime(None), "pi")
+            Path(root, ".spotlight-config.json").unlink()
+            with mock.patch.dict(os.environ, {}, clear=True):
+                with self.assertRaises(srv.NavigatorBridgeError):
+                    module.selected_runtime(None)
 
     def test_structural_validation(self):
         self.assertEqual(errs(BASE), [])
