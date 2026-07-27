@@ -11,6 +11,10 @@ Optional environment:
 - `NOOSPHERE_C2PA_URL` — signer endpoint, for example `http://localhost:5002/api/spotlight/provenance/sign`
 - `NOOSPHERE_C2PA_CREDENTIAL_ID` — signer credential id, if Noosphere exposes multiple credentials
 
+Preflight reports this integration as `unconfigured` until
+`NOOSPHERE_C2PA_URL` is set. This does not affect local unsigned manifest
+generation.
+
 ## Build Manifest
 
 ```text

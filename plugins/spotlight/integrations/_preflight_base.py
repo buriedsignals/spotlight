@@ -61,6 +61,9 @@ def build_report(
     """Build a status report for one manifest."""
     requires_key = manifest.get("requires_key", False)
     set_vars, missing_vars = check_env_vars(manifest)
+    activation_vars = manifest.get("activation_env_vars") or []
+    activation_vars_set = [name for name in activation_vars if os.environ.get(name)]
+    activation_vars_missing = [name for name in activation_vars if not os.environ.get(name)]
 
     report = {
         "id": manifest["id"],
@@ -70,11 +73,18 @@ def build_report(
         "env_vars_required": manifest.get("env_vars") or manifest.get("required_env_vars") or [],
         "env_vars_set": set_vars,
         "env_vars_missing": missing_vars,
+        "activation_env_vars": activation_vars,
+        "activation_env_vars_set": activation_vars_set,
+        "activation_env_vars_missing": activation_vars_missing,
         "status": "green",
         "smoke_error": None,
     }
     if extra_fields:
         report.update(extra_fields)
+
+    if activation_vars_missing:
+        report["status"] = "unconfigured"
+        return report
 
     if requires_key and missing_vars:
         report["status"] = "red"
@@ -95,6 +105,7 @@ def summarize(reports: list[dict]) -> dict:
         "green": sum(1 for report in reports if report["status"] == "green"),
         "yellow": sum(1 for report in reports if report["status"] == "yellow"),
         "red": sum(1 for report in reports if report["status"] == "red"),
+        "unconfigured": sum(1 for report in reports if report["status"] == "unconfigured"),
         "dismissed": sum(1 for report in reports if report["status"] == "dismissed"),
     }
 
@@ -116,13 +127,20 @@ def print_text_table(reports: list[dict], columns: list[tuple[str, str, int]]) -
         for field, _label, width in columns:
             value = str(report.get(field, ""))
             line += f"{value:<{width}} "
-        missing = ", ".join(report["env_vars_missing"]) if report["env_vars_missing"] else "—"
+        if report["status"] == "unconfigured":
+            missing_vars = report.get("activation_env_vars_missing", [])
+        else:
+            missing_vars = report["env_vars_missing"]
+        missing = ", ".join(missing_vars) if missing_vars else "—"
         line += f"{missing:<40}"
         print(line)
 
     summary = summarize(reports)
     print()
-    print(f"green={summary['green']}  yellow={summary['yellow']}  red={summary['red']}")
+    print(
+        f"green={summary['green']}  yellow={summary['yellow']}  "
+        f"red={summary['red']}  unconfigured={summary['unconfigured']}"
+    )
 
 
 def run_preflight(
@@ -184,5 +202,11 @@ def run_preflight(
     else:
         print(json.dumps(output, indent=2))
 
-    # dismissed is an intentional 12b state, not a failure -> exit 0.
-    sys.exit(0 if (dismissed or summary["green"] > 0 or sum(summary.values()) == 0) else 1)
+    # Dismissed and wholly unconfigured optional integrations are intentional
+    # non-ready states, not preflight failures.
+    no_configured_integrations = (
+        summary["green"] == 0
+        and summary["yellow"] == 0
+        and summary["red"] == 0
+    )
+    sys.exit(0 if (dismissed or summary["green"] > 0 or no_configured_integrations) else 1)

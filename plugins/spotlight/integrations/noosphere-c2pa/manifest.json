@@ -6,6 +6,8 @@
   "type": "api",
   "requires_key": false,
   "env_vars": [],
+  "activation_env_vars": ["NOOSPHERE_C2PA_URL"],
+  "smoke_url_env": "NOOSPHERE_C2PA_URL",
   "optional_env_vars": ["NOOSPHERE_C2PA_URL", "NOOSPHERE_C2PA_CREDENTIAL_ID"],
   "capabilities": [
     "case-provenance-manifest",

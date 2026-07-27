@@ -48,6 +48,13 @@ python3 integrations/preflight.py --text          # Human-readable table
 python3 integrations/preflight.py --smoke-test    # Also run a minimal probe per integration
 ```
 
+`--smoke-test` probes an integration's configured service endpoint when its
+manifest declares `smoke_url_env`; otherwise it falls back to the manifest's
+public homepage or documentation URL. A configured endpoint returning 401, 403,
+or 404 is unusable and fails the probe; 405 may confirm that an endpoint exists
+but intentionally rejects `HEAD`. A wholly unconfigured optional set exits
+successfully because no requested integration has failed.
+
 Status semantics (same as feed sources):
 
 | Status | Meaning |
@@ -55,6 +62,7 @@ Status semantics (same as feed sources):
 | `green` | `env_vars` set (or no keys required) |
 | `yellow` | Keys set but a local binary/import probe or optional smoke test failed |
 | `red` | One or more required env vars missing |
+| `unconfigured` | Optional integration has not been activated; core/local fallback remains available |
 
 The orchestrator runs this at Phase 0 step 10 alongside its Mycroft/passive-monitor checks, giving the user a combined status table at session start.
 
@@ -67,7 +75,7 @@ dev-browser          cli        green    —
 junkipedia           api        red      JUNKIPEDIA_API_KEY
 osint-navigator      api        green    —
 
-green=2  yellow=0  red=1
+green=2  yellow=0  red=1  unconfigured=0
 ```
 
 ## The setup flow (for journalists)

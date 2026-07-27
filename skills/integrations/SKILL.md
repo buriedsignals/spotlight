@@ -30,7 +30,7 @@ The skill is cheap to load — it's a routing table, not a deep methodology guid
 | `browser-use` | browser-automation | form-navigation, search-export, login-driving, multi-step-browsing | Legacy/adjacent browser automation. Do not pick as the default while dev-browser is green. |
 | `junkipedia` | social-osint | narrative-tracking, misinformation-search, social-media-monitoring, cross-platform-query | Tracking how a claim spread; finding social posts deleted from origin; cross-platform narrative investigation. |
 | `maigret` | social-osint | username-search, account-discovery, profile-url-collection | Username-led account discovery. Produces candidate profile leads only; never use as attribution proof. |
-| `noosphere-c2pa` | provenance-signing | case-provenance-manifest, c2pa-content-credentials, optional-signing-receipt | **PENDING integration — opt-in (key).** After Gate 1, the base provenance path always writes `status: unsigned` and proceeds; signing runs ONLY when a Noosphere signer endpoint + credential are configured (opt-in). Never a mandatory or blocking step. |
+| `noosphere-c2pa` | provenance-signing | case-provenance-manifest, c2pa-content-credentials, optional-signing-receipt | **PENDING integration — opt-in signer.** Preflight reports `unconfigured` until `NOOSPHERE_C2PA_URL` is set. After Gate 1, the base provenance path always writes `status: unsigned` and proceeds; signing runs only against a configured signer endpoint. Never a mandatory or blocking step. |
 | `osint-navigator` | tool-discovery | tool-search-by-keyword, complex-query-synthesis, country-specific-tool-lookup | Entitlement-gated (subscription tier): first tool-discovery pass in Phase 2 when green + sensitive mode false. Local/open tier and all fallbacks use `scripts/osint-tools.py find` (local SQL index, 12,500 tools). |
 | `unpaywall` | academic-open-access | doi-open-access-lookup, academic-fulltext-discovery, legal-pdf-location | Academic papers with DOIs when the content-access hierarchy needs a legal open-access copy. |
 
@@ -84,7 +84,7 @@ What's the task?
 execute-shell("python3 integrations/preflight.py --model-tier {config.model_tier} --json")
 ```
 
-Parse the JSON output. `summary.green` tells you how many integrations are usable. `integrations[].status` tells you per-integration. Only route to `green` integrations; log a note and fall back for `red`/`yellow`.
+Parse the JSON output. `summary.green` tells you how many integrations are usable. `integrations[].status` tells you per-integration. Only route to `green` integrations; log a note and fall back for `red`/`yellow`/`unconfigured`.
 
 ## Using an integration
 

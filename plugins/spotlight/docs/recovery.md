@@ -110,7 +110,7 @@ Backup the resolved case directory, then delete only the resolved `data/` direct
 ## Getting help
 
 Before filing an issue:
-1. `spotlight` preflight output — copy-paste the green/yellow/red table
+1. `spotlight` preflight output — copy-paste the green/yellow/red/unconfigured table
 2. Last 50 lines of `{CASE_DIR}/data/investigation-log.json`
 3. Any error messages from Terminal
 

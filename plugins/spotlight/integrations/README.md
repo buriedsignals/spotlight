@@ -38,6 +38,8 @@ Every integration directory has a `manifest.json`:
   "type": "api|cli|mcp|library",
   "requires_key": true|false,
   "env_vars": ["ENV_VAR_1", "ENV_VAR_2"],
+  "activation_env_vars": ["OPTIONAL_INTEGRATION_URL"],
+  "smoke_url_env": "OPTIONAL_INTEGRATION_URL",
   "capabilities": ["feature-1", "feature-2"],
   "invocable_by": ["investigator", "fact-checker"],
   "homepage": "https://vendor.example.com",
@@ -55,6 +57,8 @@ Every integration directory has a `manifest.json`:
 | `type` | Yes | How the integration is accessed: `api` (HTTP/REST), `cli` (shell), `mcp` (MCP server), `library` (imported SDK) |
 | `requires_key` | Yes | `true` if the integration needs at least one env var to function |
 | `env_vars` | Yes | Array of env vars the integration reads. Empty array if none |
+| `activation_env_vars` | No | Env vars that explicitly activate an otherwise optional integration. Preflight reports `unconfigured` until all are set |
+| `smoke_url_env` | No | Env var containing the integration endpoint to probe with `--smoke-test`; takes precedence over `homepage` and `docs`. Endpoint 401/403/404 responses fail; 405 may confirm a HEAD-rejecting endpoint is reachable |
 | `capabilities` | Yes | Array of capability tags (used by `invoke-skill("integrations")` for routing) |
 | `invocable_by` | Yes | Which agents may use it: `investigator`, `fact-checker`, `orchestrator`, `user` |
 | `homepage` | No | Vendor/project homepage |
@@ -70,6 +74,7 @@ Every integration directory has a `manifest.json`:
 | `green` | `env_vars` are set (or none required) |
 | `yellow` | `env_vars` set but smoke-test failed (API down, key invalid, etc.). Only reported when `--smoke-test` is passed |
 | `red` | One or more required `env_vars` missing |
+| `unconfigured` | Optional integration has not been activated; local/core fallback remains available |
 
 Usage:
 

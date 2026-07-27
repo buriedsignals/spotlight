@@ -28,6 +28,16 @@ JSON
 JSON
   python3 "$ROOT/evals/graders/integrations.py" "$expected" "$actual" >/dev/null
   rc=$?
+  if [ "$rc" -eq 0 ]; then
+    cat > "$actual" <<'JSON'
+{"integration":"noosphere-c2pa","fallback":"unsigned local manifest","preflight_status":"unconfigured","sensitive_mode_safe":true,"minimal_payload":true}
+JSON
+    cat > "$expected" <<'JSON'
+{"integration":"noosphere-c2pa"}
+JSON
+    python3 "$ROOT/evals/graders/integrations.py" "$expected" "$actual" >/dev/null
+    rc=$?
+  fi
   rm -rf "$tmp"
   if [ "$rc" -eq 0 ]; then
     echo "skillopt-lite self-test: OK"

@@ -194,7 +194,7 @@ Update `.spotlight-config.json` with the full status, not a boolean:
 {
   "integrations": {
     "osint_navigator": {
-      "status": "green|yellow|red",
+      "status": "green|yellow|red|unconfigured|dismissed",
       "checked_at": "<ISO timestamp>",
       "source": "integrations/preflight.py --json",
       "required_in_phase_2": true,

@@ -3,8 +3,9 @@
 
 Scans every integration manifest under integrations/, checks each
 integration's required env vars, reports per-integration status:
-green (ready), yellow (key set but smoke test failed), red (missing
-env vars).
+green (ready), yellow (configured but smoke test failed), red (missing
+required credentials), or unconfigured (an optional integration has not
+been activated).
 
 Shared machinery lives in integrations/_preflight_base.py.
 
@@ -12,12 +13,13 @@ Usage:
     python3 integrations/preflight.py [--smoke-test] [--json|--text]
 
 Exit code:
-    0 — at least one integration green (or no integrations require keys)
+    0 — at least one integration green, or all integrations unconfigured
     1 — all integrations red (nothing queryable)
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 import urllib.error
@@ -34,7 +36,7 @@ INTEGRATIONS_DIR = Path(__file__).parent
 
 def smoke_test(manifest: dict) -> tuple[bool, str | None]:
     """Per-integration probe. Each integration `type` gets a different check:
-      - api:     HEAD or GET against homepage/docs URL (shallow, no auth)
+      - api:     HEAD against smoke URL, endpoint env, homepage, or docs
       - library: import check
       - cli:     binary on PATH
       - mcp:     not implemented; assume ok
@@ -42,7 +44,16 @@ def smoke_test(manifest: dict) -> tuple[bool, str | None]:
     kind = manifest.get("type", "api")
 
     if kind == "api":
-        url = manifest.get("homepage") or manifest.get("docs")
+        smoke_url_env = manifest.get("smoke_url_env")
+        configured_smoke_url = (
+            manifest.get("smoke_url")
+            or (os.environ.get(smoke_url_env) if smoke_url_env else None)
+        )
+        url = (
+            configured_smoke_url
+            or manifest.get("homepage")
+            or manifest.get("docs")
+        )
         if not url:
             return True, None
         try:
@@ -50,7 +61,11 @@ def smoke_test(manifest: dict) -> tuple[bool, str | None]:
             with urllib.request.urlopen(req, timeout=5) as resp:
                 return (200 <= resp.status < 400), None
         except urllib.error.HTTPError as e:
-            # HEAD may not be allowed; 4xx accepted as "reachable"
+            # An explicit service endpoint must be usable. A 405 still proves
+            # the endpoint exists when it intentionally rejects HEAD. Preserve
+            # the legacy shallow reachability semantics for homepage/docs URLs.
+            if configured_smoke_url:
+                return e.code == 405, f"HTTP {e.code}"
             return (400 <= e.code < 500), f"HTTP {e.code}"
         except Exception as e:
             return False, f"{type(e).__name__}: {e}"
