@@ -34,6 +34,9 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   `navigator keys set arbiter` before browse or create actions. Spotlight does
   not supply or store a shared key; previously saved Arbiter material still
   renders offline.
+- `social-media-intelligence` now documents bounded Xquik Tweet and Follower
+  Actor routes while preserving existing acquisition and platform-policy
+  gates.
 - Skill placement converged on the engine placement contract (`engine
   docs/skill-placement-contract.md`): canonical `~/.agents/skills/spotlight/` store for every
   runtime + ONE product-level adapter symlink for opencode/pi/Claude Code (which now receives
