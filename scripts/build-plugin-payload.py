@@ -31,6 +31,7 @@ GENERATED_FILES = {
 
 DOC_FILES = [
     "README.md",
+    "arbiter-api.md",
     "epistemic-grounding.md",
     "fact-checking.md",
     "integrations.md",

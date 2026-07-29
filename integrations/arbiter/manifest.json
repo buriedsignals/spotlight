@@ -1,0 +1,34 @@
+{
+  "id": "arbiter",
+  "name": "Arbiter Social Intelligence",
+  "description": "Social-media case studies: browse already-collected, already-analyzed corpora (curated studies plus studies created with this key) for sentiment, stance, engagement, entity, theme, and archived-post analysis, or create a new study from a reviewed search plan.",
+  "category": "social-osint",
+  "type": "api",
+  "requires_key": true,
+  "env_vars": ["ARBITER_API_KEY", "ARBITER_API_BASE"],
+  "activation_env_vars": ["ARBITER_API_KEY"],
+  "capabilities": [
+    "curated-case-study-browse",
+    "case-study-creation",
+    "query-to-case-study-matching",
+    "entity-stance-analysis",
+    "hierarchical-theme-analysis",
+    "consolidated-case-study-report",
+    "actor-community-mapping",
+    "ai-agent-questions",
+    "engagement-metrics",
+    "archived-social-content"
+  ],
+  "sample_agent_questions": [
+    "Which themes are driving the most engagement right now?",
+    "Which accounts are amplifying this narrative the most?",
+    "What are the strongest claims and supporting sources?",
+    "How did this discussion spike and evolve over time?",
+    "Compare this story across platforms and key differences",
+    "Where are most of these posts coming from geographically?"
+  ],
+  "invocable_by": ["investigator", "fact-checker"],
+  "homepage": "https://arbiter.simppl.org/",
+  "docs": "docs/arbiter-api.md",
+  "rate_limit_note": "Per-key rate limit — respect Retry-After on 429. Post pulls, search-plan generation, finalization, and agent questions are credit-metered; listing case studies, entities, themes, reports, creating a pending study, status, progress, and /usage are free. GET /usage reports the remaining balance and the advertised per-minute limit."
+}

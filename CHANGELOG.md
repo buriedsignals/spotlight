@@ -12,6 +12,17 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   indicator export. Compact references keep the 12B manifest-floor increase
   within the 100-token ceiling; reviewed-source locks, daily drift detection, source maps,
   the upstream MIT license, and acknowledgements preserve provenance.
+- Arbiter case-study integration (`integrations/arbiter/`): read flow over the
+  `/api/v1` surface (topic menu, query-first matching, themes, consolidated
+  report) plus the external create flow (search-plan review, finalize, progress
+  polling). Offline stdlib-only renderers keep user text out of shell strings;
+  `docs/arbiter-api.md` documents the surface; preflight activates the
+  integration when `ARBITER_API_KEY` and `ARBITER_API_BASE` are set.
+- Conditional Arbiter analytics section in the deterministic report renderer: a
+  case carrying a saved `research/arbiter-report-*.json` gains an engagement
+  chart, story, theme table, actors, communities, and recorded source posts,
+  rendered by the integration rather than the core template. A case without one
+  renders byte-for-byte the same report as before.
 
 ### Changed
 - Skill placement converged on the engine placement contract (`engine
