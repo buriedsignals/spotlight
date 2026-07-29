@@ -35,6 +35,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 TEMPLATE = SCRIPT_DIR.parent / "skills/report-drafting/references/report-template.html"
 DRAFT_VALIDATOR = SCRIPT_DIR / "validate-report-draft.py"
 CASE_VALIDATOR = SCRIPT_DIR / "validate-case.py"
+ARBITER_APPENDIX = SCRIPT_DIR.parent / "integrations/arbiter/run_appendix.py"
+ARBITER_APPENDIX_TIMEOUT = 30
 AI_NOTICE = (
     "Spotlight is designed to help surface, organize, and cross-check information, "
     "but AI can make mistakes. You are responsible for verifying sources, confirming "
@@ -522,6 +524,45 @@ def template_css() -> str:
     return match.group(1).strip()
 
 
+def arbiter_appendix(case: Path) -> str:
+    """Optional analytics section for a case that used the Arbiter integration.
+
+    The check is deliberately minimal: a saved ``research/arbiter-report-*.json``
+    response is the signal that Arbiter was used, and the markup, styling, and
+    chart geometry for it all live in the integration rather than here.
+
+    Args:
+        case: The resolved case directory.
+
+    Returns:
+        The HTML fragment printed by ``integrations/arbiter/run_appendix.py``, or
+        the empty string when the case carries no saved Arbiter report or the
+        integration cannot produce a fragment. Every failure degrades to the
+        empty string with a warning on stderr, so an absent, broken, or slow
+        integration can never fail a report render.
+    """
+    if not any((case / "research").glob("arbiter-report-*.json")):
+        return ""
+    if not ARBITER_APPENDIX.is_file():
+        print(f"WARN  arbiter appendix skipped: no {ARBITER_APPENDIX}", file=sys.stderr)
+        return ""
+    try:
+        appendix = subprocess.run(
+            [sys.executable, str(ARBITER_APPENDIX), "--case-dir", str(case)],
+            capture_output=True, text=True, timeout=ARBITER_APPENDIX_TIMEOUT, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"WARN  arbiter appendix skipped: {exc}", file=sys.stderr)
+        return ""
+    if appendix.returncode != 0:
+        detail = (appendix.stderr or appendix.stdout).strip().splitlines()
+        reason = f" — {detail[-1]}" if detail else ""
+        print(f"WARN  arbiter appendix skipped: exit {appendix.returncode}{reason}",
+              file=sys.stderr)
+        return ""
+    return appendix.stdout.strip()
+
+
 def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str, Any],
                 draft: dict[str, Any], rendered: list[dict[str, Any]], hashes: dict[str, str]) -> str:
     title = text(draft.get("title"))
@@ -622,6 +663,10 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
                 f"{fid} — {VERDICT_LABEL.get(verdict['status'], verdict['status'].title())}"
             )
     hash_badges = "".join(f"<span>{h(path)} · sha256:{h(digest[:12])}</span>" for path, digest in hashes.items())
+    appendix = arbiter_appendix(case)
+    # Prefixed here rather than in the template so a case without Arbiter data
+    # renders byte-for-byte the same HTML as before this integration existed.
+    arbiter_block = f"\n  {appendix}" if appendix else ""
 
     return f'''<!doctype html>
 <html lang="{h(draft.get('language') or 'und')}">
@@ -641,7 +686,7 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
   <p class="byline"><strong>Model-authored editorial synthesis · deterministically rendered</strong><br>{verified_count} verified finding(s) · {source_count} accessible source record(s)</p>
   <section class="honesty" aria-label="AI assistance notice"><p><strong>AI assistance notice:</strong> {h(AI_NOTICE)}</p><p>The model chose localized framing and priority. Deterministic checks bind every prose block to finding IDs and place canonical verdicts beside it; they do not claim semantic entailment.</p><p><strong>Framing references:</strong> {h('; '.join(framing_labels))}</p></section>
   <section class="tldr" aria-label="findings summary">{''.join(summary_items)}</section>
-  {''.join(finding_sections)}
+  {''.join(finding_sections)}{arbiter_block}
   <section id="method">
     <div class="kicker">Methodology · structured case record</div>
     <h2>How the investigation was carried out.</h2>
