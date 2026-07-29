@@ -1,0 +1,26 @@
+{
+  "case_study_id": "case_fixture",
+  "plan": {
+    "entities": [
+      " Acme Corp ",
+      "",
+      "Researcher One"
+    ],
+    "search_phrases": [
+      "alpha narrative",
+      "beta \"quoted\" phrase",
+      "gamma \\ path"
+    ],
+    "sources": [
+      {
+        "title": "Primary source",
+        "url": "https://example.test/primary"
+      },
+      {
+        "title": null,
+        "url": "https://example.test/untitled"
+      }
+    ],
+    "summary": "Grounded fixture summary."
+  }
+}
