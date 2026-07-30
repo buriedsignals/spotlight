@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import math
 import re
 import sys
 from datetime import date as date_type
@@ -44,6 +45,9 @@ MAX_THEME_ROWS = 24
 MAX_THEME_VOICES = 4
 MAX_CLAIMS = 12
 MAX_STORY_LINES = 12
+# The timeline is the one payload collection with no natural upper bound, so the
+# newest buckets are kept and anything older is dropped rather than plotted.
+MAX_CHART_POINTS = 400
 
 CLIP_TITLE = 160
 CLIP_LABEL = 120
@@ -83,6 +87,8 @@ APPENDIX_CSS = f"""
 .arb-appendix .arb-kicker{{font-family:{SANS};font-weight:700;font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;color:#8a7f70;margin-bottom:.3em}}
 .arb-appendix .arb-title{{margin:0 0 .3em}}
 .arb-appendix .arb-subtitle{{color:#6b6258;max-width:64ch}}
+.arb-appendix .arb-prov{{font-family:{SANS};font-size:.74rem;color:#8a7f70;margin:.5em 0 0}}
+.arb-appendix .arb-prov b{{font-weight:600;color:#6b6258}}
 .arb-appendix .arb-sect{{margin:1.6em 0;break-inside:avoid}}
 .arb-appendix h3{{margin:0 0 .2em;break-after:avoid}}
 .arb-appendix .arb-hint{{font-family:{SANS};font-size:.8rem;color:#8a7f70;margin:.2em 0 .7em;break-after:avoid}}
@@ -125,8 +131,24 @@ APPENDIX_CSS = f"""
 
 
 def h(value: Any) -> str:
-    """Escape untrusted text for either an HTML text or attribute context."""
-    return html.escape("" if value is None else str(value), quote=True)
+    """Escape untrusted text for either an HTML text or attribute context.
+
+    Braces are neutralized alongside the usual HTML metacharacters because
+    ``scripts/validate-report.py`` fails the publication gate on any ``{{…}}``
+    left in ``report.html``: an Arbiter actor named ``{{TODO}}`` would otherwise
+    look like an unresolved template placeholder and block the whole report.
+    The scoped-CSS constant carries literal braces and never passes through
+    here, so its rules are unaffected.
+
+    Args:
+        value: Any payload value; ``None`` renders empty.
+
+    Returns:
+        Text safe to place in element content or a quoted attribute, carrying no
+        ``{`` or ``}``.
+    """
+    escaped = html.escape("" if value is None else str(value), quote=True)
+    return escaped.replace("{", "&#123;").replace("}", "&#125;")
 
 
 def clip(value: Any, limit: int) -> str:
@@ -153,15 +175,51 @@ def as_dict(value: Any) -> dict[str, Any]:
 
 
 def as_num(value: Any) -> float:
-    """Numeric tolerance: non-numbers count as zero, and ``True`` is not a magnitude."""
+    """Numeric tolerance: non-numbers count as zero, and ``True`` is not a magnitude.
+
+    Args:
+        value: Any payload value that should carry a magnitude.
+
+    Returns:
+        A finite float. Non-numbers, booleans, integers too large for a float,
+        and non-finite floats all count as ``0.0``, so no downstream geometry or
+        formatting can inherit a ``nan``/``inf``.
+    """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return 0.0
-    return float(value)
+    try:
+        numeric = float(value)
+    except (OverflowError, ValueError):
+        return 0.0
+    return numeric if math.isfinite(numeric) else 0.0
 
 
 def format_count(value: Any) -> str:
-    """Thousands-separated integer for display (unknowns render ``0``)."""
+    """Thousands-separated integer for display (unknowns render ``0``).
+
+    ``as_num`` is the single numeric entry point and already collapses every
+    non-finite value to zero, so ``round`` here can never see a ``nan``.
+    """
     return f"{int(round(as_num(value))):,}"
+
+
+def bar_percent(value: float, peak: float) -> str:
+    """Bar width as a percentage of ``peak``, clamped into a drawable range.
+
+    Args:
+        value: This row's magnitude.
+        peak: The largest magnitude in the same table.
+
+    Returns:
+        A one-decimal percentage between ``2.0`` and ``100.0``; a non-finite or
+        non-positive ``peak`` yields the ``2.0`` floor rather than a broken
+        ``style`` attribute.
+    """
+    if not (math.isfinite(value) and math.isfinite(peak)) or peak <= 0:
+        share = 0.0
+    else:
+        share = value / peak
+    return f"{max(min(share, 1.0), 0.02) * 100:.1f}"
 
 
 def safe_url(value: Any) -> str:
@@ -223,13 +281,22 @@ def nice_axis_top(peak: float) -> float:
 
 
 def chart_series(timeline: dict[str, Any]) -> list[tuple[str, float]]:
-    """``(date, interactions)`` buckets in payload order, dropping undated entries."""
+    """``(date, interactions)`` buckets in payload order, dropping undated entries.
+
+    Args:
+        timeline: The payload's ``engagement_timeline`` object.
+
+    Returns:
+        At most ``MAX_CHART_POINTS`` buckets. A longer timeline is truncated to
+        its newest tail, since the payload lists buckets oldest first and a plot
+        of thousands of points is unreadable as well as unbounded.
+    """
     series: list[tuple[str, float]] = []
     for point in as_dicts(timeline.get("points")):
         stamp = clip(point.get("date"), 32)
         if stamp:
             series.append((stamp, max(0.0, as_num(point.get("interactions")))))
-    return series
+    return series[-MAX_CHART_POINTS:]
 
 
 def median_gap_days(series: list[tuple[str, float]]) -> int:
@@ -497,8 +564,7 @@ def themes_html(themes: list[dict[str, Any]]) -> str:
         else:
             rank += 1
             rank_cell = f'<td class="arb-rank">{rank}</td>'
-        share = row["value"] / peak if peak > 0 else 0.0
-        fill = f"{max(min(share, 1.0), 0.02) * 100:.1f}"
+        fill = bar_percent(row["value"], peak)
         css = "arb-theme-sub" if row["child"] else "arb-theme-parent"
         rendered.append(
             f'<tr class="{css}">{rank_cell}'
@@ -537,8 +603,7 @@ def actors_html(actors: list[dict[str, Any]]) -> str:
         name = clip(actor.get("actor"), CLIP_NAME)
         if not name:
             continue
-        share = total / peak if peak > 0 else 0.0
-        fill = f"{max(min(share, 1.0), 0.02) * 100:.1f}"
+        fill = bar_percent(total, peak)
         posts = as_dict(actor.get("engagement")).get("total_posts")
         rows.append(
             f'<tr><td class="arb-rank">{rank}</td>'
@@ -573,8 +638,7 @@ def communities_html(communities: list[dict[str, Any]]) -> str:
         if not name:
             continue
         total = as_num(community.get("total_engagement"))
-        share = total / peak if peak > 0 else 0.0
-        fill = f"{max(min(share, 1.0), 0.02) * 100:.1f}"
+        fill = bar_percent(total, peak)
         members = [clip(member, CLIP_NAME) for member in
                    as_list(community.get("actors"))[:MAX_COMMUNITY_MEMBERS]]
         members = [member for member in members if member]
@@ -667,32 +731,105 @@ def claims_html(actors: list[dict[str, Any]]) -> str:
     )
 
 
-def newest_report_file(case_dir: Path) -> Path | None:
-    """Lexicographically last ``research/arbiter-report-*.json``, or ``None``.
+def provenance_html(payload: dict[str, Any]) -> str:
+    """Muted header line naming the case study these analytics came from.
 
-    ``None`` means the case never used the Arbiter integration.
+    A journalism artifact has to say which study its data describes, and the
+    section heading carries a narrative theme rather than an identifier. This
+    line supplies the study's own title, its Arbiter topic id, and when the
+    payload was generated, dropping whichever parts the payload omits.
+
+    Args:
+        payload: The parsed Arbiter report payload.
+
+    Returns:
+        One ``<p class="arb-prov">`` element, or ``""`` when the payload names
+        no source at all.
     """
+    parts: list[str] = []
+    title = (clip(payload.get("title"), CLIP_TITLE)
+             or clip(payload.get("root_theme"), CLIP_TITLE))
+    if title:
+        parts.append(f"Arbiter case study: <b>{h(title)}</b>")
+    topic_id = clip(payload.get("topic_id"), CLIP_NAME)
+    if topic_id:
+        parts.append(f"topic {h(topic_id)}")
+    generated_at = clip(payload.get("generated_at"), 40)
+    if generated_at:
+        parts.append(f"generated {h(generated_at)}")
+    if not parts:
+        return ""
+    return f'<p class="arb-prov">{" · ".join(parts)}</p>'
+
+
+def newest_report_file(case_dir: Path) -> Path | None:
+    """Most recently modified ``research/arbiter-report-*.json`` in the case.
+
+    Selection is by modification time, not by name: the filename carries a topic
+    slug before its timestamp, so a lexicographic pick lets an alphabetically
+    later slug outrank a genuinely newer save. Symlinks are skipped and every
+    candidate must resolve inside the case's own ``research`` directory, so a
+    planted link cannot make the report quote JSON from elsewhere on the disk.
+
+    Args:
+        case_dir: The case directory to search.
+
+    Returns:
+        The newest usable candidate, or ``None`` when the case never used the
+        Arbiter integration (or the directory cannot be read).
+    """
+    research = case_dir / "research"
     try:
-        candidates = sorted(
-            path for path in (case_dir / "research").glob("arbiter-report-*.json")
-            if path.is_file()
-        )
+        root = research.resolve()
+        candidates: list[tuple[float, str, Path]] = []
+        for path in research.glob("arbiter-report-*.json"):
+            if path.is_symlink() or not path.is_file():
+                continue
+            if not path.resolve().is_relative_to(root):
+                continue
+            candidates.append((path.stat().st_mtime, path.name, path))
     except OSError:
         return None
-    return candidates[-1] if candidates else None
+    if not candidates:
+        return None
+    # Name breaks mtime ties so the choice stays deterministic on filesystems
+    # with coarse timestamps.
+    return max(candidates, key=lambda entry: (entry[0], entry[1]))[2]
+
+
+def reject_json_constant(name: str) -> float:
+    """Refuse the non-standard JSON constants ``NaN``/``Infinity``/``-Infinity``.
+
+    Python's ``json`` accepts these by default, and a ``nan`` reaching the chart
+    geometry would silently emit ``nan`` coordinates in the SVG. A payload that
+    contains one is treated exactly like malformed JSON instead.
+
+    Args:
+        name: The literal the parser encountered.
+
+    Returns:
+        Never returns.
+
+    Raises:
+        ValueError: Always, so the caller's malformed-payload path takes over.
+    """
+    raise ValueError(f"non-finite JSON constant {name} is not accepted")
 
 
 def load_payload(case_dir: Path) -> dict[str, Any]:
     """Parsed Arbiter report payload for a case, or ``{}``.
 
     ``{}`` covers every unusable case: no saved report, an unreadable file, a
-    file that is not JSON, and JSON that is not an object.
+    file that is not JSON, JSON carrying a non-finite constant, and JSON that is
+    not an object.
     """
     path = newest_report_file(case_dir)
     if path is None:
         return {}
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(
+            path.read_text(encoding="utf-8"), parse_constant=reject_json_constant
+        )
     except (OSError, ValueError):
         return {}
     return payload if isinstance(payload, dict) else {}
@@ -731,6 +868,7 @@ def render_appendix(case_dir: Path) -> str:
         '<div class="arb-kicker">Case-study analytics · data from Arbiter</div>'
         f'<h2 class="arb-title">{h(title)}</h2>'
         f'<p class="arb-subtitle">{h(SUBTITLE)}</p>'
+        f"{provenance_html(payload)}"
         f"{body}"
         "</section>"
     )

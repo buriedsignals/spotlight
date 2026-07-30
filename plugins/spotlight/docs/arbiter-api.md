@@ -176,6 +176,17 @@ Three different platform lists exist on this API. Mixing them up is a `400`.
 
 So `google_news` is readable but not creatable, and `global` is a read-side aggregate that is never valid as a collection target and is never listed in a report's `platforms[]` even though it is always requestable. Filter values are trimmed and lowercased, so `Twitter , reddit` is accepted; an unknown slug or an empty list is `400`.
 
+## Identifiers
+
+Two different id shapes travel on this API. A client that validates both against one pattern will reject valid ids.
+
+| Id | Shape | Examples |
+| --- | --- | --- |
+| **Case-study id** — `topics[].id`, the `{id}` in every `/topics/{id}/*` path, and `case_study_id` on the write surface | **32 lowercase alphanumeric characters** (`[a-z0-9]{32}`), server-generated | `9f3c1b7a20d84e6fa15c8b0d4e7f2a13` (shape only) |
+| **Post id** — `items[].id`, `sample_post_ids[]`, `themes[].top_posts[].id`, `claims[].post_id`, and the `{postId}` on `GET /posts/{postId}` | **Platform-native, 1–512 characters**: letters in either case, digits, and `_`, `-`, `.`, `~`, `%`. Percent-encoding is accepted, so a `%`-bearing id is passed through as-is. | `IDfIYCNsmMI`, `dZj9yXtff_U`, `S-VgRXOzibQ` |
+
+Post ids are minted by the **source platform**, not by Arbiter, so they are not slugs: leading uppercase, mixed case, and embedded `_` or `-` are all ordinary, and a lowercase-slug validator rejects most real ids. `integrations/arbiter/run_id.py validate "<post_id>"` implements the accepting pattern — `^[A-Za-z0-9][A-Za-z0-9._~%-]{0,511}$` — and is what a client should use for post ids; keep a lowercase-slug check for case-study ids only. `Topic.slug` is a display aid and never an identifier at all (§ *Divergences*).
+
 ## Timestamps
 
 > **Post publication time is UTC. Arbiter record timestamps are IST (UTC+05:30).**
@@ -190,7 +201,7 @@ Anything describing *when an Arbiter record was created or touched* is IST: `cre
 
 The discovery menu. **There is no free-text search** — this is the only way to enumerate readable studies. Params: `limit` (`1..100`, default 25), `cursor`, `sort` (`recent` default, `title`, `post_count`). Response: `items[]`, `next_cursor`, `meta.total_topics`.
 
-Each topic carries `id` (which feeds every `/topics/{id}/*` call), `slug` (a display aid derived from the title — **never an identifier**, and also the single element of every post's `tags`), `title`, `description` (the study's **search query text**, not prose), `platforms`, `window.from`/`.to` (declared collection bounds, UTC), `post_count` (distinct posts), `starred` (`true` = curated, `false` = created with this key — provenance, not capability), and `last_updated` (UTC).
+Each topic carries `id` (32 lowercase alphanumeric characters, which feeds every `/topics/{id}/*` call — see § *Identifiers*), `slug` (a display aid derived from the title — **never an identifier**, and also the single element of every post's `tags`), `title`, `description` (the study's **search query text**, not prose), `platforms`, `window.from`/`.to` (declared collection bounds, UTC), `post_count` (distinct posts), `starred` (`true` = curated, `false` = created with this key — provenance, not capability), and `last_updated` (UTC).
 
 Empty studies are omitted, so every item has `post_count > 0` — but a `post_count` can occasionally be stale; `/topics/{id}/posts` is authoritative. **A study omitted from this menu stays addressable by id.** `sort=recent` is not a global recency merge (curated first, newest-created, then your own); sort client-side on `last_updated` for true global ordering. `sort=title` ascends, `sort=post_count` descends. The menu is bounded to at most 100 curated plus 100 of your own studies. Errors: `400`, `401`, `429`, `503` only — never `402`, `403`, or `404`.
 
@@ -202,7 +213,7 @@ Response: `topic_id`, `items[]`, `next_cursor`, `meta.total_in_topic`.
 
 | Post field | Presence | Notes |
 | --- | --- | --- |
-| `id` | always | Feeds `GET /posts/{id}`. |
+| `id` | always | The platform's own post id, **not** a slug — mixed case and `_ - . ~ %` all occur (§ *Identifiers*). Feeds `GET /posts/{id}`. |
 | `url` | always | Origin URL; `""` when unknown. May no longer be live. |
 | `platform`, `author`, `text` | always | `"unknown"` / `""` fallbacks when absent. |
 | `timestamp` | always | UTC; `""` when the record has no publish time. |
@@ -239,7 +250,7 @@ The agent call body is `{"question": "<string>"}` — trimmed, then **1–2000 c
 
 ### `GET /posts/{postId}` · `GET /usage`
 
-`postId` is trimmed, **1–512 characters**, percent-encoding accepted; there are no query parameters, so you cannot narrow by study or platform. Returns `{item, meta}` where `item` is exactly the Post schema above. Charged the **10-credit floor** on success; `400`/`403`/`404` are free, but the balance pre-check runs first, so a broke key gets `402` even for an id that would have `404`'d. `403` means the post belongs to a *curated* study this key may not read; `404` means it was not found in the curated set — the probe never inspects private studies, so this split cannot be used to detect posts in private data.
+`postId` is trimmed, **1–512 characters**, percent-encoding accepted, and is the platform-native id described in § *Identifiers* — letters in either case, digits, and `_ - . ~ %`, so `IDfIYCNsmMI` and `dZj9yXtff_U` are both ordinary values and a lowercase-slug check would wrongly reject them. There are no query parameters, so you cannot narrow by study or platform. Returns `{item, meta}` where `item` is exactly the Post schema above. Charged the **10-credit floor** on success; `400`/`403`/`404` are free, but the balance pre-check runs first, so a broke key gets `402` even for an id that would have `404`'d. `403` means the post belongs to a *curated* study this key may not read; `404` means it was not found in the curated set — the probe never inspects private studies, so this split cannot be used to detect posts in private data.
 
 `GET /usage` is free with no parameters: `credits_balance`, `rates.per_result_credits` / `.minimum_query_credits` (your **effective** rates), `period.daily` and `period.monthly` counters (`queries`, `results_returned`, `credits_used`, on IST boundaries), and `limits.requests_per_minute` (number or `null`). Counters cover metered **read** queries only — agent questions draw on the same balance but do not appear in `period.*.queries`.
 

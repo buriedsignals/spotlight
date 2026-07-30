@@ -19,14 +19,6 @@
     "engagement-metrics",
     "archived-social-content"
   ],
-  "sample_agent_questions": [
-    "Which themes are driving the most engagement right now?",
-    "Which accounts are amplifying this narrative the most?",
-    "What are the strongest claims and supporting sources?",
-    "How did this discussion spike and evolve over time?",
-    "Compare this story across platforms and key differences",
-    "Where are most of these posts coming from geographically?"
-  ],
   "invocable_by": ["investigator", "fact-checker"],
   "homepage": "https://arbiter.simppl.org/",
   "docs": "docs/arbiter-api.md",
