@@ -1,12 +1,17 @@
 # Arbiter — Social-Media Case Studies through Data Navigator
 
+> **Availability:** temporarily blocked for every member while Indicator and
+> Arbiter agree how paid-member study ownership and privacy should work. Do not
+> make network calls or bypass Data Navigator's block. The contract below is
+> retained for reactivation and for rendering previously saved responses.
+
 **What:** Arbiter is a social-intelligence platform for bounded,
 already-collected social-media corpora. A case study has one query, a platform
 set, and a declared date window, with archived posts, entity/stance analysis,
 hierarchical themes, actor/community structure, engagement analytics, and a
 study-scoped analysis agent.
 
-Spotlight accesses Arbiter only through Data Navigator's hosted partner source:
+When access resumes, Spotlight accesses Arbiter only through Data Navigator's hosted partner source:
 `global/arbiter/case-studies`. Navigator holds the partner credential on its
 server. Do not construct a direct upstream request or ask the operator for an
 Arbiter credential. Because one Arbiter key shares a created-study namespace

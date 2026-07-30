@@ -33,8 +33,20 @@ def main() -> int:
     probes = manifest.get("probes") or []
     if not any(SOURCE_ID in probe.get("args", []) for probe in probes):
         errors.append("manifest must probe the deployed Navigator Arbiter source")
+    if not any(
+        probe.get("output_contains") == '"queryable": true'
+        for probe in probes
+    ):
+        errors.append("manifest must require Arbiter to be queryable, not merely listed")
+    if not any(
+        probe.get("env", {}).get("DATANAV_CACHE_FALLBACK") == "off"
+        for probe in probes
+    ):
+        errors.append("manifest must reject a stale cached Arbiter availability result")
     if "name: arbiter" not in skill_text or "Browse existing studies" not in skill_text:
         errors.append("skills/arbiter must provide the direct /arbiter browse/create entry point")
+    if "temporarily unavailable" not in skill_text:
+        errors.append("skills/arbiter must explain the temporary access pause")
 
     forbidden = ("ARBITER_API_KEY", "Authorization: Bearer", "curl ")
     for value in forbidden:

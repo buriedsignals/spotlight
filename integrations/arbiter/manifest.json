@@ -1,7 +1,7 @@
 {
   "id": "arbiter",
   "name": "Arbiter Social Intelligence",
-  "description": "Operator-only social-media case studies through Data Navigator's hosted partner source: browse already-collected, already-analyzed corpora for stance, engagement, entity, theme, archived-post, and report analysis, or create a new study from a reviewed search plan.",
+  "description": "Temporarily unavailable while Indicator and Arbiter agree how paid-member study ownership should work. The implemented Data Navigator partner source can browse analyzed social-media collections, retrieve archived posts, ask the study agent, or create a reviewed collection once access resumes.",
   "category": "social-osint",
   "type": "cli",
   "local_binary": "navigator",
@@ -10,8 +10,11 @@
   "probes": [
     {
       "args": ["data", "show", "global/arbiter/case-studies"],
-      "output_contains": "global/arbiter/case-studies",
-      "env": {"DATANAV_CATALOGUE": "remote"}
+      "output_contains": "\"queryable\": true",
+      "env": {
+        "DATANAV_CATALOGUE": "remote",
+        "DATANAV_CACHE_FALLBACK": "off"
+      }
     }
   ],
   "requires_key": false,
@@ -31,5 +34,5 @@
   "invocable_by": ["investigator", "fact-checker"],
   "homepage": "https://arbiter.simppl.org/",
   "docs": "docs/arbiter-api.md",
-  "rate_limit_note": "Operator-only while Arbiter uses one shared case-study namespace and credit pool. Requires a connected Navigator administrator and consumes Data Navigator's hosted-source quota. Arbiter also credit-meters post pulls, search-plan generation, finalization, and agent questions. Listing studies, entities, themes, reports, pending-study creation, status, progress, and usage are free upstream."
+  "rate_limit_note": "Temporarily blocked for every member while the partnership chooses tenant-scoped hosted access, member BYOK, a hybrid, or an explicitly shared workspace. When enabled, it consumes Data Navigator's hosted-source quota and Arbiter also credit-meters post pulls, search-plan generation, finalization, and agent questions."
 }

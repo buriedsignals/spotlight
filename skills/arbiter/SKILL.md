@@ -15,6 +15,11 @@ actor/community analysis, or Arbiter report visuals.
 Arbiter is remote and disabled in sensitive mode. Previously saved Arbiter JSON
 may still be rendered offline.
 
+Arbiter network access is temporarily unavailable for every member while
+Indicator and Arbiter agree how paid-member study ownership and privacy should
+work. Do not call Arbiter directly or attempt to bypass Data Navigator's block.
+Previously saved reports and themes remain usable offline.
+
 ## Start
 
 Run the integration preflight and require Arbiter to be green:
@@ -30,11 +35,11 @@ invoke-skill("navigator")
 read-file("integrations/arbiter/integration.md")
 ```
 
-Arbiter is currently a trusted-operator source because its hosted key shares
-one created-study namespace and credit pool. If preflight reports yellow
-because the connected Navigator account cannot see
-`global/arbiter/case-studies`, explain that operator access is required and use
-the documented fallback.
+The hosted key currently shares one created-study namespace and credit pool.
+Preflight must find the source with `"queryable": true`, not merely find its
+catalogue entry. Until that check is green, explain that partnership access is
+paused pending the ownership decision and use another research source. Do not
+offer browse or create actions while it is paused.
 
 ## Prompt
 

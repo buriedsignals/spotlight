@@ -28,6 +28,10 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   renders byte-for-byte the same report as before.
 
 ### Changed
+- New Arbiter network access is temporarily blocked and `/arbiter` now requires
+  the deployed Data Navigator source to report `queryable: true` before it
+  offers browse or create actions. Previously saved Arbiter material still
+  renders offline while Indicator and Arbiter resolve paid-member ownership.
 - Skill placement converged on the engine placement contract (`engine
   docs/skill-placement-contract.md`): canonical `~/.agents/skills/spotlight/` store for every
   runtime + ONE product-level adapter symlink for opencode/pi/Claude Code (which now receives
