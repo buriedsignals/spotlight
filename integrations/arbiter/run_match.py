@@ -194,6 +194,27 @@ def render_text(result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def resolve_out_path(value: str) -> Path:
+    """Validate a ``--out`` destination before anything is written to it.
+
+    Args:
+        value: The raw ``--out`` path from the command line.
+
+    Returns:
+        The path to write.
+
+    Raises:
+        SystemExit: Exit code 2 when the destination is an existing symlink;
+            ``write_text`` follows symlinks, so writing would land on the
+            link's target — possibly inside the vault or outside the case.
+    """
+    out_path = Path(value)
+    if out_path.is_symlink():
+        print(f"error: refusing to write through a symlink: {out_path}", file=sys.stderr)
+        raise SystemExit(2)
+    return out_path
+
+
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -237,7 +258,7 @@ def main() -> None:
         json.dumps(result, indent=2) + "\n" if args.format == "json" else render_text(result) + "\n"
     )
     if args.out:
-        out_path = Path(args.out)
+        out_path = resolve_out_path(args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(output, encoding="utf-8")
         print(f"wrote {out_path}")

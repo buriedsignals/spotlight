@@ -29,7 +29,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+# Appended, never prepended: prepending would let a file in integrations/ shadow
+# a stdlib module for every later import in this process.
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 from _runner import write_json_atomic  # noqa: E402
 
 
