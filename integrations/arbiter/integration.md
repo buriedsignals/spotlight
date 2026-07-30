@@ -10,6 +10,8 @@ Spotlight accesses Arbiter through Data Navigator's BYO-key source:
 `global/arbiter/case-studies`. The operator stores their own key with
 `navigator keys set arbiter`; Navigator sends requests directly to Arbiter.
 Do not construct a direct upstream request or place the key in a case file.
+The source is currently blocked while the member discount-code flow is being
+prepared; do not offer live Arbiter calls until Navigator reports it queryable.
 
 ## When to use
 
@@ -35,9 +37,11 @@ navigator data show global/arbiter/case-studies
 ```
 
 Data Navigator requires a connected paid member account and a configured Arbiter
-key. If Navigator is disconnected, run `spotlight-navigator`; if the key is
-missing, guide the operator through `navigator keys set arbiter`. Never request
-or reveal Navigator's PAT or the Arbiter key.
+key once the source is enabled. Until the discount-code flow is available,
+Navigator reports the source as blocked and no live call may be made. If
+Navigator is disconnected, run `spotlight-navigator`; if the key is missing
+after enablement, guide the operator through `navigator keys set arbiter`.
+Never request or reveal Navigator's PAT or the Arbiter key.
 
 Every network call uses:
 

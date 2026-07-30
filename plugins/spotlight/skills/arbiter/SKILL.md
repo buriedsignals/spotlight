@@ -15,8 +15,9 @@ actor/community analysis, or Arbiter report visuals.
 Arbiter is remote and disabled in sensitive mode. Previously saved Arbiter JSON
 may still be rendered offline.
 
-Arbiter uses the member's own API key through Data Navigator. Previously saved
-reports and themes remain usable offline.
+Arbiter uses the member's own API key through Data Navigator once enabled.
+Live access is currently blocked pending the member discount-code flow;
+previously saved reports and themes remain usable offline.
 
 ## Start
 
@@ -34,8 +35,10 @@ read-file("integrations/arbiter/integration.md")
 ```
 
 Preflight must find the source with `"queryable": true`, not merely find its
-catalogue entry. If the member has no Arbiter key, explain how to create one
-and run `navigator keys set arbiter` before offering browse or create actions.
+catalogue entry. If it reports the source as blocked, explain that live access
+is pending the discount-code flow and use saved material offline. Once enabled,
+if the member has no Arbiter key, explain how to create one and run
+`navigator keys set arbiter` before offering browse or create actions.
 
 ## Prompt
 
