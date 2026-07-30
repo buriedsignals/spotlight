@@ -15,7 +15,7 @@ An agent invokes a skill to get *guidance*; it calls an integration to get *data
 
 | ID | Category | Requires key | Env vars |
 |---|---|---|---|
-| `arbiter` | social-osint | Yes | `ARBITER_API_KEY`, `ARBITER_API_BASE` |
+| `arbiter` | social-osint | No local key (Navigator-hosted, operator-only) | none |
 | `dev-browser` | browser-automation | No | none |
 | `browser-harness` | browser-automation | No | none |
 | `browser-use` | browser-automation | No (OSS); optional cloud | `BROWSER_USE_API_KEY` (optional) |
@@ -41,6 +41,12 @@ Every integration directory has a `manifest.json`:
   "env_vars": ["ENV_VAR_1", "ENV_VAR_2"],
   "activation_env_vars": ["OPTIONAL_INTEGRATION_URL"],
   "smoke_url_env": "OPTIONAL_INTEGRATION_URL",
+  "local_binary": "optional-cli-name",
+  "version_args": ["optional", "--help"],
+  "version_output_contains": "optional-capability-marker",
+  "probes": [
+    {"args": ["data", "show", "source/id"], "output_contains": "source/id", "env": {"CATALOGUE_MODE": "remote"}}
+  ],
   "capabilities": ["feature-1", "feature-2"],
   "invocable_by": ["investigator", "fact-checker"],
   "homepage": "https://vendor.example.com",
@@ -60,6 +66,10 @@ Every integration directory has a `manifest.json`:
 | `env_vars` | Yes | Array of env vars the integration reads. Empty array if none |
 | `activation_env_vars` | No | Env vars that explicitly activate an otherwise optional integration. Preflight reports `unconfigured` until all are set |
 | `smoke_url_env` | No | Env var containing the integration endpoint to probe with `--smoke-test`; takes precedence over `homepage` and `docs`. Endpoint 401/403/404 responses fail; 405 may confirm a HEAD-rejecting endpoint is reachable |
+| `local_binary` | No | Binary name for a `cli` integration when it differs from the integration id |
+| `version_args` | No | Arguments used for a non-network CLI availability/capability probe |
+| `version_output_contains` | No | Text that must appear in the probe's stdout or stderr; use it when a minimum CLI capability matters |
+| `probes` | No | Additional read-only CLI probes, each with an `args` list, optional `output_contains` marker, and optional string `env` overrides; use these to verify a remote capability/source is actually available |
 | `capabilities` | Yes | Array of capability tags (used by `invoke-skill("integrations")` for routing) |
 | `invocable_by` | Yes | Which agents may use it: `investigator`, `fact-checker`, `orchestrator`, `user` |
 | `homepage` | No | Vendor/project homepage |

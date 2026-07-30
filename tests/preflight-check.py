@@ -187,6 +187,61 @@ def main() -> int:
     ok, err = pf.smoke_test({"type": "cli", "id": "sh", "version_args": ["-c", "exit 0"]})
     check("cli: passing version check passes", ok and err is None)
 
+    # cli: required capability marker is checked in version/help output
+    ok, err = pf.smoke_test({
+        "type": "cli",
+        "id": "sh",
+        "version_args": ["-c", "printf '%s' '--input-file'"],
+        "version_output_contains": "--input-file",
+    })
+    check("cli: required output marker passes", ok and err is None)
+
+    ok, err = pf.smoke_test({
+        "type": "cli",
+        "id": "sh",
+        "version_args": ["-c", "printf '%s' '--input'"],
+        "version_output_contains": "--input-file",
+    })
+    check(
+        "cli: missing required output marker fails",
+        not ok and "--input-file" in (err or ""),
+        f"ok={ok} err={err}",
+    )
+
+    ok, err = pf.smoke_test({
+        "type": "cli",
+        "id": "sh",
+        "version_args": ["-c", "printf '%s' '--input-file'"],
+        "version_output_contains": "--input-file",
+        "probes": [
+            {
+                "args": [
+                    "-c",
+                    "test \"$DATANAV_CATALOGUE\" = remote && printf '%s' 'global/arbiter/case-studies'",
+                ],
+                "output_contains": "global/arbiter/case-studies",
+                "env": {"DATANAV_CATALOGUE": "remote"},
+            }
+        ],
+    })
+    check("cli: source availability probe passes", ok and err is None)
+
+    ok, err = pf.smoke_test({
+        "type": "cli",
+        "id": "sh",
+        "probes": [
+            {
+                "args": ["-c", "printf '%s' 'missing-source'"],
+                "output_contains": "global/arbiter/case-studies",
+            }
+        ],
+    })
+    check(
+        "cli: missing source capability fails",
+        not ok and "global/arbiter/case-studies" in (err or ""),
+        f"ok={ok} err={err}",
+    )
+
     # cli: local_binary override respected
     ok, err = pf.smoke_test({"type": "cli", "id": "anything", "local_binary": "sh"})
     check("cli: local_binary override resolves", ok and err is None)

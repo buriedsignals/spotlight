@@ -17,7 +17,7 @@ An agent invokes a **skill** to get *guidance* and calls an **integration** to g
 
 | ID | Type | Category | Key needed | Purpose |
 |---|---|---|---|---|
-| `arbiter` | api | social-osint | `ARBITER_API_KEY`, `ARBITER_API_BASE` | Social-media case studies: browse a collected, analysed corpus for entity stance, theme clustering, actor/community structure, and archived posts, or create a new study from a reviewed search plan. Post pulls and agent questions are credit-metered. |
+| `arbiter` | cli | social-osint | No local key; Data Navigator hosted operator source | Social-media case studies through `global/arbiter/case-studies`: browse a collected, analysed corpus for entity stance, themes, actors/communities, archived posts, and report visuals, or create a study from a reviewed search plan. Restricted to Navigator administrators while Arbiter uses one shared study namespace and credit pool. |
 | `dev-browser` | cli | browser-automation | No | Browser automation for specific investigative tasks after ordinary search/scrape is insufficient: forms, portals, JS-rendered pages, screenshots, downloads, and authenticated sessions. |
 | `browser-harness` | cli | browser-automation | No | Legacy browser fallback. Do not use as default while dev-browser is green. |
 | `browser-use` | library | browser-automation | No (optional cloud) | Legacy/adjacent browser automation. Do not use as default while dev-browser is green. |
@@ -27,7 +27,11 @@ An agent invokes a **skill** to get *guidance* and calls an **integration** to g
 | `osint-navigator` | api | tool-discovery | `OSINT_NAV_API_KEY` | 10,000+ OSINT tools with AI-powered synthesized answers. Complements the curated 150-tool catalog in the `osint` skill. |
 | `unpaywall` | api | academic-open-access | `UNPAYWALL_EMAIL` | Legal open-access lookup for academic papers by DOI. Used only when selected in setup and green in preflight. |
 
-Arbiter is the one first-party integration, so there is no vendor documentation site to defer to: `docs/arbiter-api.md` is its authoritative interface reference (endpoints, auth, credits, pagination, case-study lifecycle), and `GET <ARBITER_API_BASE>/openapi.json` is the machine-readable contract.
+Arbiter is the one first-party integration, so there is no vendor documentation
+site to defer to: `docs/arbiter-api.md` is its authoritative interface reference
+(endpoints, auth, credits, pagination, case-study lifecycle). Spotlight calls it
+through Data Navigator; the hosted server uses the machine-readable
+`GET /api/v1/openapi.json` contract.
 
 ## Deferred integrations (architecture ready)
 

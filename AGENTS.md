@@ -144,6 +144,7 @@ Skills are markdown playbooks loaded via `invoke-skill(skill_id)`. Each skill li
 | `shell-safety` | `skills/shell-safety/SKILL.md` | Safe command construction, value validation, and destructive-operation probe rules for execute-shell use | investigator, fact-checker, orchestrator, user |
 | `osint` | `skills/osint/SKILL.md` | OSINT tool routing table + 150-tool catalog + OSINT Navigator integration | investigator, fact-checker, user |
 | `navigator` | `skills/navigator/SKILL.md` | Unified Navigator routing: OSINT discovery for Pro and Lab members, plus the Data Navigator tool for Lab members | investigator, fact-checker, orchestrator, user |
+| `arbiter` | `skills/arbiter/SKILL.md` | Direct `/arbiter` entry point: operator-gated case-study browse/create workflow through Data Navigator, with deterministic report appendix handoff | investigator, fact-checker, orchestrator, user |
 | `investigate` | `skills/investigate/SKILL.md` | Step-by-step techniques: geolocation, verification, person, platform, transport, archiving | investigator, user |
 | `follow-the-money` | `skills/follow-the-money/SKILL.md` | Financial methodology: UBO, offshore, budgets, assets, public blockchain tracing | investigator, user |
 | `technical-investigation` | `skills/technical-investigation/SKILL.md` | Passive technical investigation: indicators, infrastructure history, local document/email metadata, public GitHub history, verified indicator export | investigator, fact-checker, orchestrator, user |

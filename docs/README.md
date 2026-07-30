@@ -11,7 +11,7 @@ If you are new to Spotlight, read in this order:
 1. **[structure.md](structure.md)** — how this repo is laid out; what each file is for; the 13-verb contract
 2. **[runtimes.md](runtimes.md)** — how to wire Spotlight into Pi, Hermes, Goose, Codex, or a local OpenAI-compatible fine-tune
 3. **[integrations.md](integrations.md)** — external OSINT tool integrations (dev-browser, Junkipedia, Arbiter, Noosphere C2PA, OSINT Navigator, Unpaywall), manifest contract, preflight
-   - **[arbiter-api.md](arbiter-api.md)** — first-party Arbiter API reference: endpoints, auth, credits, pagination, the case-study lifecycle
+   - **[arbiter-api.md](arbiter-api.md)** — first-party Arbiter API reference behind Data Navigator's hosted partner source: endpoints, auth, credits, pagination, and lifecycle
 4. **[investigating.md](investigating.md)** — the investigation pipeline: brief, methodology, cycles, gates, readiness, stall protocol
 5. **[technical-investigation.md](technical-investigation.md)** — CTI-derived methods, tier loading, case contracts, verified export, source review, and update policy
 6. **[fact-checking.md](fact-checking.md)** — the independent verification pass: SIFT, verdict taxonomy, evidence trails

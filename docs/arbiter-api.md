@@ -1,8 +1,8 @@
 # Arbiter API Reference
 
-Arbiter is a social-media case-study platform. A *case study* is a bounded corpus — one search query, a set of platforms, a date window — that has been collected, de-duplicated, indexed and analysed. The API lets Spotlight browse existing case studies as an evidence base, create new ones, and ask a case-study-scoped AI agent questions.
+Arbiter is a social-media case-study platform. A *case study* is a bounded corpus — one search query, a set of platforms, a date window — that has been collected, de-duplicated, indexed and analysed. Data Navigator's hosted partner source exposes this API to trusted Spotlight operators for browsing existing studies, creating new ones, and asking the case-study-scoped agent without disclosing the partner key to the local runtime. It is administrator-only because the upstream key shares account-owned studies and credits.
 
-Arbiter is first-party, so there is no vendor documentation site to defer to: this file is the interface contract (what the endpoints accept and return). `integrations/arbiter/integration.md` is the agent-facing behaviour contract (how an agent drives the flow).
+Arbiter is first-party, so there is no vendor documentation site to defer to: this file is the upstream interface contract (what the endpoints accept and return). `integrations/arbiter/integration.md` is the agent-facing Data Navigator contract (how Spotlight drives the flow).
 
 **`GET <base>/openapi.json` is the machine-readable contract** — OpenAPI 3.1, unauthenticated, `max-age=300`, and authoritative for shapes. Fetch it rather than hardcoding a schema. It is not listed in its own `paths`, so a generated client will not include the operation. § *Divergences* records where observed behaviour differs from the published document.
 
@@ -36,7 +36,7 @@ POST /case-studies ──▶ pending ──▶ POST /{id}/search-plan ──▶ 
 | Content type | `application/json` only, request and response |
 | Version | `1.0.0`, path-versioned as `/api/v1`; additive optional fields only within v1 |
 | Caching | Every authenticated response is `Cache-Control: no-store`. No `ETag`, no `If-None-Match`. |
-| Env vars | `ARBITER_API_KEY`, `ARBITER_API_BASE` (both must name the same deployment) |
+| Hosted configuration | Data Navigator resolves the partner key as `arbiter` (`NAVIGATOR_KEY_ARBITER`; legacy server fallback `ARBITER_API_KEY`) and optionally reads `ARBITER_API_BASE`. The source is administrator-only while this key shares one account-owned study namespace and credit pool. |
 
 **Forward compatibility:** ignore unknown response fields and never use a strict/closed-world deserializer. No schema sets `additionalProperties: false`, `required` lists are deliberately short, and optional fields may appear at any time.
 

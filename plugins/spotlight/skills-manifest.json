@@ -31,6 +31,13 @@
       "disabled_in_sensitive_mode": true
     },
     {
+      "id": "arbiter",
+      "role": "conditional-child",
+      "phases": ["phase-2-methodology", "phase-3-execution", "phase-3-fact-check", "phase-5-report"],
+      "may_make_external_calls": true,
+      "disabled_in_sensitive_mode": true
+    },
+    {
       "id": "investigate",
       "role": "core-child",
       "phases": ["phase-2-methodology", "phase-3-execution"],
@@ -137,22 +144,22 @@
     },
     "phase-2-methodology": {
       "required": ["integrations", "osint", "investigate", "epistemic-grounding"],
-      "conditional": ["navigator", "follow-the-money", "social-media-intelligence", "technical-investigation", "content-access"],
+      "conditional": ["navigator", "arbiter", "follow-the-money", "social-media-intelligence", "technical-investigation", "content-access"],
       "validation": "methodology.json includes skills_invoked[] and required Navigator fields when green."
     },
     "phase-3-execution": {
       "required": ["epistemic-grounding", "shell-safety", "web-archiving"],
-      "conditional": ["content-access", "acquisition-graduation", "social-media-intelligence", "technical-investigation"],
+      "conditional": ["content-access", "acquisition-graduation", "arbiter", "social-media-intelligence", "technical-investigation"],
       "validation": "findings contain evidence refs, archives, and confidence caps."
     },
     "phase-3-fact-check": {
       "required": ["epistemic-grounding", "content-access", "shell-safety"],
-      "conditional": ["navigator", "osint", "social-media-intelligence", "technical-investigation", "web-archiving"],
+      "conditional": ["navigator", "arbiter", "osint", "social-media-intelligence", "technical-investigation", "web-archiving"],
       "validation": "fact-check output independently checks investigator claims."
     },
     "phase-5-report": {
       "required": ["report-drafting", "epistemic-grounding"],
-      "conditional": ["provenance-signing", "technical-investigation"],
+      "conditional": ["arbiter", "provenance-signing", "technical-investigation"],
       "validation": "report claims map to evidence ledger."
     },
     "ingest": {
