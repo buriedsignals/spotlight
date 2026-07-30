@@ -1,0 +1,128 @@
+{
+  "topic_id": "topic_fixture",
+  "platform": "global",
+  "platforms": ["reddit", "youtube"],
+  "title": "Fixture Case Study",
+  "root_theme": "Fixture Narrative",
+  "generated_at": "2026-07-20T00:00:00Z",
+  "sections": { "actors": true, "themes": true, "engagement": true },
+  "engagement_timeline": {
+    "points": [
+      { "date": "2026-07-06", "interactions": 120 },
+      { "date": "2026-07-07", "interactions": 900 },
+      { "date": "2026-07-08", "interactions": 240 }
+    ],
+    "total_interactions": 1260,
+    "average_interactions": 420,
+    "story": "Interactions peaked on Jul 07.\n- Actor A drove the largest single spike.\n- News Org B amplified it the following day."
+  },
+  "top_actors": [
+    {
+      "actor": "Actor A",
+      "dominant_theme": "Theme One",
+      "engagement": {
+        "total_posts": 12,
+        "total_engagement": 900,
+        "avg_engagement_per_post": 75
+      },
+      "claims": [
+        {
+          "post_id": "p_1",
+          "text": "Actor A's highest-engagement post inside the fixture window.",
+          "url": "https://example.test/posts/1",
+          "published_at": "2026-07-07T09:00:00Z",
+          "engagement": 700
+        },
+        {
+          "post_id": "p_2",
+          "text": "A quieter follow-up post from the same actor.",
+          "url": "https://example.test/posts/2",
+          "published_at": "2026-07-08T09:00:00Z",
+          "engagement": 120
+        }
+      ],
+      "active_themes": ["Theme One", "Theme Two"]
+    },
+    {
+      "actor": "News Org B",
+      "dominant_theme": "Theme Two",
+      "engagement": {
+        "total_posts": 6,
+        "total_engagement": 360,
+        "avg_engagement_per_post": 60
+      },
+      "claims": [
+        {
+          "post_id": "p_3",
+          "text": "News Org B's aggregation post about the same window.",
+          "url": "https://example.test/posts/3",
+          "published_at": "2026-07-08T11:00:00Z",
+          "engagement": 360
+        }
+      ],
+      "active_themes": ["Theme Two"]
+    }
+  ],
+  "themes": [
+    {
+      "theme": "Theme One",
+      "level": 1,
+      "post_count": 14,
+      "engagement_total": 900,
+      "top_actors": ["Actor A"],
+      "children": [
+        {
+          "theme": "Theme One A",
+          "level": 2,
+          "post_count": 4,
+          "engagement_total": 260,
+          "top_actors": ["News Org B"],
+          "children": []
+        }
+      ]
+    },
+    {
+      "theme": "Theme Two",
+      "level": 1,
+      "post_count": 6,
+      "engagement_total": 360,
+      "top_actors": ["News Org B"],
+      "children": []
+    }
+  ],
+  "communities": [
+    {
+      "name": "Community Beta",
+      "basis": "shared_theme",
+      "actor_count": 3,
+      "total_posts": 5,
+      "total_engagement": 275,
+      "actors": ["Actor C"],
+      "themes": ["Theme Two"]
+    },
+    {
+      "name": "Community Alpha",
+      "basis": "group",
+      "actor_count": 9,
+      "total_posts": 15,
+      "total_engagement": 1100,
+      "actors": ["Actor A", "News Org B"],
+      "themes": ["Theme One"]
+    }
+  ],
+  "platform_reports": {
+    "reddit": {
+      "top_actors": [
+        {
+          "actor": "PlatformOnlyActor",
+          "dominant_theme": "Platform Only Theme",
+          "engagement": { "total_posts": 1, "total_engagement": 10 },
+          "claims": [],
+          "active_themes": ["Platform Only Theme"]
+        }
+      ],
+      "themes": [],
+      "engagement_timeline": {}
+    }
+  }
+}

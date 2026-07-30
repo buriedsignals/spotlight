@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -13,19 +14,41 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "install"))
 
 from navigator_bridge import NavigatorBridgeError, NavigatorInstallerBridge  # noqa: E402
+from setup_server import NAVIGATOR_RUNTIME_IDS, navigator_runtime_id  # noqa: E402
 
 
 def emit(value: dict) -> None:
     print(json.dumps(value, indent=2, sort_keys=True))
 
 
+def selected_runtime(explicit: str | None) -> str:
+    choice = (explicit or os.environ.get("SPOTLIGHT_RUNTIME") or "").strip()
+    config_path = ROOT / ".spotlight-config.json"
+    if not choice and config_path.is_file():
+        try:
+            config = json.loads(config_path.read_text("utf-8"))
+            choice = str(config.get("runtime") or "").strip()
+        except (OSError, json.JSONDecodeError) as error:
+            raise NavigatorBridgeError("Spotlight's saved runtime configuration is unreadable") from error
+    if not choice:
+        raise NavigatorBridgeError("Spotlight has no saved runtime; pass --runtime after choosing one")
+    return navigator_runtime_id(choice)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Connect Spotlight to Navigator membership")
     parser.add_argument("--status", action="store_true")
     parser.add_argument("--email")
+    parser.add_argument("--runtime", choices=tuple(NAVIGATOR_RUNTIME_IDS),
+                        help="override Spotlight's saved runtime choice")
     parser.add_argument("--timeout", type=int, default=600, help=argparse.SUPPRESS)
     args = parser.parse_args()
-    bridge = NavigatorInstallerBridge(ROOT / "install" / "navigator-transport-matrix.json", "claude-code")
+    try:
+        runtime = selected_runtime(args.runtime)
+    except NavigatorBridgeError as error:
+        print(f"Navigator connection failed: {error}", file=sys.stderr)
+        return 2
+    bridge = NavigatorInstallerBridge(ROOT / "install" / "navigator-transport-matrix.json", runtime)
     current = bridge.existing_status()
     if args.status or current.get("status") == "connected":
         emit(current)

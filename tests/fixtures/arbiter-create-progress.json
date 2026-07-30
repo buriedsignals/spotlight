@@ -1,0 +1,79 @@
+{
+  "analysis": {
+    "activity": [
+      {
+        "key": "analysis-run",
+        "message": "Starting case study analysis.",
+        "module": null,
+        "phase": "analysis-run",
+        "platform": null,
+        "posts": null,
+        "status": "active"
+      },
+      {
+        "key": "analysis-scope",
+        "message": "Starting analysis for Reddit with 12 posts.",
+        "module": null,
+        "phase": "analysis-scope",
+        "platform": "reddit",
+        "posts": 12,
+        "status": "complete"
+      }
+    ],
+    "modules": [
+      {
+        "module": "engagement",
+        "platform": "reddit",
+        "status": "ready"
+      },
+      {
+        "module": "themes",
+        "platform": "reddit",
+        "status": "running"
+      },
+      {
+        "module": "entities",
+        "platform": "youtube",
+        "status": "failed"
+      }
+    ]
+  },
+  "case_study_id": "case_fixture",
+  "collection": {
+    "platforms": [
+      {
+        "message": "Collected 12 posts",
+        "platform": "reddit",
+        "posts": 12,
+        "status": "complete",
+        "updated_at": "2026-07-25T14:58:00.000+05:30"
+      },
+      {
+        "message": "Fetching page 2 for \"fixture phrase\"",
+        "platform": "youtube",
+        "posts": 5,
+        "status": "collecting",
+        "updated_at": "2026-07-25T15:00:00.000+05:30"
+      }
+    ],
+    "stages": [
+      {
+        "message": null,
+        "posts": 17,
+        "stage": "collection",
+        "status": "active",
+        "updated_at": null
+      },
+      {
+        "message": "Reranking 17 posts",
+        "posts": 4,
+        "stage": "rerank",
+        "status": "active",
+        "updated_at": "2026-07-25T15:00:00.000+05:30"
+      }
+    ],
+    "total_posts": 17
+  },
+  "status": "processing",
+  "updated_at": "2026-07-25T15:00:00.000+05:30"
+}

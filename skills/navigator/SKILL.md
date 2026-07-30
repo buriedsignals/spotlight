@@ -74,11 +74,13 @@ retrieval time, and any documented limitations with the research plan.
 navigator data find "Norway companies" --json
 navigator data show no/brreg/enheter
 navigator query no/brreg/enheter --input '{"navn":"Equinor","size":5}' --out research/companies.json
+navigator query <source-id> --input-file research/request.json --out research/response.json
 ```
 
 Always run `navigator data show <source-id>` before a query. It supplies the
 current source-specific playbook, input schema, auth requirements, rate limits,
-and caveats. Use `--out` for multi-record results.
+and caveats. Use `--input-file` when the request contains arbitrary user text or
+a large body, and `--out` for multi-record results.
 
 ## Evidence Rules
 

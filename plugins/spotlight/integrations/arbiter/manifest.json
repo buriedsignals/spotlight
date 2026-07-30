@@ -1,0 +1,35 @@
+{
+  "id": "arbiter",
+  "name": "Arbiter Social Intelligence",
+  "description": "Operator-only social-media case studies through Data Navigator's hosted partner source: browse already-collected, already-analyzed corpora for stance, engagement, entity, theme, archived-post, and report analysis, or create a new study from a reviewed search plan.",
+  "category": "social-osint",
+  "type": "cli",
+  "local_binary": "navigator",
+  "version_args": ["query", "--help"],
+  "version_output_contains": "--input-file",
+  "probes": [
+    {
+      "args": ["data", "show", "global/arbiter/case-studies"],
+      "output_contains": "global/arbiter/case-studies",
+      "env": {"DATANAV_CATALOGUE": "remote"}
+    }
+  ],
+  "requires_key": false,
+  "env_vars": [],
+  "capabilities": [
+    "curated-case-study-browse",
+    "case-study-creation",
+    "query-to-case-study-matching",
+    "entity-stance-analysis",
+    "hierarchical-theme-analysis",
+    "consolidated-case-study-report",
+    "actor-community-mapping",
+    "ai-agent-questions",
+    "engagement-metrics",
+    "archived-social-content"
+  ],
+  "invocable_by": ["investigator", "fact-checker"],
+  "homepage": "https://arbiter.simppl.org/",
+  "docs": "docs/arbiter-api.md",
+  "rate_limit_note": "Operator-only while Arbiter uses one shared case-study namespace and credit pool. Requires a connected Navigator administrator and consumes Data Navigator's hosted-source quota. Arbiter also credit-meters post pulls, search-plan generation, finalization, and agent questions. Listing studies, entities, themes, reports, pending-study creation, status, progress, and usage are free upstream."
+}

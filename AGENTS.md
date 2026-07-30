@@ -132,7 +132,7 @@ Skills are markdown playbooks loaded via `invoke-skill(skill_id)`. Each skill li
 |----------|------|-------------|--------------|
 | `spotlight` | `skills/spotlight/SKILL.md` | Investigation orchestrator — pipeline phases, gates, cycle evaluation | orchestrator (top-level) |
 | `review` | `skills/review/SKILL.md` | Post-Gate-1 HTML review artifact + structured feedback loop; re-spawns investigator on feedback submission | orchestrator, user |
-| `integrations` | `skills/integrations/SKILL.md` | Routing layer for external tool integrations — dev-browser, Junkipedia, Noosphere C2PA, OSINT Navigator, Unpaywall. Reads live preflight status, maps investigation tasks to integrations | investigator, fact-checker, orchestrator |
+| `integrations` | `skills/integrations/SKILL.md` | Routing layer for external tool integrations — dev-browser, Junkipedia, Arbiter, Noosphere C2PA, OSINT Navigator, Unpaywall. Reads live preflight status, maps investigation tasks to integrations | investigator, fact-checker, orchestrator |
 | `ingest` | `skills/ingest/SKILL.md` | Knowledge archival — vault ingestion from case files | orchestrator, user |
 | `report-drafting` | `skills/report-drafting/SKILL.md` | Post-Gate-1 hybrid report: model-authored localized framing and priority in `data/report-draft.json`; deterministic finding-reference, verdict, confidence, escaping, and artifact rendering. | orchestrator, user |
 | `monitoring` | `skills/monitoring/SKILL.md` | Monitoring orchestration — Mycroft passive signals, coJournalist projects/scouts, runtime-native fallbacks | orchestrator |
@@ -144,6 +144,7 @@ Skills are markdown playbooks loaded via `invoke-skill(skill_id)`. Each skill li
 | `shell-safety` | `skills/shell-safety/SKILL.md` | Safe command construction, value validation, and destructive-operation probe rules for execute-shell use | investigator, fact-checker, orchestrator, user |
 | `osint` | `skills/osint/SKILL.md` | OSINT tool routing table + 150-tool catalog + OSINT Navigator integration | investigator, fact-checker, user |
 | `navigator` | `skills/navigator/SKILL.md` | Unified Navigator routing: OSINT discovery for Pro and Lab members, plus the Data Navigator tool for Lab members | investigator, fact-checker, orchestrator, user |
+| `arbiter` | `skills/arbiter/SKILL.md` | Direct `/arbiter` entry point: operator-gated case-study browse/create workflow through Data Navigator, with deterministic report appendix handoff | investigator, fact-checker, orchestrator, user |
 | `investigate` | `skills/investigate/SKILL.md` | Step-by-step techniques: geolocation, verification, person, platform, transport, archiving | investigator, user |
 | `follow-the-money` | `skills/follow-the-money/SKILL.md` | Financial methodology: UBO, offshore, budgets, assets, public blockchain tracing | investigator, user |
 | `technical-investigation` | `skills/technical-investigation/SKILL.md` | Passive technical investigation: indicators, infrastructure history, local document/email metadata, public GitHub history, verified indicator export | investigator, fact-checker, orchestrator, user |

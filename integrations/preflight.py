@@ -84,15 +84,52 @@ def smoke_test(manifest: dict) -> tuple[bool, str | None]:
         resolved = shutil.which(binary)
         if resolved is None:
             return False, f"{binary} not on PATH"
+        import subprocess
+
         version_args = manifest.get("version_args")
         if isinstance(version_args, list) and version_args:
-            import subprocess
             try:
                 proc = subprocess.run([binary, *version_args], text=True, capture_output=True, timeout=10, check=False)
             except Exception as e:
                 return False, f"{binary} version check failed: {type(e).__name__}: {e}"
             if proc.returncode != 0:
                 return False, f"{binary} version check exited {proc.returncode}"
+            required_output = manifest.get("version_output_contains")
+            if required_output and required_output not in f"{proc.stdout}\n{proc.stderr}":
+                return False, f"{binary} output is missing required capability: {required_output}"
+        probes = manifest.get("probes") or []
+        if not isinstance(probes, list):
+            return False, f"{binary} probes must be a list"
+        for index, probe in enumerate(probes, start=1):
+            if not isinstance(probe, dict) or not isinstance(probe.get("args"), list):
+                return False, f"{binary} probe {index} must declare an args list"
+            probe_env = probe.get("env") or {}
+            if not (
+                isinstance(probe_env, dict)
+                and all(
+                    isinstance(key, str) and isinstance(value, str)
+                    for key, value in probe_env.items()
+                )
+            ):
+                return False, f"{binary} probe {index} env must map strings to strings"
+            try:
+                proc = subprocess.run(
+                    [binary, *probe["args"]],
+                    text=True,
+                    capture_output=True,
+                    timeout=10,
+                    check=False,
+                    env={**os.environ, **probe_env},
+                )
+            except Exception as e:
+                return False, f"{binary} probe {index} failed: {type(e).__name__}: {e}"
+            if proc.returncode != 0:
+                detail = (proc.stderr or proc.stdout).strip()[:300]
+                suffix = f": {detail}" if detail else ""
+                return False, f"{binary} probe {index} exited {proc.returncode}{suffix}"
+            required_output = probe.get("output_contains")
+            if required_output and required_output not in f"{proc.stdout}\n{proc.stderr}":
+                return False, f"{binary} probe {index} output is missing: {required_output}"
         return True, None
 
     return True, None
