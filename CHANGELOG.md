@@ -13,14 +13,14 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   within the 100-token ceiling; reviewed-source locks, daily drift detection, source maps,
   the upstream MIT license, and acknowledgements preserve provenance.
 - Arbiter case-study integration (`integrations/arbiter/`): Data Navigator's
-  hosted partner source now owns the `/api/v1` credential and all 14 endpoint
+  BYO-key source now covers the `/api/v1` contract and all 14 endpoint
   operations, while Spotlight owns topic matching, reviewed creation, evidence
   handling, and offline rendering. Arbitrary text travels through Navigator's
   `--input-file` path instead of shell strings; `docs/arbiter-api.md` documents
   the upstream surface and preflight verifies the `navigator` CLI and deployed
-  source. Shared-account access is restricted to trusted Navigator
-  administrators; natural-language planning cannot approve charged or mutating
-  operations, and hosted errors retain stable Arbiter codes and retry metadata.
+  source. Members provide their own Arbiter key; natural-language planning
+  cannot approve charged or mutating operations, and errors retain stable
+  Arbiter codes and retry metadata.
 - Conditional Arbiter analytics section in the deterministic report renderer: a
   case carrying a saved `research/arbiter-report-*.json` gains an engagement
   chart, story, theme table, actors, communities, and recorded source posts,
@@ -28,10 +28,10 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   renders byte-for-byte the same report as before.
 
 ### Changed
-- New Arbiter network access is temporarily blocked and `/arbiter` now requires
-  the deployed Data Navigator source to report `queryable: true` before it
+- `/arbiter` requires the deployed Data Navigator source to report
+  `queryable: true` and the member to configure their own Arbiter key before it
   offers browse or create actions. Previously saved Arbiter material still
-  renders offline while Indicator and Arbiter resolve paid-member ownership.
+  renders offline.
 - Skill placement converged on the engine placement contract (`engine
   docs/skill-placement-contract.md`): canonical `~/.agents/skills/spotlight/` store for every
   runtime + ONE product-level adapter symlink for opencode/pi/Claude Code (which now receives

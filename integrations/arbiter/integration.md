@@ -1,22 +1,15 @@
 # Arbiter — Social-Media Case Studies through Data Navigator
 
-> **Availability:** temporarily blocked for every member while Indicator and
-> Arbiter agree how paid-member study ownership and privacy should work. Do not
-> make network calls or bypass Data Navigator's block. The contract below is
-> retained for reactivation and for rendering previously saved responses.
-
 **What:** Arbiter is a social-intelligence platform for bounded,
 already-collected social-media corpora. A case study has one query, a platform
 set, and a declared date window, with archived posts, entity/stance analysis,
 hierarchical themes, actor/community structure, engagement analytics, and a
 study-scoped analysis agent.
 
-When access resumes, Spotlight accesses Arbiter only through Data Navigator's hosted partner source:
-`global/arbiter/case-studies`. Navigator holds the partner credential on its
-server. Do not construct a direct upstream request or ask the operator for an
-Arbiter credential. Because one Arbiter key shares a created-study namespace
-and credit pool, Navigator exposes this source only to trusted administrators
-until scoped credentials or per-member case ownership exist.
+Spotlight accesses Arbiter through Data Navigator's BYO-key source:
+`global/arbiter/case-studies`. The operator stores their own key with
+`navigator keys set arbiter`; Navigator sends requests directly to Arbiter.
+Do not construct a direct upstream request or place the key in a case file.
 
 ## When to use
 
@@ -41,10 +34,10 @@ navigator auth status
 navigator data show global/arbiter/case-studies
 ```
 
-Data Navigator requires a connected administrator account. If it is
-disconnected, run `spotlight-navigator`; if the remote catalogue does not expose
-the source, use another source and report that Arbiter is operator-only. Never
-request or reveal Navigator's PAT.
+Data Navigator requires a connected paid member account and a configured Arbiter
+key. If Navigator is disconnected, run `spotlight-navigator`; if the key is
+missing, guide the operator through `navigator keys set arbiter`. Never request
+or reveal Navigator's PAT or the Arbiter key.
 
 Every network call uses:
 
@@ -216,11 +209,11 @@ Usage is free upstream:
 ```
 
 `credits_balance`, `rates`, period counters, and request limits describe the
-hosted partner account. Do not expose secrets; none appear in the response.
+member's Arbiter account. Do not expose secrets; none appear in the response.
 
 ## Create a new case study
 
-Creation changes external state and uses a shared partner account. Start only
+Creation changes external state and uses the member's Arbiter account. Start only
 after the operator explicitly chooses it. Preserve every request and response.
 
 ### 1. Create pending study — free, not idempotent

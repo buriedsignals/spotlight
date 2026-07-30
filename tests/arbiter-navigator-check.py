@@ -45,8 +45,8 @@ def main() -> int:
         errors.append("manifest must reject a stale cached Arbiter availability result")
     if "name: arbiter" not in skill_text or "Browse existing studies" not in skill_text:
         errors.append("skills/arbiter must provide the direct /arbiter browse/create entry point")
-    if "temporarily unavailable" not in skill_text:
-        errors.append("skills/arbiter must explain the temporary access pause")
+    if "navigator keys set arbiter" not in skill_text:
+        errors.append("skills/arbiter must explain how to configure the BYO key")
 
     forbidden = ("ARBITER_API_KEY", "Authorization: Bearer", "curl ")
     for value in forbidden:

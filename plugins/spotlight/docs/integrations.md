@@ -17,7 +17,7 @@ An agent invokes a **skill** to get *guidance* and calls an **integration** to g
 
 | ID | Type | Category | Key needed | Purpose |
 |---|---|---|---|---|
-| `arbiter` | cli | social-osint | Temporarily blocked pending the paid-member ownership model | Implemented social-media case studies through `global/arbiter/case-studies`: browse a collected, analysed corpus for entity stance, themes, actors/communities, archived posts, and report visuals, or create a study from a reviewed search plan once partnership access resumes. |
+| `arbiter` | cli | social-osint | Bring your own Arbiter key | Browse and create social-media case studies through `global/arbiter/case-studies`, including archived posts, themes, stance, actors, communities, engagement, and report visuals. |
 | `dev-browser` | cli | browser-automation | No | Browser automation for specific investigative tasks after ordinary search/scrape is insufficient: forms, portals, JS-rendered pages, screenshots, downloads, and authenticated sessions. |
 | `browser-harness` | cli | browser-automation | No | Legacy browser fallback. Do not use as default while dev-browser is green. |
 | `browser-use` | library | browser-automation | No (optional cloud) | Legacy/adjacent browser automation. Do not use as default while dev-browser is green. |

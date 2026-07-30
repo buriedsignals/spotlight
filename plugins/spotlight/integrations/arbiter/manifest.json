@@ -1,7 +1,7 @@
 {
   "id": "arbiter",
   "name": "Arbiter Social Intelligence",
-  "description": "Temporarily unavailable while Indicator and Arbiter agree how paid-member study ownership should work. The implemented Data Navigator partner source can browse analyzed social-media collections, retrieve archived posts, ask the study agent, or create a reviewed collection once access resumes.",
+  "description": "Bring your own Arbiter key to browse archived social-media case studies, analyze themes and actors, ask study-scoped questions, and create reviewed collections through Data Navigator.",
   "category": "social-osint",
   "type": "cli",
   "local_binary": "navigator",
@@ -34,5 +34,5 @@
   "invocable_by": ["investigator", "fact-checker"],
   "homepage": "https://arbiter.simppl.org/",
   "docs": "docs/arbiter-api.md",
-  "rate_limit_note": "Temporarily blocked for every member while the partnership chooses tenant-scoped hosted access, member BYOK, a hybrid, or an explicitly shared workspace. When enabled, it consumes Data Navigator's hosted-source quota and Arbiter also credit-meters post pulls, search-plan generation, finalization, and agent questions."
+  "rate_limit_note": "Arbiter API usage is billed or credit-metered according to the member's own Arbiter account. Data Navigator does not provide a shared hosted key."
 }
