@@ -268,7 +268,7 @@ def manifest_body(
         "status": "unsigned",
         "signing": {
             "profile": "noosphere-c2pa",
-            "requires_api_key": False,
+            "requires_api_key": True,
             "requires_signing_credential": True,
             "credential_id": credential_id,
             "endpoint": endpoint,
@@ -319,17 +319,21 @@ def post_for_signing(
     manifest: dict[str, Any],
     artifact_path: str | None,
     credential_id: str | None,
+    api_key: str | None = None,
 ) -> dict[str, Any]:
     payload = {
         "artifact_path": artifact_path,
         "provenance_manifest": manifest,
         "credential_id": credential_id,
     }
+    headers = {"Content-Type": "application/json", "User-Agent": "Spotlight-C2PA/1.1"}
+    if api_key:
+        headers["X-API-Key"] = api_key
     request = urllib.request.Request(
         endpoint,
         data=json.dumps(payload).encode("utf-8"),
         method="POST",
-        headers={"Content-Type": "application/json", "User-Agent": "Spotlight-C2PA/1.1"},
+        headers=headers,
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         result = json.loads(response.read().decode("utf-8"))
@@ -450,12 +454,14 @@ def record_signing_failure(
     endpoint: str,
     credential_id: str | None,
     error: str,
+    api_key: str | None = None,
 ) -> None:
     attempt = {
         "schema_version": "1.0",
         "revision_id": pointer["revision_id"],
         "endpoint": endpoint,
         "credential_id_provided": credential_id is not None,
+        "api_key_provided": bool(api_key),
         "status": "signing_failed",
         "error": error,
     }
@@ -481,11 +487,12 @@ def sign_revision(
     artifact: str | None,
     credential_id: str | None,
     receipt_output: str | None,
+    api_key: str | None = None,
 ) -> None:
     if pointer.get("signing_status") == "signed":
         return
     try:
-        receipt = post_for_signing(endpoint, revision, artifact, credential_id)
+        receipt = post_for_signing(endpoint, revision, artifact, credential_id, api_key)
         receipt_bytes = rendered_bytes(receipt)
         if receipt_output:
             receipt_path = Path(receipt_output).resolve()
@@ -511,6 +518,7 @@ def sign_revision(
             endpoint,
             credential_id,
             f"{type(exc).__name__}: {exc}",
+            api_key,
         )
 
 
@@ -522,6 +530,11 @@ def main() -> int:
     )
     parser.add_argument("--credential-id", default=None, help="Noosphere signing credential id")
     parser.add_argument("--sign-endpoint", default=None, help="Optional Noosphere C2PA signing endpoint")
+    parser.add_argument(
+        "--api-key",
+        default=os.environ.get("NOOSPHERE_PROVENANCE_API_KEY"),
+        help="Noosphere signing API key (X-API-Key). Defaults to $NOOSPHERE_PROVENANCE_API_KEY",
+    )
     parser.add_argument("--artifact", default=None, help="Optional artifact path to sign, e.g. review.html")
     parser.add_argument("--receipt-output", default=None, help="Optional path for signing receipt JSON")
     parser.add_argument(
@@ -576,6 +589,7 @@ def main() -> int:
                     args.artifact,
                     args.credential_id,
                     args.receipt_output,
+                    args.api_key,
                 )
                 atomic_replace(output, rendered_bytes(pointer))
         else:
@@ -598,7 +612,7 @@ def main() -> int:
                 )
                 try:
                     receipt = post_for_signing(
-                        args.sign_endpoint, manifest, args.artifact, args.credential_id
+                        args.sign_endpoint, manifest, args.artifact, args.credential_id, args.api_key
                     )
                     atomic_replace(receipt_path, rendered_bytes(receipt))
                     manifest["status"] = "signed"
