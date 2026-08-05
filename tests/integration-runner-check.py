@@ -11,7 +11,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "integrations"))
-from _runner import IntegrationError, integration_run_dir, resolve_within, run_subprocess, write_json_atomic  # noqa: E402
+from _runner import (  # noqa: E402
+    IntegrationError,
+    dispatch_integration,
+    integration_run_dir,
+    resolve_within,
+    run_subprocess,
+    write_json_atomic,
+)
 
 
 def expect_error(fn, label: str) -> None:
@@ -56,6 +63,26 @@ def main() -> int:
         proc = run_subprocess(["python3", "-c", "print('ok')"])
         assert proc.returncode == 0 and proc.stdout.strip() == "ok"
         print("ok subprocess argument list")
+
+        request = base / "maigret-request.json"
+        request.write_text(json.dumps({
+            "project": "case-three",
+            "run_id": "run-003",
+            "usernames": ["example_user"],
+        }), encoding="utf-8")
+        old_cases_root = os.environ.get("SPOTLIGHT_CASES_ROOT")
+        os.environ["SPOTLIGHT_CASES_ROOT"] = str(base / "dispatcher-cases")
+        try:
+            assert dispatch_integration(["maigret", str(request), "--dry-run"]) == 0
+        finally:
+            if old_cases_root is None:
+                os.environ.pop("SPOTLIGHT_CASES_ROOT", None)
+            else:
+                os.environ["SPOTLIGHT_CASES_ROOT"] = old_cases_root
+        print("ok closed maigret dispatcher")
+
+        expect_error(lambda: dispatch_integration(["../../shell", str(request)]), "dispatcher id traversal rejected")
+        expect_error(lambda: dispatch_integration(["unknown", str(request)]), "unknown dispatcher id rejected")
     return 0
 
 

@@ -1,15 +1,20 @@
-"""Shared execution helpers for Spotlight integrations.
+"""Shared execution helpers and closed dispatcher for Spotlight integrations.
 
 Wrappers use this module to keep path containment, request parsing, run
 manifests, atomic JSON writes, and subprocess invocation consistent.
+
+    python3 integrations/_runner.py maigret request.json [--dry-run]
+    python3 integrations/_runner.py rlm request.json
 """
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -21,6 +26,10 @@ SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 UNSAFE_CHARS_RE = re.compile(r"[\x00\r\n`$;&|<>]")
 FORBIDDEN_STATUSES = {"verified", "confirmed", "publishable"}
+INTEGRATION_ENTRYPOINTS = {
+    "maigret": "maigret.run_maigret",
+    "rlm": "rlm.run_rlm",
+}
 
 
 class IntegrationError(ValueError):
@@ -159,3 +168,47 @@ class RunManifest:
             "exit_code": self.exit_code,
             "request": self.request,
         }
+
+
+def dispatch_integration(argv: list[str] | None = None) -> int:
+    """Run one request-based integration through a closed module registry.
+
+    The Engine calls this file directly so the integration id is never turned
+    into a path or shell command. Each registered module retains its own
+    request validation and the shared containment/status helpers above.
+    """
+    args = list(sys.argv[1:] if argv is None else argv)
+    if not args or args[0] in {"-h", "--help", "help"}:
+        names = "|".join(sorted(INTEGRATION_ENTRYPOINTS))
+        print(f"usage: _runner.py <{names}> <request.json> [integration options]")
+        return 0 if args else 2
+
+    integration_id = validate_slug(args[0], "integration_id")
+    module_name = INTEGRATION_ENTRYPOINTS.get(integration_id)
+    if module_name is None:
+        raise IntegrationError(f"unsupported integration_id {integration_id!r}")
+
+    module = importlib.import_module(module_name)
+    entrypoint = getattr(module, "main", None)
+    if not callable(entrypoint):
+        raise IntegrationError(f"integration {integration_id!r} has no runnable entry point")
+
+    previous = sys.argv
+    sys.argv = [f"_runner.py {integration_id}", *args[1:]]
+    try:
+        result = entrypoint()
+    finally:
+        sys.argv = previous
+    return int(result or 0)
+
+
+def main() -> int:
+    try:
+        return dispatch_integration()
+    except (ImportError, IntegrationError, OSError, ValueError) as exc:
+        print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True), file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
