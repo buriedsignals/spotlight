@@ -188,6 +188,12 @@ def dispatch_integration(argv: list[str] | None = None) -> int:
     if module_name is None:
         raise IntegrationError(f"unsupported integration_id {integration_id!r}")
 
+    integration_root = Path(__file__).resolve().parent
+    if str(integration_root) not in sys.path:
+        # Engine launches Python with -I -S so ambient PYTHONPATH, user/system
+        # site packages, and sitecustomize cannot run before this reviewed
+        # dispatcher. Add only this checkout's integration root afterward.
+        sys.path.insert(0, str(integration_root))
     module = importlib.import_module(module_name)
     entrypoint = getattr(module, "main", None)
     if not callable(entrypoint):

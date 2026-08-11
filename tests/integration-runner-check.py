@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -80,6 +81,16 @@ def main() -> int:
             else:
                 os.environ["SPOTLIGHT_CASES_ROOT"] = old_cases_root
         print("ok closed maigret dispatcher")
+
+        isolated = subprocess.run(
+            [sys.executable, "-I", "-S", str(ROOT / "integrations" / "_runner.py"), "maigret", str(request), "--dry-run"],
+            env={**os.environ, "SPOTLIGHT_CASES_ROOT": str(base / "isolated-dispatcher-cases")},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert isolated.returncode == 0, isolated.stderr
+        print("ok isolated Engine dispatcher")
 
         expect_error(lambda: dispatch_integration(["../../shell", str(request)]), "dispatcher id traversal rejected")
         expect_error(lambda: dispatch_integration(["unknown", str(request)]), "unknown dispatcher id rejected")
