@@ -47,6 +47,25 @@ stable browser/page name so the session can be resumed:
 execute-shell("dev-browser --browser spotlight-{project} --timeout 60 run {CASE_DIR}/research/dev-browser-task.js")
 ```
 
+Always clean up a named browser when the session ends. Put the trap in the
+launcher or shell session that owns the browser name:
+
+```bash
+browser_name="spotlight-{project}"
+
+cleanup_browser() {
+  trap - EXIT INT TERM
+  bash /Users/tomvaillant/buried_signals/scripts/dev-browser-stop-browser.sh "$browser_name" || true
+}
+
+trap cleanup_browser EXIT INT TERM
+dev-browser --browser "$browser_name" --timeout 60 run {CASE_DIR}/research/dev-browser-task.js
+```
+
+The helper stops only that named browser and is safe to call when it has
+already stopped. Do not use `dev-browser stop` in a session trap: that stops
+the daemon and every managed browser, including unrelated active work.
+
 ## Evidence Handling
 
 Every browser acquisition should update `{CASE_DIR}/data/evidence-bundle.json`
