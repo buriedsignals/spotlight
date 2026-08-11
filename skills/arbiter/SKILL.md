@@ -15,9 +15,11 @@ actor/community analysis, or Arbiter report visuals.
 Arbiter is remote and disabled in sensitive mode. Previously saved Arbiter JSON
 may still be rendered offline.
 
-Arbiter uses the member's own API key through Data Navigator once enabled.
-Live access is currently blocked pending the member discount-code flow;
-previously saved reports and themes remain usable offline.
+Arbiter uses each member's own API key through Data Navigator. There is no
+shared Spotlight, Buried Signals, or hosted Arbiter key. Register through the
+[Indicator partner signup link](https://arbiter.simppl.org/auth/register?eventSignup=5cce20c609334e538f07127322361862e3136e3d-324a-4c60-894a-5f42d2d57f8a),
+create an API key in the member's Arbiter account, and store it locally with
+`navigator keys set arbiter`.
 
 ## Start
 
@@ -35,10 +37,11 @@ read-file("integrations/arbiter/integration.md")
 ```
 
 Preflight must find the source with `"queryable": true`, not merely find its
-catalogue entry. If it reports the source as blocked, explain that live access
-is pending the discount-code flow and use saved material offline. Once enabled,
-if the member has no Arbiter key, explain how to create one and run
-`navigator keys set arbiter` before offering browse or create actions.
+catalogue entry. If it does not, report the current Navigator availability
+problem and use saved material offline. If the member has no Arbiter key, send
+them to the attributed signup link above, ask them to create their own key, and
+have them run `navigator keys set arbiter` before offering browse or create
+actions. Never ask them to paste the key into the conversation or a case file.
 
 ## Prompt
 

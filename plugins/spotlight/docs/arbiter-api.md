@@ -2,7 +2,7 @@
 
 Arbiter is a social-media case-study platform. A *case study* is a bounded corpus — one search query, a set of platforms, a date window — that has been collected, de-duplicated, indexed and analysed. Data Navigator exposes this API to members who provide their own Arbiter key, for browsing existing studies, creating new ones, and asking the case-study-scoped agent.
 
-Arbiter is first-party, so there is no vendor documentation site to defer to: this file is the upstream interface contract (what the endpoints accept and return). `integrations/arbiter/integration.md` is the agent-facing Data Navigator contract (how Spotlight drives the flow).
+Arbiter is a partner integration. This file is Spotlight's local reference for the upstream interface (what the endpoints accept and return), while `integrations/arbiter/integration.md` is the agent-facing Data Navigator contract (how Spotlight drives the flow).
 
 **`GET <base>/openapi.json` is the machine-readable contract** — OpenAPI 3.1, unauthenticated, `max-age=300`, and authoritative for shapes. Fetch it rather than hardcoding a schema. It is not listed in its own `paths`, so a generated client will not include the operation. § *Divergences* records where observed behaviour differs from the published document.
 
@@ -73,7 +73,7 @@ Send the key as a bearer token on every call. The header must literally begin wi
 
 A *valid* key that is over its window returns `429`, not `401`. If credential verification is itself unavailable you get `503` — retryable, not a credential fault.
 
-**Getting a key:** sign in, open the user profile page → **API Keys** tab, create a key (optionally naming it, 1–60 characters), and copy the plaintext immediately — it is shown exactly once. An account holds **one active key at a time**: *regenerate* revokes the old key and mints a replacement; *delete* revokes with no replacement. A key created that way is automatically linked to the Arbiter account, and **`POST /topics/{id}/agent` and the whole write surface require a linked key** — a manually provisioned key may not be linked and returns `403`. Every other read endpoint works with an unlinked key.
+**Getting a key:** each user registers through the [Indicator partner signup link](https://arbiter.simppl.org/auth/register?eventSignup=5cce20c609334e538f07127322361862e3136e3d-324a-4c60-894a-5f42d2d57f8a), signs in, opens the user profile page → **API Keys** tab, creates a key (optionally naming it, 1–60 characters), and copies the plaintext immediately — it is shown exactly once. Store it on that user's machine with `navigator keys set arbiter`; do not paste it into Spotlight, a case file, or a shared service. There is no shared Buried Signals or Spotlight key. An account holds **one active key at a time**: *regenerate* revokes the old key and mints a replacement; *delete* revokes with no replacement. A key created that way is automatically linked to the Arbiter account, and **`POST /topics/{id}/agent` and the whole write surface require a linked key** — a manually provisioned key may not be linked and returns `403`. Every other read endpoint works with an unlinked key.
 
 **A key is bound to one deployment.** It is registered against that deployment's database and will not resolve against another, so the key and `ARBITER_API_BASE` must name the same deployment.
 

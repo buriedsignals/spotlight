@@ -57,7 +57,9 @@ What's the task?
 │     → arbiter  (if green — check preflight) through
 │       `navigator query global/arbiter/case-studies`; browse the topic menu for a case study
 │       that already covers the event, or create one from a reviewed plan when nothing matches
-│     → requires Navigator administrator access; post pulls and agent questions are credit-metered
+│     → requires eligible Data Navigator access and the member's own Arbiter key; `/arbiter`
+│       provides the attributed signup link and local key-setup command
+│     → post pulls and agent questions are credit-metered to that member's Arbiter account
 │     → fallback: junkipedia, then search() + social-media-intelligence skill
 │
 ├── "Find accounts from one or more usernames / handles / aliases"

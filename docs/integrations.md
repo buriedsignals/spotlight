@@ -17,7 +17,7 @@ An agent invokes a **skill** to get *guidance* and calls an **integration** to g
 
 | ID | Type | Category | Key needed | Purpose |
 |---|---|---|---|---|
-| `arbiter` | cli | social-osint | Partner — discount code pending | Browse and create social-media case studies through `global/arbiter/case-studies` once enabled, including archived posts, themes, stance, actors, communities, engagement, and report visuals. |
+| `arbiter` | cli | social-osint | Member-owned Arbiter key (BYOK) | Browse and create social-media case studies through `global/arbiter/case-studies`, including archived posts, themes, stance, actors, communities, engagement, and report visuals. |
 | `dev-browser` | cli | browser-automation | No | Browser automation for specific investigative tasks after ordinary search/scrape is insufficient: forms, portals, JS-rendered pages, screenshots, downloads, and authenticated sessions. |
 | `browser-harness` | cli | browser-automation | No | Legacy browser fallback. Do not use as default while dev-browser is green. |
 | `browser-use` | library | browser-automation | No (optional cloud) | Legacy/adjacent browser automation. Do not use as default while dev-browser is green. |
@@ -27,11 +27,13 @@ An agent invokes a **skill** to get *guidance* and calls an **integration** to g
 | `osint-navigator` | api | tool-discovery | `OSINT_NAV_API_KEY` | 10,000+ OSINT tools with AI-powered synthesized answers. Complements the curated 150-tool catalog in the `osint` skill. |
 | `unpaywall` | api | academic-open-access | `UNPAYWALL_EMAIL` | Legal open-access lookup for academic papers by DOI. Used only when selected in setup and green in preflight. |
 
-Arbiter is the one first-party integration, so there is no vendor documentation
-site to defer to: `docs/arbiter-api.md` is its authoritative interface reference
-(endpoints, auth, credits, pagination, case-study lifecycle). Spotlight calls it
-through Data Navigator; the hosted server uses the machine-readable
-`GET /api/v1/openapi.json` contract.
+Arbiter is a partner integration. Each user registers with the
+[Indicator partner signup link](https://arbiter.simppl.org/auth/register?eventSignup=5cce20c609334e538f07127322361862e3136e3d-324a-4c60-894a-5f42d2d57f8a),
+creates their own API key, and stores it locally with
+`navigator keys set arbiter`. Spotlight never receives or supplies a shared
+key. `docs/arbiter-api.md` is the authoritative interface reference for
+endpoints, authentication, credits, pagination, and the case-study lifecycle;
+Spotlight reaches that interface through Data Navigator.
 
 ## Deferred integrations (architecture ready)
 

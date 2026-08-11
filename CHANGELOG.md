@@ -28,9 +28,11 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   renders byte-for-byte the same report as before.
 
 ### Changed
-- `/arbiter` requires the deployed Data Navigator source to report
-  `queryable: true` and the member to configure their own Arbiter key before it
-  offers browse or create actions. Previously saved Arbiter material still
+- `/arbiter` is live for eligible Data Navigator members. It requires the
+  deployed source to report `queryable: true`, directs each member through the
+  attributed Indicator signup flow, and has them configure their own key with
+  `navigator keys set arbiter` before browse or create actions. Spotlight does
+  not supply or store a shared key; previously saved Arbiter material still
   renders offline.
 - Skill placement converged on the engine placement contract (`engine
   docs/skill-placement-contract.md`): canonical `~/.agents/skills/spotlight/` store for every

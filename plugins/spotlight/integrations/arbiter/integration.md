@@ -10,8 +10,11 @@ Spotlight accesses Arbiter through Data Navigator's BYO-key source:
 `global/arbiter/case-studies`. The operator stores their own key with
 `navigator keys set arbiter`; Navigator sends requests directly to Arbiter.
 Do not construct a direct upstream request or place the key in a case file.
-The source is currently blocked while the member discount-code flow is being
-prepared; do not offer live Arbiter calls until Navigator reports it queryable.
+There is no shared Spotlight, Buried Signals, or hosted Arbiter key. Each member
+registers through the
+[Indicator partner signup link](https://arbiter.simppl.org/auth/register?eventSignup=5cce20c609334e538f07127322361862e3136e3d-324a-4c60-894a-5f42d2d57f8a),
+creates an API key in their own Arbiter account, and keeps it in their local
+Navigator key store.
 
 ## When to use
 
@@ -36,12 +39,13 @@ navigator auth status
 navigator data show global/arbiter/case-studies
 ```
 
-Data Navigator requires a connected paid member account and a configured Arbiter
-key once the source is enabled. Until the discount-code flow is available,
-Navigator reports the source as blocked and no live call may be made. If
-Navigator is disconnected, run `spotlight-navigator`; if the key is missing
-after enablement, guide the operator through `navigator keys set arbiter`.
-Never request or reveal Navigator's PAT or the Arbiter key.
+Data Navigator requires a connected eligible member account and that member's
+configured Arbiter key. The deployed source is live, but preflight must still
+confirm `"queryable": true` so Spotlight never relies on a stale catalogue
+entry. If Navigator is disconnected, run `spotlight-navigator`. If the key is
+missing, send the operator to the attributed signup link above, have them create
+their own key, and guide them through `navigator keys set arbiter`. Never
+request or reveal Navigator's PAT or the Arbiter key.
 
 Every network call uses:
 
@@ -313,8 +317,8 @@ interrupted transition can still leave a lost processing study.
 ```
 
 Poll every 15–30 seconds, writing each response to the case research directory.
-The operation is free in Arbiter but every poll still consumes Navigator's
-hosted-source quota, so do not poll aggressively.
+The operation is free in Arbiter, but do not poll aggressively or add
+unnecessary load to the upstream service.
 
 - `processing`: continue while `updated_at` advances.
 - `completed`: inspect `analysis.modules[]`; completed can include failed
@@ -339,10 +343,9 @@ detail as JSON in its error. Branch on `upstream_error.code`:
 `invalid_request`, `unauthorized`, `insufficient_credits`, `forbidden_scope`,
 `not_found`, `rate_limited`, or `internal`. Do not branch on English messages.
 Honour `retry_after`, but never automatically retry a charged or
-non-idempotent call. Navigator deliberately does not refund its hosted-query
-quota for an ambiguous charged or mutating Arbiter attempt. It also bounds
-concurrent long `agent` and `search_plan` calls; a capacity response is safe to
-retry only after the stated delay because the upstream request was not sent.
+non-idempotent call. Navigator bounds concurrent long `agent` and `search_plan`
+calls; a capacity response is safe to retry only after the stated delay because
+the upstream request was not sent.
 
 Save responses verbatim. Arbiter serves archived snapshots; cite the origin
 post URL with `access_method: "archive_copy"` and record the study and post ids.
