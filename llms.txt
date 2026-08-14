@@ -68,8 +68,8 @@
 
 - The fixed verb registry is: `fetch`, `search`, `read-file`, `write-file`, `edit-file`, `list-files`, `grep-files`, `execute-shell`, `spawn-agent`, `wait-agent`, `invoke-skill`, `query-vault`, `vault-write`.
 - `fetch` and `search` are backed by `firecrawl`.
-- `query-vault` is backed by `BUN_INSTALL="" qmd query`.
-- `vault-write` is backed by the `obsidian` CLI.
+- `query-vault` is backed by the OpenKnowledge MCP server for the configured workspace.
+- `vault-write` is backed by the OpenKnowledge MCP server with explicit approval and journal reconciliation.
 
 ## Compatibility
 

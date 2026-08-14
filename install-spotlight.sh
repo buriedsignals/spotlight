@@ -197,7 +197,6 @@ export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
 # VALIDATED_DEPENDENCIES.md. The installer never asks npm or pip for "latest"
 # on packages managed by Spotlight setup.
 FIRECRAWL_CLI_VERSION="1.9.8"
-QMD_VERSION="2.5.3"
 OPEN_KNOWLEDGE_VERSION="0.34.0"
 DEV_BROWSER_VERSION="0.2.8"
 CLAUDE_CODE_VERSION="2.1.169"
@@ -411,6 +410,35 @@ place_spotlight_skills_canonical() {
   link_spotlight_skills "$SPOTLIGHT_CANONICAL_SKILLS"
 }
 
+# Flue discovers flat skill names from <cwd>/.agents/skills. The public local
+# runtime uses the OpenKnowledge project as its cwd, so project only the
+# manifest-owned Spotlight names there. Never replace user-owned workspace
+# content or a foreign symlink.
+project_spotlight_skills_into_workspace() {
+  local _dest="$SPOTLIGHT_VAULT_PATH/.agents/skills" _sid _link _target
+  run mkdir -p "$_dest"
+  if [ "$DRY_RUN" = "1" ]; then
+    printf 'DRY-RUN: project manifest skills into OpenKnowledge workspace %s\n' "$_dest"
+    return 0
+  fi
+  while IFS= read -r _sid; do
+    { [ -n "$_sid" ] && [ -e "$SPOTLIGHT_CANONICAL_SKILLS/$_sid" ]; } || continue
+    _link="$_dest/$_sid"
+    _target="$SPOTLIGHT_CANONICAL_SKILLS/$_sid"
+    if [ -L "$_link" ]; then
+      if [ "$(readlink "$_link")" != "$_target" ]; then
+        printf "%s!%s Leaving foreign workspace skill link unchanged: %s\n" "$_c_yellow" "$_c_reset" "$_link"
+      fi
+      continue
+    fi
+    if [ -e "$_link" ]; then
+      printf "%s!%s Leaving user-owned workspace skill unchanged: %s\n" "$_c_yellow" "$_c_reset" "$_link"
+      continue
+    fi
+    ln -s "$_target" "$_link"
+  done < "$SPOTLIGHT_DIR/skills.manifest"
+}
+
 # One product-level adapter symlink <adapter> -> canonical store. Migrates a
 # legacy per-skill directory in place (removes only symlinks); a dir holding
 # real files falls back to per-skill links — never deletes user data.
@@ -575,7 +603,6 @@ preflight_linux_floor() {
 reviewed_npm_version() {
   case "$1" in
     firecrawl-cli) echo "$FIRECRAWL_CLI_VERSION" ;;
-    @tobilu/qmd) echo "$QMD_VERSION" ;;
     @inkeep/open-knowledge) echo "$OPEN_KNOWLEDGE_VERSION" ;;
     dev-browser) echo "$DEV_BROWSER_VERSION" ;;
     @anthropic-ai/claude-code) echo "$CLAUDE_CODE_VERSION" ;;
@@ -876,7 +903,6 @@ if [ -n "$FIRECRAWL_API_KEY" ]; then
 else
   printf "%s→%s Firecrawl not configured; using sovereign SearXNG + Crawl4AI only\n" "$_c_yellow" "$_c_reset"
 fi
-ensure_npm_global_exact qmd @tobilu/qmd
 ensure_npm_global_exact open-knowledge @inkeep/open-knowledge
 
 # =====================================================================
@@ -1041,6 +1067,7 @@ MODEL_BASENAME="\$(basename "\$MODEL")"
 MODEL_ALIAS="\$(printf 'spotlight-%s-%s' "\$TIER" "\$MODEL_BASENAME" | tr -c 'A-Za-z0-9._-' '-')"
 VERIFY_MODEL="\$SPOTLIGHT_DIR/scripts/verify-openai-model.py"
 command -v llama-server >/dev/null 2>&1 || { echo "llama-server missing — brew install llama.cpp" >&2; exit 1; }
+command -v open-knowledge >/dev/null 2>&1 || { echo "OpenKnowledge CLI missing — re-run install-spotlight.sh" >&2; exit 1; }
 [ -x "\$FLUE" ] || { echo "Flue harness missing — re-run install-spotlight.sh (npm install in harness/flue)" >&2; exit 1; }
 [ -f "\$MODEL" ] || { echo "Model not found: \$MODEL (set SPOTLIGHT_GGUF_PATH in \$ENV_FILE)" >&2; exit 1; }
 [ -x "\$SPOTLIGHT_PYTHON" ] || { echo "Spotlight Python environment missing — re-run install-spotlight.sh" >&2; exit 1; }
@@ -1095,10 +1122,26 @@ export SPOTLIGHT_LOCAL_BASEURL="http://127.0.0.1:8080/v1"
 export SPOTLIGHT_LOCAL_CTX=40960
 export SPOTLIGHT_FLUE_MODEL="local/\$MODEL_ALIAS"
 export SPOTLIGHT_MODEL_TIER="\$TIER"
-# Engine/OpenKnowledge may bind the Flue skill-discovery cwd to the selected
-# knowledge project. Standalone installs retain the Spotlight checkout default.
-export SPOTLIGHT_CWD="\${SPOTLIGHT_WORKSPACE_PATH:-\$SPOTLIGHT_DIR}"
+# Bind Flue's skill discovery and knowledge tools to the selected OpenKnowledge
+# project. The checkout fallback exists only for pre-migration .env files.
+export SPOTLIGHT_CWD="\${SPOTLIGHT_WORKSPACE_PATH:-\${SPOTLIGHT_VAULT_PATH:-\$SPOTLIGHT_DIR}}"
 export FLUE_DB="\${FLUE_DB:-\$SPOTLIGHT_DIR/harness/flue/data/flue.db}"
+
+# Flue consumes OpenKnowledge's project-scoped Streamable HTTP MCP endpoint.
+# Start or reuse the loopback-only project server and publish its resolved port
+# before Flue loads the agent module.
+open-knowledge --cwd "\$SPOTLIGHT_CWD" config validate >/dev/null
+open-knowledge --cwd "\$SPOTLIGHT_CWD" start --only server --no-open-browser --idle-shutdown 30m \
+  >>"\$SPOTLIGHT_DIR/.spotlight/logs/openknowledge.log" 2>&1 &
+OK_PORT=""
+for _ok_try in {1..100}; do
+  OK_STATUS="\$(open-knowledge --cwd "\$SPOTLIGHT_CWD" status --json 2>/dev/null || true)"
+  OK_PORT="\$(printf '%s' "\$OK_STATUS" | "\$SPOTLIGHT_PYTHON" -c 'import json,sys; d=json.load(sys.stdin); s=d.get("server", {}); print(s.get("port", "") if s.get("alive") is True else "")' 2>/dev/null || true)"
+  [ -n "\$OK_PORT" ] && break
+  sleep 0.1
+done
+[ -n "\$OK_PORT" ] || { echo "OpenKnowledge project server did not become ready — see \$SPOTLIGHT_DIR/.spotlight/logs/openknowledge.log" >&2; exit 1; }
+export SPOTLIGHT_OPENKNOWLEDGE_MCP_URL="http://127.0.0.1:\$OK_PORT/mcp"
 
 cd "\$SPOTLIGHT_DIR/harness/flue"
 if [ "\$#" -eq 0 ]; then
@@ -1269,6 +1312,7 @@ else
 ENV_HEADER
   write_env_var SPOTLIGHT_DIR "$SPOTLIGHT_DIR"
   write_env_var SPOTLIGHT_VAULT_PATH "$SPOTLIGHT_VAULT_PATH"
+  write_env_var SPOTLIGHT_WORKSPACE_PATH "$SPOTLIGHT_VAULT_PATH"
   write_env_var SPOTLIGHT_CASES_ROOT "$SPOTLIGHT_CASES_ROOT"
   write_env_var SPOTLIGHT_PYTHON "$SPOTLIGHT_DIR/.venv/bin/python"
   [ -n "$FIRECRAWL_API_KEY" ] && write_env_var FIRECRAWL_API_KEY "$FIRECRAWL_API_KEY"
@@ -1339,7 +1383,7 @@ except Exception:
     pass
 ' "$SPOTLIGHT_DIR/.spotlight-config.json" 2>/dev/null || true)"
     if [ -n "$PREV_VAULT_PATH" ] && [ "$PREV_VAULT_PATH" != "$SPOTLIGHT_VAULT_PATH" ]; then
-      printf "%s!%s Vault path changed from %s; re-pointing qmd at the new vault — old vault data is not migrated.\n" \
+      printf "%s!%s Vault path changed from %s; initializing OpenKnowledge at the new vault — old vault data is not migrated.\n" \
         "$_c_yellow" "$_c_reset" "$PREV_VAULT_PATH"
     fi
   fi
@@ -1447,11 +1491,9 @@ tags: [spotlight, investigation]
 ## Open Questions
 CASE_TEMPLATE_EOF
 fi
-if [ "$DRY_RUN" != "1" ] && command -v qmd >/dev/null 2>&1; then
-  qmd collection add "$SPOTLIGHT_VAULT_PATH" --name spotlight >/dev/null 2>&1 || true
-  qmd update >/dev/null 2>&1 || true
-  printf "%s✓%s QMD spotlight collection configured\n" "$_c_green" "$_c_reset"
-fi
+run open-knowledge --cwd "$SPOTLIGHT_VAULT_PATH" init --mcp --local-only
+project_spotlight_skills_into_workspace
+[ "$DRY_RUN" = "1" ] || printf "%s✓%s OpenKnowledge project and MCP registration configured\n" "$_c_green" "$_c_reset"
 if [ "$SPOTLIGHT_VAULT_APP" = "obsidian" ] && [ "$OS" = "Darwin" ]; then
   run open -a Obsidian "$SPOTLIGHT_VAULT_PATH" 2>/dev/null || true
 fi
@@ -1499,7 +1541,9 @@ check_path "\$SPOTLIGHT_DIR/.env" "Spotlight env"
 check_env_name SEARXNG_URL
 check_path "\$SPOTLIGHT_VAULT_PATH" "Spotlight vault"
 check_path "\$SPOTLIGHT_CASES_ROOT" "Spotlight case workspace"
-check_cmd qmd "QMD CLI"
+check_cmd open-knowledge "OpenKnowledge CLI"
+check_path "\$SPOTLIGHT_VAULT_PATH/.ok/config.yml" "OpenKnowledge project"
+open-knowledge --cwd "\$SPOTLIGHT_VAULT_PATH" config validate >/dev/null 2>&1 && ok "OpenKnowledge config valid" || bad "OpenKnowledge config invalid"
 "\$SPOTLIGHT_PYTHON" -c 'import crawl4ai, jsonschema, requests' >/dev/null 2>&1 && ok "Spotlight Python runtime" || bad "Spotlight Python runtime is incomplete"
 DOCTOR_EOF
   if [ "$SPOTLIGHT_NAVIGATOR_CONNECTION" = "connected" ]; then

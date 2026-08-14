@@ -597,7 +597,7 @@
         <p>If a criterion fails, the agent loops back. If it persists past cycle five, the stall protocol triggers — the investigation is paused and the journalist decides whether to continue, change scope, or shelf.</p>
 
         <h3>Ingestion</h3>
-        <p>During a case, source archives and working JSON stay in the active case workspace. After explicit approval, verified or clearly caveated findings, fact-check verdicts, methodology lessons, and entity notes can be ingested into your knowledge vault as structured markdown with wikilinks. Future investigations search the vault via QMD and build on prior work without rediscovering the same entities from scratch.</p>
+        <p>During a case, source archives and working JSON stay in the active case workspace. After explicit approval, verified or clearly caveated findings, fact-check verdicts, methodology lessons, and entity notes can be ingested into your knowledge vault as structured markdown with wikilinks. Future investigations search the vault through OpenKnowledge's MCP interface and build on prior work without rediscovering the same entities from scratch.</p>
       </section>
 
       <!-- ── 03 Skills ───────────────────────────────── -->
@@ -683,7 +683,7 @@ SPOTLIGHT_INT_DEVBROWSER=true   # dev-browser for interactive browser acquisitio
 
         <div class="callout">
           <div class="callout-tag">Current support</div>
-          <p>The current installer does not create a second sensitive vault or install a <code>qmd-spotlight</code> wrapper. The implemented control is the runtime contract's sensitive mode: when enabled, adapters strip live <code>fetch</code> and <code>search</code> access and the case must be worked from local material.</p>
+          <p>The current installer initializes one OpenKnowledge project and does not create a second sensitive project or route. The implemented control is the runtime contract's sensitive mode: when enabled, adapters strip live <code>fetch</code> and <code>search</code> access and the case must be worked from local material.</p>
         </div>
 
         <h3>How it works</h3>
@@ -748,7 +748,7 @@ SPOTLIGHT_INT_DEVBROWSER=true   # dev-browser for interactive browser acquisitio
         <details>
           <summary>What's the sensitive vault flag for?</summary>
           <div class="answer">
-            <p>It turns on a second, parallel ingest target so material you deliberately classified sensitive doesn't show up in default QMD searches that a frontier-model session might run. It's a convenience boundary, not a confidentiality guarantee — see "What this is and what it isn't" above for the honest framing.</p>
+            <p>It is a proposed second OpenKnowledge project for deliberately classified material. It is not implemented, and a separate project alone would be a convenience boundary rather than a confidentiality guarantee. Use an appropriate operational boundary — such as a separate machine or OS account — for material whose threat model requires isolation.</p>
           </div>
         </details>
 

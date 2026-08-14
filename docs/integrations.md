@@ -94,7 +94,7 @@ The intended path from website → working install:
 1. **Landing page** on buriedsignals.com (separate work) links to the hosted setup page
 2. **`setup.html`** is a static landing page — what to have ready, plus one install command: `curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash` (a `spotlight-install.zip` fallback contains only a key-free bootstrap that fetches and runs the same script)
 3. The installer opens a **local configurator** served from `127.0.0.1` — runtime picker, integration checkboxes, API key inputs (live-validated with each provider), install + vault paths with a native folder picker
-4. Script installs: firecrawl CLI + QMD + chosen runtime + selected integrations + `.env` (chmod 600) + `.spotlight-config.json`; creates the active case workspace and separate knowledge-vault scaffold, registers the vault as the `spotlight` QMD collection, installs `spotlight doctor` / `spotlight update`, and runs preflight for sanity-check.
+4. Script installs the Firecrawl CLI, OpenKnowledge, the chosen runtime, selected integrations, `.env` (chmod 600), and `.spotlight-config.json`; creates the active case workspace and separate knowledge-vault scaffold; initializes the vault as an OpenKnowledge project with MCP registration; installs `spotlight doctor` / `spotlight update`; and runs preflight for a sanity check.
 5. The install ends by opening a personalized getting-started guide. Journalist opens a new terminal, runs `spotlight`, and starts investigating.
 
 Keys are entered only on the local configurator page and written to local files with owner-only permissions — they never touch buriedsignals.com or any downloadable artifact.

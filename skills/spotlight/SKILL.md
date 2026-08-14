@@ -97,7 +97,7 @@ contract and apply this runtime table:
 ### 3.7. Knowledge workspace preflight
 
 Engine-managed Spotlight uses OpenKnowledge as its canonical knowledge store.
-Confirm that the selected workspace contains `.openknowledge/config.json` and
+Confirm that the selected workspace contains `.ok/config.yml` and
 that `ok --cwd "{workspace_path}" config validate` succeeds. If either check
 fails, stop with the exact repair command from Engine/OpenKnowledge; do not
 silently switch to a different directory or legacy vault backend.

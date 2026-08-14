@@ -1,10 +1,21 @@
-import { defineAgent, defineAgentProfile } from '@flue/runtime';
+import { connectMcpServer, defineAgent, defineAgentProfile } from '@flue/runtime';
 import { local } from '@flue/runtime/node';
 import { roleBody, FLUE_VERB_ADAPTER, HARNESS_ROOT } from '../lib/roles.ts';
 
 // The local/cloud tier model. llama-server serves the Gemma GGUF as `local/…`;
 // swap to the 31B or Fireworks GLM-5.2 via env (U10/U13).
 const MODEL = process.env.SPOTLIGHT_FLUE_MODEL ?? 'local/gemma-4-12b-it';
+
+const OPEN_KNOWLEDGE_MCP_URL = process.env.SPOTLIGHT_OPENKNOWLEDGE_MCP_URL;
+const OPEN_KNOWLEDGE_CONNECTION = OPEN_KNOWLEDGE_MCP_URL
+	? await connectMcpServer('openknowledge', { url: OPEN_KNOWLEDGE_MCP_URL })
+	: undefined;
+const OPEN_KNOWLEDGE_TOOLS = OPEN_KNOWLEDGE_CONNECTION?.tools ?? [];
+if (OPEN_KNOWLEDGE_CONNECTION) {
+	process.once('beforeExit', () => {
+		void OPEN_KNOWLEDGE_CONNECTION.close();
+	});
+}
 
 // Gate compaction (LOCAL tier only — API/frontier models keep Flue's defaults).
 // A small local model generates fast at low depth and degrades past its tier's
@@ -65,6 +76,7 @@ const investigator = defineAgentProfile({
 	name: 'investigator',
 	description: 'Plans and executes OSINT research cycles. Delegate all research here.',
 	instructions: `${FLUE_VERB_ADAPTER}\n\n${roleBody('investigator')}${WORKER_GUARD}`,
+	tools: OPEN_KNOWLEDGE_TOOLS,
 	// The investigator's research cycles grow context fastest of all three agents.
 	compaction: COMPACTION,
 });
@@ -73,6 +85,7 @@ const factChecker = defineAgentProfile({
 	name: 'fact-checker',
 	description: 'Independent SIFT verification of findings, in its own context. Delegate verification here.',
 	instructions: `${FLUE_VERB_ADAPTER}\n\n${roleBody('fact-checker')}${WORKER_GUARD}`,
+	tools: OPEN_KNOWLEDGE_TOOLS,
 	compaction: COMPACTION,
 });
 
@@ -80,8 +93,9 @@ const factChecker = defineAgentProfile({
 // directly — it delegates to the subagents and manages the phase pipeline (the `spotlight` skill).
 export default defineAgent(() => ({
 	model: MODEL,
+	tools: OPEN_KNOWLEDGE_TOOLS,
 	// Real host filesystem + shell at the case dir (subagents inherit this sandbox, U8):
-	// the agents run bash / the scraping seam / qmd and persist evidence to real files.
+	// the agents run bash / the scraping seam / OpenKnowledge and persist evidence to real files.
 	// cwd is also where Flue discovers .agents/skills (the engine-placed store).
 	// local() ALLOWLISTS env — the harness process env does NOT reach the sandboxed bash
 	// unless passed here. Without SPOTLIGHT_RLM_OPENAI_BASE_URL the `fetch --rlm` seam

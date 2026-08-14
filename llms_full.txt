@@ -208,8 +208,8 @@ The fixed verb registry is:
 Universal backings documented by Spotlight:
 
 - `fetch`, `search` -> `firecrawl` CLI
-- `query-vault` -> `BUN_INSTALL="" qmd query`
-- `vault-write` -> `obsidian` CLI
+- `query-vault` -> OpenKnowledge MCP for the configured workspace
+- `vault-write` -> OpenKnowledge MCP with explicit approval and journal reconciliation
 
 ## 11. Agents
 
@@ -293,7 +293,7 @@ Required dependency documented in the README:
 
 Optional dependencies documented in the README:
 
-- `qmd`
+- `open-knowledge`
 - `obsidian`
 - Python 3.11+
 - optional integration keys such as `OSINT_NAV_API_KEY`, `JUNKIPEDIA_API_KEY`, and `CORE_API_KEY`

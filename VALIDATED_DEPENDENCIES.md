@@ -1,15 +1,17 @@
 # Spotlight dependency authority
 
-The public Spotlight bootstrap installs no product dependencies. It verifies a
-signed Buried Signals Engine archive with Minisign, then Engine resolves the
-signed catalog, writes a sealed plan, and owns every dependency, model, skill,
-runtime projection, update, rollback, and uninstall receipt.
+Spotlight has two production installers with separate ownership receipts:
 
-Do not add `npm`, `pip`, Homebrew, model, OpenKnowledge, Obsidian, or QMD
-installation commands to `install-spotlight.sh`. If a dependency changes, make
-the change in the Engine product/catalog contract and test the sealed plan.
+- Indicator Labs uses Engine's signed catalog and sealed plan. Engine owns its
+  dependency, model, skill, projection, update, rollback, and uninstall state.
+- `install-spotlight.sh` is the Engine-free public installer described in
+  `README.md`. It installs only the exact reviewed versions declared in that
+  script and records its own file manifest for safe update and uninstall.
 
-The only website prerequisites are `python3`, `curl`, and `minisign` when
-Engine is not already available through Indicator Labs, `BSIG_BIN`, or PATH.
-The configurator receives credentials on loopback and passes them to Engine on
-stdin; it never writes a second dependency or runtime configuration.
+Keep both authorities aligned. A dependency change must update the Engine
+catalog/product plan, the public installer's exact pin, and the corresponding
+contract tests. Neither path may request an unpinned `latest` dependency.
+
+The public configurator receives credentials only on loopback and writes them
+to the local owner-readable environment file; it does not send them to Buried
+Signals infrastructure or place them in downloadable artifacts.

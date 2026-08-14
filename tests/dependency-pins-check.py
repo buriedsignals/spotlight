@@ -16,14 +16,13 @@ def require(token: str, body: str, where: str) -> None:
 
 
 for token in [
-    'QMD_VERSION="2.5.3"',
     'OPEN_KNOWLEDGE_VERSION="0.34.0"',
     'CRAWL4AI_VERSION="0.9.0"',
     'ensure_npm_global_exact open-knowledge @inkeep/open-knowledge',
 ]:
     require(token, installer, "public installer")
 
-for forbidden in ["bootstrap_engine", "minisign -Vm", "navigator-cli==", "OSINT_NAV_API_KEY:?"]:
+for forbidden in ["bootstrap_engine", "minisign -Vm", "navigator-cli==", "OSINT_NAV_API_KEY:?", "@tobilu/qmd", "qmd collection"]:
     if forbidden in installer:
         print(f"FAIL: public installer contains forbidden member/legacy token {forbidden!r}", file=sys.stderr)
         raise SystemExit(1)
