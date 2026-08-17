@@ -115,7 +115,7 @@ Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for larg
 - **`ingest`** — archival from case files to vault. 8-step process with `.ingest-lock` concurrency and directory fallback. Step 6 extracts eligibility-gated claim records (verdict `verified`/`partially_verified`, grounding above `low`, sources present) into `{vault}/claims/` with a claims registry, a generated alias index (`entities/_aliases.json`), and human-gated merge proposals.
 - **`monitoring`** — case-level monitoring recommendations and explicit Mycroft handoff.
 - **`acquisition-graduation`** — turns repeated dev-browser acquisition successes into durable source/domain guidance without secrets or brittle session details.
-- **`report-drafting`** — post-Gate-1 public report drafting with methodology and evidence ledgers.
+- **`report-drafting`** — post-Gate-1 report drafting with methodology and evidence ledgers. An optional diagram selects existing `findings.json.connections`; the renderer produces `flow`, `hierarchy`, `network`, or `loop` diagrams without accepting model-authored Mermaid or layout code.
 
 ### Agent-support skills (invocable by investigator / fact-checker)
 

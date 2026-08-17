@@ -21,6 +21,10 @@ If you are new to Spotlight, read in this order:
 10. **[monitoring.md](monitoring.md)** — monitoring recommendations and explicit Mycroft handoff
 11. **[recovery.md](recovery.md)** — when things break: agent crashes, corrupted files, stale locks, API failures
 
+Report drafting is documented in `skills/report-drafting/SKILL.md`. It can add
+an optional flow, hierarchy, network, or loop diagram from existing recorded
+connections; `diagram-design` is a pinned visual reference, not a dependency.
+
 ## 60-second quick-start
 
 ### pi (MIT TypeScript harness — https://pi.dev)

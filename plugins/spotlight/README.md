@@ -9,6 +9,12 @@ and `third_party/`.
 CTI updates arrive only through reviewed Spotlight releases; raw upstream
 instructions are never fetched or activated by the plugin at runtime.
 
+Report-diagram visual guidance adapts principles from
+[diagram-design](https://github.com/cathrynlavery/diagram-design) by Cathryn
+Lavery, reviewed at `09df49d8d1a1c7fb2efdfcdc7a2a0713534350a6` under the MIT
+License. It is a design reference only: the plugin does not install, execute,
+or redistribute the upstream project. See `NOTICE.md` for the full record.
+
 Plugin install does not install runtime packages. It must not run `pip install`,
 `npm install`, `uv tool install`, `npx`, or equivalent dependency commands.
 
