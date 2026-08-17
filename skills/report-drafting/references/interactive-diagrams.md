@@ -1,5 +1,14 @@
 # Interactive diagrams — zoomable/draggable canvas, hyperlinked nodes, no font cropping
 
+## Deterministic report diagrams
+
+For report diagrams selected in `report-draft.json`, the renderer—not the
+model—emits all Mermaid source. Follow `diagram-design.md` for type selection
+and visual grammar. The renderer pins Mermaid to `11.16.1` and
+`@mermaid-js/layout-elk` to `0.2.2`, uses strict Mermaid security, and emits no
+`click` directives or node URLs. Keep the font-ready initialization, natural
+SVG sizing, overflow fixes, and canvas controls below.
+
 Default capability for `report.html`. When the case involves an **entity network, money flow, funnel, or pipeline** (≥3 actors with directed relationships), the report SHOULD carry one or more interactive diagrams built with this recipe. Battle-tested in the health-insider investigation (June 2026); every fix below was learned against a real rendering failure — do not "simplify" them away.
 
 ## What the reader gets
@@ -19,8 +28,8 @@ Default capability for `report.html`. When the case involves an **entity network
 
 ```html
 <script type="module">
-  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-  import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk/dist/mermaid-layout-elk.esm.min.mjs';
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/mermaid.esm.min.mjs';
+  import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/mermaid-layout-elk.esm.min.mjs';
 
   const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   mermaid.registerLayoutLoaders(elkLayouts);

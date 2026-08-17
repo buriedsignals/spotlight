@@ -301,6 +301,8 @@ def main() -> int:
         assert "\\!\\[proof\\]" in markdown
         assert "<https://example.org/official_record(v1)>" in markdown
         assert "AI assistance notice" in html
+        assert "mermaid@11.16.1" not in html
+        assert '<section class="report-diagrams"' not in html
         assert '<html lang="fr">' in html
         assert "The second claim remains unverified" in html
         assert "Acquire an authoritative source for F2" in html

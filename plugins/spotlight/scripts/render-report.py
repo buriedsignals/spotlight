@@ -51,6 +51,8 @@ VERDICT_LABEL = {
     "false": "False",
     "mischaracterized": "Mischaracterized",
 }
+MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/mermaid.esm.min.mjs"
+ELK_LAYOUT_URL = "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/mermaid-layout-elk.esm.min.mjs"
 
 
 class RenderError(ValueError):
@@ -386,9 +388,176 @@ def editorial_items(draft: dict[str, Any], field: str) -> list[dict[str, Any]]:
     return [item for item in draft.get(field, []) if isinstance(item, dict)]
 
 
+def mermaid_text(value: Any, limit: int = 160) -> str:
+    """Collapse model/case text into one inert Mermaid label line."""
+    label = re.sub(r"\s+", " ", text(value)).strip()
+    label = label.translate(str.maketrans({
+        '"': "'", "`": "", "\\": "", "[": "(", "]": ")",
+        "{": "(", "}": ")", "|": "/", "<": "‹", ">": "›", ";": ",", "%": "",
+    }))
+    return label if len(label) <= limit else label[:limit - 1].rstrip() + "…"
+
+
+def mermaid_node(node_id: str, label: str, role: str) -> str:
+    """Return one static Mermaid node declaration for a structural role."""
+    quoted = f'"{mermaid_text(label)}"'
+    if role in {"source", "leaf"}:
+        return f"  {node_id}([{quoted}])"
+    if role == "sink":
+        return f"  {node_id}[[{quoted}]]"
+    return f"  {node_id}[{quoted}]"
+
+
+def diagram_role(
+    diagram_type: str, node: str, incoming: dict[str, int], outgoing: dict[str, int]
+) -> str:
+    """Derive visual roles from topology without accepting model styling."""
+    if diagram_type == "flow":
+        if incoming.get(node, 0) == 0:
+            return "source"
+        if outgoing.get(node, 0) == 0:
+            return "sink"
+        return "intermediary"
+    if diagram_type == "hierarchy":
+        if incoming.get(node, 0) == 0:
+            return "root"
+        if outgoing.get(node, 0) == 0:
+            return "leaf"
+        return "branch"
+    return "entity"
+
+
+def ordered_loop_connections(
+    connections: list[tuple[str, str, str]], focal_entity: str
+) -> list[tuple[str, str, str]]:
+    """Declare a validated simple loop from its chosen starting entity."""
+    by_source = {source: (source, target, relationship) for source, target, relationship in connections}
+    ordered: list[tuple[str, str, str]] = []
+    node = focal_entity
+    for _ in range(len(connections)):
+        connection = by_source.get(node)
+        if connection is None:
+            raise RenderError("loop diagram cannot be ordered from focal entity")
+        ordered.append(connection)
+        node = connection[1]
+    if node != focal_entity:
+        raise RenderError("loop diagram does not return to focal entity")
+    return ordered
+
+
+def compile_diagrams(draft: dict[str, Any], findings_doc: dict[str, Any]) -> list[dict[str, Any]]:
+    """Compile validated connection selections into safe, deterministic Mermaid."""
+    available: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for connection in findings_doc.get("connections", []):
+        if not isinstance(connection, dict):
+            continue
+        triple = tuple(text(connection.get(field)) for field in ("from", "to", "relationship"))
+        if all(triple):
+            available.setdefault(triple, []).append(connection)
+
+    compiled: list[dict[str, Any]] = []
+    for diagram in draft.get("diagrams", []):
+        if not isinstance(diagram, dict):
+            continue
+        selected: list[tuple[str, str, str]] = []
+        for selector in diagram.get("connections", []):
+            if not isinstance(selector, dict):
+                raise RenderError("diagram connection selector is not an object")
+            triple = tuple(text(selector.get(field)) for field in ("from", "to", "relationship"))
+            if len(available.get(triple, [])) != 1:
+                raise RenderError(f"diagram selector does not resolve exactly once: {triple!r}")
+            selected.append(triple)
+
+        diagram_type = text(diagram.get("type"))
+        focal_entities = [text(entity) for entity in diagram.get("focal_entities", [])]
+        ordered_connections = (
+            ordered_loop_connections(selected, focal_entities[0])
+            if diagram_type == "loop" and focal_entities else sorted(selected)
+        )
+        if diagram_type == "loop":
+            nodes = [ordered_connections[0][0]] + [connection[1] for connection in ordered_connections]
+            nodes = list(dict.fromkeys(nodes))
+        else:
+            nodes = sorted({node for source, target, _relationship in selected for node in (source, target)})
+        node_ids = {node: f"n{index}" for index, node in enumerate(nodes, 1)}
+        incoming = {node: 0 for node in nodes}
+        outgoing = {node: 0 for node in nodes}
+        for source, target, _relationship in selected:
+            outgoing[source] += 1
+            incoming[target] += 1
+
+        direction = "TB" if diagram_type == "hierarchy" else "LR"
+        layout = "dagre" if diagram_type == "loop" else "elk"
+        title = mermaid_text(diagram.get("title"), 180)
+        caption = mermaid_text(diagram.get("caption"), 500)
+        source = [
+            "---",
+            "config:",
+            f"  layout: {layout}",
+            "---",
+            f"flowchart {direction}",
+            f"  accTitle: {title}",
+            f"  accDescr: {caption}",
+        ]
+        roles: dict[str, str] = {}
+        for node in nodes:
+            role = diagram_role(diagram_type, node, incoming, outgoing)
+            roles[node] = role
+            source.append(mermaid_node(node_ids[node], node, role))
+        for source_node, target_node, relationship in ordered_connections:
+            source.append(
+                f"  {node_ids[source_node]} -->|\"{mermaid_text(relationship, 96).replace('_', ' ')}\"| {node_ids[target_node]}"
+            )
+        for node in nodes:
+            classes = [roles[node]]
+            if node in focal_entities:
+                classes.append("focal")
+            source.append(f"  class {node_ids[node]} {','.join(classes)};")
+        if diagram_type == "loop":
+            source.append(
+                f"  linkStyle {len(ordered_connections) - 1} stroke:#6b6258,stroke-width:2px,stroke-dasharray:5 4;"
+            )
+
+        legend_labels = {
+            "source": "source", "intermediary": "intermediary", "sink": "recipient",
+            "root": "root", "branch": "branch", "leaf": "leaf", "entity": "entity",
+            "focal": "focus",
+        }
+        legend_roles = list(dict.fromkeys([roles[node] for node in nodes] + (["focal"] if focal_entities else [])))
+        compiled.append({
+            "id": text(diagram.get("id")),
+            "title": text(diagram.get("title")),
+            "caption": text(diagram.get("caption")),
+            "finding_ids": [text(finding_id) for finding_id in diagram.get("finding_ids", [])],
+            "connections": ordered_connections,
+            "source": "\n".join(source),
+            "initial_zoom": "0.85" if len(nodes) >= 7 else "1.0",
+            "legend": [(role, legend_labels[role]) for role in legend_roles],
+        })
+    return compiled
+
+
+def diagram_markdown(diagrams: list[dict[str, Any]]) -> list[str]:
+    """Render deterministic Mermaid figures into the Markdown report."""
+    if not diagrams:
+        return []
+    lines = ["", "## Diagrams"]
+    for diagram in diagrams:
+        lines += ["", f"### {md_safe(diagram['title'])}", "", md_safe(diagram["caption"]), ""]
+        if diagram["finding_ids"]:
+            lines += ["Supporting findings: " + ", ".join(md_code(fid) for fid in diagram["finding_ids"]), ""]
+        lines += ["```mermaid", diagram["source"], "```", "", "Connections shown:"]
+        for source, target, relationship in diagram["connections"]:
+            lines.append(
+                f"- {md_safe(source)} → {md_safe(relationship)} → {md_safe(target)}"
+            )
+    return lines
+
+
 def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[str, Any],
                     draft: dict[str, Any], checks: list[dict[str, Any]],
-                    expressions_doc: dict[str, Any] | None = None) -> tuple[str, list[dict[str, Any]]]:
+                    expressions_doc: dict[str, Any] | None = None,
+                    diagrams: list[dict[str, Any]] | None = None) -> tuple[str, list[dict[str, Any]]]:
     findings = ordered_findings(findings_doc, draft)
     treatments = treatment_map(draft)
     title = text(draft.get("title"))
@@ -432,6 +601,7 @@ def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[
             f"{verdict['confidence'].title()} |"
         )
 
+    lines += diagram_markdown(diagrams or [])
     lines += ["", "## Detailed Findings"]
     for record in rendered:
         finding, treatment = record["finding"], record["treatment"]
@@ -563,8 +733,159 @@ def arbiter_appendix(case: Path) -> str:
     return appendix.stdout.strip()
 
 
+def diagram_html(
+    diagrams: list[dict[str, Any]], finding_anchors: dict[str, str]
+) -> str:
+    """Render the report's diagram section without accepting authored markup."""
+    if not diagrams:
+        return ""
+    figures: list[str] = []
+    for diagram in diagrams:
+        diagram_id = h(diagram["id"])
+        title_id = f"diagram-{diagram_id}-title"
+        description_id = f"diagram-{diagram_id}-description"
+        finding_links = " · ".join(
+            f'<a href="#{h(finding_anchors[finding_id])}">{h(finding_id)}</a>'
+            for finding_id in diagram["finding_ids"] if finding_id in finding_anchors
+        )
+        relationships = "".join(
+            f"<li><strong>{h(mermaid_text(source))}</strong> <span aria-hidden=\"true\">→</span> "
+            f"{h(mermaid_text(relationship, 96))} <span aria-hidden=\"true\">→</span> "
+            f"<strong>{h(mermaid_text(target))}</strong></li>"
+            for source, target, relationship in diagram["connections"]
+        )
+        legend = "".join(
+            f'<span class="diagram-legend-item"><span class="diagram-key diagram-key-{h(role)}" '
+            f'aria-hidden="true"></span>{h(label)}</span>'
+            for role, label in diagram["legend"]
+        )
+        figures.append(f'''
+  <figure class="report-diagram" id="diagram-{diagram_id}" aria-labelledby="{title_id}" aria-describedby="{description_id}">
+    <div class="kicker">Connection diagram</div>
+    <h2 id="{title_id}">{h(diagram['title'])}</h2>
+    <figcaption id="{description_id}">{h(diagram['caption'])}</figcaption>
+    <p class="diagram-findings"><strong>Supporting findings:</strong> {finding_links or 'None recorded.'}</p>
+    <div class="mermaid-wrap" data-initial-zoom="{h(diagram['initial_zoom'])}">
+      <div class="zoom-controls" role="group" aria-label="Diagram controls">
+        <button type="button" onclick="spotlightDiagramZoom(this, 1.2)" aria-label="Zoom diagram in">+</button>
+        <button type="button" onclick="spotlightDiagramZoom(this, 0.8)" aria-label="Zoom diagram out">−</button>
+        <button type="button" onclick="spotlightDiagramReset(this)" aria-label="Reset diagram view">↻</button>
+        <button type="button" onclick="spotlightDiagramOpen(this)" aria-label="Open diagram full size">⛶</button>
+      </div>
+      <div class="canvas-legend" aria-label="Diagram legend">{legend}</div>
+      <pre class="mermaid" aria-label="{h(diagram['title'])}">{h(diagram['source'])}</pre>
+    </div>
+    <details class="diagram-connections"><summary>Connections shown</summary><ul>{relationships}</ul></details>
+  </figure>''')
+    return '<section class="report-diagrams" aria-label="Connection diagrams">' + "\n".join(figures) + "\n</section>"
+
+
+def diagram_runtime(diagrams: list[dict[str, Any]]) -> str:
+    """Return the pinned, conditional browser runtime for compiled diagrams only."""
+    if not diagrams:
+        return ""
+    return f'''
+<script type="module">
+  import mermaid from "{MERMAID_URL}";
+  import elkLayouts from "{ELK_LAYOUT_URL}";
+
+  mermaid.registerLayoutLoaders(elkLayouts);
+  mermaid.initialize({{
+    startOnLoad: false,
+    theme: "base",
+    layout: "elk",
+    securityLevel: "strict",
+    flowchart: {{ useMaxWidth: false }},
+    themeVariables: {{
+      fontSize: "15px",
+      fontFamily: "Inter, Helvetica Neue, sans-serif",
+      primaryColor: "#fbf8f1",
+      primaryBorderColor: "#6b6258",
+      primaryTextColor: "#1a1815",
+      lineColor: "#6b6258",
+      edgeLabelBackground: "#fbf8f1"
+    }}
+  }});
+
+  try {{
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    // Render one source at a time. This keeps each diagram's IDs distinct and
+    // avoids Mermaid's selector runner sharing render state across canvases.
+    for (const [index, node] of Array.from(document.querySelectorAll(".mermaid")).entries()) {{
+      const result = await mermaid.render("spotlight-mermaid-" + index, node.textContent || "");
+      node.innerHTML = result.svg;
+      if (result.bindFunctions) result.bindFunctions(node);
+    }}
+    document.querySelectorAll(".mermaid-wrap").forEach((wrap) => {{
+      const diagram = wrap.querySelector(".mermaid");
+      if (!diagram || !diagram.querySelector("svg")) return;
+      diagram.dataset.zoom = wrap.dataset.initialZoom || "1";
+      diagram.dataset.tx = "0";
+      diagram.dataset.ty = "0";
+      diagram.style.zoom = diagram.dataset.zoom;
+      wrap.classList.add("is-rendered");
+    }});
+  }} catch (error) {{
+    console.warn("Spotlight diagram could not render", error);
+  }}
+</script>
+<script>
+  function spotlightDiagramTarget(button) {{
+    const wrap = button.closest(".mermaid-wrap");
+    const diagram = wrap && wrap.querySelector(".mermaid");
+    return {{ wrap: wrap, diagram: diagram }};
+  }}
+  function spotlightDiagramApply(diagram) {{
+    diagram.style.zoom = diagram.dataset.zoom || "1";
+    diagram.style.transform = "translate(" + (diagram.dataset.tx || 0) + "px," + (diagram.dataset.ty || 0) + "px)";
+  }}
+  function spotlightDiagramZoom(button, factor) {{
+    const target = spotlightDiagramTarget(button); if (!target.diagram) return;
+    const zoom = parseFloat(target.diagram.dataset.zoom || target.wrap.dataset.initialZoom || "1");
+    target.diagram.dataset.zoom = Math.min(Math.max(zoom * factor, 0.25), 4).toString();
+    spotlightDiagramApply(target.diagram);
+  }}
+  function spotlightDiagramReset(button) {{
+    const target = spotlightDiagramTarget(button); if (!target.diagram) return;
+    target.diagram.dataset.zoom = target.wrap.dataset.initialZoom || "1";
+    target.diagram.dataset.tx = "0"; target.diagram.dataset.ty = "0";
+    spotlightDiagramApply(target.diagram);
+  }}
+  function spotlightDiagramOpen(button) {{
+    const target = spotlightDiagramTarget(button);
+    const svg = target.diagram && target.diagram.querySelector("svg"); if (!svg) return;
+    const copy = svg.cloneNode(true); copy.style.zoom = ""; copy.style.transform = "";
+    const page = "<!doctype html><html><head><meta charset=\\"utf-8\\"><title>Diagram</title>" +
+      "<style>body{{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#fbf8f1;padding:32px;box-sizing:border-box}}svg{{max-width:100%;max-height:92vh}}</style>" +
+      "</head><body>" + copy.outerHTML + "</body></html>";
+    window.open(URL.createObjectURL(new Blob([page], {{ type: "text/html" }})), "_blank", "noopener");
+  }}
+  document.querySelectorAll(".mermaid-wrap").forEach((wrap) => {{
+    let startX = 0, startY = 0, startTX = 0, startTY = 0;
+    wrap.addEventListener("pointerdown", (event) => {{
+      if (!wrap.classList.contains("is-rendered") || event.target.closest(".zoom-controls")) return;
+      const diagram = wrap.querySelector(".mermaid"); if (!diagram) return;
+      startX = event.clientX; startY = event.clientY;
+      startTX = parseFloat(diagram.dataset.tx || "0"); startTY = parseFloat(diagram.dataset.ty || "0");
+      wrap.setPointerCapture(event.pointerId); wrap.classList.add("is-panning");
+    }});
+    wrap.addEventListener("pointermove", (event) => {{
+      if (!wrap.classList.contains("is-panning")) return;
+      const diagram = wrap.querySelector(".mermaid"); if (!diagram) return;
+      const zoom = parseFloat(diagram.dataset.zoom || "1");
+      diagram.dataset.tx = (startTX + (event.clientX - startX) / zoom).toString();
+      diagram.dataset.ty = (startTY + (event.clientY - startY) / zoom).toString();
+      spotlightDiagramApply(diagram);
+    }});
+    wrap.addEventListener("pointerup", () => wrap.classList.remove("is-panning"));
+    wrap.addEventListener("pointercancel", () => wrap.classList.remove("is-panning"));
+  }});
+</script>'''
+
+
 def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str, Any],
-                draft: dict[str, Any], rendered: list[dict[str, Any]], hashes: dict[str, str]) -> str:
+                draft: dict[str, Any], rendered: list[dict[str, Any]], hashes: dict[str, str],
+                diagrams: list[dict[str, Any]] | None = None) -> str:
     title = text(draft.get("title"))
     lead = text(draft.get("deck"))
     report_date = text(findings_doc.get("investigated_at") or methodology.get("planned_at"))
@@ -663,6 +984,13 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
                 f"{fid} — {VERDICT_LABEL.get(verdict['status'], verdict['status'].title())}"
             )
     hash_badges = "".join(f"<span>{h(path)} · sha256:{h(digest[:12])}</span>" for path, digest in hashes.items())
+    finding_anchors = {
+        record["id"]: f"finding-{index}-{hashlib.sha256(record['id'].encode()).hexdigest()[:8]}"
+        for index, record in enumerate(rendered, 1)
+    }
+    diagrams = diagrams or []
+    diagrams_block = diagram_html(diagrams, finding_anchors)
+    diagram_scripts = diagram_runtime(diagrams)
     appendix = arbiter_appendix(case)
     # Prefixed here rather than in the template so a case without Arbiter data
     # renders byte-for-byte the same HTML as before this integration existed.
@@ -686,6 +1014,7 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
   <p class="byline"><strong>Model-authored editorial synthesis · deterministically rendered</strong><br>{verified_count} verified finding(s) · {source_count} accessible source record(s)</p>
   <section class="honesty" aria-label="AI assistance notice"><p><strong>AI assistance notice:</strong> {h(AI_NOTICE)}</p><p>The model chose localized framing and priority. Deterministic checks bind every prose block to finding IDs and place canonical verdicts beside it; they do not claim semantic entailment.</p><p><strong>Framing references:</strong> {h('; '.join(framing_labels))}</p></section>
   <section class="tldr" aria-label="findings summary">{''.join(summary_items)}</section>
+  {diagrams_block}
   {''.join(finding_sections)}{arbiter_block}
   <section id="method">
     <div class="kicker">Methodology · structured case record</div>
@@ -698,6 +1027,7 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
   <section id="next"><div class="kicker">Open questions</div><h2>What a later cycle should close.</h2><table><tr><th>Target</th><th>Provenance</th></tr>{next_rows}</table></section>
   <footer><p><strong>Deliverables:</strong> <code>findings-report.md</code>, <code>report.html</code>, <code>evidence-map.json</code>.</p><p class="databases">{hash_badges}</p></footer>
 </div>
+{diagram_scripts}
 </body>
 </html>
 '''
@@ -850,8 +1180,9 @@ def render(case: Path) -> dict[str, Any]:
     if activated:
         inputs.append(expressions_path)
     hashes = input_hashes(inputs)
+    diagrams = compile_diagrams(draft, findings_doc)
     markdown, rendered = render_markdown(
-        case, findings_doc, methodology, draft, checks, expressions_doc
+        case, findings_doc, methodology, draft, checks, expressions_doc, diagrams
     )
     rendered_ids = [record["id"] for record in rendered]
     expected_order = [text(fid) for fid in draft.get("finding_order", [])]
@@ -859,7 +1190,7 @@ def render(case: Path) -> dict[str, Any]:
         raise RenderError(
             "rendered finding IDs do not exactly match finding_order and findings.json"
         )
-    html_report = render_html(case, findings_doc, methodology, draft, rendered, hashes)
+    html_report = render_html(case, findings_doc, methodology, draft, rendered, hashes, diagrams)
     output_hashes = {
         "findings-report.md": hashlib.sha256(
             (markdown + ("" if markdown.endswith("\n") else "\n")).encode()

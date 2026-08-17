@@ -140,6 +140,43 @@
   .timeline .date{font-weight:800;color:var(--red);font-family:var(--mono);font-size:13px;white-space:nowrap}
   .timeline .event{color:var(--ink);line-height:1.5}
 
+  /* ───── connection diagrams ───── */
+  .report-diagrams{border-top:1px solid var(--rule-strong);padding:44px 0 12px;margin:0 0 12px}
+  .report-diagram{margin:0 0 48px}
+  .report-diagram h2{margin-top:0}
+  .report-diagram figcaption{font-size:16px;line-height:1.55;max-width:68ch;margin:0 0 10px}
+  .diagram-findings{font-family:var(--sans);font-size:12px;color:var(--mute);margin:0 0 16px}
+  .mermaid-wrap{position:relative;min-height:360px;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:44px 24px 58px;border:1px solid var(--rule);border-radius:8px;background:#fdfaf2;cursor:grab;touch-action:none}
+  .mermaid-wrap.is-panning{cursor:grabbing;user-select:none}
+  .mermaid-wrap .mermaid{margin:0;padding:0;background:none;border:0;max-width:none;white-space:pre-wrap;font-family:var(--mono);font-size:12px;line-height:1.5}
+  .mermaid-wrap.is-rendered .mermaid{white-space:normal}
+  .mermaid-wrap .mermaid svg{max-width:none;height:auto}
+  .mermaid .nodeLabel{line-height:1.35!important}
+  .mermaid foreignObject,.mermaid foreignObject>div{overflow:visible!important}
+  .mermaid foreignObject>div{white-space:nowrap!important}
+  .mermaid svg g.node.source rect,.mermaid svg g.node.source path,.mermaid svg g.node.source polygon{fill:#fdfaf2!important;stroke:var(--ink)!important}
+  .mermaid svg g.node.intermediary rect,.mermaid svg g.node.intermediary path,.mermaid svg g.node.intermediary polygon{fill:var(--bg-soft)!important;stroke:var(--grey)!important}
+  .mermaid svg g.node.sink rect,.mermaid svg g.node.sink path,.mermaid svg g.node.sink polygon{fill:#fdfaf2!important;stroke:var(--ink)!important;stroke-width:2.5px!important}
+  .mermaid svg g.node.root rect,.mermaid svg g.node.root path,.mermaid svg g.node.root polygon{fill:var(--bg-soft)!important;stroke:var(--ink)!important;stroke-width:2.5px!important}
+  .mermaid svg g.node.branch rect,.mermaid svg g.node.branch path,.mermaid svg g.node.branch polygon{fill:#fdfaf2!important;stroke:var(--grey)!important}
+  .mermaid svg g.node.leaf rect,.mermaid svg g.node.leaf path,.mermaid svg g.node.leaf polygon{fill:#fdfaf2!important;stroke:var(--ink)!important}
+  .mermaid svg g.node.entity rect,.mermaid svg g.node.entity path,.mermaid svg g.node.entity polygon{fill:#fdfaf2!important;stroke:var(--grey)!important}
+  .mermaid svg g.node.focal rect,.mermaid svg g.node.focal path,.mermaid svg g.node.focal polygon{stroke:var(--ink)!important;stroke-width:3.5px!important}
+  .zoom-controls{display:none;position:absolute;z-index:2;right:10px;top:10px;gap:2px;padding:2px;background:var(--paper);border:1px solid var(--rule);border-radius:5px}
+  .mermaid-wrap.is-rendered .zoom-controls{display:flex}
+  .zoom-controls button{width:36px;height:36px;border:0;border-radius:4px;background:transparent;color:var(--ink);font:700 16px/1 var(--sans);cursor:pointer}
+  .zoom-controls button:hover,.zoom-controls button:focus-visible{background:var(--bg-soft);outline:2px solid var(--ink);outline-offset:1px}
+  .canvas-legend{position:absolute;z-index:2;bottom:10px;left:12px;display:flex;gap:12px;flex-wrap:wrap;max-width:calc(100% - 24px);padding:7px 10px;background:var(--paper);border:1px solid var(--rule);border-radius:5px;font:11px/1.2 var(--sans);color:var(--grey);pointer-events:none}
+  .diagram-legend-item{display:flex;align-items:center;gap:5px}
+  .diagram-key{display:inline-block;width:12px;height:12px;border:2px solid var(--grey);border-radius:2px;background:#fdfaf2}
+  .diagram-key-source,.diagram-key-root{border-color:var(--ink)}
+  .diagram-key-sink,.diagram-key-leaf{border-color:var(--ink);border-width:3px}
+  .diagram-key-focal{border-color:var(--ink);border-width:3px;background:var(--bg-soft)}
+  .diagram-connections{margin-top:10px;border:1px solid var(--rule);border-radius:5px;background:var(--bg-soft);font:13px/1.5 var(--sans)}
+  .diagram-connections summary{padding:9px 12px;font-size:11px}
+  .diagram-connections ul{margin:0;padding:0 20px 12px 30px}
+  .diagram-connections li{margin:3px 0}
+
   /* ───── footer ───── */
   footer{border-top:1px solid var(--rule-strong);margin-top:64px;padding-top:24px;font-family:var(--sans);font-size:13px;color:var(--mute);line-height:1.65;max-width:80ch}
   footer a{color:var(--ink)}
@@ -155,6 +192,9 @@
     .tldr{grid-template-columns:1fr}
     .stats{grid-template-columns:repeat(2,1fr)}
     .stats.cols-3,.stats.cols-5{grid-template-columns:repeat(2,1fr)}
+    .mermaid-wrap{min-height:300px;padding:40px 12px 62px}
+    .mermaid-wrap .mermaid svg{max-width:100%;height:auto}
+    .canvas-legend{gap:8px;font-size:10px}
   }
 </style>
 </head>

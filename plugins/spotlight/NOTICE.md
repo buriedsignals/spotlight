@@ -31,3 +31,12 @@ out-of-scope techniques removed. The upstream MIT license is preserved at
 
 See `LICENSE` for methodology attributions to Bellingcat, GIJN, Jim Shultz,
 OCCRP/ICIJ, and others.
+
+## diagram-design (MIT)
+
+Spotlight's report-diagram guidance adapts visual principles from
+[diagram-design](https://github.com/cathrynlavery/diagram-design) by **Cathryn
+Lavery**, reviewed at revision
+`09df49d8d1a1c7fb2efdfcdc7a2a0713534350a6`. Spotlight does not install,
+execute, or redistribute the upstream plugin. It uses Mermaid/ELK and a small
+local reference for report diagrams.

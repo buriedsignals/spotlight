@@ -41,6 +41,10 @@
         }
       }
     },
+    "diagrams": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/diagram"}
+    },
     "caveats": {"$ref": "#/$defs/editorialItems"},
     "next_steps": {"$ref": "#/$defs/editorialItems"}
   },
@@ -66,6 +70,46 @@
           "minLength": 1,
           "pattern": "^\\S(?:.*\\S)?$"
         }
+      }
+    },
+    "diagram": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "title", "caption", "finding_ids", "connections"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "type": {"enum": ["flow", "hierarchy", "network", "loop"]},
+        "title": {"type": "string", "minLength": 1, "maxLength": 180},
+        "caption": {"type": "string", "minLength": 1, "maxLength": 500},
+        "finding_ids": {"$ref": "#/$defs/findingIds"},
+        "connections": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/connectionSelector"}
+        },
+        "focal_entities": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "connectionSelector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "relationship"],
+      "properties": {
+        "from": {"type": "string", "minLength": 1},
+        "to": {"type": "string", "minLength": 1},
+        "relationship": {"type": "string", "minLength": 1}
       }
     },
     "editorialItems": {

@@ -31,6 +31,14 @@ The renderer places this at the top of the page. Do not soften:
 1. Read `{CASE_DIR}/data/findings.json` and `{CASE_DIR}/data/fact-check.json`.
 2. Author `{CASE_DIR}/data/report-draft.json` in the report's natural language. Choose the title, deck, finding order, headlines, concise summaries, why each finding matters, caveats, and next steps. Cover every finding exactly once. Every prose block must reference the fact-checked finding IDs it interprets; do not author verdicts or confidence.
 
+   When an existing connection structure would clarify the report, add an optional
+   `diagrams` item. Select one of `flow`, `hierarchy`, `network`, or `loop`; cite
+   its supporting finding IDs; and select its existing connections using exact
+   `{from, to, relationship}` values from `findings.json`. Keep it to one question,
+   at most nine nodes and twelve connections. A `loop` is one simple cycle and has
+   exactly one focal starting entity. Never author Mermaid, SVG, HTML, JavaScript,
+   CSS, URLs, coordinates, or layout settings: the renderer owns those.
+
    ```json
    {
      "schema_version": "1.0",
@@ -51,6 +59,20 @@ The renderer places this at the top of the page. Do not soften:
          "headline": "Editorial headline for this finding",
          "summary": "A concise synthesis of the validated record.",
          "why_it_matters": "The editorial significance without adding facts."
+       }
+     ],
+     "diagrams": [
+       {
+         "id": "money-flow",
+         "type": "flow",
+         "title": "How funds moved through the structure",
+         "caption": "The selected connections show the recorded route through two intermediaries.",
+         "finding_ids": ["F2", "F1"],
+         "connections": [
+           {"from": "Payer", "to": "Intermediary", "relationship": "paid"},
+           {"from": "Intermediary", "to": "Recipient", "relationship": "transferred"}
+         ],
+         "focal_entities": ["Recipient"]
        }
      ],
      "caveats": [
@@ -99,4 +121,6 @@ an arbitrary external API loop.
 - `references/report-template.html` — canonical stylesheet and legacy manual skeleton; the renderer reads its CSS.
 - `references/citation-discipline.md` — editorial rationale behind source-closure rules.
 - `references/design-discipline.md` — design semantics retained by the renderer.
+- `references/diagram-design.md` — report-diagram type selection and visual grammar.
+- `references/interactive-diagrams.md` — Mermaid/ELK rendering and canvas behavior.
 - `references/anti-patterns.md` — historical failures that motivated deterministic finalization.
