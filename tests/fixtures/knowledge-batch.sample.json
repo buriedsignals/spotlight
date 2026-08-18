@@ -1,0 +1,202 @@
+{
+  "schema_version": "1.0",
+  "batch_id": "batch:river-monitoring:001",
+  "idempotency_key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "created_at": "2026-08-18T10:00:00Z",
+  "source_case": {
+    "project": "test-case",
+    "findings_contract_version": "1.1",
+    "case_contract_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "review_decision_id": "decision:batch:river-monitoring:001"
+  },
+  "review_decisions": [
+    {
+      "id": "decision:batch:river-monitoring:001",
+      "reviewer_id": "journalist:fixture",
+      "decided_at": "2026-08-18T09:55:00Z",
+      "disposition": "approved",
+      "rationale": "The exact knowledge batch is approved for the newsroom registry.",
+      "subject": {
+        "kind": "source_case",
+        "id": "test-case",
+        "version": 1,
+        "payload_sha256": "b7db15a4051b425d70bdb0a681a914e6e2e2648b9a45c5dc560d4197da5329ca"
+      }
+    },
+    {
+      "id": "decision:claim:night-discharge:001",
+      "reviewer_id": "journalist:fixture",
+      "decided_at": "2026-08-18T09:56:00Z",
+      "disposition": "approved",
+      "rationale": "The claim identity and proposition match the reviewed finding.",
+      "subject": {
+        "kind": "claim",
+        "id": "claim:night-discharge:001",
+        "version": 1,
+        "payload_sha256": "9025b97a481db532c322e56d5b9cb21e5775355b031a35e6c3b60e5daba704d3"
+      }
+    },
+    {
+      "id": "decision:event:river-monitoring:001",
+      "reviewer_id": "journalist:fixture",
+      "decided_at": "2026-08-18T09:57:00Z",
+      "disposition": "approved",
+      "rationale": "The actor, action, object, place, and time identify one event.",
+      "subject": {
+        "kind": "event",
+        "id": "event:river-monitoring:2026-04-18",
+        "version": 1,
+        "payload_sha256": "439a21dd9f5940c38d055aff4d42ac942f2f04a8b8c3b7bbf6717d121483c73f"
+      }
+    },
+    {
+      "id": "decision:story-arc:river-pollution:001",
+      "reviewer_id": "journalist:fixture",
+      "decided_at": "2026-08-18T09:58:00Z",
+      "disposition": "approved",
+      "rationale": "The event belongs to the reviewed river-pollution coverage arc.",
+      "subject": {
+        "kind": "story_arc",
+        "id": "story-arc:after-dark-river-pollution",
+        "version": 1,
+        "payload_sha256": "9ae46bcbecca6070418b30e0b0a88b82afdb211bd989c1ae9fa18281fd258056"
+      }
+    },
+    {
+      "id": "decision:claim-event:night-discharge:001",
+      "reviewer_id": "journalist:fixture",
+      "decided_at": "2026-08-18T09:58:30Z",
+      "disposition": "approved",
+      "rationale": "The reviewed claim directly supports this event membership.",
+      "subject": {
+        "kind": "claim_event_membership",
+        "id": "relation:claim-event:night-discharge:001",
+        "version": 1,
+        "payload_sha256": "1524e8eefba3ac75e29a7c5de7debb321ebb9117b7f2a7b76e17e7299ce66bd2"
+      }
+    },
+    {
+      "id": "decision:event-story:river-monitoring:001",
+      "reviewer_id": "journalist:fixture",
+      "decided_at": "2026-08-18T09:59:00Z",
+      "disposition": "approved",
+      "rationale": "The event is part of this continuing coverage arc.",
+      "subject": {
+        "kind": "event_story_arc_membership",
+        "id": "relation:event-story:river-monitoring:001",
+        "version": 1,
+        "payload_sha256": "f2b7b3280e209dbbbe47752988ac169a814e03301d2368d3e87fcf94b5d30798"
+      }
+    }
+  ],
+  "claims": [
+    {
+      "id": "claim:night-discharge:001",
+      "version": 1,
+      "origin": {
+        "project": "test-case",
+        "finding_id": "F1",
+        "finding_fingerprint": "283888ef86f207741644f723da3389e257a6e6a8149b6d115a137415c99a8b5e",
+        "legacy_claim_id": "test-case-f1"
+      },
+      "proposition": "Acme paid Doe.",
+      "status": "approved",
+      "event_link_disposition": "linked",
+      "review_decision_id": "decision:claim:night-discharge:001",
+      "provenance": {
+        "actor": "journalist:fixture",
+        "method": "journalist",
+        "recorded_at": "2026-08-18T09:56:00Z"
+      },
+      "source_expression_refs": [
+        {
+          "project": "test-case",
+          "expression_id": "SX1",
+          "expression_fingerprint": "777ccbf691ef9f04783a61fc9b6acaac136969b1c6f4f6ed12ea61b5db82cc7f",
+          "relation": "supports"
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "id": "event:river-monitoring:2026-04-18",
+      "version": 1,
+      "label": "2026-04-18 monitoring station records discharge at River A",
+      "core": {
+        "actors": ["monitoring-station-7"],
+        "action": "recorded discharge",
+        "object": "industrial effluent",
+        "place": "River A",
+        "time": "2026-04-18T23:30:00Z"
+      },
+      "status": "approved",
+      "story_link_disposition": "linked",
+      "review_decision_id": "decision:event:river-monitoring:001",
+      "provenance": {
+        "actor": "journalist:fixture",
+        "method": "journalist",
+        "recorded_at": "2026-08-18T09:57:00Z"
+      }
+    }
+  ],
+  "story_arcs": [
+    {
+      "id": "story-arc:after-dark-river-pollution",
+      "version": 1,
+      "title": "After-dark river pollution",
+      "description": "Continuing coverage of discharges recorded outside inspection windows.",
+      "status": "approved",
+      "review_decision_id": "decision:story-arc:river-pollution:001",
+      "provenance": {
+        "actor": "journalist:fixture",
+        "method": "journalist",
+        "recorded_at": "2026-08-18T09:58:00Z"
+      }
+    }
+  ],
+  "claim_event_memberships": [
+    {
+      "id": "relation:claim-event:night-discharge:001",
+      "version": 1,
+      "claim": {
+        "id": "claim:night-discharge:001",
+        "version": 1
+      },
+      "event": {
+        "id": "event:river-monitoring:2026-04-18",
+        "version": 1
+      },
+      "relation": "supports",
+      "status": "approved",
+      "review_decision_id": "decision:claim-event:night-discharge:001",
+      "provenance": {
+        "actor": "journalist:fixture",
+        "method": "journalist",
+        "recorded_at": "2026-08-18T09:58:30Z"
+      }
+    }
+  ],
+  "event_story_arc_memberships": [
+    {
+      "id": "relation:event-story:river-monitoring:001",
+      "version": 1,
+      "event": {
+        "id": "event:river-monitoring:2026-04-18",
+        "version": 1
+      },
+      "story_arc": {
+        "id": "story-arc:after-dark-river-pollution",
+        "version": 1
+      },
+      "role": "part_of",
+      "status": "approved",
+      "review_decision_id": "decision:event-story:river-monitoring:001",
+      "provenance": {
+        "actor": "journalist:fixture",
+        "method": "journalist",
+        "recorded_at": "2026-08-18T09:59:00Z"
+      }
+    }
+  ]
+}

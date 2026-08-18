@@ -96,10 +96,10 @@ contract and apply this runtime table:
 
 ### 3.7. Knowledge workspace preflight
 
-Engine-managed Spotlight uses OpenKnowledge as its canonical knowledge store.
+Spotlight uses OpenKnowledge as its canonical local knowledge workspace.
 Confirm that the selected workspace contains `.ok/config.yml` and
 that `ok --cwd "{workspace_path}" config validate` succeeds. If either check
-fails, stop with the exact repair command from Engine/OpenKnowledge; do not
+fails, stop with the exact repair command from OpenKnowledge; do not
 silently switch to a different directory or legacy vault backend.
 
 `obsidian_legacy` remains an explicit migration-only backend. Run an Obsidian
@@ -111,7 +111,7 @@ Ask the user:
 
 > "Which OpenKnowledge workspace should archive verified findings?"
 
-Use the Engine-selected workspace by default. Keep Markdown/YAML frontmatter
+Use the configured workspace by default. Keep Markdown/YAML frontmatter
 and relative links portable. Tolaria and `obsidian_legacy` may be selected only
 through explicit migration configuration; never infer them from directory
 contents.

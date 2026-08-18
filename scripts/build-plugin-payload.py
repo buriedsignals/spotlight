@@ -37,6 +37,7 @@ DOC_FILES = [
     "integrations.md",
     "integrations-roadmap.md",
     "investigating.md",
+    "knowledge-destination.md",
     "monitoring.md",
     "recovery.md",
     "rlm-benchmark-audit.md",

@@ -18,11 +18,15 @@ Universal backings (never change):
 | Verb | Concrete tool |
 |---|---|
 | `fetch`, `search` | `fetch` → Crawl4AI via `integrations.scraping`; `search` → SearXNG via `integrations.search` (Firecrawl = optional fallback when `FIRECRAWL_API_KEY` is set) |
-| `query-vault` | Knowledge Workspace Port (`OpenKnowledge search`; explicit Markdown recovery reads) |
-| `vault-write` | Knowledge Workspace Port (journaled, approved writes; no automatic fallback) |
+| `query-vault` | `scripts/query_vault.py`: exact workflows use local SQLite; broad discovery uses Open Knowledge directly with local receipt filtering |
+| `vault-write` | Spotlight-local journaled projection writer (approved writes; no automatic fallback) |
 | `execute-shell` | native shell subprocess |
 | `read-file`, `write-file`, `edit-file` | filesystem (runtime-native) |
 | `list-files`, `grep-files` | glob + ripgrep (runtime-native) |
+
+`query-vault` is a same-user local adapter over Open Knowledge and Spotlight's
+SQLite graph. It does not claim multi-user authorization isolation;
+the adapter must surface that typed blocker rather than report live success.
 
 Runtime-specific backings (vary):
 
@@ -199,8 +203,8 @@ opencode ships native `bash`, `read`, `write`, `edit`, `grep`, `glob`, `multi-ed
 | Verb | Concrete tool |
 |---|---|
 | `fetch`, `search` | `integrations.scraping` (Crawl4AI) / `integrations.search` (SearXNG) via `bash`; Firecrawl optional fallback |
-| `query-vault` | Knowledge Workspace Port via the Engine-managed OpenKnowledge MCP adapter |
-| `vault-write` | Knowledge Workspace Port via the Engine-managed journaled write adapter |
+| `query-vault` | Local graph for exact workflows; direct Open Knowledge discovery for broad queries |
+| `vault-write` | Spotlight-local journaled projection writer |
 | `invoke-skill` | opencode's native `skill` tool — agents see available skills and load them on demand |
 
 ### Sub-agents
@@ -314,7 +318,7 @@ All Spotlight skills (spotlight, ingest, monitoring, acquisition-graduation, web
 | `fetch`, `search` | shell call to `integrations.scraping` (Crawl4AI) / `integrations.search` (SearXNG); Firecrawl optional fallback |
 | `read-file`, `write-file`, `edit-file` | Hermes filesystem tools |
 | `execute-shell` | Hermes terminal |
-| `query-vault` | Knowledge Workspace Port via OpenKnowledge MCP |
+| `query-vault` | Receipt-aware adapter; no runtime receives a raw OpenKnowledge MCP tool |
 | `vault-write` | Knowledge Workspace Port with explicit approval and journal reconciliation |
 | `spawn-agent` | `delegate_task()` with the agent prompt + iteration_limit |
 | `wait-agent` | `delegate_task` is synchronous by default; handle = task id |
@@ -440,8 +444,8 @@ Point Codex at the repo root as its working directory. `AGENTS.md` is loaded aut
 | `write-file`, `edit-file` | native edit tools — require `--sandbox workspace-write` or higher |
 | `execute-shell` | `bash -lc` tool — require `--sandbox workspace-write` or higher |
 | `fetch`, `search` | `execute-shell` running `python -m integrations.scraping` (Crawl4AI) / `integrations.search` (SearXNG); Firecrawl optional fallback |
-| `query-vault` | Engine-managed Knowledge Workspace Port / OpenKnowledge MCP |
-| `vault-write` | Engine-managed Knowledge Workspace Port; approved and journaled only |
+| `query-vault` | Local graph plus direct Open Knowledge search with receipt filtering |
+| `vault-write` | Spotlight-local projection writer; approved and journaled only |
 | `invoke-skill` | natively loads `skills/{skill}/SKILL.md` when referenced |
 | `spawn-agent`, `wait-agent` | `execute-shell` spawning a second `codex exec` subprocess — see below |
 

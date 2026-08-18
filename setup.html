@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Spotlight — Install</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'><path d='M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z'/></svg>">
-<meta name="description" content="Install Spotlight with one command. A static, reviewable script — configuration happens on a local page served from your own machine; keys never touch a website.">
+<meta name="description" content="Install Spotlight with one command. A static, reviewable script — configuration happens on a local page served from your own machine.">
 <link rel="alternate" type="text/markdown" title="llms.txt" href="/llms.txt">
 <link rel="alternate" type="text/markdown" title="llms_full.txt" href="/llms_full.txt">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -102,11 +102,27 @@
   }
   nav.topnav .brand svg { width: 18px; height: 18px; }
   nav.topnav .links {
-    display: flex; gap: 22px; align-items: center;
+    display: flex; gap: 10px; align-items: center;
     font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase;
   }
   nav.topnav .links a { transition: color 0.2s ease; opacity: 0.85; }
   nav.topnav .links a:hover { color: var(--accent-warm); opacity: 1; }
+  nav.topnav .links a.nav-button {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 12px;
+    border: 1px solid currentColor;
+    opacity: 1;
+    font-weight: 500;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  }
+  nav.topnav .links a.nav-button:hover {
+    background: var(--accent-warm-14);
+    border-color: var(--accent-warm);
+    color: var(--accent-warm);
+  }
+  nav.topnav .links .nav-icon {
+    width: 14px; height: 14px; flex: 0 0 auto; fill: currentColor;
+  }
   /* Install — promoted as a CTA (bordered pill) in the topnav. */
   nav.topnav .links a[href$="setup.html"] {
     display: inline-flex; align-items: center;
@@ -247,6 +263,7 @@
     gap: 8px;
     margin: 28px 0 0;
   }
+  .how-grid.before-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .item {
     background: var(--ink-2);
     border: 1px solid var(--muted-faint-dark);
@@ -576,7 +593,8 @@
     }
     .sec-header h2 { text-align: left; }
 
-    .how-grid { grid-template-columns: 1fr; }
+    .how-grid,
+    .how-grid.before-grid { grid-template-columns: 1fr; }
 
     #install { padding: 60px 20px 80px; margin-top: 72px; }
     #install .out-header { flex-direction: column; align-items: flex-start; gap: 12px; }
@@ -646,16 +664,19 @@
 </div>
 
 <nav class="topnav" id="topnav">
-  <a href="index.html" class="brand">
+  <a href="/" class="brand">
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <path d="M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z"/>
     </svg>
     Spotlight
   </a>
   <div class="links">
-    <a href="docs/index.html">Docs</a>
-    <a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a>
-    <a href="setup.html">Install</a>
+    <a class="nav-button" href="/docs/">Docs</a>
+    <a class="nav-button" href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">
+      <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2.02c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.28-1.7-1.28-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.57-.29-5.27-1.28-5.27-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.16 1.18a10.97 10.97 0 0 1 5.76 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.71 5.38-5.29 5.67.42.36.79 1.06.79 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
+      GitHub
+    </a>
+    <a href="/setup.html">Install</a>
   </div>
 </nav>
 
@@ -669,7 +690,7 @@
       </h1>
     </div>
     <div class="hero-side" data-reveal="body" style="--rd: 1000ms">
-      One command in Terminal. A configurator opens locally — runtime, keys, vault, integrations — and Spotlight launches when it's done. Frontier or local: same skills, same review loop.
+      One command in Terminal. A configurator opens locally — runtime, vault, integrations — and Spotlight launches when it's done. Frontier or local: same skills, same review loop.
     </div>
   </div>
 </section>
@@ -698,7 +719,7 @@
         <div class="item" data-reveal="body" style="--rs: 1">
           <p class="knum"><em>02</em> Browser</p>
           <h3>Configure <em>locally</em></h3>
-          <p>A configurator page opens in your browser, served from <code>127.0.0.1</code> on your own machine. Pick your runtime, paste your keys, choose your vault, toggle integrations. Keys are verified live with each provider and written straight to disk — they never touch a website.</p>
+          <p>A configurator page opens in your browser, served from <code>127.0.0.1</code> on your own machine. Pick your runtime, choose your vault, and toggle integrations. Optional service credentials are verified locally and written straight to disk — they never touch a website.</p>
         </div>
         <div class="item" data-reveal="body" style="--rs: 2">
           <p class="knum"><em>03</em> Investigate</p>
@@ -720,28 +741,30 @@
         unified Navigator skill locked. Optional services can be added later.
       </p>
 
-      <div class="how-grid">
+      <div class="how-grid before-grid">
         <div class="item" data-reveal="body" style="--rs: 0">
           <p class="knum"><em>01</em> Optional</p>
-          <h3>Fallback and membership</h3>
-          <p><strong>Firecrawl</strong> adds a hosted fallback for hard-to-reach pages. If you are an Indicator member, use the local <strong>Navigator</strong> connection: Pro unlocks OSINT tool discovery and Lab also unlocks structured public-record research through Data Navigator. Skip is always available and installs no Navigator credential or CLI.</p>
+          <h3>Scraping fallback</h3>
+          <p><strong>Crawl4AI is the default scraper</strong> and needs no account. Firecrawl is an optional hosted fallback for pages Crawl4AI cannot reach.</p>
           <div class="item-links">
             <a class="mini-link" href="https://www.firecrawl.dev/" target="_blank" rel="noopener">Firecrawl key →</a>
-            <a class="mini-link" href="https://navigator.indicator.media/" target="_blank" rel="noopener">Navigator membership →</a>
           </div>
         </div>
         <div class="item" data-reveal="body" style="--rs: 1">
-          <p class="knum"><em>02</em> Conditional</p>
-          <h3>A provider key</h3>
-          <p>For managed Pi runs, add an OpenCode Go, OpenRouter, or Fireworks key. Claude Code, Gemini, and Codex use their own sign-in.</p>
+          <p class="knum"><em>02</em> Optional</p>
+          <h3>More OSINT and data</h3>
+          <p><strong>Navigator</strong> expands the research toolkit for Indicator members. Pro unlocks OSINT tool discovery; Lab also adds structured public-record research through Data Navigator. Skip installs no Navigator credential or CLI.</p>
           <div class="item-links">
-            <a class="mini-link" href="https://openrouter.ai/" target="_blank" rel="noopener">OpenRouter →</a>
-            <a class="mini-link" href="https://fireworks.ai/" target="_blank" rel="noopener">Fireworks →</a>
-            <a class="mini-link" href="https://opencode.ai/docs/go/" target="_blank" rel="noopener">OpenCode Go →</a>
+            <a class="mini-link" href="https://navigator.indicator.media/" target="_blank" rel="noopener">Navigator membership →</a>
           </div>
         </div>
         <div class="item" data-reveal="body" style="--rs: 2">
-          <p class="knum"><em>03</em> Optional</p>
+          <p class="knum"><em>03</em> Agent access</p>
+          <h3>Use your existing login</h3>
+          <p>Spotlight installs its skills in each agent’s supported config directory. Pi and OpenCode keep using their own login or provider credentials; Spotlight does not need a separate agent API key.</p>
+        </div>
+        <div class="item" data-reveal="body" style="--rs: 3">
+          <p class="knum"><em>04</em> Optional</p>
           <h3>Extras<span class="badge">skippable</span></h3>
           <p><a href="https://www.junkipedia.org/" target="_blank" rel="noopener">Junkipedia</a> tracks narratives and misinformation. <a href="https://unpaywall.org/" target="_blank" rel="noopener">Unpaywall</a> finds legal open-access papers with only a contact email.</p>
         </div>

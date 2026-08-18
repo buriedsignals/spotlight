@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://buriedsignals.com/schemas/projection-job.schema.json",
+  "title": "Spotlight minimal projection outbox job",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "job_id", "idempotency_key", "case_id", "destination_id",
+    "generation", "desired_projection_set_sha256", "status", "attempts",
+    "created_at", "updated_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "spotlight-projection-job/v1" },
+    "job_id": { "type": "string", "pattern": "^job:[a-z0-9][a-z0-9._:-]{0,250}$" },
+    "idempotency_key": { "$ref": "#/definitions/sha256" },
+    "case_id": { "$ref": "#/definitions/case_id" },
+    "destination_id": { "$ref": "#/definitions/destination_id" },
+    "generation": { "type": "integer", "minimum": 1 },
+    "desired_projection_set_sha256": { "$ref": "#/definitions/sha256" },
+    "status": { "enum": ["pending", "running", "failed", "completed", "superseded"] },
+    "attempts": { "type": "integer", "minimum": 0 },
+    "created_at": { "$ref": "#/definitions/date_time" },
+    "updated_at": { "$ref": "#/definitions/date_time" },
+    "started_at": { "$ref": "#/definitions/date_time" },
+    "next_attempt_at": { "$ref": "#/definitions/date_time" },
+    "last_error_code": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+    "superseded_by_generation": { "type": "integer", "minimum": 2 },
+    "final_receipt": { "$ref": "#/definitions/final_receipt_ref" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "running" } } },
+      "then": { "required": ["started_at"] }
+    },
+    {
+      "if": { "properties": { "status": { "const": "failed" } } },
+      "then": { "required": ["last_error_code", "next_attempt_at"] }
+    },
+    {
+      "if": { "properties": { "status": { "const": "completed" } } },
+      "then": { "required": ["final_receipt"] },
+      "else": { "not": { "required": ["final_receipt"] } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "superseded" } } },
+      "then": { "required": ["superseded_by_generation"] },
+      "else": { "not": { "required": ["superseded_by_generation"] } }
+    }
+  ],
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "date_time": { "type": "string", "format": "date-time" },
+    "case_id": { "type": "string", "pattern": "^case:[a-z0-9][a-z0-9._:-]{0,250}$" },
+    "destination_id": { "type": "string", "pattern": "^destination:[a-z0-9][a-z0-9._:-]{0,243}$" },
+    "receipt_id": { "type": "string", "pattern": "^receipt:[a-z0-9][a-z0-9._:-]{0,247}$" },
+    "final_receipt_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["receipt_id", "package_sha256", "desired_projection_set_sha256", "completed_at", "payload_sha256"],
+      "properties": {
+        "receipt_id": { "$ref": "#/definitions/receipt_id" },
+        "package_sha256": { "$ref": "#/definitions/sha256" },
+        "desired_projection_set_sha256": { "$ref": "#/definitions/sha256" },
+        "completed_at": { "$ref": "#/definitions/date_time" },
+        "payload_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    }
+  }
+}

@@ -59,8 +59,8 @@ Fixed vocabulary of abstract operations. Every runtime adapter MUST implement al
 | `spawn-agent` | `spawn-agent(agent_id, prompt, config)` | Launch sub-agent with prompt and config | runtime-specific |
 | `wait-agent` | `wait-agent(handle)` | Block until agent completes, return output | runtime-specific |
 | `invoke-skill` | `invoke-skill(skill_id)` | Load skill instructions into current context | runtime-specific |
-| `query-vault` | `query-vault(workspace_path, query)` | Search durable knowledge through the Knowledge Workspace Port | OpenKnowledge MCP `search`; explicit Markdown recovery on backend failure |
-| `vault-write` | `vault-write(workspace_path, note_path, content)` | Journal an approved durable write in the declared logical space | OpenKnowledge MCP `write`; no automatic write fallback |
+| `query-vault` | `query-vault(workspace_path, query)` | Search durable knowledge through local Open Knowledge and exact SQLite traversal | Spotlight `query_vault.py`; managed results are receipt checked and legacy results labeled |
+| `vault-write` | `vault-write(workspace_path, note_path, content)` | Project an approved signed graph batch | Spotlight's local journaled projection writer; no raw Open Knowledge mutation |
 
 ## Agent Manifests
 
@@ -214,6 +214,7 @@ as `CASE_DIR`. Do not infer the case path from the knowledge vault path.
 │   ├── investigation-log.json   # Schema: schemas/investigation-log.schema.json
 │   ├── summary.json             # Schema: schemas/summary.schema.json
 │   ├── provenance-manifest.json  # Schema: schemas/provenance-manifest.schema.json
+│   ├── knowledge-batch.json      # Optional reviewed claim/event/story promotion package
 │   └── monitoring.json          # (optional) External monitor registry for the case
 └── research/
     ├── *.md                     # Scraped web content
@@ -240,6 +241,7 @@ schema versions as declared below.
 | Source-Expression Migration | `schemas/source-expression-migration.schema.json` | Dry-run/apply audit record; informative only and never an activation signal |
 | Evidence Bundle | `schemas/evidence-bundle.schema.json` | Acquisition artifacts with method, missing-source gate, hashes, and claim links |
 | Provenance Manifest | `schemas/provenance-manifest.schema.json` | Case artifact hashes, claim/verdict links, evidence refs, and optional Noosphere C2PA signing metadata |
+| Reviewed Knowledge Batch | `schemas/knowledge-batch.schema.json` | Additive canonical claims, events, story arcs, review decisions, and versioned membership records for the Knowledge Destination Port |
 | Methodology | `schemas/methodology.schema.json` | Investigation plan with directions, steps, tools_required, opsec_considerations |
 | Investigation Log | `schemas/investigation-log.schema.json` | Append-only cycle audit trail |
 | Summary | `schemas/summary.schema.json` | Gate 1 summary for review |

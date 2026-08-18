@@ -197,7 +197,7 @@ export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
 # VALIDATED_DEPENDENCIES.md. The installer never asks npm or pip for "latest"
 # on packages managed by Spotlight setup.
 FIRECRAWL_CLI_VERSION="1.9.8"
-OPEN_KNOWLEDGE_VERSION="0.34.0"
+OPEN_KNOWLEDGE_VERSION="0.54.3"
 DEV_BROWSER_VERSION="0.2.8"
 CLAUDE_CODE_VERSION="2.1.169"
 OPENAI_CODEX_VERSION="0.138.0"
@@ -1393,6 +1393,23 @@ except Exception:
   "vault_path": "$SPOTLIGHT_VAULT_PATH",
   "vault_type": "$([ "$SPOTLIGHT_VAULT_APP" = "tolaria" ] && echo tolaria || echo obsidian)",
   "vault_app": "$SPOTLIGHT_VAULT_APP",
+  "knowledge_destination": {
+    "type": "openknowledge",
+    "workspace_path": "$SPOTLIGHT_VAULT_PATH",
+    "namespace": "spotlight",
+    "project_id": "local:$SPOTLIGHT_VAULT_PATH",
+    "destination_id": "destination:spotlight-local",
+    "projection_namespace": "investigations",
+    "story_namespace": "stories",
+    "graph_database_path": "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace/spotlight.sqlite",
+    "provider_policy": {
+      "provider_mode": "local_device",
+      "model": "bge-m3:567m",
+      "network_egress": "denied",
+      "retention_days": 0
+    },
+    "legacy_mode": "off"
+  },
   "case_workspace_root": "$SPOTLIGHT_CASES_ROOT",
   "cases_root": "$SPOTLIGHT_CASES_ROOT",
   "install_path": "$SPOTLIGHT_DIR",
@@ -1492,6 +1509,25 @@ tags: [spotlight, investigation]
 CASE_TEMPLATE_EOF
 fi
 run open-knowledge --cwd "$SPOTLIGHT_VAULT_PATH" init --mcp --local-only
+if [ "$DRY_RUN" = "1" ]; then
+  printf 'DRY-RUN: seal Spotlight route and initialize graph at %s/.knowledge-workspace/spotlight.sqlite\n' "$SPOTLIGHT_VAULT_PATH"
+else
+  mkdir -p "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace"
+  if [ ! -e "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace/routes.json" ]; then
+    cat > "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace/routes.json" <<'ROUTES_EOF'
+{"schema_version":"knowledge-routes/v1","routes":{"spotlight_verified":"spotlight"}}
+ROUTES_EOF
+    chmod 600 "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace/routes.json"
+  fi
+  if [ ! -f "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace/spotlight.sqlite" ]; then
+    "$SPOTLIGHT_PYTHON" "$SPOTLIGHT_DIR/scripts/knowledge_destination.py" init-local \
+      --workspace-root "$SPOTLIGHT_VAULT_PATH" \
+      --db .knowledge-workspace/spotlight.sqlite \
+      --destination-id destination:spotlight-local >/dev/null
+  fi
+  "$SPOTLIGHT_PYTHON" "$SPOTLIGHT_DIR/scripts/validate-install-config.py" \
+    --config "$SPOTLIGHT_DIR/.spotlight-config.json" --initialize-local >/dev/null
+fi
 project_spotlight_skills_into_workspace
 [ "$DRY_RUN" = "1" ] || printf "%s✓%s OpenKnowledge project and MCP registration configured\n" "$_c_green" "$_c_reset"
 if [ "$SPOTLIGHT_VAULT_APP" = "obsidian" ] && [ "$OS" = "Darwin" ]; then
@@ -1703,6 +1739,15 @@ spotlight() {
       SPOTLIGHT_DIR="\$dir" "\$HOME/.local/bin/spotlight-doctor"
       return \$?
       ;;
+    knowledge-retry)
+      (cd "\$dir" && { [ -f .env ] && set -a && source .env && set +a; } && \
+        "\${SPOTLIGHT_PYTHON:-\$dir/.venv/bin/python}" "\$dir/scripts/knowledge_projection.py" \
+          --database "\${SPOTLIGHT_WORKSPACE_PATH}/.knowledge-workspace/spotlight.sqlite" \
+          --root "\${SPOTLIGHT_WORKSPACE_PATH}" --cases-root "\${SPOTLIGHT_CASES_ROOT}" \
+          --activation "\${SPOTLIGHT_WORKSPACE_PATH}/.knowledge-workspace/spotlight-activation.json" \
+          --drain-mode operator)
+      return \$?
+      ;;
     uninstall)
       "\$HOME/.local/bin/spotlight-uninstall" "\${@:2}"
       return \$?
@@ -1717,12 +1762,26 @@ Usage: spotlight [subcommand | session-id "message"]
                             the same id to answer each gate. --stop stops the servers.
   update                    Apply the latest signed public release, then run doctor
   doctor                    Run the smoke test (structure, schemas, preflights)
+  knowledge-retry           Retry pending local SQLite → Open Knowledge projections
   uninstall                 Remove owned files; preserve case data by default
   help                      This message
 HELP
       return 0
       ;;
   esac
+  # Projection recovery is local and bounded. A missing activation means the
+  # graph-backed workflow is not enabled yet, so ordinary Spotlight startup
+  # remains unchanged.
+  (cd "\$dir" && { [ -f .env ] && set -a && source .env && set +a; } && \
+    if [ -f "\${SPOTLIGHT_WORKSPACE_PATH}/.knowledge-workspace/spotlight-activation.json" ] && \
+       [ -f "\${SPOTLIGHT_WORKSPACE_PATH}/.knowledge-workspace/spotlight.sqlite" ]; then
+      "\${SPOTLIGHT_PYTHON:-\$dir/.venv/bin/python}" "\$dir/scripts/knowledge_projection.py" \
+        --database "\${SPOTLIGHT_WORKSPACE_PATH}/.knowledge-workspace/spotlight.sqlite" \
+        --root "\${SPOTLIGHT_WORKSPACE_PATH}" --cases-root "\${SPOTLIGHT_CASES_ROOT}" \
+        --activation "\${SPOTLIGHT_WORKSPACE_PATH}/.knowledge-workspace/spotlight-activation.json" \
+        --drain-mode startup || \
+        echo "Spotlight projection recovery needs attention; run: spotlight knowledge-retry" >&2
+    fi)
   (cd "\$dir" && { [ -f .env ] && set -a && source .env && set +a; } && $LAUNCH_BIN "\$@")
   local runtime_status=\$?
   if [ "$SPOTLIGHT_RUNTIME" != "local" ]; then

@@ -1,0 +1,484 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://buriedsignals.com/schemas/knowledge-batch.schema.json",
+  "title": "Spotlight reviewed knowledge batch",
+  "description": "Additive Knowledge Destination Port contract for canonical claims, events, story arcs, and reviewed membership relations. It never mutates case artifacts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "batch_id",
+    "idempotency_key",
+    "created_at",
+    "source_case",
+    "review_decisions",
+    "claims",
+    "events",
+    "story_arcs",
+    "claim_event_memberships",
+    "event_story_arc_memberships"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "batch_id": { "$ref": "#/definitions/batch_id" },
+    "idempotency_key": { "$ref": "#/definitions/sha256" },
+    "created_at": { "$ref": "#/definitions/date_time" },
+    "source_case": { "$ref": "#/definitions/source_case" },
+    "review_decisions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": { "$ref": "#/definitions/review_decision" }
+    },
+    "claims": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/definitions/claim" }
+    },
+    "events": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/definitions/event" }
+    },
+    "story_arcs": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/definitions/story_arc" }
+    },
+    "claim_event_memberships": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/definitions/claim_event_membership" }
+    },
+    "event_story_arc_memberships": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/definitions/event_story_arc_membership" }
+    }
+  },
+  "definitions": {
+    "nonempty_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 65536
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "date_time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "batch_id": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^batch:[a-z0-9][a-z0-9._:-]*$"
+    },
+    "claim_id": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^claim:[a-z0-9][a-z0-9._:-]*$"
+    },
+    "event_id": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^event:[a-z0-9][a-z0-9._:-]*$"
+    },
+    "story_arc_id": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^story-arc:[a-z0-9][a-z0-9._:-]*$"
+    },
+    "claim_event_relation_id": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^relation:claim-event:[a-z0-9][a-z0-9._:-]*$"
+    },
+    "event_story_relation_id": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^relation:event-story:[a-z0-9][a-z0-9._:-]*$"
+    },
+    "decision_id": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^decision:[a-z0-9][a-z0-9._:-]*$"
+    },
+    "record_status": {
+      "enum": ["candidate", "approved", "rejected", "superseded"]
+    },
+    "membership_status": {
+      "enum": ["candidate", "approved", "rejected", "superseded"]
+    },
+    "record_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "versioning_rules": {
+      "allOf": [
+        {
+          "if": { "properties": { "version": { "const": 1 } } },
+          "then": { "not": { "required": ["supersedes_version"] } },
+          "else": { "required": ["supersedes_version"] }
+        }
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor", "method", "recorded_at"],
+      "properties": {
+        "actor": { "type": "string", "minLength": 1, "maxLength": 65536 },
+        "method": {
+          "enum": ["journalist", "migration", "agent_candidate", "newsroom_adapter"]
+        },
+        "recorded_at": { "$ref": "#/definitions/date_time" },
+        "model": { "type": "string", "minLength": 1, "maxLength": 65536 },
+        "notes": { "type": "string", "minLength": 1, "maxLength": 65536 }
+      }
+    },
+    "source_case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project", "findings_contract_version", "review_decision_id"],
+      "properties": {
+        "project": { "$ref": "#/definitions/nonempty_text" },
+        "findings_contract_version": { "enum": ["1.0", "1.1"] },
+        "case_contract_sha256": { "$ref": "#/definitions/sha256" },
+        "review_decision_id": { "$ref": "#/definitions/decision_id" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "findings_contract_version": { "const": "1.1" } } },
+          "then": { "required": ["case_contract_sha256"] },
+          "else": { "not": { "required": ["case_contract_sha256"] } }
+        }
+      ]
+    },
+    "review_decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "reviewer_id", "decided_at", "disposition", "rationale", "subject"],
+      "properties": {
+        "id": { "$ref": "#/definitions/decision_id" },
+        "reviewer_id": { "type": "string", "minLength": 1, "maxLength": 65536 },
+        "decided_at": { "$ref": "#/definitions/date_time" },
+        "disposition": {
+          "enum": ["approved", "rejected", "superseded", "not_applicable"]
+        },
+        "rationale": { "type": "string", "minLength": 1, "maxLength": 65536 },
+        "subject": { "$ref": "#/definitions/review_subject" }
+      }
+    },
+    "review_subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "version", "payload_sha256"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "source_case", "claim", "event", "story_arc",
+            "claim_event_membership", "event_story_arc_membership"
+          ]
+        },
+        "id": { "type": "string", "minLength": 1, "maxLength": 65536 },
+        "version": { "$ref": "#/definitions/record_version" },
+        "payload_sha256": { "$ref": "#/definitions/sha256" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "claim" } } },
+          "then": { "properties": { "id": { "$ref": "#/definitions/claim_id" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "event" } } },
+          "then": { "properties": { "id": { "$ref": "#/definitions/event_id" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "story_arc" } } },
+          "then": { "properties": { "id": { "$ref": "#/definitions/story_arc_id" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "claim_event_membership" } } },
+          "then": { "properties": { "id": { "$ref": "#/definitions/claim_event_relation_id" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "event_story_arc_membership" } } },
+          "then": { "properties": { "id": { "$ref": "#/definitions/event_story_relation_id" } } }
+        }
+      ]
+    },
+    "source_expression_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project", "expression_id", "expression_fingerprint", "relation"],
+      "properties": {
+        "project": { "$ref": "#/definitions/nonempty_text" },
+        "expression_id": { "$ref": "#/definitions/nonempty_text" },
+        "expression_fingerprint": { "$ref": "#/definitions/sha256" },
+        "relation": { "enum": ["supports", "contradicts", "context"] }
+      }
+    },
+    "claim_origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project", "finding_id", "finding_fingerprint"],
+      "properties": {
+        "project": { "$ref": "#/definitions/nonempty_text" },
+        "finding_id": { "$ref": "#/definitions/nonempty_text" },
+        "finding_fingerprint": { "$ref": "#/definitions/sha256" },
+        "legacy_claim_id": { "$ref": "#/definitions/nonempty_text" }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "origin",
+        "proposition",
+        "status",
+        "event_link_disposition",
+        "provenance",
+        "source_expression_refs"
+      ],
+      "properties": {
+        "id": { "$ref": "#/definitions/claim_id" },
+        "version": { "$ref": "#/definitions/record_version" },
+        "supersedes_version": { "$ref": "#/definitions/record_version" },
+        "origin": { "$ref": "#/definitions/claim_origin" },
+        "proposition": { "$ref": "#/definitions/nonempty_text" },
+        "status": { "$ref": "#/definitions/record_status" },
+        "event_link_disposition": {
+          "enum": ["pending", "linked", "not_applicable"]
+        },
+        "event_link_decision_id": { "$ref": "#/definitions/decision_id" },
+        "review_decision_id": { "$ref": "#/definitions/decision_id" },
+        "provenance": { "$ref": "#/definitions/provenance" },
+        "source_expression_refs": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/source_expression_ref" }
+        }
+      },
+      "allOf": [
+        { "$ref": "#/definitions/versioning_rules" },
+        {
+          "if": { "properties": { "status": { "const": "candidate" } } },
+          "then": { "not": { "required": ["review_decision_id"] } }
+        },
+        {
+          "if": { "properties": { "status": { "enum": ["approved", "rejected", "superseded"] } } },
+          "then": { "required": ["review_decision_id"] }
+        },
+        {
+          "if": { "properties": { "event_link_disposition": { "const": "not_applicable" } } },
+          "then": { "required": ["event_link_decision_id"] }
+        },
+        {
+          "if": { "properties": { "event_link_disposition": { "enum": ["pending", "linked"] } } },
+          "then": { "not": { "required": ["event_link_decision_id"] } }
+        }
+      ]
+    },
+    "event_core": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actors", "action", "object", "place", "time"],
+      "properties": {
+        "actors": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/nonempty_text" }
+        },
+        "action": { "$ref": "#/definitions/nonempty_text" },
+        "object": { "$ref": "#/definitions/nonempty_text" },
+        "place": { "$ref": "#/definitions/nonempty_text" },
+        "time": { "$ref": "#/definitions/nonempty_text" }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "label",
+        "core",
+        "status",
+        "story_link_disposition",
+        "provenance"
+      ],
+      "properties": {
+        "id": { "$ref": "#/definitions/event_id" },
+        "version": { "$ref": "#/definitions/record_version" },
+        "supersedes_version": { "$ref": "#/definitions/record_version" },
+        "label": { "$ref": "#/definitions/nonempty_text" },
+        "core": { "$ref": "#/definitions/event_core" },
+        "status": { "$ref": "#/definitions/record_status" },
+        "story_link_disposition": {
+          "enum": ["pending", "linked", "not_applicable"]
+        },
+        "story_link_decision_id": { "$ref": "#/definitions/decision_id" },
+        "review_decision_id": { "$ref": "#/definitions/decision_id" },
+        "provenance": { "$ref": "#/definitions/provenance" }
+      },
+      "allOf": [
+        { "$ref": "#/definitions/versioning_rules" },
+        {
+          "if": { "properties": { "status": { "const": "candidate" } } },
+          "then": { "not": { "required": ["review_decision_id"] } }
+        },
+        {
+          "if": { "properties": { "status": { "enum": ["approved", "rejected", "superseded"] } } },
+          "then": { "required": ["review_decision_id"] }
+        },
+        {
+          "if": { "properties": { "story_link_disposition": { "const": "not_applicable" } } },
+          "then": { "required": ["story_link_decision_id"] }
+        },
+        {
+          "if": { "properties": { "story_link_disposition": { "enum": ["pending", "linked"] } } },
+          "then": { "not": { "required": ["story_link_decision_id"] } }
+        }
+      ]
+    },
+    "story_arc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "title",
+        "description",
+        "status",
+        "provenance"
+      ],
+      "properties": {
+        "id": { "$ref": "#/definitions/story_arc_id" },
+        "version": { "$ref": "#/definitions/record_version" },
+        "supersedes_version": { "$ref": "#/definitions/record_version" },
+        "title": { "$ref": "#/definitions/nonempty_text" },
+        "description": { "$ref": "#/definitions/nonempty_text" },
+        "status": { "$ref": "#/definitions/record_status" },
+        "review_decision_id": { "$ref": "#/definitions/decision_id" },
+        "provenance": { "$ref": "#/definitions/provenance" }
+      },
+      "allOf": [
+        { "$ref": "#/definitions/versioning_rules" },
+        {
+          "if": { "properties": { "status": { "const": "candidate" } } },
+          "then": { "not": { "required": ["review_decision_id"] } }
+        },
+        {
+          "if": { "properties": { "status": { "enum": ["approved", "rejected", "superseded"] } } },
+          "then": { "required": ["review_decision_id"] }
+        }
+      ]
+    },
+    "claim_endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "$ref": "#/definitions/claim_id" },
+        "version": { "$ref": "#/definitions/record_version" }
+      }
+    },
+    "event_endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "$ref": "#/definitions/event_id" },
+        "version": { "$ref": "#/definitions/record_version" }
+      }
+    },
+    "story_arc_endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "$ref": "#/definitions/story_arc_id" },
+        "version": { "$ref": "#/definitions/record_version" }
+      }
+    },
+    "claim_event_membership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "claim",
+        "event",
+        "relation",
+        "status",
+        "provenance"
+      ],
+      "properties": {
+        "id": { "$ref": "#/definitions/claim_event_relation_id" },
+        "version": { "$ref": "#/definitions/record_version" },
+        "supersedes_version": { "$ref": "#/definitions/record_version" },
+        "claim": { "$ref": "#/definitions/claim_endpoint" },
+        "event": { "$ref": "#/definitions/event_endpoint" },
+        "relation": {
+          "enum": ["supports", "contradicts", "contextualizes", "mentions"]
+        },
+        "status": { "$ref": "#/definitions/membership_status" },
+        "review_decision_id": { "$ref": "#/definitions/decision_id" },
+        "provenance": { "$ref": "#/definitions/provenance" }
+      },
+      "allOf": [
+        { "$ref": "#/definitions/versioning_rules" },
+        {
+          "if": { "properties": { "status": { "const": "candidate" } } },
+          "then": { "not": { "required": ["review_decision_id"] } }
+        },
+        {
+          "if": { "properties": { "status": { "enum": ["approved", "rejected", "superseded"] } } },
+          "then": { "required": ["review_decision_id"] }
+        }
+      ]
+    },
+    "event_story_arc_membership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "event",
+        "story_arc",
+        "role",
+        "status",
+        "provenance"
+      ],
+      "properties": {
+        "id": { "$ref": "#/definitions/event_story_relation_id" },
+        "version": { "$ref": "#/definitions/record_version" },
+        "supersedes_version": { "$ref": "#/definitions/record_version" },
+        "event": { "$ref": "#/definitions/event_endpoint" },
+        "story_arc": { "$ref": "#/definitions/story_arc_endpoint" },
+        "role": { "enum": ["part_of", "background", "parallel"] },
+        "status": { "$ref": "#/definitions/membership_status" },
+        "review_decision_id": { "$ref": "#/definitions/decision_id" },
+        "provenance": { "$ref": "#/definitions/provenance" }
+      },
+      "allOf": [
+        { "$ref": "#/definitions/versioning_rules" },
+        {
+          "if": { "properties": { "status": { "const": "candidate" } } },
+          "then": { "not": { "required": ["review_decision_id"] } }
+        },
+        {
+          "if": { "properties": { "status": { "enum": ["approved", "rejected", "superseded"] } } },
+          "then": { "required": ["review_decision_id"] }
+        }
+      ]
+    }
+  }
+}

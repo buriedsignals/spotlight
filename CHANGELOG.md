@@ -6,6 +6,17 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- Local reviewed knowledge graph and Open Knowledge projection:
+  `knowledge-batch.schema.json` maps exact case findings and source-expression
+  fingerprints to canonical, versioned claims, events, story arcs, and
+  first-class membership records. SQLite provides exact forward/reverse,
+  deduplication, and prior-verdict queries. Spotlight projects a managed
+  investigation block plus story pages directly into the journalist's existing
+  Open Knowledge workspace, reusing its BGE-M3 index and creating no claim/event
+  files or second embedding service. Local receipts, journals, conflict checks,
+  deterministic recovery, policy tombstones, and receipt-aware discovery keep
+  the same-user path auditable. Engine remains the installer/updater/configurer,
+  outside the runtime knowledge path.
 - `technical-investigation`, a dynamically loaded CTI capability adapted from
   CTI Expert by Hieu Ngo / chongluadao.vn (GitHub: 7onez): passive indicator and infrastructure history, local
   document/raw-email metadata, public GitHub history, and verified technical-

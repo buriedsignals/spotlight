@@ -1,0 +1,123 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://buriedsignals.com/schemas/knowledge-workspace-package.schema.json",
+  "title": "Spotlight local workspace projection package",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "package_id", "idempotency_key", "case_id",
+    "classification", "destination_id", "graph_receipt_id",
+    "desired_projection_set_sha256", "operations"
+  ],
+  "properties": {
+    "schema_version": { "const": "spotlight-workspace-projection-package/v1" },
+    "package_id": { "type": "string", "pattern": "^package:[a-z0-9][a-z0-9._:-]{0,246}$" },
+    "idempotency_key": { "$ref": "#/definitions/sha256" },
+    "case_id": { "$ref": "#/definitions/case_id" },
+    "classification": { "$ref": "#/definitions/classification" },
+    "destination_id": { "$ref": "#/definitions/destination_id" },
+    "graph_receipt_id": { "$ref": "#/definitions/receipt_id" },
+    "desired_projection_set_sha256": { "$ref": "#/definitions/sha256" },
+    "operations": {
+      "type": "array", "minItems": 1, "maxItems": 10000,
+      "items": { "$ref": "#/definitions/managed_operation" }
+    }
+  },
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "date_time": { "type": "string", "format": "date-time" },
+    "classification": { "enum": ["shareable", "internal", "personal"] },
+    "case_id": { "type": "string", "pattern": "^case:[a-z0-9][a-z0-9._:-]{0,250}$" },
+    "destination_id": { "type": "string", "pattern": "^destination:[a-z0-9][a-z0-9._:-]{0,243}$" },
+    "receipt_id": { "type": "string", "pattern": "^receipt:[a-z0-9][a-z0-9._:-]{0,247}$" },
+    "relative_path": {
+      "type": "string", "minLength": 1, "maxLength": 512,
+      "pattern": "^(investigations|stories)/[a-z0-9][a-z0-9._/-]*\\.md$",
+      "not": { "pattern": "(^|/)\\.\\.(/|$)" }
+    },
+    "managed_block_upsert": {
+      "type": "object", "additionalProperties": false,
+      "required": ["operation_id", "kind", "path", "owner_id", "expected_version", "expected_outside_sha256", "desired_sha256", "content"],
+      "properties": {
+        "operation_id": { "type": "string", "pattern": "^operation:[a-z0-9][a-z0-9._:-]{0,244}$" },
+        "kind": { "const": "managed_block_upsert" },
+        "path": { "$ref": "#/definitions/relative_path" },
+        "owner_id": { "type": "string", "pattern": "^owner:[a-z0-9][a-z0-9._:-]{0,248}$" },
+        "expected_version": { "oneOf": [{ "$ref": "#/definitions/sha256" }, { "const": "absent" }] },
+        "expected_outside_sha256": { "$ref": "#/definitions/sha256" },
+        "expected_managed_sha256": { "$ref": "#/definitions/sha256" },
+        "desired_sha256": { "$ref": "#/definitions/sha256" },
+        "content": { "type": "string", "maxLength": 4194304 }
+      },
+      "allOf": [{
+        "if": { "properties": { "expected_version": { "const": "absent" } }, "required": ["expected_version"] },
+        "then": { "properties": { "path": { "pattern": "^stories/" } } }
+      }]
+    },
+    "managed_page_removal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["operation_id", "kind", "path", "owner_id", "expected_version", "deleted_sha256"],
+      "properties": {
+        "operation_id": { "type": "string", "pattern": "^operation:[a-z0-9][a-z0-9._:-]{0,244}$" },
+        "kind": { "const": "managed_page_removal" },
+        "path": { "$ref": "#/definitions/relative_path" },
+        "owner_id": { "type": "string", "pattern": "^owner:[a-z0-9][a-z0-9._:-]{0,248}$" },
+        "expected_version": { "$ref": "#/definitions/sha256" },
+        "deleted_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "managed_operation": {
+      "oneOf": [
+        { "$ref": "#/definitions/managed_block_upsert" },
+        { "$ref": "#/definitions/managed_page_removal" }
+      ]
+    },
+    "projection_operation_receipt": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["operation_id", "kind", "path", "owner_id", "final_version"],
+          "properties": {
+            "operation_id": { "type": "string", "pattern": "^operation:[a-z0-9][a-z0-9._:-]{0,244}$" },
+            "kind": { "const": "managed_block_upsert" },
+            "path": { "$ref": "#/definitions/relative_path" },
+            "owner_id": { "type": "string", "pattern": "^owner:[a-z0-9][a-z0-9._:-]{0,248}$" },
+            "final_version": { "$ref": "#/definitions/sha256" }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["operation_id", "kind", "path", "owner_id", "removed"],
+          "properties": {
+            "operation_id": { "type": "string", "pattern": "^operation:[a-z0-9][a-z0-9._:-]{0,244}$" },
+            "kind": { "const": "managed_page_removal" },
+            "path": { "$ref": "#/definitions/relative_path" },
+            "owner_id": { "type": "string", "pattern": "^owner:[a-z0-9][a-z0-9._:-]{0,248}$" },
+            "removed": { "const": true }
+          }
+        }
+      ]
+    },
+    "workspace_final_receipt": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "schema_version", "receipt_id", "package_sha256", "desired_projection_set_sha256",
+        "case_id", "classification", "destination_id", "graph_receipt_id", "operations"
+      ],
+      "properties": {
+        "schema_version": { "const": "spotlight-workspace-final-receipt/v1" },
+        "receipt_id": { "$ref": "#/definitions/receipt_id" },
+        "package_sha256": { "$ref": "#/definitions/sha256" },
+        "desired_projection_set_sha256": { "$ref": "#/definitions/sha256" },
+        "case_id": { "$ref": "#/definitions/case_id" },
+        "classification": { "$ref": "#/definitions/classification" },
+        "destination_id": { "$ref": "#/definitions/destination_id" },
+        "graph_receipt_id": { "$ref": "#/definitions/receipt_id" },
+        "operations": {
+          "type": "array", "minItems": 1, "maxItems": 10000,
+          "items": { "$ref": "#/definitions/projection_operation_receipt" }
+        }
+      }
+    }
+  }
+}

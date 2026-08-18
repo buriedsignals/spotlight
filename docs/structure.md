@@ -1,5 +1,11 @@
 # Structure
 
+Knowledge projection uses the configured `knowledge_destination.namespace`,
+with `projection_namespace: investigations` and `story_namespace: stories`.
+The optional typed activation receipt lives under the configured Open Knowledge
+workspace; file presence alone never retires claim notes. The deterministic
+activation validator must approve it for the exact destination and case.
+
 This doc describes the repo layout: what's where, why, and how the pieces connect. If you want to add a skill, monitoring backend, schema, or runtime adapter, start here.
 
 ## Top-level layout
@@ -48,8 +54,8 @@ spotlight/
 | `spawn-agent` | `spawn-agent(agent_id, prompt, config)` | Launch sub-agent |
 | `wait-agent` | `wait-agent(handle)` | Block until agent completes |
 | `invoke-skill` | `invoke-skill(skill_id)` | Load skill instructions into context |
-| `query-vault` | `query-vault(workspace_path, query)` | Search durable knowledge through the Knowledge Workspace Port; OpenKnowledge primary, explicit Markdown recovery reads |
-| `vault-write` | `vault-write(vault_path, note_path, content)` | Write vault note + update registry |
+| `query-vault` | `query-vault(workspace_path, query)` | Direct local Open Knowledge discovery plus exact SQLite traversal |
+| `vault-write` | `vault-write(vault_path, note_path, content)` | Project a signed graph batch through Spotlight's local journaled writer |
 
 These are **abstract** — the runtime adapter binds each to a concrete tool. See [integrations.md](integrations.md) for per-runtime mappings.
 

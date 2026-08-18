@@ -21,5 +21,6 @@ export SPOTLIGHT_WORKSPACE_PATH="$workspace"
 export SPOTLIGHT_CWD="${SPOTLIGHT_WORKSPACE_PATH:-$PWD}"
 (cd harness/flue && ./node_modules/.bin/flue build --target node --output "$workspace/dist") >/dev/null
 [ -f "$workspace/dist/server.mjs" ] || { echo "Flue build did not emit server.mjs" >&2; exit 1; }
-grep -q 'mcp__openknowledge__search' "$workspace/dist/server.mjs" || { echo "Flue build omitted the OpenKnowledge MCP adapter" >&2; exit 1; }
+grep -q 'scripts/query_vault.py' "$workspace/dist/server.mjs" || { echo "Flue build omitted the Spotlight query-vault adapter" >&2; exit 1; }
+! grep -q 'mcp__openknowledge__search' "$workspace/dist/server.mjs" || { echo "Flue build exposed a raw OpenKnowledge MCP tool" >&2; exit 1; }
 echo "Flue OpenKnowledge workspace check passed"

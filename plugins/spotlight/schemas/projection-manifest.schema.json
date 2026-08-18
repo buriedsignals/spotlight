@@ -1,0 +1,108 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://buriedsignals.com/schemas/projection-manifest.schema.json",
+  "title": "Spotlight projection manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "manifest_id", "case_id", "destination_id", "classification",
+    "generation", "created_at", "graph", "signed_case", "case_policy",
+    "desired_projection_set_sha256", "pages"
+  ],
+  "properties": {
+    "schema_version": { "const": "spotlight-projection-manifest/v1" },
+    "manifest_id": { "type": "string", "pattern": "^manifest:[a-z0-9][a-z0-9._:-]{0,246}$" },
+    "case_id": { "$ref": "#/definitions/case_id" },
+    "destination_id": { "$ref": "#/definitions/destination_id" },
+    "classification": { "$ref": "#/definitions/classification" },
+    "generation": { "type": "integer", "minimum": 1 },
+    "created_at": { "$ref": "#/definitions/date_time" },
+    "graph": { "$ref": "#/definitions/graph_snapshot" },
+    "signed_case": { "$ref": "#/definitions/signed_case" },
+    "case_policy": { "$ref": "#/definitions/case_policy_ref" },
+    "desired_projection_set_sha256": { "$ref": "#/definitions/sha256" },
+    "pages": {
+      "type": "array", "minItems": 1, "maxItems": 10000,
+      "items": { "$ref": "#/definitions/page" }
+    }
+  },
+  "definitions": {
+    "nonempty_text": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "date_time": { "type": "string", "format": "date-time" },
+    "classification": { "enum": ["shareable", "internal", "personal"] },
+    "case_id": { "type": "string", "pattern": "^case:[a-z0-9][a-z0-9._:-]{0,250}$" },
+    "destination_id": { "type": "string", "pattern": "^destination:[a-z0-9][a-z0-9._:-]{0,243}$" },
+    "receipt_id": { "type": "string", "pattern": "^receipt:[a-z0-9][a-z0-9._:-]{0,247}$" },
+    "relative_path": {
+      "type": "string", "minLength": 1, "maxLength": 512,
+      "pattern": "^(investigations|stories)/[a-z0-9][a-z0-9._/-]*\\.md$",
+      "not": { "pattern": "(^|/)\\.\\.(/|$)" }
+    },
+    "record": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "id", "version", "payload_sha256"],
+      "properties": {
+        "kind": { "enum": ["claim", "event", "story_arc", "claim_event_membership", "event_story_arc_membership"] },
+        "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "version": { "type": "integer", "minimum": 1 },
+        "payload_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "graph_snapshot": {
+      "type": "object", "additionalProperties": false,
+      "required": ["receipt_id", "commit_sha256", "snapshot_at", "records"],
+      "properties": {
+        "receipt_id": { "$ref": "#/definitions/receipt_id" },
+        "commit_sha256": { "$ref": "#/definitions/sha256" },
+        "snapshot_at": { "$ref": "#/definitions/date_time" },
+        "records": {
+          "type": "array", "minItems": 1, "maxItems": 50000,
+          "uniqueItems": true, "items": { "$ref": "#/definitions/record" }
+        }
+      }
+    },
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "role", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 512, "not": { "pattern": "(^|/)\\.\\.(/|$)" } },
+        "role": { "enum": ["summary", "findings", "fact_check", "evidence_bundle", "source_expressions", "case_contract", "other_approved"] },
+        "sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "signed_case": {
+      "type": "object", "additionalProperties": false,
+      "required": ["provenance_revision", "provenance_receipt_id", "provenance_sha256", "artifacts"],
+      "properties": {
+        "provenance_revision": { "type": "integer", "minimum": 1 },
+        "provenance_receipt_id": { "$ref": "#/definitions/receipt_id" },
+        "provenance_sha256": { "$ref": "#/definitions/sha256" },
+        "artifacts": {
+          "type": "array", "minItems": 1, "maxItems": 1000,
+          "uniqueItems": true, "items": { "$ref": "#/definitions/artifact" }
+        }
+      }
+    },
+    "case_policy_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["receipt_id", "policy_revision", "receipt_sha256"],
+      "properties": {
+        "receipt_id": { "$ref": "#/definitions/receipt_id" },
+        "policy_revision": { "type": "integer", "minimum": 1 },
+        "receipt_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "page": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "kind", "owner_id", "content_sha256"],
+      "properties": {
+        "path": { "$ref": "#/definitions/relative_path" },
+        "kind": { "enum": ["investigation_block", "story_page"] },
+        "owner_id": { "type": "string", "pattern": "^owner:[a-z0-9][a-z0-9._:-]{0,248}$" },
+        "content_sha256": { "$ref": "#/definitions/sha256" },
+        "expected_version": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    }
+  }
+}

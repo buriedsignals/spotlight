@@ -82,7 +82,16 @@ Proceed to the Ingestion Process with whatever files were found.
 
 ## Staging, journal, and concurrency
 
-Before mutation, use `batch_stage` to validate the exact Markdown and JSON registry package. Record its hash in the case-local receipt and show additions, updates, and exclusions to the journalist. Require approval of that exact hash. Then call `batch_commit` with the stable idempotency key; the port creates the checkpoint and durable journal.
+Before mutation, run `scripts/knowledge_destination.py stage` against
+`data/knowledge-batch.json` and save its exact JSON output as the review
+manifest. Show additions, updates, exclusions, and the manifest hash to the
+journalist. After approval, create the canonical approval bytes with the
+script's `approval` command and have the journalist sign them with an allowed
+SSH signing identity. Commit only with `knowledge_destination.py commit
+--project-after-commit --activation .knowledge-workspace/spotlight-activation.json`.
+That command atomically records the signed graph batch, enqueues its monotonic
+projection intent, and runs Spotlight's local journaled projection writer.
+Never substitute a raw Open Knowledge or filesystem write.
 
 If a pending journal exists, resume or restore that exact operation. Never start a second ingest over partial state. A filesystem lock is only an additional local guard, not the transaction mechanism.
 
@@ -300,6 +309,23 @@ Body: Capabilities, Access Notes, Usage History table (one row), Tips for Future
 
 ### Step 6 — Create or Update Claim Notes
 
+Before processing claims, run the deterministic activation gate:
+
+```
+execute-shell("python3 scripts/validate-install-config.py --config .spotlight-config.json --case-dir {CASE_DIR}")
+```
+
+Parse its JSON even when it exits 2. Missing, malformed, inactive, or incomplete
+activation—and any case without a reviewed `data/knowledge-batch.json`—sets
+`suppress_new_claim_notes: false`; follow the existing claim-note behavior below
+unchanged. When it returns `true`, the configured local destination has passed
+the `local_conformance` gate. In that case, still create/update the investigation
+note, but do not create new standalone claim notes, do not add new claim registry
+entries, and do not rewrite existing legacy claim notes or their registry rows.
+The approved graph and deterministic projection are the new claim surface.
+`local_conformance` is a same-user filesystem boundary, not evidence of
+multi-user authorization isolation.
+
 For each finding in `findings.json`, join its matching fact-check entry from `fact-check.json` (on finding ID) and apply the **eligibility gate** from `references/entity-model.md`:
 
 1. Verdict is `verified` or `partially_verified`.
@@ -309,7 +335,8 @@ For each finding in `findings.json`, join its matching fact-check entry from `fa
 
 **Ineligible findings are never written as claims.** Record each exclusion for the ingest summary — finding ID and reason (e.g., `F3: verdict disputed`, `F7: grounding capped low`, `F9: no sources`). Filtering must be visible in the final report, never silent. Excluded findings still appear in the investigation note (Step 2), flagged as before.
 
-**For each eligible finding**, claim ID is `{project-id}-f{n}`:
+**Unless the activation gate suppresses new claim notes**, for each eligible
+finding, claim ID is `{project-id}-f{n}`:
 
 **If the claim is new** — `write-file("{vault}/claims/{claim-id}.md", ...)` per the Claim Note schema in `references/entity-model.md`:
 
@@ -326,9 +353,10 @@ For each finding in `findings.json`, join its matching fact-check entry from `fa
 
 #### Step 6a — Attach activated source-expression snapshots
 
-For an activated `1.1` case, complete Step 7 so eligible claim notes and
-`claims/_registry.json` both exist, then run the deterministic writer before
-Step 8 while the project-owned vault lock is still held:
+For an activated `1.1` case **only when the Step 6 activation gate returned
+`suppress_new_claim_notes: false`**, complete Step 7 so eligible legacy claim
+notes and `claims/_registry.json` both exist, then run the deterministic writer
+before Step 8 while the project-owned vault lock is still held:
 
 ```
 execute-shell("python3 scripts/ingest-source-expressions.py --case-dir {CASE_DIR} --vault {vault} --lock-held")
@@ -341,6 +369,11 @@ also extends `data/ingestion.json` with the source input hash and written/skippe
 IDs. Re-ingest is byte-identical; publication failure is rolled back. There is
 no standalone expression registry, and legacy expression-less claims remain
 unchanged.
+
+When `suppress_new_claim_notes: true`, do not run
+`ingest-source-expressions.py`: verified source-expression references are
+already bound into the approved graph and deterministic projection, and no
+claim-note writer may recreate the retired standalone surface.
 
 ### Step 7 — Update ALL Registries
 
@@ -377,6 +410,41 @@ ingestion fails, write status `failed` before reporting the failure.
 
 ---
 
+## Optional reviewed knowledge-graph preparation
+
+Vault ingestion remains the case-archival path above. When the journalist also
+wants canonical claim–event–story continuity, prepare a separate
+`{CASE_DIR}/data/knowledge-batch.json` against
+`schemas/knowledge-batch.schema.json` after Step 8. Never add canonical graph
+fields to `findings.json`, `source-expressions.json`, or managed claim blocks.
+
+The batch must preserve each claim's exact `(project, finding_id,
+finding_fingerprint)` origin and any composite source-expression references. It
+must represent claim–event and event–story membership as first-class relation
+records. Similarity or clustering may create `candidate` records only; it may
+not approve, merge, or mint canonical editorial identity without a trusted,
+record-bound journalist decision.
+
+Graph promotion is **not an automatic ingest step**. The current SQLite
+implementation is a local conformance adapter and must not bypass the configured
+Knowledge Workspace Port. Do not interpolate `CASE_DIR`, workspace paths, a
+generated digest, or reviewer identity into `execute-shell`. Resolve paths with
+the shell-safety helper, keep them beneath their declared roots, and pass the
+prepared batch to a configured destination operation only when that adapter can:
+
+- verify the activated case and every finding/expression fingerprint;
+- produce a complete deterministic review manifest;
+- require a detached, destination-bound approval signed by an allowed reviewer;
+- return a durable commit receipt and journal it through `batch_commit`.
+
+If the configured port does not advertise those capabilities, stop after
+preparation and report that promotion is unavailable. A trusted developer may
+exercise the local reference adapter manually by following
+`docs/knowledge-destination.md` for traversal, coverage, compatibility, and
+adapter conformance rules; an agent must not run that commit path on its own.
+
+---
+
 ## Cross-Links
 
 All cross-references use **relative markdown links**, regardless of vault type. Obsidian
@@ -407,6 +475,8 @@ Frontmatter and registry JSON are identical regardless of vault type.
 9. **Claim history is append-only.** Re-verification and supersession append dated rows; existing claim content is never rewritten by a later investigation.
 10. **Aliases are derived, merges are human-gated.** Rebuild `entities/_aliases.json` from entity frontmatter every run; alias collisions become merge proposals, never automatic merges.
 11. **Expression mutation is deterministic.** Only `scripts/ingest-source-expressions.py` may write managed source-expression blocks, under the project-owned vault lock. Never create an expression registry.
+12. **Canonical memberships have one owner.** The Knowledge Destination Port's versioned relation records are authoritative; never maintain writable event-ID arrays in claims or claim-ID arrays in events.
+13. **Candidates are not canonical.** Agent similarity may propose event or story membership, but only an attributable journalist decision can approve it.
 
 ---
 
@@ -432,6 +502,7 @@ Reads from:
   {CASE_DIR}/data/summary.json
   {CASE_DIR}/data/case-contract.json         (activated 1.1 cases)
   {CASE_DIR}/data/source-expressions.json    (activated 1.1 cases)
+  {CASE_DIR}/data/knowledge-batch.json       (optional reviewed graph promotion)
   {vault}/_registry.json
   {vault}/investigations/_registry.json
   {vault}/entities/_registry.json
@@ -457,4 +528,5 @@ Writes to:
   {vault}/_registry.json                   (master)
   {vault}/index.md
   {CASE_DIR}/data/ingestion.json           (source-expression receipt)
+  {workspace}/spotlight/knowledge.sqlite   (local reference destination only)
 ```

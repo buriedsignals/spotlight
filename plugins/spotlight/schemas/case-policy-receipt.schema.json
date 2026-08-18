@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://buriedsignals.com/schemas/case-policy-receipt.schema.json",
+  "title": "Spotlight signed case-policy receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "receipt_id", "case_id", "policy_revision", "status",
+    "classification", "allowed_destinations", "provider_policy", "issued_at",
+    "expires_at", "revocation_version", "issuer"
+  ],
+  "properties": {
+    "schema_version": { "const": "spotlight-case-policy-receipt/v1" },
+    "receipt_id": { "$ref": "#/definitions/receipt_id" },
+    "case_id": { "$ref": "#/definitions/case_id" },
+    "policy_revision": { "type": "integer", "minimum": 1 },
+    "status": { "enum": ["active", "revoked"] },
+    "classification": { "$ref": "#/definitions/classification" },
+    "allowed_destinations": {
+      "type": "array", "minItems": 1, "maxItems": 100,
+      "uniqueItems": true, "items": { "$ref": "#/definitions/destination_id" }
+    },
+    "provider_policy": { "$ref": "#/definitions/provider_policy" },
+    "issued_at": { "$ref": "#/definitions/date_time" },
+    "expires_at": { "$ref": "#/definitions/date_time" },
+    "revocation_version": { "type": "integer", "minimum": 1 },
+    "revoked_at": { "$ref": "#/definitions/date_time" },
+    "revocation_reason": { "$ref": "#/definitions/nonempty_text" },
+    "issuer": { "$ref": "#/definitions/issuer_binding" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "revoked" } } },
+      "then": { "required": ["revoked_at", "revocation_reason"] },
+      "else": {
+        "not": { "anyOf": [{ "required": ["revoked_at"] }, { "required": ["revocation_reason"] }] }
+      }
+    }
+  ],
+  "definitions": {
+    "nonempty_text": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "date_time": { "type": "string", "format": "date-time" },
+    "classification": { "enum": ["shareable", "internal", "personal"] },
+    "case_id": { "type": "string", "pattern": "^case:[a-z0-9][a-z0-9._:-]{0,250}$" },
+    "destination_id": { "type": "string", "pattern": "^destination:[a-z0-9][a-z0-9._:-]{0,243}$" },
+    "receipt_id": { "type": "string", "pattern": "^receipt:[a-z0-9][a-z0-9._:-]{0,247}$" },
+    "issuer_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["issuer_id", "issuer_key_id", "algorithm", "payload_sha256", "signature"],
+      "properties": {
+        "issuer_id": { "type": "string", "pattern": "^issuer:[a-z0-9][a-z0-9._:-]{0,246}$" },
+        "issuer_key_id": { "type": "string", "pattern": "^key:[a-z0-9][a-z0-9._:-]{0,249}$" },
+        "algorithm": { "enum": ["ed25519", "ecdsa-p256-sha256"] },
+        "payload_sha256": { "$ref": "#/definitions/sha256" },
+        "signature": { "type": "string", "minLength": 4, "maxLength": 16384, "pattern": "^[A-Za-z0-9+/]+={0,2}$" }
+      }
+    },
+    "provider_policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["allowed_modes", "provider_ids", "data_localities", "network_egress", "max_retention_days"],
+      "properties": {
+        "allowed_modes": {
+          "type": "array", "minItems": 1, "maxItems": 2, "uniqueItems": true,
+          "items": { "enum": ["full_text", "semantic"] }
+        },
+        "provider_ids": {
+          "type": "array", "maxItems": 100, "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+        },
+        "data_localities": {
+          "type": "array", "minItems": 1, "maxItems": 100, "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        },
+        "network_egress": { "enum": ["denied", "approved_providers_only"] },
+        "max_retention_days": { "type": "integer", "minimum": 0, "maximum": 36500 }
+      }
+    }
+  }
+}

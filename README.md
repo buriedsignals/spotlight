@@ -105,6 +105,7 @@ Each investigation gets an isolated working directory under the configured
 │   ├── investigation-log.json
 │   ├── summary.json
 │   ├── provenance-manifest.json
+│   ├── knowledge-batch.json      # optional reviewed claim/event/story promotion
 │   └── monitoring.json
 ├── research/
 │   ├── *.md
@@ -150,19 +151,43 @@ activation is **NOT APPROVED** and default new-case emission remains `1.0`.
 Recovery, migration, and mode-selection instructions are in
 [`docs/investigating.md`](docs/investigating.md#source-expression-mode).
 
+### Reviewed claim–event–story graph
+
+Approved knowledge is committed to a local SQLite graph whose versioned
+relation records support deterministic traversal in both directions:
+
+```text
+source expression ↔ claim ↔ event ↔ story arc
+```
+
+Broad discovery stays in the journalist's local Open Knowledge project. A
+Spotlight-local writer creates one managed investigation block and one
+case-scoped page per linked story, journals changes, and attaches receipts; it does not create a Markdown
+file per claim or event. Open Knowledge owns indexing and reuses its installed
+BGE-M3 embeddings. Exact claim, event, deduplication, and prior-verdict queries
+read the SQLite graph directly. Engine remains responsible for installation,
+updates, configuration, and doctor, not the runtime knowledge path.
+
+Local activation can retire new standalone claim notes after the graph,
+projection, receipt-aware discovery, logical-removal, and migrated-workflow
+checks pass. Existing claim notes remain untouched as legacy records.
+The supported boundary is a same-user local workspace; multi-user newsroom
+authorization is outside this release. See
+[`docs/knowledge-destination.md`](docs/knowledge-destination.md).
+
 ## Source Acquisition
 
 Spotlight's default source path is simple:
 
-1. Search and scrape with Firecrawl.
+1. Scrape locally with Crawl4AI and search through the configured local search seam.
 2. Save the source artifact locally.
 3. Archive or capture the source when preservation matters.
 4. Cite only material that can be traced back to a local file.
 
 Use `dev-browser` only for specific investigative tasks that require browser
 automation: dynamic pages, search forms, authenticated portals, rendered tables,
-downloads, visual evidence, or multi-step UI navigation. Firecrawl remains the
-first acquisition path for ordinary search and scrape work.
+downloads, visual evidence, or multi-step UI navigation. Firecrawl is an
+optional hosted fallback for pages the local scraper cannot reach.
 
 ## Integrations
 
@@ -171,7 +196,8 @@ important integrations are:
 
 | Integration | Purpose |
 |---|---|
-| Firecrawl | Search and scrape public web sources into local case files. |
+| Crawl4AI | Default local scraper for public web sources. |
+| Firecrawl | Optional hosted fallback for difficult pages. |
 | dev-browser | Interactive or headless browser acquisition with screenshots, HTML, metadata, hashes, and journalist-controlled authentication. |
 | OSINT Navigator | Tool discovery and method routing when the built-in catalog is not enough. |
 | Mycroft | Passive signals, vault memory, and the optional handoff into durable monitoring. |

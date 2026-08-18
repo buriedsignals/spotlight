@@ -1,6 +1,6 @@
 # Spotlight — Documentation
 
-Spotlight is a runtime-agnostic OSINT investigation system with 17 skills, 2 agents, 8 schemas, and investigation-scoped monitoring orchestration. Point your agent runtime (Pi, Hermes, Goose, Codex, or any OpenAI-compatible harness) at this repo and run full-fidelity investigations end-to-end.
+Spotlight is a runtime-agnostic OSINT investigation system with 17 skills, 2 agents, versioned data contracts, and investigation-scoped monitoring orchestration. Point your agent runtime (Pi, Hermes, Goose, Codex, or any OpenAI-compatible harness) at this repo and run full-fidelity investigations end-to-end.
 
 This `docs/` directory is the operator manual. `AGENTS.md` at the repo root is the machine-readable contract your runtime loads at startup.
 
@@ -18,8 +18,9 @@ If you are new to Spotlight, read in this order:
 7. **[epistemic-grounding.md](epistemic-grounding.md)** — claim-to-evidence grounding, evidence bundles, confidence caps
 8. **[vulnerabilities.md](vulnerabilities.md)** — shell-safety vulnerabilities and v2 mitigations
 9. **[sensitivity.md](sensitivity.md)** — design doc (not yet implemented): protecting sensitive material via physical separation, escalation, and one-way declassification
-10. **[monitoring.md](monitoring.md)** — monitoring recommendations and explicit Mycroft handoff
-11. **[recovery.md](recovery.md)** — when things break: agent crashes, corrupted files, stale locks, API failures
+10. **[knowledge-destination.md](knowledge-destination.md)** — reviewed claim–event–story records, staging, SQLite reference storage, traversal, and coverage
+11. **[monitoring.md](monitoring.md)** — monitoring recommendations and explicit Mycroft handoff
+12. **[recovery.md](recovery.md)** — when things break: agent crashes, corrupted files, stale locks, API failures
 
 Report drafting is documented in `skills/report-drafting/SKILL.md`. It can add
 an optional flow, hierarchy, network, or loop diagram from existing recorded

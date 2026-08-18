@@ -1,0 +1,22 @@
+{
+  "schema_version": "spotlight-query-migration-readiness/v1",
+  "status": "ready",
+  "assurance": "local_conformance",
+  "recorded_at": "2026-08-18T00:00:00Z",
+  "consumers": {
+    "investigator": "graph_exact_and_legacy_fallback",
+    "fact_checker": "graph_prior_verdict_and_legacy_fallback",
+    "dedup": "graph_exact_proposition",
+    "prior_verdict": "graph_exact_origin_key"
+  },
+  "managed_search_enrichment": true,
+  "legacy_fallback_verified": true,
+  "security_stale_and_invalid_receipts_omitted": true,
+  "scope_revocation_blocks_reads_before_deindex": true,
+  "runtime_path": "spotlight_to_openknowledge_direct",
+  "verification": [
+    "tests/query-vault-check.py",
+    "tests/graph-lookup-migration-check.py"
+  ],
+  "u7_activation_input_only": true
+}

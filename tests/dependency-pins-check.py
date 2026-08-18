@@ -16,7 +16,7 @@ def require(token: str, body: str, where: str) -> None:
 
 
 for token in [
-    'OPEN_KNOWLEDGE_VERSION="0.34.0"',
+    'OPEN_KNOWLEDGE_VERSION="0.54.3"',
     'CRAWL4AI_VERSION="0.9.0"',
     'ensure_npm_global_exact open-knowledge @inkeep/open-knowledge',
 ]:

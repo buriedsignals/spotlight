@@ -167,6 +167,16 @@ def validate_boundaries() -> None:
         "schemas/case-contract.schema.json",
         "schemas/source-expression-migration.schema.json",
         "scripts/migrate-source-expressions.py",
+        "schemas/knowledge-batch.schema.json",
+        "schemas/case-policy-receipt.schema.json",
+        "schemas/knowledge-workspace-package.schema.json",
+        "schemas/projection-job.schema.json",
+        "schemas/projection-manifest.schema.json",
+        "scripts/knowledge_destination.py",
+        "scripts/knowledge_projection.py",
+        "scripts/query_vault.py",
+        "scripts/validate-install-config.py",
+        "docs/knowledge-destination.md",
     ):
         assert_file(PLUGIN / relative)
 
