@@ -132,7 +132,7 @@ def run(database: Path, workspace: Path, *extra: str, ok: bool = True):
 
 
 def main() -> None:
-    with tempfile.TemporaryDirectory(dir="/private/tmp") as temp:
+    with tempfile.TemporaryDirectory(dir=Path(tempfile.gettempdir()).resolve()) as temp:
         workspace = Path(temp)
         (workspace / ".knowledge-workspace").mkdir()
         (workspace / ".knowledge-workspace/routes.json").write_text(
