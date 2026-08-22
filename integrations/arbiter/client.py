@@ -8,6 +8,7 @@ discarding upstream fields.
 
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
 import os
@@ -16,7 +17,7 @@ import socket
 from pathlib import Path
 from typing import Any, Callable, Mapping
 from urllib.error import HTTPError
-from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
 
@@ -47,7 +48,59 @@ class SameOriginRedirectHandler(HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-_DEFAULT_OPENER = build_opener(SameOriginRedirectHandler()).open
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """Connect to one validated address while retaining hostname TLS checks."""
+
+    def __init__(self, host, *, address_info, tls_hostname, **kwargs):
+        self._address_family, self._address = address_info
+        self._tls_hostname = tls_hostname
+        super().__init__(host, **kwargs)
+
+    def connect(self):
+        sock = socket.socket(self._address_family, socket.SOCK_STREAM)
+        try:
+            sock.settimeout(self.timeout)
+            sock.connect(self._address)
+            if self._tunnel_host:
+                self.sock = sock
+                self._tunnel()
+            self.sock = self._context.wrap_socket(sock, server_hostname=self._tls_hostname)
+        except BaseException:
+            sock.close()
+            raise
+
+
+class _PinnedHTTPSHandler(HTTPSHandler):
+    """HTTPS handler whose connection uses the address validated by the client."""
+
+    def __init__(self, address_info):
+        super().__init__()
+        self._address_info = address_info
+
+    def https_open(self, req):
+        tls_hostname = urlsplit(req.full_url).hostname
+
+        def connection_factory(host, **kwargs):
+            return _PinnedHTTPSConnection(
+                host,
+                address_info=self._address_info,
+                tls_hostname=tls_hostname,
+                **kwargs,
+            )
+
+        return self.do_open(
+            connection_factory,
+            req,
+            context=self._context,
+            check_hostname=self._check_hostname,
+        )
+
+
+def _build_pinned_opener(address_info):
+    return build_opener(
+        SameOriginRedirectHandler(),
+        _PinnedHTTPSHandler(address_info),
+    ).open
 
 DEFAULT_API_BASE = "https://arbiter.simppl.org/api/v1"
 DEFAULT_TIMEOUT = 60.0
@@ -100,6 +153,30 @@ def _numeric_alias(hostname: str) -> bool:
     return False
 
 
+def _resolve_addresses(hostname: str, port: int = 443):
+    """Resolve and validate every address before an authenticated connection."""
+    try:
+        results = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise ValueError("Arbiter API host could not be resolved") from exc
+    addresses = []
+    for result in results:
+        try:
+            family = result[0]
+            sockaddr = result[4]
+            address = sockaddr[0]
+        except (IndexError, TypeError) as exc:
+            raise ValueError("Arbiter API resolver returned an invalid address") from exc
+        if family not in {socket.AF_INET, socket.AF_INET6} or _blocked_address(address):
+            raise ValueError("Arbiter API host resolved to a blocked address")
+        address_info = (family, sockaddr)
+        if address_info not in addresses:
+            addresses.append(address_info)
+    if not addresses:
+        raise ValueError("Arbiter API host has no usable addresses")
+    return tuple(addresses)
+
+
 def _safe_hostname(hostname: str) -> bool:
     """Reject local, reserved, numeric, and unsafe DNS targets."""
     lowered = hostname.rstrip(".").lower()
@@ -122,12 +199,10 @@ def _safe_hostname(hostname: str) -> bool:
     if address is not None:
         return not _blocked_address(str(address))
     try:
-        results = socket.getaddrinfo(lowered, 443, type=socket.SOCK_STREAM)
-    except socket.gaierror:
-        results = ()
-    except OSError:
+        _resolve_addresses(lowered)
+    except (OSError, ValueError):
         return False
-    return all(not _blocked_address(result[4][0]) for result in results)
+    return True
 
 
 def validate_api_base(value: str) -> str:
@@ -195,13 +270,16 @@ class ArbiterClient:
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
         self.api_base = validate_api_base(api_base)
+        parsed_base = urlsplit(self.api_base)
+        self._hostname = parsed_base.hostname
+        self._port = parsed_base.port or 443
         if not isinstance(api_key, str) or not api_key.strip():
             raise ValueError("ARBITER_API_KEY must be configured")
         if timeout <= 0:
             raise ValueError("request timeout must be positive")
         self._api_key = api_key
         self._sensitive = sensitive
-        self._opener = _DEFAULT_OPENER if opener is None else opener
+        self._opener = opener
         self._timeout = timeout
 
     @classmethod
@@ -243,6 +321,7 @@ class ArbiterClient:
         _validate_request_path(path)
         if verb == "GET" and body is not None:
             raise ValueError("GET requests must use query parameters, not a JSON body")
+        resolved_addresses = _resolve_addresses(self._hostname, self._port)
         encoded_query = urlencode(list(query.items()), doseq=True) if query else ""
         url = self.api_base + path + ("?" + encoded_query if encoded_query else "")
         data = None if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")
@@ -254,7 +333,10 @@ class ArbiterClient:
         request_timeout = self._timeout if timeout is None else timeout
         if request_timeout <= 0:
             raise ValueError("request timeout must be positive")
-        with self._opener(request, timeout=request_timeout) as response:
+        opener = self._opener
+        if opener is None:
+            opener = _build_pinned_opener(resolved_addresses[0])
+        with opener(request, timeout=request_timeout) as response:
             return response.read()
 
     def request_json(
@@ -287,9 +369,42 @@ def safe_research_path(case_dir: Path | str, filename: str) -> Path:
     return candidate
 
 
+def _canonical_system_root_alias(path: Path) -> Path:
+    """Normalize macOS's stable ``/var`` alias before descriptor walking."""
+    if path.is_absolute() and path.parts[1:2] == ("var",):
+        return Path("/private", "var", *path.parts[2:])
+    return path
+
+
+def _open_directory_no_follow(path: Path) -> int:
+    """Open every directory component without following replacement links."""
+    components = path.parts
+    if path.is_absolute():
+        descriptor = os.open(os.sep, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        components = components[1:]
+    else:
+        descriptor = os.open(".", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for component in components:
+            if component in {"", ".", ".."}:
+                raise OSError("unsafe research directory")
+            next_descriptor = os.open(
+                component,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=descriptor,
+            )
+            os.close(descriptor)
+            descriptor = next_descriptor
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
 def open_research_file(path: Path, flags: int, mode: int = 0o600) -> int:
     """Open one research entry through no-follow directory descriptors."""
-    case_fd = os.open(path.parent.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    path = _canonical_system_root_alias(path)
+    case_fd = _open_directory_no_follow(path.parent.parent)
     try:
         research_fd = os.open(
             "research", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=case_fd
@@ -300,3 +415,5 @@ def open_research_file(path: Path, flags: int, mode: int = 0o600) -> int:
         return os.open(path.name, flags | os.O_NOFOLLOW, mode, dir_fd=research_fd)
     finally:
         os.close(research_fd)
+
+

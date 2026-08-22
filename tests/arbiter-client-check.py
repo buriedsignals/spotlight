@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import socket
 import subprocess
 import tempfile
 from pathlib import Path
@@ -56,6 +57,17 @@ def expect_error(fn, message: str) -> None:
     raise AssertionError(message)
 
 
+def injected_dns_fixture(client):
+    """Resolve fixture hosts without weakening production DNS validation."""
+    return patch.object(
+        client.socket,
+        "getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+    )
+
+
+
+
 def check_base_validation(client) -> None:
     for value in (
         "http://arbiter.simppl.org/api/v1",
@@ -71,15 +83,21 @@ def check_base_validation(client) -> None:
         "https://metadata.google.internal/api/v1",
     ):
         expect_error(lambda value=value: client.validate_api_base(value), f"unsafe base accepted: {value}")
-    assert client.validate_api_base("https://arbiter.simppl.org/api/v1") == (
-        "https://arbiter.simppl.org/api/v1"
+
+    fake_bases = (
+        "https://arbiter.simppl.org/api/v1",
+        "https://staging.example/api/v1",
+        "https://staging.arbiter.example/api/v1",
     )
-    assert client.validate_api_base("https://staging.example/api/v1") == (
-        "https://staging.example/api/v1"
-    )
-    assert client.validate_api_base("https://staging.arbiter.example/api/v1") == (
-        "https://staging.arbiter.example/api/v1"
-    )
+    with patch.object(client.socket, "getaddrinfo", side_effect=socket.gaierror("fixture DNS unavailable")):
+        for value in fake_bases[1:]:
+            expect_error(
+                lambda value=value: client.validate_api_base(value),
+                f"unresolved fixture base accepted: {value}",
+            )
+    with injected_dns_fixture(client):
+        for value in fake_bases:
+            assert client.validate_api_base(value) == value
 
 
 def check_request_shape_and_secret_boundary(client) -> None:
@@ -88,15 +106,16 @@ def check_request_shape_and_secret_boundary(client) -> None:
     def opener(request, timeout):
         seen.append((request, timeout))
         return FakeResponse({"items": [], "meta": {"request_id": "req_fixture"}})
-
     env = {
         "ARBITER_API_KEY": "member-secret",
         "ARBITER_API_BASE": "https://staging.example/api/v1",
     }
-    arbiter = client.ArbiterClient.from_env(env, opener=opener)
-    with patch.object(subprocess, "run", side_effect=AssertionError("shell transport used")):
-        with patch.object(subprocess, "Popen", side_effect=AssertionError("shell transport used")):
-            payload = arbiter.request_json("GET", "/topics", query={"limit": 100})
+
+    with injected_dns_fixture(client):
+        arbiter = client.ArbiterClient.from_env(env, opener=opener)
+        with patch.object(subprocess, "run", side_effect=AssertionError("shell transport used")):
+            with patch.object(subprocess, "Popen", side_effect=AssertionError("shell transport used")):
+                payload = arbiter.request_json("GET", "/topics", query={"limit": 100})
     assert payload["items"] == []
     assert payload["meta"]["request_id"] == "req_fixture"
     request, timeout = seen[0]
@@ -126,11 +145,12 @@ def check_sensitive_and_safe_paths(client) -> None:
         calls.append(True)
         return FakeResponse({})
 
-    sensitive = client.ArbiterClient.from_env(
-        {"ARBITER_API_KEY": "member-secret", "ARBITER_API_BASE": "https://staging.example/api/v1"},
-        sensitive=True,
-        opener=opener,
-    )
+    with injected_dns_fixture(client):
+        sensitive = client.ArbiterClient.from_env(
+            {"ARBITER_API_KEY": "member-secret", "ARBITER_API_BASE": "https://staging.example/api/v1"},
+            sensitive=True,
+            opener=opener,
+        )
     expect_error(
         lambda: sensitive.request_json("GET", "/topics", query={"limit": 1}),
         "sensitive mode must block before the opener",
@@ -175,18 +195,19 @@ def check_http_error_contract(client) -> None:
             io.BytesIO(raw),
         )
 
-    arbiter = client.ArbiterClient.from_env(
-        {"ARBITER_API_KEY": "fixture-secret", "ARBITER_API_BASE": "https://staging.example/api/v1"},
-        opener=opener,
-    )
-    try:
-        arbiter.request_json("GET", "/topics", query={"limit": 1})
-    except HTTPError as error:
-        assert error.code == 429
-        assert error.headers["Retry-After"] == "30"
-        assert error.read() == raw
-    else:
-        raise AssertionError("HTTPError envelope was swallowed")
+    with injected_dns_fixture(client):
+        arbiter = client.ArbiterClient.from_env(
+            {"ARBITER_API_KEY": "fixture-secret", "ARBITER_API_BASE": "https://staging.example/api/v1"},
+            opener=opener,
+        )
+        try:
+            arbiter.request_json("GET", "/topics", query={"limit": 1})
+        except HTTPError as error:
+            assert error.code == 429
+            assert error.headers["Retry-After"] == "30"
+            assert error.read() == raw
+        else:
+            raise AssertionError("HTTPError envelope was swallowed")
     assert len(calls) == 1, "rate-limited requests must not be retried automatically"
 
 

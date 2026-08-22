@@ -109,6 +109,12 @@ def integration_run_dir(project: str, integration_id: str, run_id: str, root: Pa
     return case_dir(project, root) / "research" / integration_id / run
 
 
+def _canonical_system_root_alias(path: Path) -> Path:
+    """Normalize only macOS's stable ``/var`` alias before descriptor walking."""
+    if path.is_absolute() and path.parts[1:2] == ("var",):
+        return Path("/private", "var", *path.parts[2:])
+    return path
+
 def _open_directory_no_follow(path: Path) -> int:
     """Open every directory component without following replacement links."""
     components = path.parts
@@ -137,7 +143,7 @@ def _open_directory_no_follow(path: Path) -> int:
 def write_json_atomic(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = (json.dumps(data, indent=2, sort_keys=True) + "\n").encode("utf-8")
-    directory_fd = _open_directory_no_follow(path.parent.resolve(strict=True))
+    directory_fd = _open_directory_no_follow(_canonical_system_root_alias(path.parent))
     temp_name = f".{path.name}.tmp-{os.getpid()}"
     try:
         for index in range(1000):

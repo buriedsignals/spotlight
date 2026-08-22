@@ -73,6 +73,41 @@ def check_base_rejects_alternate_numeric_and_dns_aliases() -> None:
                 f"private DNS alias accepted: {host} -> {address}",
             )
 
+def check_dns_rebinding_rejected_before_authenticated_request() -> None:
+    """A DNS answer used during validation cannot rebind before the request."""
+    answers = [
+        [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+        [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))],
+    ]
+    opened = False
+
+    def opener(*_args, **_kwargs):
+        nonlocal opened
+        opened = True
+        raise OSError("authenticated opener reached after DNS rebinding")
+
+    with patch("socket.getaddrinfo", side_effect=answers) as resolver:
+        arbiter = client.ArbiterClient(
+            "https://rebind.example/api/v1",
+            "fixture-secret",
+            opener=opener,
+        )
+        expect_rejected(
+            lambda: arbiter.request_raw("GET", "/topics"),
+            "DNS rebinding accepted before authenticated request",
+        )
+        assert resolver.call_count == 2, "request did not revalidate its DNS answer"
+    assert not opened, "authenticated opener reached after DNS rebinding"
+
+
+def check_dns_failure_rejected_before_authenticated_request() -> None:
+    """A resolver failure must fail closed before authenticated setup."""
+    with patch("socket.getaddrinfo", side_effect=socket.gaierror("DNS unavailable")):
+        expect_rejected(
+            lambda: client.validate_api_base("https://dns-failure.example/api/v1"),
+            "DNS failure accepted as an allowed API base",
+        )
+
 
 def _redirect_request(target: str):
     source = Request("https://staging.example/api/v1/topics")
@@ -174,16 +209,15 @@ def check_run_create_read_survives_research_swap() -> None:
                 return
         assert body["search_query"] != "outside-secret", "research swap redirected input read outside case"
 
-
 def check_atomic_replacement_survives_parent_symlink_swap() -> None:
     """Atomic output must not report success after its parent is replaced."""
     with tempfile.TemporaryDirectory(prefix="arbiter-atomic-race-") as raw:
         case_dir, research, outside = _case_fixture(Path(raw))
         output = research / "output.json"
-        original_replace = runner.os.replace
+        original_rename = runner.os.rename
         swapped = False
 
-        def swapped_replace(source, destination):
+        def swapped_rename(source, destination, *, src_dir_fd=None, dst_dir_fd=None):
             nonlocal swapped
             if not swapped:
                 swapped = True
@@ -194,19 +228,27 @@ def check_atomic_replacement_survives_parent_symlink_swap() -> None:
                 research.symlink_to(outside, target_is_directory=True)
                 outside_source = outside / source_path.name
                 outside_source.write_bytes(parked_source.read_bytes())
-            return original_replace(source, destination)
+            return original_rename(
+                source,
+                destination,
+                src_dir_fd=src_dir_fd,
+                dst_dir_fd=dst_dir_fd,
+            )
 
-        with patch.object(runner.os, "replace", side_effect=swapped_replace):
+        with patch.object(runner.os, "rename", side_effect=swapped_rename):
             try:
                 runner.write_json_atomic(output, {"safe": True})
             except (OSError, ValueError, PermissionError):
                 pass
+        assert swapped, "atomic race did not exercise the replacement seam"
         assert not (outside / output.name).exists(), "atomic replacement escaped through swapped parent"
 
 
 def main() -> int:
     checks = (
         ("base validation", check_base_rejects_alternate_numeric_and_dns_aliases),
+        ("DNS rebinding", check_dns_rebinding_rejected_before_authenticated_request),
+        ("DNS failure", check_dns_failure_rejected_before_authenticated_request),
         ("redirect policy", check_redirect_path_scheme_host_and_bearer_policy),
         ("workflow write race", check_workflow_write_survives_research_swap),
         ("run_create read race", check_run_create_read_survives_research_swap),
