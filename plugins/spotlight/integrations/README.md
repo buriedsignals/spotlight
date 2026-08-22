@@ -15,7 +15,7 @@ An agent invokes a skill to get *guidance*; it calls an integration to get *data
 
 | ID | Category | Requires key | Env vars |
 |---|---|---|---|
-| `arbiter` | social-osint | Yes — member-owned, stored by Navigator | none |
+| `arbiter` | social-osint | Yes — member-owned `ARBITER_API_KEY`, configured locally | `ARBITER_API_KEY` (optional `ARBITER_API_BASE` deployment override) |
 | `dev-browser` | browser-automation | No | none |
 | `browser-harness` | browser-automation | No | none |
 | `browser-use` | browser-automation | No (OSS); optional cloud | `BROWSER_USE_API_KEY` (optional) |
@@ -26,8 +26,8 @@ An agent invokes a skill to get *guidance*; it calls an integration to get *data
 
 Arbiter has no shared or server-side Spotlight credential. Register through the
 [Indicator partner signup link](https://arbiter.simppl.org/auth/register?eventSignup=5cce20c609334e538f07127322361862e3136e3d-324a-4c60-894a-5f42d2d57f8a),
-create your own API key, and store it locally with
-`navigator keys set arbiter`.
+create your own API key, and configure it locally as `ARBITER_API_KEY`. Set
+`ARBITER_API_BASE` only when using the deployment that minted that key.
 
 See `skills/integrations/SKILL.md` for the routing table agents use to pick the right integration per investigation task.
 

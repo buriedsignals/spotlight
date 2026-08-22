@@ -1,24 +1,13 @@
 {
   "id": "arbiter",
   "name": "Arbiter Social Intelligence",
-  "description": "Bring your own Arbiter key to browse archived social-media case studies, analyze themes and actors, ask study-scoped questions, and create reviewed collections through Data Navigator.",
+  "description": "Bring your own Arbiter API key to browse archived social-media case studies, analyze themes and actors, ask study-scoped questions, and create reviewed collections through the native HTTPS API.",
   "category": "social-osint",
-  "type": "cli",
-  "local_binary": "navigator",
-  "version_args": ["query", "--help"],
-  "version_output_contains": "--input-file",
-  "probes": [
-    {
-      "args": ["data", "show", "global/arbiter/case-studies"],
-      "output_contains": "\"queryable\": true",
-      "env": {
-        "DATANAV_CATALOGUE": "remote",
-        "DATANAV_CACHE_FALLBACK": "off"
-      }
-    }
-  ],
-  "requires_key": false,
-  "env_vars": [],
+  "type": "api",
+  "requires_key": true,
+  "env_vars": ["ARBITER_API_KEY"],
+  "optional_env_vars": ["ARBITER_API_BASE"],
+  "smoke_url": "https://arbiter.simppl.org/api/v1/openapi.json",
   "capabilities": [
     "curated-case-study-browse",
     "case-study-creation",
@@ -34,5 +23,5 @@
   "invocable_by": ["investigator", "fact-checker"],
   "homepage": "https://arbiter.simppl.org/",
   "docs": "docs/arbiter-api.md",
-  "rate_limit_note": "Arbiter API usage is billed or credit-metered according to the member's own Arbiter account. Data Navigator does not provide a shared hosted key."
+  "rate_limit_note": "Arbiter API usage is billed or credit-metered according to the member's own Arbiter account. Spotlight never provides a shared key."
 }
