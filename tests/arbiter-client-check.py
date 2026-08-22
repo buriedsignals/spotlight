@@ -8,10 +8,12 @@ native integration. It uses an injected opener and never contacts Arbiter.
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import subprocess
 import tempfile
 from pathlib import Path
+from urllib.error import HTTPError
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
@@ -160,11 +162,49 @@ def check_sensitive_and_safe_paths(client) -> None:
         )
 
 
+def check_http_error_contract(client) -> None:
+    """Preserve Arbiter error envelopes and headers, and never retry blindly."""
+    raw = b'{"error":{"code":"rate_limited","message":"slow down","request_id":"req-1"}}'
+    calls = []
+
+    def opener(request, timeout):
+        calls.append((request, timeout))
+        raise HTTPError(
+            request.full_url, 429, "rate limited",
+            {"Retry-After": "30", "X-Request-ID": "req-1"},
+            io.BytesIO(raw),
+        )
+
+    arbiter = client.ArbiterClient.from_env(
+        {"ARBITER_API_KEY": "fixture-secret", "ARBITER_API_BASE": "https://staging.example/api/v1"},
+        opener=opener,
+    )
+    try:
+        arbiter.request_json("GET", "/topics", query={"limit": 1})
+    except HTTPError as error:
+        assert error.code == 429
+        assert error.headers["Retry-After"] == "30"
+        assert error.read() == raw
+    else:
+        raise AssertionError("HTTPError envelope was swallowed")
+    assert len(calls) == 1, "rate-limited requests must not be retried automatically"
+
+
+def check_redirect_origin_policy() -> None:
+    """The authenticated opener must revalidate redirects before forwarding bearer auth."""
+    source = CLIENT.read_text(encoding="utf-8")
+    assert "HTTPRedirectHandler" in source, "redirect policy is not installed"
+    assert "Authorization" in source and "same-origin" in source.lower(), (
+        "redirect policy must strip bearer credentials across origins"
+    )
+
 
 def main() -> int:
     client = load_client()
     check_base_validation(client)
     check_request_shape_and_secret_boundary(client)
+    check_http_error_contract(client)
+    check_redirect_origin_policy()
     check_sensitive_and_safe_paths(client)
     print("arbiter client boundary: OK")
     return 0

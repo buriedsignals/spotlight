@@ -38,7 +38,25 @@ def load_preflight():
 
 
 def main() -> int:
-    for filename in ("client.py", "workflow.py"):
+    source_modules = {
+        path.name
+        for path in SOURCE_INTEGRATION.glob("*.py")
+        if path.name != "__init__.py"
+    }
+    plugin_modules = {
+        path.name
+        for path in PLUGIN_INTEGRATION.glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert plugin_modules == source_modules, (
+        f"plugin runtime module set drift: source={source_modules!r} plugin={plugin_modules!r}"
+    )
+    for filename in sorted(source_modules):
+        source = SOURCE_INTEGRATION / filename
+        copied = PLUGIN_INTEGRATION / filename
+        assert copied.read_bytes() == source.read_bytes(), f"plugin {filename} is stale"
+
+    for filename in ("client.py", "credentials.py", "workflow.py"):
         source = SOURCE_INTEGRATION / filename
         copied = PLUGIN_INTEGRATION / filename
         assert source.is_file(), f"source Arbiter seam missing: {source}"

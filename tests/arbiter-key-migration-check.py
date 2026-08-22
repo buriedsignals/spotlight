@@ -13,7 +13,39 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+CLIENT = ROOT / "integrations" / "arbiter" / "client.py"
 CREDENTIALS = ROOT / "integrations" / "arbiter" / "credentials.py"
+
+def load_module(path: Path, name: str):
+    if not path.is_file():
+        raise AssertionError(f"{path.relative_to(ROOT)} must provide the native seam")
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise AssertionError(f"could not load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def check_client_provider_wiring(credentials) -> None:
+    """Native construction must resolve the Spotlight-owned callback in-process."""
+    client_module = load_module(CLIENT, "spotlight_arbiter_client_for_credentials")
+    events: list[str] = []
+    fixture_secret = "provider-fixture-secret-never-print"
+
+    def read_owned():
+        events.append("read")
+        return fixture_secret
+
+    client = client_module.ArbiterClient.from_env(
+        {"ARBITER_API_BASE": "https://staging.example/api/v1"},
+        credential_provider=lambda: credentials.resolve_spotlight_arbiter_key(read_owned),
+        opener=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("network must not run during provider wiring")
+        ),
+    )
+    assert events == ["read"], events
+    assert client is not None
 
 
 def load_credentials():
@@ -49,6 +81,7 @@ def main() -> int:
     assert [kind for kind, _value in events] == ["read", "write"]
     assert events[1][1] == fixture_secret
     assert result is not fixture_secret, "migration must not return the secret"
+    check_client_provider_wiring(credentials)
     assert result in (None, True, {"migrated": True}, {"status": "migrated"})
     assert fixture_secret not in repr(result)
     assert fixture_secret not in repr(events[:1])

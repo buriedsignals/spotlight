@@ -31,6 +31,82 @@ _BASE_DIR = Path(__file__).parent
 sys.path.insert(0, str(_BASE_DIR))
 from _preflight_base import run_preflight  # noqa: E402
 
+def _arbiter_components():
+    """Load native Arbiter seams only when an Arbiter operation is requested."""
+    from arbiter.client import ArbiterClient
+    from arbiter.credentials import resolve_spotlight_arbiter_key
+    from arbiter.workflow import browse, progress, read, report, reviewed_create
+
+    return ArbiterClient, resolve_spotlight_arbiter_key, browse, progress, read, report, reviewed_create
+
+
+def build_arbiter_client(
+    env: dict[str, str] | None = None,
+    *,
+    read_spotlight_key=None,
+    sensitive: bool = False,
+    opener=None,
+) -> "ArbiterClient":
+    """Construct the native client through Spotlight's credential boundary."""
+    (
+        ArbiterClient,
+        resolve_spotlight_arbiter_key,
+        _browse,
+        _progress,
+        _read,
+        _report,
+        _reviewed_create,
+    ) = _arbiter_components()
+    values = os.environ if env is None else env
+    if values.get("ARBITER_API_KEY"):
+        provider = None
+    elif read_spotlight_key is None:
+        provider = lambda: (_ for _ in ()).throw(
+            ValueError("Spotlight Arbiter key is not configured")
+        )
+    else:
+        provider = lambda: resolve_spotlight_arbiter_key(read_spotlight_key)
+    return ArbiterClient.from_env(
+        env,
+        sensitive=sensitive,
+        opener=opener,
+        credential_provider=provider,
+    )
+
+
+def run_arbiter_workflow(client, case_dir, *, case_study_id=None, create=None, confirmed=False):
+    """Run native online workflow operations while offline renderers consume saved files."""
+    (
+        _ArbiterClient,
+        _resolve_spotlight_arbiter_key,
+        browse,
+        progress,
+        read,
+        report,
+        reviewed_create,
+    ) = _arbiter_components()
+    files = {"browse": browse(client, case_dir)}
+    if case_study_id is not None:
+        files.update(
+            {
+                "read": read(client, case_dir, case_study_id),
+                "report": report(client, case_dir, case_study_id),
+                "progress": progress(client, case_dir, case_study_id),
+            }
+        )
+    if create is not None:
+        files["reviewed_create"] = reviewed_create(
+            client,
+            case_dir,
+            create["body"],
+            search_phrases=create["search_phrases"],
+            final_entities=create["final_entities"],
+            confirmed=confirmed,
+        )
+    return files
+
+
+
 INTEGRATIONS_DIR = Path(__file__).parent
 
 

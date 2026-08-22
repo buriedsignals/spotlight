@@ -55,10 +55,22 @@ DISCLOSURE = (
 )
 
 
-def cmd(command: str, flags: dict[str, str]) -> subprocess.CompletedProcess[str]:
+ACTIVE_CASE_DIR: Path | None = None
+
+
+def cmd(
+    command: str,
+    flags: dict[str, str],
+    *,
+    include_case_dir: bool = True,
+) -> subprocess.CompletedProcess[str]:
     """Invoke one subcommand without a shell; flag keys omit the leading ``--``."""
+    effective_flags = dict(flags)
+    if include_case_dir and "case-dir" not in effective_flags:
+        assert ACTIVE_CASE_DIR is not None, "test case directory is not initialized"
+        effective_flags["case-dir"] = str(ACTIVE_CASE_DIR)
     argv = [command]
-    for name, value in flags.items():
+    for name, value in effective_flags.items():
         argv += [f"--{name}", value]
     return subprocess.run(
         [sys.executable, str(HELPER), *argv],
@@ -545,11 +557,40 @@ def check_contained_paths(tmp: Path) -> None:
 
 
 
+def check_case_dir_required(tmp: Path) -> None:
+    """Every file-backed create operation requires a real case research root."""
+    query = tmp / "query-required.txt"
+    output = tmp / "output-without-case.json"
+    query.write_text("query", encoding="utf-8")
+    rejected(
+        cmd("build-create", create_flags(query, output), include_case_dir=False),
+        "case-dir",
+    )
+    assert not output.exists()
+
+    case = tmp / "real-case"
+    (case / "research").mkdir(parents=True)
+    linked_case = tmp / "linked-case"
+    linked_case.symlink_to(case, target_is_directory=True)
+    rejected(
+        cmd("build-create", create_flags(
+            case / "research" / "query.txt",
+            case / "research" / "linked-case-output.json",
+            case_dir=str(linked_case),
+        )),
+        "case research",
+    )
+
 
 def main() -> int:
     """Run the complete offline create-helper regression suite."""
+    global ACTIVE_CASE_DIR
     with tempfile.TemporaryDirectory(prefix="spotlight-arbiter-create-") as tmp_dir:
-        tmp = Path(tmp_dir)
+        case = Path(tmp_dir) / "case"
+        research = case / "research"
+        research.mkdir(parents=True)
+        ACTIVE_CASE_DIR = case
+        tmp = research
         check_create(tmp)
         check_finalize(tmp)
         check_plan_summary(tmp)
@@ -557,6 +598,7 @@ def main() -> int:
         check_progress(tmp)
         check_injection(tmp)
         check_contained_paths(tmp)
+        check_case_dir_required(tmp)
     print("arbiter create: OK - bodies, validation, review options, and injection verified")
     return 0
 

@@ -15,8 +15,27 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Mapping
 from urllib.error import HTTPError
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
-from urllib.request import Request, urlopen
+
+
+
+class SameOriginRedirectHandler(HTTPRedirectHandler):
+    """Revalidate same-origin redirects and isolate the Authorization bearer."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        source = urlsplit(req.full_url)
+        target = urlsplit(newurl)
+        if (
+            target.scheme != source.scheme
+            or target.hostname != source.hostname
+            or target.port != source.port
+        ):
+            raise ValueError("Arbiter redirect changed origin or scheme")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_DEFAULT_OPENER = build_opener(SameOriginRedirectHandler()).open
 
 DEFAULT_API_BASE = "https://arbiter.simppl.org/api/v1"
 DEFAULT_TIMEOUT = 60.0
@@ -118,14 +137,13 @@ def _research_root(case_dir: Path | str) -> tuple[Path, Path]:
 
 class ArbiterClient:
     """Authenticated JSON client with a testable opener dependency."""
-
     def __init__(
         self,
         api_base: str,
         api_key: str,
         *,
         sensitive: bool = False,
-        opener: Callable[..., Any] = urlopen,
+        opener: Callable[..., Any] | None = None,
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
         self.api_base = validate_api_base(api_base)
@@ -135,7 +153,7 @@ class ArbiterClient:
             raise ValueError("request timeout must be positive")
         self._api_key = api_key
         self._sensitive = sensitive
-        self._opener = opener
+        self._opener = _DEFAULT_OPENER if opener is None else opener
         self._timeout = timeout
 
     @classmethod
@@ -144,25 +162,31 @@ class ArbiterClient:
         env: Mapping[str, str] | None = None,
         *,
         sensitive: bool = False,
-        opener: Callable[..., Any] = urlopen,
+        opener: Callable[..., Any] | None = None,
         timeout: float = DEFAULT_TIMEOUT,
+        credential_provider: Callable[[], str] | None = None,
     ) -> "ArbiterClient":
         values = os.environ if env is None else env
         api_key = values.get("ARBITER_API_KEY")
+        if not isinstance(api_key, str) or not api_key.strip():
+            if credential_provider is None:
+                raise ValueError("ARBITER_API_KEY is required")
+            api_key = credential_provider()
         if not isinstance(api_key, str) or not api_key.strip():
             raise ValueError("ARBITER_API_KEY is required")
         base = values.get("ARBITER_API_BASE", DEFAULT_API_BASE)
         return cls(base, api_key, sensitive=sensitive, opener=opener, timeout=timeout)
 
-    def request_json(
+    def request_raw(
         self,
         method: str,
         path: str,
         *,
         query: Mapping[str, Any] | None = None,
         body: Mapping[str, Any] | None = None,
-    ) -> Any:
-        """Issue one JSON request, blocking sensitive mode before opening it."""
+        timeout: float | None = None,
+    ) -> bytes:
+        """Issue one request and return response bytes without normalization."""
         if self._sensitive:
             raise PermissionError("Arbiter requests are unavailable in sensitive mode")
         verb = method.upper()
@@ -179,12 +203,24 @@ class ArbiterClient:
         request.add_header("Accept", "application/json")
         if data is not None:
             request.add_header("Content-Type", "application/json")
-        try:
-            with self._opener(request, timeout=self._timeout) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except HTTPError:
-            raise
-        return payload
+        request_timeout = self._timeout if timeout is None else timeout
+        if request_timeout <= 0:
+            raise ValueError("request timeout must be positive")
+        with self._opener(request, timeout=request_timeout) as response:
+            return response.read()
+
+    def request_json(
+        self,
+        method: str,
+        path: str,
+        *,
+        query: Mapping[str, Any] | None = None,
+        body: Mapping[str, Any] | None = None,
+        timeout: float | None = None,
+    ) -> Any:
+        """Issue one JSON request, blocking sensitive mode before opening it."""
+        raw = self.request_raw(method, path, query=query, body=body, timeout=timeout)
+        return json.loads(raw.decode("utf-8"))
 
 
 def safe_research_path(case_dir: Path | str, filename: str) -> Path:

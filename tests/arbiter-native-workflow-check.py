@@ -34,6 +34,137 @@ class FakeResponse:
     def __exit__(self, *_args: object) -> None:
         return None
 
+class RawClient:
+    """Minimal native boundary exposing the unmodified response bytes."""
+
+    def __init__(self, responses: list[bytes]):
+        self.responses = list(responses)
+
+    def request_raw(self, method, path, *, query=None, body=None, timeout=None):
+        return self.responses.pop(0)
+
+
+class RecordingClient:
+    """Workflow fake that records the consumer-visible request contract."""
+
+    def __init__(self, create_payload: dict[str, object] | None = None):
+        self.create_payload = create_payload or {"case_study_id": "a" * 32}
+        self.calls = []
+
+    def request_json(self, method, path, *, query=None, body=None, timeout=None):
+        self.calls.append((method, path, query, body, timeout))
+        if path == "/case-studies":
+            return self.create_payload
+        if path.endswith("/search-plan"):
+            return {"plan": {"search_phrases": ["one"], "entities": ["Entity"]}}
+        if path.endswith("/finalize"):
+            return {"case_study_id": "a" * 32, "status": "processing"}
+        raise AssertionError(f"unexpected workflow request: {method} {path}")
+
+
+def check_production_wiring() -> None:
+    """The executable integration, not only tests, must own both collaborators."""
+    production = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (ROOT / "integrations").rglob("*.py")
+        if path.name not in {"workflow.py", "client.py", "credentials.py"}
+    )
+    assert "workflow" in production and "ArbiterClient" in production, (
+        "production Spotlight code must import and call the native workflow"
+    )
+    assert "credentials" in production and "resolve_spotlight_arbiter_key" in production, (
+        "production Spotlight code must wire the credential provider"
+    )
+    for name in ("browse", "read", "report", "progress", "reviewed_create"):
+        assert name in production, f"production caller missing workflow verb: {name}"
+
+
+def check_raw_bytes_and_collisions(workflow_module) -> None:
+    """Saved evidence is byte-identical and repeated timestamps do not overwrite."""
+    with tempfile.TemporaryDirectory(prefix="arbiter-raw-") as raw:
+        case_dir = Path(raw) / "case"
+        (case_dir / "research").mkdir(parents=True)
+        first = b'{  "z" : 1,\n "a":2 }'
+        second = b'{"different":true}'
+        client = RawClient([first, second])
+        first_path = workflow_module.browse(
+            client, case_dir, timestamp="2026-08-22T10-00-00Z"
+        )
+        second_path = workflow_module.browse(
+            client, case_dir, timestamp="2026-08-22T10-00-00Z"
+        )
+        assert first_path != second_path, "same-second evidence filename collision"
+        assert first_path.read_bytes() == first, "raw response bytes were normalized"
+        assert second_path.read_bytes() == second, "raw response bytes were normalized"
+
+
+def check_exact_create_contract(workflow_module) -> None:
+    """Create/finalize shapes, identifier bounds, and the long plan timeout are strict."""
+    body = {
+        "search_query": "query",
+        "platforms": ["reddit"],
+        "date_range": {"from": "2026-08-01", "to": "2026-08-02"},
+    }
+    with tempfile.TemporaryDirectory(prefix="arbiter-contract-") as raw:
+        case_dir = Path(raw) / "case"
+        (case_dir / "research").mkdir(parents=True)
+        for invalid_id in ("A" * 32, "a" * 31, "a" * 33, "../" + "a" * 29):
+            try:
+                workflow_module.read(
+                    RecordingClient(), case_dir, invalid_id,
+                    timestamp="2026-08-22T10-00-00Z",
+                )
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f"invalid read id accepted: {invalid_id}")
+
+        client = RecordingClient()
+        workflow_module.reviewed_create(
+            client, case_dir, body, search_phrases=["one"],
+            final_entities=["Entity"], confirmed=True,
+            timestamp="2026-08-22T10-00-00Z",
+        )
+        create, plan, finalize = client.calls
+        assert create[:4] == ("POST", "/case-studies", None, body)
+        assert plan[:4] == ("POST", "/case-studies/" + "a" * 32 + "/search-plan", None, {})
+        assert finalize[:4] == (
+            "POST", "/case-studies/" + "a" * 32 + "/finalize", None,
+            {"search_phrases": ["one"], "final_entities": ["Entity"]},
+        )
+        assert plan[4] is not None and plan[4] > 800, "search-plan timeout must exceed route budget"
+
+        for invalid_id in ("new-study", "A" * 32, "a" * 31, "a" * 33):
+            invalid_client = RecordingClient({"case_study_id": invalid_id})
+            try:
+                workflow_module.reviewed_create(
+                    invalid_client, case_dir, body, search_phrases=["one"],
+                    final_entities=[], confirmed=True,
+                    timestamp="2026-08-22T10-00-01Z",
+                )
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f"invalid response id accepted: {invalid_id}")
+
+        for phrases, entities in (
+            ([], []),
+            (["phrase"] * 51, []),
+            (["x" * 201], []),
+            (["phrase"], ["entity"] * 201),
+            (["phrase"], ["x" * 501]),
+        ):
+            try:
+                workflow_module.reviewed_create(
+                    client, case_dir, body, search_phrases=phrases,
+                    final_entities=entities, confirmed=True,
+                    timestamp="2026-08-22T10-00-02Z",
+                )
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("out-of-bounds create/finalize arrays accepted")
+
 
 def load(path: Path, name: str):
     if not path.is_file():
@@ -59,7 +190,7 @@ def main() -> int:
         {"items": [{"post_id": "P1"}], "next_cursor": None, "meta": {"request_id": "req-read"}},
         {"title": "Report", "top_actors": [], "meta": {"request_id": "req-report", "credits_charged": 0}},
         {"status": "processing", "updated_at": "2026-08-22T10:00:00+05:30", "meta": {"request_id": "req-progress"}},
-        {"case_study_id": "new-study", "meta": {"request_id": "req-create", "credits_charged": 0}},
+        {"case_study_id": "a" * 32, "meta": {"request_id": "req-create", "credits_charged": 0}},
         {"search_phrases": ["one"], "meta": {"request_id": "req-plan", "credits_charged": 25}},
         {"status": "processing", "meta": {"request_id": "req-finalize", "credits_charged": 100}},
     ]
@@ -136,6 +267,9 @@ def main() -> int:
 
     if responses:
         raise AssertionError(f"workflow did not consume all mocked HTTP responses: {responses!r}")
+    check_production_wiring()
+    check_raw_bytes_and_collisions(workflow_module)
+    check_exact_create_contract(workflow_module)
     print("arbiter native workflow: OK")
     return 0
 

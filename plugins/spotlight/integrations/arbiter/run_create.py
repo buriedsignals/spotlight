@@ -8,16 +8,21 @@ generated search plan and the run's progress.
 
 Usage:
   python3 integrations/arbiter/run_create.py build-create \
-    --query-file query.txt --platforms reddit,youtube \
+    --case-dir CASE_DIR --query-file CASE_DIR/research/query.txt \
+    --platforms reddit,youtube \
     --from 2026-07-10T00:00:00Z --to 2026-07-24T00:00:00Z \
-    --title-file title.txt --out create-body.json
-  python3 integrations/arbiter/run_create.py plan-summary --plan-file search-plan.json
+    --title-file CASE_DIR/research/title.txt --out CASE_DIR/research/create-body.json
+  python3 integrations/arbiter/run_create.py plan-summary \
+    --case-dir CASE_DIR --plan-file CASE_DIR/research/search-plan.json
   python3 integrations/arbiter/run_create.py plan-options --mode remove \
-    --plan-file search-plan.json --out plan-options.json
+    --case-dir CASE_DIR --plan-file CASE_DIR/research/search-plan.json \
+    --out CASE_DIR/research/plan-options.json
   python3 integrations/arbiter/run_create.py build-finalize \
-    --plan-file search-plan.json --remove 2,5 \
-    --phrases-file added-phrases.txt --out finalize-body.json
-  python3 integrations/arbiter/run_create.py progress-summary --progress-file progress.json
+    --case-dir CASE_DIR --plan-file CASE_DIR/research/search-plan.json --remove 2,5 \
+    --phrases-file CASE_DIR/research/added-phrases.txt \
+    --out CASE_DIR/research/finalize-body.json
+  python3 integrations/arbiter/run_create.py progress-summary \
+    --case-dir CASE_DIR --progress-file CASE_DIR/research/progress.json
 """
 
 from __future__ import annotations
@@ -37,11 +42,11 @@ from arbiter.client import safe_research_path  # noqa: E402
 
 
 def contained_path(args: argparse.Namespace, value: str, label: str) -> Path:
-    """Keep optional case-bound file inputs and outputs under research."""
+    """Keep every file-backed input and output under case research."""
     path = Path(value)
     case_dir = getattr(args, "case_dir", None)
     if not case_dir:
-        return path
+        raise ValueError("--case-dir is required for file-backed operations")
     case_path = Path(case_dir)
     safe_research_path(case_path, "__case-boundary-check__.json")
     research = (case_path / "research").resolve(strict=True)
@@ -526,7 +531,7 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--to", dest="to_date", required=True)
     create.add_argument("--title-file")
     create.add_argument("--out", required=True)
-    create.add_argument("--case-dir", help="optional case directory containing research files")
+    create.add_argument("--case-dir", help="case directory containing research files")
 
     finalize = subcommands.add_parser("build-finalize", help="build a finalize request body")
     finalize.add_argument("--plan-file", required=True)
@@ -535,12 +540,12 @@ def build_parser() -> argparse.ArgumentParser:
     keep_group.add_argument("--remove", help="phrase numbers to drop; keeps the rest")
     finalize.add_argument("--phrases-file")
     finalize.add_argument("--out", required=True)
-    finalize.add_argument("--case-dir", help="optional case directory containing research files")
+    finalize.add_argument("--case-dir", help="case directory containing research files")
 
     summary = subcommands.add_parser("plan-summary", help="render a saved search plan")
     summary.add_argument("--plan-file", required=True)
     summary.add_argument("--removed", help="phrase numbers already marked for removal")
-    summary.add_argument("--case-dir", help="optional case directory containing research files")
+    summary.add_argument("--case-dir", help="case directory containing research files")
 
     options = subcommands.add_parser("plan-options", help="build phrase-review options")
     options.add_argument("--mode", choices=("remove", "add"), required=True)
@@ -548,11 +553,11 @@ def build_parser() -> argparse.ArgumentParser:
     options.add_argument("--removed", help="phrase numbers already marked for removal")
     options.add_argument("--suggestions-file", help="one Spotlight suggestion per line")
     options.add_argument("--out", required=True)
-    options.add_argument("--case-dir", help="optional case directory containing research files")
+    options.add_argument("--case-dir", help="case directory containing research files")
 
     progress = subcommands.add_parser("progress-summary", help="render saved progress")
     progress.add_argument("--progress-file", required=True)
-    progress.add_argument("--case-dir", help="optional case directory containing research files")
+    progress.add_argument("--case-dir", help="case directory containing research files")
     progress.add_argument("--now", help="ISO-8601 clock override for activity ages")
     progress.add_argument(
         "--phase",
