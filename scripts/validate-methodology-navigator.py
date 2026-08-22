@@ -179,8 +179,7 @@ def validate_required(methodology: dict[str, Any], status: str) -> list[str]:
                 digest = result.get("output_sha256")
                 if not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
                     errors.append(f"{result_prefix}.output_sha256 must be a lowercase SHA-256 digest")
-        elif not nonempty_string(direction.get("navigator_data_not_applicable_reason")):
-            errors.append(f"methodology.json: investigation_plan[{index}] must record a data-source decision or navigator_data_not_applicable_reason")
+
 
     tools_required = methodology.get("tools_required", [])
     if not isinstance(tools_required, list):

@@ -21,11 +21,8 @@ Query Navigator to inform your methodology. For each investigation direction:
 1. Identify what type of OSINT task each step requires (corporate lookup, image verification, etc.)
 2. Run `navigator tools find "<need>" --json`, then inspect a candidate with
    `navigator tools show <tool-id>` before choosing it.
-3. Independently run `navigator data find "<structured records need>" --json`
-   and inspect a candidate with `navigator data show <source-id>` where a
-   reproducible public-data source may fit.
-4. Record selected tools and the data-source decision (including a concise skip
-   reason) per direction. Preserve catalog ID/version or retrieval time.
+3. Record selected tools per direction. Preserve catalog ID/version or
+   retrieval time.
 
 ---
 
@@ -36,8 +33,7 @@ Query Navigator for any tools needed by the approved methodology that you don't 
 
 ### Mid-cycle (when hitting a wall)
 If a planned technique fails or a new line of inquiry opens, repeat the CLI
-discovery loop. Run `navigator query <source-id> ...` only after inspecting the
-source playbook and saving its structured output under `{CASE_DIR}/research/`.
+discovery loop.
 
 Record tool discoveries in investigation-log.json:
 
@@ -79,5 +75,4 @@ fallback only when the CLI is unavailable, and record that fallback in the metho
 ## Rate Limit Awareness
 
 - `navigator tools find`: use for browsing and discovery
-- `navigator data find` / `navigator data query`: use when structured datasets can answer a direction; preserve the source id and result artifact
 - If the CLI reports an entitlement or quota limit, record the result and fall back to the curated tool list in this skill

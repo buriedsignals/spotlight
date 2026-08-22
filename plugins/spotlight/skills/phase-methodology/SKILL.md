@@ -46,17 +46,15 @@ INTEGRATIONS:
   osint_navigator_required={config.integrations.osint_navigator.required_in_phase_2}
 SKILLS: integrations, osint, investigate, epistemic-grounding, acquisition-graduation, web-archiving, content-access, shell-safety, social-media-intelligence (social investigations), technical-investigation (technical leads)
 
-NAVIGATOR ROUTING (CLI-first — make TWO independent decisions per direction):
+NAVIGATOR ROUTING (CLI-first — make one independent tool decision per direction):
 
 If osint_navigator_required=true (subscription / entitled deployments), before writing methodology.json:
 1. invoke-skill("integrations")
 2. invoke-skill("osint")
 3. invoke-skill("navigator")
-4. run `navigator tools find` and inspect chosen tools with `navigator tools show`
-5. independently run `navigator data find` and inspect a relevant source with `navigator data show`
-6. run `navigator query` only for an approved structured source and save machine-readable output to {CASE_DIR}/research/
-7. record CLI/API mode, catalog ID/version or retrieval time, non-secret parameters, warnings, source URLs, digest, and a per-direction data-source decision or skip reason
-In sensitive/offline mode make no Navigator request; record both modes as policy-skipped and use allowed local fallbacks.
+4. run `navigator tools find "<need>" --json` and inspect chosen tools with `navigator tools show`
+5. record CLI/API mode, catalog ID/version or retrieval time, non-secret parameters, warnings, and source URLs
+In sensitive/offline mode make no Navigator request; record OSINT discovery as policy-skipped and use allowed local fallbacks.
 
 If osint_navigator_required=false (local / open-weights deployments — no Navigator entitlement), discover tools from the LOCAL index — no external call, no mandatory reads:
 - execute-shell("python3 scripts/osint-tools.py find \"<lead-derived keywords>\" [--category <cat>] [--limit 8]")

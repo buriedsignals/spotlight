@@ -367,7 +367,7 @@ class UnitChecks(unittest.TestCase):
                        "Unpaywall", "Command Line Interface",
                        "SearXNG + Crawl4AI (sovereign web research)",
                        "Firecrawl (optional hosted fallback)",
-                       "Navigator (Pro: OSINT; Lab: OSINT + Data Navigator)"]:
+                       "Navigator (OSINT tool discovery)"]:
             self.assertIn(needle, guide)
         for secret in SECRETS:
             self.assertNotIn(secret, guide)

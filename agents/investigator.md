@@ -202,23 +202,19 @@ Apply the 6-step methodology above to design a complete investigation plan:
 Check the `INTEGRATIONS` block in your spawn prompt.
 
 If `osint_navigator_required=true`, load the unified `navigator` skill before
-writing methodology.json. For every relevant direction, make two independent
-decisions: which OSINT tool or technique could help, and whether an executable
-Navigator Data source fits. Use the CLI first; API fallback is permitted only
+writing methodology.json. For every relevant direction, decide which OSINT
+tool or technique could help. Use the CLI first; API fallback is permitted only
 when the CLI is unavailable and Engine supplies credentials to the child process.
 
 1. `invoke-skill("integrations")`
 2. `invoke-skill("osint")`
 3. `invoke-skill("navigator")`
 4. `navigator tools find "<need>" --json`, then `navigator tools show <id>` for a selected tool
-5. `navigator data find "<structured records need>" --json`, then `navigator data show <id>` before selecting a source
-6. Run `navigator query ...` only for an approved structured source; save machine-readable output under `{CASE_DIR}/research/`
-7. Record command mode, catalog ID/version or retrieval time, non-secret parameters, response path, source URLs, warnings, and output digest. Never record a PAT.
-8. For every direction record a `navigator.data_sources[]` decision or `navigator_data_not_applicable_reason`.
+5. Record command mode, catalog ID/version or retrieval time, non-secret parameters, response path, source URLs, warnings, and output digest. Never record a PAT.
 
 Navigator output is a lead or a primary-source record to verify, not a conclusive
-claim. In sensitive/offline mode make no Navigator call; record both OSINT and
-Data modes as skipped by policy and use permitted local fallbacks.
+claim. In sensitive/offline mode make no Navigator call; record OSINT discovery
+as skipped by policy and use permitted local fallbacks.
 
 Valid exceptions: sensitive mode, Navigator status red/yellow, a local/vault-only
 lead, explicit user instruction not to use external APIs, or continuation of an

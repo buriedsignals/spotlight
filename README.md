@@ -243,8 +243,8 @@ The installer:
 `spotlight update` applies the latest signed public release rather than tracking
 `origin/main`. `spotlight uninstall` removes only unchanged installer-owned
 files and preserves case/profile data unless `--remove-data` is explicit.
-Navigator is optional: Skip keeps the unified skill locked, Pro unlocks OSINT
-Navigator, and Lab additionally unlocks the Data Navigator tool.
+Navigator is optional: Skip keeps the unified skill locked; connecting unlocks
+OSINT tool discovery for Pro and Lab members.
 
 ### Local Install
 

@@ -555,7 +555,7 @@ def build_getting_started(d):
     if d["firecrawlKey"]:
         integrations.append("Firecrawl (optional hosted fallback)")
     if d["navigatorConnected"]:
-        integrations.append("Navigator (Pro: OSINT; Lab: OSINT + Data Navigator)")
+        integrations.append("Navigator (OSINT tool discovery)")
     else:
         integrations.append("Navigator skill (locked; no credential or CLI)")
     if d["intDevBrowser"]:

@@ -273,7 +273,7 @@
     </div>
     <div class="item" id="navigator">
       <div class="item__head"><span class="item__title"><em>Navigator.</em></span><span class="badge" id="navigatorBadge">Optional</span></div>
-      <p class="item__lede">The unified Navigator skill is always installed. Members can connect now: Pro unlocks OSINT tool discovery; Lab unlocks both OSINT Navigator and structured public-record research through Data Navigator. Skip keeps the skill locked and installs no Navigator credential or CLI.</p>
+      <p class="item__lede">The unified Navigator skill is always installed. Members can connect now to unlock OSINT tool discovery. Skip keeps the skill locked and installs no Navigator credential or CLI.</p>
       <label class="field-label" for="navigator_email">Membership email</label>
       <input class="fld" type="email" id="navigator_email" placeholder="you@example.com" autocomplete="email" spellcheck="false">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -711,11 +711,7 @@ async function navigatorPost(path, extra = {}) {
 function navigatorConnected(data) {
   navigatorChoice = 'connect'; navigatorFlow = '';
   navigatorBadge.textContent = data.tier === 'lab' ? 'Lab connected' : (data.tier === 'member' ? 'Member connected' : 'Pro connected');
-  navigatorStatus.textContent = data.tier === 'lab'
-    ? 'Connected: OSINT Navigator and the Data Navigator tool are available.'
-    : (data.tier === 'member'
-      ? 'Connected. Navigator will expose OSINT and, for Lab members, the Data Navigator tool.'
-      : 'Connected: OSINT Navigator is available. Data Navigator requires Lab.');
+  navigatorStatus.textContent = 'Connected: OSINT Navigator is available.';
 }
 async function pollNavigator() {
   if (!navigatorFlow) return;

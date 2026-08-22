@@ -1,11 +1,10 @@
 # Navigator — CLI-first research routing
 
-**What:** A live Navigator capability maintained by Indicator Media. It routes both OSINT tool discovery and executable structured public-data sources. It complements Spotlight's offline tool catalog and ordinary web acquisition.
+**What:** A live Navigator capability maintained by Indicator Media for OSINT tool discovery. It complements Spotlight's offline tool catalog and ordinary web acquisition.
 
 **When to use:**
 
 - You need a tool for a niche category not in the curated catalog (e.g. Argentine corporate registry, wildlife trade monitoring, specific cryptocurrency forensics)
-- You need a reproducible structured source for filings, procurement, sanctions, PEP, lobbying, legislation, or public registries
 - You need to compare multiple tools for a given task (e.g. "which free satellite imagery source is strongest for East Africa?")
 - You want a synthesized, natural-language answer to an investigation-method question ("How do I verify the authenticity of a leaked document?")
 - You're looking for recently published tools that may not be in the curated list yet
@@ -24,12 +23,9 @@ not ask a journalist to create or paste an API key. Load the portable
 ```bash
 navigator tools find "company registry Argentina" --json
 navigator tools show <tool-id>
-navigator data find "public procurement awards" --json
-navigator data show <source-id>
-navigator query <source-id> --help
 ```
 
-Inspect a selected tool or source playbook before execution. Save the CLI's
+Inspect a selected tool playbook before execution. Save the CLI's
 machine-readable output under `{CASE_DIR}/research/`; record the command mode,
 catalog ID/version or retrieval time, non-secret parameters, source URLs,
 warnings, and output digest in methodology/evidence records.
@@ -53,7 +49,7 @@ The OSINT skill includes `references/cycle-integration.md` — documented integr
 
 ## Output handling
 
-Navigator returns JSON. Tool search returns a list of tool objects; query endpoint returns a synthesized answer plus citations. Save responses verbatim to `{CASE_DIR}/research/` with a `navigator-<type>-<slug>-<timestamp>.json` naming convention.
+Navigator returns JSON. Tool search returns a list of tool objects. Save responses verbatim to `{CASE_DIR}/research/` with a `navigator-<type>-<slug>-<timestamp>.json` naming convention.
 
 For tool recommendations derived from Navigator output, cite the Navigator response in the methodology's `key_sources[]` or `tools_required[]`:
 

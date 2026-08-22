@@ -18,7 +18,6 @@ check "public configurator has direct member connection" has 'Yes, authenticate'
 check "public configurator has explicit skip" has 'Continue without Navigator' install/configure.html
 check "non-members do not receive Navigator CLI" lacks 'navigator-cli==' install-spotlight.sh
 check "Navigator skill remains in manifest" has 'navigator' skills.manifest
-check "Data Navigator is identified as Lab-only" has 'Data Navigator requires Lab' install/configure.html
 check "Spotlight does not advertise Splash" lacks 'Splash' install/configure.html
 check "Spotlight landing does not advertise Scoutpost" lacks 'Scoutpost' index.html
 
