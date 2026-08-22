@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,7 +39,7 @@ from typing import Any
 # a stdlib module for every later import in this process.
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from _runner import write_json_atomic  # noqa: E402
-from arbiter.client import safe_research_path  # noqa: E402
+from arbiter.client import open_research_file, safe_research_path  # noqa: E402
 
 
 def contained_path(args: argparse.Namespace, value: str, label: str) -> Path:
@@ -80,10 +81,16 @@ MAX_FINALIZE_PHRASE_LENGTH = 200
 MAX_FINALIZE_ENTITY_LENGTH = 500
 
 
+def _read_research_text(path: Path) -> str:
+    descriptor = open_research_file(path, os.O_RDONLY)
+    with os.fdopen(descriptor, "r", encoding="utf-8") as stream:
+        return stream.read()
+
+
 def read_text(path: Path, label: str) -> str:
     """Read and trim a UTF-8 text input file."""
     try:
-        return path.read_text(encoding="utf-8").strip()
+        return _read_research_text(path).strip()
     except OSError as exc:
         raise ValueError(f"cannot read {label} file at {path}: {exc}") from exc
 
@@ -91,7 +98,7 @@ def read_text(path: Path, label: str) -> str:
 def load_json_object(path: Path, label: str) -> dict[str, Any]:
     """Load a JSON object and surface an Arbiter error envelope clearly."""
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(_read_research_text(path))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"cannot read {label} JSON at {path}: {exc}") from exc
     if not isinstance(payload, dict):

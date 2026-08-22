@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 try:
-    from .client import ArbiterClient, safe_research_path
+    from .client import ArbiterClient, open_research_file, safe_research_path
 except ImportError:  # Loaded directly by focused checks and standalone tooling.
     client_module = sys.modules.get("spotlight_arbiter_client")
     if client_module is None:
@@ -24,6 +24,7 @@ except ImportError:  # Loaded directly by focused checks and standalone tooling.
         sys.modules[spec.name] = client_module
         spec.loader.exec_module(client_module)
     ArbiterClient = client_module.ArbiterClient
+    open_research_file = client_module.open_research_file
     safe_research_path = client_module.safe_research_path
 
 
@@ -64,14 +65,15 @@ def _case_dir(case_dir: Path | str) -> Path:
     safe_research_path(case_path, "arbiter-case-check.json")
     return case_path
 
-
 def _exclusive_write(path: Path, content: bytes) -> Path:
     """Write once without replacing an existing artifact, including on races."""
     stem, suffix = path.stem, path.suffix
     for index in range(1000):
         candidate = path if index == 0 else path.with_name(f"{stem}-{index}{suffix}")
         try:
-            descriptor = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            descriptor = open_research_file(
+                candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            )
         except FileExistsError:
             continue
         with os.fdopen(descriptor, "wb") as stream:

@@ -15,7 +15,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -110,14 +109,65 @@ def integration_run_dir(project: str, integration_id: str, run_id: str, root: Pa
     return case_dir(project, root) / "research" / integration_id / run
 
 
+def _open_directory_no_follow(path: Path) -> int:
+    """Open every directory component without following replacement links."""
+    components = path.parts
+    if path.is_absolute():
+        descriptor = os.open(os.sep, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        components = components[1:]
+    else:
+        descriptor = os.open(".", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for component in components:
+            if component in {"", ".", ".."}:
+                raise OSError("unsafe atomic output directory")
+            next_descriptor = os.open(
+                component,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=descriptor,
+            )
+            os.close(descriptor)
+            descriptor = next_descriptor
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
 def write_json_atomic(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(data, indent=2, sort_keys=True) + "\n"
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as handle:
-        handle.write(payload)
-        tmp_name = handle.name
-    os.replace(tmp_name, path)
-
+    payload = (json.dumps(data, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    directory_fd = _open_directory_no_follow(path.parent.resolve(strict=True))
+    temp_name = f".{path.name}.tmp-{os.getpid()}"
+    try:
+        for index in range(1000):
+            candidate = temp_name if index == 0 else f"{temp_name}-{index}"
+            try:
+                descriptor = os.open(
+                    candidate,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                    0o600,
+                    dir_fd=directory_fd,
+                )
+                break
+            except FileExistsError:
+                continue
+        else:
+            raise OSError("could not allocate an atomic JSON temporary file")
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.rename(candidate, path.name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+        except BaseException:
+            try:
+                os.unlink(candidate, dir_fd=directory_fd)
+            except OSError:
+                pass
+            raise
+    finally:
+        os.close(directory_fd)
 
 def forbid_verified_statuses(items: list[dict[str, Any]], label: str) -> None:
     for index, item in enumerate(items):

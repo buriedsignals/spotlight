@@ -12,12 +12,12 @@ import ipaddress
 import json
 import os
 import re
+import socket
 from pathlib import Path
 from typing import Any, Callable, Mapping
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
-
 
 
 class SameOriginRedirectHandler(HTTPRedirectHandler):
@@ -26,12 +26,24 @@ class SameOriginRedirectHandler(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         source = urlsplit(req.full_url)
         target = urlsplit(newurl)
+        source_port = source.port or (443 if source.scheme == "https" else None)
+        target_port = target.port or (443 if target.scheme == "https" else None)
+        target_path = target.path
+        for _ in range(4):
+            target_path = unquote(target_path)
         if (
-            target.scheme != source.scheme
-            or target.hostname != source.hostname
-            or target.port != source.port
+            source.scheme != "https"
+            or target.scheme != "https"
+            or source.hostname != target.hostname
+            or source_port != target_port
+            or target.username
+            or target.password
+            or not target.hostname
+            or not target_path.startswith("/api/v1/")
+            or "\\" in target_path
+            or any(segment in {".", ".."} for segment in target_path.split("/"))
         ):
-            raise ValueError("Arbiter redirect changed origin or scheme")
+            raise ValueError("Arbiter redirect changed origin, scheme, or API path")
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -41,6 +53,7 @@ DEFAULT_API_BASE = "https://arbiter.simppl.org/api/v1"
 DEFAULT_TIMEOUT = 60.0
 
 _NUMERIC_HOST_RE = re.compile(r"^[0-9.]+$")
+_NUMERIC_LABEL_RE = re.compile(r"^(?:0[xX][0-9a-fA-F]+|[0-9]+)$")
 _BLOCKED_DNS_SUFFIXES = (
     ".internal",
     ".intranet",
@@ -54,32 +67,67 @@ _BLOCKED_DNS_SUFFIXES = (
 )
 
 
+def _blocked_address(address: str) -> bool:
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        return True
+    mapped = getattr(parsed, "ipv4_mapped", None)
+    if mapped is not None:
+        parsed = mapped
+    return bool(
+        parsed.is_private
+        or parsed.is_loopback
+        or parsed.is_link_local
+        or parsed.is_reserved
+        or parsed.is_unspecified
+        or not parsed.is_global
+    )
+
+
+def _numeric_alias(hostname: str) -> bool:
+    labels = hostname.rstrip(".").split(".")
+    if any(label.lower().startswith("0x") and _NUMERIC_LABEL_RE.fullmatch(label) for label in labels):
+        return True
+    numeric = 0
+    for label in labels:
+        if _NUMERIC_LABEL_RE.fullmatch(label):
+            numeric += 1
+        else:
+            numeric = 0
+        if numeric >= 2:
+            return True
+    return False
+
+
 def _safe_hostname(hostname: str) -> bool:
-    """Reject local, reserved, numeric, and wildcard DNS targets."""
+    """Reject local, reserved, numeric, and unsafe DNS targets."""
     lowered = hostname.rstrip(".").lower()
     labels = lowered.split(".")
-    numeric_tail = len(labels) >= 4 and all(label.isdecimal() for label in labels[-4:])
     if (
         not lowered
         or any(not label or len(label) > 63 for label in labels)
         or any(ord(char) > 127 for char in lowered)
+        or any(char in lowered for char in "%[]")
         or lowered in {"localhost", "localhost.localdomain", "ip6-localhost", "metadata.google.internal"}
         or lowered.endswith(_BLOCKED_DNS_SUFFIXES)
         or _NUMERIC_HOST_RE.fullmatch(lowered)
-        or numeric_tail
+        or _numeric_alias(lowered)
     ):
         return False
     try:
         address = ipaddress.ip_address(lowered)
     except ValueError:
-        return "." in lowered
-    return not (
-        address.is_private
-        or address.is_loopback
-        or address.is_link_local
-        or address.is_reserved
-        or address.is_unspecified
-    )
+        address = None
+    if address is not None:
+        return not _blocked_address(str(address))
+    try:
+        results = socket.getaddrinfo(lowered, 443, type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        results = ()
+    except OSError:
+        return False
+    return all(not _blocked_address(result[4][0]) for result in results)
 
 
 def validate_api_base(value: str) -> str:
@@ -237,3 +285,18 @@ def safe_research_path(case_dir: Path | str, filename: str) -> Path:
     if candidate.resolve(strict=False).parent != resolved_research:
         raise ValueError("research path escapes case directory")
     return candidate
+
+
+def open_research_file(path: Path, flags: int, mode: int = 0o600) -> int:
+    """Open one research entry through no-follow directory descriptors."""
+    case_fd = os.open(path.parent.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        research_fd = os.open(
+            "research", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=case_fd
+        )
+    finally:
+        os.close(case_fd)
+    try:
+        return os.open(path.name, flags | os.O_NOFOLLOW, mode, dir_fd=research_fd)
+    finally:
+        os.close(research_fd)
