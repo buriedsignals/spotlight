@@ -31,13 +31,19 @@ The renderer places this at the top of the page. Do not soften:
 1. Read `{CASE_DIR}/data/findings.json` and `{CASE_DIR}/data/fact-check.json`.
 2. Author `{CASE_DIR}/data/report-draft.json` in the report's natural language. Choose the title, deck, finding order, headlines, concise summaries, why each finding matters, caveats, and next steps. Cover every finding exactly once. Every prose block must reference the fact-checked finding IDs it interprets; do not author verdicts or confidence.
 
-   When an existing connection structure would clarify the report, add an optional
-   `diagrams` item. Select one of `flow`, `hierarchy`, `network`, or `loop`; cite
-   its supporting finding IDs; and select its existing connections using exact
-   `{from, to, relationship}` values from `findings.json`. Keep it to one question,
-   at most nine nodes and twelve connections. A `loop` is one simple cycle and has
-   exactly one focal starting entity. Never author Mermaid, SVG, HTML, JavaScript,
-   CSS, URLs, coordinates, or layout settings: the renderer owns those.
+   When an existing structure would clarify the report, add an optional
+   `diagrams` item. For relationship structures, select one of `flow`,
+   `hierarchy`, `network`, or `loop`; cite its supporting finding IDs; and select
+   its existing connections using exact `{from, to, relationship}` values from
+   `findings.json`. Keep it to one question, at most nine nodes and twelve
+   connections. A `loop` is one simple cycle and has exactly one focal starting
+   entity. For data charts, either select `timeline` with 1–12 `indicator_ids`
+   that resolve to entries in `findings.json` `technical_indicators` (the renderer
+   draws each recorded first→last observation span in chronological order), or
+   select `bar` with a `metric` of `verdict_tally`, `confidence_distribution`, or
+   `source_types`, counted deterministically over your `finding_ids` or all
+   findings. Never author Mermaid, SVG, HTML, JavaScript, CSS, URLs, coordinates,
+   counts, or layout settings: the renderer owns those.
 
    ```json
    {

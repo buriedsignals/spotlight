@@ -28,7 +28,10 @@ MAX_TEXT = {
     "diagram_title": 180,
     "diagram_caption": 500,
 }
-DIAGRAM_TYPES = {"flow", "hierarchy", "network", "loop"}
+DIAGRAM_TYPES = {"flow", "hierarchy", "network", "loop", "timeline", "bar"}
+STRUCTURAL_DIAGRAM_TYPES = {"flow", "hierarchy", "network", "loop"}
+BAR_METRICS = {"verdict_tally", "confidence_distribution", "source_types"}
+BAR_SCOPES = {"all", "finding_ids"}
 DIAGRAM_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
 
@@ -249,13 +252,146 @@ def is_simple_loop(
     return node == focal_entity and visited == nodes
 
 
+def validate_structural_diagram(
+    label: str,
+    diagram_type: str,
+    diagram: dict[str, Any],
+    known_ids: set[str],
+    canonical: dict[tuple[str, str, str], int],
+    failures: list[str],
+) -> None:
+    """Validate bounded connection-selector diagrams against findings.json connections."""
+    selectors = diagram.get("connections")
+    resolved: list[tuple[str, str, str]] = []
+    if not isinstance(selectors, list):
+        failures.append(f"STRUCTURE: {label}.connections must be an array")
+    else:
+        if not selectors:
+            failures.append(f"STRUCTURE: {label}.connections must select at least one connection")
+        if len(selectors) > 12:
+            failures.append(f"STRUCTURE: {label}.connections has {len(selectors)} items; limit is 12")
+        seen_selectors: set[tuple[str, str, str]] = set()
+        for selector_index, selector in enumerate(selectors):
+            selector_label = f"{label}.connections[{selector_index}]"
+            if not isinstance(selector, dict):
+                failures.append(f"STRUCTURE: {selector_label} must be an object")
+                continue
+            selector_unknown = sorted(set(selector) - {"from", "to", "relationship"})
+            if selector_unknown:
+                failures.append(
+                    f"STRUCTURE: {selector_label} has unknown field(s): {selector_unknown}"
+                )
+            triple = tuple(clean(selector.get(field)) for field in ("from", "to", "relationship"))
+            if not all(triple):
+                failures.append(
+                    f"STRUCTURE: {selector_label} requires non-empty from, to, and relationship"
+                )
+                continue
+            for field, normalized in zip(("from", "to", "relationship"), triple):
+                if selector.get(field) != normalized:
+                    failures.append(
+                        f"STRUCTURE: {selector_label}.{field} has surrounding whitespace; use {normalized!r}"
+                    )
+            if triple in seen_selectors:
+                failures.append(f"STRUCTURE: {label}.connections contains duplicate selector {triple!r}")
+            seen_selectors.add(triple)
+            matches = canonical.get(triple, 0)
+            if matches != 1:
+                reason = "unknown" if matches == 0 else "ambiguous"
+                failures.append(f"STRUCTURE: {selector_label} is {reason} in findings.json.connections")
+                continue
+            resolved.append(triple)
+
+    nodes = {node for source, target, _relationship in resolved for node in (source, target)}
+    if len(nodes) > 9:
+        failures.append(f"STRUCTURE: {label} has {len(nodes)} nodes; limit is 9")
+    focal = diagram.get("focal_entities", [])
+    focal_entities: list[str] = []
+    if not isinstance(focal, list):
+        failures.append(f"STRUCTURE: {label}.focal_entities must be an array")
+    else:
+        if len(focal) > 2:
+            failures.append(f"STRUCTURE: {label}.focal_entities has {len(focal)} items; limit is 2")
+        for focal_index, raw_entity in enumerate(focal):
+            entity = clean(raw_entity)
+            focal_label = f"{label}.focal_entities[{focal_index}]"
+            if not entity:
+                failures.append(f"STRUCTURE: {focal_label} must be a non-empty endpoint label")
+                continue
+            if raw_entity != entity:
+                failures.append(f"STRUCTURE: {focal_label} has surrounding whitespace; use {entity!r}")
+            if entity in focal_entities:
+                failures.append(f"STRUCTURE: {label}.focal_entities contains duplicate endpoint {entity!r}")
+            focal_entities.append(entity)
+            if entity not in nodes:
+                failures.append(f"STRUCTURE: {focal_label} is not an endpoint in the selected connections")
+
+    if diagram_type == "hierarchy" and has_directed_cycle(resolved):
+        failures.append(f"STRUCTURE: {label}.type hierarchy cannot contain a directed cycle")
+    if diagram_type == "loop":
+        if len(focal_entities) != 1:
+            failures.append(f"STRUCTURE: {label}.type loop requires exactly one focal_entities entry")
+        elif not is_simple_loop(resolved, focal_entities[0]):
+            failures.append(
+                f"STRUCTURE: {label}.type loop requires one simple directed cycle containing its focal entity"
+            )
+
+
+def validate_indicator_selection(
+    label: str, value: Any, known_ids: set[str], failures: list[str]
+) -> None:
+    """Validate a bounded timeline selection against findings.json technical_indicators."""
+    if not isinstance(value, list):
+        failures.append(f"STRUCTURE: {label}.indicator_ids must be an array")
+        return
+    if not value:
+        failures.append(f"STRUCTURE: {label}.indicator_ids must select at least one indicator")
+    if len(value) > 12:
+        failures.append(f"STRUCTURE: {label}.indicator_ids has {len(value)} items; limit is 12")
+    refs: list[str] = []
+    for item_index, item in enumerate(value):
+        item_label = f"{label}.indicator_ids[{item_index}]"
+        normalized = clean(item) if isinstance(item, str) else ""
+        if not normalized:
+            failures.append(f"STRUCTURE: {item_label} must be a non-empty indicator ID")
+            continue
+        if item != normalized:
+            failures.append(f"STRUCTURE: {item_label} has surrounding whitespace; use {normalized!r}")
+        if normalized in refs:
+            failures.append(
+                f"STRUCTURE: {label}.indicator_ids contains duplicate indicator ID {normalized!r}"
+            )
+        refs.append(normalized)
+    for indicator_id in sorted(set(refs) - known_ids):
+        failures.append(
+            f"STRUCTURE: {label}.indicator_ids entry {indicator_id!r} "
+            "does not resolve to a technical_indicators entry"
+        )
+
+
+def validate_bar_metric(label: str, metric: Any, scope: Any, failures: list[str]) -> None:
+    """Validate a bar chart's metric and optional scope."""
+    metric_value = clean(metric)
+    if metric_value not in BAR_METRICS:
+        failures.append(f"STRUCTURE: {label}.metric must be one of {sorted(BAR_METRICS)}")
+    elif metric != metric_value:
+        failures.append(f"STRUCTURE: {label}.metric has surrounding whitespace; use {metric_value!r}")
+    if scope is None:
+        return
+    scope_value = clean(scope)
+    if scope_value not in BAR_SCOPES:
+        failures.append(f"STRUCTURE: {label}.scope must be one of {sorted(BAR_SCOPES)}")
+    elif scope != scope_value:
+        failures.append(f"STRUCTURE: {label}.scope has surrounding whitespace; use {scope_value!r}")
+
+
 def validate_diagrams(
     value: Any,
     known_ids: set[str],
-    findings_connections: Any,
+    findings_doc: dict[str, Any],
     failures: list[str],
 ) -> None:
-    """Validate bounded report diagrams against current canonical connections."""
+    """Validate bounded report diagrams against current canonical inputs."""
     if value is None:
         return
     if not isinstance(value, list):
@@ -263,6 +399,7 @@ def validate_diagrams(
         return
 
     canonical: dict[tuple[str, str, str], int] = {}
+    findings_connections = findings_doc.get("connections")
     if isinstance(findings_connections, list):
         for connection in findings_connections:
             if not isinstance(connection, dict):
@@ -270,6 +407,11 @@ def validate_diagrams(
             triple = tuple(clean(connection.get(field)) for field in ("from", "to", "relationship"))
             if all(triple):
                 canonical[triple] = canonical.get(triple, 0) + 1
+    known_indicator_ids: set[str] = {
+        clean(indicator.get("id"))
+        for indicator in (findings_doc.get("technical_indicators") or [])
+        if isinstance(indicator, dict) and clean(indicator.get("id"))
+    }
 
     seen_ids: set[str] = set()
     for index, diagram in enumerate(value):
@@ -277,9 +419,16 @@ def validate_diagrams(
         if not isinstance(diagram, dict):
             failures.append(f"STRUCTURE: {label} must be an object")
             continue
-        unknown = sorted(
-            set(diagram) - {"id", "type", "title", "caption", "finding_ids", "connections", "focal_entities"}
-        )
+        diagram_type = clean(diagram.get("type"))
+        if diagram_type in STRUCTURAL_DIAGRAM_TYPES:
+            allowed_fields = {
+                "id", "type", "title", "caption", "finding_ids", "connections", "focal_entities",
+            }
+        elif diagram_type == "timeline":
+            allowed_fields = {"id", "type", "title", "caption", "finding_ids", "indicator_ids"}
+        else:
+            allowed_fields = {"id", "type", "title", "caption", "finding_ids", "metric", "scope"}
+        unknown = sorted(set(diagram) - allowed_fields)
         if unknown:
             failures.append(f"STRUCTURE: {label} has unknown field(s): {unknown}")
 
@@ -294,87 +443,22 @@ def validate_diagrams(
             failures.append(f"STRUCTURE: diagrams contains duplicate id {diagram_id!r}")
         seen_ids.add(diagram_id)
 
-        diagram_type = clean(diagram.get("type"))
         if diagram_type not in DIAGRAM_TYPES:
             failures.append(f"STRUCTURE: {label}.type must be one of {sorted(DIAGRAM_TYPES)}")
         validate_text(f"{label}.title", diagram.get("title"), MAX_TEXT["diagram_title"], failures)
         validate_text(f"{label}.caption", diagram.get("caption"), MAX_TEXT["diagram_caption"], failures)
         validate_refs(f"{label}.finding_ids", diagram.get("finding_ids"), known_ids, failures)
 
-        selectors = diagram.get("connections")
-        resolved: list[tuple[str, str, str]] = []
-        if not isinstance(selectors, list):
-            failures.append(f"STRUCTURE: {label}.connections must be an array")
-        else:
-            if not selectors:
-                failures.append(f"STRUCTURE: {label}.connections must select at least one connection")
-            if len(selectors) > 12:
-                failures.append(f"STRUCTURE: {label}.connections has {len(selectors)} items; limit is 12")
-            seen_selectors: set[tuple[str, str, str]] = set()
-            for selector_index, selector in enumerate(selectors):
-                selector_label = f"{label}.connections[{selector_index}]"
-                if not isinstance(selector, dict):
-                    failures.append(f"STRUCTURE: {selector_label} must be an object")
-                    continue
-                selector_unknown = sorted(set(selector) - {"from", "to", "relationship"})
-                if selector_unknown:
-                    failures.append(
-                        f"STRUCTURE: {selector_label} has unknown field(s): {selector_unknown}"
-                    )
-                triple = tuple(clean(selector.get(field)) for field in ("from", "to", "relationship"))
-                if not all(triple):
-                    failures.append(
-                        f"STRUCTURE: {selector_label} requires non-empty from, to, and relationship"
-                    )
-                    continue
-                for field, normalized in zip(("from", "to", "relationship"), triple):
-                    if selector.get(field) != normalized:
-                        failures.append(
-                            f"STRUCTURE: {selector_label}.{field} has surrounding whitespace; use {normalized!r}"
-                        )
-                if triple in seen_selectors:
-                    failures.append(f"STRUCTURE: {label}.connections contains duplicate selector {triple!r}")
-                seen_selectors.add(triple)
-                matches = canonical.get(triple, 0)
-                if matches != 1:
-                    reason = "unknown" if matches == 0 else "ambiguous"
-                    failures.append(f"STRUCTURE: {selector_label} is {reason} in findings.json.connections")
-                    continue
-                resolved.append(triple)
-
-        nodes = {node for source, target, _relationship in resolved for node in (source, target)}
-        if len(nodes) > 9:
-            failures.append(f"STRUCTURE: {label} has {len(nodes)} nodes; limit is 9")
-        focal = diagram.get("focal_entities", [])
-        focal_entities: list[str] = []
-        if not isinstance(focal, list):
-            failures.append(f"STRUCTURE: {label}.focal_entities must be an array")
-        else:
-            if len(focal) > 2:
-                failures.append(f"STRUCTURE: {label}.focal_entities has {len(focal)} items; limit is 2")
-            for focal_index, raw_entity in enumerate(focal):
-                entity = clean(raw_entity)
-                focal_label = f"{label}.focal_entities[{focal_index}]"
-                if not entity:
-                    failures.append(f"STRUCTURE: {focal_label} must be a non-empty endpoint label")
-                    continue
-                if raw_entity != entity:
-                    failures.append(f"STRUCTURE: {focal_label} has surrounding whitespace; use {entity!r}")
-                if entity in focal_entities:
-                    failures.append(f"STRUCTURE: {label}.focal_entities contains duplicate endpoint {entity!r}")
-                focal_entities.append(entity)
-                if entity not in nodes:
-                    failures.append(f"STRUCTURE: {focal_label} is not an endpoint in the selected connections")
-
-        if diagram_type == "hierarchy" and has_directed_cycle(resolved):
-            failures.append(f"STRUCTURE: {label}.type hierarchy cannot contain a directed cycle")
-        if diagram_type == "loop":
-            if len(focal_entities) != 1:
-                failures.append(f"STRUCTURE: {label}.type loop requires exactly one focal_entities entry")
-            elif not is_simple_loop(resolved, focal_entities[0]):
-                failures.append(
-                    f"STRUCTURE: {label}.type loop requires one simple directed cycle containing its focal entity"
-                )
+        if diagram_type in STRUCTURAL_DIAGRAM_TYPES:
+            validate_structural_diagram(
+                label, diagram_type, diagram, known_ids, canonical, failures
+            )
+        elif diagram_type == "timeline":
+            validate_indicator_selection(
+                label, diagram.get("indicator_ids"), known_indicator_ids, failures
+            )
+        elif diagram_type == "bar":
+            validate_bar_metric(label, diagram.get("metric"), diagram.get("scope"), failures)
 
 
 def check(case: Path) -> list[str]:
@@ -454,7 +538,7 @@ def check(case: Path) -> list[str]:
     if treatment_ids != order:
         failures.append("STRUCTURE: finding_treatments must follow finding_order exactly")
 
-    validate_diagrams(draft.get("diagrams"), known_ids, findings_doc.get("connections"), failures)
+    validate_diagrams(draft.get("diagrams"), known_ids, findings_doc, failures)
     validate_editorial_list("caveats", draft.get("caveats"), known_ids, failures)
     validate_editorial_list("next_steps", draft.get("next_steps"), known_ids, failures)
 

@@ -72,7 +72,36 @@ def diagram_fixture(kind: str) -> tuple[list[dict[str, str]], dict[str, Any]]:
             {"from": "Vendor", "to": "Sponsor", "relationship": "returned_value_to"},
         ]
         return connections, {**common, "connections": connections, "focal_entities": ["Sponsor"]}
+    if kind == "timeline":
+        return None, {**common, "indicator_ids": ["IOC-domain-1", "IOC-ipv4-1"]}
+    if kind == "bar":
+        return None, {**common, "metric": "verdict_tally", "scope": "all"}
     raise AssertionError(f"unknown diagram type {kind}")
+
+
+def chart_indicators() -> list[dict[str, Any]]:
+    """Deliberately unsorted; the renderer must emit chronological order."""
+    return [
+        {
+            "id": "IOC-domain-1",
+            "finding_id": "F1",
+            "type": "domain",
+            "value": "evil.example",
+            "context": "Command-and-control domain cited by F1.",
+            "sources": ["https://example.org/official_record(v1)"],
+            "first_observed": "2026-01-05T09:00:00Z",
+            "last_observed": "2026-02-10T21:30:00Z",
+        },
+        {
+            "id": "IOC-ipv4-1",
+            "finding_id": "F1",
+            "type": "ipv4",
+            "value": "203.0.113.10",
+            "context": "Staging server cited by F1.",
+            "sources": ["https://example.org/official_record(v1)"],
+            "first_observed": "2025-11-20T08:00:00Z",
+        },
+    ]
 
 
 def build_case(root: Path, kind: str) -> Path:
@@ -81,7 +110,10 @@ def build_case(root: Path, kind: str) -> Path:
     draft_path = case / "data" / "report-draft.json"
     findings = json.loads(findings_path.read_text(encoding="utf-8"))
     connections, diagram = diagram_fixture(kind)
-    findings["connections"] = connections
+    if kind == "timeline":
+        findings["technical_indicators"] = chart_indicators()
+    if connections is not None:
+        findings["connections"] = connections
     write_json(findings_path, findings)
     draft = json.loads(draft_path.read_text(encoding="utf-8"))
     draft["diagrams"] = [diagram]
@@ -99,10 +131,21 @@ def expect_invalid(case: Path, message: str) -> None:
     assert message in result.stdout, result.stdout + result.stderr
 
 
+def compiled_mermaid(html: str) -> str:
+    """Return the first compiled Mermaid source with HTML entities decoded."""
+    raw = html.split('<pre class="mermaid"', 1)[1].split(">", 1)[1].split("</pre>", 1)[0]
+    return (
+        raw.replace("&quot;", '"')
+        .replace("&gt;", ">")
+        .replace("&lt;", "<")
+        .replace("&amp;", "&")
+    )
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="report-diagrams-") as tmp:
         root = Path(tmp)
-        for kind in ("flow", "hierarchy", "network", "loop"):
+        for kind in ("flow", "hierarchy", "network", "loop", "timeline", "bar"):
             case = build_case(root / kind, kind)
             result = run([sys.executable, str(FINALIZER), str(case)])
             assert result.returncode == 0, result.stdout + result.stderr
@@ -118,9 +161,25 @@ def main() -> int:
             assert "```mermaid" in markdown
             assert markdown.count("```") == 2
             assert f"### {kind.title()} structure" in markdown
-            assert f"layout: {'dagre' if kind == 'loop' else 'elk'}" in html
+            if kind in ("flow", "hierarchy", "network", "loop"):
+                assert f"layout: {'dagre' if kind == 'loop' else 'elk'}" in html
             if kind == "loop":
                 assert "stroke-dasharray:5 4" in html
+            if kind == "timeline":
+                mermaid = compiled_mermaid(html)
+                assert mermaid.startswith("timeline\n")
+                assert "accTitle:" in mermaid
+                # Chronological order, not input order.
+                assert mermaid.index("2025-11-20") < mermaid.index("2026-01-05")
+                assert "evil.example (domain)" in mermaid
+            if kind == "bar":
+                assert "xychart-beta" in html
+                mermaid = compiled_mermaid(html)
+                # Canonical verdict order, not input or alphabetical order.
+                assert mermaid.index('"Verified"') < mermaid.index('"Partially verified"')
+                assert mermaid.index('"Partially verified"') < mermaid.index('"Unverified"')
+                assert 'y-axis "Findings" 0 --> 1' in mermaid
+                assert "bar [1, 0, 1, 0, 0, 0]" in mermaid
             again = run([sys.executable, str(FINALIZER), str(case)])
             assert again.returncode == 0, again.stdout + again.stderr
             assert [sha(path) for path in outputs] == hashes
@@ -226,6 +285,42 @@ def main() -> int:
         draft["diagrams"][0]["connections"] = branched
         write_json(draft_path, draft)
         expect_invalid(invalid_loop, "requires one simple directed cycle")
+
+        unknown_indicator = build_case(root / "unknown-indicator", "timeline")
+        draft_path = unknown_indicator / "data" / "report-draft.json"
+        draft = json.loads(draft_path.read_text(encoding="utf-8"))
+        draft["diagrams"][0]["indicator_ids"] = ["IOC-missing"]
+        write_json(draft_path, draft)
+        expect_invalid(unknown_indicator, "does not resolve to a technical_indicators entry")
+
+        bad_metric = build_case(root / "bad-metric", "bar")
+        draft_path = bad_metric / "data" / "report-draft.json"
+        draft = json.loads(draft_path.read_text(encoding="utf-8"))
+        draft["diagrams"][0]["metric"] = "vibes"
+        write_json(draft_path, draft)
+        expect_invalid(bad_metric, "metric must be one of")
+
+        over_points = build_case(root / "over-points", "timeline")
+        draft_path = over_points / "data" / "report-draft.json"
+        draft = json.loads(draft_path.read_text(encoding="utf-8"))
+        draft["diagrams"][0]["indicator_ids"] = [f"IOC-{index}" for index in range(13)]
+        write_json(draft_path, draft)
+        expect_invalid(over_points, "indicator_ids has 13 items; limit is 12")
+
+        bar_with_connections = build_case(root / "bar-with-connections", "bar")
+        findings_path = bar_with_connections / "data" / "findings.json"
+        draft_path = bar_with_connections / "data" / "report-draft.json"
+        findings = json.loads(findings_path.read_text(encoding="utf-8"))
+        findings["connections"] = [
+            {"from": "Payer", "to": "Recipient", "relationship": "paid"},
+        ]
+        write_json(findings_path, findings)
+        draft = json.loads(draft_path.read_text(encoding="utf-8"))
+        draft["diagrams"][0]["connections"] = [
+            {"from": "Payer", "to": "Recipient", "relationship": "paid"},
+        ]
+        write_json(draft_path, draft)
+        expect_invalid(bar_with_connections, "has unknown field(s): ['connections']")
 
     print("report diagrams: OK")
     return 0

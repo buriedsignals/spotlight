@@ -13,9 +13,29 @@ reference, not a runtime dependency or a template to copy.
 | `hierarchy` | Ownership, control, parent/subsidiary, or command structures. |
 | `network` | Directed material relationships without one hierarchy or main path. |
 | `loop` | One directed cycle, such as money returning to an earlier entity. |
+| `timeline` | Change over time: recorded first→last observation spans of technical indicators, drawn chronologically. |
+| `bar` | Comparing counts: verdict tallies, confidence distribution, or source-type counts across findings. |
 
 Use one diagram to answer one question. Split a structure before it becomes a
 wall of nodes.
+
+## Choose one chart, for one message
+
+Before selecting any diagram type, state its message in one sentence ("Indicator
+A was observed three months before indicator B", "Most claims remain
+unverified"). If you cannot, do not add a diagram. Map intent to type:
+change-over-time → `timeline`; comparison or tally of categories → `bar`;
+movement between entities → `flow`; containment or control → `hierarchy`;
+many-to-many relationships → `network`; a returning cycle → `loop`.
+
+- **Channel honesty**: encode quantities with position and length first; never
+  use area, colour intensity, or decoration to carry a number.
+- **Zero baseline**: bar charts always start at zero — the renderer fixes the
+  axis range; never ask for a truncated axis, because bar length is the claim.
+- **Do not chart small data**: with two or fewer data points, write one prose
+  sentence instead. A chart must earn its canvas.
+- **No invented data**: charts may only count what `findings.json` and
+  `fact-check.json` already record. Never estimate, round up, or extrapolate.
 
 ## Visual rules
 

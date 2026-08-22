@@ -775,6 +775,74 @@ def main() -> int:
         assert ingestion_skip.returncode == 3, ingestion_skip.stdout
         assert "report phase was skipped" in ingestion_skip.stdout
 
+        # Data-driven charts (timeline + bar) compile deterministically and
+        # keep the pinned strict runtime even alongside no structural diagrams.
+        charts = build_case(Path(tmp) / "report-charts")
+        charts_findings_path = charts / "data" / "findings.json"
+        charts_findings = json.loads(charts_findings_path.read_text())
+        charts_findings["technical_indicators"] = [
+            {
+                "id": "IOC-domain-1",
+                "finding_id": "F1",
+                "type": "domain",
+                "value": "evil.example",
+                "context": "Command-and-control domain cited by F1.",
+                "sources": ["https://example.org/official_record(v1)"],
+                "first_observed": "2026-01-05T09:00:00Z",
+                "last_observed": "2026-02-10T21:30:00Z",
+            },
+            {
+                "id": "IOC-ipv4-1",
+                "finding_id": "F1",
+                "type": "ipv4",
+                "value": "203.0.113.10",
+                "context": "Staging server cited by F1.",
+                "sources": ["https://example.org/official_record(v1)"],
+                "first_observed": "2025-11-20T08:00:00Z",
+            },
+        ]
+        write_json(charts_findings_path, charts_findings)
+        charts_draft_path = charts / "data" / "report-draft.json"
+        charts_draft = json.loads(charts_draft_path.read_text())
+        charts_draft["diagrams"] = [
+            {
+                "id": "indicator-spans",
+                "type": "timeline",
+                "title": "Indicator observation windows",
+                "caption": "Recorded first-to-last observation spans for the cited indicators.",
+                "finding_ids": ["F1"],
+                "indicator_ids": ["IOC-domain-1", "IOC-ipv4-1"],
+            },
+            {
+                "id": "verdict-counts",
+                "type": "bar",
+                "title": "Verdict tally",
+                "caption": "Fact-check verdicts across the report's findings.",
+                "finding_ids": ["F1", "F2"],
+                "metric": "verdict_tally",
+            },
+        ]
+        write_json(charts_draft_path, charts_draft)
+        charts_result = subprocess.run(
+            [sys.executable, str(FINALIZER), str(charts)], capture_output=True, text=True
+        )
+        assert charts_result.returncode == 0, charts_result.stdout + charts_result.stderr
+        charts_outputs = [
+            charts / "findings-report.md", charts / "report.html", charts / "evidence-map.json"
+        ]
+        charts_html = charts_outputs[1].read_text()
+        charts_markdown = charts_outputs[0].read_text()
+        assert "securityLevel: \"strict\"" in charts_html
+        assert "xychart-beta" in charts_html
+        assert ">timeline" in charts_html
+        assert "Data shown:" in charts_markdown
+        charts_hashes = [sha(path) for path in charts_outputs]
+        charts_again = subprocess.run(
+            [sys.executable, str(FINALIZER), str(charts)], capture_output=True, text=True
+        )
+        assert charts_again.returncode == 0, charts_again.stdout + charts_again.stderr
+        assert [sha(path) for path in charts_outputs] == charts_hashes
+
     print("deterministic report finalizer checks: PASS")
     return 0
 

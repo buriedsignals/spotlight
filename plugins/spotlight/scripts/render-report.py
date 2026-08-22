@@ -445,7 +445,153 @@ def ordered_loop_connections(
     return ordered
 
 
-def compile_diagrams(draft: dict[str, Any], findings_doc: dict[str, Any]) -> list[dict[str, Any]]:
+    if diagram_type == "timeline":
+        return "milestone"
+    if diagram_type == "bar":
+        return "measure"
+    return "entity"
+
+
+def chart_text(value: Any, limit: int = 160) -> str:
+    """Collapse case text into one inert Mermaid chart label line."""
+    # Timeline/xychart lexers treat ":" and "#" structurally; strip them too.
+    return mermaid_text(value, limit).translate(str.maketrans({":": ",", "#": ""}))
+
+
+def observation_period(indicator: dict[str, Any]) -> tuple[str, str]:
+    """Return (sort_key, period_label) for an indicator's recorded observation span."""
+    start = text(indicator.get("first_observed"))[:10]
+    end = text(indicator.get("last_observed"))[:10]
+    if start and end:
+        return start, f"{start} \→ {end}"
+    if start or end:
+        return start or end, start or end
+    return text(indicator.get("id")), text(indicator.get("id"))
+
+
+def compile_timeline_diagram(
+    diagram: dict[str, Any], findings_doc: dict[str, Any]
+) -> dict[str, Any]:
+    """Compile validated indicator selections into a deterministic Mermaid timeline."""
+    available: list[dict[str, Any]] = [
+        item for item in (findings_doc.get("technical_indicators") or [])
+        if isinstance(item, dict) and text(item.get("id"))
+    ]
+    requested = [text(value) for value in diagram.get("indicator_ids", [])]
+    if not requested:
+        raise RenderError("timeline diagram selects no technical indicators")
+    if len(requested) > 12:
+        raise RenderError(f"timeline diagram has {len(requested)} points; limit is 12")
+    points: list[tuple[str, str, str, str]] = []
+    for indicator_id in requested:
+        matches = [item for item in available if text(item.get("id")) == indicator_id]
+        if not matches:
+            raise RenderError(
+                f"timeline indicator does not resolve to technical_indicators: {indicator_id!r}"
+            )
+        if len(matches) > 1:
+            raise RenderError(
+                f"timeline indicator resolves ambiguously in technical_indicators: {indicator_id!r}"
+            )
+        indicator = matches[0]
+        sort_key, period = observation_period(indicator)
+        event = chart_text(f"{text(indicator.get('value'))} ({text(indicator.get('type'))})")
+        points.append((sort_key, indicator_id, period, event))
+    # A timeline's documented canonical order is chronological: first_observed,
+    # then indicator id as the tiebreaker.
+    points.sort()
+    source = [
+        "timeline",
+        f"  accTitle: {chart_text(diagram.get('title'), 180)}",
+        f"  accDescr: {chart_text(diagram.get('caption'), 500)}",
+    ]
+    for _sort_key, _indicator_id, period, event in points:
+        source.append(f"  {chart_text(period, 96)} : {event}")
+    return {
+        "id": text(diagram.get("id")),
+        "title": text(diagram.get("title")),
+        "caption": text(diagram.get("caption")),
+        "finding_ids": [text(finding_id) for finding_id in diagram.get("finding_ids", [])],
+        "source": "\n".join(source),
+        "initial_zoom": "1.0",
+        "legend": [],
+        "connections": [],
+        "data_points": [[period, event] for _s, _i, period, event in points],
+    }
+
+
+def compile_bar_diagram(
+    diagram: dict[str, Any], findings_doc: dict[str, Any], checks: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Compile a validated metric selection into a deterministic Mermaid xychart bar chart."""
+    metric = text(diagram.get("metric"))
+    if metric not in {"verdict_tally", "confidence_distribution", "source_types"}:
+        raise RenderError(f"unsupported bar metric: {metric!r}")
+    scope = text(diagram.get("scope")) or "all"
+    if scope not in {"all", "finding_ids"}:
+        raise RenderError(f"unsupported bar scope: {scope!r}")
+    findings = [row for row in findings_doc.get("findings", []) if isinstance(row, dict)]
+    if scope == "finding_ids":
+        selected_ids = {text(fid) for fid in diagram.get("finding_ids", [])}
+        findings = [row for row in findings if text(row.get("id")) in selected_ids]
+    if not findings:
+        raise RenderError("bar series is empty: no findings in scope")
+
+    verdicts = [aggregate_verdict(row, checks) for row in findings]
+    if metric == "verdict_tally":
+        counts = {status: 0 for status in VERDICT_LABEL}
+        for verdict in verdicts:
+            counts[verdict["status"]] = counts.get(verdict["status"], 0) + 1
+        categories = [(VERDICT_LABEL[status], counts[status]) for status in VERDICT_LABEL]
+        axis_title = "Findings"
+    elif metric == "confidence_distribution":
+        confidence_labels = {"low": "Low", "medium": "Medium", "high": "High"}
+        counts = {level: 0 for level in confidence_labels}
+        for verdict in verdicts:
+            counts[verdict["confidence"]] = counts.get(verdict["confidence"], 0) + 1
+        categories = [(confidence_labels[level], counts[level]) for level in confidence_labels]
+        axis_title = "Findings"
+    else:
+        tally: dict[str, int] = {}
+        for row in findings:
+            sources = row.get("sources") if isinstance(row.get("sources"), list) else []
+            for source in sources:
+                if isinstance(source, dict) and text(source.get("type")):
+                    source_type = text(source.get("type"))
+                    tally[source_type] = tally.get(source_type, 0) + 1
+        if not tally:
+            raise RenderError("bar series is empty: no typed sources in scope")
+        # Source types have no documented canonical order: sort lexicographically.
+        categories = sorted(tally.items())
+        axis_title = "Sources"
+
+    peak = max(count for _label, count in categories)
+    if peak <= 0:
+        raise RenderError("bar series is empty: every category counts zero")
+    source = [
+        "xychart-beta",
+        f"  accTitle: {chart_text(diagram.get('title'), 180)}",
+        f"  accDescr: {chart_text(diagram.get('caption'), 500)}",
+        "  x-axis [" + ", ".join(f'"{chart_text(label, 96)}"' for label, _count in categories) + "]",
+        f'  y-axis "{axis_title}" 0 --> {peak}',
+        "  bar [" + ", ".join(str(count) for _label, count in categories) + "]",
+    ]
+    return {
+        "id": text(diagram.get("id")),
+        "title": text(diagram.get("title")),
+        "caption": text(diagram.get("caption")),
+        "finding_ids": [text(finding_id) for finding_id in diagram.get("finding_ids", [])],
+        "source": "\n".join(source),
+        "initial_zoom": "1.0",
+        "legend": [],
+        "connections": [],
+        "data_points": [[label, str(count)] for label, count in categories],
+    }
+
+
+def compile_diagrams(
+    draft: dict[str, Any], findings_doc: dict[str, Any], checks: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     """Compile validated connection selections into safe, deterministic Mermaid."""
     available: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
     for connection in findings_doc.get("connections", []):
@@ -459,6 +605,13 @@ def compile_diagrams(draft: dict[str, Any], findings_doc: dict[str, Any]) -> lis
     for diagram in draft.get("diagrams", []):
         if not isinstance(diagram, dict):
             continue
+        diagram_type = text(diagram.get("type"))
+        if diagram_type == "timeline":
+            compiled.append(compile_timeline_diagram(diagram, findings_doc))
+            continue
+        if diagram_type == "bar":
+            compiled.append(compile_bar_diagram(diagram, findings_doc, checks))
+            continue
         selected: list[tuple[str, str, str]] = []
         for selector in diagram.get("connections", []):
             if not isinstance(selector, dict):
@@ -468,7 +621,6 @@ def compile_diagrams(draft: dict[str, Any], findings_doc: dict[str, Any]) -> lis
                 raise RenderError(f"diagram selector does not resolve exactly once: {triple!r}")
             selected.append(triple)
 
-        diagram_type = text(diagram.get("type"))
         focal_entities = [text(entity) for entity in diagram.get("focal_entities", [])]
         ordered_connections = (
             ordered_loop_connections(selected, focal_entities[0])
@@ -546,11 +698,17 @@ def diagram_markdown(diagrams: list[dict[str, Any]]) -> list[str]:
         lines += ["", f"### {md_safe(diagram['title'])}", "", md_safe(diagram["caption"]), ""]
         if diagram["finding_ids"]:
             lines += ["Supporting findings: " + ", ".join(md_code(fid) for fid in diagram["finding_ids"]), ""]
-        lines += ["```mermaid", diagram["source"], "```", "", "Connections shown:"]
-        for source, target, relationship in diagram["connections"]:
-            lines.append(
-                f"- {md_safe(source)} → {md_safe(relationship)} → {md_safe(target)}"
-            )
+        lines += ["```mermaid", diagram["source"], "```"]
+        if diagram["connections"]:
+            lines += ["", "Connections shown:"]
+            for source, target, relationship in diagram["connections"]:
+                lines.append(
+                    f"- {md_safe(source)} → {md_safe(relationship)} → {md_safe(target)}"
+                )
+        elif diagram.get("data_points"):
+            lines += ["", "Data shown:"]
+            for label, detail in diagram["data_points"]:
+                lines.append(f"- {md_safe(label)} — {md_safe(detail)}")
     return lines
 
 
@@ -748,12 +906,20 @@ def diagram_html(
             f'<a href="#{h(finding_anchors[finding_id])}">{h(finding_id)}</a>'
             for finding_id in diagram["finding_ids"] if finding_id in finding_anchors
         )
-        relationships = "".join(
-            f"<li><strong>{h(mermaid_text(source))}</strong> <span aria-hidden=\"true\">→</span> "
-            f"{h(mermaid_text(relationship, 96))} <span aria-hidden=\"true\">→</span> "
-            f"<strong>{h(mermaid_text(target))}</strong></li>"
-            for source, target, relationship in diagram["connections"]
-        )
+        if diagram["connections"]:
+            detail_heading = "Connections shown"
+            details = "".join(
+                f"<li><strong>{h(mermaid_text(source))}</strong> <span aria-hidden=\"true\">→</span> "
+                f"{h(mermaid_text(relationship, 96))} <span aria-hidden=\"true\">→</span> "
+                f"<strong>{h(mermaid_text(target))}</strong></li>"
+                for source, target, relationship in diagram["connections"]
+            )
+        else:
+            detail_heading = "Data shown"
+            details = "".join(
+                f"<li><strong>{h(label)}</strong> — {h(detail)}</li>"
+                for label, detail in diagram.get("data_points", [])
+            )
         legend = "".join(
             f'<span class="diagram-legend-item"><span class="diagram-key diagram-key-{h(role)}" '
             f'aria-hidden="true"></span>{h(label)}</span>'
@@ -775,7 +941,7 @@ def diagram_html(
       <div class="canvas-legend" aria-label="Diagram legend">{legend}</div>
       <pre class="mermaid" aria-label="{h(diagram['title'])}">{h(diagram['source'])}</pre>
     </div>
-    <details class="diagram-connections"><summary>Connections shown</summary><ul>{relationships}</ul></details>
+    <details class="diagram-connections"><summary>{detail_heading}</summary><ul>{details}</ul></details>
   </figure>''')
     return '<section class="report-diagrams" aria-label="Connection diagrams">' + "\n".join(figures) + "\n</section>"
 
@@ -1180,7 +1346,7 @@ def render(case: Path) -> dict[str, Any]:
     if activated:
         inputs.append(expressions_path)
     hashes = input_hashes(inputs)
-    diagrams = compile_diagrams(draft, findings_doc)
+    diagrams = compile_diagrams(draft, findings_doc, checks)
     markdown, rendered = render_markdown(
         case, findings_doc, methodology, draft, checks, expressions_doc, diagrams
     )
