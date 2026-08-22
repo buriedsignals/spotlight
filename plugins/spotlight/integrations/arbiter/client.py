@@ -177,7 +177,7 @@ def _resolve_addresses(hostname: str, port: int = 443):
     return tuple(addresses)
 
 
-def _safe_hostname(hostname: str) -> bool:
+def _safe_hostname(hostname: str, *, resolve_dns: bool = True) -> bool:
     """Reject local, reserved, numeric, and unsafe DNS targets."""
     lowered = hostname.rstrip(".").lower()
     labels = lowered.split(".")
@@ -198,6 +198,8 @@ def _safe_hostname(hostname: str) -> bool:
         address = None
     if address is not None:
         return not _blocked_address(str(address))
+    if not resolve_dns:
+        return True
     try:
         _resolve_addresses(lowered)
     except (OSError, ValueError):
@@ -205,7 +207,7 @@ def _safe_hostname(hostname: str) -> bool:
     return True
 
 
-def validate_api_base(value: str) -> str:
+def validate_api_base(value: str, *, resolve_dns: bool = True) -> str:
     """Validate the exact HTTPS ``/api/v1`` deployment base used by the client."""
     if not isinstance(value, str) or not value:
         raise ValueError("ARBITER_API_BASE must be a non-empty HTTPS URL")
@@ -221,8 +223,8 @@ def validate_api_base(value: str) -> str:
         raise ValueError("ARBITER_API_BASE must not include query, fragment, or a non-default port")
     if parsed.path != "/api/v1":
         raise ValueError("ARBITER_API_BASE must end at /api/v1")
-    if not _safe_hostname(hostname):
-        raise ValueError("ARBITER_API_BASE host is not an allowed deployment host")
+    if not _safe_hostname(hostname, resolve_dns=resolve_dns):
+        raise ValueError("Arbiter API host is not an allowed deployment host")
     return urlunsplit(("https", hostname.lower(), "/api/v1", "", ""))
 
 
@@ -269,7 +271,7 @@ class ArbiterClient:
         opener: Callable[..., Any] | None = None,
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
-        self.api_base = validate_api_base(api_base)
+        self.api_base = validate_api_base(api_base, resolve_dns=not sensitive)
         parsed_base = urlsplit(self.api_base)
         self._hostname = parsed_base.hostname
         self._port = parsed_base.port or 443
@@ -415,5 +417,3 @@ def open_research_file(path: Path, flags: int, mode: int = 0o600) -> int:
         return os.open(path.name, flags | os.O_NOFOLLOW, mode, dir_fd=research_fd)
     finally:
         os.close(research_fd)
-
-

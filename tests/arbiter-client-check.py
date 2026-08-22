@@ -145,12 +145,17 @@ def check_sensitive_and_safe_paths(client) -> None:
         calls.append(True)
         return FakeResponse({})
 
-    with injected_dns_fixture(client):
+    with patch.object(
+        client.socket,
+        "getaddrinfo",
+        side_effect=AssertionError("sensitive construction must not resolve API host"),
+    ) as resolver:
         sensitive = client.ArbiterClient.from_env(
             {"ARBITER_API_KEY": "member-secret", "ARBITER_API_BASE": "https://staging.example/api/v1"},
             sensitive=True,
             opener=opener,
         )
+    assert not resolver.called, "sensitive construction must not call getaddrinfo"
     expect_error(
         lambda: sensitive.request_json("GET", "/topics", query={"limit": 1}),
         "sensitive mode must block before the opener",

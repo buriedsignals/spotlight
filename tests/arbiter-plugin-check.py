@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import socket
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -66,9 +67,14 @@ def main() -> int:
     manifest = json.loads((PLUGIN_INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
     preflight = load_preflight()
     override = "https://staging.arbiter.example/api/v1"
-    with patch.dict(os.environ, {"ARBITER_API_BASE": override}, clear=False):
-        with patch.object(preflight.urllib.request, "urlopen", return_value=FakeResponse()) as probe:
-            ok, error = preflight.smoke_test(manifest)
+    arbiter_client = importlib.import_module("arbiter.client")
+    fixture_dns = [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
+    ]
+    with patch.object(arbiter_client.socket, "getaddrinfo", return_value=fixture_dns):
+        with patch.dict(os.environ, {"ARBITER_API_BASE": override}, clear=False):
+            with patch.object(preflight.urllib.request, "urlopen", return_value=FakeResponse()) as probe:
+                ok, error = preflight.smoke_test(manifest)
     requested = probe.call_args.args[0].full_url if probe.call_args else None
     assert ok and error is None, (ok, error)
     assert requested == override + "/openapi.json", requested

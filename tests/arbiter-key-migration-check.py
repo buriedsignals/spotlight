@@ -8,6 +8,7 @@ host keyring, invokes Navigator, prints the value, or places it in argv/files.
 from __future__ import annotations
 
 import importlib.util
+import socket
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -37,13 +38,17 @@ def check_client_provider_wiring(credentials) -> None:
         events.append("read")
         return fixture_secret
 
-    client = client_module.ArbiterClient.from_env(
-        {"ARBITER_API_BASE": "https://staging.example/api/v1"},
-        credential_provider=lambda: credentials.resolve_spotlight_arbiter_key(read_owned),
-        opener=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("network must not run during provider wiring")
-        ),
-    )
+    fixture_dns = [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
+    ]
+    with patch.object(client_module.socket, "getaddrinfo", return_value=fixture_dns):
+        client = client_module.ArbiterClient.from_env(
+            {"ARBITER_API_BASE": "https://staging.example/api/v1"},
+            credential_provider=lambda: credentials.resolve_spotlight_arbiter_key(read_owned),
+            opener=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("network must not run during provider wiring")
+            ),
+        )
     assert events == ["read"], events
     assert client is not None
 
