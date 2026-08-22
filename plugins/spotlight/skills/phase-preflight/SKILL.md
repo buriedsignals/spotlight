@@ -253,4 +253,5 @@ Typical expectations:
 - Sovereign search + fetch backing ready (checked in step 2: Crawl4AI + SearXNG; `firecrawl` optional, only if `FIRECRAWL_API_KEY` is set)
 - Integration `dev-browser` green if the `dev-browser` CLI is available
 - Integration `osint-navigator` green if `OSINT_NAV_API_KEY` is set
+- Integration `arbiter` green if `ARBITER_API_KEY` is set (opt-in — curated social-media case studies, credit-metered to the member's account; unconfigured until set, and Spotlight works fully without it via the junkipedia/search fallbacks)
 - Other integrations (junkipedia, future integrations like serus/thinkpol) green only if user has access
