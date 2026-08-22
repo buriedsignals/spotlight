@@ -285,29 +285,8 @@
   </div>
 
   <div class="item" style="margin-top:14px;">
-    <div class="item__head"><span class="item__title">Vault <em>app.</em></span><span class="badge req">required</span></div>
-    <p class="item__lede">Spotlight archives verified findings into a Markdown vault — entities, methodology, tools — with wikilinks and YAML frontmatter. Pick the app you read it with.</p>
-    <div class="chip-row">
-      <label><input type="radio" name="vault_app" value="obsidian" checked> Obsidian</label>
-      <label><input type="radio" name="vault_app" value="tolaria" id="vault_app"> Tolaria</label>
-    </div>
-    <div id="obsidianNote">
-      <div class="callout warn"><strong>One manual step after install:</strong>
-        <ol>
-          <li>The installer launches Obsidian for you (installing it first if needed)</li>
-          <li>In Obsidian → Settings → General → Advanced → toggle <strong>Command Line Interface ON</strong></li>
-          <li>Keep Obsidian running whenever you ingest findings into the vault</li>
-        </ol>
-      </div>
-    </div>
-    <div id="tolariaNote" class="hidden">
-      <div class="callout"><strong>Tolaria must already be installed from a build you trust</strong> — Spotlight never downloads it. The vault is standard Markdown with YAML frontmatter, so it stays readable from Tolaria, Git, and your agent tools.</div>
-    </div>
-  </div>
-
-  <div class="item" style="margin-top:14px;">
     <div class="item__head"><span class="item__title">Two <em>folders.</em></span><span class="badge req">required</span></div>
-    <p class="item__lede">Where Spotlight itself lives, and where your vault lives. Keep them separate — active case files stay under the install folder in <code>cases/</code> until you explicitly ingest approved material into the vault.</p>
+    <p class="item__lede">Where Spotlight itself lives, and where your vault lives. <strong>OpenKnowledge is the knowledge runtime:</strong> verified findings are archived into the vault as Markdown — entities, methodology, tools — with wikilinks and YAML frontmatter. Keep the folders separate: active case files stay under the install folder in <code>cases/</code> until you explicitly ingest approved material into the vault.</p>
     <label class="field-label" for="install_path">Install path</label>
     <div class="path-row">
       <input class="fld" type="text" id="install_path" value="~/Documents/Spotlight" autocomplete="off" spellcheck="false">
@@ -477,14 +456,6 @@ function applyCloudRuntime() {
 document.querySelectorAll('input[name="cloud_runtime"]').forEach(el => el.addEventListener('change', applyCloudRuntime));
 document.querySelectorAll('input[name="opencode_provider"]').forEach(el => el.addEventListener('change', applyCloudRuntime));
 applyCloudRuntime();
-
-function applyVaultApp() {
-  const app = document.querySelector('input[name="vault_app"]:checked').value;
-  document.getElementById('obsidianNote').classList.toggle('hidden', app !== 'obsidian');
-  document.getElementById('tolariaNote').classList.toggle('hidden', app !== 'tolaria');
-}
-document.querySelectorAll('input[name="vault_app"]').forEach(el => el.addEventListener('change', applyVaultApp));
-applyVaultApp();
 
 function bindCheckbox(checkboxId, targetId) {
   const cb = document.getElementById(checkboxId);
@@ -661,7 +632,6 @@ function readForm() {
     firecrawlKey: v('firecrawl_key'),
     navigatorConnected: navigatorChoice === 'connect',
     navigatorChoice,
-    vaultApp: r('vault_app'),
     installPath: v('install_path'),
     vaultPath: v('vault_path'),
     intDevBrowser: c('int_devbrowser'),

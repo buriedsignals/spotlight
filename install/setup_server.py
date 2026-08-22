@@ -135,11 +135,6 @@ def detect_platform():
     return "linux"
 
 
-def tolaria_installed():
-    """macOS only — Spotlight never downloads Tolaria, so it must pre-exist."""
-    return os.path.isdir("/Applications/Tolaria.app")
-
-
 # Fixed server-side prompts keyed by field name. The client only names the
 # field; it can never inject dialog copy.
 PICKER_PROMPTS = {
@@ -237,7 +232,6 @@ def normalize(payload):
         "opencodeProvider": enum("opencodeProvider", tuple(CLOUD_KEY_VARS), "openrouter"),
         "localAgent": enum("localAgent", tuple(SERVER_FOR_AGENT), "flue"),
         "localModel": enum("localModel", tuple(MODEL_REPOS), "gemma12b"),
-        "vaultApp": enum("vaultApp", ("obsidian", "tolaria"), "obsidian"),
         "rlmMode": enum("rlmMode", ("lite", "local_gemma4_e4b"), "lite"),
         # No silent defaults here: an emptied path must fail validation,
         # not quietly install somewhere the user didn't choose.
@@ -298,12 +292,6 @@ def validate_choices(d):
             errors.append({"field": "vault_path", "message": "Vault path must be different from the install folder — the vault is durable knowledge, the install folder is replaceable code."})
         elif vault_real.startswith(install_real + os.sep):
             errors.append({"field": "vault_path", "message": "Vault path must not live inside the install folder — updates and re-installs would put your knowledge at risk."})
-    if d["vaultApp"] == "tolaria":
-        if detect_platform() == "mac":
-            if not tolaria_installed():
-                errors.append({"field": "vault_app", "message": "Tolaria is selected but /Applications/Tolaria.app was not found — install Tolaria from a build you trust first, or pick Obsidian."})
-        else:
-            warnings.append("Tolaria install could not be verified on this platform — make sure it is installed before your first investigation.")
     if d["intJunkipedia"] and not d["junkipediaKey"]:
         warnings.append("Junkipedia is enabled without an API key; the integration stays dormant until you add JUNKIPEDIA_API_KEY to .env.")
     if d["intUnpaywall"] and not d["unpaywallEmail"]:
@@ -408,7 +396,6 @@ def build_setup_config(d):
         # bake these literals in; the body's expand_path handles ~ at runtime.
         ("SPOTLIGHT_DIR_INPUT", d["installPath"]),
         ("SPOTLIGHT_VAULT_INPUT", d["vaultPath"]),
-        ("SPOTLIGHT_VAULT_APP", d["vaultApp"]),
         ("SPOTLIGHT_MODEL_REPO", der["modelRepo"]),
         ("SPOTLIGHT_INT_DEVBROWSER", "true" if d["intDevBrowser"] else "false"),
         ("SPOTLIGHT_INT_JUNKIPEDIA", "true" if d["intJunkipedia"] else "false"),
@@ -496,11 +483,11 @@ GETTING_STARTED_TEMPLATE = string.Template("""<!doctype html>
   <table>
     <tr><th>Mode</th><td>$mode_label</td></tr>
     <tr><th>Install folder</th><td><code>$install_path</code> — skills, agents, and active casework under <code>cases/</code></td></tr>
-    <tr><th>Vault</th><td><code>$vault_path</code> — your durable investigative memory ($vault_app_label-compatible Markdown)</td></tr>
+    <tr><th>Vault</th><td><code>$vault_path</code> — your durable investigative memory (standard Markdown with YAML frontmatter)</td></tr>
     <tr><th>Integrations</th><td>$integrations</td></tr>
   </table>
 
-$vault_app_section  <p class="num">$n_first — First case</p>
+  <p class="num">$n_first — First case</p>
   <h2>Open a terminal, say <em>the word.</em></h2>
   <div class="card"><p class="k">In a new terminal window</p><pre>spotlight</pre></div>
   <p>$launch_note</p>
@@ -516,26 +503,6 @@ spotlight update    # fast-forward to the latest reviewed release</pre></div>
 </body>
 </html>
 """)
-
-OBSIDIAN_SECTION = """  <p class="num">02 — Before anything else</p>
-  <h2>One switch in <em>Obsidian.</em></h2>
-  <div class="callout urgent">
-    <strong>Vault ingestion fails silently without this.</strong>
-    <ol>
-      <li>Open Obsidian → Settings → General → Advanced → <strong>Command Line Interface: ON</strong></li>
-      <li>Keep Obsidian <strong>running</strong> whenever you ingest findings into the vault</li>
-    </ol>
-  </div>
-
-"""
-
-TOLARIA_SECTION = """  <p class="num">02 — Before anything else</p>
-  <h2>Your vault in <em>Tolaria.</em></h2>
-  <div class="callout">
-    Spotlight writes standard Markdown with YAML frontmatter, so the vault stays readable from Tolaria, Git, and your agent tools. Open Tolaria and point it at your vault folder once so it indexes the scaffold.
-  </div>
-
-"""
 
 
 def esc(s):
@@ -596,15 +563,12 @@ def build_getting_started(d):
         for i, (label, text) in enumerate(prompts)
     )
 
-    vault_app_section = OBSIDIAN_SECTION if d["vaultApp"] == "obsidian" else TOLARIA_SECTION
-    base = 3  # the vault-app section always occupies 02
+    base = 2  # First case directly follows "Your install"
     return GETTING_STARTED_TEMPLATE.substitute(
         mode_label=esc(mode_label),
         install_path=esc(d["installPath"]),
         vault_path=esc(d["vaultPath"]),
-        vault_app_label="Obsidian" if d["vaultApp"] == "obsidian" else "Tolaria",
         integrations=esc(" · ".join(integrations)),
-        vault_app_section=vault_app_section,
         n_first=f"0{base}",
         launch_note=launch_note,
         prompt_cards=prompt_cards,

@@ -232,7 +232,6 @@ fi
 : "${SPOTLIGHT_CLOUD_KEY_VAR:=}"
 : "${SPOTLIGHT_CLOUD_KEY:=}"
 : "${SPOTLIGHT_MODEL_REPO:=}"
-: "${SPOTLIGHT_VAULT_APP:=obsidian}"
 : "${SPOTLIGHT_INT_DEVBROWSER:=true}"
 : "${SPOTLIGHT_INT_JUNKIPEDIA:=false}"
 : "${JUNKIPEDIA_API_KEY:=}"
@@ -842,51 +841,6 @@ if [ "$SPOTLIGHT_MODE" = "local" ]; then
   fi
 fi
 
-if [ "$SPOTLIGHT_VAULT_APP" = "tolaria" ]; then
-  step "Tolaria vault"
-  if [ "$OS" = "Darwin" ]; then
-    if [ -d "/Applications/Tolaria.app" ] || [ -d "$HOME/Applications/Tolaria.app" ]; then
-      printf "%s✓%s Tolaria.app installed\n" "$_c_green" "$_c_reset"
-    else
-      if [ "$DRY_RUN" = "1" ]; then
-        printf "DRY-RUN: Tolaria.app missing; installer would ask for a reviewed manual install before continuing.\n"
-      else
-        echo "Tolaria.app is not installed. Spotlight no longer downloads Tolaria from a moving latest-release URL." >&2
-        echo "Install a reviewed Tolaria build manually, then re-run setup; or choose Obsidian/local directory mode." >&2
-        exit 1
-      fi
-    fi
-    run open -a Tolaria 2>/dev/null || run open "$HOME/Applications/Tolaria.app" 2>/dev/null || true
-  else
-    echo "Tolaria selected. On Linux, install a reviewed Tolaria build manually; Spotlight will still write Markdown files to the vault path."
-  fi
-else
-  step "Obsidian vault"
-  if [ "$OS" = "Linux" ]; then
-    echo "Linux uses the selected directory as a Markdown vault; Obsidian is optional and is not installed through a macOS cask."
-  elif [ -d "/Applications/Obsidian.app" ] || [ -d "$HOME/Applications/Obsidian.app" ]; then
-    printf "%s✓%s Obsidian.app installed\n" "$_c_green" "$_c_reset"
-  else
-    ensure_brew
-    spin "Installing Obsidian via brew cask" brew install --cask obsidian
-  fi
-
-  if [ "$OS" = "Darwin" ] && ! command -v obsidian >/dev/null 2>&1; then
-    printf "%s!%s Opening Obsidian so you can enable the CLI\n" "$_c_cyan" "$_c_reset"
-    run open -a Obsidian 2>/dev/null || true
-    echo ""
-    echo "  ${_c_bold}Enable the Obsidian CLI (one-time):${_c_reset}"
-    echo "    Settings → General → Advanced → toggle ${_c_bold}Command Line Interface${_c_reset} ON"
-    echo ""
-    echo "  The first time you run ${_c_bold}spotlight${_c_reset}, the preflight check will detect"
-    echo "  whether the CLI is enabled and prompt you again if needed. You can continue"
-    echo "  the rest of this installer now while Obsidian is open."
-    echo ""
-  else
-    [ "$OS" = "Darwin" ] && printf "%s✓%s obsidian CLI already on PATH\n" "$_c_green" "$_c_reset"
-  fi
-fi
-
 step "Spotlight repo"
 if [ "$PUBLIC_BUNDLE_PHASE" = "1" ]; then
   [ -d "$SPOTLIGHT_DIR/.git" ] || { echo "Spotlight installer: the signed public bundle did not create the product checkout" >&2; exit 1; }
@@ -1391,8 +1345,6 @@ except Exception:
 {
   "search_library": "searxng",
   "vault_path": "$SPOTLIGHT_VAULT_PATH",
-  "vault_type": "$([ "$SPOTLIGHT_VAULT_APP" = "tolaria" ] && echo tolaria || echo obsidian)",
-  "vault_app": "$SPOTLIGHT_VAULT_APP",
   "knowledge_destination": {
     "type": "openknowledge",
     "workspace_path": "$SPOTLIGHT_VAULT_PATH",
@@ -1530,9 +1482,6 @@ ROUTES_EOF
 fi
 project_spotlight_skills_into_workspace
 [ "$DRY_RUN" = "1" ] || printf "%s✓%s OpenKnowledge project and MCP registration configured\n" "$_c_green" "$_c_reset"
-if [ "$SPOTLIGHT_VAULT_APP" = "obsidian" ] && [ "$OS" = "Darwin" ]; then
-  run open -a Obsidian "$SPOTLIGHT_VAULT_PATH" 2>/dev/null || true
-fi
 
 step "Spotlight command wrappers"
 run mkdir -p "$HOME/.local/bin" "$SPOTLIGHT_DIR/.spotlight/logs"

@@ -49,6 +49,35 @@ excludes install-spotlight.sh 'OSINT_NAV_API_KEY:?'
 excludes install-spotlight.sh 'base64 -d'
 excludes install-spotlight.sh '@tobilu/qmd'
 excludes install-spotlight.sh 'qmd collection'
+# F1 vault-app retirement: OpenKnowledge is the sole knowledge runtime, so
+# no Obsidian/Tolaria surface may remain in the install artifacts.
+excludes install-spotlight.sh 'SPOTLIGHT_VAULT_APP'
+excludes install-spotlight.sh '"vault_type"'
+excludes install-spotlight.sh '"vault_app"'
+includes install-spotlight.sh '"knowledge_destination": {'
+includes install-spotlight.sh '"type": "openknowledge"'
+for artifact in install-spotlight.sh install/setup_server.py install/configure.html; do
+  if grep -qiF obsidian "$artifact"; then note "$artifact stale fragment present: obsidian"; fi
+  if grep -qiF tolaria "$artifact"; then note "$artifact stale fragment present: tolaria"; fi
+done
+
+# A headless dry-run must succeed and run no vault-app steps.
+dryrun_dir="$(mktemp -d)"
+dryrun_log="$(mktemp)"
+# The body cds into the install dir even in dry-run mode, so both target
+# directories must pre-exist; dry-run itself never creates or fills them.
+mkdir -p "$dryrun_dir/install" "$dryrun_dir/vault"
+if SPOTLIGHT_DIR_INPUT="$dryrun_dir/install" SPOTLIGHT_VAULT_INPUT="$dryrun_dir/vault" \
+    bash install-spotlight.sh --headless --dry-run >"$dryrun_log" 2>&1; then
+  :
+else
+  note "--headless --dry-run exited non-zero"
+fi
+if grep -iqE 'obsidian|tolaria' "$dryrun_log"; then
+  note "dry-run still runs vault-app steps:"
+  grep -iE 'obsidian|tolaria' "$dryrun_log" | while IFS= read -r dryrun_line; do printf 'FAIL      %s\n' "$dryrun_line"; done
+fi
+rm -rf "$dryrun_dir" "$dryrun_log"
 
 includes install/setup_server.py 'NavigatorInstallerBridge'
 includes install/setup_server.py '"codex": "codex-cli"'

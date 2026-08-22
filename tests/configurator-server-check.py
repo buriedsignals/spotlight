@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Contract tests for the local configurator (install/setup_server.py).
-
 Covers: page serving + token injection, the GET token gate, CSRF token
 rejection on both POST endpoints, structural validation (paths, cloud key,
-Tolaria, vault/install nesting), key-validation routing with a stubbed
-prober, artifact writing (content, modes, atomicity, secret hygiene), the
-getting-started guide, and the installer env naming contract. Live key
-validation is skipped (--skip-key-validation) — its routing is unit-tested
-directly against validate_keys.
+vault/install nesting), the retired Obsidian/Tolaria vault-app contract
+(stale clients are ignored end to end), key-validation routing with a
+stubbed prober, artifact writing (content, modes, atomicity, secret
+hygiene), the getting-started guide, and the installer env naming
+contract. Live key validation is skipped (--skip-key-validation) — its
+routing is unit-tested directly against validate_keys.
 """
 
 import importlib.util
@@ -35,6 +35,8 @@ BASE = {
     "mode": "cloud", "cloudRuntime": "claude", "opencodeProvider": "openrouter",
     "cloudKey": "", "localAgent": "flue", "localModel": "gemma12b",
     "firecrawlKey": "fc-secret-test", "navigatorConnected": True,
+    # Retired F1 field: a stale client may still post it; the server must
+    # drop it instead of honoring it (test_vault_app_submission_is_ignored).
     "vaultApp": "obsidian",
     "installPath": "~/Documents/Spotlight", "vaultPath": "~/Intelligence",
     "intDevBrowser": True,
@@ -196,27 +198,16 @@ class UnitChecks(unittest.TestCase):
         self.assertEqual(d["installPath"], "~/Documents/Spotlight")
         self.assertEqual(d["vaultPath"], "~/Intelligence")
 
-    def test_tolaria_presence(self):
-        orig_platform, orig_tolaria = srv.detect_platform, srv.tolaria_installed
-        try:
-            srv.detect_platform = lambda: "mac"
-            srv.tolaria_installed = lambda: False
-            errors = errs({**BASE, "vaultApp": "tolaria"})
-            self.assertTrue(any(e["field"] == "vault_app" for e in errors))
-            # obsidian never checks for Tolaria
-            srv.tolaria_installed = lambda: (_ for _ in ()).throw(AssertionError("checked"))
-            self.assertEqual(errs(BASE), [])
-            # tolaria present on mac passes
-            srv.tolaria_installed = lambda: True
-            self.assertEqual(errs({**BASE, "vaultApp": "tolaria"}), [])
-            # on linux: warn only, never error
-            srv.detect_platform = lambda: "linux"
-            srv.tolaria_installed = lambda: False
-            payload = {**BASE, "vaultApp": "tolaria"}
-            self.assertEqual(errs(payload), [])
-            self.assertTrue(any("Tolaria" in w for w in warns(payload)))
-        finally:
-            srv.detect_platform, srv.tolaria_installed = orig_platform, orig_tolaria
+    def test_vault_app_submission_is_ignored(self):
+        # F1 retirement: OpenKnowledge is the sole knowledge runtime, so the
+        # vault-app question is gone. A stale client posting vaultApp has it
+        # dropped — never defaulted in, never validated, never warned about.
+        payload = {**BASE, "vaultApp": "tolaria"}
+        self.assertNotIn("vaultApp", srv.normalize(payload))
+        self.assertNotIn("vaultApp", srv.derived(srv.normalize(payload)))
+        self.assertEqual(errs(payload), [])
+        self.assertFalse(any(e["field"] == "vault_app" for e in errs({**BASE, "vaultApp": "obsidian"})))
+        self.assertFalse(any("Tolaria" in w or "Obsidian" in w for w in warns(payload)))
 
     def test_junkipedia_without_key_warns(self):
         payload = {**BASE, "junkipediaKey": ""}
@@ -229,7 +220,8 @@ class UnitChecks(unittest.TestCase):
         self.assertEqual(d["mode"], "cloud")
         self.assertEqual(d["cloudRuntime"], "claude")
         self.assertEqual(d["localModel"], "gemma12b")
-        self.assertEqual(d["vaultApp"], "obsidian")
+        # The vault-app choice is retired; normalize never reintroduces it.
+        self.assertNotIn("vaultApp", d)
         # …but emptied paths must NOT be silently defaulted
         self.assertEqual(d["installPath"], "")
         self.assertEqual(d["vaultPath"], "")
@@ -299,7 +291,6 @@ class UnitChecks(unittest.TestCase):
                        "SPOTLIGHT_AGENT=''", "SPOTLIGHT_MODEL_REPO=''",
                        "SPOTLIGHT_DIR_INPUT='~/Documents/Spotlight'",
                        "SPOTLIGHT_VAULT_INPUT='~/Intelligence'",
-                       "SPOTLIGHT_VAULT_APP=obsidian",
                        "SPOTLIGHT_INT_DEVBROWSER=true", "SPOTLIGHT_INT_JUNKIPEDIA=true",
                        "SPOTLIGHT_INT_UNPAYWALL=true", "UNPAYWALL_EMAIL=reporter@example.com",
                        "SPOTLIGHT_INT_RLM=true", "SPOTLIGHT_RLM_MODE=local_gemma4_e4b",
@@ -308,6 +299,7 @@ class UnitChecks(unittest.TestCase):
                        "SPOTLIGHT_RLM_GGUF=''"]:
             self.assertIn(needle, cfg)
         self.assertNotIn("OSINT_NAVIGATOR", cfg)
+        self.assertNotIn("SPOTLIGHT_VAULT_APP", cfg)
         for secret in SECRETS:
             self.assertNotIn(secret, cfg)
 
@@ -364,26 +356,27 @@ class UnitChecks(unittest.TestCase):
         guide = srv.build_getting_started(srv.normalize(BASE))
         for needle in ["~/Documents/Spotlight", "~/Intelligence", "spotlight doctor",
                        "spotlight update", "Claude Code", "dev-browser", "Junkipedia",
-                       "Unpaywall", "Command Line Interface",
+                       "Unpaywall",
                        "SearXNG + Crawl4AI (sovereign web research)",
                        "Firecrawl (optional hosted fallback)",
                        "Navigator (OSINT tool discovery)"]:
             self.assertIn(needle, guide)
+        # F1 retirement: the guide no longer coaches an Obsidian CLI toggle
+        # and never names either retired vault app.
+        for stale in ["Obsidian", "Tolaria", "Command Line Interface"]:
+            self.assertNotIn(stale, guide)
         for secret in SECRETS:
             self.assertNotIn(secret, guide)
         pi = srv.build_getting_started(srv.normalize(PI))
         self.assertIn("Pi", pi)
         self.assertIn("/login", pi)
         self.assertNotIn("Flue", pi)
-        local = srv.build_getting_started(srv.normalize({**LOCAL, "vaultApp": "obsidian"}))
+        local = srv.build_getting_started(srv.normalize(LOCAL))
         self.assertIn("Gemma 4 12B", local)
         self.assertIn("llama.cpp", local)
         locked = srv.build_getting_started(srv.normalize({**BASE, "firecrawlKey": "", "navigatorConnected": False}))
         self.assertIn("Navigator skill (locked; no credential or CLI)", locked)
         self.assertNotIn("Firecrawl (optional hosted fallback)", locked)
-        tolaria = srv.build_getting_started(srv.normalize({**BASE, "vaultApp": "tolaria"}))
-        self.assertIn("Tolaria", tolaria)
-        self.assertNotIn("Command Line Interface: ON", tolaria)
 
     def test_artifacts(self):
         tmp = tempfile.mkdtemp()
@@ -499,6 +492,12 @@ print(json.dumps({"event": "result", "data": data}))
         for needle in ["firecrawl_key", "navigatorConnect", "navigatorSkip", "install_path", "vault_path",
                        "int_devbrowser", "rlm_mode"]:
             self.assertIn(needle, self.page)
+        # F1 retirement: the served page carries no vault-app choice and
+        # names OpenKnowledge as the sole knowledge runtime.
+        for stale in ["vault_app", "applyVaultApp", "obsidianNote", "tolariaNote",
+                      "Obsidian", "Tolaria"]:
+            self.assertNotIn(stale, self.page)
+        self.assertIn("OpenKnowledge", self.page)
 
         # 2. GET without (or with a bad) token is rejected
         for url in (f"http://127.0.0.1:{self.PORT}/",
