@@ -33,6 +33,23 @@ from typing import Any
 # a stdlib module for every later import in this process.
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from _runner import write_json_atomic  # noqa: E402
+from arbiter.client import safe_research_path  # noqa: E402
+
+
+def contained_path(args: argparse.Namespace, value: str, label: str) -> Path:
+    """Keep optional case-bound file inputs and outputs under research."""
+    path = Path(value)
+    case_dir = getattr(args, "case_dir", None)
+    if not case_dir:
+        return path
+    case_path = Path(case_dir)
+    safe_research_path(case_path, "__case-boundary-check__.json")
+    research = (case_path / "research").resolve(strict=True)
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise ValueError(f"{label} must be a regular file under case research")
+    if path.resolve(strict=False).parent != research:
+        raise ValueError(f"{label} must stay under case research")
+    return path
 
 
 # Creation accepts nine platforms. The posts filter accepts a tenth
@@ -123,10 +140,9 @@ def parse_index_list(value: str, phrase_count: int, label: str) -> list[int]:
 
 def build_create_body(args: argparse.Namespace) -> dict[str, Any]:
     """Build a validated POST /case-studies request body from file inputs."""
-    query = read_text(Path(args.query_file), "query")
+    query = read_text(contained_path(args, args.query_file, "query"), "query")
     if not query or len(query) > MAX_QUERY_LENGTH:
         raise ValueError(f"query must contain 1..{MAX_QUERY_LENGTH} characters")
-
     start = parse_datetime(args.from_date, "from")
     end = parse_datetime(args.to_date, "to")
     if start >= end:
@@ -140,7 +156,7 @@ def build_create_body(args: argparse.Namespace) -> dict[str, Any]:
         "date_range": {"from": args.from_date, "to": args.to_date},
     }
     if args.title_file:
-        title = read_text(Path(args.title_file), "title")
+        title = read_text(contained_path(args, args.title_file, "title"), "title")
         if title:
             if len(title) > MAX_TITLE_LENGTH:
                 raise ValueError(f"title must contain at most {MAX_TITLE_LENGTH} characters")
@@ -203,7 +219,7 @@ def validate_finalize_values(
 
 def build_finalize_body(args: argparse.Namespace) -> dict[str, Any]:
     """Build a POST /case-studies/{id}/finalize body from reviewed plan phrases."""
-    plan = plan_payload(load_json_object(Path(args.plan_file), "search-plan"))
+    plan = plan_payload(load_json_object(contained_path(args, args.plan_file, "search-plan"), "search-plan"))
     source_phrases = [phrase.strip() for phrase in plan["search_phrases"]]
     if getattr(args, "remove", None):
         # Removal is the shape the review loop speaks: the reviewer names the
@@ -216,7 +232,7 @@ def build_finalize_body(args: argparse.Namespace) -> dict[str, Any]:
     else:
         indexes = parse_index_list(args.keep, len(source_phrases), "keep")
     phrases = [source_phrases[index - 1] for index in indexes]
-    phrases.extend(added_phrases(Path(args.phrases_file) if args.phrases_file else None))
+    phrases.extend(added_phrases(contained_path(args, args.phrases_file, "phrases") if args.phrases_file else None))
 
     deduplicated = list(dict.fromkeys(phrases))
     entities = plan.get("entities", [])
@@ -240,7 +256,7 @@ def build_plan_options(args: argparse.Namespace) -> dict[str, Any]:
     parsing labels. `--mode remove` enumerates the plan's own phrases;
     `--mode add` enumerates locally generated suggestions.
     """
-    plan = plan_payload(load_json_object(Path(args.plan_file), "search-plan"))
+    plan = plan_payload(load_json_object(contained_path(args, args.plan_file, "search-plan"), "search-plan"))
     phrases = [phrase.strip() for phrase in plan["search_phrases"]]
     if args.mode == "remove":
         if args.suggestions_file:
@@ -272,7 +288,7 @@ def build_plan_options(args: argparse.Namespace) -> dict[str, Any]:
             raise ValueError("add mode does not accept --removed")
         if not args.suggestions_file:
             raise ValueError("add mode requires --suggestions-file")
-        candidates = list(dict.fromkeys(added_phrases(Path(args.suggestions_file))))
+        candidates = list(dict.fromkeys(added_phrases(contained_path(args, args.suggestions_file, "suggestions"))))
         source_phrase_set = set(phrases)
         suggestions = [phrase for phrase in candidates if phrase not in source_phrase_set]
         if not suggestions:
@@ -510,6 +526,7 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--to", dest="to_date", required=True)
     create.add_argument("--title-file")
     create.add_argument("--out", required=True)
+    create.add_argument("--case-dir", help="optional case directory containing research files")
 
     finalize = subcommands.add_parser("build-finalize", help="build a finalize request body")
     finalize.add_argument("--plan-file", required=True)
@@ -518,10 +535,12 @@ def build_parser() -> argparse.ArgumentParser:
     keep_group.add_argument("--remove", help="phrase numbers to drop; keeps the rest")
     finalize.add_argument("--phrases-file")
     finalize.add_argument("--out", required=True)
+    finalize.add_argument("--case-dir", help="optional case directory containing research files")
 
     summary = subcommands.add_parser("plan-summary", help="render a saved search plan")
     summary.add_argument("--plan-file", required=True)
     summary.add_argument("--removed", help="phrase numbers already marked for removal")
+    summary.add_argument("--case-dir", help="optional case directory containing research files")
 
     options = subcommands.add_parser("plan-options", help="build phrase-review options")
     options.add_argument("--mode", choices=("remove", "add"), required=True)
@@ -529,9 +548,11 @@ def build_parser() -> argparse.ArgumentParser:
     options.add_argument("--removed", help="phrase numbers already marked for removal")
     options.add_argument("--suggestions-file", help="one Spotlight suggestion per line")
     options.add_argument("--out", required=True)
+    options.add_argument("--case-dir", help="optional case directory containing research files")
 
     progress = subcommands.add_parser("progress-summary", help="render saved progress")
     progress.add_argument("--progress-file", required=True)
+    progress.add_argument("--case-dir", help="optional case directory containing research files")
     progress.add_argument("--now", help="ISO-8601 clock override for activity ages")
     progress.add_argument(
         "--phase",
@@ -547,15 +568,20 @@ def main() -> int:
     args = build_parser().parse_args()
     try:
         if args.command == "build-create":
-            write_json_atomic(Path(args.out), build_create_body(args))
+            write_json_atomic(contained_path(args, args.out, "output"), build_create_body(args))
             print(f"wrote {args.out}")
         elif args.command == "build-finalize":
-            write_json_atomic(Path(args.out), build_finalize_body(args))
+            write_json_atomic(contained_path(args, args.out, "output"), build_finalize_body(args))
             print(f"wrote {args.out}")
         elif args.command == "plan-summary":
-            print(render_plan_summary(Path(args.plan_file), getattr(args, "removed", None)))
+            print(
+                render_plan_summary(
+                    contained_path(args, args.plan_file, "search-plan"),
+                    getattr(args, "removed", None),
+                )
+            )
         elif args.command == "plan-options":
-            write_json_atomic(Path(args.out), build_plan_options(args))
+            write_json_atomic(contained_path(args, args.out, "output"), build_plan_options(args))
             print(f"wrote {args.out}")
         elif args.command == "progress-summary":
             override = parse_optional_timestamp(getattr(args, "now", None))
@@ -563,7 +589,9 @@ def main() -> int:
                 raise ValueError("--now must be an ISO-8601 timestamp")
             print(
                 render_progress_summary(
-                    Path(args.progress_file), override, phase=args.phase
+                    contained_path(args, args.progress_file, "progress"),
+                    override,
+                    phase=args.phase,
                 )
             )
         return 0

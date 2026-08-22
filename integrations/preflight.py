@@ -34,13 +34,14 @@ from _preflight_base import run_preflight  # noqa: E402
 INTEGRATIONS_DIR = Path(__file__).parent
 
 
-def smoke_test(manifest: dict) -> tuple[bool, str | None]:
-    """Per-integration probe. Each integration `type` gets a different check:
-      - api:     HEAD against smoke URL, endpoint env, homepage, or docs
-      - library: import check
-      - cli:     binary on PATH
-      - mcp:     not implemented; assume ok
+def smoke_test(manifest: dict, *, sensitive: bool = False) -> tuple[bool, str | None]:
+    """Probe one integration without egress when sensitive mode is active.
+
+    API probes are network requests, so sensitive mode blocks them before
+    configured URLs, imports, or openers are touched.
     """
+    if sensitive and manifest.get("type") == "api":
+        return False, "network smoke tests are unavailable in sensitive mode"
     kind = manifest.get("type", "api")
 
     if kind == "api":

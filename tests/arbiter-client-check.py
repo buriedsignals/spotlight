@@ -63,6 +63,10 @@ def check_base_validation(client) -> None:
         "https://arbiter.simppl.org:8443/api/v1",
         "https://arbiter.simppl.org/not-api-v1",
         "https://arbiter.simppl.org/api/v1/extra",
+        "https://127.1/api/v1",
+        "https://0177.0.0.1/api/v1",
+        "https://127.0.0.1.nip.io/api/v1",
+        "https://metadata.google.internal/api/v1",
     ):
         expect_error(lambda value=value: client.validate_api_base(value), f"unsafe base accepted: {value}")
     assert client.validate_api_base("https://arbiter.simppl.org/api/v1") == (
@@ -70,6 +74,9 @@ def check_base_validation(client) -> None:
     )
     assert client.validate_api_base("https://staging.example/api/v1") == (
         "https://staging.example/api/v1"
+    )
+    assert client.validate_api_base("https://staging.arbiter.example/api/v1") == (
+        "https://staging.arbiter.example/api/v1"
     )
 
 
@@ -97,6 +104,17 @@ def check_request_shape_and_secret_boundary(client) -> None:
     assert request.data is None, "GET /topics must not carry a JSON body"
     assert request.get_header("Authorization") == "Bearer member-secret"
     assert timeout > 0
+    for hostile_path in (
+        "/../../admin",
+        "/%2e%2e/%2e%2e/admin",
+        "/topics/%2F..%2Fadmin",
+    ):
+        expect_error(
+            lambda hostile_path=hostile_path: arbiter.request_json("GET", hostile_path),
+            f"API traversal path accepted: {hostile_path}",
+        )
+    assert len(seen) == 1, "rejected request paths must not reach the opener"
+
 
 
 def check_sensitive_and_safe_paths(client) -> None:
@@ -132,6 +150,15 @@ def check_sensitive_and_safe_paths(client) -> None:
             lambda: client.safe_research_path(case_dir, "linked/escaped.json"),
             "symlink-parent escape accepted",
         )
+        external_case = Path(raw) / "external-case"
+        (external_case / "research").mkdir(parents=True)
+        linked_case = Path(raw) / "linked-case"
+        linked_case.symlink_to(external_case, target_is_directory=True)
+        expect_error(
+            lambda: client.safe_research_path(linked_case, "inside.json"),
+            "symlinked case root must not establish the research boundary",
+        )
+
 
 
 def main() -> int:

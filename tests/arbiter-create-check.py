@@ -499,6 +499,52 @@ def check_injection(tmp: Path) -> None:
        f"status={phrase} | posts=0 | modules=0/0 ready | no activity yet\n")
     assert not sentinel.exists(), "plan, phrase, or summary text was shell-evaluated"
 
+def check_contained_paths(tmp: Path) -> None:
+    """Require create inputs and outputs to stay under case research."""
+    case = tmp / "contained-case"
+    research = case / "research"
+    research.mkdir(parents=True)
+    query = research / "query.txt"
+    query.write_text("contained query", encoding="utf-8")
+    output = research / "create.json"
+    contained = create_flags(query, output, case_dir=str(case))
+    ok(cmd("build-create", contained), f"wrote {output}\n")
+    assert output.is_file()
+
+    outside_query = tmp / "outside-query.txt"
+    outside_query.write_text("outside", encoding="utf-8")
+    rejected(
+        cmd("build-create", create_flags(outside_query, research / "outside.json", case_dir=str(case))),
+        "case research",
+    )
+    assert not (research / "outside.json").exists()
+
+    outside_output = tmp / "outside-output.json"
+    rejected(
+        cmd("build-create", create_flags(query, outside_output, case_dir=str(case))),
+        "case research",
+    )
+    assert not outside_output.exists()
+
+    linked_query = tmp / "linked-query.txt"
+    linked_query.write_text("external", encoding="utf-8")
+    (research / "linked-query.txt").symlink_to(linked_query)
+    rejected(
+        cmd("build-create", create_flags(research / "linked-query.txt", research / "linked.json", case_dir=str(case))),
+        "regular file",
+    )
+    assert not (research / "linked.json").exists()
+
+    linked_output = tmp / "linked-output.json"
+    (research / "linked-output.json").symlink_to(linked_output)
+    rejected(
+        cmd("build-create", create_flags(query, research / "linked-output.json", case_dir=str(case))),
+        "regular file",
+    )
+    assert not linked_output.exists()
+
+
+
 
 def main() -> int:
     """Run the complete offline create-helper regression suite."""
@@ -510,6 +556,7 @@ def main() -> int:
         check_plan_options(tmp)
         check_progress(tmp)
         check_injection(tmp)
+        check_contained_paths(tmp)
     print("arbiter create: OK - bodies, validation, review options, and injection verified")
     return 0
 

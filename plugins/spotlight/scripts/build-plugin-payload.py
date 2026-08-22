@@ -112,6 +112,11 @@ def copy_integrations() -> None:
             integration_dir / "manifest.json",
             *sorted(integration_dir.glob("run_*.py")),
         ]
+        if integration_dir.name == "arbiter":
+            files.extend(
+                integration_dir / filename
+                for filename in ("client.py", "workflow.py", "credentials.py")
+            )
         existing = [path for path in files if path.is_file()]
         if not existing:
             continue
