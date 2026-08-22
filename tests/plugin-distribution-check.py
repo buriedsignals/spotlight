@@ -100,6 +100,7 @@ def validate_payload_sync() -> None:
     # ships the whole `scraping`/`search` package so `python -m integrations.*`
     # runs (Crawl4AI/SearXNG). __pycache__ is excluded by the build.
     seam_packages = {"scraping", "search"}
+    arbiter_runtime_modules = {"client.py", "credentials.py", "workflow.py"}
     for copied in sorted(path for path in (PLUGIN / "integrations").rglob("*") if path.is_file()):
         allowed_root = copied.parent == PLUGIN / "integrations" and copied.name in {
             "README.md",
@@ -115,7 +116,11 @@ def validate_payload_sync() -> None:
             and copied.parent.name in seam_packages
             and copied.suffix == ".py"
         )
-        if not (allowed_root or allowed_integration or allowed_seam):
+        allowed_arbiter_runtime = (
+            copied.parent == PLUGIN / "integrations" / "arbiter"
+            and copied.name in arbiter_runtime_modules
+        )
+        if not (allowed_root or allowed_integration or allowed_seam or allowed_arbiter_runtime):
             fail(f"plugin integration payload includes non-contract file: {copied.relative_to(ROOT)}")
         compare_file(ROOT / copied.relative_to(PLUGIN), copied)
 
