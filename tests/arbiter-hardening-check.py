@@ -171,6 +171,8 @@ def check_workflow_write_survives_research_swap() -> None:
                 workflow.browse(RawClient(), case_dir, timestamp="2026-08-22T10-00-00Z")
             except (OSError, ValueError, PermissionError):
                 pass
+        assert calls >= 2, "workflow race did not exercise research swap hook"
+
         assert not any(outside.iterdir()), "research swap redirected workflow write outside case"
 
 
@@ -203,11 +205,14 @@ def check_run_create_read_survives_research_swap() -> None:
             title_file=None,
         )
         with patch.object(run_create, "contained_path", side_effect=checked_then_swapped):
+            body = None
             try:
                 body = run_create.build_create_body(args)
             except (OSError, ValueError, PermissionError):
-                return
-        assert body["search_query"] != "outside-secret", "research swap redirected input read outside case"
+                pass
+        assert swapped, "run_create race did not exercise research swap hook"
+        if body is not None:
+            assert body["search_query"] != "outside-secret", "research swap redirected input read outside case"
 
 def check_atomic_replacement_survives_parent_symlink_swap() -> None:
     """Atomic output must not report success after its parent is replaced."""
