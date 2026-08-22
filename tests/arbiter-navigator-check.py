@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import socket
 import os
 import re
 import sys
@@ -198,9 +199,14 @@ def check_preflight(manifest: dict, errors: list[str]) -> None:
 
     override = {**manifest, "smoke_url": None, "smoke_url_env": "ARBITER_API_BASE"}
     override_base = "https://staging.arbiter.example/api/v1"
-    with patch.dict(os.environ, {"ARBITER_API_BASE": override_base}, clear=False):
-        with patch.object(pf.urllib.request, "urlopen", return_value=FakeResponse(200)) as probe:
-            ok, err = pf.smoke_test(override)
+    arbiter_client = importlib.import_module("arbiter.client")
+    fixture_dns = [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
+    ]
+    with patch.object(arbiter_client.socket, "getaddrinfo", return_value=fixture_dns):
+        with patch.dict(os.environ, {"ARBITER_API_BASE": override_base}, clear=False):
+            with patch.object(pf.urllib.request, "urlopen", return_value=FakeResponse(200)) as probe:
+                ok, err = pf.smoke_test(override)
     override_url = probe.call_args.args[0].full_url if probe.call_args else None
     if not ok or err is not None or override_url != override_base + "/openapi.json":
         errors.append(

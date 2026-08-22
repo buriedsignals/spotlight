@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import socket
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,6 +62,14 @@ class RecordingClient:
         if path.endswith("/finalize"):
             return {"case_study_id": "a" * 32, "status": "processing"}
         raise AssertionError(f"unexpected workflow request: {method} {path}")
+
+
+def public_staging_resolver(hostname, port, *_args, **_kwargs):
+    """Resolve the fake staging host to a public fixture address."""
+    assert hostname == "staging.example"
+    return [
+        (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("8.8.8.8", port))
+    ]
 
 
 def check_production_wiring() -> None:
@@ -205,65 +215,78 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="arbiter-workflow-") as raw:
         case_dir = Path(raw) / "case"
         (case_dir / "research").mkdir(parents=True)
-        client = client_module.ArbiterClient.from_env(
-            {
-                "ARBITER_API_KEY": "fixture-secret",
-                "ARBITER_API_BASE": "https://staging.example/api/v1",
-            },
-            opener=opener,
-        )
-        browse_file = workflow_module.browse(client, case_dir, timestamp="2026-08-22T10-00-00Z")
-        read_file = workflow_module.read(client, case_dir, "a" * 32, timestamp="2026-08-22T10-00-00Z")
-        report_file = workflow_module.report(client, case_dir, "a" * 32, timestamp="2026-08-22T10-00-00Z")
-        progress_file = workflow_module.progress(client, case_dir, "a" * 32, timestamp="2026-08-22T10-00-00Z")
-        workflow_module.reviewed_create(
-            client,
-            case_dir,
-            {
-                "search_query": "query",
-                "platforms": ["reddit"],
-                "date_range": {"from": "2026-08-01", "to": "2026-08-02"},
-            },
-            search_phrases=["one"],
-            final_entities=["Entity"],
-            confirmed=True,
-            timestamp="2026-08-22T10-00-00Z",
-        )
+        with patch.object(
+            client_module.socket,
+            "getaddrinfo",
+            side_effect=public_staging_resolver,
+        ):
+            client = client_module.ArbiterClient.from_env(
+                {
+                    "ARBITER_API_KEY": "fixture-secret",
+                    "ARBITER_API_BASE": "https://staging.example/api/v1",
+                },
+                opener=opener,
+            )
+            browse_file = workflow_module.browse(client, case_dir, timestamp="2026-08-22T10-00-00Z")
+            read_file = workflow_module.read(client, case_dir, "a" * 32, timestamp="2026-08-22T10-00-00Z")
+            report_file = workflow_module.report(client, case_dir, "a" * 32, timestamp="2026-08-22T10-00-00Z")
+            progress_file = workflow_module.progress(client, case_dir, "a" * 32, timestamp="2026-08-22T10-00-00Z")
+            workflow_module.reviewed_create(
+                client,
+                case_dir,
+                {
+                    "search_query": "query",
+                    "platforms": ["reddit"],
+                    "date_range": {"from": "2026-08-01", "to": "2026-08-02"},
+                },
+                search_phrases=["one"],
+                final_entities=["Entity"],
+                confirmed=True,
+                timestamp="2026-08-22T10-00-00Z",
+            )
 
-        assert parse_qs(urlsplit(seen[0][1]).query) == {"limit": ["100"]}
-        assert seen[0][0] == "GET" and seen[0][2] is None
-        assert seen[1][0] == "GET" and "/topics/" + "a" * 32 + "/posts" in seen[1][1]
-        assert seen[2][0] == "GET" and "/topics/" + "a" * 32 + "/report" in seen[2][1]
-        assert seen[3][0] == "GET" and "/case-studies/" + "a" * 32 + "/progress" in seen[3][1]
-        assert seen[4] == (
-            "POST",
-            "https://staging.example/api/v1/case-studies",
-            {
-                "search_query": "query",
-                "platforms": ["reddit"],
-                "date_range": {"from": "2026-08-01", "to": "2026-08-02"},
-            },
-        )
-        assert seen[5][0] == "POST" and seen[5][1].endswith("/search-plan") and seen[5][2] == {}
-        assert seen[6][0] == "POST" and seen[6][1].endswith("/finalize")
-        assert seen[6][2] == {"search_phrases": ["one"], "final_entities": ["Entity"]}
-        assert "confirmed" not in json.dumps(seen[6][2])
+            assert parse_qs(urlsplit(seen[0][1]).query) == {"limit": ["100"]}
+            assert seen[0][0] == "GET" and seen[0][2] is None
+            assert seen[1][0] == "GET" and "/topics/" + "a" * 32 + "/posts" in seen[1][1]
+            assert seen[2][0] == "GET" and "/topics/" + "a" * 32 + "/report" in seen[2][1]
+            assert seen[3][0] == "GET" and "/case-studies/" + "a" * 32 + "/progress" in seen[3][1]
+            assert seen[4] == (
+                "POST",
+                "https://staging.example/api/v1/case-studies",
+                {
+                    "search_query": "query",
+                    "platforms": ["reddit"],
+                    "date_range": {"from": "2026-08-01", "to": "2026-08-02"},
+                },
+            )
+            assert seen[5][0] == "POST" and seen[5][1].endswith("/search-plan") and seen[5][2] == {}
+            assert seen[6][0] == "POST" and seen[6][1].endswith("/finalize")
+            assert seen[6][2] == {"search_phrases": ["one"], "final_entities": ["Entity"]}
+            assert "confirmed" not in json.dumps(seen[6][2])
 
-        for output in (browse_file, read_file, report_file, progress_file):
-            path = Path(output)
-            assert path.is_file() and path.parent == case_dir / "research"
-            saved = json.loads(path.read_text(encoding="utf-8"))
-            assert saved.get("meta", {}).get("request_id"), path
-            assert "fixture-secret" not in path.read_text(encoding="utf-8")
+            for output in (browse_file, read_file, report_file, progress_file):
+                path = Path(output)
+                assert path.is_file() and path.parent == case_dir / "research"
+                saved = json.loads(path.read_text(encoding="utf-8"))
+                assert saved.get("meta", {}).get("request_id"), path
+                assert "fixture-secret" not in path.read_text(encoding="utf-8")
 
-        symlink_case = Path(raw) / "linked-case"
-        symlink_case.symlink_to(case_dir, target_is_directory=True)
-        try:
-            workflow_module.browse(client, symlink_case, timestamp="2026-08-22T10-00-00Z")
-        except (ValueError, OSError):
-            pass
-        else:
-            raise AssertionError("workflow accepted a symlinked case root")
+            symlink_case = Path(raw) / "linked-case"
+            symlink_case.symlink_to(case_dir, target_is_directory=True)
+            try:
+                workflow_module.browse(client, symlink_case, timestamp="2026-08-22T10-00-00Z")
+            except (ValueError, OSError):
+                pass
+            else:
+                raise AssertionError("workflow accepted a symlinked case root")
+
+        with patch.object(client_module.socket, "getaddrinfo", side_effect=socket.gaierror("fixture DNS failure")):
+            try:
+                client_module.validate_api_base("https://staging.example/api/v1")
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("production validation accepted an unresolved staging host")
 
     if responses:
         raise AssertionError(f"workflow did not consume all mocked HTTP responses: {responses!r}")
