@@ -28,7 +28,7 @@ The skill is cheap to load — it's a routing table, not a deep methodology guid
 | `browse` | browser-automation | skill-catalog-navigation, selector-based-driver, ref-based-driver, accessibility-tree-snapshot, portal-navigation | Second-tier browser tool. Use when a curated browse.sh skill exists for the target portal and dev-browser would require writing navigation logic from scratch. |
 | `browser-harness` | browser-automation | cdp-browser-control, dynamic-page-acquisition, screenshot-capture, download-capture, visual-verification | Legacy browser fallback. Do not pick as the default while dev-browser is green. |
 | `browser-use` | browser-automation | form-navigation, search-export, login-driving, multi-step-browsing | Legacy/adjacent browser automation. Do not pick as the default while dev-browser is green. |
-| `arbiter` | social-osint | curated-case-study-browse, entity-stance-analysis, hierarchical-theme-analysis, consolidated-case-study-report, case-study-creation | Analysing a collected social corpus: per-entity stance, theme clustering, actor/community structure, archived posts. Uses the member's own Arbiter key through Data Navigator. |
+| `arbiter` | social-osint | curated-case-study-browse, entity-stance-analysis, hierarchical-theme-analysis, consolidated-case-study-report, case-study-creation | Analysing a collected social corpus: per-entity stance, theme clustering, actor/community structure, archived posts. Uses the member's own `ARBITER_API_KEY` through the native HTTPS API. |
 | `junkipedia` | social-osint | narrative-tracking, misinformation-search, social-media-monitoring, cross-platform-query | Tracking how a claim spread; finding social posts deleted from origin; cross-platform narrative investigation. |
 | `maigret` | social-osint | username-search, account-discovery, profile-url-collection | Username-led account discovery. Produces candidate profile leads only; never use as attribution proof. |
 | `noosphere-c2pa` | provenance-signing | case-provenance-manifest, c2pa-content-credentials, optional-signing-receipt | **PENDING integration — opt-in signer.** Preflight reports `unconfigured` until `NOOSPHERE_C2PA_URL` is set. After Gate 1, the base provenance path always writes `status: unsigned` and proceeds; signing runs only against a configured signer endpoint. Never a mandatory or blocking step. |
@@ -54,11 +54,11 @@ What's the task?
 │
 ├── "Analyse a whole social corpus — entity stance, narrative themes, who is amplifying,
 │    engagement over time" / "cite a social post that may be deleted at origin"
-│     → arbiter  (if green — check preflight) through
-│       `navigator query global/arbiter/case-studies`; browse the topic menu for a case study
-│       that already covers the event, or create one from a reviewed plan when nothing matches
-│     → requires eligible Data Navigator access and the member's own Arbiter key; `/arbiter`
-│       provides the attributed signup link and local key-setup command
+│     → arbiter  (if green — check preflight) through the native HTTPS API; browse
+│       the topic menu for a case study that already covers the event, or create
+│       one from a reviewed plan when nothing matches
+│     → requires the member's own `ARBITER_API_KEY`; `/arbiter` provides the
+│       attributed signup link and local key setup guidance
 │     → post pulls and agent questions are credit-metered to that member's Arbiter account
 │     → fallback: junkipedia, then search() + social-media-intelligence skill
 │

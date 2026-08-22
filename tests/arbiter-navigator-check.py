@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-"""Contract checks for Arbiter's member-owned Navigator routing."""
+"""Contract checks for Arbiter's native member-owned API routing.
+
+The transport assertions intentionally replace the former Navigator probe.  The
+preflight checks use a mocked OpenAPI response; no network or member credential
+is used.
+"""
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 from pathlib import Path
-
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "integrations" / "arbiter" / "manifest.json"
@@ -17,7 +23,7 @@ API_DOCS = ROOT / "docs" / "arbiter-api.md"
 DOCS_README = ROOT / "docs" / "README.md"
 INTEGRATIONS_DOCS = ROOT / "docs" / "integrations.md"
 INTEGRATIONS_README = ROOT / "integrations" / "README.md"
-SOURCE_ID = "global/arbiter/case-studies"
+PREFLIGHT = ROOT / "integrations" / "preflight.py"
 SIGNUP_URL = (
     "https://arbiter.simppl.org/auth/register?"
     "eventSignup=5cce20c609334e538f07127322361862e3136e3d-"
@@ -25,143 +31,160 @@ SIGNUP_URL = (
 )
 
 
-def main() -> int:
-    errors: list[str] = []
-    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    text = INTEGRATION.read_text(encoding="utf-8")
-    skill_text = SKILL.read_text(encoding="utf-8")
-    router_skill_text = ROUTER_SKILL.read_text(encoding="utf-8")
-    api_docs_text = API_DOCS.read_text(encoding="utf-8")
-    docs_readme_text = DOCS_README.read_text(encoding="utf-8")
-    integrations_docs_text = INTEGRATIONS_DOCS.read_text(encoding="utf-8")
-    integrations_readme_text = INTEGRATIONS_README.read_text(encoding="utf-8")
+class FakeResponse:
+    def __init__(self, status: int):
+        self.status = status
 
-    expected_manifest = {
-        "type": "cli",
-        "local_binary": "navigator",
-        "requires_key": False,
-        "env_vars": [],
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+
+def load_preflight():
+    spec = importlib.util.spec_from_file_location("spotlight_preflight", PREFLIGHT)
+    if spec is None or spec.loader is None:
+        raise AssertionError("could not load integrations/preflight.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def check_manifest(manifest: dict, errors: list[str]) -> None:
+    expected = {
+        "type": "api",
+        "requires_key": True,
+        "env_vars": ["ARBITER_API_KEY"],
+        "smoke_url": "https://arbiter.simppl.org/api/v1/openapi.json",
     }
-    for field, expected in expected_manifest.items():
-        if manifest.get(field) != expected:
-            errors.append(f"manifest.{field} must be {expected!r}")
-    probes = manifest.get("probes") or []
-    if not any(SOURCE_ID in probe.get("args", []) for probe in probes):
-        errors.append("manifest must probe the deployed Navigator Arbiter source")
-    if not any(
-        probe.get("output_contains") == '"queryable": true'
-        for probe in probes
-    ):
-        errors.append("manifest must require Arbiter to be queryable, not merely listed")
-    if not any(
-        probe.get("env", {}).get("DATANAV_CACHE_FALLBACK") == "off"
-        for probe in probes
-    ):
-        errors.append("manifest must reject a stale cached Arbiter availability result")
-    if "name: arbiter" not in skill_text or "Browse existing studies" not in skill_text:
-        errors.append("skills/arbiter must provide the direct /arbiter browse/create entry point")
-    if "navigator keys set arbiter" not in skill_text:
-        errors.append("skills/arbiter must explain how to configure the BYO key")
-    for path, content in (
-        (SKILL, skill_text),
-        (INTEGRATION, text),
-        (API_DOCS, api_docs_text),
-        (INTEGRATIONS_DOCS, integrations_docs_text),
-        (INTEGRATIONS_README, integrations_readme_text),
-    ):
-        if SIGNUP_URL not in content:
-            errors.append(f"{path.relative_to(ROOT)} must use the attributed Arbiter signup URL")
+    for field, value in expected.items():
+        if manifest.get(field) != value:
+            errors.append(f"manifest.{field} must be {value!r}")
+    if "ARBITER_API_BASE" not in (manifest.get("optional_env_vars") or []):
+        errors.append("manifest.optional_env_vars must expose ARBITER_API_BASE")
 
-    onboarding_docs = (
-        (SKILL, skill_text),
-        (INTEGRATION, text),
-        (API_DOCS, api_docs_text),
-        (INTEGRATIONS_DOCS, integrations_docs_text),
-        (INTEGRATIONS_README, integrations_readme_text),
-    )
-    owned_key_markers = (
+
+def check_onboarding(docs: list[tuple[Path, str]], errors: list[str]) -> None:
+    owned_markers = (
         "member-owned",
         "member's own api key",
         "provide their own arbiter key",
-        "stores their own key",
         "creates their own api key",
         "create your own api key",
     )
-    no_shared_key_markers = (
-        "no shared",
-        "never receives or supplies a shared",
-    )
-    for path, content in onboarding_docs:
+    for path, content in docs:
         normalized = " ".join(content.lower().split())
-        relative_path = path.relative_to(ROOT)
-        if not any(marker in normalized for marker in owned_key_markers):
-            errors.append(f"{relative_path} must describe a member- or user-owned Arbiter key")
-        if "navigator keys set arbiter" not in content:
-            errors.append(f"{relative_path} must configure the Arbiter key locally with Navigator")
-        if not any(marker in normalized for marker in no_shared_key_markers):
-            errors.append(f"{relative_path} must state that Spotlight does not provide a shared key")
+        relative = path.relative_to(ROOT)
+        if SIGNUP_URL not in content:
+            errors.append(f"{relative} must retain the attributed signup URL")
+        if not any(marker in normalized for marker in owned_markers):
+            errors.append(f"{relative} must describe a member-owned API key")
+        if "ARBITER_API_KEY" not in content:
+            errors.append(f"{relative} must name ARBITER_API_KEY")
+        if not any(marker in normalized for marker in ("no shared", "no shared spotlight")):
+            errors.append(f"{relative} must state that Spotlight has no shared key")
+        if any(secret in content for secret in ("sk-", "Bearer test", "api_key=\"")):
+            errors.append(f"{relative} must not contain key material")
 
+
+def check_stale_claims(docs: list[tuple[Path, str]], errors: list[str]) -> None:
+    current_copy = "\n".join(content for _path, content in docs)
     stale_claims = (
-        "discount code pending",
-        "pending the member discount-code flow",
         "Navigator-hosted, operator-only",
         "requires Navigator administrator access",
-        "Live access is currently blocked",
-        "The source is currently blocked",
-        "Arbiter is first-party",
-        "first-party Arbiter API reference",
         "hosted-source quota",
         "hosted-query quota",
-    )
-    current_copy = "\n".join(
-        (
-            skill_text,
-            router_skill_text,
-            text,
-            api_docs_text,
-            docs_readme_text,
-            integrations_docs_text,
-            integrations_readme_text,
-        )
+        "Data Navigator's BYO-key source",
     )
     for claim in stale_claims:
         if claim in current_copy:
             errors.append(f"Arbiter activation copy is stale: found {claim!r}")
 
-    forbidden = ("ARBITER_API_KEY", "Authorization: Bearer", "curl ")
-    for value in forbidden:
-        if value in text:
-            errors.append(f"integration must not call Arbiter directly: found {value!r}")
 
+def check_native_instructions(text: str, skill_text: str, errors: list[str]) -> None:
+    forbidden = (
+        "navigator query",
+        "navigator data show",
+        "navigator keys set arbiter",
+        "Data Navigator",
+        "global/arbiter/case-studies",
+    )
+    for marker in forbidden:
+        if marker.lower() in (text + "\n" + skill_text).lower():
+            errors.append(f"Arbiter instructions retain Navigator transport marker {marker!r}")
     required = (
-        f"navigator data show {SOURCE_ID}",
-        f"navigator query {SOURCE_ID}",
-        '"operation":"topics"',
-        '"operation":"posts"',
-        '"operation":"entities"',
-        '"operation":"themes"',
-        '"operation":"report"',
-        '"operation":"post"',
-        '"operation":"agent_questions"',
-        '"operation":"agent"',
-        '"operation":"usage"',
-        '"operation":"create"',
-        '"operation":"search_plan"',
-        '"operation":"finalize"',
-        '"operation":"status"',
-        '"operation":"progress"',
-        "arbiter-report-",
+        "ARBITER_API_KEY",
+        "ARBITER_API_BASE",
+        "openapi.json",
+        "Authorization: Bearer",
+        "file-backed",
+        "input-file",
+        "output",
+        "untrusted",
+        "shell",
+        "never request or log",
+        "raw",
+        "case_study_id",
+        "post_id",
+        "search-plan",
+        "finalize",
         "confirmed",
     )
-    for value in required:
-        if value not in text:
-            errors.append(f"integration is missing Navigator contract text {value!r}")
+    combined = text + "\n" + skill_text
+    for marker in required:
+        if marker not in combined:
+            errors.append(f"native instructions are missing direct API marker {marker!r}")
+    for path, marker in (
+        (text, "GET /topics"),
+        (text, "POST /case-studies"),
+        (text, "/search-plan"),
+        (text, "/finalize"),
+        (text, "/progress"),
+    ):
+        if marker not in path:
+            errors.append(f"native integration is missing workflow marker {marker!r}")
 
+
+def check_preflight(manifest: dict, errors: list[str]) -> None:
+    pf = load_preflight()
+    expected_url = manifest.get("smoke_url", "https://arbiter.simppl.org/api/v1/openapi.json")
+    with patch.object(pf.urllib.request, "urlopen", return_value=FakeResponse(200)) as urlopen:
+        ok, err = pf.smoke_test(manifest)
+    requested = urlopen.call_args.args[0].full_url if urlopen.call_args else None
+    if not ok or err is not None:
+        errors.append(f"OpenAPI smoke should pass with HTTP 200: ok={ok} err={err}")
+    if requested != expected_url:
+        errors.append(f"preflight must request OpenAPI URL, got {requested!r}")
+    failure = pf.urllib.error.HTTPError(expected_url, 401, "unauthorized", None, None)
+    with patch.object(pf.urllib.request, "urlopen", side_effect=failure):
+        ok, err = pf.smoke_test(manifest)
+    if ok or err != "HTTP 401":
+        errors.append(f"OpenAPI auth failure should fail preflight: ok={ok} err={err}")
+
+
+def main() -> int:
+    errors: list[str] = []
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    text = INTEGRATION.read_text(encoding="utf-8")
+    skill_text = SKILL.read_text(encoding="utf-8")
+    docs = [
+        (SKILL, skill_text),
+        (INTEGRATION, text),
+        (API_DOCS, API_DOCS.read_text(encoding="utf-8")),
+        (INTEGRATIONS_DOCS, INTEGRATIONS_DOCS.read_text(encoding="utf-8")),
+        (INTEGRATIONS_README, INTEGRATIONS_README.read_text(encoding="utf-8")),
+    ]
+    check_manifest(manifest, errors)
+    check_onboarding(docs, errors)
+    check_stale_claims(docs, errors)
+    check_native_instructions(text, skill_text, errors)
+    check_preflight(manifest, errors)
     if errors:
         for error in errors:
             print(f"FAIL {error}")
         return 1
-    print("arbiter navigator routing contract: OK")
+    print("arbiter native API routing contract: OK")
     return 0
 
 

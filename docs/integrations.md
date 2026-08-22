@@ -17,7 +17,7 @@ An agent invokes a **skill** to get *guidance* and calls an **integration** to g
 
 | ID | Type | Category | Key needed | Purpose |
 |---|---|---|---|---|
-| `arbiter` | cli | social-osint | Member-owned Arbiter key (BYOK) | Browse and create social-media case studies through `global/arbiter/case-studies`, including archived posts, themes, stance, actors, communities, engagement, and report visuals. |
+| `arbiter` | api | social-osint | Member-owned `ARBITER_API_KEY` | Browse and create social-media case studies through the native Arbiter HTTPS API, including archived posts, themes, stance, actors, communities, engagement, and report visuals. |
 | `dev-browser` | cli | browser-automation | No | Browser automation for specific investigative tasks after ordinary search/scrape is insufficient: forms, portals, JS-rendered pages, screenshots, downloads, and authenticated sessions. |
 | `browser-harness` | cli | browser-automation | No | Legacy browser fallback. Do not use as default while dev-browser is green. |
 | `browser-use` | library | browser-automation | No (optional cloud) | Legacy/adjacent browser automation. Do not use as default while dev-browser is green. |
@@ -29,11 +29,12 @@ An agent invokes a **skill** to get *guidance* and calls an **integration** to g
 
 Arbiter is a partner integration. Each user registers with the
 [Indicator partner signup link](https://arbiter.simppl.org/auth/register?eventSignup=5cce20c609334e538f07127322361862e3136e3d-324a-4c60-894a-5f42d2d57f8a),
-creates their own API key, and stores it locally with
-`navigator keys set arbiter`. Spotlight never receives or supplies a shared
-key. `docs/arbiter-api.md` is the authoritative interface reference for
-endpoints, authentication, credits, pagination, and the case-study lifecycle;
-Spotlight reaches that interface through Data Navigator.
+creates their own API key, and configures it locally as `ARBITER_API_KEY`.
+Spotlight has no shared key and never receives or supplies one. `ARBITER_API_BASE` is an
+optional deployment-matched override. `docs/arbiter-api.md` is the
+authoritative interface reference for endpoints, authentication, credits,
+pagination, and the case-study lifecycle; Spotlight reaches that interface
+directly over HTTPS.
 
 ## Deferred integrations (architecture ready)
 
