@@ -16,6 +16,7 @@ allowed_verbs:
 
 disallowed_verbs:
   - spawn-agent
+return_contract: "strict JSON to {CASE_DIR}/data/fact-check.json per schemas/fact-check.schema.json — per-claim verdict (verified|partially_verified|unverified|disputed|false|mischaracterized), evidence_for/evidence_against trails, grounding_assessment, confidence"
 
 preferred_model:
   claude: opus

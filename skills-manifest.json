@@ -134,36 +134,78 @@
       "phases": ["phase-0-preflight", "phase-4-gate-1"],
       "may_make_external_calls": true,
       "disabled_in_sensitive_mode": true
+    },
+    {
+      "id": "phase-preflight",
+      "role": "core-child",
+      "phases": ["phase-0-preflight"],
+      "may_make_external_calls": false,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "phase-methodology",
+      "role": "core-child",
+      "phases": ["phase-1-brief", "phase-2-methodology"],
+      "may_make_external_calls": false,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "phase-execution",
+      "role": "core-child",
+      "phases": ["phase-3-execution", "phase-3-fact-check"],
+      "may_make_external_calls": false,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "phase-gate1",
+      "role": "core-child",
+      "phases": ["phase-4-gate-1"],
+      "may_make_external_calls": false,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "phase-report",
+      "role": "core-child",
+      "phases": ["phase-5-report"],
+      "may_make_external_calls": false,
+      "disabled_in_sensitive_mode": false
+    },
+    {
+      "id": "phase-ingest",
+      "role": "core-child",
+      "phases": ["ingest"],
+      "may_make_external_calls": false,
+      "disabled_in_sensitive_mode": false
     }
   ],
   "phase_requirements": {
     "phase-0-preflight": {
-      "required": ["integrations"],
+      "required": ["phase-preflight", "integrations"],
       "conditional": ["shell-safety"],
       "validation": ".spotlight-config.json stores full integration status, not only booleans."
     },
     "phase-2-methodology": {
-      "required": ["integrations", "osint", "investigate", "epistemic-grounding"],
+      "required": ["phase-methodology", "integrations", "osint", "investigate", "epistemic-grounding"],
       "conditional": ["navigator", "arbiter", "follow-the-money", "social-media-intelligence", "technical-investigation", "content-access"],
       "validation": "methodology.json includes skills_invoked[] and required Navigator fields when green."
     },
     "phase-3-execution": {
-      "required": ["epistemic-grounding", "shell-safety", "web-archiving"],
+      "required": ["phase-execution", "epistemic-grounding", "shell-safety", "web-archiving"],
       "conditional": ["content-access", "acquisition-graduation", "arbiter", "social-media-intelligence", "technical-investigation"],
       "validation": "findings contain evidence refs, archives, and confidence caps."
     },
     "phase-3-fact-check": {
-      "required": ["epistemic-grounding", "content-access", "shell-safety"],
+      "required": ["phase-execution", "epistemic-grounding", "content-access", "shell-safety"],
       "conditional": ["navigator", "arbiter", "osint", "social-media-intelligence", "technical-investigation", "web-archiving"],
       "validation": "fact-check output independently checks investigator claims."
     },
     "phase-5-report": {
-      "required": ["report-drafting", "epistemic-grounding"],
+      "required": ["phase-report", "report-drafting", "epistemic-grounding"],
       "conditional": ["arbiter", "provenance-signing", "technical-investigation"],
       "validation": "report claims map to evidence ledger."
     },
     "ingest": {
-      "required": ["ingest"],
+      "required": ["phase-ingest", "ingest"],
       "conditional": [],
       "validation": "only verified or explicitly caveated material enters vault."
     }

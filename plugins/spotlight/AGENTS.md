@@ -163,6 +163,12 @@ Skills are markdown playbooks loaded via `invoke-skill(skill_id)`. Each skill li
 | `follow-the-money` | `skills/follow-the-money/SKILL.md` | Financial methodology: UBO, offshore, budgets, assets, public blockchain tracing | investigator, user |
 | `technical-investigation` | `skills/technical-investigation/SKILL.md` | Passive technical investigation: indicators, infrastructure history, local document/email metadata, public GitHub history, verified indicator export | investigator, fact-checker, orchestrator, user |
 | `social-media-intelligence` | `skills/social-media-intelligence/SKILL.md` | Account authenticity, coordination detection, narrative tracking | investigator, fact-checker, user |
+| `phase-preflight` | `skills/phase-preflight/SKILL.md` | Phase 0 preflight child skill — config, sovereign backings, workspace validation, project setup, integration tiering | orchestrator |
+| `phase-methodology` | `skills/phase-methodology/SKILL.md` | Phases 1–2 child skill — brief conversation with approval gate, investigator PLANNING spawn, methodology validation and approval | orchestrator |
+| `phase-execution` | `skills/phase-execution/SKILL.md` | Phase 3 child skill — autonomous execution cycles (max 5), fact-check spawns, validators, readiness criteria, Stall Protocol | orchestrator |
+| `phase-gate1` | `skills/phase-gate1/SKILL.md` | Phase 4 child skill — summary + machine contract generation, Gate 1 user approval (ends turn), provenance packaging, review artifact | orchestrator |
+| `phase-report` | `skills/phase-report/SKILL.md` | Phase 5 child skill — public-facing report drafting via report-drafting + deterministic finalize-report.py rendering | orchestrator |
+| `phase-ingest` | `skills/phase-ingest/SKILL.md` | Phase 6 child skill — ingestion transition marker, user confirmation, vault ingestion or decline | orchestrator |
 
 ## Sensitive Mode
 

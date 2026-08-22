@@ -145,7 +145,7 @@ fi
 
 echo ""
 echo "── Contracts ──"
-skill_count=$(grep -cE '^\| `[a-z-]+` \| `skills/' AGENTS.md || echo 0)
+skill_count=$(grep -cE '^\| `[a-z0-9-]+` \| `skills/' AGENTS.md || echo 0)
 manifest_count=$(python3 - <<'PY'
 import json
 print(len(json.load(open("skills-manifest.json"))["skills"]))

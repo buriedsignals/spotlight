@@ -17,6 +17,7 @@ allowed_verbs:
 
 disallowed_verbs:
   - spawn-agent
+return_contract: "strict JSON per mode — PLANNING: {CASE_DIR}/data/methodology.json per schemas/methodology.schema.json (directions, steps, tools_required, skills_invoked[], navigator block); EXECUTION: {CASE_DIR}/data/findings.json per schemas/findings.schema.json + data/evidence-bundle.json per schemas/evidence-bundle.schema.json + appended data/investigation-log.json"
 
 preferred_model:
   claude: opus

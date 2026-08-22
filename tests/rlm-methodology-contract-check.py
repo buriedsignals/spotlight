@@ -31,15 +31,16 @@ def main() -> int:
     if boundary != "lead-only; never verified or publishable":
         fail("methodology schema does not enforce RLM evidence boundary")
 
-    skill = (ROOT / "skills" / "spotlight" / "SKILL.md").read_text(encoding="utf-8")
-    for phrase in [
-        "methodology-phase option",
-        "Use RLM for\n   > this methodology?",
-        "integrations/rlm/run_rlm.py",
-        "Treat every RLM artifact as `needs_verification`",
+    methodology = (ROOT / "skills" / "phase-methodology" / "SKILL.md").read_text(encoding="utf-8")
+    execution = (ROOT / "skills" / "phase-execution" / "SKILL.md").read_text(encoding="utf-8")
+    for phrase, body in [
+        ("methodology-phase option", methodology),
+        ("Use RLM for\n   > this methodology?", methodology),
+        ("integrations/rlm/run_rlm.py", methodology),
+        ("Treat every RLM artifact as `needs_verification`", execution),
     ]:
-        if phrase not in skill:
-            fail(f"spotlight skill missing RLM methodology instruction: {phrase}")
+        if phrase not in body:
+            fail(f"spotlight phase skill missing RLM methodology instruction: {phrase}")
 
     configure = (ROOT / "install" / "configure.html").read_text(encoding="utf-8")
     if "docs/rlm-benchmark-audit.md" not in configure:
