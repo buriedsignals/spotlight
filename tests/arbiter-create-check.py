@@ -122,6 +122,7 @@ def check_create(tmp: Path) -> None:
     })
     # All nine create platforms are accepted together and keep caller order.
     query.write_text("valid query", encoding="utf-8")
+    assert "confirmed" not in json.loads(out.read_text(encoding="utf-8"))
     every = tmp / "all-platforms.json"
     ok(cmd("build-create", create_flags(query, every, platforms=",".join(CREATE_PLATFORMS))),
        f"wrote {every}\n")
@@ -174,8 +175,65 @@ def check_finalize(tmp: Path) -> None:
     dropped = tmp / "finalize-remove.json"
     ok(cmd("build-finalize", {"plan-file": str(plan), "remove": "2", "out": str(dropped)}),
        f"wrote {dropped}\n")
+    assert "confirmed" not in json.loads(dropped.read_text(encoding="utf-8"))
     exact_json(dropped, {"search_phrases": ["alpha narrative", "gamma \\ path"],
                          "final_entities": ENTITIES})
+
+    # Protocol limits and normalized uniqueness must be enforced locally before
+    # a caller can issue the charged finalize request.
+    oversized = tmp / "oversized-plan.json"
+    write_json(oversized, {
+        "plan": {
+            "search_phrases": [f"phrase-{index}" for index in range(51)],
+            "entities": ["entity"],
+        }
+    })
+    too_many_phrases = tmp / "too-many-phrases.json"
+    phrase_proc = cmd("build-finalize", {
+        "plan-file": str(oversized),
+        "keep": ",".join(str(index) for index in range(1, 52)),
+        "out": str(too_many_phrases),
+    })
+    assert phrase_proc.returncode == 2 and not too_many_phrases.exists(), phrase_proc.stderr
+
+    oversized_entities = tmp / "oversized-entities.json"
+    write_json(oversized_entities, {
+        "plan": {
+            "search_phrases": ["one"],
+            "entities": [f"entity-{index}" for index in range(201)],
+        }
+    })
+    too_many_entities = tmp / "too-many-entities.json"
+    entity_proc = cmd("build-finalize", {
+        "plan-file": str(oversized_entities),
+        "keep": "1",
+        "out": str(too_many_entities),
+    })
+    assert entity_proc.returncode == 2 and not too_many_entities.exists(), entity_proc.stderr
+
+    duplicate_plan = tmp / "duplicate-plan.json"
+    write_json(duplicate_plan, {
+        "plan": {"search_phrases": ["Alpha", " alpha "], "entities": ["Entity", " entity "]}
+    })
+    duplicate_out = tmp / "duplicate-out.json"
+    duplicate_proc = cmd("build-finalize", {
+        "plan-file": str(duplicate_plan),
+        "keep": "1,2",
+        "out": str(duplicate_out),
+    })
+    assert duplicate_proc.returncode == 2 and not duplicate_out.exists(), duplicate_proc.stderr
+
+    length_plan = tmp / "length-plan.json"
+    write_json(length_plan, {
+        "plan": {"search_phrases": ["x" * 201], "entities": ["x" * 501]}
+    })
+    length_out = tmp / "length-out.json"
+    length_proc = cmd("build-finalize", {
+        "plan-file": str(length_plan),
+        "keep": "1",
+        "out": str(length_out),
+    })
+    assert length_proc.returncode == 2 and not length_out.exists(), length_proc.stderr
 
     bad = tmp / "finalize-reject.json"
     rejected(cmd("build-finalize", {"plan-file": str(plan), "remove": "1,2,3", "out": str(bad)}),
@@ -421,7 +479,7 @@ def check_injection(tmp: Path) -> None:
     assert not sentinel.exists(), "query or title text was interpreted by a shell"
 
     plan, finalize = tmp / "hostile-plan.json", tmp / "hostile-finalize.json"
-    phrase = f'$(touch "{sentinel}") && `touch "{sentinel}"` "quoted" \\'
+    phrase = f'$(touch "{sentinel}") && `touch` "quoted" \\'
     write_json(plan, {"plan": {
         "summary": phrase, "search_phrases": [phrase], "entities": [],
         "sources": [{"title": phrase, "url": 'https://example.test/?q="x"'}]}})

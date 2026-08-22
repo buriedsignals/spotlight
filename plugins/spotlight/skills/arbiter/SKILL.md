@@ -32,10 +32,11 @@ python3 integrations/preflight.py --json
 ```
 
 The Arbiter preflight performs an unauthenticated direct OpenAPI smoke against
-`https://arbiter.simppl.org/api/v1/openapi.json`. Missing `ARBITER_API_KEY` is a
-local configuration state, not a reason to disclose credentials. Read
-`integrations/arbiter/integration.md` and `docs/arbiter-api.md` before making a
-request.
+`https://arbiter.simppl.org/api/v1/openapi.json`, or against the validated
+`ARBITER_API_BASE` override when one is configured. Missing
+`ARBITER_API_KEY` is local configuration state, not a reason to disclose
+credentials. Read `integrations/arbiter/integration.md` and
+`docs/arbiter-api.md` before making a request.
 
 ## Prompt
 
@@ -49,15 +50,23 @@ Follow `integrations/arbiter/integration.md` exactly. It is the source of truth
 for direct endpoint shapes, credit disclosures, confirmation gates, timeout and
 retry behavior, evidence rules, sensitive-mode blocking, and polling.
 
-Every authenticated call is direct HTTPS with
-`Authorization: Bearer <member-key>`. Build a file-backed JSON `input-file`,
-validate `case_study_id` and `post_id`, and write the unmodified raw response to
-an output file. Never interpolate untrusted text into shell commands. Preserve
+Every authenticated call uses the in-process native client:
+`ArbiterClient.from_env()` reads the member-owned `ARBITER_API_KEY` and sends
+`Authorization: Bearer <member-key>` over HTTPS. Build a file-backed JSON
+`input-file`, validate `case_study_id` and `post_id`, and write the unmodified
+raw response to an `output` file. Use `safe_research_path()` for contained
+regular files under `{CASE_DIR}/research`; never accept traversal, symlink
+parents, or unsafe slugs. Never interpolate untrusted text into shell
+commands, and do not use shell or curl transport for API calls. Preserve
 unknown upstream fields and keep request/response files beside one another in
 `{CASE_DIR}/research/`.
+
+Local human review and explicit confirmation remain required before charged or
+external-state-changing operations. `confirmed` is not a wire field: never
+send `confirmed: true` in create or finalize JSON. The local gate is not
+authorization from the API.
 
 For a report, save the raw `GET /topics/{case_study_id}/report` response under
 `{CASE_DIR}/research/arbiter-report-<slug>-<timestamp>.json`. That filename and
 response shape activate Spotlight's deterministic Arbiter appendix. Use
-`confirmed: true` only after the operator has explicitly approved a charged or
-external-state-changing operation.
+`GET /topics?limit=100` with query parameters, never a JSON GET body.

@@ -45,15 +45,18 @@ def smoke_test(manifest: dict) -> tuple[bool, str | None]:
 
     if kind == "api":
         smoke_url_env = manifest.get("smoke_url_env")
-        configured_smoke_url = (
-            manifest.get("smoke_url")
-            or (os.environ.get(smoke_url_env) if smoke_url_env else None)
-        )
-        url = (
-            configured_smoke_url
-            or manifest.get("homepage")
-            or manifest.get("docs")
-        )
+        environment_url = os.environ.get(smoke_url_env) if smoke_url_env else None
+        if smoke_url_env == "ARBITER_API_BASE" and environment_url:
+            # Arbiter exposes OpenAPI below its validated deployment base.
+            from arbiter.client import validate_api_base
+
+            try:
+                configured_smoke_url = validate_api_base(environment_url) + "/openapi.json"
+            except ValueError as exc:
+                return False, str(exc)
+        else:
+            configured_smoke_url = manifest.get("smoke_url") or environment_url
+        url = configured_smoke_url or manifest.get("homepage") or manifest.get("docs")
         if not url:
             return True, None
         try:

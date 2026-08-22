@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import re
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -22,6 +24,9 @@ ROUTER_SKILL = ROOT / "skills" / "integrations" / "SKILL.md"
 API_DOCS = ROOT / "docs" / "arbiter-api.md"
 DOCS_README = ROOT / "docs" / "README.md"
 INTEGRATIONS_DOCS = ROOT / "docs" / "integrations.md"
+CHANGELOG = ROOT / "CHANGELOG.md"
+PLUGIN_INTEGRATION = ROOT / "plugins" / "spotlight" / "integrations" / "arbiter" / "integration.md"
+PLUGIN_SKILL = ROOT / "plugins" / "spotlight" / "skills" / "arbiter" / "SKILL.md"
 INTEGRATIONS_README = ROOT / "integrations" / "README.md"
 PREFLIGHT = ROOT / "integrations" / "preflight.py"
 SIGNUP_URL = (
@@ -102,6 +107,35 @@ def check_stale_claims(docs: list[tuple[Path, str]], errors: list[str]) -> None:
             errors.append(f"Arbiter activation copy is stale: found {claim!r}")
 
 
+def check_wire_contract(text: str, skill_text: str, errors: list[str]) -> None:
+    """Reject obsolete confirmation fields and unsafe shell transport recipes."""
+    create_start = text.find("### 1. Create a pending study")
+    plan_start = text.find("### 2. Generate the search plan", create_start)
+    finalize_start = text.find("### 4. Finalize", plan_start)
+    progress_start = text.find("### 5. Progress", finalize_start)
+    create_section = text[create_start:plan_start]
+    finalize_section = text[finalize_start:progress_start]
+    if re.search(r"confirmed\s*:\s*true", create_section, re.IGNORECASE):
+        errors.append("create wire instructions must not send confirmed")
+    if re.search(r"confirmed\s*:\s*true", finalize_section, re.IGNORECASE):
+        errors.append("finalize wire instructions must not send confirmed")
+    if "human review" not in text.lower() or "explicit" not in text.lower():
+        errors.append("local human confirmation gate must remain documented")
+    for marker in ('${ARBITER_API_KEY}', '$ARBITER_API_KEY', "curl --"):
+        if marker in text or marker in skill_text:
+            errors.append(f"secret-bearing shell transport marker remains: {marker}")
+    if "in-process" not in (text + "\n" + skill_text).lower():
+        errors.append("native request seam must read the API key in-process")
+
+
+def check_topics_query(text: str, errors: list[str]) -> None:
+    """Require GET /topics limit to be encoded as query parameters."""
+    if not re.search(r"GET\s+/topics[^\n]*\?[^`\n]*limit=100", text):
+        errors.append("GET /topics must encode limit=100 in the query string")
+    if re.search(r"Write\s+\{\s*[\"']limit[\"']\s*:\s*100\s*\}", text):
+        errors.append("GET /topics must not describe a JSON request body")
+
+
 def check_native_instructions(text: str, skill_text: str, errors: list[str]) -> None:
     forbidden = (
         "navigator query",
@@ -162,6 +196,31 @@ def check_preflight(manifest: dict, errors: list[str]) -> None:
     if ok or err != "HTTP 401":
         errors.append(f"OpenAPI auth failure should fail preflight: ok={ok} err={err}")
 
+    override = {**manifest, "smoke_url": None, "smoke_url_env": "ARBITER_API_BASE"}
+    override_base = "https://staging.arbiter.example/api/v1"
+    with patch.dict(os.environ, {"ARBITER_API_BASE": override_base}, clear=False):
+        with patch.object(pf.urllib.request, "urlopen", return_value=FakeResponse(200)) as probe:
+            ok, err = pf.smoke_test(override)
+    override_url = probe.call_args.args[0].full_url if probe.call_args else None
+    if not ok or err is not None or override_url != override_base + "/openapi.json":
+        errors.append(
+            "preflight must probe configured ARBITER_API_BASE override: "
+            f"ok={ok} err={err} url={override_url!r}"
+        )
+
+    for invalid in (
+        "http://arbiter.simppl.org/api/v1",
+        "https://arbiter.simppl.org/api/v1?query=1",
+        "https://user:pass@arbiter.simppl.org/api/v1",
+        "https://arbiter.simppl.org:8443/api/v1",
+        "https://arbiter.simppl.org/not-api-v1",
+    ):
+        with patch.dict(os.environ, {"ARBITER_API_BASE": invalid}, clear=False):
+            with patch.object(pf.urllib.request, "urlopen", return_value=FakeResponse(200)) as probe:
+                ok, _err = pf.smoke_test(override)
+        if ok or probe.called:
+            errors.append(f"unsafe ARBITER_API_BASE must be rejected before network: {invalid}")
+
 
 def main() -> int:
     errors: list[str] = []
@@ -174,11 +233,16 @@ def main() -> int:
         (API_DOCS, API_DOCS.read_text(encoding="utf-8")),
         (INTEGRATIONS_DOCS, INTEGRATIONS_DOCS.read_text(encoding="utf-8")),
         (INTEGRATIONS_README, INTEGRATIONS_README.read_text(encoding="utf-8")),
+        (PLUGIN_INTEGRATION, PLUGIN_INTEGRATION.read_text(encoding="utf-8")),
+        (PLUGIN_SKILL, PLUGIN_SKILL.read_text(encoding="utf-8")),
     ]
+    claim_docs = docs + [(CHANGELOG, CHANGELOG.read_text(encoding="utf-8"))]
     check_manifest(manifest, errors)
     check_onboarding(docs, errors)
-    check_stale_claims(docs, errors)
+    check_stale_claims(claim_docs, errors)
     check_native_instructions(text, skill_text, errors)
+    check_wire_contract(text, skill_text, errors)
+    check_topics_query(text, errors)
     check_preflight(manifest, errors)
     if errors:
         for error in errors:

@@ -8,6 +8,7 @@
   "env_vars": ["ARBITER_API_KEY"],
   "optional_env_vars": ["ARBITER_API_BASE"],
   "smoke_url": "https://arbiter.simppl.org/api/v1/openapi.json",
+  "smoke_url_env": "ARBITER_API_BASE",
   "capabilities": [
     "curated-case-study-browse",
     "case-study-creation",

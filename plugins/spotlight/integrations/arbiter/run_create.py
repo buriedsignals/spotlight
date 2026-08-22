@@ -52,6 +52,10 @@ ALLOWED_PLATFORMS = frozenset(
 )
 MAX_QUERY_LENGTH = 500
 MAX_TITLE_LENGTH = 200
+MAX_FINALIZE_PHRASES = 50
+MAX_FINALIZE_ENTITIES = 200
+MAX_FINALIZE_PHRASE_LENGTH = 200
+MAX_FINALIZE_ENTITY_LENGTH = 500
 
 
 def read_text(path: Path, label: str) -> str:
@@ -167,6 +171,36 @@ def added_phrases(path: Path | None) -> list[str]:
     return [line.strip() for line in text.splitlines() if line.strip()]
 
 
+def validate_finalize_values(
+    phrases: list[str], entities: list[str]
+) -> tuple[list[str], list[str]]:
+    """Validate protocol ceilings, lengths, and case-insensitive uniqueness."""
+    if not phrases or len(phrases) > MAX_FINALIZE_PHRASES:
+        raise ValueError(
+            f"search_phrases must contain 1..{MAX_FINALIZE_PHRASES} items"
+        )
+    if len(entities) > MAX_FINALIZE_ENTITIES:
+        raise ValueError(
+            f"final_entities must contain at most {MAX_FINALIZE_ENTITIES} items"
+        )
+    for phrase in phrases:
+        if not 1 <= len(phrase) <= MAX_FINALIZE_PHRASE_LENGTH:
+            raise ValueError(
+                f"search phrases must contain 1..{MAX_FINALIZE_PHRASE_LENGTH} characters"
+            )
+    for entity in entities:
+        if not 1 <= len(entity) <= MAX_FINALIZE_ENTITY_LENGTH:
+            raise ValueError(
+                f"entities must contain 1..{MAX_FINALIZE_ENTITY_LENGTH} characters"
+            )
+    phrase_keys = [phrase.casefold() for phrase in phrases]
+    if len(phrase_keys) != len(set(phrase_keys)):
+        raise ValueError("search_phrases must be unique after trimming and case normalization")
+    entity_keys = [entity.casefold() for entity in entities]
+    if len(entity_keys) != len(set(entity_keys)):
+        raise ValueError("final_entities must be unique after trimming and case normalization")
+    return phrases, entities
+
 def build_finalize_body(args: argparse.Namespace) -> dict[str, Any]:
     """Build a POST /case-studies/{id}/finalize body from reviewed plan phrases."""
     plan = plan_payload(load_json_object(Path(args.plan_file), "search-plan"))
@@ -185,14 +219,16 @@ def build_finalize_body(args: argparse.Namespace) -> dict[str, Any]:
     phrases.extend(added_phrases(Path(args.phrases_file) if args.phrases_file else None))
 
     deduplicated = list(dict.fromkeys(phrases))
-    if not deduplicated:
-        raise ValueError("finalize requires at least one search phrase")
     entities = plan.get("entities", [])
     if not isinstance(entities, list) or not all(isinstance(item, str) for item in entities):
         raise ValueError("plan.entities must be an array of strings when present")
+    normalized_entities = [entity.strip() for entity in entities if entity.strip()]
+    deduplicated, normalized_entities = validate_finalize_values(
+        deduplicated, normalized_entities
+    )
     return {
         "search_phrases": deduplicated,
-        "final_entities": [entity.strip() for entity in entities if entity.strip()],
+        "final_entities": normalized_entities,
     }
 
 
