@@ -338,34 +338,6 @@ feedback, proceed to ingestion, or stop here — your call."
 
 ---
 
-## Integration with the Orchestrator
-
-### Phase 4 end (Gate 1 approved)
-
-The orchestrator's Phase 4, after the user approves the findings and `summary.md` is written, includes:
-
-```
-5. invoke-skill("review")  # Mode A auto — generates review.html
-6. Offer the user: "Review artifact ready. Inspect and submit feedback,
-   or proceed to ingestion?"
-```
-
-### Phase 0 resume check
-
-When resuming an investigation, the orchestrator's Phase 0 should add a step (between 7 and 8):
-
-```
-Check for {CASE_DIR}/data/review-feedback.json:
-  - If exists AND review-feedback-processed.json missing/older:
-    invoke-skill("review")  # Mode B auto — processes feedback
-  - Otherwise: proceed normally
-```
-
-### Direct user invocation
-
-The user can call this skill at any time to regenerate the review artifact (useful mid-investigation to see current state) or to force-process pending feedback.
-
----
 
 ## Feedback Schema
 
