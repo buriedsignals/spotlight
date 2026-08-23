@@ -97,6 +97,19 @@ Before asking the user to approve the investigation as ready for report drafting
 
 **Gate: user approves the investigation.**
 
+After the user explicitly approves, persist the attributable receipt before any
+downstream work:
+
+```text
+python3 scripts/spotlight-orchestration.py approve gate1 --approved-by "<human identity>" --approved-at "<ISO 8601 timestamp>" {CASE_DIR}
+```
+
+This binds the current `summary.md`, `data/summary.json`,
+`data/findings.json`, `data/fact-check.json`, `data/evidence-bundle.json`, and
+`data/investigation-log.json`. The pending summary artifacts are not approval.
+If any bound input changes, a fresh status returns `gate1_approval`; re-run the
+existing validators and obtain a new human approval before report or ingestion.
+
 ## Package provenance before HTML review
 
 After approval and before invoking the review skill, invoke `provenance-signing`:

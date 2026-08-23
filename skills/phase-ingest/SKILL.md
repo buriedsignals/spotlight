@@ -7,13 +7,14 @@ phase: ingest
 
 # Phase 6 — Ingestion
 
-After report drafting (or after Gate 1 if drafting was skipped):
+Enter this phase only when
+`python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}` returns
+`next_phase: ingest`.
 
-Before entering this phase, write `data/ingestion.json` with
-`{"schema_version":"1.0","status":"pending"}` and run
-`python3 scripts/finalize-report.py {CASE_DIR} --if-ready`. This case-local transition
-marker makes a skipped Phase 5 visible even if ingestion writes only to an external
-vault. Stop if the finalizer fails.
+Before asking for the ingestion decision, run
+`python3 scripts/finalize-report.py {CASE_DIR} --if-ready`. The existing
+finalizer verifies the current completed or declined report path. Stop if it
+fails.
 
 Remind the user before asking for ingestion confirmation:
 
@@ -21,5 +22,14 @@ Remind the user before asking for ingestion confirmation:
 
 > "Investigation complete. Ingest confirmed findings into your knowledge base?"
 
-- If yes: update `data/ingestion.json` to status `requested`, then `invoke-skill("ingest")` — pass project path and vault config from `.spotlight-config.json`.
-- If no: update `data/ingestion.json` to status `declined`; pipeline ends.
+- If yes, run
+  `python3 scripts/spotlight-orchestration.py decide-ingest requested {CASE_DIR}`,
+  then `invoke-skill("ingest")` with the project path and vault config from
+  `.spotlight-config.json`. After the ingest skill writes its receipt, run
+  `python3 scripts/spotlight-orchestration.py decide-ingest completed {CASE_DIR}`;
+  the seam preserves existing ingestion fields while sealing their current
+  bytes.
+- If no, run
+  `python3 scripts/spotlight-orchestration.py decide-ingest declined {CASE_DIR}`.
+  The seam writes the existing declined `data/ingestion.json` marker and the
+  hash-bound case decision; the pipeline ends.

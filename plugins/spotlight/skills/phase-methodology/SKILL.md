@@ -155,9 +155,20 @@ When the agent completes:
    `skip_reason`. Do not block methodology approval.
 
 5. **Gate: user approves the methodology.** Iterate if the user has changes.
+   Re-run the methodology validator after the final change. When the user
+   explicitly approves, persist the attributable, current-input receipt:
+
+   ```text
+   python3 scripts/spotlight-orchestration.py approve methodology --approved-by "<human identity>" --approved-at "<ISO 8601 timestamp>" {CASE_DIR}
+   ```
+
+   The receipt binds the current `brief-directions.txt` and
+   `data/methodology.json`. The methodology file alone remains a draft; if
+   either input changes, status returns `methodology_approval` again.
    If the methodology changes after an approved RLM run, update
    `methodology.json`, regenerate `rlm-request.json` with the changed
-   methodology/corpus paths, and rerun RLM before Phase 3.
+   methodology/corpus paths, rerun RLM, revalidate, and record a new approval
+   before Phase 3.
 6. After approval and before Phase 3 research begins, remind the user:
 
    > **AI assistance notice:** Spotlight is designed to help surface, organize, and cross-check information, but AI can make mistakes. You are responsible for verifying sources, confirming authenticity, assessing risks, and deciding what is publishable.

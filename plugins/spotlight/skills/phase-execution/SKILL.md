@@ -9,6 +9,12 @@ phase: execution
 
 With approved methodology, begin the execution loop. No user involvement between cycles — decide autonomously.
 
+Enter this phase only when
+`python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}` returns
+`next_phase: execution`. Set `N` to one more than
+`attempts.execution-cycle` (default 0); never reconstruct the cycle number from
+conversation context or artifact presence.
+
 ## Source-expression release mode
 
 Resolve this once before the first cycle and preserve it on every investigator
@@ -104,9 +110,19 @@ Append to {CASE_DIR}/data/investigation-log.json.",
      If validation reports errors (non-zero exit), the investigator left data
      bugs — empty `claim` fields, missing required keys, wrong-shape output,
      or dangling references. Do NOT proceed to the fact-checker. Re-spawn the
-     investigator with the validator errors quoted verbatim in the prompt and
-     a directive: "fix these data bugs without changing your findings or
-     verdicts; only correct the shape." Loop until the validator passes.
+     investigator with the validator errors quoted verbatim and direct it to
+     correct only the shape, without changing findings or verdicts. Re-run the
+     validator after the correction. If it still fails, record the failed
+     correction and its exact error:
+
+     ```
+     python3 scripts/spotlight-orchestration.py record-attempt structural-correction --gap "<validator error>" {CASE_DIR}
+     python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}
+     ```
+
+     Stop when status is `blocked`; otherwise make the one remaining structural
+     correction. Two failed corrections exhaust the case. There is no
+     shape-repair loop beyond that cap.
 
   3. Spawn fact-checker:
 
@@ -144,13 +160,20 @@ Write to {CASE_DIR}/data/fact-check.json.",
      execute-shell("python3 scripts/validate-fact-check.py {CASE_DIR}")
      ```
 
-     If the structural validator fails, use the same shape-only correction rules
-     as 2.5. If the evidence validator fails, re-spawn the fact-checker once with
-     its reasons quoted verbatim: repair the named case-local path, line range,
-     JSON Pointer, quote, or hash; otherwise downgrade the verdict and explain the
-     gap. Never ask it to change prose merely to satisfy a language heuristic.
-     Present Gate 1 only after the evidence validator passes, or explicitly disclose
-     the remaining claim as unverified.
+     If the structural validator fails, use the bounded shape-only correction
+     path in 2.5. If the evidence validator fails, re-spawn the fact-checker
+     once with its reasons quoted verbatim: repair the named case-local path,
+     line range, JSON Pointer, quote, or hash; otherwise downgrade the verdict
+     and explain the gap. Never ask it to change prose merely to satisfy a
+     language heuristic. Re-run both validators. If evidence validation still
+     fails, persist exhaustion and stop:
+
+     ```
+     python3 scripts/spotlight-orchestration.py record-attempt fact-check-evidence-repair --gap "<evidence validator error>" {CASE_DIR}
+     python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}
+     ```
+
+     Do not present Gate 1 from a failed evidence chain.
 
   5. Run editorial standards check:
      - Do findings have sources with URLs, timestamps, and `local_file`?
@@ -197,15 +220,26 @@ Write to {CASE_DIR}/data/fact-check.json.",
 
   7. If ALL criteria met: proceed to Gate 1 (`skills/phase-gate1`).
 
-  8. If NOT met AND N < 5: identify specific gaps, increment N, loop.
+  8. If NOT met: record the completed unsuccessful cycle and the current gaps:
 
-  9. If NOT met AND N >= 5: trigger Stall Protocol.
+     ```
+     python3 scripts/spotlight-orchestration.py record-attempt execution-cycle --gap "<readiness gaps>" {CASE_DIR}
+     python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}
+     ```
+
+     If status returns `execution`, resume at the disk-derived next cycle. If
+     it returns `blocked`, trigger the Stall Protocol. Five unsuccessful cycles
+     exhaust the case.
 ```
 
 ---
 
 # Stall Protocol
 
-> "Investigation stalled after {N} cycles. Missing: {gaps}. Options: continue with more cycles, pivot angle, or review current findings as-is."
+> "Investigation blocked after {attempts.execution-cycle} cycles. Missing:
+> {blocked.gap}."
 
-**STOP** and wait for the user's decision. Do not auto-advance.
+**STOP**. Present the persisted blocked evidence and counts. Continuing requires
+a revised methodology and a new human approval receipt; never extend the cap,
+reset it from conversation memory, auto-advance, or loop until a validator
+passes.
