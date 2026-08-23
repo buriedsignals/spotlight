@@ -50,7 +50,7 @@ done
 # Version handshake with install/setup_server.py + install/configure.html —
 # asserted after a CDN fetch so a half-propagated deploy fails loud instead
 # of 403-ing every POST.
-CONFIGURATOR_VERSION="2"
+CONFIGURATOR_VERSION="3"
 SPOTLIGHT_PROFILE_DIR="$HOME/.config/spotlight"
 STAGED_ENV="$SPOTLIGHT_PROFILE_DIR/.env"
 SETUP_CONFIG="$SPOTLIGHT_PROFILE_DIR/setup-config.env"

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="configurator-version" content="2">
+<meta name="configurator-version" content="3">
 <title>Spotlight — Configure your install</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23c16a34'><path d='M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z'/></svg>">
 <style>
@@ -51,6 +51,7 @@
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   @media (max-width: 760px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+  .grid-2[hidden] { display: none; }
   .item { background: var(--paper-2); border: var(--hairline-light); padding: 22px 22px 20px; display: flex; flex-direction: column; gap: 10px; transition: background 150ms ease, color 150ms ease, border-color 150ms ease; }
   .item__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
   .item__title { font-family: var(--display); font-variation-settings: "opsz" 72, "wght" 500; font-weight: 500; font-size: 20px; line-height: 1.15; letter-spacing: -0.02em; }
@@ -170,10 +171,11 @@
     <p class="num">02 — Agent</p>
     <h2>Pick your <em>AI agent.</em></h2>
     <p class="sec-lead">Spotlight is a skill bundle — it runs inside an agent runtime. Subscription runtimes (Claude Code, Codex, Pi) authenticate via their own login: <strong>no API key needed</strong>. Only OpenCode requires a provider key (pay per token).</p>
-    <div class="grid-2">
+    <div class="callout" id="runtimeConfirm" hidden><p style="margin:0;">Detected <strong id="runtimeDetectedLabel">agent</strong><span id="runtimeDetectedVersion"></span> installed — using it. <a href="#" id="runtimeChange">Change</a></p></div>
+    <div class="grid-2" id="runtimeCards">
       <label class="item radio-card">
         <div class="item__head">
-          <span class="item__title"><input type="radio" name="cloud_runtime" value="claude" checked style="margin-right:8px;">Claude <em>Code.</em></span>
+          <span class="item__title"><input type="radio" name="cloud_runtime" value="claude-code" checked style="margin-right:8px;">Claude <em>Code.</em></span>
           <span class="badge req">default</span>
         </div>
         <p class="item__lede">Anthropic Claude — covered by Claude Max or Claude Pro. Strongest for methodology + fact-checking depth.</p>
@@ -181,13 +183,13 @@
       <label class="item radio-card">
         <div class="item__head">
           <span class="item__title"><input type="radio" name="cloud_runtime" value="pi" style="margin-right:8px;">Pi<em>.</em></span>
-          <span class="badge">subscription</span>
+          <span class="badge">subscription</span> <span class="badge">not auto-detected</span>
         </div>
         <p class="item__lede">A direct Pi coding-agent session. Run <code>/login</code> on first launch and use your supported subscription — no Flue and no provider key.</p>
       </label>
       <label class="item radio-card">
         <div class="item__head">
-          <span class="item__title"><input type="radio" name="cloud_runtime" value="codex" style="margin-right:8px;">Codex<em>.</em></span>
+          <span class="item__title"><input type="radio" name="cloud_runtime" value="codex-cli" style="margin-right:8px;">Codex<em>.</em></span>
           <span class="badge">subscription</span>
         </div>
         <p class="item__lede">OpenAI GPT — covered by ChatGPT Plus / Pro / Team / Enterprise. Fast, broadly capable.</p>
@@ -195,7 +197,7 @@
       <label class="item radio-card">
         <div class="item__head">
           <span class="item__title"><input type="radio" name="cloud_runtime" value="opencode" style="margin-right:8px;">Open<em>Code.</em></span>
-          <span class="badge">pay per token</span>
+          <span class="badge">pay per token</span> <span class="badge">not auto-detected</span>
         </div>
         <p class="item__lede">Pick OpenRouter or Fireworks below. Engine-managed installs additionally offer OpenCode Go. Typically ~$0.50–2 per investigation, charged per token.</p>
       </label>
@@ -372,6 +374,7 @@
 <script>
 const TOKEN = "__SETUP_TOKEN__";
 const PLATFORM = "__PLATFORM__"; // mac | linux | windows-wsl — detected by the local server
+const RUNTIME_DETECTION = __RUNTIME_DETECTION__; // probed at server start: {installed:[{id,label,version?}],failures:[{id,reason}]}
 
 /* Install + vault paths: native Browse (the local server opens a real OS
    folder dialog) plus per-OS default chips. */
@@ -456,6 +459,31 @@ function applyCloudRuntime() {
 document.querySelectorAll('input[name="cloud_runtime"]').forEach(el => el.addEventListener('change', applyCloudRuntime));
 document.querySelectorAll('input[name="opencode_provider"]').forEach(el => el.addEventListener('change', applyCloudRuntime));
 applyCloudRuntime();
+
+/* Runtime detection — probed by the local server before this page was
+   served. A detected runtime preselects its card and collapses §02 to the
+   confirmation row; nothing detected or every probe failed leaves the manual
+   list exactly as authored below. Runs before the Engine IIFE, and only
+   mutates nodes that path deletes wholesale, so the two never conflict. */
+function applyRuntimeDetection() {
+  const grid = document.getElementById('runtimeCards');
+  const row = document.getElementById('runtimeConfirm');
+  const detected = (RUNTIME_DETECTION && RUNTIME_DETECTION.installed || [])[0];
+  const radio = detected && document.querySelector('input[name="cloud_runtime"][value="' + detected.id + '"]');
+  if (!grid || !row || !radio) return;
+  radio.checked = true;
+  applyCloudRuntime();
+  grid.hidden = true;
+  document.getElementById('runtimeDetectedLabel').textContent = detected.label || detected.id;
+  document.getElementById('runtimeDetectedVersion').textContent = detected.version ? ' ' + detected.version : '';
+  row.hidden = false;
+}
+document.getElementById('runtimeChange').addEventListener('click', event => {
+  event.preventDefault();
+  document.getElementById('runtimeConfirm').hidden = true;
+  document.getElementById('runtimeCards').hidden = false;
+});
+applyRuntimeDetection();
 
 function bindCheckbox(checkboxId, targetId) {
   const cb = document.getElementById(checkboxId);

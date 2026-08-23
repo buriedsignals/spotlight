@@ -32,7 +32,7 @@ import setup_server as srv  # noqa: E402
 import engine_bridge as engine  # noqa: E402
 
 BASE = {
-    "mode": "cloud", "cloudRuntime": "claude", "opencodeProvider": "openrouter",
+    "mode": "cloud", "cloudRuntime": "claude-code", "opencodeProvider": "openrouter",
     "cloudKey": "", "localAgent": "flue", "localModel": "gemma12b",
     "firecrawlKey": "fc-secret-test", "navigatorConnected": True,
     # Retired F1 field: a stale client may still post it; the server must
@@ -218,7 +218,7 @@ class UnitChecks(unittest.TestCase):
         d = srv.normalize({})
         # enum choices may default…
         self.assertEqual(d["mode"], "cloud")
-        self.assertEqual(d["cloudRuntime"], "claude")
+        self.assertEqual(d["cloudRuntime"], "claude-code")
         self.assertEqual(d["localModel"], "gemma12b")
         # The vault-app choice is retired; normalize never reintroduces it.
         self.assertNotIn("vaultApp", d)
@@ -412,6 +412,133 @@ class UnitChecks(unittest.TestCase):
         self.assertIn(f'<meta name="configurator-version" content="{srv.CONFIGURATOR_VERSION}">', page)
 
 
+class RuntimeTokenChecks(unittest.TestCase):
+    """F3: one token set — the Engine resolver vocabulary — mapped once in
+    setup_server.py; every page-offered runtime resolves into it."""
+
+    RESOLVER_VOCABULARY = {
+        "claude-code", "claude-desktop", "codex-cli", "codex-desktop",
+        "opencode", "pi",
+    }
+
+    def test_runtime_map_covers_resolver_vocabulary_exactly(self):
+        self.assertEqual(set(srv.RUNTIMES), self.RESOLVER_VOCABULARY)
+
+    def test_every_page_offered_runtime_exists_in_resolver_vocabulary(self):
+        source = read(os.path.join(ROOT, "install", "configure.html"))
+        offered = set(re.findall(r'name="cloud_runtime" value="([^"]+)"', source))
+        self.assertTrue(offered, "no cloud_runtime options found in configure.html")
+        self.assertLessEqual(offered, set(srv.RUNTIMES))
+
+    def test_probe_coverage_is_exactly_claude_code_and_codex_cli(self):
+        probed = {token for token, spec in srv.RUNTIMES.items() if spec.get("bin")}
+        self.assertEqual(probed, {"claude-code", "codex-cli"})
+
+    def test_normalize_keeps_resolver_tokens_as_posted(self):
+        for token in ("claude-code", "codex-cli", "pi", "opencode"):
+            self.assertEqual(srv.normalize({"cloudRuntime": token})["cloudRuntime"], token)
+
+    def test_derived_maps_resolver_tokens_to_installer_tokens(self):
+        # The installer-facing SPOTLIGHT_RUNTIME token must keep working:
+        # setup-config.env still carries claude/codex/pi/opencode.
+        expected = {"claude-code": "claude", "codex-cli": "codex",
+                    "pi": "pi", "opencode": "opencode"}
+        for resolver, installer in expected.items():
+            derived = srv.derived(srv.normalize({"cloudRuntime": resolver}))
+            self.assertEqual(derived["runtime"], installer, resolver)
+
+
+class RuntimeDetectionChecks(unittest.TestCase):
+    """F2: the probe seam mirrors engine desktop/src/main/remote-mcp-runtime.ts
+    (~20 lines: which <bin> + --version), is stubbed in tests, and a probe
+    failure degrades to the manual list — it never blocks install."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def write_fake_binary(self, name, stdout="", exit_code=0):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("#!/usr/bin/env python3\n"
+                         "import sys\n"
+                         f"print({stdout!r})\n"
+                         f"sys.exit({exit_code})\n")
+        os.chmod(path, 0o755)
+        return path
+
+    def test_default_probe_captures_last_version_token_of_successful_binary(self):
+        binary = self.write_fake_binary("claude", stdout="claude 2.1.0")
+        with mock.patch.object(srv.shutil, "which", return_value=binary):
+            self.assertEqual(srv.default_runtime_probe("claude-code"),
+                             {"installed": True, "version": "2.1.0"})
+
+    def test_default_probe_omits_version_when_version_output_is_empty(self):
+        binary = self.write_fake_binary("claude", stdout="")
+        with mock.patch.object(srv.shutil, "which", return_value=binary):
+            self.assertEqual(srv.default_runtime_probe("claude-code"),
+                             {"installed": True})
+
+    def test_default_probe_treats_missing_binary_as_not_installed(self):
+        with mock.patch.object(srv.shutil, "which", return_value=None):
+            self.assertEqual(srv.default_runtime_probe("codex-cli"),
+                             {"installed": False})
+
+    def test_default_probe_treats_uncovered_runtime_as_not_installed(self):
+        self.assertEqual(srv.default_runtime_probe("pi"), {"installed": False})
+
+    def test_default_probe_reports_error_for_failing_version_command(self):
+        binary = self.write_fake_binary("codex", stdout="", exit_code=3)
+        with mock.patch.object(srv.shutil, "which", return_value=binary):
+            result = srv.default_runtime_probe("codex-cli")
+        self.assertFalse(result["installed"])
+        self.assertTrue(result.get("error"), "a failing probe must carry its error")
+
+    def test_detect_runtimes_lists_installed_in_probe_order_with_versions(self):
+        versions = {"claude-code": "2.1.0", "codex-cli": "0.5.0"}
+
+        def stub(runtime_id):
+            return {"installed": True, "version": versions[runtime_id]}
+
+        observation = srv.detect_runtimes(probe=stub)
+        self.assertEqual([row["id"] for row in observation["installed"]],
+                         ["claude-code", "codex-cli"])
+        self.assertEqual(observation["installed"][0]["version"], "2.1.0")
+
+    def test_detect_runtimes_returns_empty_when_nothing_is_detected(self):
+        observation = srv.detect_runtimes(
+            probe=lambda runtime_id: {"installed": False})
+        self.assertEqual(observation["installed"], [])
+
+    def test_detect_runtimes_collects_probe_errors_without_raising(self):
+        def stub(runtime_id):
+            return {"installed": False, "error": f"{runtime_id} exploded"}
+
+        observation = srv.detect_runtimes(probe=stub)
+        self.assertEqual(observation["installed"], [])
+        self.assertEqual(sorted(row["id"] for row in observation["failures"]),
+                         ["claude-code", "codex-cli"])
+
+    def test_detect_runtimes_survives_a_raising_probe(self):
+        def stub(runtime_id):
+            raise RuntimeError("probe kaboom")
+
+        observation = srv.detect_runtimes(probe=stub)
+        self.assertEqual(observation["installed"], [])
+        self.assertTrue(all(row["reason"] for row in observation["failures"]))
+
+    def test_detection_json_is_baked_over_the_page_placeholder(self):
+        source = read(os.path.join(ROOT, "install", "configure.html"))
+        self.assertIn(srv.RUNTIME_DETECTION_PLACEHOLDER, source)
+        page = "<html>" + srv.RUNTIME_DETECTION_PLACEHOLDER + "</html>"
+        baked = srv.apply_runtime_detection(page, {
+            "installed": [{"id": "claude-code", "version": "2.1.0"}],
+            "failures": [],
+        })
+        self.assertNotIn(srv.RUNTIME_DETECTION_PLACEHOLDER, baked)
+        self.assertIn('"claude-code"', baked)
+        self.assertIn("2.1.0", baked)
+
+
 class ServerChecks(unittest.TestCase):
     PORT = 0
 
@@ -533,6 +660,39 @@ print(json.dumps({"event": "result", "data": data}))
         self.assertEqual(marker_data["plan"]["plan_path"], "/tmp/spotlight-install.json")
         self.assertEqual(marker_data["engine_binary"], self.fake_bsig)
         self.assertEqual(set(os.listdir(self.tmp)), {"bsig", "engine-plan.ready"})
+
+    def test_runtime_detection_page_contract(self):
+        # F2/F3: detection payload is baked server-side; the static form
+        # speaks resolver tokens; uncovered options say so honestly.
+        self.assertNotIn("__RUNTIME_DETECTION__", self.page)
+        offered = set(re.findall(r'name="cloud_runtime" value="([^"]+)"', self.page))
+        self.assertEqual(offered, {"claude-code", "pi", "codex-cli", "opencode"})
+
+        def card_head(token):
+            for segment in self.page.split('<label class="item radio-card">')[1:]:
+                head = segment.split("</label>")[0]
+                if f'value="{token}"' in head:
+                    return head
+            return ""
+
+        for token in ("pi", "opencode"):
+            self.assertIn("not auto-detected", card_head(token), token)
+        for token in ("claude-code", "codex-cli"):
+            head = card_head(token)
+            self.assertTrue(head, f"missing radio card for {token}")
+            self.assertNotIn("not auto-detected", head, token)
+
+        # Detected runtimes collapse §02 to a confirmation row with a change link.
+        self.assertIn('id="runtimeConfirm"', self.page)
+        self.assertIn('id="runtimeChange"', self.page)
+        templates = [line for line in self.page.splitlines() if "using it" in line]
+        self.assertEqual(len(templates), 1, "exactly one confirmation-row template")
+        row_template = templates[0]
+        self.assertIn("Detected", row_template)
+        self.assertIn("installed", row_template)
+        # Copy discipline: installation is proven, entitlement is never claimed.
+        self.assertNotIn("subscription", row_template)
+        self.assertNotIn("covered", row_template)
 
 
 class PublicWebsiteChecks(unittest.TestCase):

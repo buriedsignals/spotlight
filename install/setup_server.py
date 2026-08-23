@@ -24,6 +24,7 @@ import platform
 import re
 import secrets
 import shlex
+import shutil
 import string
 import subprocess
 import sys
@@ -47,17 +48,41 @@ from navigator_bridge import NavigatorBridgeError, NavigatorInstallerBridge
 
 # Asserted by install-spotlight.sh against the literal in configure.html and
 # its own copy — a mismatch means the Pages CDN is mid-propagation.
-CONFIGURATOR_VERSION = "2"
+CONFIGURATOR_VERSION = "3"
 
 SUBMIT_TIMEOUT_SECONDS = 30 * 60
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# One token set: the Engine resolver vocabulary. Every downstream surface
+# derives from this table — installer tokens (the SPOTLIGHT_RUNTIME case arms
+# in install-spotlight.sh), labels, Navigator contract IDs, probe coverage.
+# Desktop rows carry no installer arm yet: vocabulary-only, never offered by
+# the static form (the Engine-managed path offers them instead).
+RUNTIMES = {
+    "claude-code": {"label": "Claude Code", "installer": "claude", "bin": "claude"},
+    "claude-desktop": {"label": "Claude Desktop", "installer": None, "bin": None},
+    "codex-cli": {"label": "Codex", "installer": "codex", "bin": "codex"},
+    "codex-desktop": {"label": "Codex Desktop", "installer": None, "bin": None},
+    "opencode": {"label": "OpenCode", "installer": "opencode", "bin": None},
+    "pi": {"label": "Pi", "installer": "pi", "bin": None},
+}
+# Tokens the legacy installer body can actually install — an RT case arm exists.
+INSTALLABLE_RUNTIMES = tuple(token for token, row in RUNTIMES.items() if row["installer"])
+# F2 probe coverage: exactly the runtimes with a known CLI binary.
+PROBED_RUNTIMES = tuple(token for token, row in RUNTIMES.items() if row["bin"])
+RUNTIME_LABELS = {token: row["label"] for token, row in RUNTIMES.items()}
+
 NAVIGATOR_RUNTIME_IDS = {
-    "claude": "claude-code",
-    "codex": "codex-cli",
+    # Resolver tokens are Navigator's contract IDs; "local" names the
+    # Flue-on-Pi harness transport. "claude"/"codex" are legacy persisted
+    # choices, kept as aliases so saved configs still resolve.
+    "claude-code": "claude-code",
+    "codex-cli": "codex-cli",
     "pi": "pi",
     "opencode": "opencode",
+    "claude": "claude-code",
+    "codex": "codex-cli",
     "local": "pi-flue",
 }
 
@@ -134,6 +159,59 @@ def detect_platform():
         return "linux"
     return "linux"
 
+# ── Runtime detection ─────────────────────────────────────────────────
+# Mirrors the engine's desktop/src/main/remote-mcp-runtime.ts: which(1) +
+# --version, last whitespace token of stdout is the version. A probe failure
+# degrades to the manual list — detection never blocks an install.
+RUNTIME_DETECTION_PLACEHOLDER = "__RUNTIME_DETECTION__"
+
+
+def default_runtime_probe(runtime_id):
+    """which + --version against one runtime's binary; uncovered ids report
+    not installed rather than erroring."""
+    spec = RUNTIMES.get(runtime_id)
+    binary = spec and spec["bin"] and shutil.which(spec["bin"])
+    if not binary:
+        return {"installed": False}
+    try:
+        result = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return {"installed": False, "error": str(error)}
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        return {"installed": False,
+                "error": detail or f"{runtime_id} exited with code {result.returncode}"}
+    tokens = result.stdout.split()
+    return {"installed": True, "version": tokens[-1]} if tokens else {"installed": True}
+
+
+def detect_runtimes(probe=default_runtime_probe):
+    """Aggregate probes over PROBED_RUNTIMES; never raises (mirrors
+    detectRuntimes in the engine's desktop/src/shared/remote-mcp-contracts.ts)."""
+    installed, failures = [], []
+    for runtime_id in PROBED_RUNTIMES:
+        try:
+            observed = probe(runtime_id)
+        except Exception as error:  # a raising probe is a failure, never a crash
+            failures.append({"id": runtime_id, "reason": str(error) or "runtime probe failed"})
+            continue
+        if observed.get("error"):
+            failures.append({"id": runtime_id, "reason": str(observed["error"])})
+            continue
+        if observed.get("installed"):
+            row = {"id": runtime_id, "label": RUNTIMES[runtime_id]["label"]}
+            if observed.get("version"):
+                row["version"] = str(observed["version"])
+            installed.append(row)
+    return {"installed": installed, "failures": failures}
+
+
+def apply_runtime_detection(page, detection):
+    """Bake the startup detection payload over the page placeholder. `<` is
+    escaped so a hostile --version string cannot close the inline script."""
+    payload = json.dumps(detection).replace("<", "\\u003c")
+    return page.replace(RUNTIME_DETECTION_PLACEHOLDER, payload)
+
 
 # Fixed server-side prompts keyed by field name. The client only names the
 # field; it can never inject dialog copy.
@@ -202,12 +280,6 @@ CLOUD_KEY_VARS = {
     "openrouter": "OPENROUTER_API_KEY",
     "fireworks": "FIREWORKS_API_KEY",
 }
-RUNTIME_LABELS = {
-    "claude": "Claude Code",
-    "codex": "Codex",
-    "pi": "Pi",
-    "opencode": "OpenCode",
-}
 PROVIDER_LABELS = {
     "openrouter": "OpenRouter",
     "fireworks": "Fireworks AI",
@@ -228,7 +300,7 @@ def normalize(payload):
 
     return {
         "mode": enum("mode", ("cloud", "local"), "cloud"),
-        "cloudRuntime": enum("cloudRuntime", ("claude", "codex", "pi", "opencode"), "claude"),
+        "cloudRuntime": enum("cloudRuntime", INSTALLABLE_RUNTIMES, "claude-code"),
         "opencodeProvider": enum("opencodeProvider", tuple(CLOUD_KEY_VARS), "openrouter"),
         "localAgent": enum("localAgent", tuple(SERVER_FOR_AGENT), "flue"),
         "localModel": enum("localModel", tuple(MODEL_REPOS), "gemma12b"),
@@ -259,7 +331,7 @@ def derived(d):
     local = d["mode"] == "local"
     opencode_cloud = (not local) and d["cloudRuntime"] == "opencode"
     return {
-        "runtime": "local" if local else d["cloudRuntime"],
+        "runtime": "local" if local else RUNTIMES[d["cloudRuntime"]]["installer"],
         # One local harness: Flue on Pi over llama.cpp (docs/runtimes.md, canonical).
         "agent": "flue" if local else "",
         "localServer": "llamacpp" if local else "",
@@ -546,7 +618,7 @@ def build_getting_started(d):
                        "First time: type <code>/model</code> and pick a strong default for your provider.")
     else:
         runtime = RUNTIME_LABELS[d["cloudRuntime"]]
-        login_cmd = {"claude": "claude login", "codex": "codex login", "pi": "pi  # then /login"}[d["cloudRuntime"]]
+        login_cmd = {"claude-code": "claude login", "codex-cli": "codex login", "pi": "pi  # then /login"}[d["cloudRuntime"]]
         launch_note = (f"The <code>spotlight</code> command opens {esc(runtime)} inside your Spotlight folder with every skill loaded. "
                        f"First time only: run <code>{esc(login_cmd)}</code> and sign in with your subscription account — no API key needed.")
 
@@ -632,6 +704,7 @@ def main():
     token = secrets.token_urlsafe(16)
     page = page.replace("__SETUP_TOKEN__", token)
     page = page.replace("__PLATFORM__", detect_platform())
+    page = apply_runtime_detection(page, detect_runtimes())
     done = threading.Event()
     result = {"written": False}
     engine_bridge = None

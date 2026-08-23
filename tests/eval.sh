@@ -151,10 +151,10 @@ echo "── Runtime consistency (install/configure.html) ──"
 # The configurator's radio sets are the runtime/provider contract the
 # installer's case branches consume. Both sets must match the supported lists.
 radio_values=$(grep -oE 'name="cloud_runtime" value="[^"]+"' install/configure.html | sed 's/.*value="\([^"]*\)".*/\1/' | sort -u | tr '\n' ' ' | sed 's/ $//')
-expected_runtimes="claude codex opencode pi"
+expected_runtimes="claude-code codex-cli opencode pi"
 
 if [ "$radio_values" = "$expected_runtimes" ]; then
-  ok "cloud_runtime radios cover claude/codex/opencode/pi"
+  ok "cloud_runtime radios cover claude-code/codex-cli/opencode/pi"
 else
   fail "cloud_runtime radio drift in install/configure.html"
   printf "%s  radios:   %s%s\n" "$_c_dim" "$radio_values" "$_c_reset"
