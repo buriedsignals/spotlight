@@ -276,7 +276,7 @@
     </div>
     <label class="field-label" for="vault_path">Vault path</label>
     <div class="path-row">
-      <input class="fld" type="text" id="vault_path" value="~/Intelligence" autocomplete="off" spellcheck="false">
+      <input class="fld" type="text" id="vault_path" value="~/Documents/OpenKnowledge/Spotlight" autocomplete="off" spellcheck="false">
       <button type="button" class="mini-btn" data-browse="vault_path">Browse…</button>
     </div>
     <div class="os-chips" role="group" aria-label="Default paths per operating system">
@@ -359,11 +359,11 @@ const RUNTIME_DETECTION = __RUNTIME_DETECTION__; // probed at server start: {ins
 /* Install + vault paths: native Browse (the local server opens a real OS
    folder dialog) plus per-OS default chips. */
 const OS_DEFAULTS = {
-  'mac': { install: '~/Documents/Spotlight', vault: '~/Intelligence',
+  'mac': { install: '~/Documents/Spotlight', vault: '~/Documents/OpenKnowledge/Spotlight',
     hint: 'macOS defaults — ~ is your home folder.' },
-  'linux': { install: '~/Documents/Spotlight', vault: '~/Intelligence',
+  'linux': { install: '~/Documents/Spotlight', vault: '~/Documents/OpenKnowledge/Spotlight',
     hint: 'Linux defaults — ~ is your home folder.' },
-  'windows-wsl': { install: '/mnt/c/Users/YOUR-USERNAME/Documents/Spotlight', vault: '/mnt/c/Users/YOUR-USERNAME/Documents/Intelligence',
+  'windows-wsl': { install: '/mnt/c/Users/YOUR-USERNAME/Documents/Spotlight', vault: '/mnt/c/Users/YOUR-USERNAME/Documents/OpenKnowledge/Spotlight',
     hint: 'Replace YOUR-USERNAME with your Windows username. Keeping both under /mnt/c/… lets Windows apps read them from WSL.' },
 };
 

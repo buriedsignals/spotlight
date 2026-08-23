@@ -38,7 +38,7 @@ BASE = {
     # Retired F1 field: a stale client may still post it; the server must
     # drop it instead of honoring it (test_vault_app_submission_is_ignored).
     "vaultApp": "obsidian",
-    "installPath": "~/Documents/Spotlight", "vaultPath": "~/Intelligence",
+    "installPath": "~/Documents/Spotlight", "vaultPath": "~/Documents/OpenKnowledge/Spotlight",
     "intDevBrowser": True,
     "intJunkipedia": True, "junkipediaKey": "jk-secret-test",
     "intUnpaywall": True, "unpaywallEmail": "reporter@example.com",
@@ -292,7 +292,7 @@ class UnitChecks(unittest.TestCase):
                        "SPOTLIGHT_LOCAL_SERVER=''", "SPOTLIGHT_LOCAL_MODEL=''",
                        "SPOTLIGHT_AGENT=''", "SPOTLIGHT_MODEL_REPO=''",
                        "SPOTLIGHT_DIR_INPUT='~/Documents/Spotlight'",
-                       "SPOTLIGHT_VAULT_INPUT='~/Intelligence'",
+                       "SPOTLIGHT_VAULT_INPUT='~/Documents/OpenKnowledge/Spotlight'",
                        "SPOTLIGHT_INT_DEVBROWSER=true", "SPOTLIGHT_INT_JUNKIPEDIA=true",
                        "SPOTLIGHT_INT_UNPAYWALL=true", "UNPAYWALL_EMAIL=reporter@example.com",
                        "SPOTLIGHT_INT_RLM=true", "SPOTLIGHT_RLM_MODE=local_gemma4_e4b",
@@ -356,7 +356,7 @@ class UnitChecks(unittest.TestCase):
 
     def test_getting_started(self):
         guide = srv.build_getting_started(srv.normalize(BASE))
-        for needle in ["~/Documents/Spotlight", "~/Intelligence", "spotlight doctor",
+        for needle in ["~/Documents/Spotlight", "~/Documents/OpenKnowledge/Spotlight", "spotlight doctor",
                        "spotlight update", "Claude Code", "dev-browser", "Junkipedia",
                        "Unpaywall",
                        "SearXNG + Crawl4AI (sovereign web research)",
@@ -412,6 +412,22 @@ class UnitChecks(unittest.TestCase):
     def test_configurator_version_in_page(self):
         page = read(os.path.join(ROOT, "install", "configure.html"))
         self.assertIn(f'<meta name="configurator-version" content="{srv.CONFIGURATOR_VERSION}">', page)
+    def test_spotlight_default_vault_path_flows_from_page_to_server_config(self):
+        page = read(os.path.join(ROOT, "install", "configure.html"))
+        default = "~/Documents/OpenKnowledge/Spotlight"
+        self.assertIn(f'id="vault_path" value="{default}"', page)
+        for os_default in (
+            f"'mac': {{ install: '~/Documents/Spotlight', vault: '{default}'",
+            f"'linux': {{ install: '~/Documents/Spotlight', vault: '{default}'",
+            f"'windows-wsl': {{ install: '/mnt/c/Users/YOUR-USERNAME/Documents/Spotlight', vault: '/mnt/c/Users/YOUR-USERNAME/Documents/OpenKnowledge/Spotlight'",
+        ):
+            self.assertIn(os_default, page)
+        vault_input = re.search(r'<input[^>]+id="vault_path"[^>]*>', page)
+        self.assertIsNotNone(vault_input)
+        self.assertNotIn("readonly", vault_input.group(0))
+
+        cfg = srv.build_setup_config(srv.normalize({**BASE, "vaultPath": default}))
+        self.assertIn(f"SPOTLIGHT_VAULT_INPUT='{default}'", cfg)
 
 
 class RuntimeTokenChecks(unittest.TestCase):
