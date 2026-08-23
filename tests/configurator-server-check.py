@@ -219,7 +219,9 @@ class UnitChecks(unittest.TestCase):
         # enum choices may default…
         self.assertEqual(d["mode"], "cloud")
         self.assertEqual(d["cloudRuntime"], "claude-code")
-        self.assertEqual(d["localModel"], "gemma12b")
+        # AC3/PRD F5: default follows the catalog recommendation (26b is
+        # 'default'; 12b is 'advanced') — see task notes.md deviation record.
+        self.assertEqual(d["localModel"], "gemma26b")
         # The vault-app choice is retired; normalize never reintroduces it.
         self.assertNotIn("vaultApp", d)
         # …but emptied paths must NOT be silently defaulted
@@ -739,6 +741,78 @@ class PublicWebsiteChecks(unittest.TestCase):
                     proc.terminate()
                     proc.wait(timeout=5)
                 proc.stdout.close()
+
+
+class ModelCatalogChecks(unittest.TestCase):
+    """F5: local-model cards render from one pinned table in setup_server.py
+    whose numbers equal the signed engine catalog (engine/catalog/catalog.json,
+    release_sequence 22). The public static install path cannot read the
+    catalog, so the expected values are hardcoded here from the signed source.
+    Catalog artifacts[] carry no byte counts, so download figures are the
+    grounded Content-Length approximations of the pinned artifact URLs
+    (response etag == catalog sha256, measured 2026-08-23).
+    """
+
+    CATALOG = {
+        "gemma12b": {"catalog_id": "spotlight-gemma4-12b", "min_ram_gb": 24,
+                     "artifact_id": "spotlight-gemma4-12b-q4km",
+                     "download_gb": 7, "recommendation": "advanced"},
+        "gemma26b": {"catalog_id": "gemma4-26b-a4b", "min_ram_gb": 32,
+                     "artifact_id": "gemma4-26b-a4b-q4km",
+                     "download_gb": 17, "recommendation": "default"},
+        "gemma31b": {"catalog_id": "gemma4-31b", "min_ram_gb": 48,
+                     "artifact_id": "gemma4-31b-q4km",
+                     "download_gb": 18, "recommendation": "advanced"},
+    }
+
+    def baked_page(self):
+        return srv.apply_model_cards(read(os.path.join(ROOT, "install", "configure.html")))
+
+    def card(self, page, token):
+        match = re.search(
+            rf'<label class="item radio-card" id="modelCard-{re.escape(token)}">.*?</label>',
+            page, re.S)
+        self.assertIsNotNone(match, f"model card for {token} not rendered")
+        return match.group(0)
+
+    def test_pinned_model_table_matches_signed_catalog(self):
+        self.assertEqual(set(srv.MODELS), set(self.CATALOG))
+        for token, want in self.CATALOG.items():
+            row = srv.MODELS[token]
+            for field, value in want.items():
+                self.assertEqual(row[field], value, f"{token}.{field}")
+
+    def test_default_local_model_is_the_catalog_recommendation_default(self):
+        defaults = [token for token, row in srv.MODELS.items()
+                    if row["recommendation"] == "default"]
+        self.assertEqual(defaults, ["gemma26b"])
+        self.assertEqual(srv.DEFAULT_MODEL, "gemma26b")
+        # The server-side fallback for payloads without a model follows the pin.
+        self.assertEqual(srv.normalize({"mode": "local"})["localModel"], srv.DEFAULT_MODEL)
+
+    def test_cards_render_from_the_pinned_table(self):
+        raw = read(os.path.join(ROOT, "install", "configure.html"))
+        self.assertEqual(
+            re.findall(r'<input type="radio" name="local_model" value="([^"]+)"', raw),
+            [], "cards must be server-rendered from MODELS, not hardcoded")
+        page = self.baked_page()
+        offered = re.findall(r'<input type="radio" name="local_model" value="([^"]+)"', page)
+        self.assertEqual(sorted(offered), sorted(self.CATALOG))
+        checked = re.findall(
+            r'<input type="radio" name="local_model" value="([^"]+)"[^>]*checked', page)
+        self.assertEqual(checked, [srv.DEFAULT_MODEL])
+        for token, row in self.CATALOG.items():
+            card = self.card(page, token)
+            self.assertIn(f">{row['min_ram_gb']} GB</span>", card, token)
+            self.assertIn(f"~{row['download_gb']} GB download", card, token)
+
+    def test_no_stale_ram_claims_remain_on_cards_or_splash(self):
+        page = self.baked_page()
+        for token in self.CATALOG:
+            self.assertNotIn("16 GB", self.card(page, token), token)
+        # Splash Local meta states the true floor (min min_ram_gb = 24).
+        self.assertNotIn("16 GB+ RAM", page)
+        self.assertIn("24 GB+ RAM", page)
 
 
 if __name__ == "__main__":

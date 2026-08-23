@@ -255,21 +255,60 @@ def pick_folder_natively(prompt):
 
 # Choice → installer-value tables. Pins live in install-spotlight.sh only;
 # this server (and configure.html) carry choices, never versions.
-# Roster (2026-07-09): the Gemma-4 sovereign tiers. Repo + Q4 filename pairs are
-# verified against the HF API; the 12b is the Spotlight procedure-tuned orchestrator.
-MODEL_REPOS = {
-    "gemma12b": "tomvaillant/gemma4-12b-spotlight-orchestrator-v5-GGUF",
-    "gemma26b": "unsloth/gemma-4-26B-A4B-it-GGUF",
-    "gemma31b": "unsloth/gemma-4-31B-it-GGUF",
+# MODELS is the one pinned roster of local-model claims, equal to the signed
+# engine catalog (release_sequence 22): min_ram_gb and recommendation are
+# catalog fields; download_gb is the grounded Content-Length approximation of
+# each pinned artifact URL (response etag == catalog sha256, checked
+# 2026-08-23). configure.html's cards render from it at serve time.
+MODELS = {  # token → {repo, label, sub, tier, catalog_id, artifact_id,
+            #          recommendation, min_ram_gb, download_gb, blurb}
+    "gemma12b": {
+        "repo": "tomvaillant/gemma4-12b-spotlight-orchestrator-v5-GGUF",
+        "label": "Gemma 4 12B",
+        "sub": "Spotlight orchestrator.",
+        "tier": "12b",
+        "catalog_id": "spotlight-gemma4-12b",
+        "artifact_id": "spotlight-gemma4-12b-q4km",
+        "recommendation": "advanced",
+        "min_ram_gb": 24,
+        "download_gb": 7,
+        "blurb": ("The speed pick. Procedure-tuned on real Spotlight "
+                  "investigations to drive the gated pipeline (delegate → "
+                  "verify → stop at gates)."),
+    },
+    "gemma26b": {
+        "repo": "unsloth/gemma-4-26B-A4B-it-GGUF",
+        "label": "Gemma 4 26B-A4B",
+        "sub": "Mixture-of-experts.",
+        "tier": "26b",
+        "catalog_id": "gemma4-26b-a4b",
+        "artifact_id": "gemma4-26b-a4b-q4km",
+        "recommendation": "default",
+        "min_ram_gb": 32,
+        "download_gb": 17,
+        "blurb": ("Mid tier: 26B of knowledge with 4B active per token — "
+                  "near-12B response speed with more reasoning headroom. "
+                  "Needs 32 GB unified memory; comfortable at 48 GB."),
+    },
+    "gemma31b": {
+        "repo": "unsloth/gemma-4-31B-it-GGUF",
+        "label": "Gemma 4 31B",
+        "sub": "Maximum quality.",
+        "tier": "31b",
+        "catalog_id": "gemma4-31b",
+        "artifact_id": "gemma4-31b-q4km",
+        "recommendation": "advanced",
+        "min_ram_gb": 48,
+        "download_gb": 18,
+        "blurb": ("Quality tier: strongest local model on our OSINT benchmark "
+                  "(0.881 facet at Q4, lowest hallucination of the pack). "
+                  "Dense — noticeably slower on deep investigations; wants "
+                  "48 GB unified memory for the full stack."),
+    },
 }
-MODEL_LABELS = {
-    "gemma12b": "Gemma 4 12B — Spotlight orchestrator (procedure-tuned)",
-    "gemma26b": "Gemma 4 26B-A4B (MoE)",
-    "gemma31b": "Gemma 4 31B",
-}
-# Tier drives the harness compaction profile, the launcher's reasoning budget,
-# and integration dismissal (12b: constrained set).
-MODEL_TIERS = {"gemma12b": "12b", "gemma26b": "26b", "gemma31b": "31b"}
+# The page's initial selection and normalize()'s fallback follow the catalog's
+# recommendation semantics ("default", not "advanced").
+DEFAULT_MODEL = "gemma26b"
 # The RLM (fetch distillation + compaction summarizer), served by the launcher on
 # its own llama.cpp. Stock instruction-tuned e4b — verified public on HF.
 RLM_REPO = "unsloth/gemma-4-E4B-it-GGUF"
@@ -303,7 +342,7 @@ def normalize(payload):
         "cloudRuntime": enum("cloudRuntime", INSTALLABLE_RUNTIMES, "claude-code"),
         "opencodeProvider": enum("opencodeProvider", tuple(CLOUD_KEY_VARS), "openrouter"),
         "localAgent": enum("localAgent", tuple(SERVER_FOR_AGENT), "flue"),
-        "localModel": enum("localModel", tuple(MODEL_REPOS), "gemma12b"),
+        "localModel": enum("localModel", tuple(MODELS), DEFAULT_MODEL),
         "rlmMode": enum("rlmMode", ("lite", "local_gemma4_e4b"), "lite"),
         # No silent defaults here: an emptied path must fail validation,
         # not quietly install somewhere the user didn't choose.
@@ -336,8 +375,8 @@ def derived(d):
         "agent": "flue" if local else "",
         "localServer": "llamacpp" if local else "",
         "localModel": d["localModel"] if local else "",
-        "modelRepo": MODEL_REPOS[d["localModel"]] if local else "",
-        "modelTier": MODEL_TIERS[d["localModel"]] if local else "",
+        "modelRepo": MODELS[d["localModel"]]["repo"] if local else "",
+        "modelTier": MODELS[d["localModel"]]["tier"] if local else "",
         "opencodeProvider": d["opencodeProvider"] if opencode_cloud else "",
         "cloudKeyVar": CLOUD_KEY_VARS[d["opencodeProvider"]] if opencode_cloud else "",
         "needsCloudKey": opencode_cloud,
@@ -581,10 +620,37 @@ def esc(s):
     return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def apply_model_cards(page):
+    """Bake the local-model radio cards and the splash RAM floor over their
+    placeholders. Cards server-render from the pinned MODELS table so the
+    served page cannot drift from catalog truth; the raw template ships none."""
+    def card(token, m):
+        is_default = m["recommendation"] == "default"
+        return (
+            f'      <label class="item radio-card" id="modelCard-{token}">\n'
+            f'        <div class="item__head">\n'
+            f'          <span class="item__title">'
+            f'<input type="radio" name="local_model" value="{token}"'
+            f'{" checked" if is_default else ""} style="margin-right:8px;">'
+            f'{esc(m["label"])}<br><em>{esc(m["sub"])}</em></span>\n'
+            f'          <span class="badge{"" if is_default else " req"}">'
+            f'{m["min_ram_gb"]} GB</span>\n'
+            f'        </div>\n'
+            f'        <p class="item__lede">{esc(m["blurb"])} '
+            f'~{m["download_gb"]} GB download.</p>\n'
+            f'      </label>'
+        )
+
+    cards = "\n".join(card(t, m) for t, m in MODELS.items())
+    return (page.replace("__MODEL_CARDS__", cards)
+                .replace("__LOCAL_MIN_RAM__",
+                         str(min(m["min_ram_gb"] for m in MODELS.values()))))
+
+
 def build_getting_started(d):
     der = derived(d)
     if d["mode"] == "local":
-        mode_label = f"Local · {MODEL_LABELS[d['localModel']]} via llama.cpp (Flue/Pi harness) · runs on your machine"
+        mode_label = f"Local · {MODELS[d['localModel']]['label']} via llama.cpp (Flue/Pi harness) · runs on your machine"
     elif der["needsCloudKey"]:
         mode_label = f"Frontier · OpenCode via {PROVIDER_LABELS[d['opencodeProvider']]} (pay per token)"
     else:
@@ -611,7 +677,7 @@ def build_getting_started(d):
 
     if d["mode"] == "local":
         launch_note = ("The <code>spotlight</code> command starts your local inference server, loads the "
-                       f"{esc(MODEL_LABELS[d['localModel']])}, and opens the harness inside your Spotlight folder with every skill loaded. "
+                       f"{esc(MODELS[d['localModel']]['label'])}, and opens the harness inside your Spotlight folder with every skill loaded. "
                        "Nothing leaves your machine.")
     elif d["cloudRuntime"] == "opencode":
         launch_note = ("The <code>spotlight</code> command opens OpenCode inside your Spotlight folder with every skill loaded. "
@@ -705,6 +771,7 @@ def main():
     page = page.replace("__SETUP_TOKEN__", token)
     page = page.replace("__PLATFORM__", detect_platform())
     page = apply_runtime_detection(page, detect_runtimes())
+    page = apply_model_cards(page)
     done = threading.Event()
     result = {"written": False}
     engine_bridge = None

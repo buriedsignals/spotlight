@@ -163,7 +163,7 @@
       <p class="sov-num"><em>02</em> Local</p>
       <span class="sov-title">Yours,<br><em>Truly.</em></span>
       <p class="sov-desc">A fine-tuned journalism model served on your machine. The installer preconfigures the inference server underneath your chosen harness.</p>
-      <p class="sov-meta">$0 / mo · 16 GB+ RAM · private by design</p>
+      <p class="sov-meta">$0 / mo · __LOCAL_MIN_RAM__ GB+ RAM · private by design</p>
     </label>
   </div>
 
@@ -235,27 +235,7 @@
     </div>
 
     <div class="grid-2" style="margin-top:14px;">
-      <label class="item radio-card" id="modelCard-gemma12b">
-        <div class="item__head">
-          <span class="item__title"><input type="radio" name="local_model" value="gemma12b" checked style="margin-right:8px;">Gemma 4 12B<br><em>Spotlight orchestrator.</em></span>
-          <span class="badge">16 GB</span>
-        </div>
-        <p class="item__lede">Default — the speed pick. Procedure-tuned on real Spotlight investigations to drive the gated pipeline (delegate → verify → stop at gates). ~7 GB download. Runs on any 16 GB machine; 24 GB runs the full stack with the RLM research distiller.</p>
-      </label>
-      <label class="item radio-card" id="modelCard-gemma26b">
-        <div class="item__head">
-          <span class="item__title"><input type="radio" name="local_model" value="gemma26b" style="margin-right:8px;">Gemma 4 26B-A4B<br><em>Mixture-of-experts.</em></span>
-          <span class="badge req">32 GB</span>
-        </div>
-        <p class="item__lede">Mid tier. 26B of knowledge with 4B active per token — near-12B response speed with more reasoning headroom. ~18 GB download. Needs 32 GB unified memory; comfortable at 48 GB.</p>
-      </label>
-      <label class="item radio-card" id="modelCard-gemma31b">
-        <div class="item__head">
-          <span class="item__title"><input type="radio" name="local_model" value="gemma31b" style="margin-right:8px;">Gemma 4 31B<br><em>Maximum quality.</em></span>
-          <span class="badge req">48 GB</span>
-        </div>
-        <p class="item__lede">Quality tier. Strongest local model on our OSINT benchmark (0.881 facet at Q4, lowest hallucination of the pack). Dense — noticeably slower on deep investigations. ~18 GB download; needs 48 GB unified memory for the full stack.</p>
-      </label>
+      __MODEL_CARDS__
     </div>
     <p class="hint">The installer streams the model download with resume-on-interrupt and registers it with the inference server. Progress shows live in the terminal.</p>
   </div>
