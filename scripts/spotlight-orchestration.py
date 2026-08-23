@@ -3,27 +3,23 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 STATE_VERSION = "spotlight-orchestration/v1"
 STATUS_VERSION = "spotlight-orchestration-status/v1"
+DEPENDENCY_STATUS_VERSION = "spotlight-gate1-dependencies/v1"
 METHODOLOGY_INPUTS = ("brief-directions.txt", "data/methodology.json")
-GATE1_INPUTS = (
-    "summary.md",
-    "data/summary.json",
-    "data/findings.json",
-    "data/fact-check.json",
-    "data/evidence-bundle.json",
-    "data/investigation-log.json",
-)
+GATE1_FINALIZATION_OUTPUTS = ("data/provenance-manifest.json", "review.html")
 ATTEMPT_LIMITS = {
     "execution-cycle": 5,
     "fact-check-evidence-repair": 1,
@@ -62,6 +58,18 @@ def resolve_case(value: str) -> Path:
     return case
 
 
+@contextmanager
+def state_lock(case: Path, *, exclusive: bool) -> Iterator[None]:
+    lock_path = case / "data/.orchestration.lock"
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+        yield
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+
 def new_state() -> dict[str, Any]:
     return {
         "schema_version": STATE_VERSION,
@@ -93,8 +101,9 @@ def load_state(case: Path) -> dict[str, Any]:
         for kind, count in state["attempts"].items()
     ):
         raise OrchestrationError("data/orchestration.json contains invalid attempt counts")
-    if "blocked" in state and not isinstance(state["blocked"], dict):
-        raise OrchestrationError("data/orchestration.json field 'blocked' must be an object")
+    for field in ("blocked", "follow_up", "gate1_finalization"):
+        if field in state and not isinstance(state[field], dict):
+            raise OrchestrationError(f"data/orchestration.json field {field!r} must be an object")
     return state
 
 
@@ -108,9 +117,24 @@ def current_hashes(case: Path, inputs: tuple[str, ...]) -> dict[str, str]:
 def receipt_matches(receipt: object, hashes: dict[str, str]) -> bool:
     return isinstance(receipt, dict) and receipt.get("input_sha256") == hashes
 
+
+def digest_receipt_matches(receipt: object, dependency_digest: str) -> bool:
+    return isinstance(receipt, dict) and receipt.get("dependency_digest") == dependency_digest
+
+
 def approval_matches(receipt: object, hashes: dict[str, str]) -> bool:
     if not receipt_matches(receipt, hashes) or not isinstance(receipt, dict):
         return False
+    return attributable_approval(receipt)
+
+
+def gate1_approval_matches(receipt: object, dependency_digest: str) -> bool:
+    if not digest_receipt_matches(receipt, dependency_digest) or not isinstance(receipt, dict):
+        return False
+    return attributable_approval(receipt)
+
+
+def attributable_approval(receipt: dict[str, Any]) -> bool:
     actor = receipt.get("approved_by")
     approved_at = receipt.get("approved_at")
     if not isinstance(actor, str) or not isinstance(approved_at, str):
@@ -135,6 +159,84 @@ def outputs_match(case: Path, receipt: object) -> bool:
     )
 
 
+def gate1_dependencies(case: Path) -> dict[str, Any]:
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_DIR / "build-provenance-manifest.py"),
+                str(case),
+                "--dependency-digest",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise OrchestrationError(f"cannot hash Gate 1 dependencies: {exc}") from exc
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "dependency builder failed"
+        raise OrchestrationError(detail)
+    try:
+        snapshot = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise OrchestrationError("dependency builder returned invalid JSON") from exc
+    if (
+        not isinstance(snapshot, dict)
+        or snapshot.get("schema_version") != DEPENDENCY_STATUS_VERSION
+        or not isinstance(snapshot.get("ready"), bool)
+        or not isinstance(snapshot.get("missing"), list)
+        or not isinstance(snapshot.get("dependency_digest"), str)
+    ):
+        raise OrchestrationError("dependency builder returned an unsupported contract")
+    return snapshot
+
+
+def require_gate1_digest(case: Path) -> str:
+    snapshot = gate1_dependencies(case)
+    if not snapshot["ready"]:
+        raise OrchestrationError(
+            f"required Gate 1 inputs are missing: {', '.join(snapshot['missing'])}"
+        )
+    return str(snapshot["dependency_digest"])
+
+
+def provenance_matches(case: Path, dependency_digest: str) -> bool:
+    path = case / "data/provenance-manifest.json"
+    if not path.is_file():
+        return False
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    return isinstance(manifest, dict) and manifest.get("input_set_hash") == dependency_digest
+
+
+def execution_status(
+    status: dict[str, Any], state: dict[str, Any], follow_up: object = None
+) -> dict[str, Any]:
+    value = {
+        **status,
+        "status": "active",
+        "next_phase": "execution",
+        "attempts": dict(state["attempts"]),
+    }
+    if isinstance(follow_up, dict):
+        value["follow_up"] = {"instructions": follow_up["instructions"]}
+    return value
+
+
+def ingest_marker_status(case: Path) -> str | None:
+    path = case / "data/ingestion.json"
+    if not path.is_file():
+        return None
+    try:
+        marker = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return marker.get("status") if isinstance(marker, dict) else None
+
+
 def status_for(case: Path, state: dict[str, Any]) -> dict[str, Any]:
     status = {"schema_version": STATUS_VERSION, "status": "pending", "next_phase": "brief"}
     if not (case / "brief-directions.txt").is_file():
@@ -146,30 +248,88 @@ def status_for(case: Path, state: dict[str, Any]) -> dict[str, Any]:
         return {**status, "next_phase": "methodology_approval"}
     if "blocked" in state:
         return {**status, "status": "blocked", "next_phase": "blocked", "blocked": state["blocked"]}
-    if not all((case / relative).is_file() for relative in GATE1_INPUTS):
+
+    dependencies = gate1_dependencies(case)
+    dependency_digest = str(dependencies["dependency_digest"])
+    follow_up = state.get("follow_up")
+    if not dependencies["ready"]:
+        return execution_status(status, state)
+    if (
+        digest_receipt_matches(follow_up, dependency_digest)
+        and isinstance(follow_up.get("instructions"), str)
+    ):
+        return execution_status(status, state, follow_up)
+    if not gate1_approval_matches(state["approvals"].get("gate1"), dependency_digest):
+        return {**status, "next_phase": "gate1_approval"}
+
+    finalization = state.get("gate1_finalization")
+    if not digest_receipt_matches(finalization, dependency_digest) or not outputs_match(
+        case, finalization
+    ):
+        if not provenance_matches(case, dependency_digest):
+            resume_at = "provenance"
+        elif not (case / "review.html").is_file():
+            resume_at = "review"
+        else:
+            resume_at = "seal"
         return {
             **status,
             "status": "active",
-            "next_phase": "execution",
-            "attempts": dict(state["attempts"]),
+            "next_phase": "gate1_finalization",
+            "gate1": {"state": "approved", "resume_at": resume_at},
         }
-    gate1_hashes = current_hashes(case, GATE1_INPUTS)
-    if not approval_matches(state["approvals"].get("gate1"), gate1_hashes):
-        return {**status, "next_phase": "gate1_approval"}
+
     report = state["decisions"].get("report")
     if (
         not isinstance(report, dict)
         or report.get("decision") not in {"completed", "declined"}
-        or not receipt_matches(report, gate1_hashes)
+        or not digest_receipt_matches(report, dependency_digest)
         or not outputs_match(case, report)
     ):
         return {**status, "next_phase": "report"}
+
     ingest = state["decisions"].get("ingest")
-    if not receipt_matches(ingest, gate1_hashes) or not outputs_match(case, ingest):
-        return {**status, "next_phase": "ingest"}
-    if ingest.get("decision") not in {"completed", "declined"}:
-        return {**status, "status": "active", "next_phase": "ingest"}
-    return {"schema_version": STATUS_VERSION, "status": "completed", "next_phase": "complete"}
+    if not digest_receipt_matches(ingest, dependency_digest):
+        return {
+            **status,
+            "next_phase": "ingest",
+            "ingest": {"state": "pending", "resume_at": "decision"},
+        }
+    decision = ingest.get("decision")
+    marker_status = ingest_marker_status(case)
+    if decision == "requested":
+        detail = (
+            {"state": "completed", "resume_at": "seal"}
+            if marker_status == "completed"
+            else {"state": "requested", "resume_at": "ingest"}
+        )
+        return {**status, "status": "active", "next_phase": "ingest", "ingest": detail}
+    if decision == "completed" and outputs_match(case, ingest):
+        return {
+            "schema_version": STATUS_VERSION,
+            "status": "completed",
+            "next_phase": "complete",
+            "ingest": {"state": "completed", "resume_at": "complete"},
+        }
+    if decision == "declined" and outputs_match(case, ingest):
+        return {
+            "schema_version": STATUS_VERSION,
+            "status": "completed",
+            "next_phase": "complete",
+            "ingest": {"state": "declined", "resume_at": "complete"},
+        }
+    if decision == "completed" and marker_status == "completed":
+        return {
+            **status,
+            "status": "active",
+            "next_phase": "ingest",
+            "ingest": {"state": "completed", "resume_at": "seal"},
+        }
+    return {
+        **status,
+        "next_phase": "ingest",
+        "ingest": {"state": "pending", "resume_at": "decision"},
+    }
 
 
 def validate_approval(actor: str, approved_at: str) -> None:
@@ -186,24 +346,36 @@ def validate_approval(actor: str, approved_at: str) -> None:
 def approve(case: Path, gate: str, actor: str, approved_at: str) -> None:
     validate_approval(actor, approved_at)
     state = load_state(case)
-    inputs = METHODOLOGY_INPUTS if gate == "methodology" else GATE1_INPUTS
-    hashes = current_hashes(case, inputs)
     expected_phase = "methodology_approval" if gate == "methodology" else "gate1_approval"
     if status_for(case, state)["next_phase"] != expected_phase:
         raise OrchestrationError(f"case is not awaiting {gate} approval")
+
     previous = state["approvals"].get(gate)
-    state["approvals"][gate] = {
-        "approved_by": actor,
-        "approved_at": approved_at,
-        "input_sha256": hashes,
-    }
-    if gate == "methodology" and not approval_matches(previous, hashes):
-        state["approvals"].pop("gate1", None)
-        state["decisions"].clear()
-        state["attempts"].clear()
-        state.pop("blocked", None)
-    elif gate == "gate1" and not approval_matches(previous, hashes):
-        state["decisions"].clear()
+    if gate == "methodology":
+        hashes = current_hashes(case, METHODOLOGY_INPUTS)
+        state["approvals"][gate] = {
+            "approved_by": actor,
+            "approved_at": approved_at,
+            "input_sha256": hashes,
+        }
+        if not approval_matches(previous, hashes):
+            state["approvals"].pop("gate1", None)
+            state["decisions"].clear()
+            state["attempts"].clear()
+            state.pop("blocked", None)
+            state.pop("follow_up", None)
+            state.pop("gate1_finalization", None)
+    else:
+        dependency_digest = require_gate1_digest(case)
+        state["approvals"][gate] = {
+            "approved_by": actor,
+            "approved_at": approved_at,
+            "dependency_digest": dependency_digest,
+        }
+        if not gate1_approval_matches(previous, dependency_digest):
+            state["decisions"].clear()
+            state.pop("gate1_finalization", None)
+        state.pop("follow_up", None)
     atomic_write_json(case / "data/orchestration.json", state)
 
 
@@ -222,6 +394,41 @@ def record_attempt(case: Path, kind: str, gap: str) -> None:
             "gap": gap,
             "attempts": dict(attempts),
         }
+    atomic_write_json(case / "data/orchestration.json", state)
+
+
+def request_follow_up(case: Path, instructions: str) -> None:
+    if not instructions.strip():
+        raise OrchestrationError("--instructions must describe the requested follow-up")
+    state = load_state(case)
+    if status_for(case, state)["next_phase"] not in {
+        "gate1_approval",
+        "gate1_finalization",
+        "report",
+    }:
+        raise OrchestrationError("follow-up can only be requested from Gate 1")
+    state["follow_up"] = {
+        "instructions": instructions,
+        "dependency_digest": require_gate1_digest(case),
+    }
+    state["approvals"].pop("gate1", None)
+    state.pop("gate1_finalization", None)
+    state["decisions"].clear()
+    atomic_write_json(case / "data/orchestration.json", state)
+
+
+def seal_gate1(case: Path) -> None:
+    state = load_state(case)
+    status = status_for(case, state)
+    if status.get("next_phase") != "gate1_finalization" or status.get("gate1", {}).get(
+        "resume_at"
+    ) != "seal":
+        raise OrchestrationError("Gate 1 finalization outputs are not ready to seal")
+    state["gate1_finalization"] = {
+        "dependency_digest": require_gate1_digest(case),
+        "output_sha256": current_hashes(case, GATE1_FINALIZATION_OUTPUTS),
+    }
+    state["decisions"].clear()
     atomic_write_json(case / "data/orchestration.json", state)
 
 
@@ -248,32 +455,46 @@ def decide_report(case: Path, decision: str) -> None:
         outputs = ("report.html", "findings-report.md", "evidence-map.json")
     state["decisions"]["report"] = {
         "decision": decision,
-        "input_sha256": current_hashes(case, GATE1_INPUTS),
+        "dependency_digest": require_gate1_digest(case),
         "output_sha256": current_hashes(case, outputs),
     }
     state["decisions"].pop("ingest", None)
     atomic_write_json(case / "data/orchestration.json", state)
 
 
-def decide_ingest(case: Path, decision: str) -> None:
-    state = load_state(case)
-    if status_for(case, state)["next_phase"] != "ingest":
-        raise OrchestrationError("case is not awaiting an ingestion decision")
+def load_ingestion_marker(case: Path) -> dict[str, Any]:
     marker_path = case / "data/ingestion.json"
     marker: dict[str, Any] = {"schema_version": "1.0"}
-    if marker_path.is_file():
-        try:
-            existing = json.loads(marker_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise OrchestrationError(f"cannot read data/ingestion.json: {exc}") from exc
-        if not isinstance(existing, dict):
-            raise OrchestrationError("data/ingestion.json must be an object")
-        marker.update(existing)
+    if not marker_path.is_file():
+        return marker
+    try:
+        existing = json.loads(marker_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise OrchestrationError(f"cannot read data/ingestion.json: {exc}") from exc
+    if not isinstance(existing, dict):
+        raise OrchestrationError("data/ingestion.json must be an object")
+    marker.update(existing)
+    return marker
+
+
+def decide_ingest(case: Path, decision: str) -> None:
+    state = load_state(case)
+    status = status_for(case, state)
+    if status["next_phase"] != "ingest":
+        raise OrchestrationError("case is not awaiting an ingestion decision")
+    detail = status.get("ingest", {})
+    if decision in {"requested", "declined"} and detail.get("resume_at") != "decision":
+        raise OrchestrationError("the ingestion decision is already durable")
+    if decision == "completed" and detail != {"state": "completed", "resume_at": "seal"}:
+        raise OrchestrationError("ingestion has not produced a completed receipt to seal")
+
+    marker = load_ingestion_marker(case)
     marker["status"] = decision
+    marker_path = case / "data/ingestion.json"
     atomic_write_json(marker_path, marker)
     state["decisions"]["ingest"] = {
         "decision": decision,
-        "input_sha256": current_hashes(case, GATE1_INPUTS),
+        "dependency_digest": require_gate1_digest(case),
         "output_sha256": current_hashes(case, ("data/ingestion.json",)),
     }
     atomic_write_json(case / "data/orchestration.json", state)
@@ -294,6 +515,11 @@ def build_parser() -> argparse.ArgumentParser:
     attempt.add_argument("kind", choices=tuple(ATTEMPT_LIMITS))
     attempt.add_argument("--gap", required=True)
     attempt.add_argument("case_dir")
+    follow_up = commands.add_parser("request-follow-up")
+    follow_up.add_argument("--instructions", required=True)
+    follow_up.add_argument("case_dir")
+    seal = commands.add_parser("seal-gate1")
+    seal.add_argument("case_dir")
     report = commands.add_parser("decide-report")
     report.add_argument("decision", choices=("completed", "declined"))
     report.add_argument("case_dir")
@@ -307,17 +533,26 @@ def main() -> int:
     args = build_parser().parse_args()
     try:
         case = resolve_case(args.case_dir)
-        if args.command == "status":
-            value = status_for(case, load_state(case))
-            print(json.dumps(value, sort_keys=True) if args.json else f"{value['status']}: {value['next_phase']}")
-        elif args.command == "approve":
-            approve(case, args.gate, args.approved_by, args.approved_at)
-        elif args.command == "record-attempt":
-            record_attempt(case, args.kind, args.gap)
-        elif args.command == "decide-report":
-            decide_report(case, args.decision)
-        else:
-            decide_ingest(case, args.decision)
+        with state_lock(case, exclusive=args.command != "status"):
+            if args.command == "status":
+                value = status_for(case, load_state(case))
+                print(
+                    json.dumps(value, sort_keys=True)
+                    if args.json
+                    else f"{value['status']}: {value['next_phase']}"
+                )
+            elif args.command == "approve":
+                approve(case, args.gate, args.approved_by, args.approved_at)
+            elif args.command == "record-attempt":
+                record_attempt(case, args.kind, args.gap)
+            elif args.command == "request-follow-up":
+                request_follow_up(case, args.instructions)
+            elif args.command == "seal-gate1":
+                seal_gate1(case)
+            elif args.command == "decide-report":
+                decide_report(case, args.decision)
+            else:
+                decide_ingest(case, args.decision)
     except OrchestrationError as exc:
         print(f"FAIL  {exc}", file=sys.stderr)
         return 3

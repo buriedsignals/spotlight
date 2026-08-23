@@ -7,6 +7,18 @@ phase: gate-1
 
 # Phase 4 — Gate 1
 
+Start or resume by running:
+
+```text
+python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}
+```
+
+On the execution owner's direct readiness handoff, generate the two summary
+artifacts below and run status again. Otherwise act only on
+`next_phase: gate1_approval` or `next_phase: gate1_finalization`; never infer a
+Gate 1 substep from artifact presence.
+
+
 ## Generate summary
 
 `write-file("{CASE_DIR}/summary.md", <content>)` as a human-readable markdown document:
@@ -89,7 +101,14 @@ contract. Generate both.
 
 ## Iterate
 
-The user can request follow-up cycles targeting specific findings. If so, re-enter the execution loop with targeted gap instructions.
+If the user requests a follow-up cycle, persist the transition before returning
+to execution:
+
+```text
+python3 scripts/spotlight-orchestration.py request-follow-up --instructions "<targeted gap instructions>" {CASE_DIR}
+```
+
+Re-run status and pass `follow_up.instructions` to `skills/phase-execution`.
 
 Before asking the user to approve the investigation as ready for report drafting and ingestion, remind them:
 
@@ -104,38 +123,59 @@ downstream work:
 python3 scripts/spotlight-orchestration.py approve gate1 --approved-by "<human identity>" --approved-at "<ISO 8601 timestamp>" {CASE_DIR}
 ```
 
-This binds the current `summary.md`, `data/summary.json`,
-`data/findings.json`, `data/fact-check.json`, `data/evidence-bundle.json`, and
-`data/investigation-log.json`. The pending summary artifacts are not approval.
-If any bound input changes, a fresh status returns `gate1_approval`; re-run the
-existing validators and obtain a new human approval before report or ingestion.
+This binds the current dependency digest owned by the provenance builder's
+annotated registry, including activated validation inputs and referenced
+evidence artifacts. Pending summary artifacts are not approval. If a dependency
+changes, a fresh status returns `gate1_approval`; re-run the existing validators
+and obtain a new human approval before report or ingestion.
 
-## Package provenance before HTML review
+The human gate ends the turn. On resume, run status and follow
+`gate1.resume_at`; do not skip directly to report.
 
-After approval and before invoking the review skill, invoke `provenance-signing`:
+## Finalize an approved Gate 1
+
+### `resume_at: provenance`
+
+Invoke `provenance-signing`:
 
 ```text
 execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR}")
 ```
 
-This creates `{CASE_DIR}/data/provenance-manifest.json` with hashes for the case artifacts, claim-to-verdict links, evidence bundle refs, and `requires_api_key: false`.
+This creates `{CASE_DIR}/data/provenance-manifest.json` with hashes for the case
+artifacts, claim-to-verdict links, evidence bundle refs, and
+`requires_api_key: false`.
 
-If `NOOSPHERE_C2PA_URL` is configured, optionally request signing:
+If `NOOSPHERE_C2PA_URL` is configured, signing remains optional:
 
 ```text
 execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR} --sign-endpoint \"$NOOSPHERE_C2PA_URL\" --credential-id \"$NOOSPHERE_C2PA_CREDENTIAL_ID\"")
 ```
 
-Signing failures do not block review. Preserve the unsigned manifest and report the failure clearly.
+Signing failures do not block review. Preserve the unsigned manifest and report
+the failure clearly. Re-run orchestration status; it must return
+`gate1.resume_at: review`.
 
-## Generate review artifact
+### `resume_at: review`
 
-After approval, `invoke-skill("review")` to produce `{CASE_DIR}/review.html` — a self-contained HTML artifact the user can open in any browser to inspect findings and submit structured feedback. See `skills/review/SKILL.md`.
+Invoke `review` to produce `{CASE_DIR}/review.html`, a self-contained artifact
+for inspecting findings and submitting structured feedback. Then re-run
+orchestration status; it must return `gate1.resume_at: seal`.
 
 Offer the user:
 
-> "Review artifact written to `{CASE_DIR}/review.html`. Open it in any browser to inspect findings and submit feedback (optional). If you submit feedback, save the exported `review-feedback.json` into `{CASE_DIR}/data/` and re-run `/spotlight` to process it. Or proceed to drafting the public report now."
+> "Review artifact written to `{CASE_DIR}/review.html`. Open it in any browser to inspect findings. Request a targeted follow-up, or proceed to the public report."
 
-## Feedback processing (on resume)
+For a follow-up, validate the feedback, convert it to targeted instructions,
+and run `request-follow-up` as shown above before dispatching execution. Do not
+derive the transition from feedback-file or processed-marker presence.
 
-When `/spotlight` is resumed and `{CASE_DIR}/data/review-feedback.json` exists without a matching `review-feedback-processed.json` marker, the Preflight skill (`skills/phase-preflight`) invokes the review skill in process mode before advancing. This re-spawns the investigator with feedback-targeted instructions, updates findings, and regenerates the review artifact. See `skills/review/SKILL.md` § Mode B.
+### `resume_at: seal`
+
+If the user proceeds, seal both current finalization outputs:
+
+```text
+python3 scripts/spotlight-orchestration.py seal-gate1 {CASE_DIR}
+```
+
+Re-run status. Only a successful seal returns `next_phase: report`.

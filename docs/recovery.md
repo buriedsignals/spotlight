@@ -4,7 +4,16 @@ Agents crash, APIs rate-limit, your laptop closes the lid. Spotlight is designed
 
 ## The golden rule
 
-**Everything Spotlight knows is in `{CASE_DIR}/data/*.json`.** No hidden daemon, no lock service, no in-memory state. If a cycle crashes, re-read the JSON and keep going.
+**Resume only from the product status CLI.** Case data and orchestration state
+live on disk, but consumers must not reconstruct workflow state by reading
+files. Run:
+
+```text
+python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}
+```
+
+The command serializes state access, validates current dependency hashes, and
+returns the authoritative phase and substep. There is no daemon or lock service.
 
 ## Failure scenarios
 
@@ -22,15 +31,17 @@ Re-spawning is safe. The investigator's EXECUTION prompt includes "merge with pr
 
 ### Laptop sleeps / Terminal closes
 
-No special handling needed. Reopen Terminal, `cd` into the Spotlight repo, run `spotlight` — the orchestrator reads the case directory and determines where to resume per the "Context Recovery" table in `skills/spotlight/SKILL.md`.
+No special handling is needed. Reopen Terminal, `cd` into the Spotlight repo,
+and run:
 
-| Files present | Resume at |
-|---|---|
-| None | Phase 1 (Brief) |
-| `brief-directions.txt` only | Phase 2 (Methodology) |
-| `data/methodology.json` but no findings | Phase 3, cycle 1 |
-| `data/findings.json` but no `summary.md` | Phase 3, evaluate current cycle readiness |
-| `summary.md` present | Phase 4 (Gate 1 review) |
+```text
+python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}
+```
+
+Dispatch the returned `next_phase` through the Context Recovery table in
+`skills/spotlight/SKILL.md`. Follow `gate1.resume_at`,
+`follow_up.instructions`, or `ingest.resume_at` when present. Do not infer
+recovery from artifact presence or conversation memory.
 
 ### Firecrawl / OSINT Navigator API fails
 
@@ -61,13 +72,21 @@ Model state is on disk; restarting doesn't lose anything. Your investigation fil
 
 ### Obsidian vault locked / ingestion mid-failure
 
-The ingest skill uses a `.ingest-lock` file. If a previous ingestion crashed, the lock may be stale.
+First run orchestration status. If it returns `ingest.state: requested` and
+`ingest.resume_at: ingest`, resume the idempotent ingest skill without asking
+for confirmation again. If it returns `ingest.state: completed` and
+`ingest.resume_at: seal`, do not repeat projection; run
+`spotlight-orchestration.py decide-ingest completed {CASE_DIR}`.
 
-1. Check: `python3 scripts/spotlight_safe.py destructive-probe --base {vault} --path .ingest-lock`
-2. If present but old (check mtime): delete the resolved lock path only after the probe confirms it is inside the vault.
-3. Re-run ingestion. It will re-read registries, see what's already written, and skip duplicates (matched by `id` in the relevant registry).
+If the ingest skill itself reports a stale `.ingest-lock`:
 
-The ingest skill is idempotent at the registry level — you can run it twice without double-entries.
+1. Probe it with `python3 scripts/spotlight_safe.py destructive-probe --base {vault} --path .ingest-lock`.
+2. Delete only the resolved lock path after the probe confirms containment.
+3. Re-run the ingest skill only when orchestration status still says
+   `requested` / `ingest`.
+
+The ingest skill is idempotent at the registry level, and the orchestration
+status prevents a completed projection from being invoked twice.
 
 ### Vault sync conflict (Obsidian Sync or other)
 
@@ -78,14 +97,17 @@ If two devices ingest simultaneously (rare), the `_registry.json` files may conf
 
 ### Review feedback never processes
 
-You submitted `review-feedback.json` but the next `spotlight` run didn't act on it.
+Do not force recovery by deleting a processed marker. Validate the structured
+feedback through the review skill, convert it to targeted instructions, and
+record the product transition:
 
-Check:
-1. Is the file at `{CASE_DIR}/data/review-feedback.json`?
-2. Is there a `{CASE_DIR}/data/review-feedback-processed.json` marker? If yes, the file was already processed; only newer feedback (later `submitted_at`) will re-trigger.
-3. Is the `schema_version` field `"1.0"`? Malformed feedback files are skipped with a warning.
+```text
+python3 scripts/spotlight-orchestration.py request-follow-up --instructions "<targeted feedback instructions>" {CASE_DIR}
+```
 
-Delete the processed marker and re-run if you want to force re-processing.
+Run status again. It must return `next_phase: execution` with the same
+`follow_up.instructions`. When regenerated Gate 1 dependencies change, status
+returns `gate1_approval` for a new human decision.
 
 ### Corrupted case JSON
 

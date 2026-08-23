@@ -27,19 +27,21 @@ from source_expression_contract import canonical_fingerprint, fact_check_rows, l
 
 
 ARTIFACTS = [
-    ("summary", "summary.md"),
-    ("summary_json", "data/summary.json"),
-    ("findings", "data/findings.json"),
-    ("fact_check", "data/fact-check.json"),
-    ("source_expressions", "data/source-expressions.json"),
-    ("evidence_bundle", "data/evidence-bundle.json"),
-    ("investigation_log", "data/investigation-log.json"),
-    ("review_html", "review.html"),
-    ("report_markdown", "findings-report.md"),
-    ("report_html", "report.html"),
-    ("evidence_map", "evidence-map.json"),
+    {"kind": "summary", "path": "summary.md", "gate1_dependency": True, "gate1_required": True},
+    {"kind": "summary_json", "path": "data/summary.json", "gate1_dependency": True, "gate1_required": True},
+    {"kind": "findings", "path": "data/findings.json", "gate1_dependency": True, "gate1_required": True},
+    {"kind": "fact_check", "path": "data/fact-check.json", "gate1_dependency": True, "gate1_required": True},
+    {"kind": "source_expressions", "path": "data/source-expressions.json", "gate1_dependency": True},
+    {"kind": "other", "path": "data/case-contract.json", "gate1_dependency": True},
+    {"kind": "evidence_bundle", "path": "data/evidence-bundle.json", "gate1_dependency": True, "gate1_required": True},
+    {"kind": "investigation_log", "path": "data/investigation-log.json", "gate1_dependency": True, "gate1_required": True},
+    {"kind": "review_html", "path": "review.html"},
+    {"kind": "report_markdown", "path": "findings-report.md"},
+    {"kind": "report_html", "path": "report.html"},
+    {"kind": "evidence_map", "path": "evidence-map.json"},
 ]
 ARTIFACT_PATH_KEYS = ("raw_path", "screenshot_path", "downloaded_document_path")
+DEPENDENCY_STATUS_VERSION = "spotlight-gate1-dependencies/v1"
 
 
 def now_iso() -> str:
@@ -112,13 +114,65 @@ def case_relative(case_dir: Path, path: Path) -> str:
 
 def artifact_entries(case_dir: Path) -> list[dict[str, Any]]:
     entries = []
-    for kind, rel in ARTIFACTS:
-        path = case_dir / rel
+    for artifact in ARTIFACTS:
+        path = case_dir / artifact["path"]
         if not path.exists():
             continue
         digest, size = sha256_file(path)
-        entries.append({"kind": kind, "path": rel, "sha256": digest, "bytes": size})
+        entries.append({
+            "kind": artifact["kind"],
+            "path": artifact["path"],
+            "sha256": digest,
+            "bytes": size,
+        })
     return entries
+
+
+def dependency_entry(case_dir: Path, kind: str, relative: str) -> dict[str, Any]:
+    case_root = case_dir.resolve()
+    path = (case_root / relative).resolve()
+    present = path.is_relative_to(case_root) and path.is_file()
+    entry: dict[str, Any] = {"kind": kind, "path": relative, "present": present}
+    if present:
+        entry["sha256"], entry["bytes"] = sha256_file(path)
+    return entry
+
+
+def gate1_dependency_snapshot(case_dir: Path) -> dict[str, Any]:
+    dependencies = [artifact for artifact in ARTIFACTS if artifact.get("gate1_dependency")]
+    entries = [
+        dependency_entry(case_dir, artifact["kind"], artifact["path"])
+        for artifact in dependencies
+    ]
+    missing = [
+        artifact["path"]
+        for artifact, entry in zip(dependencies, entries)
+        if artifact.get("gate1_required") and not entry["present"]
+    ]
+
+    evidence_path = case_dir / "data/evidence-bundle.json"
+    if evidence_path.is_file():
+        evidence_bundle = load_json(evidence_path)
+        referenced = []
+        for item in evidence_bundle.get("items", []):
+            if not isinstance(item, dict):
+                raise ValueError("data/evidence-bundle.json items must be objects")
+            for key in ARTIFACT_PATH_KEYS:
+                relative = item.get(key)
+                if isinstance(relative, str) and relative:
+                    referenced.append(dependency_entry(case_dir, f"evidence_{key}", relative))
+        entries.extend(sorted(referenced, key=lambda entry: (entry["path"], entry["kind"])))
+
+    return {
+        "schema_version": DEPENDENCY_STATUS_VERSION,
+        "ready": not missing,
+        "missing": missing,
+        "dependency_digest": canonical_hash(entries),
+    }
+
+
+def gate1_dependency_digest(case_dir: Path) -> str:
+    return str(gate1_dependency_snapshot(case_dir)["dependency_digest"])
 
 
 def fact_check_expression_ids(checked: dict[str, Any]) -> set[str]:
@@ -308,6 +362,7 @@ def build_manifest(
     findings, fact_check, evidence_bundle = load_case(case_dir)
     return {
         "schema_version": "1.0",
+        "input_set_hash": gate1_dependency_digest(case_dir),
         **manifest_body(
             case_dir, findings, fact_check, evidence_bundle, credential_id, endpoint
         ),
@@ -348,7 +403,7 @@ def read_pointer(path: Path) -> dict[str, Any] | None:
 
 
 def current_input_hash(case_dir: Path) -> str:
-    return canonical_hash(artifact_entries(case_dir))
+    return gate1_dependency_digest(case_dir)
 
 
 def check_current(case_dir: Path, output: Path) -> int:
@@ -369,13 +424,18 @@ def check_current(case_dir: Path, output: Path) -> int:
         print(desired)
         return 0 if is_current else 1
 
-    expected = {
-        item["path"]: item["sha256"] for item in current.get("case_artifacts", [])
-    }
-    actual = {item["path"]: item["sha256"] for item in artifact_entries(case_dir)}
-    status = "current" if expected == actual else "stale"
+    expected_hash = current.get("input_set_hash")
+    if isinstance(expected_hash, str):
+        is_current = expected_hash == current_input_hash(case_dir)
+    else:
+        expected = {
+            item["path"]: item["sha256"] for item in current.get("case_artifacts", [])
+        }
+        actual = {item["path"]: item["sha256"] for item in artifact_entries(case_dir)}
+        is_current = expected == actual
+    status = "current" if is_current else "stale"
     print(status)
-    return 0 if status == "current" else 1
+    return 0 if is_current else 1
 
 
 def build_revision(
@@ -389,7 +449,7 @@ def build_revision(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     expressions = load_json(case_dir / "data/source-expressions.json")
     artifacts = artifact_entries(case_dir)
-    input_set_hash = canonical_hash(artifacts)
+    input_set_hash = gate1_dependency_digest(case_dir)
     previous = read_pointer(output)
     if previous and previous.get("input_set_hash") == input_set_hash:
         revision_path = case_dir / previous["revision_path"]
@@ -529,12 +589,24 @@ def main() -> int:
         action="store_true",
         help="Check whether the current manifest still matches case inputs; mark an activated pointer stale on mismatch",
     )
+    parser.add_argument(
+        "--dependency-digest",
+        action="store_true",
+        help="Print the registry-owned Gate 1 dependency status without building a manifest",
+    )
     args = parser.parse_args()
 
     case_dir = Path(args.case_dir).resolve()
     if not case_dir.is_dir():
         print(f"case directory not found: {case_dir}", file=sys.stderr)
         return 2
+    if args.dependency_digest:
+        try:
+            print(json.dumps(gate1_dependency_snapshot(case_dir), sort_keys=True))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            print(f"cannot hash Gate 1 dependencies: {exc}", file=sys.stderr)
+            return 2
+        return 0
     output = Path(args.output).resolve() if args.output else case_dir / "data/provenance-manifest.json"
     if args.check_current:
         if not output.is_file():
@@ -581,6 +653,7 @@ def main() -> int:
         else:
             manifest = {
                 "schema_version": "1.0",
+                "input_set_hash": gate1_dependency_digest(case_dir),
                 **manifest_body(
                     case_dir,
                     findings,

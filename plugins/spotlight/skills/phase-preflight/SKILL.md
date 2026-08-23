@@ -117,13 +117,19 @@ If `CASE_DIR` already exists, prompt:
 
 > "An investigation named `{project}` already exists. Resume the existing investigation, or start fresh?"
 
-If resume: read existing state files and determine where the pipeline left off. If fresh: back up the existing directory to `{CASE_ROOT}/{project}-{timestamp}/` and create a new one.
+If resume, run
+`python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}` and return
+its `next_phase` and resume detail to the dispatcher without inspecting case
+artifacts or `data/orchestration.json`. If fresh, back up the existing directory
+to `{CASE_ROOT}/{project}-{timestamp}/` and create a new one.
 
 ## 7. Active investigation check
 
-Use `list-files("{CASE_ROOT}/*")` to scan for directories that do NOT contain `summary.md`. If any are found:
+Use `list-files("{CASE_ROOT}/*")` to enumerate case directories, then run
+`python3 scripts/spotlight-orchestration.py status --json` for each valid case.
+Cases whose returned `next_phase` is not `complete` are active:
 
-> "Note: {N} investigation(s) in progress without a completed summary: {names}. Continuing with `{project}`."
+> "Note: {N} investigation(s) in progress: {names}. Continuing with `{project}`."
 
 ## 8. Write config
 
@@ -226,16 +232,14 @@ If `integrations.rlm.enabled` is true, find the `rlm` entry in
 `integrations.rlm` object as `preflight_status`, `checked_at`, `source`, and
 `reason`. Do not ask the user about RLM during Phase 0.
 
-## 9.5. Review feedback check (resume only)
+## 9.5. Follow-up recovery (resume only)
 
-When resuming an existing project, check for pending feedback:
-
-```
-list-files("{CASE_DIR}/data/review-feedback.json")
-list-files("{CASE_DIR}/data/review-feedback-processed.json")
-```
-
-If `review-feedback.json` exists AND `review-feedback-processed.json` is absent or older, `invoke-skill("review")` before proceeding. The review skill enters Mode B (process), re-spawns the investigator with feedback-targeted instructions, updates findings/fact-check, and regenerates `review.html`. Only then continue with monitoring preflight.
+When resuming an existing project, consume the same orchestration status result
+used above. If it returns `next_phase: execution` with
+`follow_up.instructions`, pass those instructions to `skills/phase-execution`.
+Do not scan feedback files or processed markers to derive resume state. The
+Gate 1 owner validates structured feedback and records the durable transition
+through `spotlight-orchestration.py request-follow-up` before execution resumes.
 
 ## 10. Monitoring + integrations availability (optional)
 

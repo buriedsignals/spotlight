@@ -7,12 +7,19 @@ phase: ingest
 
 # Phase 6 — Ingestion
 
-Enter this phase only when
-`python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}` returns
-`next_phase: ingest`.
+Run:
 
-Before asking for the ingestion decision, run
-`python3 scripts/finalize-report.py {CASE_DIR} --if-ready`. The existing
+```text
+python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}
+```
+
+Enter this phase only for `next_phase: ingest`, and follow the returned
+`ingest.state` and `ingest.resume_at`. Do not inspect `ingestion.json` to choose
+a substep.
+
+### `pending` / `decision`
+
+Run `python3 scripts/finalize-report.py {CASE_DIR} --if-ready`. The existing
 finalizer verifies the current completed or declined report path. Stop if it
 fails.
 
@@ -24,12 +31,25 @@ Remind the user before asking for ingestion confirmation:
 
 - If yes, run
   `python3 scripts/spotlight-orchestration.py decide-ingest requested {CASE_DIR}`,
-  then `invoke-skill("ingest")` with the project path and vault config from
-  `.spotlight-config.json`. After the ingest skill writes its receipt, run
-  `python3 scripts/spotlight-orchestration.py decide-ingest completed {CASE_DIR}`;
-  the seam preserves existing ingestion fields while sealing their current
-  bytes.
+  re-run status, and continue at the returned substep.
 - If no, run
   `python3 scripts/spotlight-orchestration.py decide-ingest declined {CASE_DIR}`.
-  The seam writes the existing declined `data/ingestion.json` marker and the
-  hash-bound case decision; the pipeline ends.
+  The seam writes the existing declined marker and the hash-bound decision.
+
+### `requested` / `ingest`
+
+The human decision is already durable. Do not ask again. Invoke `ingest` with
+the project path and vault config from `.spotlight-config.json`. After it writes
+its completed receipt, re-run orchestration status; do not invoke ingestion a
+second time.
+
+### `completed` / `seal`
+
+The projection receipt already exists. Do not ask or invoke `ingest` again.
+Seal its current bytes:
+
+```text
+python3 scripts/spotlight-orchestration.py decide-ingest completed {CASE_DIR}
+```
+
+Re-run status. `completed` / `complete` means the pipeline has ended.
