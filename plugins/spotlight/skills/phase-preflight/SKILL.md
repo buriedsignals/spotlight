@@ -126,7 +126,7 @@ to `{CASE_ROOT}/{project}-{timestamp}/` and create a new one.
 ## 7. Active investigation check
 
 Use `list-files("{CASE_ROOT}/*")` to enumerate case directories, then run
-`python3 scripts/spotlight-orchestration.py status --json` for each valid case.
+`python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}` for each valid case.
 Cases whose returned `next_phase` is not `complete` are active:
 
 > "Note: {N} investigation(s) in progress: {names}. Continuing with `{project}`."

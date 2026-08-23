@@ -211,6 +211,17 @@ def provenance_matches(case: Path, dependency_digest: str) -> bool:
         return False
     return isinstance(manifest, dict) and manifest.get("input_set_hash") == dependency_digest
 
+def review_is_fresh(case: Path, approval: object) -> bool:
+    path = case / "review.html"
+    if not path.is_file():
+        return False
+    prior_hash = (
+        approval.get("review_sha256_at_approval")
+        if isinstance(approval, dict)
+        else None
+    )
+    return not isinstance(prior_hash, str) or sha256(path) != prior_hash
+
 
 def execution_status(
     status: dict[str, Any], state: dict[str, Any], follow_up: object = None
@@ -224,17 +235,6 @@ def execution_status(
     if isinstance(follow_up, dict):
         value["follow_up"] = {"instructions": follow_up["instructions"]}
     return value
-
-
-def ingest_marker_status(case: Path) -> str | None:
-    path = case / "data/ingestion.json"
-    if not path.is_file():
-        return None
-    try:
-        marker = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return None
-    return marker.get("status") if isinstance(marker, dict) else None
 
 
 def status_for(case: Path, state: dict[str, Any]) -> dict[str, Any]:
@@ -259,7 +259,8 @@ def status_for(case: Path, state: dict[str, Any]) -> dict[str, Any]:
         and isinstance(follow_up.get("instructions"), str)
     ):
         return execution_status(status, state, follow_up)
-    if not gate1_approval_matches(state["approvals"].get("gate1"), dependency_digest):
+    gate1_approval = state["approvals"].get("gate1")
+    if not gate1_approval_matches(gate1_approval, dependency_digest):
         return {**status, "next_phase": "gate1_approval"}
 
     finalization = state.get("gate1_finalization")
@@ -268,7 +269,7 @@ def status_for(case: Path, state: dict[str, Any]) -> dict[str, Any]:
     ):
         if not provenance_matches(case, dependency_digest):
             resume_at = "provenance"
-        elif not (case / "review.html").is_file():
+        elif not review_is_fresh(case, gate1_approval):
             resume_at = "review"
         else:
             resume_at = "seal"
@@ -288,15 +289,26 @@ def status_for(case: Path, state: dict[str, Any]) -> dict[str, Any]:
     ):
         return {**status, "next_phase": "report"}
 
+    marker = load_ingestion_marker(case)
+    marker_status = marker.get("status")
     ingest = state["decisions"].get("ingest")
     if not digest_receipt_matches(ingest, dependency_digest):
+        if (
+            digest_receipt_matches(marker, dependency_digest)
+            and marker_status in {"requested", "completed"}
+        ):
+            detail = (
+                {"state": "completed", "resume_at": "seal"}
+                if marker_status == "completed"
+                else {"state": "requested", "resume_at": "ingest"}
+            )
+            return {**status, "status": "active", "next_phase": "ingest", "ingest": detail}
         return {
             **status,
             "next_phase": "ingest",
             "ingest": {"state": "pending", "resume_at": "decision"},
         }
     decision = ingest.get("decision")
-    marker_status = ingest_marker_status(case)
     if decision == "requested":
         detail = (
             {"state": "completed", "resume_at": "seal"}
@@ -367,11 +379,15 @@ def approve(case: Path, gate: str, actor: str, approved_at: str) -> None:
             state.pop("gate1_finalization", None)
     else:
         dependency_digest = require_gate1_digest(case)
-        state["approvals"][gate] = {
+        gate1_receipt = {
             "approved_by": actor,
             "approved_at": approved_at,
             "dependency_digest": dependency_digest,
         }
+        review_path = case / "review.html"
+        if review_path.is_file():
+            gate1_receipt["review_sha256_at_approval"] = sha256(review_path)
+        state["approvals"][gate] = gate1_receipt
         if not gate1_approval_matches(previous, dependency_digest):
             state["decisions"].clear()
             state.pop("gate1_finalization", None)
@@ -488,13 +504,15 @@ def decide_ingest(case: Path, decision: str) -> None:
     if decision == "completed" and detail != {"state": "completed", "resume_at": "seal"}:
         raise OrchestrationError("ingestion has not produced a completed receipt to seal")
 
+    dependency_digest = require_gate1_digest(case)
     marker = load_ingestion_marker(case)
     marker["status"] = decision
+    marker["dependency_digest"] = dependency_digest
     marker_path = case / "data/ingestion.json"
     atomic_write_json(marker_path, marker)
     state["decisions"]["ingest"] = {
         "decision": decision,
-        "dependency_digest": require_gate1_digest(case),
+        "dependency_digest": dependency_digest,
         "output_sha256": current_hashes(case, ("data/ingestion.json",)),
     }
     atomic_write_json(case / "data/orchestration.json", state)

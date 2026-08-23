@@ -17,7 +17,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -138,6 +138,25 @@ def dependency_entry(case_dir: Path, kind: str, relative: str) -> dict[str, Any]
     return entry
 
 
+def direct_evidence_paths(item: dict[str, Any]) -> Iterator[tuple[str, str]]:
+    for key in ARTIFACT_PATH_KEYS:
+        relative = item.get(key)
+        if isinstance(relative, str) and relative:
+            yield key, relative
+
+
+def evidence_dependency_paths(item: dict[str, Any]) -> Iterator[tuple[str, str]]:
+    yield from direct_evidence_paths(item)
+    derivatives = item.get("text_derivatives", []) or []
+    if not isinstance(derivatives, list):
+        raise ValueError("data/evidence-bundle.json text_derivatives must be an array")
+    for derivative in derivatives:
+        if not isinstance(derivative, dict):
+            raise ValueError("data/evidence-bundle.json text_derivatives must contain objects")
+        relative = derivative.get("path")
+        if isinstance(relative, str) and relative:
+            yield "text_derivative", relative
+
 def gate1_dependency_snapshot(case_dir: Path) -> dict[str, Any]:
     dependencies = [artifact for artifact in ARTIFACTS if artifact.get("gate1_dependency")]
     entries = [
@@ -157,10 +176,8 @@ def gate1_dependency_snapshot(case_dir: Path) -> dict[str, Any]:
         for item in evidence_bundle.get("items", []):
             if not isinstance(item, dict):
                 raise ValueError("data/evidence-bundle.json items must be objects")
-            for key in ARTIFACT_PATH_KEYS:
-                relative = item.get(key)
-                if isinstance(relative, str) and relative:
-                    referenced.append(dependency_entry(case_dir, f"evidence_{key}", relative))
+            for key, relative in evidence_dependency_paths(item):
+                referenced.append(dependency_entry(case_dir, f"evidence_{key}", relative))
         entries.extend(sorted(referenced, key=lambda entry: (entry["path"], entry["kind"])))
 
     return {
@@ -285,10 +302,7 @@ def source_entries(
         for key in ("sha256", *ARTIFACT_PATH_KEYS):
             if item.get(key):
                 entry[key] = item[key]
-        for key in ARTIFACT_PATH_KEYS:
-            rel = item.get(key)
-            if not rel:
-                continue
+        for key, rel in direct_evidence_paths(item):
             artifact_path = (case_dir / rel).resolve()
             if artifact_path.is_file() and artifact_path.is_relative_to(case_dir):
                 digest, size = sha256_file(artifact_path)

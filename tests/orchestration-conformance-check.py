@@ -5,6 +5,8 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -17,6 +19,7 @@ FIXED_APPROVAL = ("journalist:fixture", "2026-08-23T12:00:00Z")
 PROVENANCE_BUILDER = ROOT / "scripts" / "build-provenance-manifest.py"
 CASE_VALIDATOR = ROOT / "scripts" / "validate-case.py"
 PROVENANCE_FIXTURE_PATH = ROOT / "tests" / "provenance-manifest-check.py"
+PREFLIGHT_SKILL = ROOT / "skills" / "phase-preflight" / "SKILL.md"
 PROVENANCE_FIXTURE_SPEC = importlib.util.spec_from_file_location(
     "spotlight_provenance_fixture", PROVENANCE_FIXTURE_PATH
 )
@@ -273,6 +276,36 @@ class OrchestrationConformance(unittest.TestCase):
 
         self.assertEqual(self.status()["next_phase"], "gate1_approval")
 
+    def test_referenced_text_derivative_bytes_stale_gate1(self) -> None:
+        self.approve("methodology")
+        investigation_outputs(self.case)
+        transcript_path = self.case / "research/transcript.txt"
+        transcript_path.parent.mkdir()
+        transcript_path.write_text("Original fixture transcript.\n", encoding="utf-8")
+        evidence_path = self.case / "data/evidence-bundle.json"
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        evidence["items"] = [
+            {
+                "id": "E1",
+                "text_derivatives": [
+                    {
+                        "id": "TD-E1",
+                        "path": "research/transcript.txt",
+                        "sha256": sha256(transcript_path),
+                    }
+                ],
+            }
+        ]
+        write_json(evidence_path, evidence)
+        self.approve("gate1")
+        self.finish_gate1()
+        self.assertEqual(self.status()["next_phase"], "report")
+
+        transcript_path.write_text("Mutated fixture transcript.\n", encoding="utf-8")
+
+        self.assertEqual(self.status()["next_phase"], "gate1_approval")
+
+
     def test_gate1_approval_resumes_finalization_until_both_outputs_are_sealed(
         self,
     ) -> None:
@@ -301,6 +334,29 @@ class OrchestrationConformance(unittest.TestCase):
         )
         self.command("seal-gate1")
         self.assertEqual(self.status()["next_phase"], "report")
+
+    def test_old_review_cannot_finalize_a_new_gate1_dependency_digest(self) -> None:
+        self.approve("methodology")
+        investigation_outputs(self.case)
+        self.approve("gate1")
+        self.finish_gate1()
+        (self.case / "summary.md").write_text(
+            "# Corrected offline demo\n", encoding="utf-8"
+        )
+        self.approve("gate1")
+        self.build_provenance()
+
+        self.assertEqual(
+            self.status()["gate1"], {"state": "approved", "resume_at": "review"}
+        )
+        (self.case / "review.html").write_text(
+            "<!doctype html><title>Corrected offline review</title>\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            self.status()["gate1"], {"state": "approved", "resume_at": "seal"}
+        )
+
 
     def test_gate1_follow_up_reopens_execution_durably(self) -> None:
         self.approve("methodology")
@@ -419,6 +475,10 @@ class OrchestrationConformance(unittest.TestCase):
         )
 
         self.command("decide-ingest", "requested")
+        state_path = self.case / "data/orchestration.json"
+        interrupted_state = json.loads(state_path.read_text(encoding="utf-8"))
+        interrupted_state["decisions"].pop("ingest")
+        write_json(state_path, interrupted_state)
         self.assertEqual(
             self.status()["ingest"], {"state": "requested", "resume_at": "ingest"}
         )
@@ -436,6 +496,37 @@ class OrchestrationConformance(unittest.TestCase):
         self.assertEqual(
             complete["ingest"], {"state": "completed", "resume_at": "complete"}
         )
+
+    def test_preflight_active_case_status_command_supplies_each_case_directory(
+        self,
+    ) -> None:
+        preflight = PREFLIGHT_SKILL.read_text(encoding="utf-8")
+        active_check = preflight.split("## 7. Active investigation check", 1)[1].split(
+            "## 8. Write config", 1
+        )[0]
+        documented = re.findall(
+            r"`(python3 scripts/spotlight-orchestration\.py status --json[^`]*)`",
+            active_check,
+        )
+        self.assertEqual(len(documented), 1, active_check)
+        arguments = shlex.split(documented[0])
+        arguments[0] = sys.executable
+        arguments = [
+            str(self.case) if argument == "{CASE_DIR}" else argument
+            for argument in arguments
+        ]
+
+        result = subprocess.run(
+            arguments,
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            env={"PATH": "", "PYTHONNOUSERSITE": "1"},
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
 
     def test_offline_demo_resumes_and_completes_report_ingest_declines(self) -> None:
         self.approve("methodology")
