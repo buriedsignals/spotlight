@@ -112,13 +112,13 @@ Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for larg
 
 ### Orchestrator skill
 
-- **`spotlight`** — the investigation orchestrator. Phase 0 preflight → Brief → Methodology → Execution cycles (max 5) → Gate 1 → Ingestion. Invokes investigator and fact-checker as agents.
+- **`spotlight`** — the investigation dispatcher. After preflight it resolves durable state, dynamically invokes one phase owner, and repeats through Brief → Methodology → Execution cycles (max 5) → Gate 1 → Report → Ingestion.
 
 ### Pipeline-support skills (invocable by orchestrator)
 
-- **`review`** — post-Gate-1 HTML review artifact. Renders a self-contained `{CASE_DIR}/review.html` the journalist opens in any browser, submits structured feedback, downloads as JSON. Mode B re-spawns the investigator to process the feedback and regenerates the HTML. No server required.
+- **`review`** — post-Gate-1 HTML review artifact. Renders a self-contained `{CASE_DIR}/review.html` that exports structured feedback for validation by the Gate 1 owner. It never spawns agents or derives phase state. No server required.
 - **`integrations`** — routing layer for external tool integrations (dev-browser, Junkipedia, Arbiter, Noosphere C2PA, OSINT Navigator, Unpaywall). Reads live preflight status, maps investigation tasks to integrations. See `integrations/` at repo root for manifests + per-integration usage docs.
-- **`ingest`** — archival from case files to vault. 8-step process with `.ingest-lock` concurrency and directory fallback. Step 6 extracts eligibility-gated claim records (verdict `verified`/`partially_verified`, grounding above `low`, sources present) into `{vault}/claims/` with a claims registry, a generated alias index (`entities/_aliases.json`), and human-gated merge proposals.
+- **`ingest`** — Phase 6 archival from the resolver-selected case to its configured vault. It runs only after a durable requested transition and uses an `.ingest-lock` plus the Knowledge Workspace Port for concurrency and projection.
 - **`monitoring`** — case-level monitoring recommendations and explicit Mycroft handoff.
 - **`acquisition-graduation`** — turns repeated dev-browser acquisition successes into durable source/domain guidance without secrets or brittle session details.
 - **`report-drafting`** — post-Gate-1 report drafting with methodology and evidence ledgers. An optional diagram selects existing `findings.json.connections`; the renderer produces `flow`, `hierarchy`, `network`, or `loop` diagrams without accepting model-authored Mermaid or layout code.

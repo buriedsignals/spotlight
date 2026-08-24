@@ -23,12 +23,13 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 from source_expression_contract import lifecycle_state
+from spotlight_orchestration.case_writer import atomic_write_files
+from spotlight_orchestration.contract import OrchestrationError
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -1276,42 +1277,10 @@ def evidence_map(
 
 
 def publish_outputs(case: Path, outputs: dict[str, str]) -> None:
-    """Stage every artifact, then publish with rollback on replacement failure."""
-    staged: dict[Path, Path] = {}
-    originals: dict[Path, bytes | None] = {}
-    try:
-        for name, content in outputs.items():
-            destination = case / name
-            originals[destination] = destination.read_bytes() if destination.exists() else None
-            handle, temp_name = tempfile.mkstemp(prefix=f".{name}.stage.", dir=case, text=True)
-            with os.fdopen(handle, "w") as temp:
-                temp.write(content)
-                temp.flush()
-                os.fsync(temp.fileno())
-            staged[destination] = Path(temp_name)
-        published: list[Path] = []
-        try:
-            for destination, staged_path in staged.items():
-                staged_path.replace(destination)
-                published.append(destination)
-        except BaseException:
-            for destination in reversed(published):
-                original = originals[destination]
-                if original is None:
-                    destination.unlink(missing_ok=True)
-                else:
-                    handle, restore_name = tempfile.mkstemp(
-                        prefix=f".{destination.name}.restore.", dir=case
-                    )
-                    with os.fdopen(handle, "wb") as restore:
-                        restore.write(original)
-                        restore.flush()
-                        os.fsync(restore.fileno())
-                    Path(restore_name).replace(destination)
-            raise
-    finally:
-        for staged_path in staged.values():
-            staged_path.unlink(missing_ok=True)
+    atomic_write_files(
+        case,
+        {name: content.encode("utf-8") for name, content in outputs.items()},
+    )
 
 
 def render(case: Path) -> dict[str, Any]:
@@ -1414,7 +1383,7 @@ def main() -> int:
             return 3
     try:
         result = render(case)
-    except (OSError, RenderError) as exc:
+    except (OSError, OrchestrationError, RenderError) as exc:
         print(f"FAIL  report render: {exc}")
         return 3
     if args.json:

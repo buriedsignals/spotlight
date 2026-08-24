@@ -7,16 +7,12 @@ phase: gate-1
 
 # Phase 4 — Gate 1
 
-Start or resume by running:
-
-```text
-python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}
-```
-
-On the execution owner's direct readiness handoff, generate the two summary
-artifacts below and run status again. Otherwise act only on
-`next_phase: gate1_approval` or `next_phase: gate1_finalization`; never infer a
-Gate 1 substep from artifact presence.
+Start or resume only from a `spotlight_resolve` result passed by the parent
+with `owner: phase-gate1`. When `phase: gate1_approval`, regenerate both
+summary artifacts below from current execution outputs, then call
+`spotlight_resolve({})` before presenting the human gate. This applies whether
+the summaries were missing or stale. For finalization, follow `resume` without
+inferring a substep from artifact presence.
 
 
 ## Generate summary
@@ -105,10 +101,13 @@ If the user requests a follow-up cycle, persist the transition before returning
 to execution:
 
 ```text
-python3 scripts/spotlight-orchestration.py request-follow-up --instructions "<targeted gap instructions>" {CASE_DIR}
+spotlight_transition({
+  operation: "requestFollowUp",
+  payload: {instructions: "<targeted gap instructions>"}
+})
 ```
 
-Re-run status and pass `follow_up.instructions` to `skills/phase-execution`.
+Resolve again and pass `resume.instructions` to the returned execution owner.
 
 Before asking the user to approve the investigation as ready for report drafting and ingestion, remind them:
 
@@ -120,17 +119,20 @@ After the user explicitly approves, persist the attributable receipt before any
 downstream work:
 
 ```text
-python3 scripts/spotlight-orchestration.py approve gate1 --approved-by "<human identity>" --approved-at "<ISO 8601 timestamp>" {CASE_DIR}
+spotlight_transition({
+  operation: "approve",
+  payload: {gate: "gate1", approvedBy: "<human identity>", approvedAt: "<ISO 8601 timestamp>"}
+})
 ```
 
 This binds the current dependency digest owned by the provenance builder's
 annotated registry, including activated validation inputs and referenced
 evidence artifacts. Pending summary artifacts are not approval. If a dependency
-changes, a fresh status returns `gate1_approval`; re-run the existing validators
-and obtain a new human approval before report or ingestion.
+changes, the next resolution returns Gate 1 approval; re-run the existing
+validators and obtain a new human approval before report or ingestion.
 
-The human gate ends the turn. On resume, run status and follow
-`gate1.resume_at`; do not skip directly to report.
+The human gate ends the turn. On resume, resolve and follow `resume.resume_at`;
+do not skip directly to report.
 
 ## Finalize an approved Gate 1
 
@@ -153,29 +155,29 @@ execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR} --sign-en
 ```
 
 Signing failures do not block review. Preserve the unsigned manifest and report
-the failure clearly. Re-run orchestration status; it must return
-`gate1.resume_at: review`.
+the failure clearly. Call `spotlight_resolve`; its `resume.resume_at` must be
+`review`.
 
 ### `resume_at: review`
 
 Invoke `review` to produce `{CASE_DIR}/review.html`, a self-contained artifact
-for inspecting findings and submitting structured feedback. Then re-run
-orchestration status; it must return `gate1.resume_at: seal`.
+for inspecting findings and exporting structured feedback. Then call
+`spotlight_resolve`; its `resume.resume_at` must be `seal`.
 
 Offer the user:
 
 > "Review artifact written to `{CASE_DIR}/review.html`. Open it in any browser to inspect findings. Request a targeted follow-up, or proceed to the public report."
 
 For a follow-up, validate the feedback, convert it to targeted instructions,
-and run `request-follow-up` as shown above before dispatching execution. Do not
-derive the transition from feedback-file or processed-marker presence.
+and apply `requestFollowUp` as shown above before dispatching execution. Do not
+derive the transition from feedback-file presence.
 
 ### `resume_at: seal`
 
 If the user proceeds, seal both current finalization outputs:
 
 ```text
-python3 scripts/spotlight-orchestration.py seal-gate1 {CASE_DIR}
+spotlight_transition({operation: "sealGate1", payload: {}})
 ```
 
-Re-run status. Only a successful seal returns `next_phase: report`.
+Resolve again. Only a successful seal returns `phase: report`.

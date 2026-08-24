@@ -38,6 +38,15 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   renders byte-for-byte the same report as before.
 
 ### Changed
+- Spotlight orchestration now resolves durable state through one importable
+  Python authority. Flue registers host-bound active-case
+  `spotlight_resolve`/`spotlight_transition` capabilities, while the former CLI
+  remains only an optional thin adapter. Execution readiness selects the
+  existing Gate 1 owner to author summaries; Report and Ingest remain resolver-
+  owned phases. Transition, ingestion, report-decline, and report publication
+  writes use descriptor-anchored no-follow replacement on macOS, Linux, and
+  Windows through WSL. Legacy review-file processing, direct phase handoffs,
+  launcher finalizers, and standalone ingestion routes are removed.
 - `/arbiter` is live for members with a configured Arbiter API key. It directs
   each member through the attributed Indicator signup flow and local
   member-owned key setup before browse or create actions. Spotlight does not

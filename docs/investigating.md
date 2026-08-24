@@ -34,8 +34,12 @@ Phase 4 — Gate 1
     write summary.md + summary.json → present findings table to user
         │ GATE: user approves investigation
         ▼
-Phase 5 — Ingestion
-    invoke-skill("ingest") → writes vault notes, registries, index.md
+Phase 5 — Report
+    draft and deterministically render report, or record decline
+        │ GATE: user decides report
+        ▼
+Phase 6 — Ingestion
+    record ingest decision → invoke ingest handler only after a requested transition
         │ GATE: user approves ingest
         ▼
 END
@@ -291,20 +295,28 @@ The user approves the investigation, requests follow-up cycles (re-enter Phase 3
 
 ### Review artifact (after Gate 1 approval)
 
-After the Gate 1 approval, the orchestrator invokes the `review` skill to produce `{CASE_DIR}/review.html`. This is a self-contained HTML file — no server, no CDN — that the journalist can open in any browser to inspect findings, verdicts, grounding state, evidence-bundle refs, local source files, and case-level C2PA/provenance status before submitting structured feedback. Feedback downloads as `review-feedback.json`; dropping it into `{CASE_DIR}/data/` and re-running `/spotlight` triggers Mode B of the review skill, which re-spawns the investigator with feedback-targeted instructions and regenerates the HTML.
-
-This turns Gate 1 from a one-shot approval into an iterative editorial loop. Skip it to proceed straight to ingestion.
+After Gate 1 approval, the orchestrator invokes the `review` skill to produce
+`{CASE_DIR}/review.html`. This self-contained artifact lets the journalist
+inspect findings, verdicts, grounding, evidence references, local sources, and
+case provenance. It exports structured `review-feedback.json`; the journalist
+returns that file to the Gate 1 owner, which validates targets, converts
+actionable feedback to bounded instructions, and records `requestFollowUp`.
+Feedback-file presence never triggers a phase or directly spawns an agent.
 
 See `skills/review/SKILL.md` for full details.
 
-## Phase 5 — Ingestion
+## Phase 5 — Report
 
-After Gate 1 approval:
+After sealed Gate 1 finalization, the report owner offers deterministic report
+drafting or decline and records the decision through `decideReport`.
 
-> "Investigation complete. Ingest confirmed findings into your knowledge base?"
+## Phase 6 — Ingestion
 
-- If yes: `invoke-skill("ingest")` — 7-step archival into vault notes + registries + `index.md`. See the ingest skill for details.
-- If no: pipeline ends. Case files remain in `{CASE_DIR}/` for future reference or later ingestion.
+After the report decision, the ingest owner asks whether to ingest confirmed
+findings. Approval records `decideIngest: requested`; only then does the owner
+invoke the ingest handler with the exact case and configured destination. A
+decline records `decideIngest: declined`. The ingest skill is not a standalone
+entry point.
 
 ## Evidence grounding — the rule that applies across all phases
 

@@ -553,8 +553,9 @@
 
       <!-- ── 02 Pipeline ─────────────────────────────── -->
       <section id="pipeline">
-        <h2><span class="num">02 — The pipeline</span>Six stages, one editorial loop.</h2>
-        <p>Every investigation runs through the same six stages. The agent moves between them under explicit gates — no silent transitions, no half-finished cases.</p>
+        <h2><span class="num">02 — The pipeline</span>Seven stages, one editorial loop.</h2>
+        <p>Every investigation runs through the same seven stages. The agent moves between them under explicit gates — no silent transitions, no half-finished cases.</p>
+        <p>The cases root is trusted journalist-owned local storage. Active case directories must not be moved or replaced during an operation.</p>
 
         <iframe
           class="spec-flow-frame"
@@ -569,7 +570,8 @@
           <div class="pipeline-step"><div class="step-n">03</div><div class="step-name">Methodology</div></div>
           <div class="pipeline-step"><div class="step-n">04</div><div class="step-name">Execution × 5</div></div>
           <div class="pipeline-step"><div class="step-n">05</div><div class="step-name">Gate 1</div></div>
-          <div class="pipeline-step"><div class="step-n">06</div><div class="step-name">Ingestion</div></div>
+          <div class="pipeline-step"><div class="step-n">06</div><div class="step-name">Report</div></div>
+          <div class="pipeline-step"><div class="step-n">07</div><div class="step-name">Ingestion</div></div>
         </div>
 
         <h3>Preflight</h3>
@@ -585,7 +587,7 @@
         <p>Up to five execution cycles, each in two modes: <strong>PLANNING</strong> (what to do next) and <strong>EXECUTION</strong> (do it, record what came back). The investigator agent runs the cycles; every source is archived locally before it can be cited; every claim gets an evidence trail with grounding rationale.</p>
 
         <h3>Gate 1 — six readiness criteria</h3>
-        <p>Before ingestion, the case has to pass six checks:</p>
+        <p>Before the report decision, the case has to pass six checks:</p>
         <ol>
           <li>Findings are non-empty and schema-valid.</li>
           <li>Independence — fact-checker spawned as a separate agent, not the investigator's same context.</li>
@@ -595,6 +597,9 @@
           <li>Gap assessment — what we don't know is named, not hidden.</li>
         </ol>
         <p>If a criterion fails, the agent loops back. If it persists past cycle five, the stall protocol triggers — the investigation is paused and the journalist decides whether to continue, change scope, or shelf.</p>
+
+        <h3>Report</h3>
+        <p>After Gate 1, the journalist completes or declines the resolver-owned report phase. A completed report publishes the canonical <code>report.html</code>, <code>findings-report.md</code>, and <code>evidence-map.json</code> artifacts as one validated package before the case can proceed to ingestion.</p>
 
         <h3>Ingestion</h3>
         <p>During a case, source archives and working JSON stay in the active case workspace. After explicit approval, verified or clearly caveated findings, fact-check verdicts, methodology lessons, and entity notes can be ingested into your knowledge vault as structured markdown with wikilinks. Future investigations search the vault through OpenKnowledge's MCP interface and build on prior work without rediscovering the same entities from scratch.</p>

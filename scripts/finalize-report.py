@@ -49,6 +49,26 @@ def run(script: str, case: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def report_stages(case: Path) -> list[dict[str, object]]:
+    stages: list[dict[str, object]] = []
+    for label, script in (
+        ("fact_check", "validate-fact-check.py"),
+        ("report_draft", "validate-report-draft.py"),
+        ("render", "render-report.py"),
+        ("report", "validate-report.py"),
+    ):
+        result = run(script, case)
+        stages.append({
+            "stage": label,
+            "passed": result.returncode == 0,
+            "stdout": result.stdout.strip(),
+            "stderr": result.stderr.strip(),
+        })
+        if result.returncode != 0:
+            break
+    return stages
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("case_dir")
@@ -58,9 +78,11 @@ def main() -> int:
     args = parser.parse_args()
     case = Path(args.case_dir)
     data_dir = case / "data"
-    ready = all((data_dir / name).is_file() for name in (
-        "findings.json", "fact-check.json", "report-draft.json"
-    ))
+    ready = all(
+        (data_dir / name).is_file()
+        for name in ("findings.json", "fact-check.json", "report-draft.json")
+    )
+
     if args.if_ready and not ready:
         declined, decline_error = valid_decline(data_dir)
         advanced = any(path.is_file() for path in (
@@ -109,22 +131,7 @@ def main() -> int:
         print(f"FAIL  case dir not found: {case}")
         return 3
 
-    stages: list[dict[str, object]] = []
-    for label, script in (
-        ("fact_check", "validate-fact-check.py"),
-        ("report_draft", "validate-report-draft.py"),
-        ("render", "render-report.py"),
-        ("report", "validate-report.py"),
-    ):
-        result = run(script, case)
-        stages.append({
-            "stage": label,
-            "passed": result.returncode == 0,
-            "stdout": result.stdout.strip(),
-            "stderr": result.stderr.strip(),
-        })
-        if result.returncode != 0:
-            break
+    stages = report_stages(case)
 
     passed = len(stages) == 4 and all(stage["passed"] for stage in stages)
     if args.json:

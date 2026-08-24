@@ -5,11 +5,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
+from spotlight_orchestration.case_writer import atomic_write_json
+from spotlight_orchestration.contract import OrchestrationError
+from spotlight_orchestration.storage import resolve_case
 
 
 INPUTS = ("findings.json", "fact-check.json")
@@ -24,7 +25,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("case_dir")
     args = parser.parse_args()
-    case = Path(args.case_dir).resolve()
+    try:
+        case = resolve_case(args.case_dir)
+    except OrchestrationError as exc:
+        print(f"FAIL  {exc}")
+        return 3
     data = case / "data"
     missing = [name for name in INPUTS if not (data / name).is_file()]
     if missing:
@@ -46,16 +51,11 @@ def main() -> int:
         "decision": "declined",
         "input_sha256": {f"data/{name}": sha256(data / name) for name in INPUTS},
     }
-    handle, temp_name = tempfile.mkstemp(prefix=".report-declined.", dir=data, text=True)
     try:
-        with os.fdopen(handle, "w") as temp:
-            json.dump(marker, temp, indent=2)
-            temp.write("\n")
-            temp.flush()
-            os.fsync(temp.fileno())
-        Path(temp_name).replace(data / "report-declined.json")
-    finally:
-        Path(temp_name).unlink(missing_ok=True)
+        atomic_write_json(case, "data/report-declined.json", marker)
+    except OrchestrationError as exc:
+        print(f"FAIL  cannot record report decline: {exc}")
+        return 3
     print("report decision: DECLINED — bound to current findings and fact-check inputs")
     return 0
 

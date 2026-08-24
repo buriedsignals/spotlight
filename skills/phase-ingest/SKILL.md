@@ -1,27 +1,18 @@
 ---
 name: phase-ingest
-description: Spotlight Phase 6 — Ingestion: finalize-report --if-ready transition marker, ingestion.json status lifecycle, user confirmation, invoke-skill ingest or decline
+description: Spotlight Phase 6 — Ingestion: resolver-owned transition, ingestion.json status lifecycle, user confirmation, invoke-skill ingest or decline
 invocable_by: [orchestrator]
 phase: ingest
 ---
 
 # Phase 6 — Ingestion
 
-Run:
-
-```text
-python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}
-```
-
-Enter this phase only for `next_phase: ingest`, and follow the returned
-`ingest.state` and `ingest.resume_at`. Do not inspect `ingestion.json` to choose
-a substep.
+Enter this phase only from a `spotlight_resolve` result with `phase: ingest`
+and `owner: phase-ingest`. Follow its `resume.state` and `resume.resume_at`; do
+not inspect `ingestion.json` to choose a substep.
 
 ### `pending` / `decision`
 
-Run `python3 scripts/finalize-report.py {CASE_DIR} --if-ready`. The existing
-finalizer verifies the current completed or declined report path. Stop if it
-fails.
 
 Remind the user before asking for ingestion confirmation:
 
@@ -29,18 +20,17 @@ Remind the user before asking for ingestion confirmation:
 
 > "Investigation complete. Ingest confirmed findings into your knowledge base?"
 
-- If yes, run
-  `python3 scripts/spotlight-orchestration.py decide-ingest requested {CASE_DIR}`,
-  re-run status, and continue at the returned substep.
-- If no, run
-  `python3 scripts/spotlight-orchestration.py decide-ingest declined {CASE_DIR}`.
-  The seam writes the existing declined marker and the hash-bound decision.
+- If yes, call `spotlight_transition({operation: "decideIngest", payload:
+  {decision: "requested"}})`, resolve again, and continue at the returned
+  substep.
+- If no, use the same operation with `payload: {decision: "declined"}`. The
+  resolver writes the existing declined marker and the hash-bound decision.
 
 ### `requested` / `ingest`
 
 The human decision is already durable. Do not ask again. Invoke `ingest` with
 the project path and vault config from `.spotlight-config.json`. After it writes
-its completed receipt, re-run orchestration status; do not invoke ingestion a
+its completed receipt, call `spotlight_resolve`; do not invoke ingestion a
 second time.
 
 ### `completed` / `seal`
@@ -49,7 +39,10 @@ The projection receipt already exists. Do not ask or invoke `ingest` again.
 Seal its current bytes:
 
 ```text
-python3 scripts/spotlight-orchestration.py decide-ingest completed {CASE_DIR}
+spotlight_transition({
+  operation: "decideIngest",
+  payload: {decision: "completed"}
+})
 ```
 
-Re-run status. `completed` / `complete` means the pipeline has ended.
+Resolve again. `completed` / `complete` means the pipeline has ended.

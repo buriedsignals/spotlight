@@ -2,7 +2,7 @@
 name: ingest
 description: Stage and commit approved investigation findings through the Knowledge Workspace Port into the spotlight namespace.
 version: "1.0"
-invocable_by: [orchestrator, user]
+invocable_by: [orchestrator]
 requires: []
 ---
 
@@ -14,27 +14,14 @@ All durable mutations use the Knowledge Workspace Port. Set `logical_space: spot
 
 This skill instructs. You — the host runtime — execute. You read investigation files, write vault notes, update registries, and maintain the knowledge graph. The user sees the result; you do the work.
 
-Two input modes:
+This skill is a Phase 6 handler, not a standalone entry point. Enter only when
+the parent passes a resolver result with `owner: phase-ingest`,
+`resume.state: requested`, and `resume.resume_at: ingest`. The preceding
+`decideIngest` transition already wrote the case-local requested receipt and
+bound its dependency digest; never recreate or discard that marker.
 
-- **Pipeline mode** — invoked by Spotlight after Gate 1 approval. Project path and vault config are already known.
-- **Standalone mode** — invoked directly. You gather inputs interactively.
-
----
-
-## Input Mode Detection
-
-### Mode A — From Spotlight Pipeline
-
-The orchestrator passes project path and vault config (from `.spotlight-config.json`). All inputs are known:
-
-- `knowledge_destination` — typed target from `.spotlight-config.json`
-- `project` — project slug
-
-At entry, write `{CASE_DIR}/data/ingestion.json` with
-`{"schema_version":"1.0","status":"requested"}`. This receipt is case-local even
-when every durable output is written to an external vault.
-
-Read these case files:
+The orchestrator passes the exact `CASE_DIR`, project, and typed knowledge
+destination from `.spotlight-config.json`. Read:
 
 ```
 {CASE_DIR}/data/findings.json
@@ -46,37 +33,8 @@ Read these case files:
 For an activated `1.1` case, also read
 `data/case-contract.json` and `data/source-expressions.json`.
 
-Skip to the Ingestion Process.
-
-### Mode B — Standalone
-
-The user requests ingestion directly.
-
-**Step 1 — Findings source:**
-
-> "Point me to your findings file (JSON with claims, sources, and evidence)."
-
-`read-file(<path>)`. Validate it contains a `findings` array where entries have `sources`. If the structure is wrong:
-
-> "This file doesn't match the expected format. I need a JSON file with a `findings` array where each finding has `claim`, `sources`, and `evidence` fields."
-
-**STOP.**
-
-**Step 2 — Knowledge destination:**
-
-> "Which configured Knowledge Workspace should receive this approved package?"
-
-Require a typed destination (`openknowledge`, `markdown`, or `obsidian_legacy`) and namespace `spotlight`. Standalone ingestion still requires an explicit editorial approval record; a bare filesystem path is insufficient.
-
-**Step 3 — Supplementary files:**
-
-Check whether these exist alongside the findings file. Use whatever is available; do not require all of them:
-
-- `fact-check.json` — verdict annotations
-- `investigation-log.json` — methodology, tools, search queries
-- `summary.json` — overview and conclusions
-
-Proceed to the Ingestion Process with whatever files were found.
+Do not discover inputs from sibling files, prompt for an arbitrary findings
+path, or infer a destination from prose.
 
 ---
 
@@ -404,9 +362,11 @@ After Step 8 and, when applicable, Step 6a complete, remove the `.ingest-lock`.
 Include both the claim exclusions and source-expression written/skipped IDs in
 the ingest summary.
 
-In pipeline mode, update `{CASE_DIR}/data/ingestion.json` to
-`{"schema_version":"1.0","status":"completed"}` after the lock is removed. If
-ingestion fails, write status `failed` before reporting the failure.
+After Step 8 and lock removal, update the existing
+`{CASE_DIR}/data/ingestion.json` object to `status: "completed"` while
+preserving its resolver-owned `dependency_digest` and adding the projection
+receipt fields. If ingestion fails, preserve the same binding and update status
+to `failed` before reporting the failure.
 
 ---
 

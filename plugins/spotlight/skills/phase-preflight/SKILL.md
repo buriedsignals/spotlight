@@ -102,7 +102,24 @@ contents.
 
 ## 5. Project setup
 
-Derive a project slug from the user's lead (lowercase, hyphens, no spaces). Resolve `CASE_ROOT` from `case_workspace_root`; if absent, use legacy `cases_root`; if absent, use `cases/`. Resolve `CASE_DIR = CASE_ROOT/{project}`. Create:
+### Flue-native case binding
+
+When running in Flue, use only the host's launcher-bound active case. The
+registered Spotlight tools have already established that exact case and its
+`data/` directory beneath the configured cases root. Do not derive another
+slug, create or enumerate sibling cases, accept a model-selected case path, or
+invoke the Python adapter directly.
+
+After the preceding preflight checks, call `spotlight_resolve({})` and return
+its resolution to the dispatcher without inspecting case artifacts or
+`data/orchestration.json`.
+
+### Non-Flue case selection
+
+Derive a project slug from the user's lead (lowercase, hyphens, no spaces).
+Resolve `CASE_ROOT` from `case_workspace_root`; if absent, use legacy
+`cases_root`; if absent, use `cases/`. Resolve
+`CASE_DIR = CASE_ROOT/{project}`. Create:
 
 ```
 {CASE_DIR}/
@@ -111,23 +128,23 @@ Derive a project slug from the user's lead (lowercase, hyphens, no spaces). Reso
 {CASE_DIR}/evidence/
 ```
 
-## 6. Duplicate project check
+#### Duplicate project check
 
 If `CASE_DIR` already exists, prompt:
 
 > "An investigation named `{project}` already exists. Resume the existing investigation, or start fresh?"
 
-If resume, run
-`python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}` and return
-its `next_phase` and resume detail to the dispatcher without inspecting case
-artifacts or `data/orchestration.json`. If fresh, back up the existing directory
-to `{CASE_ROOT}/{project}-{timestamp}/` and create a new one.
+If resuming, call the runtime adapter's resolver operation and return its
+resolution to the dispatcher without inspecting case artifacts or
+`data/orchestration.json`. If fresh, back up the existing directory to
+`{CASE_ROOT}/{project}-{timestamp}/` and create a new one.
 
-## 7. Active investigation check
+#### Active investigation check
 
-Use `list-files("{CASE_ROOT}/*")` to enumerate case directories, then run
-`python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}` for each valid case.
-Cases whose returned `next_phase` is not `complete` are active:
+Use `list-files("{CASE_ROOT}/*")` to enumerate case directories, then use the
+thin non-Flue adapter for each valid case:
+`python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}`.
+Cases whose returned phase is not `complete` are active:
 
 > "Note: {N} investigation(s) in progress: {names}. Continuing with `{project}`."
 
@@ -234,12 +251,12 @@ If `integrations.rlm.enabled` is true, find the `rlm` entry in
 
 ## 9.5. Follow-up recovery (resume only)
 
-When resuming an existing project, consume the same orchestration status result
-used above. If it returns `next_phase: execution` with
-`follow_up.instructions`, pass those instructions to `skills/phase-execution`.
-Do not scan feedback files or processed markers to derive resume state. The
-Gate 1 owner validates structured feedback and records the durable transition
-through `spotlight-orchestration.py request-follow-up` before execution resumes.
+When resuming an existing project, consume the same resolver result used above.
+If it returns `phase: execution` with `resume.instructions`, pass those
+instructions to the returned execution owner. Do not derive resume state from
+feedback-file presence. The Gate 1 owner validates structured feedback and
+records `requestFollowUp` through `spotlight_transition` before execution
+resumes.
 
 ## 10. Monitoring + integrations availability (optional)
 

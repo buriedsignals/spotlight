@@ -96,25 +96,20 @@ The renderer places this at the top of the page. Do not soften:
    text and attribution, and records its locator, hashes, relation, and lifecycle in
    `evidence-map.json`. Legacy `1.0` reports do not accept expression selections.
 
-3. Run:
-
-   ```sh
-   python3 scripts/finalize-report.py {CASE_DIR}
-   ```
-
-   The finalizer validates the fact-check, validates your report draft, renders all three artifacts, then runs the report gate. It will not overwrite deliverables when either input gate fails.
-4. If `report_draft` fails, revise only `data/report-draft.json` using the exact failure. If fact-check fails, return to the fact-checker. **Never repair generated HTML or Markdown by hand.**
-5. Present the final gate only when the command prints `report finalizer: PASSED`.
+3. Return the completed structured draft to the `phase-report` owner. That
+   owner applies `spotlight_transition({operation: "decideReport", payload:
+   {decision: "completed"}})`; the resolver invokes the deterministic
+   finalizer, validates both inputs, renders all three artifacts, and records
+   their hashes before advancing to Ingest.
+4. If that transition reports a `report_draft` failure, revise only
+   `data/report-draft.json` using the exact failure. If fact-check fails, return
+   to the fact-checker. **Never repair generated HTML or Markdown by hand.**
+5. Present generated report artifacts only after the transition succeeds.
 
 The renderer is byte-deterministic for identical inputs, HTML-escapes all case text, permits links only to HTTP(S) sources or existing files within the case, and caps every non-verified finding at Low confidence. Activated reports also require every reportable positive finding to retain an active supporting expression through the fact-check trail. Missing, dangling, tampered, superseded, or withdrawn expression references fail before valid report artifacts are replaced.
 
 The structural validator is deliberately language-neutral. It proves reference coverage and verdict placement; it does **not** pretend to prove semantic entailment from prose. Independent fact-checking and the final human editorial gate remain responsible for whether the model's synthesis accurately interprets the cited findings.
 
-The model/code split is the same on local and frontier models. Flue runs the finalizer
-from its per-turn launcher; installed frontier CLIs must run it before presenting the
-final gate, with a process-exit hook as a backstop. A custom API host must call
-`scripts/finalize-report.py` in its own response middleware; Spotlight cannot intercept
-an arbitrary external API loop.
 
 ## Inputs / Outputs
 

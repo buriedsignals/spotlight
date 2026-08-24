@@ -27,8 +27,20 @@ from source_expression_contract import canonical_fingerprint, fact_check_rows, l
 
 
 ARTIFACTS = [
-    {"kind": "summary", "path": "summary.md", "gate1_dependency": True, "gate1_required": True},
-    {"kind": "summary_json", "path": "data/summary.json", "gate1_dependency": True, "gate1_required": True},
+    {
+        "kind": "summary",
+        "path": "summary.md",
+        "gate1_dependency": True,
+        "gate1_required": True,
+        "gate1_authored": True,
+    },
+    {
+        "kind": "summary_json",
+        "path": "data/summary.json",
+        "gate1_dependency": True,
+        "gate1_required": True,
+        "gate1_authored": True,
+    },
     {"kind": "findings", "path": "data/findings.json", "gate1_dependency": True, "gate1_required": True},
     {"kind": "fact_check", "path": "data/fact-check.json", "gate1_dependency": True, "gate1_required": True},
     {"kind": "source_expressions", "path": "data/source-expressions.json", "gate1_dependency": True},
@@ -163,8 +175,8 @@ def gate1_dependency_snapshot(case_dir: Path) -> dict[str, Any]:
         dependency_entry(case_dir, artifact["kind"], artifact["path"])
         for artifact in dependencies
     ]
-    missing = [
-        artifact["path"]
+    required_missing = [
+        artifact
         for artifact, entry in zip(dependencies, entries)
         if artifact.get("gate1_required") and not entry["present"]
     ]
@@ -180,10 +192,19 @@ def gate1_dependency_snapshot(case_dir: Path) -> dict[str, Any]:
                 referenced.append(dependency_entry(case_dir, f"evidence_{key}", relative))
         entries.extend(sorted(referenced, key=lambda entry: (entry["path"], entry["kind"])))
 
+    gate1_missing = [
+        artifact["path"] for artifact in required_missing if artifact.get("gate1_authored")
+    ]
+    execution_missing = [
+        artifact["path"] for artifact in required_missing if not artifact.get("gate1_authored")
+    ]
     return {
         "schema_version": DEPENDENCY_STATUS_VERSION,
-        "ready": not missing,
-        "missing": missing,
+        "ready": not required_missing,
+        "missing": [artifact["path"] for artifact in required_missing],
+        "execution_ready": not execution_missing,
+        "execution_missing": execution_missing,
+        "gate1_missing": gate1_missing,
         "dependency_digest": canonical_hash(entries),
     }
 
