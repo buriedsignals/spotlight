@@ -430,10 +430,10 @@ Offer dry-run backfill for legacy cases with exact existing fact-check anchors. 
 - `cases/newsatom-information-units/summary.md` — verified architecture conclusion and pilot limitation.
 - `cases/newsatom-information-units/research/newsatom-spotlight-crosswalk.md` — NewsAtom field mapping and source-expression alternatives.
 - `cases/newsatom-information-units/data/fact-check.json` — independent verification and confidence boundaries.
-- `docs/plans/2026-06-11-001-feat-claim-level-intelligence-base-plan.md` — canonical claim identity, eligibility, append-only history, and vault constraints.
+- `skills/ingest/references/registry-spec.md` — canonical claim identity, registry parity, and verdict constraints.
 - `schemas/fact-check.schema.json` and `scripts/validate-fact-check.py` — existing exact quote, locator, hash, containment, and evidence-link checks.
 - `schemas/evidence-bundle.schema.json` — acquisition provenance and structured finding-link pattern.
 - `skills/review/SKILL.md` and `skills/review/references/feedback-schema.md` — adversarial review join and feedback flow.
 - `skills/report-drafting/SKILL.md`, `scripts/finalize-report.py`, and `scripts/validate-report.py` — model/deterministic boundary and no-overwrite finalization gate.
 - `skills/ingest/SKILL.md` and `skills/ingest/references/entity-model.md` — durable claim eligibility and append-only ingest semantics.
-- `docs/plans/spotlight-plugin-distribution-plan.md` — canonical-root and generated-plugin parity rules.
+- `scripts/build-plugin-payload.py` and `tests/plugin-distribution-check.py` — canonical-root and generated-plugin parity rules.
