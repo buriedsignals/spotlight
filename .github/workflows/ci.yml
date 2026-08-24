@@ -21,7 +21,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install Python test deps
         run: pip install --quiet jsonschema==4.25.1 requests==2.32.5
