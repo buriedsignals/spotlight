@@ -1,6 +1,6 @@
 ---
 name: phase-methodology
-description: Spotlight Phases 1–2 — Brief and Methodology: user brief conversation with approval gate, then investigator PLANNING spawn, methodology validation, RLM proposal (frontier opt-in), methodology approval gate
+description: "Spotlight Phases 1–2 — Brief and Methodology: user brief conversation with approval gate, then investigator PLANNING spawn, methodology validation, RLM proposal (frontier opt-in), methodology approval gate"
 invocable_by: [orchestrator]
 phase: brief,methodology
 ---

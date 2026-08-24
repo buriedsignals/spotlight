@@ -1,6 +1,6 @@
 ---
 name: phase-gate1
-description: Spotlight Phase 4 — Gate 1: generate summary.md + data/summary.json, present findings to the user, iterate on request, user approval gate (ends the turn), provenance packaging, review artifact, feedback processing on resume
+description: "Spotlight Phase 4 — Gate 1: generate summary.md + data/summary.json, present findings to the user, iterate on request, user approval gate (ends the turn), provenance packaging, review artifact, feedback processing on resume"
 invocable_by: [orchestrator]
 phase: gate-1
 ---

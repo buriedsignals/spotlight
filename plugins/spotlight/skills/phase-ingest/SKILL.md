@@ -1,6 +1,6 @@
 ---
 name: phase-ingest
-description: Spotlight Phase 6 — Ingestion: resolver-owned transition, ingestion.json status lifecycle, user confirmation, invoke-skill ingest or decline
+description: "Spotlight Phase 6 — Ingestion: resolver-owned transition, ingestion.json status lifecycle, user confirmation, invoke-skill ingest or decline"
 invocable_by: [orchestrator]
 phase: ingest
 ---

@@ -1,6 +1,6 @@
 ---
 name: phase-execution
-description: Spotlight Phase 3 — Autonomous execution cycles (max 5): source-expression release mode resolution, investigator EXECUTION + fact-checker spawns, validators, editorial checks, monitoring recommendations, readiness criteria; includes the Stall Protocol
+description: "Spotlight Phase 3 — Autonomous execution cycles (max 5): source-expression release mode resolution, investigator EXECUTION + fact-checker spawns, validators, editorial checks, monitoring recommendations, readiness criteria; includes the Stall Protocol"
 invocable_by: [orchestrator]
 phase: execution
 ---

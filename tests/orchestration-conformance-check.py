@@ -889,6 +889,7 @@ class OrchestrationConformance(unittest.TestCase):
                         f"{prompt_label} must define one literal child-visible prompt",
                     )
                     prompt = prompts[0]
+                    self.assertIn("CASE_DIR: {CASE_DIR}", prompt)
                     self.assertRegex(
                         prompt,
                         r"(?is)(?:all|every).*case.*source.*monitoring.*validator.*"

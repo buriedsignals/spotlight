@@ -1,6 +1,6 @@
 ---
 name: phase-preflight
-description: Spotlight Phase 0 — Preflight: config detection, sovereign search/fetch backing checks, OSINT skill inventory, OpenKnowledge workspace validation, project setup, integration tiering, resume feedback check
+description: "Spotlight Phase 0 — Preflight: config detection, sovereign search/fetch backing checks, OSINT skill inventory, OpenKnowledge workspace validation, project setup, integration tiering, resume feedback check"
 invocable_by: [orchestrator]
 phase: preflight
 ---
