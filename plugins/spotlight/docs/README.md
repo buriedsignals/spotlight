@@ -68,7 +68,7 @@ The existing `buriedsignals/spotlight@1.2.1` marketplace plugin at `~/buried_sig
 
 Every runtime must preserve these — they are the editorial contract:
 
-- Pipeline: Preflight → Brief → Methodology → Execution → Gate 1 → Ingestion
+- Pipeline: Preflight → Brief → Methodology → Execution → Gate 1 → Report → Ingestion
 - Cycle limit 5, stall protocol on N ≥ 5 without readiness
 - Six readiness criteria (findings, independence, disputes, affected perspective, document trail, gap assessment)
 - Investigator modes: PLANNING and EXECUTION

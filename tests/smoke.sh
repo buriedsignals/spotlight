@@ -117,7 +117,7 @@ fi
 echo ""
 echo "── Validators and helpers ──"
 for t in validate-case-check validate-fact-check-check source-expression-producer-contract-check migrate-source-expressions-check validate-report-check render-report-check report-diagrams-check provenance-manifest-check knowledge-destination-check knowledge-destination-hardening-check knowledge-projection-check query-vault-check graph-lookup-migration-check ingest-check schema-validation-check preflight-check scoutpost-boundary-check cti-upstream-check technical-investigation-check verified-indicator-export-check \
-         arbiter-match-check arbiter-report-check arbiter-create-check arbiter-appendix-check arbiter-themes-check arbiter-id-check arbiter-navigator-check; do
+         orchestration-conformance-check portable-resolver-check arbiter-match-check arbiter-report-check arbiter-create-check arbiter-appendix-check arbiter-themes-check arbiter-id-check arbiter-navigator-check; do
   python3 "tests/$t.py" >/dev/null 2>&1
   rc=$?
   if [ $rc -eq 0 ]; then
@@ -126,6 +126,14 @@ for t in validate-case-check validate-fact-check-check source-expression-produce
     fail "tests/$t.py failed with rc=$rc"
   fi
 done
+
+(cd harness/flue && node --test src/lib/spotlight-tools.test.ts) >/dev/null 2>&1
+rc=$?
+if [ $rc -eq 0 ]; then
+  ok "harness/flue/src/lib/spotlight-tools.test.ts passes"
+else
+  fail "harness/flue/src/lib/spotlight-tools.test.ts failed with rc=$rc"
+fi
 
 echo ""
 echo "── Cleanliness ──"

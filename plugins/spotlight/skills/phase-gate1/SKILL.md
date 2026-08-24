@@ -1,11 +1,19 @@
 ---
 name: phase-gate1
-description: Spotlight Phase 4 — Gate 1: generate summary.md + data/summary.json, present findings to the user, iterate on request, user approval gate (ends the turn), provenance packaging, review artifact, feedback processing on resume
+description: "Spotlight Phase 4 — Gate 1: generate summary.md + data/summary.json, present findings to the user, iterate on request, user approval gate (ends the turn), provenance packaging, review artifact, feedback processing on resume"
 invocable_by: [orchestrator]
 phase: gate-1
 ---
 
 # Phase 4 — Gate 1
+
+Start or resume only from a `spotlight_resolve` result passed by the parent
+with `owner: phase-gate1`. When `phase: gate1_approval`, regenerate both
+summary artifacts below from current execution outputs, then call
+`spotlight_resolve({})` before presenting the human gate. This applies whether
+the summaries were missing or stale. For finalization, follow `resume` without
+inferring a substep from artifact presence.
+
 
 ## Generate summary
 
@@ -89,7 +97,17 @@ contract. Generate both.
 
 ## Iterate
 
-The user can request follow-up cycles targeting specific findings. If so, re-enter the execution loop with targeted gap instructions.
+If the user requests a follow-up cycle, persist the transition before returning
+to execution:
+
+```text
+spotlight_transition({
+  operation: "requestFollowUp",
+  payload: {instructions: "<targeted gap instructions>"}
+})
+```
+
+Resolve again and pass `resume.instructions` to the returned execution owner.
 
 Before asking the user to approve the investigation as ready for report drafting and ingestion, remind them:
 
@@ -97,32 +115,69 @@ Before asking the user to approve the investigation as ready for report drafting
 
 **Gate: user approves the investigation.**
 
-## Package provenance before HTML review
+After the user explicitly approves, persist the attributable receipt before any
+downstream work:
 
-After approval and before invoking the review skill, invoke `provenance-signing`:
+```text
+spotlight_transition({
+  operation: "approve",
+  payload: {gate: "gate1", approvedBy: "<human identity>", approvedAt: "<ISO 8601 timestamp>"}
+})
+```
+
+This binds the current dependency digest owned by the provenance builder's
+annotated registry, including activated validation inputs and referenced
+evidence artifacts. Pending summary artifacts are not approval. If a dependency
+changes, the next resolution returns Gate 1 approval; re-run the existing
+validators and obtain a new human approval before report or ingestion.
+
+The human gate ends the turn. On resume, resolve and follow `resume.resume_at`;
+do not skip directly to report.
+
+## Finalize an approved Gate 1
+
+### `resume_at: provenance`
+
+Invoke `provenance-signing`:
 
 ```text
 execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR}")
 ```
 
-This creates `{CASE_DIR}/data/provenance-manifest.json` with hashes for the case artifacts, claim-to-verdict links, evidence bundle refs, and `requires_api_key: false`.
+This creates `{CASE_DIR}/data/provenance-manifest.json` with hashes for the case
+artifacts, claim-to-verdict links, evidence bundle refs, and
+`requires_api_key: false`.
 
-If `NOOSPHERE_C2PA_URL` is configured, optionally request signing:
+If `NOOSPHERE_C2PA_URL` is configured, signing remains optional:
 
 ```text
 execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR} --sign-endpoint \"$NOOSPHERE_C2PA_URL\" --credential-id \"$NOOSPHERE_C2PA_CREDENTIAL_ID\"")
 ```
 
-Signing failures do not block review. Preserve the unsigned manifest and report the failure clearly.
+Signing failures do not block review. Preserve the unsigned manifest and report
+the failure clearly. Call `spotlight_resolve`; its `resume.resume_at` must be
+`review`.
 
-## Generate review artifact
+### `resume_at: review`
 
-After approval, `invoke-skill("review")` to produce `{CASE_DIR}/review.html` — a self-contained HTML artifact the user can open in any browser to inspect findings and submit structured feedback. See `skills/review/SKILL.md`.
+Invoke `review` to produce `{CASE_DIR}/review.html`, a self-contained artifact
+for inspecting findings and exporting structured feedback. Then call
+`spotlight_resolve`; its `resume.resume_at` must be `seal`.
 
 Offer the user:
 
-> "Review artifact written to `{CASE_DIR}/review.html`. Open it in any browser to inspect findings and submit feedback (optional). If you submit feedback, save the exported `review-feedback.json` into `{CASE_DIR}/data/` and re-run `/spotlight` to process it. Or proceed to drafting the public report now."
+> "Review artifact written to `{CASE_DIR}/review.html`. Open it in any browser to inspect findings. Request a targeted follow-up, or proceed to the public report."
 
-## Feedback processing (on resume)
+For a follow-up, validate the feedback, convert it to targeted instructions,
+and apply `requestFollowUp` as shown above before dispatching execution. Do not
+derive the transition from feedback-file presence.
 
-When `/spotlight` is resumed and `{CASE_DIR}/data/review-feedback.json` exists without a matching `review-feedback-processed.json` marker, the Preflight skill (`skills/phase-preflight`) invokes the review skill in process mode before advancing. This re-spawns the investigator with feedback-targeted instructions, updates findings, and regenerates the review artifact. See `skills/review/SKILL.md` § Mode B.
+### `resume_at: seal`
+
+If the user proceeds, seal both current finalization outputs:
+
+```text
+spotlight_transition({operation: "sealGate1", payload: {}})
+```
+
+Resolve again. Only a successful seal returns `phase: report`.

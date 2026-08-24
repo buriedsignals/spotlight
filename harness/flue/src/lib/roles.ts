@@ -53,7 +53,7 @@ export const FLUE_VERB_ADAPTER = `## Runtime adapter (Flue) — how the skills' 
 
 You are running in the Flue harness. Your **harness root** is \`${HARNESS_ROOT}\` — the \`integrations/\` Python package, \`cases/\`, \`schemas/\`, and \`.agents/skills\` all live there. Two hard path rules (breaking either silently fails the run):
 - **Run every \`integrations.*\` seam as \`PYTHONPATH=${HARNESS_ROOT} ${SPOTLIGHT_PYTHON} -m integrations.…\`.** Both parts are required: \`PYTHONPATH=${HARNESS_ROOT}\` (the package imports ONLY from the harness root — else "No module named integrations") and \`${SPOTLIGHT_PYTHON}\` (the venv interpreter that has crawl4ai; bare \`python3\` is the system python and lacks it, so the seam fails and you'd wrongly fall back to \`curl\`).
-- **Use the ABSOLUTE case dir for every case artifact.** For project slug \`<project>\`, **\`CASE_DIR = ${HARNESS_ROOT}/cases/<project>\`**. Wherever a skill references \`{CASE_DIR}/…\`, substitute this absolute path (including \`mkdir\`). NEVER use \`cases/<project>/…\` or a bare \`research/…\` path from a subagent — its cwd may already be inside the case dir, so relative paths nest as \`cases/X/cases/X/…\` and the orchestrator can't find them.
+- **Use the exact active \`CASE_DIR\` supplied by the launcher for case artifacts.** Never derive, accept, or select a sibling case path. The native Spotlight tools are a host-bound capability for that active case and do not accept a model-supplied path.
 
 The shared skills use abstract verbs; execute them as:
 - **execute-shell(cmd)** → your \`bash\` tool.
@@ -64,6 +64,7 @@ The shared skills use abstract verbs; execute them as:
 - **vault-write(workspace_path, note_path, content)** → do not write arbitrary knowledge pages. Reviewed graph commits invoke Spotlight's local deterministic projection writer, which owns markers, conflict checks, journals, and receipts. Unless the reviewed batch, signature, active policy, and projection command are available, return a typed blocker. Never use raw write/edit/move/delete tools or shell filesystem mutations.
 - **read-file / write-file / edit-file / list-files / grep-files** → your \`read\` / \`write\` / \`edit\` / \`glob\` / \`grep\` tools.
 - **invoke-skill(id)** → the skill of that name is already loaded from \`.agents/skills\`; follow its instructions.
+- **Spotlight durable state (orchestrator only)** → call \`spotlight_resolve({})\`; dynamically invoke exactly its returned phase owner; apply approvals and transitions with \`spotlight_transition({ operation, payload })\`; then resolve again through Gate 1, Report, and Ingest. These registered native tools are bound by the host to the active case and backed by the product resolver. Never infer a phase from files or invoke the Python CLI from Flue.
 - **spawn-agent(id, prompt)** → delegate with your \`task\` tool to the named subagent (\`investigator\` or \`fact-checker\`).
 
 ## Context hygiene — RLM lead-distillation is AUTOMATIC in \`fetch\` on this local harness

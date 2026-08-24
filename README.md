@@ -52,11 +52,12 @@ Preflight
   -> Methodology
   -> Research and fact-check cycles
   -> Gate 1 review
+  -> Report decision
   -> Ingest, monitor, export, or continue
 ```
 
 Every gate is explicit. Spotlight does not auto-advance through brief approval,
-methodology approval, Gate 1 review, or vault ingestion.
+methodology approval, Gate 1 review, the report decision, or vault ingestion.
 
 The research loop runs up to five cycles by default:
 
@@ -90,11 +91,16 @@ needs reporting.
 Each investigation gets an isolated working directory under the configured
 `SPOTLIGHT_CASES_ROOT` active case workspace:
 
+The cases root is trusted journalist-owned local storage. Active case directories must not be moved or replaced during an operation.
+
 ```text
 {CASE_DIR}/
 ├── brief-directions.txt
 ├── summary.md
 ├── review.html
+├── report.html
+├── findings-report.md
+├── evidence-map.json
 ├── data/
   │   ├── methodology.json
   │   ├── findings.json

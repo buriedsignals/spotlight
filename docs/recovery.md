@@ -4,7 +4,20 @@ Agents crash, APIs rate-limit, your laptop closes the lid. Spotlight is designed
 
 ## The golden rule
 
-**Everything Spotlight knows is in `{CASE_DIR}/data/*.json`.** No hidden daemon, no lock service, no in-memory state. If a cycle crashes, re-read the JSON and keep going.
+**Resume only from the product resolver.** In Flue the launcher binds the
+native capability to its active case, so call `spotlight_resolve({})`; Python
+consumers import and call `spotlight_orchestration.resolve(CASE_DIR)`. The
+optional CI/debug adapter is:
+
+```text
+python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}
+```
+
+All three paths call the same importable authority. Resolution is read-only and
+returns the authoritative phase, owner, requirements, attempt counts, and
+resume detail. Transitions use a case-local portable lock and descriptor-
+anchored no-follow replacement on macOS, Linux, and Windows through WSL; there
+is no daemon or lock service.
 
 ## Failure scenarios
 
@@ -22,15 +35,11 @@ Re-spawning is safe. The investigator's EXECUTION prompt includes "merge with pr
 
 ### Laptop sleeps / Terminal closes
 
-No special handling needed. Reopen Terminal, `cd` into the Spotlight repo, run `spotlight` — the orchestrator reads the case directory and determines where to resume per the "Context Recovery" table in `skills/spotlight/SKILL.md`.
-
-| Files present | Resume at |
-|---|---|
-| None | Phase 1 (Brief) |
-| `brief-directions.txt` only | Phase 2 (Methodology) |
-| `data/methodology.json` but no findings | Phase 3, cycle 1 |
-| `data/findings.json` but no `summary.md` | Phase 3, evaluate current cycle readiness |
-| `summary.md` present | Phase 4 (Gate 1 review) |
+No special handling is needed. Reopen the runtime and call
+`spotlight_resolve({})` through its host-bound active-case capability. Invoke
+only the returned `owner` and pass its `phase`, `missing`, `attempts`, and
+`resume` detail unchanged. Do not infer recovery from artifact presence or
+conversation memory.
 
 ### Firecrawl / OSINT Navigator API fails
 
@@ -61,13 +70,27 @@ Model state is on disk; restarting doesn't lose anything. Your investigation fil
 
 ### Obsidian vault locked / ingestion mid-failure
 
-The ingest skill uses a `.ingest-lock` file. If a previous ingestion crashed, the lock may be stale.
+First resolve the case. If the result returns `resume.state: requested` and
+`resume.resume_at: ingest`, resume the idempotent ingest handler without asking
+for confirmation again. If it returns `resume.state: completed` and
+`resume.resume_at: seal`, do not repeat projection; call:
 
-1. Check: `python3 scripts/spotlight_safe.py destructive-probe --base {vault} --path .ingest-lock`
-2. If present but old (check mtime): delete the resolved lock path only after the probe confirms it is inside the vault.
-3. Re-run ingestion. It will re-read registries, see what's already written, and skip duplicates (matched by `id` in the relevant registry).
+```text
+spotlight_transition({
+  operation: "decideIngest",
+  payload: {decision: "completed"}
+})
+```
 
-The ingest skill is idempotent at the registry level — you can run it twice without double-entries.
+If the ingest handler reports a stale `.ingest-lock`:
+
+1. Probe it with `python3 scripts/spotlight_safe.py destructive-probe --base {vault} --path .ingest-lock`.
+2. Delete only the resolved lock path after the probe confirms containment.
+3. Re-run the ingest handler only while the resolver still returns `requested`
+   / `ingest`.
+
+The handler is idempotent at the registry level, and resolver-owned state
+prevents a completed projection from being invoked twice.
 
 ### Vault sync conflict (Obsidian Sync or other)
 
@@ -76,16 +99,22 @@ If two devices ingest simultaneously (rare), the `_registry.json` files may conf
 1. Accept the most-recent version as ground truth (usually the one with more entries).
 2. Re-run ingestion from the case that was lost — it will fill in any missing notes.
 
-### Review feedback never processes
+### Review feedback follow-up is interrupted
 
-You submitted `review-feedback.json` but the next `spotlight` run didn't act on it.
+Return the exported feedback to the Gate 1 owner. Validate its project and
+target IDs, convert actionable content to bounded instructions, and record:
 
-Check:
-1. Is the file at `{CASE_DIR}/data/review-feedback.json`?
-2. Is there a `{CASE_DIR}/data/review-feedback-processed.json` marker? If yes, the file was already processed; only newer feedback (later `submitted_at`) will re-trigger.
-3. Is the `schema_version` field `"1.0"`? Malformed feedback files are skipped with a warning.
+```text
+spotlight_transition({
+  operation: "requestFollowUp",
+  payload: {instructions: "<targeted feedback instructions>"}
+})
+```
 
-Delete the processed marker and re-run if you want to force re-processing.
+Resolve again. It must return `phase: execution` with the same instructions in
+`resume`. When regenerated Gate 1 dependencies change, resolution returns Gate
+1 approval for a new human decision. Feedback-file presence never determines
+recovery.
 
 ### Corrupted case JSON
 

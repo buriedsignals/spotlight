@@ -1,6 +1,6 @@
 ---
 name: phase-preflight
-description: Spotlight Phase 0 — Preflight: config detection, sovereign search/fetch backing checks, OSINT skill inventory, OpenKnowledge workspace validation, project setup, integration tiering, resume feedback check
+description: "Spotlight Phase 0 — Preflight: config detection, sovereign search/fetch backing checks, OSINT skill inventory, OpenKnowledge workspace validation, project setup, integration tiering, resume feedback check"
 invocable_by: [orchestrator]
 phase: preflight
 ---
@@ -102,7 +102,24 @@ contents.
 
 ## 5. Project setup
 
-Derive a project slug from the user's lead (lowercase, hyphens, no spaces). Resolve `CASE_ROOT` from `case_workspace_root`; if absent, use legacy `cases_root`; if absent, use `cases/`. Resolve `CASE_DIR = CASE_ROOT/{project}`. Create:
+### Flue-native case binding
+
+When running in Flue, use only the host's launcher-bound active case. The
+registered Spotlight tools have already established that exact case and its
+`data/` directory beneath the configured cases root. Do not derive another
+slug, create or enumerate sibling cases, accept a model-selected case path, or
+invoke the Python adapter directly.
+
+After the preceding preflight checks, call `spotlight_resolve({})` and return
+its resolution to the dispatcher without inspecting case artifacts or
+`data/orchestration.json`.
+
+### Non-Flue case selection
+
+Derive a project slug from the user's lead (lowercase, hyphens, no spaces).
+Resolve `CASE_ROOT` from `case_workspace_root`; if absent, use legacy
+`cases_root`; if absent, use `cases/`. Resolve
+`CASE_DIR = CASE_ROOT/{project}`. Create:
 
 ```
 {CASE_DIR}/
@@ -111,19 +128,25 @@ Derive a project slug from the user's lead (lowercase, hyphens, no spaces). Reso
 {CASE_DIR}/evidence/
 ```
 
-## 6. Duplicate project check
+#### Duplicate project check
 
 If `CASE_DIR` already exists, prompt:
 
 > "An investigation named `{project}` already exists. Resume the existing investigation, or start fresh?"
 
-If resume: read existing state files and determine where the pipeline left off. If fresh: back up the existing directory to `{CASE_ROOT}/{project}-{timestamp}/` and create a new one.
+If resuming, call the runtime adapter's resolver operation and return its
+resolution to the dispatcher without inspecting case artifacts or
+`data/orchestration.json`. If fresh, back up the existing directory to
+`{CASE_ROOT}/{project}-{timestamp}/` and create a new one.
 
-## 7. Active investigation check
+#### Active investigation check
 
-Use `list-files("{CASE_ROOT}/*")` to scan for directories that do NOT contain `summary.md`. If any are found:
+Use `list-files("{CASE_ROOT}/*")` to enumerate case directories, then use the
+thin non-Flue adapter for each valid case:
+`python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}`.
+Cases whose returned phase is not `complete` are active:
 
-> "Note: {N} investigation(s) in progress without a completed summary: {names}. Continuing with `{project}`."
+> "Note: {N} investigation(s) in progress: {names}. Continuing with `{project}`."
 
 ## 8. Write config
 
@@ -226,16 +249,14 @@ If `integrations.rlm.enabled` is true, find the `rlm` entry in
 `integrations.rlm` object as `preflight_status`, `checked_at`, `source`, and
 `reason`. Do not ask the user about RLM during Phase 0.
 
-## 9.5. Review feedback check (resume only)
+## 9.5. Follow-up recovery (resume only)
 
-When resuming an existing project, check for pending feedback:
-
-```
-list-files("{CASE_DIR}/data/review-feedback.json")
-list-files("{CASE_DIR}/data/review-feedback-processed.json")
-```
-
-If `review-feedback.json` exists AND `review-feedback-processed.json` is absent or older, `invoke-skill("review")` before proceeding. The review skill enters Mode B (process), re-spawns the investigator with feedback-targeted instructions, updates findings/fact-check, and regenerates `review.html`. Only then continue with monitoring preflight.
+When resuming an existing project, consume the same resolver result used above.
+If it returns `phase: execution` with `resume.instructions`, pass those
+instructions to the returned execution owner. Do not derive resume state from
+feedback-file presence. The Gate 1 owner validates structured feedback and
+records `requestFollowUp` through `spotlight_transition` before execution
+resumes.
 
 ## 10. Monitoring + integrations availability (optional)
 

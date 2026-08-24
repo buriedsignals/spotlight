@@ -1,6 +1,7 @@
 import { defineAgent, defineAgentProfile } from '@flue/runtime';
 import { local } from '@flue/runtime/node';
 import { roleBody, FLUE_VERB_ADAPTER, HARNESS_ROOT } from '../lib/roles.ts';
+import { createSpotlightTools } from '../lib/spotlight-tools.ts';
 
 // The local/cloud tier model. llama-server serves the Gemma GGUF as `local/…`;
 // swap to the 31B or Fireworks GLM-5.2 via env (U10/U13).
@@ -80,35 +81,39 @@ const factChecker = defineAgentProfile({
 
 // The orchestrator is the discovered agent (`flue run spotlight`). It NEVER investigates
 // directly — it delegates to the subagents and manages the phase pipeline (the `spotlight` skill).
-export default defineAgent(() => ({
-	model: MODEL,
-	tools: [],
-	// Real host filesystem + shell at the case dir (subagents inherit this sandbox, U8):
-	// the agents run bash / the scraping seam / OpenKnowledge and persist evidence to real files.
-	// cwd is also where Flue discovers .agents/skills (the engine-placed store).
-	// local() ALLOWLISTS env — the harness process env does NOT reach the sandboxed bash
-	// unless passed here. Without SPOTLIGHT_RLM_OPENAI_BASE_URL the `fetch --rlm` seam
-	// silently falls back to raw pages (grounded 2026-07-09: --rlm ran, e4b never saw a
-	// request) — the #1 local-tier context killer. undefined values are dropped.
-	sandbox: local({
+export default defineAgent(() => {
+	const tools = createSpotlightTools({
+		activeCaseDir: process.env.SPOTLIGHT_ACTIVE_CASE ?? '',
+		casesRoot: process.env.SPOTLIGHT_CASES_ROOT ?? '',
+	});
+	return {
+		model: MODEL,
+		tools,
+		// Real host filesystem + shell at the case dir (subagents inherit this sandbox, U8):
+		// the agents run bash / the scraping seam / OpenKnowledge and persist evidence to real files.
+		// cwd is also where Flue discovers .agents/skills (the engine-placed store).
+		// local() ALLOWLISTS env — the harness process env does NOT reach the sandboxed bash
+		// unless passed here. Without SPOTLIGHT_RLM_OPENAI_BASE_URL the `fetch --rlm` seam
+		// silently falls back to raw pages (grounded 2026-07-09: --rlm ran, e4b never saw a
+		// request) — the #1 local-tier context killer. undefined values are dropped.
+		sandbox: local({
 			env: {
-			BSIG_BIN: process.env.BSIG_BIN,
-			SPOTLIGHT_RLM_OPENAI_BASE_URL: process.env.SPOTLIGHT_RLM_OPENAI_BASE_URL,
-			SPOTLIGHT_RLM_OPENAI_MODEL: process.env.SPOTLIGHT_RLM_OPENAI_MODEL,
-			FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY, // bot-block escalation (opt-in)
-			SPOTLIGHT_ANONYMIZE_FETCH: process.env.SPOTLIGHT_ANONYMIZE_FETCH, // Tor opt-in (U7)
-		},
-	}),
-	cwd: process.env.SPOTLIGHT_CWD ?? process.cwd(),
-	instructions: `${FLUE_VERB_ADAPTER}
+				BSIG_BIN: process.env.BSIG_BIN,
+				SPOTLIGHT_RLM_OPENAI_BASE_URL: process.env.SPOTLIGHT_RLM_OPENAI_BASE_URL,
+				SPOTLIGHT_RLM_OPENAI_MODEL: process.env.SPOTLIGHT_RLM_OPENAI_MODEL,
+				FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY, // bot-block escalation (opt-in)
+				SPOTLIGHT_ANONYMIZE_FETCH: process.env.SPOTLIGHT_ANONYMIZE_FETCH, // Tor opt-in (U7)
+			},
+		}),
+		cwd: process.env.SPOTLIGHT_CWD ?? process.cwd(),
+		instructions: `${FLUE_VERB_ADAPTER}
 
-You are the Spotlight orchestrator. You NEVER investigate directly. You delegate all research to the \`investigator\` subagent and all verification to the \`fact-checker\` subagent (via the \`task\` tool), then evaluate results, manage gates, and synthesise for the user. Follow the \`spotlight\` skill for the phase pipeline (brief → methodology → research cycles → fact-check → report).
+You are the Spotlight orchestrator. You NEVER investigate directly. Delegate research to the \`investigator\` subagent and verification to the \`fact-checker\` subagent through the \`task\` tool.
 
-**Gates are real and require the user — no exceptions, on every path including this local harness.** At each gate the skill defines (brief direction, methodology, and the fact-check→report handoff), present your synthesis and decisions, then **END YOUR TURN**. Do not proceed, delegate, or self-approve. The user replies with approval or changes in the very next message; act only on that reply. Never skip a gate, never auto-approve, and never treat the absence of a reply as approval — stopping and waiting IS the correct behavior. (The RLM context-hygiene pass is the one step you run without a gate, per the adapter.)
+Start and resume by invoking \`phase-preflight\` first and completing its Flue-native checks against the launcher-bound case. Then call \`spotlight_resolve({})\`. Follow the \`spotlight\` skill, dynamically invoke exactly the returned phase owner, apply only its structured \`spotlight_transition({ operation, payload })\`, then resolve again. The durable sequence is Brief → Methodology → Execution → Gate 1 → Report → Ingest; do not infer phase completion from files or invoke orchestration scripts directly.
 
-**Fact-check evidence gate (deterministic and language-neutral).** After the fact-checker returns and BEFORE presenting the fact-check gate, run \`bash\`: \`python3 ${HARNESS_ROOT}/scripts/validate-fact-check.py <CASE_DIR>\`. If it FAILS, re-delegate ONCE to the fact-checker with the failure reasons verbatim ("these positive verdicts lack intact case-local evidence anchors — add the stored file/line/JSON pointer, mark them unverified with the reason, or re-acquire the source"); re-run the validator on its revision. Present the gate only after it passes, or with the remaining failures explicitly disclosed as unverified. The gate checks paths, structured pointers, exact quotes, and hashes without judging prose or assuming a language. A claim with no intact evidence anchor is never "verified".
-
-**Report gate (hybrid editorial + deterministic build).** After Gate 1 approval, invoke \`report-drafting\` and author \`<CASE_DIR>/data/report-draft.json\`: you choose localized title, deck, finding order, headlines, concise summaries, why each finding matters, caveats, and next steps; every prose block cites finding IDs. Then run \`bash\`: \`python3 ${HARNESS_ROOT}/scripts/finalize-report.py <CASE_DIR>\`. It validates reference coverage, attaches canonical verdict/confidence, safely renders \`findings-report.md\`, \`report.html\`, and \`evidence-map.json\`, and validates the outputs. Semantic accuracy remains subject to the independent fact-check and human editorial gate. NEVER hand-edit generated HTML or Markdown. If it FAILS, fix only the named structured input and re-run. Never describe an artifact as "ready" unless the finalizer prints \`report finalizer: PASSED\`.`,
-	compaction: COMPACTION,
-	subagents: [investigator, factChecker],
-}));
+**Human gates are real — no exceptions, including this local harness.** When the returned phase owner presents a gate, present its synthesis and decisions, then **END YOUR TURN**. Do not proceed, delegate, transition, or self-approve until the user replies with an explicit decision. Stopping and waiting is correct behavior.`,
+		compaction: COMPACTION,
+		subagents: [investigator, factChecker],
+	};
+});
