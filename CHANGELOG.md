@@ -4,6 +4,20 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Fixed — public installer on macOS and Windows (WSL)
+
+- OpenKnowledge and Spotlight's graph port both require
+  `.knowledge-workspace` to be owner-only (`0700`). The installer used
+  `mkdir -p`, which follows umask and typically creates `0755` on macOS, then
+  `ok init` aborted with `database directory permissions must be owner-only`.
+  Setup now creates that directory at `0700` before init, and `init-local`
+  chmods a pre-existing directory rather than leaving umask mode in place.
+- `ok init` is now non-interactive (`--json --no-skills --scope project`) so
+  the installer cannot stall on the editor/skills prompt (`ExitPromptError`).
+- The localhost configurator no longer uses `xdg-open`/`gio` on WSL. It opens
+  `wslview` or Windows `cmd.exe` instead, and prints the loopback URL if no
+  GUI opener works.
+
 ### Added
 
 - Local reviewed knowledge graph and Open Knowledge projection:

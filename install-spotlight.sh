@@ -1455,11 +1455,22 @@ tags: [spotlight, investigation]
 ## Open Questions
 CASE_TEMPLATE_EOF
 fi
-run open-knowledge --cwd "$SPOTLIGHT_VAULT_PATH" init --mcp --local-only
+# OpenKnowledge and Spotlight's graph port both refuse a group/world-readable
+# `.knowledge-workspace`. `mkdir -p` follows umask (typically 0755 on macOS).
+# Create the directory owner-only before `ok init`, and keep `init` non-interactive
+# so the installer cannot stall on the editor/skills prompt (ExitPromptError).
+if [ "$DRY_RUN" = "1" ]; then
+  printf 'DRY-RUN: mkdir -p %s/.knowledge-workspace && chmod 700\n' "$SPOTLIGHT_VAULT_PATH"
+else
+  mkdir -p "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace"
+  chmod 700 "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace"
+fi
+run open-knowledge --cwd "$SPOTLIGHT_VAULT_PATH" init --mcp --local-only --no-skills --scope project --json
 if [ "$DRY_RUN" = "1" ]; then
   printf 'DRY-RUN: seal Spotlight route and initialize graph at %s/.knowledge-workspace/spotlight.sqlite\n' "$SPOTLIGHT_VAULT_PATH"
 else
   mkdir -p "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace"
+  chmod 700 "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace"
   if [ ! -e "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace/routes.json" ]; then
     cat > "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace/routes.json" <<'ROUTES_EOF'
 {"schema_version":"knowledge-routes/v1","routes":{"spotlight_verified":"spotlight"}}
