@@ -9,6 +9,7 @@ import importlib.util
 import json
 import os
 import sqlite3
+import stat
 import subprocess
 import sys
 import tempfile
@@ -248,6 +249,13 @@ def schema_errors(batch: dict) -> list[str]:
 def main() -> int:
     with tempfile.TemporaryDirectory() as raw_tmp:
         workspace = Path(raw_tmp).resolve()
+        preexisting = workspace / "preexisting" / ".knowledge-workspace"
+        preexisting.mkdir(parents=True)
+        os.chmod(preexisting, 0o755)
+        created = PORT._prepare_private_database(preexisting / "spotlight.sqlite")
+        assert created is True
+        assert stat.S_IMODE(preexisting.stat().st_mode) == 0o700
+        assert stat.S_IMODE((preexisting / "spotlight.sqlite").stat().st_mode) == 0o600
         case_dir = workspace / "case"
         database = workspace / "knowledge" / "spotlight.sqlite"
         batch = activated_batch(case_dir)
@@ -852,6 +860,7 @@ def main() -> int:
         print("ok   schema and runtime contract agree on the sample batch")
     else:
         print("skip JSON Schema parity (jsonschema unavailable; required in CI)")
+    print("ok   pre-existing 0755 database dirs are tightened to 0700")
     print("ok   activated source artifacts and fingerprints are resolved")
     print("ok   detached SSH approval is required and verified")
     print("ok   atomic commit, replay, receipts, permissions, and schema version")

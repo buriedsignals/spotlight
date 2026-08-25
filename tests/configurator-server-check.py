@@ -430,6 +430,80 @@ class UnitChecks(unittest.TestCase):
         self.assertIn(f"SPOTLIGHT_VAULT_INPUT='{default}'", cfg)
 
 
+class BrowserOpenChecks(unittest.TestCase):
+    URL = "http://127.0.0.1:35347/?t=E5XFmNB5LTtXFuyrGBYaQw"
+
+    def test_wsl_prefers_wslview_then_windows_cmd(self):
+        cmds = srv.configurator_open_commands(
+            self.URL,
+            platform_id="windows-wsl",
+            which=lambda name: "/usr/bin/wslview" if name == "wslview" else None,
+            isfile=lambda path: False,
+            env={},
+        )
+        self.assertEqual(cmds, [["/usr/bin/wslview", self.URL]])
+
+    def test_wsl_uses_cmd_exe_when_wslview_is_missing(self):
+        cmds = srv.configurator_open_commands(
+            self.URL,
+            platform_id="windows-wsl",
+            which=lambda name: None,
+            isfile=lambda path: path == "/mnt/c/Windows/System32/cmd.exe",
+            env={},
+        )
+        self.assertEqual(cmds, [[
+            "/mnt/c/Windows/System32/cmd.exe", "/c", "start", "", self.URL,
+        ]])
+
+    def test_mac_uses_open(self):
+        cmds = srv.configurator_open_commands(
+            self.URL, platform_id="mac", which=lambda name: None,
+            isfile=lambda path: False, env={},
+        )
+        self.assertEqual(cmds, [["open", self.URL]])
+
+    def test_wsl_does_not_fall_back_to_webbrowser_gio(self):
+        webbrowser_calls = []
+
+        def fake_run(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 1, b"", b"gio: Operation not supported")
+
+        opened = srv.open_local_url(
+            self.URL,
+            platform_id="windows-wsl",
+            which=lambda name: None,
+            isfile=lambda path: False,
+            isdir=lambda path: False,
+            env={},
+            run=fake_run,
+            browser_open=lambda url: webbrowser_calls.append(url) or True,
+        )
+        self.assertFalse(opened)
+        self.assertEqual(webbrowser_calls, [])
+
+    def test_wsl_cmd_exe_success_opens_the_url(self):
+        runs = []
+
+        def fake_run(argv, **kwargs):
+            runs.append((argv, kwargs.get("cwd")))
+            return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+        opened = srv.open_local_url(
+            self.URL,
+            platform_id="windows-wsl",
+            which=lambda name: None,
+            isfile=lambda path: path == "/mnt/c/Windows/System32/cmd.exe",
+            isdir=lambda path: path == "/mnt/c/Windows/System32",
+            env={},
+            run=fake_run,
+            browser_open=lambda url: (_ for _ in ()).throw(AssertionError("webbrowser")),
+        )
+        self.assertTrue(opened)
+        self.assertEqual(runs, [([
+            "/mnt/c/Windows/System32/cmd.exe", "/c", "start", "", self.URL,
+        ], "/mnt/c/Windows/System32")])
+
+
 class RuntimeTokenChecks(unittest.TestCase):
     """F3: one token set — the Engine resolver vocabulary — mapped once in
     setup_server.py; every page-offered runtime resolves into it."""

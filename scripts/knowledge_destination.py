@@ -1439,6 +1439,15 @@ def _prepare_private_database(path: Path) -> bool:
             raise ContractError("database must be owned by the current user and not hard-linked")
         return False
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # Path.mkdir(..., exist_ok=True, mode=0o700) does not chmod a pre-existing
+    # directory, and mkdir -p uses umask (typically 0755). OpenKnowledge and
+    # this port both refuse group/world-readable database dirs.
+    parent_meta = path.parent.stat()
+    if parent_meta.st_uid != os.getuid():
+        raise ContractError(
+            f"database directory must be owned by the current user: {path.parent}"
+        )
+    os.chmod(path.parent, 0o700)
     if stat.S_IMODE(path.parent.stat().st_mode) & 0o077:
         raise ContractError(
             f"database directory permissions must be owner-only: {path.parent}"
