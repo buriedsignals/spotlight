@@ -1,6 +1,6 @@
 # OSINT Tools by Category
 
-150 tools curated by [OSINT Navigator](https://navigator.indicator.media).
+151 tools curated by [OSINT Navigator](https://navigator.indicator.media).
 
 Last updated: 2026-02-26
 
@@ -222,6 +222,11 @@ Maltego is an open source intelligence (OSINT) and graphical link analysis tool 
 Metadata2Go is an online tool that allows OSINT investigators to view, extract, and remove hidden metadata from various file types including images, documents, and videos.
 **Use when:** You need to extract, view, or remove metadata from a file like an image, document, or video.
 **vs. alternatives:** Metadata2Go is a web-based tool specifically designed for metadata extraction and editing, unlike general file viewers.
+
+### [Metadata Remover](https://metadataremover.ai/metadata-viewer) — metadataremover.ai [Free]
+Metadata Remover is a browser-local viewer for inspecting image metadata without uploading files to a server.
+**Use when:** You need a privacy-preserving first pass on image metadata before sharing or investigating a file.
+**vs. alternatives:** It keeps the file in the browser, but metadata should remain an investigative lead and be corroborated with another method before being treated as evidence.
 
 ### Namechk — namechk.com [Free]
 Namechk.com helps OSINT investigators and users check the availability of usernames and domain names across multiple platforms and domains within seconds.
