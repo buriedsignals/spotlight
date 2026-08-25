@@ -22,6 +22,9 @@ __pycache__/
 # Brainstorming companion
 .superpowers/
 
+# Jeff orchestration state (local quality ledger; never publish)
+.jeff/
+
 # Local debug fixups (kept locally, not maintained in-repo)
 patch-spotlight-low-ram.sh
 
