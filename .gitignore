@@ -25,6 +25,9 @@ __pycache__/
 # Jeff orchestration state (local quality ledger; never publish)
 .jeff/
 
+# Local agent scratchpads (never publish)
+scratchpads/
+
 # Local debug fixups (kept locally, not maintained in-repo)
 patch-spotlight-low-ram.sh
 
