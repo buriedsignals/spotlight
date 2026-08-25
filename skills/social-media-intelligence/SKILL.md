@@ -172,6 +172,11 @@ write-file("{CASE_DIR}/research/apify-tiktok-input.json", <serialized actor inpu
 execute-shell('apify call apify/tiktok-scraper --input-file {CASE_DIR}/research/apify-tiktok-input.json')
 ```
 
+Keep the generic X route above available. For structured X posts,
+conversations, lists, engagement accounts, followers, following, communities,
+or audience overlap, read `references/xquik-apify-actors.md`. It defines
+bounded routes through both Xquik Actors and the required evidence handling.
+
 If the installed Apify CLI does not support `--input-file`, use a local wrapper that reads JSON from a file and passes it through argv/subprocess without invoking a shell. Do not inline search terms or direct URLs into a shell command.
 
 For X specifically, Apify collection violates the post-2023 ToS even for public posts. Where the story could face legal scrutiny, prefer the official API or a licensed broker, and record the collection authority in `access_notes` for every capture.
