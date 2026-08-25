@@ -23,7 +23,7 @@
       "required": ["profile", "requires_api_key", "requires_signing_credential"],
       "properties": {
         "profile": { "const": "noosphere-c2pa" },
-        "requires_api_key": { "const": false },
+        "requires_api_key": { "const": true },
         "requires_signing_credential": { "type": "boolean" },
         "credential_id": { "type": ["string", "null"] },
         "endpoint": { "type": ["string", "null"] },

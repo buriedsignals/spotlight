@@ -46,7 +46,7 @@ Noosphere C2PA does not need a third-party API key for this contract. It does ne
 
 Model this distinction explicitly:
 
-- `requires_api_key: false`
+- `requires_api_key: true`
 - `requires_signing_credential: true`
 - `credential_id`: optional identifier passed to the signer
 

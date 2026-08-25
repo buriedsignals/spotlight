@@ -5,7 +5,7 @@
   "status": "unsigned",
   "signing": {
     "profile": "noosphere-c2pa",
-    "requires_api_key": false,
+    "requires_api_key": true,
     "requires_signing_credential": true,
     "credential_id": null,
     "endpoint": null

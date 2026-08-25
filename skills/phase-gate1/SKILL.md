@@ -146,7 +146,7 @@ execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR}")
 
 This creates `{CASE_DIR}/data/provenance-manifest.json` with hashes for the case
 artifacts, claim-to-verdict links, evidence bundle refs, and
-`requires_api_key: false`.
+`requires_api_key: true`.
 
 If `NOOSPHERE_C2PA_URL` is configured, signing remains optional:
 

@@ -4,16 +4,17 @@ Use this integration only after Spotlight has passed Gate 1. It packages the com
 
 ## Contract
 
-No API key is required by Spotlight. The signer may require a configured signing credential on the Noosphere side.
+Signing requires a Noosphere API key, sent as the `X-API-Key` header with the `sign` scope. The signer also uses a signing credential configured on the Noosphere side.
 
-Optional environment:
+Environment:
 
-- `NOOSPHERE_C2PA_URL` — signer endpoint, for example `http://localhost:5002/api/spotlight/provenance/sign`
-- `NOOSPHERE_C2PA_CREDENTIAL_ID` — signer credential id, if Noosphere exposes multiple credentials
+- `NOOSPHERE_C2PA_URL` — signer endpoint, e.g. `https://platform.noosphere.tech/api/provenance/sign`
+- `NOOSPHERE_PROVENANCE_API_KEY` — Noosphere signing API key (sent as `X-API-Key`). Required to sign.
+- `NOOSPHERE_C2PA_CREDENTIAL_ID` — signer credential id, if Noosphere exposes multiple credentials (optional)
 
-Preflight reports this integration as `unconfigured` until
-`NOOSPHERE_C2PA_URL` is set. This does not affect local unsigned manifest
-generation.
+Preflight reports this integration as `unconfigured` until both
+`NOOSPHERE_C2PA_URL` and `NOOSPHERE_PROVENANCE_API_KEY` are set. This does not
+affect local unsigned manifest generation.
 
 ## Build Manifest
 

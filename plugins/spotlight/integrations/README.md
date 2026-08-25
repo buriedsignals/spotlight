@@ -20,7 +20,7 @@ An agent invokes a skill to get *guidance*; it calls an integration to get *data
 | `browser-harness` | browser-automation | No | none |
 | `browser-use` | browser-automation | No (OSS); optional cloud | `BROWSER_USE_API_KEY` (optional) |
 | `junkipedia` | social-osint | Yes | `JUNKIPEDIA_API_KEY` |
-| `noosphere-c2pa` | provenance-signing | No | `NOOSPHERE_C2PA_URL`, `NOOSPHERE_C2PA_CREDENTIAL_ID` (optional) |
+| `noosphere-c2pa` | provenance-signing | Yes | `NOOSPHERE_C2PA_URL`, `NOOSPHERE_PROVENANCE_API_KEY`, `NOOSPHERE_C2PA_CREDENTIAL_ID` (optional) |
 | `osint-navigator` | tool-discovery | Yes | `OSINT_NAV_API_KEY` |
 | `unpaywall` | academic-open-access | Yes | `UNPAYWALL_EMAIL` |
 

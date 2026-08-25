@@ -253,26 +253,38 @@ def main() -> int:
     noosphere = {
         "id": "noosphere-c2pa",
         "name": "Noosphere C2PA",
-        "requires_key": False,
-        "env_vars": [],
-        "activation_env_vars": ["NOOSPHERE_C2PA_URL"],
+        "requires_key": True,
+        "env_vars": ["NOOSPHERE_PROVENANCE_API_KEY"],
+        "activation_env_vars": ["NOOSPHERE_C2PA_URL", "NOOSPHERE_PROVENANCE_API_KEY"],
     }
     original_url = os.environ.pop("NOOSPHERE_C2PA_URL", None)
+    original_api_key = os.environ.pop("NOOSPHERE_PROVENANCE_API_KEY", None)
     try:
         report = preflight_base.build_report(noosphere)
         check(
             "activation env: absent optional signer is unconfigured",
             report["status"] == "unconfigured"
-            and report["activation_env_vars_missing"] == ["NOOSPHERE_C2PA_URL"],
+            and report["activation_env_vars_missing"]
+            == ["NOOSPHERE_C2PA_URL", "NOOSPHERE_PROVENANCE_API_KEY"],
             str(report),
         )
 
         os.environ["NOOSPHERE_C2PA_URL"] = "http://localhost:5002/api/spotlight/provenance/sign"
         report = preflight_base.build_report(noosphere)
         check(
+            "activation env: URL without API key stays unconfigured",
+            report["status"] == "unconfigured"
+            and report["activation_env_vars_missing"] == ["NOOSPHERE_PROVENANCE_API_KEY"],
+            str(report),
+        )
+
+        os.environ["NOOSPHERE_PROVENANCE_API_KEY"] = "test-signing-key"
+        report = preflight_base.build_report(noosphere)
+        check(
             "activation env: configured signer is green",
             report["status"] == "green"
-            and report["activation_env_vars_set"] == ["NOOSPHERE_C2PA_URL"],
+            and report["activation_env_vars_set"]
+            == ["NOOSPHERE_C2PA_URL", "NOOSPHERE_PROVENANCE_API_KEY"],
             str(report),
         )
 
@@ -309,7 +321,10 @@ def main() -> int:
         result = run_temporary_preflight(
             cli_manifest,
             "--json",
-            env_updates={"NOOSPHERE_C2PA_URL": "http://127.0.0.1:1/sign"},
+            env_updates={
+                "NOOSPHERE_C2PA_URL": "http://127.0.0.1:1/sign",
+                "NOOSPHERE_PROVENANCE_API_KEY": "test-signing-key",
+            },
         )
         output = json.loads(result.stdout)
         check(
@@ -322,7 +337,10 @@ def main() -> int:
             cli_manifest,
             "--json",
             "--smoke-test",
-            env_updates={"NOOSPHERE_C2PA_URL": "http://127.0.0.1:1/provenance/sign"},
+            env_updates={
+                "NOOSPHERE_C2PA_URL": "http://127.0.0.1:1/provenance/sign",
+                "NOOSPHERE_PROVENANCE_API_KEY": "test-signing-key",
+            },
         )
         output = json.loads(result.stdout)
         check(
@@ -338,6 +356,10 @@ def main() -> int:
             os.environ.pop("NOOSPHERE_C2PA_URL", None)
         else:
             os.environ["NOOSPHERE_C2PA_URL"] = original_url
+        if original_api_key is None:
+            os.environ.pop("NOOSPHERE_PROVENANCE_API_KEY", None)
+        else:
+            os.environ["NOOSPHERE_PROVENANCE_API_KEY"] = original_api_key
 
     print(f"\n{PASS} passed, {FAIL} failed")
     return 1 if FAIL else 0
