@@ -129,8 +129,8 @@ def validate_boundaries() -> None:
     readme = (PLUGIN / "README.md").read_text(encoding="utf-8")
     if "does not install runtime packages" not in readme:
         fail("plugin README must state that plugin install does not install runtime packages")
-    if "setup.html" not in readme or "VALIDATED_DEPENDENCIES.md" not in readme:
-        fail("plugin README must point runtime installs to setup.html and dependency pins")
+    if "https://buriedsignals.com/join" not in readme or "VALIDATED_DEPENDENCIES.md" not in readme:
+        fail("plugin README must point runtime installs at Indicator Labs join and dependency pins")
     if "lead-only and never verified or publishable evidence" not in readme:
         fail("plugin README must preserve RLM evidence boundary")
     pilot_path = PLUGIN / "docs" / "source-expression-pilot-results.json"

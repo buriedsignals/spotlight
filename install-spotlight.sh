@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
-# Spotlight installer — one static, reviewable, key-free script:
+# Spotlight contributor installer. Journalists use Indicator Labs
+# (https://buriedsignals.com/join), not curl|bash from Pages.
 #
-#   curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash
+# From a git checkout:
+#   bash install-spotlight.sh
 #
 # Interactive flow: the script launches a local configurator
 # (install/setup_server.py) on 127.0.0.1; every choice and API key is entered
 # on that local page and staged in ~/.config/spotlight/ (setup-config.env +
 # .env, both 0600). The script sources the staged artifacts and the install
-# body takes over. Keys never appear in the shell command line, in shell
-# history, or on any hosted page.
+# body takes over. Keys never appear in the shell command line or in shell
+# history.
 #
 # Headless / CI path:
-#   curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash -s -- --headless
+#   bash install-spotlight.sh --headless
 # with the required env vars pre-exported. Load keys from a 0600 env file
-# (set -a; . keys.env; set +a) — never inline `export KEY=...` commands — so
-# the no-keys-in-shell-history guarantee holds on this path too.
+# (set -a; . keys.env; set +a) — never inline `export KEY=...` commands.
 
 set -euo pipefail
 
@@ -27,8 +28,7 @@ fi
 # The retired SPOTLIGHT_CONFIG base64-blob channel fails loud — never decoded.
 if [ -n "${SPOTLIGHT_CONFIG:-}" ]; then
   echo "The Spotlight install method changed — this script no longer accepts SPOTLIGHT_CONFIG." >&2
-  echo "Run the new installer instead:" >&2
-  echo "  curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash" >&2
+  echo "Install Spotlight in Indicator Labs (https://buriedsignals.com/join), or re-run bash install-spotlight.sh from a git checkout." >&2
   exit 1
 fi
 
@@ -88,8 +88,8 @@ else
         read -r ans </dev/tty || ans="Y"
         if [[ "$ans" =~ ^[Nn] ]]; then echo "Aborted." >&2; exit 1; fi
         xcode-select --install || true
-        echo "A dialog opened. Complete the Command Line Tools install, then re-run this script:"
-        echo "  curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash"
+        echo "A dialog opened. Complete the Command Line Tools install, then re-run this script from the checkout:"
+        echo "  bash install-spotlight.sh"
         exit 1
       else
         echo "python3 is required for the configurator. Install it first (apt install python3 / dnf install python3), then re-run." >&2
@@ -107,7 +107,7 @@ else
       echo "  from your local machine (ssh -L PORT:127.0.0.1:PORT <host>) and open the"
       echo "  printed URL in your local browser — or run the headless install with"
       echo "  pre-exported env vars loaded from a 0600 env file:"
-      echo "    curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash -s -- --headless"
+      echo "    bash install-spotlight.sh --headless"
       echo ""
     fi
 
@@ -867,7 +867,7 @@ if [ "$SPOTLIGHT_MODE" = "local" ]; then
   # ---- Inference server: llama.cpp (the launcher serves orchestrator + RLM) ----
     step "Local inference (llama-server)"
     if [ -z "$MODEL_LEAF" ] || [ -z "$GGUF_FILE" ]; then
-      echo "No GGUF model selected (SPOTLIGHT_MODEL_REPO / SPOTLIGHT_LOCAL_MODEL). Re-run setup.html and pick a llama.cpp model." >&2
+      echo "No GGUF model selected (SPOTLIGHT_MODEL_REPO / SPOTLIGHT_LOCAL_MODEL). Re-run Indicator Labs configure and pick a llama.cpp model." >&2
       exit 1
     fi
     if ! command -v llama-server >/dev/null 2>&1; then
@@ -1455,11 +1455,22 @@ tags: [spotlight, investigation]
 ## Open Questions
 CASE_TEMPLATE_EOF
 fi
-run open-knowledge --cwd "$SPOTLIGHT_VAULT_PATH" init --mcp --local-only
+# OpenKnowledge and Spotlight's graph port both refuse a group/world-readable
+# `.knowledge-workspace`. `mkdir -p` follows umask (typically 0755 on macOS).
+# Create the directory owner-only before `ok init`, and keep `init` non-interactive
+# so the installer cannot stall on the editor/skills prompt (ExitPromptError).
+if [ "$DRY_RUN" = "1" ]; then
+  printf 'DRY-RUN: mkdir -p %s/.knowledge-workspace && chmod 700\n' "$SPOTLIGHT_VAULT_PATH"
+else
+  mkdir -p "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace"
+  chmod 700 "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace"
+fi
+run open-knowledge --cwd "$SPOTLIGHT_VAULT_PATH" init --mcp --local-only --no-skills --scope project --json
 if [ "$DRY_RUN" = "1" ]; then
   printf 'DRY-RUN: seal Spotlight route and initialize graph at %s/.knowledge-workspace/spotlight.sqlite\n' "$SPOTLIGHT_VAULT_PATH"
 else
   mkdir -p "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace"
+  chmod 700 "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace"
   if [ ! -e "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace/routes.json" ]; then
     cat > "$SPOTLIGHT_VAULT_PATH/.knowledge-workspace/routes.json" <<'ROUTES_EOF'
 {"schema_version":"knowledge-routes/v1","routes":{"spotlight_verified":"spotlight"}}

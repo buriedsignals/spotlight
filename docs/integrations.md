@@ -92,13 +92,12 @@ green=2  yellow=0  red=1  unconfigured=0
 
 The intended path from website → working install:
 
-1. **Landing page** on buriedsignals.com (separate work) links to the hosted setup page
-2. **`setup.html`** is a static landing page — what to have ready, plus one install command: `curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash` (a `spotlight-install.zip` fallback contains only a key-free bootstrap that fetches and runs the same script)
-3. The installer opens a **local configurator** served from `127.0.0.1` — runtime picker, integration checkboxes, API key inputs (live-validated with each provider), install + vault paths with a native folder picker
-4. Script installs the Firecrawl CLI, OpenKnowledge, the chosen runtime, selected integrations, `.env` (chmod 600), and `.spotlight-config.json`; creates the active case workspace and separate knowledge-vault scaffold; initializes the vault as an OpenKnowledge project with MCP registration; installs `spotlight doctor` / `spotlight update`; and runs preflight for a sanity check.
-5. The install ends by opening a personalized getting-started guide. Journalist opens a new terminal, runs `spotlight`, and starts investigating.
+1. **Join** at [buriedsignals.com/join](https://buriedsignals.com/join) and install **Indicator Labs**.
+2. Pair in the desktop app (Navigator OAuth only). Configure Spotlight from the Engine descriptor. Secrets use the operating-system prompt.
+3. Apply the plan. Doctor. Open the chosen agent; skills are already placed.
+4. Contributors who already have a checkout can still run `install-spotlight.sh` from GitHub. That is not the journalist path.
 
-Keys are entered only on the local configurator page and written to local files with owner-only permissions — they never touch buriedsignals.com or any downloadable artifact.
+Keys are never collected on buriedsignals.com or Pages HTML.
 
 ## Adding a new integration
 
@@ -146,5 +145,4 @@ The orchestrator marks sensitive-mode investigations at Gate 1 noting which inte
 | `integrations/<id>/manifest.json` | Per-integration contract |
 | `integrations/<id>/integration.md` | Per-integration agent-facing usage |
 | `skills/integrations/SKILL.md` | Agent-facing routing layer |
-| `setup.html` | Hosted install landing page (one-command installer) |
-| `install/configure.html` + `install/setup_server.py` | Local configurator the installer serves on `127.0.0.1` |
+| `install/configure.html` + `install/setup_server.py` | Local configurator the contributor installer serves on `127.0.0.1` |

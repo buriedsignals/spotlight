@@ -215,36 +215,16 @@ See [docs/integrations.md](docs/integrations.md) for setup and routing details.
 
 ## Install
 
-### Guided Install
+Journalists install Spotlight through **Indicator Labs** after joining at
+[buriedsignals.com/join](https://buriedsignals.com/join). Secrets are entered
+in the operating-system prompt, not on this website.
 
-```bash
-curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash
-```
+GitHub stays the contributor path. Clone the repository and follow
+[docs/runtimes.md](docs/runtimes.md). The shell script
+[`install-spotlight.sh`](install-spotlight.sh) remains in the tree for
+development and existing checkouts; it is not the public journalist installer.
 
-One static, reviewable script ([`install-spotlight.sh`](install-spotlight.sh))
-for every install. It applies a product-specific signed bundle exported by
-Engine at release time; the public path never downloads or executes Engine.
-It opens a local configurator page in the browser — served
-from `127.0.0.1` by `install/setup_server.py`. Runtime, API keys, optional
-integrations, and install/vault paths (with a native folder picker) are all
-collected there; keys are verified live with each provider and written to local
-files with owner-only permissions. **API keys never transit Buried Signals
-infrastructure and never exist in any downloadable artifact.** The hosted pages
-are static and contain no forms; the configurator accepts POSTs only on the
-loopback interface, guarded by a per-run token.
-
-Prefer a file? The hosted setup page offers `spotlight-install.zip`, whose
-key-free bootstrap fetches and runs the same canonical script.
-
-The installer:
-
-- clones the Spotlight source,
-- installs required command-line dependencies,
-- writes local environment/config files,
-- creates the active case workspace and knowledge-vault scaffold,
-- registers the vault for local search,
-- installs `spotlight`, `spotlight doctor`, and `spotlight update`,
-- runs preflight and opens a personalized getting-started guide.
+The installer uses exact versions recorded in `VALIDATED_DEPENDENCIES.md`.
 
 `spotlight update` applies the latest signed public release rather than tracking
 `origin/main`. `spotlight uninstall` removes only unchanged installer-owned
@@ -254,7 +234,7 @@ OSINT tool discovery for Pro and Lab members.
 
 ### Local Install
 
-Clone the repo and run the same installer from the working tree:
+Clone the repo and run the contributor installer from the working tree:
 
 ```sh
 git clone https://github.com/buriedsignals/spotlight.git
@@ -263,13 +243,14 @@ bash spotlight/install-spotlight.sh
 
 ### Headless / CI Install
 
-`--headless` skips the configurator and reads pre-exported environment
+`--headless` skips the local configurator and reads pre-exported environment
 variables. Load keys from a `0600` env file — never inline `export KEY=...`
 commands, which would land the keys in shell history:
 
 ```sh
+git clone https://github.com/buriedsignals/spotlight.git
 set -a; . keys.env; set +a   # keys.env is chmod 600
-curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash -s -- --headless
+bash spotlight/install-spotlight.sh --headless
 ```
 
 ## Runtimes

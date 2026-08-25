@@ -12,7 +12,7 @@
 #   8. No legacy local feed framework remains
 #   9. AGENTS.md skill registry matches skills-manifest.json count
 #  10. Integration routing rows resolve
-#  11. setup.html exists
+#  11. setup.html is absent (journalist install is Indicator Labs / join)
 #  12. index.html exists
 #  13. DISCLAIMER.md + LICENSE present
 #  14. Setup dependency pins are enforced
@@ -233,13 +233,25 @@ fi
 
 echo ""
 echo "── Entry points ──"
-for f in setup.html index.html DISCLAIMER.md LICENSE VALIDATED_DEPENDENCIES.md; do
+for f in index.html DISCLAIMER.md LICENSE VALIDATED_DEPENDENCIES.md; do
   if [ -f "$f" ]; then
     ok "$f present"
   else
     fail "$f missing"
   fi
 done
+if [ -e setup.html ]; then
+  fail "setup.html must be absent"
+else
+  ok "setup.html absent"
+fi
+bash tests/journalist-install-cta-check.sh >/dev/null 2>&1
+rc=$?
+if [ $rc -eq 0 ]; then
+  ok "journalist install CTAs point at join"
+else
+  fail "journalist install CTA check failed"
+fi
 
 echo ""
 if [ $FAIL -eq 0 ]; then

@@ -8,7 +8,7 @@ role: Canonical design system for Spotlight marketing + installer. Source of tru
 
 This document is **the** reference. If the code deviates from what's written here, fix the code. If a new pattern emerges, add it here first, then use it.
 
-Scope: `index.html` (landing) and `setup.html` (install landing page — the command + ZIP slab; the form moved to the local configurator, `install/configure.html`, which follows the same DA). Both pages share the same DA — most patterns apply to both; a few are landing-only and marked as such.
+Scope: `index.html` (landing). Journalist Install goes to `https://buriedsignals.com/join`. The retired `setup.html` curl landing is gone; the contributor configurator remains `install/configure.html`.
 
 ---
 
@@ -156,7 +156,7 @@ Fixed top. Three-state (hero / dark / paper). JS observes `data-nav-theme` on se
   </a>
   <div class="links">
     <a href="#link-1">Link</a>
-    <a href="setup.html">Install</a>  <!-- auto-promotes to pill CTA -->
+    <a class="cta-install" href="https://buriedsignals.com/join">Install</a>
   </div>
 </nav>
 ```
@@ -171,13 +171,13 @@ Fixed top. Three-state (hero / dark / paper). JS observes `data-nav-theme` on se
 
 **Install pill (CTA):**
 ```css
-nav.topnav .links a[href="setup.html"] {
+nav.topnav .links a.cta-install {
   padding: 9px 14px;
   border: 1px solid currentColor;
   letter-spacing: 0.22em;  /* M-pill tier */
   opacity: 1;
 }
-nav.topnav .links a[href="setup.html"]:hover {
+nav.topnav .links a.cta-install:hover {
   background: rgba(193, 106, 52, 0.14);
   border-color: var(--accent-warm);
   color: var(--accent-warm);
@@ -200,7 +200,7 @@ Padding `120px 48px`, text-align center, `border-top: 1px solid var(--muted-fain
 
 ### 3.3 Section header — `.header`
 
-Canonical section entry point. Two variants: chap+title (landing), eyebrow-only (setup uses `.sec-header`).
+Canonical section entry point. Two variants: chap+title (landing), eyebrow-only (configurator uses `.sec-header`).
 
 ```html
 <div class="header">
@@ -459,7 +459,7 @@ Used in Built-on section. Two-column: role label + entity block.
 
 ### 3.9 Footer (both)
 
-Canonical summary-left / actions-right footer shared by `index.html` and `setup.html`.
+Canonical summary-left / actions-right footer shared by the landing pages.
 
 ```html
 <section id="footer" data-nav-theme="dark">
@@ -470,7 +470,7 @@ Canonical summary-left / actions-right footer shared by `index.html` and `setup.
       Local when the case is too sensitive for the cloud.
     </p>
     <div class="footer-links">
-      <a href="setup.html">Install</a>
+      <a href="https://buriedsignals.com/join">Install</a>
       <a href="https://buriedsignals.com/consulting" target="_blank" rel="noopener">Work with me ↗</a>
       <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals ↗</a>
     </div>
@@ -701,9 +701,9 @@ Deviations observed on 2026-04-22 and their resolution status. 13/14 complete.
 2. **If nothing fits**, check §2 tiers and §1 tokens — compose from those first.
 3. **If you truly need a new component**, add it to §3 of this doc *before* writing the CSS. Propose the pattern in a PR comment or chat; once agreed, codify.
 4. **If you need a new token** (colour, font size, letter-spacing, spacing value), stop. Those are rare. Propose and justify before adding.
-5. **Always test** both landing and setup if the change touches shared components (nav, footer, buttons, inputs, typography).
+5. **Always test** landing pages if the change touches shared components (nav, footer, buttons, inputs, typography).
 6. **Reduced motion** — if you add motion, extend the rule in §5 to collapse it.
-7. **Run** `bash tests/install-spotlight-check.sh` (its landing-page section covers `setup.html`) and `bash tests/smoke.sh` after any change to `setup.html`; run `python3 tests/configurator-server-check.py` after any change to `install/configure.html`.
+7. **Run** `bash tests/journalist-install-cta-check.sh` and `bash tests/install-spotlight-check.sh` after landing CTA changes; run `python3 tests/configurator-server-check.py` after any change to `install/configure.html`.
 
 ---
 

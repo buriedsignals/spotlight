@@ -21,7 +21,7 @@ Which part of Spotlight does this touch?
 - [ ] A new feed source (monitoring)
 - [ ] A new runtime adapter
 - [ ] Change to an existing skill / agent
-- [ ] setup.html / index.html / review.html
+- [ ] index.html / review.html / install/configure.html
 - [ ] Docs
 - [ ] Other
 

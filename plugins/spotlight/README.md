@@ -18,10 +18,10 @@ or redistribute the upstream project. See `NOTICE.md` for the full record.
 Plugin install does not install runtime packages. It must not run `pip install`,
 `npm install`, `uv tool install`, `npx`, or equivalent dependency commands.
 
-For a full local runtime with reviewed dependency pins, run the canonical
-installer (`install-spotlight.sh` at the repository root, advertised on the
-hosted `setup.html` landing page):
-`curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash`.
+For a full local runtime with reviewed dependency pins, join
+[Indicator Labs](https://buriedsignals.com/join) or clone this repository and
+follow `VALIDATED_DEPENDENCIES.md`. Plugin install does not replace that
+desktop/Engine path.
 The installer uses exact versions recorded in `VALIDATED_DEPENDENCIES.md`.
 
 RLM is optional and off by default. If a user enabled RLM during setup,

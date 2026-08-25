@@ -14,9 +14,8 @@ This doc describes the repo layout: what's where, why, and how the pieces connec
 spotlight/
 ├── AGENTS.md                 # Runtime contract — verb registry, agent manifests, skill registry
 ├── README.md                 # Humans-first entry doc (quick-start per runtime)
-├── setup.html                # Hosted install landing page — one-command installer + key-free ZIP bootstrap
-├── install-spotlight.sh      # The canonical installer script (static, reviewable)
-├── install/                  # Local configurator — collects runtime, keys, and vault paths on 127.0.0.1
+├── install-spotlight.sh      # Contributor/dev installer (not the journalist path)
+├── install/                  # Local configurator used by the contributor installer
 ├── .spotlight-config.json    # Per-session config (search library, vault path, cases root, runtime)
 ├── .gitignore
 ├── schemas/                  # JSON schemas — case artifacts, activation, migration, and reports

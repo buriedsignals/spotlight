@@ -74,13 +74,13 @@
   }
   nav.topnav .links a { transition: color 0.2s ease; opacity: 0.85; }
   nav.topnav .links a:hover { color: var(--accent-warm); opacity: 1; }
-  nav.topnav .links a[href$="setup.html"] {
+  nav.topnav .links a.cta-install {
     border: 1px solid var(--paper);
     padding: 8px 14px;
     border-radius: 999px;
     opacity: 1;
   }
-  nav.topnav .links a[href$="setup.html"]:hover {
+  nav.topnav .links a.cta-install:hover {
     background: var(--paper);
     color: var(--ink);
     border-color: var(--paper);
@@ -512,7 +512,7 @@
   <div class="links">
     <a href="index.html">Docs</a>
     <a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a>
-    <a href="../setup.html">Install</a>
+    <a class="cta-install" href="https://buriedsignals.com/join">Install</a>
   </div>
 </nav>
 
@@ -822,7 +822,7 @@ SPOTLIGHT_INT_DEVBROWSER=true   # dev-browser for interactive browser acquisitio
       </section>
 
       <div class="cta-strip">
-        <a class="cta" href="../setup.html">Install Spotlight <span aria-hidden="true">→</span></a>
+        <a class="cta" href="https://buriedsignals.com/join">Install Spotlight <span aria-hidden="true">→</span></a>
         <a class="secondary" href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a>
         <span class="ghost">MIT licensed · v2 in development</span>
       </div>
