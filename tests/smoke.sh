@@ -191,12 +191,12 @@ fi
 
 echo ""
 echo "── Installer ──"
-python3 tests/configurator-server-check.py >/dev/null 2>&1
+bash tests/journalist-install-cta-check.sh >/dev/null 2>&1
 rc=$?
 if [ $rc -eq 0 ]; then
-  ok "configurator server contract holds"
+  ok "journalist install CTAs point at Indicator Labs"
 else
-  fail "configurator server check failed with rc=$rc"
+  fail "journalist install CTA check failed with rc=$rc"
 fi
 
 bash tests/install-spotlight-check.sh >/dev/null 2>&1
@@ -210,9 +210,9 @@ fi
 bash tests/install-spotlight-smoke.sh >/dev/null 2>&1
 rc=$?
 if [ $rc -eq 0 ]; then
-  ok "installer dry-run matrix passes"
+  ok "install pointer dry-run matrix passes"
 else
-  fail "installer dry-run matrix failed with rc=$rc"
+  fail "install pointer dry-run matrix failed with rc=$rc"
 fi
 
 bash tests/install-spotlight-audit-check.sh >/dev/null 2>&1

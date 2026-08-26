@@ -37,16 +37,13 @@ jobs:
       - name: Run eval (contract compliance + sample data)
         run: bash tests/eval.sh
 
-      - name: Configurator server contract
-        run: python3 tests/configurator-server-check.py
-
-      - name: Installer + landing-page fragments
+      - name: Installer pointer + landing-page fragments
         run: bash tests/install-spotlight-check.sh
 
       - name: Journalist install CTAs (join, no setup.html, no curl)
         run: bash tests/journalist-install-cta-check.sh
 
-      - name: HTML pages parse (index.html + install/configure.html)
+      - name: HTML pages parse (landing pages)
         run: |
           python3 - <<'PY'
           from html.parser import HTMLParser
@@ -73,7 +70,7 @@ jobs:
                       self.problems.append(f"unmatched </{tag}> at line {self.getpos()[0]}")
 
           failed = False
-          for page in ["index.html", "docs/index.html", "going-sovereign/index.html", "install/configure.html"]:
+          for page in ["index.html", "docs/index.html", "going-sovereign/index.html"]:
               parser = BalanceParser()
               with open(page, encoding="utf-8") as fh:
                   parser.feed(fh.read())

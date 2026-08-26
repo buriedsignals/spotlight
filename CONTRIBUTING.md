@@ -17,10 +17,10 @@ This doc is the entry point. It points at the per-subsystem contracts.
 
 A runtime is an agent CLI or SDK (pi, Claude Code, Gemini, Codex, OpenCode, etc.) that can read `AGENTS.md` and dispatch the 13 verbs.
 
-1. Add the runtime as a choice in the local configurator: a radio card in `install/configure.html` (cloud or local section) plus the matching handling in `install/setup_server.py` (`normalize()`, `validate_choices`, `build_setup_config`). The configurator carries **choices only** — no version strings.
-2. Add the install/launch logic to `install-spotlight.sh`. Version pins live ONLY in `install-spotlight.sh` and `VALIDATED_DEPENDENCIES.md` — never duplicate them in the configurator.
+1. Add the runtime as a choice in Indicator Labs / Engine's Spotlight product module. Do not add a localhost configure.html form.
+2. Keep reviewed pins in Engine's signed catalog and `VALIDATED_DEPENDENCIES.md`.
 3. Write `docs/runtimes.md` addition — brief wiring notes, verb mapping specifics, sensitive-mode handling.
-4. Run `bash tests/smoke.sh` and `bash tests/eval.sh` to confirm consistency, plus the installer/configurator checks below.
+4. Run `bash tests/smoke.sh` and `bash tests/eval.sh` to confirm consistency.
 
 ### Add a new external tool integration
 
@@ -30,7 +30,7 @@ An integration is a specific external OSINT tool (dev-browser, Junkipedia, OSINT
 2. Write `integrations/<id>/manifest.json` per the contract in `integrations/README.md`.
 3. Write `integrations/<id>/integration.md` — when to use, verb calls, output format, sensitive-mode behavior.
 4. Add a row to the routing table in `skills/integrations/SKILL.md`.
-5. Optional: add a checkbox to the Plug-ins section of the local configurator (`install/configure.html`, wired through `install/setup_server.py`) so journalists see it during install.
+5. Optional: add the key to Indicator Labs if journalists should save it at install time.
 6. Run `python3 integrations/preflight.py --text` — your new integration should appear.
 
 ### Passive feed sources
@@ -75,14 +75,8 @@ CI runs both on every push + PR. Don't merge unless both are green.
 When touching `install-spotlight.sh`, also run:
 
 ```bash
-bash tests/install-spotlight-check.sh   # bash -n + fragment assertions + landing-page checks
-bash tests/install-spotlight-smoke.sh   # --headless --dry-run combo matrix
-```
-
-When touching the configurator (`install/setup_server.py` or `install/configure.html`):
-
-```bash
-python3 tests/configurator-server-check.py
+bash tests/install-spotlight-check.sh
+bash tests/install-spotlight-smoke.sh
 ```
 
 (See `.github/workflows/ci.yml` for the canonical test commands.)

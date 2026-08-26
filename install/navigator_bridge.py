@@ -25,6 +25,28 @@ class NavigatorBridgeError(RuntimeError):
     """A sanitized, user-presentable connection error."""
 
 
+NAVIGATOR_RUNTIME_IDS = {
+    # Resolver tokens are Navigator's contract IDs; "local" names the
+    # Flue-on-Pi harness transport. "claude"/"codex" are legacy persisted
+    # choices, kept as aliases so saved configs still resolve.
+    "claude-code": "claude-code",
+    "codex-cli": "codex-cli",
+    "pi": "pi",
+    "opencode": "opencode",
+    "claude": "claude-code",
+    "codex": "codex-cli",
+    "local": "pi-flue",
+}
+
+
+def navigator_runtime_id(choice: str) -> str:
+    """Map Spotlight's persisted runtime choice to Navigator's contract ID."""
+    runtime = NAVIGATOR_RUNTIME_IDS.get(str(choice or "").strip())
+    if runtime is None:
+        raise NavigatorBridgeError("Choose a supported Spotlight runtime before connecting Navigator")
+    return runtime
+
+
 class NavigatorInstallerBridge:
     def __init__(self, contract_path: str | os.PathLike[str], runtime: str):
         self.contract_path = Path(contract_path)

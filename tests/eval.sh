@@ -4,7 +4,7 @@
 # Goes beyond smoke.sh's structural checks: validates that agent + skill
 # frontmatter is well-formed, allowed_verbs reference real verbs from
 # AGENTS.md, sample case files validate against their schemas, and the
-# runtime/provider choices in install/configure.html are consistent.
+# runtime IDs in install/navigator_bridge.py are consistent.
 #
 # Exit 0 on pass, 1 if any check fails.
 
@@ -146,30 +146,23 @@ for t in knowledge-destination-check knowledge-destination-hardening-check knowl
 done
 
 echo ""
-echo "── Runtime consistency (install/configure.html) ──"
+echo "── Runtime consistency (install/navigator_bridge.py) ──"
 
-# The configurator's radio sets are the runtime/provider contract the
-# installer's case branches consume. Both sets must match the supported lists.
-radio_values=$(grep -oE 'name="cloud_runtime" value="[^"]+"' install/configure.html | sed 's/.*value="\([^"]*\)".*/\1/' | sort -u | tr '\n' ' ' | sed 's/ $//')
-expected_runtimes="claude-code codex-cli opencode pi"
-
-if [ "$radio_values" = "$expected_runtimes" ]; then
-  ok "cloud_runtime radios cover claude-code/codex-cli/opencode/pi"
+if python3 - <<'PY'
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path("install").resolve()))
+from navigator_bridge import NAVIGATOR_RUNTIME_IDS
+expected = {"claude-code", "codex-cli", "opencode", "pi"}
+have = {choice for choice, runtime in NAVIGATOR_RUNTIME_IDS.items() if choice == runtime}
+if have != expected:
+    raise SystemExit(f"runtime id drift: {sorted(have)} != {sorted(expected)}")
+print("navigator runtime ids cover claude-code/codex-cli/opencode/pi")
+PY
+then
+  ok "navigator runtime ids cover claude-code/codex-cli/opencode/pi"
 else
-  fail "cloud_runtime radio drift in install/configure.html"
-  printf "%s  radios:   %s%s\n" "$_c_dim" "$radio_values" "$_c_reset"
-  printf "%s  expected: %s%s\n" "$_c_dim" "$expected_runtimes" "$_c_reset"
-fi
-
-provider_values=$(grep -oE 'name="opencode_provider" value="[^"]+"' install/configure.html | sed 's/.*value="\([^"]*\)".*/\1/' | sort -u | tr '\n' ' ' | sed 's/ $//')
-expected_providers="fireworks openrouter"
-
-if [ "$provider_values" = "$expected_providers" ]; then
-  ok "legacy fallback provider radios cover openrouter/fireworks"
-else
-  fail "opencode_provider radio drift in install/configure.html"
-  printf "%s  radios:   %s%s\n" "$_c_dim" "$provider_values" "$_c_reset"
-  printf "%s  expected: %s%s\n" "$_c_dim" "$expected_providers" "$_c_reset"
+  fail "navigator runtime id drift in install/navigator_bridge.py"
 fi
 
 echo ""

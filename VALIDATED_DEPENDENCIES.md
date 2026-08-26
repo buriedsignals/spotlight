@@ -1,17 +1,18 @@
 # Spotlight dependency authority
 
-Spotlight has two production installers with separate ownership receipts:
+Journalist install is Indicator Labs. Engine's signed catalog and sealed plan
+own dependency, model, skill, projection, update, rollback, and uninstall
+state. `install-spotlight.sh` is a fail-closed pointer for old curl|bash pipes;
+it does not install software or collect credentials.
 
-- Indicator Labs uses Engine's signed catalog and sealed plan. Engine owns its
-  dependency, model, skill, projection, update, rollback, and uninstall state.
-- `install-spotlight.sh` is the Engine-free public installer described in
-  `README.md`. It installs only the exact reviewed versions declared in that
-  script and records its own file manifest for safe update and uninstall.
+Keep the catalog pins below aligned with Engine `catalog/catalog.json`. A
+dependency change must update the Engine catalog/product plan and this file.
+Neither path may request an unpinned `latest` dependency.
 
-Keep both authorities aligned. A dependency change must update the Engine
-catalog/product plan, the public installer's exact pin, and the corresponding
-contract tests. Neither path may request an unpinned `latest` dependency.
+Reviewed pins currently consumed by Indicator Labs:
 
-The public configurator receives credentials only on loopback and writes them
-to the local owner-readable environment file; it does not send them to Buried
-Signals infrastructure or place them in downloadable artifacts.
+- `@inkeep/open-knowledge` `0.54.3`
+- `crawl4ai` `0.9.0`
+
+Secrets are entered only in Indicator Labs through the operating-system prompt.
+There is no localhost configure page.

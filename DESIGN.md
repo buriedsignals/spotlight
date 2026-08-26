@@ -8,7 +8,7 @@ role: Canonical design system for Spotlight marketing + installer. Source of tru
 
 This document is **the** reference. If the code deviates from what's written here, fix the code. If a new pattern emerges, add it here first, then use it.
 
-Scope: `index.html` (landing). Journalist Install goes to `https://buriedsignals.com/join`. The retired `setup.html` curl landing is gone; the contributor configurator remains `install/configure.html`.
+Scope: `index.html` (landing). Journalist Install goes to `https://buriedsignals.com/join`. The retired `setup.html` curl landing and `install/configure.html` localhost configurator are gone.
 
 ---
 
@@ -703,7 +703,7 @@ Deviations observed on 2026-04-22 and their resolution status. 13/14 complete.
 4. **If you need a new token** (colour, font size, letter-spacing, spacing value), stop. Those are rare. Propose and justify before adding.
 5. **Always test** landing pages if the change touches shared components (nav, footer, buttons, inputs, typography).
 6. **Reduced motion** — if you add motion, extend the rule in §5 to collapse it.
-7. **Run** `bash tests/journalist-install-cta-check.sh` and `bash tests/install-spotlight-check.sh` after landing CTA changes; run `python3 tests/configurator-server-check.py` after any change to `install/configure.html`.
+7. **Run** `bash tests/journalist-install-cta-check.sh` and `bash tests/install-spotlight-check.sh` after landing CTA changes.
 
 ---
 

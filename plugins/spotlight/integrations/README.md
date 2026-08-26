@@ -123,7 +123,7 @@ The skill `skills/integrations/SKILL.md` is the routing layer — it tells agent
 3. **Usage instructions**: write `integration.md` — when to use, exact verb calls, output format, examples
 4. **Verify**: `python3 integrations/preflight.py --text` — the new integration should appear in the status table
 
-Also register in `skills/integrations/SKILL.md`'s routing table so agents can discover it. If the integration is expected to appear in the setup flow, add a checkbox + optional env-var input to the local configurator (`install/configure.html`, wired through `install/setup_server.py`).
+Also register in `skills/integrations/SKILL.md`'s routing table so agents can discover it. If journalists should save a key at install time, add it to Indicator Labs.
 
 No changes required to `preflight.py` itself — it discovers integrations by scanning manifests.
 

@@ -13,8 +13,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "install"))
 
-from navigator_bridge import NavigatorBridgeError, NavigatorInstallerBridge  # noqa: E402
-from setup_server import NAVIGATOR_RUNTIME_IDS, navigator_runtime_id  # noqa: E402
+from navigator_bridge import (  # noqa: E402
+    NavigatorBridgeError,
+    NavigatorInstallerBridge,
+    navigator_runtime_id,
+)
 
 
 def emit(value: dict) -> None:

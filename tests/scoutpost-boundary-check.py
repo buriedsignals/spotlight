@@ -32,8 +32,6 @@ for rel in (
 
 for rel in (
     "install-spotlight.sh",
-    "install/setup_server.py",
-    "install/configure.html",
     "integrations/preflight.py",
     "skills.manifest",
 ):

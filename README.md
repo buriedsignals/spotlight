@@ -220,9 +220,9 @@ Journalists install Spotlight through **Indicator Labs** after joining at
 in the operating-system prompt, not on this website.
 
 GitHub stays the contributor path. Clone the repository and follow
-[docs/runtimes.md](docs/runtimes.md). The shell script
-[`install-spotlight.sh`](install-spotlight.sh) remains in the tree for
-development and existing checkouts; it is not the public journalist installer.
+[docs/runtimes.md](docs/runtimes.md). [`install-spotlight.sh`](install-spotlight.sh)
+remains only as a fail-closed pointer for old curl|bash pipes; it does not
+install Spotlight or open a configure page.
 
 The installer uses exact versions recorded in `VALIDATED_DEPENDENCIES.md`.
 
@@ -234,23 +234,11 @@ OSINT tool discovery for Pro and Lab members.
 
 ### Local Install
 
-Clone the repo and run the contributor installer from the working tree:
+Clone the repo and install Spotlight from Indicator Labs against that checkout.
+Do not run `install-spotlight.sh`; it exits after pointing at Indicator Labs.
 
 ```sh
 git clone https://github.com/buriedsignals/spotlight.git
-bash spotlight/install-spotlight.sh
-```
-
-### Headless / CI Install
-
-`--headless` skips the local configurator and reads pre-exported environment
-variables. Load keys from a `0600` env file — never inline `export KEY=...`
-commands, which would land the keys in shell history:
-
-```sh
-git clone https://github.com/buriedsignals/spotlight.git
-set -a; . keys.env; set +a   # keys.env is chmod 600
-bash spotlight/install-spotlight.sh --headless
 ```
 
 ## Runtimes

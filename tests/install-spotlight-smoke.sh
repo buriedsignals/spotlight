@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Public installer boundary checks for the Engine-free shell entry point.
+# Fail-closed pointer checks for the retired public installer.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -20,24 +20,14 @@ check() {
 
 tmp="$(mktemp -d -t spotlight-public-install.XXXXXX)"
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/preflight-bin"
-printf '#!/bin/sh\nprintf "Linux\\n"\n' > "$tmp/preflight-bin/uname"
-chmod +x "$tmp/preflight-bin/uname"
 
-check "fresh bootstrap stops before configuration when prerequisites are absent" \
-  "python3 is required for the configurator" \
-  env -u BSIG_BIN HOME="$tmp/home" PATH="$tmp/preflight-bin" /bin/bash install-spotlight.sh
-
-mkdir -p "$tmp/bin"
-printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/bsig"
-chmod +x "$tmp/bin/bsig"
-check "headless path stays product-local and validates its configuration" \
-  "install path missing from config" \
-  env HOME="$tmp/home" PATH="$tmp/bin:/usr/bin:/bin" bash install-spotlight.sh --headless --dry-run
+check "install pointer sends journalists to Indicator Labs" \
+  "https://buriedsignals.com/join" \
+  env HOME="$tmp/home" PATH="/usr/bin:/bin" /bin/bash install-spotlight.sh
 
 check "retired base64 channel still fails loud" \
   "no longer accepts SPOTLIGHT_CONFIG" \
-  env SPOTLIGHT_CONFIG=x HOME="$tmp/home" PATH="$tmp/bin:/usr/bin:/bin" bash install-spotlight.sh --dry-run
+  env SPOTLIGHT_CONFIG=x HOME="$tmp/home" PATH="/usr/bin:/bin" bash install-spotlight.sh
 
-printf '%s passed, %s failed\n' "$pass" "$fail"
-exit "$fail"
+echo "$pass passed, $fail failed"
+[ "$fail" -eq 0 ]

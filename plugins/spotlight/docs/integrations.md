@@ -108,7 +108,7 @@ Keys are never collected on buriedsignals.com or Pages HTML.
 3. Write `integration.md` with: when to use, exact verb calls, output format, evidence handling, sensitive-mode behavior
 4. Add a row to the routing table in `skills/integrations/SKILL.md`
 
-Optionally expose the integration in the local configurator by adding a checkbox + key input to `install/configure.html` (wired through `install/setup_server.py`). Preflight picks up the new integration automatically on its next run — no code changes needed.
+Optionally expose the integration key in Indicator Labs if journalists should save it at install time. Preflight picks up the new integration automatically on its next run — no localhost configure.html form.
 
 ## Agent-facing usage
 
@@ -145,4 +145,3 @@ The orchestrator marks sensitive-mode investigations at Gate 1 noting which inte
 | `integrations/<id>/manifest.json` | Per-integration contract |
 | `integrations/<id>/integration.md` | Per-integration agent-facing usage |
 | `skills/integrations/SKILL.md` | Agent-facing routing layer |
-| `install/configure.html` + `install/setup_server.py` | Local configurator the contributor installer serves on `127.0.0.1` |
