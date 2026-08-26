@@ -11,15 +11,6 @@ channel="$HOME/.local/share/buriedsignals/public-installer/spotlight"
 bin="$HOME/.local/bin"
 mkdir -p "$product_root/scripts" "$channel" "$bin" "$HOME/.config/spotlight"
 cp scripts/spotlight-uninstall "$product_root/scripts/spotlight-uninstall"
-cat > "$channel/bootstrap.sh" <<'BOOTSTRAP'
-#!/usr/bin/env bash
-set -euo pipefail
-case " $* " in
-  *' --dry-run '*) exit 0 ;;
-esac
-rm -rf "$HOME/spotlight"
-BOOTSTRAP
-chmod +x "$channel/bootstrap.sh"
 printf 'SPOTLIGHT_DIR_INPUT=%q\nSPOTLIGHT_RUNTIME=codex\n' "$product_root" > "$HOME/.config/spotlight/setup-config.env"
 ln -s "$product_root/scripts/navigator-connect" "$bin/spotlight-navigator"
 ln -s "$product_root/scripts/spotlight-uninstall" "$bin/spotlight-uninstall"
@@ -31,13 +22,20 @@ printf '%s\n' '# user setting' '# SPOTLIGHT-BEGIN — added by install-spotlight
 bash "$product_root/scripts/spotlight-uninstall" --dry-run >/dev/null
 [ -L "$bin/spotlight-uninstall" ]
 grep -q '^# SPOTLIGHT-BEGIN' "$HOME/.zshrc"
+[ -d "$channel" ]
 
-bash "$product_root/scripts/spotlight-uninstall"
+out="$(bash "$product_root/scripts/spotlight-uninstall" 2>&1)"
+printf '%s\n' "$out" | grep -qF 'https://buriedsignals.com/join' || {
+  echo "spotlight-uninstall must point leftover users at Indicator Labs"
+  exit 1
+}
 [ ! -e "$bin/spotlight-navigator" ]
 [ ! -e "$bin/spotlight-uninstall" ]
 [ ! -e "$bin/spotlight-doctor" ]
 [ ! -e "$bin/spotlight-update" ]
 [ -f "$bin/spotlight-local" ]
+[ ! -e "$channel" ]
+[ -d "$product_root" ]
 grep -q '^# user setting$' "$HOME/.zshrc"
 grep -q '^# trailing setting$' "$HOME/.zshrc"
 ! grep -q '^# SPOTLIGHT-' "$HOME/.zshrc"

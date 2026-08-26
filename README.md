@@ -226,11 +226,11 @@ install Spotlight or open a configure page.
 
 The installer uses exact versions recorded in `VALIDATED_DEPENDENCIES.md`.
 
-`spotlight update` applies the latest signed public release rather than tracking
-`origin/main`. `spotlight uninstall` removes only unchanged installer-owned
-files and preserves case/profile data unless `--remove-data` is explicit.
-Navigator is optional: Skip keeps the unified skill locked; connecting unlocks
-OSINT tool discovery for Pro and Lab members.
+`spotlight update` and `spotlight uninstall` in Indicator Labs move the
+checkout Engine installed. Leftover `spotlight-uninstall` on PATH only removes
+old shell wrappers and points at Indicator Labs; it does not apply a signed
+public bundle. Navigator is optional: Skip keeps the unified skill locked;
+connecting unlocks OSINT tool discovery for Pro and Lab members.
 
 ### Local Install
 

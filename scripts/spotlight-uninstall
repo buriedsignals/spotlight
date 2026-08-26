@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
+# Leftover wrapper cleanup from old public installs. Product uninstall is
+# Indicator Labs; this script must not apply a cached bootstrap.
 set -euo pipefail
+
+JOIN='https://buriedsignals.com/join'
 
 setup="$HOME/.config/spotlight/setup-config.env"
 if [ -f "$setup" ]; then
@@ -15,23 +19,20 @@ expand_path() {
   esac
 }
 product_root="$(expand_path "${SPOTLIGHT_DIR_INPUT:-${SPOTLIGHT_DIR:-$HOME/spotlight}}")"
-runtime="${SPOTLIGHT_RUNTIME:-claude}"
-channel="$HOME/.local/share/buriedsignals/public-installer/spotlight"
-bootstrap="$channel/bootstrap.sh"
-if [ ! -f "$bootstrap" ]; then
-  echo "Spotlight uninstall receipt channel is missing; no files were removed." >&2
-  exit 1
-fi
-args=(--product spotlight --runtime "$runtime" --product-root "$product_root" --action uninstall)
 dry_run=0
 for arg in "$@"; do
   case "$arg" in
-    --dry-run) dry_run=1; args+=("$arg") ;;
-    --remove-data|--force) args+=("$arg") ;;
+    --dry-run) dry_run=1 ;;
+    --remove-data|--force)
+      printf 'Product and data uninstall is Indicator Labs (%s), not this leftover wrapper.\n' "$JOIN" >&2
+      ;;
     *) echo "usage: spotlight-uninstall [--remove-data] [--force] [--dry-run]" >&2; exit 2 ;;
   esac
 done
-bash "$bootstrap" "${args[@]}"
+
+if [ "$dry_run" != "1" ]; then
+  printf 'This script only removes leftover Spotlight shell wrappers.\nUninstall Spotlight itself in Indicator Labs: %s\n' "$JOIN" >&2
+fi
 
 remove_owned_link() {
   local path="$1" expected_target="$2"
@@ -92,3 +93,12 @@ remove_owned_file "$bin/spotlight-local" 'Spotlight local launcher' 'SPOTLIGHT_D
 remove_shell_block "$HOME/.zshrc"
 remove_shell_block "$HOME/.bashrc"
 remove_shell_block "$HOME/.profile"
+
+channel="$HOME/.local/share/buriedsignals/public-installer/spotlight"
+if [ -e "$channel" ]; then
+  if [ "$dry_run" = "1" ]; then
+    printf 'DRY-RUN: remove leftover public-installer channel %s\n' "$channel"
+  else
+    rm -rf "$channel"
+  fi
+fi
