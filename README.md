@@ -215,31 +215,38 @@ See [docs/integrations.md](docs/integrations.md) for setup and routing details.
 
 ## Install
 
-Journalists install Spotlight through **Indicator Labs** after joining at
-[buriedsignals.com/join](https://buriedsignals.com/join). Secrets are entered
-in the operating-system prompt, not on this website.
+**Buried Signals Engine (`bsig`) is Spotlight's only installation authority.**
+Indicator Labs submits the same Engine plans while adding guided runtime/model
+selection, credential prompts, repair, and automatic updates for
+[members](https://buriedsignals.com/join).
 
-GitHub stays the contributor path. Clone the repository and follow
-[docs/runtimes.md](docs/runtimes.md). [`install-spotlight.sh`](install-spotlight.sh)
-remains only as a fail-closed pointer for old curl|bash pipes; it does not
-install Spotlight or open a configure page.
+For agent-led manual setup, fetch the signed Engine descriptor at:
 
-The installer uses exact versions recorded in `VALIDATED_DEPENDENCIES.md`.
-
-`spotlight update` and `spotlight uninstall` in Indicator Labs move the
-checkout Engine installed. Leftover `spotlight-uninstall` on PATH only removes
-old shell wrappers and points at Indicator Labs; it does not apply a signed
-public bundle. Navigator is optional: Skip keeps the unified skill locked;
-connecting unlocks OSINT tool discovery for Pro and Lab members.
-
-### Local Install
-
-Clone the repo and install Spotlight from Indicator Labs against that checkout.
-Do not run `install-spotlight.sh`; it exits after pointing at Indicator Labs.
-
-```sh
-git clone https://github.com/buriedsignals/spotlight.git
+```text
+https://navigator.indicator.media/api/artifacts/bootstrap/bsig/<platform>
 ```
+
+Use `darwin-arm64`, `darwin-amd64`, `linux-arm64`, `linux-amd64`, or
+`windows-amd64`. Download the archive, checksum, signature, and public key
+before the 60-second grants expire; verify SHA-256 and Minisign before running
+`bsig`. Then:
+
+```text
+bsig catalog sync
+bsig --json configure describe spotlight
+```
+
+The agent selects values from that signed descriptor and submits the JSON
+request on stdin to `bsig configure plan spotlight`. Review and apply the
+emitted `plan.json`. Secrets use Engine's stdin/keychain path, never argv or
+chat. Manual updates use `bsig plan update spotlight`; Indicator Labs automates
+the same lifecycle.
+
+[`install-spotlight.sh`](install-spotlight.sh) remains a fail-closed pointer for
+old `curl | bash` commands; it is not another installer. Contributors may clone
+[`buriedsignals/spotlight`](https://github.com/buriedsignals/spotlight), but
+Engine installs the catalog-pinned public commit for journalists. Runtime
+development details remain in [docs/runtimes.md](docs/runtimes.md).
 
 ## Runtimes
 
