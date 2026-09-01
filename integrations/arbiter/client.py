@@ -88,12 +88,14 @@ class _PinnedHTTPSHandler(HTTPSHandler):
                 **kwargs,
             )
 
-        return self.do_open(
-            connection_factory,
-            req,
-            context=self._context,
-            check_hostname=self._check_hostname,
-        )
+        connection_args = {"context": self._context}
+        # Python 3.9 exposes a separate ``_check_hostname`` argument, while
+        # current Python keeps that policy on the SSLContext and removed the
+        # corresponding HTTPSConnection parameter.  Forward it only when the
+        # runtime's HTTPSHandler owns it.
+        if hasattr(self, "_check_hostname"):
+            connection_args["check_hostname"] = self._check_hostname
+        return self.do_open(connection_factory, req, **connection_args)
 
 
 def _build_pinned_opener(address_info):

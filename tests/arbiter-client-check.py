@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from urllib.error import HTTPError
+from urllib.request import Request
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
@@ -225,12 +226,37 @@ def check_redirect_origin_policy() -> None:
     )
 
 
+def check_default_pinned_handler_runtime_compatibility(client) -> None:
+    """The production opener must work across old and current urllib APIs."""
+    address_info = (socket.AF_INET, ("93.184.216.34", 443))
+    handler = client._PinnedHTTPSHandler(address_info)
+    request = Request("https://arbiter.simppl.org/api/v1/topics")
+    seen = {}
+
+    def do_open(connection_factory, received_request, **kwargs):
+        seen.update(kwargs)
+        assert received_request is request
+        connection = connection_factory("arbiter.simppl.org", timeout=5)
+        assert connection._address == address_info[1]
+        assert connection._tls_hostname == "arbiter.simppl.org"
+        return "fixture-response"
+
+    with patch.object(handler, "do_open", side_effect=do_open):
+        assert handler.https_open(request) == "fixture-response"
+    assert seen["context"] is handler._context
+    if hasattr(handler, "_check_hostname"):
+        assert seen["check_hostname"] is handler._check_hostname
+    else:
+        assert "check_hostname" not in seen
+
+
 def main() -> int:
     client = load_client()
     check_base_validation(client)
     check_request_shape_and_secret_boundary(client)
     check_http_error_contract(client)
     check_redirect_origin_policy()
+    check_default_pinned_handler_runtime_compatibility(client)
     check_sensitive_and_safe_paths(client)
     print("arbiter client boundary: OK")
     return 0
