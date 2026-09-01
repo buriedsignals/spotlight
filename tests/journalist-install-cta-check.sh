@@ -10,7 +10,7 @@ if [ -e setup.html ]; then
   note "setup.html must be deleted; do not leave a curl|bash stub"
 fi
 if [ -e install/configure.html ]; then
-  note "install/configure.html must be deleted; key collection lives in Indicator Labs"
+  note "install/configure.html must be deleted; both credential paths use Engine outside Spotlight"
 fi
 
 JOIN='https://buriedsignals.com/join'
@@ -37,6 +37,9 @@ if ! grep -qF "$BOOTSTRAP" README.md; then
 fi
 if ! grep -qF 'bsig configure plan spotlight' README.md; then
   note "README.md missing the single Engine planning path"
+fi
+if ! grep -qF 'bsig keys list' README.md; then
+  note "README.md missing open-source credential ID discovery"
 fi
 if grep -qF "$BOOTSTRAP" install-spotlight.sh; then
   note "install-spotlight.sh must remain a fail-closed pointer, not a second bootstrap path"

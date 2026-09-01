@@ -88,16 +88,19 @@ osint-navigator      api        green    —
 green=2  yellow=0  red=1  unconfigured=0
 ```
 
-## The setup flow (for journalists)
+## Setup flows
 
-The intended path from website → working install:
+Managed journalists join at [buriedsignals.com/join](https://buriedsignals.com/join), install
+Indicator Labs, configure Spotlight from the Engine descriptor, enter secrets through the
+operating-system prompt, apply the plan, and run doctor.
 
-1. **Join** at [buriedsignals.com/join](https://buriedsignals.com/join) and install **Indicator Labs**.
-2. Pair in the desktop app (Navigator OAuth only). Configure Spotlight from the Engine descriptor. Secrets use the operating-system prompt.
-3. Apply the plan. Doctor. Open the chosen agent; skills are already placed.
-4. Contributors who already have a checkout can still run `install-spotlight.sh` from GitHub. That is not the journalist path.
+Open-source and agent-led users follow the signed Engine bootstrap and planning instructions in the
+repository README. Preflight names missing integration credential IDs. A trusted local agent may
+prepare Engine's protected `bsig` stdin/keychain flow, while the user enters each value only through
+a private operating-system or terminal prompt outside chat. The fail-closed
+`install-spotlight.sh` pointer is not an installer.
 
-Keys are never collected on buriedsignals.com or Pages HTML.
+Neither path collects keys on buriedsignals.com, GitHub Pages, or a localhost Spotlight form.
 
 ## Adding a new integration
 

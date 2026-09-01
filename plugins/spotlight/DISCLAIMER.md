@@ -37,7 +37,7 @@ Spotlight calls out to third-party services when configured. Each has its own te
 
 ## Data you provide
 
-- API keys are entered on a configurator page served from `127.0.0.1` by the installer running on your own machine. They are validated directly with each provider and written to local files with owner-only permissions (chmod 600). They never touch buriedsignals.com — the hosted pages are static and contain no forms, and keys never exist in any downloadable artifact.
+- API keys are stored locally through Engine's operating-system credential broker. Managed users enter them through Indicator Labs' protected prompt; open-source users use Engine's protected `bsig` stdin/keychain flow and enter values through a private operating-system or terminal prompt outside agent chat. Keys never belong in argv, shell history, repository files, buriedsignals.com, GitHub Pages, or a localhost Spotlight form.
 - Investigation case files are stored locally in `cases/` (or wherever you set `cases_root`). Nothing is uploaded to Buried Signals.
 - Your vault stays on your machine. Buried Signals has no access to your findings.
 

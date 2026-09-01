@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard reviewed pins and the Indicator Labs / landing boundary."""
+"""Guard reviewed pins and both managed/open-source Engine boundaries."""
 
 from pathlib import Path
 import sys
@@ -18,6 +18,11 @@ def require(token: str, body: str, where: str) -> None:
 require("https://buriedsignals.com/join", installer, "install pointer")
 require("Indicator Labs", installer, "install pointer")
 require("There is no localhost configure.html server", installer, "install pointer")
+require("Open-source and agent-led users", installer, "install pointer")
+require("protected bsig", installer, "install pointer")
+require("stdin/keychain flow", installer, "install pointer")
+require("Open-source users", validated, "VALIDATED_DEPENDENCIES.md")
+require("stdin/keychain flow", validated, "VALIDATED_DEPENDENCIES.md")
 
 for token in [
     "0.54.3",

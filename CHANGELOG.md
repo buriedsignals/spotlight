@@ -4,6 +4,13 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed — open-source credential guidance
+
+- Install and preflight guidance now distinguishes Indicator Labs' managed
+  credential prompts from the public Engine path. Open-source users receive the
+  exact Engine credential IDs and use the protected `bsig` stdin/keychain flow;
+  no Spotlight localhost page collects secrets.
+
 ### Fixed — public installer on macOS and Windows (WSL)
 
 - OpenKnowledge and Spotlight's graph port both require

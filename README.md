@@ -238,9 +238,12 @@ bsig --json configure describe spotlight
 
 The agent selects values from that signed descriptor and submits the JSON
 request on stdin to `bsig configure plan spotlight`. Review and apply the
-emitted `plan.json`. Secrets use Engine's stdin/keychain path, never argv or
-chat. Manual updates use `bsig plan update spotlight`; Indicator Labs automates
-the same lifecycle.
+emitted `plan.json`. Preflight and `bsig keys list` name optional integration
+credential IDs. A trusted local agent may prepare Engine's protected
+stdin/keychain flow, but the user enters each value only through a private
+operating-system or terminal prompt—never argv, chat, shell history, or a
+repository file. Manual updates use `bsig plan update spotlight`; Indicator
+Labs automates the same lifecycle.
 
 [`install-spotlight.sh`](install-spotlight.sh) remains a fail-closed pointer for
 old `curl | bash` commands; it is not another installer. Contributors may clone
