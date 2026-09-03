@@ -251,6 +251,31 @@ old `curl | bash` commands; it is not another installer. Contributors may clone
 Engine installs the catalog-pinned public commit for journalists. Runtime
 development details remain in [docs/runtimes.md](docs/runtimes.md).
 
+## Install from source (agents)
+
+Engine is the supported path above. An agent pointed at this repository can
+install the runtime set without cloning the whole repository: `install-set.txt`
+names the directories a frontier runtime needs; everything else is documentation,
+example cases, the local-model harness, and development tooling. Scripts use the
+Python 3 standard library only.
+
+```bash
+git clone --filter=blob:none --sparse https://github.com/buriedsignals/spotlight.git spotlight
+cd spotlight
+git sparse-checkout set $(grep -v '^#' install-set.txt)
+```
+
+Then link the skills into your agent's skills directory (Windows: use
+`New-Item -ItemType Junction` in place of `ln -s`):
+
+| Agent | Link |
+|---|---|
+| Goose, Cursor, Codex, Gemini (shared agents store) | `mkdir -p ~/.agents/skills/spotlight && for s in skills/*/; do ln -s "$PWD/$s" ~/.agents/skills/spotlight/$(basename "$s"); done` |
+| Claude Code | `ln -s "$PWD" ~/.claude/skills/spotlight` |
+
+These are the same links Engine creates; a later Engine install adopts or
+replaces them. Integration credentials are never read from this checkout.
+
 ## Runtimes
 
 Two shapes, one source of truth (the skills + `agents/*.md` role files):

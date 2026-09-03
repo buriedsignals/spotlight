@@ -1,0 +1,18 @@
+# Spotlight install set — the directories a frontier runtime (Claude Code, Codex,
+# Cursor, Gemini, Goose) needs to run the skills. Root files (AGENTS.md, LICENSE,
+# DISCLAIMER.md) are always included by git cone-mode sparse checkout.
+#
+#   git sparse-checkout set $(grep -v '^#' install-set.txt)
+#
+# Not listed: cases/ (your investigations live outside the checkout), harness/
+# (non-frontier local-model runtime), plugins/ docs/ evals/ tests/ (development).
+skills
+agents
+scripts
+schemas
+integrations
+monitoring
+third_party
+upstreams
+.claude-plugin
+.agents

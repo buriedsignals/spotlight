@@ -1,0 +1,10 @@
+{
+  "name": "spotlight",
+  "version": "1.0.0",
+  "description": "OSINT investigation orchestration for journalists: structured briefs, methodology approval, sourced findings, independent fact-checking, review artifacts, and knowledge ingestion.",
+  "author": { "name": "Buried Signals", "url": "https://buriedsignals.com" },
+  "homepage": "https://github.com/buriedsignals/spotlight",
+  "repository": "https://github.com/buriedsignals/spotlight",
+  "license": "MIT",
+  "keywords": ["osint", "journalism", "investigations", "fact-checking", "source-verification", "opsec"]
+}
