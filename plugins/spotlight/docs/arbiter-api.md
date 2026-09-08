@@ -8,12 +8,12 @@ Arbiter is a partner integration. This file is Spotlight's local reference for t
 
 ```
                     ┌─────────────── READ SURFACE ───────────────┐
-GET /topics ──▶ pick an id ──┬──▶ /topics/{id}/posts      (metered)
+GET /topics ──▶ pick an id ──┬──▶ /topics/{id}/posts      (free)
                              ├──▶ /topics/{id}/entities   (free)
                              ├──▶ /topics/{id}/themes     (free)
                              ├──▶ /topics/{id}/report     (free)
-                             ├──▶ /topics/{id}/agent      (metered)
-                             └──▶ any post id ──▶ /posts/{id} (metered)
+                             ├──▶ /topics/{id}/agent [POST] (25 daily credits)
+                             └──▶ any post id ──▶ /posts/{id} (free)
 
                     ┌─────────────── WRITE SURFACE ──────────────┐
 POST /case-studies ──▶ pending ──▶ POST /{id}/search-plan ──▶ review phrases
@@ -47,14 +47,14 @@ POST /case-studies ──▶ pending ──▶ POST /{id}/search-plan ──▶ 
 | # | Method & path | Credits | Purpose |
 | --- | --- | --- | --- |
 | 1 | `GET /topics` | free | List readable case studies. The only discovery mechanism. |
-| 2 | `GET /topics/{id}/posts` | `max(10, 2 × items)` | Paged raw post corpus, newest first. |
+| 2 | `GET /topics/{id}/posts` | free | Paged raw post corpus, newest first. |
 | 3 | `GET /topics/{id}/entities` | free | Entity + stance analysis. |
 | 4 | `GET /topics/{id}/themes` | free | Hierarchical theme tree with per-theme stats. |
 | 5 | `GET /topics/{id}/report` | free | Consolidated actors, themes, communities, engagement timeline. |
 | 6 | `GET /topics/{id}/agent/questions` | free | Curated sample questions for the agent. |
 | 7 | `POST /topics/{id}/agent` | **25** | Ask the case-study agent one question. Synchronous. |
-| 8 | `GET /posts/{postId}` | **10** | Resolve any cited post id to its full record. |
-| 9 | `GET /usage` | free | Balance, effective rates, period counters, advertised limits. |
+| 8 | `GET /posts/{postId}` | free | Resolve any cited post id to its full record. |
+| 9 | `GET /usage` | free | Daily allowance, historical counters, advertised limits. |
 | 10 | `POST /case-studies` | free | Create a pending study. |
 | 11 | `GET /case-studies/{id}` | free | Status and immutable scope. |
 | 12 | `POST /case-studies/{id}/search-plan` | **25** | Generate the reviewable search plan. |
@@ -79,16 +79,16 @@ A *valid* key that is over its window returns `429`, not `401`. If credential ve
 
 ## Errors
 
-Every non-2xx response on the 14 documented operations uses one envelope:
+Every non-2xx response on the 14 documented operations uses one envelope (illustrative daily-allowance error):
 
 ```json
 {
   "error": {
     "code": "insufficient_credits",
-    "message": "Insufficient credits for a metered query.",
+    "message": "Daily credit allowance exhausted.",
     "request_id": "req_1f2e3d4c5b6a7988990a1b2c",
-    "credits_balance": 4,
-    "minimum_required": 10
+    "daily_credit_limit": 500,
+    "daily_credits_used": 500
   }
 }
 ```
@@ -101,7 +101,7 @@ Every non-2xx response on the 14 documented operations uses one envelope:
 | --- | --- | --- | --- |
 | `invalid_request` | 400 | Malformed parameter, cursor, or body. | Fix the request. Never retry unchanged. |
 | `unauthorized` | 401 | Missing/malformed/unknown/expired/revoked key. | Check header format; mint a new key. |
-| `insufficient_credits` | 402 | Balance below the operation's minimum; no billing project on the key; or (agent/finalize) the linked account is out of its own credits. | Top up and retry. If billing is not configured, retrying will not help. |
+| `insufficient_credits` | 402 | Daily allowance exhausted; billing not configured; or (agent/finalize) linked-account credits or quota exhausted. | Inspect optional daily fields and `GET /usage`. Wait for midnight IST for daily exhaustion; address linked-account credits separately. Retrying cannot fix missing billing configuration. |
 | `forbidden_scope` | 403 | Authenticated but not permitted: study outside read scope, out-of-scope post, unlinked key on the agent, or a write against a study the account does not own. | Do not retry. Use an id from `GET /topics`. |
 | `not_found` | 404 | Id not in the readable universe; or on `GET /usage`, no billing project. | Do not retry the same id. Re-list. |
 | `rate_limited` | 429 | Per-minute window exhausted, **or** a concurrency conflict. | Back off and retry. |
@@ -109,7 +109,7 @@ Every non-2xx response on the 14 documented operations uses one envelope:
 
 **There is no 500 and no 502** — all internal failures surface as `503 internal` so callers read them as retryable. No 4xx outside `{400, 401, 402, 403, 404, 429}` occurs.
 
-**Conditional extra fields, all optional even when the code matches:** `credits_balance` and `minimum_required` (numbers) appear on the balance-too-low variant of `402` only — the "no billing project" and "linked account out of credits" variants carry neither. `unavailable_months` (`["YYYY-MM", …]`) appears on the `400` from `POST /case-studies` when `reddit` is requested for an uncovered month, and is **not declared in the published spec**.
+**Conditional extra fields, all optional even when the code matches:** `daily_credit_limit` and `daily_credits_used` identify daily-allowance exhaustion on `402`. Linked-account credit failures carry no numeric fields. Legacy `credits_balance` and `minimum_required` remain in the error schema; do not treat them as the v1 allowance or require them on a `402`. `unavailable_months` (`["YYYY-MM", …]`) appears on the `400` from `POST /case-studies` when `reddit` is requested for an uncovered month, and is **not declared in the published spec**.
 
 **Two distinct meanings of 404 on the read surface.** (a) `"No such case study."` — the id is not in this key's read scope; deliberately does not distinguish "does not exist" from "exists but is private to someone else". (b) `"No entity analysis is available for this case study and platform."` (and the `themes` / `report` equivalents) — the study is readable, but that analysis does not exist for the requested `platform`; retry with `?platform=global` or another platform from the report's `platforms` list. Separately, a **just-completed** study can `404` briefly on `/topics/{id}/*` because the readable set is served from a short-lived cache — wait ~15 seconds and retry once before treating it as permanent.
 
@@ -130,22 +130,22 @@ Every non-2xx response on the 14 documented operations uses one envelope:
 
 ## Credits and metering
 
-| Operation | Charge |
+All v1 reads are **free**. Metered operations share a separate per-key daily allowance; no v1 endpoint consumes the prepaid `credits_balance`. Billing guidance verified against the [published OpenAPI schema](https://arbiter.simppl.org/api/v1/openapi.json) on 2026-09-08; this supersedes the former balance-debit model.
+
+| Operation | Daily allowance charge |
 | --- | --- |
-| `GET /topics/{id}/posts` | `max(minimum_query_credits, per_result_credits × items_returned)` — default **`max(10, 2 × items)`** |
-| `GET /posts/{postId}` | one result ⇒ **10** (the floor) |
 | `POST /topics/{id}/agent` | flat **25** |
 | `POST /case-studies/{id}/search-plan` | flat **25** |
 | `POST /case-studies/{id}/finalize` | flat **100** |
-| Everything else | **free**; `meta.credits_charged` is literally `0` |
+| Everything else, including all reads | **free**; `meta.credits_charged` is `0` |
 
-`items_returned` is the length of `items[]` **after** page de-duplication, not the requested `limit`. Read effective rates from `GET /usage` → `rates` rather than hardcoding 2/10 — they can be provisioned per key. Note the gap: `rates` exposes only the per-result read rates, so the flat agent rate is not programmatically discoverable.
+Use `GET /usage` → `daily_credits.{limit, used, remaining}` for allowance checks and reconciliation. The allowance resets at **midnight IST (UTC+05:30)**; unused credits do not roll over. Read the actual limit from the response rather than assuming a fixed allowance.
 
-- **The 10-credit floor makes small pages expensive.** A page of 1 costs the same as a page of 5: at `limit=100` the marginal cost is 2 credits/post, at `limit=1` effectively 10 — a 10× penalty. Request large pages.
-- **A failed request never charges.** Every 4xx and 5xx costs 0. The balance is checked *before* any work, so a `402` is free; the debit is attempted only after a `200` has been assembled.
-- **`meta.credits_charged` is authoritative.** Reconcile against it, not your own arithmetic. It can be `0` on a `200` for three reasons: the operation is free; it was an idempotent replay; or a transient billing hiccup occurred after the payload was built — in which case you keep the data free rather than losing the response. No caller-supplied idempotency keys are accepted anywhere, so a *retry* is always a new billable request.
-- **Two separate pools gate the write surface.** `finalize` checks the API project's credits (100) *and* the linked account's own product credits (which must be ≥ 1000). A fully funded key can still be blocked by the underlying account.
-- **Short debits.** When the balance is nearly exhausted a debit can be clamped to whatever remains, and the pre-check reserves nothing, so concurrent requests can each pass it and collectively settle short. A `meta.credits_charged` below the expected charge is a **top-up signal**, not a discount, and the next call will `402`. Do not fire many metered requests concurrently on a nearly-empty balance.
+- **Reconcile `meta.credits_charged` against `daily_credits.used`.** Save the returned charge and request id for each operation. Within one IST day, compare the change in `used` with the sum of returned charges, accounting for other activity on the same key. Split reconciliation at the midnight reset.
+- **Example:** a successful search plan (25) and finalize (100) record 125 daily credits. With no other activity or reset, `used` rises by 125 and `remaining` falls by 125; an unchanged `credits_balance` is expected.
+- **Legacy fields are not current spend counters.** `credits_balance` is the billing project's prepaid balance, not v1 credits remaining. Both `rates` values are now `0`. `period.daily` and `period.monthly` are frozen historical read-query counters; do not use their `credits_used` to reconcile current calls.
+- **A failed request does not charge.** A client timeout does not prove the server failed; follow the endpoint's retry guidance before repeating a metered request.
+- **Linked-account gates remain separate.** Finalize also requires the linked account's own product-credit floor, and agent questions spend its agent quota. A daily-allowance `402` clears at midnight IST; a linked-account credit shortage needs attention to that account. Topping up the prepaid API balance does not replenish the daily allowance.
 
 ## Pagination
 
@@ -160,7 +160,7 @@ Only two endpoints paginate, with the same convention.
 - `next_cursor` is `string | null`; **`null` means last page.** Loop until it is `null`.
 - **`limit` rejects out-of-range values with `400`; it does not clamp.** `0`, negatives, `101+`, and non-integers all fail.
 
-Two gotchas specific to `/posts`: a **short page is not the end** (`items.length` can be below `limit` while `next_cursor` is non-null, because pages are de-duplicated after retrieval), and **the final page hands you one more cursor** — following it returns `items: []` with `next_cursor: null` and is still charged the 10-credit floor. Stop when `items` is empty *or* `next_cursor` is `null`, and budget for one possible extra billed request. `meta.total_in_topic` may slightly exceed the number of unique posts; use it as a progress indicator, never as a termination condition.
+Two gotchas specific to `/posts`: a **short page is not the end** (`items.length` can be below `limit` while `next_cursor` is non-null, because pages are de-duplicated after retrieval), and **the final page hands you one more cursor** — following it returns `items: []` with `next_cursor: null` and is free. Stop when `items` is empty *or* `next_cursor` is `null`, and allow for one possible extra request against the per-minute rate limit. `meta.total_in_topic` may slightly exceed the number of unique posts; use it as a progress indicator, never as a termination condition.
 
 `GET /topics` paging is positional over a set re-derived per request, so items can shift between pages if the menu changes. The menu is small — fetch it in one call with `limit=100`.
 
@@ -193,7 +193,7 @@ Post ids are minted by the **source platform**, not by Arbiter, so they are not 
 
 Anything describing *when content was published or collected in the world* is UTC: `items[].timestamp`, `claims[].published_at`, `engagement_timeline.points[].date` (a UTC calendar day, `YYYY-MM-DD`), `window.from`/`.to`, `last_updated`, `generated_at`, and the `since`/`until` request params (send `Z`-suffixed UTC).
 
-Anything describing *when an Arbiter record was created or touched* is IST: `created_at` on `GET /case-studies/{id}` and every `updated_at` on `/progress`. Parse those defensively — treat an offset-less value as `+05:30` — and never compare them naively against a UTC clock. `GET /usage` daily/monthly counters also roll over on **IST** boundaries, so reconciling against UTC-day billing shows a 5h30m offset. On the write surface, `date_range.from`/`.to` are plain dates with no zone.
+Anything describing *when an Arbiter record was created or touched* is IST: `created_at` on `GET /case-studies/{id}` and every `updated_at` on `/progress`. Parse those defensively — treat an offset-less value as `+05:30` — and never compare them naively against a UTC clock. `GET /usage` → `daily_credits` resets at midnight **IST**, not UTC; unused allowance does not roll over. The legacy `period.*` counters are frozen historical read counters. On the write surface, `date_range.from`/`.to` are plain dates with no zone.
 
 ## Read endpoints
 
@@ -246,13 +246,23 @@ All three are free, unpaged, and take only `platform` (default `global`, the 11-
 
 The agent call body is `{"question": "<string>"}` — trimmed, then **1–2000 characters**; whitespace-only fails and extra properties are ignored. Response: `topic_id`, `question` (the trimmed form), `answer` (markdown, tables preserved), `run_id` (correlation only), `meta`.
 
-**Synchronous:** tens of seconds typical, up to **10 minutes** before `503`. Set a client timeout of at least ~10 minutes and do not retry aggressively; there is no token streaming. Beyond the key's 25-credit charge the *linked account* spends its own agent quota, so a `402` naming the linked account is possible even with a healthy `GET /usage` balance (that variant carries no balance fields). An unlinked key gets an agent-only `403`, not retryable. Send the user's question verbatim — Arbiter only `.trim()`s it and does its own prompt construction, so client-side rewriting degrades the answer. Two behaviours you do not control: prior turns on the same study and key are carried as context, and an identical earlier question can replay a cached answer while still charging.
+**Synchronous:** tens of seconds typical, up to **10 minutes** before `503`. Set a client timeout of at least ~10 minutes and do not retry aggressively; there is no token streaming. Beyond the key's 25-credit daily-allowance charge the *linked account* spends its own agent quota, so a `402` naming the linked account is possible even with sufficient `GET /usage` → `daily_credits.remaining` (that variant carries no balance fields). An unlinked key gets an agent-only `403`, not retryable. Send the user's question verbatim — Arbiter only `.trim()`s it and does its own prompt construction, so client-side rewriting degrades the answer. Two behaviours you do not control: prior turns on the same study and key are carried as context, and an identical earlier question can replay a cached answer while still charging.
 
 ### `GET /posts/{postId}` · `GET /usage`
 
-`postId` is trimmed, **1–512 characters**, percent-encoding accepted, and is the platform-native id described in § *Identifiers* — letters in either case, digits, and `_ - . ~ %`, so `IDfIYCNsmMI` and `dZj9yXtff_U` are both ordinary values and a lowercase-slug check would wrongly reject them. There are no query parameters, so you cannot narrow by study or platform. Returns `{item, meta}` where `item` is exactly the Post schema above. Charged the **10-credit floor** on success; `400`/`403`/`404` are free, but the balance pre-check runs first, so a broke key gets `402` even for an id that would have `404`'d. `403` means the post belongs to a *curated* study this key may not read; `404` means it was not found in the curated set — the probe never inspects private studies, so this split cannot be used to detect posts in private data.
+`postId` is trimmed, **1–512 characters**, percent-encoding accepted, and is the platform-native id described in § *Identifiers* — letters in either case, digits, and `_ - . ~ %`, so `IDfIYCNsmMI` and `dZj9yXtff_U` are both ordinary values and a lowercase-slug check would wrongly reject them. There are no query parameters, so you cannot narrow by study or platform. Returns `{item, meta}` where `item` is exactly the Post schema above. This read is free and does not consume the daily allowance or prepaid balance. `403` means the post belongs to a *curated* study this key may not read; `404` means it was not found in the curated set — the probe never inspects private studies, so this split cannot be used to detect posts in private data.
 
-`GET /usage` is free with no parameters: `credits_balance`, `rates.per_result_credits` / `.minimum_query_credits` (your **effective** rates), `period.daily` and `period.monthly` counters (`queries`, `results_returned`, `credits_used`, on IST boundaries), and `limits.requests_per_minute` (number or `null`). Counters cover metered **read** queries only — agent questions draw on the same balance but do not appear in `period.*.queries`.
+`GET /usage` is free with no parameters:
+
+| Field | Meaning |
+| --- | --- |
+| `daily_credits.limit`, `.used`, `.remaining` | Current per-key daily allowance shared by search-plan, finalize, and agent questions. Use for reconciliation and display of credits remaining. Resets at midnight IST; no rollover. |
+| `credits_balance` | Legacy prepaid project balance; no v1 endpoint consumes it. |
+| `rates.per_result_credits`, `.minimum_query_credits` | Both `0`: reads are unmetered. |
+| `period.daily`, `period.monthly` | Frozen historical read-query counters (`queries`, `results_returned`, `credits_used`); not current metered spend. |
+| `limits.requests_per_minute` | Number or `null`; request-rate limit, separate from credits. |
+| `limits.daily_credit_limit` | Advertised daily credit limit; use `daily_credits` for the complete allowance state. |
+
 
 ## Write surface
 
@@ -348,7 +358,7 @@ In `pending` you may re-plan (repeatedly, charging each time), finalize once a p
 | Research / Flex | 1–3 | 56 | 15 | 3 |
 | Enterprise | 1–3 | 56 | 15 | 3 |
 
-Also gated: the account must be email-verified and access-approved, and must hold ≥ 1000 of its own product credits at finalize time (independent of the API project's 100-credit charge). **The schema ceilings are not the policy limits** — `platforms: maxItems 9` and `search_phrases: maxItems 50` are protocol bounds well above every real tier, so a 4-platform request is schema-valid and then rejected. Build any picker to the tier limit, not the schema.
+Also gated: the account must be email-verified and access-approved, and must hold ≥ 1000 of its own product credits at finalize time (independent of the key's 100-credit daily-allowance charge). **The schema ceilings are not the policy limits** — `platforms: maxItems 9` and `search_phrases: maxItems 50` are protocol bounds well above every real tier, so a 4-platform request is schema-valid and then rejected. Build any picker to the tier limit, not the schema.
 
 ## What this API does not do
 
@@ -367,9 +377,9 @@ The OpenAPI document is authoritative for *shapes*; these are the places where o
 - `title` on create is accepted to 200 characters and **stored truncated to 160**.
 - `progress.updated_at` is typed nullable but is always present in practice — use `has_activity` / `plan_ready` for "has anything happened", not `null`. `plan_ready`, `collection.has_activity` and `steps[].display_text` are likewise optional in the spec and always emitted today.
 - `steps[].display_text` is described as `<p>` + `<a>` but also contains `<b>` and `<i>`; sanitize rather than allow-listing tags. `stages[].status` / `.stage` and `activity[].status` are open strings — tolerate unknown values.
-- On `/posts`, a non-null `next_cursor` can point at an empty, still-billed page, and a short page is not the end. Neither is documented.
+- On `/posts`, a non-null `next_cursor` can point at an empty, free page, and a short page is not the end. Neither is documented.
 - `GET /openapi.json` is absent from the spec's own `paths`, and its unauthenticated status is undocumented.
-- `/usage` `rates` exposes only the per-result read rates; the flat agent rate is not programmatically discoverable.
+- `/usage` `rates` reports zero read rates; the flat metered-operation charges are documented on their endpoints, not in `rates`.
 - `sort=recent` is curated-first then your-own, each newest-created — not a merged global recency.
 - Rate-limit headers are declared on 2xx only, appear on most post-authentication responses, and none is guaranteed.
 
