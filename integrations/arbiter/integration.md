@@ -98,19 +98,19 @@ For each call, use a dedicated file-backed request/output pair. The primary
 endpoints are:
 
 ```text
-GET /topics/{case_study_id}/posts       # metered: max(10, 2 × items_returned)
+GET /topics/{case_study_id}/posts       # free
 GET /topics/{case_study_id}/entities   # free
 GET /topics/{case_study_id}/themes     # free
 GET /topics/{case_study_id}/report     # free
 GET /topics/{case_study_id}/agent/questions  # free
 POST /topics/{case_study_id}/agent     # 25 credits
-GET /posts/{post_id}                   # 10 credits
+GET /posts/{post_id}                   # free
 GET /usage                              # free
 ```
 
 For posts, use `limit: 100`, stop when `items` is empty or `next_cursor` is
-null, and never auto-paginate beyond five pages without explicit approval. A
-small page still pays the 10-credit floor. For the agent, send the question
+null, and never auto-paginate beyond five pages without explicit approval. Reads
+are free but still count toward the per-minute request limit. For the agent, send the question
 verbatim in a JSON body, set a client timeout of at least ten minutes, show
 the full `answer` as tool-generated analysis, and cite its `run_id`; it is not
 primary evidence. Keep report filenames prefixed `arbiter-report-` so
@@ -193,12 +193,27 @@ report to the operator, not a reason to repeat a metered call.
 
 For non-2xx responses, branch on `error.code`, never English messages:
 `invalid_request` (fix, no retry), `unauthorized` (check local key and bearer
-shape), `insufficient_credits` (top up), `forbidden_scope` (do not retry),
+shape), `insufficient_credits` (check daily allowance and linked-account quota), `forbidden_scope` (do not retry),
 `not_found` (re-list), `rate_limited` (back off), and `internal` (exponential
 backoff). Honor `Retry-After` when present; otherwise use bounded exponential
 backoff. A failed request does not charge, but every retry of an accepted
 metered or non-idempotent request may charge or create another study. Serialize
 long-running calls per study.
+
+All v1 reads are free. Search-plan (25), finalize (100), and agent questions
+(25) share the key's daily allowance. Reconcile `meta.credits_charged` against
+`GET /usage` → `daily_credits.used`, and display `daily_credits.remaining`.
+The allowance resets at midnight IST (UTC+05:30), with no rollover. No v1 call
+consumes `credits_balance`; `period.*` contains frozen historical read counters.
+A plan plus finalize records 125 daily credits while leaving the prepaid
+balance unchanged. Account for other calls on the key and midnight resets
+when comparing usage snapshots.
+
+On `402`, optional `daily_credit_limit` / `daily_credits_used` identify daily
+exhaustion: wait until midnight IST. A linked-account credit or agent-quota
+failure is separate; topping up the prepaid API balance does not replenish
+the daily allowance. See `docs/arbiter-api.md` for the full usage contract and
+its published OpenAPI source.
 
 Save responses verbatim, including successful `meta.credits_charged` and
 `meta.request_id`, and retain the exact input beside the output. Every post,
