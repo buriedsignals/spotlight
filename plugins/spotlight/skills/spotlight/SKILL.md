@@ -59,6 +59,8 @@ Durability and safety clauses:
 
 ## Dispatch
 
+Before Phase 0, establish a shell whose working directory is the checkout root
+that holds both `skills/` and `scripts/` (`AGENTS.md`, "Checkout layout").
 Run `skills/phase-preflight` first to validate configuration and select the
 case. Then resolve durable state, invoke the single returned owner, let that
 owner perform one transition or stop at its human gate, and resolve again.

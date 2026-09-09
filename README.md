@@ -256,8 +256,8 @@ development details remain in [docs/runtimes.md](docs/runtimes.md).
 Engine is the supported path above. An agent pointed at this repository can
 install the runtime set without cloning the whole repository: `install-set.txt`
 names the directories a frontier runtime needs; everything else is documentation,
-example cases, the local-model harness, and development tooling. Scripts use the
-Python 3 standard library only.
+example cases, the local-model harness, plugin payloads, and development
+tooling. Scripts use the Python 3 standard library only.
 
 ```bash
 git clone --filter=blob:none --sparse https://github.com/buriedsignals/spotlight.git spotlight
@@ -265,16 +265,48 @@ cd spotlight
 git sparse-checkout set $(grep -v '^#' install-set.txt)
 ```
 
-Then link the skills into your agent's skills directory (Windows: use
+Skills and `scripts/` stay together in this checkout: every script path inside
+a skill is relative to the checkout root, and the agent runs Spotlight from a
+shell whose working directory is that root (see `AGENTS.md`, "Checkout
+layout").
+
+Then link each skill directory into your agent's skills directory (Windows: use
 `New-Item -ItemType Junction` in place of `ln -s`):
 
 | Agent | Link |
 |---|---|
 | Goose, Cursor, Codex, Gemini (shared agents store) | `mkdir -p ~/.agents/skills/spotlight && for s in skills/*/; do ln -s "$PWD/$s" ~/.agents/skills/spotlight/$(basename "$s"); done` |
-| Claude Code | `ln -s "$PWD" ~/.claude/skills/spotlight` |
+| Claude Code | `mkdir -p ~/.claude/skills && for s in skills/*/; do ln -s "$PWD/$s" ~/.claude/skills/$(basename "$s"); done` |
 
-These are the same links Engine creates; a later Engine install adopts or
-replaces them. Integration credentials are never read from this checkout.
+Link skill directories, never the repository root: a skill is discovered by the
+`SKILL.md` inside the linked directory, and the repository root has none.
+
+Some runtimes rebuild their skill listing at turn boundaries rather than on
+filesystem change, so freshly linked skills become visible on the agent's next
+turn. An immediate "Unknown skill: spotlight" in the installing turn is not
+evidence of a failed install; wait for the next turn before troubleshooting.
+
+Engine places the same skills under a `spotlight` product namespace; a later
+Engine install adopts or replaces these links. Integration credentials are never
+read from this checkout.
+
+### Plugin install (runtimes with a plugin system)
+
+`.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json`
+describe a plugin whose payload is the generated `plugins/spotlight/` tree. They
+serve the marketplace route, which clones the full repository itself and
+namespaces every skill under the plugin name (`spotlight:` in Claude Code), so
+skill names cannot collide with a runtime's built-in commands. Prefer it where
+the runtime supports plugins:
+
+```bash
+claude plugin marketplace add buriedsignals/spotlight
+claude plugin install spotlight@spotlight-plugin
+```
+
+These manifests are not in the sparse install set above because that checkout
+never contains `plugins/`. Plugin install places skills only; it installs no
+runtime packages and does not replace the Engine path.
 
 ## Runtimes
 

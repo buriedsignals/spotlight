@@ -1,5 +1,5 @@
 ---
-name: investigate
+name: investigation-methodology
 description: Investigation methodology for journalists — step-by-step techniques, platform OPSEC, and case studies from Bellingcat training materials.
 version: "1.0"
 invocable_by: [investigator, user]

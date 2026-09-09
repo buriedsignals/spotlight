@@ -5,7 +5,10 @@
 #   git sparse-checkout set $(grep -v '^#' install-set.txt)
 #
 # Not listed: cases/ (your investigations live outside the checkout), harness/
-# (non-frontier local-model runtime), plugins/ docs/ evals/ tests/ (development).
+# (non-frontier local-model runtime), docs/ evals/ tests/ (development), and
+# plugins/ together with the .claude-plugin/ and .agents/ marketplace manifests
+# that point at it — those serve the plugin-marketplace route, which clones the
+# full repository itself (README, "Plugin install").
 skills
 agents
 scripts
@@ -14,5 +17,3 @@ integrations
 monitoring
 third_party
 upstreams
-.claude-plugin
-.agents

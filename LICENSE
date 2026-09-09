@@ -27,7 +27,7 @@ Portions of this software adapt or synthesize methodology from:
 - jamditis/claude-skills-journalism (MIT License) — by Joe Amditis. Used in
   the web-archiving, content-access, and social-media-intelligence skills.
 - Bellingcat training materials (https://bellingcat.com/) — investigation
-  techniques referenced in the investigate skill.
+  techniques referenced in the investigation-methodology skill.
 - GIJN methodology publications (https://gijn.org/) — Miranda Patrucic &
   Jelena Cosic, "Introduction to Investigative Journalism: Following the
   Money," November 2024, CC BY-ND 4.0.

@@ -70,7 +70,7 @@ def methodology_with_navigator() -> dict:
     return {
         "schema_version": "1.0",
         "project": "sample",
-        "skills_invoked": ["integrations", "osint", "investigate", "epistemic-grounding"],
+        "skills_invoked": ["integrations", "osint", "investigation-methodology", "epistemic-grounding"],
         "navigator": {
             "required": True,
             "used": True,
@@ -134,6 +134,16 @@ def main() -> int:
         valid = run(case_dir, config)
         if valid.returncode != 0:
             raise AssertionError(f"valid navigator fixture should pass\nSTDOUT:\n{valid.stdout}\nSTDERR:\n{valid.stderr}")
+
+        legacy = methodology_with_navigator()
+        legacy["skills_invoked"] = ["integrations", "osint", "investigate", "epistemic-grounding"]
+        write_json(methodology_path, legacy)
+        legacy_result = run(case_dir, config)
+        if legacy_result.returncode != 0:
+            raise AssertionError(
+                "pre-rename skill id 'investigate' must still satisfy the planning-skill check"
+                f"\nSTDOUT:\n{legacy_result.stdout}\nSTDERR:\n{legacy_result.stderr}"
+            )
 
         structured = methodology_with_navigator()
         structured["navigator"]["data_sources"][0]["results"] = [{

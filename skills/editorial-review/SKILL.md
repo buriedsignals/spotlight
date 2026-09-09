@@ -1,12 +1,12 @@
 ---
-name: review
+name: editorial-review
 description: Generate a self-contained HTML review artifact after Gate 1 and export structured feedback to the Gate 1 owner. No server required.
 version: "1.0"
 invocable_by: [orchestrator, user]
 requires: []
 ---
 
-# Review — Post-Gate-1 Editorial Review
+# Editorial Review — Post-Gate-1 Review Artifact
 
 Generate one self-contained HTML file that the journalist can open in any
 browser to inspect findings and verdicts and export structured feedback. The
@@ -53,7 +53,7 @@ read-file("{CASE_DIR}/summary.md")              # may not exist
 ### 2. Read the HTML template
 
 ```
-read-file("skills/review/references/template.html")
+read-file("skills/editorial-review/references/template.html")
 ```
 
 ### 3. Build the injection payload
@@ -224,7 +224,7 @@ Reads from:
   {CASE_DIR}/data/summary.json                (optional)
   {CASE_DIR}/data/provenance-manifest.json    (optional)
   {CASE_DIR}/summary.md                       (optional)
-  skills/review/references/template.html
+  skills/editorial-review/references/template.html
 
 Writes to:
   {CASE_DIR}/review.html

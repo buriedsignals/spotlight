@@ -3,7 +3,7 @@ from _common import bool_score, emit, has_nonempty, list_has_nonempty, require_a
 
 
 def main() -> int:
-    _expected, actual = require_args("review")
+    _expected, actual = require_args("editorial-review")
     checks = {
         "unsupported_claims_flagged": bool(actual.get("unsupported_claims")) if isinstance(actual, dict) else False,
         "weak_evidence_separated": bool(actual.get("weak_evidence")) if isinstance(actual, dict) else False,

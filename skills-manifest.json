@@ -38,7 +38,7 @@
       "disabled_in_sensitive_mode": true
     },
     {
-      "id": "investigate",
+      "id": "investigation-methodology",
       "role": "core-child",
       "phases": ["phase-2-methodology", "phase-3-execution"],
       "may_make_external_calls": false,
@@ -101,7 +101,7 @@
       "disabled_in_sensitive_mode": false
     },
     {
-      "id": "review",
+      "id": "editorial-review",
       "role": "core-child",
       "phases": ["phase-4-gate-1"],
       "may_make_external_calls": false,
@@ -185,7 +185,7 @@
       "validation": ".spotlight-config.json stores full integration status, not only booleans."
     },
     "phase-2-methodology": {
-      "required": ["phase-methodology", "integrations", "osint", "investigate", "epistemic-grounding"],
+      "required": ["phase-methodology", "integrations", "osint", "investigation-methodology", "epistemic-grounding"],
       "conditional": ["navigator", "arbiter", "follow-the-money", "social-media-intelligence", "technical-investigation", "content-access"],
       "validation": "methodology.json includes skills_invoked[] and required Navigator fields when green."
     },

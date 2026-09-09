@@ -43,14 +43,14 @@
 ## Skills
 
 - [spotlight](https://spotlight.buriedsignals.com/skills/spotlight/SKILL.md): top-level investigation orchestrator
-- [review](https://spotlight.buriedsignals.com/skills/review/SKILL.md): post-Gate-1 review artifact and feedback loop
+- [editorial-review](https://spotlight.buriedsignals.com/skills/editorial-review/SKILL.md): post-Gate-1 review artifact and feedback loop
 - [integrations](https://spotlight.buriedsignals.com/skills/integrations/SKILL.md): routing layer for external tools
 - [ingest](https://spotlight.buriedsignals.com/skills/ingest/SKILL.md): vault ingestion and registry updates
 - [monitoring](https://spotlight.buriedsignals.com/skills/monitoring/SKILL.md): monitoring orchestration across runtimes
 - [web-archiving](https://spotlight.buriedsignals.com/skills/web-archiving/SKILL.md): archive workflow and chain of custody
 - [content-access](https://spotlight.buriedsignals.com/skills/content-access/SKILL.md): paywall and access-method handling
 - [osint](https://spotlight.buriedsignals.com/skills/osint/SKILL.md): OSINT tool routing and catalog
-- [investigate](https://spotlight.buriedsignals.com/skills/investigate/SKILL.md): investigation techniques and reference playbooks
+- [investigation-methodology](https://spotlight.buriedsignals.com/skills/investigation-methodology/SKILL.md): investigation techniques and reference playbooks
 - [follow-the-money](https://spotlight.buriedsignals.com/skills/follow-the-money/SKILL.md): financial and ownership tracing methods
 - [social-media-intelligence](https://spotlight.buriedsignals.com/skills/social-media-intelligence/SKILL.md): account authenticity, coordination, and narrative tracking
 

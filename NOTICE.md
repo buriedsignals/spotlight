@@ -13,7 +13,7 @@ been fully rewritten (no upstream text remains); its methodology is inspired by
 
 ## CTI Expert (MIT with Ethical Use Addendum)
 
-The `technical-investigation` skill, coverage-state discipline in `investigate`,
+The `technical-investigation` skill, coverage-state discipline in `investigation-methodology`,
 contradiction categories in `epistemic-grounding`, public-ledger tracing in
 `follow-the-money`, and verified technical-indicator exporter adapt reviewed
 methods from [CTI Expert](https://github.com/7onez/cti-expert) by **Hieu Ngo /

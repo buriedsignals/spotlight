@@ -37,7 +37,7 @@ cd "$ROOT"
 
 echo "── Structure ──"
 
-expected_skills=(spotlight review integrations ingest report-drafting monitoring provenance-signing acquisition-graduation web-archiving content-access epistemic-grounding shell-safety osint investigate follow-the-money social-media-intelligence technical-investigation)
+expected_skills=(spotlight editorial-review integrations ingest report-drafting monitoring provenance-signing acquisition-graduation web-archiving content-access epistemic-grounding shell-safety osint investigation-methodology follow-the-money social-media-intelligence technical-investigation)
 for skill in "${expected_skills[@]}"; do
   if [ -f "skills/$skill/SKILL.md" ]; then
     ok "skills/$skill/SKILL.md present"

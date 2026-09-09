@@ -36,7 +36,7 @@ Derive keywords from the lead (entity type + geography + task); `python3 scripts
 | Web archives | "old version of website", "deleted page", "archived", "what did the site look like before" | Wayback Machine, Archive.today |
 | Threat intelligence | "is this URL malicious", "domain reputation", "suspicious link" | VirusTotal, URLScan.io, Shodan |
 | People search | "find this person", "phone number lookup", "who is this person" | Pipl, Spokeo, TruePeopleSearch |
-| **Individual investigation** | "investigate this person", "build a profile", "pivot chain", "breach data", "username reuse" | **`invoke-skill("investigate")`** — pivot chains, platform techniques, life events research, case studies |
+| **Individual investigation** | "investigate this person", "build a profile", "pivot chain", "breach data", "username reuse" | **`invoke-skill("investigation-methodology")`** — pivot chains, platform techniques, life events research, case studies |
 | **Financial investigation** | "follow the money", "who owns this company", "beneficial owner", "UBO", "offshore", "shell company", "budget monitoring", "asset tracing" | **`invoke-skill("follow-the-money")`** — corporate ownership tracing, offshore structures, budget/revenue monitoring, asset tracing |
 | Video and image analysis | "verify video", "deepfake detection", "metadata", "is this video manipulated" | InVID, ExifTool, Forensically |
 | Crypto and blockchain | "trace crypto", "wallet analysis", "blockchain transaction" | Chainalysis, Etherscan, Blockchair |
@@ -132,7 +132,7 @@ Say: "For financial investigation methodology, invoke the follow-the-money skill
 
 ## When to Use investigate
 
-If the user already knows their target and needs step-by-step technique guidance, `invoke-skill("investigate")`:
+If the user already knows their target and needs step-by-step technique guidance, `invoke-skill("investigation-methodology")`:
 
 - **Platform-specific techniques** — TikTok timestamps, Instagram full-res extraction, WordPress user enumeration, cross-platform search
 - **Advanced search operators** — Google dork patterns for finding exposed documents, hidden pages, platform-specific content
@@ -142,7 +142,7 @@ If the user already knows their target and needs step-by-step technique guidance
 - **Archiving and evidence recovery** — Wayback Machine wildcards, cache techniques, deleted content recovery, high-res image extraction
 - **Transport investigation** — Maritime AIS analysis, flight tracking with ADS-B Exchange, transponder deception detection
 
-Say: "For the step-by-step technique, invoke the investigate skill."
+Say: "For the step-by-step technique, invoke the investigation-methodology skill."
 
 ## When to Use social-media-intelligence
 
@@ -167,6 +167,6 @@ If the investigation involves social media accounts, viral content, or suspected
 
 | Skill | Use When |
 |---|---|
-| `investigate` | Step-by-step investigation techniques: person research, geolocation, platforms, verification, transport |
+| `investigation-methodology` | Step-by-step investigation techniques: person research, geolocation, platforms, verification, transport |
 | `follow-the-money` | Financial investigation methodology: corporate ownership, offshore structures, budget monitoring, asset tracing |
 | `social-media-intelligence` | Account authenticity, coordinated inauthentic behavior, narrative spread tracking |

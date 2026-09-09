@@ -1,11 +1,12 @@
 acquisition-graduation
 arbiter
 content-access
+editorial-review
 epistemic-grounding
 follow-the-money
 ingest
 integrations
-investigate
+investigation-methodology
 monitoring
 navigator
 osint
@@ -17,7 +18,6 @@ phase-preflight
 phase-report
 provenance-signing
 report-drafting
-review
 shell-safety
 social-media-intelligence
 spotlight

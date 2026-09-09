@@ -483,7 +483,7 @@
   try {
     DATA = JSON.parse(rawEl.textContent);
   } catch (e) {
-    document.body.innerHTML = '<p style="padding:40px;color:#e36b6b;font-family:monospace;">Failed to parse investigation data. The review skill must inject a JSON payload into the <script id="investigation-data"> tag. Raw error: ' + e.message + '</p>';
+    document.body.innerHTML = '<p style="padding:40px;color:#e36b6b;font-family:monospace;">Failed to parse investigation data. The editorial-review skill must inject a JSON payload into the <script id="investigation-data"> tag. Raw error: ' + e.message + '</p>';
     return;
   }
 

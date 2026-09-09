@@ -42,7 +42,7 @@ Use the routing table below to match the user's query to the correct reference f
 
 | Need | Route |
 |---|---|
-| Person behind the company identified — need to build their profile | `invoke-skill("investigate")` — pivot chains, platform techniques, life events research |
+| Person behind the company identified — need to build their profile | `invoke-skill("investigation-methodology")` — pivot chains, platform techniques, life events research |
 | Which tools exist for a specific financial task | `invoke-skill("osint")` — tool catalog with 150+ OSINT tools |
 | Country-specific company registries | OSINT Navigator (navigator.indicator.media) |
 | A domain, IP, URL, hash, document, email header, or public repository is the starting point | `invoke-skill("technical-investigation")` — passive technical investigation |

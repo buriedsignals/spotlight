@@ -8,7 +8,7 @@ This doc is the operator overview. See `integrations/README.md` for the manifest
 
 | Concept | Lives at | Example | What it holds |
 |---|---|---|---|
-| **Skill** | `skills/<id>/SKILL.md` | `osint`, `follow-the-money`, `investigate` | Methodology playbook the agent follows. No credentials. |
+| **Skill** | `skills/<id>/SKILL.md` | `osint`, `follow-the-money`, `investigation-methodology` | Methodology playbook the agent follows. No credentials. |
 | **Integration** | `integrations/<id>/` | `dev-browser`, `junkipedia`, `noosphere-c2pa`, `osint-navigator` | Specific external tool with its own API contract + credentials. |
 
 An agent invokes a **skill** to get *guidance* and calls an **integration** to get *direct data from a specific vendor or platform*. Passive feed signals now live in Mycroft, not Spotlight.

@@ -9,9 +9,49 @@ phase: preflight
 
 Run these checks in order. Stop at the first failure.
 
+## 0. Storage and checkout preconditions
+
+Both checks run before anything else is read or written. They state what must
+be true; they do not describe how any runtime provides storage or a shell.
+
+### Durable case storage
+
+`CASE_ROOT` (from `case_workspace_root`, legacy `cases_root`, or the default
+`cases/`, resolved to an absolute path) must be durable, user-owned storage
+that survives this session. Some runtimes run the agent's shell on a separate,
+ephemeral filesystem. A case written there validates green, passes every gate,
+and is destroyed at session end: total evidence loss with no error, on a
+product whose value is chain of custody.
+
+Confirm it; do not assume it:
+
+1. Resolve the absolute `CASE_ROOT` and show it to the user.
+2. Write a probe: `write-file("{CASE_ROOT}/.spotlight-durability-probe", "<random nonce> <ISO timestamp>")`.
+3. Read it back in step 5, before creating `CASE_DIR`; the nonce must match.
+4. If the path cannot be resolved, is not writable, the read-back fails, or you
+   cannot tell whether the location outlives the session, stop and ask:
+
+> "Spotlight needs a case directory on durable, user-owned storage that survives this session. `{CASE_ROOT}` could not be confirmed. Which absolute path should hold the case files?"
+
+Never choose a fallback location silently. Record the resolved path and the
+check result in `.spotlight-config.json` (step 8).
+
+### Co-located checkout
+
+`skills/`, `scripts/`, `integrations/`, and `schemas/` sit in one checkout, and
+every `execute-shell` call in Spotlight runs from a shell whose working
+directory is that checkout root (`AGENTS.md`, "Checkout layout"). Confirm:
+
+```
+execute-shell("test -f skills/phase-preflight/SKILL.md && test -f scripts/spotlight-orchestration.py && echo ok")
+```
+
+If this does not print `ok`, establish such a shell before continuing. Do not
+rewrite script paths to guessed locations.
+
 ## 1. Config check
 
-Use `read-file` on `.spotlight-config.json` in the working directory. If it exists and contains valid `search_library`, `vault_path`, and `case_workspace_root` (or legacy `cases_root`) fields, update `last_used` to the current timestamp and skip to step 5 (project setup).
+Use `read-file` on `.spotlight-config.json` in the working directory. If it exists and contains valid `search_library`, `vault_path`, and `case_workspace_root` (or legacy `cases_root`) fields, update `last_used` to the current timestamp, refresh the `storage` block from step 0, and skip to step 5 (project setup).
 
 `case_workspace_root` is the active investigation workspace. `vault_path` is the durable knowledge vault. Do not write active case files into the vault. At case start, query the vault for prior context; at case end, ask before ingesting verified material into the vault.
 
@@ -35,7 +75,7 @@ If SearXNG is unreachable, `search` falls back to Firecrawl when `FIRECRAWL_API_
 Confirm the following skills resolve via `invoke-skill`:
 
 - `osint` — tool routing and technique catalog
-- `investigate` — step-by-step techniques
+- `investigation-methodology` — step-by-step techniques
 - `follow-the-money` — financial investigation methodology
 - `epistemic-grounding` — claim-to-evidence grounding and confidence caps
 - `shell-safety` — safe command construction and destructive-operation probes
@@ -58,7 +98,7 @@ Agents have access to the following skills by their own `invoke-skill` calls:
 | `epistemic-grounding` | investigator, fact-checker | Test whether exact evidence actually supports exact claims; cap confidence when grounding is weak |
 | `shell-safety` | investigator, fact-checker | Validate untrusted values before execute-shell; require probes for destructive operations |
 | `provenance-signing` | orchestrator, user | Build a case provenance manifest and optionally hand it to Noosphere C2PA signing |
-| `osint`, `investigate`, `follow-the-money` | investigator | Tool routing + technique catalog |
+| `osint`, `investigation-methodology`, `follow-the-money` | investigator | Tool routing + technique catalog |
 | `social-media-intelligence` | investigator, fact-checker | Account authenticity, coordination detection, narrative tracking |
 
 When building spawn prompts, remind agents these are available and expected.
@@ -72,7 +112,7 @@ contract and apply this runtime table:
 | Parent phase | Required child skills | Conditional child skills | Validation |
 |---|---|---|---|
 | Phase 0 Preflight | `integrations` | `shell-safety` if preflight executes dynamic shell values | `.spotlight-config.json` stores full integration status, not only booleans. |
-| Phase 2 Methodology | `integrations`, `osint`, `investigate`, `epistemic-grounding` | `follow-the-money`, `social-media-intelligence`, `technical-investigation`, `content-access` | `methodology.json` includes `skills_invoked[]` and required Navigator fields when green. |
+| Phase 2 Methodology | `integrations`, `osint`, `investigation-methodology`, `epistemic-grounding` | `follow-the-money`, `social-media-intelligence`, `technical-investigation`, `content-access` | `methodology.json` includes `skills_invoked[]` and required Navigator fields when green. |
 | Phase 3 Execution | `epistemic-grounding`, `shell-safety`, `web-archiving` | `content-access`, `acquisition-graduation`, `social-media-intelligence`, `technical-investigation` | findings contain evidence refs, archives, confidence caps. |
 | Phase 3 Fact-check | `epistemic-grounding`, `content-access`, `shell-safety` | `osint`, `social-media-intelligence`, `technical-investigation`, `web-archiving` | fact-check output independently checks investigator claims. |
 | Phase 5 Report | `report-drafting`, `epistemic-grounding` | `provenance-signing`, `technical-investigation` | report claims map to evidence ledger. |
@@ -101,6 +141,19 @@ through explicit migration configuration; never infer them from directory
 contents.
 
 ## 5. Project setup
+
+### Durability read-back
+
+Before any case directory is created, in every mode:
+
+```
+read-file("{CASE_ROOT}/.spotlight-durability-probe")
+```
+
+The nonce must equal the one written in step 0. If the file is missing or the
+nonce differs, `CASE_ROOT` is not durable storage: stop and ask the user for an
+absolute path, exactly as in step 0. On a match, delete the probe file and
+continue.
 
 ### Flue-native case binding
 
@@ -157,8 +210,14 @@ Write `.spotlight-config.json` via `write-file`:
   "search_library": "<detected library>",
   "vault_path": "<user-provided path or ./vault/>",
   "vault_type": "openknowledge | tolaria | obsidian_legacy | directory",
-  "case_workspace_root": "cases/",
-  "cases_root": "cases/",
+  "case_workspace_root": "<absolute CASE_ROOT from step 0>",
+  "cases_root": "<absolute CASE_ROOT from step 0>",
+  "storage": {
+    "case_root_resolved": "<absolute CASE_ROOT from step 0>",
+    "durability": "confirmed",
+    "durability_check": "probe write + read-back",
+    "durability_checked_at": "<ISO timestamp>"
+  },
   "integrations": {
     "osint_navigator": {
       "status": "unknown",

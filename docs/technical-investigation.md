@@ -42,7 +42,7 @@ boundary.
 | Local document metadata and raw email headers | `skills/technical-investigation/references/document-message-forensics*.md` | Local-first analysis with originals and derived observations kept separate. |
 | Public GitHub history | `skills/technical-investigation/references/github-public*.md` | Public repositories, commits, forks, tags, and releases only. |
 | Public-ledger tracing | `skills/follow-the-money/references/blockchain-tracing.md` | Transaction-flow leads with provider-label and wallet-clustering limits. |
-| Attempted, skipped, blocked, and null paths | `skills/investigate/references/coverage-discipline.md` | Coverage records due diligence; it does not score publishability. |
+| Attempted, skipped, blocked, and null paths | `skills/investigation-methodology/references/coverage-discipline.md` | Coverage records due diligence; it does not score publishability. |
 | Material contradictions | `skills/epistemic-grounding/SKILL.md` | Categories route follow-up checks; no trust scores or automatic winner. |
 | JSON, CSV, and STIX indicator export | `scripts/export-verified-indicators.py` | Rewritten against Spotlight findings and fact-check contracts. |
 

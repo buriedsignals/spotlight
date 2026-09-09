@@ -5,15 +5,15 @@ const path = require("path");
 
 const ROOT = path.join(__dirname, "..");
 const template = fs.readFileSync(
-  path.join(ROOT, "skills", "review", "references", "template.html"),
+  path.join(ROOT, "skills", "editorial-review", "references", "template.html"),
   "utf8"
 );
 const skill = fs.readFileSync(
-  path.join(ROOT, "skills", "review", "SKILL.md"),
+  path.join(ROOT, "skills", "editorial-review", "SKILL.md"),
   "utf8"
 );
 const feedbackSchema = fs.readFileSync(
-  path.join(ROOT, "skills", "review", "references", "feedback-schema.md"),
+  path.join(ROOT, "skills", "editorial-review", "references", "feedback-schema.md"),
   "utf8"
 );
 

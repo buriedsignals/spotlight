@@ -115,7 +115,7 @@ Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for larg
 
 ### Pipeline-support skills (invocable by orchestrator)
 
-- **`review`** — post-Gate-1 HTML review artifact. Renders a self-contained `{CASE_DIR}/review.html` that exports structured feedback for validation by the Gate 1 owner. It never spawns agents or derives phase state. No server required.
+- **`editorial-review`** — post-Gate-1 HTML review artifact. Renders a self-contained `{CASE_DIR}/review.html` that exports structured feedback for validation by the Gate 1 owner. It never spawns agents or derives phase state. No server required.
 - **`integrations`** — routing layer for external tool integrations (dev-browser, Junkipedia, Arbiter, Noosphere C2PA, OSINT Navigator, Unpaywall). Reads live preflight status, maps investigation tasks to integrations. See `integrations/` at repo root for manifests + per-integration usage docs.
 - **`ingest`** — Phase 6 archival from the resolver-selected case to its configured vault. It runs only after a durable requested transition and uses an `.ingest-lock` plus the Knowledge Workspace Port for concurrency and projection.
 - **`monitoring`** — case-level monitoring recommendations and explicit Mycroft handoff.
@@ -129,7 +129,7 @@ Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for larg
 - **`epistemic-grounding`** — claim-to-evidence grounding, confidence caps, and failure routing for weak or adjacent evidence.
 - **`shell-safety`** — safe command construction, validation helpers, and destructive-operation probe rules.
 - **`osint`** — tool routing table + 150-tool catalog + OSINT Navigator integration.
-- **`investigate`** — step-by-step techniques (geolocation, person, platform, verification, transport).
+- **`investigation-methodology`** — step-by-step techniques (geolocation, person, platform, verification, transport).
 - **`follow-the-money`** — financial methodology (UBO, offshore, budgets, assets, public blockchain tracing).
 - **`social-media-intelligence`** — account authenticity, coordination detection, narrative tracking.
 - **`technical-investigation`** — passive technical indicators and infrastructure history, local document/email metadata, public GitHub history, and verified-indicator export.
@@ -165,7 +165,7 @@ The body is instructions for the runtime's model: what to do when invoked, which
 
 Unlike skills (which are invoked), agents are **spawned**. Their markdown files are prompt bundles consumed by `spawn-agent`.
 
-- **`investigator.md`** — two modes: `PLANNING` (writes `methodology.json`) and `EXECUTION` (writes `findings.json` + appends `investigation-log.json`). Iteration limit 80. Loads skills acquisition-graduation, osint, investigate, follow-the-money, web-archiving, content-access, epistemic-grounding, shell-safety, social-media-intelligence, and technical-investigation.
+- **`investigator.md`** — two modes: `PLANNING` (writes `methodology.json`) and `EXECUTION` (writes `findings.json` + appends `investigation-log.json`). Iteration limit 80. Loads skills acquisition-graduation, osint, investigation-methodology, follow-the-money, web-archiving, content-access, epistemic-grounding, shell-safety, social-media-intelligence, and technical-investigation.
 - **`fact-checker.md`** — SIFT methodology, verdict taxonomy, independent from investigator. Iteration limit 50. Loads skills osint, web-archiving, content-access, epistemic-grounding, shell-safety, and technical-investigation. Cannot `spawn-agent` (no recursive spawning).
 
 Frontmatter declares `allowed_verbs`, `preferred_model` (per-runtime mapping), `vault_context` (whether to query the vault before research).

@@ -160,7 +160,7 @@ the failure clearly. Call `spotlight_resolve`; its `resume.resume_at` must be
 
 ### `resume_at: review`
 
-Invoke `review` to produce `{CASE_DIR}/review.html`, a self-contained artifact
+Invoke `editorial-review` to produce `{CASE_DIR}/review.html`, a self-contained artifact
 for inspecting findings and exporting structured feedback. Then call
 `spotlight_resolve`; its `resume.resume_at` must be `seal`.
 

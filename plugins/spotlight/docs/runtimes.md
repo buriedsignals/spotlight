@@ -142,7 +142,7 @@ for skill_dir in /path/to/spotlight/skills/*/; do
 done
 ```
 
-Creates symlinks for all skills, including `spotlight`, `ingest`, `monitoring`, `acquisition-graduation`, `web-archiving`, `content-access`, `epistemic-grounding`, `shell-safety`, `osint`, `investigate`, `follow-the-money`, `social-media-intelligence`, `integrations`, and `review`. Live links — `git pull` in the spotlight repo updates everything.
+Creates symlinks for all skills, including `spotlight`, `ingest`, `monitoring`, `acquisition-graduation`, `web-archiving`, `content-access`, `epistemic-grounding`, `shell-safety`, `osint`, `investigation-methodology`, `follow-the-money`, `social-media-intelligence`, `integrations`, and `editorial-review`. Live links — `git pull` in the spotlight repo updates everything.
 
 `AGENTS.md` is loaded as Rules (https://opencode.ai/docs/rules/), walked up from cwd to the git worktree. Drop a project `AGENTS.md` in your investigations directory and opencode picks it up automatically.
 
