@@ -10,7 +10,11 @@ and trust boundary exist.
 from __future__ import annotations
 
 import argparse
-import fcntl
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
+    import msvcrt
 import hashlib
 import json
 import os
@@ -457,7 +461,7 @@ def _atomic_write(root: Path, target: Path, body: bytes, mode: int) -> None:
     _ensure_parent(root, target)
     descriptor, temporary = tempfile.mkstemp(prefix=".spotlight-projection-", dir=target.parent)
     try:
-        os.fchmod(descriptor, mode)
+        _owner_only_descriptor(descriptor, Path(temporary), mode)
         with os.fdopen(descriptor, "wb", closefd=True) as handle:
             descriptor = -1
             handle.write(body)
@@ -490,6 +494,35 @@ def _receipt_path(root: Path, receipt_id: str) -> Path:
     return root / ".knowledge-workspace" / "projection-receipts" / (_safe_key(receipt_id) + ".json")
 
 
+
+def _lock_exclusive(descriptor: int) -> None:
+    """Take a non-blocking exclusive lock; raise BlockingIOError when held."""
+    if fcntl is not None:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return
+    try:
+        msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+    except OSError as exc:
+        raise BlockingIOError(str(exc)) from exc
+
+
+def _unlock(descriptor: int) -> None:
+    if fcntl is not None:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        return
+    try:
+        msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+    except OSError:
+        pass
+
+
+def _owner_only_descriptor(descriptor: int, path, mode: int = 0o600) -> None:
+    """chmod through the descriptor where the platform supports it."""
+    if hasattr(os, "fchmod"):
+        os.fchmod(descriptor, mode)
+    else:
+        os.chmod(path, mode)
+
 @contextmanager
 def workspace_projection_lock(root: Path):
     lock_path = root / ".knowledge-workspace" / "projection.lock"
@@ -497,15 +530,15 @@ def workspace_projection_lock(root: Path):
     _reject_symlinks(root, lock_path)
     descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
     try:
-        os.fchmod(descriptor, 0o600)
+        _owner_only_descriptor(descriptor, lock_path)
         try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _lock_exclusive(descriptor)
         except BlockingIOError as exc:
             raise ProjectionError("workspace_busy", "another local workspace projection is active") from exc
         yield
     finally:
         try:
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            _unlock(descriptor)
         finally:
             os.close(descriptor)
 
@@ -934,13 +967,13 @@ def serialized_worker_lock(database: Path):
     try:
         os.chmod(lock_path, 0o600)
         try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _lock_exclusive(descriptor)
         except BlockingIOError as exc:
             raise ProjectionError("serialized_runner_busy", "another local projection worker is active") from exc
         yield
     finally:
         try:
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            _unlock(descriptor)
         finally:
             os.close(descriptor)
 

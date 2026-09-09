@@ -1424,18 +1424,32 @@ def resolve_root(path: Path, label: str) -> Path:
     return resolved
 
 
+# Windows has no uid and reports POSIX-shaped modes that only mirror the
+# read-only bit; per-user profile ACLs already scope these files there. Keep
+# the POSIX ownership/mode contract where it is meaningful and skip it on NT.
+_POSIX_OWNERSHIP = hasattr(os, "getuid")
+
+
+def _owned_by_current_user(metadata: os.stat_result) -> bool:
+    return not _POSIX_OWNERSHIP or metadata.st_uid == os.getuid()
+
+
+def _mode_is_owner_only(metadata: os.stat_result) -> bool:
+    return not _POSIX_OWNERSHIP or not (stat.S_IMODE(metadata.st_mode) & 0o077)
+
+
 def _prepare_private_database(path: Path) -> bool:
     _reject_symlink_path(path)
     if path.exists():
         metadata = path.stat()
         mode = stat.S_IMODE(metadata.st_mode)
-        if mode & 0o077:
+        if not _mode_is_owner_only(metadata):
             raise ContractError(
                 f"database permissions must be owner-only (0600), got {mode:04o}"
             )
         if not path.is_file():
             raise ContractError(f"database is not a regular file: {path}")
-        if metadata.st_uid != os.getuid() or metadata.st_nlink != 1:
+        if not _owned_by_current_user(metadata) or metadata.st_nlink != 1:
             raise ContractError("database must be owned by the current user and not hard-linked")
         return False
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -1443,12 +1457,13 @@ def _prepare_private_database(path: Path) -> bool:
     # directory, and mkdir -p uses umask (typically 0755). OpenKnowledge and
     # this port both refuse group/world-readable database dirs.
     parent_meta = path.parent.stat()
-    if parent_meta.st_uid != os.getuid():
+    if not _owned_by_current_user(parent_meta):
         raise ContractError(
             f"database directory must be owned by the current user: {path.parent}"
         )
-    os.chmod(path.parent, 0o700)
-    if stat.S_IMODE(path.parent.stat().st_mode) & 0o077:
+    if _POSIX_OWNERSHIP:
+        os.chmod(path.parent, 0o700)
+    if not _mode_is_owner_only(path.parent.stat()):
         raise ContractError(
             f"database directory permissions must be owner-only: {path.parent}"
         )
@@ -3087,13 +3102,13 @@ def open_existing_database(path: Path) -> sqlite3.Connection:
     _reject_symlink_path(path)
     if not path.is_file():
         raise ContractError(f"database not found: {path}")
-    mode = stat.S_IMODE(path.stat().st_mode)
-    if mode & 0o077:
+    metadata = path.stat()
+    mode = stat.S_IMODE(metadata.st_mode)
+    if not _mode_is_owner_only(metadata):
         raise ContractError(
             f"database permissions must be owner-only (0600), got {mode:04o}"
         )
-    metadata = path.stat()
-    if metadata.st_uid != os.getuid() or metadata.st_nlink != 1:
+    if not _owned_by_current_user(metadata) or metadata.st_nlink != 1:
         raise ContractError("database must be owned by the current user and not hard-linked")
     uri = "file:" + urllib.parse.quote(str(path), safe="/") + "?mode=ro"
     connection = sqlite3.connect(uri, timeout=5.0, uri=True)

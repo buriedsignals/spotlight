@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-import fcntl
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
+    import msvcrt
 import json
 import os
 import stat
@@ -125,7 +129,10 @@ def load_state(case: Path, data_descriptor: int | None = None) -> dict[str, Any]
 def transaction(case: Path) -> Iterator[int]:
     with open_case_directory(case, ("data",)) as descriptor:
         try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            if fcntl is not None:
+                fcntl.flock(descriptor, fcntl.LOCK_EX)
+            else:
+                msvcrt.locking(descriptor, msvcrt.LK_LOCK, 1)
         except OSError as exc:
             raise OrchestrationError(
                 f"cannot lock the case data directory: {exc}"
@@ -133,4 +140,10 @@ def transaction(case: Path) -> Iterator[int]:
         try:
             yield descriptor
         finally:
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            if fcntl is not None:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            else:
+                try:
+                    msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+                except OSError:
+                    pass
