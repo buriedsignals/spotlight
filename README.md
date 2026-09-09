@@ -8,7 +8,7 @@
 
 [Install](#install) | [Workflow](#investigation-workflow) | [Integrations](#integrations) | [Runtimes](#runtimes) | [Website](https://spotlight.buriedsignals.com/)
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-00c853?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)[![17 Skills](https://img.shields.io/badge/skills-17-0080ff?style=for-the-badge&logo=bookstack&logoColor=white)](https://github.com/buriedsignals/spotlight/tree/main/skills)[![7 Runtimes](https://img.shields.io/badge/runtimes-7-aa00ff?style=for-the-badge&logo=windowsterminal&logoColor=white)](#runtimes)[![Sovereign](https://img.shields.io/badge/sovereign_mode-SearXNG_+_Crawl4AI_+_local_models-00bfa5?style=for-the-badge&logo=shield&logoColor=white)](#source-acquisition)
+[![License: MIT](https://img.shields.io/badge/license-MIT-00c853?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)[![25 Skills](https://img.shields.io/badge/skills-25-0080ff?style=for-the-badge&logo=bookstack&logoColor=white)](https://github.com/buriedsignals/spotlight/tree/main/skills)[![7 Runtimes](https://img.shields.io/badge/runtimes-7-aa00ff?style=for-the-badge&logo=windowsterminal&logoColor=white)](#runtimes)[![Sovereign](https://img.shields.io/badge/sovereign_mode-SearXNG_+_Crawl4AI_+_local_models-00bfa5?style=for-the-badge&logo=shield&logoColor=white)](#source-acquisition)
 
 [![Stars](https://img.shields.io/github/stars/buriedsignals/spotlight?style=flat-square&logo=github&label=Stars)](https://github.com/buriedsignals/spotlight/stargazers)[![Issues](https://img.shields.io/github/issues/buriedsignals/spotlight?style=flat-square&logo=github&label=Issues)](https://github.com/buriedsignals/spotlight/issues)[![Last Commit](https://img.shields.io/github/last-commit/buriedsignals/spotlight?style=flat-square&logo=github&label=Last%20Commit)](https://github.com/buriedsignals/spotlight/commits)[![Contributors](https://img.shields.io/github/contributors/buriedsignals/spotlight?style=flat-square&logo=github&label=Contributors)](https://github.com/buriedsignals/spotlight/graphs/contributors)
 
@@ -215,6 +215,17 @@ See [docs/integrations.md](docs/integrations.md) for setup and routing details.
 
 ## Install
 
+Two routes, one decision:
+
+- **Engine (supported).** Buried Signals Engine (`bsig`) installs a
+  catalog-pinned, signed release, places skills for every runtime it detects,
+  holds integration credentials in the OS keychain, and updates in place.
+  Choose this for any real investigation, and for every journalist install.
+- **Source (lighter).** A sparse clone plus per-skill links, described under
+  [Install from source](#install-from-source-agents). Skills load, scripts run,
+  nothing else: no credentials, no updates, no repair. Choose this only when an
+  agent or developer is working from a clone and will re-link after every pull.
+
 **Buried Signals Engine (`bsig`) is Spotlight's only installation authority.**
 Indicator Labs submits the same Engine plans while adding guided runtime/model
 selection, credential prompts, repair, and automatic updates for
@@ -275,7 +286,7 @@ Then link each skill directory into your agent's skills directory (Windows: use
 | Agent | Link |
 |---|---|
 | Goose, Cursor (shared agents store) | `mkdir -p ~/.agents/skills/spotlight && for s in skills/*/; do ln -s "$PWD/$s" ~/.agents/skills/spotlight/$(basename "$s"); done` |
-| Codex CLI, ChatGPT Desktop | `mkdir -p ~/.codex/skills && for s in skills/*/; do ln -s "$PWD/$s" ~/.codex/skills/$(basename "$s"); done` |
+| Codex CLI, ChatGPT Desktop | `mkdir -p ~/.codex/skills && for s in skills/*/; do ln -s "$PWD/$s" ~/.codex/skills/$(basename "$s"); done` — Codex lists them as `spotlight:<skill>`, the namespace taken from the link target |
 | Claude Code (flat) | `mkdir -p ~/.claude/skills && for s in skills/*/; do ln -s "$PWD/$s" ~/.claude/skills/$(basename "$s"); done` |
 | Claude Code (namespaced, `spotlight:<skill>`) | no links: `claude --plugin-dir "$PWD"` — the checkout root is a plugin root |
 | Gemini CLI | no links: `ln -s AGENTS.md GEMINI.md` and run from the checkout root |
