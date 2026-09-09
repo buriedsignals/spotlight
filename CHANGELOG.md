@@ -4,6 +4,55 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed — BREAKING: two skill ids renamed
+
+- `investigate` is now `investigation-methodology` and `review` is now
+  `editorial-review`. Both old names collide with reserved built-in command
+  names in at least one frontier runtime, which silently disables any user
+  skill of the same name. Every reference in skills, agents, manifests, docs,
+  and tests uses the new ids. The orchestration
+  state token `resume_at: review` is unchanged.
+- **Existing source installs:** after pulling, re-link `skills/` so the two new
+  directories are discovered and remove the two stale links
+  (`~/.claude/skills/{investigate,review}`,
+  `~/.agents/skills/spotlight/{investigate,review}`, or your runtime's
+  equivalent); links to the old directory names dangle after `git pull`.
+- **Engine installs** pin a commit in Engine's signed catalog and are unaffected
+  until that pin moves. Re-pinning past this change must update the two
+  catalog `id`/`path` entries, regenerate `skills.manifest`, and re-sign.
+- **Existing cases** that list `investigate` in `methodology.json`
+  `skills_invoked` remain valid: `validate-methodology-navigator.py` maps the
+  legacy ids to the new ones. Case artifacts are not rewritten.
+- Landing-site URLs `skills/investigate/SKILL.md` and `skills/review/SKILL.md`
+  no longer resolve; `llms.txt` and `llms_full.txt` point at the new paths.
+
+### Changed — install preconditions (portable requirements, no runtime branching)
+
+- Phase 0 now requires `CASE_ROOT` to resolve to durable, user-owned storage
+  that survives the session, confirmed by a probe write and read-back before any
+  case file is created and recorded in `.spotlight-config.json` under `storage`.
+  An unconfirmed root stops preflight and asks the user instead of guessing.
+- `AGENTS.md` states that `skills/`, `scripts/`, `integrations/`, and `schemas/`
+  must be co-located in one checkout reachable from a single shell whose working
+  directory is the checkout root, established before Phase 0; Phase 0 verifies
+  it. Skills keep their root-relative script paths.
+- README: the Claude Code source-install row links each skill directory
+  (linking the repository root discovered nothing); Codex CLI / ChatGPT
+  Desktop get their own `~/.codex/skills` row and Gemini its `GEMINI.md` row
+  instead of the shared agents store; a note explains that some runtimes list
+  new skills only on the next turn.
+
+### Removed — plugin marketplace payload
+
+- `plugins/spotlight/` (a generated copy of the repository),
+  `.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`,
+  `scripts/build-plugin-payload.py`, and `tests/plugin-distribution-check.py`
+  are gone. The marketplace route is retired; Codex plugins were
+  marketplace-only and Cursor never had a plugin path. The checkout root keeps
+  `.claude-plugin/plugin.json`, so `claude --plugin-dir /path/to/spotlight`
+  still loads every skill namespaced as `spotlight:<id>`, and Engine keeps
+  building its own plugin root under `~/.claude/skills/spotlight/`.
+
 ### Changed — open-source credential guidance
 
 - Install and preflight guidance now distinguishes Indicator Labs' managed

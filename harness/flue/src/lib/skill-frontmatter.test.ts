@@ -31,7 +31,7 @@ function validateFrontmatter(markdown: string, label: string, errors: string[]):
 	}
 }
 
-test('every manifest skill has Flue-loadable frontmatter and an identical generated mirror', () => {
+test('every manifest skill has Flue-loadable frontmatter', () => {
 	const skillIds = readFileSync(new URL('skills.manifest', ROOT), 'utf8')
 		.split(/\r?\n/)
 		.map((line) => line.trim())
@@ -40,15 +40,8 @@ test('every manifest skill has Flue-loadable frontmatter and an identical genera
 
 	for (const skillId of skillIds) {
 		const canonicalPath = new URL(`skills/${skillId}/SKILL.md`, ROOT);
-		const mirrorPath = new URL(`plugins/spotlight/skills/${skillId}/SKILL.md`, ROOT);
 		const canonical = readFileSync(canonicalPath);
-		const mirror = readFileSync(mirrorPath);
-
-		if (!canonical.equals(mirror)) {
-			errors.push(`${skillId}: generated mirror differs from canonical skill`);
-		}
 		validateFrontmatter(canonical.toString('utf8'), `canonical ${skillId}`, errors);
-		validateFrontmatter(mirror.toString('utf8'), `generated ${skillId}`, errors);
 	}
 
 	assert.equal(errors.length, 0, errors.join('\n'));

@@ -26,8 +26,6 @@ API_DOCS = ROOT / "docs" / "arbiter-api.md"
 DOCS_README = ROOT / "docs" / "README.md"
 INTEGRATIONS_DOCS = ROOT / "docs" / "integrations.md"
 CHANGELOG = ROOT / "CHANGELOG.md"
-PLUGIN_INTEGRATION = ROOT / "plugins" / "spotlight" / "integrations" / "arbiter" / "integration.md"
-PLUGIN_SKILL = ROOT / "plugins" / "spotlight" / "skills" / "arbiter" / "SKILL.md"
 INTEGRATIONS_README = ROOT / "integrations" / "README.md"
 PREFLIGHT = ROOT / "integrations" / "preflight.py"
 SIGNUP_URL = (
@@ -239,8 +237,6 @@ def main() -> int:
         (API_DOCS, API_DOCS.read_text(encoding="utf-8")),
         (INTEGRATIONS_DOCS, INTEGRATIONS_DOCS.read_text(encoding="utf-8")),
         (INTEGRATIONS_README, INTEGRATIONS_README.read_text(encoding="utf-8")),
-        (PLUGIN_INTEGRATION, PLUGIN_INTEGRATION.read_text(encoding="utf-8")),
-        (PLUGIN_SKILL, PLUGIN_SKILL.read_text(encoding="utf-8")),
     ]
     claim_docs = docs + [(CHANGELOG, CHANGELOG.read_text(encoding="utf-8"))]
     check_manifest(manifest, errors)

@@ -36,7 +36,7 @@ only adaptations reviewed at `active_sha`.
 3. Diff only paths named in `source-map.json`, plus the upstream license.
 4. Rewrite accepted changes into Spotlight's contracts and record deliberate
    divergences.
-5. Run the CTI, manifest, schema, safety, and plugin-distribution checks.
+5. Run the CTI, manifest, schema, and safety checks.
 6. Use `--update-seen` when acknowledging the observed revision, whether it is
    accepted or deliberately skipped. Advance `active_sha` only in a reviewed
    change that adapts accepted material.

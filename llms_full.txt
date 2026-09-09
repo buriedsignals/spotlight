@@ -160,28 +160,28 @@ Monitoring recommendations can come from the investigator or the fact-checker an
 The public skill registry documented in `AGENTS.md` is:
 
 - `spotlight`: investigation orchestrator and gate logic
-- `review`: post-Gate-1 HTML review artifact and feedback loop
+- `editorial-review`: post-Gate-1 HTML review artifact and feedback loop
 - `integrations`: routing layer for dev-browser, Junkipedia, OSINT Navigator, and other external tools
 - `ingest`: knowledge archival into a vault
 - `monitoring`: monitoring orchestration
 - `web-archiving`: evidence preservation workflows
 - `content-access`: paywall and access-method handling
 - `osint`: OSINT tool routing and catalog
-- `investigate`: step-by-step investigation techniques
+- `investigation-methodology`: step-by-step investigation techniques
 - `follow-the-money`: financial methodology
 - `social-media-intelligence`: account authenticity and narrative tracking
 
 Canonical URLs:
 
 - spotlight: https://spotlight.buriedsignals.com/skills/spotlight/SKILL.md
-- review: https://spotlight.buriedsignals.com/skills/review/SKILL.md
+- editorial-review: https://spotlight.buriedsignals.com/skills/editorial-review/SKILL.md
 - integrations: https://spotlight.buriedsignals.com/skills/integrations/SKILL.md
 - ingest: https://spotlight.buriedsignals.com/skills/ingest/SKILL.md
 - monitoring: https://spotlight.buriedsignals.com/skills/monitoring/SKILL.md
 - web-archiving: https://spotlight.buriedsignals.com/skills/web-archiving/SKILL.md
 - content-access: https://spotlight.buriedsignals.com/skills/content-access/SKILL.md
 - osint: https://spotlight.buriedsignals.com/skills/osint/SKILL.md
-- investigate: https://spotlight.buriedsignals.com/skills/investigate/SKILL.md
+- investigation-methodology: https://spotlight.buriedsignals.com/skills/investigation-methodology/SKILL.md
 - follow-the-money: https://spotlight.buriedsignals.com/skills/follow-the-money/SKILL.md
 - social-media-intelligence: https://spotlight.buriedsignals.com/skills/social-media-intelligence/SKILL.md
 

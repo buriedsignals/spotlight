@@ -64,7 +64,7 @@ This records method provenance, not evidence for a factual claim.
 - `invoke-skill("web-archiving")` to preserve public technical evidence.
 - `invoke-skill("content-access")` when a relevant public source is inaccessible.
 - `invoke-skill("follow-the-money")` when a public blockchain trail becomes a financial-flow question.
-- `invoke-skill("investigate")` for the investigation-wide coverage ledger.
+- `invoke-skill("investigation-methodology")` for the investigation-wide coverage ledger.
 
 ## Credits
 

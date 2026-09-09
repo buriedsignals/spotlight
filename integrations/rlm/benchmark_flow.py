@@ -48,7 +48,7 @@ def prepare_case(fixture: Path, labels: dict[str, Any]) -> Path:
                 "lead": labels["lead"],
                 "planned_at": utc_now(),
                 "brief_directions": ["inspect local corpus for procurement leads"],
-                "skills_invoked": ["integrations", "investigate", "epistemic-grounding"],
+                "skills_invoked": ["integrations", "investigation-methodology", "epistemic-grounding"],
                 "navigator": {"required": False, "used": False, "fallback_used": True, "fallback_reason": "local dummy fixture"},
                 "investigation_plan": [
                     {

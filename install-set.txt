@@ -4,8 +4,10 @@
 #
 #   git sparse-checkout set $(grep -v '^#' install-set.txt)
 #
-# Not listed: cases/ (your investigations live outside the checkout), harness/
-# (non-frontier local-model runtime), plugins/ docs/ evals/ tests/ (development).
+# .claude-plugin holds only plugin.json, which makes the checkout root a Claude
+# Code plugin root for `claude --plugin-dir`. Not listed: cases/ (your
+# investigations live outside the checkout), harness/ (non-frontier local-model
+# runtime), docs/ evals/ tests/ (development).
 skills
 agents
 scripts
@@ -15,4 +17,3 @@ monitoring
 third_party
 upstreams
 .claude-plugin
-.agents

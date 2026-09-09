@@ -36,5 +36,5 @@ Each skill follows the [Agent Skills specification](https://agentskills.io/speci
 - `skills.manifest` is the engine-resolved installation and discovery boundary.
 - `skills-manifest.json` is the maintenance and phase-assignment contract.
 - `harness/composition.json` records the intended role-to-skill bundles.
-- `plugins/spotlight/` is generated from the canonical repository sources; do
-  not edit its copied skills directly.
+- The repository root doubles as a Claude Code plugin root
+  (`.claude-plugin/plugin.json`); there is no generated plugin copy.

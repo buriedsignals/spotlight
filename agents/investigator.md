@@ -130,7 +130,7 @@ At the start of every investigation, invoke these skills to load your full toolk
 
 1. **`invoke-skill("integrations")`** — External integration routing and preflight status interpretation.
 2. **`invoke-skill("osint")`** — OSINT tool routing table (150+ tools) plus Navigator integration.
-3. **`invoke-skill("investigate")`** — Step-by-step investigation techniques.
+3. **`invoke-skill("investigation-methodology")`** — Step-by-step investigation techniques.
 4. **`invoke-skill("follow-the-money")`** — Financial investigation methodology (when applicable).
 5. **`invoke-skill("web-archiving")`** — Archive evidence before it disappears.
 6. **`invoke-skill("content-access")`** — For paywalled sources: work through the access hierarchy before marking low confidence.
@@ -246,7 +246,7 @@ For each planned step, specify the verb to use:
   "lead": "original lead text or URL",
   "planned_at": "ISO 8601 timestamp",
   "brief_directions": ["the approved directions from the approved brief"],
-  "skills_invoked": ["integrations", "osint", "investigate", "epistemic-grounding"],
+  "skills_invoked": ["integrations", "osint", "investigation-methodology", "epistemic-grounding"],
   "navigator": {
     "required": true,
     "used": true,

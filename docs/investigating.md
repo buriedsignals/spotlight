@@ -57,7 +57,7 @@ Purpose: make sure the environment is sane before any research starts. Runs once
 
 1. **Config check** — does `.spotlight-config.json` exist with valid `search_library` and `vault_path`? If yes, skip to step 5.
 2. **Search library detection** — `firecrawl` CLI must be on PATH. Abort with setup instructions if not.
-3. **OSINT skill availability** — confirm `osint`, `investigate`, `follow-the-money`, `epistemic-grounding`, `shell-safety`, `acquisition-graduation`, `social-media-intelligence` skills resolve.
+3. **OSINT skill availability** — confirm `osint`, `investigation-methodology`, `follow-the-money`, `epistemic-grounding`, `shell-safety`, `acquisition-graduation`, `social-media-intelligence` skills resolve.
 3.5. **Agent skill inventory** — record which skills each agent has access to (for spawn prompt construction).
 4. **Vault configuration** — ask the user where to archive findings; detect Obsidian vs directory.
 5. **Project setup** — derive slug from lead, create `{CASE_DIR}/{data,research}/`.
@@ -295,7 +295,7 @@ The user approves the investigation, requests follow-up cycles (re-enter Phase 3
 
 ### Review artifact (after Gate 1 approval)
 
-After Gate 1 approval, the orchestrator invokes the `review` skill to produce
+After Gate 1 approval, the orchestrator invokes the `editorial-review` skill to produce
 `{CASE_DIR}/review.html`. This self-contained artifact lets the journalist
 inspect findings, verdicts, grounding, evidence references, local sources, and
 case provenance. It exports structured `review-feedback.json`; the journalist
@@ -303,7 +303,7 @@ returns that file to the Gate 1 owner, which validates targets, converts
 actionable feedback to bounded instructions, and records `requestFollowUp`.
 Feedback-file presence never triggers a phase or directly spawns an agent.
 
-See `skills/review/SKILL.md` for full details.
+See `skills/editorial-review/SKILL.md` for full details.
 
 ## Phase 5 — Report
 

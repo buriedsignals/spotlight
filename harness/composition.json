@@ -9,7 +9,7 @@
         "ingest",
         "monitoring",
         "report-drafting",
-        "review",
+        "editorial-review",
         "provenance-signing",
         "technical-investigation",
         "integrations"
@@ -19,7 +19,7 @@
       "role": "agents/investigator.md",
       "skills": [
         "osint",
-        "investigate",
+        "investigation-methodology",
         "follow-the-money",
         "integrations",
         "content-access",

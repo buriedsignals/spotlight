@@ -15,7 +15,10 @@ from pathlib import Path
 from typing import Any
 
 
-REQUIRED_PLANNING_SKILLS = {"integrations", "osint", "investigate", "epistemic-grounding"}
+REQUIRED_PLANNING_SKILLS = {"integrations", "osint", "investigation-methodology", "epistemic-grounding"}
+# Skill ids renamed for cross-runtime namespace safety. Cases planned before the
+# rename still list the old ids in skills_invoked and remain valid.
+LEGACY_SKILL_IDS = {"investigate": "investigation-methodology", "review": "editorial-review"}
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CTI_LOCK = ROOT / "upstreams" / "cti-expert" / "source.lock.json"
 DEFAULT_CTI_REVISIONS = ROOT / "upstreams" / "cti-expert" / "reviewed-revisions.json"
@@ -57,7 +60,9 @@ def validate_required(methodology: dict[str, Any], status: str) -> list[str]:
     if not isinstance(skills, list):
         errors.append("methodology.json: skills_invoked must be a list")
         skills = []
-    missing_skills = REQUIRED_PLANNING_SKILLS - {skill for skill in skills if isinstance(skill, str)}
+    missing_skills = REQUIRED_PLANNING_SKILLS - {
+        LEGACY_SKILL_IDS.get(skill, skill) for skill in skills if isinstance(skill, str)
+    }
     if missing_skills:
         errors.append(f"methodology.json: missing required planning skills {sorted(missing_skills)}")
 
