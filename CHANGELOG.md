@@ -13,10 +13,12 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   and tests uses the new ids. The orchestration
   state token `resume_at: review` is unchanged.
 - **Existing source installs:** after pulling, re-link `skills/` so the two new
-  directories are discovered and remove the two stale links
-  (`~/.claude/skills/{investigate,review}`,
-  `~/.agents/skills/spotlight/{investigate,review}`, or your runtime's
-  equivalent); links to the old directory names dangle after `git pull`.
+  directories are discovered and remove the two stale entries wherever skills
+  were placed: `~/.claude/skills/`, `~/.codex/skills/`, `~/.agents/skills/`
+  (flat), `~/.agents/skills/spotlight/`, or your runtime's equivalent. Links to
+  the old directory names dangle after `git pull`, and Codex also scans
+  `~/.agents/skills`, so an old flat copy there keeps advertising `review` and
+  `investigate` beside the new names.
 - **Engine installs** pin a commit in Engine's signed catalog and are unaffected
   until that pin moves. Re-pinning past this change must update the two
   catalog `id`/`path` entries, regenerate `skills.manifest`, and re-sign.

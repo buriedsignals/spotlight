@@ -17,7 +17,9 @@ Each skill follows the [Agent Skills specification](https://agentskills.io/speci
 2. Include YAML frontmatter with `name` and `description`. The name must match
    the containing directory.
 3. Use the description as a standalone routing decision: state what the skill
-   does and when it should be invoked.
+   does and when it should be invoked. Put that in the first sentence: Codex
+   trims descriptions to a shared context budget once a machine holds many
+   skills, so only the opening survives reliably.
 4. Keep supporting procedures, formats, and tables in the skill's own
    `references/` directory and load them only when needed.
 
