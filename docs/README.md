@@ -62,7 +62,7 @@ Both read `AGENTS.md` natively. Point them at the repo root as the project conte
 
 ## Claude Code note
 
-The existing `buriedsignals/spotlight@1.2.1` marketplace plugin at `~/buried_signals/tools/skills/spotlight/` is the Claude Code path. It is **not** served from this repo — the agnostic repo exists precisely so non-Claude runtimes have the same capability without a Claude plugin dependency.
+The repository root is itself a Claude Code plugin root (`.claude-plugin/plugin.json` plus `skills/` and `agents/`): `claude --plugin-dir /path/to/spotlight` loads every skill namespaced as `spotlight:<id>` with no marketplace. Engine builds the same plugin-root shape under `~/.claude/skills/spotlight/`. There is no marketplace and no generated plugin copy; the agnostic repo exists so non-Claude runtimes have the same capability without a Claude plugin dependency.
 
 ## The invariants (what never changes across runtimes)
 

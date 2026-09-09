@@ -8,7 +8,7 @@
 
 [Install](#install) | [Workflow](#investigation-workflow) | [Integrations](#integrations) | [Runtimes](#runtimes) | [Website](https://spotlight.buriedsignals.com/)
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-00c853?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)[![17 Skills](https://img.shields.io/badge/skills-17-0080ff?style=for-the-badge&logo=bookstack&logoColor=white)](https://github.com/buriedsignals/spotlight/tree/main/plugins/spotlight/skills)[![7 Runtimes](https://img.shields.io/badge/runtimes-7-aa00ff?style=for-the-badge&logo=windowsterminal&logoColor=white)](#runtimes)[![Sovereign](https://img.shields.io/badge/sovereign_mode-SearXNG_+_Crawl4AI_+_local_models-00bfa5?style=for-the-badge&logo=shield&logoColor=white)](#source-acquisition)
+[![License: MIT](https://img.shields.io/badge/license-MIT-00c853?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)[![17 Skills](https://img.shields.io/badge/skills-17-0080ff?style=for-the-badge&logo=bookstack&logoColor=white)](https://github.com/buriedsignals/spotlight/tree/main/skills)[![7 Runtimes](https://img.shields.io/badge/runtimes-7-aa00ff?style=for-the-badge&logo=windowsterminal&logoColor=white)](#runtimes)[![Sovereign](https://img.shields.io/badge/sovereign_mode-SearXNG_+_Crawl4AI_+_local_models-00bfa5?style=for-the-badge&logo=shield&logoColor=white)](#source-acquisition)
 
 [![Stars](https://img.shields.io/github/stars/buriedsignals/spotlight?style=flat-square&logo=github&label=Stars)](https://github.com/buriedsignals/spotlight/stargazers)[![Issues](https://img.shields.io/github/issues/buriedsignals/spotlight?style=flat-square&logo=github&label=Issues)](https://github.com/buriedsignals/spotlight/issues)[![Last Commit](https://img.shields.io/github/last-commit/buriedsignals/spotlight?style=flat-square&logo=github&label=Last%20Commit)](https://github.com/buriedsignals/spotlight/commits)[![Contributors](https://img.shields.io/github/contributors/buriedsignals/spotlight?style=flat-square&logo=github&label=Contributors)](https://github.com/buriedsignals/spotlight/graphs/contributors)
 
@@ -256,8 +256,7 @@ development details remain in [docs/runtimes.md](docs/runtimes.md).
 Engine is the supported path above. An agent pointed at this repository can
 install the runtime set without cloning the whole repository: `install-set.txt`
 names the directories a frontier runtime needs; everything else is documentation,
-example cases, the local-model harness, plugin payloads, and development
-tooling. Scripts use the Python 3 standard library only.
+example cases, the local-model harness, and development tooling. Scripts use the Python 3 standard library only.
 
 ```bash
 git clone --filter=blob:none --sparse https://github.com/buriedsignals/spotlight.git spotlight
@@ -275,11 +274,18 @@ Then link each skill directory into your agent's skills directory (Windows: use
 
 | Agent | Link |
 |---|---|
-| Goose, Cursor, Codex, Gemini (shared agents store) | `mkdir -p ~/.agents/skills/spotlight && for s in skills/*/; do ln -s "$PWD/$s" ~/.agents/skills/spotlight/$(basename "$s"); done` |
-| Claude Code | `mkdir -p ~/.claude/skills && for s in skills/*/; do ln -s "$PWD/$s" ~/.claude/skills/$(basename "$s"); done` |
+| Goose, Cursor (shared agents store) | `mkdir -p ~/.agents/skills/spotlight && for s in skills/*/; do ln -s "$PWD/$s" ~/.agents/skills/spotlight/$(basename "$s"); done` |
+| Codex CLI, ChatGPT Desktop | `mkdir -p ~/.codex/skills && for s in skills/*/; do ln -s "$PWD/$s" ~/.codex/skills/$(basename "$s"); done` |
+| Claude Code (flat) | `mkdir -p ~/.claude/skills && for s in skills/*/; do ln -s "$PWD/$s" ~/.claude/skills/$(basename "$s"); done` |
+| Claude Code (namespaced, `spotlight:<skill>`) | no links: `claude --plugin-dir "$PWD"` — the checkout root is a plugin root |
+| Gemini CLI | no links: `ln -s AGENTS.md GEMINI.md` and run from the checkout root |
 
-Link skill directories, never the repository root: a skill is discovered by the
-`SKILL.md` inside the linked directory, and the repository root has none.
+Link skill directories, never the repository root: a flat skills directory
+discovers a skill by the `SKILL.md` inside the linked directory, and the
+repository root has none. The namespaced Claude Code form is the exception,
+because `--plugin-dir` reads a plugin root, not a skills directory. Codex and
+ChatGPT Desktop also read `AGENTS.md` and `skills/` in place when the checkout
+root is the working directory.
 
 Some runtimes rebuild their skill listing at turn boundaries rather than on
 filesystem change, so freshly linked skills become visible on the agent's next
@@ -289,24 +295,6 @@ evidence of a failed install; wait for the next turn before troubleshooting.
 Engine places the same skills under a `spotlight` product namespace; a later
 Engine install adopts or replaces these links. Integration credentials are never
 read from this checkout.
-
-### Plugin install (runtimes with a plugin system)
-
-`.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json`
-describe a plugin whose payload is the generated `plugins/spotlight/` tree. They
-serve the marketplace route, which clones the full repository itself and
-namespaces every skill under the plugin name (`spotlight:` in Claude Code), so
-skill names cannot collide with a runtime's built-in commands. Prefer it where
-the runtime supports plugins:
-
-```bash
-claude plugin marketplace add buriedsignals/spotlight
-claude plugin install spotlight@spotlight-plugin
-```
-
-These manifests are not in the sparse install set above because that checkout
-never contains `plugins/`. Plugin install places skills only; it installs no
-runtime packages and does not replace the Engine path.
 
 ## Runtimes
 

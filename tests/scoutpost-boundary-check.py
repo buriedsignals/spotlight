@@ -23,9 +23,7 @@ def fail(message: str) -> None:
 
 for rel in (
     "integrations/scoutpost",
-    "plugins/spotlight/integrations/scoutpost",
     "monitoring/registry.py",
-    "plugins/spotlight/monitoring/registry.py",
 ):
     if (ROOT / rel).exists():
         fail(f"Spotlight still ships a direct Scoutpost surface: {rel}")

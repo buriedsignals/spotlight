@@ -213,7 +213,7 @@ opencode ships native `bash`, `read`, `write`, `edit`, `grep`, `glob`, `multi-ed
 
 ### Sensitive mode
 
-Enforce at the agent definition: strip `firecrawl` (and any external-fetch shell) from the agent's `allowed-tools` frontmatter. Same pattern as the Claude Code marketplace plugin.
+Enforce at the agent definition: strip `firecrawl` (and any external-fetch shell) from the agent's `allowed-tools` frontmatter. Same pattern as the Claude Code plugin root (`claude --plugin-dir`).
 
 ---
 

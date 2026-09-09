@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RED contract for the distributed Arbiter client and preflight override."""
+"""RED contract for the Arbiter client seam and the preflight base-URL override."""
 
 from __future__ import annotations
 
@@ -13,8 +13,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_INTEGRATION = ROOT / "integrations" / "arbiter"
-PLUGIN_INTEGRATION = ROOT / "plugins" / "spotlight" / "integrations" / "arbiter"
-PLUGIN_PREFLIGHT = ROOT / "plugins" / "spotlight" / "integrations" / "preflight.py"
+PREFLIGHT = ROOT / "integrations" / "preflight.py"
 
 
 class FakeResponse:
@@ -28,43 +27,22 @@ class FakeResponse:
 
 
 def load_preflight():
-    integration_dir = PLUGIN_PREFLIGHT.parent
+    integration_dir = PREFLIGHT.parent
     sys.path.insert(0, str(integration_dir))
-    spec = importlib.util.spec_from_file_location("spotlight_plugin_preflight", PLUGIN_PREFLIGHT)
+    spec = importlib.util.spec_from_file_location("spotlight_preflight", PREFLIGHT)
     if spec is None or spec.loader is None:
-        raise AssertionError("plugin preflight must be importable")
+        raise AssertionError("preflight must be importable")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
 def main() -> int:
-    source_modules = {
-        path.name
-        for path in SOURCE_INTEGRATION.glob("*.py")
-        if path.name != "__init__.py"
-    }
-    plugin_modules = {
-        path.name
-        for path in PLUGIN_INTEGRATION.glob("*.py")
-        if path.name != "__init__.py"
-    }
-    assert plugin_modules == source_modules, (
-        f"plugin runtime module set drift: source={source_modules!r} plugin={plugin_modules!r}"
-    )
-    for filename in sorted(source_modules):
-        source = SOURCE_INTEGRATION / filename
-        copied = PLUGIN_INTEGRATION / filename
-        assert copied.read_bytes() == source.read_bytes(), f"plugin {filename} is stale"
-
     for filename in ("client.py", "credentials.py", "workflow.py"):
         source = SOURCE_INTEGRATION / filename
-        copied = PLUGIN_INTEGRATION / filename
         assert source.is_file(), f"source Arbiter seam missing: {source}"
-        assert copied.is_file(), f"distributed plugin missing {filename}"
-        assert copied.read_bytes() == source.read_bytes(), f"plugin {filename} is stale"
 
-    manifest = json.loads((PLUGIN_INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads((SOURCE_INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
     preflight = load_preflight()
     override = "https://staging.arbiter.example/api/v1"
     arbiter_client = importlib.import_module("arbiter.client")

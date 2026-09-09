@@ -76,6 +76,16 @@ def local_activation(destination: str = "destination:local") -> dict:
 
 
 class ProjectionChecks(unittest.TestCase):
+    def setUp(self):
+        # Sentinel paths handed to mocked workers must never resolve against the
+        # process working directory: an unmocked failure path opens the "database"
+        # and would leave a SQLite file in the repository root.
+        self._scratch = tempfile.TemporaryDirectory()
+        self.scratch = Path(self._scratch.name)
+
+    def tearDown(self):
+        self._scratch.cleanup()
+
     def test_receipt_identity_matches_spotlight_golden(self):
         value = {
             "schema_version": "spotlight-workspace-final-receipt/v1", "receipt_id": "",
@@ -172,7 +182,7 @@ class ProjectionChecks(unittest.TestCase):
     def test_local_worker_requires_matching_activation_before_projection(self):
         with mock.patch.object(kp, "serialized_worker_lock", return_value=nullcontext()), mock.patch.object(kp, "_check_current", return_value={"destination_id": "destination:local"}), mock.patch.object(kp, "_workspace_prefix", return_value=(Path("/tmp/workspace"), "spotlight")), mock.patch.object(kp, "resolve_snapshot") as resolve:
             with self.assertRaises(kp.ProjectionError) as caught:
-                kp.run_worker(Path("x"), "job:test", Path("x"), Path("x"), {}, None, None)
+                kp.run_worker(self.scratch / "x", "job:test", self.scratch / "x", self.scratch / "x", {}, None, None)
         self.assertEqual(caught.exception.code, "local_activation_invalid")
         resolve.assert_not_called()
 
@@ -210,7 +220,7 @@ class ProjectionChecks(unittest.TestCase):
     def test_stale_head_blocks_before_calls(self):
         source = fixture()
         with mock.patch.object(kp, "serialized_worker_lock", return_value=nullcontext()), mock.patch.object(kp, "resolve_snapshot", return_value=source), mock.patch.object(kp, "_check_current", side_effect=kp.ProjectionError("job_superseded", "stale")):
-            with self.assertRaises(kp.ProjectionError): kp.run_worker(Path("x"), "job:test", Path("x"), Path("x"), preconditions(source), None, local_activation())
+            with self.assertRaises(kp.ProjectionError): kp.run_worker(self.scratch / "x", "job:test", self.scratch / "x", self.scratch / "x", preconditions(source), None, local_activation())
 
     def test_startup_and_operator_use_same_serialized_queue_drain(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -249,7 +259,7 @@ class ProjectionChecks(unittest.TestCase):
         error = kp.ProjectionError("signed_case_hash_stale", "stale")
         with mock.patch.object(kp, "serialized_worker_lock", return_value=nullcontext()), mock.patch.object(kp, "resolve_snapshot", side_effect=error), mock.patch.object(kp, "_check_current", return_value={"destination_id": "destination:local"}), mock.patch.object(kp, "_workspace_prefix", return_value=(Path("/tmp/workspace"), "spotlight")), mock.patch.object(kp, "validate_worker_activation"), mock.patch.object(kp, "_mark_running_failed", side_effect=lambda *x: failures.append(x)):
             with self.assertRaises(kp.ProjectionError):
-                kp.run_worker(Path("x"), "job:test", Path("x"), Path("x"), {}, None, local_activation())
+                kp.run_worker(self.scratch / "x", "job:test", self.scratch / "x", self.scratch / "x", {}, None, local_activation())
         self.assertEqual(failures[0][1], "job:test")
 
     def test_ordinary_running_failure_transitions_to_failed(self):
@@ -260,7 +270,7 @@ class ProjectionChecks(unittest.TestCase):
             def close(self): pass
         connection = Connection()
         with mock.patch.object(kp.kd, "connect_database", return_value=connection), mock.patch.object(kp.kd, "fail_projection_job") as fail:
-            kp._mark_running_failed(Path("x"), "job:test", kp.ProjectionError("engine_call_failed", "failed"))
+            kp._mark_running_failed(self.scratch / "x", "job:test", kp.ProjectionError("engine_call_failed", "failed"))
         fail.assert_called_once()
         self.assertIn("engine_call_failed", fail.call_args.args[2])
 
@@ -374,9 +384,9 @@ class ProjectionChecks(unittest.TestCase):
             final["receipt_id"] = ""
             final["receipt_id"] = "receipt:" + hashlib.sha256(kp.canonical_bytes(final)).hexdigest()
             return {"package_sha256": stage["package_sha256"], "receipt": final}
-        prepared = {"workspace": Path("x"), "prefix": "", "preconditions": preconditions(source), "previous_receipt": None}
-        with mock.patch.object(kp, "serialized_worker_lock", return_value=nullcontext()), mock.patch.object(kp, "resolve_snapshot", return_value=source), mock.patch.object(kp, "_check_current", return_value={"status": "pending", "destination_id": "destination:local"}), mock.patch.object(kp.kd, "connect_database", return_value=lock), mock.patch.object(kp.kd, "claim_projection_job_exact", return_value={"job_id": "job:test"}) as claim, mock.patch.object(kp.kd, "complete_projection_job", return_value={"status": "completed"}) as complete, mock.patch.object(kp, "_workspace_prefix", return_value=(Path("x"), "")), mock.patch.object(kp, "validate_worker_activation"), mock.patch.object(kp, "workspace_projection_lock", return_value=nullcontext()), mock.patch.object(kp, "prepare_local_projection", return_value=prepared), mock.patch.object(kp, "recorded_local_preconditions", return_value=None), mock.patch.object(kp, "commit_local_projection", side_effect=commit):
-            kp.run_worker(Path("x"), "job:test", Path("x"), Path("x"), {}, None, local_activation())
+        prepared = {"workspace": self.scratch / "x", "prefix": "", "preconditions": preconditions(source), "previous_receipt": None}
+        with mock.patch.object(kp, "serialized_worker_lock", return_value=nullcontext()), mock.patch.object(kp, "resolve_snapshot", return_value=source), mock.patch.object(kp, "_check_current", return_value={"status": "pending", "destination_id": "destination:local"}), mock.patch.object(kp.kd, "connect_database", return_value=lock), mock.patch.object(kp.kd, "claim_projection_job_exact", return_value={"job_id": "job:test"}) as claim, mock.patch.object(kp.kd, "complete_projection_job", return_value={"status": "completed"}) as complete, mock.patch.object(kp, "_workspace_prefix", return_value=(self.scratch / "x", "")), mock.patch.object(kp, "validate_worker_activation"), mock.patch.object(kp, "workspace_projection_lock", return_value=nullcontext()), mock.patch.object(kp, "prepare_local_projection", return_value=prepared), mock.patch.object(kp, "recorded_local_preconditions", return_value=None), mock.patch.object(kp, "commit_local_projection", side_effect=commit):
+            kp.run_worker(self.scratch / "x", "job:test", self.scratch / "x", self.scratch / "x", {}, None, local_activation())
         self.assertEqual(observed, [True])
         claim.assert_called_once_with(lock, "job:test")
         self.assertTrue(complete.call_args.kwargs["in_transaction"])

@@ -10,7 +10,7 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   `editorial-review`. Both old names collide with reserved built-in command
   names in at least one frontier runtime, which silently disables any user
   skill of the same name. Every reference in skills, agents, manifests, docs,
-  tests, and the generated plugin payload uses the new ids. The orchestration
+  and tests uses the new ids. The orchestration
   state token `resume_at: review` is unchanged.
 - **Existing source installs:** after pulling, re-link `skills/` so the two new
   directories are discovered and remove the two stale links
@@ -37,11 +37,21 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   directory is the checkout root, established before Phase 0; Phase 0 verifies
   it. Skills keep their root-relative script paths.
 - README: the Claude Code source-install row links each skill directory
-  (linking the repository root discovered nothing); a note explains that some
-  runtimes list new skills only on the next turn; the plugin manifests are
-  documented as the marketplace route, and `.claude-plugin`/`.agents` left
-  `install-set.txt` because they point at `plugins/`, which the sparse checkout
-  never contains.
+  (linking the repository root discovered nothing); Codex CLI / ChatGPT
+  Desktop get their own `~/.codex/skills` row and Gemini its `GEMINI.md` row
+  instead of the shared agents store; a note explains that some runtimes list
+  new skills only on the next turn.
+
+### Removed — plugin marketplace payload
+
+- `plugins/spotlight/` (a generated copy of the repository),
+  `.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`,
+  `scripts/build-plugin-payload.py`, and `tests/plugin-distribution-check.py`
+  are gone. The marketplace route is retired; Codex plugins were
+  marketplace-only and Cursor never had a plugin path. The checkout root keeps
+  `.claude-plugin/plugin.json`, so `claude --plugin-dir /path/to/spotlight`
+  still loads every skill namespaced as `spotlight:<id>`, and Engine keeps
+  building its own plugin root under `~/.claude/skills/spotlight/`.
 
 ### Changed — open-source credential guidance
 

@@ -158,19 +158,13 @@ upstream code, or advance `active_sha`.
 
 A maintainer reviews a new revision by quarantining the source, checking the
 license and mapped files, rewriting accepted changes into Spotlight, updating
-the source records, and rebuilding the plugin. Online Spotlight installs and
+the source records. Online Spotlight installs and
 updates receive the latest reviewed adaptation. Offline installs use the
 bundled reviewed revision.
 
 ## Distribution and checks
 
-The repository-root skill is canonical. Regenerate the Codex/Claude plugin
-after changes:
-
-```bash
-python3 scripts/build-plugin-payload.py
-python3 tests/plugin-distribution-check.py
-```
+The repository-root skill is canonical; there is no generated plugin copy.
 
 Run the CTI-specific contracts and existing regression suite:
 

@@ -29,24 +29,11 @@ REPORT_FIXTURE_PATH = ROOT / "tests" / "render-report-check.py"
 DOCS_README = ROOT / "docs" / "README.md"
 PUBLIC_GUIDE = ROOT / "docs" / "index.html"
 ROOT_README = ROOT / "README.md"
-PLUGIN_DOCS_README = ROOT / "plugins" / "spotlight" / "docs" / "README.md"
 SCRIPTS = ROOT / "scripts"
 PREFLIGHT_SKILL = ROOT / "skills" / "phase-preflight" / "SKILL.md"
-PLUGIN_PREFLIGHT_SKILL = (
-    ROOT / "plugins" / "spotlight" / "skills" / "phase-preflight" / "SKILL.md"
-)
 INGEST_SKILL = ROOT / "skills" / "phase-ingest" / "SKILL.md"
-PLUGIN_INGEST_SKILL = (
-    ROOT / "plugins" / "spotlight" / "skills" / "phase-ingest" / "SKILL.md"
-)
 METHODOLOGY_SKILL = ROOT / "skills" / "phase-methodology" / "SKILL.md"
-PLUGIN_METHODOLOGY_SKILL = (
-    ROOT / "plugins" / "spotlight" / "skills" / "phase-methodology" / "SKILL.md"
-)
 EXECUTION_SKILL = ROOT / "skills" / "phase-execution" / "SKILL.md"
-PLUGIN_EXECUTION_SKILL = (
-    ROOT / "plugins" / "spotlight" / "skills" / "phase-execution" / "SKILL.md"
-)
 PROVENANCE_FIXTURE_SPEC = importlib.util.spec_from_file_location(
     "spotlight_provenance_fixture", PROVENANCE_FIXTURE_PATH
 )
@@ -596,8 +583,6 @@ class OrchestrationConformance(unittest.TestCase):
         self,
     ) -> None:
         preflight = PREFLIGHT_SKILL.read_text(encoding="utf-8")
-        generated = PLUGIN_PREFLIGHT_SKILL.read_text(encoding="utf-8")
-        self.assertEqual(generated, preflight)
         self.assertIn("### Flue-native case binding", preflight)
         self.assertIn("### Non-Flue case selection", preflight)
         flue_branch = preflight.split("### Flue-native case binding", 1)[1].split(
@@ -635,8 +620,6 @@ class OrchestrationConformance(unittest.TestCase):
 
     def test_ingest_metadata_advertises_only_the_resolver_owned_route(self) -> None:
         canonical = INGEST_SKILL.read_text(encoding="utf-8")
-        generated = PLUGIN_INGEST_SKILL.read_text(encoding="utf-8")
-        self.assertEqual(generated, canonical)
         frontmatter = canonical.split("---", 2)[1]
         description = next(
             line.removeprefix("description:").strip()
@@ -762,9 +745,7 @@ class OrchestrationConformance(unittest.TestCase):
             "Gate 1 → Report → Ingestion"
         )
         canonical = DOCS_README.read_text(encoding="utf-8")
-        generated = PLUGIN_DOCS_README.read_text(encoding="utf-8")
         self.assertIn(expected, canonical)
-        self.assertEqual(generated, canonical)
 
     def test_public_workflow_surfaces_require_report_before_ingest_and_name_outputs(
         self,
@@ -821,7 +802,6 @@ class OrchestrationConformance(unittest.TestCase):
             (
                 "phase-methodology",
                 METHODOLOGY_SKILL,
-                PLUGIN_METHODOLOGY_SKILL,
                 (
                     (
                         "initial investigator planning",
@@ -838,7 +818,6 @@ class OrchestrationConformance(unittest.TestCase):
             (
                 "phase-execution",
                 EXECUTION_SKILL,
-                PLUGIN_EXECUTION_SKILL,
                 (
                     (
                         "initial investigator execution",
@@ -869,13 +848,8 @@ class OrchestrationConformance(unittest.TestCase):
             ),
         )
 
-        for skill_label, skill_path, plugin_path, prompt_sections in (
-            skill_prompt_sections
-        ):
+        for skill_label, skill_path, prompt_sections in skill_prompt_sections:
             canonical = skill_path.read_text(encoding="utf-8")
-            generated = plugin_path.read_text(encoding="utf-8")
-            with self.subTest(skill=skill_label, contract="generated mirror"):
-                self.assertEqual(generated, canonical)
 
             for prompt_label, start, end in prompt_sections:
                 with self.subTest(skill=skill_label, prompt=prompt_label):

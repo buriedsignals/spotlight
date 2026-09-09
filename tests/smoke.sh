@@ -181,13 +181,6 @@ else
   fail "setup dependency pins drifted"
 fi
 
-python3 tests/plugin-distribution-check.py >/dev/null 2>&1
-rc=$?
-if [ $rc -eq 0 ]; then
-  ok "plugin distribution payload valid"
-else
-  fail "plugin distribution payload drifted"
-fi
 
 echo ""
 echo "── Installer ──"
