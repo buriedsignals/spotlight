@@ -70,6 +70,18 @@ If Crawl4AI is missing:
 
 If SearXNG is unreachable, `search` falls back to Firecrawl when `FIRECRAWL_API_KEY` is set; otherwise report the gap. Proceed once at least one search + one fetch backing is available — a pure-sovereign install (no Firecrawl key) is fully supported.
 
+Apify is a second **optional** escape hatch — hosted social-media collection actors (X, Instagram, TikTok, Facebook, LinkedIn) used by `social-media-intelligence` — enabled only when `APIFY_API_TOKEN` is present. The Engine (`bsig`) injects it at launch when Apify is enabled in Indicator Labs; from-repo users export it themselves. Check presence only; never echo the token:
+
+```
+execute-shell('test -n "$APIFY_API_TOKEN" && echo apify:enabled || echo apify:unavailable')   # Apify (optional)
+```
+
+If this prints `apify:unavailable`, report:
+
+> "social-media collection via Apify unavailable — export APIFY_API_TOKEN or enable Apify in Indicator Labs"
+
+and continue — Apify is never required. Native platform APIs and `fetch` + manual review remain available (`social-media-intelligence`, "Pluggable platform scraping"). Older setups that only export `APIFY_TOKEN` must re-export it as `APIFY_API_TOKEN`; preflight reads the new name only.
+
 ## 3. OSINT skill availability
 
 Confirm the following skills resolve via `invoke-skill`:
@@ -333,5 +345,6 @@ Typical expectations:
 - Sovereign search + fetch backing ready (checked in step 2: Crawl4AI + SearXNG; `firecrawl` optional, only if `FIRECRAWL_API_KEY` is set)
 - Integration `dev-browser` green if the `dev-browser` CLI is available
 - Integration `osint-navigator` green if `OSINT_NAV_API_KEY` is set
+- Integration `apify` green if `APIFY_API_TOKEN` is set (opt-in hosted social-media collection; `unconfigured` until set, and Spotlight works fully without it via native platform APIs and `fetch` + manual review)
 - Integration `arbiter` green if `ARBITER_API_KEY` is set (opt-in — curated social-media case studies, credit-metered to the member's account; unconfigured until set, and Spotlight works fully without it via the junkipedia/search fallbacks)
 - Other integrations (junkipedia, future integrations like serus/thinkpol) green only if user has access

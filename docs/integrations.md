@@ -9,7 +9,7 @@ This doc is the operator overview. See `integrations/README.md` for the manifest
 | Concept | Lives at | Example | What it holds |
 |---|---|---|---|
 | **Skill** | `skills/<id>/SKILL.md` | `osint`, `follow-the-money`, `investigation-methodology` | Methodology playbook the agent follows. No credentials. |
-| **Integration** | `integrations/<id>/` | `dev-browser`, `junkipedia`, `noosphere-c2pa`, `osint-navigator` | Specific external tool with its own API contract + credentials. |
+| **Integration** | `integrations/<id>/` | `dev-browser`, `junkipedia`, `apify`, `noosphere-c2pa`, `osint-navigator` | Specific external tool with its own API contract + credentials. |
 
 An agent invokes a **skill** to get *guidance* and calls an **integration** to get *direct data from a specific vendor or platform*. Passive feed signals now live in Mycroft, not Spotlight.
 
@@ -17,6 +17,7 @@ An agent invokes a **skill** to get *guidance* and calls an **integration** to g
 
 | ID | Type | Category | Key needed | Purpose |
 |---|---|---|---|---|
+| `apify` | api | social-osint | `APIFY_API_TOKEN` (optional; `unconfigured` until set) | Hosted social-media collection actors for X, Instagram, TikTok, Facebook, and LinkedIn through the Apify REST API. Engine injects the token when Apify is enabled in Indicator Labs; from-repo users export it. ToS caveat: X prohibits scraping even public posts — record the collection authority in `access_notes`. |
 | `arbiter` | api | social-osint | Member-owned `ARBITER_API_KEY` | Browse and create social-media case studies through the native Arbiter HTTPS API, including archived posts, themes, stance, actors, communities, engagement, and report visuals. |
 | `dev-browser` | cli | browser-automation | No | Browser automation for specific investigative tasks after ordinary search/scrape is insufficient: forms, portals, JS-rendered pages, screenshots, downloads, and authenticated sessions. |
 | `browser-harness` | cli | browser-automation | No | Legacy browser fallback. Do not use as default while dev-browser is green. |
@@ -81,11 +82,12 @@ Example:
 ```
 ID                   Type       Status   Missing env
 ------------------------------------------------------------------------------
+apify                api        unconfigured APIFY_API_TOKEN
 dev-browser          cli        green    —
 junkipedia           api        red      JUNKIPEDIA_API_KEY
 osint-navigator      api        green    —
 
-green=2  yellow=0  red=1  unconfigured=0
+green=2  yellow=0  red=1  unconfigured=1
 ```
 
 ## Setup flows

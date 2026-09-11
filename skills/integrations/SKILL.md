@@ -1,6 +1,6 @@
 ---
 name: integrations
-description: Use when an investigation step may need an external integration such as browser acquisition, Maigret account discovery, Junkipedia narrative tracking, Arbiter social-media case studies, OSINT Navigator tool discovery, Noosphere C2PA signing, or Unpaywall access lookup.
+description: Use when an investigation step may need an external integration such as browser acquisition, Maigret account discovery, Junkipedia narrative tracking, Apify social-media collection, Arbiter social-media case studies, OSINT Navigator tool discovery, Noosphere C2PA signing, or Unpaywall access lookup.
 version: "1.0"
 invocable_by: [investigator, fact-checker, orchestrator]
 requires: []
@@ -30,6 +30,7 @@ The skill is cheap to load — it's a routing table, not a deep methodology guid
 | `browser-use` | browser-automation | form-navigation, search-export, login-driving, multi-step-browsing | Legacy/adjacent browser automation. Do not pick as the default while dev-browser is green. |
 | `arbiter` | social-osint | curated-case-study-browse, entity-stance-analysis, hierarchical-theme-analysis, consolidated-case-study-report, case-study-creation | Analysing a collected social corpus: per-entity stance, theme clustering, actor/community structure, archived posts. Uses the member's own `ARBITER_API_KEY` through the native HTTPS API. |
 | `junkipedia` | social-osint | narrative-tracking, misinformation-search, social-media-monitoring, cross-platform-query | Tracking how a claim spread; finding social posts deleted from origin; cross-platform narrative investigation. |
+| `apify` | social-osint | social-post-collection, profile-post-history, conversation-thread-capture, keyword-post-search, cross-platform-collection | Bounded collection of public posts from X, Instagram, TikTok, Facebook, or LinkedIn when no native platform API path fits. Optional: `unconfigured` until `APIFY_API_TOKEN` is set. Billed to the member's own Apify account. X collection violates X ToS even for public posts — record the collection authority in `access_notes` and prefer the official API or a licensed broker where legal scrutiny is likely. |
 | `maigret` | social-osint | username-search, account-discovery, profile-url-collection | Username-led account discovery. Produces candidate profile leads only; never use as attribution proof. |
 | `noosphere-c2pa` | provenance-signing | case-provenance-manifest, c2pa-content-credentials, optional-signing-receipt | **PENDING integration — opt-in signer.** Preflight reports `unconfigured` until `NOOSPHERE_C2PA_URL` is set. After Gate 1, the base provenance path always writes `status: unsigned` and proceeds; signing runs only against a configured signer endpoint. Never a mandatory or blocking step. |
 | `osint-navigator` | tool-discovery | tool-search-by-keyword, complex-query-synthesis, country-specific-tool-lookup | Entitlement-gated (subscription tier): first tool-discovery pass in Phase 2 when green + sensitive mode false. Local/open tier and all fallbacks use `scripts/osint-tools.py find` (local SQL index, 12,500 tools). |
@@ -61,6 +62,14 @@ What's the task?
 │       attributed signup link and local key setup guidance
 │     → post pulls and agent questions are credit-metered to that member's Arbiter account
 │     → fallback: junkipedia, then search() + social-media-intelligence skill
+│
+├── "Collect a bounded set of public posts from an X / Instagram / TikTok / Facebook /
+│    LinkedIn profile, thread, or keyword search"
+│     → native platform API first (YouTube Data API, Bluesky AT Protocol, Reddit API, Telegram —
+│       see social-media-intelligence "Platform Tools")
+│     → apify  (if green — check preflight) via `integrations/apify/integration.md`; write the
+│       actor input to a case-local JSON file, cap `maxItems`, record collection authority
+│     → fallback: fetch(profile_url) + manual review; junkipedia for archived/deleted posts
 │
 ├── "Find accounts from one or more usernames / handles / aliases"
 │     → maigret if preflight is green and the operator accepts account-discovery noise

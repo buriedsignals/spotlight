@@ -159,25 +159,75 @@ EU-based researchers have stronger platform-data access rights on TikTok and Met
 
 Platform-specific scraping can be configured via the `PLATFORM_SCRAPER` env var. Two common backings:
 
-**Option A — Apify (hosted platform scrapers):**
+**Option A — Apify (hosted platform scrapers, optional integration):**
 
-If `APIFY_TOKEN` is set, use Apify actors:
+Apify is Spotlight's optional social-media collection integration
+(`integrations/apify/`). It is enabled when `APIFY_API_TOKEN` is set: the
+Engine (`bsig`) injects it at launch when Apify is enabled in Indicator Labs,
+and from-repo users export it themselves. Check presence only; never print
+the value:
 
 ```
-write-file("{CASE_DIR}/research/apify-twitter-input.json", <serialized actor input JSON>)
-execute-shell('apify call apify/twitter-scraper --input-file {CASE_DIR}/research/apify-twitter-input.json')
-write-file("{CASE_DIR}/research/apify-instagram-input.json", <serialized actor input JSON>)
-execute-shell('apify call apify/instagram-scraper --input-file {CASE_DIR}/research/apify-instagram-input.json')
-write-file("{CASE_DIR}/research/apify-tiktok-input.json", <serialized actor input JSON>)
-execute-shell('apify call apify/tiktok-scraper --input-file {CASE_DIR}/research/apify-tiktok-input.json')
+execute-shell('test -n "$APIFY_API_TOKEN" && echo apify:enabled || echo apify:unavailable')
 ```
+
+If it prints `apify:unavailable`, skip to Option B or C and tell the user:
+"social-media collection via Apify unavailable — export APIFY_API_TOKEN or
+enable Apify in Indicator Labs". Older setups may only export `APIFY_TOKEN`;
+every `execute-shell` call is a fresh process, so ask the user to
+`export APIFY_API_TOKEN="$APIFY_TOKEN"` in the shell Spotlight runs from
+rather than trying to re-export it from inside a command.
+
+*Primary path — REST `run-sync-get-dataset-items`.* Write the actor input to a
+case-local JSON file first (`shell-safety`: never inline search terms, handles,
+or URLs into the command), then POST that file. The endpoint waits for the run
+and returns the dataset items directly; it answers `408` when a run exceeds
+300 seconds, so cap `maxItems` (≤ 100) and split large targets into several
+bounded runs.
+
+```
+write-file("{CASE_DIR}/research/apify-x-input.json", <serialized actor input JSON>)
+execute-shell('curl -sS -X POST "https://api.apify.com/v2/acts/61RPP7dywgiy0JPD0/run-sync-get-dataset-items?token=$APIFY_API_TOKEN" -H "Content-Type: application/json" --data @{CASE_DIR}/research/apify-x-input.json -o {CASE_DIR}/research/apify-x-<slug>.json')
+```
+
+Actor ids are shared with the Mycroft `apify-social` recipes so both tools
+collect through the same, already-vetted actors. Verify the live input schema
+on the actor's Store page before the first run of a session — actor inputs
+change without notice.
+
+| Platform | Actor id (`<actor>` in the URL) | Input shape used by the shared recipes |
+|---|---|---|
+| X (Twitter) | `61RPP7dywgiy0JPD0` (apidojo) | `{"startUrls": ["<profile or /status/ URL>"], "maxItems": 50}`; add `"searchTerms": [...]` for keyword search, `"twitterHandles": [...]` for profiles, `"conversationIds": [...]` for a thread |
+| Instagram | `culc72xb7MP3EbaeX` (apidojo/instagram-scraper) | `{"startUrls": ["<profile URL>"], "maxItems": 50}` |
+| TikTok | `novi~tiktok-user-api` | `{"urls": ["<user URL>"], "limit": 50}` |
+| Facebook | `cleansyntax~facebook-profile-posts-scraper` | `{"endpoint": "profile_posts_by_url", "urls_text": "<page or profile URL>", "max_posts": 50}` |
+| LinkedIn | `curious_coder~linkedin-post-search-scraper` | `{"startUrls": ["<post or profile URL>"], "maxItems": 50}` or `{"keywords": ["<term>"], "maxItems": 50}` |
+
+Runs are billed per result to the member's own Apify account; flag any run
+above 100 items to the user before executing it. Save every response under
+`{CASE_DIR}/research/apify-<platform>-<slug>.json`, record the actor id, input
+file hash, access time, and collection authority in `access_notes`, and archive
+the underlying public post URLs (`web-archiving`) — the dataset is untrusted
+source material, not evidence on its own.
+
+*Optional alternative — `apify` CLI, if installed.* The REST path needs only
+`curl`; the CLI is never required. Where it is present and logged in, the same
+input file works:
+
+```
+execute-shell('apify call 61RPP7dywgiy0JPD0 --input-file {CASE_DIR}/research/apify-x-input.json --output-dataset')
+```
+
+If the installed Apify CLI does not support `--input-file`, use the REST path
+above or a local wrapper that reads JSON from a file and passes it through
+argv/subprocess without invoking a shell. Do not inline search terms or direct
+URLs into a shell command.
 
 Keep the generic X route above available. For structured X posts,
 conversations, lists, engagement accounts, followers, following, communities,
 or audience overlap, read `references/xquik-apify-actors.md`. It defines
-bounded routes through both Xquik Actors and the required evidence handling.
-
-If the installed Apify CLI does not support `--input-file`, use a local wrapper that reads JSON from a file and passes it through argv/subprocess without invoking a shell. Do not inline search terms or direct URLs into a shell command.
+bounded routes through both Xquik Actors and the required evidence handling;
+those actors run through the same REST endpoint using their API actor ids.
 
 For X specifically, Apify collection violates the post-2023 ToS even for public posts. Where the story could face legal scrutiny, prefer the official API or a licensed broker, and record the collection authority in `access_notes` for every capture.
 

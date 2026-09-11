@@ -1,0 +1,22 @@
+{
+  "id": "apify",
+  "name": "Apify",
+  "description": "Optional hosted social-media collection through Apify actors (X, Instagram, TikTok, Facebook, LinkedIn) via the Apify REST API. Activated only when APIFY_API_TOKEN is set; the Engine injects it when Apify is enabled in Indicator Labs, from-repo users export it themselves.",
+  "category": "social-osint",
+  "type": "api",
+  "requires_key": true,
+  "env_vars": ["APIFY_API_TOKEN"],
+  "activation_env_vars": ["APIFY_API_TOKEN"],
+  "optional_env_vars": ["APIFY_TOKEN"],
+  "capabilities": [
+    "social-post-collection",
+    "profile-post-history",
+    "conversation-thread-capture",
+    "keyword-post-search",
+    "cross-platform-collection"
+  ],
+  "invocable_by": ["investigator", "fact-checker"],
+  "homepage": "https://apify.com/",
+  "docs": "https://docs.apify.com/api/v2",
+  "rate_limit_note": "Pay-per-result actor pricing billed to the member's own Apify account; cap every run with maxItems. Platform ToS caveat: X prohibits scraping even public posts, so Apify collection on X is a ToS-violating path — record the collection authority in access_notes and prefer the official API or a licensed broker where legal scrutiny is likely."
+}

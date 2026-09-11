@@ -21,7 +21,7 @@ spotlight/
 ├── schemas/                  # JSON schemas — case artifacts, activation, migration, and reports
 ├── skills/                   # 17 skills (pi-native SKILL.md format)
 ├── agents/                   # 2 agent prompt bundles (investigator + fact-checker)
-├── integrations/             # External tool integrations (dev-browser, Junkipedia, Arbiter, Noosphere C2PA, OSINT Navigator, Unpaywall)
+├── integrations/             # External tool integrations (dev-browser, Junkipedia, Apify, Arbiter, Noosphere C2PA, OSINT Navigator, Unpaywall)
 ├── docs/                     # You are here. Operator manual.
 ├── monitoring/               # Case-level monitor registry helper + leads queue
 └── cases/                    # Per-investigation output (gitignored)
@@ -116,7 +116,7 @@ Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for larg
 ### Pipeline-support skills (invocable by orchestrator)
 
 - **`editorial-review`** — post-Gate-1 HTML review artifact. Renders a self-contained `{CASE_DIR}/review.html` that exports structured feedback for validation by the Gate 1 owner. It never spawns agents or derives phase state. No server required.
-- **`integrations`** — routing layer for external tool integrations (dev-browser, Junkipedia, Arbiter, Noosphere C2PA, OSINT Navigator, Unpaywall). Reads live preflight status, maps investigation tasks to integrations. See `integrations/` at repo root for manifests + per-integration usage docs.
+- **`integrations`** — routing layer for external tool integrations (dev-browser, Junkipedia, Apify, Arbiter, Noosphere C2PA, OSINT Navigator, Unpaywall). Reads live preflight status, maps investigation tasks to integrations. See `integrations/` at repo root for manifests + per-integration usage docs.
 - **`ingest`** — Phase 6 archival from the resolver-selected case to its configured vault. It runs only after a durable requested transition and uses an `.ingest-lock` plus the Knowledge Workspace Port for concurrency and projection.
 - **`monitoring`** — case-level monitoring recommendations and explicit Mycroft handoff.
 - **`acquisition-graduation`** — turns repeated dev-browser acquisition successes into durable source/domain guidance without secrets or brittle session details.

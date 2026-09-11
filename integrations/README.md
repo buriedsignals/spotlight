@@ -7,7 +7,7 @@ This framework is the single place Spotlight models external tools. Integrations
 ## Why integrations are separate from skills
 
 - **Skills** are methodology playbooks: how to investigate a person, how to follow the money, how to verify a claim. Runtime-agnostic, no credentials.
-- **Integrations** are specific external tools with credentials and an API contract: Junkipedia's narrative database, Arbiter's social-media case studies, Noosphere C2PA's provenance signer, OSINT Navigator's tool index, Unpaywall's DOI lookup, and dev-browser for browser acquisition fallback.
+- **Integrations** are specific external tools with credentials and an API contract: Junkipedia's narrative database, Apify's hosted social-media collection actors, Arbiter's social-media case studies, Noosphere C2PA's provenance signer, OSINT Navigator's tool index, Unpaywall's DOI lookup, and dev-browser for browser acquisition fallback.
 
 An agent invokes a skill to get *guidance*; it calls an integration to get *data*.
 
@@ -15,6 +15,7 @@ An agent invokes a skill to get *guidance*; it calls an integration to get *data
 
 | ID | Category | Requires key | Env vars |
 |---|---|---|---|
+| `apify` | social-osint | Optional — `unconfigured` until set | `APIFY_API_TOKEN` (legacy alias `APIFY_TOKEN` is not read by preflight; re-export it) |
 | `arbiter` | social-osint | Yes — member-owned `ARBITER_API_KEY`, configured locally | `ARBITER_API_KEY` (optional `ARBITER_API_BASE` deployment override) |
 | `dev-browser` | browser-automation | No | none |
 | `browser-harness` | browser-automation | No | none |

@@ -296,7 +296,7 @@ Optional dependencies documented in the README:
 - `open-knowledge`
 - `obsidian`
 - Python 3.11+
-- optional integration keys such as `OSINT_NAV_API_KEY`, `JUNKIPEDIA_API_KEY`, and `CORE_API_KEY`
+- optional integration keys such as `OSINT_NAV_API_KEY`, `JUNKIPEDIA_API_KEY`, `APIFY_API_TOKEN`, and `CORE_API_KEY`
 - local runtimes such as llama-server or Ollama (driven by opencode)
 
 ## 16. Sensitive mode

@@ -208,6 +208,7 @@ important integrations are:
 | OSINT Navigator | Tool discovery and method routing when the built-in catalog is not enough. |
 | Mycroft | Passive signals, vault memory, and the optional handoff into durable monitoring. |
 | Junkipedia | Narrative and misinformation tracking when the newsroom has access. |
+| Apify | Optional hosted social-media collection (X, Instagram, TikTok, Facebook, LinkedIn) when `APIFY_API_TOKEN` is set. Collection on X violates the platform ToS even for public posts; record the collection authority per capture. |
 | Unpaywall | Legal open-access lookup for academic papers. |
 | Noosphere C2PA | Optional provenance signing for case-level packages. |
 

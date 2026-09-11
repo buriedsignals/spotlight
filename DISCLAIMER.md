@@ -32,6 +32,7 @@ Spotlight calls out to third-party services when configured. Each has its own te
 - **Firecrawl** — web scraping API. Subject to source site ToS and Firecrawl's terms.
 - **OSINT Navigator** — tool discovery API. Subject to Indicator Media terms.
 - **LLM providers** (Anthropic, OpenAI, Google, Fireworks, OpenRouter, Together) — queries and some context are sent to the chosen provider. Review their privacy policies. For maximum privacy, use Local mode (Ollama + fine-tuned model on your machine).
+- **Apify** — hosted social-media scraping actors, billed to your own Apify account. Subject to Apify's terms and to each platform's ToS; X prohibits scraping even public posts, so Apify collection on X is a ToS-violating path.
 - **ACLED, Junkipedia, browser-use** — subject to each service's terms.
 - **Obsidian** — your vault is local unless you enable Obsidian's sync service.
 

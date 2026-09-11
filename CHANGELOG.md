@@ -4,6 +4,25 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added — Apify as an optional integration
+
+- `integrations/apify/` (manifest + `integration.md`): hosted social-media
+  collection actors for X, Instagram, TikTok, Facebook, and LinkedIn through
+  the Apify REST API, using the same actor ids as the Mycroft `apify-social`
+  recipes. Preflight reports `unconfigured` until `APIFY_API_TOKEN` is set and
+  makes no network call; the Engine injects the token when Apify is enabled in
+  Indicator Labs, from-repo users export it themselves.
+- `social-media-intelligence` reads `APIFY_API_TOKEN` (legacy `APIFY_TOKEN`
+  is re-exported, not read directly), makes the `run-sync-get-dataset-items`
+  REST path primary with the actor input written to a case-local JSON file,
+  and keeps the `apify` CLI as an optional alternative. The X ToS caveat is
+  unchanged.
+- `phase-preflight` step 2 adds a presence-only Apify check beside the
+  Firecrawl one and reports "social-media collection via Apify unavailable —
+  export APIFY_API_TOKEN or enable Apify in Indicator Labs" when absent.
+- README, `docs/integrations.md`, `integrations/README.md`, `DISCLAIMER.md`,
+  and the landing page list Apify with its env var and ToS note.
+
 ### Changed — BREAKING: two skill ids renamed
 
 - `investigate` is now `investigation-methodology` and `review` is now
