@@ -50,6 +50,7 @@ includes install/navigator_bridge.py '"local": "pi-flue"'
 includes install/navigator_bridge.py '"codex": "codex-cli"'
 excludes scripts/navigator-connect 'NavigatorInstallerBridge(ROOT / "install" / "navigator-transport-matrix.json", "claude-code")'
 excludes scripts/navigator-connect 'from setup_server import'
+python3 scripts/navigator-connect --help >/dev/null 2>&1 || note "scripts/navigator-connect --help must run (import or argparse error)"
 
 if [ -e install/configure.html ]; then note "install/configure.html must be deleted"; fi
 if [ -e install/setup_server.py ]; then note "install/setup_server.py must be deleted"; fi

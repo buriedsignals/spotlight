@@ -81,6 +81,14 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   exact Engine credential IDs and use the protected `bsig` stdin/keychain flow;
   no Spotlight localhost page collects secrets.
 
+### Fixed — `spotlight-navigator` crashed on every invocation
+
+- `scripts/navigator-connect` used `NAVIGATOR_RUNTIME_IDS` for the `--runtime`
+  choices but no longer imported it after the `setup_server` retirement, so
+  every run (including `--status`) raised `NameError` while building the
+  argument parser. It is imported from `navigator_bridge` again, and
+  `tests/install-spotlight-check.sh` now runs `navigator-connect --help`.
+
 ### Fixed — public installer on macOS and Windows (WSL)
 
 - OpenKnowledge and Spotlight's graph port both require
