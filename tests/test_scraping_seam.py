@@ -196,6 +196,46 @@ def test_tor_failure_never_falls_back_direct():
     raise AssertionError("an anonymized fetch failure must raise, never de-anonymize")
 
 
+def _with_tool_python(script_body, call):
+    """Point the provider at a fake Crawl4AI tool interpreter and hide any
+    in-process crawl4ai, the Engine install shape (isolated uv tool)."""
+    import stat
+    import tempfile
+    tmp = tempfile.mkdtemp()
+    shim = pathlib.Path(tmp) / "python"
+    shim.write_text("#!/bin/sh\n" + script_body)
+    shim.chmod(shim.stat().st_mode | stat.S_IEXEC)
+    old_env = os.environ.get("SPOTLIGHT_CRAWL4AI_PYTHON")
+    old_importable = c4a._importable
+    os.environ["SPOTLIGHT_CRAWL4AI_PYTHON"] = str(shim)
+    c4a._importable = lambda: False
+    try:
+        return call()
+    finally:
+        c4a._importable = old_importable
+        if old_env is None:
+            os.environ.pop("SPOTLIGHT_CRAWL4AI_PYTHON", None)
+        else:
+            os.environ["SPOTLIGHT_CRAWL4AI_PYTHON"] = old_env
+
+
+def test_crawl4ai_delegates_to_the_tool_interpreter_when_not_importable():
+    payload = ('{"markdown": "# page", "requested_url": "https://x", "source_url": "https://x", '
+               '"fetched_at": "t", "provider": "crawl4ai", "status_code": 200, "title": null, '
+               '"html": null, "raw_html": null, "metadata": {}, "content_sha256": "ignored"}')
+    result = _with_tool_python(f"echo '{payload}'\n", lambda: c4a.fetch("https://x"))
+    assert result.markdown == "# page" and result.provider == "crawl4ai"
+
+
+def test_crawl4ai_delegation_failure_raises_scrape_error():
+    try:
+        _with_tool_python('echo "scrape failed: boom" >&2; exit 3\n', lambda: c4a.fetch("https://x"))
+    except ScrapeError as e:
+        assert "boom" in str(e)
+        return
+    raise AssertionError("a failed delegated fetch must raise ScrapeError")
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:
