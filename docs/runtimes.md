@@ -344,59 +344,15 @@ Hermes has a `local-gemma` skill at `~/buried_signals/kit/mycroft/local-gemma/SK
 
 ---
 
-## Goose (extension pack)
+## Goose (through Mycroft)
 
-**What it is:** Block/Square's CLI agent (https://block.github.io/goose/). Ships as a brew/installer package; config at `~/.config/goose/config.yaml`. Extensions add capabilities.
+**What it is:** Block/Square's agent (https://block.github.io/goose/). Config at `~/.config/goose/config.yaml`. Extensions add capabilities.
 
-**This repo is packaged as a Goose extension.** Consumers install once; all skills become available.
+Spotlight is not published as a Goose extension; `goose extensions install spotlight` does not exist. Goose reaches Spotlight through **Mycroft**, and both are installed by Engine:
 
-### Extension manifest
-
-At the repo root (or a distribution artifact), provide a Goose extension descriptor:
-
-```yaml
-# extension.yaml (Goose extension format)
-name: spotlight
-version: "1.0"
-description: "OSINT investigation system — verified findings, fact-checking, vault ingestion"
-type: agent-pack
-entry:
-  agents_md: AGENTS.md
-  skills_dir: skills/
-  agent_prompts_dir: agents/
-  schemas_dir: schemas/
-requires:
-  cli_tools:
-    - firecrawl   # reviewed setup pin: firecrawl-cli@1.3.1
-    - openknowledge # Engine-catalog-pinned knowledge adapter and MCP server
-  env_vars:
-    required: [FIRECRAWL_API_KEY]
-    optional: [OSINT_NAV_API_KEY, CORE_API_KEY]
-recipes:
-  - id: spotlight-investigate
-    description: "Start a new OSINT investigation"
-    entry_skill: spotlight
-  - id: spotlight-ingest
-    description: "Archive completed findings to a vault"
-    entry_skill: ingest
-```
-
-*(Goose's extension format is evolving; verify the exact YAML shape against the current Goose docs before publishing. The fields above are the semantic contract — adjust key names to match Goose's live schema.)*
-
-### Installing
-
-Once published to a Goose extension registry (or a git URL):
-
-```bash
-goose extensions install spotlight
-```
-
-This should wire:
-
-- `AGENTS.md` as the project-context file Goose loads at session start
-- All skills under `skills/` discoverable via Goose's skill-search
-- Agent prompts in `agents/` loadable as recipe variants
-- Schemas validated automatically against case file writes
+1. `bsig configure plan spotlight` with `runtime=mycroft` installs Spotlight (checkout, cases root, OpenKnowledge workspace, shared skills) and records its paths in `~/.config/buriedsignals/handoff/spotlight.json`.
+2. `bsig configure plan mycroft` owns the Goose config: it installs the catalog-pinned Goose Desktop, the `openknowledge` extension, and a `.goosehints` that points Goose at the Spotlight checkout, cases root, and vault from that handoff receipt. Engine refuses to write over a Goose config it did not create (`bsig doctor` reports `foreign-state`).
+3. Launch through Engine: `bsig run mycroft` (CLI) or `bsig run mycroft --desktop`. Engine injects the required keys and puts the Navigator CLI on `PATH`/`PYTHONPATH` at exec time. A Goose started directly (Dock, `goose run`) has neither, so Navigator falls back to the local tool index.
 
 ### Verb bindings
 
