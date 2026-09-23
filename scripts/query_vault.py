@@ -453,6 +453,9 @@ def _legacy_path(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
     candidate = Path(value.lstrip("./"))
+    # Open Knowledge 0.56 returns page paths without their extension.
+    if candidate.suffix == "":
+        candidate = candidate.with_name(candidate.name + ".md")
     if candidate.is_absolute() or candidate.suffix.lower() != ".md" or any(part in {"", ".", ".."} for part in candidate.parts):
         return None
     if candidate.parts[0] in {".git", ".ok", ".knowledge-workspace"}:
