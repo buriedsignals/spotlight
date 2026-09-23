@@ -96,6 +96,20 @@ Confirm the following skills resolve via `invoke-skill`:
 
 These ship in `skills/` in this repo. If your runtime cannot resolve them, fix the skill-loading configuration before proceeding.
 
+Then confirm the local tool index that Phase 2 falls back to whenever Navigator is not green:
+
+```
+execute-shell("python3 scripts/osint-tools.py categories")
+```
+
+If it reports `index missing`, build it once (network, about a minute) before leaving preflight:
+
+```
+execute-shell("uv run --with datasets --with pandas --with pyarrow scripts/osint-tools.py build")
+```
+
+Engine installs do not build this index, so a first case always needs this step.
+
 ## 3.5. Agent skill inventory
 
 No user action required. This step establishes what capabilities your agents have access to before you spawn them.

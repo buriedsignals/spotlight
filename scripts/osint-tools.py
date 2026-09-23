@@ -7,9 +7,8 @@ role as the OSINT Navigator API, but offline, deterministic, and available to ev
 stays as the entitlement-gated first pass for subscription deployments (see PRD R1/R2).
 
 Two subcommands:
-  build   pull the HF parquet once (install-time) and build the FTS5 index. Needs huggingface_hub +
-          pandas + pyarrow — run via:  uv run --with huggingface_hub --with pandas --with pyarrow \
-                                         scripts/osint-tools.py build
+  build   pull the HF dataset once and build the FTS5 index. Needs datasets + pandas + pyarrow
+          — run via:  uv run --with datasets --with pandas --with pyarrow scripts/osint-tools.py build
   find    query the index. STDLIB ONLY (sqlite3) so the harness hot-path has zero deps and is instant.
 
 DB location: $SPOTLIGHT_OSINT_DB, else ~/.spotlight/osint_tools.db
@@ -81,11 +80,16 @@ def _escape_fts(q):
     return " OR ".join(x for x in safe if x not in ("OR", "AND", "NOT")) or '""'
 
 
+def _require_index(db):
+    # sqlite3.connect would create an empty file that later passes this check.
+    if not os.path.exists(db):
+        sys.exit(f"[osint-tools] index missing at {db} — build it once with: "
+                 "uv run --with datasets --with pandas --with pyarrow scripts/osint-tools.py build")
+
+
 def find(args):
     """Hot path (stdlib only): FTS query, optional category scope, compact ranked output."""
-    if not os.path.exists(args.db):
-        sys.exit(f"[osint-tools] index missing at {args.db} — run `osint-tools build` "
-                 f"(install-spotlight builds it).")
+    _require_index(args.db)
     con = sqlite3.connect(args.db)
     cur = con.cursor()
     match = _escape_fts(args.query)
@@ -115,6 +119,7 @@ def find(args):
 
 
 def categories(args):
+    _require_index(args.db)
     con = sqlite3.connect(args.db); cur = con.cursor()
     v = cur.execute("SELECT value FROM meta WHERE key='categories'").fetchone()
     print("\n".join(json.loads(v[0])) if v else "(no meta — rebuild)")
