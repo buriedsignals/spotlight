@@ -35,6 +35,10 @@ def main() -> int:
             if db.exists():
                 errors.append(f"{label}: created an empty index file at {db}")
                 db.unlink()
+    split = subprocess.run([sys.executable, str(SCRIPT), "find", "structural", "monitoring", "--limit", "1"],
+                           capture_output=True, text=True)
+    if "unrecognized arguments" in split.stderr:
+        errors.append("find: rejected an unquoted multi-word query")
     for error in errors:
         print(f"FAIL {error}", file=sys.stderr)
     if errors:

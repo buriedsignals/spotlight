@@ -187,6 +187,9 @@ for line in sys.stdin:
         broad = run(database, workspace, "--open-knowledge", str(fake), "river pollution")
         discovery = json.loads(broad.stdout)
         results = discovery["data"]["results"]
+        # Agents often pass an unquoted multi-word query as separate arguments.
+        split = run(database, workspace, "--open-knowledge", str(fake), "river", "pollution")
+        assert json.loads(split.stdout)["data"]["results"] == results
         # Open Knowledge 0.56 returns page paths without the .md extension.
         assert [item["envelope"]["source"]["path"] for item in results] == ["spotlight/investigations/test-case.md", "other/unrelated.md", "spotlight/claims/legacy-f1.md"]
         assert results[0]["managed_current"] is True and results[0]["legacy"] is False
