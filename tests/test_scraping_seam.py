@@ -196,6 +196,20 @@ def test_tor_failure_never_falls_back_direct():
     raise AssertionError("an anonymized fetch failure must raise, never de-anonymize")
 
 
+class _StringCompatibleMarkdown(str):
+    """Mirrors Crawl4AI 0.9: a str subclass carrying raw_markdown/fit_markdown."""
+
+    def __new__(cls, raw, fit):
+        obj = super().__new__(cls, raw)
+        obj.raw_markdown, obj.fit_markdown = raw, fit
+        return obj
+
+
+def test_extract_markdown_returns_a_plain_str_for_string_compatible_markdown():
+    out = _extract_markdown(_StringCompatibleMarkdown("# raw", "fit"))
+    assert type(out) is str and out == "# raw"
+
+
 def _with_tool_python(script_body, call):
     """Point the provider at a fake Crawl4AI tool interpreter and hide any
     in-process crawl4ai, the Engine install shape (isolated uv tool)."""

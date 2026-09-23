@@ -17,13 +17,15 @@ from .scrape_types import ScrapeResult
 def _extract_markdown(raw: Any) -> str:
     # Crawl4AI's markdown field is a MarkdownGenerationResult (raw_markdown /
     # fit_markdown attributes), a plain string on some paths, or absent.
+    # Crawl4AI 0.9 wraps it in StringCompatibleMarkdown, a str subclass that
+    # does not survive dataclasses.asdict, so always return a plain str.
     if raw is None:
         return ""
-    if isinstance(raw, str):
-        return raw
     raw_markdown = getattr(raw, "raw_markdown", None)
     if isinstance(raw_markdown, str):
-        return raw_markdown
+        return str(raw_markdown)
+    if isinstance(raw, str):
+        return str(raw)
     raise ValueError(f"unexpected crawl markdown shape: {type(raw).__name__}")
 
 
