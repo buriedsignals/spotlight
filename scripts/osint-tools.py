@@ -90,6 +90,7 @@ def _require_index(db):
 def find(args):
     """Hot path (stdlib only): FTS query, optional category scope, compact ranked output."""
     _require_index(args.db)
+    args.query = " ".join(args.query)  # an unquoted multi-word query arrives as several arguments
     con = sqlite3.connect(args.db)
     cur = con.cursor()
     match = _escape_fts(args.query)
@@ -136,7 +137,7 @@ def main():
     pb.set_defaults(fn=build)
 
     pf = sub.add_parser("find", help="query the index for tools matching lead-derived keywords")
-    pf.add_argument("query")
+    pf.add_argument("query", nargs="+")
     pf.add_argument("--category", help="scope to one category (see `categories`)")
     pf.add_argument("--limit", type=int, default=8)
     pf.add_argument("--json", action="store_true")

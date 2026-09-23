@@ -607,7 +607,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--finding-fingerprint")
     parser.add_argument("--legacy-claim-id")
     parser.add_argument("--proposition")
-    parser.add_argument("query", nargs="?", default="")
+    parser.add_argument("query", nargs="*", default=[])
     return parser
 
 
@@ -641,6 +641,8 @@ def resolve_installed_context(args: argparse.Namespace) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    # An unquoted multi-word query arrives as several arguments.
+    args.query = " ".join(args.query)
     try:
         resolve_installed_context(args)
         args.workspace_root = GRAPH.resolve_root(args.workspace_root, "workspace root")
