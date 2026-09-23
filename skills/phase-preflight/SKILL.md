@@ -60,15 +60,17 @@ Use `read-file` on `.spotlight-config.json` in the working directory. If it exis
 Spotlight is **sovereign by default**: `fetch` → Crawl4AI (`integrations.scraping`, no API key), `search` → SearXNG (`integrations.search`, self-hosted). Firecrawl is an **optional** escape hatch (scrape fallback on a hard bot-block, or a `--union` search engine) enabled only when `FIRECRAWL_API_KEY` is present. Check the sovereign backings with:
 
 ```
-execute-shell("command -v crwl || command -v uvx")   # Crawl4AI (or uvx cold-start)
-execute-shell("curl -s -o /dev/null -w '%{http_code}' \"${SEARXNG_URL:-http://localhost:8899}/search?q=ping&format=json\"")   # SearXNG
+execute-shell("python3 -m integrations.scraping https://example.com --provider crawl4ai --no-escalate > /dev/null && echo fetch:ok")   # Crawl4AI, a real fetch
+execute-shell("curl -s --get --data-urlencode 'q=wikipedia' --data-urlencode 'format=json' \"${SEARXNG_URL:-http://localhost:8899}/search\" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(\"searxng results:\", len(d[\"results\"]), \"unresponsive:\", d[\"unresponsive_engines\"])'")   # SearXNG, a real query
 ```
 
-If Crawl4AI is missing:
+Both probes test the backing end to end: an HTTP 200 from SearXNG with zero results (every engine suspended, CAPTCHA-blocked, or crashing) and an installed-but-unusable Crawl4AI are failures, not green.
 
-> "No Crawl4AI detected. Spotlight's `fetch` verb uses Crawl4AI. Run `install-spotlight.sh` (provisions `crawl4ai` + `crawl4ai-setup`), or set `FIRECRAWL_API_KEY` to use the Firecrawl fallback."
+If the fetch probe fails:
 
-If SearXNG is unreachable, `search` falls back to Firecrawl when `FIRECRAWL_API_KEY` is set; otherwise report the gap. Proceed once at least one search + one fetch backing is available — a pure-sovereign install (no Firecrawl key) is fully supported.
+> "Crawl4AI cannot fetch on this install. Spotlight's `fetch` verb uses Crawl4AI. Repair the install with Engine (`bsig doctor`, then re-apply the Mycroft or Spotlight plan), or set `FIRECRAWL_API_KEY` to use the Firecrawl fallback."
+
+If SearXNG is unreachable or returns zero results, report the unresponsive engines; `search` falls back to Firecrawl when `FIRECRAWL_API_KEY` is set, otherwise report the gap. Proceed once at least one search + one fetch backing is available — a pure-sovereign install (no Firecrawl key) is fully supported.
 
 Apify is a second **optional** escape hatch — hosted social-media collection actors (X, Instagram, TikTok, Facebook, LinkedIn) used by `social-media-intelligence` — enabled only when `APIFY_API_TOKEN` is present. The Engine (`bsig`) injects it at launch when Apify is enabled in Indicator Labs; from-repo users export it themselves. Check presence only; never echo the token:
 
