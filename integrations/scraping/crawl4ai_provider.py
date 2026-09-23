@@ -10,6 +10,12 @@ a local Python process, KTD7).
 from __future__ import annotations
 
 import asyncio
+import importlib.util
+import json
+import os
+import shutil
+import subprocess
+from pathlib import Path
 
 from .mapping import crawl_failure_detail, map_crawl_result
 from .scrape_types import ScrapeError, ScrapeResult
@@ -44,5 +50,54 @@ async def _afetch(url: str, timeout_ms: int, proxy: str | None = None) -> Scrape
     return map_crawl_result(result, url, provider="crawl4ai")
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DELEGATED = "SPOTLIGHT_CRAWL4AI_DELEGATED"
+
+
+def _importable() -> bool:
+    return importlib.util.find_spec("crawl4ai") is not None
+
+
+def _tool_python() -> str | None:
+    """Interpreter of the Engine-installed Crawl4AI uv tool, whose isolated
+    environment the calling python3 cannot import from."""
+    override = os.environ.get("SPOTLIGHT_CRAWL4AI_PYTHON")
+    if override:
+        return override if os.path.isfile(override) else None
+    uv = shutil.which("uv")
+    if not uv:
+        return None
+    try:
+        tool_dir = subprocess.run([uv, "tool", "dir"], capture_output=True, text=True, timeout=30).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for rel in (("bin", "python"), ("Scripts", "python.exe")):
+        candidate = Path(tool_dir, "crawl4ai", *rel)
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def _delegate(python: str, url: str, timeout_ms: int, proxy: str | None) -> ScrapeResult:
+    args = [python, "-m", "integrations.scraping", url, "--provider", "crawl4ai",
+            "--no-escalate", "--json", "--tor" if proxy else "--no-tor"]
+    env = {**os.environ, _DELEGATED: "1"}
+    try:
+        done = subprocess.run(args, cwd=_REPO_ROOT, env=env, capture_output=True, text=True,
+                              timeout=timeout_ms / 1000 + 120)
+    except subprocess.TimeoutExpired as exc:
+        raise ScrapeError(f"crawl4ai fetch timed out for {url}") from exc
+    if done.returncode != 0:
+        detail = done.stderr.strip().removeprefix("scrape failed: ") or f"exit {done.returncode}"
+        raise ScrapeError(detail)
+    payload = json.loads(done.stdout)
+    payload.pop("content_sha256", None)
+    return ScrapeResult(**payload)
+
+
 def fetch(url: str, timeout_ms: int = DEFAULT_TIMEOUT_MS, proxy: str | None = None) -> ScrapeResult:  # pragma: no cover - live path
+    if not _importable() and not os.environ.get(_DELEGATED):
+        python = _tool_python()
+        if python:
+            return _delegate(python, url, timeout_ms, proxy)
     return asyncio.run(_afetch(url, timeout_ms, proxy))
