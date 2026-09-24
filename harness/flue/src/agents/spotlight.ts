@@ -47,8 +47,8 @@ const COMPACTION = MODEL.startsWith('local/')
 // Investigator + fact-checker run as delegated subagents in their OWN child sessions
 // (fact-check independence, U8). Skill subsets are the U2 composition (harness/composition.json);
 // the skills themselves are discovered from <cwd>/.agents/skills.
-// Skills are workspace-discovered from <cwd>/.agents/skills (the Engine/OpenKnowledge
-// projection store), using flat skill names rather than a product namespace:
+// Skills are checkout-discovered from <cwd>/.agents/skills (Engine-private
+// verified bundles), using flat skill names rather than a product namespace:
 // all are available by name, bodies loaded on-invoke (D1). This natively delivers the
 // per-agent "lightening" (D2) — no agent holds skill bodies up front. `harness/composition.json`
 // (U2) remains the documented intent; each role's instructions steer which it actually uses.
@@ -82,6 +82,7 @@ const factChecker = defineAgentProfile({
 // The orchestrator is the discovered agent (`flue run spotlight`). It NEVER investigates
 // directly — it delegates to the subagents and manages the phase pipeline (the `spotlight` skill).
 export default defineAgent(() => {
+	const cwd = process.env.SPOTLIGHT_CWD ?? process.cwd();
 	const tools = createSpotlightTools({
 		activeCaseDir: process.env.SPOTLIGHT_ACTIVE_CASE ?? '',
 		casesRoot: process.env.SPOTLIGHT_CASES_ROOT ?? '',
@@ -89,7 +90,7 @@ export default defineAgent(() => {
 	return {
 		model: MODEL,
 		tools,
-		// Real host filesystem + shell at the case dir (subagents inherit this sandbox, U8):
+		// Real host filesystem + shell at the checkout (subagents inherit this sandbox):
 		// the agents run bash / the scraping seam / OpenKnowledge and persist evidence to real files.
 		// cwd is also where Flue discovers .agents/skills (the engine-placed store).
 		// local() ALLOWLISTS env — the harness process env does NOT reach the sandboxed bash
@@ -97,15 +98,30 @@ export default defineAgent(() => {
 		// silently falls back to raw pages (grounded 2026-07-09: --rlm ran, e4b never saw a
 		// request) — the #1 local-tier context killer. undefined values are dropped.
 		sandbox: local({
+			cwd,
 			env: {
 				BSIG_BIN: process.env.BSIG_BIN,
+				PYTHONPATH: process.env.PYTHONPATH,
+				SPOTLIGHT_CWD: process.env.SPOTLIGHT_CWD,
+				SPOTLIGHT_INSTALL_PATH: process.env.SPOTLIGHT_INSTALL_PATH,
+				SPOTLIGHT_CASES_ROOT: process.env.SPOTLIGHT_CASES_ROOT,
+				SPOTLIGHT_ACTIVE_CASE: process.env.SPOTLIGHT_ACTIVE_CASE,
+				SPOTLIGHT_RLM_API_KEY: process.env.SPOTLIGHT_RLM_API_KEY,
+				SPOTLIGHT_RLM_MODEL: process.env.SPOTLIGHT_RLM_MODEL,
+				SPOTLIGHT_RLM_CTX: process.env.SPOTLIGHT_RLM_CTX,
+				OSINT_NAV_API_KEY: process.env.OSINT_NAV_API_KEY,
+				APIFY_API_TOKEN: process.env.APIFY_API_TOKEN,
+				APIFY_TOKEN: process.env.APIFY_TOKEN,
+				ARBITER_API_KEY: process.env.ARBITER_API_KEY,
+				SCOUTPOST_API_KEY: process.env.SCOUTPOST_API_KEY,
+				SCOUTPOST_API_KEY_AUDIENCE: process.env.SCOUTPOST_API_KEY_AUDIENCE,
 				SPOTLIGHT_RLM_OPENAI_BASE_URL: process.env.SPOTLIGHT_RLM_OPENAI_BASE_URL,
 				SPOTLIGHT_RLM_OPENAI_MODEL: process.env.SPOTLIGHT_RLM_OPENAI_MODEL,
 				FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY, // bot-block escalation (opt-in)
 				SPOTLIGHT_ANONYMIZE_FETCH: process.env.SPOTLIGHT_ANONYMIZE_FETCH, // Tor opt-in (U7)
 			},
 		}),
-		cwd: process.env.SPOTLIGHT_CWD ?? process.cwd(),
+		cwd,
 		instructions: `${FLUE_VERB_ADAPTER}
 
 You are the Spotlight orchestrator. You NEVER investigate directly. Delegate research to the \`investigator\` subagent and verification to the \`fact-checker\` subagent through the \`task\` tool.

@@ -218,16 +218,18 @@ See [docs/integrations.md](docs/integrations.md) for setup and routing details.
 
 Two routes, one decision:
 
-- **Engine (supported).** Buried Signals Engine (`bsig`) installs a
-  catalog-pinned, signed release, places skills for every runtime it detects,
-  holds integration credentials in the OS keychain, and updates in place.
-  Choose this for any real investigation, and for every journalist install.
+- **Engine (managed).** Buried Signals Engine (`bsig`) installs a
+  catalog-pinned, signed release, places skills only for the selected local
+  runtime in its actual project checkout, holds integration credentials in the
+  OS keychain, and updates through reviewed plans. This is the managed route
+  for journalist installs; the native-ownership cutover's full acceptance is
+  still blocked (see [Runtimes](#runtimes)).
 - **Source (lighter).** A sparse clone plus per-skill links, described under
   [Install from source](#install-from-source-agents). Skills load, scripts run,
   nothing else: no credentials, no updates, no repair. Choose this only when an
   agent or developer is working from a clone and will re-link after every pull.
 
-**Buried Signals Engine (`bsig`) is Spotlight's only installation authority.**
+**Buried Signals Engine (`bsig`) is Spotlight's only managed installation authority.**
 Indicator Labs submits the same Engine plans while adding guided runtime/model
 selection, credential prompts, repair, and automatic updates for
 [members](https://buriedsignals.com/join).
@@ -263,6 +265,30 @@ old `curl | bash` commands; it is not another installer. Contributors may clone
 Engine installs the catalog-pinned public commit for journalists. Runtime
 development details remain in [docs/runtimes.md](docs/runtimes.md).
 
+### Managed skill ownership
+
+Spotlight's verified bundles and ownership ledger are private to Engine:
+`<Engine base>/skills/spotlight/bundles/` and
+`<Engine base>/skills/spotlight/registry.json`. Runtime discovery uses flat
+`<skill-id>/SKILL.md` leaves under the selected checkout's native skills root,
+not a home-global `spotlight/` namespace or fan-out to every detected runtime.
+See the [runtime placement table](docs/runtimes.md#project-local-placement-and-execution-host).
+Windows and Antigravity use verified copies; other supported local routes use
+symlinks. Mycroft retains its separate `~/.ok/skills` store and shared ledger.
+
+The installed manifest seals the runtime and `native_skill_ids`, including
+Navigator opt-out. When enabled, Navigator's authority is the catalog-pinned
+installed `navigator-cli` distribution and verified skill bytes, never a
+similarly named source checkout. OpenKnowledge remains the local knowledge
+service/index dependency; it is not Spotlight skill storage.
+
+Managed launch requires active, committed ownership. Migration and recovery
+bind the reviewed plan hash to a unique apply commit identity and check retained
+recovery receipts. Unknown or changed foreign files are refused and retained;
+Engine does not blindly adopt source links, overwrite them, or roll back the
+whole shared ledger. Inspect the blocker and retained evidence before a reviewed
+update. Do not hand-edit ledgers, fabricate receipts, or blindly retry apply.
+
 ## Install from source (agents)
 
 Engine is the supported path above. An agent pointed at this repository can
@@ -281,32 +307,41 @@ a skill is relative to the checkout root, and the agent runs Spotlight from a
 shell whose working directory is that root (see `AGENTS.md`, "Checkout
 layout").
 
-Then link each skill directory into your agent's skills directory (Windows: use
-`New-Item -ItemType Junction` in place of `ln -s`):
+For an **unmanaged development checkout**, choose just the native project root
+for the runtime you will actually launch:
 
-| Agent | Link |
+| Local runtime | Skills directory relative to checkout |
 |---|---|
-| Goose, Cursor (shared agents store) | `mkdir -p ~/.agents/skills/spotlight && for s in skills/*/; do ln -s "$PWD/$s" ~/.agents/skills/spotlight/$(basename "$s"); done` |
-| Codex CLI, ChatGPT Desktop | `mkdir -p ~/.codex/skills && for s in skills/*/; do ln -s "$PWD/$s" ~/.codex/skills/$(basename "$s"); done` — Codex lists them as `spotlight:<skill>`, the namespace taken from the link target |
-| Claude Code (flat) | `mkdir -p ~/.claude/skills && for s in skills/*/; do ln -s "$PWD/$s" ~/.claude/skills/$(basename "$s"); done` |
-| Claude Code (namespaced, `spotlight:<skill>`) | no links: `claude --plugin-dir "$PWD"` — the checkout root is a plugin root |
-| Gemini CLI | no links: `ln -s AGENTS.md GEMINI.md` and run from the checkout root |
+| Pi / Flue, Codex CLI, ChatGPT Desktop Codex Local, Goose | `.agents/skills/` |
+| Claude Code / Claude Desktop Code Local | `.claude/skills/` |
+| Cursor | `.cursor/skills/` |
+| Gemini CLI | `.gemini/skills/` |
+| OpenCode | `.opencode/skills/` |
+| Antigravity | `.agents/skills/` (copies, not symlinks) |
 
-Link skill directories, never the repository root: a flat skills directory
-discovers a skill by the `SKILL.md` inside the linked directory, and the
-repository root has none. The namespaced Claude Code form is the exception,
-because `--plugin-dir` reads a plugin root, not a skills directory. Codex and
-ChatGPT Desktop also read `AGENTS.md` and `skills/` in place when the checkout
-root is the working directory.
+Create one flat leaf per skill directory in that selected directory, each
+containing `SKILL.md`; never link the repository root or add another
+`spotlight/` namespace around the leaves. On macOS/Linux, a leaf may be a
+symlink to its absolute `skills/<id>` source path. For Windows or Antigravity,
+copy each complete skill directory and verify its contents instead. Refuse
+existing destinations rather than force-replacing them. Keep these unmanaged
+leaves in a dedicated development checkout, away from an Engine-owned install.
+Gemini also needs project instructions in `GEMINI.md` (the same contract as
+`AGENTS.md`). This setup provides discovery, not managed ownership or credentials.
+
+Start the selected runtime with this exact checkout as its working project and
+shell cwd. A different workspace, detached worktree, or remote/cloud app without
+access to these local files is not covered. Claude Desktop must use Code → Local;
+ChatGPT Desktop must use Codex → Local, not ordinary Chat or Cloud.
 
 Some runtimes rebuild their skill listing at turn boundaries rather than on
 filesystem change, so freshly linked skills become visible on the agent's next
 turn. An immediate "Unknown skill: spotlight" in the installing turn is not
 evidence of a failed install; wait for the next turn before troubleshooting.
 
-Engine places the same skills under a `spotlight` product namespace; a later
-Engine install adopts or replaces these links. Integration credentials are never
-read from this checkout.
+These source links/copies remain unmanaged. An Engine install must establish
+its own verified ownership through a reviewed plan; it does not automatically
+adopt them. Never hand-build an ownership ledger or receipt to bypass a conflict.
 
 ## Runtimes
 
@@ -317,22 +352,33 @@ Two shapes, one source of truth (the skills + `agents/*.md` role files):
 - **Non-frontier** (local GGUFs and API providers like Fireworks/OpenRouter): the
   repo's **Flue-on-Pi harness** (`harness/flue/`) provides orchestration — native
   investigator/fact-checker subagents, durable resumable sessions, RLM distillation,
-  and conversation compaction. The installer deploys the *same* harness the evals
-  exercise.
+  and conversation compaction. Engine launches from the actual checkout with an
+  explicit `harness/flue/flue.config.ts`, not from the harness subdirectory, and
+  passes scoped dependency paths and the sandbox's explicit environment.
 
 Per-runtime wiring lives in [docs/runtimes.md](docs/runtimes.md). The
 machine-readable contract lives in [AGENTS.md](AGENTS.md).
+
+Goose remains a supported local workflow route; native discovery does not
+require rewriting the workflow skills. Local evidence for this cutover includes
+Goose 1.50.0 discovering 25 intended skills in an isolated checkout, Flue SDK
+discovery and actual sandbox cwd/dependency/environment checks, mixed-ownership
+migration/update/uninstall preserving Mycroft and synthetic case/knowledge/graph
+bytes, and missing-browser repair followed by an actual Crawl4AI raw-HTML task.
+These are bounded checks, not a completed model investigation, native Windows
+acceptance, or packaged Desktop acceptance. A Desktop handoff is not runtime
+health, and the original timeout cause is not established. Full acceptance
+remains blocked.
 
 ## Local Models
 
 Local model selection is an implementation detail, not the product. Spotlight
 can use cloud, ZDR, or local inference depending on the runtime and newsroom
-policy. On the local tier the day-to-day interface is one command per
-investigation turn — `spotlight <case-id> "<message>"` (re-run with the same id
-to answer each gate; `spotlight-local --stop` stops the model servers) — and
-switching model tiers (12b/26b/31b) is an `.env` edit
-(`SPOTLIGHT_GGUF_PATH` + `SPOTLIGHT_MODEL_TIER`), not a reinstall. Details and
-fit checks: [docs/runtimes.md](docs/runtimes.md).
+policy. On the managed local tier, use `bsig spotlight` (or the installed
+`spotlight` launcher); Engine binds the selected runtime, checkout, active case,
+model configuration, and credentials. Changing managed configuration requires
+the Engine configuration/plan flow, not a hand-edited `.env`. Unmanaged harness
+development and model-tier details are in [docs/runtimes.md](docs/runtimes.md).
 
 ## Documentation
 

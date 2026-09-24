@@ -25,6 +25,7 @@
     },
     {
       "id": "navigator",
+      "source": {"kind": "package", "distribution": "navigator-cli", "path": "app/static/navigator-skill.md"},
       "role": "conditional-child",
       "phases": ["phase-2-methodology", "phase-3-execution", "phase-3-fact-check"],
       "may_make_external_calls": true,

@@ -4,6 +4,29 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed — Spotlight native ownership and selected local runtime
+
+- Engine keeps Spotlight bundles and ledger under
+  `<Engine base>/skills/spotlight/{bundles,registry.json}` and publishes only
+  flat native leaves in the selected checkout/runtime root. Windows and
+  Antigravity use verified copies; other local routes use symlinks. Mycroft's
+  shared store remains separate. Navigator uses catalog-pinned installed
+  distribution bytes; OpenKnowledge remains a knowledge dependency.
+- The manifest seals runtime and selected skill ids, including Navigator opt-out.
+  Launch requires active committed ownership; migration/recovery uses the plan
+  hash, unique apply commit identity, and checked retained receipts. Foreign or
+  changed objects are refused and retained, without global fan-out, blind retry,
+  manual ledger repair, or whole-ledger rollback.
+- Flue runs from the actual checkout with explicit harness config and scoped
+  dependency/sandbox environment. Goose keeps its existing workflow; source
+  setup is explicitly unmanaged and project-local. External/cloud execution
+  without local filesystem access is not supported by this placement.
+- Acceptance remains blocked: isolated Goose 1.50.0 discovery of 25 skills,
+  Flue SDK/sandbox checks, mixed-ownership lifecycle preservation, and
+  browser-repair/Crawl4AI raw-HTML proof do not establish a complete model
+  workflow, native Windows, packaged Desktop health, or the original timeout
+  cause. This unreleased entry is not a release or full-verification claim.
+
 ### Added — Apify as an optional integration
 
 - `integrations/apify/` (manifest + `integration.md`): hosted social-media
@@ -31,13 +54,12 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   skill of the same name. Every reference in skills, agents, manifests, docs,
   and tests uses the new ids. The orchestration
   state token `resume_at: review` is unchanged.
-- **Existing source installs:** after pulling, re-link `skills/` so the two new
-  directories are discovered and remove the two stale entries wherever skills
-  were placed: `~/.claude/skills/`, `~/.codex/skills/`, `~/.agents/skills/`
-  (flat), `~/.agents/skills/spotlight/`, or your runtime's equivalent. Links to
-  the old directory names dangle after `git pull`, and Codex also scans
-  `~/.agents/skills`, so an old flat copy there keeps advertising `review` and
-  `investigate` beside the new names.
+- **Existing source installs:** after pulling, refresh the selected checkout's
+  project-local leaves so the two new directories are discovered. Inspect any
+  legacy global links advertising `review` or `investigate`; retire only entries
+  you can prove belong to that unmanaged install. Do not delete foreign content
+  or use force-linking to bypass a conflict. Engine-owned migration goes through
+  a reviewed Engine plan, not these manual source steps.
 - **Engine installs** pin a commit in Engine's signed catalog and are unaffected
   until that pin moves. Re-pinning past this change must update the two
   catalog `id`/`path` entries, regenerate `skills.manifest`, and re-sign.
@@ -57,22 +79,18 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   must be co-located in one checkout reachable from a single shell whose working
   directory is the checkout root, established before Phase 0; Phase 0 verifies
   it. Skills keep their root-relative script paths.
-- README: the Claude Code source-install row links each skill directory
-  (linking the repository root discovered nothing); Codex CLI / ChatGPT
-  Desktop get their own `~/.codex/skills` row and Gemini its `GEMINI.md` row
-  instead of the shared agents store; a note explains that some runtimes list
-  new skills only on the next turn.
+- README source setup uses per-skill native leaves in the selected local
+  checkout (linking the repository root discovers nothing), with project
+  instructions supplied separately. Some runtimes refresh discovery only at a
+  turn/session boundary.
 
 ### Removed — plugin marketplace payload
 
 - `plugins/spotlight/` (a generated copy of the repository),
   `.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`,
   `scripts/build-plugin-payload.py`, and `tests/plugin-distribution-check.py`
-  are gone. The marketplace route is retired; Codex plugins were
-  marketplace-only and Cursor never had a plugin path. The checkout root keeps
-  `.claude-plugin/plugin.json`, so `claude --plugin-dir /path/to/spotlight`
-  still loads every skill namespaced as `spotlight:<id>`, and Engine keeps
-  building its own plugin root under `~/.claude/skills/spotlight/`.
+  are gone. The marketplace route is retired. Engine uses flat project-local
+  native leaves, not a generated home-global Claude plugin root.
 
 ### Changed — open-source credential guidance
 
@@ -152,11 +170,9 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 - `social-media-intelligence` now documents bounded Xquik Tweet and Follower
   Actor routes while preserving existing acquisition and platform-policy
   gates.
-- Skill placement converged on the engine placement contract (`engine
-  docs/skill-placement-contract.md`): canonical `~/.agents/skills/spotlight/` store for every
-  runtime + ONE product-level adapter symlink for opencode/pi/Claude Code (which now receives
-  skills for the first time); legacy per-skill dirs migrate in place; `spotlight update`
-  re-places skills after a fast-forward.
+- Skill placement now follows the selected project-local native-ownership
+  contract described above, superseding the earlier global product namespace
+  and product-level runtime adapters.
 - `content-access` + `social-media-intelligence` reconciled against upstream @ `2097d218`:
   2026 platform-API facts (Meta Content Library replaces CrowdTangle, X pay-per-use, TikTok
   Research API, Bluesky Jetstream, Threads/Mastodon/Telegram), EU DSA Art. 40 access section,

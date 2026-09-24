@@ -1,8 +1,67 @@
 # Integrations — Agent Runtimes
 
-Spotlight's agnostic contract is `AGENTS.md` + `skills/*/SKILL.md`. Any agent runtime that can (a) read those files, (b) dispatch the 13 verbs to native tools, and (c) spawn sub-agents can run Spotlight.
+Spotlight's agnostic contract is `AGENTS.md` + `skills/*/SKILL.md`. A compatible local execution host must read those files, dispatch the 13 verbs to native tools, and isolate investigator/fact-checker sub-agents. Skill discovery alone does not establish that the full workflow succeeds.
 
 This doc is the per-runtime wiring guide. Each section covers: how the runtime loads skills, how verbs map, how sub-agents work, and how sensitive mode is enforced.
+
+## Project-local placement and execution host
+
+Engine installs only the selected runtime's flat native leaves in the **actual
+Spotlight checkout/runtime root**. Each leaf is `<skill-id>/SKILL.md`; there is
+no extra product namespace and no home-global Spotlight fan-out.
+
+| Selected local surface | Native root relative to checkout | Execution host |
+|---|---|---|
+| Pi / Flue | `.agents/skills/` | Checkout cwd; Flue explicitly selects `harness/flue/flue.config.ts` |
+| Codex CLI | `.agents/skills/` | CLI launched in this checkout |
+| ChatGPT Desktop | `.agents/skills/` | Codex → Local, this exact project |
+| Claude Code / Claude Desktop | `.claude/skills/` | CLI checkout cwd / Code → Local, this exact project |
+| Cursor | `.cursor/skills/` | This local project |
+| Gemini CLI | `.gemini/skills/` | CLI checkout cwd |
+| OpenCode | `.opencode/skills/` | CLI checkout cwd |
+| Antigravity | `.agents/skills/` | This local project; copied leaves |
+| Mycroft/Goose | `.agents/skills/` | Fresh Spotlight checkout session, not the Mycroft vault session |
+
+Windows uses verified copies for every route; Antigravity uses verified copies
+on other platforms too. Other routes use symlinks to verified private bundles.
+The private store is `<Engine base>/skills/spotlight/bundles/`, with ledger
+`<Engine base>/skills/spotlight/registry.json`. Mycroft remains in `~/.ok/skills`
+with its shared ledger; OpenKnowledge remains the knowledge service/index,
+not Spotlight skill storage.
+
+The manifest seals `runtime` and `native_skill_ids`, including Navigator opt-out.
+When enabled, Navigator comes from the catalog-pinned installed `navigator-cli`
+distribution with verified version and skill bytes, not a checkout lookalike.
+Launch requires active, committed ownership. Migration binds the plan hash and
+unique apply commit identity to checked, retained recovery receipts. Unknown or
+changed foreign objects are refused and retained. Recovery restores only proven
+affected ownership and bytes, not a whole shared ledger. Inspect retained evidence
+and use a reviewed Engine update; never hand-edit the ledger, construct receipts,
+or blindly retry apply.
+
+For unmanaged source development, create flat leaves only in the selected
+project root using the [README setup](../README.md#install-from-source-agents).
+This does not confer Engine ownership; use a separate checkout, never force
+existing destinations, and do not expect automatic adoption.
+
+All placement here requires the execution host to have local filesystem and
+shell access to the same checkout, dependencies, and durable case storage.
+Hosted inference through a local harness is compatible with that boundary.
+External/cloud execution without those files is unsupported by this placement:
+ordinary Desktop Chat/Cowork, remote modes, ChatGPT Cloud, and detached worktrees
+are not interchangeable with the selected local project. Opening an app or
+handing it a project is not evidence of runtime health.
+
+### Acceptance boundary
+
+Local proof covers Goose 1.50.0 discovering 25 intended skills in an isolated
+checkout; Flue SDK discovery and actual sandbox cwd, dependency, and scoped-env
+checks; mixed-ownership migration/update/uninstall preserving Mycroft and
+synthetic Cases/Knowledge/graph bytes; and missing-browser repair followed by an
+actual Crawl4AI raw-HTML task. It does **not** prove a complete model investigation,
+native Windows, packaged Desktop, or the original timeout cause. The Windows VM
+is deallocated and the failed extension identity is unknown. Full acceptance
+remains blocked; the implementation is not a release or end-to-end health claim.
 
 ---
 
@@ -40,60 +99,74 @@ Runtime-specific backings (vary):
 ## Flue on Pi — the local & cloud non-frontier harness (CANONICAL, 2026-07-09)
 
 **What it is:** the repo's `harness/flue/` — a [Flue](https://flueframework.com) app (TypeScript
-harness framework built on Pi, by the Astro team) that IS the Spotlight orchestration for every
-non-frontier deployment. **One harness**: the evals exercise the same app the installer deploys
-(`local test == user experience`). It gives the orchestrator native subagents (investigator +
-fact-checker in their own child sessions — real verification independence), workspace-discovered
-skills from `<cwd>/.agents/skills/` with bodies loaded on-invoke, durable sqlite sessions
-(resume-on-crash), and threshold **conversation compaction** summarized by the resident RLM e4b.
+harness framework built on Pi, by the Astro team) for the local and hosted-API
+non-frontier routes. It uses the shared workflow skills and role files, native
+investigator/fact-checker child sessions, checkout-discovered
+`<cwd>/.agents/skills/` with bodies loaded on invoke, durable SQLite sessions,
+and threshold conversation compaction. Current local compaction uses the
+session model; the RLM sidecar serves source distillation.
 
-### How to launch (local)
+### Managed launch
 
-The installer writes everything; day-to-day is one command per investigation turn:
+Use `bsig spotlight` (or Engine's installed `spotlight` launcher). Engine binds
+the selected runtime and actual installed checkout, validates active ownership,
+and supplies the configured case/model context and credentials at execution
+time. It does not source a checkout `.env`.
+
+For Flue, the process cwd and `SPOTLIGHT_CWD` are the checkout root, **not**
+`harness/flue/`. Engine appends the explicit
+`--config <checkout>/harness/flue/flue.config.ts` and refuses a caller-supplied
+config override. Native discovery and the real host sandbox therefore use the
+same root. `SPOTLIGHT_CASES_ROOT` and `SPOTLIGHT_ACTIVE_CASE` bind durable case
+storage; the native state tools do not accept a model-selected sibling case.
+
+Dependency and credential environments are scoped to the launched process.
+Engine replaces inherited owned values, supplies `.spotlight/pydeps` through
+`PYTHONPATH`, and adds the installed Navigator dependency/launcher paths when
+available. Flue's local sandbox explicitly forwards the relevant dependency,
+case, integration, and RLM environment; inheriting the outer process environment
+alone is not sufficient. The role adapter resolves shared files from the
+checkout and selects `SPOTLIGHT_PYTHON` (or the development `.venv` interpreter)
+for Python seams. Do not replace missing dependencies with ad-hoc global paths.
+
+### Unmanaged harness development
+
+After explicitly provisioning dependencies, case storage, environment, and
+project-local skills in a separate source checkout, launch from that root:
 
 ```bash
-spotlight                          # start the model servers, print usage (no session)
-spotlight my-case "Investigate <target>: <what you want to know>"   # open a session
-spotlight my-case "Approved, proceed."                              # answer each gate
-spotlight-local --stop             # stop the llama.cpp servers
-spotlight doctor                   # health checks
+flue run spotlight --id my-case --config "$PWD/harness/flue/flue.config.ts"
 ```
 
-Sessions are durable (`harness/flue/data/`): the same session-id resumes exactly where it left
-off, including after a crash or laptop sleep. Gates are real turns — the orchestrator stops and
-waits; you answer by re-running with the same id.
+This is a developer entry point, not an Engine installation or ownership repair.
+Keep `SPOTLIGHT_CWD` equal to the actual checkout and supply the active-case
+context required by the native tools. Resume with the same session id; human
+gates still require explicit replies. No workflow-skill rewrite is required.
 
-Under the hood, `spotlight` (shell function) sources `$SPOTLIGHT_DIR/.env` and runs
-`spotlight-local`, which (a) serves the orchestrator GGUF on :8080 (llama.cpp, `--jinja`
-tool-calling, q8_0 KV + flash-attn, two resident slots `--parallel 2 --no-cache-idle-slots`,
-tier-capped `--reasoning-budget`), (b) serves the RLM e4b on :8095 when `SPOTLIGHT_RLM_GGUF_PATH`
-exists (`--reasoning-budget 0`; powers `fetch --rlm` distillation AND the compaction summarizer),
-(c) exports the env, and (d) runs `flue run spotlight --id <session>` from `harness/flue`.
-Servers stay resident between turns (warm prefix cache).
+### Model tiers
 
-### Model tiers — switching is an `.env` edit, not a reinstall
-
-`$SPOTLIGHT_DIR/.env` drives the launcher each run:
+Managed model changes use Engine's configuration/plan flow. For an unmanaged
+development launch, configure its model server and harness environment explicitly:
 
 | Var | Meaning |
 |---|---|
-| `SPOTLIGHT_GGUF_PATH` | orchestrator GGUF served on :8080 |
-| `SPOTLIGHT_MODEL_TIER` | `12b` \| `26b` \| `31b` — picks reasoning budget (400/800/1024), compaction profile (fold at ~16k/24.5k/28.5k, keep 4k/6k/8k recent), and the `.raw` affordance (12b: leads only; 26b+: may selectively read raw) |
-| `SPOTLIGHT_RLM_GGUF_PATH` | e4b GGUF for the RLM; absent = graceful degradation (raw fetches, session-model compaction) |
+| `SPOTLIGHT_FLUE_MODEL` | selected local or API-provider model |
+| `SPOTLIGHT_MODEL_TIER` | `12b` \| `26b` \| `31b` — compaction profile (fold at ~16k/24.5k/28.5k, keep 4k/6k/8k recent) and raw-source affordance |
+| `SPOTLIGHT_RLM_OPENAI_BASE_URL`, `SPOTLIGHT_RLM_OPENAI_MODEL` | optional source-distillation sidecar |
 | `SPOTLIGHT_REASONING_BUDGET`, `SPOTLIGHT_COMPACT_AT`, `SPOTLIGHT_COMPACT_KEEP` | optional overrides of the tier defaults |
 
-To switch tiers: edit `SPOTLIGHT_GGUF_PATH` + `SPOTLIGHT_MODEL_TIER`, run
-`spotlight-local --stop`, then launch normally.
+Changing environment values does not provision a model, dependencies, or an
+Engine-owned installation.
 
 ### Cloud non-frontier (API providers) through the same harness
 
 `harness/flue/src/app.ts` registers providers by env: **Fireworks** (`FIREWORKS_API_KEY`, GLM-5.2
 ZDR) and **OpenRouter** (`OPENROUTER_API_KEY`). Select with
-`SPOTLIGHT_FLUE_MODEL=fireworks/…` or `openrouter/…` and run `flue run spotlight` the same way —
-no llama.cpp, no KV flags, flue-default compaction (the local restrictions fall away
-structurally). Any OpenAI-compatible endpoint is one `registerProvider` block; custom providers
-MUST declare `contextWindow` + `maxTokens` (else flue sends `max_completion_tokens:1` → empty
-output).
+`SPOTLIGHT_FLUE_MODEL=fireworks/…` or `openrouter/…`; keep the same local checkout
+cwd, explicit config, dependencies, and sandbox environment. Inference is remote,
+but filesystem execution remains local. This does not support a remote harness
+with no access to the installed project. Custom providers must declare
+`contextWindow` and `maxTokens`.
 
 ### Verb bindings, sub-agents, sensitive mode
 
@@ -125,26 +198,13 @@ curl -fsSL https://opencode.ai/install | bash
 
 ### Loading this repo
 
-opencode discovers `SKILL.md` files **recursively** under each of these roots (the binary globs `skills/**/SKILL.md`; verified on opencode 1.17.5):
+Use flat leaves at `<checkout>/.opencode/skills/<id>/SKILL.md` and start OpenCode
+from that exact checkout. Engine owns managed leaves; source developers use the
+unmanaged project-local setup above. Do not publish a global
+`spotlight/<id>` namespace or redirect OpenCode to Mycroft's shared store.
 
-- Project: `.opencode/skills/`, `.claude/skills/`, `.agents/skills/`
-- Global: `~/.config/opencode/skills/`, `~/.claude/skills/`, `~/.agents/skills/`
-
-The **leaf** directory holding `SKILL.md` must equal the `name:` field in the frontmatter (validated); intermediate directories are ignored. So a per-product namespace subdir works: `~/.config/opencode/skills/spotlight/<skill>/SKILL.md` is discovered exactly like a top-level `<skill>/SKILL.md`.
-
-Install Spotlight globally (namespaced under `spotlight/`, matching the engine's `<root>/<product>/<skill>` shape):
-
-```bash
-mkdir -p ~/.config/opencode/skills/spotlight
-for skill_dir in /path/to/spotlight/skills/*/; do
-  name=$(basename "$skill_dir")
-  ln -sfn "$skill_dir" "$HOME/.config/opencode/skills/spotlight/$name"
-done
-```
-
-Creates symlinks for all skills, including `spotlight`, `ingest`, `monitoring`, `acquisition-graduation`, `web-archiving`, `content-access`, `epistemic-grounding`, `shell-safety`, `osint`, `investigation-methodology`, `follow-the-money`, `social-media-intelligence`, `integrations`, and `editorial-review`. Live links — `git pull` in the spotlight repo updates everything.
-
-`AGENTS.md` is loaded as Rules (https://opencode.ai/docs/rules/), walked up from cwd to the git worktree. Drop a project `AGENTS.md` in your investigations directory and opencode picks it up automatically.
+`AGENTS.md` supplies project rules from the checkout. Global provider settings
+below configure inference, not Spotlight skill placement or ownership.
 
 ### Local llama.cpp provider config
 
@@ -170,7 +230,7 @@ Merge into `~/.config/opencode/opencode.json` (preserves any other providers you
 }
 ```
 
-Start with: `opencode --model llama.cpp/qwen27` (or use the installer-generated launcher script).
+For an unmanaged local session, start `opencode --model llama.cpp/qwen27` from the checkout.
 
 ### Local Ollama provider config
 
@@ -213,7 +273,7 @@ opencode ships native `bash`, `read`, `write`, `edit`, `grep`, `glob`, `multi-ed
 
 ### Sensitive mode
 
-Enforce at the agent definition: strip `firecrawl` (and any external-fetch shell) from the agent's `allowed-tools` frontmatter. Same pattern as the Claude Code plugin root (`claude --plugin-dir`).
+Enforce at the agent definition: strip `firecrawl` (and any external-fetch shell) from the agent's allowed tools. Native skill placement does not itself enforce network permissions.
 
 ---
 
@@ -221,20 +281,16 @@ Enforce at the agent definition: strip `firecrawl` (and any external-fetch shell
 
 **What it is:** Minimal TypeScript coding harness by Mario Zechner (https://pi.dev). MIT license. Natively supports `AGENTS.md` + `skills/*/SKILL.md`.
 
-**Status: SUPERSEDED as a direct runtime (2026-07-09)** — pi is now the **engine under Flue**
-(the canonical harness above is a Flue app, and Flue is built on Pi), which resolves the old
-"pi lacks native sub-agents" objection: subagents, compaction, and durability come from the Flue
-layer. Do not wire pi directly for Spotlight; the notes below are kept for reference.
+The canonical non-frontier harness is Flue on Pi, which supplies native
+subagents, compaction, and durability. Direct Pi remains a selected local
+skill-discovery route; its host must supply the required sub-agent isolation.
 
 ### Loading this repo
 
-```bash
-mkdir -p ~/.pi/agent/skills
-ln -sfn /path/to/spotlight/skills ~/.pi/agent/skills/spotlight
-pi
-```
-
-pi recursively walks `~/.pi/agent/skills/` (user) and `<cwd>/.pi/skills/` (project) at startup, picking up every `SKILL.md` it finds — verified in `pi-coding-agent/dist/core/skills.js:347-348`. Skill names come from each frontmatter, so the symlink above loads all Spotlight sub-skills by name.
+Use flat leaves at `<checkout>/.agents/skills/<id>/SKILL.md`, then launch Pi
+from that checkout. Engine places the selected leaves; unmanaged source setup
+uses the same local discovery shape without ownership receipts. Do not install
+a product-root adapter under `~/.pi/agent/skills`.
 
 `AGENTS.md` is layered into pi's system prompt from `~/.pi/agent/`, parent directories, and the current directory (per [pi.dev docs](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)).
 
@@ -244,7 +300,7 @@ pi ships native `Read`, `Write`, `Edit`, `Grep`, `Glob`, `Bash` equivalents. The
 
 ### Sub-agents
 
-**pi does not ship built-in sub-agents.** Workarounds: a `pi-subagent` extension if one exists, tmux-spawn a second pi process via RPC mode, or SDK-mode wrapper. For Spotlight's investigator/fact-checker pattern this is awkward — that's why opencode is the recommended local runtime.
+Direct Pi requires a suitable extension or SDK wrapper for isolated workers. Flue supplies that layer for the canonical non-frontier route; discovery alone does not supply sub-agents.
 
 ### Local llama-server provider via pi
 
@@ -261,7 +317,7 @@ The extension auto-detects models on the running llama-server (`/models` endpoin
 3. `~/.pi/agent/settings.json` — `{"llamaServerUrl":"http://127.0.0.1:8080"}`
 4. Default `http://127.0.0.1:8080`
 
-Spotlight's installer writes option 3 automatically when you pick Pi as the agent harness — pointing at port 8080 for `llamacpp` or 11434 for Ollama. Pi's authentication for the local server (if any) lives in `~/.pi/agent/auth.json` under provider id `llama-server` (displayed as "Llama.cpp" in the Pi UI).
+For unmanaged direct-Pi development, configure the endpoint in the selected project or Pi's provider settings. This is inference configuration, not Engine skill ownership.
 
 Status indicators on the `/models` browser: 🟢 loaded · 🟡 loading · 🔴 failed · 🔵 sleeping · ⚪ unloaded. The sleeping state requires `llama-server --sleep-idle-seconds <n>` on the server side.
 
@@ -309,7 +365,7 @@ Restart Hermes:
 launchctl kickstart -k gui/$(id -u)/ai.hermes.gateway
 ```
 
-All Spotlight skills (spotlight, ingest, monitoring, acquisition-graduation, web-archiving, content-access, epistemic-grounding, shell-safety, osint, investigate, follow-the-money, social-media-intelligence, integrations, review) become available by `invoke-skill` name.
+The checkout's current skill ids become available by `invoke-skill` name. This is an unmanaged Hermes integration, not an Engine-native placement route; its shell and workers must use the same local checkout.
 
 ### Verb bindings
 
@@ -344,59 +400,26 @@ Hermes has a `local-gemma` skill at `~/buried_signals/kit/mycroft/local-gemma/SK
 
 ---
 
-## Goose (extension pack)
+## Goose
 
-**What it is:** Block/Square's CLI agent (https://block.github.io/goose/). Ships as a brew/installer package; config at `~/.config/goose/config.yaml`. Extensions add capabilities.
+**What it is:** Block/Square's CLI agent (https://block.github.io/goose/), with
+provider configuration at `~/.config/goose/config.yaml`. Goose remains a
+supported historical Spotlight workflow route; the cutover changes placement,
+not the investigation methodology or workflow skills.
 
-**This repo is packaged as a Goose extension.** Consumers install once; all skills become available.
+### Loading this repo
 
-### Extension manifest
+Use flat leaves at `<checkout>/.agents/skills/<id>/SKILL.md` and start a fresh
+Goose session in the actual Spotlight checkout. The selected Mycroft/Goose
+Engine route reuses provider/key/local-server setup, but does not reuse the
+Mycroft vault or welcome recipe as Spotlight's execution project. Desktop
+handoff must likewise select the checkout for a fresh session.
 
-At the repo root (or a distribution artifact), provide a Goose extension descriptor:
-
-```yaml
-# extension.yaml (Goose extension format)
-name: spotlight
-version: "1.0"
-description: "OSINT investigation system — verified findings, fact-checking, vault ingestion"
-type: agent-pack
-entry:
-  agents_md: AGENTS.md
-  skills_dir: skills/
-  agent_prompts_dir: agents/
-  schemas_dir: schemas/
-requires:
-  cli_tools:
-    - firecrawl   # reviewed setup pin: firecrawl-cli@1.3.1
-    - openknowledge # Engine-catalog-pinned knowledge adapter and MCP server
-  env_vars:
-    required: [FIRECRAWL_API_KEY]
-    optional: [OSINT_NAV_API_KEY, CORE_API_KEY]
-recipes:
-  - id: spotlight-investigate
-    description: "Start a new OSINT investigation"
-    entry_skill: spotlight
-  - id: spotlight-ingest
-    description: "Archive completed findings to a vault"
-    entry_skill: ingest
-```
-
-*(Goose's extension format is evolving; verify the exact YAML shape against the current Goose docs before publishing. The fields above are the semantic contract — adjust key names to match Goose's live schema.)*
-
-### Installing
-
-Once published to a Goose extension registry (or a git URL):
-
-```bash
-goose extensions install spotlight
-```
-
-This should wire:
-
-- `AGENTS.md` as the project-context file Goose loads at session start
-- All skills under `skills/` discoverable via Goose's skill-search
-- Agent prompts in `agents/` loadable as recipe variants
-- Schemas validated automatically against case file writes
+No hypothetical extension descriptor or registry publication is required for
+native skill discovery. Goose 1.50.0 discovered the 25 intended skills in the
+isolated local checkout proof. That proves discovery, not a complete model
+workflow, recipe execution, or packaged Desktop health. Existing Goose
+workflow/recipe use does not require rewriting the shared skill content.
 
 ### Verb bindings
 
@@ -434,7 +457,7 @@ npm install -g @openai/codex@0.138.0
 codex login   # OAuth via ChatGPT OR set OPENAI_API_KEY
 ```
 
-Point Codex at the repo root as its working directory. `AGENTS.md` is loaded automatically.
+Point Codex at the actual checkout as its working directory, with flat native leaves under `.agents/skills/<id>/SKILL.md`. `AGENTS.md` supplies project instructions; it is not a substitute for skill placement.
 
 ### Verb bindings
 
@@ -446,7 +469,7 @@ Point Codex at the repo root as its working directory. `AGENTS.md` is loaded aut
 | `fetch`, `search` | `execute-shell` running `python -m integrations.scraping` (Crawl4AI) / `integrations.search` (SearXNG); Firecrawl optional fallback |
 | `query-vault` | Local graph plus direct Open Knowledge search with receipt filtering |
 | `vault-write` | Spotlight-local projection writer; approved and journaled only |
-| `invoke-skill` | natively loads `skills/{skill}/SKILL.md` when referenced |
+| `invoke-skill` | loads the named native leaf from the checkout's `.agents/skills/` |
 | `spawn-agent`, `wait-agent` | `execute-shell` spawning a second `codex exec` subprocess — see below |
 
 ### Sandbox mode
@@ -514,7 +537,7 @@ For defence-in-depth, wrap `firecrawl` in a shell alias that refuses to run when
 
 ### Loading
 
-Point Gemini at the repo root. Create `GEMINI.md` as a symlink to `AGENTS.md` so Gemini's startup loader sees the contract.
+Point Gemini at the actual checkout, with flat native leaves under `.gemini/skills/<id>/SKILL.md`. Supply `GEMINI.md` with the `AGENTS.md` contract; do not overwrite an existing project instruction file. Instructions alone do not replace skill discovery.
 
 ### Verb bindings
 
@@ -596,6 +619,6 @@ To add a runtime adapter doc:
 3. Choose a sub-agent pattern (native, tmux, SDK wrapper)
 4. Choose a sensitive-mode enforcement point
 5. Write a new section here with the same structure as existing ones
-6. If the runtime has a distribution format (Goose extension, npm package, Homebrew tap), add a manifest entry at the repo root
+6. Establish the exact local discovery root and execution host before adding an Engine placement route; do not infer support from an app handoff or a hypothetical extension manifest
 
 All runtimes share the same skill content. The adapter doc is 200–400 lines of mapping and setup — the skills themselves are never rewritten per runtime.
