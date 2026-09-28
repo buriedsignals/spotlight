@@ -33,6 +33,9 @@ def fetch(url: str, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> ScrapeResult:  # pr
             [binary, "scrape", url],
             capture_output=True,
             text=True,
+            # The CLI writes UTF-8; Windows would otherwise decode it as cp1252 and crash.
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout_ms / 1000,
             env=env,
         )

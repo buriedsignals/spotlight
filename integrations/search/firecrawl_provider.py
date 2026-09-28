@@ -33,6 +33,9 @@ def search(query: str, *, limit: int = 10) -> list[SearchHit]:
             [binary, "search", query, "--limit", str(limit), "--json"],
             capture_output=True,
             text=True,
+            # The CLI writes UTF-8; Windows would otherwise decode it as cp1252 and crash.
+            encoding="utf-8",
+            errors="replace",
             timeout=90,
             env=env,
         )
@@ -41,7 +44,13 @@ def search(query: str, *, limit: int = 10) -> list[SearchHit]:
     if proc.returncode != 0:
         detail = redact(proc.stderr.strip(), [env.get("FIRECRAWL_API_KEY", "")])
         raise SearchError(detail[:300] or "firecrawl non-zero exit")
-    web = (json.loads(proc.stdout).get("data") or {}).get("web", []) or []
+    try:
+        payload = json.loads(proc.stdout)
+    except ValueError as exc:
+        # An unauthenticated or outdated CLI prints text, not JSON: report it, never crash.
+        detail = redact(proc.stdout.strip(), [env.get("FIRECRAWL_API_KEY", "")])[:300]
+        raise SearchError(f"firecrawl search returned no JSON: {detail or 'empty output'}") from exc
+    web = ((payload if isinstance(payload, dict) else {}).get("data") or {}).get("web", []) or []
     return [
         SearchHit(
             url=r.get("url", ""),
