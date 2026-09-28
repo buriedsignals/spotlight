@@ -70,17 +70,17 @@ If Crawl4AI is missing:
 
 If SearXNG is unreachable, `search` falls back to Firecrawl when `FIRECRAWL_API_KEY` is set; otherwise report the gap. Proceed once at least one search + one fetch backing is available — a pure-sovereign install (no Firecrawl key) is fully supported.
 
-Apify is a second **optional** escape hatch — hosted social-media collection actors (X, Instagram, TikTok, Facebook, LinkedIn) used by `social-media-intelligence` — enabled only when `APIFY_API_TOKEN` is present. The Engine (`bsig`) injects it at launch when Apify is enabled in Indicator Labs; from-repo users export it themselves. Check presence only; never echo the token:
+Apify is a second **optional** escape hatch — hosted social-media collection actors (X, Instagram, TikTok, Facebook, LinkedIn) used by `social-media-intelligence` — enabled only when an `APIFY_API_TOKEN` is configured. Indicator Labs writes keys to the credential file named by `env_file` in `.spotlight-config.json`; from-repo users set them in their environment, that file, or the checkout `.env`. Check presence only; never print a key or open a credential file:
 
 ```
-execute-shell('test -n "$APIFY_API_TOKEN" && echo apify:enabled || echo apify:unavailable')   # Apify (optional)
+execute-shell('python3 -m integrations.apify status')   # Apify (optional)
 ```
 
 If this prints `apify:unavailable`, report:
 
-> "social-media collection via Apify unavailable — export APIFY_API_TOKEN or enable Apify in Indicator Labs"
+> "social-media collection via Apify unavailable — add an Apify token in Indicator Labs or set APIFY_API_TOKEN"
 
-and continue — Apify is never required. Native platform APIs and `fetch` + manual review remain available (`social-media-intelligence`, "Pluggable platform scraping"). Older setups that only export `APIFY_TOKEN` must re-export it as `APIFY_API_TOKEN`; preflight reads the new name only.
+and continue — Apify is never required. Native platform APIs and `fetch` + manual review remain available (`social-media-intelligence`, "Pluggable platform scraping").
 
 ## 3. OSINT skill availability
 

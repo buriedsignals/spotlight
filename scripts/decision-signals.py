@@ -37,6 +37,8 @@ ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(ROOT / "integrations" / "decisions"))
 
+sys.path.insert(0, str(ROOT))
+from integrations import _credentials as credentials  # noqa: E402
 import decision_signals_lib as lib  # noqa: E402
 import questions  # noqa: E402
 import rules  # noqa: E402
@@ -80,7 +82,13 @@ def read_env_file(path: Path) -> dict[str, str]:
 
 
 def resolve_key(cfg: dict[str, Any], env_file: Path | None) -> tuple[str, str]:
-    """Return (key, where): environment first, then the configured env file, then the checkout .env."""
+    """Return (key, where). A top-level `env_file` in the config that holds or
+    manages the key decides alone (integrations/_credentials.py); otherwise the
+    environment, then --env-file, then integrations.decisions.env_file, then
+    the checkout .env."""
+    decided = credentials.from_authority(KEY_ENV, ROOT)
+    if decided is not None:
+        return decided
     if os.environ.get(KEY_ENV):
         return os.environ[KEY_ENV], "environment"
     for candidate in (env_file, cfg.get("env_file"), ROOT / ".env"):

@@ -9,6 +9,11 @@ import sys
 from pathlib import Path
 from typing import Callable
 
+_CHECKOUT = Path(__file__).resolve().parents[1]
+if str(_CHECKOUT) not in sys.path:
+    sys.path.insert(0, str(_CHECKOUT))
+from integrations._credentials import credential  # noqa: E402
+
 
 def _load_dotenv(root: Path) -> None:
     """Load repo-root .env into os.environ without external dependencies."""
@@ -48,8 +53,8 @@ def discover_manifests(root: Path) -> list[dict]:
 def check_env_vars(manifest: dict) -> tuple[list[str], list[str]]:
     """Return set and missing env vars for a manifest."""
     required = manifest.get("env_vars") or manifest.get("required_env_vars") or []
-    set_vars = [name for name in required if os.environ.get(name)]
-    missing_vars = [name for name in required if not os.environ.get(name)]
+    set_vars = [name for name in required if credential(name)]
+    missing_vars = [name for name in required if not credential(name)]
     return set_vars, missing_vars
 
 
@@ -62,8 +67,8 @@ def build_report(
     requires_key = manifest.get("requires_key", False)
     set_vars, missing_vars = check_env_vars(manifest)
     activation_vars = manifest.get("activation_env_vars") or []
-    activation_vars_set = [name for name in activation_vars if os.environ.get(name)]
-    activation_vars_missing = [name for name in activation_vars if not os.environ.get(name)]
+    activation_vars_set = [name for name in activation_vars if credential(name)]
+    activation_vars_missing = [name for name in activation_vars if not credential(name)]
 
     report = {
         "id": manifest["id"],

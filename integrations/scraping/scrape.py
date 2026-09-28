@@ -23,8 +23,15 @@ import — they never touch a vendor SDK directly.
 from __future__ import annotations
 
 import os
+import sys
+from pathlib import Path
 
 from .scrape_types import ScrapeError, ScrapeResult
+
+_CHECKOUT = Path(__file__).resolve().parents[2]
+if str(_CHECKOUT) not in sys.path:
+    sys.path.insert(0, str(_CHECKOUT))
+from integrations._credentials import credential  # noqa: E402
 
 DEFAULT_PROVIDER = "crawl4ai"
 _KNOWN = ("crawl4ai", "firecrawl")
@@ -103,7 +110,7 @@ def _escalate(url: str, timeout_ms: int) -> ScrapeResult:
     # Crawl4AI was bot-blocked/empty on our own IP. Escalate to Firecrawl's managed
     # proxy pool (KTD6) — but only if its key is present. No key ⇒ stay sovereign and
     # surface the block rather than pretending we can reach a hard anti-bot target.
-    if not os.environ.get("FIRECRAWL_API_KEY"):
+    if not credential("FIRECRAWL_API_KEY"):
         raise ScrapeError(
             f"crawl4ai was bot-blocked/empty on {url} and no FIRECRAWL_API_KEY is "
             "set for the optional Firecrawl escape hatch — target not reachable "

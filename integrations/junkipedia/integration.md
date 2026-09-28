@@ -9,22 +9,18 @@
 - You want to see which outlets / accounts have amplified a specific narrative
 - You're tracking a disinformation operation and need cross-platform pattern data
 
-**Access:** Application-based. Request API access via https://www.junkipedia.org/. Once approved, set `JUNKIPEDIA_API_KEY` in `.env`.
+**Access:** Application-based. Request API access via https://www.junkipedia.org/. Once approved, add the key in Indicator Labs, or set `JUNKIPEDIA_API_KEY` in your environment, the file named by `env_file` in `.spotlight-config.json`, or the checkout `.env`. Never print the key or open a credential file.
 
 **Docs:** https://docs.junkipedia.org/reference-material/api
 
 ## Verb calls
 
-Junkipedia is REST API over HTTPS. Invoke `shell-safety` before curl calls. Use `--get --data-urlencode` for query values and validate output paths.
+Junkipedia is REST API over HTTPS. Invoke `shell-safety` first. The helper sends the key in a header, URL-encodes every parameter and accepts only the paths below; validate output paths.
 
 ### Search for tracked content
 
 ```
-execute-shell('curl -s -H "Authorization: Bearer $JUNKIPEDIA_API_KEY" \
-  --get "https://api.junkipedia.org/api/v1/posts" \
-  --data-urlencode "q=<query>" \
-  --data-urlencode "limit=50" \
-  -o {CASE_DIR}/research/junkipedia-<slug>.json')
+execute-shell('python3 -m integrations.junkipedia get posts --param "q=<query>" --param limit=50 --output {CASE_DIR}/research/junkipedia-<slug>.json')
 ```
 
 ### Search by narrative / issue
@@ -33,17 +29,13 @@ Junkipedia tags content under "issues" (narratives). Find posts tagged with a sp
 
 ```
 execute-shell('python3 scripts/spotlight_safe.py validate-slug "<issue_id>"')
-execute-shell('curl -s -H "Authorization: Bearer $JUNKIPEDIA_API_KEY" \
-  "https://api.junkipedia.org/api/v1/issues/<issue_id>/posts?limit=100" \
-  -o {CASE_DIR}/research/junkipedia-issue-<id>.json')
+execute-shell('python3 -m integrations.junkipedia get issues/<issue_id>/posts --param limit=100 --output {CASE_DIR}/research/junkipedia-issue-<id>.json')
 ```
 
 ### List issues the platform tracks
 
 ```
-execute-shell('curl -s -H "Authorization: Bearer $JUNKIPEDIA_API_KEY" \
-  "https://api.junkipedia.org/api/v1/issues" \
-  -o {CASE_DIR}/research/junkipedia-issues.json')
+execute-shell('python3 -m integrations.junkipedia get issues --output {CASE_DIR}/research/junkipedia-issues.json')
 ```
 
 Refer to the official docs for the current endpoint catalog — the exact paths above may change as the platform evolves. Re-verify against https://docs.junkipedia.org/reference-material/api before relying on any specific endpoint.
@@ -77,4 +69,4 @@ The `social-media-intelligence` skill's coordination-detection and narrative-tra
 
 ## Sensitive mode
 
-Junkipedia requires remote API access, so it's blocked in sensitive mode (the adapter strips `fetch`/`search`, and `execute-shell("curl ...")` against remote hosts is guarded at the skill layer). If pre-archived Junkipedia responses exist in `{CASE_DIR}/research/`, agents can read those directly via `read-file`.
+Junkipedia requires remote API access, so it's blocked in sensitive mode (the adapter strips `fetch`/`search`, and remote calls are guarded at the skill layer). If pre-archived Junkipedia responses exist in `{CASE_DIR}/research/`, agents can read those directly via `read-file`.

@@ -8,7 +8,7 @@
 - No native platform API path fits (see `skills/social-media-intelligence/SKILL.md`, "Platform Tools" — prefer YouTube Data API, Bluesky AT Protocol, Reddit API, Telegram where they apply)
 - The methodology already records the legal, ethical, and platform-policy basis for the collection
 
-**Access:** Optional. Preflight reports `unconfigured` until `APIFY_API_TOKEN` is set. The Engine (`bsig`) injects the token at launch when Apify is enabled in Indicator Labs; from-repo users export it themselves. Older setups that only have `APIFY_TOKEN` must re-export it as `APIFY_API_TOKEN` — preflight reads the new name only. Never echo the token.
+**Access:** Optional. Preflight reports `unconfigured` until an `APIFY_API_TOKEN` is configured. Indicator Labs writes it to the credential file named by `env_file` in `.spotlight-config.json`; from-repo users set it in their environment, that file, or the checkout `.env` (see `integrations/_credentials.py`). Never print the token or open a credential file.
 
 **Docs:** https://docs.apify.com/api/v2
 
@@ -16,11 +16,11 @@
 
 ## Verb calls
 
-Apify is a REST API over HTTPS. Invoke `shell-safety` first. Write the actor input to a case-local JSON file and POST that file — never inline search terms, handles, or URLs into the command. The `run-sync-get-dataset-items` endpoint waits for the run and returns the dataset items; it answers HTTP `408` when a run exceeds 300 seconds, so cap `maxItems` (≤ 100) and split large targets into several bounded runs.
+Apify is a REST API over HTTPS. Invoke `shell-safety` first. Write the actor input to a case-local JSON file and run the helper, which POSTs that file with the token in an `Authorization` header — never inline search terms, handles, or URLs into the command. The `run-sync-get-dataset-items` endpoint waits for the run and returns the dataset items; it answers HTTP `408` when a run exceeds 300 seconds, so cap `maxItems` (≤ 100) and split large targets into several bounded runs.
 
 ```
 write-file("{CASE_DIR}/research/apify-<platform>-input.json", <serialized actor input JSON>)
-execute-shell('curl -sS -X POST "https://api.apify.com/v2/acts/<actor>/run-sync-get-dataset-items?token=$APIFY_API_TOKEN" -H "Content-Type: application/json" --data @{CASE_DIR}/research/apify-<platform>-input.json -o {CASE_DIR}/research/apify-<platform>-<slug>.json')
+execute-shell('python3 -m integrations.apify run <actor> --input {CASE_DIR}/research/apify-<platform>-input.json --output {CASE_DIR}/research/apify-<platform>-<slug>.json')
 ```
 
 | Platform | `<actor>` | Input shape used by the shared recipes |
@@ -35,13 +35,13 @@ Verify the live input schema on the actor's Store page before the first run of a
 
 ### Optional: `apify` CLI
 
-The REST path needs only `curl`; the CLI is never required. If it is installed and logged in, the same input file works:
+The helper needs only Python; the CLI is never required. If it is installed and logged in, the same input file works:
 
 ```
 execute-shell('apify call <actor> --input-file {CASE_DIR}/research/apify-<platform>-input.json --output-dataset')
 ```
 
-If the installed CLI does not support `--input-file`, use the REST path.
+If the installed CLI does not support `--input-file`, use the helper.
 
 ## Cost control
 
@@ -67,4 +67,4 @@ Record the actor id, input-file hash, access time, and collection authority. Arc
 
 ## Sensitive mode
 
-Apify requires remote API access, so it is blocked in sensitive mode (`fetch`/`search` are stripped and `execute-shell("curl …")` against remote hosts is guarded at the skill layer). Previously saved responses under `{CASE_DIR}/research/` remain readable via `read-file`.
+Apify requires remote API access, so it is blocked in sensitive mode (`fetch`/`search` are stripped and remote calls are guarded at the skill layer). Previously saved responses under `{CASE_DIR}/research/` remain readable via `read-file`.
