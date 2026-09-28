@@ -673,6 +673,29 @@ def test_round_five_regressions(tmp: Path) -> None:
     assert fields["opt_in"] == "unavailable" and fields["status"] == "dismissed"
 
 
+def test_round_six_regression(tmp: Path) -> None:
+    """Renaming another case's data/ or research/ into place mid-run cannot cross the consent boundary."""
+    case_a = fresh_case(tmp / "dir-a")
+    case_b = fresh_case(tmp / "dir-b")
+    findings_b = json.loads((case_b / "data" / "findings.json").read_text())
+    findings_b["findings"][0]["claim"] = "Case B unconsented claim."
+    (case_b / "data" / "findings.json").write_text(json.dumps(findings_b))
+    (case_b / "research" / "official-record.md").write_text("Case B unconsented source text.\n")
+    with lib.pinned_case(case_a) as pinned:
+        for child in ("data", "research"):
+            os.rename(pinned / child, pinned / f"{child}-original")
+            os.rename(case_b / child, pinned / child)
+        try:
+            claims = [f["claim"] for f in lib.case_findings(pinned)]
+            source = lib.read_case_file(pinned, "research/official-record.md").decode()
+        finally:
+            for child in ("data", "research"):
+                os.rename(pinned / child, case_b / child)
+                os.rename(pinned / f"{child}-original", pinned / child)
+    assert "Case B unconsented claim." not in claims, "data/ is read from the directory pinned at the start"
+    assert "Case B" not in source, "research/ is read from the directory pinned at the start"
+
+
 def main() -> int:
     for test in (test_client_boundary, test_rules):
         test()
@@ -684,7 +707,7 @@ def main() -> int:
                      test_invalid_and_unsafe_signal_files, test_symlinked_research_is_not_read,
                      test_malformed_answer_keeps_other_results, test_ingest_phase, test_missing_grounding_cap_warns,
                      test_round_two_regressions, test_round_three_regressions, test_input_containment,
-                     test_round_five_regressions):
+                     test_round_five_regressions, test_round_six_regression):
             test(tmp)
     print("decision-signals-check: PASS")
     return 0

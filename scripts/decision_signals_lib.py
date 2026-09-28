@@ -36,36 +36,54 @@ from spotlight_orchestration.storage import read_data_bytes, transaction
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _DIRECTORY = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | _NOFOLLOW
 ANCHORED_READS = os.open in os.supports_dir_fd and bool(_NOFOLLOW)
-_PINNED: dict[str, int] = {}
+PINNED_CHILDREN = ("data", "research")
+_PINNED: dict[str, dict[str, int]] = {}
 
 
 @contextmanager
 def pinned_case(case: Path) -> Iterator[Path]:
-    """Open the case root once; reads for this Path then walk from that descriptor.
+    """Pin the case root and its data/ and research/ directories before anything is read.
 
-    Networked callers pin the case before reading consent so that a later
-    rename or symlink swap of the case pathname cannot redirect any read that a
-    request depends on. The yielded Path must be passed unchanged to readers.
+    Networked callers enter this before reading consent. Consent, every request
+    input and the signal write then come from these same directory inodes, so
+    renaming or symlink-swapping the case, its data/ or its research/ during the
+    run cannot bring another case's content under this case's consent. (Moving
+    individual files into the pinned directories is equivalent to adding them to
+    the case.) The yielded Path must be passed unchanged to readers.
     """
     if not ANCHORED_READS:
         raise SignalsError("descriptor-anchored reads are unavailable on this platform")
     resolved = case.resolve()
+    descriptors: dict[str, int] = {}
     try:
-        descriptor = os.open(resolved, _DIRECTORY)
+        descriptors[""] = os.open(resolved, _DIRECTORY)
+        for child in PINNED_CHILDREN:
+            try:
+                descriptors[child] = os.open(child, _DIRECTORY, dir_fd=descriptors[""])
+            except FileNotFoundError:
+                continue
     except OSError as exc:
+        for descriptor in descriptors.values():
+            os.close(descriptor)
         raise SignalsError(f"case directory is not safely accessible: {exc}") from exc
-    _PINNED[str(resolved)] = descriptor
+    _PINNED[str(resolved)] = descriptors
     try:
         yield resolved
     finally:
         _PINNED.pop(str(resolved), None)
-        os.close(descriptor)
+        for descriptor in descriptors.values():
+            os.close(descriptor)
 
 
 def _open_parent(case: Path, parts: tuple[str, ...]) -> int:
     """A descriptor for the directory holding the target, walked without following symlinks."""
     pinned = _PINNED.get(str(case))
-    descriptor = os.dup(pinned) if pinned is not None else os.open(case.resolve(), _DIRECTORY)
+    if pinned is not None and parts and parts[0] in pinned:
+        descriptor, parts = os.dup(pinned[parts[0]]), parts[1:]
+    elif pinned is not None:
+        descriptor = os.dup(pinned[""])
+    else:
+        descriptor = os.open(case.resolve(), _DIRECTORY)
     try:
         for part in parts:
             child = os.open(part, _DIRECTORY, dir_fd=descriptor)
