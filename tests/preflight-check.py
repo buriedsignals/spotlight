@@ -62,6 +62,7 @@ def run_temporary_preflight(
         manifest_dir.mkdir(parents=True)
         shutil.copy2(SCRIPT, integrations_dir / "preflight.py")
         shutil.copy2(ROOT / "integrations" / "_preflight_base.py", integrations_dir / "_preflight_base.py")
+        shutil.copy2(ROOT / "integrations" / "_credentials.py", integrations_dir / "_credentials.py")
         (manifest_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         env = os.environ.copy()
         for name in manifest.get("activation_env_vars", []):

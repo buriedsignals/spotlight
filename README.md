@@ -239,9 +239,11 @@ It is off unless you choose it. Phase 0 preflight asks once per install
 undecided | enabled | declined`), and each investigation asks again before
 anything is sent. Sensitive mode never uses it.
 
-- **Key:** it uses your own `OPENROUTER_API_KEY`, from the environment Spotlight
-  runs in or from a private file named by `integrations.decisions.env_file` in
-  `.spotlight-config.json`. Keep that file outside any repository and
+- **Key:** it uses your own `OPENROUTER_API_KEY`. Indicator Labs writes the keys
+  you save there to a private file named by the top-level `env_file` in
+  `.spotlight-config.json`, which then decides for every key it manages. Without
+  it, Spotlight reads the environment it runs in, a private file named by
+  `integrations.decisions.env_file`, or the checkout `.env`. Keep that file outside any repository and
   `chmod 600` it. Never paste the key into chat or the config.
 - **Readiness:** `python3 scripts/decision-signals.py <case> --phase gate1 --check`
   reports whether a run would happen, without sending anything.

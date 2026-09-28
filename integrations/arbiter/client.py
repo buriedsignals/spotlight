@@ -14,11 +14,17 @@ import json
 import os
 import re
 import socket
+import sys
 from pathlib import Path
 from typing import Any, Callable, Mapping
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
+
+_CHECKOUT = Path(__file__).resolve().parents[2]
+if str(_CHECKOUT) not in sys.path:
+    sys.path.insert(0, str(_CHECKOUT))
+from integrations._credentials import credential  # noqa: E402
 
 
 class SameOriginRedirectHandler(HTTPRedirectHandler):
@@ -282,6 +288,10 @@ class ArbiterClient:
         if timeout <= 0:
             raise ValueError("request timeout must be positive")
         self._api_key = api_key
+        # Set by from_env() when no explicit key source was given: the key is
+        # then looked up again for every request, so a key replaced or removed
+        # in Indicator Labs applies to the next call on an existing client.
+        self._key_lookup: Callable[[], str] | None = None
         self._sensitive = sensitive
         self._opener = opener
         self._timeout = timeout
@@ -297,7 +307,19 @@ class ArbiterClient:
         credential_provider: Callable[[], str] | None = None,
     ) -> "ArbiterClient":
         values = os.environ if env is None else env
-        api_key = values.get("ARBITER_API_KEY")
+        lookup = None
+        if env is None:
+            # Configured credentials first (file, environment, .env); a
+            # caller-supplied provider only when none is configured.
+            def lookup() -> str:
+                key = credential("ARBITER_API_KEY")
+                if not key and credential_provider is not None:
+                    key = credential_provider()
+                return key
+
+            api_key = lookup()
+        else:
+            api_key = values.get("ARBITER_API_KEY")
         if not isinstance(api_key, str) or not api_key.strip():
             if credential_provider is None:
                 raise ValueError("ARBITER_API_KEY is required")
@@ -305,7 +327,9 @@ class ArbiterClient:
         if not isinstance(api_key, str) or not api_key.strip():
             raise ValueError("ARBITER_API_KEY is required")
         base = values.get("ARBITER_API_BASE", DEFAULT_API_BASE)
-        return cls(base, api_key, sensitive=sensitive, opener=opener, timeout=timeout)
+        client = cls(base, api_key, sensitive=sensitive, opener=opener, timeout=timeout)
+        client._key_lookup = lookup
+        return client
 
     def request_raw(
         self,
@@ -330,7 +354,10 @@ class ArbiterClient:
         url = self.api_base + path + ("?" + encoded_query if encoded_query else "")
         data = None if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")
         request = Request(url, data=data, method=verb)
-        request.add_header("Authorization", f"Bearer {self._api_key}")
+        api_key = self._key_lookup() if self._key_lookup is not None else self._api_key
+        if not api_key:
+            raise ValueError("ARBITER_API_KEY is not configured")
+        request.add_header("Authorization", f"Bearer {api_key}")
         request.add_header("Accept", "application/json")
         if data is not None:
             request.add_header("Content-Type", "application/json")

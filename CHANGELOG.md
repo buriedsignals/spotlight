@@ -4,6 +4,22 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added — Keys from a configured credential file
+
+- `integrations/_credentials.py` resolves keys per call without changing the
+  process environment. A top-level `env_file` in `.spotlight-config.json` wins
+  for every key it holds, and its `# managed: NAME …` line makes it
+  authoritative for the listed names even when one is absent. Without
+  `env_file`, the environment and the checkout `.env` apply as before.
+  Indicator Labs points `env_file` at the file it keeps up to date, so keys
+  saved there work in any local agent (Claude Desktop, ChatGPT Desktop, Cursor,
+  a terminal CLI) without a launcher.
+- `python3 -m integrations.apify` and `python3 -m integrations.junkipedia`
+  replace the `curl … $TOKEN` instructions: the key travels in a header, never
+  on a command line, and the commands work in PowerShell.
+- Firecrawl scrape and search, Arbiter (per request) and decision checks read
+  keys through the helper; errors never echo a key.
+
 ### Added — Opt-in decision checks (OpenRouter Decisions API)
 
 - New optional integration `decisions` (`integrations/decisions/`): typed
