@@ -204,10 +204,10 @@ def ingest(case: Path, asker: Asker, entities_file: Path | None, existing_file: 
     computed: set[str] = {"propositions", "memberships"} if lib.read_case_json(case, "knowledge-batch.json") is not None else set()
     if entities_file:
         computed.add("entities")
-        entries += lib.entity_items(load_json(entities_file))
+        entries += lib.entity_items(lib.read_case_json(case, lib.case_input_name(case, entities_file)) or [])
     if existing_file:
         computed.add("matches")
-        entries += lib.match_items(case, load_json(existing_file), MAX_MATCH_PAIRS)
+        entries += lib.match_items(case, lib.read_case_json(case, lib.case_input_name(case, existing_file)) or [], MAX_MATCH_PAIRS)
     jobs, derive = [], {}
     for index, entry in enumerate(entries):
         group, inputs = entry["group"], entry["rule_inputs"]
@@ -269,8 +269,8 @@ def main(argv: list[str] | None = None, provider: Any = None) -> int:
     parser.add_argument("--check", action="store_true", help="report whether a run would make requests, without any request")
     parser.add_argument("--env-file", type=Path, help=f"file holding {KEY_ENV} (overrides integrations.decisions.env_file)")
     parser.add_argument("--sensitive", action="store_true")
-    parser.add_argument("--entities", type=Path)
-    parser.add_argument("--existing-claims", type=Path)
+    parser.add_argument("--entities", type=Path, help="entity list [{name, context, type}]; must be a file directly inside CASE_DIR/data/")
+    parser.add_argument("--existing-claims", type=Path, help="existing claims [{id, claim}]; must be a file directly inside CASE_DIR/data/")
     args = parser.parse_args(argv)
 
     case = Path(args.case_dir).resolve()

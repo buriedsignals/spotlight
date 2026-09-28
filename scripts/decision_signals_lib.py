@@ -21,14 +21,19 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import re
+import stat
 import unicodedata
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
-from spotlight_orchestration.case_writer import atomic_write_files
+from spotlight_orchestration.case_writer import atomic_write_files, open_case_directory
 from spotlight_orchestration.contract import OrchestrationError
 from spotlight_orchestration.storage import read_data_bytes, transaction
+
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_ANCHORED = os.open in os.supports_dir_fd and bool(_NOFOLLOW)
 
 SIGNALS_NAME = "decision-signals.json"
 INGEST_SIGNALS_NAME = "decision-signals-ingest.json"
@@ -71,12 +76,48 @@ def text(value: Any) -> str:
     return str(value).strip()
 
 
+def read_case_file(case: Path, relative: str) -> bytes | None:
+    """Read a case-relative file through directory descriptors, never following a symlink.
+
+    Every path component is opened with O_NOFOLLOW relative to its verified
+    parent descriptor and the opened file is checked with fstat, so a
+    concurrent swap cannot redirect the read outside the case. Returns None
+    when the file is absent; raises SignalsError for escaping, symlinked or
+    non-regular paths.
+    """
+    posix = PurePosixPath(relative)
+    parts = posix.parts
+    if posix.is_absolute() or not parts or any(part in ("", ".", "..") for part in parts):
+        raise SignalsError(f"invalid case-relative path: {relative}")
+    case = case.resolve()
+    if not _ANCHORED:  # platforms without dir_fd: best-effort pathname checks
+        path = case.joinpath(*parts)
+        if not path.exists():
+            return None
+        if any(p.is_symlink() for p in [path, *path.parents] if case in p.parents or p == path) or not path.is_file():
+            raise SignalsError(f"{relative} must be a regular, non-symlinked case file")
+        return path.read_bytes()
+    try:
+        with open_case_directory(case, tuple(parts[:-1])) as directory:
+            try:
+                descriptor = os.open(parts[-1], os.O_RDONLY | _NOFOLLOW, dir_fd=directory)
+            except FileNotFoundError:
+                return None
+            with os.fdopen(descriptor, "rb") as stream:
+                if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                    raise SignalsError(f"{relative} must be a regular file")
+                return stream.read()
+    except OrchestrationError as exc:
+        if not case.joinpath(*parts[:-1]).exists():
+            return None
+        raise SignalsError(f"{relative}: {exc}") from exc
+    except OSError as exc:
+        raise SignalsError(f"{relative} is not a safely readable case file: {exc}") from exc
+
+
 def read_case_json(case: Path, name: str) -> Any:
     """Read data/<name> without following symlinks or leaving the case; None when absent."""
-    try:
-        content = read_data_bytes(case.resolve(), name)
-    except OrchestrationError as exc:
-        raise SignalsError(str(exc)) from exc
+    content = read_case_file(case, f"data/{name}")
     if content is None:
         return None
     try:
@@ -165,6 +206,34 @@ def case_path(case: Path, candidate: Any) -> Path | None:
     return _contained(case, path if path.is_absolute() else case / path)
 
 
+def _safe_text(case: Path, path: Path) -> str | None:
+    """Read a stored source through the anchored reader; skip anything unsafe or unreadable."""
+    try:
+        relative = path.relative_to(case) if not path.is_absolute() else path.absolute().relative_to(case.resolve())
+    except ValueError:
+        try:
+            relative = path.resolve().relative_to(case.resolve())
+        except (OSError, ValueError):
+            return None
+    try:
+        content = read_case_file(case, relative.as_posix())
+    except SignalsError:
+        return None
+    return None if content is None else content.decode("utf-8", errors="ignore")
+
+
+def case_input_name(case: Path, value: Any) -> str:
+    """A CLI-supplied ingest input must be a plain file directly inside {CASE_DIR}/data/."""
+    raw = Path(str(value))
+    candidate = raw if raw.is_absolute() else Path.cwd() / raw
+    data_dir = case.resolve() / "data"
+    # The parent directory must be the case's data directory; the file itself is then
+    # opened by name through the anchored reader, which refuses a symlinked file.
+    if os.path.realpath(candidate.parent) != os.path.realpath(data_dir) or candidate.name in ("", ".", ".."):
+        raise SignalsError(f"{value} must be a file directly inside {data_dir}")
+    return candidate.name
+
+
 def grounding_sources(case: Path, finding: dict[str, Any]) -> tuple[list[dict[str, str]], str]:
     """Locate the finding's quoted evidence in stored sources inside the case.
 
@@ -180,9 +249,9 @@ def grounding_sources(case: Path, finding: dict[str, Any]) -> tuple[list[dict[st
         if not isinstance(source, dict):
             continue
         path = case_path(case, source.get("local_file"))
-        if path is None:
+        document = _safe_text(case, path) if path is not None else None
+        if document is None:
             continue
-        document = path.read_text(encoding="utf-8", errors="ignore")
         excerpt = locate_excerpt(document, quote)
         if excerpt:
             located.append({"url": text(source.get("url")), "document_heading": document_heading(document), "excerpt": excerpt})
@@ -192,9 +261,9 @@ def grounding_sources(case: Path, finding: dict[str, Any]) -> tuple[list[dict[st
     if research.is_dir() and _directory_contained(case, research):
         for candidate in sorted(research.rglob("*.md")):
             path = _contained(case, candidate)
-            if path is None:
+            document = _safe_text(case, candidate) if path is not None else None
+            if document is None:
                 continue
-            document = path.read_text(encoding="utf-8", errors="ignore")
             excerpt = locate_excerpt(document, quote)
             if excerpt:
                 return [{"url": "", "document_heading": document_heading(document) or path.name, "excerpt": excerpt}], "other_case_file"
@@ -275,18 +344,8 @@ def validate_signals(doc: Any) -> dict[str, Any]:
 
 def load_signals(case: Path, name: str = SIGNALS_NAME) -> dict[str, Any] | None:
     """None when absent; SignalsError when present but unreadable, malformed or a symlink."""
-    case = case.resolve()
-    try:
-        content = read_data_bytes(case, name)
-    except OrchestrationError as exc:
-        raise SignalsError(str(exc)) from exc
-    if content is None:
-        return None
-    try:
-        doc = json.loads(content.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError) as exc:
-        raise SignalsError(f"data/{name} is not valid JSON: {exc}") from exc
-    return validate_signals(doc)
+    doc = read_case_json(case, name)
+    return None if doc is None else validate_signals(doc)
 
 
 def update_signals(case: Path, name: str, mutate: Callable[[dict[str, Any] | None], dict[str, Any]]) -> dict[str, Any]:

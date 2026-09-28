@@ -117,12 +117,13 @@ def evaluate(case: Path, entities: list[Any] | None = None, existing: list[Any] 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Deterministic Phase 6 claim eligibility (offline).")
     parser.add_argument("case_dir")
-    parser.add_argument("--entities", type=Path, help="the same entity list passed to decision-signals.py --entities")
-    parser.add_argument("--existing-claims", type=Path, help="the same list passed to decision-signals.py --existing-claims")
+    parser.add_argument("--entities", type=Path, help="the same entity list passed to decision-signals.py --entities (inside CASE_DIR/data/)")
+    parser.add_argument("--existing-claims", type=Path, help="the same list passed to decision-signals.py --existing-claims (inside CASE_DIR/data/)")
     args = parser.parse_args()
-    load = lambda path: json.loads(path.read_text(encoding="utf-8")) if path else None  # noqa: E731
+    case = Path(args.case_dir)
     try:
-        report = evaluate(Path(args.case_dir), load(args.entities), load(args.existing_claims))
+        load = lambda path: (lib.read_case_json(case, lib.case_input_name(case, path)) or []) if path else None  # noqa: E731
+        report = evaluate(case, load(args.entities), load(args.existing_claims))
     except lib.SignalsError as exc:
         print(json.dumps({"error": f"decision signals are invalid: {exc}"}))
         return 1

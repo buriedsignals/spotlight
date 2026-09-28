@@ -429,9 +429,9 @@ def test_ingest_phase(tmp: Path) -> None:
     run_phase(case, cfg, "gate1", provider_with())
     assert run_script("finalize-report.py", case).returncode == 0
     report_inputs = json.loads((case / "evidence-map.json").read_text())["input_sha256"]
-    entities = tmp / "entities.json"
+    entities = case / "data" / "ingest-entities.json"
     entities.write_text(json.dumps([{"name": "Morgan", "context": "Morgan approved the payment.", "type": "person"}]))
-    existing = tmp / "existing.json"
+    existing = case / "data" / "ingest-existing-claims.json"
     existing.write_text(json.dumps([{"id": "old-1", "claim": "Ada Lovelace is President of Northwind Research Cooperative."}]))
     provider = provider_with({"i_prop": "broader_or_changed", "i_member": "mentions", "i_entity_ambiguous": 0.8})
     run_phase(case, cfg, "ingest", provider, ["--entities", str(entities)])
@@ -480,7 +480,7 @@ def test_round_two_regressions(tmp: Path) -> None:
     # Ingest-only run never creates the main signals file; a finalized report stays valid.
     case = fresh_case(tmp / "ingest-only")
     assert run_script("finalize-report.py", case).returncode == 0
-    entities = tmp / "r2-entities.json"
+    entities = case / "data" / "ingest-entities.json"
     entities.write_text(json.dumps([{"name": "Acme AG", "context": "Acme AG paid the fee.", "type": "company"}]))
     run_phase(case, config(tmp, {"ingest": "advisory"}, "r2i.json"), "ingest", provider_with(), ["--entities", str(entities)])
     assert not (case / lib.SIGNALS_PATH).exists() and (case / lib.INGEST_SIGNALS_PATH).exists()
@@ -581,6 +581,30 @@ def test_round_three_regressions(tmp: Path) -> None:
     assert statuses[routed[0]["target"]] == "unresolved"
 
 
+def test_input_containment(tmp: Path) -> None:
+    case = fresh_case(tmp / "inputs")
+    outside = tmp / "other-case-entities.json"
+    outside.write_text(json.dumps([{"name": "Secret Person", "context": "Secret Person met the minister.", "type": "person"}]))
+    cfg = config(tmp, {"ingest": "advisory"}, "contain.json")
+    link = case / "data" / "ingest-entities.json"
+    link.symlink_to(outside)
+    for value in (outside, link):
+        provider = provider_with()
+        out = io.StringIO(); stdout, sys.stdout = sys.stdout, out
+        try:
+            code = signals_cli.main([str(case), "--phase", "ingest", "--config", str(cfg), "--case-opt-in", "--entities", str(value)], provider=provider)
+        finally:
+            sys.stdout = stdout
+        assert code == 2 and not provider.calls, f"{value} must be refused before any request"
+    for bad in ("../findings.json", "data/../x.json"):
+        try:
+            lib.read_case_file(case, bad)
+            raise AssertionError("escaping relative paths must be refused")
+        except lib.SignalsError:
+            pass
+    assert lib.read_case_file(case, "data/absent.json") is None
+
+
 def main() -> int:
     for test in (test_client_boundary, test_rules):
         test()
@@ -591,7 +615,7 @@ def main() -> int:
                      test_stale_grounding_signal_not_applied, test_report_fidelity_stage,
                      test_invalid_and_unsafe_signal_files, test_symlinked_research_is_not_read,
                      test_malformed_answer_keeps_other_results, test_ingest_phase, test_missing_grounding_cap_warns,
-                     test_round_two_regressions, test_round_three_regressions):
+                     test_round_two_regressions, test_round_three_regressions, test_input_containment):
             test(tmp)
     print("decision-signals-check: PASS")
     return 0

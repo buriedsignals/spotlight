@@ -350,10 +350,12 @@ finding, claim ID is `{project-id}-f{n}`:
 
 **Matching against existing claims (optional).** When decision checks ran,
 collect existing claim notes that share an entity with this case's findings
-(`[{"id", "claim"}]`, at most 60 pairs) and run
-`python3 scripts/decision-signals.py {CASE_DIR} --phase ingest --existing-claims <that file>`.
+into `{CASE_DIR}/data/ingest-existing-claims.json` (`[{"id", "claim"}]`, at
+most 60 pairs; both input lists must be regular files directly inside
+`{CASE_DIR}/data/`) and run
+`python3 scripts/decision-signals.py {CASE_DIR} --phase ingest --existing-claims {CASE_DIR}/data/ingest-existing-claims.json`.
 Immediately before writing any re-verification or supersession row, run
-`python3 scripts/ingest-eligibility.py {CASE_DIR} --existing-claims <that file>`
+`python3 scripts/ingest-eligibility.py {CASE_DIR} --existing-claims {CASE_DIR}/data/ingest-existing-claims.json`
 with the current list and use only `ingest_checks` entries whose status is
 `judged`; rerun the check for `stale` or `unchecked` entries first. Results are
 candidates for the user, never authority over another claim's history:
