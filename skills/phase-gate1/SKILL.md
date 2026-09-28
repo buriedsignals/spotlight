@@ -80,6 +80,37 @@ review, report drafting, and ingest:
 `summary.md` is the human artifact; `data/summary.json` is the machine
 contract. Generate both.
 
+## Decision checks (optional)
+
+Run only when `.spotlight-config.json` has `integrations.decisions.enabled: true`,
+the case is not sensitive, an OpenRouter key is available, and the user agreed
+to decision checks for this case at methodology approval (first run only: add
+`--case-opt-in`). `python3 scripts/decision-signals.py {CASE_DIR} --phase gate1 --check`
+reports readiness without making a request.
+
+```
+execute-shell("python3 scripts/decision-signals.py {CASE_DIR} --phase gate1")
+```
+
+It asks the decision model (OpenRouter Decisions API, zero data retention) whether
+each finding's quoted evidence, located in the stored sources, grounds the
+claim, and writes `data/decision-signals.json`. Findings whose quote is not
+found in any stored source, or that need arithmetic, are `routed` back to the
+existing fact-check process instead of judged. If the command prints
+`"ran": false`, skip this section without blocking Gate 1.
+
+Add a **Decision check** column to the findings table (flags or `none`,
+`routed`, `unavailable`) and list each flag with its reason under
+**Limitations**. State that these are classification signals, not
+verification: they never raise confidence. In `enforce` mode the report and
+ingest apply the recorded cap; in `advisory` mode they only show it. When the
+user disagrees with a flag, append `{target: "finding:F1", input_sha256:
+<that finding entry's input_sha256>, reviewer, reason, at}` to `overrides` in
+`data/decision-signals.json`; the override lapses automatically when the
+finding or its located source changes. A contradiction or
+incomplete-support flag is a good reason to offer another fact-check cycle
+(see Iterate).
+
 ## Present to user
 
 **Headline:** "{N} verified findings across {M} cycles"

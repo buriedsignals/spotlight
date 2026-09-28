@@ -82,6 +82,10 @@ def build_report(
     if extra_fields:
         report.update(extra_fields)
 
+    # A user's explicit dismissal is final: no credential reclassification, no probe.
+    if report.get("status") == "dismissed":
+        return report
+
     if activation_vars_missing:
         report["status"] = "unconfigured"
         return report

@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+import decision_signals_lib as decision_signals
 from source_expression_contract import lifecycle_state
 from spotlight_orchestration.case_writer import atomic_write_files
 from spotlight_orchestration.contract import OrchestrationError
@@ -522,7 +523,8 @@ def compile_timeline_diagram(
 
 
 def compile_bar_diagram(
-    diagram: dict[str, Any], findings_doc: dict[str, Any], checks: list[dict[str, Any]]
+    diagram: dict[str, Any], findings_doc: dict[str, Any], checks: list[dict[str, Any]],
+    verdict_for: Any = None,
 ) -> dict[str, Any]:
     """Compile a validated metric selection into a deterministic Mermaid xychart bar chart."""
     metric = text(diagram.get("metric"))
@@ -538,7 +540,7 @@ def compile_bar_diagram(
     if not findings:
         raise RenderError("bar series is empty: no findings in scope")
 
-    verdicts = [aggregate_verdict(row, checks) for row in findings]
+    verdicts = [verdict_for(row) if verdict_for else aggregate_verdict(row, checks) for row in findings]
     if metric == "verdict_tally":
         counts = {status: 0 for status in VERDICT_LABEL}
         for verdict in verdicts:
@@ -591,7 +593,8 @@ def compile_bar_diagram(
 
 
 def compile_diagrams(
-    draft: dict[str, Any], findings_doc: dict[str, Any], checks: list[dict[str, Any]]
+    draft: dict[str, Any], findings_doc: dict[str, Any], checks: list[dict[str, Any]],
+    verdict_for: Any = None,
 ) -> list[dict[str, Any]]:
     """Compile validated connection selections into safe, deterministic Mermaid."""
     available: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
@@ -611,7 +614,7 @@ def compile_diagrams(
             compiled.append(compile_timeline_diagram(diagram, findings_doc))
             continue
         if diagram_type == "bar":
-            compiled.append(compile_bar_diagram(diagram, findings_doc, checks))
+            compiled.append(compile_bar_diagram(diagram, findings_doc, checks, verdict_for))
             continue
         selected: list[tuple[str, str, str]] = []
         for selector in diagram.get("connections", []):
@@ -716,7 +719,9 @@ def diagram_markdown(diagrams: list[dict[str, Any]]) -> list[str]:
 def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[str, Any],
                     draft: dict[str, Any], checks: list[dict[str, Any]],
                     expressions_doc: dict[str, Any] | None = None,
-                    diagrams: list[dict[str, Any]] | None = None) -> tuple[str, list[dict[str, Any]]]:
+                    diagrams: list[dict[str, Any]] | None = None,
+                    effective: dict[str, tuple[dict[str, Any], dict[str, Any] | None]] | None = None,
+                    ) -> tuple[str, list[dict[str, Any]]]:
     findings = ordered_findings(findings_doc, draft)
     treatments = treatment_map(draft)
     title = text(draft.get("title"))
@@ -747,12 +752,13 @@ def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[
     for index, finding in enumerate(findings, 1):
         fid = text(finding.get("id")) or f"F{index}"
         treatment = treatments[fid]
-        verdict = aggregate_verdict(finding, checks)
+        verdict, signal = (effective or {}).get(fid) or (aggregate_verdict(finding, checks), None)
         sources = source_records(case, finding, verdict)
         quotes = selected_expressions(treatment, fid, expressions)
         record = {"id": fid, "finding": finding, "treatment": treatment,
                   "verdict": verdict, "sources": sources, "quotes": quotes,
-                  "source_expressions": linked_by_finding.get(fid, [])}
+                  "source_expressions": linked_by_finding.get(fid, []),
+                  "decision_signal": signal}
         rendered.append(record)
         lines.append(
             f"| {md_cell(fid)} | {md_cell(treatment.get('headline'))} | "
@@ -776,6 +782,8 @@ def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[
             f"- **Verdict:** {VERDICT_LABEL.get(verdict['status'], verdict['status'].title())}",
             f"- **Report confidence:** {verdict['confidence'].title()}",
         ]
+        if record["decision_signal"]:
+            lines += ["- **Decision check:** " + md_safe(decision_check_line(record["decision_signal"], verdict))]
         evidence = list_of_text(finding.get("evidence"))
         if evidence:
             lines += ["- **Recorded evidence:** " + " ".join(md_safe(item) for item in evidence)]
@@ -840,6 +848,25 @@ def render_markdown(case: Path, findings_doc: dict[str, Any], methodology: dict[
     lines += ["", "## Deliverables", "",
               "- `findings-report.md`", "- `report.html`", "- `evidence-map.json`", ""]
     return "\n".join(lines), rendered
+
+
+def decision_check_line(signal: dict[str, Any], verdict: dict[str, Any]) -> str:
+    """One editor-facing line describing a decision-model signal (never evidence)."""
+    status = signal.get("status")
+    mode = signal.get("mode", "advisory")
+    if status == "stale":
+        return "stale: the finding changed after the check, so it was not applied."
+    if status == "unavailable":
+        return "unavailable: no signal was recorded."
+    if status == "routed":
+        return (f"routed to the existing fact-check process ({text(signal.get('route_reason'))}); "
+                "the decision model did not judge this finding.")
+    flags = [text(flag.get("reason")) for flag in signal.get("flags", []) if isinstance(flag, dict)]
+    head = f"{mode}; support {text(signal.get('support')) or 'n/a'}"
+    if not flags:
+        return head + "; no flags. Classification signal, not verification."
+    applied = f"; confidence capped at {verdict['decision_cap'].title()}" if verdict.get("decision_cap") else ""
+    return head + "; flags: " + ", ".join(flags) + applied + ". Classification signal, not verification."
 
 
 def template_css() -> str:
@@ -1224,6 +1251,20 @@ def evidence_map(
             "evidence_bundle_refs": list_of_text(finding.get("evidence_bundle_refs")),
             "sources": record["sources"],
         })
+        signal = record.get("decision_signal")
+        if signal:
+            claims[-1]["decision_signal"] = {
+                "status": signal.get("status"),
+                "mode": signal.get("mode"),
+                "support": signal.get("support"),
+                "cap": signal.get("cap"),
+                "applied_cap": verdict.get("decision_cap"),
+                "flags": signal.get("flags", []),
+                "facets": signal.get("facets", {}),
+                # Grounding inputs (claim, evidence, located source excerpts) at render time;
+                # validate-report recomputes it so a later source edit cannot hide behind the ledger.
+                "dependency_sha256": signal.get("current_input_sha256"),
+            }
         if record["source_expressions"]:
             selected_ids = {text(item.get("id")) for item in record["quotes"]}
             claims[-1]["source_expression_refs"] = [
@@ -1314,10 +1355,24 @@ def render(case: Path) -> dict[str, Any]:
     inputs = [findings_path, fact_check_path, draft_path] + ([methodology_path] if methodology_path.is_file() else [])
     if activated:
         inputs.append(expressions_path)
+    signals_path = case / decision_signals.SIGNALS_PATH
+    try:
+        signals = decision_signals.load_signals(case)
+    except decision_signals.SignalsError as exc:
+        raise RenderError(f"data/decision-signals.json is invalid: {exc}") from exc
+    if signals is not None:
+        inputs.append(signals_path)
     hashes = input_hashes(inputs)
-    diagrams = compile_diagrams(draft, findings_doc, checks)
+    # One effective verdict per finding (fact-check verdict plus any enforced
+    # decision cap), shared by charts, finding cards, Markdown and the ledger.
+    this_module = sys.modules[__name__]
+    effective = {
+        text(finding.get("id")): decision_signals.effective_verdict(this_module, case, finding, checks, signals)
+        for finding in findings
+    }
+    diagrams = compile_diagrams(draft, findings_doc, checks, lambda row: effective[text(row.get("id"))][0])
     markdown, rendered = render_markdown(
-        case, findings_doc, methodology, draft, checks, expressions_doc, diagrams
+        case, findings_doc, methodology, draft, checks, expressions_doc, diagrams, effective
     )
     rendered_ids = [record["id"] for record in rendered]
     expected_order = [text(fid) for fid in draft.get("finding_order", [])]

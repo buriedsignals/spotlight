@@ -170,6 +170,23 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    `proposed=false`, `approved=false`, `mode="off"`, and a concrete
    `skip_reason`. Do not block methodology approval.
 
+
+   **Decision checks (optional).** If `.spotlight-config.json` has
+   `integrations.decisions.enabled: true`, `python3 scripts/decision-signals.py
+   {CASE_DIR} --phase gate1 --check --case-opt-in` reports `"ready": true`, and the
+   case is not sensitive, ask before the approval gate:
+
+   > "Decision checks are available. After fact-checking, Spotlight can send
+   > each claim, its quoted evidence and a short excerpt of the stored source to
+   > a decision model through OpenRouter (zero data retention, US-hosted) to flag
+   > weak grounding and overstated report prose. Flags can only lower
+   > confidence. Enable them for this case?"
+
+   Do not edit approved case files to record the answer. If the user agrees,
+   the first `scripts/decision-signals.py` run at Gate 1 preparation passes
+   `--case-opt-in`, which records the consent in `data/decision-signals.json`;
+   otherwise never run it for this case.
+
 5. **Gate: user approves the methodology.** Iterate if the user has changes.
    Re-run the methodology validator after the final change. When the user
    explicitly approves, persist the attributable, current-input receipt:

@@ -54,6 +54,7 @@ def report_stages(case: Path) -> list[dict[str, object]]:
     for label, script in (
         ("fact_check", "validate-fact-check.py"),
         ("report_draft", "validate-report-draft.py"),
+        ("report_fidelity", "check-report-fidelity.py"),
         ("render", "render-report.py"),
         ("report", "validate-report.py"),
     ):
@@ -133,7 +134,7 @@ def main() -> int:
 
     stages = report_stages(case)
 
-    passed = len(stages) == 4 and all(stage["passed"] for stage in stages)
+    passed = len(stages) == 5 and all(stage["passed"] for stage in stages)
     if args.json:
         print(json.dumps({"passed": passed, "stages": stages}, indent=2))
     else:

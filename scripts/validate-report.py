@@ -39,11 +39,36 @@ import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
 TEMPLATE = SCRIPT_DIR.parent / "skills/report-drafting/references/report-template.html"
 FACT_CHECK_VALIDATOR = SCRIPT_DIR / "validate-fact-check.py"
 REPORT_DRAFT_VALIDATOR = SCRIPT_DIR / "validate-report-draft.py"
 MIN_REPORT_BYTES = 500
 TEMPLATE_PLACEHOLDER_RE = re.compile(r"\{\{[^{}]*\}\}")
+
+
+def decision_dependency_fails(case: Path, claims: list) -> list[str]:
+    """Recompute decision-check grounding inputs (claim, evidence, located source excerpts).
+
+    The renderer records them per finding; if a stored source changed after
+    rendering, the displayed decision status or cap may no longer hold.
+    """
+    recorded = {str(c.get("id")): c["decision_signal"].get("dependency_sha256") for c in claims
+                if isinstance(c, dict) and isinstance(c.get("decision_signal"), dict)
+                and c["decision_signal"].get("dependency_sha256")}
+    if not recorded:
+        return []
+    import decision_signals_lib as decision_signals
+    try:
+        findings = json.loads((case / "data" / "findings.json").read_text()).get("findings") or []
+    except (OSError, ValueError):
+        return []
+    fails = []
+    for finding in findings:
+        fid = str(finding.get("id", "")) if isinstance(finding, dict) else ""
+        if fid in recorded and decision_signals.grounding_fingerprint(case, finding) != recorded[fid]:
+            fails.append(f"GENERATED: {fid} decision-check inputs (claim, evidence or stored source) changed since rendering; re-render")
+    return fails
 
 
 def find_artifact(case: Path, name: str) -> Path | None:
@@ -118,7 +143,8 @@ def check(case: Path) -> list[str]:
             )
 
         expected_inputs: dict[str, str] = {}
-        input_names = ["findings.json", "fact-check.json", "report-draft.json", "methodology.json"]
+        input_names = ["findings.json", "fact-check.json", "report-draft.json", "methodology.json",
+                       "decision-signals.json"]
         if (case / "data" / "case-contract.json").is_file():
             input_names.append("source-expressions.json")
         for name in input_names:
@@ -220,6 +246,14 @@ def check(case: Path) -> list[str]:
                     f"CONFIDENCE: {claim.get('id') or 'finding'} is High confidence but "
                     f"its fact-check status is {claim.get('fact_check_status') or 'MISSING'}"
                 )
+            signal = claim.get("decision_signal")
+            applied = signal.get("applied_cap") if isinstance(signal, dict) else None
+            rank = {"low": 1, "medium": 2, "high": 3}
+            if applied in rank and rank.get(str(claim.get("report_confidence", "")).lower(), 3) > rank[applied]:
+                fails.append(
+                    f"CONFIDENCE: {claim.get('id') or 'finding'} exceeds its applied decision-check cap ({applied})"
+                )
+        fails += decision_dependency_fails(case, evidence_map_doc["claims"])
 
     return fails
 

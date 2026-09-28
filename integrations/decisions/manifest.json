@@ -1,0 +1,31 @@
+{
+  "id": "decisions",
+  "name": "Decision checks (OpenRouter Decisions API)",
+  "description": "Optional typed decision checks through the OpenRouter Decisions API (default model typesafe/jev-1.13) that answer narrow questions about claim grounding, report prose fidelity and knowledge-ingest records. Uses the member's OpenRouter key (OPENROUTER_API_KEY, from the environment or integrations.decisions.env_file). Every request is pinned to zero data retention.",
+  "category": "verification-signals",
+  "type": "api",
+  "requires_key": true,
+  "env_vars": [
+    "OPENROUTER_API_KEY"
+  ],
+  "activation_env_vars": [
+    "OPENROUTER_API_KEY"
+  ],
+  "capabilities": [
+    "claim-grounding-signals",
+    "report-prose-fidelity",
+    "ingest-proposition-fidelity",
+    "ingest-entity-typing",
+    "ingest-claim-event-relation",
+    "cross-case-claim-matching",
+    "claim-facets"
+  ],
+  "invocable_by": [
+    "orchestrator"
+  ],
+  "homepage": "https://openrouter.ai/typesafe/jev-1.13",
+  "docs": "https://openrouter.ai/docs/guides/community/jev",
+  "egress_note": "Sends claims, finding text and bounded source excerpts to OpenRouter and the serving provider (TypeSafe, US, for the default model) under zero-data-retention routing. Never used in sensitive mode or for cases that have not opted in.",
+  "risk_note": "Decision signals are classifications, never evidence, verification or corroboration. They can only lower confidence, add review flags or route records to a lead layer; they never raise confidence or set a verdict.",
+  "network_smoke": false
+}
