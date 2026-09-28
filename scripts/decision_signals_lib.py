@@ -25,15 +25,56 @@ import os
 import re
 import stat
 import unicodedata
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
-from spotlight_orchestration.case_writer import atomic_write_files, open_case_directory
+from spotlight_orchestration.case_writer import atomic_write_files
 from spotlight_orchestration.contract import OrchestrationError
 from spotlight_orchestration.storage import read_data_bytes, transaction
 
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
-_ANCHORED = os.open in os.supports_dir_fd and bool(_NOFOLLOW)
+_DIRECTORY = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | _NOFOLLOW
+ANCHORED_READS = os.open in os.supports_dir_fd and bool(_NOFOLLOW)
+_PINNED: dict[str, int] = {}
+
+
+@contextmanager
+def pinned_case(case: Path) -> Iterator[Path]:
+    """Open the case root once; reads for this Path then walk from that descriptor.
+
+    Networked callers pin the case before reading consent so that a later
+    rename or symlink swap of the case pathname cannot redirect any read that a
+    request depends on. The yielded Path must be passed unchanged to readers.
+    """
+    if not ANCHORED_READS:
+        raise SignalsError("descriptor-anchored reads are unavailable on this platform")
+    resolved = case.resolve()
+    try:
+        descriptor = os.open(resolved, _DIRECTORY)
+    except OSError as exc:
+        raise SignalsError(f"case directory is not safely accessible: {exc}") from exc
+    _PINNED[str(resolved)] = descriptor
+    try:
+        yield resolved
+    finally:
+        _PINNED.pop(str(resolved), None)
+        os.close(descriptor)
+
+
+def _open_parent(case: Path, parts: tuple[str, ...]) -> int:
+    """A descriptor for the directory holding the target, walked without following symlinks."""
+    pinned = _PINNED.get(str(case))
+    descriptor = os.dup(pinned) if pinned is not None else os.open(case.resolve(), _DIRECTORY)
+    try:
+        for part in parts:
+            child = os.open(part, _DIRECTORY, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor
 
 SIGNALS_NAME = "decision-signals.json"
 INGEST_SIGNALS_NAME = "decision-signals-ingest.json"
@@ -89,41 +130,53 @@ def read_case_file(case: Path, relative: str) -> bytes | None:
     parts = posix.parts
     if posix.is_absolute() or not parts or any(part in ("", ".", "..") for part in parts):
         raise SignalsError(f"invalid case-relative path: {relative}")
-    case = case.resolve()
-    if not _ANCHORED:  # platforms without dir_fd: best-effort pathname checks
-        path = case.joinpath(*parts)
+    if not ANCHORED_READS:
+        # Offline consumers only (networked callers refuse to run without anchored reads).
+        path = case.resolve().joinpath(*parts)
         if not path.exists():
             return None
-        if any(p.is_symlink() for p in [path, *path.parents] if case in p.parents or p == path) or not path.is_file():
+        if path.is_symlink() or not path.is_file():
             raise SignalsError(f"{relative} must be a regular, non-symlinked case file")
         return path.read_bytes()
     try:
-        with open_case_directory(case, tuple(parts[:-1])) as directory:
-            try:
-                descriptor = os.open(parts[-1], os.O_RDONLY | _NOFOLLOW, dir_fd=directory)
-            except FileNotFoundError:
-                return None
-            with os.fdopen(descriptor, "rb") as stream:
-                if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-                    raise SignalsError(f"{relative} must be a regular file")
-                return stream.read()
-    except OrchestrationError as exc:
-        if not case.joinpath(*parts[:-1]).exists():
-            return None
-        raise SignalsError(f"{relative}: {exc}") from exc
+        directory = _open_parent(case, tuple(parts[:-1]))
+    except FileNotFoundError:
+        return None
     except OSError as exc:
-        raise SignalsError(f"{relative} is not a safely readable case file: {exc}") from exc
+        raise SignalsError(f"{relative} is not safely reachable inside the case: {exc}") from exc
+    try:
+        try:
+            descriptor = os.open(parts[-1], os.O_RDONLY | _NOFOLLOW, dir_fd=directory)
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            raise SignalsError(f"{relative} is not a safely readable case file: {exc}") from exc
+        with os.fdopen(descriptor, "rb") as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise SignalsError(f"{relative} must be a regular file")
+            return stream.read()
+    finally:
+        os.close(directory)
 
 
-def read_case_json(case: Path, name: str) -> Any:
-    """Read data/<name> without following symlinks or leaving the case; None when absent."""
+def read_case_json(case: Path, name: str, expect: type | None = dict, required: bool = False) -> Any:
+    """Read data/<name> without following symlinks or leaving the case.
+
+    None when absent (SignalsError instead when ``required``). A present file
+    must parse to ``expect``; JSON null or another type is invalid, never absent.
+    """
     content = read_case_file(case, f"data/{name}")
     if content is None:
+        if required:
+            raise SignalsError(f"data/{name} does not exist")
         return None
     try:
-        return json.loads(content.decode("utf-8"))
+        value = json.loads(content.decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as exc:
         raise SignalsError(f"data/{name} is not valid JSON: {exc}") from exc
+    if expect is not None and not isinstance(value, expect):
+        raise SignalsError(f"data/{name} must contain a JSON {expect.__name__}")
+    return value
 
 
 def case_findings(case: Path) -> list[dict[str, Any]]:
@@ -349,7 +402,13 @@ def load_signals(case: Path, name: str = SIGNALS_NAME) -> dict[str, Any] | None:
 
 
 def update_signals(case: Path, name: str, mutate: Callable[[dict[str, Any] | None], dict[str, Any]]) -> dict[str, Any]:
-    """Locked read-modify-write through descriptor-anchored, no-follow atomic publication."""
+    """Locked read-modify-write through descriptor-anchored, no-follow atomic publication.
+
+    Under ``pinned_case`` the data directory is reached from the pinned root
+    descriptor, so a swapped case pathname cannot redirect the write.
+    """
+    if str(case) in _PINNED:
+        return _update_pinned(case, name, mutate)
     case = case.resolve()
     try:
         with transaction(case) as descriptor:
@@ -366,6 +425,36 @@ def update_signals(case: Path, name: str, mutate: Callable[[dict[str, Any] | Non
             return updated
     except OrchestrationError as exc:
         raise SignalsError(str(exc)) from exc
+
+
+def _update_pinned(case: Path, name: str, mutate: Callable[[dict[str, Any] | None], dict[str, Any]]) -> dict[str, Any]:
+    import fcntl
+
+    try:
+        descriptor = _open_parent(case, ("data",))
+    except OSError as exc:
+        raise SignalsError(f"case data directory is not safely accessible: {exc}") from exc
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        try:
+            content = read_data_bytes(case, name, descriptor)
+        except OrchestrationError as exc:
+            raise SignalsError(str(exc)) from exc
+        current = None
+        if content is not None:
+            try:
+                current = validate_signals(json.loads(content.decode("utf-8")))
+            except (UnicodeDecodeError, ValueError) as exc:
+                raise SignalsError(f"data/{name} is invalid; move it aside before rerunning: {exc}") from exc
+        updated = validate_signals(mutate(current))
+        payload = (json.dumps(updated, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+        try:
+            atomic_write_files(case, {f"data/{name}": payload}, data_descriptor=descriptor)
+        except OrchestrationError as exc:
+            raise SignalsError(str(exc)) from exc
+        return updated
+    finally:
+        os.close(descriptor)  # closing releases the lock
 
 
 # ------------------------------------------------------------------ overrides

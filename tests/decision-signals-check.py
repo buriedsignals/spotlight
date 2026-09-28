@@ -605,6 +605,74 @@ def test_input_containment(tmp: Path) -> None:
     assert lib.read_case_file(case, "data/absent.json") is None
 
 
+def test_round_five_regressions(tmp: Path) -> None:
+    # A swapped case pathname cannot redirect reads made under a pinned case.
+    case_a = fresh_case(tmp / "pin-a")
+    case_b = fresh_case(tmp / "pin-b")
+    findings_b = json.loads((case_b / "data" / "findings.json").read_text())
+    findings_b["findings"][0]["claim"] = "Case B secret claim."
+    (case_b / "data" / "findings.json").write_text(json.dumps(findings_b))
+    with lib.pinned_case(case_a) as pinned:
+        moved = case_a.parent / "case-moved"
+        os.rename(pinned, moved)
+        os.symlink(case_b.resolve(), pinned)
+        try:
+            claims = [f["claim"] for f in lib.case_findings(pinned)]
+        finally:
+            os.unlink(pinned)
+            os.rename(moved, pinned)
+    assert "Case B secret claim." not in claims, "pinned reads stay in the authorized case"
+
+    # JSON null is invalid, never "absent".
+    case = fresh_case(tmp / "null")
+    (case / lib.SIGNALS_PATH).write_text("null")
+    try:
+        lib.load_signals(case)
+        raise AssertionError("a null signals document must be rejected")
+    except lib.SignalsError:
+        pass
+    assert run_script("check-report-fidelity.py", case).returncode != 0
+
+    # A missing explicit input stops the run before any request and keeps earlier results.
+    case = fresh_case(tmp / "missing-input")
+    entities = case / "data" / "ingest-entities.json"
+    entities.write_text(json.dumps([{"name": "Acme AG", "context": "Acme AG paid.", "type": "company"}]))
+    cfg = config(tmp, {"ingest": "advisory"}, "r5.json")
+    provider = provider_with()
+    out = io.StringIO(); stdout, sys.stdout = sys.stdout, out
+    try:
+        code = signals_cli.main([str(case), "--phase", "ingest", "--config", str(cfg), "--case-opt-in", "--entities", str(entities),
+                                 "--existing-claims", str(case / "data" / "ingest-existing-claims.json")], provider=provider)
+    finally:
+        sys.stdout = stdout
+    assert code == 2 and not provider.calls and not (case / lib.INGEST_SIGNALS_PATH).exists(), \
+        "a missing explicit input is an error, never an empty list"
+
+    # Without descriptor-anchored reads the networked step refuses and preflight says why.
+    saved = lib.ANCHORED_READS
+    lib.ANCHORED_READS = False
+    try:
+        out = io.StringIO(); stdout, sys.stdout = sys.stdout, out
+        try:
+            signals_cli.main([str(case), "--phase", "gate1", "--config", str(cfg), "--case-opt-in"], provider=provider_with())
+            signals_cli.main([str(case), "--phase", "gate1", "--config", str(cfg), "--check"])
+        finally:
+            sys.stdout = stdout
+        refused, check = [json.loads(line) for line in out.getvalue().splitlines()]
+        assert not refused["ran"] and "anchored" in refused["reason"] and not check["ready"]
+    finally:
+        lib.ANCHORED_READS = saved
+    preflight = load("spotlight_preflight_r5", ROOT / "integrations" / "preflight.py")
+    manifest = json.loads((ROOT / "integrations" / "decisions" / "manifest.json").read_text())
+    saved_dir_fd = os.supports_dir_fd
+    os.supports_dir_fd = set()
+    try:
+        fields = preflight.extra_fields(manifest)
+    finally:
+        os.supports_dir_fd = saved_dir_fd
+    assert fields["opt_in"] == "unavailable" and fields["status"] == "dismissed"
+
+
 def main() -> int:
     for test in (test_client_boundary, test_rules):
         test()
@@ -615,7 +683,8 @@ def main() -> int:
                      test_stale_grounding_signal_not_applied, test_report_fidelity_stage,
                      test_invalid_and_unsafe_signal_files, test_symlinked_research_is_not_read,
                      test_malformed_answer_keeps_other_results, test_ingest_phase, test_missing_grounding_cap_warns,
-                     test_round_two_regressions, test_round_three_regressions, test_input_containment):
+                     test_round_two_regressions, test_round_three_regressions, test_input_containment,
+                     test_round_five_regressions):
             test(tmp)
     print("decision-signals-check: PASS")
     return 0

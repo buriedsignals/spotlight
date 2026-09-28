@@ -122,7 +122,7 @@ def main() -> int:
     args = parser.parse_args()
     case = Path(args.case_dir)
     try:
-        load = lambda path: (lib.read_case_json(case, lib.case_input_name(case, path)) or []) if path else None  # noqa: E731
+        load = lambda path: lib.read_case_json(case, lib.case_input_name(case, path), expect=list, required=True) if path else None  # noqa: E731
         report = evaluate(case, load(args.entities), load(args.existing_claims))
     except lib.SignalsError as exc:
         print(json.dumps({"error": f"decision signals are invalid: {exc}"}))

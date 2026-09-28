@@ -35,3 +35,6 @@ invalidates a finalized report). Deterministic code turns the answers into signa
   as an `inconclusive` flag, never as a clean result.
 - Reviewer overrides are bound to the exact `input_sha256` they reviewed.
 - Writes are locked and symlink-safe; an invalid signals file fails loudly.
+- Every case input that can reach a request is read through descriptors pinned
+  to the case root, never following symlinks. Platforms without that support
+  (Windows) report the integration as `unavailable`; it never runs there.

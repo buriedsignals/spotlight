@@ -245,6 +245,9 @@ anything is sent. Sensitive mode never uses it.
   `chmod 600` it. Never paste the key into chat or the config.
 - **Readiness:** `python3 scripts/decision-signals.py <case> --phase gate1 --check`
   reports whether a run would happen, without sending anything.
+- **Platforms:** macOS and Linux. The checks need descriptor-anchored,
+  symlink-refusing file reads, so on Windows preflight shows them as
+  `unavailable` and they never run.
 - **Data:** each request sends the claim, its quoted evidence and a short excerpt
   of the stored source to OpenRouter and the model's provider (TypeSafe, US).
   Requests always use zero-data-retention routing with fallbacks disabled.

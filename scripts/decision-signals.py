@@ -204,10 +204,10 @@ def ingest(case: Path, asker: Asker, entities_file: Path | None, existing_file: 
     computed: set[str] = {"propositions", "memberships"} if lib.read_case_json(case, "knowledge-batch.json") is not None else set()
     if entities_file:
         computed.add("entities")
-        entries += lib.entity_items(lib.read_case_json(case, lib.case_input_name(case, entities_file)) or [])
+        entries += lib.entity_items(lib.read_case_json(case, lib.case_input_name(case, entities_file), expect=list, required=True))
     if existing_file:
         computed.add("matches")
-        entries += lib.match_items(case, lib.read_case_json(case, lib.case_input_name(case, existing_file)) or [], MAX_MATCH_PAIRS)
+        entries += lib.match_items(case, lib.read_case_json(case, lib.case_input_name(case, existing_file), expect=list, required=True), MAX_MATCH_PAIRS)
     jobs, derive = [], {}
     for index, entry in enumerate(entries):
         group, inputs = entry["group"], entry["rule_inputs"]
@@ -283,6 +283,22 @@ def main(argv: list[str] | None = None, provider: Any = None) -> int:
         print(json.dumps({"ran": False, "phase": args.phase, "reason": reason}))
         return 0
 
+    if not lib.ANCHORED_READS:
+        if args.check:
+            print(json.dumps({"ready": False, "blockers": ["this platform lacks descriptor-anchored file reads"],
+                              "key_source": None, "model": cfg["model"], "mode": cfg["modes"][args.phase]}))
+            return 0
+        return refuse("decision checks need descriptor-anchored file reads, unavailable on this platform")
+    try:
+        with lib.pinned_case(case) as pinned:
+            return run(args, pinned, cfg, sensitive, provider, refuse)
+    except lib.SignalsError as exc:
+        print(json.dumps({"ran": False, "phase": args.phase, "error": str(exc)}))
+        return 2
+
+
+def run(args: argparse.Namespace, case: Path, cfg: dict[str, Any], sensitive: bool, provider: Any, refuse) -> int:
+    """Everything that reads the case, asks the provider or writes signals, under one pinned case root."""
     try:
         main_doc = lib.load_signals(case)
         ingest_doc = lib.load_signals(case, lib.INGEST_SIGNALS_NAME)

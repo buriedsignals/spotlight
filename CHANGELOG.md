@@ -28,7 +28,10 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   signals are ignored. A choice counts only when both option orders agree.
   Reviewer overrides are bound to the exact fingerprint reviewed and lapse
   when it changes. Malformed answers become `unavailable`; invalid signal
-  files fail loudly.
+  files fail loudly. Every case input that can reach a request is read
+  through descriptors pinned to the case root without following symlinks;
+  platforms without that support (Windows) show the integration as
+  unavailable.
 - Signals can only lower confidence or add flags. In `enforce` mode the
   renderer caps displayed confidence from fresh judged signals and
   `validate-report.py` rejects any confidence above an applied cap; in

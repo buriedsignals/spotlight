@@ -255,6 +255,10 @@ def extra_fields(manifest: dict) -> dict:
     fields = {"type": manifest.get("type", "api"), "opt_in": ""}
     if manifest.get("id") != "decisions":
         return fields
+    if not (os.open in os.supports_dir_fd and getattr(os, "O_NOFOLLOW", 0)):
+        fields.update(opt_in="unavailable", status="dismissed",
+                      reason="decision checks need descriptor-anchored file reads, unavailable on this platform")
+        return fields
     block = decisions_block()
     if "enabled" not in block or not block.get("decided_at"):
         fields.update(opt_in="undecided", choice=DECISIONS_CHOICE)
