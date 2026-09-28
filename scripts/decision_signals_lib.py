@@ -71,6 +71,31 @@ def text(value: Any) -> str:
     return str(value).strip()
 
 
+def read_case_json(case: Path, name: str) -> Any:
+    """Read data/<name> without following symlinks or leaving the case; None when absent."""
+    try:
+        content = read_data_bytes(case.resolve(), name)
+    except OrchestrationError as exc:
+        raise SignalsError(str(exc)) from exc
+    if content is None:
+        return None
+    try:
+        return json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise SignalsError(f"data/{name} is not valid JSON: {exc}") from exc
+
+
+def case_findings(case: Path) -> list[dict[str, Any]]:
+    doc = read_case_json(case, "findings.json") or {}
+    return [f for f in doc.get("findings") or [] if isinstance(f, dict)]
+
+
+def valid_opt_in(value: Any) -> bool:
+    """A consent record names who agreed and when; anything else is not consent."""
+    return (isinstance(value, dict) and isinstance(value.get("by"), str) and value["by"].strip() != ""
+            and isinstance(value.get("at"), str) and value["at"].strip() != "")
+
+
 def frame_finding(claim: str, verdict: str) -> str:
     """Present a finding as what the fact-check established (state shaping for prose checks)."""
     return VERDICT_FRAME.get(verdict, "{c}").format(c=claim)
@@ -213,6 +238,7 @@ def validate_signals(doc: Any) -> dict[str, Any]:
     _require(doc.get("schema_version") == SCHEMA_VERSION, "unsupported decision-signals schema_version")
     _require(isinstance(doc.get("phases"), dict), "decision signals need a phases object")
     _require(isinstance(doc.get("overrides", []), list), "decision-signals overrides must be a list")
+    _require(doc.get("opt_in") is None or valid_opt_in(doc.get("opt_in")), "opt_in must be null or name who agreed and when")
     for override in doc.get("overrides", []):
         _require(isinstance(override, dict), "each override must be an object")
     for override in doc.get("overrides", []):
@@ -340,11 +366,10 @@ def report_items(case: Path, signals: dict[str, Any] | None) -> list[dict[str, A
     cites (identity, claim, verdict and the confidence the reader will see).
     """
     render = render_module()
-    findings = json.loads((case / "data" / "findings.json").read_text(encoding="utf-8")).get("findings") or []
-    by_id = {text(f.get("id")): f for f in findings if isinstance(f, dict)}
-    checks = render.canonical_checks(json.loads((case / "data" / "fact-check.json").read_text(encoding="utf-8")))
+    by_id = {text(f.get("id")): f for f in case_findings(case)}
+    checks = render.canonical_checks(read_case_json(case, "fact-check.json") or {})
     verdicts = {fid: effective_verdict(render, case, f, checks, signals)[0] for fid, f in by_id.items()}
-    draft = json.loads((case / "data" / "report-draft.json").read_text(encoding="utf-8"))
+    draft = read_case_json(case, "report-draft.json") or {}
     targets: list[tuple[str, str, str, list[str]]] = [
         ("deck", "deck", text(draft.get("deck")), [text(i) for i in draft.get("framing_finding_ids", [])])]
     for treatment in draft.get("finding_treatments", []):
@@ -377,37 +402,43 @@ def report_items(case: Path, signals: dict[str, Any] | None) -> list[dict[str, A
 def batch_items(case: Path) -> list[dict[str, Any]]:
     """Proposition and claim-event checks for data/knowledge-batch.json, shared by producer and consumers.
 
-    Every input that can change the derived result is part of ``state`` or
-    ``rule_inputs`` and therefore of the fingerprint.
+    Records are resolved by exact (id, version). Every input that can change the
+    derived result, including endpoint identities and versions, is part of
+    ``state`` or ``rule_inputs`` and therefore of the fingerprint. A membership
+    whose endpoints cannot be resolved is returned with ``unresolved: True``.
     """
-    batch_path = case / "data" / "knowledge-batch.json"
-    if not batch_path.is_file():
+    batch = read_case_json(case, "knowledge-batch.json")
+    if not isinstance(batch, dict):
         return []
-    findings = json.loads((case / "data" / "findings.json").read_text(encoding="utf-8")).get("findings") or []
-    by_id = {text(f.get("id")): f for f in findings if isinstance(f, dict)}
-    batch = json.loads(batch_path.read_text(encoding="utf-8"))
-    claims = {c.get("id"): c for c in batch.get("claims", []) if isinstance(c, dict)}
-    events = {e.get("id"): e for e in batch.get("events", []) if isinstance(e, dict)}
+    by_id = {text(f.get("id")): f for f in case_findings(case)}
+
+    def key(ref: Any) -> tuple[str, str]:
+        ref = ref if isinstance(ref, dict) else {}
+        return text(ref.get("id")), text(ref.get("version"))
+
+    claims = {key(c): c for c in batch.get("claims", []) if isinstance(c, dict)}
+    events = {key(e): e for e in batch.get("events", []) if isinstance(e, dict)}
     items: list[dict[str, Any]] = []
 
-    def item(group: str, target: str, state: dict[str, Any], rule_inputs: dict[str, Any]) -> None:
-        items.append({"group": group, "target": target, "state": state, "rule_inputs": rule_inputs,
+    def item(group: str, target: str, state: dict[str, Any], rule_inputs: dict[str, Any], unresolved: bool = False) -> None:
+        items.append({"group": group, "target": target, "state": state, "rule_inputs": rule_inputs, "unresolved": unresolved,
                       "input_sha256": canonical_sha256({"state": state, "rule_inputs": rule_inputs})})
 
-    for claim in claims.values():
+    for (cid, version), claim in claims.items():
         finding = by_id.get(text((claim.get("origin") or {}).get("finding_id")))
-        if finding:
-            item("propositions", f"claim:{claim.get('id')}",
-                 {"finding_claim": text(finding.get("claim")), "proposition": text(claim.get("proposition"))}, {})
+        state = {"finding_claim": text((finding or {}).get("claim")), "proposition": text(claim.get("proposition"))}
+        item("propositions", f"claim:{cid}@{version}", state, {"claim_version": version}, unresolved=finding is None)
     for membership in batch.get("claim_event_memberships", []):
         if not isinstance(membership, dict):
             continue
-        claim = claims.get((membership.get("claim") or {}).get("id"))
-        event = events.get((membership.get("event") or {}).get("id"))
-        if claim and event:
-            item("memberships", f"membership:{membership.get('id')}",
-                 {"claim": text(claim.get("proposition")), "event_label": text(event.get("label")), "event_core": event.get("core") or {}},
-                 {"declared_relation": text(membership.get("relation"))})
+        claim_ref, event_ref = key(membership.get("claim")), key(membership.get("event"))
+        claim, event = claims.get(claim_ref), events.get(event_ref)
+        target = f"membership:{text(membership.get('id'))}@{text(membership.get('version'))}"
+        state = {"claim": text((claim or {}).get("proposition")), "event_label": text((event or {}).get("label")),
+                 "event_core": (event or {}).get("core") or {}}
+        rule_inputs = {"declared_relation": text(membership.get("relation")),
+                       "claim_ref": list(claim_ref), "event_ref": list(event_ref)}
+        item("memberships", target, state, rule_inputs, unresolved=claim is None or event is None)
     return items
 
 
@@ -425,8 +456,7 @@ def entity_items(entities: list[Any]) -> list[dict[str, Any]]:
 
 def match_items(case: Path, existing: list[Any], limit: int = 60) -> list[dict[str, Any]]:
     """New-finding vs existing-claim pairs for an agent-provided list [{id, claim}]."""
-    findings = json.loads((case / "data" / "findings.json").read_text(encoding="utf-8")).get("findings") or []
-    pairs = [(f, e) for f in findings if isinstance(f, dict) for e in existing if isinstance(e, dict)][:limit]
+    pairs = [(f, e) for f in case_findings(case) for e in existing if isinstance(e, dict)][:limit]
     items = []
     for finding, candidate in pairs:
         state = {"new_claim": text(finding.get("claim")), "existing_claim": text(candidate.get("claim"))}
@@ -450,10 +480,17 @@ def ingest_status(case: Path, entities: list[Any] | None = None, existing: list[
     if existing is not None:
         current += match_items(case, existing)
     results = []
+    for group, supplied in (("entities", entities), ("matches", existing)):
+        if supplied is None and phase.get(group):
+            results.append({"group": group, "target": None, "status": "inputs_not_supplied", "mode": phase.get("mode"),
+                            "result": None, "flags": [{"reason": "freshness_unknown",
+                                                       "detail": f"pass the current {group} input list to check these stored results"}]})
     for item in current:
         by_target = {entry.get("target"): entry for entry in phase.get(item["group"], [])}
         entry = by_target.get(item["target"])
-        if entry is None:
+        if item.get("unresolved"):
+            status = "unresolved"
+        elif entry is None:
             status = "unchecked"
         elif entry.get("input_sha256") != item["input_sha256"]:
             status = "stale"

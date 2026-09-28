@@ -156,7 +156,7 @@ class Asker:
 
 # ------------------------------------------------------------------ gate1
 def gate1(case: Path, asker: Asker, mode: str) -> dict[str, Any]:
-    findings = [f for f in load_json(case / "data" / "findings.json").get("findings") or [] if isinstance(f, dict)]
+    findings = lib.case_findings(case)
     entries: dict[str, dict[str, Any]] = {}
     claims: dict[str, str] = {}
     jobs = []
@@ -201,7 +201,7 @@ def report(case: Path, asker: Asker, mode: str, stored: dict[str, Any] | None) -
 def ingest(case: Path, asker: Asker, entities_file: Path | None, existing_file: Path | None) -> dict[str, list[dict[str, Any]]]:
     """Return only the groups computed in this run; the caller merges them with earlier groups."""
     entries = lib.batch_items(case)
-    computed: set[str] = {"propositions", "memberships"} if (case / "data" / "knowledge-batch.json").is_file() else set()
+    computed: set[str] = {"propositions", "memberships"} if lib.read_case_json(case, "knowledge-batch.json") is not None else set()
     if entities_file:
         computed.add("entities")
         entries += lib.entity_items(load_json(entities_file))
@@ -211,6 +211,8 @@ def ingest(case: Path, asker: Asker, entities_file: Path | None, existing_file: 
     jobs, derive = [], {}
     for index, entry in enumerate(entries):
         group, inputs = entry["group"], entry["rule_inputs"]
+        if entry.get("unresolved"):
+            continue  # never sent: the record's finding or endpoints are missing from the batch
         if group == "propositions":
             derive[index], qs = rules.proposition_signal, questions.ALL["proposition"]
         elif group == "memberships":
@@ -226,7 +228,10 @@ def ingest(case: Path, asker: Asker, entities_file: Path | None, existing_file: 
         # Every input that can change the derived result is recorded and fingerprinted.
         item = {"target": entry["target"], "input": {**entry["state"], **entry["rule_inputs"]}, "input_sha256": entry["input_sha256"]}
         response = responses.get(str(index))
-        if response is None:
+        if entry.get("unresolved"):
+            item.update({"status": "routed", "result": "unresolved", "flags": [{"reason": "unresolved_reference",
+                         "detail": "the batch record's finding, claim or event version could not be resolved"}]})
+        elif response is None:
             item.update({"status": "unavailable", "result": "", "flags": []})
         else:
             item.update({**derive[index](response["answers"]), "answers": response["answers"]})
@@ -284,7 +289,7 @@ def main(argv: list[str] | None = None, provider: Any = None) -> int:
     except lib.SignalsError as exc:
         print(json.dumps({"ran": False, "phase": args.phase, "error": str(exc)}))
         return 2
-    recorded_opt_in = next((d["opt_in"] for d in (main_doc, ingest_doc) if d and isinstance(d.get("opt_in"), dict)), None)
+    recorded_opt_in = next((d["opt_in"] for d in (main_doc, ingest_doc) if d and lib.valid_opt_in(d.get("opt_in"))), None)
     opted_in = recorded_opt_in is not None
 
     if args.check:
@@ -322,12 +327,16 @@ def main(argv: list[str] | None = None, provider: Any = None) -> int:
 
     asker = Asker(provider)
     mode = cfg["modes"][args.phase]
-    if args.phase == "gate1":
-        result = gate1(case, asker, mode)
-    elif args.phase == "report":
-        result = report(case, asker, mode, main_doc)
-    else:
-        groups = ingest(case, asker, args.entities, args.existing_claims)
+    try:
+        if args.phase == "gate1":
+            result = gate1(case, asker, mode)
+        elif args.phase == "report":
+            result = report(case, asker, mode, main_doc)
+        else:
+            groups = ingest(case, asker, args.entities, args.existing_claims)
+    except lib.SignalsError as exc:  # unsafe or unreadable case input: nothing is sent or written
+        print(json.dumps({"ran": False, "phase": args.phase, "error": str(exc)}))
+        return 2
     if args.dry_run:
         return 0
 

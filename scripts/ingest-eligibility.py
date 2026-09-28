@@ -63,8 +63,8 @@ def grounding_cap(finding: dict[str, Any], checks: list[dict[str, Any]]) -> str 
 
 def evaluate(case: Path, entities: list[Any] | None = None, existing: list[Any] | None = None) -> dict[str, Any]:
     render = lib.render_module()
-    findings = [f for f in json.loads((case / "data" / "findings.json").read_text(encoding="utf-8")).get("findings") or [] if isinstance(f, dict)]
-    checks = render.canonical_checks(json.loads((case / "data" / "fact-check.json").read_text(encoding="utf-8")))
+    findings = lib.case_findings(case)
+    checks = render.canonical_checks(lib.read_case_json(case, "fact-check.json") or {})
     signals = lib.load_signals(case)
     out = []
     for finding in findings:

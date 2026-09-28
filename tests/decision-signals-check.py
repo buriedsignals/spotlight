@@ -446,7 +446,9 @@ def test_ingest_phase(tmp: Path) -> None:
     assert validate.returncode == 0, "ingest checks must not invalidate the finalized report: " + validate.stdout
     assert json.loads((case / "evidence-map.json").read_text())["input_sha256"] == report_inputs
     checks = json.loads(run_script("ingest-eligibility.py", case).stdout)["ingest_checks"]
-    assert {c["status"] for c in checks} == {"judged"}
+    assert {c["status"] for c in checks if c["group"] in ("propositions", "memberships")} == {"judged"}
+    assert {c["group"] for c in checks if c["status"] == "inputs_not_supplied"} == {"entities", "matches"}, \
+        "stored entity/match results are never presented as current without their inputs"
     batch["claims"][0]["proposition"] = "Acme paid Doe twice."
     (case / "data" / "knowledge-batch.json").write_text(json.dumps(batch))
     checks = json.loads(run_script("ingest-eligibility.py", case).stdout)["ingest_checks"]
@@ -530,6 +532,55 @@ def test_round_two_regressions(tmp: Path) -> None:
     assert any(c["status"] == "legacy_location" for c in lib.ingest_status(case))
 
 
+def test_round_three_regressions(tmp: Path) -> None:
+    # A malformed consent record is not consent.
+    assert not lib.valid_opt_in({}) and not lib.valid_opt_in({"by": "", "at": "t"}) and lib.valid_opt_in({"by": "user", "at": "t"})
+    case = fresh_case(tmp / "consent")
+    (case / lib.INGEST_SIGNALS_PATH).write_text(json.dumps({**signals_cli.empty_document("m"), "opt_in": {}}))
+    provider = provider_with()
+    out = io.StringIO(); stdout, sys.stdout = sys.stdout, out
+    try:
+        code = signals_cli.main([str(case), "--phase", "ingest", "--config", str(config(tmp, {}, "r3c.json"))], provider=provider)
+    finally:
+        sys.stdout = stdout
+    assert code == 2 and not provider.calls, "a malformed consent record never authorizes a request"
+
+    # A symlinked knowledge batch is never read or sent.
+    case = fresh_case(tmp / "batch-link")
+    other = tmp / "other-case-batch.json"
+    other.write_text(json.dumps({"claims": [{"id": "c", "version": 1, "proposition": "Secret proposition.", "origin": {"finding_id": "F1"}}]}))
+    (case / "data" / "knowledge-batch.json").symlink_to(other)
+    provider = provider_with()
+    out = io.StringIO(); stdout, sys.stdout = sys.stdout, out
+    try:
+        code = signals_cli.main([str(case), "--phase", "ingest", "--config", str(config(tmp, {}, "r3b.json")), "--case-opt-in"], provider=provider)
+    finally:
+        sys.stdout = stdout
+    assert code == 2 and not provider.calls, "symlinked case inputs are refused before any request"
+
+    # Versioned batch records resolve exactly; unresolved endpoints are routed, never judged.
+    case = fresh_case(tmp / "versions")
+    batch = json.loads((ROOT / "tests" / "fixtures" / "knowledge-batch.sample.json").read_text())
+    claim_v1 = batch["claims"][0]
+    claim_v1["origin"]["finding_id"] = "F1"
+    claim_v2 = {**claim_v1, "version": 2, "proposition": "Acme paid Doe twice."}
+    batch["claims"].append(claim_v2)
+    dangling = {**batch["claim_event_memberships"][0], "id": "relation:dangling", "claim": {"id": claim_v1["id"], "version": 9}}
+    batch["claim_event_memberships"].append(dangling)
+    (case / "data" / "knowledge-batch.json").write_text(json.dumps(batch))
+    targets = {i["target"]: i for i in lib.batch_items(case)}
+    assert f"claim:{claim_v1['id']}@1" in targets and f"claim:{claim_v1['id']}@2" in targets
+    member = next(i for t, i in targets.items() if t.startswith("membership:relation:claim-event"))
+    assert member["state"]["claim"] == claim_v1["proposition"], "a membership is judged against its exact claim version"
+    assert next(i for t, i in targets.items() if t.startswith("membership:relation:dangling"))["unresolved"]
+    run_phase(case, config(tmp, {"ingest": "advisory"}, "r3v.json"), "ingest", provider_with())
+    phase = signals(case, lib.INGEST_SIGNALS_NAME)["phases"]["ingest"]
+    routed = [m for m in phase["memberships"] if m["target"].startswith("membership:relation:dangling")]
+    assert routed and routed[0]["status"] == "routed" and routed[0]["result"] == "unresolved"
+    statuses = {c["target"]: c["status"] for c in lib.ingest_status(case)}
+    assert statuses[routed[0]["target"]] == "unresolved"
+
+
 def main() -> int:
     for test in (test_client_boundary, test_rules):
         test()
@@ -540,7 +591,7 @@ def main() -> int:
                      test_stale_grounding_signal_not_applied, test_report_fidelity_stage,
                      test_invalid_and_unsafe_signal_files, test_symlinked_research_is_not_read,
                      test_malformed_answer_keeps_other_results, test_ingest_phase, test_missing_grounding_cap_warns,
-                     test_round_two_regressions):
+                     test_round_two_regressions, test_round_three_regressions):
             test(tmp)
     print("decision-signals-check: PASS")
     return 0

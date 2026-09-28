@@ -180,7 +180,11 @@ execute-shell("python3 scripts/decision-signals.py {CASE_DIR} --phase ingest --e
 ```
 
 Results go to `data/decision-signals-ingest.json` (`phases.ingest.entities`,
-each with its exact `input`). They are recommendations, never authority:
+each with its exact `input`). Immediately before writing entity notes, run
+`python3 scripts/ingest-eligibility.py {CASE_DIR} --entities {CASE_DIR}/data/ingest-entities.json`
+with the current list and use only `ingest_checks` entries whose status is
+`judged`; rerun the check for `stale` or `unchecked` entries first. They are
+recommendations, never authority:
 
 - `shadow`: record only; keep the pattern-table type.
 - `advisory`: show the user each disagreement (`entity_type_disagrees`) and each
@@ -304,7 +308,10 @@ The approved graph and deterministic projection are the new claim surface.
 `local_conformance` is a same-user filesystem boundary, not evidence of
 multi-user authorization isolation.
 
-Run the deterministic eligibility helper and follow its output:
+Run the deterministic eligibility helper and follow its output (add
+`--entities` / `--existing-claims` with the current files when those decision
+checks ran; otherwise their stored results are reported as
+`inputs_not_supplied` and must not be used):
 
 ```
 execute-shell("python3 scripts/ingest-eligibility.py {CASE_DIR}")
@@ -345,7 +352,10 @@ finding, claim ID is `{project-id}-f{n}`:
 collect existing claim notes that share an entity with this case's findings
 (`[{"id", "claim"}]`, at most 60 pairs) and run
 `python3 scripts/decision-signals.py {CASE_DIR} --phase ingest --existing-claims <that file>`.
-Results (`phases.ingest.matches` in `data/decision-signals-ingest.json`) are
+Immediately before writing any re-verification or supersession row, run
+`python3 scripts/ingest-eligibility.py {CASE_DIR} --existing-claims <that file>`
+with the current list and use only `ingest_checks` entries whose status is
+`judged`; rerun the check for `stale` or `unchecked` entries first. Results are
 candidates for the user, never authority over another claim's history:
 `same_claim` suggests re-verification, `updates` suggests a later state,
 `contradicts` suggests both cannot hold for the same time and scope, and
@@ -449,8 +459,10 @@ Then read `ingest_checks` from `python3 scripts/ingest-eligibility.py {CASE_DIR}
 (add `--entities` / `--existing-claims` with the same files you passed to
 `decision-signals.py` to include those checks). It lists every current target
 with `judged`, `unavailable`, `stale` (inputs changed since the check) or
-`unchecked` (never checked); rerun the ingest checks for `stale` and
-`unchecked` targets, and in `enforce` mode do not stage until none remain. A
+`unchecked` (never checked), or `unresolved` (the batch record's finding,
+claim or event version is missing; fix the batch); rerun the ingest checks for
+`stale` and `unchecked` targets, and in `enforce` mode do not stage until none
+remain. A
 `legacy_location` entry means results were stored by an earlier layout; rerun
 the ingest checks. A proposition flagged
 `broader_or_changed`, `different` or `inconclusive` and a relation flagged
