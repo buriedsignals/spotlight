@@ -61,10 +61,13 @@ def pinned_case(case: Path) -> Iterator[Path]:
             try:
                 descriptors[child] = os.open(child, _DIRECTORY, dir_fd=descriptors[""])
             except FileNotFoundError:
-                continue
+                if child == "data":
+                    raise  # fail closed: consent and inputs must come from one pinned data/
+                descriptors[child] = -1  # absent for the whole pinned session; never reopened
     except OSError as exc:
         for descriptor in descriptors.values():
-            os.close(descriptor)
+            if descriptor >= 0:
+                os.close(descriptor)
         raise SignalsError(f"case directory is not safely accessible: {exc}") from exc
     _PINNED[str(resolved)] = descriptors
     try:
@@ -72,16 +75,19 @@ def pinned_case(case: Path) -> Iterator[Path]:
     finally:
         _PINNED.pop(str(resolved), None)
         for descriptor in descriptors.values():
-            os.close(descriptor)
+            if descriptor >= 0:
+                os.close(descriptor)
 
 
 def _open_parent(case: Path, parts: tuple[str, ...]) -> int:
     """A descriptor for the directory holding the target, walked without following symlinks."""
     pinned = _PINNED.get(str(case))
-    if pinned is not None and parts and parts[0] in pinned:
+    if pinned is not None:
+        # Under a pinned session only the pinned directories are readable; nothing is
+        # reopened by pathname, so a directory created or swapped in later is never read.
+        if not parts or parts[0] not in pinned or pinned[parts[0]] == -1:
+            raise FileNotFoundError(f"{'/'.join(parts) or '.'} is outside the pinned case directories")
         descriptor, parts = os.dup(pinned[parts[0]]), parts[1:]
-    elif pinned is not None:
-        descriptor = os.dup(pinned[""])
     else:
         descriptor = os.open(case.resolve(), _DIRECTORY)
     try:

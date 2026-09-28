@@ -696,6 +696,26 @@ def test_round_six_regression(tmp: Path) -> None:
     assert "Case B" not in source, "research/ is read from the directory pinned at the start"
 
 
+def test_round_seven_regression(tmp: Path) -> None:
+    """A data/ missing at pin time fails closed; an absent research/ is never reopened later."""
+    case = fresh_case(tmp / "absent")
+    os.rename(case / "data", case / "data-away")
+    try:
+        with lib.pinned_case(case):
+            raise AssertionError("pinning must fail closed without data/")
+    except lib.SignalsError:
+        pass
+    finally:
+        os.rename(case / "data-away", case / "data")
+    shutil.rmtree(case / "research")
+    with lib.pinned_case(case) as pinned:
+        (pinned / "research").mkdir()
+        (pinned / "research" / "late.md").write_text("Created after pinning.\n")
+        assert lib.read_case_file(pinned, "research/late.md") is None, "an absent research/ stays absent"
+        assert lib.read_case_file(pinned, "other/file.md") is None, "only pinned directories are readable"
+        assert lib.case_findings(pinned), "data/ remains readable"
+
+
 def main() -> int:
     for test in (test_client_boundary, test_rules):
         test()
@@ -707,7 +727,7 @@ def main() -> int:
                      test_invalid_and_unsafe_signal_files, test_symlinked_research_is_not_read,
                      test_malformed_answer_keeps_other_results, test_ingest_phase, test_missing_grounding_cap_warns,
                      test_round_two_regressions, test_round_three_regressions, test_input_containment,
-                     test_round_five_regressions, test_round_six_regression):
+                     test_round_five_regressions, test_round_six_regression, test_round_seven_regression):
             test(tmp)
     print("decision-signals-check: PASS")
     return 0
