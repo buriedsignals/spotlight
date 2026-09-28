@@ -1,7 +1,7 @@
 """Deterministic rules that turn decision-model answers into Spotlight signals.
 
 Thresholds were fitted on the dev half of the evaluation sets and frozen before
-the held-out half was scored (tools/decision-model-evidence/jev-2026-09-28/).
+the held-out half was scored (summary in CHANGELOG.md, decision checks).
 Signals only lower confidence or add flags; nothing here can raise confidence.
 """
 

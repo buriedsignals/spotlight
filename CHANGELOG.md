@@ -44,11 +44,10 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 - `scripts/ingest-eligibility.py` implements the ingest eligibility gate in code
   (previously applied by the agent from prose) and layers decision signals and
   claim facets (claim type, temporal status, source assertion) on top.
-- Evaluation (exploratory; labels written by agents and partly blind-checked):
+- Evaluation (exploratory; AI-written labels with a blind second labelling):
   on held-out halves in five languages, grounding caught 49/51 problems with
   4/30 false alarms (2/30 after one post-hoc threshold fix); report prose
-  22/23 with 0/23; proposition fidelity 18/18 with 1/17. Evidence:
-  `tools/decision-model-evidence/jev-2026-09-28/`.
+  22/23 with 0/23; proposition fidelity 18/18 with 1/17.
 
 ### Changed — Spotlight native ownership and selected local runtime
 

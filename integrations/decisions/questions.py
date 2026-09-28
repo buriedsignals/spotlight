@@ -3,7 +3,7 @@
 Every question id maps to a Jev primitive. Choice questions listed in a
 *_PERMUTE list are also asked with reversed option order (suffix "_rev"); a
 choice only counts when both orders agree. Evaluation that produced these
-questions and thresholds: tools/decision-model-evidence/jev-2026-09-28/.
+questions and thresholds is summarised in CHANGELOG.md (decision checks).
 
 Changing any question text changes QUESTION_BANK_VERSION; thresholds in
 rules.py were measured against this exact text and must be re-measured.
