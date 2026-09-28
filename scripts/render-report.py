@@ -1261,6 +1261,9 @@ def evidence_map(
                 "applied_cap": verdict.get("decision_cap"),
                 "flags": signal.get("flags", []),
                 "facets": signal.get("facets", {}),
+                # Grounding inputs (claim, evidence, located source excerpts) at render time;
+                # validate-report recomputes it so a later source edit cannot hide behind the ledger.
+                "dependency_sha256": signal.get("current_input_sha256"),
             }
         if record["source_expressions"]:
             selected_ids = {text(item.get("id")) for item in record["quotes"]}

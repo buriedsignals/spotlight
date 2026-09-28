@@ -460,6 +460,76 @@ def test_missing_grounding_cap_warns(tmp: Path) -> None:
     assert f1["confidence_cap"] is None and f1["warnings"], "a missing grounding cap is visible, not silent"
 
 
+def test_round_two_regressions(tmp: Path) -> None:
+    # Multi-finding prose: changing a non-minimum confidence must make the check stale.
+    case = fresh_case(tmp / "multi")
+    draft = json.loads((case / "data" / "report-draft.json").read_text())
+    draft["framing_finding_ids"] = ["F1", "F2"]
+    (case / "data" / "report-draft.json").write_text(json.dumps(draft))
+    cfg = config(tmp, {"gate1": "enforce", "report": "enforce"}, "r2.json")
+    run_phase(case, cfg, "report", provider_with())
+    assert run_script("check-report-fidelity.py", case).returncode == 0
+    fact = json.loads((case / "data" / "fact-check.json").read_text())
+    fact["claims"][0]["confidence"] = "medium"  # F1 high -> medium; F2 stays low (the minimum)
+    (case / "data" / "fact-check.json").write_text(json.dumps(fact))
+    check = run_script("check-report-fidelity.py", case)
+    assert check.returncode == 1 and "deck" in check.stdout, "every cited finding's confidence is fingerprinted"
+
+    # Ingest-only run never creates the main signals file; a finalized report stays valid.
+    case = fresh_case(tmp / "ingest-only")
+    assert run_script("finalize-report.py", case).returncode == 0
+    entities = tmp / "r2-entities.json"
+    entities.write_text(json.dumps([{"name": "Acme AG", "context": "Acme AG paid the fee.", "type": "company"}]))
+    run_phase(case, config(tmp, {"ingest": "advisory"}, "r2i.json"), "ingest", provider_with(), ["--entities", str(entities)])
+    assert not (case / lib.SIGNALS_PATH).exists() and (case / lib.INGEST_SIGNALS_PATH).exists()
+    assert run_script("validate-report.py", case).returncode == 0
+    ok = json.loads(subprocess.run([sys.executable, str(ROOT / "scripts" / "ingest-eligibility.py"), str(case),
+                                     "--entities", str(entities)], capture_output=True, text=True).stdout)["ingest_checks"]
+    assert [c["status"] for c in ok] == ["judged"]
+    entities.write_text(json.dumps([{"name": "Acme AG", "context": "Acme AG, a foundation, paid the fee.", "type": "company"},
+                                    {"name": "Doe", "context": "Doe signed.", "type": "person"}]))
+    statuses = [c["status"] for c in json.loads(subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "ingest-eligibility.py"), str(case), "--entities", str(entities)],
+        capture_output=True, text=True).stdout)["ingest_checks"]]
+    assert statuses == ["stale", "unchecked"], statuses
+
+    # Structural validation of caps; malformed choices never crash; order disagreement is flagged.
+    doc = json.loads((case / lib.INGEST_SIGNALS_PATH).read_text())
+    doc["phases"]["gate1"] = {"mode": "enforce", "findings": [{"finding_id": "F1", "input_sha256": "0" * 64, "status": "judged", "flags": [], "cap": []}]}
+    try:
+        lib.validate_signals(doc)
+        raise AssertionError("an invalid cap must be rejected")
+    except lib.SignalsError:
+        pass
+    choice_q = {"type": "choice", "instructions": "?", "criteria": {"a": "", "b": ""}}
+    assert client.answer_problem(choice_q, {"choice": [], "probabilities": {"a": 1}}) is not None
+    assert client.answer_problem(choice_q, {"choice": "a", "probabilities": {"b": 1}}) is not None
+    bank = questions.ALL["grounding"]
+    clean = {qid: clean_answer(q) for qid, q in bank.items()}
+    direct = {"type": "choice", "choice": "direct", "probabilities": {"direct": 1.0, "partial": 0, "insufficient": 0, "contradicted": 0}}
+    contra = {"type": "choice", "choice": "contradicted", "probabilities": {"direct": 0, "partial": 0, "insufficient": 0, "contradicted": 1.0}}
+    split = rules.grounding_signal("X", dict(clean, g_support=direct, g_support_rev=contra))
+    assert split["cap"] == "low" and split["flags"], "either order confidently contradicting is enough"
+
+    # A source edited after rendering fails report validation.
+    case = fresh_case(tmp / "dependency")
+    run_phase(case, config(tmp, {"gate1": "advisory"}, "r2d.json"), "gate1", provider_with({"g_support": "partial"}))
+    assert run_script("finalize-report.py", case).returncode == 0
+    source = case / "research" / "official-record.md"
+    source.write_text(source.read_text() + "\nAmended later.\n")
+    bundle = json.loads((case / "data" / "evidence-bundle.json").read_text())
+    bundle["items"][0]["sha256"] = render_check.sha(source)
+    (case / "data" / "evidence-bundle.json").write_text(json.dumps(bundle))
+    validate = run_script("validate-report.py", case)
+    assert validate.returncode != 0 and "changed since rendering" in validate.stdout, validate.stdout
+
+    # Ingest results left in the main file by an earlier layout are reported, not silently dropped.
+    main = json.loads((case / lib.SIGNALS_PATH).read_text())
+    main["phases"]["ingest"] = {"mode": "advisory", "entities": []}
+    (case / lib.SIGNALS_PATH).write_text(json.dumps(main))
+    assert any(c["status"] == "legacy_location" for c in lib.ingest_status(case))
+
+
 def main() -> int:
     for test in (test_client_boundary, test_rules):
         test()
@@ -469,7 +539,8 @@ def main() -> int:
                      test_backwards_compatible_without_signals, test_gate1_advisory_and_enforce,
                      test_stale_grounding_signal_not_applied, test_report_fidelity_stage,
                      test_invalid_and_unsafe_signal_files, test_symlinked_research_is_not_read,
-                     test_malformed_answer_keeps_other_results, test_ingest_phase, test_missing_grounding_cap_warns):
+                     test_malformed_answer_keeps_other_results, test_ingest_phase, test_missing_grounding_cap_warns,
+                     test_round_two_regressions):
             test(tmp)
     print("decision-signals-check: PASS")
     return 0

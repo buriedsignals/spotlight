@@ -67,8 +67,12 @@ def grounding_signal(claim: str, answers: Mapping[str, Any], t: Mapping[str, flo
     def flag(reason: str, detail: str = "") -> None:
         flags.append({"reason": reason, **({"detail": detail} if detail else {})})
 
-    if support != "direct" and support_p >= t["support"]:
-        flag(f"support_{support}")
+    # Either option order confidently reading the support as not direct is enough.
+    orders = [_top(answers["g_support"]), _top(answers["g_support_rev"])]
+    confident = [(c, p) for c, p in orders if c != "direct" and p >= t["support"]]
+    if confident:
+        worst = min(confident, key=lambda cp: ("contradicted", "insufficient", "partial").index(cp[0]))
+        flag(f"support_{worst[0]}", "" if orders[0][0] == orders[1][0] else "the two option orders disagree")
     mean_direct = (float(answers["g_support"]["probabilities"].get("direct", 0.0))
                    + float(answers["g_support_rev"]["probabilities"].get("direct", 0.0))) / 2
     if mean_direct < t["p_direct"] and not any(f["reason"].startswith("support_") for f in flags):
@@ -109,7 +113,7 @@ def grounding_signal(claim: str, answers: Mapping[str, Any], t: Mapping[str, flo
 
     if not flags:
         cap = "none"
-    elif support in ("insufficient", "contradicted") and support_p >= t["support"]:
+    elif any(c in ("insufficient", "contradicted") for c, _p in confident):
         cap = "low"
     elif any(f["reason"] in ("direction_mismatch", "amount_mismatch", "date_mismatch", "stage_overstated") for f in flags):
         cap = "low"

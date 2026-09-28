@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deterministic Phase 6 claim eligibility (offline).
 
-    python3 scripts/ingest-eligibility.py CASE_DIR
+    python3 scripts/ingest-eligibility.py CASE_DIR [--entities FILE] [--existing-claims FILE]
 
 Implements the ingest eligibility gate from skills/ingest/references/entity-model.md
 in code, then layers stored decision-model signals on top:
@@ -20,12 +20,15 @@ shadow modes the same outcome is only a recommendation. A reviewer override
 counts only for the exact reviewed fingerprint. Claim facets (claim type,
 temporal status, source assertion) are attached from fresh judged signals.
 
-Ingest decision signals (data/decision-signals-ingest.json) for knowledge-batch
-propositions and claim-event relations are reported with their freshness;
-entity and matching results carry their exact inputs in that file.
+Ingest decision signals (data/decision-signals-ingest.json) are reported as
+`ingest_checks`: every current knowledge-batch target, plus entity and matching
+targets when the same input files are passed, with status judged, unavailable,
+stale (inputs changed since the check) or unchecked (never checked). In enforce
+mode, stale or unchecked targets must be checked before staging.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -58,7 +61,7 @@ def grounding_cap(finding: dict[str, Any], checks: list[dict[str, Any]]) -> str 
     return min(caps, key=RANK.get) if caps else None
 
 
-def evaluate(case: Path) -> dict[str, Any]:
+def evaluate(case: Path, entities: list[Any] | None = None, existing: list[Any] | None = None) -> dict[str, Any]:
     render = lib.render_module()
     findings = [f for f in json.loads((case / "data" / "findings.json").read_text(encoding="utf-8")).get("findings") or [] if isinstance(f, dict)]
     checks = render.canonical_checks(json.loads((case / "data" / "fact-check.json").read_text(encoding="utf-8")))
@@ -108,34 +111,18 @@ def evaluate(case: Path) -> dict[str, Any]:
                             record["confidence"] = decision_cap
             record["decision_check"] = decision
         out.append(record)
-    return {"findings": out, "ingest_checks": ingest_checks(case)}
-
-
-def ingest_checks(case: Path) -> list[dict[str, Any]]:
-    """Knowledge-batch check results with freshness recomputed from the current batch."""
-    stored = lib.load_signals(case, lib.INGEST_SIGNALS_NAME)
-    phase = ((stored or {}).get("phases") or {}).get("ingest") or {}
-    if not phase:
-        return []
-    current = {(entry["group"], entry["target"]): entry["input_sha256"] for entry in lib.batch_items(case)}
-    results = []
-    for group in ("propositions", "memberships"):
-        for item in phase.get(group, []):
-            fingerprint = current.get((group, item.get("target")))
-            status = item.get("status")
-            if fingerprint is None or fingerprint != item.get("input_sha256"):
-                status = "stale"
-            results.append({"group": group, "target": item.get("target"), "status": status,
-                            "mode": phase.get("mode"), "result": item.get("result"), "flags": item.get("flags", [])})
-    return results
+    return {"findings": out, "ingest_checks": lib.ingest_status(case, entities, existing)}
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        print("usage: ingest-eligibility.py CASE_DIR")
-        return 2
+    parser = argparse.ArgumentParser(description="Deterministic Phase 6 claim eligibility (offline).")
+    parser.add_argument("case_dir")
+    parser.add_argument("--entities", type=Path, help="the same entity list passed to decision-signals.py --entities")
+    parser.add_argument("--existing-claims", type=Path, help="the same list passed to decision-signals.py --existing-claims")
+    args = parser.parse_args()
+    load = lambda path: json.loads(path.read_text(encoding="utf-8")) if path else None  # noqa: E731
     try:
-        report = evaluate(Path(sys.argv[1]))
+        report = evaluate(Path(args.case_dir), load(args.entities), load(args.existing_claims))
     except lib.SignalsError as exc:
         print(json.dumps({"error": f"decision signals are invalid: {exc}"}))
         return 1

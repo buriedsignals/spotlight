@@ -124,10 +124,13 @@ def answer_problem(question: Mapping[str, Any], answer: Any) -> str | None:
     if kind == "choice":
         options = set(question.get("criteria") or {})
         probabilities = answer.get("probabilities")
-        if answer.get("choice") not in options:
+        choice = answer.get("choice")
+        if not isinstance(choice, str) or choice not in options:
             return "choice is not one of the criteria"
         if not isinstance(probabilities, dict) or not probabilities or not set(probabilities) <= options:
             return "probabilities do not match the criteria"
+        if choice not in probabilities:
+            return "the selected choice has no probability"
         if not all(_probability(v) for v in probabilities.values()):
             return "probabilities are not numbers between 0 and 1"
         return None

@@ -30,7 +30,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
@@ -200,54 +200,37 @@ def report(case: Path, asker: Asker, mode: str, stored: dict[str, Any] | None) -
 # ------------------------------------------------------------------ ingest
 def ingest(case: Path, asker: Asker, entities_file: Path | None, existing_file: Path | None) -> dict[str, list[dict[str, Any]]]:
     """Return only the groups computed in this run; the caller merges them with earlier groups."""
-    findings = [f for f in load_json(case / "data" / "findings.json").get("findings") or [] if isinstance(f, dict)]
-    jobs: list[tuple[str, Any, dict[str, Any]]] = []
-    meta: dict[str, tuple[str, dict[str, Any], Callable[[dict[str, Any]], dict[str, Any]]]] = {}
-    computed: set[str] = set()
-
-    def add(key: str, group: str, target: str, state: dict[str, Any], rule_inputs: dict[str, Any], derive, qs) -> None:
-        # Every input that can change the derived result is recorded and fingerprinted.
-        item = {"target": target, "input": {**state, **rule_inputs},
-                "input_sha256": lib.canonical_sha256({"state": state, "rule_inputs": rule_inputs})}
-        meta[key] = (group, item, derive)
-        jobs.append((key, state, qs))
-
-    batch = lib.batch_items(case)
-    if batch or (case / "data" / "knowledge-batch.json").is_file():
-        computed |= {"propositions", "memberships"}
-    for entry in batch:
-        if entry["group"] == "propositions":
-            derive, qs = rules.proposition_signal, questions.ALL["proposition"]
-        else:
-            declared = entry["rule_inputs"]["declared_relation"]
-            derive, qs = (lambda a, d=declared: rules.membership_signal(d, a)), questions.ALL["membership"]
-        add(f"{entry['group']}:{entry['target']}", entry["group"], entry["target"], entry["state"], entry["rule_inputs"], derive, qs)
+    entries = lib.batch_items(case)
+    computed: set[str] = {"propositions", "memberships"} if (case / "data" / "knowledge-batch.json").is_file() else set()
     if entities_file:
         computed.add("entities")
-        for index, entity in enumerate(load_json(entities_file)):
-            if not isinstance(entity, dict):
-                continue
-            state = {"entity_name": lib.text(entity.get("name")), "context_sentence": lib.text(entity.get("context"))}
-            declared = lib.text(entity.get("type"))
-            add(f"entity:{index}", "entities", f"entity:{state['entity_name']}", state, {"declared_type": declared},
-                lambda a, d=declared: rules.entity_signal(a, d), questions.ALL["entities"])
+        entries += lib.entity_items(load_json(entities_file))
     if existing_file:
         computed.add("matches")
-        existing = [e for e in load_json(existing_file) if isinstance(e, dict)]
-        for finding, candidate in [(f, e) for f in findings for e in existing][:MAX_MATCH_PAIRS]:
-            state = {"new_claim": lib.text(finding.get("claim")), "existing_claim": lib.text(candidate.get("claim"))}
-            add(f"match:{lib.text(finding.get('id'))}:{lib.text(candidate.get('id'))}", "matches",
-                f"finding:{lib.text(finding.get('id'))}|existing:{lib.text(candidate.get('id'))}", state, {},
-                rules.match_signal, questions.ALL["matching"])
+        entries += lib.match_items(case, load_json(existing_file), MAX_MATCH_PAIRS)
+    jobs, derive = [], {}
+    for index, entry in enumerate(entries):
+        group, inputs = entry["group"], entry["rule_inputs"]
+        if group == "propositions":
+            derive[index], qs = rules.proposition_signal, questions.ALL["proposition"]
+        elif group == "memberships":
+            derive[index], qs = (lambda a, d=inputs["declared_relation"]: rules.membership_signal(d, a)), questions.ALL["membership"]
+        elif group == "entities":
+            derive[index], qs = (lambda a, d=inputs["declared_type"]: rules.entity_signal(a, d)), questions.ALL["entities"]
+        else:
+            derive[index], qs = rules.match_signal, questions.ALL["matching"]
+        jobs.append((str(index), entry["state"], qs))
     responses = asker.ask_many(jobs)
     groups: dict[str, list[dict[str, Any]]] = {group: [] for group in computed}
-    for key, (group, item, derive) in meta.items():
-        response = responses.get(key)
+    for index, entry in enumerate(entries):
+        # Every input that can change the derived result is recorded and fingerprinted.
+        item = {"target": entry["target"], "input": {**entry["state"], **entry["rule_inputs"]}, "input_sha256": entry["input_sha256"]}
+        response = responses.get(str(index))
         if response is None:
             item.update({"status": "unavailable", "result": "", "flags": []})
         else:
-            item.update({**derive(response["answers"]), "answers": response["answers"]})
-        groups[group].append(item)
+            item.update({**derive[index](response["answers"]), "answers": response["answers"]})
+        groups[entry["group"]].append(item)
     return groups
 
 
@@ -297,10 +280,12 @@ def main(argv: list[str] | None = None, provider: Any = None) -> int:
 
     try:
         main_doc = lib.load_signals(case)
+        ingest_doc = lib.load_signals(case, lib.INGEST_SIGNALS_NAME)
     except lib.SignalsError as exc:
         print(json.dumps({"ran": False, "phase": args.phase, "error": str(exc)}))
         return 2
-    opted_in = main_doc is not None and isinstance(main_doc.get("opt_in"), dict)
+    recorded_opt_in = next((d["opt_in"] for d in (main_doc, ingest_doc) if d and isinstance(d.get("opt_in"), dict)), None)
+    opted_in = recorded_opt_in is not None
 
     if args.check:
         key, where = resolve_key(cfg, args.env_file)
@@ -346,14 +331,13 @@ def main(argv: list[str] | None = None, provider: Any = None) -> int:
     if args.dry_run:
         return 0
 
-    opt_in = (main_doc or {}).get("opt_in") or {"by": "user", "at": now()}
+    opt_in = recorded_opt_in or {"by": "user", "at": now()}
 
-    def base(current: dict[str, Any] | None, count_usage: bool = True) -> dict[str, Any]:
+    def base(current: dict[str, Any] | None) -> dict[str, Any]:
         doc = current or empty_document(cfg["model"])
         doc["opt_in"] = doc.get("opt_in") or opt_in
         doc["question_bank_version"] = questions.QUESTION_BANK_VERSION
-        if count_usage:
-            merge_usage(doc, asker)
+        merge_usage(doc, asker)
         return doc
 
     try:
@@ -366,9 +350,8 @@ def main(argv: list[str] | None = None, provider: Any = None) -> int:
             items = result.get("findings") or result.get("items") or []
             status = result["status"]
         else:
-            if main_doc is None:  # the case opt-in lives in the main file
-                lib.update_signals(case, lib.SIGNALS_NAME, lambda current: current or base(None, count_usage=False))
-
+            # The ingest file carries its own opt-in record; the main file (a hashed
+            # report input) is never created or touched by an ingest run.
             def mutate_ingest(current):
                 doc = base(current)
                 previous = doc["phases"].get("ingest") or {}

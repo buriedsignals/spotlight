@@ -445,9 +445,14 @@ and that each claim–event relation is plausible:
 execute-shell("python3 scripts/decision-signals.py {CASE_DIR} --phase ingest")
 ```
 
-Then read `ingest_checks` from `python3 scripts/ingest-eligibility.py {CASE_DIR}`,
-which recomputes each result's freshness from the current batch (`stale` means
-the batch changed since the check; rerun it). A proposition flagged
+Then read `ingest_checks` from `python3 scripts/ingest-eligibility.py {CASE_DIR}`
+(add `--entities` / `--existing-claims` with the same files you passed to
+`decision-signals.py` to include those checks). It lists every current target
+with `judged`, `unavailable`, `stale` (inputs changed since the check) or
+`unchecked` (never checked); rerun the ingest checks for `stale` and
+`unchecked` targets, and in `enforce` mode do not stage until none remain. A
+`legacy_location` entry means results were stored by an earlier layout; rerun
+the ingest checks. A proposition flagged
 `broader_or_changed`, `different` or `inconclusive` and a relation flagged
 `relation_disagrees` or `relation_inconclusive` go in front of the reviewer
 with both values. In `advisory` mode the reviewer decides; in `enforce` mode

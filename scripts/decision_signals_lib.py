@@ -215,18 +215,35 @@ def validate_signals(doc: Any) -> dict[str, Any]:
     _require(isinstance(doc.get("overrides", []), list), "decision-signals overrides must be a list")
     for override in doc.get("overrides", []):
         _require(isinstance(override, dict), "each override must be an object")
+    for override in doc.get("overrides", []):
+        _require(isinstance(override.get("target"), str) and isinstance(override.get("input_sha256"), str),
+                 "each override needs a target and the input_sha256 it reviewed")
+    required = {"gate1": ("findings",), "report": ("items",), "ingest": ()}
+    optional = {"gate1": (), "report": (), "ingest": ("propositions", "memberships", "entities", "matches")}
     for name, phase in doc["phases"].items():
-        _require(name in ("gate1", "report", "ingest") and isinstance(phase, dict), f"invalid phase {name!r}")
+        _require(name in required and isinstance(phase, dict), f"invalid phase {name!r}")
         _require(phase.get("mode") in MODES, f"phase {name} has an invalid mode")
-        groups = {"gate1": ("findings",), "report": ("items",), "ingest": ("propositions", "memberships", "entities", "matches")}[name]
-        for group in groups:
-            entries = phase.get(group, [])
+        for group in required[name] + optional[name]:
+            if group not in phase:
+                _require(group not in required[name], f"{name}.{group} is missing")
+                continue
+            entries = phase[group]
             _require(isinstance(entries, list), f"{name}.{group} must be a list")
             for entry in entries:
                 _require(isinstance(entry, dict), f"{name}.{group} entries must be objects")
                 _require(isinstance(entry.get("input_sha256"), str), f"{name}.{group} entry lacks input_sha256")
                 _require(entry.get("status") in ("judged", "routed", "unavailable"), f"{name}.{group} entry has an invalid status")
-                _require(isinstance(entry.get("flags", []), list), f"{name}.{group} flags must be a list")
+                flags = entry.get("flags")
+                _require(isinstance(flags, list) and all(isinstance(f, dict) and isinstance(f.get("reason"), str) for f in flags),
+                         f"{name}.{group} flags must be objects with a reason")
+                if name == "gate1":
+                    _require(isinstance(entry.get("finding_id"), str), "gate1 entries need a finding_id")
+                    _require(entry.get("cap", "none") in ("none", "medium", "low"), "gate1 cap must be none, medium or low")
+                if name == "report":
+                    _require(isinstance(entry.get("target"), str) and isinstance(entry.get("finding_ids"), list),
+                             "report entries need a target and finding_ids")
+                if name == "ingest":
+                    _require(isinstance(entry.get("target"), str), "ingest entries need a target")
     return doc
 
 
@@ -286,7 +303,8 @@ def finding_signal(signals: dict[str, Any] | None, case: Path, finding: dict[str
     for entry in phase.get("findings", []):
         if entry.get("finding_id") == text(finding.get("id")):
             result = dict(entry)
-            if entry.get("input_sha256") != grounding_fingerprint(case, finding):
+            result["current_input_sha256"] = grounding_fingerprint(case, finding)
+            if entry.get("input_sha256") != result["current_input_sha256"]:
                 result["status"] = "stale"
             result["mode"] = phase.get("mode", "advisory")
             return result
@@ -347,8 +365,11 @@ def report_items(case: Path, signals: dict[str, Any] | None) -> list[dict[str, A
         confidence = min((verdicts[fid]["confidence"] for fid in fids), key=lambda c: CAP_ORDER.get(c, 1))
         state = {"approved_finding": framed[0] if len(framed) == 1 else framed, "verdict": verdict,
                  "confidence": confidence, "field": field, "sentence": sentence}
+        # The model sees the weakest confidence; the fingerprint keeps every finding's own values.
+        detail = [{"id": fid, "claim": text(by_id[fid].get("claim")), "verdict": verdicts[fid]["status"],
+                   "confidence": verdicts[fid]["confidence"]} for fid in fids]
         items.append({"target": target, "finding_ids": fids, "state": state,
-                      "input_sha256": canonical_sha256({"state": state, "finding_ids": fids})})
+                      "input_sha256": canonical_sha256({"state": state, "findings": detail})})
     return items
 
 
@@ -388,3 +409,62 @@ def batch_items(case: Path) -> list[dict[str, Any]]:
                  {"claim": text(claim.get("proposition")), "event_label": text(event.get("label")), "event_core": event.get("core") or {}},
                  {"declared_relation": text(membership.get("relation"))})
     return items
+
+
+def entity_items(entities: list[Any]) -> list[dict[str, Any]]:
+    """Entity-type checks for an agent-provided list [{name, context, type}]."""
+    items = []
+    for entity in entities:
+        if isinstance(entity, dict):
+            state = {"entity_name": text(entity.get("name")), "context_sentence": text(entity.get("context"))}
+            rule_inputs = {"declared_type": text(entity.get("type"))}
+            items.append({"group": "entities", "target": f"entity:{state['entity_name']}", "state": state, "rule_inputs": rule_inputs,
+                          "input_sha256": canonical_sha256({"state": state, "rule_inputs": rule_inputs})})
+    return items
+
+
+def match_items(case: Path, existing: list[Any], limit: int = 60) -> list[dict[str, Any]]:
+    """New-finding vs existing-claim pairs for an agent-provided list [{id, claim}]."""
+    findings = json.loads((case / "data" / "findings.json").read_text(encoding="utf-8")).get("findings") or []
+    pairs = [(f, e) for f in findings if isinstance(f, dict) for e in existing if isinstance(e, dict)][:limit]
+    items = []
+    for finding, candidate in pairs:
+        state = {"new_claim": text(finding.get("claim")), "existing_claim": text(candidate.get("claim"))}
+        items.append({"group": "matches", "target": f"finding:{text(finding.get('id'))}|existing:{text(candidate.get('id'))}",
+                      "state": state, "rule_inputs": {}, "input_sha256": canonical_sha256({"state": state, "rule_inputs": {}})})
+    return items
+
+
+def ingest_status(case: Path, entities: list[Any] | None = None, existing: list[Any] | None = None) -> list[dict[str, Any]]:
+    """Every current ingest target with its stored result: judged, unavailable, stale or unchecked.
+
+    Knowledge-batch targets are always evaluated; entity and matching targets
+    only when the same input lists are supplied. Results stored in the main
+    signals file by an earlier layout are reported as legacy and must be rerun.
+    """
+    stored = load_signals(case, INGEST_SIGNALS_NAME)
+    phase = ((stored or {}).get("phases") or {}).get("ingest") or {}
+    current = batch_items(case)
+    if entities is not None:
+        current += entity_items(entities)
+    if existing is not None:
+        current += match_items(case, existing)
+    results = []
+    for item in current:
+        by_target = {entry.get("target"): entry for entry in phase.get(item["group"], [])}
+        entry = by_target.get(item["target"])
+        if entry is None:
+            status = "unchecked"
+        elif entry.get("input_sha256") != item["input_sha256"]:
+            status = "stale"
+        else:
+            status = entry.get("status")
+        results.append({"group": item["group"], "target": item["target"], "status": status, "mode": phase.get("mode"),
+                        "result": (entry or {}).get("result") if status in ("judged", "unavailable") else None,
+                        "flags": (entry or {}).get("flags", []) if status == "judged" else []})
+    main = load_signals(case)
+    if ((main or {}).get("phases") or {}).get("ingest"):
+        results.append({"group": "legacy", "target": SIGNALS_PATH, "status": "legacy_location", "mode": None, "result": None,
+                        "flags": [{"reason": "ingest_results_in_legacy_location",
+                                   "detail": f"rerun ingest checks; results now live in {INGEST_SIGNALS_PATH}"}]})
+    return results
