@@ -56,7 +56,7 @@ The user remains the editor at every gate. Spotlight does not auto-advance throu
 
 ### Preflight
 
-Preflight validates the environment before research starts. It checks configuration, Firecrawl availability, skill inventory, vault configuration, project setup, duplicate projects, active investigations, optional integrations, and monitoring availability.
+Preflight validates the environment before research starts. It checks configuration, Firecrawl availability, skill inventory, vault configuration, project setup, duplicate projects, active investigations, optional integrations, and monitoring availability. It also asks once per install whether to enable the opt-in decision checks (a typed decision model on OpenRouter that flags weak grounding, overstated report prose and drifting knowledge-base records; flags only lower confidence).
 
 ### Brief
 
@@ -296,7 +296,7 @@ Optional dependencies documented in the README:
 - `open-knowledge`
 - `obsidian`
 - Python 3.11+
-- optional integration keys such as `OSINT_NAV_API_KEY`, `JUNKIPEDIA_API_KEY`, `APIFY_API_TOKEN`, and `CORE_API_KEY`
+- optional integration keys such as `OSINT_NAV_API_KEY`, `JUNKIPEDIA_API_KEY`, `APIFY_API_TOKEN`, `CORE_API_KEY`, and `OPENROUTER_API_KEY` (opt-in decision checks)
 - local runtimes such as llama-server or Ollama (driven by opencode)
 
 ## 16. Sensitive mode

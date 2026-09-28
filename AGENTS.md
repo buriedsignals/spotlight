@@ -236,6 +236,7 @@ absolute path and the result in `.spotlight-config.json` under `storage`.
 │   ├── summary.json             # Schema: schemas/summary.schema.json
 │   ├── provenance-manifest.json  # Schema: schemas/provenance-manifest.schema.json
 │   ├── knowledge-batch.json      # Optional reviewed claim/event/story promotion package
+│   ├── decision-signals.json     # Optional decision-model review signals (opt-in; never evidence)
 │   └── monitoring.json          # (optional) External monitor registry for the case
 └── research/
     ├── *.md                     # Scraped web content
@@ -262,6 +263,7 @@ schema versions as declared below.
 | Source-Expression Migration | `schemas/source-expression-migration.schema.json` | Dry-run/apply audit record; informative only and never an activation signal |
 | Evidence Bundle | `schemas/evidence-bundle.schema.json` | Acquisition artifacts with method, missing-source gate, hashes, and claim links |
 | Provenance Manifest | `schemas/provenance-manifest.schema.json` | Case artifact hashes, claim/verdict links, evidence refs, and optional Noosphere C2PA signing metadata |
+| Decision Signals | `schemas/decision-signals.schema.json` | Opt-in Jev decision-model answers and derived review signals for grounding, report prose and ingest; can only lower confidence or add flags |
 | Reviewed Knowledge Batch | `schemas/knowledge-batch.schema.json` | Additive canonical claims, events, story arcs, review decisions, and versioned membership records for the Knowledge Destination Port |
 | Methodology | `schemas/methodology.schema.json` | Investigation plan with directions, steps, tools_required, opsec_considerations |
 | Investigation Log | `schemas/investigation-log.schema.json` | Append-only cycle audit trail |

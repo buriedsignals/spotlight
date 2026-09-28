@@ -1,0 +1,453 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spotlight.buriedsignals.com/schemas/decision-signals.schema.json",
+  "title": "Spotlight decision-model review signals",
+  "description": "Typed decision-model answers and the deterministic signals derived from them. data/decision-signals.json holds gate1 and report phases; data/decision-signals-ingest.json holds the ingest phase. Signals are classifications, never evidence: they can only lower confidence, add review flags or route records to a lead layer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generator",
+    "opt_in",
+    "provider",
+    "question_bank_version",
+    "phases",
+    "overrides",
+    "usage"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "generator": {
+      "const": "scripts/decision-signals.py"
+    },
+    "opt_in": {
+      "description": "Recorded when the user agreed to decision checks for this case.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "by",
+            "at"
+          ],
+          "properties": {
+            "by": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "model_requested",
+        "zero_data_retention"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "model_requested": {
+          "type": "string"
+        },
+        "models_served": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "zero_data_retention": {
+          "type": "boolean"
+        }
+      }
+    },
+    "question_bank_version": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "phases": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gate1": {
+          "$ref": "#/$defs/gate1"
+        },
+        "report": {
+          "$ref": "#/$defs/report"
+        },
+        "ingest": {
+          "$ref": "#/$defs/ingest"
+        }
+      }
+    },
+    "overrides": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target",
+          "input_sha256",
+          "reviewer",
+          "reason",
+          "at"
+        ],
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reviewer": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "at": {
+            "type": "string"
+          },
+          "input_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "The exact reviewed input; the override lapses when the input changes."
+          }
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requests",
+        "input_tokens",
+        "cost_usd"
+      ],
+      "properties": {
+        "requests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cost_usd": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "$defs": {
+    "status": {
+      "enum": [
+        "judged",
+        "routed",
+        "unavailable"
+      ]
+    },
+    "mode": {
+      "enum": [
+        "shadow",
+        "advisory",
+        "enforce"
+      ]
+    },
+    "phaseHeader": {
+      "type": "object",
+      "required": [
+        "generated_at",
+        "mode",
+        "status"
+      ],
+      "properties": {
+        "generated_at": {
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/mode"
+        },
+        "status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "flag": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    },
+    "answers": {
+      "type": "object"
+    },
+    "gate1": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/phaseHeader"
+        }
+      ],
+      "type": "object",
+      "required": [
+        "findings"
+      ],
+      "properties": {
+        "generated_at": true,
+        "mode": true,
+        "status": true,
+        "reason": true,
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "finding_id",
+              "input_sha256",
+              "status",
+              "flags"
+            ],
+            "properties": {
+              "finding_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "input_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "status": {
+                "$ref": "#/$defs/status"
+              },
+              "route_reason": {
+                "type": "string"
+              },
+              "evidence_location": {
+                "enum": [
+                  "listed_source",
+                  "other_case_file",
+                  "not_found",
+                  "no_evidence"
+                ]
+              },
+              "support": {
+                "enum": [
+                  "direct",
+                  "partial",
+                  "insufficient",
+                  "contradicted"
+                ]
+              },
+              "support_probability": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "cap": {
+                "enum": [
+                  "none",
+                  "medium",
+                  "low"
+                ]
+              },
+              "flags": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/flag"
+                }
+              },
+              "facets": {
+                "type": "object"
+              },
+              "answers": {
+                "$ref": "#/$defs/answers"
+              }
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "report": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/phaseHeader"
+        }
+      ],
+      "type": "object",
+      "required": [
+        "items"
+      ],
+      "properties": {
+        "generated_at": true,
+        "mode": true,
+        "status": true,
+        "reason": true,
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "target",
+              "finding_ids",
+              "input_sha256",
+              "status",
+              "flags"
+            ],
+            "properties": {
+              "target": {
+                "type": "string",
+                "minLength": 1
+              },
+              "finding_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "input_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "status": {
+                "$ref": "#/$defs/status"
+              },
+              "flags": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/flag"
+                }
+              },
+              "overstatement_type": {
+                "type": "string"
+              },
+              "answers": {
+                "$ref": "#/$defs/answers"
+              }
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ingest": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/phaseHeader"
+        }
+      ],
+      "type": "object",
+      "properties": {
+        "generated_at": true,
+        "mode": true,
+        "status": true,
+        "reason": true,
+        "propositions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ingestItem"
+          }
+        },
+        "memberships": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ingestItem"
+          }
+        },
+        "entities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ingestItem"
+          }
+        },
+        "matches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ingestItem"
+          }
+        },
+        "groups_generated_at": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ingestItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "input_sha256",
+        "status",
+        "result",
+        "flags"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "input_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "result": {
+          "type": "string"
+        },
+        "declared": {
+          "type": "string"
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/flag"
+          }
+        },
+        "answers": {
+          "$ref": "#/$defs/answers"
+        },
+        "input": {
+          "type": "object",
+          "description": "Every input that can change the derived result."
+        }
+      }
+    }
+  }
+}

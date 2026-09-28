@@ -4,6 +4,49 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added — Opt-in decision checks (OpenRouter Decisions API)
+
+- New optional integration `decisions` (`integrations/decisions/`): typed
+  decision checks through the OpenRouter Decisions API (default model
+  `typesafe/jev-1.13`), always with `provider: {zdr: true, allow_fallbacks:
+  false}`. It uses the member's `OPENROUTER_API_KEY` (environment,
+  `integrations.decisions.env_file`, or the checkout `.env`) and is off unless
+  `integrations.decisions.enabled` is true, the case is not sensitive and the
+  user opted in for the case. `--check` reports readiness without a request.
+- `scripts/decision-signals.py` (the only networked step) writes
+  `data/decision-signals.json` (Gate 1 grounding of each finding against its
+  located source excerpt, and report-prose fidelity) and
+  `data/decision-signals-ingest.json` (proposition vs finding, claim-to-event
+  relation, entity type, matching against existing claims), both against
+  `schemas/decision-signals.schema.json`. Findings whose quote is not in any
+  stored source, or that need arithmetic, are routed to the existing
+  fact-check process instead of judged. Writes are locked, atomic and
+  symlink-safe; source discovery never leaves the case directory.
+- Fingerprints cover every input a result depends on (claim, evidence and
+  located source excerpts; prose plus each cited finding's verdict and
+  displayed confidence; declared relations and entity types), and stale
+  signals are ignored. A choice counts only when both option orders agree.
+  Reviewer overrides are bound to the exact fingerprint reviewed and lapse
+  when it changes. Malformed answers become `unavailable`; invalid signal
+  files fail loudly.
+- Signals can only lower confidence or add flags. In `enforce` mode the
+  renderer caps displayed confidence from fresh judged signals and
+  `validate-report.py` rejects any confidence above an applied cap; in
+  `advisory` mode flags are shown only. `findings-report.md` and
+  `evidence-map.json` carry a per-finding decision-check line. Rendering stays
+  offline and byte-deterministic; stale signals are ignored.
+- The report finalizer gains a `report_fidelity` stage
+  (`scripts/check-report-fidelity.py`, offline) that fails in `enforce` mode on
+  flagged or changed prose unless a reviewer override is recorded.
+- `scripts/ingest-eligibility.py` implements the ingest eligibility gate in code
+  (previously applied by the agent from prose) and layers decision signals and
+  claim facets (claim type, temporal status, source assertion) on top.
+- Evaluation (exploratory; labels written by agents and partly blind-checked):
+  on held-out halves in five languages, grounding caught 49/51 problems with
+  4/30 false alarms (2/30 after one post-hoc threshold fix); report prose
+  22/23 with 0/23; proposition fidelity 18/18 with 1/17. Evidence:
+  `tools/decision-model-evidence/jev-2026-09-28/`.
+
 ### Changed — Spotlight native ownership and selected local runtime
 
 - Engine keeps Spotlight bundles and ledger under

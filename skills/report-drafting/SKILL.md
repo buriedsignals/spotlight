@@ -96,17 +96,40 @@ The renderer places this at the top of the page. Do not soften:
    text and attribution, and records its locator, hashes, relation, and lifecycle in
    `evidence-map.json`. Legacy `1.0` reports do not accept expression selections.
 
-3. Return the completed structured draft to the `phase-report` owner. That
+3. **Decision check (optional).** If this case ran decision checks at Gate 1
+   (`data/decision-signals.json` exists), check the prose before finalizing:
+
+   ```
+   execute-shell("python3 scripts/decision-signals.py {CASE_DIR} --phase report")
+   ```
+
+   It asks the decision model whether each deck, headline, summary,
+   why-it-matters and caveat says more than its findings and verdicts allow
+   (added certainty, cause, motive, scope, actor, amount or date; a dropped
+   "allegedly"; an unverified finding stated as fact). Revise only the flagged
+   fields in `data/report-draft.json` and rerun the check (at most two rounds).
+   If the editor judges a flag wrong, record an override in
+   `data/decision-signals.json` with the flagged item's `target` and
+   `input_sha256` plus `reviewer`, `reason` and `at`. It applies only to that
+   exact sentence with those findings, verdicts and confidences, and lapses
+   when any of them changes. The finalizer's
+   `report_fidelity` stage reads these stored signals offline: in `enforce`
+   mode it fails on unrevised flags or on prose changed after the check; in
+   `advisory` mode it only warns.
+
+4. Return the completed structured draft to the `phase-report` owner. That
    owner applies `spotlight_transition({operation: "decideReport", payload:
    {decision: "completed"}})`; the resolver invokes the deterministic
    finalizer, validates both inputs, renders all three artifacts, and records
    their hashes before advancing to Ingest.
-4. If that transition reports a `report_draft` failure, revise only
+5. If that transition reports a `report_draft` or `report_fidelity` failure, revise only
    `data/report-draft.json` using the exact failure. If fact-check fails, return
    to the fact-checker. **Never repair generated HTML or Markdown by hand.**
-5. Present generated report artifacts only after the transition succeeds.
+6. Present generated report artifacts only after the transition succeeds.
 
 The renderer is byte-deterministic for identical inputs, HTML-escapes all case text, permits links only to HTTP(S) sources or existing files within the case, and caps every non-verified finding at Low confidence. Activated reports also require every reportable positive finding to retain an active supporting expression through the fact-check trail. Missing, dangling, tampered, superseded, or withdrawn expression references fail before valid report artifacts are replaced.
+
+When decision checks ran, `findings-report.md` and `evidence-map.json` show each finding's decision-check line and flags; in `enforce` mode a fresh, judged grounding signal can lower displayed confidence (never raise it), and `validate-report.py` fails if any displayed confidence exceeds its applied cap.
 
 The structural validator is deliberately language-neutral. It proves reference coverage and verdict placement; it does **not** pretend to prove semantic entailment from prose. Independent fact-checking and the final human editorial gate remain responsible for whether the model's synthesis accurately interprets the cited findings.
 

@@ -118,7 +118,8 @@ def check(case: Path) -> list[str]:
             )
 
         expected_inputs: dict[str, str] = {}
-        input_names = ["findings.json", "fact-check.json", "report-draft.json", "methodology.json"]
+        input_names = ["findings.json", "fact-check.json", "report-draft.json", "methodology.json",
+                       "decision-signals.json"]
         if (case / "data" / "case-contract.json").is_file():
             input_names.append("source-expressions.json")
         for name in input_names:
@@ -219,6 +220,13 @@ def check(case: Path) -> list[str]:
                 fails.append(
                     f"CONFIDENCE: {claim.get('id') or 'finding'} is High confidence but "
                     f"its fact-check status is {claim.get('fact_check_status') or 'MISSING'}"
+                )
+            signal = claim.get("decision_signal")
+            applied = signal.get("applied_cap") if isinstance(signal, dict) else None
+            rank = {"low": 1, "medium": 2, "high": 3}
+            if applied in rank and rank.get(str(claim.get("report_confidence", "")).lower(), 3) > rank[applied]:
+                fails.append(
+                    f"CONFIDENCE: {claim.get('id') or 'finding'} exceeds its applied decision-check cap ({applied})"
                 )
 
     return fails

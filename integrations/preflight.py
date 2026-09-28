@@ -19,6 +19,7 @@ Exit code:
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
@@ -118,6 +119,8 @@ def smoke_test(manifest: dict, *, sensitive: bool = False) -> tuple[bool, str | 
     """
     if sensitive and manifest.get("type") == "api":
         return False, "network smoke tests are unavailable in sensitive mode"
+    if manifest.get("network_smoke") is False:
+        return True, None  # readiness is local-only for this integration
     kind = manifest.get("type", "api")
 
     if kind == "api":
@@ -215,13 +218,61 @@ def smoke_test(manifest: dict, *, sensitive: bool = False) -> tuple[bool, str | 
     return True, None
 
 
+CONFIG_PATH = _BASE_DIR.parent / ".spotlight-config.json"
+DECISIONS_KEY = "OPENROUTER_API_KEY"
+DECISIONS_CHOICE = (
+    "Opt-in decision checks: a decision model on OpenRouter (default typesafe/jev-1.13, "
+    "zero data retention) flags weak grounding and overstated report prose. Flags only lower "
+    "confidence. Needs an OpenRouter key; each case still asks before anything is sent."
+)
+
+
+def decisions_block() -> dict:
+    try:
+        config = json.loads(CONFIG_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
+    block = (config.get("integrations") or {}).get("decisions")
+    return block if isinstance(block, dict) else {}
+
+
+def load_decisions_key(block: dict) -> None:
+    """Make a key held in the configured private env file visible to this check only."""
+    if os.environ.get(DECISIONS_KEY) or not block.get("env_file"):
+        return
+    try:
+        lines = Path(str(block["env_file"])).expanduser().read_text().splitlines()
+    except OSError:
+        return
+    for line in lines:
+        key, sep, value = line.strip().removeprefix("export ").partition("=")
+        if sep and key.strip() == DECISIONS_KEY and value.strip():
+            os.environ[DECISIONS_KEY] = value.strip().strip("'\"")
+            return
+
+
+def extra_fields(manifest: dict) -> dict:
+    fields = {"type": manifest.get("type", "api"), "opt_in": ""}
+    if manifest.get("id") != "decisions":
+        return fields
+    block = decisions_block()
+    if "enabled" not in block or not block.get("decided_at"):
+        fields.update(opt_in="undecided", choice=DECISIONS_CHOICE)
+    elif block.get("enabled") is True:
+        fields["opt_in"] = "enabled"
+    else:
+        fields.update(opt_in="declined", status="dismissed", reason="the user declined decision checks at preflight")
+    return fields
+
+
 def main():
+    load_decisions_key(decisions_block())
     run_preflight(
         INTEGRATIONS_DIR,
         result_key="integrations",
         smoke_fn=smoke_test,
-        report_extra_fields=lambda m: {"type": m.get("type", "api")},
-        text_columns=[("id", "ID", 20), ("type", "Type", 10), ("status", "Status", 8)],
+        report_extra_fields=extra_fields,
+        text_columns=[("id", "ID", 20), ("type", "Type", 10), ("status", "Status", 12), ("opt_in", "Opt-in", 10)],
         description="Preflight check for Spotlight external tool integrations",
         dismiss_when_constrained=True,
     )

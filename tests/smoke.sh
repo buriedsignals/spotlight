@@ -116,7 +116,7 @@ fi
 
 echo ""
 echo "── Validators and helpers ──"
-for t in validate-case-check validate-fact-check-check source-expression-producer-contract-check migrate-source-expressions-check validate-report-check render-report-check report-diagrams-check provenance-manifest-check knowledge-destination-check knowledge-destination-hardening-check knowledge-projection-check query-vault-check graph-lookup-migration-check ingest-check schema-validation-check preflight-check scoutpost-boundary-check cti-upstream-check technical-investigation-check verified-indicator-export-check \
+for t in decision-signals-check validate-case-check validate-fact-check-check source-expression-producer-contract-check migrate-source-expressions-check validate-report-check render-report-check report-diagrams-check provenance-manifest-check knowledge-destination-check knowledge-destination-hardening-check knowledge-projection-check query-vault-check graph-lookup-migration-check ingest-check schema-validation-check preflight-check scoutpost-boundary-check cti-upstream-check technical-investigation-check verified-indicator-export-check \
          orchestration-conformance-check portable-resolver-check arbiter-match-check arbiter-report-check arbiter-create-check arbiter-appendix-check arbiter-themes-check arbiter-id-check arbiter-navigator-check; do
   python3 "tests/$t.py" >/dev/null 2>&1
   rc=$?

@@ -211,8 +211,49 @@ important integrations are:
 | Apify | Optional hosted social-media collection (X, Instagram, TikTok, Facebook, LinkedIn) when `APIFY_API_TOKEN` is set. Collection on X violates the platform ToS even for public posts; record the collection authority per capture. |
 | Unpaywall | Legal open-access lookup for academic papers. |
 | Noosphere C2PA | Optional provenance signing for case-level packages. |
+| Decision checks (OpenRouter) | **Opt-in.** A decision model on OpenRouter (default `typesafe/jev-1.13`) flags findings their stored sources do not support, report prose that overstates its findings, and knowledge-base records that drift from their findings. Flags can only lower confidence. See [Opt-in decision checks](#opt-in-decision-checks). |
 
 See [docs/integrations.md](docs/integrations.md) for setup and routing details.
+
+### Opt-in decision checks
+
+Spotlight can ask a typed decision model narrow questions at three gates. It
+never writes text and never decides a verdict:
+
+- **Gate 1:** does the located source excerpt actually support each finding?
+  Flags cover partial support, contradiction, an announcement presented as
+  current, an incomplete list, an address presented as legal domicile, an
+  allegation stated as fact, a reversed payer or owner, a role presented as
+  ownership, a proposed or approved step presented as paid, an amount or date
+  mismatch, and added scope or causation.
+- **Report:** does any deck, headline, summary, "why it matters" or caveat say
+  more than its findings and verdicts allow? The finalizer's `report_fidelity`
+  stage reads the stored answers.
+- **Ingest:** eligibility runs in code (`scripts/ingest-eligibility.py`). Checks
+  cover a knowledge-base proposition that changed its finding's meaning, the
+  claim-to-event relation, entity types (ambiguous bare names become
+  `unclear`), and matching against existing claims.
+
+It is off unless you choose it. Phase 0 preflight asks once per install
+(`python3 integrations/preflight.py --json` shows `decisions` with `opt_in:
+undecided | enabled | declined`), and each investigation asks again before
+anything is sent. Sensitive mode never uses it.
+
+- **Key:** it uses your own `OPENROUTER_API_KEY`, from the environment Spotlight
+  runs in or from a private file named by `integrations.decisions.env_file` in
+  `.spotlight-config.json`. Keep that file outside any repository and
+  `chmod 600` it. Never paste the key into chat or the config.
+- **Readiness:** `python3 scripts/decision-signals.py <case> --phase gate1 --check`
+  reports whether a run would happen, without sending anything.
+- **Data:** each request sends the claim, its quoted evidence and a short excerpt
+  of the stored source to OpenRouter and the model's provider (TypeSafe, US).
+  Requests always use zero-data-retention routing with fallbacks disabled.
+- **Modes:** the default mode, `advisory`, shows flags. `enforce` caps displayed
+  confidence and blocks overstated prose until it is revised or a reviewer
+  override is recorded.
+- **What stays with the fact-checker:** arithmetic (sums, counts, conversions),
+  whether a "current" claim has gone stale, and quotes that cannot be found in
+  a stored source are routed to the existing process, not judged.
 
 ## Install
 
@@ -258,6 +299,13 @@ stdin/keychain flow, but the user enters each value only through a private
 operating-system or terminal prompt—never argv, chat, shell history, or a
 repository file. Manual updates use `bsig plan update spotlight`; Indicator
 Labs automates the same lifecycle.
+
+On the first run after either install route, Phase 0 preflight offers the
+optional [decision checks](#opt-in-decision-checks) once; declining leaves
+Spotlight exactly as before. If you accept, provide `OPENROUTER_API_KEY` through
+your runtime's environment (for Engine installs, the protected keychain flow or
+your runtime's provider key) or a private `env_file`, then confirm with
+`scripts/decision-signals.py <case> --phase gate1 --check`.
 
 [`install-spotlight.sh`](install-spotlight.sh) remains a fail-closed pointer for
 old `curl | bash` commands; it is not another installer. Contributors may clone

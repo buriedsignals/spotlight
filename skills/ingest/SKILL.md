@@ -170,6 +170,26 @@ Infer entity type:
 
 Generate kebab-case ID from entity name.
 
+**Decision check for entity types (optional).** When `data/decision-signals.json`
+exists for this case, write the extracted entities with their inferred types to
+a case-local JSON list (`[{"name", "context", "type"}]`, where `context` is the
+sentence the entity came from) and run:
+
+```
+execute-shell("python3 scripts/decision-signals.py {CASE_DIR} --phase ingest --entities {CASE_DIR}/data/ingest-entities.json")
+```
+
+Results go to `data/decision-signals-ingest.json` (`phases.ingest.entities`,
+each with its exact `input`). They are recommendations, never authority:
+
+- `shadow`: record only; keep the pattern-table type.
+- `advisory`: show the user each disagreement (`entity_type_disagrees`) and each
+  `unclear` result (a bare name such as "Jordan" or "Morgan" that the sentence
+  cannot decide) next to the pattern-table type; change a type only when the
+  user confirms it.
+- `enforce`: do not write an entity note whose type disagrees or is `unclear`
+  until the user decides it.
+
 **If entity exists** in `{vault}/entities/_registry.json` (match on `id`):
 
 - `read-file("{vault}/entities/{entity-id}.md")`
@@ -284,7 +304,24 @@ The approved graph and deterministic projection are the new claim surface.
 `local_conformance` is a same-user filesystem boundary, not evidence of
 multi-user authorization isolation.
 
-For each finding in `findings.json`, join its matching fact-check entry from `fact-check.json` (on finding ID) and apply the **eligibility gate** from `references/entity-model.md`:
+Run the deterministic eligibility helper and follow its output:
+
+```
+execute-shell("python3 scripts/ingest-eligibility.py {CASE_DIR}")
+```
+
+It applies the gate below in code and, when decision checks ran, the stored
+Gate 1 signals: in `enforce` mode a low decision cap excludes a finding and a
+medium cap moves it to `layer: lead` with `needs_verification: true` and caps
+its confidence; in `advisory` mode the same outcome appears only as
+`decision_check.recommendation`, which you report to the user. Report any
+`warnings` (for example a finding with no recorded grounding cap). When a
+finding carries `facets` (`claim_type`, `temporal_status`, `source_assertion`),
+add them to the claim note frontmatter under `facets:`; treat them as
+classification metadata, not evidence. If the helper reports invalid decision
+signals, stop and tell the user rather than ingesting around them.
+
+For reference, the helper implements the **eligibility gate** from `references/entity-model.md` for each finding joined with its fact-check entry (on finding ID):
 
 1. Verdict is `verified` or `partially_verified`.
 2. Grounding `confidence_cap` is above `low`.
@@ -303,6 +340,21 @@ finding, claim ID is `{project-id}-f{n}`:
 - `recorded` = today; `verified` = fact-check date; `verified_by` = this project
 - `entities` = entity IDs from Step 3 that this finding references
 - Body: Claim (verbatim), Evidence Summary, Sources (with access dates), Supersession History (empty table), Connections (relative markdown links to entities and `[{project-id}](../investigations/{project-id}.md)`)
+
+**Matching against existing claims (optional).** When decision checks ran,
+collect existing claim notes that share an entity with this case's findings
+(`[{"id", "claim"}]`, at most 60 pairs) and run
+`python3 scripts/decision-signals.py {CASE_DIR} --phase ingest --existing-claims <that file>`.
+Results (`phases.ingest.matches` in `data/decision-signals-ingest.json`) are
+candidates for the user, never authority over another claim's history:
+`same_claim` suggests re-verification, `updates` suggests a later state,
+`contradicts` suggests both cannot hold for the same time and scope, and
+`inconclusive` means the model disagreed with itself. Write a re-verification
+or supersession row to an existing note only after the user confirms the
+specific pair. In `enforce` mode, a `contradicts` or `same_claim` pair blocks
+writing the new claim note until the user decides; in `shadow` mode, record
+only. Runs for entities, matches and the knowledge batch are kept separately
+and do not erase each other.
 
 **If the claim already exists** (re-ingest of the same project, or a later project re-verifying the same claim):
 
@@ -384,6 +436,25 @@ must represent claim–event and event–story membership as first-class relatio
 records. Similarity or clustering may create `candidate` records only; it may
 not approve, merge, or mint canonical editorial identity without a trusted,
 record-bound journalist decision.
+
+Before staging a prepared batch, and when decision checks ran for this case,
+check that each claim `proposition` still says what its origin finding says
+and that each claim–event relation is plausible:
+
+```
+execute-shell("python3 scripts/decision-signals.py {CASE_DIR} --phase ingest")
+```
+
+Then read `ingest_checks` from `python3 scripts/ingest-eligibility.py {CASE_DIR}`,
+which recomputes each result's freshness from the current batch (`stale` means
+the batch changed since the check; rerun it). A proposition flagged
+`broader_or_changed`, `different` or `inconclusive` and a relation flagged
+`relation_disagrees` or `relation_inconclusive` go in front of the reviewer
+with both values. In `advisory` mode the reviewer decides; in `enforce` mode
+a flagged proposition blocks staging until the journalist revises it or
+records an override bound to its `input_sha256`. Never rewrite a proposition
+or relation automatically. These flags inform the human signature; they never
+approve anything themselves.
 
 Graph promotion is **not an automatic ingest step**. The current SQLite
 implementation is a local conformance adapter and must not bypass the configured

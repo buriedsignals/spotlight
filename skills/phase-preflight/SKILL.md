@@ -245,7 +245,8 @@ Write `.spotlight-config.json` via `write-file`:
       "prefilter": false,
       "hybrid": false,
       "evidence_boundary": "lead-only; never verified or publishable"
-    }
+    },
+    "decisions": "<preserve the existing block; step 9.1 records the opt-in choice>"
   },
   "sensitive": false,
   "created_at": "<ISO timestamp>",
@@ -319,6 +320,48 @@ If `integrations.rlm.enabled` is true, find the `rlm` entry in
 `integrations/preflight.py --json` and record its status under the same
 `integrations.rlm` object as `preflight_status`, `checked_at`, `source`, and
 `reason`. Do not ask the user about RLM during Phase 0.
+
+### 9.1. Decision checks — one-time opt-in choice
+
+Find the `decisions` entry in the same `integrations/preflight.py --json`
+output. When its `opt_in` is `undecided` (a new install, or the choice was
+never recorded), and `model_tier` is not `12b` and sensitive mode is off, ask
+the user once, using the entry's `choice` text:
+
+> "Spotlight can add opt-in decision checks. A decision model on OpenRouter
+> (default `typesafe/jev-1.13`, zero data retention, US-hosted) flags findings
+> whose stored source does not support them and report prose that overstates
+> them; ingest uses it to catch changed knowledge-base propositions. Flags can
+> only lower confidence, never raise it. It needs your OpenRouter key, cost
+> well under a cent per investigation in testing, and every investigation still
+> asks before anything is sent. Enable decision checks?"
+
+Record the answer, preserving every other key:
+
+```json
+{
+  "integrations": {
+    "decisions": {
+      "enabled": true,
+      "decided_at": "<ISO timestamp>",
+      "decided_by": "user",
+      "env_file": "<optional absolute path to a private file holding OPENROUTER_API_KEY>",
+      "modes": {"gate1": "advisory", "report": "advisory", "ingest": "advisory"}
+    }
+  }
+}
+```
+
+When the user declines, write `"enabled": false` with `decided_at` and
+`decided_by`; preflight then reports `decisions` as `dismissed` and no phase
+runs it. When the user accepts but the entry is `unconfigured`, tell them to
+provide `OPENROUTER_API_KEY` either in their environment (Engine, shell
+profile) or in a private file outside any repository (`chmod 600`), and to
+give you only that file's path for `env_file`. Never ask for the key itself
+in chat, and never write it to `.spotlight-config.json`. Keep `modes` at
+`advisory` unless the user explicitly asks for `enforce`. When `opt_in` is
+already `enabled` or `declined`, do not ask again; the user can change the
+choice by asking at any time.
 
 ## 9.5. Follow-up recovery (resume only)
 
