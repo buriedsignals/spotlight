@@ -9,7 +9,6 @@ This doc is the entry point. It points at the per-subsystem contracts.
 - Read `docs/structure.md` to understand the layout.
 - Read `AGENTS.md` — the runtime contract every skill and agent speaks.
 - Run `bash tests/smoke.sh` — if it passes on your machine, your environment is ready.
-- Check `docs/plans/` for any active work-in-progress.
 
 ## Ways to contribute
 
