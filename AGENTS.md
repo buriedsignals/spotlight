@@ -40,7 +40,7 @@ minutes, so do not treat an immediately stale response as a failed deploy.
 
 ## Session Preflight
 
-Before coding in this project on a Buried Signals dev machine, read the shared `coding-rules` skill (`kit/coding-rules/SKILL.md` in the sibling shared-skills repo, if present). It is the canonical source for workflow routing, coding standards, Jujutsu/version-control rules, GitHub operations, and parallel-agent isolation. Local instructions below add project-specific constraints.
+Before coding in this project on a Buried Signals dev machine, load the shared `coding-rules` skill from OpenKnowledge (and `test-audit` when touching tests). It is the canonical source for workflow routing, coding standards, Jujutsu/version-control rules, GitHub operations, and parallel-agent isolation. Local instructions below add project-specific constraints.
 
 ## Tool Verb Registry
 
