@@ -106,19 +106,20 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.out:
         if leads is not None:
-            with open(args.out + ".raw", "w") as fh:
+            with open(args.out + ".raw", "w", encoding="utf-8") as fh:
                 fh.write(out)
-            with open(args.out, "w") as fh:
+            with open(args.out, "w", encoding="utf-8") as fh:
                 fh.write(f"# RLM-distilled leads from {args.target}\n"
                          f"# (compact; raw source: {os.path.basename(args.out)}.raw)\n\n" + leads)
             print(f"distilled {len(result.markdown)}->{len(leads)} chars via {result.provider}+RLM -> {args.out} (raw sidecar)", file=sys.stderr)
         else:
-            with open(args.out, "w") as fh:
+            with open(args.out, "w", encoding="utf-8") as fh:
                 fh.write(out)
             note = " (RLM off/failed — raw)" if args.rlm else ""
             print(f"wrote {len(result.markdown)} chars via {result.provider} -> {args.out}{note}", file=sys.stderr)
     else:
-        sys.stdout.write(leads if leads is not None else out)
+        # Pages are Unicode; a Windows console or pipe defaults to cp1252.
+        sys.stdout.buffer.write((leads if leads is not None else out).encode("utf-8"))
     return 0
 
 
