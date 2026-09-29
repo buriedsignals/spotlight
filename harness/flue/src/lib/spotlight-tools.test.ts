@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import {
 	mkdir,
 	mkdtemp,
+	readdir,
 	readFile,
 	rm,
 	symlink,
@@ -24,6 +25,7 @@ type RegisteredTool = {
 type AgentConfig = {
 	tools?: unknown[];
 	instructions?: string;
+	subagents?: { name: string; instructions: string; tools?: unknown[] }[];
 };
 
 const FIXED_APPROVAL = {
@@ -194,6 +196,44 @@ test('real Flue instructions defer all phases through resolver operations', asyn
 	assert.match(instructions, /Report.*Ingest/s);
 	assert.doesNotMatch(instructions, /finalize-report\.py/);
 	assert.match(instructions, /phase-preflight.*spotlight_resolve/s);
+});
+
+test('real Flue config reaches durable knowledge only through the local query-vault adapter', async (t) => {
+	const { caseDir, root } = await makeCase(t);
+	const config = await initializeAgent(caseDir, root);
+
+	assert.deepEqual(
+		(config.tools as RegisteredTool[]).map((tool) => tool.name).sort(),
+		['spotlight_resolve', 'spotlight_transition'],
+	);
+	assert.deepEqual(
+		(config.subagents ?? []).map((subagent) => [subagent.name, subagent.tools]),
+		[
+			['investigator', []],
+			['fact-checker', []],
+		],
+	);
+	assert.deepEqual(Object.keys(config).filter((key) => /mcp/i.test(key)), []);
+
+	const roles = [
+		['orchestrator', String(config.instructions)],
+		...(config.subagents ?? []).map((subagent) => [subagent.name, subagent.instructions]),
+	];
+	for (const [role, instructions] of roles) {
+		assert.match(instructions, /scripts\/query_vault\.py --config \S+\.spotlight-config\.json --case-dir/, role);
+		assert.doesNotMatch(instructions, /mcp__openknowledge/i, role);
+		assert.doesNotMatch(instructions, /bsig\b.*\bknowledge (search|read|stage|commit)/i, role);
+	}
+
+	// connectMcpServer is Flue's API for attaching MCP tools; the harness must never call it.
+	const sourceRoot = new URL('../', import.meta.url);
+	const sources = (await readdir(sourceRoot, { recursive: true })).filter(
+		(path) => path.endsWith('.ts') && !path.endsWith('.test.ts'),
+	);
+	assert.ok(sources.length > 0);
+	for (const path of sources) {
+		assert.doesNotMatch(await readFile(new URL(path, sourceRoot), 'utf8'), /connectMcpServer/, path);
+	}
 });
 
 test('an in-flight transition reaches one durable outcome after caller abort', async (t) => {

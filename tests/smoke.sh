@@ -129,20 +129,18 @@ for t in credentials-check firecrawl-cli-check decision-signals-check validate-c
   fi
 done
 
-for t in feedback-widget-check.js flue-openknowledge-mcp-check.mjs; do
-  node "tests/$t" >/dev/null 2>&1
-  rc=$?
-  if [ $rc -eq 0 ]; then
-    ok "tests/$t passes"
-  else
-    fail "tests/$t failed with rc=$rc"
-  fi
-done
-
-if bash tests/flue-openknowledge-workspace-check.sh >/dev/null 2>&1; then
-  ok "tests/flue-openknowledge-workspace-check.sh passes"
+node tests/feedback-widget-check.js >/dev/null 2>&1
+rc=$?
+if [ $rc -eq 0 ]; then
+  ok "tests/feedback-widget-check.js passes"
 else
-  fail "tests/flue-openknowledge-workspace-check.sh failed"
+  fail "tests/feedback-widget-check.js failed with rc=$rc"
+fi
+
+if bash tests/flue-build-check.sh >/dev/null 2>&1; then
+  ok "tests/flue-build-check.sh passes"
+else
+  fail "tests/flue-build-check.sh failed"
 fi
 
 npm test --prefix harness/flue >/dev/null 2>&1
