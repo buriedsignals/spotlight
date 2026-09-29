@@ -4,6 +4,14 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Removed — Arbiter client sensitive switch
+
+- `ArbiterClient` and `ArbiterClient.from_env()` no longer accept
+  `sensitive`, and `preflight.smoke_test()` no longer accepts it either.
+  Nothing in Spotlight set it, so it never blocked a request. As with the
+  other remote integrations, the rule not to call Arbiter in sensitive mode
+  lives in the skill instructions.
+
 ### Fixed — Recorded evidence in the HTML report
 
 - `report.html` shows each finding's recorded evidence again, before the

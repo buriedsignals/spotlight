@@ -220,8 +220,9 @@ Save responses verbatim, including successful `meta.credits_charged` and
 entity score, theme, ranking, and agent answer is a lead—not a verified
 conclusion. Archive a still-live origin separately.
 
-In sensitive mode, block all HTTPS requests to Arbiter before opening the
-network. Previously saved JSON can still be rendered offline with `run_match.py`,
+In sensitive mode, make no Arbiter requests. The client does not block them;
+this rule is enforced at the skill layer. Previously saved JSON can still be
+rendered offline with `run_match.py`,
 `run_themes.py`, `run_report.py`, `run_appendix.py`, and `run_create.py`;
 no-Arbiter cases stay byte-identical.
 

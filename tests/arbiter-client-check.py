@@ -139,30 +139,7 @@ def check_request_shape_and_secret_boundary(client) -> None:
 
 
 
-def check_sensitive_and_safe_paths(client) -> None:
-    calls = []
-
-    def opener(*_args):
-        calls.append(True)
-        return FakeResponse({})
-
-    with patch.object(
-        client.socket,
-        "getaddrinfo",
-        side_effect=AssertionError("sensitive construction must not resolve API host"),
-    ) as resolver:
-        sensitive = client.ArbiterClient.from_env(
-            {"ARBITER_API_KEY": "member-secret", "ARBITER_API_BASE": "https://staging.example/api/v1"},
-            sensitive=True,
-            opener=opener,
-        )
-    assert not resolver.called, "sensitive construction must not call getaddrinfo"
-    expect_error(
-        lambda: sensitive.request_json("GET", "/topics", query={"limit": 1}),
-        "sensitive mode must block before the opener",
-    )
-    assert not calls, "sensitive mode reached the live request opener"
-
+def check_safe_research_paths(client) -> None:
     with tempfile.TemporaryDirectory() as raw:
         case_dir = Path(raw) / "case"
         research = case_dir / "research"
@@ -257,7 +234,7 @@ def main() -> int:
     check_http_error_contract(client)
     check_redirect_origin_policy()
     check_default_pinned_handler_runtime_compatibility(client)
-    check_sensitive_and_safe_paths(client)
+    check_safe_research_paths(client)
     print("arbiter client boundary: OK")
     return 0
 

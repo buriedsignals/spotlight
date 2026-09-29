@@ -391,7 +391,7 @@ Also unpublished as guarantees: typical wall-clock time for a plan or a full run
 
 Arbiter serves archived snapshots, so posts remain retrievable after deletion at origin. Cite the origin `url` as the source with `access_method: "archive_copy"`, say so in `access_notes`, and record the Arbiter case-study id for reproducibility. Two integrity notes belong in findings: a study's `window` is a **declared** bound, so absence of posts outside it is not evidence of absence of activity; and `stance_score` is `0` both for genuinely neutral and for unscored entities, so `0` is not a measured neutral. Everything the API returns is a lead — nothing from it may be recorded as a `verified`, `confirmed`, or `publishable` status.
 
-Arbiter requires remote API access, so it is **unavailable in sensitive mode**. Previously saved responses under `{CASE_DIR}/research/` remain readable, and the offline renderers in `integrations/arbiter/` still work on them.
+Arbiter requires remote API access, so **do not call it in sensitive mode**; like Spotlight's other remote integrations, this is enforced at the skill layer, not by the client. Previously saved responses under `{CASE_DIR}/research/` remain readable, and the offline renderers in `integrations/arbiter/` still work on them.
 
 ## See also
 

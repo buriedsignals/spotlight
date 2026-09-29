@@ -50,7 +50,6 @@ def build_arbiter_client(
     env: dict[str, str] | None = None,
     *,
     read_spotlight_key=None,
-    sensitive: bool = False,
     opener=None,
 ) -> "ArbiterClient":
     """Construct the native client through Spotlight's credential boundary."""
@@ -74,7 +73,6 @@ def build_arbiter_client(
         provider = lambda: resolve_spotlight_arbiter_key(read_spotlight_key)
     return ArbiterClient.from_env(
         env,
-        sensitive=sensitive,
         opener=opener,
         credential_provider=provider,
     )
@@ -116,14 +114,8 @@ def run_arbiter_workflow(client, case_dir, *, case_study_id=None, create=None, c
 INTEGRATIONS_DIR = Path(__file__).parent
 
 
-def smoke_test(manifest: dict, *, sensitive: bool = False) -> tuple[bool, str | None]:
-    """Probe one integration without egress when sensitive mode is active.
-
-    API probes are network requests, so sensitive mode blocks them before
-    configured URLs, imports, or openers are touched.
-    """
-    if sensitive and manifest.get("type") == "api":
-        return False, "network smoke tests are unavailable in sensitive mode"
+def smoke_test(manifest: dict) -> tuple[bool, str | None]:
+    """Probe one integration's readiness."""
     if manifest.get("network_smoke") is False:
         return True, None  # readiness is local-only for this integration
     kind = manifest.get("type", "api")

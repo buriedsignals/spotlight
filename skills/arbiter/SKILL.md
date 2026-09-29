@@ -12,8 +12,8 @@ Use this skill when the operator invokes `/arbiter` or asks Spotlight for an
 Arbiter case study, archived social posts, entity stance, themes,
 actor/community analysis, or Arbiter report visuals.
 
-Arbiter is remote and disabled in sensitive mode. Previously saved Arbiter JSON
-may still be rendered offline.
+Arbiter is a remote API: do not call it in sensitive mode. The client does not
+enforce this. Previously saved Arbiter JSON may still be rendered offline.
 
 Each member uses their own, member-owned Arbiter API key. There is no shared Spotlight,
 Buried Signals, or hosted key. Register through the [Indicator partner signup
@@ -48,7 +48,7 @@ When the API is available, ask whether the operator wants to:
 
 Follow `integrations/arbiter/integration.md` exactly. It is the source of truth
 for direct endpoint shapes, credit disclosures, confirmation gates, timeout and
-retry behavior, evidence rules, sensitive-mode blocking, and polling.
+retry behavior, evidence rules, and polling.
 
 Every authenticated call uses the in-process native client:
 `ArbiterClient.from_env()` reads the member-owned `ARBITER_API_KEY` and sends

@@ -57,12 +57,6 @@ def main() -> int:
     assert ok and error is None, (ok, error)
     assert requested == override + "/openapi.json", requested
 
-    calls = []
-    with patch.object(preflight.urllib.request, "urlopen", side_effect=lambda *args, **kwargs: calls.append(args)):
-        ok, error = preflight.smoke_test(manifest, sensitive=True)
-    assert not ok and error and "sensitive" in error.lower()
-    assert not calls, "sensitive preflight must block before opening a network"
-
     print("arbiter plugin parity: OK")
     return 0
 
