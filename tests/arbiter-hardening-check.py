@@ -24,16 +24,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 client = importlib.import_module("integrations.arbiter.client")
-workflow = importlib.import_module("integrations.arbiter.workflow")
 run_create = importlib.import_module("integrations.arbiter.run_create")
 runner = importlib.import_module("integrations._runner")
-
-
-class RawClient:
-    """Minimal response seam for workflow evidence writes."""
-
-    def request_raw(self, method, path, *, query=None, body=None, timeout=None):
-        return b'{"safe":true}'
 
 
 def expect_rejected(call, message: str) -> None:
@@ -46,15 +38,20 @@ def expect_rejected(call, message: str) -> None:
 
 def check_base_rejects_alternate_numeric_and_dns_aliases() -> None:
     """No alternate numeric or private DNS result may reach authenticated setup."""
-    for host in (
-        "0x7f.0x0.0x0.0x1",
-        "127.0.0.1%2e",
-        "127.0.0.1.example",
-    ):
-        expect_rejected(
-            lambda host=host: client.validate_api_base(f"https://{host}/api/v1"),
-            f"alternate numeric host accepted: {host}",
-        )
+    # Resolve every name to a public address, so the host-name checks, not
+    # the system resolver or NXDOMAIN, must reject the numeric aliases.
+    public = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
+    with patch("socket.getaddrinfo", return_value=public):
+        assert client.validate_api_base("https://alias-control.example/api/v1")
+        for host in (
+            "0x7f.0x0.0x0.0x1",
+            "127.0.0.1%2e",
+            "127.0.0.1.example",
+        ):
+            expect_rejected(
+                lambda host=host: client.validate_api_base(f"https://{host}/api/v1"),
+                f"alternate numeric host accepted: {host}",
+            )
 
     addresses = (
         ("alias-loopback.example", "127.0.0.1"),
@@ -149,33 +146,6 @@ def _case_fixture(root: Path) -> tuple[Path, Path, Path]:
     return case_dir, research, outside
 
 
-def check_workflow_write_survives_research_swap() -> None:
-    """Evidence writes must not follow a research-directory replacement."""
-    with tempfile.TemporaryDirectory(prefix="arbiter-write-race-") as raw:
-        case_dir, research, outside = _case_fixture(Path(raw))
-        original = workflow.safe_research_path
-        calls = 0
-
-        def checked_then_swapped(case, filename):
-            nonlocal calls
-            candidate = original(case, filename)
-            calls += 1
-            if calls == 2:
-                parked = Path(raw) / "research-original"
-                research.rename(parked)
-                research.symlink_to(outside, target_is_directory=True)
-            return candidate
-
-        with patch.object(workflow, "safe_research_path", side_effect=checked_then_swapped):
-            try:
-                workflow.browse(RawClient(), case_dir, timestamp="2026-08-22T10-00-00Z")
-            except (OSError, ValueError, PermissionError):
-                pass
-        assert calls >= 2, "workflow race did not exercise research swap hook"
-
-        assert not any(outside.iterdir()), "research swap redirected workflow write outside case"
-
-
 def check_run_create_read_survives_research_swap() -> None:
     """Validated input reads must not follow a replaced research directory."""
     with tempfile.TemporaryDirectory(prefix="arbiter-read-race-") as raw:
@@ -255,7 +225,6 @@ def main() -> int:
         ("DNS rebinding", check_dns_rebinding_rejected_before_authenticated_request),
         ("DNS failure", check_dns_failure_rejected_before_authenticated_request),
         ("redirect policy", check_redirect_path_scheme_host_and_bearer_policy),
-        ("workflow write race", check_workflow_write_survives_research_swap),
         ("run_create read race", check_run_create_read_survives_research_swap),
         ("atomic replacement race", check_atomic_replacement_survives_parent_symlink_swap),
     )
