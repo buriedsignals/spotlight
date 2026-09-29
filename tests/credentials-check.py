@@ -127,7 +127,7 @@ client_mod._resolve_addresses = lambda host, port=443: ["203.0.113.1"]  # offlin
 orig_credential = client_mod.credential
 keys = iter(["arb-1", "arb-1", "arb-2"])
 client_mod.credential = lambda name: next(keys)
-client = client_mod.ArbiterClient.from_env(opener=opener, sensitive=False)
+client = client_mod.ArbiterClient.from_env(opener=opener)
 client.request_raw("GET", "/case-studies")
 client.request_raw("GET", "/case-studies")
 check("arbiter rotation applies to the next request on one client", seen == ["Bearer arb-1", "Bearer arb-2"])

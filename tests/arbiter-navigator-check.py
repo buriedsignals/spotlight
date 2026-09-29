@@ -195,7 +195,8 @@ def check_preflight(manifest: dict, errors: list[str]) -> None:
     if ok or err != "HTTP 401":
         errors.append(f"OpenAPI auth failure should fail preflight: ok={ok} err={err}")
 
-    override = {**manifest, "smoke_url": None, "smoke_url_env": "ARBITER_API_BASE"}
+    # The shipped manifest keeps its default smoke_url; a configured
+    # ARBITER_API_BASE must take precedence over it.
     override_base = "https://staging.arbiter.example/api/v1"
     arbiter_client = importlib.import_module("arbiter.client")
     fixture_dns = [
@@ -204,7 +205,7 @@ def check_preflight(manifest: dict, errors: list[str]) -> None:
     with patch.object(arbiter_client.socket, "getaddrinfo", return_value=fixture_dns):
         with patch.dict(os.environ, {"ARBITER_API_BASE": override_base}, clear=False):
             with patch.object(pf.urllib.request, "urlopen", return_value=FakeResponse(200)) as probe:
-                ok, err = pf.smoke_test(override)
+                ok, err = pf.smoke_test(manifest)
     override_url = probe.call_args.args[0].full_url if probe.call_args else None
     if not ok or err is not None or override_url != override_base + "/openapi.json":
         errors.append(
@@ -221,7 +222,7 @@ def check_preflight(manifest: dict, errors: list[str]) -> None:
     ):
         with patch.dict(os.environ, {"ARBITER_API_BASE": invalid}, clear=False):
             with patch.object(pf.urllib.request, "urlopen", return_value=FakeResponse(200)) as probe:
-                ok, _err = pf.smoke_test(override)
+                ok, _err = pf.smoke_test(manifest)
         if ok or probe.called:
             errors.append(f"unsafe ARBITER_API_BASE must be rejected before network: {invalid}")
 

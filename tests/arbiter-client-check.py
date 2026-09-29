@@ -138,31 +138,36 @@ def check_request_shape_and_secret_boundary(client) -> None:
     assert len(seen) == 1, "rejected request paths must not reach the opener"
 
 
+def check_post_body_and_per_call_timeout(client) -> None:
+    """POST bodies reach the wire as JSON; a per-call timeout reaches the opener.
 
-def check_sensitive_and_safe_paths(client) -> None:
-    calls = []
+    integration.md requires a client timeout above 800 seconds for
+    search-plan, well above the client's default.
+    """
+    seen = []
 
-    def opener(*_args):
-        calls.append(True)
-        return FakeResponse({})
+    def opener(request, timeout):
+        seen.append((request, timeout))
+        return FakeResponse({"case_study_id": "a" * 32})
 
-    with patch.object(
-        client.socket,
-        "getaddrinfo",
-        side_effect=AssertionError("sensitive construction must not resolve API host"),
-    ) as resolver:
-        sensitive = client.ArbiterClient.from_env(
+    create = {"search_query": "query", "platforms": ["reddit"]}
+    with injected_dns_fixture(client):
+        arbiter = client.ArbiterClient.from_env(
             {"ARBITER_API_KEY": "member-secret", "ARBITER_API_BASE": "https://staging.example/api/v1"},
-            sensitive=True,
             opener=opener,
         )
-    assert not resolver.called, "sensitive construction must not call getaddrinfo"
-    expect_error(
-        lambda: sensitive.request_json("GET", "/topics", query={"limit": 1}),
-        "sensitive mode must block before the opener",
-    )
-    assert not calls, "sensitive mode reached the live request opener"
+        arbiter.request_json("POST", "/case-studies", body=create)
+        arbiter.request_json("POST", "/case-studies/" + "a" * 32 + "/search-plan", body={}, timeout=900)
+    (create_request, _), (plan_request, plan_timeout) = seen
+    assert create_request.get_method() == "POST"
+    assert create_request.data and json.loads(create_request.data) == create, "POST body dropped"
+    assert create_request.get_header("Content-type") == "application/json"
+    assert plan_request.data == b"{}", "search-plan must send exactly {}"
+    assert plan_timeout == 900, f"per-call timeout ignored: opener got {plan_timeout}"
 
+
+
+def check_safe_research_paths(client) -> None:
     with tempfile.TemporaryDirectory() as raw:
         case_dir = Path(raw) / "case"
         research = case_dir / "research"
@@ -254,10 +259,11 @@ def main() -> int:
     client = load_client()
     check_base_validation(client)
     check_request_shape_and_secret_boundary(client)
+    check_post_body_and_per_call_timeout(client)
     check_http_error_contract(client)
     check_redirect_origin_policy()
     check_default_pinned_handler_runtime_compatibility(client)
-    check_sensitive_and_safe_paths(client)
+    check_safe_research_paths(client)
     print("arbiter client boundary: OK")
     return 0
 

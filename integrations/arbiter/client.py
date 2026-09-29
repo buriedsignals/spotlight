@@ -1,9 +1,8 @@
 """Small, stdlib-only request boundary for the Arbiter API.
 
 The boundary owns deployment URL validation, in-process credential handling,
-request serialization, sensitive-mode egress blocking, and case research path
-containment.  Callers receive decoded response objects without normalizing or
-discarding upstream fields.
+request serialization, and case research path containment.  Callers receive
+decoded response objects without normalizing or discarding upstream fields.
 """
 
 from __future__ import annotations
@@ -184,7 +183,7 @@ def _resolve_addresses(hostname: str, port: int = 443):
     return tuple(addresses)
 
 
-def _safe_hostname(hostname: str, *, resolve_dns: bool = True) -> bool:
+def _safe_hostname(hostname: str) -> bool:
     """Reject local, reserved, numeric, and unsafe DNS targets."""
     lowered = hostname.rstrip(".").lower()
     labels = lowered.split(".")
@@ -205,8 +204,6 @@ def _safe_hostname(hostname: str, *, resolve_dns: bool = True) -> bool:
         address = None
     if address is not None:
         return not _blocked_address(str(address))
-    if not resolve_dns:
-        return True
     try:
         _resolve_addresses(lowered)
     except (OSError, ValueError):
@@ -214,7 +211,7 @@ def _safe_hostname(hostname: str, *, resolve_dns: bool = True) -> bool:
     return True
 
 
-def validate_api_base(value: str, *, resolve_dns: bool = True) -> str:
+def validate_api_base(value: str) -> str:
     """Validate the exact HTTPS ``/api/v1`` deployment base used by the client."""
     if not isinstance(value, str) or not value:
         raise ValueError("ARBITER_API_BASE must be a non-empty HTTPS URL")
@@ -230,7 +227,7 @@ def validate_api_base(value: str, *, resolve_dns: bool = True) -> str:
         raise ValueError("ARBITER_API_BASE must not include query, fragment, or a non-default port")
     if parsed.path != "/api/v1":
         raise ValueError("ARBITER_API_BASE must end at /api/v1")
-    if not _safe_hostname(hostname, resolve_dns=resolve_dns):
+    if not _safe_hostname(hostname):
         raise ValueError("Arbiter API host is not an allowed deployment host")
     return urlunsplit(("https", hostname.lower(), "/api/v1", "", ""))
 
@@ -274,11 +271,10 @@ class ArbiterClient:
         api_base: str,
         api_key: str,
         *,
-        sensitive: bool = False,
         opener: Callable[..., Any] | None = None,
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
-        self.api_base = validate_api_base(api_base, resolve_dns=not sensitive)
+        self.api_base = validate_api_base(api_base)
         parsed_base = urlsplit(self.api_base)
         self._hostname = parsed_base.hostname
         self._port = parsed_base.port or 443
@@ -291,7 +287,6 @@ class ArbiterClient:
         # then looked up again for every request, so a key replaced or removed
         # in Indicator Labs applies to the next call on an existing client.
         self._key_lookup: Callable[[], str] | None = None
-        self._sensitive = sensitive
         self._opener = opener
         self._timeout = timeout
 
@@ -300,7 +295,6 @@ class ArbiterClient:
         cls,
         env: Mapping[str, str] | None = None,
         *,
-        sensitive: bool = False,
         opener: Callable[..., Any] | None = None,
         timeout: float = DEFAULT_TIMEOUT,
         credential_provider: Callable[[], str] | None = None,
@@ -326,7 +320,7 @@ class ArbiterClient:
         if not isinstance(api_key, str) or not api_key.strip():
             raise ValueError("ARBITER_API_KEY is required")
         base = values.get("ARBITER_API_BASE", DEFAULT_API_BASE)
-        client = cls(base, api_key, sensitive=sensitive, opener=opener, timeout=timeout)
+        client = cls(base, api_key, opener=opener, timeout=timeout)
         client._key_lookup = lookup
         return client
 
@@ -340,8 +334,6 @@ class ArbiterClient:
         timeout: float | None = None,
     ) -> bytes:
         """Issue one request and return response bytes without normalization."""
-        if self._sensitive:
-            raise PermissionError("Arbiter requests are unavailable in sensitive mode")
         verb = method.upper()
         if verb not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
             raise ValueError("unsupported HTTP method")
@@ -378,7 +370,7 @@ class ArbiterClient:
         body: Mapping[str, Any] | None = None,
         timeout: float | None = None,
     ) -> Any:
-        """Issue one JSON request, blocking sensitive mode before opening it."""
+        """Issue one JSON request and decode the response body."""
         raw = self.request_raw(method, path, query=query, body=body, timeout=timeout)
         return json.loads(raw.decode("utf-8"))
 
