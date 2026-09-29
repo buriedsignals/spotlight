@@ -13,13 +13,6 @@ bash -n scripts/spotlight-uninstall || { echo "scripts/spotlight-uninstall does 
 bash tests/spotlight-uninstall-check.sh || { echo "Spotlight uninstall cleanup checks failed"; exit 1; }
 [ -x scripts/spotlight-uninstall ] || note "scripts/spotlight-uninstall must be executable so install does not dirty the checkout"
 includes .gitignore '.venv/'
-includes scripts/spotlight-uninstall 'remove_owned_link "$bin/spotlight-uninstall"'
-includes scripts/spotlight-uninstall 'remove_owned_file "$bin/spotlight-doctor"'
-includes scripts/spotlight-uninstall 'remove_shell_block "$HOME/.zshrc"'
-includes scripts/spotlight-uninstall 'https://buriedsignals.com/join'
-includes scripts/spotlight-uninstall 'Indicator Labs'
-excludes scripts/spotlight-uninstall 'bootstrap.sh'
-excludes scripts/spotlight-uninstall '--action uninstall'
 
 includes install-spotlight.sh 'https://buriedsignals.com/join'
 includes install-spotlight.sh 'Indicator Labs'
