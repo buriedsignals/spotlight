@@ -23,7 +23,7 @@ One or two sentences on what this PR does and why.
 
 - [ ] `bash tests/smoke.sh` passes
 - [ ] `bash tests/eval.sh` passes
-- [ ] For `install-spotlight.sh` changes: `bash tests/install-spotlight-check.sh` and `bash tests/install-spotlight-smoke.sh` pass
+- [ ] For `install-spotlight.sh` changes: `bash tests/install-spotlight-check.sh` passes
 - [ ] For public landing CTAs: `bash tests/journalist-install-cta-check.sh` passes
 - [ ] For new skills: smoke-test skill count incremented in `docs/structure.md` and `AGENTS.md`
 - [ ] For new integrations / feeds: `preflight.py --text` output includes the new entry

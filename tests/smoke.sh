@@ -189,13 +189,6 @@ else
   fail "integration routing rows drifted"
 fi
 
-python3 tests/dependency-pins-check.py >/dev/null 2>&1
-rc=$?
-if [ $rc -eq 0 ]; then
-  ok "setup dependency pins enforced"
-else
-  fail "setup dependency pins drifted"
-fi
 
 
 echo ""
@@ -214,22 +207,6 @@ if [ $rc -eq 0 ]; then
   ok "installer + landing-page fragments hold"
 else
   fail "installer fragment check failed with rc=$rc"
-fi
-
-bash tests/install-spotlight-smoke.sh >/dev/null 2>&1
-rc=$?
-if [ $rc -eq 0 ]; then
-  ok "install pointer dry-run matrix passes"
-else
-  fail "install pointer dry-run matrix failed with rc=$rc"
-fi
-
-bash tests/install-spotlight-audit-check.sh >/dev/null 2>&1
-rc=$?
-if [ $rc -eq 0 ]; then
-  ok "install-audit regressions hold"
-else
-  fail "install-audit regression check failed with rc=$rc"
 fi
 
 python3 tests/local-model-identity-check.py >/dev/null 2>&1

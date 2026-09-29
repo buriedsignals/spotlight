@@ -25,6 +25,11 @@ def skill_dirs() -> set[str]:
     return {path.parent.name for path in (ROOT / "skills").glob("*/SKILL.md")}
 
 
+def install_manifest_skills() -> set[str]:
+    lines = (ROOT / "skills.manifest").read_text(encoding="utf-8").splitlines()
+    return {line.strip() for line in lines if line.strip()}
+
+
 def agents_registry_skills() -> set[str]:
     text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     return set(re.findall(r"\| `([^`]+)` \| `skills/[^`]+/SKILL\.md` \|", text))
@@ -53,6 +58,9 @@ def main() -> int:
         errors.append(f"manifest skills differ from skills/*/SKILL.md: manifest={sorted(manifest_ids)} dirs={sorted(dirs)}")
     if manifest_ids != registry:
         errors.append(f"manifest skills differ from AGENTS.md registry: manifest={sorted(manifest_ids)} registry={sorted(registry)}")
+    installed = install_manifest_skills()
+    if manifest_ids != installed:
+        errors.append(f"manifest skills differ from skills.manifest: manifest={sorted(manifest_ids)} skills.manifest={sorted(installed)}")
 
     for skill in skills:
         if not isinstance(skill, dict):
