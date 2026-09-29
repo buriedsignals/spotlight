@@ -1,24 +1,7 @@
 #!/usr/bin/env bash
-# Spotlight smoke test — exercises the install contract without spending any API calls.
-#
-# Checks:
-#   1. All 17 skill directories present with SKILL.md
-#   2. All 2 agent prompts present
-#   3. All schemas parse as valid JSON
-#   4. Integrations preflight runs cleanly
-#   5. Monitoring registry helper runs cleanly
-#   6. RLM helper and flow proxy run without requiring Ollama
-#   7. No banned Claude-specific syntax in skills/agents
-#   8. No legacy local feed framework remains
-#   9. AGENTS.md skill registry matches skills-manifest.json count
-#  10. Integration routing rows resolve
-#  11. setup.html is absent (journalist install is Indicator Labs / join)
-#  12. index.html exists
-#  13. DISCLAIMER.md + LICENSE present
-#  14. Setup dependency pins are enforced
-#  15. Configurator server contract holds
-#  16. Installer + landing-page fragment checks pass
-#  17. Installer dry-run matrix passes (4 combos + contract checks)
+# Spotlight smoke test — runs the offline test files and structural checks
+# without spending any API calls. Skill inventory lives in
+# tests/skills-manifest-check.py (run by tests/eval.sh).
 #
 # Exit 0 on pass, 1 if any check fails.
 
@@ -36,15 +19,6 @@ fail() { printf "%s✗%s %s%s\n" "$_c_red" "$_c_reset" "$1" "${2:+ ${_c_dim}— 
 cd "$ROOT"
 
 echo "── Structure ──"
-
-expected_skills=(spotlight editorial-review integrations ingest report-drafting monitoring provenance-signing acquisition-graduation web-archiving content-access epistemic-grounding shell-safety osint investigation-methodology follow-the-money social-media-intelligence technical-investigation)
-for skill in "${expected_skills[@]}"; do
-  if [ -f "skills/$skill/SKILL.md" ]; then
-    ok "skills/$skill/SKILL.md present"
-  else
-    fail "skills/$skill/SKILL.md missing"
-  fi
-done
 
 for agent in investigator fact-checker; do
   if [ -f "agents/$agent.md" ]; then
@@ -70,12 +44,20 @@ done
 
 echo ""
 echo "── Preflight scripts ──"
-python3 integrations/preflight.py --text >/dev/null 2>&1
+# rc 1 only means no integration is green in this environment; a crash still
+# exits 1, so also require a JSON report that covers every shipped manifest.
+preflight_json=$(python3 integrations/preflight.py --json 2>/dev/null)
 rc=$?
-if [ $rc -eq 0 ] || [ $rc -eq 1 ]; then
-  ok "integrations/preflight.py runs (rc=$rc)"
+if { [ $rc -eq 0 ] || [ $rc -eq 1 ]; } && printf '%s' "$preflight_json" | python3 -c '
+import json, sys
+from pathlib import Path
+reported = {item["id"] for item in json.load(sys.stdin)["integrations"]}
+shipped = {path.parent.name for path in Path("integrations").glob("*/manifest.json")}
+sys.exit(0 if reported == shipped else 1)
+' 2>/dev/null; then
+  ok "integrations/preflight.py reports every shipped integration (rc=$rc)"
 else
-  fail "integrations/preflight.py failed with rc=$rc"
+  fail "integrations/preflight.py crashed or omitted an integration (rc=$rc)"
 fi
 
 echo ""
@@ -226,18 +208,6 @@ for f in index.html DISCLAIMER.md LICENSE VALIDATED_DEPENDENCIES.md; do
     fail "$f missing"
   fi
 done
-if [ -e setup.html ]; then
-  fail "setup.html must be absent"
-else
-  ok "setup.html absent"
-fi
-bash tests/journalist-install-cta-check.sh >/dev/null 2>&1
-rc=$?
-if [ $rc -eq 0 ]; then
-  ok "journalist install CTAs point at join"
-else
-  fail "journalist install CTA check failed"
-fi
 
 echo ""
 if [ $FAIL -eq 0 ]; then

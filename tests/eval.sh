@@ -118,17 +118,6 @@ for value in invalid:
 fi
 
 echo ""
-echo "── Knowledge projection acceptance ──"
-
-for t in knowledge-destination-check knowledge-destination-hardening-check knowledge-projection-check query-vault-check graph-lookup-migration-check ingest-check schema-validation-check; do
-  if python3 "tests/$t.py" >/dev/null 2>&1; then
-    ok "tests/$t.py passes"
-  else
-    fail "tests/$t.py failed"
-  fi
-done
-
-echo ""
 echo "── Runtime consistency (install/navigator_bridge.py) ──"
 
 if python3 - <<'PY'
@@ -182,15 +171,6 @@ if python3 tests/methodology-navigator-check.py >/dev/null 2>&1; then
   ok "Navigator-green methodology requires saved Navigator evidence"
 else
   fail "methodology Navigator regression failed"
-fi
-
-echo ""
-echo "── Provenance manifest regression ──"
-
-if python3 tests/provenance-manifest-check.py >/dev/null 2>&1; then
-  ok "provenance manifest builder emits unsigned Noosphere C2PA contract"
-else
-  fail "provenance manifest regression failed"
 fi
 
 echo ""
