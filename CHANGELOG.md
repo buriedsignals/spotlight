@@ -4,6 +4,12 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Fixed — Recorded evidence in the HTML report
+
+- `report.html` shows each finding's recorded evidence again, before the
+  independent fact-check, as `findings-report.md` already did. It had been
+  dropped when the lead paragraph moved to the editorial summary.
+
 ### Fixed — Firecrawl and other CLIs on Windows
 
 - Firecrawl search printed a `UnicodeEncodeError` traceback when results held

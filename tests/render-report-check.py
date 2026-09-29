@@ -297,6 +297,7 @@ def main() -> int:
         assert "&lt;script&gt;alert" in markdown
         assert "javascript:alert" not in html
         assert "evil.example/track.png" in html
+        assert "<strong>Recorded evidence:</strong> The official record names Ada Lovelace as President." in html
         assert "![proof]" not in markdown
         assert "\\!\\[proof\\]" in markdown
         assert "<https://example.org/official_record(v1)>" in markdown
