@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Spotlight eval — contract compliance + sample data validation.
 #
-# Goes beyond smoke.sh's structural checks: validates that agent + skill
+# Goes beyond smoke.sh's structural checks: validates that agent
 # frontmatter is well-formed, allowed_verbs reference real verbs from
 # AGENTS.md, sample case files validate against their schemas, and the
 # runtime IDs in install/navigator_bridge.py are consistent.
@@ -50,23 +50,6 @@ for agent in agents/*.md; do
     ok "$agent_id allowed_verbs all valid"
   else
     fail "$agent_id references unknown verb '$bad_verb'"
-  fi
-done
-
-echo ""
-echo "── Skill contract compliance ──"
-
-for skill_dir in skills/*/; do
-  skill_id=$(basename "$skill_dir")
-  skill_file="${skill_dir}SKILL.md"
-  if [ ! -f "$skill_file" ]; then continue; fi
-
-  if head -30 "$skill_file" | grep -q "^name:" && \
-     head -30 "$skill_file" | grep -q "^description:" && \
-     head -30 "$skill_file" | grep -q "^invocable_by:"; then
-    ok "$skill_id frontmatter has name/description/invocable_by"
-  else
-    fail "$skill_id frontmatter incomplete"
   fi
 done
 

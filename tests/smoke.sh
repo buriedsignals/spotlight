@@ -145,12 +145,12 @@ else
   fail "tests/flue-openknowledge-workspace-check.sh failed"
 fi
 
-(cd harness/flue && node --test src/lib/spotlight-tools.test.ts) >/dev/null 2>&1
+npm test --prefix harness/flue >/dev/null 2>&1
 rc=$?
 if [ $rc -eq 0 ]; then
-  ok "harness/flue/src/lib/spotlight-tools.test.ts passes"
+  ok "harness/flue node --test suite passes"
 else
-  fail "harness/flue/src/lib/spotlight-tools.test.ts failed with rc=$rc"
+  fail "harness/flue node --test suite failed with rc=$rc"
 fi
 
 echo ""
