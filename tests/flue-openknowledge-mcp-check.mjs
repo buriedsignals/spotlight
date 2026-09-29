@@ -7,7 +7,8 @@ const agent = await readFile(new URL('../harness/flue/src/agents/spotlight.ts', 
 const roles = await readFile(new URL('../harness/flue/src/lib/roles.ts', import.meta.url), 'utf8');
 
 assert.doesNotMatch(agent, /connectMcpServer|OPEN_KNOWLEDGE_MCP|mcp__openknowledge/i);
-assert.equal((agent.match(/tools:\s*\[\]/g) ?? []).length, 3, 'all Flue profiles must enumerate zero provider tools');
+assert.equal((agent.match(/tools:\s*\[\]/g) ?? []).length, 2, 'both worker profiles must enumerate zero provider tools');
+assert.match(agent, /const tools = createSpotlightTools\(/, "the orchestrator's only tools are Spotlight's local tools");
 assert.doesNotMatch(agent, /SPOTLIGHT_KNOWLEDGE_(ROOT|DB|DESTINATION)/);
 assert.match(roles, /scripts\/query_vault\.py/);
 assert.match(roles, /--config .*\.spotlight-config\.json --case-dir/);

@@ -7,6 +7,20 @@ on:
     branches: [main]
 
 jobs:
+  windows:
+    name: Windows integrations
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Firecrawl CLI robustness (tree kill, no stdin, UTF-8 output)
+        run: python tests/firecrawl-cli-check.py
+
   smoke:
     name: Smoke + Eval
     runs-on: ubuntu-latest
@@ -28,6 +42,9 @@ jobs:
 
       - name: Install Python test deps
         run: pip install --quiet jsonschema==4.25.1 requests==2.32.5
+
+      - name: Install PDF text extraction (tests/test_pdfparse.py)
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends poppler-utils
 
       - name: Run smoke test
         run: bash tests/smoke.sh

@@ -116,8 +116,10 @@ fi
 
 echo ""
 echo "── Validators and helpers ──"
-for t in credentials-check decision-signals-check validate-case-check validate-fact-check-check source-expression-producer-contract-check migrate-source-expressions-check validate-report-check render-report-check report-diagrams-check provenance-manifest-check knowledge-destination-check knowledge-destination-hardening-check knowledge-projection-check query-vault-check graph-lookup-migration-check ingest-check schema-validation-check preflight-check scoutpost-boundary-check cti-upstream-check technical-investigation-check verified-indicator-export-check \
-         orchestration-conformance-check portable-resolver-check arbiter-match-check arbiter-report-check arbiter-create-check arbiter-appendix-check arbiter-themes-check arbiter-id-check arbiter-navigator-check; do
+for t in credentials-check firecrawl-cli-check decision-signals-check validate-case-check validate-fact-check-check source-expression-producer-contract-check migrate-source-expressions-check validate-report-check render-report-check report-diagrams-check provenance-manifest-check knowledge-destination-check knowledge-destination-hardening-check knowledge-projection-check query-vault-check graph-lookup-migration-check ingest-check schema-validation-check preflight-check scoutpost-boundary-check cti-upstream-check technical-investigation-check verified-indicator-export-check \
+         orchestration-conformance-check portable-resolver-check arbiter-match-check arbiter-report-check arbiter-create-check arbiter-appendix-check arbiter-themes-check arbiter-id-check arbiter-navigator-check \
+         arbiter-client-check arbiter-hardening-check arbiter-key-migration-check arbiter-native-workflow-check arbiter-plugin-check \
+         integration-runner-check maigret-wrapper-check test_pdfparse test_scraping_seam; do
   python3 "tests/$t.py" >/dev/null 2>&1
   rc=$?
   if [ $rc -eq 0 ]; then
@@ -126,6 +128,22 @@ for t in credentials-check decision-signals-check validate-case-check validate-f
     fail "tests/$t.py failed with rc=$rc"
   fi
 done
+
+for t in feedback-widget-check.js flue-openknowledge-mcp-check.mjs; do
+  node "tests/$t" >/dev/null 2>&1
+  rc=$?
+  if [ $rc -eq 0 ]; then
+    ok "tests/$t passes"
+  else
+    fail "tests/$t failed with rc=$rc"
+  fi
+done
+
+if bash tests/flue-openknowledge-workspace-check.sh >/dev/null 2>&1; then
+  ok "tests/flue-openknowledge-workspace-check.sh passes"
+else
+  fail "tests/flue-openknowledge-workspace-check.sh failed"
+fi
 
 (cd harness/flue && node --test src/lib/spotlight-tools.test.ts) >/dev/null 2>&1
 rc=$?
