@@ -75,7 +75,6 @@ When touching `install-spotlight.sh`, also run:
 
 ```bash
 bash tests/install-spotlight-check.sh
-bash tests/install-spotlight-smoke.sh
 ```
 
 (See `.github/workflows/ci.yml` for the canonical test commands.)

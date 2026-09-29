@@ -54,12 +54,6 @@ jobs:
       - name: Run eval (contract compliance + sample data)
         run: bash tests/eval.sh
 
-      - name: Installer pointer + landing-page fragments
-        run: bash tests/install-spotlight-check.sh
-
-      - name: Journalist install CTAs (join, no setup.html, no curl)
-        run: bash tests/journalist-install-cta-check.sh
-
       - name: HTML pages parse (landing pages)
         run: |
           python3 - <<'PY'

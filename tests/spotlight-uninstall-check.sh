@@ -38,5 +38,12 @@ printf '%s\n' "$out" | grep -qF 'https://buriedsignals.com/join' || {
 [ -d "$product_root" ]
 grep -q '^# user setting$' "$HOME/.zshrc"
 grep -q '^# trailing setting$' "$HOME/.zshrc"
-! grep -q '^# SPOTLIGHT-' "$HOME/.zshrc"
+if grep -q '^# SPOTLIGHT-' "$HOME/.zshrc"; then
+  echo "spotlight-uninstall must remove the Spotlight shell block from .zshrc"
+  exit 1
+fi
+if grep -qF -- 'bootstrap.sh' scripts/spotlight-uninstall || grep -qF -- '--action uninstall' scripts/spotlight-uninstall; then
+  echo "spotlight-uninstall must not apply a public-installer bootstrap"
+  exit 1
+fi
 printf 'spotlight uninstall cleanup checks passed\n'

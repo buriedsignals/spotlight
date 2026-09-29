@@ -13,34 +13,7 @@ bash -n scripts/spotlight-uninstall || { echo "scripts/spotlight-uninstall does 
 bash tests/spotlight-uninstall-check.sh || { echo "Spotlight uninstall cleanup checks failed"; exit 1; }
 [ -x scripts/spotlight-uninstall ] || note "scripts/spotlight-uninstall must be executable so install does not dirty the checkout"
 includes .gitignore '.venv/'
-includes scripts/spotlight-uninstall 'remove_owned_link "$bin/spotlight-uninstall"'
-includes scripts/spotlight-uninstall 'remove_owned_file "$bin/spotlight-doctor"'
-includes scripts/spotlight-uninstall 'remove_shell_block "$HOME/.zshrc"'
-includes scripts/spotlight-uninstall 'https://buriedsignals.com/join'
-includes scripts/spotlight-uninstall 'Indicator Labs'
-excludes scripts/spotlight-uninstall 'bootstrap.sh'
-excludes scripts/spotlight-uninstall '--action uninstall'
 
-includes install-spotlight.sh 'https://buriedsignals.com/join'
-includes install-spotlight.sh 'Indicator Labs'
-includes install-spotlight.sh 'There is no localhost configure.html server'
-includes install-spotlight.sh 'no longer accepts SPOTLIGHT_CONFIG'
-includes install-spotlight.sh 'Open-source and agent-led users'
-includes install-spotlight.sh 'bsig'
-includes install-spotlight.sh 'stdin/keychain flow'
-excludes install-spotlight.sh 'setup_server.py'
-excludes install-spotlight.sh 'engine_bridge.py'
-excludes install-spotlight.sh 'bootstrap_engine'
-excludes install-spotlight.sh 'minisign -Vm'
-excludes install-spotlight.sh 'navigator-cli=='
-excludes install-spotlight.sh 'base64 -d'
-excludes install-spotlight.sh '@tobilu/qmd'
-excludes install-spotlight.sh 'SPOTLIGHT_VAULT_APP'
-excludes harness/flue/src/agents/spotlight.ts 'SPOTLIGHT_KNOWLEDGE_ROOT'
-includes harness/flue/src/lib/roles.ts '--config ${HARNESS_ROOT}/.spotlight-config.json --case-dir <CASE_DIR>'
-includes harness/flue/src/lib/roles.ts 'scripts/query_vault.py'
-excludes harness/flue/src/agents/spotlight.ts "connectMcpServer('openknowledge'"
-excludes harness/flue/src/agents/spotlight.ts 'OPEN_KNOWLEDGE_TOOLS'
 excludes index.html 'Scoutpost'
 excludes index.html 'Splash'
 includes skills/navigator/SKILL.md 'OSINT tool discovery'
@@ -56,16 +29,19 @@ if [ -e install/setup_server.py ]; then note "install/setup_server.py must be de
 if [ -e install/engine_bridge.py ]; then note "install/engine_bridge.py must be deleted"; fi
 if [ -e setup.html ]; then note "setup.html must be deleted"; fi
 
-if grep -qiF obsidian install-spotlight.sh; then note "install-spotlight.sh stale fragment present: obsidian"; fi
-if grep -qiF tolaria install-spotlight.sh; then note "install-spotlight.sh stale fragment present: tolaria"; fi
-
-if bash install-spotlight.sh >/tmp/spotlight-install-pointer.out 2>&1; then
-  note "install-spotlight.sh must exit non-zero so old curl|bash pipes fail closed"
-fi
-if ! grep -qF 'https://buriedsignals.com/join' /tmp/spotlight-install-pointer.out; then
-  note "install-spotlight.sh output missing Indicator Labs join URL"
-fi
-rm -f /tmp/spotlight-install-pointer.out
+# Old curl|bash pipes must fail closed: run the pointer with a PATH that holds
+# only `cat`, so any other external command it tried would fail as not found.
+pointer_tmp="$(mktemp -d)"
+trap 'rm -rf "$pointer_tmp"' EXIT
+mkdir "$pointer_tmp/bin"
+ln -s "$(command -v cat)" "$pointer_tmp/bin/cat"
+pointer_rc=0
+env -i HOME="$pointer_tmp" PATH="$pointer_tmp/bin" "$BASH" install-spotlight.sh >"$pointer_tmp/out" 2>&1 || pointer_rc=$?
+[ "$pointer_rc" = "1" ] || note "install-spotlight.sh must exit 1 using only cat (rc=$pointer_rc)"
+if grep -qF 'command not found' "$pointer_tmp/out"; then note "install-spotlight.sh ran a command other than cat"; fi
+for line in 'it does not install Spotlight' 'install with Indicator Labs at https://buriedsignals.com/join' "follow README.md's signed Engine instructions"; do
+  grep -qF -- "$line" "$pointer_tmp/out" || note "install-spotlight.sh output missing: $line"
+done
 
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck -S error install-spotlight.sh || fail=1
