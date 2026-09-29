@@ -19,7 +19,6 @@ import argparse
 import hashlib
 import html
 import json
-import os
 import re
 import subprocess
 import sys
@@ -1104,7 +1103,6 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
         source_html = '<span class="sep">·</span>'.join(html_source(source) for source in sources)
         if not source_html:
             source_html = "No accessible source URL or case-local evidence file was recorded."
-        evidence = " ".join(list_of_text(finding.get("evidence")))
         assessment = verdict["assessment"] or "No fact-check narrative was recorded."
         quotations = "".join(
             '<blockquote class="source-expression">'

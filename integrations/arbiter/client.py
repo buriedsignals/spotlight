@@ -17,7 +17,6 @@ import socket
 import sys
 from pathlib import Path
 from typing import Any, Callable, Mapping
-from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
