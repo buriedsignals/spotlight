@@ -27,6 +27,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+_CHECKOUT = Path(__file__).resolve().parents[1]
+if str(_CHECKOUT) not in sys.path:
+    sys.path.insert(0, str(_CHECKOUT))
+from integrations._cli import run_captured  # noqa: E402
+
 # Import the shared helpers from integrations/ — local single source of truth
 _BASE_DIR = Path(__file__).parent
 sys.path.insert(0, str(_BASE_DIR))
@@ -167,12 +172,11 @@ def smoke_test(manifest: dict, *, sensitive: bool = False) -> tuple[bool, str | 
         resolved = shutil.which(binary)
         if resolved is None:
             return False, f"{binary} not on PATH"
-        import subprocess
 
         version_args = manifest.get("version_args")
         if isinstance(version_args, list) and version_args:
             try:
-                proc = subprocess.run([binary, *version_args], text=True, capture_output=True, timeout=10, check=False)
+                proc = run_captured([binary, *version_args], timeout=10)
             except Exception as e:
                 return False, f"{binary} version check failed: {type(e).__name__}: {e}"
             if proc.returncode != 0:
@@ -196,14 +200,7 @@ def smoke_test(manifest: dict, *, sensitive: bool = False) -> tuple[bool, str | 
             ):
                 return False, f"{binary} probe {index} env must map strings to strings"
             try:
-                proc = subprocess.run(
-                    [binary, *probe["args"]],
-                    text=True,
-                    capture_output=True,
-                    timeout=10,
-                    check=False,
-                    env={**os.environ, **probe_env},
-                )
+                proc = run_captured([binary, *probe["args"]], env={**os.environ, **probe_env}, timeout=10)
             except Exception as e:
                 return False, f"{binary} probe {index} failed: {type(e).__name__}: {e}"
             if proc.returncode != 0:

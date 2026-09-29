@@ -7,6 +7,20 @@ on:
     branches: [main]
 
 jobs:
+  windows:
+    name: Windows integrations
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Firecrawl CLI robustness (tree kill, no stdin, UTF-8 output)
+        run: python tests/firecrawl-cli-check.py
+
   smoke:
     name: Smoke + Eval
     runs-on: ubuntu-latest

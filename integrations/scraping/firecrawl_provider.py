@@ -14,6 +14,7 @@ from pathlib import Path
 _CHECKOUT = Path(__file__).resolve().parents[2]
 if str(_CHECKOUT) not in sys.path:
     sys.path.insert(0, str(_CHECKOUT))
+from integrations._cli import run_captured, strip_ansi  # noqa: E402
 from integrations._credentials import executable, redact, subprocess_env  # noqa: E402
 
 from .scrape_types import ScrapeError, ScrapeResult
@@ -29,20 +30,13 @@ def fetch(url: str, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> ScrapeResult:  # pr
         )
     env = subprocess_env(["FIRECRAWL_API_KEY"])
     try:
-        proc = subprocess.run(
-            [binary, "scrape", url],
-            capture_output=True,
-            text=True,
-            # The CLI writes UTF-8; Windows would otherwise decode it as cp1252 and crash.
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout_ms / 1000,
-            env=env,
-        )
+        proc = run_captured([binary, "scrape", url], env=env, timeout=timeout_ms / 1000)
     except subprocess.TimeoutExpired as exc:
         raise ScrapeError(f"firecrawl scrape timed out for {url}") from exc
+    except OSError as exc:
+        raise ScrapeError(f"firecrawl scrape failed for {url}: {exc}") from exc
     if proc.returncode != 0:
-        detail = redact(proc.stderr.strip(), [env.get("FIRECRAWL_API_KEY", "")])
+        detail = redact(strip_ansi(proc.stderr).strip(), [env.get("FIRECRAWL_API_KEY", "")])
         raise ScrapeError(f"firecrawl scrape failed for {url}: {detail}")
     return ScrapeResult(
         markdown=proc.stdout,

@@ -14,6 +14,7 @@ from pathlib import Path
 _CHECKOUT = Path(__file__).resolve().parents[2]
 if str(_CHECKOUT) not in sys.path:
     sys.path.insert(0, str(_CHECKOUT))
+from integrations._cli import run_captured, strip_ansi  # noqa: E402
 from integrations._credentials import executable, redact, subprocess_env  # noqa: E402
 
 from .search_types import SearchError, SearchHit
@@ -28,27 +29,21 @@ def search(query: str, *, limit: int = 10) -> list[SearchHit]:
     if binary is None:
         raise SearchError("firecrawl CLI not on PATH")
     env = subprocess_env(["FIRECRAWL_API_KEY"])
+    secrets = [env.get("FIRECRAWL_API_KEY", "")]
     try:
-        proc = subprocess.run(
-            [binary, "search", query, "--limit", str(limit), "--json"],
-            capture_output=True,
-            text=True,
-            # The CLI writes UTF-8; Windows would otherwise decode it as cp1252 and crash.
-            encoding="utf-8",
-            errors="replace",
-            timeout=90,
-            env=env,
-        )
-    except Exception as exc:  # noqa: BLE001
+        proc = run_captured([binary, "search", query, "--limit", str(limit), "--json"], env=env, timeout=90)
+    except subprocess.TimeoutExpired as exc:
+        raise SearchError("firecrawl search timed out after 90s") from exc
+    except OSError as exc:
         raise SearchError(f"firecrawl search failed: {exc}") from exc
     if proc.returncode != 0:
-        detail = redact(proc.stderr.strip(), [env.get("FIRECRAWL_API_KEY", "")])
+        detail = redact(strip_ansi(proc.stderr).strip(), secrets)
         raise SearchError(detail[:300] or "firecrawl non-zero exit")
     try:
         payload = json.loads(proc.stdout)
     except ValueError as exc:
         # An unauthenticated or outdated CLI prints text, not JSON: report it, never crash.
-        detail = redact(proc.stdout.strip(), [env.get("FIRECRAWL_API_KEY", "")])[:300]
+        detail = redact(strip_ansi(proc.stdout).strip(), secrets)[:300]
         raise SearchError(f"firecrawl search returned no JSON: {detail or 'empty output'}") from exc
     web = ((payload if isinstance(payload, dict) else {}).get("data") or {}).get("web", []) or []
     return [

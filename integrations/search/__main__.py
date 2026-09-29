@@ -18,6 +18,8 @@ import dataclasses
 import json
 import sys
 
+from integrations._cli import utf8_stdio
+
 from .search import search
 from .search_types import SearchError
 
@@ -35,6 +37,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--time-range", dest="time_range", default=None, help="SearXNG time_range, e.g. month")
     ap.add_argument("--json", action="store_true", help="emit structured SearchHit JSON")
     args = ap.parse_args(argv)
+    utf8_stdio()
 
     try:
         hits = search(

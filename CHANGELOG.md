@@ -4,6 +4,16 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Fixed — Firecrawl and other CLIs on Windows
+
+- Firecrawl search printed a `UnicodeEncodeError` traceback when results held
+  non-Latin text, and a key-less search could hang indefinitely: on timeout
+  Python killed only npm's `.cmd` wrapper and kept waiting on pipes the node
+  child still held. `integrations/_cli.py` now runs Firecrawl, preflight CLI
+  checks and integration runners with no stdin, UTF-8 output and a
+  whole-process-tree kill on timeout; the search and scrape CLIs print UTF-8;
+  CLI messages lose terminal colour codes. A Windows CI job covers it.
+
 ### Added — Keys from a configured credential file
 
 - `integrations/_credentials.py` resolves keys per call without changing the

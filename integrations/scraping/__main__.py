@@ -22,6 +22,8 @@ import os
 import sys
 import urllib.request
 
+from integrations._cli import utf8_stdio
+
 from .scrape import scrape
 from .scrape_types import ScrapeError
 
@@ -81,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--rlm", action="store_true",
                     help="runtime-auto RLM: distill the page to compact leads (local tier); raw kept as <out>.raw")
     args = ap.parse_args(argv)
+    utf8_stdio()
 
     try:
         if args.pdf:
@@ -118,8 +121,7 @@ def main(argv: list[str] | None = None) -> int:
             note = " (RLM off/failed — raw)" if args.rlm else ""
             print(f"wrote {len(result.markdown)} chars via {result.provider} -> {args.out}{note}", file=sys.stderr)
     else:
-        # Pages are Unicode; a Windows console or pipe defaults to cp1252.
-        sys.stdout.buffer.write((leads if leads is not None else out).encode("utf-8"))
+        sys.stdout.write(leads if leads is not None else out)
     return 0
 
 

@@ -20,6 +20,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+_CHECKOUT = Path(__file__).resolve().parents[1]
+if str(_CHECKOUT) not in sys.path:
+    sys.path.insert(0, str(_CHECKOUT))
+from integrations._cli import run_captured  # noqa: E402
+
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -185,7 +190,7 @@ def forbid_verified_statuses(items: list[dict[str, Any]], label: str) -> None:
 def run_subprocess(args: list[str], *, cwd: Path | None = None, timeout: int | None = None) -> subprocess.CompletedProcess[str]:
     if not args or not all(isinstance(arg, str) and arg for arg in args):
         raise IntegrationError("subprocess args must be a non-empty list of strings")
-    return subprocess.run(args, cwd=cwd, timeout=timeout, text=True, capture_output=True, check=False)
+    return run_captured(args, cwd=cwd, timeout=timeout)
 
 
 @dataclass
