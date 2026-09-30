@@ -68,6 +68,14 @@
     letter-spacing: -0.01em;
   }
   nav.topnav .brand svg { width: 18px; height: 18px; }
+  nav.topnav .brand-lockup { display: flex; align-items: center; gap: 14px; }
+  nav.topnav .byline {
+    font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase;
+    opacity: 0.6; white-space: nowrap;
+    transition: color 0.2s ease, opacity 0.2s ease;
+  }
+  nav.topnav .byline:hover { color: var(--accent-warm); opacity: 1; }
+  @media (max-width: 760px) { nav.topnav .byline { display: none; } }
   nav.topnav .links {
     display: flex; gap: 22px; align-items: center;
     font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase;
@@ -118,12 +126,14 @@
 
   .doc-grid {
     display: grid;
-    grid-template-columns: 220px 1fr;
+    /* minmax(0, …): a bare 1fr cannot shrink below its widest code block,
+       which made the whole page scroll sideways on a phone. */
+    grid-template-columns: 220px minmax(0, 1fr);
     gap: 64px;
     align-items: start;
   }
   @media (max-width: 900px) {
-    .doc-grid { grid-template-columns: 1fr; gap: 32px; }
+    .doc-grid { grid-template-columns: minmax(0, 1fr); gap: 32px; }
   }
 
   /* TOC */
@@ -503,12 +513,15 @@
 <body>
 
 <nav class="topnav" id="topnav">
-  <a href="../index.html" class="brand">
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z"/>
-    </svg>
-    Spotlight
-  </a>
+  <div class="brand-lockup">
+    <a href="../index.html" class="brand">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z"/>
+      </svg>
+      Spotlight
+    </a>
+    <a class="byline" href="https://buriedsignals.com" target="_blank" rel="noopener">by Buried Signals</a>
+  </div>
   <div class="links">
     <a href="index.html">Docs</a>
     <a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a>
