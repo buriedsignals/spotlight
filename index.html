@@ -101,6 +101,14 @@
     letter-spacing: -0.01em;
   }
   nav.topnav .brand svg { width: 18px; height: 18px; }
+  /* Publisher credit, set as a quiet label beside the brand. */
+  nav.topnav .brand-lockup { display: flex; align-items: center; gap: 14px; }
+  nav.topnav .byline {
+    font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase;
+    opacity: 0.6; white-space: nowrap;
+    transition: color 0.2s ease, opacity 0.2s ease;
+  }
+  nav.topnav .byline:hover { color: var(--accent-warm); opacity: 1; }
   nav.topnav .links {
     display: flex; gap: 10px; align-items: center;
     font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase;
@@ -178,6 +186,7 @@
   /* Only the article pill is interactive in this paint-only mirror. */
   nav.topnav.topnav-overlay > * { pointer-events: none; }
   nav.topnav.topnav-overlay .brand,
+  nav.topnav.topnav-overlay .byline,
   nav.topnav.topnav-overlay .links a:not(.new-pill) { visibility: hidden; }
   nav.topnav.topnav-overlay .links a.new-pill { visibility: visible; pointer-events: auto; }
 
@@ -1187,6 +1196,8 @@
       border-bottom-color: transparent;
       mix-blend-mode: difference;
     }
+    /* The phone bar has room for the brand and one action; the credit stays in the footer. */
+    nav.topnav .byline { display: none; }
     /* Hide every nav link except Install, promoted to a compact CTA. The
        selector has to out-rank the button and pill rules above, which set
        their own display with a class: a bare `a` left Docs, GitHub and the
@@ -1725,12 +1736,15 @@
 <div id="global-canvas" aria-hidden="true"></div>
 
 <nav class="topnav" id="topnav">
-  <a href="/" class="brand">
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z"/>
-    </svg>
-    Spotlight
-  </a>
+  <div class="brand-lockup">
+    <a href="/" class="brand">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z"/>
+      </svg>
+      Spotlight
+    </a>
+    <a class="byline" href="https://buriedsignals.com" target="_blank" rel="noopener">by Buried Signals</a>
+  </div>
   <div class="links">
     <a class="nav-button" href="/docs/">Docs</a>
     <a class="nav-button" href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">
@@ -1743,12 +1757,15 @@
 </nav>
 <!-- Non-blended mirror of the topnav — paints only the Going Sovereign pill (see CSS note). -->
 <nav class="topnav topnav-overlay" aria-hidden="false">
-  <a href="/" class="brand" aria-hidden="true" tabindex="-1">
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z"/>
-    </svg>
-    Spotlight
-  </a>
+  <div class="brand-lockup">
+    <a href="/" class="brand" aria-hidden="true" tabindex="-1">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M6 2h4v4h-4zM10 2h4v4h-4zM14 2h4v4h-4zM6 6h4v4h-4zM6 10h4v4h-4zM14 10h4v4h-4zM14 14h4v4h-4zM6 18h4v4h-4zM10 18h4v4h-4zM14 18h4v4h-4z"/>
+      </svg>
+      Spotlight
+    </a>
+    <a class="byline" href="https://buriedsignals.com" target="_blank" rel="noopener" aria-hidden="true" tabindex="-1">by Buried Signals</a>
+  </div>
   <div class="links">
     <a class="nav-button" href="/docs/" aria-hidden="true" tabindex="-1">Docs</a>
     <a class="nav-button" href="https://github.com/buriedsignals/spotlight" aria-hidden="true" tabindex="-1">
@@ -1977,15 +1994,17 @@
 
     <article class="offer" data-reveal="card" data-stagger-idx="1">
       <div class="kicker">
-        <span>Consulting</span>
+        <span>Hire me</span>
       </div>
       <h3>I train newsrooms to investigate with AI</h3>
-      <p class="lede">Workshops, custom tooling, and investigation collaborations.</p>
+      <p class="lede">Talks, workshops, custom tooling, and investigation collaborations.</p>
       <ul>
         <li>Le Temps</li>
+        <li>Al Jazeera</li>
         <li>MAZ Journalistenschule</li>
         <li>Republik</li>
         <li>20 Minuten</li>
+        <li>SRF</li>
         <li>MediaStorm</li>
         <li>The New Humanitarian</li>
       </ul>
