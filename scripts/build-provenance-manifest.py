@@ -412,6 +412,9 @@ def post_for_signing(
     api_key: str | None = None,
 ) -> dict[str, Any]:
     payload = {
+        # The signer records the request under this product profile and echoes it
+        # back; without it the record falls back to the generic profile.
+        "profile": "spotlight",
         "artifact_path": artifact_path,
         "provenance_manifest": manifest,
         "credential_id": credential_id,

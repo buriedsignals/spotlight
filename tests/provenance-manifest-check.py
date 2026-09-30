@@ -19,6 +19,8 @@ SPEC = importlib.util.spec_from_file_location("build_provenance_manifest", BUILD
 assert SPEC and SPEC.loader
 PROVENANCE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PROVENANCE)
+# main() stubs post_for_signing; keep the real one for the request check.
+REAL_POST_FOR_SIGNING = PROVENANCE.post_for_signing
 
 
 def canonical_hash(value: object) -> str:
@@ -316,7 +318,42 @@ def main() -> int:
         assert first_receipt.read_bytes() == first_receipt_bytes
         assert len(list((case_dir / "data" / "provenance-signing-receipts").glob("*.json"))) == 2
 
+    check_sign_request_names_the_product()
     return 0
+
+
+def check_sign_request_names_the_product() -> None:
+    """The signer files a request under the profile it names; a request without
+    one is recorded under the generic profile, which is what the August canary
+    showed."""
+    import urllib.request
+
+    captured = {}
+
+    class _Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return b'{"status": "signed"}'
+
+    def fake_urlopen(request, timeout=None):
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        captured["headers"] = dict(request.header_items())
+        return _Response()
+
+    real_urlopen = urllib.request.urlopen
+    urllib.request.urlopen = fake_urlopen
+    try:
+        REAL_POST_FOR_SIGNING("http://localhost/sign", {"input_set_hash": "0" * 64}, "report.html", None, "test-key")
+    finally:
+        urllib.request.urlopen = real_urlopen
+    assert captured["body"]["profile"] == "spotlight"
+    assert captured["body"]["provenance_manifest"]["input_set_hash"] == "0" * 64
+    assert captured["headers"].get("X-api-key") == "test-key"
 
 
 if __name__ == "__main__":
