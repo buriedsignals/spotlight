@@ -1187,9 +1187,12 @@
       border-bottom-color: transparent;
       mix-blend-mode: difference;
     }
-    /* Hide every nav link except Install, promoted to a compact CTA. */
+    /* Hide every nav link except Install, promoted to a compact CTA. The
+       selector has to out-rank the button and pill rules above, which set
+       their own display with a class: a bare `a` left Docs, GitHub and the
+       pill in the bar and pushed Install off the screen. */
     nav.topnav .links { display: flex; gap: 0; }
-    nav.topnav .links a { display: none; }
+    nav.topnav .links a:not(.cta-install) { display: none; }
     nav.topnav .links a.cta-install {
       padding: 7px 12px;
       font-size: 10px;

@@ -118,12 +118,14 @@
 
   .doc-grid {
     display: grid;
-    grid-template-columns: 220px 1fr;
+    /* minmax(0, …): a bare 1fr cannot shrink below its widest code block,
+       which made the whole page scroll sideways on a phone. */
+    grid-template-columns: 220px minmax(0, 1fr);
     gap: 64px;
     align-items: start;
   }
   @media (max-width: 900px) {
-    .doc-grid { grid-template-columns: 1fr; gap: 32px; }
+    .doc-grid { grid-template-columns: minmax(0, 1fr); gap: 32px; }
   }
 
   /* TOC */

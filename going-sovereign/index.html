@@ -521,7 +521,8 @@
 
   @media (max-width: 640px) {
     article { padding-top: 48px; }
-    nav.topnav .links { gap: 14px; }
+    /* Brand and Install only, as on the landing: with Docs and GitHub the bar is wider than a phone. */
+    nav.topnav .links a:not(.cta-install) { display: none; }
     .stage { height: 380px; }
     .lg-row, .score-row { grid-template-columns: 1fr; gap: 6px; }
     .lg-win, .score-row .val { text-align: left; }
