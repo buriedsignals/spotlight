@@ -109,8 +109,11 @@
     transition: color 0.2s ease, opacity 0.2s ease;
   }
   nav.topnav .byline:hover { color: var(--accent-warm); opacity: 1; }
-  /* Below this the brand, the credit and the four links no longer fit on one line; the credit is the one to go. */
-  @media (max-width: 840px) { nav.topnav .byline { display: none; } }
+  /* Below this the brand, the credit and the four links no longer fit on one line, so the credit sits under the brand. */
+  @media (max-width: 840px) {
+    nav.topnav .brand-lockup { flex-direction: column; align-items: flex-start; gap: 4px; }
+    nav.topnav .byline { font-size: 8px; letter-spacing: 0.14em; line-height: 1; }
+  }
   nav.topnav .links {
     display: flex; gap: 10px; align-items: center;
     font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase;
@@ -1198,9 +1201,9 @@
       border-bottom-color: transparent;
       mix-blend-mode: difference;
     }
-    /* The phone bar keeps the smaller brand: the credit it is sized against is hidden here. */
-    nav.topnav .brand { font-size: 17px; }
-    nav.topnav .brand svg { width: 18px; height: 18px; }
+    /* The phone bar takes the brand one step down from the desktop's 20px. */
+    nav.topnav .brand { font-size: 19px; }
+    nav.topnav .brand svg { width: 20px; height: 20px; }
     /* Hide every nav link except Install, promoted to a compact CTA. The
        selector has to out-rank the button and pill rules above, which set
        their own display with a class: a bare `a` left Docs, GitHub and the
