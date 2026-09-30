@@ -64,10 +64,10 @@
   }
   nav.topnav .brand {
     display: flex; align-items: center; gap: 10px;
-    font-family: "Fraunces", serif; font-size: 17px; font-weight: 500;
+    font-family: "Fraunces", serif; font-size: 20px; font-weight: 500;
     letter-spacing: -0.01em;
   }
-  nav.topnav .brand svg { width: 18px; height: 18px; }
+  nav.topnav .brand svg { width: 21px; height: 21px; }
   nav.topnav .brand-lockup { display: flex; align-items: center; gap: 14px; }
   nav.topnav .byline {
     font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase;
@@ -75,7 +75,11 @@
     transition: color 0.2s ease, opacity 0.2s ease;
   }
   nav.topnav .byline:hover { color: var(--accent-warm); opacity: 1; }
-  @media (max-width: 760px) { nav.topnav .byline { display: none; } }
+  @media (max-width: 760px) {
+    nav.topnav .byline { display: none; }
+    nav.topnav .brand { font-size: 17px; }
+    nav.topnav .brand svg { width: 18px; height: 18px; }
+  }
   nav.topnav .links {
     display: flex; gap: 22px; align-items: center;
     font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase;

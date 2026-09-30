@@ -97,10 +97,10 @@
   nav.topnav > * { pointer-events: auto; }
   nav.topnav .brand {
     display: flex; align-items: center; gap: 10px;
-    font-family: "Fraunces", serif; font-size: 17px; font-weight: 500;
+    font-family: "Fraunces", serif; font-size: 20px; font-weight: 500;
     letter-spacing: -0.01em;
   }
-  nav.topnav .brand svg { width: 18px; height: 18px; }
+  nav.topnav .brand svg { width: 21px; height: 21px; }
   /* Publisher credit, set as a quiet label beside the brand. */
   nav.topnav .brand-lockup { display: flex; align-items: center; gap: 14px; }
   nav.topnav .byline {
@@ -109,6 +109,8 @@
     transition: color 0.2s ease, opacity 0.2s ease;
   }
   nav.topnav .byline:hover { color: var(--accent-warm); opacity: 1; }
+  /* Below this the brand, the credit and the four links no longer fit on one line; the credit is the one to go. */
+  @media (max-width: 840px) { nav.topnav .byline { display: none; } }
   nav.topnav .links {
     display: flex; gap: 10px; align-items: center;
     font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase;
@@ -1196,8 +1198,9 @@
       border-bottom-color: transparent;
       mix-blend-mode: difference;
     }
-    /* The phone bar has room for the brand and one action; the credit stays in the footer. */
-    nav.topnav .byline { display: none; }
+    /* The phone bar keeps the smaller brand: the credit it is sized against is hidden here. */
+    nav.topnav .brand { font-size: 17px; }
+    nav.topnav .brand svg { width: 18px; height: 18px; }
     /* Hide every nav link except Install, promoted to a compact CTA. The
        selector has to out-rank the button and pill rules above, which set
        their own display with a class: a bare `a` left Docs, GitHub and the
