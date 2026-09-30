@@ -71,9 +71,10 @@
   }
   nav.topnav .byline:hover { color: var(--accent-warm); opacity: 1; }
   @media (max-width: 760px) {
-    nav.topnav .byline { display: none; }
-    nav.topnav .brand { font-size: 17px; }
-    nav.topnav .brand svg { width: 18px; height: 18px; }
+    nav.topnav .brand-lockup { flex-direction: column; align-items: flex-start; gap: 4px; }
+    nav.topnav .byline { font-size: 8px; letter-spacing: 0.14em; line-height: 1; }
+    nav.topnav .brand { font-size: 19px; }
+    nav.topnav .brand svg { width: 20px; height: 20px; }
   }
   nav.topnav .links { display: flex; gap: 10px; align-items: center; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; }
   nav.topnav .links a { color: var(--paper); opacity: 0.85; border-bottom: none; }
