@@ -34,9 +34,14 @@ If `NOOSPHERE_C2PA_URL` is configured:
 execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR} --sign-endpoint \"$NOOSPHERE_C2PA_URL\" --credential-id \"$NOOSPHERE_C2PA_CREDENTIAL_ID\" --artifact review.html")
 ```
 
-The helper saves the receipt to:
+The helper checks the response against the Noosphere contract and the manifest
+it sent (see `skills/provenance-signing/SKILL.md`), then saves an accepted
+receipt to:
 
 `{CASE_DIR}/data/provenance-signing-receipt.json`
+
+An accepted receipt is recorded as `receipt_status: received_unverified`; the
+package stays `unsigned` until local C2PA verification exists.
 
 ## Editorial Boundary
 

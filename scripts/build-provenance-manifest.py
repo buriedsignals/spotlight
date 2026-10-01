@@ -8,6 +8,8 @@ immutable 1.1 revision files plus a derived ``provenance-manifest.json`` pointer
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import hashlib
 import json
 import os
@@ -54,6 +56,23 @@ ARTIFACTS = [
 ]
 ARTIFACT_PATH_KEYS = ("raw_path", "screenshot_path", "downloaded_document_path")
 DEPENDENCY_STATUS_VERSION = "spotlight-gate1-dependencies/v1"
+SIGNING_PROFILE = "spotlight"
+# Noosphere caps the signed record at 5 MB and returns it twice (object and
+# base64) next to the sidecar; anything far beyond that is not a receipt.
+MAX_SIGNING_RESPONSE_BYTES = 32 * 1024 * 1024
+# A response that passes every check is still not "signed" until the C2PA
+# sidecar is verified locally against Noosphere's production trust material.
+RECEIPT_RECEIVED_UNVERIFIED = "received_unverified"
+
+
+class SigningResponseError(ValueError):
+    """The signer answered, but the answer is not a usable signature."""
+
+
+class _RefuseRedirect(urllib.request.HTTPRedirectHandler):
+    # Noosphere never redirects; following one would resend X-API-Key elsewhere.
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 def now_iso() -> str:
@@ -414,7 +433,7 @@ def post_for_signing(
     payload = {
         # The signer records the request under this product profile and echoes it
         # back; without it the record falls back to the generic profile.
-        "profile": "spotlight",
+        "profile": SIGNING_PROFILE,
         "artifact_path": artifact_path,
         "provenance_manifest": manifest,
         "credential_id": credential_id,
@@ -428,11 +447,65 @@ def post_for_signing(
         method="POST",
         headers=headers,
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        result = json.loads(response.read().decode("utf-8"))
+    opener = urllib.request.build_opener(_RefuseRedirect)
+    with opener.open(request, timeout=30) as response:
+        body = response.read(MAX_SIGNING_RESPONSE_BYTES + 1)
+    if len(body) > MAX_SIGNING_RESPONSE_BYTES:
+        raise SigningResponseError(f"signing response exceeds {MAX_SIGNING_RESPONSE_BYTES} bytes")
+    result = json.loads(body.decode("utf-8"))
     if not isinstance(result, dict):
         raise json.JSONDecodeError("signing receipt must be a JSON object", "", 0)
+    problems = signing_response_problems(result, manifest)
+    if problems:
+        raise SigningResponseError("signing response rejected: " + "; ".join(problems))
     return result
+
+
+def strict_base64(value: Any) -> bytes | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return base64.b64decode(value, validate=True) or None
+    except binascii.Error:
+        return None
+
+
+def signing_response_problems(response: dict[str, Any], manifest: dict[str, Any]) -> list[str]:
+    """Check a signer response against the Noosphere 1.2 contract and the
+    manifest that was sent. An empty list means structurally sound, not
+    cryptographically verified."""
+    problems = []
+    if response.get("status") != "signed":
+        problems.append(f"status is {response.get('status')!r}, not 'signed'")
+    if response.get("profile") != SIGNING_PROFILE:
+        problems.append(f"profile is {response.get('profile')!r}, not {SIGNING_PROFILE!r}")
+    if response.get("input_set_hash") != manifest.get("input_set_hash"):
+        problems.append("input_set_hash does not match the manifest that was sent")
+    for field, kind in (("manifest_id", str), ("signed_at", str), ("signer", dict), ("record", dict)):
+        if not isinstance(response.get(field), kind):
+            problems.append(f"{field} is missing or not a {kind.__name__}")
+
+    record_bytes = strict_base64(response.get("record_b64"))
+    if record_bytes is None:
+        problems.append("record_b64 is missing or not valid base64")
+    else:
+        content_hash = str(response.get("content_hash", "")).removeprefix("sha256:")
+        if content_hash != hashlib.sha256(record_bytes).hexdigest():
+            problems.append("content_hash does not match the decoded record_b64 bytes")
+        try:
+            decoded_record = json.loads(record_bytes)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            decoded_record = None
+        if decoded_record != response.get("record"):
+            problems.append("record_b64 does not decode to the returned record")
+
+    if strict_base64(response.get("c2pa_manifest_b64", response.get("c2pa_manifest"))) is None:
+        problems.append("C2PA sidecar is missing or not valid base64")
+    chain = response.get("certificate_chain")
+    grade = chain.get("grade") if isinstance(chain, dict) else None
+    if grade != "production":
+        problems.append(f"certificate chain grade is {grade!r}, not 'production'")
+    return problems
 
 
 def read_pointer(path: Path) -> dict[str, Any] | None:
@@ -587,7 +660,10 @@ def sign_revision(
     receipt_output: str | None,
     api_key: str | None = None,
 ) -> None:
-    if pointer.get("signing_status") == "signed":
+    if (
+        pointer.get("signing_status") == "signed"
+        or pointer.get("receipt_status") == RECEIPT_RECEIVED_UNVERIFIED
+    ):
         return
     try:
         receipt = post_for_signing(endpoint, revision, artifact, credential_id, api_key)
@@ -603,7 +679,8 @@ def sign_revision(
             )
         write_immutable(receipt_path, receipt_bytes)
         pointer.update({
-            "signing_status": "signed",
+            "signing_status": "unsigned",
+            "receipt_status": RECEIPT_RECEIVED_UNVERIFIED,
             "receipt_path": case_relative(case_dir, receipt_path),
             "updated_at": now_iso(),
         })
@@ -726,10 +803,11 @@ def main() -> int:
                         args.sign_endpoint, manifest, args.artifact, args.credential_id, args.api_key
                     )
                     atomic_replace(receipt_path, rendered_bytes(receipt))
-                    manifest["status"] = "signed"
-                    manifest["signing"]["signed_at"] = now_iso()
+                    manifest["signing"]["receipt_status"] = RECEIPT_RECEIVED_UNVERIFIED
                     manifest["signing"]["receipt_path"] = str(receipt_path.relative_to(case_dir))
-                except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+                except (
+                    urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError, SigningResponseError
+                ) as exc:
                     manifest["status"] = "signing_failed"
                     manifest["signing"]["error"] = f"{type(exc).__name__}: {exc}"
             atomic_replace(output, rendered_bytes(manifest))

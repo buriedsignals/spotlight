@@ -28,6 +28,7 @@
         "credential_id": { "type": ["string", "null"] },
         "endpoint": { "type": ["string", "null"] },
         "receipt_path": { "type": "string" },
+        "receipt_status": { "const": "received_unverified" },
         "signed_at": { "type": "string", "format": "date-time" },
         "error": { "type": "string" },
         "attempt_path": { "type": "string" }
@@ -193,6 +194,7 @@
         "input_set_hash": { "$ref": "#/definitions/fingerprint" },
         "derived_status": { "enum": ["current", "stale"] },
         "signing_status": { "enum": ["unsigned", "signed", "signing_failed"] },
+        "receipt_status": { "const": "received_unverified" },
         "receipt_path": { "type": "string" },
         "attempt_path": { "type": "string" },
         "error": { "type": "string" },
