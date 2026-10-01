@@ -40,9 +40,11 @@ fingerprints, relation, anchor hash, and original artifact hash used by the
 fact-check at that revision. This proves integrity and traceability, not that
 the passage semantically entails the finding.
 
-## No API Key Boundary
+## Credentials Boundary
 
-Noosphere C2PA does not need a third-party API key for this contract. It does need a signing credential configured wherever Noosphere runs the signer.
+Signing needs a Noosphere API key with the `sign` scope, sent as the `X-API-Key`
+header from `NOOSPHERE_PROVENANCE_API_KEY`. The signing credential itself is
+configured on the Noosphere side and never reaches the case directory.
 
 Model this distinction explicitly:
 
@@ -50,7 +52,7 @@ Model this distinction explicitly:
 - `requires_signing_credential: true`
 - `credential_id`: optional identifier passed to the signer
 
-Never store private keys, certificates, bearer tokens, or signing secrets in the case directory.
+Never store private keys, certificates, API keys, bearer tokens, or signing secrets in the case directory.
 
 ## Build Only
 
@@ -81,20 +83,24 @@ revision file in place.
 If a Noosphere C2PA signer endpoint is available:
 
 ```text
-execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR} --sign-endpoint http://localhost:5002/api/spotlight/provenance/sign --credential-id <credential-id> --artifact review.html")
+execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR} --sign-endpoint \"$NOOSPHERE_C2PA_URL\" --credential-id \"$NOOSPHERE_C2PA_CREDENTIAL_ID\" --artifact review.html")
 ```
 
-The signing request body is:
+The signing request carries the `X-API-Key` header and this body:
 
 ```json
 {
+  "profile": "spotlight",
   "artifact_path": "review.html",
   "provenance_manifest": {},
   "credential_id": "optional signer credential id"
 }
 ```
 
-Expected successful response is any JSON receipt Noosphere chooses to return.
+The response follows the Noosphere provenance contract
+(`https://platform.noosphere.tech/openapi.yaml`): it returns the signed
+`record_b64`, its `content_hash`, the C2PA sidecar as `c2pa_manifest_b64`, and
+echoes `profile` and `input_set_hash` unchanged.
 For activated cases receipts are immutable and content-addressed under:
 
 `{CASE_DIR}/data/provenance-signing-receipts/`
