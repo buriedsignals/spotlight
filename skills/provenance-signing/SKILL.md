@@ -101,19 +101,33 @@ The response follows the Noosphere provenance contract
 (`https://platform.noosphere.tech/openapi.yaml`): it returns the signed
 `record_b64`, its `content_hash`, the C2PA sidecar as `c2pa_manifest_b64`, and
 echoes `profile` and `input_set_hash` unchanged.
+
+The helper checks every response before keeping it: `status` is `signed`,
+`profile` and `input_set_hash` match what was sent, `content_hash` matches the
+decoded `record_b64` bytes, `record_b64` decodes to `record`, the sidecar is
+valid base64, and `certificate_chain.grade` is `production`. It never follows a
+redirect and refuses responses over 32 MB. A response that fails any check
+records `signing_failed` with the reasons.
+
+A response that passes is kept with `receipt_status: received_unverified` and
+the package stays `unsigned`. Spotlight does not yet verify the C2PA sidecar
+locally against Noosphere's production trust material, so it never reports a
+package as `signed`.
+
 For activated cases receipts are immutable and content-addressed under:
 
 `{CASE_DIR}/data/provenance-signing-receipts/`
 
 The current pointer records the applicable receipt. A repeated signing command
-for an already signed revision does not call the signer again. Legacy cases
-retain `data/provenance-signing-receipt.json` for compatibility.
+for a revision that already has a receipt does not call the signer again.
+Legacy cases retain `data/provenance-signing-receipt.json` for compatibility.
 
 ## Report Language
 
 In summaries and HTML reports, describe the result carefully:
 
-- Correct: "The investigation package and verification trail were signed and can be checked for later tampering."
+- Correct, once a package is `signed`: "The investigation package and verification trail were signed and can be checked for later tampering."
+- Correct, with `receipt_status: received_unverified`: "A signing receipt was received from Noosphere; it has not been verified locally."
 - Incorrect: "C2PA proves the investigation is true."
 
 Truth still depends on Spotlight evidence, independent fact-checking, and editorial review.

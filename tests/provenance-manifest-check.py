@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import importlib.util
+import os
 import json
 import shutil
 import subprocess
@@ -19,8 +21,6 @@ SPEC = importlib.util.spec_from_file_location("build_provenance_manifest", BUILD
 assert SPEC and SPEC.loader
 PROVENANCE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PROVENANCE)
-# main() stubs post_for_signing; keep the real one for the request check.
-REAL_POST_FOR_SIGNING = PROVENANCE.post_for_signing
 
 
 def canonical_hash(value: object) -> str:
@@ -139,12 +139,15 @@ def activate_case(case_dir: Path) -> None:
     })
 
 
-def run_builder(case_dir: Path, *args: str, ok: bool = True) -> subprocess.CompletedProcess[str]:
+def run_builder(
+    case_dir: Path, *args: str, ok: bool = True, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         [sys.executable, str(BUILDER), str(case_dir), *args],
         cwd=ROOT,
         text=True,
         capture_output=True,
+        env={**os.environ, **(env or {})},
     )
     if ok and result.returncode != 0:
         raise AssertionError(result.stderr)
@@ -264,7 +267,9 @@ def main() -> int:
         PROVENANCE.atomic_replace(pointer_path, PROVENANCE.rendered_bytes(signed_pointer_before))
         assert len(calls) == 1
         signed_pointer = json.loads(pointer_path.read_text())
-        assert signed_pointer["signing_status"] == "signed"
+        assert signed_pointer["signing_status"] == "unsigned"
+        assert signed_pointer["receipt_status"] == "received_unverified"
+        assert_schema(signed_pointer)
         first_receipt = case_dir / signed_pointer["receipt_path"]
         first_receipt_bytes = first_receipt.read_bytes()
         assert signed_revision_path.read_bytes() == unsigned_bytes
@@ -310,50 +315,146 @@ def main() -> int:
             "http://localhost/sign", None, None, None,
         )
         PROVENANCE.atomic_replace(pointer_path, PROVENANCE.rendered_bytes(failed_pointer))
-        assert len(successes) == 1  # already-signed retries are idempotent
+        assert len(successes) == 1  # retries after a received receipt are idempotent
         retry_pointer = json.loads(pointer_path.read_text())
-        assert retry_pointer["signing_status"] == "signed"
+        assert retry_pointer["signing_status"] == "unsigned"
+        assert retry_pointer["receipt_status"] == "received_unverified"
         assert retry_revision.read_bytes() == retry_revision_bytes
         assert signed_revision_path.read_bytes() == unsigned_bytes
         assert first_receipt.read_bytes() == first_receipt_bytes
         assert len(list((case_dir / "data" / "provenance-signing-receipts").glob("*.json"))) == 2
 
-    check_sign_request_names_the_product()
+    check_signer_responses()
     return 0
 
 
-def check_sign_request_names_the_product() -> None:
-    """The signer files a request under the profile it names; a request without
-    one is recorded under the generic profile, which is what the August canary
-    showed."""
-    import urllib.request
+def signer_response(request_body: dict, **overrides: object) -> dict:
+    """A response shaped like Noosphere's 1.2.0 contract for the request it answers."""
+    manifest = request_body["provenance_manifest"]
+    record = {
+        "profile": request_body["profile"],
+        "input_set_hash": manifest["input_set_hash"],
+        "case_artifacts": manifest["case_artifacts"],
+    }
+    record_bytes = json.dumps(record, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    response = {
+        "status": "signed",
+        "contract_version": "1.2.0",
+        "profile": request_body["profile"],
+        "manifest_id": "provenance_test.json",
+        "input_set_hash": manifest["input_set_hash"],
+        "content_hash": "sha256:" + hashlib.sha256(record_bytes).hexdigest(),
+        "record": record,
+        "record_b64": base64.b64encode(record_bytes).decode("ascii"),
+        "c2pa_manifest_b64": base64.b64encode(b"synthetic c2pa sidecar").decode("ascii"),
+        "signer": {"org_id": "org_test", "signing_source": "dpod-hsm"},
+        "certificate_chain": {"grade": "production"},
+        "signed_at": "2026-10-01T00:00:00Z",
+    }
+    response.update(overrides)
+    return response
 
-    captured = {}
 
-    class _Response:
-        def __enter__(self):
-            return self
+SIGNER_CASES = {
+    # path: (response builder, expected error fragment or None for an accepted receipt)
+    "/ok": (lambda body: signer_response(body), None),
+    "/development-chain": (
+        lambda body: signer_response(body, certificate_chain={"grade": "development"}),
+        "certificate chain grade is 'development'",
+    ),
+    "/bare-success": (lambda body: {"status": "signed"}, "record_b64 is missing"),
+    "/tampered-hash": (
+        lambda body: signer_response(body, content_hash="sha256:" + "0" * 64),
+        "content_hash does not match",
+    ),
+    "/other-input-set": (
+        lambda body: signer_response(body, input_set_hash="1" * 64),
+        "input_set_hash does not match",
+    ),
+    "/generic-profile": (
+        lambda body: signer_response(body, profile="provenance"),
+        "profile is 'provenance'",
+    ),
+    "/redirect": (None, "HTTPError"),
+    "/oversized": (None, "exceeds"),
+}
 
-        def __exit__(self, *exc):
-            return False
 
-        def read(self):
-            return b'{"status": "signed"}'
+def check_signer_responses() -> None:
+    """The builder keeps a structurally sound Noosphere response as an
+    unverified receipt and refuses false success, mismatched hashes, a
+    development chain, redirects and oversized bodies."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-    def fake_urlopen(request, timeout=None):
-        captured["body"] = json.loads(request.data.decode("utf-8"))
-        captured["headers"] = dict(request.header_items())
-        return _Response()
+    seen: list[tuple[str, dict, dict]] = []
 
-    real_urlopen = urllib.request.urlopen
-    urllib.request.urlopen = fake_urlopen
+    class Signer(BaseHTTPRequestHandler):
+        def log_message(self, *args: object) -> None:
+            pass
+
+        def send_json(self, value: object) -> None:
+            data = json.dumps(value).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self) -> None:
+            seen.append((self.path, {k.lower(): v for k, v in self.headers.items()}, {}))
+            self.send_json({"status": "signed"})
+
+        def do_POST(self) -> None:
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            seen.append((self.path, {k.lower(): v for k, v in self.headers.items()}, body))
+            if self.path == "/redirect":
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/stolen")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if self.path == "/oversized":
+                size = PROVENANCE.MAX_SIGNING_RESPONSE_BYTES + 1
+                self.send_response(200)
+                self.send_header("Content-Length", str(size))
+                self.end_headers()
+                self.wfile.write(b" " * size)
+                return
+            self.send_json(SIGNER_CASES[self.path][0](body))
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Signer)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        REAL_POST_FOR_SIGNING("http://localhost/sign", {"input_set_hash": "0" * 64}, "report.html", None, "test-key")
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            for path, (_, expected_error) in SIGNER_CASES.items():
+                case_dir = copy_fixture_case(Path(raw_tmp) / path.strip("/"))
+                run_builder(
+                    case_dir,
+                    "--sign-endpoint", f"http://127.0.0.1:{server.server_port}{path}",
+                    env={"NOOSPHERE_PROVENANCE_API_KEY": "test-key"},
+                )
+                manifest = json.loads((case_dir / "data" / "provenance-manifest.json").read_text())
+                assert_schema(manifest)
+                assert manifest["status"] != "signed", path
+                if expected_error is None:
+                    assert manifest["status"] == "unsigned", path
+                    assert manifest["signing"]["receipt_status"] == "received_unverified", path
+                    assert (case_dir / manifest["signing"]["receipt_path"]).is_file(), path
+                else:
+                    assert manifest["status"] == "signing_failed", path
+                    assert expected_error in manifest["signing"]["error"], (path, manifest["signing"]["error"])
+                    assert "receipt_path" not in manifest["signing"], path
+                    assert "test-key" not in manifest["signing"]["error"], path
+
+        request_path, headers, body = next(entry for entry in seen if entry[0] == "/ok")
+        assert body["profile"] == "spotlight"
+        assert body["provenance_manifest"]["input_set_hash"]
+        assert headers.get("x-api-key") == "test-key"
+        assert not any(entry[0] == "/stolen" for entry in seen), "redirect was followed"
     finally:
-        urllib.request.urlopen = real_urlopen
-    assert captured["body"]["profile"] == "spotlight"
-    assert captured["body"]["provenance_manifest"]["input_set_hash"] == "0" * 64
-    assert captured["headers"].get("X-api-key") == "test-key"
+        server.shutdown()
+        server.server_close()
 
 
 if __name__ == "__main__":
