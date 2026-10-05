@@ -1,0 +1,71 @@
+{
+  "profile": "mycroft",
+  "artifact_path": "report.html",
+  "provenance_manifest": {
+    "schema_version": "1.0",
+    "project": "noosphere-fixture-mycroft",
+    "generated_at": "2026-01-01T00:00:00+00:00",
+    "status": "unsigned",
+    "input_set_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+    "signing": {
+      "profile": "noosphere-c2pa",
+      "requires_api_key": true,
+      "requires_signing_credential": true,
+      "credential_id": null,
+      "endpoint": null
+    },
+    "investigator": {
+      "name": "Fixture Investigator",
+      "organization": "Fixture Newsroom"
+    },
+    "artifacts": [
+      {
+        "kind": "sift_manifest",
+        "path": "data/sift-manifest.json",
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "bytes": 3072
+      },
+      {
+        "kind": "evidence_bundle",
+        "path": "data/evidence-bundle.json",
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "bytes": 2048
+      },
+      {
+        "kind": "report_html",
+        "path": "report.html",
+        "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "bytes": 8192
+      }
+    ],
+    "claims": [
+      {
+        "claim_id": "C1",
+        "claim_text": "The fixture grant was awarded in 2021.",
+        "verdict": "unverified",
+        "confidence": "medium",
+        "confidence_cap": "medium",
+        "grounding_strength": "partial",
+        "evidence_refs": [
+          "EV1"
+        ]
+      }
+    ],
+    "evidence": [
+      {
+        "evidence_id": "EV1",
+        "source_url": "https://grants.example/awards/2021-0042",
+        "acquisition_method": "mycroft-fetch",
+        "accessed_at": "2026-01-01T00:00:00+00:00",
+        "archive_url": "https://web.archive.org/web/20260101000000/https://grants.example/awards/2021-0042",
+        "human_verification_required": true,
+        "claim_links": [
+          {
+            "claim_id": "C1",
+            "support_type": "indirect"
+          }
+        ]
+      }
+    ]
+  }
+}

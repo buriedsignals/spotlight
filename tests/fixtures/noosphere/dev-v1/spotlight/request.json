@@ -1,0 +1,78 @@
+{
+  "profile": "spotlight",
+  "artifact_path": "review.html",
+  "provenance_manifest": {
+    "schema_version": "1.1",
+    "kind": "provenance_manifest_revision",
+    "project": "noosphere-fixture-spotlight",
+    "generated_at": "2026-01-01T00:00:00+00:00",
+    "status": "unsigned",
+    "revision_id": "PM-1111111111111111111111111111111111111111111111111111111111111111",
+    "parent_revision_id": null,
+    "input_set_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+    "parent_input_set_hash": null,
+    "signing": {
+      "profile": "noosphere-c2pa",
+      "requires_api_key": false,
+      "requires_signing_credential": true,
+      "credential_id": null,
+      "endpoint": null
+    },
+    "investigator": {
+      "name": "Fixture Reporter",
+      "organization": "Fixture Newsroom"
+    },
+    "case_artifacts": [
+      {
+        "kind": "findings",
+        "path": "data/findings.json",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "bytes": 4096
+      },
+      {
+        "kind": "fact_check",
+        "path": "data/fact-check.json",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "bytes": 2048
+      },
+      {
+        "kind": "evidence_bundle",
+        "path": "data/evidence-bundle.json",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "bytes": 1024
+      }
+    ],
+    "claims": [
+      {
+        "finding_id": "F1",
+        "claim_text": "The fixture company was incorporated on 2019-03-14.",
+        "confidence": "high",
+        "fact_check_verdict": "verified",
+        "support_type": "direct",
+        "evidence_refs": [
+          "E1"
+        ],
+        "finding_fingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    ],
+    "sources": [
+      {
+        "evidence_id": "E1",
+        "source_url": "https://registry.example/filings/2019-ABC-123",
+        "accessed": "2026-01-01T00:00:00+00:00",
+        "acquisition_method": "fixture",
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "archive_url": "https://web.archive.org/web/20260101000000/https://registry.example/filings/2019-ABC-123",
+        "raw_path": "research/registry-filing.md",
+        "human_verification_required": false,
+        "claim_links": [
+          {
+            "finding_id": "F1",
+            "claim_text": "The fixture company was incorporated on 2019-03-14.",
+            "support_type": "direct"
+          }
+        ]
+      }
+    ]
+  }
+}

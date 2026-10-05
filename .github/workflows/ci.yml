@@ -43,6 +43,14 @@ jobs:
       - name: Install Python test deps
         run: pip install --quiet jsonschema==4.25.1 requests==2.32.5
 
+      - name: Install c2patool 0.27.22 (tests/provenance-manifest-check.py)
+        run: |
+          curl -fsSL -o /tmp/c2patool.tar.gz https://github.com/contentauth/c2pa-rs/releases/download/c2patool-v0.27.22/c2patool-v0.27.22-x86_64-unknown-linux-gnu.tar.gz
+          echo "6f138ad53da1a62f1cd6ee71c60727efa27d13b811f4c0ea8c2a8528968b358b  /tmp/c2patool.tar.gz" | sha256sum -c -
+          mkdir -p /tmp/c2patool && tar -xzf /tmp/c2patool.tar.gz -C /tmp/c2patool
+          install -m 0755 "$(find /tmp/c2patool -type f -name c2patool | head -1)" /usr/local/bin/c2patool
+          c2patool --version
+
       - name: Install PDF text extraction (tests/test_pdfparse.py)
         run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends poppler-utils
 

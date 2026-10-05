@@ -86,7 +86,11 @@ If a Noosphere C2PA signer endpoint is available:
 execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR} --sign-endpoint \"$NOOSPHERE_C2PA_URL\" --credential-id \"$NOOSPHERE_C2PA_CREDENTIAL_ID\" --artifact review.html")
 ```
 
-The signing request carries the `X-API-Key` header and this body:
+The signing request carries this body. `NOOSPHERE_PROVENANCE_API_KEY` is sent
+as `X-API-Key` only to `https://platform.noosphere.tech`; with the key set, a
+custom endpoint is refused rather than handed the key. The key is read from the
+environment only, never from a command-line flag. In sensitive mode the helper
+does not contact the signer and writes the unsigned manifest.
 
 ```json
 {
@@ -97,22 +101,27 @@ The signing request carries the `X-API-Key` header and this body:
 }
 ```
 
-The response follows the Noosphere provenance contract
+The response follows the Noosphere provenance contract 1.x
 (`https://platform.noosphere.tech/openapi.yaml`): it returns the signed
 `record_b64`, its `content_hash`, the C2PA sidecar as `c2pa_manifest_b64`, and
 echoes `profile` and `input_set_hash` unchanged.
 
-The helper checks every response before keeping it: `status` is `signed`,
-`profile` and `input_set_hash` match what was sent, `content_hash` matches the
-decoded `record_b64` bytes, `record_b64` decodes to `record`, the sidecar is
-valid base64, and `certificate_chain.grade` is `production`. It never follows a
-redirect and refuses responses over 32 MB. A response that fails any check
-records `signing_failed` with the reasons.
+The helper checks every response before keeping it: `contract_version` is 1.x,
+`status` is `signed`, `profile` and `input_set_hash` match what was sent,
+`content_hash` matches the decoded `record_b64` bytes, `record_b64` decodes to
+`record`, every artifact, claim and source sent appears unchanged in the
+signed record, the sidecar is valid base64, and `certificate_chain.grade` is
+`production`. It never follows a redirect and refuses responses over 32 MB.
+A response that fails any check, or an HTTP error (401 key rejected, 403
+missing `sign` scope, 413, 422, 429 with its retry delay, 503 no production
+chain), records `signing_failed` with the reason.
 
-A response that passes is kept with `receipt_status: received_unverified` and
-the package stays `unsigned`. Spotlight does not yet verify the C2PA sidecar
-locally against Noosphere's production trust material, so it never reports a
-package as `signed`.
+A response that passes is then verified locally: `c2patool` checks the C2PA
+sidecar over the record bytes against the pinned C2PA trust list
+(`integrations/noosphere-c2pa/c2pa-trust-list.pem`). Only a `Trusted` result
+marks the package `signed`. Otherwise, including when `c2patool` is not
+installed, the receipt is kept with `receipt_status: received_unverified`, the
+package stays `unsigned`, and `signing.verification` records why.
 
 For activated cases receipts are immutable and content-addressed under:
 
