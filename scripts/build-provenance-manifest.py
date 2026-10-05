@@ -16,6 +16,7 @@ import os
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +27,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from source_expression_contract import canonical_fingerprint, fact_check_rows, lifecycle_state
+import noosphere_verify
 
 
 ARTIFACTS = [
@@ -61,12 +63,28 @@ SIGNING_PROFILE = "spotlight"
 # base64) next to the sidecar; anything far beyond that is not a receipt.
 MAX_SIGNING_RESPONSE_BYTES = 32 * 1024 * 1024
 # A response that passes every check is still not "signed" until the C2PA
-# sidecar is verified locally against Noosphere's production trust material.
+# sidecar verifies locally against the pinned trust anchors (noosphere_verify).
 RECEIPT_RECEIVED_UNVERIFIED = "received_unverified"
+# The managed signer. NOOSPHERE_PROVENANCE_API_KEY is sent to this origin only.
+MANAGED_ORIGIN = ("https", "platform.noosphere.tech")
+API_KEY_ENV = "NOOSPHERE_PROVENANCE_API_KEY"
+CONTRACT_MAJOR = "1"
+HTTP_ERRORS = {
+    401: "the signer rejected the API key (401); check NOOSPHERE_PROVENANCE_API_KEY",
+    403: "the API key lacks the 'sign' scope (403)",
+    413: "the manifest is larger than the signer accepts (413)",
+    422: "the signer refused a manifest with no artifacts, claims or sources (422)",
+    429: "the signer is rate limiting (429)",
+    503: "the signer has no production certificate chain (503)",
+}
 
 
 class SigningResponseError(ValueError):
     """The signer answered, but the answer is not a usable signature."""
+
+
+class SigningHTTPError(SigningResponseError):
+    """The signer answered with an HTTP error status."""
 
 
 class _RefuseRedirect(urllib.request.HTTPRedirectHandler):
@@ -423,13 +441,34 @@ def build_manifest(
     }
 
 
+def is_managed_endpoint(endpoint: str) -> bool:
+    parsed = urllib.parse.urlsplit(endpoint)
+    return (parsed.scheme, parsed.hostname) == MANAGED_ORIGIN and parsed.port in (None, 443)
+
+
+def http_error_message(exc: urllib.error.HTTPError) -> str:
+    if 300 <= exc.code < 400:
+        return f"the signer redirected ({exc.code}); redirects are refused so the API key is never resent"
+    message = HTTP_ERRORS.get(exc.code, f"the signer returned HTTP {exc.code}")
+    retry_after = exc.headers.get("Retry-After") if exc.code == 429 and exc.headers else None
+    if retry_after and retry_after.isdigit():
+        message += f"; retry after {retry_after} s"
+    return message
+
+
 def post_for_signing(
     endpoint: str,
     manifest: dict[str, Any],
     artifact_path: str | None,
     credential_id: str | None,
-    api_key: str | None = None,
 ) -> dict[str, Any]:
+    api_key = os.environ.get(API_KEY_ENV)
+    if api_key and not is_managed_endpoint(endpoint):
+        # SIGN-05: the managed key never reaches a user-supplied origin.
+        raise SigningResponseError(
+            f"{API_KEY_ENV} is only sent to https://platform.noosphere.tech; "
+            "unset it to use a custom signer"
+        )
     payload = {
         # The signer records the request under this product profile and echoes it
         # back; without it the record falls back to the generic profile.
@@ -448,8 +487,11 @@ def post_for_signing(
         headers=headers,
     )
     opener = urllib.request.build_opener(_RefuseRedirect)
-    with opener.open(request, timeout=30) as response:
-        body = response.read(MAX_SIGNING_RESPONSE_BYTES + 1)
+    try:
+        with opener.open(request, timeout=30) as response:
+            body = response.read(MAX_SIGNING_RESPONSE_BYTES + 1)
+    except urllib.error.HTTPError as exc:
+        raise SigningHTTPError(http_error_message(exc)) from None
     if len(body) > MAX_SIGNING_RESPONSE_BYTES:
         raise SigningResponseError(f"signing response exceeds {MAX_SIGNING_RESPONSE_BYTES} bytes")
     result = json.loads(body.decode("utf-8"))
@@ -471,10 +513,12 @@ def strict_base64(value: Any) -> bytes | None:
 
 
 def signing_response_problems(response: dict[str, Any], manifest: dict[str, Any]) -> list[str]:
-    """Check a signer response against the Noosphere 1.2 contract and the
+    """Check a signer response against the Noosphere 1.x contract and the
     manifest that was sent. An empty list means structurally sound, not
     cryptographically verified."""
     problems = []
+    if str(response.get("contract_version", "")).split(".")[0] != CONTRACT_MAJOR:
+        problems.append(f"contract_version is {response.get('contract_version')!r}, not {CONTRACT_MAJOR}.x")
     if response.get("status") != "signed":
         problems.append(f"status is {response.get('status')!r}, not 'signed'")
     if response.get("profile") != SIGNING_PROFILE:
@@ -505,7 +549,52 @@ def signing_response_problems(response: dict[str, Any], manifest: dict[str, Any]
     grade = chain.get("grade") if isinstance(chain, dict) else None
     if grade != "production":
         problems.append(f"certificate chain grade is {grade!r}, not 'production'")
+    if isinstance(response.get("record"), dict):
+        problems.extend(projection_problems(response["record"], manifest))
     return problems
+
+
+def projection_problems(record: dict[str, Any], manifest: dict[str, Any]) -> list[str]:
+    """Every artifact, claim and source that was sent must appear in the signed
+    record unchanged (HASHING.md section 5; PRD REC-11)."""
+    def missing(sent: set, signed: set, label: str) -> list[str]:
+        lost = sent - signed
+        return [f"{len(lost)} {label} missing or changed in the signed record"] if lost else []
+
+    def rows(value: Any) -> list[dict[str, Any]]:
+        return [row for row in value if isinstance(row, dict)] if isinstance(value, list) else []
+
+    sent_sources = rows(manifest.get("sources"))
+    return (
+        missing(
+            {(a.get("path"), a.get("sha256"), a.get("bytes")) for a in rows(manifest.get("case_artifacts"))},
+            {(a.get("path"), a.get("sha256"), a.get("bytes")) for a in rows(record.get("inventory"))},
+            "artifact(s)",
+        )
+        + missing(
+            {(c.get("finding_id"), c.get("claim_text"), c.get("fact_check_verdict")) for c in rows(manifest.get("claims"))},
+            {(c.get("id"), c.get("text"), c.get("verdict")) for c in rows(record.get("claims"))},
+            "claim(s)",
+        )
+        + missing(
+            {(s.get("evidence_id"), s.get("source_url"), s.get("sha256")) for s in sent_sources},
+            {(s.get("id"), s.get("url"), s.get("hash")) for s in rows(record.get("sources"))}
+            | {(s.get("id"), s.get("url"), None) for s in rows(record.get("sources"))},
+            "source(s)",
+        )
+    )
+
+
+def sensitive_mode() -> bool:
+    """Spotlight sensitive mode (AGENTS.md frontmatter or SPOTLIGHT_SENSITIVE)
+    keeps every byte local, so remote signing is blocked (PRD PRIV-04)."""
+    if os.environ.get("SPOTLIGHT_SENSITIVE", "").lower() == "true":
+        return True
+    agents = SCRIPT_DIR.parent / "AGENTS.md"
+    if not agents.is_file():
+        return False
+    head = agents.read_text(encoding="utf-8").split("---", 2)
+    return len(head) > 2 and any(line.strip() == "sensitive: true" for line in head[1].splitlines())
 
 
 def read_pointer(path: Path) -> dict[str, Any] | None:
@@ -625,14 +714,13 @@ def record_signing_failure(
     endpoint: str,
     credential_id: str | None,
     error: str,
-    api_key: str | None = None,
 ) -> None:
     attempt = {
         "schema_version": "1.0",
         "revision_id": pointer["revision_id"],
         "endpoint": endpoint,
         "credential_id_provided": credential_id is not None,
-        "api_key_provided": bool(api_key),
+        "api_key_provided": bool(os.environ.get(API_KEY_ENV)),
         "status": "signing_failed",
         "error": error,
     }
@@ -658,7 +746,6 @@ def sign_revision(
     artifact: str | None,
     credential_id: str | None,
     receipt_output: str | None,
-    api_key: str | None = None,
 ) -> None:
     if (
         pointer.get("signing_status") == "signed"
@@ -666,7 +753,7 @@ def sign_revision(
     ):
         return
     try:
-        receipt = post_for_signing(endpoint, revision, artifact, credential_id, api_key)
+        receipt = post_for_signing(endpoint, revision, artifact, credential_id)
         receipt_bytes = rendered_bytes(receipt)
         if receipt_output:
             receipt_path = Path(receipt_output).resolve()
@@ -678,12 +765,18 @@ def sign_revision(
                 / f"{pointer['revision_id']}-{receipt_hash}.json"
             )
         write_immutable(receipt_path, receipt_bytes)
+        verification = noosphere_verify.verify_sidecar(receipt)
         pointer.update({
-            "signing_status": "unsigned",
-            "receipt_status": RECEIPT_RECEIVED_UNVERIFIED,
             "receipt_path": case_relative(case_dir, receipt_path),
+            "verification": verification,
             "updated_at": now_iso(),
         })
+        if verification["verified"]:
+            pointer["signing_status"] = "signed"
+            pointer.pop("receipt_status", None)
+        else:
+            pointer["signing_status"] = "unsigned"
+            pointer["receipt_status"] = RECEIPT_RECEIVED_UNVERIFIED
         pointer.pop("attempt_path", None)
         pointer.pop("error", None)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError, ValueError) as exc:
@@ -693,7 +786,6 @@ def sign_revision(
             endpoint,
             credential_id,
             f"{type(exc).__name__}: {exc}",
-            api_key,
         )
 
 
@@ -705,11 +797,6 @@ def main() -> int:
     )
     parser.add_argument("--credential-id", default=None, help="Noosphere signing credential id")
     parser.add_argument("--sign-endpoint", default=None, help="Optional Noosphere C2PA signing endpoint")
-    parser.add_argument(
-        "--api-key",
-        default=os.environ.get("NOOSPHERE_PROVENANCE_API_KEY"),
-        help="Noosphere signing API key (X-API-Key). Defaults to $NOOSPHERE_PROVENANCE_API_KEY",
-    )
     parser.add_argument("--artifact", default=None, help="Optional artifact path to sign, e.g. review.html")
     parser.add_argument("--receipt-output", default=None, help="Optional path for signing receipt JSON")
     parser.add_argument(
@@ -742,8 +829,10 @@ def main() -> int:
             return 2
         return check_current(case_dir, output)
 
+    if args.sign_endpoint and sensitive_mode():
+        print("sensitive mode: remote signing is blocked; building the unsigned manifest only", file=sys.stderr)
+        args.sign_endpoint = None
     if args.sign_endpoint:
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
         from spotlight_safe import SafetyError, validate_url
 
         try:
@@ -776,7 +865,6 @@ def main() -> int:
                     args.artifact,
                     args.credential_id,
                     args.receipt_output,
-                    args.api_key,
                 )
                 atomic_replace(output, rendered_bytes(pointer))
         else:
@@ -800,11 +888,17 @@ def main() -> int:
                 )
                 try:
                     receipt = post_for_signing(
-                        args.sign_endpoint, manifest, args.artifact, args.credential_id, args.api_key
+                        args.sign_endpoint, manifest, args.artifact, args.credential_id
                     )
                     atomic_replace(receipt_path, rendered_bytes(receipt))
-                    manifest["signing"]["receipt_status"] = RECEIPT_RECEIVED_UNVERIFIED
+                    verification = noosphere_verify.verify_sidecar(receipt)
                     manifest["signing"]["receipt_path"] = str(receipt_path.relative_to(case_dir))
+                    manifest["signing"]["verification"] = verification
+                    if verification["verified"]:
+                        manifest["status"] = "signed"
+                        manifest["signing"]["signed_at"] = now_iso()
+                    else:
+                        manifest["signing"]["receipt_status"] = RECEIPT_RECEIVED_UNVERIFIED
                 except (
                     urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError, SigningResponseError
                 ) as exc:

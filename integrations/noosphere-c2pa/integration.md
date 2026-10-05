@@ -9,7 +9,7 @@ Signing requires a Noosphere API key, sent as the `X-API-Key` header with the `s
 Environment:
 
 - `NOOSPHERE_C2PA_URL` — signer endpoint, e.g. `https://platform.noosphere.tech/api/provenance/sign`
-- `NOOSPHERE_PROVENANCE_API_KEY` — Noosphere signing API key (sent as `X-API-Key`). Required to sign.
+- `NOOSPHERE_PROVENANCE_API_KEY` — Noosphere signing API key (sent as `X-API-Key`, only to `https://platform.noosphere.tech`). Required to sign; read from the environment only.
 - `NOOSPHERE_C2PA_CREDENTIAL_ID` — signer credential id, if Noosphere exposes multiple credentials (optional)
 
 Preflight reports this integration as `unconfigured` until both
@@ -40,8 +40,16 @@ receipt to:
 
 `{CASE_DIR}/data/provenance-signing-receipt.json`
 
-An accepted receipt is recorded as `receipt_status: received_unverified`; the
-package stays `unsigned` until local C2PA verification exists.
+An accepted receipt is verified locally with `c2patool` (0.27.22 tested)
+against `c2pa-trust-list.pem`. Only a `Trusted` result marks the package
+`signed`; otherwise it is recorded as `receipt_status: received_unverified` and
+stays `unsigned`.
+
+`c2pa-trust-list.pem` is the official C2PA trust list, copied unchanged from
+`c2pa-org/conformance-public` `trust-list/C2PA-TRUST-LIST.pem` at commit
+`70ec46e16962b81e70795fcb50a05e0128329a20` (2026-08-13). Noosphere's
+development CA is not on it, so receipts signed under that CA stay unverified.
+Update the file from the same source when the list changes.
 
 ## Editorial Boundary
 
