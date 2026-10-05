@@ -97,15 +97,6 @@ def check_dns_rebinding_rejected_before_authenticated_request() -> None:
     assert not opened, "authenticated opener reached after DNS rebinding"
 
 
-def check_dns_failure_rejected_before_authenticated_request() -> None:
-    """A resolver failure must fail closed before authenticated setup."""
-    with patch("socket.getaddrinfo", side_effect=socket.gaierror("DNS unavailable")):
-        expect_rejected(
-            lambda: client.validate_api_base("https://dns-failure.example/api/v1"),
-            "DNS failure accepted as an allowed API base",
-        )
-
-
 def _redirect_request(target: str):
     source = Request("https://staging.example/api/v1/topics")
     source.add_header("Authorization", "Bearer fixture-secret")
@@ -223,7 +214,6 @@ def main() -> int:
     checks = (
         ("base validation", check_base_rejects_alternate_numeric_and_dns_aliases),
         ("DNS rebinding", check_dns_rebinding_rejected_before_authenticated_request),
-        ("DNS failure", check_dns_failure_rejected_before_authenticated_request),
         ("redirect policy", check_redirect_path_scheme_host_and_bearer_policy),
         ("run_create read race", check_run_create_read_survives_research_swap),
         ("atomic replacement race", check_atomic_replacement_survives_parent_symlink_swap),

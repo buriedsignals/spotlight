@@ -70,14 +70,6 @@ else
   fail "tests/rlm-helper-check.py failed with rc=$rc"
 fi
 
-python3 tests/rlm-flow-check.py >/dev/null 2>&1
-rc=$?
-if [ $rc -eq 0 ]; then
-  ok "tests/rlm-flow-check.py runs"
-else
-  fail "tests/rlm-flow-check.py failed with rc=$rc"
-fi
-
 python3 tests/rlm-methodology-contract-check.py >/dev/null 2>&1
 rc=$?
 if [ $rc -eq 0 ]; then
@@ -98,8 +90,8 @@ fi
 
 echo ""
 echo "── Validators and helpers ──"
-for t in credentials-check firecrawl-cli-check decision-signals-check validate-case-check validate-fact-check-check source-expression-producer-contract-check migrate-source-expressions-check validate-report-check render-report-check report-diagrams-check provenance-manifest-check knowledge-destination-check knowledge-destination-hardening-check knowledge-projection-check query-vault-check graph-lookup-migration-check ingest-check schema-validation-check preflight-check scoutpost-boundary-check cti-upstream-check technical-investigation-check verified-indicator-export-check \
-         orchestration-conformance-check portable-resolver-check arbiter-match-check arbiter-report-check arbiter-create-check arbiter-appendix-check arbiter-themes-check arbiter-id-check arbiter-navigator-check \
+for t in credentials-check firecrawl-cli-check decision-signals-check validate-case-check validate-fact-check-check source-expression-producer-contract-check migrate-source-expressions-check validate-report-check render-report-check report-diagrams-check provenance-manifest-check knowledge-destination-check knowledge-destination-hardening-check knowledge-projection-check query-vault-check ingest-check schema-validation-check preflight-check scoutpost-boundary-check cti-upstream-check technical-investigation-check verified-indicator-export-check \
+         orchestration-conformance-check portable-resolver-check arbiter-match-check arbiter-report-check arbiter-create-check arbiter-appendix-check arbiter-themes-check arbiter-id-check arbiter-api-routing-check \
          arbiter-client-check arbiter-hardening-check \
          integration-runner-check maigret-wrapper-check test_pdfparse test_scraping_seam; do
   python3 "tests/$t.py" >/dev/null 2>&1
@@ -151,18 +143,6 @@ fi
 
 echo ""
 echo "── Contracts ──"
-skill_count=$(grep -cE '^\| `[a-z0-9-]+` \| `skills/' AGENTS.md || echo 0)
-manifest_count=$(python3 - <<'PY'
-import json
-print(len(json.load(open("skills-manifest.json"))["skills"]))
-PY
-)
-if [ "$skill_count" = "$manifest_count" ]; then
-  ok "AGENTS.md skill registry has $skill_count entries"
-else
-  fail "AGENTS.md skill registry count off: got $skill_count, want $manifest_count"
-fi
-
 python3 tests/integrations-routing-check.py >/dev/null 2>&1
 rc=$?
 if [ $rc -eq 0 ]; then

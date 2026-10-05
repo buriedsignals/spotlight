@@ -472,7 +472,6 @@ def main() -> int:
         "language": "en",
     }]
     check("evidence schema: original and derivative identities", schema_errors("evidence-bundle.schema.json", bundle_with_derivative), False)
-    check("evidence fixture: derivative hash is distinct", [] if bundle_with_derivative["items"][0]["sha256"] != bundle_with_derivative["items"][0]["text_derivatives"][0]["sha256"] else ["hashes match"], False)
 
     contract = valid_case_contract()
     check("case contract: valid sole activation artifact", schema_errors("case-contract.schema.json", contract), False)

@@ -523,6 +523,7 @@ def main() -> int:
             [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
         )
         assert mismatch.returncode == 3, mismatch.stdout
+        assert 'claim text does not exactly match the linked finding' in mismatch.stdout, mismatch.stdout
 
         # Legacy aliases cannot override the canonical fields in claims[].
         case = build_case(Path(tmp) / "mixed-claim-aliases")
@@ -535,6 +536,7 @@ def main() -> int:
             [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
         )
         assert mixed_aliases.returncode == 3, mixed_aliases.stdout
+        assert 'legacy claim/status aliases are not allowed' in mixed_aliases.stdout, mixed_aliases.stdout
 
         # An absolute source outside the case cannot anchor a verified verdict.
         case = build_case(Path(tmp) / "path-escape")
@@ -549,6 +551,7 @@ def main() -> int:
             [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
         )
         assert escaped.returncode == 3, escaped.stdout
+        assert 'does not resolve to a case-local file' in escaped.stdout, escaped.stdout
 
         # An honestly marked inaccessible artifact cannot anchor a positive verdict.
         case = build_case(Path(tmp) / "inaccessible-anchor")
@@ -560,6 +563,7 @@ def main() -> int:
             [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
         )
         assert inaccessible.returncode == 3, inaccessible.stdout
+        assert 'positive verdict needs an accessible case-local evidence anchor' in inaccessible.stdout, inaccessible.stdout
 
         case = build_case(Path(tmp) / "missing-access-method")
         fact_check_path = case / "data" / "fact-check.json"
@@ -570,6 +574,7 @@ def main() -> int:
             [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
         )
         assert missing_access.returncode == 3, missing_access.stdout
+        assert 'positive verdict needs an accessible case-local evidence anchor' in missing_access.stdout, missing_access.stdout
 
         # Canonical bundles require structured, claim-exact links.
         case = build_case(Path(tmp) / "loose-bundle-link")
@@ -581,6 +586,7 @@ def main() -> int:
             [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
         )
         assert loose_bundle.returncode == 3, loose_bundle.stdout
+        assert 'claim_links[0]: must be an object' in loose_bundle.stdout, loose_bundle.stdout
 
         case = build_case(Path(tmp) / "incomplete-canonical-bundle")
         bundle_path = case / "data" / "evidence-bundle.json"
@@ -591,6 +597,7 @@ def main() -> int:
             [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
         )
         assert incomplete_bundle.returncode == 3, incomplete_bundle.stdout
+        assert "missing or empty 'source_url'" in incomplete_bundle.stdout, incomplete_bundle.stdout
 
         # Legacy evidence[] metadata may be preserved, but cannot itself verify a claim.
         case = build_case(Path(tmp) / "legacy-bundle-anchor")
@@ -615,6 +622,7 @@ def main() -> int:
             [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
         )
         assert legacy_bundle.returncode == 3, legacy_bundle.stdout
+        assert 'evidence bundles cannot anchor a positive verdict' in legacy_bundle.stdout, legacy_bundle.stdout
 
         # A prefix, blank line, or BOM cannot disguise an RLM-derived lead as source evidence.
         case = build_case(Path(tmp) / "derived-lead-anchor")
@@ -625,6 +633,7 @@ def main() -> int:
             [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
         )
         assert derived.returncode == 3, derived.stdout
+        assert 'is an RLM-distilled lead file, not source evidence' in derived.stdout, derived.stdout
 
         # Every prose block must stay attached to a known fact-checked finding.
         case = build_case(Path(tmp) / "unknown-reference")

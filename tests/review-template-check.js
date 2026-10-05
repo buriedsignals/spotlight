@@ -20,7 +20,7 @@ const feedbackSchema = fs.readFileSync(
 const scriptBlocks = [...template.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)];
 const mainScript = scriptBlocks
   .map((match) => match[1])
-  .find((body) => body.includes("function renderProvenance"));
+  .find((body) => body.includes("investigation-data"));
 
 assert.ok(mainScript, "review HTML includes the main render script");
 assert.doesNotThrow(() => new Function(mainScript), "review HTML inline script is syntactically valid");
@@ -32,23 +32,19 @@ assert.equal(
 
 assert.match(template, /id="provenance-block"/, "review HTML exposes a provenance panel");
 assert.match(template, /Provenance \/ C2PA/, "review HTML labels C2PA provenance state");
-assert.match(template, /function renderProvenance/, "review HTML renders provenance manifests");
-assert.match(template, /function renderGrounding/, "review HTML renders grounding detail");
 assert.match(template, /support_type/, "review HTML reads support type");
 assert.match(template, /missing_assumptions/, "review HTML shows missing assumptions");
 assert.match(template, /confidence_cap/, "review HTML shows confidence cap");
 assert.match(template, /evidence_bundle_refs/, "review HTML shows evidence bundle refs");
 assert.match(template, /human_verification_required/, "review HTML shows source verification requirements");
 assert.match(template, /local_file/, "review HTML keeps local source file paths visible");
-assert.match(template, /function renderSourceExpressions/, "review HTML renders source-expression chains");
 assert.match(template, /Source expression → finding → verdict/, "review HTML labels the complete audit chain");
-assert.match(template, /DATA\.source_expressions/, "review HTML joins the source-expression collection");
+assert.match(template, /\.source_expressions\b/, "review HTML reads the source_expressions payload key");
 assert.match(template, /finding_links/, "review HTML joins expressions by authoritative finding link");
 assert.match(template, /relation-supports/, "review HTML distinguishes supporting expressions");
 assert.match(template, /relation-contradicts/, "review HTML distinguishes contradicting expressions");
 assert.match(template, /lifecycle-superseded/, "review HTML styles superseded expression history");
 assert.match(template, /original_evidence_bundle_id/, "review HTML shows the source evidence identity");
-assert.match(template, /expressionLocator/, "review HTML shows the canonical source locator");
 assert.match(template, /expression_fingerprint/, "review HTML shows expression integrity hashes");
 assert.match(template, /expression\.attribution/, "review HTML shows printed attribution");
 assert.match(template, /expression\.language/, "review HTML shows source language");

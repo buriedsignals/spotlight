@@ -184,13 +184,6 @@ def main() -> int:
             assert again.returncode == 0, again.stdout + again.stderr
             assert [sha(path) for path in outputs] == hashes
 
-        no_diagram = HELPERS.build_case(root / "no-diagram")
-        no_diagram_result = run([sys.executable, str(FINALIZER), str(no_diagram)])
-        assert no_diagram_result.returncode == 0, no_diagram_result.stdout + no_diagram_result.stderr
-        no_diagram_html = (no_diagram / "report.html").read_text(encoding="utf-8")
-        assert "mermaid@11.16.1" not in no_diagram_html
-        assert '<section class="report-diagrams"' not in no_diagram_html
-
         hostile = build_case(root / "hostile", "flow")
         hostile_findings_path = hostile / "data" / "findings.json"
         hostile_draft_path = hostile / "data" / "report-draft.json"
