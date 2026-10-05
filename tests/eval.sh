@@ -245,10 +245,12 @@ d = json.load(open('tests/fixtures/findings.sample.json'))
 d['findings'][0]['claim'] = ''
 json.dump(d, open('$_VC_NEG/data/findings.json', 'w'))
 "
-if python3 scripts/validate-case.py "$_VC_NEG" >/dev/null 2>&1; then
-  fail "validate-case.py FAILED to reject empty 'claim' (negative test)"
-else
+# Exit 1 is a validation failure; 2 means the validator could not run.
+_vc_rc=0; python3 scripts/validate-case.py "$_VC_NEG" >/dev/null 2>&1 || _vc_rc=$?
+if [ "$_vc_rc" = "1" ]; then
   ok "validate-case.py rejects empty 'claim' (negative test)"
+else
+  fail "validate-case.py FAILED to reject empty 'claim' (negative test) (rc=$_vc_rc, want 1)"
 fi
 rm -rf "$_VC_NEG"
 
@@ -262,10 +264,11 @@ d = json.load(open('tests/fixtures/fact-check.sample.json'))
 d['claims'][0]['evidence_for'][0].pop('source')
 json.dump(d, open('$_VC_NEG/data/fact-check.json', 'w'))
 "
-if python3 scripts/validate-case.py "$_VC_NEG" >/dev/null 2>&1; then
-  fail "validate-case.py FAILED to reject malformed fact-check evidence item"
-else
+_vc_rc=0; python3 scripts/validate-case.py "$_VC_NEG" >/dev/null 2>&1 || _vc_rc=$?
+if [ "$_vc_rc" = "1" ]; then
   ok "validate-case.py rejects malformed fact-check evidence item"
+else
+  fail "validate-case.py FAILED to reject malformed fact-check evidence item (rc=$_vc_rc, want 1)"
 fi
 rm -rf "$_VC_NEG"
 
@@ -280,10 +283,11 @@ d = json.load(open('tests/fixtures/evidence-bundle.sample.json'))
 d['items'][0].pop('source_url')
 json.dump(d, open('$_VC_NEG/data/evidence-bundle.json', 'w'))
 "
-if python3 scripts/validate-case.py "$_VC_NEG" >/dev/null 2>&1; then
-  fail "validate-case.py FAILED to reject malformed evidence-bundle.json"
-else
+_vc_rc=0; python3 scripts/validate-case.py "$_VC_NEG" >/dev/null 2>&1 || _vc_rc=$?
+if [ "$_vc_rc" = "1" ]; then
   ok "validate-case.py rejects malformed evidence-bundle.json"
+else
+  fail "validate-case.py FAILED to reject malformed evidence-bundle.json (rc=$_vc_rc, want 1)"
 fi
 rm -rf "$_VC_NEG"
 
@@ -307,10 +311,11 @@ json.dump({
   }]
 }, open('$_VC_NEG/data/investigation-log.json', 'w'))
 "
-if python3 scripts/validate-case.py "$_VC_NEG" >/dev/null 2>&1; then
-  fail "validate-case.py FAILED to reject malformed investigation-log.json"
-else
+_vc_rc=0; python3 scripts/validate-case.py "$_VC_NEG" >/dev/null 2>&1 || _vc_rc=$?
+if [ "$_vc_rc" = "1" ]; then
   ok "validate-case.py rejects malformed investigation-log.json"
+else
+  fail "validate-case.py FAILED to reject malformed investigation-log.json (rc=$_vc_rc, want 1)"
 fi
 rm -rf "$_VC_NEG"
 

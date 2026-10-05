@@ -85,9 +85,3 @@ python3 integrations/rlm/benchmark_flow_suite.py \
   --out /private/tmp/spotlight-rlm-flow-suite-real-gemma4-e4b.json \
   --no-rlm-chunk-budget 12
 ```
-
-Run the smoke proxy without requiring Ollama:
-
-```bash
-python3 tests/rlm-flow-check.py
-```

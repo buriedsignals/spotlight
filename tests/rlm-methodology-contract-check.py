@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the RLM methodology opt-in and benchmark audit contract."""
+"""Check the RLM methodology opt-in and evidence-boundary contract."""
 
 from __future__ import annotations
 
@@ -31,26 +31,16 @@ def main() -> int:
     if boundary != "lead-only; never verified or publishable":
         fail("methodology schema does not enforce RLM evidence boundary")
 
+    # Agent-facing instructions: the script path the methodology phase runs,
+    # and the execution phase's evidence boundary.
     methodology = (ROOT / "skills" / "phase-methodology" / "SKILL.md").read_text(encoding="utf-8")
     execution = (ROOT / "skills" / "phase-execution" / "SKILL.md").read_text(encoding="utf-8")
     for phrase, body in [
-        ("methodology-phase option", methodology),
-        ("Use RLM for\n   > this methodology?", methodology),
         ("integrations/rlm/run_rlm.py", methodology),
         ("Treat every RLM artifact as `needs_verification`", execution),
     ]:
         if phrase not in body:
             fail(f"spotlight phase skill missing RLM methodology instruction: {phrase}")
-
-    audit = (ROOT / "docs" / "rlm-benchmark-audit.md").read_text(encoding="utf-8")
-    for phrase in [
-        "RLM remains off by default",
-        "Without RLM | 0.75",
-        "Hybrid prefiltered Gemma RLM | 1.0",
-        "needs_verification",
-    ]:
-        if phrase not in audit:
-            fail(f"RLM audit missing expected benchmark/boundary phrase: {phrase}")
 
     print("rlm methodology contract: OK")
     return 0

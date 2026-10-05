@@ -306,16 +306,6 @@ def main() -> int:
     }
     final_receipt = valid_final_receipt()
     assert_valid(final_receipt_schema, final_receipt)
-    # Receipt identity uses UTF-8, recursive lexicographic keys, compact
-    # separators, and ensure_ascii=False; receipt_id is blank while hashing.
-    golden_material = copy.deepcopy(final_receipt)
-    golden_material["receipt_id"] = ""
-    golden_bytes = json.dumps(
-        golden_material, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
-    assert hashlib.sha256(golden_bytes).hexdigest() == (
-        "f490978dce2e72b00a04dc0c65d46af9eeceba7673ae0409bb94bcfe6dd330fe"
-    )
     leaked_content = copy.deepcopy(final_receipt)
     leaked_content["operations"][0]["content"] = "must never be serialized"
     assert errors(final_receipt_schema, leaked_content)

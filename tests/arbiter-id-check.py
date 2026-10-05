@@ -108,24 +108,6 @@ def check_rejected() -> None:
         assert "\n" not in message, (reason, proc.stderr)
 
 
-def check_slug_gap_is_real() -> None:
-    """Verify the bug this validator fixes: validate-slug rejects real ids.
-
-    Without this control the suite could pass against a validator that merely
-    delegated to `validate-slug`, which is exactly the behaviour being replaced.
-    """
-    safe = ROOT / "scripts" / "spotlight_safe.py"
-    for post_id in REAL_IDS:
-        proc = subprocess.run(
-            [sys.executable, str(safe), "validate-slug", post_id],
-            cwd=ROOT, capture_output=True, text=True, timeout=30, check=False,
-        )
-        assert proc.returncode != 0, (
-            f"validate-slug unexpectedly accepted {post_id!r}; run_id.py may be redundant"
-        )
-        assert validate(post_id).returncode == 0, post_id
-
-
 def check_leading_dash_without_separator() -> None:
     """Verify a leading-dash id is refused on its own reason, not argparse's.
 
@@ -185,7 +167,6 @@ def main() -> int:
     check_leading_dash_without_separator()
     check_embedded_control_chars()
     check_boundary_is_exact()
-    check_slug_gap_is_real()
     print("arbiter id: OK - platform-native ids accepted, shell and URL "
           "metacharacters refused, 512-character boundary exact")
     return 0

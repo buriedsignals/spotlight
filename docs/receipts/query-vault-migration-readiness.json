@@ -15,8 +15,7 @@
   "scope_revocation_blocks_reads_before_deindex": true,
   "runtime_path": "spotlight_to_openknowledge_direct",
   "verification": [
-    "tests/query-vault-check.py",
-    "tests/graph-lookup-migration-check.py"
+    "tests/query-vault-check.py"
   ],
   "u7_activation_input_only": true
 }

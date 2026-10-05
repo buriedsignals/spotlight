@@ -262,6 +262,10 @@ for line in sys.stdin:
         assert revoked["data"]["retrieval_mode"] == "not_run"
         assert run(database, workspace, claim_id, ok=False).returncode != 0
 
+    # The agents reach these workflows only through their prompt instructions.
+    assert "--workflow dedup" in (ROOT / "agents/investigator.md").read_text(encoding="utf-8")
+    assert "--workflow prior-verdict" in (ROOT / "agents/fact-checker.md").read_text(encoding="utf-8")
+
     print("query vault checks passed")
 
 

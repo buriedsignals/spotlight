@@ -25,6 +25,7 @@ spec = importlib.util.spec_from_file_location("preflight", SCRIPT)
 pf = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pf)
 import _preflight_base as preflight_base  # noqa: E402
+from integrations import _credentials  # noqa: E402
 
 PASS = 0
 FAIL = 0
@@ -261,6 +262,13 @@ def main() -> int:
     }
     original_url = os.environ.pop("NOOSPHERE_C2PA_URL", None)
     original_api_key = os.environ.pop("NOOSPHERE_PROVENANCE_API_KEY", None)
+    # Resolve credentials against an empty checkout: by design the real one's
+    # .env or configured env_file also counts, and may hold a Noosphere key.
+    credential_root = Path(tempfile.mkdtemp(prefix="spotlight-preflight-credentials-"))
+    credential_patch = patch.object(
+        preflight_base, "credential", lambda name: _credentials.credential(name, credential_root)
+    )
+    credential_patch.start()
     try:
         report = preflight_base.build_report(noosphere)
         check(
@@ -354,6 +362,8 @@ def main() -> int:
         )
 
     finally:
+        credential_patch.stop()
+        shutil.rmtree(credential_root, ignore_errors=True)
         if original_url is None:
             os.environ.pop("NOOSPHERE_C2PA_URL", None)
         else:

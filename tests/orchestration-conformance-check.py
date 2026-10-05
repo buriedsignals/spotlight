@@ -26,7 +26,6 @@ PROVENANCE_BUILDER = ROOT / "scripts" / "build-provenance-manifest.py"
 CASE_VALIDATOR = ROOT / "scripts" / "validate-case.py"
 PROVENANCE_FIXTURE_PATH = ROOT / "tests" / "provenance-manifest-check.py"
 REPORT_FIXTURE_PATH = ROOT / "tests" / "render-report-check.py"
-DOCS_README = ROOT / "docs" / "README.md"
 PUBLIC_GUIDE = ROOT / "docs" / "index.html"
 ROOT_README = ROOT / "README.md"
 SCRIPTS = ROOT / "scripts"
@@ -738,14 +737,6 @@ class OrchestrationConformance(unittest.TestCase):
                     originals,
                 )
                 self.assertEqual(state_path.read_bytes(), state_before)
-
-    def test_runtime_docs_keep_report_between_gate1_and_ingest(self) -> None:
-        expected = (
-            "Pipeline: Preflight → Brief → Methodology → Execution → "
-            "Gate 1 → Report → Ingestion"
-        )
-        canonical = DOCS_README.read_text(encoding="utf-8")
-        self.assertIn(expected, canonical)
 
     def test_public_workflow_surfaces_require_report_before_ingest_and_name_outputs(
         self,

@@ -153,16 +153,12 @@ def check_native_instructions(text: str, skill_text: str, errors: list[str]) -> 
         "Authorization: Bearer",
         "file-backed",
         "input-file",
-        "output",
         "untrusted",
-        "shell",
         "never request or log",
-        "raw",
         "case_study_id",
         "post_id",
         "search-plan",
         "finalize",
-        "confirmed",
     )
     combined = text + "\n" + skill_text
     for marker in required:

@@ -222,13 +222,25 @@ def check_http_error_contract(client) -> None:
     assert len(calls) == 1, "rate-limited requests must not be retried automatically"
 
 
-def check_redirect_origin_policy() -> None:
-    """The authenticated opener must revalidate redirects before forwarding bearer auth."""
-    source = CLIENT.read_text(encoding="utf-8")
-    assert "HTTPRedirectHandler" in source, "redirect policy is not installed"
-    assert "Authorization" in source and "same-origin" in source.lower(), (
-        "redirect policy must strip bearer credentials across origins"
-    )
+def check_redirect_origin_policy(client) -> None:
+    """The opener that carries bearer auth must refuse a cross-origin redirect.
+
+    urllib's default redirect handler forwards Authorization to the new host,
+    so the policy only protects the key if it is installed in this opener.
+    """
+    # A refused local port: if the redirect were followed, the error would be
+    # a connection failure rather than the policy's ValueError.
+    director = client._build_pinned_opener((socket.AF_INET, ("127.0.0.1", 9))).__self__
+    request = Request("https://arbiter.example/api/v1/topics")
+    request.add_header("Authorization", "Bearer fixture-secret")
+    request.timeout = 5  # set by OpenerDirector.open, which this bypasses
+    headers = {"location": "https://evil.example/api/v1/topics"}
+    try:
+        director.error("https", request, io.BytesIO(b""), 302, "Found", headers)
+    except ValueError as exc:
+        assert "redirect changed origin" in str(exc), exc
+    else:
+        raise AssertionError("cross-origin redirect was followed with bearer auth")
 
 
 def check_default_pinned_handler_runtime_compatibility(client) -> None:
@@ -261,7 +273,7 @@ def main() -> int:
     check_request_shape_and_secret_boundary(client)
     check_post_body_and_per_call_timeout(client)
     check_http_error_contract(client)
-    check_redirect_origin_policy()
+    check_redirect_origin_policy(client)
     check_default_pinned_handler_runtime_compatibility(client)
     check_safe_research_paths(client)
     print("arbiter client boundary: OK")
