@@ -45,7 +45,7 @@ jobs:
               issue => !issue.pull_request && issue.title === title
             );
 
-            if (drift.status === "current") {
+            if (!drift.review_required) {
               if (existing?.state === "open") {
                 await github.rest.issues.update({
                   owner: context.repo.owner,
@@ -54,7 +54,7 @@ jobs:
                   state: "closed",
                 });
               }
-              core.info("The reviewed CTI Expert revision matches upstream HEAD.");
+              core.info(`CTI Expert upstream needs no review (${drift.status}).`);
               return;
             }
 
