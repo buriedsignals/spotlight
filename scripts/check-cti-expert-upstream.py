@@ -118,6 +118,9 @@ def main() -> int:
             "seen_sha": lock["seen_sha"],
             "upstream_head": head_sha,
             "status": status,
+            # Only an unacknowledged upstream revision needs a maintainer; an
+            # acknowledged skip (review_pending) may stay unpromoted indefinitely.
+            "review_required": status == "upstream_changed",
             "runtime_activated": False,
             "next_action": "none" if status == "current" else "review upstream diff; do not auto-activate",
         }

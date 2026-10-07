@@ -43,20 +43,26 @@ def main() -> int:
 
         current = run(lock, "--head-sha", SHA_A, "--strict")
         assert current.returncode == 0, current.stderr or current.stdout
-        assert json.loads(current.stdout)["status"] == "current"
+        current_json = json.loads(current.stdout)
+        assert current_json["status"] == "current"
+        assert current_json["review_required"] is False
 
         changed = run(lock, "--head-sha", SHA_B)
         assert changed.returncode == 0, changed.stderr or changed.stdout
         changed_json = json.loads(changed.stdout)
         assert changed_json["status"] == "upstream_changed"
         assert changed_json["runtime_activated"] is False
+        assert changed_json["review_required"] is True
 
         strict = run(lock, "--head-sha", SHA_B, "--strict")
         assert strict.returncode == 3
 
         updated = run(lock, "--head-sha", SHA_B, "--update-seen")
         assert updated.returncode == 0, updated.stderr or updated.stdout
-        assert json.loads(updated.stdout)["status"] == "review_pending"
+        updated_json = json.loads(updated.stdout)
+        assert updated_json["status"] == "review_pending"
+        # An acknowledged skip must not keep the review issue open (#44).
+        assert updated_json["review_required"] is False
         stored = json.loads(lock.read_text(encoding="utf-8"))
         assert stored["seen_sha"] == SHA_B
         assert stored["active_sha"] == SHA_A
