@@ -824,7 +824,7 @@
   }
   .offer .lede {
     font-size: 14px; line-height: 1.65; opacity: 0.75;
-    max-width: 44ch;
+    max-width: none;
     margin: 0 0 32px;
   }
   .offer ul {
@@ -994,21 +994,18 @@
     display: inline-flex;
     align-items: center;
     align-self: flex-start;
-    gap: 8px;
-    width: auto;
-    max-width: 100%;
-    padding: 0 0 4px;
-    border: 0;
-    border-bottom: 1px solid var(--muted-faint-dark);
-    background: transparent;
-    color: var(--muted-dark);
-    font-size: 10px;
-    transition: border-color 0.2s ease, color 0.2s ease;
+    gap: 10px;
+    padding: 16px 22px;
+    background: var(--accent-warm);
+    color: var(--ink);
+    font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase;
+    text-decoration: none;
+    transition: background 0.2s ease, color 0.2s ease;
   }
   .offer .indicator-lab-link:hover {
-    border-color: var(--accent-warm);
-    background: transparent;
-    color: var(--accent-warm);
+    background: var(--paper);
+    color: var(--ink);
   }
   .offer .indicator-lab-link span {
     transition: transform 0.2s ease;
@@ -1954,11 +1951,11 @@
     <article class="offer" data-reveal="card" data-stagger-idx="0">
       <div class="kicker">
         <span>Indicator Lab</span>
-        <span class="launch">Launching September 2026</span>
+        <span class="launch">Now open</span>
       </div>
       <h3>Investigations with AI. The tools to run your own</h3>
-      <p class="lede">Indicator Lab combines the Buried Signals tool suite with a monthly investigation debrief, a practical Case Note, and office hours every two weeks.</p>
-      <a class="indicator-lab-link" href="https://buriedsignals.com/join">Explore Indicator Lab <span aria-hidden="true">→</span></a>
+      <p class="lede">The Buried Signals tool suite, a monthly live workshop and Lab Newsletter, office hours every two weeks, and the training course. $10/month add-on to Indicator membership.</p>
+      <a class="indicator-lab-link" href="https://buriedsignals.com/join">Join Indicator Lab <span aria-hidden="true">→</span></a>
       <div class="offer-footer offer-footer--newsletter">
         <p class="offer-signup-error hidden" id="newsletter-error"></p>
         <p class="offer-signup-success hidden" id="newsletter-success" role="status">
