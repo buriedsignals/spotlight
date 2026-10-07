@@ -19,6 +19,11 @@ excludes index.html 'Splash'
 includes skills/navigator/SKILL.md 'OSINT tool discovery'
 includes scripts/navigator-connect 'NavigatorInstallerBridge'
 includes scripts/navigator-connect 'selected_runtime(args.runtime)'
+# spotlight-navigator must build its parser and reject unknown runtimes (#67).
+connect_rc=0
+connect_out="$(python3 scripts/navigator-connect --runtime not-a-runtime 2>&1)" || connect_rc=$?
+[ "$connect_rc" = "2" ] || note "navigator-connect must reject an unknown --runtime with exit 2 (rc=$connect_rc): $connect_out"
+case "$connect_out" in *"invalid choice: 'not-a-runtime'"*) ;; *) note "navigator-connect did not list valid runtimes: $connect_out" ;; esac
 includes install/navigator_bridge.py '"local": "pi-flue"'
 includes install/navigator_bridge.py '"codex": "codex-cli"'
 
