@@ -43,6 +43,7 @@ Artifacts are written under `{CASE_DIR}/research/maigret/{run_id}/`:
 - `request.json`
 - raw Maigret files
 - `normalized-leads.json`
-- `run-manifest.json`
+- `run-manifest.json`: command, exit code, the Maigret version (`tool_version`), and
+  `outputs[]` with the path, SHA-256 and size of every other file in the run directory
 
 Every normalized lead has `verification_status: "unverified"`. Inspect and archive underlying profile URLs before citing anything in `findings.json`.

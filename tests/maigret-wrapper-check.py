@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -59,8 +62,50 @@ def main() -> int:
         assert leads == []
         manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
         assert manifest["command"][0] == "maigret"
+        assert_outputs_hashed(manifest, Path(result["run_dir"]), {"request.json", "normalized-leads.json"})
         print("ok dry-run artifacts")
+
+    with tempfile.TemporaryDirectory(dir=ROOT / "cases") as tmp_dir, tempfile.TemporaryDirectory() as bin_dir:
+        install_fake_maigret(Path(bin_dir))
+        os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
+        request_path = write_request(Path(tmp_dir), {**valid, "project": Path(tmp_dir).name, "formats": ["json"]})
+        result = run(request_path)
+        assert result["status"] == "ok", result
+        assert result["lead_count"] == 1
+        manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
+        assert manifest["tool_version"] == "Maigret v0.4.4", manifest["tool_version"]
+        assert_outputs_hashed(
+            manifest,
+            Path(result["run_dir"]),
+            {"request.json", "normalized-leads.json", "maigret.json", "stdout.txt", "stderr.txt"},
+        )
+        print("ok live run records tool version and output hashes")
     return 0
+
+
+def assert_outputs_hashed(manifest: dict, run_dir: Path, expected: set[str]) -> None:
+    outputs = {item["path"]: item for item in manifest["outputs"]}
+    assert set(outputs) == expected, sorted(outputs)
+    for name, item in outputs.items():
+        data = (run_dir / name).read_bytes()
+        assert item["sha256"] == hashlib.sha256(data).hexdigest(), name
+        assert item["bytes"] == len(data), name
+
+
+def install_fake_maigret(bin_dir: Path) -> None:
+    """A stand-in Maigret: prints a version, or writes one found account to --json."""
+    script = bin_dir / "maigret"
+    script.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        "args = sys.argv[1:]\n"
+        "if args == ['--version']:\n"
+        "    print('Maigret v0.4.4'); sys.exit(0)\n"
+        "out = args[args.index('--json') + 1]\n"
+        "json.dump({args[0]: {'Example': {'url_user': 'https://example.com/' + args[0], 'status': 'Claimed'}}}, open(out, 'w'))\n",
+        encoding="utf-8",
+    )
+    script.chmod(script.stat().st_mode | stat.S_IXUSR)
 
 
 if __name__ == "__main__":

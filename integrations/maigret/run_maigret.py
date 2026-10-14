@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -127,6 +128,20 @@ def normalize_json_output(path: Path, request: dict[str, Any]) -> list[dict[str,
     return leads
 
 
+def maigret_version(manifest: RunManifest) -> str | None:
+    """Record which Maigret produced the run; a failed probe is a warning, not an error."""
+    try:
+        proc = run_subprocess(["maigret", "--version"], timeout=15)
+    except (OSError, subprocess.SubprocessError) as exc:
+        manifest.warnings.append(f"maigret --version failed: {exc}")
+        return None
+    text = (proc.stdout or proc.stderr).strip()
+    if proc.returncode != 0 or not text:
+        manifest.warnings.append("maigret --version returned no version")
+        return None
+    return text.splitlines()[0][:200]
+
+
 def run(request_path: str | Path, *, dry_run: bool = False) -> dict[str, Any]:
     request = validate_request(load_request(request_path))
     output_dir = integration_run_dir(request["project"], "maigret", request["run_id"])
@@ -139,6 +154,7 @@ def run(request_path: str | Path, *, dry_run: bool = False) -> dict[str, Any]:
 
     if shutil.which("maigret") is None and not dry_run:
         manifest.finish("error", error="maigret binary not found on PATH")
+        manifest.record_outputs(output_dir)
         write_json_atomic(output_dir / "run-manifest.json", manifest.as_dict())
         return {"status": "error", "error": "maigret binary not found on PATH", "run_dir": str(output_dir)}
 
@@ -146,6 +162,7 @@ def run(request_path: str | Path, *, dry_run: bool = False) -> dict[str, Any]:
         leads: list[dict[str, Any]] = []
         manifest.finish("dry_run", exit_code=0)
     else:
+        manifest.tool_version = maigret_version(manifest)
         proc = run_subprocess(command, timeout=request["timeout_seconds"] + 30)
         (output_dir / "stdout.txt").write_text(proc.stdout, encoding="utf-8")
         (output_dir / "stderr.txt").write_text(proc.stderr, encoding="utf-8")
@@ -157,6 +174,7 @@ def run(request_path: str | Path, *, dry_run: bool = False) -> dict[str, Any]:
             manifest.finish("ok", exit_code=proc.returncode)
 
     write_json_atomic(output_dir / "normalized-leads.json", {"leads": leads})
+    manifest.record_outputs(output_dir)
     write_json_atomic(output_dir / "run-manifest.json", manifest.as_dict())
     return {
         "status": manifest.status,

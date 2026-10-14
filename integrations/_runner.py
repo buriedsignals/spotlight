@@ -9,6 +9,7 @@ manifests, atomic JSON writes, and subprocess invocation consistent.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import os
@@ -206,6 +207,26 @@ class RunManifest:
     command: list[str] | None = None
     exit_code: int | None = None
     finished_at: str | None = None
+    tool_version: str | None = None
+    outputs: list[dict[str, Any]] = field(default_factory=list)
+
+    def record_outputs(self, run_dir: Path) -> None:
+        """Hash every artifact already written to the run directory.
+
+        The manifest itself is excluded because it is written after this call.
+        Paths are relative to the run directory so the record survives a move.
+        """
+        outputs = []
+        for path in sorted(run_dir.rglob("*")):
+            if not path.is_file() or path.is_symlink() or path.name == "run-manifest.json":
+                continue
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            outputs.append({
+                "path": path.relative_to(run_dir).as_posix(),
+                "sha256": digest,
+                "bytes": path.stat().st_size,
+            })
+        self.outputs = outputs
 
     def finish(self, status: str, *, exit_code: int | None = None, error: str | None = None) -> dict[str, Any]:
         self.status = status
@@ -227,6 +248,8 @@ class RunManifest:
             "errors": self.errors,
             "command": self.command,
             "exit_code": self.exit_code,
+            "tool_version": self.tool_version,
+            "outputs": self.outputs,
             "request": self.request,
         }
 
