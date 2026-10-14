@@ -4,6 +4,20 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Removed — Data Navigator source planning
+
+- Data Navigator is retired. The methodology contract no longer has
+  `navigator.data_sources`, `navigator_data_not_applicable_reason`, the
+  `data_source` query mode or the `data_sources` capability, and
+  `scripts/validate-methodology-navigator.py` no longer checks them. Older
+  cases that still carry these fields pass the methodology gate, which ignores
+  them. A strict JSON Schema check of such a case against
+  `schemas/methodology.schema.json` now rejects the old `data_source` mode and
+  `data_sources` capability values; Spotlight runs no such check.
+- The OSINT Navigator manifest, `osint` skill and Phase 2 prompt describe
+  tool discovery only. OSINT Navigator tool discovery and native Arbiter
+  access are unchanged.
+
 ### Added — REA static-analysis integration
 
 - `integrations/rea/` runs five static REA operations on files inside the case

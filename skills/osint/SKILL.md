@@ -64,7 +64,7 @@ When responding to an investigation query:
 
 ## OSINT Navigator
 
-Navigator is a live CLI-first capability for OSINT tool discovery and structured public-data source routing. **When available, load the portable `navigator` skill before using the curated list below.**
+Navigator is a live CLI-first capability for OSINT tool discovery. **When available, load the portable `navigator` skill before using the curated list below.**
 
 Payload boundary: Navigator requests may include only the minimal tool-selection
 query, country/region, source type, and investigation direction needed to pick
