@@ -4,6 +4,16 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added — Web-Check integration
+
+- `integrations/webcheck/` runs website and domain checks one at a time on the
+  member's own [Web-Check](https://github.com/lissy93/web-check) instance
+  (`WEB_CHECK_URL`). Lookup checks (DNS, RDAP/WHOIS, certificate-log
+  subdomains, Wayback history) run by default. Page checks (headers, TLS,
+  trackers, tech stack) contact the live host and need `contact_target: true`.
+  Port scans, traceroute and third-party scanners are never called. Results
+  are unverified observations, hashed in `run-manifest.json`.
+
 ### Added — Output hashes in integration run manifests
 
 - `run-manifest.json` now carries `outputs[]` (path, SHA-256 and size of every

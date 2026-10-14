@@ -5,6 +5,7 @@ manifests, atomic JSON writes, and subprocess invocation consistent.
 
     python3 integrations/_runner.py maigret request.json [--dry-run]
     python3 integrations/_runner.py rlm request.json
+    python3 integrations/_runner.py webcheck request.json [--dry-run]
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ FORBIDDEN_STATUSES = {"verified", "confirmed", "publishable"}
 INTEGRATION_ENTRYPOINTS = {
     "maigret": "maigret.run_maigret",
     "rlm": "rlm.run_rlm",
+    "webcheck": "webcheck.run_webcheck",
 }
 
 

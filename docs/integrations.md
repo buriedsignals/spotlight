@@ -28,6 +28,7 @@ An agent invokes a **skill** to get *guidance* and calls an **integration** to g
 | `noosphere-c2pa` | api | provenance-signing | `NOOSPHERE_C2PA_URL` | Optional case-level C2PA/content-credentials signing after Gate 1. |
 | `osint-navigator` | api | tool-discovery | `OSINT_NAV_API_KEY` | 10,000+ OSINT tools with AI-powered synthesized answers. Complements the curated 150-tool catalog in the `osint` skill. |
 | `unpaywall` | api | academic-open-access | `UNPAYWALL_EMAIL` | Legal open-access lookup for academic papers by DOI. Used only when selected in setup and green in preflight. |
+| `webcheck` | api | technical-osint | No key; `WEB_CHECK_URL` (optional; `unconfigured` until set) | Website and domain recon through the member's own [Web-Check](https://github.com/lissy93/web-check) instance. Lookup checks by default; page checks only with `contact_target: true`; port scans, traceroute and third-party scanners are never called. Unverified observations only. |
 
 Arbiter is a partner integration. Each user registers with the
 [Indicator partner signup link](https://arbiter.simppl.org/auth/register?eventSignup=5cce20c609334e538f07127322361862e3136e3d-324a-4c60-894a-5f42d2d57f8a),

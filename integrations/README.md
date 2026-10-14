@@ -21,9 +21,11 @@ An agent invokes a skill to get *guidance*; it calls an integration to get *data
 | `browser-harness` | browser-automation | No | none |
 | `browser-use` | browser-automation | No (OSS); optional cloud | `BROWSER_USE_API_KEY` (optional) |
 | `junkipedia` | social-osint | Yes | `JUNKIPEDIA_API_KEY` |
+| `maigret` | social-osint | No | none (reviewed `maigret` CLI on `PATH`) |
 | `noosphere-c2pa` | provenance-signing | Yes | `NOOSPHERE_C2PA_URL`, `NOOSPHERE_PROVENANCE_API_KEY`, `NOOSPHERE_C2PA_CREDENTIAL_ID` (optional) |
 | `osint-navigator` | tool-discovery | Yes | `OSINT_NAV_API_KEY` |
 | `unpaywall` | academic-open-access | Yes | `UNPAYWALL_EMAIL` |
+| `webcheck` | technical-osint | Optional — `unconfigured` until set | `WEB_CHECK_URL` (the member's own Web-Check instance) |
 
 Arbiter has no shared or server-side Spotlight credential. Register through the
 [Indicator partner signup link](https://arbiter.simppl.org/auth/register?eventSignup=5cce20c609334e538f07127322361862e3136e3d-324a-4c60-894a-5f42d2d57f8a),
