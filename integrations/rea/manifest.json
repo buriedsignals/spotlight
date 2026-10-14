@@ -1,0 +1,23 @@
+{
+  "id": "rea",
+  "name": "REA (static analysis)",
+  "description": "Static, no-execution analysis of local artifacts with the REA CLI: JavaScript/Electron apps, HAR or mitmproxy captures, .NET assemblies and Android APKs. Produces unverified observations only.",
+  "category": "technical-osint",
+  "type": "cli",
+  "requires_key": false,
+  "env_vars": [],
+  "local_binary": "rea",
+  "version_args": ["--version"],
+  "capabilities": [
+    "electron-app-analysis",
+    "javascript-module-graph",
+    "network-capture-analysis",
+    "dotnet-assembly-inventory",
+    "android-package-inspection"
+  ],
+  "invocable_by": ["investigator", "fact-checker"],
+  "homepage": "https://github.com/morluto/rea",
+  "docs": "https://github.com/morluto/rea/blob/main/docs/cli.md",
+  "egress_note": "The five allowed operations declare no network access in REA's capability catalog; inputs are local files inside the case directory.",
+  "risk_note": "Static analysis shows what code and captures contain, not what an app did on a given device or who built it. Pinned to a reviewed release because REA ships breaking majors often."
+}

@@ -22,6 +22,7 @@ An agent invokes a skill to get *guidance*; it calls an integration to get *data
 | `browser-use` | browser-automation | No (OSS); optional cloud | `BROWSER_USE_API_KEY` (optional) |
 | `junkipedia` | social-osint | Yes | `JUNKIPEDIA_API_KEY` |
 | `maigret` | social-osint | No | none (reviewed `maigret` CLI on `PATH`) |
+| `rea` | technical-osint | No | none (reviewed `rea-agents@6.4.0` CLI on `PATH`) |
 | `noosphere-c2pa` | provenance-signing | Yes | `NOOSPHERE_C2PA_URL`, `NOOSPHERE_PROVENANCE_API_KEY`, `NOOSPHERE_C2PA_CREDENTIAL_ID` (optional) |
 | `osint-navigator` | tool-discovery | Yes | `OSINT_NAV_API_KEY` |
 | `unpaywall` | academic-open-access | Yes | `UNPAYWALL_EMAIL` |

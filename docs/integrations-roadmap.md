@@ -16,6 +16,11 @@ These integrations have architecture ready in Spotlight (manifest + integration 
 - **Reality Defender** — deepfake detection. Use case: validating image and video evidence for synthetic-media artefacts before citation.
 - **Klarety** — disinformation detection. Use case: scoring claims and narratives for coordinated-inauthentic-behaviour signals during fact-checking.
 
+## Later
+
+- **REA beyond static analysis** — runtime capture, browser, Android-device and native-decompiler commands (Hopper/Ghidra/IDA). Not wrapped: they run the target or need commercial licences.
+- **OTInstaller-style tool registry** — reviewed 2026-10-14 and not adopted (Linux-only v0.0.2; its registry includes breach, WhatsApp-monitoring and Instagram-monitoring tools that `upstreams/cti-expert/review-policy.md` blocks). Its per-run hash sidecar is now `run-manifest.json` `outputs[]`.
+
 ## Activation checklist (when API access arrives)
 
 1. Create `integrations/<name>/manifest.json` per the standard pattern (see existing integrations).

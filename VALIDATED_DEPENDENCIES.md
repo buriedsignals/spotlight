@@ -15,6 +15,13 @@ Reviewed pins currently consumed by both Engine installation paths:
 - `@inkeep/open-knowledge` `0.54.3`
 - `crawl4ai` `0.9.0`
 
+Reviewed pins for optional integrations that Engine does not install. The user
+installs them only after enabling the integration; unpinned installs are not
+allowed:
+
+- `maigret` `0.4.4` (`integrations/maigret`)
+- `rea-agents` `6.4.0` (`integrations/rea`; `REVIEWED_VERSION` in `run_rea.py`)
+
 Secrets enter Engine's operating-system credential broker: through Indicator
 Labs' protected prompt for managed installs, or through the protected `bsig`
 stdin/keychain flow for open-source installs. Values never belong in agent chat,
