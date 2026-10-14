@@ -29,6 +29,7 @@
         "endpoint": { "type": ["string", "null"] },
         "receipt_path": { "type": "string" },
         "receipt_status": { "const": "received_unverified" },
+        "verification": { "$ref": "#/definitions/verification" },
         "signed_at": { "type": "string", "format": "date-time" },
         "error": { "type": "string" },
         "attempt_path": { "type": "string" }
@@ -196,9 +197,25 @@
         "signing_status": { "enum": ["unsigned", "signed", "signing_failed"] },
         "receipt_status": { "const": "received_unverified" },
         "receipt_path": { "type": "string" },
+        "verification": { "$ref": "#/definitions/verification" },
         "attempt_path": { "type": "string" },
         "error": { "type": "string" },
         "updated_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "verification": {
+      "description": "Local C2PA verification of the signing receipt. Only verified: true marks a package signed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verifier", "verified"],
+      "properties": {
+        "verifier": { "const": "c2patool" },
+        "verified": { "type": "boolean" },
+        "version": { "type": "string" },
+        "validation_state": { "type": ["string", "null"] },
+        "failures": { "type": "array", "items": { "type": "string" } },
+        "trust_anchors": { "type": "string" },
+        "reason": { "type": "string" }
       }
     }
   }
