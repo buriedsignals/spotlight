@@ -32,6 +32,7 @@ The skill is cheap to load — it's a routing table, not a deep methodology guid
 | `junkipedia` | social-osint | narrative-tracking, misinformation-search, social-media-monitoring, cross-platform-query | Tracking how a claim spread; finding social posts deleted from origin; cross-platform narrative investigation. |
 | `apify` | social-osint | social-post-collection, profile-post-history, conversation-thread-capture, keyword-post-search, cross-platform-collection | Bounded collection of public posts from X, Instagram, TikTok, Facebook, or LinkedIn when no native platform API path fits. Optional: `unconfigured` until `APIFY_API_TOKEN` is set. Billed to the member's own Apify account. X collection violates X ToS even for public posts — record the collection authority in `access_notes` and prefer the official API or a licensed broker where legal scrutiny is likely. |
 | `maigret` | social-osint | username-search, account-discovery, profile-url-collection | Username-led account discovery. Produces candidate profile leads only; never use as attribution proof. |
+| `rea` | technical-osint | electron-app-analysis, javascript-module-graph, network-capture-analysis, dotnet-assembly-inventory, android-package-inspection | Static, no-execution look inside a file the case holds: Electron app, HAR/mitmproxy capture, .NET assembly or APK. Requires the reviewed `rea-agents@6.4.0` CLI on `PATH`. Observations only; never claims what an app did on a device. |
 | `webcheck` | technical-osint | dns-records, domain-registration, certificate-transparency-subdomains, archive-history, http-headers, tracker-detection, tech-stack | Website or domain recon through the member's own Web-Check instance. Lookup checks (DNS, RDAP/WHOIS, CT subdomains, Wayback history) by default; page checks (headers, TLS, trackers, tech stack) contact the live host and need `contact_target: true` plus the user's explicit approval; never for a suspicious indicator. `unconfigured` until `WEB_CHECK_URL` is set. Observations only, never attribution. |
 | `noosphere-c2pa` | provenance-signing | case-provenance-manifest, c2pa-content-credentials, optional-signing-receipt | **PENDING integration — opt-in signer.** Preflight reports `unconfigured` until `NOOSPHERE_C2PA_URL` is set. After Gate 1, the base provenance path always writes `status: unsigned` and proceeds; signing runs only against a configured signer endpoint. Never a mandatory or blocking step. |
 | `osint-navigator` | tool-discovery | tool-search-by-keyword, complex-query-synthesis, country-specific-tool-lookup | Entitlement-gated (subscription tier): first tool-discovery pass in Phase 2 when green + sensitive mode false. Local/open tier and all fallbacks use `scripts/osint-tools.py find` (local SQL index, 12,500 tools). |
@@ -87,6 +88,11 @@ What's the task?
 │     → page checks (`contact_target: true`) contact the live host: only with the user's
 │       explicit approval and an OPSEC plan in the methodology, never for a suspicious indicator
 │     → fallback: crt.sh / RDAP / Wayback by hand as described in infrastructure-history
+│
+├── "What does this app / capture / assembly contain: endpoints, trackers, IPC, permissions"
+│     → rea  (if green — check preflight) via `integrations/rea/integration.md`; the artifact
+│       must already be in the case directory
+│     → static only: never run the target; record how the artifact was obtained
 │
 ├── "Phase 2 methodology tool selection" / "Need a tool I don't know for category X" / "Compare tools" / "Niche country-specific tool"
 │     → osint-navigator  (first pass ONLY if entitled + green + sensitive mode false — subscription tier)

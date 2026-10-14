@@ -4,6 +4,7 @@ Wrappers use this module to keep path containment, request parsing, run
 manifests, atomic JSON writes, and subprocess invocation consistent.
 
     python3 integrations/_runner.py maigret request.json [--dry-run]
+    python3 integrations/_runner.py rea request.json [--dry-run]
     python3 integrations/_runner.py rlm request.json
     python3 integrations/_runner.py webcheck request.json [--dry-run]
 """
@@ -34,6 +35,7 @@ UNSAFE_CHARS_RE = re.compile(r"[\x00\r\n`$;&|<>]")
 FORBIDDEN_STATUSES = {"verified", "confirmed", "publishable"}
 INTEGRATION_ENTRYPOINTS = {
     "maigret": "maigret.run_maigret",
+    "rea": "rea.run_rea",
     "rlm": "rlm.run_rlm",
     "webcheck": "webcheck.run_webcheck",
 }

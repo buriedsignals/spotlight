@@ -25,6 +25,7 @@ An agent invokes a **skill** to get *guidance* and calls an **integration** to g
 | `browser-use` | library | browser-automation | No (optional cloud) | Legacy/adjacent browser automation. Do not use as default while dev-browser is green. |
 | `junkipedia` | api | social-osint | `JUNKIPEDIA_API_KEY` | Narrative / misinformation tracking across social platforms. Application-based access. |
 | `maigret` | cli | social-osint | No | Username-led account discovery. Produces unverified profile leads only, not attribution proof. |
+| `rea` | cli | technical-osint | No | Static, no-execution analysis of case files with the [REA](https://github.com/morluto/rea) CLI: Electron apps, HAR/mitmproxy captures, .NET assemblies, APKs. Runtime capture, browser, device and decompiler commands are not reachable. Reviewed release `rea-agents@6.4.0`. |
 | `noosphere-c2pa` | api | provenance-signing | `NOOSPHERE_C2PA_URL` | Optional case-level C2PA/content-credentials signing after Gate 1. |
 | `osint-navigator` | api | tool-discovery | `OSINT_NAV_API_KEY` | 10,000+ OSINT tools with AI-powered synthesized answers. Complements the curated 150-tool catalog in the `osint` skill. |
 | `unpaywall` | api | academic-open-access | `UNPAYWALL_EMAIL` | Legal open-access lookup for academic papers by DOI. Used only when selected in setup and green in preflight. |

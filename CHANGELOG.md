@@ -4,6 +4,16 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added — REA static-analysis integration
+
+- `integrations/rea/` runs five static REA operations on files inside the case
+  directory: Electron/JavaScript apps, HAR or mitmproxy captures, .NET
+  assemblies (two views) and Android APKs. REA's runtime capture, browser,
+  device, decompiler, setup and update commands are not reachable. The reviewed
+  release is `rea-agents@6.4.0`; another version is recorded as a warning.
+- `VALIDATED_DEPENDENCIES.md` now lists the optional-integration pins Engine
+  does not install (`maigret 0.4.4`, `rea-agents 6.4.0`).
+
 ### Added — Web-Check integration
 
 - `integrations/webcheck/` runs website and domain checks one at a time on the
