@@ -229,7 +229,7 @@ class NavigatorInstallerBridge:
             return {
                 "status": "connected", "transport": "api/mcp", "tier": "member",
                 "capabilities": [], "mcp_url": self.contract["mcp_url"],
-                "detail": "Connected. Navigator enforces OSINT and Lab-only Data access at the service.",
+                "detail": "Connected. Navigator enforces OSINT access at the service.",
             }
         return {"status": "available", "transport": "api/mcp", "mcp_url": self.contract["mcp_url"]}
 

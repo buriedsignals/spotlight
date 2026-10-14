@@ -90,18 +90,11 @@ def methodology_with_navigator() -> dict:
             ],
             "fallback_used": False,
             "fallback_reason": "",
-			"data_sources": [{
-				"direction": "corporate ownership trail",
-				"considered": ["company registry"],
-				"selected": [],
-				"reason": "No executable structured source fits this fixture."
-			}],
         },
         "investigation_plan": [
             {
                 "direction": "corporate ownership trail",
                 "questions": ["Who owns Example Corp?"],
-				"navigator_data_not_applicable_reason": "Recorded in navigator.data_sources.",
                 "steps": [
                     {
                         "order": 1,
@@ -145,28 +138,27 @@ def main() -> int:
                 f"\nSTDOUT:\n{legacy_result.stdout}\nSTDERR:\n{legacy_result.stderr}"
             )
 
-        structured = methodology_with_navigator()
-        structured["navigator"]["data_sources"][0]["results"] = [{
-            "source_id": "global/procurement",
-            "interface": "cli",
-            "command": "navigator query global/procurement --input '{...}'",
-            "parameters": {"supplier": "Example Corp"},
-            "executed_at": "2026-07-17T12:01:00Z",
-            "source_urls": ["https://example.test/award/1"],
-            "warnings": [],
-            "output_path": "cases/sample/research/navigator-procurement.json",
-            "output_sha256": "a" * 64,
+        # Data Navigator is retired. Cases planned before the retirement may
+        # still carry navigator.data_sources (even incomplete results); the
+        # gate must ignore them rather than reject the archived methodology.
+        legacy_data = methodology_with_navigator()
+        legacy_data["navigator"]["data_sources"] = [{
+            "direction": "corporate ownership trail",
+            "considered": ["company registry"],
+            "selected": ["global/procurement"],
+            "reason": "Planned before Data Navigator retirement.",
+            "results": [{"source_id": "global/procurement", "interface": "cli"}],
         }]
-        write_json(methodology_path, structured)
-        structured_valid = run(case_dir, config)
-        if structured_valid.returncode != 0:
-            raise AssertionError(f"valid structured result should pass\n{structured_valid.stderr}")
-
-        structured["navigator"]["data_sources"][0]["results"][0].pop("output_sha256")
-        write_json(methodology_path, structured)
-        malformed_result = run(case_dir, config)
-        if malformed_result.returncode == 0 or "output_sha256 is required" not in malformed_result.stderr:
-            raise AssertionError("structured Navigator output without digest should fail")
+        legacy_data["navigator"]["capabilities"] = ["osint_tools", "data_sources"]
+        legacy_data["navigator"]["queries"][0]["mode"] = "data_source"
+        legacy_data["investigation_plan"][0]["navigator_data_not_applicable_reason"] = "legacy"
+        write_json(methodology_path, legacy_data)
+        legacy_data_result = run(case_dir, config)
+        if legacy_data_result.returncode != 0:
+            raise AssertionError(
+                "legacy navigator.data_sources must be ignored, not validated"
+                f"\nSTDOUT:\n{legacy_data_result.stdout}\nSTDERR:\n{legacy_data_result.stderr}"
+            )
 
         write_json(config, base_config(required=False))
         skipped = methodology_without_navigator()

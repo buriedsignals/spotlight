@@ -51,7 +51,7 @@
         "used": { "type": "boolean" },
         "status": { "enum": ["green", "yellow", "red", "missing", "unknown"] },
 		"interface": { "enum": ["cli", "api_fallback", "none"] },
-		"capabilities": { "type": "array", "items": { "enum": ["osint_tools", "data_sources"] } },
+		"capabilities": { "type": "array", "items": { "enum": ["osint_tools"] } },
         "queries": {
           "type": "array",
           "items": {
@@ -59,7 +59,7 @@
 			"required": ["direction", "response_path"],
             "properties": {
               "direction": { "type": "string" },
-			  "mode": { "enum": ["tool_discovery", "data_source"] },
+			  "mode": { "enum": ["tool_discovery"] },
 			  "interface": { "enum": ["cli", "api_fallback"] },
 			  "command": { "type": "string" },
 			  "catalog_id": { "type": "string" },
@@ -84,42 +84,6 @@
         },
         "fallback_used": { "type": "boolean" },
         "fallback_reason": { "type": "string" }
-		,"data_sources": {
-		  "type": "array",
-		  "items": {
-			"type": "object",
-			"required": ["direction", "considered", "selected", "reason"],
-			"properties": {
-			  "direction": { "type": "string" },
-			  "considered": { "type": "array", "items": { "type": "string" } },
-			  "selected": { "type": "array", "items": { "type": "string" } },
-			  "unavailable_capability": { "type": "string" },
-			  "reason": { "type": "string" },
-			  "playbook_path": { "type": "string" },
-			  "retrieved_at": { "type": "string", "format": "date-time" },
-			  "results": {
-				"type": "array",
-				"description": "Structured Navigator query artifacts recorded after execution.",
-				"items": {
-				  "type": "object",
-				  "required": ["source_id", "interface", "parameters", "executed_at", "source_urls", "warnings", "output_path", "output_sha256"],
-				  "properties": {
-					"source_id": { "type": "string" },
-					"interface": { "enum": ["cli", "api_fallback"] },
-					"command": { "type": "string" },
-					"endpoint": { "enum": ["/api/query"] },
-					"parameters": { "type": "object" },
-					"executed_at": { "type": "string", "format": "date-time" },
-					"source_urls": { "type": "array", "items": { "type": "string" } },
-					"warnings": { "type": "array", "items": { "type": "string" } },
-					"output_path": { "type": "string" },
-					"output_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
-				  }
-				}
-			  }
-			}
-		  }
-		}
       }
     },
     "rlm": {
@@ -156,7 +120,6 @@
           "direction": { "type": "string" },
           "questions": { "type": "array", "items": { "type": "string" } },
           "navigator_not_applicable_reason": { "type": "string" },
-		  "navigator_data_not_applicable_reason": { "type": "string" },
           "steps": {
             "type": "array",
             "items": {

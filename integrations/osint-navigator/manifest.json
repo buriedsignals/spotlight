@@ -1,7 +1,7 @@
 {
   "id": "osint-navigator",
   "name": "OSINT Navigator",
-  "description": "CLI-first Navigator capability for OSINT tool discovery and structured public-data source planning. It complements Spotlight's offline catalog and ordinary web acquisition.",
+  "description": "CLI-first Navigator capability for OSINT tool discovery. It complements Spotlight's offline catalog and ordinary web acquisition.",
   "category": "research-routing",
   "type": "cli",
   "requires_key": false,
@@ -9,9 +9,7 @@
   "capabilities": [
     "tool-search-by-keyword",
     "tool-search-by-category",
-    "country-specific-tool-lookup",
-    "structured-data-source-discovery",
-    "structured-data-querying"
+    "country-specific-tool-lookup"
   ],
   "invocable_by": ["investigator", "fact-checker"],
   "homepage": "https://navigator.indicator.media/",
