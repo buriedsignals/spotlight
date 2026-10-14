@@ -170,6 +170,7 @@ for line in sys.stdin:
                 "results": [
                     {"kind": "page", "path": "other/unrelated.md", "docName": "other/unrelated", "title": "Other", "score": 9, "signals": {"lexical": 1, "fullText": 1, "recency": 0, "vector": 1}, "snippet": "unrelated", "previewUrl": None},
                     {"kind": "page", "path": "spotlight/investigations/test-case.md", "docName": "spotlight/investigations/test-case", "title": "Current", "score": 8, "signals": {"lexical": 1, "fullText": 1, "recency": 0, "vector": 1}, "snippet": "current managed index", "previewUrl": None},
+                    {"kind": "page", "path": "spotlight/claims/legacy-f1", "docName": "spotlight/claims/legacy-f1", "title": "Legacy", "score": 6, "signals": {"lexical": 1, "fullText": 1, "recency": 0, "vector": 1}, "snippet": "extensionless legacy page", "previewUrl": None},
                     {"kind": "folder", "path": "spotlight/investigations", "docName": "spotlight/investigations", "title": "Folder", "score": 7, "signals": {"lexical": 1, "fullText": 0, "recency": 0}, "previewUrl": None}],
                 "elapsedMs": 1, "semantic": {"capable": True, "applied": args.get("semantic") is not False and args["query"] != "lexical only", "coverage": {"embedded": 1, "total": 1}}}
         elif tool == "exec":
@@ -186,7 +187,11 @@ for line in sys.stdin:
         broad = run(database, workspace, "--open-knowledge", str(fake), "river pollution")
         discovery = json.loads(broad.stdout)
         results = discovery["data"]["results"]
-        assert [item["envelope"]["source"]["path"] for item in results] == ["spotlight/investigations/test-case.md", "other/unrelated.md"]
+        # Agents often pass an unquoted multi-word query as separate arguments.
+        split = run(database, workspace, "--open-knowledge", str(fake), "river", "pollution")
+        assert json.loads(split.stdout)["data"]["results"] == results
+        # Open Knowledge 0.56 returns page paths without the .md extension.
+        assert [item["envelope"]["source"]["path"] for item in results] == ["spotlight/investigations/test-case.md", "other/unrelated.md", "spotlight/claims/legacy-f1.md"]
         assert results[0]["managed_current"] is True and results[0]["legacy"] is False
         assert results[1]["managed_current"] is False and results[1]["legacy"] is True
         assert results[0]["envelope"]["claim_index"][0]["id"] == claim_id

@@ -421,6 +421,14 @@ isolated local checkout proof. That proves discovery, not a complete model
 workflow, recipe execution, or packaged Desktop health. Existing Goose
 workflow/recipe use does not require rewriting the shared skill content.
 
+### Through Mycroft (Engine)
+
+Spotlight is not published as a Goose extension; `goose extensions install spotlight` does not exist. Goose reaches Spotlight through **Mycroft**, and both are installed by Engine:
+
+1. `bsig configure plan spotlight` with `runtime=mycroft` installs Spotlight (checkout, cases root, OpenKnowledge workspace, shared skills) and records its paths in `~/.config/buriedsignals/handoff/spotlight.json`.
+2. `bsig configure plan mycroft` owns the Goose config: it installs the catalog-pinned Goose Desktop, the `openknowledge` extension, and a `.goosehints` that points Goose at the Spotlight checkout, cases root, and vault from that handoff receipt. Engine refuses to write over a Goose config it did not create (`bsig doctor` reports `foreign-state`).
+3. Launch through Engine: `bsig run mycroft` (CLI) or `bsig run mycroft --desktop`. Engine injects the required keys and puts the Navigator CLI on `PATH`/`PYTHONPATH` at exec time. A Goose started directly (Dock, `goose run`) has neither, so Navigator falls back to the local tool index.
+
 ### Verb bindings
 
 | Verb | Goose equivalent |
