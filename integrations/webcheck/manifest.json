@@ -1,0 +1,25 @@
+{
+  "id": "webcheck",
+  "name": "Web-Check",
+  "description": "Website and domain recon (DNS, registration, certificates, archive history, headers, trackers, tech stack) through a self-hosted Web-Check instance. Produces unverified observations only.",
+  "category": "technical-osint",
+  "type": "api",
+  "requires_key": false,
+  "env_vars": [],
+  "activation_env_vars": ["WEB_CHECK_URL"],
+  "smoke_url_env": "WEB_CHECK_URL",
+  "capabilities": [
+    "dns-records",
+    "domain-registration",
+    "certificate-transparency-subdomains",
+    "archive-history",
+    "http-headers",
+    "tracker-detection",
+    "tech-stack"
+  ],
+  "invocable_by": ["investigator", "fact-checker"],
+  "homepage": "https://github.com/lissy93/web-check",
+  "docs": "https://web-check.xyz/checks",
+  "egress_note": "Requests go to the configured instance, which then queries DNS resolvers and public datasets (RDAP/WHOIS, Wayback CDX, crt.sh, CertSpotter, HackerTarget, Tranco, IP geolocation). Page-tier checks also send ordinary HTTP/TLS requests to the target; they run only with contact_target: true.",
+  "risk_note": "Infrastructure observations are not attribution. DNS, hosting, trackers and registration data change and can be shared, proxied or spoofed."
+}

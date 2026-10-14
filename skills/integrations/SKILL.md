@@ -32,6 +32,7 @@ The skill is cheap to load — it's a routing table, not a deep methodology guid
 | `junkipedia` | social-osint | narrative-tracking, misinformation-search, social-media-monitoring, cross-platform-query | Tracking how a claim spread; finding social posts deleted from origin; cross-platform narrative investigation. |
 | `apify` | social-osint | social-post-collection, profile-post-history, conversation-thread-capture, keyword-post-search, cross-platform-collection | Bounded collection of public posts from X, Instagram, TikTok, Facebook, or LinkedIn when no native platform API path fits. Optional: `unconfigured` until `APIFY_API_TOKEN` is set. Billed to the member's own Apify account. X collection violates X ToS even for public posts — record the collection authority in `access_notes` and prefer the official API or a licensed broker where legal scrutiny is likely. |
 | `maigret` | social-osint | username-search, account-discovery, profile-url-collection | Username-led account discovery. Produces candidate profile leads only; never use as attribution proof. |
+| `webcheck` | technical-osint | dns-records, domain-registration, certificate-transparency-subdomains, archive-history, http-headers, tracker-detection, tech-stack | Website or domain recon through the member's own Web-Check instance. Lookup checks (DNS, RDAP/WHOIS, CT subdomains, Wayback history) by default; page checks (headers, TLS, trackers, tech stack) contact the live host and need `contact_target: true` plus the user's explicit approval; never for a suspicious indicator. `unconfigured` until `WEB_CHECK_URL` is set. Observations only, never attribution. |
 | `noosphere-c2pa` | provenance-signing | case-provenance-manifest, c2pa-content-credentials, optional-signing-receipt | **PENDING integration — opt-in signer.** Preflight reports `unconfigured` until `NOOSPHERE_C2PA_URL` is set. After Gate 1, the base provenance path always writes `status: unsigned` and proceeds; signing runs only against a configured signer endpoint. Never a mandatory or blocking step. |
 | `osint-navigator` | tool-discovery | tool-search-by-keyword, complex-query-synthesis, country-specific-tool-lookup | Entitlement-gated (subscription tier): first tool-discovery pass in Phase 2 when green + sensitive mode false. Local/open tier and all fallbacks use `scripts/osint-tools.py find` (local SQL index, 12,500 tools). |
 | `decisions` | verification-signals | claim-grounding-signals, report-prose-fidelity, ingest-proposition-fidelity, ingest-entity-typing, ingest-claim-event-relation, cross-case-claim-matching, claim-facets | **Orchestrator only, opt-in per case.** Run `scripts/decision-signals.py` at Gate 1 preparation, after report drafting, and during ingest when `--check` reports ready, the config enables it, the case is not sensitive and the user agreed. Signals are classifications, never evidence; they only lower confidence or add flags. Uses the member's `OPENROUTER_API_KEY` (environment or `integrations.decisions.env_file`); `scripts/decision-signals.py CASE_DIR --phase gate1 --check` reports readiness. |
@@ -76,6 +77,16 @@ What's the task?
 │     → maigret if preflight is green and the operator accepts account-discovery noise
 │     → output is unverified account-discovery leads only
 │     → fallback: search() + social-media-intelligence skill
+│
+├── "What runs this website / who registered the domain / which subdomains, trackers,
+│    certificates or past versions does it have"
+│     → invoke-skill("technical-investigation") first: it decides whether the target is a
+│       suspicious indicator and records each path as observed / null / skipped / blocked
+│     → webcheck  (if green — check preflight, sensitive mode false) via
+│       `integrations/webcheck/integration.md`; lookup checks by default
+│     → page checks (`contact_target: true`) contact the live host: only with the user's
+│       explicit approval and an OPSEC plan in the methodology, never for a suspicious indicator
+│     → fallback: crt.sh / RDAP / Wayback by hand as described in infrastructure-history
 │
 ├── "Phase 2 methodology tool selection" / "Need a tool I don't know for category X" / "Compare tools" / "Niche country-specific tool"
 │     → osint-navigator  (first pass ONLY if entitled + green + sensitive mode false — subscription tier)

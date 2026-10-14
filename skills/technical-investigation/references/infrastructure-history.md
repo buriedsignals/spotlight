@@ -18,6 +18,10 @@ Use the smallest useful set of passive lanes:
 
 WARNING: Do not port-scan, fingerprint a live service, brute-force names, request sensitive paths, bypass access controls, or send direct probes to the target. If a direct retrieval becomes editorially necessary, it is outside this passive method and requires explicit approval and an OPSEC plan.
 
+### Web-Check
+
+When the `webcheck` integration is green, its lookup checks (`dns`, `txt-records`, `caa-records`, `dnssec`, `dns-server`, `whois`, `subdomains`, `archives`, `rank`, `block-lists`, `location`) are a quick passive pass over these lanes. They return the current state, except `archives` and the certificate-log `subdomains`, so they do not answer a historical question by themselves. Its page checks contact the live host and fall under the warning above: run them only with explicit approval and an OPSEC plan recorded in the methodology, never for a suspicious indicator. Record each check's `results.json` outcome in the coverage ledger.
+
 ## Timeline Workflow
 
 1. Preserve the original domain, URL, or IP and any claimed event time.
