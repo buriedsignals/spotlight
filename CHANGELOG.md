@@ -12,6 +12,13 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   other remote integrations, the rule not to call Arbiter in sensitive mode
   lives in the skill instructions.
 
+### Fixed — `spotlight-navigator` crashed on every run
+
+- `scripts/navigator-connect` raised `NameError` while building its parser, so
+  every invocation failed, including `--status`. It now imports
+  `NAVIGATOR_RUNTIME_IDS`. Reported by @JSF204 (#67); @Anai-Guo sent the same
+  fix first in #71.
+
 ### Fixed — Recorded evidence in the HTML report
 
 - `report.html` shows each finding's recorded evidence again, before the
