@@ -4,6 +4,12 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added — Output hashes in integration run manifests
+
+- `run-manifest.json` now carries `outputs[]` (path, SHA-256 and size of every
+  other file in the run directory) and `tool_version`. Maigret records the
+  output of `maigret --version`; a failed version probe is a warning.
+
 ### Removed — Arbiter client sensitive switch
 
 - `ArbiterClient` and `ArbiterClient.from_env()` no longer accept
