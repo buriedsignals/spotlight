@@ -164,6 +164,20 @@ class CallerTests(unittest.TestCase):
             (self.root / ".spotlight-config.json").write_text("broken config")
             self.assertEqual(self.cli("--provider", "parallel")[0], 3)
 
+    def test_frontmatter_booleans_comments_and_invalid_policy_fail_closed(self):
+        with patch.object(parallel.urllib.request, "urlopen", side_effect=AssertionError("egress")):
+            for directive in ["sensitive: true # private investigation", "sensitive: True",
+                              "sensitive: TRUE", "sensitive: yes", "sensitive: ON",
+                              "sensitive: unknown", 'sensitive: "true"',
+                              "sensitive: false\nsensitive: true", "name: missing flag"]:
+                with self.subTest(directive=directive):
+                    (self.root / "AGENTS.md").write_text("---\n" + directive + "\n---\n")
+                    self.assertEqual(self.cli("--provider", "parallel")[0], 3)
+        for directive in ["sensitive: false # ordinary case", "sensitive: False", "sensitive: OFF"]:
+            (self.root / "AGENTS.md").write_text("---\n" + directive + "\n---\n")
+            with patch.object(parallel.urllib.request, "urlopen", Transport()):
+                self.assertEqual(self.cli("--provider", "parallel")[0], 0)
+
     def test_unsupported_options_and_invalid_input_do_not_egress(self):
         with patch.object(parallel.urllib.request, "urlopen", side_effect=AssertionError("egress")):
             for args in [("--union",), ("--categories", "news"), ("--time-range", "month"), ("--limit", "0")]:

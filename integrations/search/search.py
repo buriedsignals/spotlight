@@ -29,13 +29,24 @@ def _allow_search() -> None:
     if os.environ.get("SPOTLIGHT_SENSITIVE", "").strip().lower() in {"1", "true", "yes", "on"}:
         raise SearchError("sensitive mode blocks web search")
     try:
-        manifest = (_CHECKOUT / "AGENTS.md").read_text(encoding="utf-8").split("---", 2)
-        if len(manifest) > 2 and re.search(r"^sensitive:\s*true\s*$", manifest[1], re.M):
+        lines = (_CHECKOUT / "AGENTS.md").read_text(encoding="utf-8").splitlines()
+        if not lines or lines[0] != "---" or "---" not in lines[1:]:
+            raise ValueError()
+        frontmatter = lines[1:lines.index("---", 1)]
+        directives = [line for line in frontmatter if re.match(r"^sensitive\s*:", line)]
+        if len(directives) != 1:
+            raise ValueError()
+        flag = re.fullmatch(r"sensitive\s*:\s*(true|false|yes|no|on|off)\s*(?:#.*)?", directives[0], re.I)
+        if flag is None:
+            raise ValueError()
+        if flag[1].lower() in {"true", "yes", "on"}:
             raise SearchError("sensitive mode blocks web search")
         config_path = _CHECKOUT / ".spotlight-config.json"
         if config_path.exists():
             config = json.loads(config_path.read_text(encoding="utf-8"))
             if not isinstance(config, dict):
+                raise ValueError()
+            if "sensitive" in config and not isinstance(config["sensitive"], bool):
                 raise ValueError()
             if config.get("sensitive") is True:
                 raise SearchError("sensitive mode blocks web search")
