@@ -133,6 +133,47 @@ Maigret outputs are always `unverified` leads until the underlying source materi
 
 See `skills/integrations/SKILL.md` § "Routing decision tree" for the task → integration mapping.
 
+## Optional hosted search
+
+The existing `search` verb can use [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp)
+for free hosted web search in Fast mode, with no account or API key. This is an
+optional backing of `integrations.search`, alongside SearXNG and Firecrawl;
+it requires only Python's standard library and is not a separate preflight integration.
+
+From the checkout root:
+
+```bash
+python3 -m integrations.search "public procurement filing" --provider parallel --json --limit 5
+```
+
+To select it for a run, export `SEARCH_PROVIDER=parallel` before starting the
+runtime. Flue passes this selection into its agent shell; an explicit
+`--provider searxng` or `--provider firecrawl` still takes precedence. Existing
+configuration and credentials are not rewritten. Without an explicit selection,
+SearXNG remains the self-hosted default, including its existing Firecrawl fallback
+and union behavior. A Parallel failure is reported without switching providers.
+
+Parallel sends the query to `https://search.parallel.ai/mcp` and returns the usual
+`SearchHit` fields: URL, title, snippet, date and engine (`parallel`). These are
+discovery leads; fetch and inspect the original source before citing it. Page
+acquisition continues through the configured scraping seam. The provider does
+not support SearXNG's `--categories`, `--time-range` or `--union`; these options
+fail before any Parallel request. `--limit` truncates returned results locally
+and does not change the server's search depth.
+
+No credential is read or sent, including an ambient Parallel API key. Anonymous
+usage has service limits: failures surface through the normal CLI error path
+(exit 3), without automatic retries; Ctrl-C cancels with exit 130. Connections
+use a 30-second timeout budget. Flue assigns one `SPOTLIGHT_SEARCH_SESSION_ID`
+per agent configuration; other runtimes can set this optional identifier once
+per conversation (1–100 characters) and reuse it for related calls.
+
+Web search is blocked when `SPOTLIGHT_SENSITIVE=true`, checkout `AGENTS.md`
+frontmatter has `sensitive: true`, or checkout `.spotlight-config.json` has
+`"sensitive": true`. Unreadable policy or invalid config also blocks search.
+`SEARCH_PROVIDER=none` disables the default search selection. Do not enable
+hosted search for sensitive or local-only casework.
+
 ## Sensitive mode
 
 In sensitive mode (`AGENTS.md` → `sensitive: true`):
