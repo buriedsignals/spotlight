@@ -1,4 +1,5 @@
 import { defineAgent, defineAgentProfile } from '@flue/runtime';
+import { randomUUID } from 'node:crypto';
 import { local } from '@flue/runtime/node';
 import { roleBody, FLUE_VERB_ADAPTER, HARNESS_ROOT } from '../lib/roles.ts';
 import { createSpotlightTools } from '../lib/spotlight-tools.ts';
@@ -83,6 +84,7 @@ const factChecker = defineAgentProfile({
 // directly — it delegates to the subagents and manages the phase pipeline (the `spotlight` skill).
 export default defineAgent(() => {
 	const cwd = process.env.SPOTLIGHT_CWD ?? process.cwd();
+	const searchSession = process.env.SPOTLIGHT_SEARCH_SESSION_ID ?? randomUUID();
 	const tools = createSpotlightTools({
 		activeCaseDir: process.env.SPOTLIGHT_ACTIVE_CASE ?? '',
 		casesRoot: process.env.SPOTLIGHT_CASES_ROOT ?? '',
@@ -118,6 +120,10 @@ export default defineAgent(() => {
 				SPOTLIGHT_RLM_OPENAI_BASE_URL: process.env.SPOTLIGHT_RLM_OPENAI_BASE_URL,
 				SPOTLIGHT_RLM_OPENAI_MODEL: process.env.SPOTLIGHT_RLM_OPENAI_MODEL,
 				FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY, // bot-block escalation (opt-in)
+				SEARCH_PROVIDER: process.env.SEARCH_PROVIDER,
+				SEARXNG_URL: process.env.SEARXNG_URL,
+				SPOTLIGHT_SENSITIVE: process.env.SPOTLIGHT_SENSITIVE,
+				SPOTLIGHT_SEARCH_SESSION_ID: searchSession,
 				SPOTLIGHT_ANONYMIZE_FETCH: process.env.SPOTLIGHT_ANONYMIZE_FETCH, // Tor opt-in (U7)
 			},
 		}),

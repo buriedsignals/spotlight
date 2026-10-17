@@ -4,6 +4,13 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added — Optional Parallel search backing
+
+- The existing search seam accepts `--provider parallel` or
+  `SEARCH_PROVIDER=parallel` for anonymous Parallel Search MCP source discovery.
+  SearXNG remains the sovereign default, and Firecrawl choices remain available.
+  The search CLI checks sensitive-mode policy before network access.
+
 ### Removed — Data Navigator source planning
 
 - Data Navigator is retired. The methodology contract no longer has

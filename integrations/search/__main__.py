@@ -5,11 +5,13 @@
     python3 -m integrations.search "<query>" --json          # structured hits
     python3 -m integrations.search "<query>" --union         # SearXNG + Firecrawl, deduped
     python3 -m integrations.search "<query>" --provider firecrawl
+    python3 -m integrations.search "<query>" --provider parallel --json
     python3 -m integrations.search "<query>" --categories news --time-range month
 
 Default provider is SearXNG (self-hosted, free; set SEARXNG_URL). Firecrawl is an
 optional fallback (used only if SearXNG is down and a key is present) or an explicit
-union engine. Exit 0 on success; 3 on failure with the error on stderr.
+union engine. Parallel is an explicit remote, anonymous MCP option. Exit 0 on
+success, 3 on failure with the error on stderr, or 130 on cancellation.
 """
 from __future__ import annotations
 
@@ -31,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("query", help="search query")
     ap.add_argument("--limit", type=int, default=10, help="max results (default 10)")
-    ap.add_argument("--provider", default=None, help="searxng (default) | firecrawl")
+    ap.add_argument("--provider", default=None, help="searxng (default) | firecrawl | parallel (anonymous remote MCP)")
     ap.add_argument("--union", action="store_true", help="merge SearXNG + Firecrawl results (exhaustive)")
     ap.add_argument("--categories", default=None, help="SearXNG categories, e.g. news")
     ap.add_argument("--time-range", dest="time_range", default=None, help="SearXNG time_range, e.g. month")
@@ -48,6 +50,9 @@ def main(argv: list[str] | None = None) -> int:
             categories=args.categories,
             time_range=args.time_range,
         )
+    except KeyboardInterrupt:
+        print("search cancelled", file=sys.stderr)
+        return 130
     except SearchError as exc:
         print(f"search failed: {exc}", file=sys.stderr)
         return 3
