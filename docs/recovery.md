@@ -101,7 +101,7 @@ If two devices ingest simultaneously (rare), the `_registry.json` files may conf
 
 ### Review feedback follow-up is interrupted
 
-Return the exported feedback to the Gate 1 owner. Validate its project and
+Return the exported feedback to the Investigation gate owner. Validate its project and
 target IDs, convert actionable content to bounded instructions, and record:
 
 ```text
@@ -112,8 +112,8 @@ spotlight_transition({
 ```
 
 Resolve again. It must return `phase: execution` with the same instructions in
-`resume`. When regenerated Gate 1 dependencies change, resolution returns Gate
-1 approval for a new human decision. Feedback-file presence never determines
+`resume`. When regenerated Investigation gate dependencies change, resolution returns
+Investigation gate approval for a new human decision. Feedback-file presence never determines
 recovery.
 
 ### Corrupted case JSON

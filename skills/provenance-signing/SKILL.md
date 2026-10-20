@@ -10,7 +10,7 @@ requires: []
 
 This skill creates a portable provenance package for a completed Spotlight case. It does not replace Spotlight verification. It makes the case artifacts tamper-evident and gives Noosphere C2PA a clear signing contract.
 
-Use it after Gate 1 readiness criteria pass and before the final HTML review/report artifact is delivered.
+Use it after the Investigation gate readiness criteria pass and before the final HTML review/report artifact is delivered.
 
 ## What Gets Signed
 

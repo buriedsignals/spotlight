@@ -21,7 +21,7 @@ Use passive, source-linked technical observations as leads in a Spotlight invest
 | Reconstruct DNS, certificate, registration, or HTTP history | `references/infrastructure-history.md` |
 | Examine local document metadata or raw email headers | `references/document-message-forensics.md` |
 | Trace public GitHub repository, commit, fork, or release history | `references/github-public.md` |
-| Export fact-checked technical indicators after Gate 1 | `references/verified-indicator-export.md` |
+| Export fact-checked technical indicators after the Investigation gate | `references/verified-indicator-export.md` |
 
 ### Model-tier loading
 

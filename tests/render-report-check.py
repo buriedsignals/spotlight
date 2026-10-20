@@ -705,7 +705,7 @@ def main() -> int:
         assert missing.returncode == 3, missing.stdout
         assert not (case / "report.html").exists()
 
-        # --if-ready may wait at Gate 1, but must reject a silent Phase 5 skip.
+        # --if-ready may wait at the Investigation gate, but must reject a silent Phase 4 skip.
         waiting = subprocess.run(
             [sys.executable, str(FINALIZER), str(case), "--if-ready"],
             capture_output=True, text=True,
@@ -772,7 +772,7 @@ def main() -> int:
         )
         assert helper_decline.returncode == 3, helper_decline.stdout
 
-        # Entering Phase 6 is visible even when no monitoring or closure follows.
+        # Entering Phase 5 is visible even when no monitoring or closure follows.
         case = build_case(Path(tmp) / "ingestion-only-skip")
         (case / "data" / "report-draft.json").unlink()
         write_json(case / "data" / "ingestion.json", {

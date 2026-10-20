@@ -50,7 +50,7 @@ Durability and safety clauses:
 - Dynamically load exactly the returned `owner` with `invoke-skill`. Do not
   maintain or infer a second phase map. A `null` owner means stop: present a
   blocked result or report completion according to the resolver status.
-- Apply approvals, attempts, follow-up, Gate 1 sealing, report decisions, and
+- Apply approvals, attempts, follow-up, Investigation gate sealing, report decisions, and
   ingest decisions only through `spotlight_transition({operation, payload})`.
   The runtime binds that tool to the active case; the resolver module owns
   receipts, invalidation, caps, locking, atomic state replacement, and resume
@@ -85,15 +85,21 @@ Then re-spawn without the model hint.
 
 | Gate | Closes into (sealed artifact) | Who closes it |
 |---|---|---|
-| Brief direction approved | `brief-directions.txt` | user |
-| Methodology approved | Current attributable, hash-bound approval returned by `spotlight_resolve` | user |
-| Gate 1 — investigation approved | Current attributable approval over the provenance registry's dependency digest, followed by sealed provenance and review outputs | user — **ends the turn** |
-| Report finalized or declined | Hash-bound `decideReport` transition; rendering/decline artifacts remain owned by deterministic helpers | deterministic code after the user's decision |
-| Ingestion confirmed or declined | `decideIngest` requested/completed/declined state plus `data/ingestion.json` | user |
+| Brief gate (Phase 1) — direction approved | `brief-directions.txt` | user |
+| Methodology gate (Phase 2) — methodology approved | Current attributable, hash-bound approval returned by `spotlight_resolve` | user |
+| Investigation gate (end of Phase 3) — findings from investigation cycles 1–5 approved | Current attributable approval over the provenance registry's dependency digest, followed by sealed provenance and review outputs | user — **ends the turn** |
+| Report gate (Phase 4) — report finalized or declined | Hash-bound `decideReport` transition; rendering/decline artifacts remain owned by deterministic helpers | deterministic code after the user's decision |
+| Ingest gate (Phase 5) — ingestion confirmed or declined | `decideIngest` requested/completed/declined state plus `data/ingestion.json` | user |
 
-Gate 1 is the turn boundary: present the findings, then stop. Never answer a
+The Investigation gate is the turn boundary: present the findings, then stop. Never answer a
 human gate for the user, and never treat a transcript mention of approval as
 closure — closure is the attributable, current-hash receipt on disk.
+
+Each gate is named after the phase it closes; gates are never numbered. Phase 3
+runs up to five numbered investigation cycles, which are not gates, and ends at
+the Investigation gate. Machine identifiers keep their original names:
+`gate1`, `phase-gate1`, `sealGate1`, `--phase gate1`, `execution`,
+`phase-execution`.
 
 ## Verbs
 
@@ -123,7 +129,7 @@ APPROVED**. Do not enable
 
 | Knob | Value | Enforced in |
 |---|---|---|
-| Max execution cycles | 5, then Stall Protocol | `skills/phase-execution` |
+| Max investigation cycles | 5, then Stall Protocol | `skills/phase-execution` |
 | Investigator iteration limit | 80 | `agents/investigator.md` |
 | Fact-checker iteration limit | 50 | `agents/fact-checker.md` |
 | Brief clarifying questions | 1–3 | `skills/phase-methodology` |
@@ -155,7 +161,7 @@ present the unresolved gap and exhausted attempt. If phase is `complete`, stop.
 
 The resolver hashes current inputs before accepting either approval or a
 downstream decision. Changed methodology inputs reopen methodology approval;
-changed registry-owned Gate 1 dependencies reopen Gate 1 approval. A draft or
+changed registry-owned Investigation gate dependencies reopen Investigation gate approval. A draft or
 pending artifact never closes a human gate. Do not reconstruct a phase or
 substep by inspecting files.
 
@@ -178,4 +184,4 @@ When `sensitive: true` is set in `AGENTS.md`, the adapter MUST strip `fetch` and
 
 - Research phases become local-only (`read-file`, `grep-files`, `list-files`, `query-vault`)
 - All evidence must come from pre-scraped material in `{CASE_DIR}/research/`
-- Readiness criteria requiring new sources cannot be met — flag explicitly at Gate 1 and mark the investigation as **constrained** rather than **verified**
+- Readiness criteria requiring new sources cannot be met — flag explicitly at the Investigation gate and mark the investigation as **constrained** rather than **verified**

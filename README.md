@@ -40,7 +40,7 @@ explicit end-of-case decision.
 - Produces structured findings with source URLs, local files, confidence,
   evidence grounding, limitations, and monitoring recommendations.
 - Runs an independent fact-check pass using SIFT-style source verification.
-- Enforces readiness criteria before Gate 1 review.
+- Enforces readiness criteria before the Investigation gate review.
 - Produces review, summary, evidence, and provenance artifacts that can be
   inspected, exported, or ingested into a knowledge vault.
 
@@ -51,13 +51,13 @@ Preflight
   -> Brief
   -> Methodology
   -> Research and fact-check cycles
-  -> Gate 1 review
+  -> Investigation gate review
   -> Report decision
   -> Ingest, monitor, export, or continue
 ```
 
 Every gate is explicit. Spotlight does not auto-advance through brief approval,
-methodology approval, Gate 1 review, the report decision, or vault ingestion.
+methodology approval, Investigation gate review, the report decision, or vault ingestion.
 
 The research loop runs up to five cycles by default:
 
@@ -73,7 +73,7 @@ contract.
 
 ## Readiness Criteria
 
-Spotlight only opens Gate 1 when the case has passed six editorial checks:
+Spotlight only opens the Investigation gate when the case has passed six editorial checks:
 
 - Enough high-confidence findings.
 - Independent source support for key claims.
@@ -220,7 +220,7 @@ See [docs/integrations.md](docs/integrations.md) for setup and routing details.
 Spotlight can ask a typed decision model narrow questions at three gates. It
 never writes text and never decides a verdict:
 
-- **Gate 1:** does the located source excerpt actually support each finding?
+- **Investigation gate:** does the located source excerpt actually support each finding?
   Flags cover partial support, contradiction, an announcement presented as
   current, an incomplete list, an address presented as legal domicile, an
   allegation stated as fact, a reversed payer or owner, a role presented as

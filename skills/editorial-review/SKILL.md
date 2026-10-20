@@ -1,16 +1,16 @@
 ---
 name: editorial-review
-description: Generate a self-contained HTML review artifact after Gate 1 and export structured feedback to the Gate 1 owner. No server required.
+description: Generate a self-contained HTML review artifact after the Investigation gate and export structured feedback to the Investigation gate owner. No server required.
 version: "1.0"
 invocable_by: [orchestrator, user]
 requires: []
 ---
 
-# Editorial Review — Post-Gate-1 Review Artifact
+# Editorial Review — Post-Investigation-gate Review Artifact
 
 Generate one self-contained HTML file that the journalist can open in any
 browser to inspect findings and verdicts and export structured feedback. The
-Gate 1 owner validates that feedback, converts it to targeted instructions, and
+Investigation gate owner validates that feedback, converts it to targeted instructions, and
 records `requestFollowUp` through `spotlight_transition`. This skill never
 spawns agents or derives phase state from feedback-file presence.
 
@@ -21,7 +21,7 @@ Feedback is exported as a downloadable `review-feedback.json` file.
 
 ## Generate
 
-The Gate 1 owner invokes this skill only when the resolver returns
+The Investigation gate owner invokes this skill only when the resolver returns
 `resume_at: review`.
 
 Inputs:
@@ -169,7 +169,7 @@ write-file("{CASE_DIR}/review.html", <populated template>)
 "Review artifact written to {CASE_DIR}/review.html.
 
 Open it in any browser to inspect findings and export structured feedback.
-Return the exported review-feedback.json to the Gate 1 owner for validation
+Return the exported review-feedback.json to the Investigation gate owner for validation
 and a targeted follow-up transition, or proceed to the public report."
 ```
 
@@ -188,7 +188,7 @@ Key invariants:
 - `expressions_feedback[].expression_id` and `.finding_id` must resolve to a current authoritative expression link
 - `expressions_feedback[].category` is one of `omitted_context`, `attribution_error`, `wrong_relation`, `mistranscription`, `bad_locator`, `stale_source`, `other`
 - Expression feedback is an annotation routed through validation and independent re-fact-check; it never changes a verdict directly
-- Before a follow-up transition, the Gate 1 owner runs `python3 scripts/validate-case.py {CASE_DIR}` to validate the referenced case and expression state.
+- Before a follow-up transition, the Investigation gate owner runs `python3 scripts/validate-case.py {CASE_DIR}` to validate the referenced case and expression state.
 - The independent fact-checker is the only actor in this loop that may change a verdict.
 - Feedback comments and existing finding fields remain free-form; only the expression category uses a fixed enum
 
@@ -235,5 +235,5 @@ Writes to:
 ## Sensitive Mode
 
 Generation is local-only and works unchanged in sensitive mode. Any targeted
-follow-up requested from exported feedback returns through the Gate 1 owner and
+follow-up requested from exported feedback returns through the Investigation gate owner and
 the normal execution phase, where sensitive-mode egress restrictions apply.

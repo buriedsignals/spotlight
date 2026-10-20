@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic Phase 6 claim eligibility (offline).
+"""Deterministic Phase 5 claim eligibility (offline).
 
     python3 scripts/ingest-eligibility.py CASE_DIR [--entities FILE] [--existing-claims FILE]
 
@@ -115,7 +115,7 @@ def evaluate(case: Path, entities: list[Any] | None = None, existing: list[Any] 
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Deterministic Phase 6 claim eligibility (offline).")
+    parser = argparse.ArgumentParser(description="Deterministic Phase 5 claim eligibility (offline).")
     parser.add_argument("case_dir")
     parser.add_argument("--entities", type=Path, help="the same entity list passed to decision-signals.py --entities (inside CASE_DIR/data/)")
     parser.add_argument("--existing-claims", type=Path, help="the same list passed to decision-signals.py --existing-claims (inside CASE_DIR/data/)")

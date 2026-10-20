@@ -1,6 +1,6 @@
 # Review Feedback Schema
 
-Schema for the `review-feedback.json` exported by the review HTML and validated by the Gate 1 owner before a targeted `requestFollowUp` transition.
+Schema for the `review-feedback.json` exported by the review HTML and validated by the Investigation gate owner before a targeted `requestFollowUp` transition.
 
 ---
 
@@ -124,7 +124,7 @@ verdict.
 ## Routing
 
 The exported file is not a phase trigger and is never discovered by scanning a
-case directory. The journalist returns it to the Gate 1 owner. That owner
+case directory. The journalist returns it to the Investigation gate owner. That owner
 validates the project and target IDs, converts actionable items to bounded
 instructions, and records `requestFollowUp` through `spotlight_transition`.
 The next resolver result is the only authority for resuming execution.

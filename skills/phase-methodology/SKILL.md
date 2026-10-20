@@ -183,7 +183,7 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    > confidence. Enable them for this case?"
 
    Do not edit approved case files to record the answer. If the user agrees,
-   the first `scripts/decision-signals.py` run at Gate 1 preparation passes
+   the first `scripts/decision-signals.py` run at the Investigation gate preparation passes
    `--case-opt-in`, which records the consent in `data/decision-signals.json`;
    otherwise never run it for this case.
 

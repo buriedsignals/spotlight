@@ -14,7 +14,7 @@ All durable mutations use the Knowledge Workspace Port. Set `logical_space: spot
 
 This skill instructs. You — the host runtime — execute. You read investigation files, write vault notes, update registries, and maintain the knowledge graph. The user sees the result; you do the work.
 
-This skill is a Phase 6 handler, not a standalone entry point. Enter only when
+This skill is a Phase 5 handler, not a standalone entry point. Enter only when
 the parent passes a resolver result with `owner: phase-ingest`,
 `resume.state: requested`, and `resume.resume_at: ingest`. The preceding
 `decideIngest` transition already wrote the case-local requested receipt and
@@ -318,7 +318,7 @@ execute-shell("python3 scripts/ingest-eligibility.py {CASE_DIR}")
 ```
 
 It applies the gate below in code and, when decision checks ran, the stored
-Gate 1 signals: in `enforce` mode a low decision cap excludes a finding and a
+Investigation gate signals: in `enforce` mode a low decision cap excludes a finding and a
 medium cap moves it to `layer: lead` with `needs_verification: true` and caps
 its confidence; in `advisory` mode the same outcome appears only as
 `decision_check.recommendation`, which you report to the user. Report any

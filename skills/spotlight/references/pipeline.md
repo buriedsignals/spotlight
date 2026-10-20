@@ -1,6 +1,6 @@
 # Pipeline Reference
 
-Readiness criteria, cycle mechanics, stall protocol, and Gate 1 presentation format. The orchestrator evaluates these after each investigation cycle to decide whether to loop or advance.
+Readiness criteria, cycle mechanics, stall protocol, and Investigation gate presentation format. The orchestrator evaluates these after each investigation cycle to decide whether to loop or advance.
 
 ---
 
@@ -26,7 +26,7 @@ After each investigation cycle, run this evaluation:
 3. For each criterion in the readiness table:
    - Check the condition against the data
    - Report pass/fail with specifics (e.g., "PASS: 4 high-confidence findings" or "FAIL: only 1 independent source for claim about contract award")
-4. **If ALL criteria pass:** advance to Gate 1
+4. **If ALL criteria pass:** advance to the Investigation gate
 5. If `data/findings.json` contains `monitoring_recommendations[]` and monitoring is configured: process recommendations via `invoke-skill(monitoring)`
 6. **If any fail and cycle < 5:** list specific gaps, recommend what the next cycle should focus on (e.g., "Next cycle: find second independent source for funding claim, use `fetch` to scrape court filing referenced in interview")
 7. **If any fail and cycle >= 5:** trigger stall protocol
@@ -43,7 +43,7 @@ Present this to the user and wait for direction. Do not auto-advance.
 
 ---
 
-## Gate 1 Presentation Format
+## Investigation Gate Presentation Format
 
 When all readiness criteria pass, present the investigation for review:
 
@@ -65,4 +65,4 @@ When all readiness criteria pass, present the investigation for review:
 
 ## summary.json
 
-Generated at Gate 1 and written to `{CASE_DIR}/data/summary.json` per the summary schema (`schemas/summary.schema.json`). Contains the structured data for the investigation summary: title, overview, scope, conclusions, findings summary, limitations, and methodology summary.
+Generated at the Investigation gate and written to `{CASE_DIR}/data/summary.json` per the summary schema (`schemas/summary.schema.json`). Contains the structured data for the investigation summary: title, overview, scope, conclusions, findings summary, limitations, and methodology summary.

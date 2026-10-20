@@ -4,6 +4,16 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed — Gates are named after their phase
+
+- Docs no longer number gates. Each gate takes the name of the phase it
+  closes: Brief, Methodology, Investigation (was "Gate 1"), Report and Ingest.
+  Phase 3 is now "Investigation": up to five numbered investigation cycles,
+  which are not gates, ending at the Investigation gate. The former Phase 4
+  is folded into Phase 3, so Report is Phase 4 and Ingest is Phase 5. Machine
+  identifiers (`gate1`, `phase-gate1`, `sealGate1`, `--phase gate1`,
+  `execution`, `phase-execution`) are unchanged.
+
 ### Removed — Data Navigator source planning
 
 - Data Navigator is retired. The methodology contract no longer has

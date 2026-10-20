@@ -68,7 +68,7 @@ The repository root is itself a Claude Code plugin root (`.claude-plugin/plugin.
 
 Every runtime must preserve these — they are the editorial contract:
 
-- Pipeline: Preflight → Brief → Methodology → Execution → Gate 1 → Report → Ingestion
+- Pipeline: Preflight → Brief → Methodology → Investigation → Investigation gate → Report → Ingest
 - Cycle limit 5, stall protocol on N ≥ 5 without readiness
 - Six readiness criteria (findings, independence, disputes, affected perspective, document trail, gap assessment)
 - Investigator modes: PLANNING and EXECUTION

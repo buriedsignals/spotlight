@@ -19,14 +19,14 @@ An agent invokes a **skill** to get *guidance* and calls an **integration** to g
 |---|---|---|---|---|
 | `apify` | api | social-osint | `APIFY_API_TOKEN` (optional; `unconfigured` until set) | Hosted social-media collection actors for X, Instagram, TikTok, Facebook, and LinkedIn through the Apify REST API. Engine injects the token when Apify is enabled in Indicator Labs; from-repo users export it. ToS caveat: X prohibits scraping even public posts — record the collection authority in `access_notes`. |
 | `arbiter` | api | social-osint | Member-owned `ARBITER_API_KEY` | Browse and create social-media case studies through the native Arbiter HTTPS API, including archived posts, themes, stance, actors, communities, engagement, and report visuals. |
-| `decisions` | api | verification-signals | `OPENROUTER_API_KEY` (environment or `integrations.decisions.env_file`); opt-in at Phase 0 and per case | Typed decision checks through the OpenRouter Decisions API (default `typesafe/jev-1.13`, zero data retention): grounding at Gate 1, report-prose fidelity, and ingest proposition/relation/entity/matching checks. Signals only lower confidence or add flags. Preflight shows `opt_in: undecided/enabled/declined`; declined reports `dismissed`. Readiness: `scripts/decision-signals.py <case> --phase gate1 --check`. |
+| `decisions` | api | verification-signals | `OPENROUTER_API_KEY` (environment or `integrations.decisions.env_file`); opt-in at Phase 0 and per case | Typed decision checks through the OpenRouter Decisions API (default `typesafe/jev-1.13`, zero data retention): grounding at the Investigation gate, report-prose fidelity, and ingest proposition/relation/entity/matching checks. Signals only lower confidence or add flags. Preflight shows `opt_in: undecided/enabled/declined`; declined reports `dismissed`. Readiness: `scripts/decision-signals.py <case> --phase gate1 --check`. |
 | `dev-browser` | cli | browser-automation | No | Browser automation for specific investigative tasks after ordinary search/scrape is insufficient: forms, portals, JS-rendered pages, screenshots, downloads, and authenticated sessions. |
 | `browser-harness` | cli | browser-automation | No | Legacy browser fallback. Do not use as default while dev-browser is green. |
 | `browser-use` | library | browser-automation | No (optional cloud) | Legacy/adjacent browser automation. Do not use as default while dev-browser is green. |
 | `junkipedia` | api | social-osint | `JUNKIPEDIA_API_KEY` | Narrative / misinformation tracking across social platforms. Application-based access. |
 | `maigret` | cli | social-osint | No | Username-led account discovery. Produces unverified profile leads only, not attribution proof. |
 | `rea` | cli | technical-osint | No | Static, no-execution analysis of case files with the [REA](https://github.com/morluto/rea) CLI: Electron apps, HAR/mitmproxy captures, .NET assemblies, APKs. Runtime capture, browser, device and decompiler commands are not reachable. Reviewed release `rea-agents@6.4.0`. |
-| `noosphere-c2pa` | api | provenance-signing | `NOOSPHERE_C2PA_URL` | Optional case-level C2PA/content-credentials signing after Gate 1. |
+| `noosphere-c2pa` | api | provenance-signing | `NOOSPHERE_C2PA_URL` | Optional case-level C2PA/content-credentials signing after the Investigation gate. |
 | `osint-navigator` | api | tool-discovery | `OSINT_NAV_API_KEY` | 10,000+ OSINT tools with AI-powered synthesized answers. Complements the curated 150-tool catalog in the `osint` skill. |
 | `unpaywall` | api | academic-open-access | `UNPAYWALL_EMAIL` | Legal open-access lookup for academic papers by DOI. Used only when selected in setup and green in preflight. |
 | `webcheck` | api | technical-osint | No key; `WEB_CHECK_URL` (optional; `unconfigured` until set) | Website and domain recon through the member's own [Web-Check](https://github.com/lissy93/web-check) instance. Lookup checks by default; page checks only with `contact_target: true`; port scans, traceroute and third-party scanners are never called. Unverified observations only. |
@@ -142,7 +142,7 @@ In sensitive mode (`AGENTS.md` → `sensitive: true`):
 - Pre-cached integration responses in `{CASE_DIR}/research/` remain readable via `read-file`
 - Local-only browser acquisition against cached or local files may still function through dev-browser — see the individual `integration.md` § Sensitive mode
 
-The orchestrator marks sensitive-mode investigations at Gate 1 noting which integrations were unavailable.
+The orchestrator marks sensitive-mode investigations at the Investigation gate noting which integrations were unavailable.
 
 ## Reference
 
