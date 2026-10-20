@@ -1216,7 +1216,7 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
     <h2>How the investigation was carried out.</h2>
     {''.join(methodology_sections)}
     <div class="phase"><div class="phase-head"><span class="phase-id">Phase 3 · fact-check</span><h4 class="phase-title">Independent verdict boundary</h4></div><p>Report confidence is computed from the recorded verdicts and confidence caps; it is not authored during rendering.</p></div>
-    <div class="phase"><div class="phase-head"><span class="phase-id">Phase 5 · report</span><h4 class="phase-title">Editorial model + deterministic renderer</h4></div><p>The model authored <code>data/report-draft.json</code>; code validated its finding-reference coverage and output structure, then generated all three deliverables.</p></div>
+    <div class="phase"><div class="phase-head"><span class="phase-id">Phase 4 · report</span><h4 class="phase-title">Editorial model + deterministic renderer</h4></div><p>The model authored <code>data/report-draft.json</code>; code validated its finding-reference coverage and output structure, then generated all three deliverables.</p></div>
   </section>
   <section id="caveats"><div class="kicker">Editorial caveats</div><h2>What readers should keep in view.</h2><ul>{caveat_items}</ul></section>
   <section id="next"><div class="kicker">Open questions</div><h2>What a later cycle should close.</h2><table><tr><th>Target</th><th>Provenance</th></tr>{next_rows}</table></section>

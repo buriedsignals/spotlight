@@ -48,11 +48,11 @@ The investigation pipeline is:
 1. **Preflight**
 2. **Brief**
 3. **Methodology**
-4. **Execution cycles**
-5. **Gate 1**
+4. **Investigation** (cycles 1–5, ending at the Investigation gate)
+5. **Report**
 6. **Ingestion**
 
-The user remains the editor at every gate. Spotlight does not auto-advance through the brief approval, methodology approval, Gate 1 approval, or ingestion approval.
+The user remains the editor at every gate. Spotlight does not auto-advance through the brief approval, methodology approval, Investigation gate approval, or ingestion approval.
 
 ### Preflight
 
@@ -66,9 +66,9 @@ If the lead is a URL, Spotlight scrapes it first. It then clarifies scope with t
 
 The investigator runs in PLANNING mode and writes `methodology.json` without executing the research. The methodology includes directions, questions, steps, OSINT techniques, key sources, risks, and limitations.
 
-### Execution cycles
+### Investigation cycles
 
-Each execution cycle does this:
+Each investigation cycle does this:
 
 1. investigator runs in EXECUTION mode and updates findings
 2. fact-checker independently checks the claims
@@ -78,7 +78,7 @@ Each execution cycle does this:
 
 Spotlight runs up to five cycles before stalling for user direction.
 
-### Gate 1
+### Investigation gate
 
 When readiness passes, Spotlight generates:
 
@@ -93,7 +93,7 @@ After approval, Spotlight invokes the ingest skill to write case outputs into th
 
 ## 5. Readiness criteria
 
-All six readiness criteria must pass before Gate 1 opens:
+All six readiness criteria must pass before the Investigation gate opens:
 
 1. **Minimum findings:** at least three high-confidence findings
 2. **Source independence:** at least two independent sources for key claims
@@ -160,7 +160,7 @@ Monitoring recommendations can come from the investigator or the fact-checker an
 The public skill registry documented in `AGENTS.md` is:
 
 - `spotlight`: investigation orchestrator and gate logic
-- `editorial-review`: post-Gate-1 HTML review artifact and feedback loop
+- `editorial-review`: post-Investigation-gate HTML review artifact and feedback loop
 - `integrations`: routing layer for dev-browser, Junkipedia, OSINT Navigator, and other external tools
 - `ingest`: knowledge archival into a vault
 - `monitoring`: monitoring orchestration

@@ -141,9 +141,9 @@ contract and apply this runtime table:
 |---|---|---|---|
 | Phase 0 Preflight | `integrations` | `shell-safety` if preflight executes dynamic shell values | `.spotlight-config.json` stores full integration status, not only booleans. |
 | Phase 2 Methodology | `integrations`, `osint`, `investigation-methodology`, `epistemic-grounding` | `follow-the-money`, `social-media-intelligence`, `technical-investigation`, `content-access` | `methodology.json` includes `skills_invoked[]` and required Navigator fields when green. |
-| Phase 3 Execution | `epistemic-grounding`, `shell-safety`, `web-archiving` | `content-access`, `acquisition-graduation`, `social-media-intelligence`, `technical-investigation` | findings contain evidence refs, archives, confidence caps. |
+| Phase 3 Investigation | `epistemic-grounding`, `shell-safety`, `web-archiving` | `content-access`, `acquisition-graduation`, `social-media-intelligence`, `technical-investigation` | findings contain evidence refs, archives, confidence caps. |
 | Phase 3 Fact-check | `epistemic-grounding`, `content-access`, `shell-safety` | `osint`, `social-media-intelligence`, `technical-investigation`, `web-archiving` | fact-check output independently checks investigator claims. |
-| Phase 5 Report | `report-drafting`, `epistemic-grounding` | `provenance-signing`, `technical-investigation` | report claims map to evidence ledger. |
+| Phase 4 Report | `report-drafting`, `epistemic-grounding` | `provenance-signing`, `technical-investigation` | report claims map to evidence ledger. |
 | Ingest | `ingest` | none | only verified or explicitly caveated material enters vault. |
 
 ## 3.7. Knowledge workspace preflight
@@ -384,7 +384,7 @@ choice by asking at any time.
 When resuming an existing project, consume the same resolver result used above.
 If it returns `phase: execution` with `resume.instructions`, pass those
 instructions to the returned execution owner. Do not derive resume state from
-feedback-file presence. The Gate 1 owner validates structured feedback and
+feedback-file presence. The Investigation gate owner validates structured feedback and
 records `requestFollowUp` through `spotlight_transition` before execution
 resumes.
 

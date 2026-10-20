@@ -337,7 +337,7 @@ If Firecrawl returned enough evidence, do not use dev-browser. dev-browser is fo
 
 ### Evidence Bundle
 
-Create or update `{CASE_DIR}/data/evidence-bundle.json` during every execution cycle. Each acquisition attempt gets an item with:
+Create or update `{CASE_DIR}/data/evidence-bundle.json` during every investigation cycle. Each acquisition attempt gets an item with:
 
 - `id` (`E1`, `E2`, ...),
 - `query_or_task`,

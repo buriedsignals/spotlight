@@ -21,7 +21,7 @@ cp adapters/codex/config.toml.example ~/.codex/config.toml
 
 The example defines three profiles:
 
-- `orchestrator` — runs the Spotlight top-level skill (Phase 0 → Gate 1)
+- `orchestrator` — runs the Spotlight top-level skill (Phase 0 → Investigation gate)
 - `investigator` — spawned by the orchestrator as a subprocess for PLANNING and EXECUTION
 - `fact-checker` — spawned after each investigator EXECUTION cycle
 

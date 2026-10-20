@@ -1,11 +1,11 @@
 ---
 name: phase-ingest
-description: "Spotlight Phase 6 — Ingestion: resolver-owned transition, ingestion.json status lifecycle, user confirmation, invoke-skill ingest or decline"
+description: "Spotlight Phase 5 — Ingestion: resolver-owned transition, ingestion.json status lifecycle, user confirmation, invoke-skill ingest or decline"
 invocable_by: [orchestrator]
 phase: ingest
 ---
 
-# Phase 6 — Ingestion
+# Phase 5 — Ingestion
 
 Enter this phase only from a `spotlight_resolve` result with `phase: ingest`
 and `owner: phase-ingest`. Follow its `resume.state` and `resume.resume_at`; do

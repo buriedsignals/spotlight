@@ -760,7 +760,7 @@ class OrchestrationConformance(unittest.TestCase):
             with self.subTest(surface=label):
                 self.assertRegex(
                     workflow,
-                    r"(?s)Gate 1.*Report.*Ingest",
+                    r"(?s)Investigation gate.*Report.*Ingest",
                 )
         for label, outputs in (
             ("docs/index.html", guide_pipeline),

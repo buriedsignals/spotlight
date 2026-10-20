@@ -396,7 +396,7 @@ Hermes has a `local-gemma` skill at `~/buried_signals/kit/mycroft/local-gemma/SK
 
 1. The orchestrator sets the per-delegation model to `local-gemma` for all agent spawns
 2. Hermes routes `fetch`/`search` verbs to a no-op or error — the agent works from local `{CASE_DIR}/research/`
-3. The orchestrator marks findings as "sensitive-mode constrained" at Gate 1
+3. The orchestrator marks findings as "sensitive-mode constrained" at the Investigation gate
 
 ---
 
@@ -603,7 +603,7 @@ When `sensitive: true` is set in `AGENTS.md` (or via a runtime command), every a
 | Gemini | Tool allowlist |
 | Local-endpoint wrappers | Orchestrator refuses to call the verb backing; wrapper blocks the shell call |
 
-A sensitive investigation cannot satisfy the "document trail" readiness criterion from external sources. The orchestrator marks the investigation as **sensitive-mode constrained** at Gate 1, and the Gate 1 summary notes which readiness criteria could not be evaluated live.
+A sensitive investigation cannot satisfy the "document trail" readiness criterion from external sources. The orchestrator marks the investigation as **sensitive-mode constrained** at the Investigation gate, and the Investigation gate summary notes which readiness criteria could not be evaluated live.
 
 ### Two distinct egress postures — do not conflate
 

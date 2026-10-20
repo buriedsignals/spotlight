@@ -1,13 +1,13 @@
 ---
 name: phase-execution
-description: "Spotlight Phase 3 — Autonomous execution cycles (max 5): source-expression release mode resolution, investigator EXECUTION + fact-checker spawns, validators, editorial checks, monitoring recommendations, readiness criteria; includes the Stall Protocol"
+description: "Spotlight Phase 3 — Autonomous investigation cycles (max 5): source-expression release mode resolution, investigator EXECUTION + fact-checker spawns, validators, editorial checks, monitoring recommendations, readiness criteria; includes the Stall Protocol"
 invocable_by: [orchestrator]
 phase: execution
 ---
 
-# Phase 3 — Execution (Autonomous Cycles, Max 5)
+# Phase 3 — Investigation (Autonomous Cycles, Max 5)
 
-With approved methodology, begin the execution loop. No user involvement between cycles — decide autonomously.
+With approved methodology, begin the investigation loop. No user involvement between cycles — decide autonomously.
 
 Enter this phase only when the parent passes a `spotlight_resolve` result with
 `phase: execution` and `owner: phase-execution`. Set `N` to one more than
@@ -218,7 +218,7 @@ Repair the named case-local path, line range, JSON Pointer, quote, or hash. Othe
      spotlight_resolve({})
      ```
 
-     Do not present Gate 1 from a failed evidence chain.
+     Do not present the Investigation gate from a failed evidence chain.
 
   5. Run editorial standards check:
      - Do findings have sources with URLs, timestamps, and `local_file`?
@@ -280,7 +280,7 @@ Apply only the specific fixes required by these gaps.",
      | Gap assessment | All gaps resolved or explicitly noted as limitations |
 
   7. If ALL criteria are met, call `spotlight_resolve({})` and return its
-     resolution to the parent. The resolver selects the existing Gate 1 owner,
+     resolution to the parent. The resolver selects the existing Investigation gate owner,
      which authors the summaries and presents the human gate.
 
   8. If NOT met: record the completed unsuccessful cycle and the current gaps:

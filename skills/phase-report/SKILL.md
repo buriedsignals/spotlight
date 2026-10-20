@@ -1,11 +1,11 @@
 ---
 name: phase-report
-description: Spotlight Phase 5 — Public-facing report drafting via report-drafting + finalize-report.py deterministic rendering; hybrid data-detective handover mode
+description: Spotlight Phase 4 — Public-facing report drafting via report-drafting + finalize-report.py deterministic rendering; hybrid data-detective handover mode
 invocable_by: [orchestrator]
 phase: report
 ---
 
-# Phase 5 — Report drafting (public-facing)
+# Phase 4 — Report drafting (public-facing)
 
 Before asking whether to draft the public-facing report, remind the user:
 
@@ -42,4 +42,4 @@ resolver invokes the existing hash-bound decline helper and records its output.
 
 ## Hybrid mode (data-detective handover)
 
-When `{CASE_DIR}/data-detective-handover/` exists (i.e. this Spotlight run was triggered by a data-detective formal handover, not a standalone lead), `report-drafting` runs in hybrid mode: the methodology section spans both orchestrators in phase order — upstream data-detective phases (P0/P1 ingest, P3 detect, P6 handover) followed by Spotlight phases (P1 brief, P2 method, P3 cycles + fact-check, P4 Gate 1, P5 report-drafting). Each finding's `.path` block walks the actual trail from upstream detector to downstream fact-checker. Skip the offer above — drafting is the whole point of the handover. Invoke `report-drafting` automatically.
+When `{CASE_DIR}/data-detective-handover/` exists (i.e. this Spotlight run was triggered by a data-detective formal handover, not a standalone lead), `report-drafting` runs in hybrid mode: the methodology section spans both orchestrators in phase order — upstream data-detective phases (P0/P1 ingest, P3 detect, P6 handover) followed by Spotlight phases (P1 brief, P2 method, P3 cycles + fact-check, P4 Investigation gate, P5 report-drafting). Each finding's `.path` block walks the actual trail from upstream detector to downstream fact-checker. Skip the offer above — drafting is the whole point of the handover. Invoke `report-drafting` automatically.

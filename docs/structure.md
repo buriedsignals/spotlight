@@ -74,7 +74,7 @@ activation receipt. Other artifacts retain their schema-specific versions.
 | `methodology.schema.json` | `{CASE_DIR}/data/methodology.json` | Investigator PLANNING output — investigation_plan, tools_required, opsec_considerations |
 | `evidence-bundle.schema.json` | `{CASE_DIR}/data/evidence-bundle.json` | Acquisition artifacts, missing-source gates, hashes, and claim links |
 | `investigation-log.schema.json` | `{CASE_DIR}/data/investigation-log.json` | Append-only cycle audit trail |
-| `summary.schema.json` | `{CASE_DIR}/data/summary.json` | Gate 1 summary |
+| `summary.schema.json` | `{CASE_DIR}/data/summary.json` | Investigation gate summary |
 | `rlm-analysis.schema.json` | `{CASE_DIR}/data/rlm-analysis.json` | Optional RLM case-corpus analysis — leads only, every artifact `needs_verification` |
 | `provenance-manifest.schema.json` | `{CASE_DIR}/data/provenance-manifest.json` | Case artifact hashes, claim/verdict links, evidence refs, optional C2PA signing metadata |
 
@@ -111,16 +111,16 @@ Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for larg
 
 ### Orchestrator skill
 
-- **`spotlight`** — the investigation dispatcher. After preflight it resolves durable state, dynamically invokes one phase owner, and repeats through Brief → Methodology → Execution cycles (max 5) → Gate 1 → Report → Ingestion.
+- **`spotlight`** — the investigation dispatcher. After preflight it resolves durable state, dynamically invokes one phase owner, and repeats through Brief → Methodology → Investigation cycles (max 5) → Investigation gate → Report → Ingest.
 
 ### Pipeline-support skills (invocable by orchestrator)
 
-- **`editorial-review`** — post-Gate-1 HTML review artifact. Renders a self-contained `{CASE_DIR}/review.html` that exports structured feedback for validation by the Gate 1 owner. It never spawns agents or derives phase state. No server required.
+- **`editorial-review`** — post-Investigation-gate HTML review artifact. Renders a self-contained `{CASE_DIR}/review.html` that exports structured feedback for validation by the Investigation gate owner. It never spawns agents or derives phase state. No server required.
 - **`integrations`** — routing layer for external tool integrations (dev-browser, Junkipedia, Apify, Arbiter, Noosphere C2PA, OSINT Navigator, Unpaywall). Reads live preflight status, maps investigation tasks to integrations. See `integrations/` at repo root for manifests + per-integration usage docs.
-- **`ingest`** — Phase 6 archival from the resolver-selected case to its configured vault. It runs only after a durable requested transition and uses an `.ingest-lock` plus the Knowledge Workspace Port for concurrency and projection.
+- **`ingest`** — Phase 5 archival from the resolver-selected case to its configured vault. It runs only after a durable requested transition and uses an `.ingest-lock` plus the Knowledge Workspace Port for concurrency and projection.
 - **`monitoring`** — case-level monitoring recommendations and explicit Mycroft handoff.
 - **`acquisition-graduation`** — turns repeated dev-browser acquisition successes into durable source/domain guidance without secrets or brittle session details.
-- **`report-drafting`** — post-Gate-1 report drafting with methodology and evidence ledgers. An optional diagram selects existing `findings.json.connections`; the renderer produces `flow`, `hierarchy`, `network`, or `loop` diagrams without accepting model-authored Mermaid or layout code.
+- **`report-drafting`** — post-Investigation-gate report drafting with methodology and evidence ledgers. An optional diagram selects existing `findings.json.connections`; the renderer produces `flow`, `hierarchy`, `network`, or `loop` diagrams without accepting model-authored Mermaid or layout code.
 
 ### Agent-support skills (invocable by investigator / fact-checker)
 
@@ -202,7 +202,7 @@ decision.
 ```
 {CASE_DIR}/
 ├── brief-directions.txt      # User-approved brief (Phase 1)
-├── summary.md                # Gate 1 summary (markdown, human-readable)
+├── summary.md                # Investigation gate summary (markdown, human-readable)
 ├── data/
 │   ├── methodology.json
 │   ├── findings.json

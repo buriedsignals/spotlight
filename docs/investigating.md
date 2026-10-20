@@ -17,7 +17,7 @@ Phase 2 — Methodology
     spawn investigator (PLANNING) → writes methodology.json → present to user
         │ GATE: user approves methodology
         ▼
-Phase 3 — Execution (cycles, max 5)
+Phase 3 — Investigation (cycles, max 5)
     FOR each cycle:
         spawn investigator (EXECUTION) → writes findings.json + investigation-log.json
         opt-in pilot/activated cases → acquiring agent records source-expressions.json
@@ -25,20 +25,17 @@ Phase 3 — Execution (cycles, max 5)
         editorial standards check
         process monitoring_recommendations (if any)
         evaluate 6 readiness criteria
-            ALL pass → Gate 1
+            ALL pass → leave the loop
             ANY fail, cycle < 5 → loop with gap-targeted next cycle
             ANY fail, cycle ≥ 5 → Stall Protocol (user decides)
-        │
-        ▼
-Phase 4 — Gate 1
     write summary.md + summary.json → present findings table to user
-        │ GATE: user approves investigation
+        │ GATE: Investigation gate — user approves investigation (follow-up → more cycles)
         ▼
-Phase 5 — Report
+Phase 4 — Report
     draft and deterministically render report, or record decline
         │ GATE: user decides report
         ▼
-Phase 6 — Ingestion
+Phase 5 — Ingestion
     record ingest decision → invoke ingest handler only after a requested transition
         │ GATE: user approves ingest
         ▼
@@ -134,9 +131,9 @@ Broad discovery uses `query-vault` against the local Open Knowledge index. Curre
 
 After the investigator writes `methodology.json`, the orchestrator presents a summary to the user. The user approves, iterates, or cancels. Changes trigger another PLANNING spawn with the feedback.
 
-## Phase 3 — Execution (cycles)
+## Phase 3 — Investigation (cycles)
 
-Cycles are autonomous. The orchestrator runs up to 5 without user intervention, then either advances to Gate 1 (all readiness criteria met) or triggers the Stall Protocol.
+Cycles are autonomous. The orchestrator runs up to 5 without user intervention, then either advances to the Investigation gate (all readiness criteria met) or triggers the Stall Protocol.
 
 ### Source-expression mode
 
@@ -238,14 +235,14 @@ CYCLE N:
   5. evaluate 6 readiness criteria
 
   6. decide:
-     ALL pass → Phase 4 (Gate 1)
+     ALL pass → Investigation gate
      ANY fail, N < 5 → identify specific gaps, increment N, loop
      ANY fail, N ≥ 5 → Stall Protocol
 ```
 
 ### The 6 readiness criteria
 
-All must pass for Gate 1 to open:
+All must pass for the Investigation gate to open:
 
 | # | Criterion | Threshold | Check |
 |---|---|---|---|
@@ -264,7 +261,7 @@ If cycle ≥ 5 and readiness not met:
 
 **STOP.** Wait for the user's decision. Do not auto-advance.
 
-## Phase 4 — Gate 1
+## Investigation gate (end of Phase 3)
 
 The orchestrator synthesizes the full investigation:
 
@@ -293,24 +290,24 @@ Also `write-file("{CASE_DIR}/data/summary.json", ...)` per `schemas/summary.sche
 
 The user approves the investigation, requests follow-up cycles (re-enter Phase 3 with targeted gap instructions), or cancels.
 
-### Review artifact (after Gate 1 approval)
+### Review artifact (after the Investigation gate approval)
 
-After Gate 1 approval, the orchestrator invokes the `editorial-review` skill to produce
+After the Investigation gate approval, the orchestrator invokes the `editorial-review` skill to produce
 `{CASE_DIR}/review.html`. This self-contained artifact lets the journalist
 inspect findings, verdicts, grounding, evidence references, local sources, and
 case provenance. It exports structured `review-feedback.json`; the journalist
-returns that file to the Gate 1 owner, which validates targets, converts
+returns that file to the Investigation gate owner, which validates targets, converts
 actionable feedback to bounded instructions, and records `requestFollowUp`.
 Feedback-file presence never triggers a phase or directly spawns an agent.
 
 See `skills/editorial-review/SKILL.md` for full details.
 
-## Phase 5 — Report
+## Phase 4 — Report
 
-After sealed Gate 1 finalization, the report owner offers deterministic report
+After sealed Investigation gate finalization, the report owner offers deterministic report
 drafting or decline and records the decision through `decideReport`.
 
-## Phase 6 — Ingestion
+## Phase 5 — Ingestion
 
 After the report decision, the ingest owner asks whether to ingest confirmed
 findings. Approval records `decideIngest: requested`; only then does the owner
@@ -367,7 +364,7 @@ Set `sensitive: true` in `AGENTS.md` (or via runtime flag).
 
 ### Implications
 
-A sensitive investigation typically cannot reach the same confidence as a full-network one. At Gate 1, the orchestrator marks findings as **sensitive-mode constrained** and notes which criteria could not be evaluated live. The user sees this framing explicitly.
+A sensitive investigation typically cannot reach the same confidence as a full-network one. At the Investigation gate, the orchestrator marks findings as **sensitive-mode constrained** and notes which criteria could not be evaluated live. The user sees this framing explicitly.
 
 Per-runtime enforcement of sensitive mode: see [integrations.md](integrations.md#sensitive-mode-across-runtimes).
 
@@ -379,9 +376,9 @@ All pipeline state lives in files. If context is lost mid-investigation, the orc
 |---|---|
 | None | Phase 1 |
 | `brief-directions.txt` only | Phase 2 |
-| `data/methodology.json` but no findings | Phase 3 cycle 1 |
+| `data/methodology.json` but no findings | Phase 3 investigation cycle 1 |
 | `data/findings.json` but no `summary.md` | Phase 3, evaluate current cycle's readiness |
-| `summary.md` present | Phase 4 review |
+| `summary.md` present | Investigation gate review (end of Phase 3) |
 
 Before choosing a phase, classify the source-expression contract:
 
@@ -406,7 +403,7 @@ No database, no daemon — files are the source of truth.
 
 ## Vault context (reading, not writing)
 
-The vault (`VAULT_PATH` from `.spotlight-config.json`) is read-only during investigation. The investigator queries it for prior knowledge before research begins; no agent writes to the vault during Phases 2–4. Writing happens only during Phase 5 (ingestion).
+The vault (`VAULT_PATH` from `.spotlight-config.json`) is read-only during investigation. The investigator queries it for prior knowledge before research begins; no agent writes to the vault during Phases 2–4. Writing happens only during Phase 4 (ingestion).
 
 This separation protects the vault from half-formed findings. The vault holds confirmed knowledge; case files hold in-progress research.
 

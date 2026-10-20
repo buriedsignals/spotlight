@@ -1,11 +1,11 @@
 ---
 name: phase-gate1
-description: "Spotlight Phase 4 — Gate 1: generate summary.md + data/summary.json, present findings to the user, iterate on request, user approval gate (ends the turn), provenance packaging, review artifact, feedback processing on resume"
+description: "Spotlight Investigation gate (end of Phase 3): generate summary.md + data/summary.json, present findings to the user, iterate on request, user approval gate (ends the turn), provenance packaging, review artifact, feedback processing on resume"
 invocable_by: [orchestrator]
 phase: gate-1
 ---
 
-# Phase 4 — Gate 1
+# Investigation gate (end of Phase 3)
 
 Start or resume only from a `spotlight_resolve` result passed by the parent
 with `owner: phase-gate1`. When `phase: gate1_approval`, regenerate both
@@ -97,7 +97,7 @@ each finding's quoted evidence, located in the stored sources, grounds the
 claim, and writes `data/decision-signals.json`. Findings whose quote is not
 found in any stored source, or that need arithmetic, are `routed` back to the
 existing fact-check process instead of judged. If the command prints
-`"ran": false`, skip this section without blocking Gate 1.
+`"ran": false`, skip this section without blocking the Investigation gate.
 
 Add a **Decision check** column to the findings table (flags or `none`,
 `routed`, `unavailable`) and list each flag with its reason under
@@ -159,13 +159,13 @@ spotlight_transition({
 This binds the current dependency digest owned by the provenance builder's
 annotated registry, including activated validation inputs and referenced
 evidence artifacts. Pending summary artifacts are not approval. If a dependency
-changes, the next resolution returns Gate 1 approval; re-run the existing
+changes, the next resolution returns the Investigation gate approval; re-run the existing
 validators and obtain a new human approval before report or ingestion.
 
 The human gate ends the turn. On resume, resolve and follow `resume.resume_at`;
 do not skip directly to report.
 
-## Finalize an approved Gate 1
+## Finalize an approved Investigation gate
 
 ### `resume_at: provenance`
 

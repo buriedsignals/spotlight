@@ -1,6 +1,6 @@
 ---
 name: report-drafting
-description: "Phase 5 hybrid synthesis — the model authors localized report framing and priority in report-draft.json; deterministic code validates finding references and renders the final Markdown, HTML, and evidence ledger."
+description: "Phase 4 hybrid synthesis — the model authors localized report framing and priority in report-draft.json; deterministic code validates finding references and renders the final Markdown, HTML, and evidence ledger."
 license: MIT
 metadata:
   type: orchestration-subskill
@@ -9,9 +9,9 @@ metadata:
 invocable_by: [orchestrator, user]
 ---
 
-# report-drafting — Phase 5 synthesis
+# report-drafting — Phase 4 synthesis
 
-You are at Phase 5. Gate 1 has approved the structured findings and independent verdicts. You own the editorial synthesis; deterministic code owns file construction and evidence/confidence enforcement.
+You are at Phase 4. The Investigation gate has approved the structured findings and independent verdicts. You own the editorial synthesis; deterministic code owns file construction and evidence/confidence enforcement.
 
 ## Deliverables (all three required)
 
@@ -96,7 +96,7 @@ The renderer places this at the top of the page. Do not soften:
    text and attribution, and records its locator, hashes, relation, and lifecycle in
    `evidence-map.json`. Legacy `1.0` reports do not accept expression selections.
 
-3. **Decision check (optional).** If this case ran decision checks at Gate 1
+3. **Decision check (optional).** If this case ran decision checks at the Investigation gate
    (`data/decision-signals.json` exists), check the prose before finalizing:
 
    ```

@@ -1,6 +1,6 @@
 # Noosphere C2PA Integration
 
-Use this integration only after Spotlight has passed Gate 1. It packages the completed case into a C2PA-ready provenance manifest and can optionally submit that manifest to a Noosphere signer.
+Use this integration only after Spotlight has passed the Investigation gate. It packages the completed case into a C2PA-ready provenance manifest and can optionally submit that manifest to a Noosphere signer.
 
 ## Contract
 
@@ -53,4 +53,4 @@ Update the file from the same source when the list changes.
 
 ## Editorial Boundary
 
-C2PA signing makes the package tamper-evident. It does not certify that claims are true. Spotlight's truth standard remains the evidence bundle, independent fact-checking, and Gate 1 editorial review.
+C2PA signing makes the package tamper-evident. It does not certify that claims are true. Spotlight's truth standard remains the evidence bundle, independent fact-checking, and Investigation gate editorial review.

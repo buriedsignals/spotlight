@@ -21,7 +21,7 @@ spotlight parent
   -> load one task reference for the configured model tier
   -> write existing Spotlight case artifacts
   -> independent fact-check
-  -> optional verified-indicator export after Gate 1
+  -> optional verified-indicator export after the Investigation gate
 ```
 
 There is no CTI pack manager, second agent hierarchy, upstream workspace, or
@@ -116,7 +116,7 @@ verified finding does not inherit that finding's verdict.
 
 ### Verified export
 
-Export is offered only after Gate 1:
+Export is offered only after the Investigation gate:
 
 ```bash
 python3 scripts/export-verified-indicators.py \

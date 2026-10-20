@@ -2,7 +2,7 @@
 # Copy to ~/.codex/config.toml and adjust per your OpenAI plan.
 #
 # Profiles:
-#   orchestrator — top-level skill (Phase 0 → Gate 1)
+#   orchestrator — top-level skill (Phase 0 → Investigation gate)
 #   investigator — PLANNING + EXECUTION (spawned by orchestrator)
 #   fact-checker — verification after each investigator cycle
 #

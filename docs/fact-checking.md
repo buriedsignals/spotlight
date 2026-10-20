@@ -206,7 +206,7 @@ A finding built on `inaccessible` sources cannot be `high` confidence. This is h
 }
 ```
 
-This rolls up into the Gate 1 readiness check. One of the six readiness criteria is "No unresolved disputes" — a `disputed` verdict without a resolution path fails that criterion.
+This rolls up into the Investigation gate readiness check. One of the six readiness criteria is "No unresolved disputes" — a `disputed` verdict without a resolution path fails that criterion.
 
 ## gaps_for_next_cycle
 

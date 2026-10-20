@@ -155,10 +155,10 @@ step 0). Do not rewrite script paths per runtime.
 | Skill ID | Path | Description | Invocable By |
 |----------|------|-------------|--------------|
 | `spotlight` | `skills/spotlight/SKILL.md` | Investigation orchestrator — pipeline phases, gates, cycle evaluation | orchestrator (top-level) |
-| `editorial-review` | `skills/editorial-review/SKILL.md` | Post-Gate-1 HTML review artifact; exports structured feedback to the Gate 1 owner | orchestrator, user |
+| `editorial-review` | `skills/editorial-review/SKILL.md` | Post-Investigation-gate HTML review artifact; exports structured feedback to the Investigation gate owner | orchestrator, user |
 | `integrations` | `skills/integrations/SKILL.md` | Routing layer for external tool integrations — dev-browser, Junkipedia, Arbiter, Noosphere C2PA, OSINT Navigator, Unpaywall. Reads live preflight status, maps investigation tasks to integrations | investigator, fact-checker, orchestrator |
-| `ingest` | `skills/ingest/SKILL.md` | Phase 6 knowledge archival after a durable requested transition | orchestrator |
-| `report-drafting` | `skills/report-drafting/SKILL.md` | Post-Gate-1 hybrid report: model-authored localized framing and priority in `data/report-draft.json`; deterministic finding-reference, verdict, confidence, escaping, and artifact rendering. | orchestrator, user |
+| `ingest` | `skills/ingest/SKILL.md` | Phase 5 knowledge archival after a durable requested transition | orchestrator |
+| `report-drafting` | `skills/report-drafting/SKILL.md` | Post-Investigation-gate hybrid report: model-authored localized framing and priority in `data/report-draft.json`; deterministic finding-reference, verdict, confidence, escaping, and artifact rendering. | orchestrator, user |
 | `monitoring` | `skills/monitoring/SKILL.md` | Monitoring orchestration — Mycroft passive signals, coJournalist projects/scouts, runtime-native fallbacks | orchestrator |
 | `provenance-signing` | `skills/provenance-signing/SKILL.md` | Build a case-level provenance manifest and optionally hand it to Noosphere C2PA signing before final report delivery | orchestrator, user |
 | `acquisition-graduation` | `skills/acquisition-graduation/SKILL.md` | Convert repeated dev-browser acquisitions into durable source/domain guidance without secrets or brittle session details | investigator, fact-checker, orchestrator, user |
@@ -175,10 +175,10 @@ step 0). Do not rewrite script paths per runtime.
 | `social-media-intelligence` | `skills/social-media-intelligence/SKILL.md` | Account authenticity, coordination detection, narrative tracking | investigator, fact-checker, user |
 | `phase-preflight` | `skills/phase-preflight/SKILL.md` | Phase 0 preflight child skill — config, sovereign backings, workspace validation, project setup, integration tiering | orchestrator |
 | `phase-methodology` | `skills/phase-methodology/SKILL.md` | Phases 1–2 child skill — brief conversation with approval gate, investigator PLANNING spawn, methodology validation and approval | orchestrator |
-| `phase-execution` | `skills/phase-execution/SKILL.md` | Phase 3 child skill — autonomous execution cycles (max 5), fact-check spawns, validators, readiness criteria, Stall Protocol | orchestrator |
-| `phase-gate1` | `skills/phase-gate1/SKILL.md` | Phase 4 child skill — summary + machine contract generation, Gate 1 user approval (ends turn), provenance packaging, review artifact | orchestrator |
-| `phase-report` | `skills/phase-report/SKILL.md` | Phase 5 child skill — public-facing report drafting via report-drafting + deterministic finalize-report.py rendering | orchestrator |
-| `phase-ingest` | `skills/phase-ingest/SKILL.md` | Phase 6 child skill — ingestion transition marker, user confirmation, vault ingestion or decline | orchestrator |
+| `phase-execution` | `skills/phase-execution/SKILL.md` | Phase 3 child skill — autonomous investigation cycles (max 5), fact-check spawns, validators, readiness criteria, Stall Protocol | orchestrator |
+| `phase-gate1` | `skills/phase-gate1/SKILL.md` | Phase 3 closing child skill — summary + machine contract generation, Investigation gate user approval (ends turn), provenance packaging, review artifact | orchestrator |
+| `phase-report` | `skills/phase-report/SKILL.md` | Phase 4 child skill — public-facing report drafting via report-drafting + deterministic finalize-report.py rendering | orchestrator |
+| `phase-ingest` | `skills/phase-ingest/SKILL.md` | Phase 5 child skill — ingestion transition marker, user confirmation, vault ingestion or decline | orchestrator |
 
 ## Sensitive Mode
 
@@ -186,7 +186,7 @@ When `sensitive: true` is set in this manifest (or toggled at runtime), the adap
 
 The adapter's enforcement point varies by runtime (pi extension / Hermes `local-gemma` routing / Goose tool allowlist / Codex tool allowlist / per-session provider binding). See `docs/integrations.md#sensitive-mode-across-runtimes`.
 
-A sensitive investigation cannot satisfy the "document trail" readiness criterion from external sources. The orchestrator marks the investigation as **sensitive-mode constrained** at Gate 1.
+A sensitive investigation cannot satisfy the "document trail" readiness criterion from external sources. The orchestrator marks the investigation as **sensitive-mode constrained** at the Investigation gate.
 
 To activate: set `sensitive: true` in this file or issue a runtime command.
 To deactivate: set `sensitive: false` or issue a runtime command.
@@ -220,7 +220,7 @@ absolute path and the result in `.spotlight-config.json` under `storage`.
 ```
 {CASE_DIR}/
 ├── brief-directions.txt         # Phase 1 — approved brief
-├── summary.md                   # Phase 4 — Gate 1 summary (human-readable)
+├── summary.md                   # Phase 3 — Investigation gate summary (human-readable)
 ├── data/
 │   ├── methodology.json         # Schema: schemas/methodology.schema.json
 │   ├── findings.json            # Schema: schemas/findings.schema.json
@@ -229,8 +229,8 @@ absolute path and the result in `.spotlight-config.json` under `storage`.
 │   ├── case-contract.json       # Sole authoritative 1.1 activation receipt
 │   ├── source-expression-migration.json # Dry-run audit only; never activates a case
 │   ├── report-draft.json        # Schema: schemas/report-draft.schema.json (when report requested)
-│   ├── report-declined.json     # Explicit Phase 5 decline marker (when report skipped)
-│   ├── ingestion.json           # Case-local Phase 6 transition/receipt
+│   ├── report-declined.json     # Explicit Phase 4 decline marker (when report skipped)
+│   ├── ingestion.json           # Case-local Phase 5 transition/receipt
 │   ├── evidence-bundle.json     # Schema: schemas/evidence-bundle.schema.json
 │   ├── investigation-log.json   # Schema: schemas/investigation-log.schema.json
 │   ├── summary.json             # Schema: schemas/summary.schema.json
@@ -267,7 +267,7 @@ schema versions as declared below.
 | Reviewed Knowledge Batch | `schemas/knowledge-batch.schema.json` | Additive canonical claims, events, story arcs, review decisions, and versioned membership records for the Knowledge Destination Port |
 | Methodology | `schemas/methodology.schema.json` | Investigation plan with directions, steps, tools_required, opsec_considerations |
 | Investigation Log | `schemas/investigation-log.schema.json` | Append-only cycle audit trail |
-| Summary | `schemas/summary.schema.json` | Gate 1 summary for review |
+| Summary | `schemas/summary.schema.json` | Investigation gate summary for review |
 
 ## Source-Expression Release Modes
 

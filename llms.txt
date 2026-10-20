@@ -14,7 +14,7 @@
 ## What Spotlight does
 
 - [README](https://spotlight.buriedsignals.com/README.md): overview, supported runtimes, dependencies, and public documentation map
-- [Investigation pipeline](https://spotlight.buriedsignals.com/docs/investigating.md): brief, methodology, cycles, Gate 1, ingestion, and readiness criteria
+- [Investigation pipeline](https://spotlight.buriedsignals.com/docs/investigating.md): brief, methodology, cycles, Investigation gate, ingestion, and readiness criteria
 - [Fact-checking model](https://spotlight.buriedsignals.com/docs/fact-checking.md): independent verification pass, SIFT workflow, verdict taxonomy, and evidence trails
 - [Monitoring](https://spotlight.buriedsignals.com/docs/monitoring.md): how ongoing monitoring feeds new leads back into investigations
 - [Integrations](https://spotlight.buriedsignals.com/docs/integrations.md): dev-browser, Junkipedia, OSINT Navigator, and manifest/preflight behavior
@@ -22,9 +22,9 @@
 
 ## Core concepts
 
-- **Pipeline:** Preflight -> Brief -> Methodology -> Execution cycles -> Gate 1 -> Ingestion
+- **Pipeline:** Preflight -> Brief -> Methodology -> Investigation cycles -> Investigation gate -> Report -> Ingest
 - **Two-agent model:** investigator executes the research; fact-checker independently verifies the claims
-- **Editorial control:** the user approves the brief, methodology, Gate 1 summary, and ingestion
+- **Editorial control:** the user approves the brief, methodology, Investigation gate summary, and ingestion
 - **Readiness criteria:** minimum findings, source independence, no unresolved disputes, affected perspective, document trail, and gap assessment
 - **Evidence grounding:** scrape before cite, keep local copies, and archive sources before relying on them
 - **Sensitive mode:** strips web search and scraping so investigations can run local-only
@@ -43,7 +43,7 @@
 ## Skills
 
 - [spotlight](https://spotlight.buriedsignals.com/skills/spotlight/SKILL.md): top-level investigation orchestrator
-- [editorial-review](https://spotlight.buriedsignals.com/skills/editorial-review/SKILL.md): post-Gate-1 review artifact and feedback loop
+- [editorial-review](https://spotlight.buriedsignals.com/skills/editorial-review/SKILL.md): post-Investigation-gate review artifact and feedback loop
 - [integrations](https://spotlight.buriedsignals.com/skills/integrations/SKILL.md): routing layer for external tools
 - [ingest](https://spotlight.buriedsignals.com/skills/ingest/SKILL.md): vault ingestion and registry updates
 - [monitoring](https://spotlight.buriedsignals.com/skills/monitoring/SKILL.md): monitoring orchestration across runtimes

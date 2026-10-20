@@ -1,6 +1,6 @@
 # Verified Technical-Indicator Export
 
-Use only after Gate 1 fact-checking. Export is a derived editorial artifact, never a substitute for verification.
+Use only after the Investigation gate fact-checking. Export is a derived editorial artifact, never a substitute for verification.
 
 ## Eligibility
 
