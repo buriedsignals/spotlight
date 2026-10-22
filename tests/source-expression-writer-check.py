@@ -39,8 +39,16 @@ PASSAGES = [f"Passage number {i}." for i in range(8)]
 
 
 def make_case(root: Path) -> Path:
+    """An activated case born under the new default: a born event, no
+    artifact hashes until its gate approval binds them."""
     case = root / "case"
     CASES.write_activated_case(case)
+    contract_path = case / "data" / "case-contract.json"
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    contract["activation_events"] = [{
+        "event_id": "born-test", "kind": "born", "activated_contract_version": "1.1",
+        "activated_at": "2026-10-22T12:00:00Z", "tool_version": "test"}]
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
     passages = case / "research" / "passages.txt"
     passages.write_text("\n".join(PASSAGES) + "\n", encoding="utf-8")
     bundle_path = case / "data" / "evidence-bundle.json"
@@ -210,6 +218,13 @@ def main() -> int:
         report = json.loads(subprocess.run([sys.executable, str(SCRIPTS / "revalidate-locators.py"), str(root), "--json"],
                                            capture_output=True, text=True, check=True).stdout)
         require(report["revalidation_rate"] is not None and report["revalidation_rate"] < 1.0, report)
+        (root / "unreadable" / "data").mkdir(parents=True)
+        (root / "unreadable" / "data" / "case-contract.json").write_text("{}", encoding="utf-8")
+        report = json.loads(subprocess.run([sys.executable, str(SCRIPTS / "revalidate-locators.py"), str(root), "--json"],
+                                           capture_output=True, text=True, check=True).stdout)
+        require(report["revalidation_rate"] is None and report["skipped_cases"], "an unreadable case was reported as stable")
+        import shutil
+        shutil.rmtree(root / "unreadable")
         passages_path.write_bytes(original_passages)
 
         # Born activation and the gate-approval binding.
@@ -228,6 +243,11 @@ def main() -> int:
         (born / "data" / "source-expressions.json").unlink()
         resumed = subprocess.run([sys.executable, str(SCRIPTS / "case-contract.py"), "activate-new", str(born)], capture_output=True, text=True)
         require(resumed.returncode == 0 and (born / "data" / "source-expressions.json").is_file(), resumed.stderr)
+        pilot = root / "pilot"
+        (pilot / "data").mkdir(parents=True)
+        (pilot / "data" / "source-expressions.json").write_text("{}", encoding="utf-8")
+        refused_pilot = subprocess.run([sys.executable, str(SCRIPTS / "case-contract.py"), "activate-new", str(pilot)], capture_output=True, text=True)
+        require(refused_pilot.returncode == 2 and not (pilot / "data" / "case-contract.json").exists(), "a case with passages was re-born")
         legacy = root / "legacy"
         (legacy / "data").mkdir(parents=True)
         (legacy / "data" / "findings.json").write_text(json.dumps(CASES.valid_findings()), encoding="utf-8")
@@ -235,9 +255,15 @@ def main() -> int:
         require(reborn.returncode == 2 and not (legacy / "data" / "case-contract.json").exists(), "a legacy case was re-born")
 
         # Once the gate is approved, the artifacts must match the binding.
+        # Only the gate approval binds (there is no bind command); here the
+        # approval's own order is reproduced: bind, then record the approval.
+        from spotlight_orchestration.case_contract import bind
+        from spotlight_orchestration.storage import transaction
+        with transaction(case) as descriptor:
+            bind(case, descriptor)
         (case / "data" / "orchestration.json").write_text(json.dumps({"approvals": {"investigation_gate": {}}}), encoding="utf-8")
-        bound = subprocess.run([sys.executable, str(SCRIPTS / "case-contract.py"), "bind", str(case)], capture_output=True, text=True)
-        require(bound.returncode == 0, bound.stderr)
+        no_cli = subprocess.run([sys.executable, str(SCRIPTS / "case-contract.py"), "bind", str(case)], capture_output=True, text=True)
+        require(no_cli.returncode == 2 and "invalid choice" in no_cli.stderr, "a bind command exists")
         fresh = subprocess.run([sys.executable, str(SCRIPTS / "validate-case.py"), str(case)], capture_output=True, text=True)
         require(fresh.returncode == 0, "a freshly bound approved case does not validate: " + fresh.stdout[-1200:] + fresh.stderr[-1200:])
         require(run_writer(case, {"expressions": [], "lifecycle": [{"expression_id": "SXW7", "event": "withdrawn", "reason": "test"}]}).returncode == 0,

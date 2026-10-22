@@ -428,11 +428,11 @@ If a planned approach hits a dead end:
 
 ### Write Findings
 
-`write-file("{CASE_DIR}/data/findings.json", ...)` (for cycle 1) or `edit-file` to merge with prior findings (for cycle N > 1):
+`write-file("{CASE_DIR}/data/findings.json", ...)` (for cycle 1) or `edit-file` to merge with prior findings (for cycle N > 1). Use `"schema_version": "1.1"` when `SOURCE_EXPRESSION_MODE` is `activated` (then run `--fingerprint-findings`, below), and `"1.0"` otherwise:
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "project": "string",
   "lead": "original lead text or URL",
   "investigated_at": "ISO 8601 timestamp",

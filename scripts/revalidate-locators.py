@@ -28,26 +28,35 @@ LOCATOR_MARKERS = ("anchor", "locator", "line range", "json pointer", "does not 
 
 
 def revalidate(root: Path) -> dict:
-    cases, expressions, failures = 0, 0, []
+    cases, expressions, failures, skipped = 0, 0, [], []
     for contract in sorted(root.glob("*/data/case-contract.json")):
         case = contract.parent.parent
         try:
             doc = json.loads((case / "data" / "source-expressions.json").read_text(encoding="utf-8"))
             findings = json.loads((case / "data" / "findings.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except (OSError, ValueError) as exc:
+            skipped.append({"case": case.name, "reason": str(exc)[:200]})
             continue
         cases += 1
         active = [e for e in doc.get("expressions", []) if isinstance(e, dict)
                   and (e.get("lifecycle_events") or [{}])[-1].get("event") == "activated"]
         expressions += len(active)
         bundle_path = case / "data" / "evidence-bundle.json"
-        bundle = json.loads(bundle_path.read_text(encoding="utf-8")) if bundle_path.is_file() else None
+        try:
+            bundle = json.loads(bundle_path.read_text(encoding="utf-8")) if bundle_path.is_file() else None
+        except (OSError, ValueError):
+            bundle = None
         errors = VALIDATOR.validate_source_expressions(case, doc, findings, None, bundle, enforce_positive_verdicts=False)
         broken = {e.get("id") for e in active
                   if any(f"{e.get('id')!r}" in err and any(m in err.lower() for m in LOCATOR_MARKERS) for err in errors)}
         failures += [{"case": case.name, "expression_id": i} for i in sorted(broken)]
-    rate = None if expressions == 0 else round(1 - len(failures) / expressions, 4)
-    return {"cases": cases, "active_expressions": expressions, "locator_failures": failures, "revalidation_rate": rate}
+    # An unreadable case cannot count as stable: the rate is withheld until
+    # every activated case can be read.
+    rate = None if expressions == 0 or skipped else round(1 - len(failures) / expressions, 4)
+    # Skipped cases are listed, not silently dropped: an unreadable case is
+    # not a stable one.
+    return {"cases": cases, "active_expressions": expressions, "locator_failures": failures,
+            "skipped_cases": skipped, "revalidation_rate": rate}
 
 
 def main(argv: list[str] | None = None) -> int:

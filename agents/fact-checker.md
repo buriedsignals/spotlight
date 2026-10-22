@@ -355,8 +355,9 @@ Use the same schema as the investigator (see `skills/monitoring/references/recom
 - Reads from: `{CASE_DIR}/data/findings.json`
 - Reads from: `{CASE_DIR}/data/evidence-bundle.json` when present
 - Writes to: `{CASE_DIR}/data/fact-check.json`
-- Reads and appends to: `{CASE_DIR}/data/source-expressions.json` only in
-  explicit `pilot` or `activated` mode
+- Reads `{CASE_DIR}/data/source-expressions.json` and adds passages only
+  through `scripts/write-source-expressions.py`, in `pilot` or `activated`
+  mode
 - Research output: `{CASE_DIR}/research/`
 
 ## Sensitive Mode

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .case_writer import atomic_write_files
+from .contract import OrchestrationError
 
 TOOL_VERSION = "spotlight-case-contract/1"
 CONTRACT = "data/case-contract.json"
@@ -21,8 +22,9 @@ ARTIFACTS = {
 }
 
 
-class ContractError(Exception):
-    pass
+class ContractError(OrchestrationError):
+    """A case-contract write that is refused; the CLI reports it like any
+    other orchestration refusal."""
 
 
 def _now() -> str:
@@ -49,8 +51,9 @@ def _project(case: Path) -> str:
 def activate_new(case: Path, data_descriptor: int) -> dict[str, Any]:
     contract_path = case / CONTRACT
     expressions_path = case / "data" / "source-expressions.json"
-    if (case / "data" / "findings.json").exists():
-        raise ContractError("the case already has findings; migrate a legacy case instead of re-activating it")
+    for relative in ("data/findings.json", "findings.json", "data/fact-check.json", "data/investigation-log.json"):
+        if (case / relative).exists():
+            raise ContractError(f"the case already has {relative}; migrate a legacy case instead of re-activating it")
     if contract_path.exists():
         try:
             existing = json.loads(contract_path.read_text(encoding="utf-8"))
@@ -62,6 +65,8 @@ def activate_new(case: Path, data_descriptor: int) -> dict[str, Any]:
             raise ContractError("the case already has a case contract")
         # An earlier run stopped between its two writes: finish it.
         doc = existing
+    elif expressions_path.exists():
+        raise ContractError("the case already has passages (data/source-expressions.json); a pilot case is migrated, not re-born")
     else:
         doc = {
             "schema_version": "1.0",

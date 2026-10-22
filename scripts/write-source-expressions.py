@@ -159,18 +159,27 @@ def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], 
                 raise WriteError(f"expression {raw['id']!r} already exists with a different passage; "
                                  "a changed passage is a new expression that supersedes it")
             target = existing
-        for link in raw.get("finding_links", []):
+        links = raw.get("finding_links", [])
+        if not isinstance(links, list) or not all(isinstance(link, dict) for link in links):
+            raise WriteError(f"expression {raw['id']!r}: finding_links must be a list of objects")
+        for link in links:
             finding_id, relation = link.get("finding_id"), link.get("relation")
             if finding_id not in findings:
                 raise WriteError(f"expression {raw['id']!r}: finding {finding_id!r} does not exist")
             if relation not in ("supports", "contradicts", "context"):
                 raise WriteError(f"expression {raw['id']!r}: relation must be supports, contradicts or context")
             built_link = _link(target, findings[finding_id], finding_id, relation)
-            if not any(l.get("finding_id") == finding_id for l in target["finding_links"]):
+            existing_link = next((l for l in target["finding_links"] if l.get("finding_id") == finding_id), None)
+            if existing_link is None:
                 target["finding_links"].append(built_link)
-            elif not any(l.get("link_fingerprint") == built_link["link_fingerprint"] for l in target["finding_links"]):
-                raise WriteError(f"expression {raw['id']!r} already links {finding_id!r} with another relation")
-    for event in proposal.get("lifecycle", []):
+            elif existing_link.get("relation") != relation:
+                raise WriteError(f"expression {raw['id']!r} already links {finding_id!r} as {existing_link.get('relation')}")
+            elif existing_link.get("link_fingerprint") != built_link["link_fingerprint"]:
+                raise WriteError(f"expression {raw['id']!r}: the link to {finding_id!r} is stale because the claim changed; run --fingerprint-findings")
+    lifecycle = proposal.get("lifecycle", [])
+    if not isinstance(lifecycle, list) or not all(isinstance(event, dict) for event in lifecycle):
+        raise WriteError("lifecycle must be a list of objects")
+    for event in lifecycle:
         expression = by_id.get(event.get("expression_id"))
         if expression is None:
             raise WriteError(f"lifecycle event for unknown expression {event.get('expression_id')!r}")
@@ -214,7 +223,11 @@ def fingerprint_findings(case: Path) -> int:
             if finding.get("finding_fingerprint") != fp:
                 finding["finding_fingerprint"] = fp
                 changed[str(finding.get("id"))] = finding
-        outputs = {"data/findings.json": (json.dumps(findings_doc, indent=2, ensure_ascii=False) + "\n").encode("utf-8")}
+        # Rewrite findings.json only when a fingerprint changed, so an idle
+        # run never moves the file's hash.
+        outputs = {}
+        if changed:
+            outputs["data/findings.json"] = (json.dumps(findings_doc, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
         expressions = _load(case / TARGET)
         relinked = False
         if isinstance(expressions, dict):
@@ -229,7 +242,8 @@ def fingerprint_findings(case: Path) -> int:
                         relinked = True
             if relinked:
                 outputs[TARGET] = canonical_json_bytes(expressions) + b"\n"
-        atomic_write_files(case, outputs, data_descriptor=descriptor)
+        if outputs:
+            atomic_write_files(case, outputs, data_descriptor=descriptor)
     return len(changed)
 
 
