@@ -20,6 +20,8 @@ ARTIFACTS = {
     "evidence_bundle_sha256": "data/evidence-bundle.json",
     "source_expressions_sha256": "data/source-expressions.json",
 }
+# Optional: bound when the case has source positions at approval.
+POSITIONS = "data/source-positions.json"
 
 
 class ContractError(OrchestrationError):
@@ -106,6 +108,9 @@ def bind(case: Path, data_descriptor: int) -> dict[str, Any] | None:
         if not artifact.is_file():
             raise ContractError(f"cannot bind: {relative} is missing")
         hashes[key] = hashlib.sha256(artifact.read_bytes()).hexdigest()
+    positions = case / POSITIONS
+    if positions.is_file():
+        hashes["source_positions_sha256"] = hashlib.sha256(positions.read_bytes()).hexdigest()
     events = doc.get("activation_events")
     if not isinstance(events, list) or not events:
         raise ContractError("the case contract has no activation event")

@@ -163,6 +163,44 @@ def main() -> int:
         validation = subprocess.run([sys.executable, str(SCRIPTS / "validate-case.py"), str(case)], capture_output=True, text=True)
         require(validation.returncode == 0, validation.stdout + validation.stderr)
 
+        # Source positions go through the same writer and publish with the
+        # passages in one locked write.
+        positions_path = case / "data" / "source-positions.json"
+
+        def position(**overrides) -> dict:
+            body = {"id": "SP1", "finding_id": "F1", "actor": {"label": "Acme spokesperson"},
+                    "stance": "disputes", "source_expression_ids": ["SXW2"],
+                    "attribution_verbatim": "Passage number 2"}
+            body.update(overrides)
+            return {"expressions": [], "positions": [body]}
+
+        made = run_writer(case, position())
+        require(made.returncode == 0 and json.loads(positions_path.read_text(encoding="utf-8"))["positions"][0]["created_by"] == "investigator",
+                "a valid position was not written: " + made.stderr)
+        positions_before, passages_before = positions_path.read_bytes(), target.read_bytes()
+        for bad, reason in (
+            (position(id="SP2", attribution_verbatim="the ministry said"), "does not appear"),
+            (position(id="SP2", source_expression_ids=["SXW404"]), "does not exist"),
+            (position(id="SP2", finding_id="F404"), "does not exist"),
+            (position(stance="asserts"), "already exists"),
+            (position(id="SP2", created_by="human"), "unknown fields"),
+        ):
+            refused = run_writer(case, bad)
+            require(refused.returncode == 2 and reason in refused.stderr, f"a bad position was accepted: {bad} {refused.stderr}")
+            require(positions_path.read_bytes() == positions_before and target.read_bytes() == passages_before,
+                    "a refused position changed a file")
+        unioned = run_writer(case, position(source_expression_ids=["SXW3"], attribution_verbatim="Passage number 2"))
+        require(unioned.returncode == 0 and json.loads(positions_path.read_text(encoding="utf-8"))["positions"][0]["source_expression_ids"] == ["SXW2", "SXW3"],
+                "re-proposing a position did not union its passages: " + unioned.stderr)
+        # A cited passage must be linked to the position's finding.
+        unlinked = expressions(case)
+        for expression in unlinked["expressions"]:
+            if expression["id"] == "SXW3":
+                expression["finding_links"] = [dict(expression["finding_links"][0], finding_id="F2")]
+        errors = CASES.vc.validate_source_positions(json.loads(positions_path.read_text(encoding="utf-8")),
+                                                     json.loads((case / "data" / "findings.json").read_text(encoding="utf-8")), unlinked)
+        require(any("not linked to finding" in e for e in errors), f"an unlinked passage was accepted: {errors}")
+
         # A two-file publish that fails on its second file puts the first
         # back: findings and passages never disagree after a failure.
         findings_path = case / "data" / "findings.json"
@@ -271,6 +309,14 @@ def main() -> int:
         after = subprocess.run([sys.executable, str(SCRIPTS / "validate-case.py"), str(case)], capture_output=True, text=True)
         require(after.returncode != 0 and "approval covers" in after.stdout + after.stderr,
                 "a change after approval was not caught by the binding: " + after.stdout[-800:] + after.stderr[-800:])
+        # The binding covers the positions that existed at approval.
+        bound = json.loads((case / "data" / "case-contract.json").read_text(encoding="utf-8"))["activation_events"][-1]["artifact_hashes"]
+        require(bound.get("source_positions_sha256") == hashlib.sha256(positions_path.read_bytes()).hexdigest(),
+                "the gate binding does not cover the source positions")
+        positions_path.unlink()
+        dropped = subprocess.run([sys.executable, str(SCRIPTS / "validate-case.py"), str(case)], capture_output=True, text=True)
+        require(dropped.returncode != 0 and "source-positions.json is missing" in dropped.stdout + dropped.stderr,
+                "positions removed after approval were not caught")
 
     print("source-expression writer and case contract: PASS")
     return 0

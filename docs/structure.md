@@ -69,6 +69,7 @@ activation receipt. Other artifacts retain their schema-specific versions.
 | `findings.schema.json` | `{CASE_DIR}/data/findings.json` | Investigator output — claims, evidence, sources, confidence, perspective, optional explicit technical indicators, monitoring recommendations |
 | `fact-check.schema.json` | `{CASE_DIR}/data/fact-check.json` | Fact-checker output — per-claim verdicts, evidence_for/against, gaps_for_next_cycle |
 | `source-expressions.schema.json` | `{CASE_DIR}/data/source-expressions.json` | Opt-in exact passages, locators, hashes, lifecycle, and finding relations |
+| `source-positions.schema.json` | `{CASE_DIR}/data/source-positions.json` | Who asserts or disputes each finding, with cited passages and verbatim attribution |
 | `case-contract.schema.json` | `{CASE_DIR}/data/case-contract.json` | Sole authoritative activation receipt for findings contract `1.1` |
 | `source-expression-migration.schema.json` | `{CASE_DIR}/data/source-expression-migration.json` | Migration dry-run/apply audit; never an activation signal |
 | `methodology.schema.json` | `{CASE_DIR}/data/methodology.json` | Investigator PLANNING output — investigation_plan, tools_required, opsec_considerations |
@@ -207,6 +208,7 @@ decision.
 │   ├── findings.json
 │   ├── fact-check.json
 │   ├── source-expressions.json  # pilot or activated cases
+│   ├── source-positions.json    # actor positions per finding (same writer)
 │   ├── case-contract.json       # activated cases only
 │   ├── source-expression-migration.json # migration audit only
 │   ├── investigation-log.json

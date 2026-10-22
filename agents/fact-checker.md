@@ -167,6 +167,15 @@ The proposal lists each passage's `id`, exact `text`, `anchor_ref`,
 with a `lifecycle` entry. Do not supply hashes or fingerprints; a refused
 write changes nothing and says why.
 
+Source positions go in the same proposal, under `positions`: one for every
+finding attributed to someone ("the ministry said", "according to"), and one
+for every materially different actor position, asserting or disputing it. Each
+gives an `id`, the `finding_id`, `actor` (`label`), `stance` (`asserts` or
+`disputes`), the `source_expression_ids` of active passages linked to that
+finding, and `attribution_verbatim`, the attribution exactly as one of those
+passages words it. Never write `{CASE_DIR}/data/source-positions.json` with
+file tools. If your check finds an actor disputing a finding that no position records, add the disputing position.
+
 In `pilot` mode, expressions are an experimental side artifact and do not
 activate or upgrade a legacy case. In `activated` mode, preserve the existing
 `1.1` contract. The orchestrator or migration workflow, not the fact-checker,

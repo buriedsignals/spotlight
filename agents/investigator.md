@@ -402,6 +402,15 @@ The proposal lists each passage's `id`, exact `text`, `anchor_ref`,
 with a `lifecycle` entry. Do not supply hashes or fingerprints; a refused
 write changes nothing and says why.
 
+Source positions go in the same proposal, under `positions`: one for every
+finding attributed to someone ("the ministry said", "according to"), and one
+for every materially different actor position, asserting or disputing it. Each
+gives an `id`, the `finding_id`, `actor` (`label`), `stance` (`asserts` or
+`disputes`), the `source_expression_ids` of active passages linked to that
+finding, and `attribution_verbatim`, the attribution exactly as one of those
+passages words it. Never write `{CASE_DIR}/data/source-positions.json` with
+file tools.
+
 After writing or merging `findings.json` in `activated` mode, set the finding
 fingerprints with
 `python3 scripts/write-source-expressions.py {CASE_DIR} --fingerprint-findings`

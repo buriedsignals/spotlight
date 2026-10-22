@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The one writer for data/source-expressions.json.
+"""The one writer for data/source-expressions.json and data/source-positions.json.
 
 The investigator and the fact-checker propose passages; this script merges
 them by expression id and publishes the file atomically under the case lock,
@@ -22,14 +22,24 @@ Proposal (JSON on stdin, or --file):
       "finding_links": [{"finding_id": "F1", "relation": "supports"}]
    }],
    "lifecycle": [{"expression_id": "SX1", "event": "superseded",
-                  "successor_expression_id": "SX3", "reason": "..."}]}
+                  "successor_expression_id": "SX3", "reason": "..."}],
+   "positions": [{"id": "SP1", "finding_id": "F1", "actor": {"label": "Ministry of Health"},
+                  "stance": "asserts", "source_expression_ids": ["SX3"],
+                  "attribution_verbatim": "the ministry said"}]}
+
+A source position records who asserts or disputes a finding: one for every
+attributed finding, and one for every materially different actor position.
+Its attribution_verbatim must appear exactly in one of the cited passages,
+which must be active and linked to the finding.
 
 Merging rules:
 - a new id is created with an `activated` lifecycle event by --actor;
 - an existing id must keep its passage core byte for byte (a changed passage
   is a new expression that supersedes the old one); its finding links are
   unioned, never removed, and its author is kept;
-- lifecycle events are appended, never rewritten.
+- lifecycle events are appended, never rewritten;
+- an existing position keeps its finding, actor, stance and attribution; its
+  passages are unioned (a changed position is a new id).
 
 The merged file is validated with the case validator before it is published;
 any error refuses the whole write and leaves the file as it was.
@@ -62,6 +72,8 @@ assert _SPEC.loader is not None
 _SPEC.loader.exec_module(VALIDATOR)
 
 TARGET = "data/source-expressions.json"
+POSITIONS = "data/source-positions.json"
+POSITION_CORE = ("finding_id", "actor", "stance", "attribution_verbatim")
 ACTORS = ("investigator", "fact-checker", "human")
 PROPOSED_CORE = ("text", "anchor_ref", "original_evidence_bundle_id", "language",
                  "attribution", "direct_quote", "derived_from_expression_id", "derivative_type")
@@ -190,6 +202,42 @@ def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], 
     return doc
 
 
+def merge_positions(current: dict[str, Any] | None, proposal: dict[str, Any], project: Any,
+                    actor: str, cycle: int) -> dict[str, Any] | None:
+    """Return the merged positions document, or None when nothing is proposed
+    and none exist yet; raise WriteError on a conflicting position."""
+    proposed = proposal.get("positions", [])
+    if not isinstance(proposed, list) or not all(isinstance(p, dict) for p in proposed):
+        raise WriteError("positions must be a list of objects")
+    if not proposed:
+        return current
+    doc = copy.deepcopy(current) if current else {
+        "schema_version": "1.0", "project": project, "created_at": _now(), "positions": [],
+    }
+    by_id = {p.get("id"): p for p in doc.get("positions", []) if isinstance(p, dict)}
+    for raw in proposed:
+        unknown = set(raw) - set(POSITION_CORE) - {"id", "source_expression_ids"}
+        if unknown:
+            raise WriteError(f"position {raw.get('id')!r}: unknown fields {sorted(unknown)}")
+        if not isinstance(raw.get("id"), str) or not raw["id"]:
+            raise WriteError("every proposed position needs a non-empty id")
+        ids = raw.get("source_expression_ids")
+        if not isinstance(ids, list) or not ids:
+            raise WriteError(f"position {raw['id']!r}: source_expression_ids must be a non-empty list")
+        existing = by_id.get(raw["id"])
+        if existing is None:
+            built = {key: copy.deepcopy(raw.get(key)) for key in ("id",) + POSITION_CORE}
+            built.update({"source_expression_ids": list(dict.fromkeys(ids)), "created_by": actor, "cycle": cycle})
+            doc["positions"].append(built)
+            by_id[raw["id"]] = built
+            continue
+        if any(existing.get(key) != raw.get(key) for key in POSITION_CORE):
+            raise WriteError(f"position {raw['id']!r} already exists with a different finding, actor, stance "
+                             "or attribution; a changed position is a new id")
+        existing["source_expression_ids"] = list(dict.fromkeys(existing["source_expression_ids"] + ids))
+    return doc
+
+
 def write(case: Path, proposal: dict[str, Any], actor: str, cycle: int) -> dict[str, Any]:
     if actor not in ACTORS:
         raise WriteError(f"--actor must be one of {', '.join(ACTORS)}")
@@ -202,7 +250,16 @@ def write(case: Path, proposal: dict[str, Any], actor: str, cycle: int) -> dict[
         errors = VALIDATOR.validate_source_expressions(case, doc, findings, fact_check, bundle, enforce_positive_verdicts=False)
         if errors:
             raise WriteError("the merged passages are not valid: " + "; ".join(errors[:8]))
-        atomic_write_files(case, {TARGET: canonical_json_bytes(doc) + b"\n"}, data_descriptor=descriptor)
+        outputs = {TARGET: canonical_json_bytes(doc) + b"\n"}
+        current_positions = _load(case / POSITIONS)
+        positions = merge_positions(current_positions, proposal, doc.get("project"), actor, cycle)
+        if positions is not None and positions is not current_positions:
+            errors = VALIDATOR.validate_source_positions(positions, findings, doc)
+            if errors:
+                raise WriteError("the merged source positions are not valid: " + "; ".join(errors[:8]))
+            outputs[POSITIONS] = canonical_json_bytes(positions) + b"\n"
+        # Both files publish together or not at all.
+        atomic_write_files(case, outputs, data_descriptor=descriptor)
     return doc
 
 

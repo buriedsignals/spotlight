@@ -58,6 +58,9 @@
         },
         "source_expressions_sha256": {
           "$ref": "#/definitions/sha256"
+        },
+        "source_positions_sha256": {
+          "$ref": "#/definitions/sha256"
         }
       }
     },

@@ -230,6 +230,7 @@ absolute path and the result in `.spotlight-config.json` under `storage`.
 │   ├── findings.json            # Schema: schemas/findings.schema.json
 │   ├── fact-check.json          # Schema: schemas/fact-check.schema.json
 │   ├── source-expressions.json  # Exact passages; written only by scripts/write-source-expressions.py
+│   ├── source-positions.json    # Who asserts or disputes each finding; same writer
 │   ├── case-contract.json       # Sole authoritative 1.1 activation receipt
 │   ├── source-expression-migration.json # Dry-run audit only; never activates a case
 │   ├── report-draft.json        # Schema: schemas/report-draft.schema.json (when report requested)
@@ -265,6 +266,7 @@ activation documents use their own schema versions as declared below.
 | Findings | `schemas/findings.schema.json` | Investigation findings with sources, confidence, claim-to-evidence grounding, connections, monitoring_recommendations |
 | Fact-Check | `schemas/fact-check.schema.json` | Per-claim verdicts with evidence_for/evidence_against trails and grounding assessment |
 | Source Expressions | `schemas/source-expressions.schema.json` | Exact case-local passages, locators, hashes, lifecycle, and many-to-many finding relations |
+| Source Positions | `schemas/source-positions.schema.json` | Per finding: actor, stance, cited passages and verbatim attribution; bound by the gate approval when present |
 | Case Contract | `schemas/case-contract.schema.json` | Append-only receipt that solely determines whether a case is activated as findings contract `1.1` |
 | Source-Expression Migration | `schemas/source-expression-migration.schema.json` | Dry-run/apply audit record; informative only and never an activation signal |
 | Evidence Bundle | `schemas/evidence-bundle.schema.json` | Acquisition artifacts with method, missing-source gate, hashes, and claim links |

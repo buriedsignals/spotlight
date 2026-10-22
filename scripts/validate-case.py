@@ -134,7 +134,8 @@ def validate_case_contract(data: Any) -> list[str]:
     if not isinstance(events, list) or not events:
         return errors + [f"{prefix}: activation_events must be a non-empty list"]
     event_ids: set[str] = set()
-    hash_fields = ("findings_sha256", "fact_check_sha256", "evidence_bundle_sha256", "source_expressions_sha256")
+    hash_fields = ("findings_sha256", "fact_check_sha256", "evidence_bundle_sha256", "source_expressions_sha256",
+                   "source_positions_sha256")
 
     def check_hashes(hashes: Any, where: str, require_expressions: bool) -> None:
         required = set(hash_fields[:3]) | ({"source_expressions_sha256"} if require_expressions else set())
@@ -511,6 +512,85 @@ def validate_source_expressions(
                 errors.append(f"fact-check.json.{container}[{index}]: source expression {expression_id!r} is pending human verification or not source evidence")
         if not eligible:
             errors.append(f"fact-check.json.{container}[{index}]: positive verdict for {finding_id!r} has no active supporting source expression")
+    return errors
+
+
+POSITION_FIELDS = {"id", "finding_id", "actor", "stance", "source_expression_ids", "attribution_verbatim", "created_by", "cycle"}
+
+
+def validate_source_positions(data: Any, findings_data: Any, expressions_data: Any) -> list[str]:
+    """Check data/source-positions.json against the findings and passages.
+
+    Every position names a finding, an actor and a stance, cites active
+    passages linked to that finding, and quotes its attribution exactly as
+    one of those passages words it (after whitespace normalization).
+    """
+    prefix = "source-positions.json"
+    if not isinstance(data, dict):
+        return [f"{prefix}: top-level must be an object"]
+    errors: list[str] = []
+    if set(data) - {"schema_version", "project", "created_at", "positions"}:
+        errors.append(f"{prefix}: unknown fields {sorted(set(data) - {'schema_version', 'project', 'created_at', 'positions'})}")
+    if data.get("schema_version") != "1.0":
+        errors.append(f"{prefix}: schema_version must be 1.0")
+    if not isinstance(findings_data, dict) or data.get("project") != findings_data.get("project"):
+        errors.append(f"{prefix}: project must match findings.json")
+    if parse_datetime(data.get("created_at")) is None:
+        errors.append(f"{prefix}: created_at must be a timezone-aware ISO timestamp")
+    positions = data.get("positions")
+    if not isinstance(positions, list):
+        return errors + [f"{prefix}: positions must be a list"]
+    finding_ids = {f.get("id") for f in (findings_data or {}).get("findings", []) if isinstance(f, dict)} if isinstance(findings_data, dict) else set()
+    expressions = {
+        e.get("id"): e for e in (expressions_data or {}).get("expressions", []) if isinstance(e, dict)
+    } if isinstance(expressions_data, dict) else {}
+    seen: set[str] = set()
+    for index, position in enumerate(positions):
+        where = f"{prefix}.positions[{index}]"
+        if not isinstance(position, dict):
+            errors.append(f"{where}: must be an object")
+            continue
+        missing, extra = POSITION_FIELDS - set(position), set(position) - POSITION_FIELDS
+        if missing or extra:
+            errors.append(f"{where}: missing {sorted(missing)} / unknown {sorted(extra)} fields")
+            continue
+        position_id = position["id"]
+        if not nonempty_string(position_id) or position_id in seen:
+            errors.append(f"{where}.id: must be a unique non-empty string")
+        seen.add(position_id)
+        finding_id = position["finding_id"]
+        if finding_id not in finding_ids:
+            errors.append(f"{where}: finding {finding_id!r} does not exist")
+        actor = position["actor"]
+        if not isinstance(actor, dict) or set(actor) != {"label"} or not nonempty_string(actor.get("label")):
+            errors.append(f"{where}.actor: must be an object with a non-empty label only")
+        if position["stance"] not in ("asserts", "disputes"):
+            errors.append(f"{where}.stance: must be asserts or disputes")
+        if position["created_by"] not in ("investigator", "fact-checker", "human"):
+            errors.append(f"{where}.created_by: must be investigator, fact-checker or human")
+        if not isinstance(position["cycle"], int) or isinstance(position["cycle"], bool) or position["cycle"] < 0:
+            errors.append(f"{where}.cycle: must be a non-negative integer")
+        ids = position["source_expression_ids"]
+        if not isinstance(ids, list) or not ids or len(set(map(str, ids))) != len(ids):
+            errors.append(f"{where}.source_expression_ids: must be a non-empty list of unique ids")
+            continue
+        texts = []
+        for expression_id in ids:
+            expression = expressions.get(expression_id)
+            if expression is None:
+                errors.append(f"{where}: passage {expression_id!r} does not exist")
+                continue
+            events = expression.get("lifecycle_events") or [{}]
+            if not isinstance(events[-1], dict) or events[-1].get("event") != "activated":
+                errors.append(f"{where}: passage {expression_id!r} is not active")
+            if not any(isinstance(l, dict) and l.get("finding_id") == finding_id for l in expression.get("finding_links") or []):
+                errors.append(f"{where}: passage {expression_id!r} is not linked to finding {finding_id!r}")
+            texts.append(normalized(expression.get("text")))
+        verbatim = normalized(position["attribution_verbatim"])
+        if not verbatim:
+            errors.append(f"{where}.attribution_verbatim: must be non-empty")
+        elif texts and not any(verbatim in text for text in texts):
+            errors.append(f"{where}.attribution_verbatim: does not appear in any cited passage")
     return errors
 
 
@@ -1198,6 +1278,12 @@ def main() -> int:
             all_errors.extend(validate_source_expressions(
                 case_dir, expressions_data, findings_data, factcheck_data, evidence_bundle_data
             ))
+        positions_path = case_dir / "data" / "source-positions.json"
+        if positions_path.exists():
+            positions_data, errs = load_json(positions_path)
+            all_errors.extend(errs)
+            if positions_data is not None:
+                all_errors.extend(validate_source_positions(positions_data, findings_data, expressions_data))
         artifact_paths = {
             "findings_sha256": findings_path,
             "fact_check_sha256": factcheck_path,
@@ -1215,6 +1301,10 @@ def main() -> int:
             if latest is None:
                 all_errors.append("case-contract.json: the approved Investigation gate has no artifact binding")
             else:
+                # Positions are optional: a binding covers them when they
+                # existed at approval, and none may appear after it.
+                if "source_positions_sha256" in latest or positions_path.exists():
+                    artifact_paths["source_positions_sha256"] = positions_path
                 for key, path in artifact_paths.items():
                     if not path.is_file():
                         all_errors.append(f"case-contract.json: activated artifact {path.name} is missing")
