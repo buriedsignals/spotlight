@@ -34,7 +34,7 @@ export function roleBody(name: string): string {
 }
 
 // Tier-conditional raw-source affordance: the 12b must never bulk-load raw pages
-// (context rot is its #1 failure mode); the more capable local tiers (26b/31b) may
+// (context rot is its #1 failure mode); the more capable local tier (26b) may
 // selectively read a `.raw` when the distilled leads look thin — a longer leash on
 // the same harness, not a different harness.
 const MODEL_TIER = process.env.SPOTLIGHT_MODEL_TIER ?? '12b';

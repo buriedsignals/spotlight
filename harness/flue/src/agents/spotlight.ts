@@ -4,7 +4,8 @@ import { roleBody, FLUE_VERB_ADAPTER, HARNESS_ROOT } from '../lib/roles.ts';
 import { createSpotlightTools } from '../lib/spotlight-tools.ts';
 
 // The local/cloud tier model. llama-server serves the Gemma GGUF as `local/…`;
-// swap to the 31B or Fireworks GLM-5.2 via env (U10/U13).
+// swap to Fireworks GLM-5.2 via env (U10/U13). Gemma 4 31B left the catalog
+// (Indicator Lab 0.1.60), so its tier is gone; an unknown tier falls back to 12b.
 const MODEL = process.env.SPOTLIGHT_FLUE_MODEL ?? 'local/gemma-4-12b-it';
 
 // Gate compaction (LOCAL tier only — API/frontier models keep Flue's defaults).
@@ -24,7 +25,6 @@ const TIER = process.env.SPOTLIGHT_MODEL_TIER ?? '12b';
 const TIER_COMPACT: Record<string, { at: number; keep: number }> = {
 	'12b': { at: 16384, keep: 4000 },
 	'26b': { at: 24576, keep: 6000 },
-	'31b': { at: 28672, keep: 8000 },
 };
 const tierCompact = TIER_COMPACT[TIER] ?? TIER_COMPACT['12b'];
 const LOCAL_CTX = Number(process.env.SPOTLIGHT_LOCAL_CTX ?? 32768);
