@@ -149,6 +149,12 @@ fi
 echo ""
 echo "── Skills manifest regression ──"
 
+if python3 tests/parity-compare-check.py >/dev/null 2>&1; then
+  ok "parity comparer passes in-tolerance runs and fails each breach"
+else
+  fail "tests/parity-compare-check.py failed"
+fi
+
 if python3 tests/skills-manifest-check.py >/dev/null 2>&1; then
   ok "skills-manifest.json matches skill dirs and AGENTS.md registry"
 else

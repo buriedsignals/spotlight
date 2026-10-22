@@ -1,0 +1,87 @@
+{
+  "schema_version": "spotlight-parity-baseline/v1",
+  "harness": "flue (@flue/runtime 1.0.0-beta.9)",
+  "recorded": "2026-07-08..2026-07-10",
+  "cases": [
+    {
+      "id": "browse-companieshouse-0",
+      "brief": "Retrieve the registered office address and current directors of a UK company using the Companies House registry (https://find-and-update.company-information.service.gov.uk), using OpenCorporates for cross-verification. Use `dev-browser` automation if the interactive search cannot be handled via standard `fetch`. Record the `acquisition_method` for all evidence.",
+      "model": "google/gemma-4-31b-it (OpenRouter)",
+      "findings": 3,
+      "verdicts": {
+        "verified": 3
+      },
+      "cycles": 1
+    },
+    {
+      "id": "browse-zefix-0",
+      "brief": "Confirm the legal domicile (canton) and legal form of \"Stiftung Ethereum\" via the official Swiss commercial register ZEFIX (zefix.ch). \nThe register is a JS application; browser automation (dev-browser) is mandatory for search and detail extraction. \nDeliverables: Legal form, Canton of domicile, and acquisition evidence.",
+      "model": "google/gemma-4-31b-it (OpenRouter)",
+      "findings": 2,
+      "verdicts": {
+        "verified": 2
+      },
+      "cycles": 1
+    },
+    {
+      "id": "inv-blender-1",
+      "brief": "Identify the current chairman/leader and the legal domicile (country and legal form) of the Blender Foundation. Prioritize the official Blender Foundation site for leadership and corporate/nonprofit registries for domicile. Use 3-4 primary authoritative sources and perform independent adversarial fact-checking.",
+      "model": "google/gemma-4-31b-it (OpenRouter)",
+      "findings": 4,
+      "verdicts": {
+        "verified": 4
+      },
+      "cycles": 1
+    },
+    {
+      "id": "inv-ef26-0",
+      "brief": "Identify the CURRENT President and Executive Director of the Ethereum Foundation and its legal domicile (country + legal form).\n\nFocus on current status:\n- For leadership (President, Executive Director): Prioritize the official Ethereum Foundation site/blog.\n- For domicile (Country, Legal Form): Prioritize the official corporate registry.\n\nRequirements:\n- Aim for 3-4 primary sources.\n- Do not exhaustively map leadership history.\n- Independent adversarial fact-check of sources.\n- Deliver a short brief with source URLs.",
+      "model": "gemma-4-26B-A4B-it (llama-server)",
+      "findings": 4,
+      "verdicts": {
+        "verified": 5
+      },
+      "cycles": 1
+    },
+    {
+      "id": "inv-linuxfdn-0",
+      "brief": "Identify the current Executive Director of the Linux Foundation and its legal domicile (country and legal form), prioritizing the most authoritative primary sources (official site and corporate registries) with a targeted limit of 3–4 sources and an independent adversarial fact-check. Focus on current status only.",
+      "model": "google/gemma-4-31b-it (OpenRouter)",
+      "findings": 3,
+      "verdicts": {
+        "verified": 3
+      },
+      "cycles": 1
+    },
+    {
+      "id": "inv-signal-0",
+      "brief": "Identify the current President/leader of the Signal Foundation (Signal Messenger) and its legal domicile (country + legal form). Focus on current status: for each fact prioritize the single most authoritative current source (the official Signal site for leadership, the nonprofit/corporate registry for domicile). 3-4 primary sources total. Independent adversarial fact-check required.",
+      "model": "google/gemma-4-31b-it (OpenRouter)",
+      "findings": 3,
+      "verdicts": {
+        "verified": 3
+      },
+      "cycles": 1
+    },
+    {
+      "id": "inv-tor-0",
+      "brief": "Identify the current Executive Director of the Tor Project and its legal domicile (country + legal form). \nPrioritize authoritative current sources: \n- Executive Director: Official Tor Project site.\n- Domicile/Legal Form: Official site and corporate/nonprofit registries.\nTarget 3-4 primary sources. \nPerform an independent adversarial fact-check.",
+      "model": "google/gemma-4-31b-it (OpenRouter)",
+      "findings": 3,
+      "verdicts": {
+        "verified": 3
+      },
+      "cycles": 1
+    },
+    {
+      "id": "inv-tor-1",
+      "brief": "Identify the current Executive Director of the Tor Project and its legal domicile (country + legal form). Focus on current status: for each fact prioritize the single most authoritative current source (the official Tor Project site for leadership, the nonprofit/corporate registry for domicile); about 3-4 primary sources is enough — do not exhaustively map history. Independent adversarial fact-check of those sources.",
+      "model": "google/gemma-4-31b-it (OpenRouter)",
+      "findings": 2,
+      "verdicts": {
+        "verified": 2
+      },
+      "cycles": 1
+    }
+  ]
+}
