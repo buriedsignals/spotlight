@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Validate the Navigator CLI-first methodology contract.
 
-The gate is intentionally narrow: when Phase 0 preflight marks Navigator green
-and required for Phase 2, methodology.json must prove Navigator was used before
+The gate is intentionally narrow: when Preflight marks Navigator green
+and required for Methodology, methodology.json must prove Navigator was used before
 the plan is shown for user approval.
 """
 

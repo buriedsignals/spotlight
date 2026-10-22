@@ -1,14 +1,14 @@
 ---
-name: phase-gate1
-description: "Spotlight Investigation gate (end of Phase 3): generate summary.md + data/summary.json, present findings to the user, iterate on request, user approval gate (ends the turn), provenance packaging, review artifact, feedback processing on resume"
+name: phase-investigation-gate
+description: "Spotlight Investigation gate (end of Investigation): generate summary.md + data/summary.json, present findings to the user, iterate on request, user approval gate (ends the turn), provenance packaging, review artifact, feedback processing on resume"
 invocable_by: [orchestrator]
-phase: gate-1
+phase: investigation-gate
 ---
 
-# Investigation gate (end of Phase 3)
+# Investigation gate (end of Investigation)
 
 Start or resume only from a `spotlight_resolve` result passed by the parent
-with `owner: phase-gate1`. When `phase: gate1_approval`, regenerate both
+with `owner: phase-investigation-gate`. When `phase: investigation_gate_approval`, regenerate both
 summary artifacts below from current execution outputs, then call
 `spotlight_resolve({})` before presenting the human gate. This applies whether
 the summaries were missing or stale. For finalization, follow `resume` without
@@ -85,11 +85,11 @@ contract. Generate both.
 Run only when `.spotlight-config.json` has `integrations.decisions.enabled: true`,
 the case is not sensitive, an OpenRouter key is available, and the user agreed
 to decision checks for this case at methodology approval (first run only: add
-`--case-opt-in`). `python3 scripts/decision-signals.py {CASE_DIR} --phase gate1 --check`
+`--case-opt-in`). `python3 scripts/decision-signals.py {CASE_DIR} --phase investigation-gate --check`
 reports readiness without making a request.
 
 ```
-execute-shell("python3 scripts/decision-signals.py {CASE_DIR} --phase gate1")
+execute-shell("python3 scripts/decision-signals.py {CASE_DIR} --phase investigation-gate")
 ```
 
 It asks the decision model (OpenRouter Decisions API, zero data retention) whether
@@ -152,7 +152,7 @@ downstream work:
 ```text
 spotlight_transition({
   operation: "approve",
-  payload: {gate: "gate1", approvedBy: "<human identity>", approvedAt: "<ISO 8601 timestamp>"}
+  payload: {gate: "investigation_gate", approvedBy: "<human identity>", approvedAt: "<ISO 8601 timestamp>"}
 })
 ```
 
@@ -208,7 +208,7 @@ derive the transition from feedback-file presence.
 If the user proceeds, seal both current finalization outputs:
 
 ```text
-spotlight_transition({operation: "sealGate1", payload: {}})
+spotlight_transition({operation: "sealInvestigationGate", payload: {}})
 ```
 
 Resolve again. Only a successful seal returns `phase: report`.

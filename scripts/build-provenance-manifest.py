@@ -34,30 +34,30 @@ ARTIFACTS = [
     {
         "kind": "summary",
         "path": "summary.md",
-        "gate1_dependency": True,
-        "gate1_required": True,
-        "gate1_authored": True,
+        "investigation_gate_dependency": True,
+        "investigation_gate_required": True,
+        "investigation_gate_authored": True,
     },
     {
         "kind": "summary_json",
         "path": "data/summary.json",
-        "gate1_dependency": True,
-        "gate1_required": True,
-        "gate1_authored": True,
+        "investigation_gate_dependency": True,
+        "investigation_gate_required": True,
+        "investigation_gate_authored": True,
     },
-    {"kind": "findings", "path": "data/findings.json", "gate1_dependency": True, "gate1_required": True},
-    {"kind": "fact_check", "path": "data/fact-check.json", "gate1_dependency": True, "gate1_required": True},
-    {"kind": "source_expressions", "path": "data/source-expressions.json", "gate1_dependency": True},
-    {"kind": "other", "path": "data/case-contract.json", "gate1_dependency": True},
-    {"kind": "evidence_bundle", "path": "data/evidence-bundle.json", "gate1_dependency": True, "gate1_required": True},
-    {"kind": "investigation_log", "path": "data/investigation-log.json", "gate1_dependency": True, "gate1_required": True},
+    {"kind": "findings", "path": "data/findings.json", "investigation_gate_dependency": True, "investigation_gate_required": True},
+    {"kind": "fact_check", "path": "data/fact-check.json", "investigation_gate_dependency": True, "investigation_gate_required": True},
+    {"kind": "source_expressions", "path": "data/source-expressions.json", "investigation_gate_dependency": True},
+    {"kind": "other", "path": "data/case-contract.json", "investigation_gate_dependency": True},
+    {"kind": "evidence_bundle", "path": "data/evidence-bundle.json", "investigation_gate_dependency": True, "investigation_gate_required": True},
+    {"kind": "investigation_log", "path": "data/investigation-log.json", "investigation_gate_dependency": True, "investigation_gate_required": True},
     {"kind": "review_html", "path": "review.html"},
     {"kind": "report_markdown", "path": "findings-report.md"},
     {"kind": "report_html", "path": "report.html"},
     {"kind": "evidence_map", "path": "evidence-map.json"},
 ]
 ARTIFACT_PATH_KEYS = ("raw_path", "screenshot_path", "downloaded_document_path")
-DEPENDENCY_STATUS_VERSION = "spotlight-gate1-dependencies/v1"
+DEPENDENCY_STATUS_VERSION = "spotlight-investigation-gate-dependencies/v2"
 SIGNING_PROFILE = "spotlight"
 # Noosphere caps the signed record at 5 MB and returns it twice (object and
 # base64) next to the sidecar; anything far beyond that is not a receipt.
@@ -206,8 +206,8 @@ def evidence_dependency_paths(item: dict[str, Any]) -> Iterator[tuple[str, str]]
         if isinstance(relative, str) and relative:
             yield "text_derivative", relative
 
-def gate1_dependency_snapshot(case_dir: Path) -> dict[str, Any]:
-    dependencies = [artifact for artifact in ARTIFACTS if artifact.get("gate1_dependency")]
+def investigation_gate_dependency_snapshot(case_dir: Path) -> dict[str, Any]:
+    dependencies = [artifact for artifact in ARTIFACTS if artifact.get("investigation_gate_dependency")]
     entries = [
         dependency_entry(case_dir, artifact["kind"], artifact["path"])
         for artifact in dependencies
@@ -215,7 +215,7 @@ def gate1_dependency_snapshot(case_dir: Path) -> dict[str, Any]:
     required_missing = [
         artifact
         for artifact, entry in zip(dependencies, entries)
-        if artifact.get("gate1_required") and not entry["present"]
+        if artifact.get("investigation_gate_required") and not entry["present"]
     ]
 
     evidence_path = case_dir / "data/evidence-bundle.json"
@@ -229,25 +229,25 @@ def gate1_dependency_snapshot(case_dir: Path) -> dict[str, Any]:
                 referenced.append(dependency_entry(case_dir, f"evidence_{key}", relative))
         entries.extend(sorted(referenced, key=lambda entry: (entry["path"], entry["kind"])))
 
-    gate1_missing = [
-        artifact["path"] for artifact in required_missing if artifact.get("gate1_authored")
+    gate_missing = [
+        artifact["path"] for artifact in required_missing if artifact.get("investigation_gate_authored")
     ]
-    execution_missing = [
-        artifact["path"] for artifact in required_missing if not artifact.get("gate1_authored")
+    investigation_missing = [
+        artifact["path"] for artifact in required_missing if not artifact.get("investigation_gate_authored")
     ]
     return {
         "schema_version": DEPENDENCY_STATUS_VERSION,
         "ready": not required_missing,
         "missing": [artifact["path"] for artifact in required_missing],
-        "execution_ready": not execution_missing,
-        "execution_missing": execution_missing,
-        "gate1_missing": gate1_missing,
+        "investigation_ready": not investigation_missing,
+        "investigation_missing": investigation_missing,
+        "investigation_gate_missing": gate_missing,
         "dependency_digest": canonical_hash(entries),
     }
 
 
-def gate1_dependency_digest(case_dir: Path) -> str:
-    return str(gate1_dependency_snapshot(case_dir)["dependency_digest"])
+def investigation_gate_dependency_digest(case_dir: Path) -> str:
+    return str(investigation_gate_dependency_snapshot(case_dir)["dependency_digest"])
 
 
 def fact_check_expression_ids(checked: dict[str, Any]) -> set[str]:
@@ -434,7 +434,7 @@ def build_manifest(
     findings, fact_check, evidence_bundle = load_case(case_dir)
     return {
         "schema_version": "1.0",
-        "input_set_hash": gate1_dependency_digest(case_dir),
+        "input_set_hash": investigation_gate_dependency_digest(case_dir),
         **manifest_body(
             case_dir, findings, fact_check, evidence_bundle, credential_id, endpoint
         ),
@@ -607,7 +607,7 @@ def read_pointer(path: Path) -> dict[str, Any] | None:
 
 
 def current_input_hash(case_dir: Path) -> str:
-    return gate1_dependency_digest(case_dir)
+    return investigation_gate_dependency_digest(case_dir)
 
 
 def check_current(case_dir: Path, output: Path) -> int:
@@ -653,7 +653,7 @@ def build_revision(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     expressions = load_json(case_dir / "data/source-expressions.json")
     artifacts = artifact_entries(case_dir)
-    input_set_hash = gate1_dependency_digest(case_dir)
+    input_set_hash = investigation_gate_dependency_digest(case_dir)
     previous = read_pointer(output)
     if previous and previous.get("input_set_hash") == input_set_hash:
         revision_path = case_dir / previous["revision_path"]
@@ -807,7 +807,7 @@ def main() -> int:
     parser.add_argument(
         "--dependency-digest",
         action="store_true",
-        help="Print the registry-owned Gate 1 dependency status without building a manifest",
+        help="Print the registry-owned Investigation gate dependency status without building a manifest",
     )
     args = parser.parse_args()
 
@@ -817,9 +817,9 @@ def main() -> int:
         return 2
     if args.dependency_digest:
         try:
-            print(json.dumps(gate1_dependency_snapshot(case_dir), sort_keys=True))
+            print(json.dumps(investigation_gate_dependency_snapshot(case_dir), sort_keys=True))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
-            print(f"cannot hash Gate 1 dependencies: {exc}", file=sys.stderr)
+            print(f"cannot hash Investigation gate dependencies: {exc}", file=sys.stderr)
             return 2
         return 0
     output = Path(args.output).resolve() if args.output else case_dir / "data/provenance-manifest.json"
@@ -870,7 +870,7 @@ def main() -> int:
         else:
             manifest = {
                 "schema_version": "1.0",
-                "input_set_hash": gate1_dependency_digest(case_dir),
+                "input_set_hash": investigation_gate_dependency_digest(case_dir),
                 **manifest_body(
                     case_dir,
                     findings,

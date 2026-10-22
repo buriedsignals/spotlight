@@ -32,9 +32,9 @@ def main() -> int:
         fail("methodology schema does not enforce RLM evidence boundary")
 
     # Agent-facing instructions: the script path the methodology phase runs,
-    # and the execution phase's evidence boundary.
+    # and the Investigation phase's evidence boundary.
     methodology = (ROOT / "skills" / "phase-methodology" / "SKILL.md").read_text(encoding="utf-8")
-    execution = (ROOT / "skills" / "phase-execution" / "SKILL.md").read_text(encoding="utf-8")
+    execution = (ROOT / "skills" / "phase-investigation" / "SKILL.md").read_text(encoding="utf-8")
     for phrase, body in [
         ("integrations/rlm/run_rlm.py", methodology),
         ("Treat every RLM artifact as `needs_verification`", execution),

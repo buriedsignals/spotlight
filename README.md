@@ -245,7 +245,7 @@ anything is sent. Sensitive mode never uses it.
   it, Spotlight reads the environment it runs in, a private file named by
   `integrations.decisions.env_file`, or the checkout `.env`. Keep that file outside any repository and
   `chmod 600` it. Never paste the key into chat or the config.
-- **Readiness:** `python3 scripts/decision-signals.py <case> --phase gate1 --check`
+- **Readiness:** `python3 scripts/decision-signals.py <case> --phase investigation-gate --check`
   reports whether a run would happen, without sending anything.
 - **Platforms:** macOS and Linux. The checks need descriptor-anchored,
   symlink-refusing file reads, so on Windows preflight shows them as
@@ -310,7 +310,7 @@ optional [decision checks](#opt-in-decision-checks) once; declining leaves
 Spotlight exactly as before. If you accept, provide `OPENROUTER_API_KEY` through
 your runtime's environment (for Engine installs, the protected keychain flow or
 your runtime's provider key) or a private `env_file`, then confirm with
-`scripts/decision-signals.py <case> --phase gate1 --check`.
+`scripts/decision-signals.py <case> --phase investigation-gate --check`.
 
 [`install-spotlight.sh`](install-spotlight.sh) remains a fail-closed pointer for
 old `curl | bash` commands; it is not another installer. Contributors may clone

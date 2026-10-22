@@ -157,7 +157,7 @@ step 0). Do not rewrite script paths per runtime.
 | `spotlight` | `skills/spotlight/SKILL.md` | Investigation orchestrator — pipeline phases, gates, cycle evaluation | orchestrator (top-level) |
 | `editorial-review` | `skills/editorial-review/SKILL.md` | Post-Investigation-gate HTML review artifact; exports structured feedback to the Investigation gate owner | orchestrator, user |
 | `integrations` | `skills/integrations/SKILL.md` | Routing layer for external tool integrations — dev-browser, Junkipedia, Arbiter, Noosphere C2PA, OSINT Navigator, Unpaywall. Reads live preflight status, maps investigation tasks to integrations | investigator, fact-checker, orchestrator |
-| `ingest` | `skills/ingest/SKILL.md` | Phase 5 knowledge archival after a durable requested transition | orchestrator |
+| `ingest` | `skills/ingest/SKILL.md` | Ingest knowledge archival after a durable requested transition | orchestrator |
 | `report-drafting` | `skills/report-drafting/SKILL.md` | Post-Investigation-gate hybrid report: model-authored localized framing and priority in `data/report-draft.json`; deterministic finding-reference, verdict, confidence, escaping, and artifact rendering. | orchestrator, user |
 | `monitoring` | `skills/monitoring/SKILL.md` | Monitoring orchestration — Mycroft passive signals, coJournalist projects/scouts, runtime-native fallbacks | orchestrator |
 | `provenance-signing` | `skills/provenance-signing/SKILL.md` | Build a case-level provenance manifest and optionally hand it to Noosphere C2PA signing before final report delivery | orchestrator, user |
@@ -173,12 +173,12 @@ step 0). Do not rewrite script paths per runtime.
 | `follow-the-money` | `skills/follow-the-money/SKILL.md` | Financial methodology: UBO, offshore, budgets, assets, public blockchain tracing | investigator, user |
 | `technical-investigation` | `skills/technical-investigation/SKILL.md` | Passive technical investigation: indicators, infrastructure history, local document/email metadata, public GitHub history, verified indicator export | investigator, fact-checker, orchestrator, user |
 | `social-media-intelligence` | `skills/social-media-intelligence/SKILL.md` | Account authenticity, coordination detection, narrative tracking | investigator, fact-checker, user |
-| `phase-preflight` | `skills/phase-preflight/SKILL.md` | Phase 0 preflight child skill — config, sovereign backings, workspace validation, project setup, integration tiering | orchestrator |
-| `phase-methodology` | `skills/phase-methodology/SKILL.md` | Phases 1–2 child skill — brief conversation with approval gate, investigator PLANNING spawn, methodology validation and approval | orchestrator |
-| `phase-execution` | `skills/phase-execution/SKILL.md` | Phase 3 child skill — autonomous investigation cycles (max 5), fact-check spawns, validators, readiness criteria, Stall Protocol | orchestrator |
-| `phase-gate1` | `skills/phase-gate1/SKILL.md` | Phase 3 closing child skill — summary + machine contract generation, Investigation gate user approval (ends turn), provenance packaging, review artifact | orchestrator |
-| `phase-report` | `skills/phase-report/SKILL.md` | Phase 4 child skill — public-facing report drafting via report-drafting + deterministic finalize-report.py rendering | orchestrator |
-| `phase-ingest` | `skills/phase-ingest/SKILL.md` | Phase 5 child skill — ingestion transition marker, user confirmation, vault ingestion or decline | orchestrator |
+| `phase-preflight` | `skills/phase-preflight/SKILL.md` | Preflight child skill — config, sovereign backings, workspace validation, project setup, integration tiering | orchestrator |
+| `phase-methodology` | `skills/phase-methodology/SKILL.md` | Brief and Methodology child skill — brief conversation with approval gate, investigator PLANNING spawn, methodology validation and approval | orchestrator |
+| `phase-investigation` | `skills/phase-investigation/SKILL.md` | Investigation child skill — autonomous investigation cycles (max 5), fact-check spawns, validators, readiness criteria, Stall Protocol | orchestrator |
+| `phase-investigation-gate` | `skills/phase-investigation-gate/SKILL.md` | Investigation closing child skill — summary + machine contract generation, Investigation gate user approval (ends turn), provenance packaging, review artifact | orchestrator |
+| `phase-report` | `skills/phase-report/SKILL.md` | Report child skill — public-facing report drafting via report-drafting + deterministic finalize-report.py rendering | orchestrator |
+| `phase-ingest` | `skills/phase-ingest/SKILL.md` | Ingest child skill — ingestion transition marker, user confirmation, vault ingestion or decline | orchestrator |
 
 ## Sensitive Mode
 

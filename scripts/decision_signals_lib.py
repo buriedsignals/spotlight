@@ -6,7 +6,7 @@ here is deterministic and makes no network request.
 
 Two case files:
 
-* ``data/decision-signals.json`` — Gate 1 grounding and report-prose signals.
+* ``data/decision-signals.json`` — Investigation-gate grounding and report-prose signals.
   The report renderer hashes it as an input.
 * ``data/decision-signals-ingest.json`` — ingest signals. It is kept separate so
   that ingest checks after report finalization do not invalidate the report.
@@ -390,8 +390,13 @@ def validate_signals(doc: Any) -> dict[str, Any]:
     for override in doc.get("overrides", []):
         _require(isinstance(override.get("target"), str) and isinstance(override.get("input_sha256"), str),
                  "each override needs a target and the input_sha256 it reviewed")
-    required = {"gate1": ("findings",), "report": ("items",), "ingest": ()}
-    optional = {"gate1": (), "report": (), "ingest": ("propositions", "memberships", "entities", "matches")}
+    if "gate1" in doc["phases"]:
+        # Files written before the phases were named carry "gate1"; read it as the
+        # Investigation gate. The next write stores the new key.
+        _require("investigation_gate" not in doc["phases"], "decision signals carry both gate1 and investigation_gate")
+        doc["phases"] = {("investigation_gate" if k == "gate1" else k): v for k, v in doc["phases"].items()}
+    required = {"investigation_gate": ("findings",), "report": ("items",), "ingest": ()}
+    optional = {"investigation_gate": (), "report": (), "ingest": ("propositions", "memberships", "entities", "matches")}
     for name, phase in doc["phases"].items():
         _require(name in required and isinstance(phase, dict), f"invalid phase {name!r}")
         _require(phase.get("mode") in MODES, f"phase {name} has an invalid mode")
@@ -408,9 +413,9 @@ def validate_signals(doc: Any) -> dict[str, Any]:
                 flags = entry.get("flags")
                 _require(isinstance(flags, list) and all(isinstance(f, dict) and isinstance(f.get("reason"), str) for f in flags),
                          f"{name}.{group} flags must be objects with a reason")
-                if name == "gate1":
-                    _require(isinstance(entry.get("finding_id"), str), "gate1 entries need a finding_id")
-                    _require(entry.get("cap", "none") in ("none", "medium", "low"), "gate1 cap must be none, medium or low")
+                if name == "investigation_gate":
+                    _require(isinstance(entry.get("finding_id"), str), "investigation_gate entries need a finding_id")
+                    _require(entry.get("cap", "none") in ("none", "medium", "low"), "investigation_gate cap must be none, medium or low")
                 if name == "report":
                     _require(isinstance(entry.get("target"), str) and isinstance(entry.get("finding_ids"), list),
                              "report entries need a target and finding_ids")
@@ -492,12 +497,12 @@ def override_for(signals: dict[str, Any] | None, target: str, input_sha256: str)
     return None
 
 
-# ------------------------------------------------------------------ gate1 consumers
+# ------------------------------------------------------------------ investigation-gate consumers
 def finding_signal(signals: dict[str, Any] | None, case: Path, finding: dict[str, Any]) -> dict[str, Any] | None:
-    """The gate1 signal for a finding, marked stale when its inputs changed since it was computed."""
+    """The Investigation-gate signal for a finding, marked stale when its inputs changed since it was computed."""
     if not signals:
         return None
-    phase = (signals.get("phases") or {}).get("gate1") or {}
+    phase = (signals.get("phases") or {}).get("investigation_gate") or {}
     for entry in phase.get("findings", []):
         if entry.get("finding_id") == text(finding.get("id")):
             result = dict(entry)

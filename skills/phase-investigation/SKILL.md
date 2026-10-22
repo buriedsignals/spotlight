@@ -1,17 +1,17 @@
 ---
-name: phase-execution
-description: "Spotlight Phase 3 — Autonomous investigation cycles (max 5): source-expression release mode resolution, investigator EXECUTION + fact-checker spawns, validators, editorial checks, monitoring recommendations, readiness criteria; includes the Stall Protocol"
+name: phase-investigation
+description: "Spotlight Investigation — autonomous investigation cycles (max 5): source-expression release mode resolution, investigator EXECUTION + fact-checker spawns, validators, editorial checks, monitoring recommendations, readiness criteria; includes the Stall Protocol"
 invocable_by: [orchestrator]
-phase: execution
+phase: investigation
 ---
 
-# Phase 3 — Investigation (Autonomous Cycles, Max 5)
+# Investigation (Autonomous Cycles, Max 5)
 
 With approved methodology, begin the investigation loop. No user involvement between cycles — decide autonomously.
 
 Enter this phase only when the parent passes a `spotlight_resolve` result with
-`phase: execution` and `owner: phase-execution`. Set `N` to one more than
-`attempts.execution-cycle` (default 0); never reconstruct the cycle number from
+`phase: investigation` and `owner: phase-investigation`. Set `N` to one more than
+`attempts.investigation-cycle` (default 0); never reconstruct the cycle number from
 conversation context or artifact presence.
 
 ## Source-expression release mode
@@ -288,12 +288,12 @@ Apply only the specific fixes required by these gaps.",
      ```
      spotlight_transition({
        operation: "recordAttempt",
-       payload: {kind: "execution-cycle", gap: "<readiness gaps>"}
+       payload: {kind: "investigation-cycle", gap: "<readiness gaps>"}
      })
      spotlight_resolve({})
      ```
 
-     If the resolution returns `phase: execution`, resume at the disk-derived
+     If the resolution returns `phase: investigation`, resume at the disk-derived
      next cycle. If it returns `status: blocked`, trigger the Stall Protocol.
      Five unsuccessful cycles exhaust the case.
 ```
@@ -302,7 +302,7 @@ Apply only the specific fixes required by these gaps.",
 
 # Stall Protocol
 
-> "Investigation blocked after {attempts.execution-cycle} cycles. Missing:
+> "Investigation blocked after {attempts.investigation-cycle} cycles. Missing:
 > {blocked.gap}."
 
 **STOP**. Present the persisted blocked evidence and counts. Continuing requires

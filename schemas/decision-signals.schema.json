@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://spotlight.buriedsignals.com/schemas/decision-signals.schema.json",
   "title": "Spotlight decision-model review signals",
-  "description": "Typed decision-model answers and the deterministic signals derived from them. data/decision-signals.json holds gate1 and report phases; data/decision-signals-ingest.json holds the ingest phase. Signals are classifications, never evidence: they can only lower confidence, add review flags or route records to a lead layer.",
+  "description": "Typed decision-model answers and the deterministic signals derived from them. data/decision-signals.json holds investigation_gate and report phases (files written before the rename carry gate1, read as investigation_gate); data/decision-signals-ingest.json holds the ingest phase. Signals are classifications, never evidence: they can only lower confidence, add review flags or route records to a lead layer.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -80,8 +80,11 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "investigation_gate": {
+          "$ref": "#/$defs/investigationGate"
+        },
         "gate1": {
-          "$ref": "#/$defs/gate1"
+          "$ref": "#/$defs/investigationGate"
         },
         "report": {
           "$ref": "#/$defs/report"
@@ -211,7 +214,7 @@
     "answers": {
       "type": "object"
     },
-    "gate1": {
+    "investigationGate": {
       "allOf": [
         {
           "$ref": "#/$defs/phaseHeader"

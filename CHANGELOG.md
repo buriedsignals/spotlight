@@ -4,15 +4,33 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed — Machine identifiers follow the phase names
+
+- Phases are named, not numbered: Preflight, Brief, Methodology,
+  Investigation, Report, Ingest. Machine identifiers now match:
+  `execution` → `investigation`, `gate1_approval` / `gate1_finalization` →
+  `investigation_gate_approval` / `investigation_gate_finalization`, approval
+  key `gate1` → `investigation_gate`, attempt kind `execution-cycle` →
+  `investigation-cycle`, skills `phase-execution` → `phase-investigation` and
+  `phase-gate1` → `phase-investigation-gate`, transition `sealGate1` /
+  `seal-gate1` → `sealInvestigationGate` / `seal-investigation-gate`, and
+  `decision-signals.py --phase gate1` → `--phase investigation-gate`.
+- `data/orchestration.json` moves to `spotlight-orchestration/v2`. A v1 file
+  is read under the new names and rewritten as v2 at the next transition; an
+  activated case stays activated. `decision-signals.json` files and
+  `.spotlight-config.json` decision modes saved under `gate1` are read as the
+  Investigation gate.
+- The dependency status contract is now
+  `spotlight-investigation-gate-dependencies/v2`; dependency digests are
+  unchanged, so existing approvals stay valid.
+
 ### Changed — Gates are named after their phase
 
 - Docs no longer number gates. Each gate takes the name of the phase it
   closes: Brief, Methodology, Investigation (was "Gate 1"), Report and Ingest.
   Phase 3 is now "Investigation": up to five numbered investigation cycles,
   which are not gates, ending at the Investigation gate. The former Phase 4
-  is folded into Phase 3, so Report is Phase 4 and Ingest is Phase 5. Machine
-  identifiers (`gate1`, `phase-gate1`, `sealGate1`, `--phase gate1`,
-  `execution`, `phase-execution`) are unchanged.
+  is folded into Phase 3, so Report is Phase 4 and Ingest is Phase 5.
 
 ### Removed — Data Navigator source planning
 

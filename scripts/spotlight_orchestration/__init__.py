@@ -18,7 +18,7 @@ __all__ = [
     "record_attempt",
     "request_follow_up",
     "resolve",
-    "seal_gate1",
+    "seal_investigation_gate",
 ]
 
 
@@ -89,12 +89,12 @@ def request_follow_up(
     )
 
 
-def seal_gate1(
+def seal_investigation_gate(
     case_dir: str | Path, *, authorized_cases_root: str | Path | None = None
 ) -> None:
     _transition(
         case_dir,
-        transitions.seal_gate1,
+        transitions.seal_investigation_gate,
         authorized_cases_root=authorized_cases_root,
     )
 

@@ -1,11 +1,11 @@
 ---
 name: phase-preflight
-description: "Spotlight Phase 0 — Preflight: config detection, sovereign search/fetch backing checks, OSINT skill inventory, OpenKnowledge workspace validation, project setup, integration tiering, resume feedback check"
+description: "Spotlight Preflight: config detection, sovereign search/fetch backing checks, OSINT skill inventory, OpenKnowledge workspace validation, project setup, integration tiering, resume feedback check"
 invocable_by: [orchestrator]
 phase: preflight
 ---
 
-# Phase 0 — Preflight
+# Preflight
 
 Run these checks in order. Stop at the first failure.
 
@@ -98,7 +98,7 @@ Confirm the following skills resolve via `invoke-skill`:
 
 These ship in `skills/` in this repo. If your runtime cannot resolve them, fix the skill-loading configuration before proceeding.
 
-Then confirm the local tool index that Phase 2 falls back to whenever Navigator is not green:
+Then confirm the local tool index that Methodology falls back to whenever Navigator is not green:
 
 ```
 execute-shell("python3 scripts/osint-tools.py categories")
@@ -139,11 +139,11 @@ contract and apply this runtime table:
 
 | Parent phase | Required child skills | Conditional child skills | Validation |
 |---|---|---|---|
-| Phase 0 Preflight | `integrations` | `shell-safety` if preflight executes dynamic shell values | `.spotlight-config.json` stores full integration status, not only booleans. |
-| Phase 2 Methodology | `integrations`, `osint`, `investigation-methodology`, `epistemic-grounding` | `follow-the-money`, `social-media-intelligence`, `technical-investigation`, `content-access` | `methodology.json` includes `skills_invoked[]` and required Navigator fields when green. |
-| Phase 3 Investigation | `epistemic-grounding`, `shell-safety`, `web-archiving` | `content-access`, `acquisition-graduation`, `social-media-intelligence`, `technical-investigation` | findings contain evidence refs, archives, confidence caps. |
-| Phase 3 Fact-check | `epistemic-grounding`, `content-access`, `shell-safety` | `osint`, `social-media-intelligence`, `technical-investigation`, `web-archiving` | fact-check output independently checks investigator claims. |
-| Phase 4 Report | `report-drafting`, `epistemic-grounding` | `provenance-signing`, `technical-investigation` | report claims map to evidence ledger. |
+| Preflight | `integrations` | `shell-safety` if preflight executes dynamic shell values | `.spotlight-config.json` stores full integration status, not only booleans. |
+| Methodology | `integrations`, `osint`, `investigation-methodology`, `epistemic-grounding` | `follow-the-money`, `social-media-intelligence`, `technical-investigation`, `content-access` | `methodology.json` includes `skills_invoked[]` and required Navigator fields when green. |
+| Investigation | `epistemic-grounding`, `shell-safety`, `web-archiving` | `content-access`, `acquisition-graduation`, `social-media-intelligence`, `technical-investigation` | findings contain evidence refs, archives, confidence caps. |
+| Investigation fact-check | `epistemic-grounding`, `content-access`, `shell-safety` | `osint`, `social-media-intelligence`, `technical-investigation`, `web-archiving` | fact-check output independently checks investigator claims. |
+| Report | `report-drafting`, `epistemic-grounding` | `provenance-signing`, `technical-investigation` | report claims map to evidence ledger. |
 | Ingest | `ingest` | none | only verified or explicitly caveated material enters vault. |
 
 ## 3.7. Knowledge workspace preflight
@@ -274,7 +274,7 @@ Write `.spotlight-config.json` via `write-file`:
 ## 9. Integration checks
 
 Check for optional API integrations. None are required for Spotlight to start,
-but a green OSINT Navigator result becomes mandatory during Phase 2 tool
+but a green OSINT Navigator result becomes mandatory during Methodology tool
 selection when sensitive mode is false.
 
 Run the manifest-based preflight and parse the `osint-navigator` entry:
@@ -335,7 +335,7 @@ Also preserve any existing `integrations.rlm` setup block from
 If `integrations.rlm.enabled` is true, find the `rlm` entry in
 `integrations/preflight.py --json` and record its status under the same
 `integrations.rlm` object as `preflight_status`, `checked_at`, `source`, and
-`reason`. Do not ask the user about RLM during Phase 0.
+`reason`. Do not ask the user about RLM during Preflight.
 
 ### 9.1. Decision checks — one-time opt-in choice
 
@@ -362,7 +362,7 @@ Record the answer, preserving every other key:
       "decided_at": "<ISO timestamp>",
       "decided_by": "user",
       "env_file": "<optional absolute path to a private file holding OPENROUTER_API_KEY>",
-      "modes": {"gate1": "advisory", "report": "advisory", "ingest": "advisory"}
+      "modes": {"investigation_gate": "advisory", "report": "advisory", "ingest": "advisory"}
     }
   }
 }
@@ -382,7 +382,7 @@ choice by asking at any time.
 ## 9.5. Follow-up recovery (resume only)
 
 When resuming an existing project, consume the same resolver result used above.
-If it returns `phase: execution` with `resume.instructions`, pass those
+If it returns `phase: investigation` with `resume.instructions`, pass those
 instructions to the returned execution owner. Do not derive resume state from
 feedback-file presence. The Investigation gate owner validates structured feedback and
 records `requestFollowUp` through `spotlight_transition` before execution

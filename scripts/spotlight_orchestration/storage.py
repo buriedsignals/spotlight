@@ -15,7 +15,12 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .case_writer import atomic_write_json, open_case_directory
-from .contract import ATTEMPT_LIMITS, OrchestrationError, STATE_VERSION
+from .contract import (
+    ATTEMPT_LIMITS,
+    LEGACY_STATE_VERSION,
+    OrchestrationError,
+    STATE_VERSION,
+)
 
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
@@ -97,6 +102,62 @@ def read_data_bytes(
         raise OrchestrationError(f"cannot read {relative}: {exc}") from exc
 
 
+_V1_ATTEMPT_KINDS = {
+    "execution-cycle": "investigation-cycle",
+    "fact-check-evidence-repair": "fact-check-evidence-repair",
+    "structural-correction": "structural-correction",
+}
+_V1_FIELDS = {"schema_version", "approvals", "attempts", "decisions", "blocked", "follow_up", "gate1_finalization"}
+
+
+def _upgrade_v1(state: dict[str, Any]) -> dict[str, Any]:
+    """Map a v1 state onto v2 names in memory; the next transition writes v2.
+
+    Only v1 vocabulary is mapped. A v2 name inside a v1 document is refused rather
+    than silently merged, so a hand-edited or half-migrated file cannot pass.
+    """
+    unknown = set(state) - _V1_FIELDS
+    if unknown:
+        raise OrchestrationError(
+            f"data/orchestration.json has unknown v1 fields: {', '.join(sorted(unknown))}"
+        )
+    upgraded: dict[str, Any] = {"schema_version": STATE_VERSION}
+    approvals = state.get("approvals")
+    if isinstance(approvals, dict):
+        if set(approvals) - {"methodology", "gate1"}:
+            raise OrchestrationError("data/orchestration.json has unknown v1 approvals")
+        approvals = dict(approvals)
+        if "gate1" in approvals:
+            approvals["investigation_gate"] = approvals.pop("gate1")
+    upgraded["approvals"] = approvals
+    attempts = state.get("attempts")
+    if isinstance(attempts, dict):
+        if set(attempts) - set(_V1_ATTEMPT_KINDS):
+            raise OrchestrationError("data/orchestration.json contains invalid attempt counts")
+        attempts = {_V1_ATTEMPT_KINDS[kind]: count for kind, count in attempts.items()}
+    upgraded["attempts"] = attempts
+    upgraded["decisions"] = state.get("decisions")
+    if "blocked" in state:
+        blocked = state["blocked"]
+        if isinstance(blocked, dict):
+            blocked = dict(blocked)
+            if blocked.get("phase") == "execution":
+                blocked["phase"] = "investigation"
+            if blocked.get("exhausted_attempt") in _V1_ATTEMPT_KINDS:
+                blocked["exhausted_attempt"] = _V1_ATTEMPT_KINDS[blocked["exhausted_attempt"]]
+            if isinstance(blocked.get("attempts"), dict):
+                blocked["attempts"] = {
+                    _V1_ATTEMPT_KINDS.get(kind, kind): count
+                    for kind, count in blocked["attempts"].items()
+                }
+        upgraded["blocked"] = blocked
+    if "follow_up" in state:
+        upgraded["follow_up"] = state["follow_up"]
+    if "gate1_finalization" in state:
+        upgraded["investigation_gate_finalization"] = state["gate1_finalization"]
+    return upgraded
+
+
 def load_state(case: Path, data_descriptor: int | None = None) -> dict[str, Any]:
     content = read_data_bytes(case, "orchestration.json", data_descriptor)
     if content is None:
@@ -105,6 +166,8 @@ def load_state(case: Path, data_descriptor: int | None = None) -> dict[str, Any]
         state = json.loads(content.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise OrchestrationError(f"cannot read data/orchestration.json: {exc}") from exc
+    if isinstance(state, dict) and state.get("schema_version") == LEGACY_STATE_VERSION:
+        state = _upgrade_v1(state)
     if not isinstance(state, dict) or state.get("schema_version") != STATE_VERSION:
         raise OrchestrationError("data/orchestration.json has an unsupported schema")
     for field in ("approvals", "attempts", "decisions"):
@@ -119,7 +182,7 @@ def load_state(case: Path, data_descriptor: int | None = None) -> dict[str, Any]
         for kind, count in state["attempts"].items()
     ):
         raise OrchestrationError("data/orchestration.json contains invalid attempt counts")
-    for field in ("blocked", "follow_up", "gate1_finalization"):
+    for field in ("blocked", "follow_up", "investigation_gate_finalization"):
         if field in state and not isinstance(state[field], dict):
             raise OrchestrationError(f"data/orchestration.json field {field!r} must be an object")
     return state

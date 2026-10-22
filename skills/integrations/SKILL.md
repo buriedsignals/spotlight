@@ -10,7 +10,7 @@ requires: []
 
 Spotlight ships with a framework for external OSINT tool integrations (`integrations/` at the repo root). Each integration is a directory with `manifest.json` + `integration.md`. This skill is the agent-facing routing layer: given an investigation need, which integration (if any) should the agent reach for?
 
-**The preflight result is authoritative.** Before routing, the orchestrator should have run `integrations/preflight.py` at Phase 0. If an integration is `red` (missing env var) or `yellow` (smoke test failed), do not route to it — use a fallback.
+**The preflight result is authoritative.** Before routing, the orchestrator should have run `integrations/preflight.py` during Preflight. If an integration is `red` (missing env var) or `yellow` (smoke test failed), do not route to it — use a fallback.
 
 ## When to invoke this skill
 
@@ -35,8 +35,8 @@ The skill is cheap to load — it's a routing table, not a deep methodology guid
 | `rea` | technical-osint | electron-app-analysis, javascript-module-graph, network-capture-analysis, dotnet-assembly-inventory, android-package-inspection | Static, no-execution look inside a file the case holds: Electron app, HAR/mitmproxy capture, .NET assembly or APK. Requires the reviewed `rea-agents@6.4.0` CLI on `PATH`. Observations only; never claims what an app did on a device. |
 | `webcheck` | technical-osint | dns-records, domain-registration, certificate-transparency-subdomains, archive-history, http-headers, tracker-detection, tech-stack | Website or domain recon through the member's own Web-Check instance. Lookup checks (DNS, RDAP/WHOIS, CT subdomains, Wayback history) by default; page checks (headers, TLS, trackers, tech stack) contact the live host and need `contact_target: true` plus the user's explicit approval; never for a suspicious indicator. `unconfigured` until `WEB_CHECK_URL` is set. Observations only, never attribution. |
 | `noosphere-c2pa` | provenance-signing | case-provenance-manifest, c2pa-content-credentials, optional-signing-receipt | **PENDING integration — opt-in signer.** Preflight reports `unconfigured` until `NOOSPHERE_C2PA_URL` is set. After Investigation gate, the base provenance path always writes `status: unsigned` and proceeds; signing runs only against a configured signer endpoint. Never a mandatory or blocking step. |
-| `osint-navigator` | tool-discovery | tool-search-by-keyword, complex-query-synthesis, country-specific-tool-lookup | Entitlement-gated (subscription tier): first tool-discovery pass in Phase 2 when green + sensitive mode false. Local/open tier and all fallbacks use `scripts/osint-tools.py find` (local SQL index, 12,500 tools). |
-| `decisions` | verification-signals | claim-grounding-signals, report-prose-fidelity, ingest-proposition-fidelity, ingest-entity-typing, ingest-claim-event-relation, cross-case-claim-matching, claim-facets | **Orchestrator only, opt-in per case.** Run `scripts/decision-signals.py` at the Investigation gate preparation, after report drafting, and during ingest when `--check` reports ready, the config enables it, the case is not sensitive and the user agreed. Signals are classifications, never evidence; they only lower confidence or add flags. Uses the member's `OPENROUTER_API_KEY` (environment or `integrations.decisions.env_file`); `scripts/decision-signals.py CASE_DIR --phase gate1 --check` reports readiness. |
+| `osint-navigator` | tool-discovery | tool-search-by-keyword, complex-query-synthesis, country-specific-tool-lookup | Entitlement-gated (subscription tier): first tool-discovery pass in Methodology when green + sensitive mode false. Local/open tier and all fallbacks use `scripts/osint-tools.py find` (local SQL index, 12,500 tools). |
+| `decisions` | verification-signals | claim-grounding-signals, report-prose-fidelity, ingest-proposition-fidelity, ingest-entity-typing, ingest-claim-event-relation, cross-case-claim-matching, claim-facets | **Orchestrator only, opt-in per case.** Run `scripts/decision-signals.py` at the Investigation gate preparation, after report drafting, and during ingest when `--check` reports ready, the config enables it, the case is not sensitive and the user agreed. Signals are classifications, never evidence; they only lower confidence or add flags. Uses the member's `OPENROUTER_API_KEY` (environment or `integrations.decisions.env_file`); `scripts/decision-signals.py CASE_DIR --phase investigation-gate --check` reports readiness. |
 | `unpaywall` | academic-open-access | doi-open-access-lookup, academic-fulltext-discovery, legal-pdf-location | Academic papers with DOIs when the content-access hierarchy needs a legal open-access copy. |
 
 ## Routing decision tree
@@ -94,7 +94,7 @@ What's the task?
 │       must already be in the case directory
 │     → static only: never run the target; record how the artifact was obtained
 │
-├── "Phase 2 methodology tool selection" / "Need a tool I don't know for category X" / "Compare tools" / "Niche country-specific tool"
+├── "Methodology tool selection" / "Need a tool I don't know for category X" / "Compare tools" / "Niche country-specific tool"
 │     → osint-navigator  (first pass ONLY if entitled + green + sensitive mode false — subscription tier)
 │     → otherwise (DEFAULT for local / open tier): execute-shell("python3 scripts/osint-tools.py find \"<keywords>\" [--category X]")  — local SQL index, 12,500 tools, offline, no Navigator needed
 │

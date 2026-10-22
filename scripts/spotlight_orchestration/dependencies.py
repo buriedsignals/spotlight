@@ -65,7 +65,7 @@ def approval_matches(receipt: object, hashes: dict[str, str]) -> bool:
     )
 
 
-def gate1_approval_matches(receipt: object, dependency_digest: str) -> bool:
+def investigation_gate_approval_matches(receipt: object, dependency_digest: str) -> bool:
     return (
         isinstance(receipt, dict)
         and digest_receipt_matches(receipt, dependency_digest)
@@ -88,7 +88,7 @@ def outputs_match(case: Path, receipt: object) -> bool:
     return True
 
 
-def gate1_dependencies(case: Path) -> dict[str, Any]:
+def investigation_gate_dependencies(case: Path) -> dict[str, Any]:
     try:
         result = subprocess.run(
             [
@@ -102,7 +102,7 @@ def gate1_dependencies(case: Path) -> dict[str, Any]:
             check=False,
         )
     except OSError as exc:
-        raise OrchestrationError(f"cannot hash Gate 1 dependencies: {exc}") from exc
+        raise OrchestrationError(f"cannot hash Investigation gate dependencies: {exc}") from exc
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "dependency builder failed"
         raise OrchestrationError(detail)
@@ -115,20 +115,20 @@ def gate1_dependencies(case: Path) -> dict[str, Any]:
         or snapshot.get("schema_version") != DEPENDENCY_STATUS_VERSION
         or not isinstance(snapshot.get("ready"), bool)
         or not isinstance(snapshot.get("missing"), list)
-        or not isinstance(snapshot.get("execution_ready"), bool)
-        or not isinstance(snapshot.get("execution_missing"), list)
-        or not isinstance(snapshot.get("gate1_missing"), list)
+        or not isinstance(snapshot.get("investigation_ready"), bool)
+        or not isinstance(snapshot.get("investigation_missing"), list)
+        or not isinstance(snapshot.get("investigation_gate_missing"), list)
         or not isinstance(snapshot.get("dependency_digest"), str)
     ):
         raise OrchestrationError("dependency builder returned an unsupported contract")
     return snapshot
 
 
-def require_gate1_digest(case: Path) -> str:
-    snapshot = gate1_dependencies(case)
+def require_investigation_gate_digest(case: Path) -> str:
+    snapshot = investigation_gate_dependencies(case)
     if not snapshot["ready"]:
         raise OrchestrationError(
-            f"required Gate 1 inputs are missing: {', '.join(snapshot['missing'])}"
+            f"required Investigation gate inputs are missing: {', '.join(snapshot['missing'])}"
         )
     return str(snapshot["dependency_digest"])
 

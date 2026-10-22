@@ -1,6 +1,6 @@
 ---
 name: report-drafting
-description: "Phase 4 hybrid synthesis — the model authors localized report framing and priority in report-draft.json; deterministic code validates finding references and renders the final Markdown, HTML, and evidence ledger."
+description: "Report-phase hybrid synthesis — the model authors localized report framing and priority in report-draft.json; deterministic code validates finding references and renders the final Markdown, HTML, and evidence ledger."
 license: MIT
 metadata:
   type: orchestration-subskill
@@ -9,9 +9,9 @@ metadata:
 invocable_by: [orchestrator, user]
 ---
 
-# report-drafting — Phase 4 synthesis
+# report-drafting — Report synthesis
 
-You are at Phase 4. The Investigation gate has approved the structured findings and independent verdicts. You own the editorial synthesis; deterministic code owns file construction and evidence/confidence enforcement.
+You are in the Report phase. The Investigation gate has approved the structured findings and independent verdicts. You own the editorial synthesis; deterministic code owns file construction and evidence/confidence enforcement.
 
 ## Deliverables (all three required)
 

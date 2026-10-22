@@ -26,7 +26,7 @@ def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
-def write_execution_outputs(case: Path, *, include_gate1_summaries: bool) -> None:
+def write_investigation_outputs(case: Path, *, include_investigation_gate_summaries: bool) -> None:
     write_json(case / "data/findings.json", {"schema_version": "1.0", "findings": []})
     write_json(case / "data/fact-check.json", {"schema_version": "1.0", "claims": []})
     write_json(
@@ -37,7 +37,7 @@ def write_execution_outputs(case: Path, *, include_gate1_summaries: bool) -> Non
         case / "data/investigation-log.json",
         {"schema_version": "1.0", "cycles": []},
     )
-    if include_gate1_summaries:
+    if include_investigation_gate_summaries:
         (case / "summary.md").write_text("# Mature fixture\n", encoding="utf-8")
         write_json(case / "data/summary.json", {"schema_version": "1.0"})
 
@@ -85,19 +85,19 @@ class PortableResolverContract(unittest.TestCase):
 
         with portable_module() as orchestration:
             orchestration.approve(case, "methodology", **FIXED_APPROVAL)
-            write_execution_outputs(case, include_gate1_summaries=True)
+            write_investigation_outputs(case, include_investigation_gate_summaries=True)
             before = byte_snapshot(case)
             resolution = orchestration.resolve(case)
 
         self.assertEqual(byte_snapshot(case), before)
-        self.assertEqual(resolution["phase"], "gate1_approval")
+        self.assertEqual(resolution["phase"], "investigation_gate_approval")
         self.assertEqual(resolution["status"], "pending")
-        self.assertEqual(resolution["owner"], "phase-gate1")
-        self.assertIn("Gate 1 approval", resolution["missing"])
+        self.assertEqual(resolution["owner"], "phase-investigation-gate")
+        self.assertIn("Investigation gate approval", resolution["missing"])
         self.assertIsInstance(resolution["attempts"], dict)
         self.assertIn("resume", resolution)
 
-    def test_execution_completion_selects_gate1_to_author_its_summaries(self) -> None:
+    def test_investigation_completion_selects_the_gate_to_author_its_summaries(self) -> None:
         temporary, case = self.make_case()
         self.addCleanup(temporary.cleanup)
         (case / "brief-directions.txt").write_text(
@@ -107,11 +107,11 @@ class PortableResolverContract(unittest.TestCase):
 
         with portable_module() as orchestration:
             orchestration.approve(case, "methodology", **FIXED_APPROVAL)
-            write_execution_outputs(case, include_gate1_summaries=False)
+            write_investigation_outputs(case, include_investigation_gate_summaries=False)
             resolution = orchestration.resolve(case)
 
-        self.assertEqual(resolution["phase"], "gate1_approval")
-        self.assertEqual(resolution["owner"], "phase-gate1")
+        self.assertEqual(resolution["phase"], "investigation_gate_approval")
+        self.assertEqual(resolution["owner"], "phase-investigation-gate")
         self.assertCountEqual(
             resolution["missing"],
             ["summary.md", "data/summary.json"],

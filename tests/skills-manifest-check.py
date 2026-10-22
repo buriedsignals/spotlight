@@ -12,11 +12,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VALID_ROLES = {"parent", "core-child", "conditional-child", "reference"}
 REQUIRED_PHASES = {
-    "phase-0-preflight",
-    "phase-2-methodology",
-    "phase-3-execution",
-    "phase-3-fact-check",
-    "phase-5-report",
+    "preflight",
+    "methodology",
+    "investigation",
+    "investigation-fact-check",
+    "report",
     "ingest",
 }
 

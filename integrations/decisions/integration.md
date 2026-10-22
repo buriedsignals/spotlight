@@ -3,7 +3,7 @@
 Optional. Uses the member's OpenRouter key, `OPENROUTER_API_KEY`, read from the
 environment or from the file named by `integrations.decisions.env_file` in
 `.spotlight-config.json` (for example `~/buried_signals/investigations/.env`).
-`python3 scripts/decision-signals.py CASE_DIR --phase gate1 --check` reports whether a run
+`python3 scripts/decision-signals.py CASE_DIR --phase investigation-gate --check` reports whether a run
 would happen, without any request. The default model is `typesafe/jev-1.13` (TypeSafe's
 decision model served by OpenRouter); change it with `integrations.decisions.model` only
 after re-running the evaluation, because thresholds are measured against that model.
@@ -17,7 +17,7 @@ invalidates a finalized report). Deterministic code turns the answers into signa
 
 | Phase | Check | Effect |
 |---|---|---|
-| Investigation gate prep (`--phase gate1`) | Grounding of each finding against its located source excerpt | Flags with reasons (partial support, contradiction, announced-not-current, incomplete list, address used as legal domicile, allegation stated as fact, reversed payer or owner, role presented as ownership, proposed or approved presented as paid, amount or date mismatch, scope or causation added); a confidence cap; claim facets |
+| Investigation gate prep (`--phase investigation-gate`) | Grounding of each finding against its located source excerpt | Flags with reasons (partial support, contradiction, announced-not-current, incomplete list, address used as legal domicile, allegation stated as fact, reversed payer or owner, role presented as ownership, proposed or approved presented as paid, amount or date mismatch, scope or causation added); a confidence cap; claim facets |
 | Report (`--phase report`) | Fidelity of each deck, headline, summary, why-it-matters and caveat against its findings and verdicts | Flags overstated prose with a type (certainty, causation, scope, actor, amount, allegation as fact, …) |
 | Ingest (`--phase ingest`) | Proposition vs finding claim; claim-to-event relation; entity type; matching against existing claims | Blocks broadened propositions, flags relation disagreements, types entities or marks them `unclear` |
 

@@ -230,8 +230,8 @@ def test_key_resolution_and_check(tmp: Path) -> None:
     cfg.write_text(json.dumps({"integrations": {"decisions": {"enabled": True, "env_file": str(env_file)}}}))
     out = io.StringIO(); stdout, sys.stdout = sys.stdout, out
     try:
-        signals_cli.main([str(case), "--phase", "gate1", "--config", str(cfg), "--check"])
-        signals_cli.main([str(case), "--phase", "gate1", "--config", str(cfg), "--check", "--case-opt-in"])
+        signals_cli.main([str(case), "--phase", "investigation-gate", "--config", str(cfg), "--check"])
+        signals_cli.main([str(case), "--phase", "investigation-gate", "--config", str(cfg), "--check", "--case-opt-in"])
     finally:
         sys.stdout = stdout
     first, second = [json.loads(line) for line in out.getvalue().splitlines()]
@@ -243,11 +243,11 @@ def test_key_resolution_and_check(tmp: Path) -> None:
 
 def test_refusals(tmp: Path) -> None:
     case = fresh_case(tmp / "refuse")
-    cfg = config(tmp, {"gate1": "advisory"})
+    cfg = config(tmp, {"investigation_gate": "advisory"})
     out = io.StringIO(); stdout, sys.stdout = sys.stdout, out
     try:
-        signals_cli.main([str(case), "--phase", "gate1", "--config", str(cfg)], provider=provider_with())
-        signals_cli.main([str(case), "--phase", "gate1", "--config", str(cfg), "--case-opt-in", "--sensitive"], provider=provider_with())
+        signals_cli.main([str(case), "--phase", "investigation-gate", "--config", str(cfg)], provider=provider_with())
+        signals_cli.main([str(case), "--phase", "investigation-gate", "--config", str(cfg), "--case-opt-in", "--sensitive"], provider=provider_with())
     finally:
         sys.stdout = stdout
     lines = [json.loads(line) for line in out.getvalue().splitlines()]
@@ -266,19 +266,19 @@ def test_backwards_compatible_without_signals(tmp: Path) -> None:
     assert all("decision_signal" not in claim for claim in ledger["claims"])
 
 
-# ------------------------------------------------------------------ gate1 and report
-def test_gate1_advisory_and_enforce(tmp: Path) -> None:
+# ------------------------------------------------------------------ investigation gate and report
+def test_investigation_gate_advisory_and_enforce(tmp: Path) -> None:
     for mode in ("advisory", "enforce"):
         case = fresh_case(tmp / mode)
         draft = json.loads((case / "data" / "report-draft.json").read_text())
         draft["diagrams"] = [{"id": "confidence", "type": "bar", "title": "Confidence", "caption": "Confidence by finding.",
                               "finding_ids": ["F1"], "metric": "confidence_distribution", "scope": "all"}]
         (case / "data" / "report-draft.json").write_text(json.dumps(draft))
-        cfg = config(tmp, {"gate1": mode, "report": mode})
-        summary = run_phase(case, cfg, "gate1", provider_with({"g_support": "partial", "g_current": 0.1}))
+        cfg = config(tmp, {"investigation_gate": mode, "report": mode})
+        summary = run_phase(case, cfg, "investigation-gate", provider_with({"g_support": "partial", "g_current": 0.1}))
         assert summary["ran"] and summary["items"] == 2
         doc = signals(case)
-        f1, f2 = doc["phases"]["gate1"]["findings"]
+        f1, f2 = doc["phases"]["investigation_gate"]["findings"]
         assert f1["status"] == "judged" and f1["cap"] == "medium" and "announced_not_current" in [f["reason"] for f in f1["flags"]]
         assert f2["status"] == "routed" and f2["route_reason"] == "evidence_not_located", "unlocated quotes go to the existing process"
         assert set(f1["facets"]) == {"claim_type", "temporal_status", "source_assertion"}
@@ -324,10 +324,33 @@ def test_gate1_advisory_and_enforce(tmp: Path) -> None:
             assert ledger_claim(case, "F1")["report_confidence"] == "high", "a bound override restores the fact-check confidence"
 
 
+def test_saved_gate1_keys_still_apply(tmp: Path) -> None:
+    """Configs and signal files saved before the phases were named use "gate1"."""
+    case = fresh_case(tmp / "legacy-config")
+    run_phase(case, config(tmp, {"gate1": "enforce"}, "legacy.json"), "investigation-gate",
+              provider_with({"g_support": "partial", "g_current": 0.1}))
+    assert signals(case)["phases"]["investigation_gate"]["mode"] == "enforce", "modes.gate1 keeps the member's mode"
+    assert run_script("finalize-report.py", case).returncode == 0
+    assert ledger_claim(case, "F1")["report_confidence"] == "medium", "a saved gate1 enforce mode still enforces"
+
+    doc = signals(case)
+    doc["phases"]["gate1"] = doc["phases"].pop("investigation_gate")
+    (case / lib.SIGNALS_PATH).write_text(json.dumps(doc))
+    assert run_script("finalize-report.py", case).returncode == 0, "an old signals file still loads"
+    assert ledger_claim(case, "F1")["report_confidence"] == "medium", "its gate1 cap still applies"
+
+    doc["phases"]["investigation_gate"] = doc["phases"]["gate1"]
+    try:
+        lib.validate_signals(json.loads(json.dumps(doc)))
+        raise AssertionError("a file carrying both keys must be refused")
+    except lib.SignalsError:
+        pass
+
+
 def test_stale_grounding_signal_not_applied(tmp: Path) -> None:
     case = fresh_case(tmp / "stale")
-    cfg = config(tmp, {"gate1": "enforce"})
-    run_phase(case, cfg, "gate1", provider_with({"g_support": "contradicted"}))
+    cfg = config(tmp, {"investigation_gate": "enforce"})
+    run_phase(case, cfg, "investigation-gate", provider_with({"g_support": "contradicted"}))
     source = case / "research" / "official-record.md"
     source.write_text(source.read_text() + "\nUpdated: the record now also names a second officer.\n")
     bundle = json.loads((case / "data" / "evidence-bundle.json").read_text())
@@ -343,7 +366,7 @@ def test_stale_grounding_signal_not_applied(tmp: Path) -> None:
 def test_report_fidelity_stage(tmp: Path) -> None:
     for mode, expect_pass in (("advisory", True), ("enforce", False)):
         case = fresh_case(tmp / f"prose-{mode}")
-        cfg = config(tmp, {"gate1": mode, "report": mode})
+        cfg = config(tmp, {"investigation_gate": mode, "report": mode})
         run_phase(case, cfg, "report", provider_with({"r_fidelity": "overstated", "r_type": "certainty"}))
         stage = run_script("check-report-fidelity.py", case)
         assert (stage.returncode == 0) is expect_pass, stage.stdout
@@ -389,7 +412,7 @@ def test_invalid_and_unsafe_signal_files(tmp: Path) -> None:
         pass
     out = io.StringIO(); stdout, sys.stdout = sys.stdout, out
     try:
-        code = signals_cli.main([str(case), "--phase", "gate1", "--config", str(config(tmp, {})), "--case-opt-in"], provider=provider_with())
+        code = signals_cli.main([str(case), "--phase", "investigation-gate", "--config", str(config(tmp, {})), "--case-opt-in"], provider=provider_with())
     finally:
         sys.stdout = stdout
     assert code == 2 and outside.read_text() == "{}", "a symlinked signals file is never written through"
@@ -424,9 +447,9 @@ def test_ingest_phase(tmp: Path) -> None:
     for claim in batch["claims"]:
         claim["origin"]["finding_id"] = "F1"
     (case / "data" / "knowledge-batch.json").write_text(json.dumps(batch))
-    cfg = config(tmp, {"gate1": "advisory", "report": "advisory", "ingest": "advisory"})
+    cfg = config(tmp, {"investigation_gate": "advisory", "report": "advisory", "ingest": "advisory"})
     assert run_script("finalize-report.py", case).returncode == 0
-    run_phase(case, cfg, "gate1", provider_with())
+    run_phase(case, cfg, "investigation-gate", provider_with())
     assert run_script("finalize-report.py", case).returncode == 0
     report_inputs = json.loads((case / "evidence-map.json").read_text())["input_sha256"]
     entities = case / "data" / "ingest-entities.json"
@@ -468,7 +491,7 @@ def test_round_two_regressions(tmp: Path) -> None:
     draft = json.loads((case / "data" / "report-draft.json").read_text())
     draft["framing_finding_ids"] = ["F1", "F2"]
     (case / "data" / "report-draft.json").write_text(json.dumps(draft))
-    cfg = config(tmp, {"gate1": "enforce", "report": "enforce"}, "r2.json")
+    cfg = config(tmp, {"investigation_gate": "enforce", "report": "enforce"}, "r2.json")
     run_phase(case, cfg, "report", provider_with())
     assert run_script("check-report-fidelity.py", case).returncode == 0
     fact = json.loads((case / "data" / "fact-check.json").read_text())
@@ -497,7 +520,7 @@ def test_round_two_regressions(tmp: Path) -> None:
 
     # Structural validation of caps; malformed choices never crash; order disagreement is flagged.
     doc = json.loads((case / lib.INGEST_SIGNALS_PATH).read_text())
-    doc["phases"]["gate1"] = {"mode": "enforce", "findings": [{"finding_id": "F1", "input_sha256": "0" * 64, "status": "judged", "flags": [], "cap": []}]}
+    doc["phases"]["investigation_gate"] = {"mode": "enforce", "findings": [{"finding_id": "F1", "input_sha256": "0" * 64, "status": "judged", "flags": [], "cap": []}]}
     try:
         lib.validate_signals(doc)
         raise AssertionError("an invalid cap must be rejected")
@@ -515,7 +538,7 @@ def test_round_two_regressions(tmp: Path) -> None:
 
     # A source edited after rendering fails report validation.
     case = fresh_case(tmp / "dependency")
-    run_phase(case, config(tmp, {"gate1": "advisory"}, "r2d.json"), "gate1", provider_with({"g_support": "partial"}))
+    run_phase(case, config(tmp, {"investigation_gate": "advisory"}, "r2d.json"), "investigation-gate", provider_with({"g_support": "partial"}))
     assert run_script("finalize-report.py", case).returncode == 0
     source = case / "research" / "official-record.md"
     source.write_text(source.read_text() + "\nAmended later.\n")
@@ -654,8 +677,8 @@ def test_round_five_regressions(tmp: Path) -> None:
     try:
         out = io.StringIO(); stdout, sys.stdout = sys.stdout, out
         try:
-            signals_cli.main([str(case), "--phase", "gate1", "--config", str(cfg), "--case-opt-in"], provider=provider_with())
-            signals_cli.main([str(case), "--phase", "gate1", "--config", str(cfg), "--check"])
+            signals_cli.main([str(case), "--phase", "investigation-gate", "--config", str(cfg), "--case-opt-in"], provider=provider_with())
+            signals_cli.main([str(case), "--phase", "investigation-gate", "--config", str(cfg), "--check"])
         finally:
             sys.stdout = stdout
         refused, check = [json.loads(line) for line in out.getvalue().splitlines()]
@@ -722,7 +745,8 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as raw:
         tmp = Path(raw)
         for test in (test_preflight_opt_in_states, test_key_resolution_and_check, test_refusals,
-                     test_backwards_compatible_without_signals, test_gate1_advisory_and_enforce,
+                     test_backwards_compatible_without_signals, test_investigation_gate_advisory_and_enforce,
+                     test_saved_gate1_keys_still_apply,
                      test_stale_grounding_signal_not_applied, test_report_fidelity_stage,
                      test_invalid_and_unsafe_signal_files, test_symlinked_research_is_not_read,
                      test_malformed_answer_keeps_other_results, test_ingest_phase, test_missing_grounding_cap_warns,
