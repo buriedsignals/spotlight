@@ -8,7 +8,7 @@ the admitted store together. ``--admitted`` names batches already admitted
 (in any order). The batch must already validate against
 schemas/knowledge-batch-1.1.schema.json; this script does not repeat that.
 
-Rules (Batch 1.1 semantic rules, section 17):
+Rules (Batch 1.1's cross-record rules, numbered as in its specification):
 
   C1   every submitted (type, id, version) is new
   C2   version n > 1 has version n - 1 in the batch or the store
@@ -25,7 +25,8 @@ Rules (Batch 1.1 semantic rules, section 17):
   C13  dates and date-times are real calendar values, and an event interval
        does not end before it starts
 
-C11 does not exist and C12 (retractions) belongs to the newsroom edition.
+The specification has no C11, and its C12 concerns retractions, which the
+core does not carry.
 Passing proves structure and references, not truth: people still review.
 
 Exit codes: 0 = pass; 3 = at least one rule fails; 2 = unreadable input.
@@ -102,6 +103,49 @@ def records(batch: dict[str, Any]) -> Iterator[tuple[str, dict[str, Any]]]:
                 yield record_type, record
 
 
+def _is_ref(ref: Any, typed: bool) -> bool:
+    return (isinstance(ref, dict) and isinstance(ref.get("id"), str) and bool(ref["id"])
+            and isinstance(ref.get("version"), int) and not isinstance(ref.get("version"), bool)
+            and ref["version"] >= 1 and (not typed or isinstance(ref.get("type"), str)))
+
+
+def shape_errors(doc: Any, where: str) -> list[str]:
+    """The structure the rules rely on, checked so a malformed document fails
+    instead of silently passing for want of records. Full validation is the
+    schema's job; this only refuses what the rules would otherwise skip."""
+    if not isinstance(doc, dict):
+        return [f"shape: {where} is not an object"]
+    errors = []
+    for array, record_type in ARRAYS.items():
+        if array not in doc:
+            continue
+        if not isinstance(doc[array], list):
+            errors.append(f"shape: {where} {array} is not a list")
+            continue
+        for index, record in enumerate(doc[array]):
+            at = f"{where} {array}[{index}]"
+            if not isinstance(record, dict) or not _is_ref(record, typed=False):
+                errors.append(f"shape: {at} is not a record with a string id and a positive integer version")
+                continue
+            for (owner, field), _ in EXACT_REFS.items():
+                if owner == record_type and field in record:
+                    values = record[field] if isinstance(record[field], list) else [record[field]]
+                    if not values or not all(_is_ref(v, typed=False) for v in values):
+                        errors.append(f"shape: {at} {field} is not an exact reference")
+            if record_type == "source_expression" and "origin_ref" in record and not _is_ref(record["origin_ref"], typed=True):
+                errors.append(f"shape: {at} origin_ref is not a typed reference")
+            if record_type == "assessment":
+                typed = list(record.get("basis_refs") or [])
+                for flag in record.get("flags") or []:
+                    if not isinstance(flag, dict) or not isinstance(flag.get("related_refs"), list):
+                        errors.append(f"shape: {at} has a flag without related_refs")
+                        continue
+                    typed += flag["related_refs"]
+                if not all(_is_ref(ref, typed=True) for ref in typed):
+                    errors.append(f"shape: {at} has a basis or flag reference that is not a typed reference")
+    return errors
+
+
 def key(record_type: str, record: dict[str, Any]) -> Key:
     return (record_type, str(record.get("id")), record.get("version"))
 
@@ -165,11 +209,16 @@ def real_time_value(value: str) -> tuple[datetime, datetime] | None:
         moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
         moment = moment.astimezone(timezone.utc).replace(tzinfo=None) if moment.tzinfo else moment
         return moment, moment
-    except ValueError:
+    except (ValueError, OverflowError):
         return None
 
 
-def validate(batch: dict[str, Any], admitted: list[dict[str, Any]]) -> list[str]:
+def validate(batch: Any, admitted: list[Any]) -> list[str]:
+    shape = shape_errors(batch, "batch")
+    for index, doc in enumerate(admitted):
+        shape += shape_errors(doc, f"admitted[{index}]")
+    if shape:
+        return shape
     errors: list[str] = []
     store: dict[Key, dict[str, Any]] = {}
     for doc in admitted:
@@ -222,8 +271,10 @@ def validate(batch: dict[str, Any], admitted: list[dict[str, Any]]) -> list[str]
                 if code not in FLAG_CODES:
                     errors.append(f"C8: {label(k)} flag code {code!r} is not in the registry")
             assessed = ref_key("claim", record.get("claim_ref"))
-            for _, target in outgoing_refs(record_type, record):
-                if target[0] not in ("claim_source_expression", "source_position"):
+            for field, target in outgoing_refs(record_type, record):
+                # Flags may cite other claims' records; only the basis must
+                # concern the assessed claim.
+                if field != "basis_refs" or target[0] not in ("claim_source_expression", "source_position"):
                     continue
                 basis = known.get(target)
                 if basis is not None and ref_key("claim", basis.get("claim_ref")) != assessed:
@@ -250,7 +301,9 @@ def validate(batch: dict[str, Any], admitted: list[dict[str, Any]]) -> list[str]
     # C10
     pairs: dict[tuple[str, tuple[str, ...]], str] = {}
     lineage_of: dict[tuple[str, str], tuple[str, ...]] = {}
-    for k in sorted(known, key=lambda k: (k[0], k[1], k[2] if isinstance(k[2], int) else 0)):
+    # Admitted records first, so they own their pair and lineage whatever the
+    # submitted ids sort as; then versions in order.
+    for k in sorted(known, key=lambda k: (k in submitted, k[2], k[0], k[1])):
         if k[0] not in LINEAGE:
             continue
         record = known[k]
@@ -280,7 +333,7 @@ def main(argv: list[str] | None = None) -> int:
     if not isinstance(batch, dict) or batch.get("schema_version") != "1.1":
         print("validate-knowledge-batch: not a Batch 1.1 document", file=sys.stderr)
         return 2
-    errors = validate(batch, [d for d in admitted if isinstance(d, dict)])
+    errors = validate(batch, admitted)
     if args.json:
         print(json.dumps({"ok": not errors, "errors": errors}, indent=2))
     else:

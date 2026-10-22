@@ -3,7 +3,7 @@
   "$id": "https://spotlight.buriedsignals.com/schemas/knowledge-batch-1.1.schema.json",
   "title": "Spotlight Knowledge Batch 1.1 (core)",
   "description": "The open-source core of Knowledge Batch 1.1: one proposed knowledge batch built from a case. It keeps the full Batch 1.1 names and rules and only its open-source record types and fields, so every core batch also validates against the full schema.",
-  "$comment": "Derived from the Batch 1.1 full schema docs/knowledge-model/knowledge-batch-1.1.schema.json, sha256 8ca0442770e9a939685519407f91e6b77c7c5604e52554d7ea012a74627b095e. MIT. Never set in a batch: approval decisions, who submitted it and when; the service adds them. Cross-record rules C1-C10 and C13 are enforced by scripts/validate-knowledge-batch.py.",
+  "$comment": "Derived from the full Knowledge Batch 1.1 schema with sha256 8ca0442770e9a939685519407f91e6b77c7c5604e52554d7ea012a74627b095e. MIT. Never set in a batch: approval decisions, who submitted it and when; the service adds them. Cross-record rules C1-C10 and C13 are enforced by scripts/validate-knowledge-batch.py.",
   "type": "object",
   "additionalProperties": false,
   "required": [
