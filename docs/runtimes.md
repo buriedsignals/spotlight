@@ -12,7 +12,7 @@ no extra product namespace and no home-global Spotlight fan-out.
 
 | Selected local surface | Native root relative to checkout | Execution host |
 |---|---|---|
-| Pi / Flue | `.agents/skills/` | Checkout cwd; Flue explicitly selects `harness/flue/flue.config.ts` |
+| Spotlight Pi harness | Loaded by path | Launcher in this checkout; skills from `skills/` |
 | Codex CLI | `.agents/skills/` | CLI launched in this checkout |
 | ChatGPT Desktop | `.agents/skills/` | Codex → Local, this exact project |
 | Claude Code / Claude Desktop | `.claude/skills/` | CLI checkout cwd / Code → Local, this exact project |
@@ -55,7 +55,7 @@ handing it a project is not evidence of runtime health.
 ### Acceptance boundary
 
 Local proof covers Goose 1.50.0 discovering 25 intended skills in an isolated
-checkout; Flue SDK discovery and actual sandbox cwd, dependency, and scoped-env
+checkout; the Pi harness's process isolation, tool allowlists and scoped-env
 checks; mixed-ownership migration/update/uninstall preserving Mycroft and
 synthetic Cases/Knowledge/graph bytes; and missing-browser repair followed by an
 actual Crawl4AI raw-HTML task. It does **not** prove a complete model investigation,
@@ -96,93 +96,63 @@ Runtime-specific backings (vary):
 
 ---
 
-## Flue on Pi — the local & cloud non-frontier harness (CANONICAL, 2026-07-09)
+## Spotlight Pi harness — the local & cloud non-frontier harness
 
-**What it is:** the repo's `harness/flue/` — a [Flue](https://flueframework.com) app (TypeScript
-harness framework built on Pi, by the Astro team) for the local and hosted-API
-non-frontier routes. It uses the shared workflow skills and role files, native
-investigator/fact-checker child sessions, checkout-discovered
-`<cwd>/.agents/skills/` with bodies loaded on invoke, durable SQLite sessions,
-and threshold conversation compaction. Current local compaction uses the
-session model; the RLM sidecar serves source distillation.
+**What it is:** the repo's `harness/pi/`, built on [Pi](https://pi.dev) at a
+pinned version. Indicator Lab starts it through Osaurus; a newsroom client can
+start the same launcher. It runs today's pipeline (Preflight, Brief,
+Methodology, Investigation, Report, Ingest) with the shared skills and role
+files. Full reference: [`harness/pi/README.md`](../harness/pi/README.md).
 
-### Managed launch
+### Launch
 
-Use `bsig spotlight` (or Engine's installed `spotlight` launcher). Engine binds
-the selected runtime and actual installed checkout, validates active ownership,
-and supplies the configured case/model context and credentials at execution
-time. It does not source a checkout `.env`.
-
-For Flue, the process cwd and `SPOTLIGHT_CWD` are the checkout root, **not**
-`harness/flue/`. Engine appends the explicit
-`--config <checkout>/harness/flue/flue.config.ts` and refuses a caller-supplied
-config override. Native discovery and the real host sandbox therefore use the
-same root. `SPOTLIGHT_CASES_ROOT` and `SPOTLIGHT_ACTIVE_CASE` bind durable case
-storage; the native state tools do not accept a model-selected sibling case.
-
-Dependency and credential environments are scoped to the launched process.
-Engine replaces inherited owned values, supplies `.spotlight/pydeps` through
-`PYTHONPATH`, and adds the installed Navigator dependency/launcher paths when
-available. Flue's local sandbox explicitly forwards the relevant dependency,
-case, integration, and RLM environment; inheriting the outer process environment
-alone is not sufficient. The role adapter resolves shared files from the
-checkout and selects `SPOTLIGHT_PYTHON` (or the development `.venv` interpreter)
-for Python seams. Do not replace missing dependencies with ad-hoc global paths.
-
-### Unmanaged harness development
-
-After explicitly provisioning dependencies, case storage, environment, and
-project-local skills in a separate source checkout, launch from that root:
+One long-lived launcher per chat, in Pi's RPC mode only:
 
 ```bash
-flue run spotlight --id my-case --config "$PWD/harness/flue/flue.config.ts"
+node harness/pi/src/launcher.ts
 ```
 
-This is a developer entry point, not an Engine installation or ownership repair.
-Keep `SPOTLIGHT_CWD` equal to the actual checkout and supply the active-case
-context required by the native tools. Resume with the same session id; human
-gates still require explicit replies. No workflow-skill rewrite is required.
+The launcher runs `pi --mode rpc` and passes stdin and stdout through
+untouched, so stdout carries only Pi's JSONL records; the launcher, the
+extension and every pi process log to stderr. Closing stdin ends the chat in
+order, with SIGTERM as the fallback. Case state stays on disk in the case
+folder and the resolver, so a closed chat or a quit app resumes from the same
+phase in a new chat.
 
-### Model tiers
+Configuration comes only from the environment: model base URL and id, helper
+URL, search URL, cases root, case id, harness data folder, and only the keys
+each role declares. A missing variable stops the launcher with a plain message.
+The full variable list is in the harness README.
 
-Managed model changes use Engine's configuration/plan flow. For an unmanaged
-development launch, configure its model server and harness environment explicitly:
+### Processes and tools
 
-| Var | Meaning |
-|---|---|
-| `SPOTLIGHT_FLUE_MODEL` | selected local or API-provider model |
-| `SPOTLIGHT_MODEL_TIER` | `12b` \| `26b` \| `31b` — compaction profile (fold at ~16k/24.5k/28.5k, keep 4k/6k/8k recent) and raw-source affordance |
-| `SPOTLIGHT_RLM_OPENAI_BASE_URL`, `SPOTLIGHT_RLM_OPENAI_MODEL` | optional source-distillation sidecar |
-| `SPOTLIGHT_REASONING_BUDGET`, `SPOTLIGHT_COMPACT_AT`, `SPOTLIGHT_COMPACT_KEEP` | optional overrides of the tier defaults |
+- The orchestrator, investigator and fact-checker each run as their own pi
+  process. Workers start on the orchestrator's request and cannot delegate.
+- Every pi process starts with Pi's built-in tools, discovery, MCP and context
+  files off, loads only Spotlight's extension and its role's skills by path,
+  and declares an explicit tool list (`harness/composition.json`). A personal
+  Pi configuration never applies.
+- One writer per case: a second chat on a case already open is refused.
+- The model never records a gate decision. Approvals, the report decision and
+  the ingest request come from the review page; the model can only record
+  attempts, request a follow-up and seal finished steps.
+- A fixed request-body policy (for example zero data retention) is merged into
+  every model request inside each pi process.
 
-Changing environment values does not provision a model, dependencies, or an
-Engine-owned installation.
+### Model routes
 
-### Cloud non-frontier (API providers) through the same harness
-
-`harness/flue/src/app.ts` registers providers by env: **Fireworks** (`FIREWORKS_API_KEY`, GLM-5.2
-ZDR) and **OpenRouter** (`OPENROUTER_API_KEY`). Select with
-`SPOTLIGHT_FLUE_MODEL=fireworks/…` or `openrouter/…`; keep the same local checkout
-cwd, explicit config, dependencies, and sandbox environment. Inference is remote,
-but filesystem execution remains local. This does not support a remote harness
-with no access to the installed project. Custom providers must declare
-`contextWindow` and `maxTokens`.
-
-### Verb bindings, sub-agents, sensitive mode
-
-The `FLUE_VERB_ADAPTER` (`harness/flue/src/lib/roles.ts`) maps every contract verb to flue's
-native tools and injects the absolute-path rules (PYTHONPATH + venv python for `integrations.*`,
-absolute `CASE_DIR`). Sub-agents are **native** (`defineAgentProfile` + `task` delegation, own
-child sessions). Role instructions come from the same runtime-agnostic `agents/<role>.md` files
-the frontier path uses. Sensitive mode follows the skills (same as other runtimes).
+Any OpenAI-compatible endpoint works: the local model through Osaurus or
+llama-server, or a hosted API provider. Inference may be remote; files, tools
+and case state stay on the member's machine. In the newsroom edition the
+launcher accepts only the routes the newsroom allows, and material that must
+stay in-house goes only to a route the newsroom runs itself.
 
 ---
 
 ## opencode
 
-**Status: RETIRED as the local Spotlight runtime (2026-07-09)** — the Flue-on-Pi harness above
-replaced it (native subagents + compaction + RLM in one app; the installer no longer writes an
-opencode launcher for local mode). opencode remains usable as a generic runtime for the skills
+**Status: RETIRED as the local Spotlight runtime (2026-07-09)** — the Spotlight harness above
+replaced it (the installer no longer writes an opencode launcher for local mode). opencode remains usable as a generic runtime for the skills
 (the wiring below is kept for reference) and as a cloud runtime choice.
 
 **What it is:** Terminal-first AI coding agent by Anomaly Innovations (https://opencode.ai). MIT license. Native `AGENTS.md`, `SKILL.md`, sub-agents, MCP, and a built-in `llama.cpp` provider that talks directly to a local llama-server.
@@ -281,8 +251,8 @@ Enforce at the agent definition: strip `firecrawl` (and any external-fetch shell
 
 **What it is:** Minimal TypeScript coding harness by Mario Zechner (https://pi.dev). MIT license. Natively supports `AGENTS.md` + `skills/*/SKILL.md`.
 
-The canonical non-frontier harness is Flue on Pi, which supplies native
-subagents, compaction, and durability. Direct Pi remains a selected local
+The non-frontier harness is the Spotlight Pi harness above, which supplies
+isolated workers and durable case state. Direct Pi remains a selected local
 skill-discovery route; its host must supply the required sub-agent isolation.
 
 ### Loading this repo
@@ -300,7 +270,7 @@ pi ships native `Read`, `Write`, `Edit`, `Grep`, `Glob`, `Bash` equivalents. The
 
 ### Sub-agents
 
-Direct Pi requires a suitable extension or SDK wrapper for isolated workers. Flue supplies that layer for the canonical non-frontier route; discovery alone does not supply sub-agents.
+Direct Pi requires a suitable extension or SDK wrapper for isolated workers. The Spotlight Pi harness supplies that layer for the non-frontier route; discovery alone does not supply sub-agents.
 
 ### Local llama-server provider via pi
 

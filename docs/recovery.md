@@ -4,7 +4,7 @@ Agents crash, APIs rate-limit, your laptop closes the lid. Spotlight is designed
 
 ## The golden rule
 
-**Resume only from the product resolver.** In Flue the launcher binds the
+**Resume only from the product resolver.** In the Pi harness the launcher binds the
 native capability to its active case, so call `spotlight_resolve({})`; Python
 consumers import and call `spotlight_orchestration.resolve(CASE_DIR)`. The
 optional CI/debug adapter is:
