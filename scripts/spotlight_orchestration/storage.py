@@ -7,6 +7,7 @@ try:
 except ImportError:  # Windows
     fcntl = None
     import msvcrt
+import hashlib
 import json
 import os
 import stat
@@ -23,6 +24,41 @@ from .contract import (
 )
 
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+# Decisions carried over from a v1 state predate the review-nonce ledger, so
+# they count. The upgrade binds each to a "legacy-v1" ledger entry held in
+# memory under this key; the first transition that writes v2 publishes those
+# entries with the state. A v2 file never carries the key.
+LEGACY_CHANNEL = "legacy-v1"
+LEGACY_LEDGER_KEY = "_legacy_v1_ledger"
+_LEGACY_GATES = {"approvals": ("methodology", "investigation_gate"), "decisions": ("report", "ingest")}
+
+
+def legacy_binding(gate: str, receipt: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """A stable ledger binding for a decision that predates the ledger."""
+    seed = json.dumps({"gate": gate, "receipt": receipt}, sort_keys=True)
+    hashed = hashlib.sha256(f"{LEGACY_CHANNEL}:{seed}".encode("utf-8")).hexdigest()
+    return hashed, {
+        "channel": LEGACY_CHANNEL,
+        "nonce_sha256": hashed,
+        "review_digest": None,
+        "review_sha256": None,
+    }
+
+
+def _bind_legacy_decisions(state: dict[str, Any]) -> None:
+    ledger: dict[str, Any] = {}
+    for group, gates in _LEGACY_GATES.items():
+        receipts = state.get(group)
+        if not isinstance(receipts, dict):
+            continue
+        for gate in gates:
+            receipt = receipts.get(gate)
+            if not isinstance(receipt, dict) or "review" in receipt:
+                continue
+            hashed, binding = legacy_binding(gate, receipt)
+            receipt["review"] = binding
+            ledger[hashed] = {"gate": gate, "channel": LEGACY_CHANNEL, "used": True}
+    state[LEGACY_LEDGER_KEY] = ledger
 
 
 def resolve_case(
@@ -155,6 +191,7 @@ def _upgrade_v1(state: dict[str, Any]) -> dict[str, Any]:
         upgraded["follow_up"] = state["follow_up"]
     if "gate1_finalization" in state:
         upgraded["investigation_gate_finalization"] = state["gate1_finalization"]
+    _bind_legacy_decisions(upgraded)
     return upgraded
 
 
@@ -166,6 +203,8 @@ def load_state(case: Path, data_descriptor: int | None = None) -> dict[str, Any]
         state = json.loads(content.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise OrchestrationError(f"cannot read data/orchestration.json: {exc}") from exc
+    if isinstance(state, dict) and LEGACY_LEDGER_KEY in state:
+        raise OrchestrationError("data/orchestration.json carries an in-memory-only field")
     if isinstance(state, dict) and state.get("schema_version") == LEGACY_STATE_VERSION:
         state = _upgrade_v1(state)
     if not isinstance(state, dict) or state.get("schema_version") != STATE_VERSION:

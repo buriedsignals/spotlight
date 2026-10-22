@@ -1,0 +1,481 @@
+// Spotlight review page. Case text arrives only as JSON from this server and
+// is inserted with textContent; this file never builds HTML from strings.
+const app = document.getElementById("app");
+const statusLine = document.getElementById("status");
+const alertBox = document.getElementById("alert");
+const title = document.getElementById("title");
+const boot = JSON.parse(document.getElementById("boot").textContent || "{}");
+
+let view = null;
+let busy = false;
+let ended = false;
+// Disabling a focused control while a request runs drops focus to the body,
+// so the control's id is kept to restore focus after the re-render.
+let focusAfterRender = "";
+
+const DECISION_LABELS = {
+  methodology: { approved: "Approve the methodology" },
+  investigation_gate: { approved: "Approve the investigation" },
+  report: { completed: "Publish the drafted report", declined: "Decline the report" },
+  ingest: { requested: "Ingest into the knowledge base", declined: "Do not ingest" },
+};
+const DISPOSITION_LABELS = { keep: "Keep in the record", set_aside: "Set aside" };
+
+function el(tag, options = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [name, value] of Object.entries(options)) {
+    if (value === undefined || value === null || value === false) continue;
+    if (name === "text") node.textContent = String(value);
+    else if (name === "className") node.className = value;
+    else if (name === "checked" || name === "disabled") node[name] = Boolean(value);
+    else if (name === "value") node.value = String(value);
+    else if (name === "on") for (const [type, fn] of Object.entries(value)) node.addEventListener(type, fn);
+    else node.setAttribute(name, value === true ? "" : String(value));
+  }
+  for (const child of children.flat()) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(typeof child === "string" ? document.createTextNode(child) : child);
+  }
+  return node;
+}
+
+function say(message) {
+  statusLine.textContent = message;
+}
+
+function warn(message) {
+  if (!message) {
+    alertBox.hidden = true;
+    alertBox.textContent = "";
+    return;
+  }
+  alertBox.textContent = message;
+  alertBox.hidden = false;
+}
+
+async function post(path, body) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify(body),
+  });
+  let data = {};
+  try {
+    data = await response.json();
+  } catch {
+    data = { message: "The review server sent an unreadable reply." };
+  }
+  if (response.status === 403) endSession(data.message);
+  return { status: response.status, data };
+}
+
+function endSession(message) {
+  ended = true;
+  warn(message || "This review session has ended. Ask the agent to reopen the review.");
+  say("Session ended.");
+  for (const control of app.querySelectorAll("button, input, textarea")) control.disabled = true;
+}
+
+function setBusy(value) {
+  if (value && document.activeElement?.id) focusAfterRender = document.activeElement.id;
+  busy = value;
+  app.setAttribute("aria-busy", value ? "true" : "false");
+  // Buttons stay focusable (aria-disabled) so keyboard focus is not lost.
+  for (const control of app.querySelectorAll("input, textarea")) {
+    if (value) control.disabled = true;
+  }
+  for (const control of app.querySelectorAll("button")) {
+    if (value) control.setAttribute("aria-disabled", "true");
+  }
+  if (!value && view) render(view);
+}
+
+function keepFocus(render) {
+  const id = focusAfterRender || document.activeElement?.id;
+  render();
+  focusAfterRender = "";
+  const target = (id && document.getElementById(id)) || null;
+  if (target && !target.disabled) target.focus();
+  else if (id && readOnly()) document.getElementById("receipt-heading")?.focus();
+}
+
+function readOnly() {
+  return ended || !view || view.pending_gate !== view.gate;
+}
+
+function domId(prefix, key, suffix = "") {
+  return `${prefix}-${key.replace(/[^A-Za-z0-9_-]/g, "_")}${suffix ? `-${suffix}` : ""}`;
+}
+
+// ---------------------------------------------------------------- content
+
+function list(items, empty) {
+  if (!items.length) return el("p", { className: "muted", text: empty });
+  return el("ul", {}, items.map((item) => el("li", { text: item })));
+}
+
+function methodologyContent(content) {
+  return el(
+    "section",
+    { "aria-labelledby": "plan-heading" },
+    el("h2", { id: "plan-heading", text: "The plan" }),
+    el("div", { className: "card" }, el("h3", { text: "Brief" }), el("p", { className: "quote", text: content.brief || "No brief recorded." })),
+    content.directions.length
+      ? content.directions.map((direction, index) =>
+          el(
+            "div",
+            { className: "card" },
+            el("h3", { text: `Direction ${index + 1}: ${direction.direction}` }),
+            el("p", { className: "muted", text: "Questions" }),
+            list(direction.questions, "No questions listed."),
+            el("p", { className: "muted", text: "Steps" }),
+            direction.steps.length
+              ? el("ol", {}, direction.steps.map((step) => el("li", { text: `${step.action} (${step.tool})${step.target ? `: ${step.target}` : ""}` })))
+              : el("p", { className: "muted", text: "No steps listed." }),
+          ),
+        )
+      : el("p", { className: "muted", text: "The methodology lists no directions." }),
+    content.limitations.length ? [el("h3", { text: "Limitations" }), list(content.limitations, "")] : null,
+  );
+}
+
+function findingDetails(finding) {
+  if (!finding) return null;
+  return [
+    el("p", {}, el("span", { className: "tag strong", text: `Fact-check verdict: ${finding.verdict}` }), el("span", { className: "tag", text: `Confidence: ${finding.confidence || "not stated"}` })),
+    el("p", { className: "quote", text: finding.claim }),
+    finding.evidence ? el("p", { className: "quote muted", text: `Evidence: ${finding.evidence}` }) : null,
+    finding.fact_check_notes ? el("p", { className: "quote muted", text: `Fact-check notes: ${finding.fact_check_notes}` }) : null,
+    finding.sources.length
+      ? el("ul", { "aria-label": `Sources for finding ${finding.id}` }, finding.sources.map((source) => el("li", { text: source.description ? `${source.description} (${source.url})` : source.url })))
+      : null,
+  ];
+}
+
+function suggestionLine(item) {
+  if (item.suggested === null) return el("p", { className: "muted", text: `No suggestion: you decide. ${item.suggestion_reason}` });
+  const shown = typeof item.suggested === "boolean" ? (item.suggested ? "include" : "leave out") : DISPOSITION_LABELS[item.suggested];
+  return el("p", { className: "muted", text: `Suggested: ${shown}. Source: ${item.suggestion_source}. ${item.suggestion_reason}` });
+}
+
+function changeTag(item) {
+  if (item.suggested === null) return item.final === null ? el("span", { className: "tag strong", text: "Open: needs your decision" }) : el("span", { className: "tag", text: "Decided" });
+  return item.final === item.suggested
+    ? el("span", { className: "tag", text: "As suggested" })
+    : el("span", { className: "tag strong", text: "Changed from the suggestion" });
+}
+
+function noteField(item) {
+  const id = domId("note", item.key);
+  return el(
+    "div",
+    {},
+    el("label", { for: id, text: "Note (optional)" }),
+    el("textarea", {
+      id,
+      maxlength: "2000",
+      value: item.note,
+      disabled: readOnly() || busy,
+      on: { change: (event) => edit({ kind: "note", key: item.key, value: event.target.value }) },
+    }),
+  );
+}
+
+function dispositionCard(item, finding) {
+  const name = domId("disposition", item.key);
+  return el(
+    "fieldset",
+    { className: "card", "aria-describedby": `${name}-state` },
+    el("legend", { text: `Finding ${finding?.id ?? item.target}` }),
+    findingDetails(finding),
+    suggestionLine(item),
+    el("p", { id: `${name}-state` }, changeTag(item)),
+    el(
+      "div",
+      { className: "choices", role: "radiogroup", "aria-label": `Disposition for ${item.target}` },
+      Object.entries(DISPOSITION_LABELS).map(([value, label]) => {
+        const id = `${name}-${value}`;
+        return el(
+          "span",
+          { className: "choice" },
+          el("input", {
+            type: "radio",
+            id,
+            name,
+            value,
+            checked: item.final === value,
+            disabled: readOnly() || busy,
+            on: { change: () => edit({ kind: "mark", key: item.key, value }) },
+          }),
+          el("label", { for: id, text: label }),
+        );
+      }),
+    ),
+    noteField(item),
+  );
+}
+
+function selectionCard(item, finding) {
+  const id = domId("select", item.key);
+  return el(
+    "div",
+    { className: "card" },
+    el(
+      "div",
+      { className: "choice" },
+      el("input", {
+        type: "checkbox",
+        id,
+        checked: item.final === true,
+        disabled: readOnly() || busy,
+        "aria-describedby": `${id}-state`,
+        on: { change: (event) => edit({ kind: "mark", key: item.key, value: event.target.checked }) },
+      }),
+      el("label", { for: id, text: `Include finding ${finding?.id ?? item.target} in the record` }),
+    ),
+    findingDetails(finding),
+    suggestionLine(item),
+    el("p", { id: `${id}-state` }, changeTag(item)),
+    noteField(item),
+  );
+}
+
+function investigationContent(content, items) {
+  const findings = new Map(content.findings.map((finding) => [`finding:${finding.id}`, finding]));
+  const flags = items.filter((item) => item.kind === "disposition");
+  const selection = items.filter((item) => item.kind === "selection");
+  const open = flags.filter((item) => item.final === null).length;
+  return [
+    el(
+      "section",
+      { "aria-labelledby": "summary-heading" },
+      el("h2", { id: "summary-heading", text: content.title || "Summary" }),
+      el("p", { className: "quote", text: content.summary || "No summary recorded." }),
+    ),
+    el(
+      "section",
+      { "aria-labelledby": "flags-heading" },
+      el("h2", { id: "flags-heading", text: `Flags needing a disposition (${open} open of ${flags.length})` }),
+      flags.length ? flags.map((item) => dispositionCard(item, findings.get(item.target))) : el("p", { className: "muted", text: "No findings are flagged." }),
+    ),
+    el(
+      "section",
+      { "aria-labelledby": "selection-heading" },
+      el("h2", { id: "selection-heading", text: "Selection" }),
+      selection.length ? selection.map((item) => selectionCard(item, findings.get(item.target))) : el("p", { className: "muted", text: "No verified findings to select." }),
+    ),
+  ];
+}
+
+function reportContent(content) {
+  return el(
+    "section",
+    { "aria-labelledby": "report-heading" },
+    el("h2", { id: "report-heading", text: content.title || "Public report" }),
+    content.draft_ready
+      ? el("p", { text: `A report draft is ready${content.draft_title ? `: ${content.draft_title}` : ""}. Publishing renders it from the draft.` })
+      : el("p", { text: "No report draft exists yet. Ask the agent to draft the report first, or decline it." }),
+  );
+}
+
+function ingestContent(content) {
+  const records = content.batch?.records ?? [];
+  return el(
+    "section",
+    { "aria-labelledby": "batch-heading" },
+    el("h2", { id: "batch-heading", text: "Knowledge batch" }),
+    records.length
+      ? list(records.map((record) => String(record.label ?? record.id ?? "")), "")
+      : el("p", { className: "muted", text: "No batch preview is available for this case. Deciding here records only whether to ingest." }),
+  );
+}
+
+// ---------------------------------------------------------------- decision
+
+function decisionBlockers() {
+  if (readOnly()) return "";
+  if (view.blocking.length) return "Approval is unavailable while a blocking failure is open.";
+  if (view.open_required) return `Approval is unavailable until every flag has a disposition (${view.open_required} open).`;
+  return "";
+}
+
+function reviewerField() {
+  return el(
+    "div",
+    {},
+    el("label", { for: "reviewer", text: "Your name (recorded with the approval)" }),
+    el("input", {
+      type: "text",
+      id: "reviewer",
+      autocomplete: "name",
+      maxlength: "200",
+      value: view.reviewer,
+      disabled: readOnly() || busy,
+      on: { change: (event) => edit({ kind: "reviewer", value: event.target.value }) },
+    }),
+  );
+}
+
+function reasonFor(blocker, missingDraft, missingName) {
+  if (blocker) return blocker;
+  if (missingName) return "Enter your name before approving.";
+  if (missingDraft) return "Publishing needs a report draft. Ask the agent to draft the report, or decline it.";
+  return "";
+}
+
+function reasonLine(blocker, missingName, missingDraft) {
+  const reason = reasonFor(blocker, missingDraft, missingName);
+  return reason ? el("p", { id: "decide-reason", text: reason }) : null;
+}
+
+function decisionSection() {
+  const approval = view.gate === "methodology" || view.gate === "investigation_gate";
+  const blocker = decisionBlockers();
+  const counts = view.counts;
+  return el(
+    "section",
+    { "aria-labelledby": "decision-heading" },
+    el("h2", { id: "decision-heading", text: "Decision" }),
+    counts.items
+      ? el("p", { className: "muted", text: `Items: ${counts.items}. As suggested: ${counts.accepted_unchanged}. Changed: ${counts.changed}. Open: ${counts.open_required}.` })
+      : null,
+    approval ? reviewerField() : null,
+    el("p", { text: "Digest of the record you are deciding:" }),
+    el("code", { className: "digest", id: "digest", text: view.digest }),
+    reasonLine(blocker, approval && !view.reviewer, view.gate === "report" && !view.content.draft_ready),
+    view.decisions.map((decision) => {
+      const label = DECISION_LABELS[view.gate][decision];
+      const missingDraft = view.gate === "report" && decision === "completed" && !view.content.draft_ready;
+      const missingName = approval && !view.reviewer;
+      const unavailable = readOnly() || busy || Boolean(blocker) || missingDraft || missingName;
+      // aria-disabled keeps the button in the tab order so a keyboard user
+      // can reach it and hear why it is unavailable; the handler refuses.
+      return el("button", {
+        type: "button",
+        id: `decide-${decision}`,
+        className: decision === "declined" ? "secondary" : undefined,
+        "aria-disabled": unavailable ? "true" : "false",
+        "aria-describedby": unavailable ? "decide-reason" : undefined,
+        text: label,
+        on: { click: () => (unavailable ? warn(reasonFor(blocker, missingDraft, missingName)) : decide(decision)) },
+      });
+    }),
+  );
+}
+
+function receiptSection() {
+  const receipt = view.receipt;
+  if (!receipt) {
+    return el("section", { "aria-labelledby": "receipt-heading" }, el("h2", { id: "receipt-heading", text: "Read-only" }), el("p", { text: "This gate is not waiting for a decision now. Return to the agent." }));
+  }
+  const rows = [
+    ["Decision", receipt.decision],
+    ["By", receipt.approved_by],
+    ["At", receipt.approved_at],
+    ["Digest", receipt.review_digest],
+    ["Recorded through", receipt.channel === "page" ? "this review page" : "the command line"],
+  ].filter(([, value]) => value);
+  return el(
+    "section",
+    { "aria-labelledby": "receipt-heading", className: "card" },
+    el("h2", { id: "receipt-heading", tabindex: "-1", text: "Decision recorded" }),
+    el("dl", {}, rows.flatMap(([name, value]) => [el("dt", { text: name }), el("dd", { text: value })])),
+    el("p", { text: "The review is read-only. You can close this tab and tell the agent you are done." }),
+  );
+}
+
+// ---------------------------------------------------------------- render
+
+function render(next) {
+  view = next;
+  title.textContent = `Spotlight review: ${view.gate_label || boot.gates?.[view.gate] || view.gate}`;
+  keepFocus(() => {
+    const parts = [];
+    if (readOnly()) parts.push(receiptSection());
+    if (view.blocking.length) {
+      parts.push(
+        el(
+          "section",
+          { "aria-labelledby": "blocking-heading", className: "card" },
+          el("h2", { id: "blocking-heading", text: `Blocking failures (${view.blocking.length})` }),
+          el("p", { text: "These must be fixed in the case before approval. Ask the agent to fix them, then reload this page." }),
+          list(view.blocking, ""),
+        ),
+      );
+    }
+    if (view.gate === "methodology") parts.push(methodologyContent(view.content));
+    if (view.gate === "investigation_gate") parts.push(...investigationContent(view.content, view.items));
+    if (view.gate === "report") parts.push(reportContent(view.content));
+    if (view.gate === "ingest") parts.push(ingestContent(view.content));
+    if (!readOnly()) parts.push(decisionSection());
+    app.replaceChildren(...parts);
+  });
+  app.setAttribute("aria-busy", busy ? "true" : "false");
+}
+
+async function load() {
+  say("Loading the review…");
+  const { status, data } = await post("/api/view", {});
+  if (status !== 200) {
+    if (status !== 403) warn(data.message || "The review could not load.");
+    return;
+  }
+  render(data);
+  say(readOnly() ? "This gate is decided." : "Review loaded. Your edits are saved as you make them.");
+}
+
+async function edit(change) {
+  if (busy || readOnly()) return;
+  warn("");
+  setBusy(true);
+  say("Saving…");
+  try {
+    const { status, data } = await post("/api/edit", { edit: change });
+    if (status === 200) {
+      view = data;
+      say("Saved.");
+    } else if (data.view) {
+      view = data.view;
+      warn(data.message);
+    } else if (status !== 403) {
+      warn(data.message || "The edit was refused. Nothing was saved.");
+      say("Not saved.");
+    }
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function decide(decision) {
+  if (busy || readOnly()) return;
+  warn("");
+  setBusy(true);
+  say("Recording the decision…");
+  try {
+    const { status, data } = await post("/api/decide", { decision, digest: view.digest });
+    if (status === 200) {
+      view = data;
+      say("Decision recorded.");
+    } else if (data.view) {
+      view = data.view;
+      warn(data.message);
+      say("Reloaded.");
+    } else if (status !== 403) {
+      warn(data.message || "The decision was refused.");
+      say("Not recorded.");
+    }
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function start() {
+  const capability = location.hash.slice(1);
+  history.replaceState(null, "", location.pathname);
+  const { status } = await post("/session", { capability });
+  if (status !== 200) return;
+  await load();
+}
+
+start().catch(() => warn("The review page could not reach its local server. Ask the agent to reopen the review."));

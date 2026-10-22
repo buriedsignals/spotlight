@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -22,9 +24,44 @@ from .dependencies import (
     validate_approval,
 )
 from .resolver import load_ingestion_marker, status_for
-from .case_writer import restore_files_on_error
-from .storage import atomic_write_json, case_path, load_state
+from .case_writer import atomic_write_files, restore_files_on_error
+from .review import LEDGER_FILE, consume_nonce, ledger_bytes, load_ledger
+from .storage import (
+    LEGACY_CHANNEL,
+    LEGACY_LEDGER_KEY,
+    case_path,
+    legacy_binding,
+    load_state,
+)
 
+
+def _state_bytes(state: dict) -> bytes:
+    return (json.dumps(state, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _publish(
+    case: Path,
+    data_descriptor: int,
+    state: dict,
+    ledger: dict | None = None,
+    extra: dict | None = None,
+) -> None:
+    """Write the state in one atomic publication with the ledger entries it needs.
+
+    A spent nonce is published with the decision it backs. For a state upgraded
+    from v1, this first v2 write also records the carried-over decisions'
+    legacy entries, so they stay backed once the file is v2.
+    """
+    legacy = state.pop(LEGACY_LEDGER_KEY, None)
+    outputs: dict[str, bytes] = {}
+    if legacy or ledger is not None:
+        if ledger is None:
+            ledger = load_ledger(case, data_descriptor)
+        ledger["nonces"].update(legacy or {})
+        outputs[f"data/{LEDGER_FILE}"] = ledger_bytes(ledger)
+    outputs.update(extra or {})
+    outputs["data/orchestration.json"] = _state_bytes(state)
+    atomic_write_files(case, outputs, data_descriptor=data_descriptor)
 
 
 def approve(
@@ -33,6 +70,8 @@ def approve(
     gate: str,
     approved_by: str,
     approved_at: str,
+    nonce: str | None = None,
+    digest: str | None = None,
 ) -> None:
     if gate not in {"methodology", "investigation_gate"}:
         raise OrchestrationError("gate must be methodology or investigation_gate")
@@ -43,6 +82,7 @@ def approve(
     )
     if status_for(case, state, data_descriptor)["next_phase"] != expected_phase:
         raise OrchestrationError(f"case is not awaiting {gate} approval")
+    ledger, binding = consume_nonce(case, data_descriptor, gate, nonce, digest)
 
     previous = state["approvals"].get(gate)
     if gate == "methodology":
@@ -51,6 +91,7 @@ def approve(
             "approved_by": approved_by,
             "approved_at": approved_at,
             "input_sha256": hashes,
+            "review": binding,
         }
         if not approval_matches(previous, hashes):
             state["approvals"].pop("investigation_gate", None)
@@ -65,6 +106,7 @@ def approve(
             "approved_by": approved_by,
             "approved_at": approved_at,
             "dependency_digest": dependency_digest,
+            "review": binding,
         }
         review_path = case_path(case, "review.html")
         if review_path.is_file():
@@ -74,9 +116,7 @@ def approve(
             state["decisions"].clear()
             state.pop("investigation_gate_finalization", None)
         state.pop("follow_up", None)
-    atomic_write_json(
-        case, "data/orchestration.json", state, data_descriptor=data_descriptor
-    )
+    _publish(case, data_descriptor, state, ledger)
 
 
 def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> None:
@@ -96,9 +136,7 @@ def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> Non
             "gap": gap,
             "attempts": dict(attempts),
         }
-    atomic_write_json(
-        case, "data/orchestration.json", state, data_descriptor=data_descriptor
-    )
+    _publish(case, data_descriptor, state)
 
 
 def request_follow_up(
@@ -120,9 +158,7 @@ def request_follow_up(
     state["approvals"].pop("investigation_gate", None)
     state.pop("investigation_gate_finalization", None)
     state["decisions"].clear()
-    atomic_write_json(
-        case, "data/orchestration.json", state, data_descriptor=data_descriptor
-    )
+    _publish(case, data_descriptor, state)
 
 
 def seal_investigation_gate(case: Path, data_descriptor: int) -> None:
@@ -139,9 +175,7 @@ def seal_investigation_gate(case: Path, data_descriptor: int) -> None:
         "output_sha256": current_hashes(case, INVESTIGATION_GATE_FINALIZATION_OUTPUTS),
     }
     state["decisions"].clear()
-    atomic_write_json(
-        case, "data/orchestration.json", state, data_descriptor=data_descriptor
-    )
+    _publish(case, data_descriptor, state)
 
 
 def _run_helper(script: str, case: Path) -> None:
@@ -159,12 +193,19 @@ def _run_helper(script: str, case: Path) -> None:
         raise OrchestrationError(detail)
 
 
-def decide_report(case: Path, data_descriptor: int, decision: str) -> None:
+def decide_report(
+    case: Path,
+    data_descriptor: int,
+    decision: str,
+    nonce: str | None = None,
+    digest: str | None = None,
+) -> None:
     if decision not in {"completed", "declined"}:
         raise OrchestrationError("report decision must be completed or declined")
     state = load_state(case, data_descriptor)
     if status_for(case, state, data_descriptor)["next_phase"] != "report":
         raise OrchestrationError("case is not awaiting a report decision")
+    ledger, binding = consume_nonce(case, data_descriptor, "report", nonce, digest)
     if decision == "declined":
         helper = "decline-report.py"
         outputs = ("data/report-declined.json",)
@@ -182,17 +223,19 @@ def decide_report(case: Path, data_descriptor: int, decision: str) -> None:
             "decision": decision,
             "dependency_digest": require_investigation_gate_digest(case),
             "output_sha256": current_hashes(case, outputs),
+            "review": binding,
         }
         state["decisions"].pop("ingest", None)
-        atomic_write_json(
-            case,
-            "data/orchestration.json",
-            state,
-            data_descriptor=data_descriptor,
-        )
+        _publish(case, data_descriptor, state, ledger)
 
 
-def decide_ingest(case: Path, data_descriptor: int, decision: str) -> None:
+def decide_ingest(
+    case: Path,
+    data_descriptor: int,
+    decision: str,
+    nonce: str | None = None,
+    digest: str | None = None,
+) -> None:
     if decision not in {"requested", "completed", "declined"}:
         raise OrchestrationError("ingest decision must be requested, completed, or declined")
     state = load_state(case, data_descriptor)
@@ -207,16 +250,39 @@ def decide_ingest(case: Path, data_descriptor: int, decision: str) -> None:
 
     dependency_digest = require_investigation_gate_digest(case)
     marker = load_ingestion_marker(case, data_descriptor)
+    if decision == "completed":
+        # Sealing the projection receipt is model-side; it carries forward the
+        # member's earlier requested decision instead of taking a new nonce.
+        if nonce is not None or digest is not None:
+            raise OrchestrationError("sealing a completed ingestion takes no review nonce")
+        prior = state["decisions"].get("ingest")
+        binding = prior.get("review") if isinstance(prior, dict) else None
+        if not isinstance(binding, dict):
+            binding = marker.get("review")
+        if not isinstance(binding, dict) and LEGACY_LEDGER_KEY in state:
+            # A v1 case interrupted after its requested marker: the marker
+            # predates the ledger like the state, so it is carried over too.
+            hashed, binding = legacy_binding("ingest", marker)
+            state[LEGACY_LEDGER_KEY][hashed] = {
+                "gate": "ingest",
+                "channel": LEGACY_CHANNEL,
+                "used": True,
+            }
+        if not isinstance(binding, dict):
+            raise OrchestrationError("the requested ingestion decision has no review receipt")
+        ledger = None
+    else:
+        ledger, binding = consume_nonce(case, data_descriptor, "ingest", nonce, digest)
     marker["status"] = decision
     marker["dependency_digest"] = dependency_digest
-    atomic_write_json(
-        case, "data/ingestion.json", marker, data_descriptor=data_descriptor
-    )
+    marker["review"] = binding
+    marker_bytes = (json.dumps(marker, indent=2, sort_keys=True) + "\n").encode("utf-8")
     state["decisions"]["ingest"] = {
         "decision": decision,
         "dependency_digest": dependency_digest,
-        "output_sha256": current_hashes(case, ("data/ingestion.json",)),
+        "output_sha256": {
+            "data/ingestion.json": hashlib.sha256(marker_bytes).hexdigest()
+        },
+        "review": binding,
     }
-    atomic_write_json(
-        case, "data/orchestration.json", state, data_descriptor=data_descriptor
-    )
+    _publish(case, data_descriptor, state, ledger, {"data/ingestion.json": marker_bytes})

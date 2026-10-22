@@ -11,12 +11,26 @@ from . import (
     approve,
     decide_ingest,
     decide_report,
+    issue_review_nonce,
     record_attempt,
     request_follow_up,
     resolve,
+    review_edit,
+    review_view,
     seal_investigation_gate,
 )
 from .contract import ATTEMPT_LIMITS
+from .review import REVIEW_GATES, ReviewDigestChanged
+
+# Exit code the review server reads as "the record changed; reload the page".
+DIGEST_CHANGED_EXIT = 4
+
+
+def add_review_receipt(parser: argparse.ArgumentParser) -> None:
+    # The review server passes the page's nonce and digest; without them the
+    # decision is recorded on the command-line channel.
+    parser.add_argument("--nonce", help=argparse.SUPPRESS)
+    parser.add_argument("--digest", help=argparse.SUPPRESS)
 
 
 def add_case_boundary(parser: argparse.ArgumentParser) -> None:
@@ -34,6 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     approval.add_argument("gate", choices=("methodology", "investigation_gate"))
     approval.add_argument("--approved-by", required=True)
     approval.add_argument("--approved-at", required=True)
+    add_review_receipt(approval)
     add_case_boundary(approval)
     attempt = commands.add_parser("record-attempt")
     attempt.add_argument("kind", choices=tuple(ATTEMPT_LIMITS))
@@ -46,10 +61,22 @@ def build_parser() -> argparse.ArgumentParser:
     add_case_boundary(seal)
     report = commands.add_parser("decide-report")
     report.add_argument("decision", choices=("completed", "declined"))
+    add_review_receipt(report)
     add_case_boundary(report)
     ingest = commands.add_parser("decide-ingest")
     ingest.add_argument("decision", choices=("requested", "completed", "declined"))
+    add_review_receipt(ingest)
     add_case_boundary(ingest)
+    nonce = commands.add_parser("issue-review-nonce")
+    nonce.add_argument("gate", choices=REVIEW_GATES)
+    add_case_boundary(nonce)
+    view = commands.add_parser("review-view")
+    view.add_argument("gate", choices=REVIEW_GATES)
+    add_case_boundary(view)
+    edit = commands.add_parser("review-edit")
+    edit.add_argument("gate", choices=REVIEW_GATES)
+    edit.add_argument("--edit", required=True, help="one edit as a JSON object")
+    add_case_boundary(edit)
     return parser
 
 
@@ -57,12 +84,28 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
     boundary = {"authorized_cases_root": args.authorized_cases_root}
     if args.command == "status":
         return resolve(args.case_dir, **boundary)
+    if args.command == "review-view":
+        return review_view(args.case_dir, args.gate, **boundary)
+    if args.command == "issue-review-nonce":
+        return {"nonce": issue_review_nonce(args.case_dir, args.gate, **boundary)}
+    if args.command == "review-edit":
+        try:
+            edit = json.loads(args.edit)
+        except json.JSONDecodeError as exc:
+            raise OrchestrationError(f"--edit must be JSON: {exc}") from exc
+        review_edit(args.case_dir, args.gate, edit, **boundary)
+        return review_view(args.case_dir, args.gate, **boundary)
+    receipt = {
+        "nonce": getattr(args, "nonce", None),
+        "digest": getattr(args, "digest", None),
+    }
     if args.command == "approve":
         approve(
             args.case_dir,
             args.gate,
             args.approved_by,
             args.approved_at,
+            **receipt,
             **boundary,
         )
     elif args.command == "record-attempt":
@@ -72,9 +115,9 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
     elif args.command == "seal-investigation-gate":
         seal_investigation_gate(args.case_dir, **boundary)
     elif args.command == "decide-report":
-        decide_report(args.case_dir, args.decision, **boundary)
+        decide_report(args.case_dir, args.decision, **receipt, **boundary)
     else:
-        decide_ingest(args.case_dir, args.decision, **boundary)
+        decide_ingest(args.case_dir, args.decision, **receipt, **boundary)
     return None
 
 
@@ -82,12 +125,17 @@ def main() -> int:
     args = build_parser().parse_args()
     try:
         value = dispatch(args)
-        if value is not None:
+        if value is not None and args.command != "status":
+            print(json.dumps(value, sort_keys=True))
+        elif value is not None:
             print(
                 json.dumps(value, sort_keys=True)
                 if args.json
                 else f"{value['status']}: {value['phase']}"
             )
+    except ReviewDigestChanged as exc:
+        print(f"FAIL  {exc}", file=sys.stderr)
+        return DIGEST_CHANGED_EXIT
     except OrchestrationError as exc:
         print(f"FAIL  {exc}", file=sys.stderr)
         return 3

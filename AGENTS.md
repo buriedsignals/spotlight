@@ -231,6 +231,8 @@ absolute path and the result in `.spotlight-config.json` under `storage`.
 │   ├── report-draft.json        # Schema: schemas/report-draft.schema.json (when report requested)
 │   ├── report-declined.json     # Explicit Phase 4 decline marker (when report skipped)
 │   ├── ingestion.json           # Case-local Phase 5 transition/receipt
+│   ├── <gate>-review.json       # Review page record per gate: suggested and final marks, dispositions, selection
+│   ├── review-nonces.json       # Hashes of one-time decision nonces; a gate decision counts only when backed here
 │   ├── evidence-bundle.json     # Schema: schemas/evidence-bundle.schema.json
 │   ├── investigation-log.json   # Schema: schemas/investigation-log.schema.json
 │   ├── summary.json             # Schema: schemas/summary.schema.json

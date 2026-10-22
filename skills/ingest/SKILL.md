@@ -428,7 +428,7 @@ the ingest summary.
 
 After Step 8 and lock removal, update the existing
 `{CASE_DIR}/data/ingestion.json` object to `status: "completed"` while
-preserving its resolver-owned `dependency_digest` and adding the projection
+preserving its resolver-owned `dependency_digest` and `review` fields and adding the projection
 receipt fields. If ingestion fails, preserve the same binding and update status
 to `failed` before reporting the failure.
 
