@@ -271,6 +271,7 @@ activation documents use their own schema versions as declared below.
 | Provenance Manifest | `schemas/provenance-manifest.schema.json` | Case artifact hashes, claim/verdict links, evidence refs, and optional Noosphere C2PA signing metadata |
 | Decision Signals | `schemas/decision-signals.schema.json` | Opt-in Jev decision-model answers and derived review signals for grounding, report prose and ingest; can only lower confidence or add flags |
 | Reviewed Knowledge Batch | `schemas/knowledge-batch.schema.json` | Additive canonical claims, events, story arcs, review decisions, and versioned membership records for the Knowledge Destination Port |
+| Knowledge Batch 1.1 (core) | `schemas/knowledge-batch-1.1.schema.json` | Open-source core of Batch 1.1: evidence, passages, claims, claim–passage links, source positions, assessments, events, story arcs and memberships, with continuous versions and exact refs. Cross-record rules C1–C10 and C13 are checked by `scripts/validate-knowledge-batch.py`; 1.0 stays for existing cases |
 | Methodology | `schemas/methodology.schema.json` | Investigation plan with directions, steps, tools_required, opsec_considerations |
 | Investigation Log | `schemas/investigation-log.schema.json` | Append-only cycle audit trail |
 | Summary | `schemas/summary.schema.json` | Investigation gate summary for review |

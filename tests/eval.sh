@@ -82,7 +82,7 @@ if ! python3 -c "import jsonschema" 2>/dev/null; then
   printf "%s⊘%s jsonschema not installed — skipping sample validation%s\n" "$_c_dim" "$_c_reset" "$_c_dim"
   printf "   Install: python3 -m pip install --user jsonschema==4.25.1   (CI installs this automatically)%s\n" "$_c_reset"
 else
-  for pair in "findings.sample.json:findings.schema.json" "fact-check.sample.json:fact-check.schema.json" "evidence-bundle.sample.json:evidence-bundle.schema.json" "provenance-manifest.sample.json:provenance-manifest.schema.json" "knowledge-batch.sample.json:knowledge-batch.schema.json"; do
+  for pair in "findings.sample.json:findings.schema.json" "fact-check.sample.json:fact-check.schema.json" "evidence-bundle.sample.json:evidence-bundle.schema.json" "provenance-manifest.sample.json:provenance-manifest.schema.json" "knowledge-batch.sample.json:knowledge-batch.schema.json" "knowledge-batch-1.1.sample.json:knowledge-batch-1.1.schema.json"; do
     sample="tests/fixtures/${pair%%:*}"
     schema="schemas/${pair##*:}"
     if python3 -c "

@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.1",
+  "batch_id": "batch:river-monitoring-001",
+  "case_id": "case:river-monitoring",
+  "evidence": [
+    {
+      "id": "evidence:permit-register",
+      "version": 1,
+      "capture": {
+        "route": "browser",
+        "tool": "crawl4ai",
+        "source_url": "https://registry.example.org/permits/4412",
+        "captured_at": "2026-08-17T14:02:11Z"
+      },
+      "content_ref": "research/permit-register-4412.md",
+      "content_sha256": "1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b3c5d7e9f1a3b5c7d9e1f3a",
+      "derivatives": [
+        {
+          "id": "text",
+          "type": "extracted_text",
+          "content_ref": "research/permit-register-4412.txt",
+          "content_sha256": "2e4b6d8f0a2c4e6b8d0f2a4c6e8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c2e4b"
+        }
+      ],
+      "provenance": {"method": "agent_candidate", "model": "fixture-model-1"}
+    },
+    {
+      "id": "evidence:operator-statement",
+      "version": 1,
+      "capture": {
+        "route": "browser",
+        "source_url": "https://operator.example.com/news/discharge-statement",
+        "captured_at": "2026-08-17T15:40:00+02:00"
+      },
+      "content_ref": "research/operator-statement.md",
+      "content_sha256": "3c5e7a9b1d3f5c7e9a1b3d5f7c9e1a3b5d7f9c1e3a5b7d9f1c3e5a7b9d1f3c5e",
+      "provenance": {"method": "agent_candidate", "model": "fixture-model-1"}
+    }
+  ],
+  "source_expressions": [
+    {
+      "id": "passage:permit-night-discharge",
+      "version": 1,
+      "text": "Discharge authorised between 22:00 and 05:00 at outfall 3.",
+      "language": "en",
+      "direct_quote": true,
+      "origin_ref": {"type": "evidence", "id": "evidence:permit-register", "version": 1, "derivative_id": "text"},
+      "provenance": {"method": "agent_candidate", "model": "fixture-model-1"}
+    },
+    {
+      "id": "passage:operator-denial",
+      "version": 1,
+      "text": "We have never discharged at night.",
+      "language": "en",
+      "direct_quote": true,
+      "origin_ref": {"type": "evidence", "id": "evidence:operator-statement", "version": 1},
+      "speaker": "River Works Ltd spokesperson",
+      "provenance": {"method": "agent_candidate", "model": "fixture-model-1"}
+    }
+  ],
+  "claims": [
+    {
+      "id": "claim:night-discharge",
+      "version": 1,
+      "origin": {"finding_id": "F1"},
+      "proposition": "River Works Ltd is permitted to discharge at outfall 3 at night.",
+      "origin_source_expression_ref": {"id": "passage:permit-night-discharge", "version": 1},
+      "language": "en",
+      "statement": {
+        "subject": {"text": "River Works Ltd"},
+        "predicate": "is permitted to discharge at night at",
+        "object": {"text": "outfall 3"}
+      },
+      "provenance": {"method": "agent_candidate", "model": "fixture-model-1"}
+    }
+  ],
+  "claim_source_expressions": [
+    {
+      "id": "grounding:night-discharge-permit",
+      "version": 1,
+      "claim_ref": {"id": "claim:night-discharge", "version": 1},
+      "source_expression_ref": {"id": "passage:permit-night-discharge", "version": 1},
+      "role": "supports",
+      "provenance": {"method": "agent_candidate", "model": "fixture-model-1"}
+    },
+    {
+      "id": "grounding:night-discharge-denial",
+      "version": 1,
+      "claim_ref": {"id": "claim:night-discharge", "version": 1},
+      "source_expression_ref": {"id": "passage:operator-denial", "version": 1},
+      "role": "context",
+      "provenance": {"method": "agent_candidate", "model": "fixture-model-1"}
+    }
+  ],
+  "source_positions": [
+    {
+      "id": "position:night-discharge-operator",
+      "version": 1,
+      "claim_ref": {"id": "claim:night-discharge", "version": 1},
+      "actor": {"label": "River Works Ltd"},
+      "stance": "disputes",
+      "source_expression_refs": [{"id": "passage:operator-denial", "version": 1}],
+      "attribution_verbatim": "We have never discharged at night.",
+      "provenance": {"method": "agent_candidate", "model": "fixture-model-1"}
+    }
+  ],
+  "assessments": [
+    {
+      "id": "assessment:night-discharge",
+      "version": 1,
+      "claim_ref": {"id": "claim:night-discharge", "version": 1},
+      "verdict": "verified",
+      "confidence": "high",
+      "rationale": "The public permit register states the authorised night window; the operator's denial concerns practice, not the permit.",
+      "verification_methods": ["re_fetched"],
+      "basis_refs": [
+        {"type": "claim_source_expression", "id": "grounding:night-discharge-permit", "version": 1},
+        {"type": "source_position", "id": "position:night-discharge-operator", "version": 1}
+      ],
+      "flags": [
+        {
+          "code": "dispute_unrecorded",
+          "reason": "The operator's statement disputes night discharges; the position now records it.",
+          "related_refs": [{"type": "source_expression", "id": "passage:operator-denial", "version": 1}],
+          "disposition": {"action": "accept_with_reason", "reason": "Recorded as a disputing source position."}
+        }
+      ],
+      "provenance": {"method": "agent_candidate", "model": "fixture-model-1"}
+    }
+  ],
+  "events": [
+    {
+      "id": "event:permit-granted",
+      "version": 1,
+      "language": "en",
+      "actors": [{"name": "Regional water authority", "role": "agent"}, {"name": "River Works Ltd", "role": "participant"}],
+      "action": "grant",
+      "object": {"text": "a night discharge permit for outfall 3"},
+      "time": {"kind": "point", "value": "2025-03"},
+      "place": {"name": "Outfall 3"},
+      "provenance": {"method": "agent_candidate", "model": "fixture-model-1"}
+    }
+  ],
+  "claim_event_memberships": [
+    {
+      "id": "membership:night-discharge-permit-granted",
+      "version": 1,
+      "claim_ref": {"id": "claim:night-discharge", "version": 1},
+      "event_ref": {"id": "event:permit-granted", "version": 1},
+      "provenance": {"method": "agent_candidate", "model": "fixture-model-1"}
+    }
+  ],
+  "story_arcs": [
+    {
+      "id": "arc:river-discharges",
+      "version": 1,
+      "language": "en",
+      "title": "River discharges",
+      "description": "How discharges into the river are permitted and monitored.",
+      "provenance": {"method": "journalist"}
+    }
+  ],
+  "event_story_arc_memberships": [
+    {
+      "id": "arc-membership:permit-granted-river-discharges",
+      "version": 1,
+      "event_ref": {"id": "event:permit-granted", "version": 1},
+      "story_arc_ref": {"id": "arc:river-discharges", "version": 1},
+      "provenance": {"method": "journalist"}
+    }
+  ]
+}

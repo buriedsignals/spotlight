@@ -11,6 +11,16 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   decisions. Indicator Lab starts it through Osaurus. The runtimes guide, README
   and landing page describe it in place of the Flue harness.
 
+### Added — Knowledge Batch 1.1 core
+
+- `schemas/knowledge-batch-1.1.schema.json`: the open-source core of Batch
+  1.1, with its names and rules and only the open-source records and fields.
+  Every core batch also validates against the full Batch 1.1 schema. The 1.0
+  schema stays, and existing cases keep reading against it.
+- `scripts/validate-knowledge-batch.py` checks the cross-record rules the
+  schema cannot (C1–C10, C13) against a batch and the batches already
+  admitted, including the §8.4 flag registry.
+
 ### Changed — Exact passages are the default for new cases
 
 - Every new case starts activated: before the first Investigation cycle,
