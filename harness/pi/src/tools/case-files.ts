@@ -37,9 +37,14 @@ function caseRelative(root: string, path: string): string {
 	return relative(root, path).split(sep).join('/');
 }
 
+// Skills write paths as `{CASE_DIR}/...`; a model often copies that prefix
+// verbatim, and it means the case folder itself.
+const CASE_DIR_PREFIX = /^\{CASE_DIR\}(?:[\\/]|$)/;
+
 function requested(base: string, path: string): string {
 	if (path.includes('\0')) throw new FileRefused('refused: path contains a NUL byte');
-	return isAbsolute(path) ? resolve(path) : resolve(base, path);
+	const relative = path.replace(CASE_DIR_PREFIX, '');
+	return isAbsolute(relative) ? resolve(relative) : resolve(base, relative);
 }
 
 function lstatOrUndefined(path: string): Stats | undefined {
@@ -93,9 +98,13 @@ export function writeConfined(caseDir: string, root: string, path: string, conte
 // A read target is wherever the path really leads, which must be inside the case
 // or the checkout's schemas/.
 export function readTarget(caseDir: string, path: string): string {
+	const target = requested(caseDir, path);
+	// Refuse before looking: "not found" for an outside path would tell the model
+	// which files exist beyond the case.
+	if (!inside(caseDir, target) && !inside(SCHEMAS_DIR, target)) throw new FileRefused(`refused: ${path} is outside the case`);
 	let real: string;
 	try {
-		real = realpathSync(requested(caseDir, path));
+		real = realpathSync(target);
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`not found: ${path}`);
 		throw error;

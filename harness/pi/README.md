@@ -35,6 +35,7 @@ Configuration comes only from the environment. A missing or invalid required var
 | `SPOTLIGHT_EDITION` | no | `solo` (default) or `newsroom`. |
 | `SPOTLIGHT_ROUTES` | newsroom | JSON array of allowed model routes (see below). |
 | `SPOTLIGHT_PYTHON` | no | Python interpreter for the Spotlight resolver and every Python seam the tools wrap (default `python3`). |
+| `SPOTLIGHT_WORKER_TRANSCRIPT_DIR` | no | Debugging only: a folder where each worker's RPC records are written, one file per task. They contain case text; keep the folder private. |
 | `SPOTLIGHT_CONFIG` | no | Absolute path of the installed `.spotlight-config.json` (default: the checkout root's). |
 | `SPOTLIGHT_SENSITIVE` | no | `true` removes every web tool from every process. |
 | `SPOTLIGHT_ANONYMIZE_FETCH`, `TOR_SOCKS` | no | Tor posture for `fetch`, passed to the scraping seam. |

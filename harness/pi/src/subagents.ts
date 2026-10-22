@@ -6,7 +6,8 @@
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { appendFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { onJsonlRecords } from './pi-process.ts';
@@ -92,7 +93,12 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 		if (child.stdin.writable) child.stdin.write(`${JSON.stringify(command)}\n`);
 	};
 	let started = false;
+	// Opt-in debugging: the worker's RPC records (which carry case text) go to a
+	// folder the operator names, never to stderr or the chat.
+	const transcriptDir = process.env.SPOTLIGHT_WORKER_TRANSCRIPT_DIR;
+	const transcript = transcriptDir ? join(transcriptDir, `worker-${Date.now()}.jsonl`) : '';
 	onJsonlRecords(child.stdout, (record) => {
+		if (transcript) appendFileSync(transcript, `${JSON.stringify(record)}\n`, { mode: 0o600 });
 		if (record.type === 'response' && record.id === 'prompt') {
 			if (!record.success) answer.reject(new Error(`worker refused the task: ${String(record.error)}`));
 			started = (record.data as { disposition?: string } | undefined)?.disposition !== 'handled';

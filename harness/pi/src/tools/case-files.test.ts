@@ -36,6 +36,16 @@ test('a write inside the case lands there and reads back', async (t) => {
 	assert.match(await call('grep_files', { pattern: 'sec.nd' }), /research\/notes\/a\.md:1:second/);
 });
 
+test('a path copied from a skill with its {CASE_DIR}/ prefix lands in the case root', async (t) => {
+	const { caseDir, call } = await fixture(t);
+
+	await call('write_file', { path: '{CASE_DIR}/brief-directions.txt', content: 'approved' });
+
+	assert.equal(await readFile(join(caseDir, 'brief-directions.txt'), 'utf8'), 'approved');
+	assert.match(await call('read_file', { path: '{CASE_DIR}/brief-directions.txt' }), /approved/);
+	assert.equal(existsSync(join(caseDir, '{CASE_DIR}')), false);
+});
+
 test('writes outside the case, through a symlink, or to a protected file are refused', async (t) => {
 	const { caseDir, outside, call } = await fixture(t);
 	await symlink(outside, join(caseDir, 'research'), 'dir');
@@ -64,6 +74,15 @@ test('writes outside the case, through a symlink, or to a protected file are ref
 	assert.equal(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'), '{"phase":"brief"}');
 	for (const name of ['review-nonces.json', 'methodology-review.json', 'provenance-signing-receipt.json']) {
 		assert.equal(existsSync(join(caseDir, 'data', name)), false, name);
+	}
+});
+
+test('a read outside the case is refused whether or not the file exists', async (t) => {
+	const { outside, call } = await fixture(t);
+	await writeFile(join(outside, 'present.txt'), 'x');
+
+	for (const path of ['../outside/present.txt', '../outside/absent.txt', join(outside, 'absent.txt')]) {
+		await assert.rejects(call('read_file', { path }), /refused/, path);
 	}
 });
 
