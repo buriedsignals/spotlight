@@ -121,7 +121,12 @@
       "description": "Legacy contract 1.0 (schema_version absent or 1.0): old cases keep their recorded verdicts and stay readable.",
       "properties": {
         "schema_version": { "const": "1.0" },
-        "claims": { "items": { "properties": { "verdict": { "not": { "const": "not_checkable" } } } } }
+        "claims": {
+          "items": {
+            "not": { "required": ["flags"] },
+            "properties": { "verdict": { "not": { "const": "not_checkable" } } }
+          }
+        }
       }
     },
     {

@@ -1143,11 +1143,18 @@ def main() -> int:
         all_errors.append("findings.json: schema_version 1.1 requires a valid data/case-contract.json")
 
     if activated:
-        if isinstance(factcheck_data, dict) and fact_check_version(factcheck_data) != "1.1":
-            all_errors.append(
-                "fact-check.json: activated cases use fact-check contract 1.1 "
-                "(verified, unverified, disputed, false, not_checkable)"
-            )
+        # An activated case uses Batch 1.1's vocabulary. Cases activated
+        # before contract 1.1 existed keep their 1.0 file (it is hashed into
+        # the case contract) and stay valid while they use only that
+        # vocabulary; a removed verdict or confidence needs a person.
+        if isinstance(factcheck_data, dict):
+            container, rows = fact_check_rows(factcheck_data)
+            for index, row in enumerate(rows if isinstance(rows, list) else []):
+                if isinstance(row, dict) and fact_check_values(container, row)[1] in ("partially_verified", "mischaracterized"):
+                    all_errors.append(
+                        f"fact-check.json.{container}[{index}]: activated cases use Batch 1.1 verdicts "
+                        "(verified, unverified, disputed, false, not_checkable); a person must re-assess this one"
+                    )
         if contract_data.get("project") != findings_data.get("project"):
             all_errors.append("case-contract.json: project must match findings.json")
         expressions_path = case_dir / "data" / "source-expressions.json"

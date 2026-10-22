@@ -134,7 +134,7 @@ vault_context:
 
 The fact-checker operates independently from the investigator. Spawned with its own context, it reads only the investigator's JSON output — not their reasoning — and writes `{CASE_DIR}/data/fact-check.json` with per-claim verdicts and evidence trails.
 
-**Verdict taxonomy** (fact-check contract `1.1`, Batch 1.1's five verdicts): `verified` | `unverified` | `disputed` | `false` | `not_checkable`, with confidence `high` | `medium` | `low` and optional Batch 1.1 flags. Legacy `1.0` files keep `partially_verified` and `mischaracterized` (and findings' `disputed` confidence) and stay readable; activated cases must use `1.1`.
+**Verdict taxonomy** (fact-check contract `1.1`, Batch 1.1's five verdicts): `verified` | `unverified` | `disputed` | `false` | `not_checkable`, with confidence `high` | `medium` | `low` and optional Batch 1.1 flags. Legacy `1.0` files keep `partially_verified` and `mischaracterized` (and findings' `disputed` confidence) and stay readable; an activated case uses only the Batch 1.1 vocabulary.
 
 Full prompt bundle: `agents/fact-checker.md`.
 

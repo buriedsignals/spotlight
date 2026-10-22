@@ -319,10 +319,14 @@ def activated_documents(case: Path) -> tuple[dict, dict, dict, dict]:
     return findings, fact_check, bundle, expressions
 
 
-def write_activated_case(case: Path) -> None:
+def write_activated_case(case: Path, fact_check_version: str | None = "1.1", verdict: str | None = None) -> None:
     data = case / "data"
     data.mkdir(parents=True, exist_ok=True)
     findings, fact_check, bundle, expressions = activated_documents(case)
+    if fact_check_version is None:
+        fact_check.pop("schema_version", None)
+    if verdict is not None:
+        fact_check["claims"][0]["verdict"] = verdict
     documents = {
         "findings.json": findings,
         "fact-check.json": fact_check,
@@ -586,15 +590,17 @@ def main() -> int:
         write_activated_case(activated)
         rc = subprocess.run([sys.executable, str(SCRIPT), str(activated)], capture_output=True).returncode
         check("e2e: activated case exits 0", [] if rc == 0 else [f"rc={rc}"], False)
-        downgraded = Path(tmp) / "activated-legacy-fact-check"
-        write_activated_case(downgraded)
-        fc_path = downgraded / "data" / "fact-check.json"
-        fc = json.loads(fc_path.read_text(encoding="utf-8"))
-        fc.pop("schema_version", None)
-        fc_path.write_text(json.dumps(fc), encoding="utf-8")
-        out = subprocess.run([sys.executable, str(SCRIPT), str(downgraded)], capture_output=True, text=True)
-        check("e2e: activated case refuses a 1.0 fact-check",
-              [] if "activated cases use fact-check contract 1.1" in out.stdout + out.stderr else ["no contract-version error"], False)
+        # A case activated before contract 1.1 keeps its 1.0 fact-check and
+        # stays valid; a removed verdict in an activated case is refused.
+        earlier = Path(tmp) / "activated-before-1.1"
+        write_activated_case(earlier, fact_check_version=None)
+        rc = subprocess.run([sys.executable, str(SCRIPT), str(earlier)], capture_output=True).returncode
+        check("e2e: case activated with a 1.0 fact-check stays valid", [] if rc == 0 else [f"rc={rc}"], False)
+        removed = Path(tmp) / "activated-removed-verdict"
+        write_activated_case(removed, fact_check_version=None, verdict="partially_verified")
+        out = subprocess.run([sys.executable, str(SCRIPT), str(removed)], capture_output=True, text=True)
+        check("e2e: activated case refuses a removed verdict",
+              [] if "a person must re-assess this one" in out.stdout + out.stderr else ["no removed-verdict error"], False)
         (activated / "data" / "source-expressions.json").write_text("{}", encoding="utf-8")
         rc = subprocess.run([sys.executable, str(SCRIPT), str(activated)], capture_output=True).returncode
         check("e2e: activated artifact mutation exits 1", [] if rc == 1 else [f"rc={rc}"], False)

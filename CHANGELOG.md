@@ -24,9 +24,10 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   carry optional `flags` from Batch 1.1's code registry (§8.4, including the
   eight codes added on 22 October 2026); a person gives each a disposition.
 - Old cases keep their recorded verdicts: contract `1.0` files stay readable
-  and nothing rewrites them. An activated case must carry a `1.1`
-  fact-check, and `migrate-source-expressions.py` now blocks a case whose
-  legacy verdicts or confidences need a person's judgement.
+  and nothing rewrites them. An activated case may use only Batch 1.1's
+  vocabulary (a case activated before contract `1.1` keeps its `1.0` file),
+  and `migrate-source-expressions.py` now blocks a case whose legacy
+  verdicts or confidences need a person's judgement.
 - The report's verdict chart shows the five verdicts, plus a legacy verdict
   only when an old case records it. A finding with any `not_checkable` part
   reads as not established.

@@ -231,6 +231,19 @@ def main() -> int:
         removed_audit = json.loads((removed / "data/source-expression-migration.json").read_text(encoding="utf-8"))
         validate_schema(removed_audit)
         assert any(item["reason"] == "removed_verdict" for item in removed_audit["blocking_reasons"])
+        before_removed = snapshot(removed / "data")
+        assert run(removed, "--apply").returncode == 3
+        assert snapshot(removed / "data") == before_removed, "a blocked migration changed the case"
+
+        disputed = build_case(root / "removed-confidence")
+        findings_file = disputed / "data/findings.json"
+        rows = json.loads(findings_file.read_text(encoding="utf-8"))
+        rows["findings"][0]["confidence"] = "disputed"
+        write_json(findings_file, rows)
+        assert run(disputed).returncode == 0
+        disputed_audit = json.loads((disputed / "data/source-expression-migration.json").read_text(encoding="utf-8"))
+        validate_schema(disputed_audit)
+        assert any(item["reason"] == "removed_confidence" for item in disputed_audit["blocking_reasons"])
 
         before_apply = snapshot(exact / "data")
         applied = run(exact, "--apply")
@@ -238,7 +251,6 @@ def main() -> int:
         data = exact / "data"
         assert (data / "case-contract.json").exists()
         assert json.loads((data / "findings.json").read_text())["schema_version"] == "1.1"
-        assert json.loads((data / "fact-check.json").read_text())["schema_version"] == "1.1"
         expressions = json.loads((data / "source-expressions.json").read_text())
         assert len(expressions["expressions"]) == 1
         contract = json.loads((data / "case-contract.json").read_text())

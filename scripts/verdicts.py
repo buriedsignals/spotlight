@@ -3,11 +3,14 @@
 Fact-check contract 1.1 uses Batch 1.1's five assessment verdicts and three
 confidence levels. Contract 1.0 is the legacy vocabulary: old cases keep
 their recorded verdicts and stay readable, and nothing rewrites them. An
-activated case (findings contract 1.1) must carry a 1.1 fact-check.
+activated case (findings contract 1.1) uses only the 1.1 vocabulary; one
+activated before contract 1.1 existed keeps its 1.0 file.
 """
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 VERDICTS_1_1 = frozenset({"verified", "unverified", "disputed", "false", "not_checkable"})
@@ -22,29 +25,10 @@ POSITIVE_1_1 = frozenset({"verified"})
 LEGACY_POSITIVE = frozenset({"verified", "partially_verified"})
 
 # Batch 1.1 §8.4 flag registry: the initial codes plus the eight added on
-# 22 October 2026. Codes never change meaning; a new meaning needs a new code.
-FLAG_CODES = frozenset(
-    {
-        "partial_support",
-        "contradiction",
-        "allegation_as_fact",
-        "amount_mismatch",
-        "date_mismatch",
-        "added_scope",
-        "added_causation",
-        "proposition_drift",
-        "ambiguous_entity",
-        "unresolved_semantic_ambiguity",
-        "announced_not_current",
-        "incomplete_list",
-        "address_as_legal_domicile",
-        "direction_mismatch",
-        "control_overstated",
-        "beneficial_owner_not_stated",
-        "stage_overstated",
-        "dispute_unrecorded",
-    }
-)
+# 22 October 2026. The fact-check schema holds the one list; codes never
+# change meaning, and a new meaning needs a new code.
+_SCHEMA = Path(__file__).resolve().parents[1] / "schemas" / "fact-check.schema.json"
+FLAG_CODES = frozenset(json.loads(_SCHEMA.read_text(encoding="utf-8"))["definitions"]["flag_code"]["enum"])
 
 
 def fact_check_version(document: Any) -> str:

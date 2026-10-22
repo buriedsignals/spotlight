@@ -82,6 +82,32 @@ def main() -> int:
         )
         require(any("does not match" in item for item in failures), "stale hash accepted")
 
+        # Contract 1.1 end to end: not_checkable needs no anchor; a removed
+        # verdict is refused; a legacy 1.0 file keeps its vocabulary.
+        data = case / "data"
+        data.mkdir()
+        (data / "findings.json").write_text(json.dumps({
+            "project": "p", "findings": [{
+                "id": "F1", "claim": "Acme will pay Doe next year.", "evidence": ["forecast"],
+                "sources": [{"url": "https://example.org"}], "confidence": "low"}]}), encoding="utf-8")
+        def fact_check(version: str | None, verdict: str) -> None:
+            doc = {"project": "p", "claims": [{
+                "id": 1, "finding_id": "F1", "claim_text": "Acme will pay Doe next year.",
+                "verdict": verdict, "confidence": "low", "evidence_for": [], "evidence_against": []}]}
+            if version:
+                doc["schema_version"] = version
+            (data / "fact-check.json").write_text(json.dumps(doc), encoding="utf-8")
+        fact_check("1.1", "not_checkable")
+        results, code = VALIDATOR.validate(case)
+        require(code == 0, f"1.1 not_checkable refused: {results}")
+        fact_check("1.1", "mischaracterized")
+        results, code = VALIDATOR.validate(case)
+        require(code != 0 and "contract 1.1" in json.dumps(results), f"1.1 removed verdict accepted: {results}")
+        fact_check(None, "mischaracterized")
+        results, code = VALIDATOR.validate(case)
+        require(code == 0, f"legacy 1.0 verdict no longer readable: {results}")
+
+
     with tempfile.TemporaryDirectory() as tmp:
         case = Path(tmp) / "case"
         (case / "data").mkdir(parents=True)
@@ -99,7 +125,7 @@ def main() -> int:
         results, code = VALIDATOR.validate(case)
         require(code == 0, f"an explicit no-qualifying-findings outcome failed: {results}")
 
-    print("validate-fact-check characterization: 8 passed")
+    print("validate-fact-check characterization: 11 passed")
     return 0
 
 

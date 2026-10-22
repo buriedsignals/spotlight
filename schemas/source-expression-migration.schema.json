@@ -173,7 +173,7 @@
       "required": ["finding_id", "reason", "detail"],
       "properties": {
         "finding_id": { "type": "string", "minLength": 1 },
-        "reason": { "enum": ["positive_verdict_without_exact_support", "removed_verdict", "removed_confidence", "legacy_verdict_container"] },
+        "reason": { "enum": ["positive_verdict_without_exact_support", "removed_verdict", "removed_confidence"] },
         "detail": { "type": "string", "minLength": 1 }
       }
     }

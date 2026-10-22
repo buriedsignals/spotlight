@@ -519,14 +519,9 @@ def build_documents(
         if isinstance(finding, dict):
             finding["finding_fingerprint"] = fingerprint({"claim": finding.get("claim")})
     updated_findings["schema_version"] = "1.1"
-    # An activated case carries fact-check contract 1.1. The legacy verdicts
-    # Batch 1.1 removed, and a finding's "disputed" confidence, each need a
-    # person's judgement (forward-only policy), so they block the migration.
-    updated_fact["schema_version"] = "1.1"
+    # The verdicts Batch 1.1 removed, and a finding's "disputed" confidence,
+    # each need a person's judgement (forward-only policy), so they block.
     removed: list[dict[str, str]] = []
-    if container != "claims":
-        removed.append({"finding_id": "-", "reason": "legacy_verdict_container",
-                        "detail": f"contract 1.1 records verdicts only in claims[], not {container}[]"})
     for row in rows:
         if isinstance(row, dict):
             _, verdict = row_values(container, row)
