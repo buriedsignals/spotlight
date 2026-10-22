@@ -14,7 +14,7 @@ from . import (
     record_attempt,
     request_follow_up,
     resolve,
-    seal_gate1,
+    seal_investigation_gate,
 )
 from .contract import ATTEMPT_LIMITS
 
@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--json", action="store_true")
     add_case_boundary(status)
     approval = commands.add_parser("approve")
-    approval.add_argument("gate", choices=("methodology", "gate1"))
+    approval.add_argument("gate", choices=("methodology", "investigation_gate"))
     approval.add_argument("--approved-by", required=True)
     approval.add_argument("--approved-at", required=True)
     add_case_boundary(approval)
@@ -42,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     follow_up = commands.add_parser("request-follow-up")
     follow_up.add_argument("--instructions", required=True)
     add_case_boundary(follow_up)
-    seal = commands.add_parser("seal-gate1")
+    seal = commands.add_parser("seal-investigation-gate")
     add_case_boundary(seal)
     report = commands.add_parser("decide-report")
     report.add_argument("decision", choices=("completed", "declined"))
@@ -69,8 +69,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
         record_attempt(args.case_dir, args.kind, args.gap, **boundary)
     elif args.command == "request-follow-up":
         request_follow_up(args.case_dir, args.instructions, **boundary)
-    elif args.command == "seal-gate1":
-        seal_gate1(args.case_dir, **boundary)
+    elif args.command == "seal-investigation-gate":
+        seal_investigation_gate(args.case_dir, **boundary)
     elif args.command == "decide-report":
         decide_report(args.case_dir, args.decision, **boundary)
     else:

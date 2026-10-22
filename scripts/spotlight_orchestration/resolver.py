@@ -11,8 +11,8 @@ from .dependencies import (
     approval_matches,
     current_hashes,
     digest_receipt_matches,
-    gate1_approval_matches,
-    gate1_dependencies,
+    investigation_gate_approval_matches,
+    investigation_gate_dependencies,
     outputs_match,
     provenance_matches,
     review_is_fresh,
@@ -23,10 +23,10 @@ _PHASE_OWNERS = {
     "brief": "phase-methodology",
     "methodology": "phase-methodology",
     "methodology_approval": "phase-methodology",
-    "execution": "phase-execution",
-    "blocked": "phase-execution",
-    "gate1_approval": "phase-gate1",
-    "gate1_finalization": "phase-gate1",
+    "investigation": "phase-investigation",
+    "blocked": "phase-investigation",
+    "investigation_gate_approval": "phase-investigation-gate",
+    "investigation_gate_finalization": "phase-investigation-gate",
     "report": "phase-report",
     "ingest": "phase-ingest",
     "complete": None,
@@ -50,7 +50,7 @@ def load_ingestion_marker(
     return marker
 
 
-def execution_status(
+def investigation_status(
     status: dict[str, Any],
     missing: list[str],
     follow_up: object = None,
@@ -58,7 +58,7 @@ def execution_status(
     value = {
         **status,
         "status": "active",
-        "next_phase": "execution",
+        "next_phase": "investigation",
         "missing": missing,
     }
     if isinstance(follow_up, dict):
@@ -80,41 +80,43 @@ def status_for(
     if "blocked" in state:
         return {**status, "status": "blocked", "next_phase": "blocked", "blocked": state["blocked"]}
 
-    dependencies = gate1_dependencies(case)
+    dependencies = investigation_gate_dependencies(case)
     dependency_digest = str(dependencies["dependency_digest"])
     follow_up = state.get("follow_up")
-    if not dependencies["execution_ready"]:
-        return execution_status(status, list(dependencies["execution_missing"]))
+    if not dependencies["investigation_ready"]:
+        return investigation_status(status, list(dependencies["investigation_missing"]))
     if (
         isinstance(follow_up, dict)
         and digest_receipt_matches(follow_up, dependency_digest)
         and isinstance(follow_up.get("instructions"), str)
     ):
-        return execution_status(status, list(dependencies["execution_missing"]), follow_up)
-    if dependencies["gate1_missing"]:
+        return investigation_status(
+            status, list(dependencies["investigation_missing"]), follow_up
+        )
+    if dependencies["investigation_gate_missing"]:
         return {
             **status,
-            "next_phase": "gate1_approval",
-            "missing": list(dependencies["gate1_missing"]),
+            "next_phase": "investigation_gate_approval",
+            "missing": list(dependencies["investigation_gate_missing"]),
         }
-    gate1_approval = state["approvals"].get("gate1")
-    if not gate1_approval_matches(gate1_approval, dependency_digest):
-        return {**status, "next_phase": "gate1_approval"}
-    finalization = state.get("gate1_finalization")
+    gate_approval = state["approvals"].get("investigation_gate")
+    if not investigation_gate_approval_matches(gate_approval, dependency_digest):
+        return {**status, "next_phase": "investigation_gate_approval"}
+    finalization = state.get("investigation_gate_finalization")
     if not digest_receipt_matches(finalization, dependency_digest) or not outputs_match(
         case, finalization
     ):
         if not provenance_matches(case, dependency_digest):
             resume_at = "provenance"
-        elif not review_is_fresh(case, gate1_approval):
+        elif not review_is_fresh(case, gate_approval):
             resume_at = "review"
         else:
             resume_at = "seal"
         return {
             **status,
             "status": "active",
-            "next_phase": "gate1_finalization",
-            "gate1": {"state": "approved", "resume_at": resume_at},
+            "next_phase": "investigation_gate_finalization",
+            "investigation_gate": {"state": "approved", "resume_at": resume_at},
         }
 
     report = state["decisions"].get("report")
@@ -182,12 +184,12 @@ def _missing_for(status: dict[str, Any]) -> list[str]:
         return ["data/methodology.json"]
     if phase == "methodology_approval":
         return ["methodology approval"]
-    if phase == "execution":
+    if phase == "investigation":
         return list(status.get("missing", []))
-    if phase == "gate1_approval":
-        return list(status.get("missing", ["Gate 1 approval"]))
-    if phase == "gate1_finalization":
-        return [status["gate1"]["resume_at"]]
+    if phase == "investigation_gate_approval":
+        return list(status.get("missing", ["Investigation gate approval"]))
+    if phase == "investigation_gate_finalization":
+        return [status["investigation_gate"]["resume_at"]]
     if phase == "report":
         return ["report decision"]
     if phase == "ingest" and status.get("ingest", {}).get("resume_at") == "decision":
@@ -198,7 +200,12 @@ def _missing_for(status: dict[str, Any]) -> list[str]:
 def normalized_resolution(case: Path, state: dict[str, Any]) -> dict[str, Any]:
     status = status_for(case, state)
     phase = status["next_phase"]
-    resume = status.get("gate1") or status.get("ingest") or status.get("follow_up") or {}
+    resume = (
+        status.get("investigation_gate")
+        or status.get("ingest")
+        or status.get("follow_up")
+        or {}
+    )
     return {
         **status,
         "phase": phase,

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .contract import (
     ATTEMPT_LIMITS,
-    GATE1_FINALIZATION_OUTPUTS,
+    INVESTIGATION_GATE_FINALIZATION_OUTPUTS,
     METHODOLOGY_INPUTS,
     OrchestrationError,
     SCRIPT_DIR,
@@ -16,8 +16,8 @@ from .contract import (
 from .dependencies import (
     approval_matches,
     current_hashes,
-    gate1_approval_matches,
-    require_gate1_digest,
+    investigation_gate_approval_matches,
+    require_investigation_gate_digest,
     sha256,
     validate_approval,
 )
@@ -34,11 +34,13 @@ def approve(
     approved_by: str,
     approved_at: str,
 ) -> None:
-    if gate not in {"methodology", "gate1"}:
-        raise OrchestrationError("gate must be methodology or gate1")
+    if gate not in {"methodology", "investigation_gate"}:
+        raise OrchestrationError("gate must be methodology or investigation_gate")
     validate_approval(approved_by, approved_at)
     state = load_state(case, data_descriptor)
-    expected_phase = "methodology_approval" if gate == "methodology" else "gate1_approval"
+    expected_phase = (
+        "methodology_approval" if gate == "methodology" else "investigation_gate_approval"
+    )
     if status_for(case, state, data_descriptor)["next_phase"] != expected_phase:
         raise OrchestrationError(f"case is not awaiting {gate} approval")
 
@@ -51,26 +53,26 @@ def approve(
             "input_sha256": hashes,
         }
         if not approval_matches(previous, hashes):
-            state["approvals"].pop("gate1", None)
+            state["approvals"].pop("investigation_gate", None)
             state["decisions"].clear()
             state["attempts"].clear()
             state.pop("blocked", None)
             state.pop("follow_up", None)
-            state.pop("gate1_finalization", None)
+            state.pop("investigation_gate_finalization", None)
     else:
-        dependency_digest = require_gate1_digest(case)
-        gate1_receipt = {
+        dependency_digest = require_investigation_gate_digest(case)
+        gate_receipt = {
             "approved_by": approved_by,
             "approved_at": approved_at,
             "dependency_digest": dependency_digest,
         }
         review_path = case_path(case, "review.html")
         if review_path.is_file():
-            gate1_receipt["review_sha256_at_approval"] = sha256(review_path)
-        state["approvals"][gate] = gate1_receipt
-        if not gate1_approval_matches(previous, dependency_digest):
+            gate_receipt["review_sha256_at_approval"] = sha256(review_path)
+        state["approvals"][gate] = gate_receipt
+        if not investigation_gate_approval_matches(previous, dependency_digest):
             state["decisions"].clear()
-            state.pop("gate1_finalization", None)
+            state.pop("investigation_gate_finalization", None)
         state.pop("follow_up", None)
     atomic_write_json(
         case, "data/orchestration.json", state, data_descriptor=data_descriptor
@@ -83,13 +85,13 @@ def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> Non
     if not gap.strip():
         raise OrchestrationError("gap must describe the unresolved gap")
     state = load_state(case, data_descriptor)
-    if status_for(case, state, data_descriptor)["next_phase"] != "execution":
-        raise OrchestrationError("attempts can only be recorded during execution")
+    if status_for(case, state, data_descriptor)["next_phase"] != "investigation":
+        raise OrchestrationError("attempts can only be recorded during investigation")
     attempts = state["attempts"]
     attempts[kind] = attempts.get(kind, 0) + 1
     if attempts[kind] >= ATTEMPT_LIMITS[kind]:
         state["blocked"] = {
-            "phase": "execution",
+            "phase": "investigation",
             "exhausted_attempt": kind,
             "gap": gap,
             "attempts": dict(attempts),
@@ -106,33 +108,35 @@ def request_follow_up(
         raise OrchestrationError("instructions must describe the requested follow-up")
     state = load_state(case, data_descriptor)
     if status_for(case, state, data_descriptor)["next_phase"] not in {
-        "gate1_approval",
-        "gate1_finalization",
+        "investigation_gate_approval",
+        "investigation_gate_finalization",
         "report",
     }:
-        raise OrchestrationError("follow-up can only be requested from Gate 1")
+        raise OrchestrationError("follow-up can only be requested from the Investigation gate")
     state["follow_up"] = {
         "instructions": instructions,
-        "dependency_digest": require_gate1_digest(case),
+        "dependency_digest": require_investigation_gate_digest(case),
     }
-    state["approvals"].pop("gate1", None)
-    state.pop("gate1_finalization", None)
+    state["approvals"].pop("investigation_gate", None)
+    state.pop("investigation_gate_finalization", None)
     state["decisions"].clear()
     atomic_write_json(
         case, "data/orchestration.json", state, data_descriptor=data_descriptor
     )
 
 
-def seal_gate1(case: Path, data_descriptor: int) -> None:
+def seal_investigation_gate(case: Path, data_descriptor: int) -> None:
     state = load_state(case, data_descriptor)
     status = status_for(case, state, data_descriptor)
-    if status.get("next_phase") != "gate1_finalization" or status.get("gate1", {}).get(
-        "resume_at"
-    ) != "seal":
-        raise OrchestrationError("Gate 1 finalization outputs are not ready to seal")
-    state["gate1_finalization"] = {
-        "dependency_digest": require_gate1_digest(case),
-        "output_sha256": current_hashes(case, GATE1_FINALIZATION_OUTPUTS),
+    if status.get("next_phase") != "investigation_gate_finalization" or status.get(
+        "investigation_gate", {}
+    ).get("resume_at") != "seal":
+        raise OrchestrationError(
+            "Investigation gate finalization outputs are not ready to seal"
+        )
+    state["investigation_gate_finalization"] = {
+        "dependency_digest": require_investigation_gate_digest(case),
+        "output_sha256": current_hashes(case, INVESTIGATION_GATE_FINALIZATION_OUTPUTS),
     }
     state["decisions"].clear()
     atomic_write_json(
@@ -176,7 +180,7 @@ def decide_report(case: Path, data_descriptor: int, decision: str) -> None:
         _run_helper(helper, case)
         state["decisions"]["report"] = {
             "decision": decision,
-            "dependency_digest": require_gate1_digest(case),
+            "dependency_digest": require_investigation_gate_digest(case),
             "output_sha256": current_hashes(case, outputs),
         }
         state["decisions"].pop("ingest", None)
@@ -201,7 +205,7 @@ def decide_ingest(case: Path, data_descriptor: int, decision: str) -> None:
     if decision == "completed" and detail != {"state": "completed", "resume_at": "seal"}:
         raise OrchestrationError("ingestion has not produced a completed receipt to seal")
 
-    dependency_digest = require_gate1_digest(case)
+    dependency_digest = require_investigation_gate_digest(case)
     marker = load_ingestion_marker(case, data_descriptor)
     marker["status"] = decision
     marker["dependency_digest"] = dependency_digest

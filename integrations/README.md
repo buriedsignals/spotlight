@@ -104,7 +104,7 @@ python3 integrations/preflight.py --text          # Human-readable table
 python3 integrations/preflight.py --smoke-test    # Also runs a minimal API call per integration
 ```
 
-The orchestrator runs this at Phase 0 step 10, alongside its local Mycroft/passive-monitor checks, so the user sees which integrations are live before starting an investigation.
+The orchestrator runs this in Preflight step 10, alongside its local Mycroft/passive-monitor checks, so the user sees which integrations are live before starting an investigation.
 
 ## Agent-facing usage
 

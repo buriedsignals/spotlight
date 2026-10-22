@@ -45,7 +45,7 @@ second copy of Navigator instructions.
 
 ## Cycle integration
 
-The OSINT skill includes `references/cycle-integration.md` — documented integration points for Navigator within the investigation cycle (Phase 2 methodology design, Phase 3 investigation). Read that ref before using Navigator mid-investigation.
+The OSINT skill includes `references/cycle-integration.md` — documented integration points for Navigator within the investigation cycle (Methodology design, Investigation). Read that ref before using Navigator mid-investigation.
 
 ## Output handling
 

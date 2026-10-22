@@ -136,7 +136,7 @@ test('Spotlight agent transition tool changes state through the product module',
 	});
 	const resolution = (await resolve.run({ input: { caseDir } })) as Record<string, unknown>;
 
-	assert.equal(resolution.phase, 'execution');
+	assert.equal(resolution.phase, 'investigation');
 });
 
 test('registered tools are a capability for the active case, not a model-selected sibling', async (t) => {
@@ -174,7 +174,7 @@ test('registered transitions cannot mutate a model-selected sibling case', async
 	});
 	const resolution = (await resolve.run({ input: { caseDir } })) as Record<string, unknown>;
 
-	assert.equal(resolution.phase, 'execution');
+	assert.equal(resolution.phase, 'investigation');
 	await assert.rejects(readFile(join(sibling, 'data', 'orchestration.json')));
 });
 
@@ -255,9 +255,9 @@ test('an in-flight transition reaches one durable outcome after caller abort', a
 			return '';
 		}
 		return JSON.stringify({
-			phase: 'execution',
+			phase: 'investigation',
 			status: 'active',
-			owner: 'phase-execution',
+			owner: 'phase-investigation',
 			missing: [],
 			attempts: {},
 			resume: {},
@@ -281,5 +281,5 @@ test('an in-flight transition reaches one durable outcome after caller abort', a
 	release.resolve();
 
 	const resolution = (await pending) as Record<string, unknown>;
-	assert.equal(resolution.phase, 'execution');
+	assert.equal(resolution.phase, 'investigation');
 });

@@ -14,7 +14,7 @@ All durable mutations use the Knowledge Workspace Port. Set `logical_space: spot
 
 This skill instructs. You — the host runtime — execute. You read investigation files, write vault notes, update registries, and maintain the knowledge graph. The user sees the result; you do the work.
 
-This skill is a Phase 5 handler, not a standalone entry point. Enter only when
+This skill is an Ingest handler, not a standalone entry point. Enter only when
 the parent passes a resolver result with `owner: phase-ingest`,
 `resume.state: requested`, and `resume.resume_at: ingest`. The preceding
 `decideIngest` transition already wrote the case-local requested receipt and

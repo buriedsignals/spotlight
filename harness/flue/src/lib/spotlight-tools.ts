@@ -11,7 +11,7 @@ const OPERATIONS = [
 	'approve',
 	'recordAttempt',
 	'requestFollowUp',
-	'sealGate1',
+	'sealInvestigationGate',
 	'decideReport',
 	'decideIngest',
 ] as const;
@@ -159,9 +159,9 @@ function transitionArguments(
 				casesRoot,
 				caseDir,
 			];
-		case 'sealGate1':
+		case 'sealInvestigationGate':
 			return [
-				'seal-gate1',
+				'seal-investigation-gate',
 				'--authorized-cases-root',
 				casesRoot,
 				caseDir,

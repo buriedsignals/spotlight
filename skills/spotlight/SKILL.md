@@ -59,7 +59,7 @@ Durability and safety clauses:
 
 ## Dispatch
 
-Before Phase 0, establish a shell whose working directory is the checkout root
+Before Preflight, establish a shell whose working directory is the checkout root
 that holds both `skills/` and `scripts/` (`AGENTS.md`, "Checkout layout").
 Run `skills/phase-preflight` first to validate configuration and select the
 case. Then resolve durable state, invoke the single returned owner, let that
@@ -85,21 +85,24 @@ Then re-spawn without the model hint.
 
 | Gate | Closes into (sealed artifact) | Who closes it |
 |---|---|---|
-| Brief gate (Phase 1) — direction approved | `brief-directions.txt` | user |
-| Methodology gate (Phase 2) — methodology approved | Current attributable, hash-bound approval returned by `spotlight_resolve` | user |
-| Investigation gate (end of Phase 3) — findings from investigation cycles 1–5 approved | Current attributable approval over the provenance registry's dependency digest, followed by sealed provenance and review outputs | user — **ends the turn** |
-| Report gate (Phase 4) — report finalized or declined | Hash-bound `decideReport` transition; rendering/decline artifacts remain owned by deterministic helpers | deterministic code after the user's decision |
-| Ingest gate (Phase 5) — ingestion confirmed or declined | `decideIngest` requested/completed/declined state plus `data/ingestion.json` | user |
+| Brief gate — direction approved | `brief-directions.txt` | user |
+| Methodology gate — methodology approved | Current attributable, hash-bound approval returned by `spotlight_resolve` | user |
+| Investigation gate (end of Investigation) — findings from investigation cycles 1–5 approved | Current attributable approval over the provenance registry's dependency digest, followed by sealed provenance and review outputs | user — **ends the turn** |
+| Report gate — report finalized or declined | Hash-bound `decideReport` transition; rendering/decline artifacts remain owned by deterministic helpers | deterministic code after the user's decision |
+| Ingest gate — ingestion confirmed or declined | `decideIngest` requested/completed/declined state plus `data/ingestion.json` | user |
 
 The Investigation gate is the turn boundary: present the findings, then stop. Never answer a
 human gate for the user, and never treat a transcript mention of approval as
 closure — closure is the attributable, current-hash receipt on disk.
 
-Each gate is named after the phase it closes; gates are never numbered. Phase 3
-runs up to five numbered investigation cycles, which are not gates, and ends at
-the Investigation gate. Machine identifiers keep their original names:
-`gate1`, `phase-gate1`, `sealGate1`, `--phase gate1`, `execution`,
-`phase-execution`.
+Phases and gates are named, never numbered: Preflight, Brief, Methodology,
+Investigation, Report, Ingest. Each gate is named after the phase it closes.
+Investigation runs up to five investigation cycles, which are not gates, and
+ends at the Investigation gate. Machine identifiers use the same names
+(`investigation`, `investigation_gate`, `phase-investigation`,
+`phase-investigation-gate`, `sealInvestigationGate`). A case saved under the
+old identifiers (`gate1`, `execution`) is read under the new ones and
+rewritten at its next transition.
 
 ## Verbs
 
@@ -129,14 +132,14 @@ APPROVED**. Do not enable
 
 | Knob | Value | Enforced in |
 |---|---|---|
-| Max investigation cycles | 5, then Stall Protocol | `skills/phase-execution` |
+| Max investigation cycles | 5, then Stall Protocol | `skills/phase-investigation` |
 | Investigator iteration limit | 80 | `agents/investigator.md` |
 | Fact-checker iteration limit | 50 | `agents/fact-checker.md` |
 | Brief clarifying questions | 1–3 | `skills/phase-methodology` |
-| Minimum high-confidence findings | 3 | readiness criteria, `skills/phase-execution` |
-| Independent sources per key claim | 2+ | readiness criteria, `skills/phase-execution` |
-| Fact-checker re-spawns on evidence-validator failure | 1 | `skills/phase-execution` |
-| Structural correction failures | 2 | `data/orchestration.json` via `skills/phase-execution` |
+| Minimum high-confidence findings | 3 | readiness criteria, `skills/phase-investigation` |
+| Independent sources per key claim | 2+ | readiness criteria, `skills/phase-investigation` |
+| Fact-checker re-spawns on evidence-validator failure | 1 | `skills/phase-investigation` |
+| Structural correction failures | 2 | `data/orchestration.json` via `skills/phase-investigation` |
 
 ---
 
@@ -166,7 +169,7 @@ pending artifact never closes a human gate. Do not reconstruct a phase or
 substep by inspecting files.
 
 Source-expression release mode remains a separate product-data classification
-inside Phase 3. A valid `case-contract.json`, findings contract `1.1`, matching
+inside Investigation. A valid `case-contract.json`, findings contract `1.1`, matching
 artifact hashes, and a green `validate-case.py` result mean **activated**.
 Findings contract `1.0` plus an explicitly recorded pilot choice means
 **pilot**. An incomplete or stale activated contract blocks recovery; never

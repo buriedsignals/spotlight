@@ -1,11 +1,11 @@
 ---
 name: phase-methodology
-description: "Spotlight Phases 1–2 — Brief and Methodology: user brief conversation with approval gate, then investigator PLANNING spawn, methodology validation, RLM proposal (frontier opt-in), methodology approval gate"
+description: "Spotlight Brief and Methodology: user brief conversation with approval gate, then investigator PLANNING spawn, methodology validation, RLM proposal (frontier opt-in), methodology approval gate"
 invocable_by: [orchestrator]
 phase: brief,methodology
 ---
 
-# Phase 1 — Brief (Skill <-> User)
+# Brief (Skill <-> User)
 
 This is a conversation between you and the user. Do NOT spawn agents.
 
@@ -27,7 +27,7 @@ This is a conversation between you and the user. Do NOT spawn agents.
 
 ---
 
-# Phase 2 — Methodology (Skill -> Agent -> User)
+# Methodology (Skill -> Agent -> User)
 
 After brief approval, spawn the investigator in PLANNING mode:
 
@@ -173,7 +173,7 @@ Correct only methodology.json as required by the validator evidence. On Navigato
 
    **Decision checks (optional).** If `.spotlight-config.json` has
    `integrations.decisions.enabled: true`, `python3 scripts/decision-signals.py
-   {CASE_DIR} --phase gate1 --check --case-opt-in` reports `"ready": true`, and the
+   {CASE_DIR} --phase investigation-gate --check --case-opt-in` reports `"ready": true`, and the
    case is not sensitive, ask before the approval gate:
 
    > "Decision checks are available. After fact-checking, Spotlight can send
@@ -205,7 +205,7 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    If the methodology changes after an approved RLM run, update
    `methodology.json`, regenerate `rlm-request.json` with the changed
    methodology/corpus paths, rerun RLM, revalidate, and record a new approval
-   before Phase 3.
-6. After approval and before Phase 3 research begins, remind the user:
+   before Investigation.
+6. After approval and before Investigation research begins, remind the user:
 
    > **AI assistance notice:** Spotlight is designed to help surface, organize, and cross-check information, but AI can make mistakes. You are responsible for verifying sources, confirming authenticity, assessing risks, and deciding what is publishable.

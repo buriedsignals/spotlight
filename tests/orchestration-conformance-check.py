@@ -32,7 +32,7 @@ SCRIPTS = ROOT / "scripts"
 PREFLIGHT_SKILL = ROOT / "skills" / "phase-preflight" / "SKILL.md"
 INGEST_SKILL = ROOT / "skills" / "phase-ingest" / "SKILL.md"
 METHODOLOGY_SKILL = ROOT / "skills" / "phase-methodology" / "SKILL.md"
-EXECUTION_SKILL = ROOT / "skills" / "phase-execution" / "SKILL.md"
+EXECUTION_SKILL = ROOT / "skills" / "phase-investigation" / "SKILL.md"
 PROVENANCE_FIXTURE_SPEC = importlib.util.spec_from_file_location(
     "spotlight_provenance_fixture", PROVENANCE_FIXTURE_PATH
 )
@@ -169,6 +169,34 @@ def investigation_outputs(case: Path) -> None:
     })
 
 
+def as_v1_state(state: dict) -> dict:
+    """Rewrite a v2 state with the names a case saved before the rename used."""
+    kinds = {"investigation-cycle": "execution-cycle"}
+    legacy = {
+        "schema_version": "spotlight-orchestration/v1",
+        "approvals": {
+            ("gate1" if key == "investigation_gate" else key): value
+            for key, value in state["approvals"].items()
+        },
+        "attempts": {kinds.get(k, k): v for k, v in state["attempts"].items()},
+        "decisions": state["decisions"],
+    }
+    if "blocked" in state:
+        blocked = dict(state["blocked"])
+        if blocked.get("phase") == "investigation":
+            blocked["phase"] = "execution"
+        blocked["exhausted_attempt"] = kinds.get(
+            blocked["exhausted_attempt"], blocked["exhausted_attempt"]
+        )
+        blocked["attempts"] = {kinds.get(k, k): v for k, v in blocked["attempts"].items()}
+        legacy["blocked"] = blocked
+    if "follow_up" in state:
+        legacy["follow_up"] = state["follow_up"]
+    if "investigation_gate_finalization" in state:
+        legacy["gate1_finalization"] = state["investigation_gate_finalization"]
+    return legacy
+
+
 class OrchestrationConformance(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(prefix="spotlight-orchestration-")
@@ -220,12 +248,12 @@ class OrchestrationConformance(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
-    def finish_gate1(self) -> None:
+    def finish_investigation_gate(self) -> None:
         self.build_provenance()
         (self.case / "review.html").write_text(
             "<!doctype html><title>Offline review</title>\n", encoding="utf-8"
         )
-        self.command("seal-gate1")
+        self.command("seal-investigation-gate")
 
     def prepare_completed_report_case(
         self, fixture_name: str = "completed-report"
@@ -246,8 +274,8 @@ class OrchestrationConformance(unittest.TestCase):
             {"schema_version": "1.0", "project": "Northwind review"},
         )
         self.approve("methodology")
-        self.approve("gate1")
-        self.finish_gate1()
+        self.approve("investigation_gate")
+        self.finish_investigation_gate()
 
     def use_activated_case(self) -> None:
         self.case = PROVENANCE_FIXTURE.copy_fixture_case(Path(self.temp.name))
@@ -312,35 +340,122 @@ class OrchestrationConformance(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
+    def assert_v1_resolves_like_v2(self) -> None:
+        state_path = self.case / "data/orchestration.json"
+        current = json.loads(state_path.read_text(encoding="utf-8"))
+        expected = self.status()
+        write_json(state_path, as_v1_state(current))
+        self.assertEqual(self.status(), expected)
+        write_json(state_path, current)
+        return expected
+
+    def test_v1_state_resolves_to_the_same_owner_and_resume_point(self) -> None:
+        self.approve("methodology")
+        self.command("record-attempt", "investigation-cycle", "--gap", "first gap")
+        seen = [self.assert_v1_resolves_like_v2()["phase"]]
+        investigation_outputs(self.case)
+        seen.append(self.assert_v1_resolves_like_v2()["phase"])
+        self.approve("investigation_gate")
+        seen.append(self.assert_v1_resolves_like_v2()["phase"])
+        self.build_provenance()
+        (self.case / "review.html").write_text("<!doctype html>\n", encoding="utf-8")
+        seen.append(self.assert_v1_resolves_like_v2()["phase"])
+        self.command("seal-investigation-gate")
+        seen.append(self.assert_v1_resolves_like_v2()["phase"])
+        self.command("decide-report", "declined")
+        seen.append(self.assert_v1_resolves_like_v2()["phase"])
+        self.command("decide-ingest", "declined")
+        seen.append(self.assert_v1_resolves_like_v2()["phase"])
+        self.assertEqual(
+            seen,
+            [
+                "investigation",
+                "investigation_gate_approval",
+                "investigation_gate_finalization",
+                "investigation_gate_finalization",
+                "report",
+                "ingest",
+                "complete",
+            ],
+        )
+
+    def test_v1_blocked_and_follow_up_states_resolve_like_v2(self) -> None:
+        self.approve("methodology")
+        investigation_outputs(self.case)
+        self.command("request-follow-up", "--instructions", "Corroborate the claim.")
+        follow_up = self.assert_v1_resolves_like_v2()
+        self.assertEqual(follow_up["resume"], {"instructions": "Corroborate the claim."})
+        for _ in range(2):
+            self.command("record-attempt", "structural-correction", "--gap", "bad shape")
+        blocked = self.assert_v1_resolves_like_v2()
+        self.assertEqual(blocked["owner"], "phase-investigation")
+        self.assertEqual(blocked["blocked"]["phase"], "investigation")
+
+    def test_first_transition_writes_v2_and_keeps_an_activated_case_activated(
+        self,
+    ) -> None:
+        self.use_activated_case()
+        contract = (self.case / "data/case-contract.json").read_bytes()
+        self.approve("methodology")
+        state_path = self.case / "data/orchestration.json"
+        write_json(state_path, as_v1_state(json.loads(state_path.read_text("utf-8"))))
+        self.approve("investigation_gate")
+        written = json.loads(state_path.read_text(encoding="utf-8"))
+        self.assertEqual(written["schema_version"], "spotlight-orchestration/v2")
+        self.assertEqual(set(written["approvals"]), {"methodology", "investigation_gate"})
+        self.assertEqual((self.case / "data/case-contract.json").read_bytes(), contract)
+        self.assert_case_valid()
+
+    def test_unknown_or_mixed_state_keys_are_refused(self) -> None:
+        self.approve("methodology")
+        state_path = self.case / "data/orchestration.json"
+        v2 = json.loads(state_path.read_text(encoding="utf-8"))
+        refused = {
+            "v2 carrying a v1 attempt kind": {**v2, "attempts": {"execution-cycle": 1}},
+            "v2 unknown attempt kind": {**v2, "attempts": {"research-lane": 1}},
+            "v1 carrying a v2 attempt kind": {
+                **as_v1_state(v2), "attempts": {"investigation-cycle": 1}
+            },
+            "v1 unknown approval": {
+                **as_v1_state(v2), "approvals": {"investigation_gate": {}}
+            },
+            "v1 unknown field": {**as_v1_state(v2), "research": {}},
+            "unknown schema": {**v2, "schema_version": "spotlight-orchestration/v9"},
+        }
+        for name, state in refused.items():
+            with self.subTest(name):
+                write_json(state_path, state)
+                self.command("status", "--json", expect=3)
+
     def test_drafts_and_pending_summary_are_not_human_approval(self) -> None:
         self.assertEqual(self.status()["next_phase"], "methodology_approval")
         self.approve("methodology")
-        self.assertEqual(self.status()["next_phase"], "execution")
+        self.assertEqual(self.status()["next_phase"], "investigation")
         investigation_outputs(self.case)
         pending = self.status()
         self.assertEqual(
-            (pending["next_phase"], pending["status"]), ("gate1_approval", "pending")
+            (pending["next_phase"], pending["status"]), ("investigation_gate_approval", "pending")
         )
 
     def test_changed_approved_inputs_reopen_the_earliest_human_gate(self) -> None:
         self.approve("methodology")
         investigation_outputs(self.case)
-        self.approve("gate1")
+        self.approve("investigation_gate")
         (self.case / "summary.md").write_text(
             "# Corrected summary\n", encoding="utf-8"
         )
-        self.assertEqual(self.status()["next_phase"], "gate1_approval")
+        self.assertEqual(self.status()["next_phase"], "investigation_gate_approval")
         write_json(
             self.case / "data/methodology.json",
             {**methodology(), "tools_required": ["read-file", "grep-files"]},
         )
         self.assertEqual(self.status()["next_phase"], "methodology_approval")
 
-    def test_activated_validation_inputs_stale_gate1_as_one_dependency_set(self) -> None:
+    def test_activated_validation_inputs_stale_the_investigation_gate_as_one_dependency_set(self) -> None:
         self.use_activated_case()
         self.approve("methodology")
-        self.approve("gate1")
-        self.finish_gate1()
+        self.approve("investigation_gate")
+        self.finish_investigation_gate()
         self.assertEqual(self.status()["next_phase"], "report")
 
         expressions_path = self.case / "data/source-expressions.json"
@@ -355,9 +470,9 @@ class OrchestrationConformance(unittest.TestCase):
         write_json(contract_path, contract)
         self.assert_case_valid()
 
-        self.assertEqual(self.status()["next_phase"], "gate1_approval")
+        self.assertEqual(self.status()["next_phase"], "investigation_gate_approval")
 
-    def test_referenced_text_derivative_bytes_stale_gate1(self) -> None:
+    def test_referenced_text_derivative_bytes_stale_the_investigation_gate(self) -> None:
         self.approve("methodology")
         investigation_outputs(self.case)
         transcript_path = self.case / "research/transcript.txt"
@@ -378,68 +493,68 @@ class OrchestrationConformance(unittest.TestCase):
             }
         ]
         write_json(evidence_path, evidence)
-        self.approve("gate1")
-        self.finish_gate1()
+        self.approve("investigation_gate")
+        self.finish_investigation_gate()
         self.assertEqual(self.status()["next_phase"], "report")
 
         transcript_path.write_text("Mutated fixture transcript.\n", encoding="utf-8")
 
-        self.assertEqual(self.status()["next_phase"], "gate1_approval")
+        self.assertEqual(self.status()["next_phase"], "investigation_gate_approval")
 
 
-    def test_gate1_approval_resumes_finalization_until_both_outputs_are_sealed(
+    def test_investigation_gate_approval_resumes_finalization_until_both_outputs_are_sealed(
         self,
     ) -> None:
         self.approve("methodology")
         investigation_outputs(self.case)
-        self.approve("gate1")
+        self.approve("investigation_gate")
         interrupted = self.status()
         self.assertEqual(
-            (interrupted["next_phase"], interrupted.get("gate1")),
+            (interrupted["next_phase"], interrupted.get("investigation_gate")),
             (
-                "gate1_finalization",
+                "investigation_gate_finalization",
                 {"state": "approved", "resume_at": "provenance"},
             ),
         )
-        self.command("seal-gate1", expect=3)
+        self.command("seal-investigation-gate", expect=3)
 
         self.build_provenance()
         self.assertEqual(
-            self.status()["gate1"], {"state": "approved", "resume_at": "review"}
+            self.status()["investigation_gate"], {"state": "approved", "resume_at": "review"}
         )
         (self.case / "review.html").write_text(
             "<!doctype html><title>Offline review</title>\n", encoding="utf-8"
         )
         self.assertEqual(
-            self.status()["gate1"], {"state": "approved", "resume_at": "seal"}
+            self.status()["investigation_gate"], {"state": "approved", "resume_at": "seal"}
         )
-        self.command("seal-gate1")
+        self.command("seal-investigation-gate")
         self.assertEqual(self.status()["next_phase"], "report")
 
-    def test_old_review_cannot_finalize_a_new_gate1_dependency_digest(self) -> None:
+    def test_old_review_cannot_finalize_a_new_investigation_gate_dependency_digest(self) -> None:
         self.approve("methodology")
         investigation_outputs(self.case)
-        self.approve("gate1")
-        self.finish_gate1()
+        self.approve("investigation_gate")
+        self.finish_investigation_gate()
         (self.case / "summary.md").write_text(
             "# Corrected offline demo\n", encoding="utf-8"
         )
-        self.approve("gate1")
+        self.approve("investigation_gate")
         self.build_provenance()
 
         self.assertEqual(
-            self.status()["gate1"], {"state": "approved", "resume_at": "review"}
+            self.status()["investigation_gate"], {"state": "approved", "resume_at": "review"}
         )
         (self.case / "review.html").write_text(
             "<!doctype html><title>Corrected offline review</title>\n",
             encoding="utf-8",
         )
         self.assertEqual(
-            self.status()["gate1"], {"state": "approved", "resume_at": "seal"}
+            self.status()["investigation_gate"], {"state": "approved", "resume_at": "seal"}
         )
 
 
-    def test_gate1_follow_up_reopens_execution_durably(self) -> None:
+    def test_investigation_gate_follow_up_reopens_investigation_durably(self) -> None:
         self.approve("methodology")
         investigation_outputs(self.case)
         self.command(
@@ -448,7 +563,7 @@ class OrchestrationConformance(unittest.TestCase):
             "Re-check the unresolved fixture claim.",
         )
         reopened = self.status()
-        self.assertEqual((reopened["status"], reopened["next_phase"]), ("active", "execution"))
+        self.assertEqual((reopened["status"], reopened["next_phase"]), ("active", "investigation"))
         self.assertEqual(
             reopened["follow_up"]["instructions"],
             "Re-check the unresolved fixture claim.",
@@ -456,7 +571,7 @@ class OrchestrationConformance(unittest.TestCase):
         (self.case / "summary.md").write_text(
             "# Follow-up summary\n", encoding="utf-8"
         )
-        self.assertEqual(self.status()["next_phase"], "gate1_approval")
+        self.assertEqual(self.status()["next_phase"], "investigation_gate_approval")
 
     def test_concurrent_attempts_serialize_at_the_cap(self) -> None:
         methodology_path = self.case / "data/methodology.json"
@@ -483,7 +598,7 @@ class OrchestrationConformance(unittest.TestCase):
                     str(start_read),
                     str(SEAM),
                     "record-attempt",
-                    "execution-cycle",
+                    "investigation-cycle",
                     "--gap",
                     "fixture gap remains",
                     str(self.case),
@@ -513,11 +628,11 @@ class OrchestrationConformance(unittest.TestCase):
         self.assertEqual(
             (blocked["status"], blocked["next_phase"]), ("blocked", "blocked")
         )
-        self.assertEqual(blocked["blocked"]["attempts"]["execution-cycle"], 5)
+        self.assertEqual(blocked["blocked"]["attempts"]["investigation-cycle"], 5)
 
-    def test_execution_and_repair_caps_persist_explicit_blocked_state(self) -> None:
+    def test_investigation_and_repair_caps_persist_explicit_blocked_state(self) -> None:
         limits = (
-            ("execution-cycle", 5),
+            ("investigation-cycle", 5),
             ("fact-check-evidence-repair", 1),
             ("structural-correction", 2),
         )
@@ -548,8 +663,8 @@ class OrchestrationConformance(unittest.TestCase):
     def test_positive_ingest_interruptions_resume_without_reasking(self) -> None:
         self.approve("methodology")
         investigation_outputs(self.case)
-        self.approve("gate1")
-        self.finish_gate1()
+        self.approve("investigation_gate")
+        self.finish_investigation_gate()
         self.command("decide-report", "declined")
         self.assertEqual(
             self.status()["ingest"], {"state": "pending", "resume_at": "decision"}
@@ -807,7 +922,7 @@ class OrchestrationConformance(unittest.TestCase):
                 ),
             ),
             (
-                "phase-execution",
+                "phase-investigation",
                 EXECUTION_SKILL,
                 (
                     (
@@ -868,9 +983,9 @@ class OrchestrationConformance(unittest.TestCase):
 
     def test_offline_demo_resumes_and_completes_report_ingest_declines(self) -> None:
         self.approve("methodology")
-        self.assertEqual(self.status()["next_phase"], "execution")
+        self.assertEqual(self.status()["next_phase"], "investigation")
         investigation_outputs(self.case)
-        self.assertEqual(self.status()["next_phase"], "gate1_approval")
+        self.assertEqual(self.status()["next_phase"], "investigation_gate_approval")
         trace = json.loads(
             (self.case / "data/investigation-log.json").read_text(encoding="utf-8")
         )["cycles"][0]["methodology"]["steps_completed"]
@@ -885,8 +1000,8 @@ class OrchestrationConformance(unittest.TestCase):
                 "compile",
             ],
         )
-        self.approve("gate1")
-        self.finish_gate1()
+        self.approve("investigation_gate")
+        self.finish_investigation_gate()
         self.command("decide-report", "declined")
         self.command("decide-ingest", "declined")
         completed = self.status()

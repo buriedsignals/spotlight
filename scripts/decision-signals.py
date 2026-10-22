@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Compute decision-model review signals for a case (the only networked step).
 
-    python3 scripts/decision-signals.py CASE_DIR --phase gate1|report|ingest \
+    python3 scripts/decision-signals.py CASE_DIR --phase investigation-gate|report|ingest \
         [--config .spotlight-config.json] [--case-opt-in] [--check] [--dry-run] \
         [--env-file FILE] [--entities FILE] [--existing-claims FILE]
 
 Asks the decision model (OpenRouter Decisions API, default typesafe/jev-1.13,
-zero data retention) typed questions. Gate 1 and report results go to
+zero data retention) typed questions. Investigation-gate and report results go to
 data/decision-signals.json; ingest results go to data/decision-signals-ingest.json.
 Signals are review aids: they can lower confidence, add flags or route records
 to a lead layer, and never raise confidence or set a verdict. See
@@ -44,7 +44,10 @@ import questions  # noqa: E402
 import rules  # noqa: E402
 from client import KEY_ENV, DecisionUnavailable, JevOpenRouterProvider, answer_problem  # noqa: E402
 
-PHASES = ("gate1", "report", "ingest")
+PHASES = ("investigation_gate", "report", "ingest")
+# Before the phases were named, the Investigation gate was "gate1"; saved
+# configs may still use that key.
+LEGACY_MODE_KEYS = {"investigation_gate": "gate1"}
 INGEST_GROUPS = ("propositions", "memberships", "entities", "matches")
 MAX_MATCH_PAIRS = 60
 
@@ -101,6 +104,13 @@ def resolve_key(cfg: dict[str, Any], env_file: Path | None) -> tuple[str, str]:
     return "", ""
 
 
+def _mode(modes: dict[str, Any], phase: str) -> str:
+    value = modes.get(phase)
+    if value is None and phase in LEGACY_MODE_KEYS:
+        value = modes.get(LEGACY_MODE_KEYS[phase])
+    return value if value in lib.MODES else "advisory"
+
+
 def settings(config: dict[str, Any]) -> dict[str, Any]:
     block = (config.get("integrations") or {}).get("decisions") or {}
     modes = block.get("modes") or {}
@@ -108,7 +118,7 @@ def settings(config: dict[str, Any]) -> dict[str, Any]:
         "enabled": block.get("enabled") is True,
         "env_file": block.get("env_file"),
         "model": block.get("model") or "typesafe/jev-1.13",
-        "modes": {phase: modes.get(phase, "advisory") if modes.get(phase, "advisory") in lib.MODES else "advisory" for phase in PHASES},
+        "modes": {phase: _mode(modes, phase) for phase in PHASES},
     }
 
 
@@ -162,8 +172,8 @@ class Asker:
         return results
 
 
-# ------------------------------------------------------------------ gate1
-def gate1(case: Path, asker: Asker, mode: str) -> dict[str, Any]:
+# ------------------------------------------------------------------ investigation gate
+def investigation_gate(case: Path, asker: Asker, mode: str) -> dict[str, Any]:
     findings = lib.case_findings(case)
     entries: dict[str, dict[str, Any]] = {}
     claims: dict[str, str] = {}
@@ -270,7 +280,9 @@ def merge_usage(document: dict[str, Any], asker: Asker) -> None:
 def main(argv: list[str] | None = None, provider: Any = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("case_dir")
-    parser.add_argument("--phase", choices=PHASES, required=True)
+    parser.add_argument(
+        "--phase", type=lambda value: value.replace("-", "_"), choices=PHASES, required=True
+    )
     parser.add_argument("--config", default=str(ROOT / ".spotlight-config.json"))
     parser.add_argument("--case-opt-in", action="store_true", help="record that the user agreed to decision checks for this case")
     parser.add_argument("--dry-run", action="store_true", help="print the states that would be sent and exit")
@@ -352,8 +364,8 @@ def run(args: argparse.Namespace, case: Path, cfg: dict[str, Any], sensitive: bo
     asker = Asker(provider)
     mode = cfg["modes"][args.phase]
     try:
-        if args.phase == "gate1":
-            result = gate1(case, asker, mode)
+        if args.phase == "investigation_gate":
+            result = investigation_gate(case, asker, mode)
         elif args.phase == "report":
             result = report(case, asker, mode, main_doc)
         else:
@@ -374,7 +386,7 @@ def run(args: argparse.Namespace, case: Path, cfg: dict[str, Any], sensitive: bo
         return doc
 
     try:
-        if args.phase in ("gate1", "report"):
+        if args.phase in ("investigation_gate", "report"):
             def mutate(current):
                 doc = base(current)
                 doc["phases"][args.phase] = result

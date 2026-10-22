@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic Phase 5 claim eligibility (offline).
+"""Deterministic Ingest claim eligibility (offline).
 
     python3 scripts/ingest-eligibility.py CASE_DIR [--entities FILE] [--existing-claims FILE]
 
@@ -13,7 +13,7 @@ in code, then layers stored decision-model signals on top:
 3. At least one source reference is present.
 4. The finding is not RLM-derived.
 
-Gate 1 decision signals (data/decision-signals.json) can only make the result
+Investigation-gate decision signals (data/decision-signals.json) can only make the result
 more conservative: in enforce mode a low decision cap excludes the finding and a
 medium cap moves it to the lead layer with needs_verification. In advisory and
 shadow modes the same outcome is only a recommendation. A reviewer override
@@ -115,7 +115,7 @@ def evaluate(case: Path, entities: list[Any] | None = None, existing: list[Any] 
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Deterministic Phase 5 claim eligibility (offline).")
+    parser = argparse.ArgumentParser(description="Deterministic Ingest claim eligibility (offline).")
     parser.add_argument("case_dir")
     parser.add_argument("--entities", type=Path, help="the same entity list passed to decision-signals.py --entities (inside CASE_DIR/data/)")
     parser.add_argument("--existing-claims", type=Path, help="the same list passed to decision-signals.py --existing-claims (inside CASE_DIR/data/)")

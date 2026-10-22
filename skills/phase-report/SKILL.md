@@ -1,11 +1,11 @@
 ---
 name: phase-report
-description: Spotlight Phase 4 — Public-facing report drafting via report-drafting + finalize-report.py deterministic rendering; hybrid data-detective handover mode
+description: Spotlight Report — public-facing report drafting via report-drafting + finalize-report.py deterministic rendering; hybrid data-detective handover mode
 invocable_by: [orchestrator]
 phase: report
 ---
 
-# Phase 4 — Report drafting (public-facing)
+# Report (public-facing drafting)
 
 Before asking whether to draft the public-facing report, remind the user:
 

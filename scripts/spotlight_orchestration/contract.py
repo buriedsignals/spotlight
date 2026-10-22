@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-STATE_VERSION = "spotlight-orchestration/v1"
-STATUS_VERSION = "spotlight-orchestration-status/v1"
-DEPENDENCY_STATUS_VERSION = "spotlight-gate1-dependencies/v1"
+STATE_VERSION = "spotlight-orchestration/v2"
+# v1 used numbered-phase names (gate1, execution); load_state maps it in memory
+# and the next transition writes v2.
+LEGACY_STATE_VERSION = "spotlight-orchestration/v1"
+STATUS_VERSION = "spotlight-orchestration-status/v2"
+DEPENDENCY_STATUS_VERSION = "spotlight-investigation-gate-dependencies/v2"
 METHODOLOGY_INPUTS = ("brief-directions.txt", "data/methodology.json")
-GATE1_FINALIZATION_OUTPUTS = ("data/provenance-manifest.json", "review.html")
+INVESTIGATION_GATE_FINALIZATION_OUTPUTS = ("data/provenance-manifest.json", "review.html")
 ATTEMPT_LIMITS = {
-    "execution-cycle": 5,
+    "investigation-cycle": 5,
     "fact-check-evidence-repair": 1,
     "structural-correction": 2,
 }

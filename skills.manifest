@@ -10,9 +10,9 @@ investigation-methodology
 monitoring
 navigator
 osint
-phase-execution
-phase-gate1
 phase-ingest
+phase-investigation
+phase-investigation-gate
 phase-methodology
 phase-preflight
 phase-report
