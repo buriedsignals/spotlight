@@ -14,6 +14,7 @@ The launcher runs `pi --mode rpc` for the orchestrator and passes stdin and stdo
 - **One writer per case.** The launcher holds a lock file in the harness data folder with its PID and its children's PIDs. A second chat on a held case is refused. A lock left by a harness that died is taken over after its leftover pi processes are stopped. If the launcher itself is killed, its pi processes see their stdin close and shut down. On resume, a research lane folder without a completed `lane.json` is discarded so the lane reruns.
 - **No gate decisions from the model.** The transition tool accepts only `recordAttempt`, `requestFollowUp`, `sealInvestigationGate` and `decideIngest` with `completed`. Gate approvals, the report decision and the ingest request or decline come from the review page.
 - **Provider privacy policy.** Fixed request-body fields are merged into every model request by a `before_provider_request` handler inside each pi process.
+- **No shell.** Every step a skill would run through `execute-shell` is a typed tool or a check the harness runs itself (see [Tools](#tools)).
 
 ## Environment
 
@@ -33,7 +34,11 @@ Configuration comes only from the environment. A missing or invalid required var
 | `SPOTLIGHT_HARNESS_DATA` | yes | Absolute path of the harness data folder (locks, per-process Pi configuration). |
 | `SPOTLIGHT_EDITION` | no | `solo` (default) or `newsroom`. |
 | `SPOTLIGHT_ROUTES` | newsroom | JSON array of allowed model routes (see below). |
-| `SPOTLIGHT_PYTHON` | no | Python interpreter for the Spotlight resolver (default `python3`). |
+| `SPOTLIGHT_PYTHON` | no | Python interpreter for the Spotlight resolver and every Python seam the tools wrap (default `python3`). |
+| `SPOTLIGHT_CONFIG` | no | Absolute path of the installed `.spotlight-config.json` (default: the checkout root's). |
+| `SPOTLIGHT_SENSITIVE` | no | `true` removes every web tool from every process. |
+| `SPOTLIGHT_ANONYMIZE_FETCH`, `TOR_SOCKS` | no | Tor posture for `fetch`, passed to the scraping seam. |
+| `SPOTLIGHT_RLM_*` | no | RLM endpoint settings for `run_rlm`. |
 
 Keys a role needs are listed by name under that role's `keys` in `harness/composition.json`. A pi process receives only its own role's keys and its route's token; every other variable is dropped. Log lines and error messages never show those values.
 
@@ -53,6 +58,68 @@ In the newsroom edition, `SPOTLIGHT_ROUTES` lists every endpoint the harness may
 - `key_env` names the variable that holds the route's token. The harness passes it to pi processes as `SPOTLIGHT_PROVIDER_API_KEY`.
 - With no route, the harness does not start. `SPOTLIGHT_MODEL_BASE_URL`, `SPOTLIGHT_HELPER_URL` and `SPOTLIGHT_SEARCH_URL` must each be one of the routes or unset.
 - Journalist input and local-corpus material go only to an `own` route. With no `own` route the harness refuses to process them. There is no fallback to another route.
+
+## Tools
+
+There is no shell in this harness. Each tool takes typed arguments, refuses anything outside its schema, and starts its backing program (if any) as a plain argument list with the shell off. Python seams run with `SPOTLIGHT_PYTHON` from the checkout root. Each role's tool list is its `tools` allowlist in `harness/composition.json`.
+
+| Tool | Backing | Roles |
+|---|---|---|
+| `read_file`, `write_file`, `list_files`, `grep_files` | the case folder | orchestrator, investigator, fact-checker |
+| `edit_file` | the case folder | investigator |
+| `fetch` | `python -m integrations.scraping` (Crawl4AI; Firecrawl fallback with `FIRECRAWL_API_KEY`) | investigator, fact-checker |
+| `search` | `python -m integrations.search` (SearXNG at `SPOTLIGHT_SEARCH_URL`) | investigator, fact-checker |
+| `http_get` | one GET from the harness itself | investigator, fact-checker |
+| `browse` | the dev-browser script runner (`dev-browser --headless run`), with a script the harness writes | investigator, fact-checker |
+| `query_vault` | `scripts/query_vault.py` | investigator, fact-checker |
+| `osint_tools` | `scripts/osint-tools.py find` and `categories` | orchestrator, investigator, fact-checker |
+| `navigator_tools` | `navigator tools find` and `show` | investigator, fact-checker |
+| `exiftool` | `exiftool -json` | investigator, fact-checker |
+| `decision_signals` | `scripts/decision-signals.py` | orchestrator |
+| `provenance_manifest` | `scripts/build-provenance-manifest.py` (build, check, sign) | orchestrator |
+| `run_rlm` | `integrations/rlm/run_rlm.py` | orchestrator |
+| `integration_status` | `integrations/preflight.py --json` | orchestrator |
+
+`browse` is backed by dev-browser. `integrations/browse` holds only a manifest for the optional browse.sh CLI and backs nothing here. The model gives `browse` a URL, never a script, so the browser opens exactly one guarded page and returns its text, its HTML or a screenshot saved in the case.
+
+**Case files.** Reads stay inside the case folder (plus the checkout's `schemas/`); a symlink that leads out is refused. Writes stay inside the caller's write folder (the case folder for these roles), never follow a symlink, and never touch `data/orchestration.json`, `data/review-nonces.json`, `data/*-review.json` or any file whose name contains `receipt`. The check ignores letter case.
+
+**Egress.** `fetch`, `browse` and `http_get` accept only http(s) URLs without credentials whose addresses are public. Loopback, private, link-local (including the 169.254.169.254 metadata address), carrier-grade NAT, multicast, reserved and documentation ranges, IPv4-mapped and NAT64 forms, `localhost`, `.local` and single-label names are refused. A hostname is resolved inside the connection's own lookup, so the checked address is the connected one, and every redirect hop is checked again. `http_get` does its request entirely under this guard. `fetch` and `browse` first walk the redirect chain under the guard and hand their backing only the final URL; the URL the backing reports ending on is checked again before anything is returned. Inside the browser, `browse` also holds every request to a literal private address or a local name. Limits: what Crawl4AI or the browser loads by itself (scripts, images, a redirect the harness did not see) is not checked address by address, and a public name that the backing later resolves to a private address is caught only by the final-URL check. `osint_tools` takes no URL and reads only the local index. `search` sends the query to the operator's search service.
+
+**Sensitive mode** (`SPOTLIGHT_SENSITIVE=true`, or `sensitive: true` in the frontmatter of `AGENTS.md`) removes `fetch`, `search`, `http_get`, `browse` and `navigator_tools` from every process.
+
+**Checks at fixed points.** When a worker finishes, the launcher resolves the case phase and runs the validators for what that worker writes, then appends their outcome to the worker's answer: after the investigator while the case is in Brief, Methodology or awaiting methodology approval, `validate-methodology-navigator.py`; after the investigator in Investigation, `validate-case.py`; after the fact-checker, `validate-case.py` and `validate-fact-check.py`. A findings list may be empty only with an explicit `no_qualifying_findings: {"reason": ...}` record.
+
+### Shell steps and their replacements
+
+Every `execute-shell` step in `agents/` and in the skills these roles load, and where it went:
+
+| Where | Shell step | In this harness |
+|---|---|---|
+| investigator, fact-checker, content-access, web-archiving, integrations | `curl` GET to registries, archives and APIs (WHOIS, Unpaywall, CORE, Semantic Scholar, OpenAlex, Wayback CDX, availability and save, archive.today lookup) | `http_get` |
+| web-archiving | `curl -X POST` to archive.today's submit form | not available (GET only); the step reports that it needs a POST |
+| content-access, web-archiving, dev-browser capture | `spotlight_safe.py validate-url`, `validate-doi`, `validate-timestamp`, `sha256` | not needed: tool schemas and the egress guard check arguments; `browse`, `fetch` and `http_get` return SHA-256 |
+| web-archiving | `python3 -m integrations.scraping {URL} --out ...` | `fetch` with `save_as` |
+| dev-browser integration, web-archiving dev-browser capture | `dev-browser run <script>`, then `mkdir`, `cp`, `rm` of the capture | `browse` (text, HTML or screenshot saved with `save_as`) |
+| fact-checker, technical-investigation | `exiftool {file}` | `exiftool` |
+| phase-methodology, osint, integrations | `scripts/osint-tools.py find` | `osint_tools` |
+| phase-preflight, phase-methodology | `scripts/osint-tools.py categories` | `osint_tools` |
+| phase-preflight | `uv run ... scripts/osint-tools.py build` | not available: an install step that downloads a dataset; `osint_tools` reports a missing index |
+| phase-methodology, osint, navigator, investigator | `navigator tools find` and `show` | `navigator_tools` |
+| phase-methodology | `scripts/validate-methodology-navigator.py` | harness check after the investigator while the case is in Brief, Methodology or awaiting methodology approval |
+| phase-methodology | `integrations/rlm/run_rlm.py` | `run_rlm` |
+| phase-investigation | `scripts/validate-case.py` after the investigator | harness check |
+| phase-investigation | `scripts/validate-case.py` and `scripts/validate-fact-check.py` after the fact-checker | harness check |
+| phase-investigation | `scripts/migrate-source-expressions.py` (dry run and apply) | not available: an operator-reviewed flow outside the model |
+| phase-investigation-gate, report-drafting, ingest | `scripts/decision-signals.py` (including `--check` and `--case-opt-in`) | `decision_signals` |
+| phase-investigation-gate, provenance-signing | `scripts/build-provenance-manifest.py` (build, `--check-current`, `--sign-endpoint`) | `provenance_manifest` |
+| phase-preflight | step 0: `test -f skills/... && test -f scripts/...` | skipped: `spotlight_resolve` answering confirms the checkout |
+| phase-preflight | `scripts/spotlight-orchestration.py status` | `spotlight_resolve` |
+| phase-preflight, integrations | `integrations/preflight.py --json` | `integration_status` |
+| phase-preflight | Crawl4AI probe (`integrations.scraping https://example.com`) and SearXNG `curl` probe | not run by the orchestrator, which has no web tools; a worker's first `fetch` or `search` reports a broken backing |
+| phase-preflight, social-media-intelligence | `integrations.apify status` and `run`, `apify call` | not available |
+| phase-preflight | `test -f ~/.mycroft/monitoring/monitor.py` | not available (monitoring runs outside this harness) |
+| ingest | `spotlight_safe.py destructive-probe` and `resolve-path`, `rm` of the ingest lock, `ingest-eligibility.py`, `ingest-source-expressions.py`, `validate-install-config.py` | not available: Ingest needs `vault-write`, which this harness does not offer yet |
 
 ## Tests
 

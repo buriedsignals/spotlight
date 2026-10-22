@@ -1,6 +1,7 @@
 // End-to-end tests of the real launcher and real pi processes against a
 // scripted OpenAI-compatible server on 127.0.0.1. No network, no model.
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -8,7 +9,7 @@ import { isWorkerRequest, startFakeOpenAI, toolNames, toolResults } from './test
 import type { ChatRequest, Reply } from './test-support/fake-openai.ts';
 import { baseEnv, launch, settledPrompt, waitUntil, workspace } from './test-support/launch.ts';
 import type { Chat, Workspace } from './test-support/launch.ts';
-import { loadComposition } from './roles.ts';
+import { CHECKOUT_ROOT, loadComposition } from './roles.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
 
@@ -230,4 +231,102 @@ test('newsroom edition: no allowed route refuses to start; with a route, request
 
 	assert.ok(route.requests.length >= 2);
 	assert.equal(elsewhere.requests.length, 0);
+});
+
+// A case whose methodology is approved, so the next worker task is Investigation.
+async function caseAtInvestigation(space: Workspace): Promise<string> {
+	const caseDir = join(space.casesRoot, 'case-a');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
+	await writeFile(join(caseDir, 'data', 'methodology.json'), '{}\n');
+	await new Promise<void>((done, fail) =>
+		execFile(
+			process.env.SPOTLIGHT_PYTHON ?? 'python3',
+			[
+				join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'),
+				'approve', 'methodology',
+				'--approved-by', 'journalist:fixture',
+				'--approved-at', '2026-08-23T12:00:00Z',
+				'--authorized-cases-root', space.casesRoot,
+				caseDir,
+			],
+			(error) => (error ? fail(error) : done()),
+		),
+	);
+	return caseDir;
+}
+
+test('a worker writes through its typed tools and the harness validates its output when it finishes', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			return toolResults(request).length === 0
+				? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/findings.json', content: '{"project": "case-a", "findings": []}' } }] }
+				: { text: 'Investigator finished.' };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')).project, 'case-a');
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+	const delegated = toolResults(orchestrator[orchestrator.length - 1]).join('\n');
+	assert.match(delegated, /Investigator finished\./);
+	assert.match(delegated, /validate-case\.py: FAILED/);
+	assert.match(delegated, /no_qualifying_findings/);
+});
+
+test('sensitive mode removes every egress tool from every process', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { text: 'Investigator finished.' };
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Plan the case.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_SENSITIVE: 'true' });
+
+	await settledPrompt(chat, 'Start.');
+
+	const composition = loadComposition();
+	const worker = fake.requests.find((request) => isWorkerRequest(request, 'investigator'));
+	assert.ok(worker, 'the investigator ran');
+	assert.ok(composition.investigator.tools.includes('fetch'), 'the investigator is normally allowed to fetch');
+	for (const request of fake.requests) {
+		assert.deepEqual(toolNames(request).filter((name) => /^(fetch|search|http_get|browse|navigator_tools)$/.test(name)), []);
+	}
+	assert.ok(toolNames(worker).includes('read_file'));
+});
+
+test('after a planning task the harness runs the methodology check, not the findings check', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			return toolResults(request).length === 0
+				? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: '{"project": "case-a"}' } }] }
+				: { text: 'Plan written.' };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: PLANNING' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+	const delegated = toolResults(orchestrator[orchestrator.length - 1]).join('\n');
+	assert.match(delegated, /validate-methodology-navigator\.py: FAILED/);
+	assert.doesNotMatch(delegated, /validate-case\.py/);
 });

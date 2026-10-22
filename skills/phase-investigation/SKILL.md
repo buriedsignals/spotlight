@@ -115,6 +115,8 @@ Append to {CASE_DIR}/data/investigation-log.json.",
      execute-shell("python3 scripts/validate-case.py {CASE_DIR}")
      ```
 
+     In a runtime without `execute-shell`, the runtime runs this validator itself when the investigator finishes and returns the outcome with the investigator's answer; act on that outcome.
+
      If validation reports errors (non-zero exit), the investigator left data
      bugs — empty `claim` fields, missing required keys, wrong-shape output,
      or dangling references. Do NOT proceed to the fact-checker. Re-spawn the
@@ -187,6 +189,8 @@ Write to {CASE_DIR}/data/fact-check.json.",
      execute-shell("python3 scripts/validate-case.py {CASE_DIR}")
      execute-shell("python3 scripts/validate-fact-check.py {CASE_DIR}")
      ```
+
+     In a runtime without `execute-shell`, the runtime runs both validators itself when the fact-checker finishes and returns the outcome with the fact-checker's answer; act on that outcome.
 
      If the structural validator fails, use the bounded shape-only correction
      path in 2.5. If the evidence validator fails, re-spawn the fact-checker

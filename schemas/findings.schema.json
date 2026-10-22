@@ -10,6 +10,14 @@
     "investigated_at": { "type": "string", "format": "date-time" },
     "cycle": { "type": "integer", "minimum": 1 },
     "questions": { "type": "array", "items": { "type": "string" } },
+    "no_qualifying_findings": {
+      "type": "object",
+      "description": "Explicit 'nothing qualified' outcome: required when findings is empty, and only allowed then.",
+      "required": ["reason"],
+      "properties": {
+        "reason": { "type": "string", "minLength": 1, "description": "What was searched and why nothing met the evidence bar." }
+      }
+    },
     "findings": {
       "type": "array",
       "items": {
@@ -94,6 +102,16 @@
       "items": { "$ref": "#/definitions/monitoring_recommendation" }
     }
   },
+  "allOf": [
+    {
+      "if": { "required": ["findings"], "properties": { "findings": { "maxItems": 0 } } },
+      "then": { "required": ["no_qualifying_findings"] }
+    },
+    {
+      "if": { "required": ["no_qualifying_findings"] },
+      "then": { "properties": { "findings": { "maxItems": 0 } } }
+    }
+  ],
   "oneOf": [
     {
       "description": "Legacy contract. Omitted schema_version remains valid for backward compatibility.",

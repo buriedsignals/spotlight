@@ -1,8 +1,9 @@
 // Launch configuration. The harness reads its configuration only from the
 // environment the caller sets; nothing comes from the member's own Pi config.
+import { readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { parseFixedRequestBody } from './provider-policy.ts';
-import { agentSpec } from './roles.ts';
+import { CHECKOUT_ROOT, agentSpec } from './roles.ts';
 import type { Composition } from './roles.ts';
 
 export type Edition = 'solo' | 'newsroom';
@@ -35,6 +36,10 @@ export type HarnessConfig = {
 	requestBody?: string;
 	contextWindow: number;
 	python: string;
+	// Installed Spotlight config, read by the scripts the typed tools wrap.
+	spotlightConfig: string;
+	// Sensitive mode: no egress tools in any process.
+	sensitive: boolean;
 };
 
 export class ConfigError extends Error {}
@@ -141,6 +146,22 @@ function newsroomRoutes(env: Env): { routes: Route[]; pipelineRoute: Route } {
 	return { routes, pipelineRoute };
 }
 
+// Sensitive mode is on when SPOTLIGHT_SENSITIVE is "true" or the checkout's
+// AGENTS.md frontmatter says `sensitive: true`, as the scripts read it.
+function sensitiveMode(env: Env): boolean {
+	const value = env.SPOTLIGHT_SENSITIVE?.trim().toLowerCase();
+	if (value === 'true') return true;
+	if (value && value !== 'false') throw new ConfigError('SPOTLIGHT_SENSITIVE must be "true" or "false".');
+	let manifest: string;
+	try {
+		manifest = readFileSync(resolve(CHECKOUT_ROOT, 'AGENTS.md'), 'utf8');
+	} catch {
+		return false;
+	}
+	const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(manifest)?.[1] ?? '';
+	return /^sensitive:\s*true\s*$/m.test(frontmatter);
+}
+
 export function readConfig(env: Env): HarnessConfig {
 	const editionValue = env.SPOTLIGHT_EDITION?.trim() || 'solo';
 	if (editionValue !== 'solo' && editionValue !== 'newsroom') {
@@ -183,7 +204,16 @@ export function readConfig(env: Env): HarnessConfig {
 		requestBody: env.SPOTLIGHT_PROVIDER_REQUEST_BODY || undefined,
 		contextWindow,
 		python: env.SPOTLIGHT_PYTHON?.trim() || 'python3',
+		spotlightConfig: spotlightConfigPath(env),
+		sensitive: sensitiveMode(env),
 	};
+}
+
+function spotlightConfigPath(env: Env): string {
+	const value = env.SPOTLIGHT_CONFIG?.trim();
+	if (!value) return resolve(CHECKOUT_ROOT, '.spotlight-config.json');
+	if (!isAbsolute(value)) throw new ConfigError('SPOTLIGHT_CONFIG must be an absolute path.');
+	return resolve(value);
 }
 
 export class RouteRefused extends Error {}
@@ -212,6 +242,16 @@ export function secretValues(config: HarnessConfig, composition: Composition, en
 }
 
 const PASSTHROUGH = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT'];
+// Non-secret settings of the backings the typed tools wrap (Tor posture for
+// fetch, the RLM endpoint), passed to every process unchanged.
+const BACKING_SETTINGS = [
+	'SPOTLIGHT_ANONYMIZE_FETCH',
+	'TOR_SOCKS',
+	'SPOTLIGHT_RLM_MODE',
+	'SPOTLIGHT_RLM_OPENAI_BASE_URL',
+	'SPOTLIGHT_RLM_OPENAI_MODEL',
+	'SPOTLIGHT_RLM_MODEL',
+];
 
 // The complete environment of one pi process: system basics, the harness's own
 // settings, the selected route's token under a fixed name, and only the keys
@@ -226,7 +266,7 @@ export function childEnv(
 	const route = routeFor(config, material);
 	const spec = agentSpec(composition, role);
 	const out: Record<string, string> = {};
-	for (const name of PASSTHROUGH) if (env[name]) out[name] = env[name] as string;
+	for (const name of [...PASSTHROUGH, ...BACKING_SETTINGS]) if (env[name]) out[name] = env[name] as string;
 	for (const key of spec.keys ?? []) if (env[key]) out[key] = env[key] as string;
 	const token = route.keyEnv ? env[route.keyEnv] : undefined;
 	if (token) out[PROVIDER_KEY] = token;
@@ -247,7 +287,10 @@ export function childEnv(
 		SPOTLIGHT_ROUTE_INFERENCE: route.inference,
 		SPOTLIGHT_MODEL_CONTEXT_WINDOW: String(config.contextWindow),
 		SPOTLIGHT_PYTHON: config.python,
+		SPOTLIGHT_CONFIG: config.spotlightConfig,
+		SPOTLIGHT_SENSITIVE: config.sensitive ? 'true' : 'false',
 	});
+	if (config.searchURL) out.SPOTLIGHT_SEARCH_URL = config.searchURL;
 	if (config.requestBody) out.SPOTLIGHT_PROVIDER_REQUEST_BODY = config.requestBody;
 	return out;
 }

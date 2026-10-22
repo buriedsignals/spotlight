@@ -331,6 +331,15 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
 
     raw_findings = findings_doc.get("findings")
     if not isinstance(raw_findings, list) or not raw_findings:
+        # An explicit "nothing qualified" record (validated by validate-case.py
+        # above) is an outcome, not a gap; there are no verdicts to anchor.
+        nothing = findings_doc.get("no_qualifying_findings")
+        if raw_findings == [] and isinstance(nothing, dict) and normalized(nothing.get("reason")):
+            if canonical_fact_checks(fact_check_doc):
+                return [{"id": "-", "ok": False,
+                         "reason": "fact-check has verdicts but findings.json records that nothing qualified"}], 3
+            return [{"id": "-", "ok": True,
+                     "reason": "findings.json records that nothing qualified: " + normalized(nothing.get("reason"))}], 0
         return [{"id": "-", "ok": False, "reason": "findings.json contains no findings"}], 3
     findings: dict[str, dict[str, Any]] = {}
     structural: list[str] = []

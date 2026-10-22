@@ -50,6 +50,16 @@ function workerPersonaPath(spec: AgentSpec): string | undefined {
 	return path;
 }
 
+// Tools that reach a network service on the model's behalf. Sensitive mode
+// removes them from every role (AGENTS.md, "Sensitive Mode").
+export const EGRESS_TOOLS = ['fetch', 'search', 'http_get', 'browse', 'navigator_tools'];
+
+// The tools a process declares and registers: its allowlist, minus egress in
+// sensitive mode.
+export function allowedTools(spec: AgentSpec, sensitive: boolean): string[] {
+	return sensitive ? spec.tools.filter((tool) => !EGRESS_TOOLS.includes(tool)) : [...spec.tools];
+}
+
 export function skillDirectory(name: string): string {
 	if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) throw new Error(`invalid skill name: ${name}`);
 	return resolve(SKILLS_DIR, name);
@@ -71,11 +81,16 @@ function stripSkillPath(rolePath: string): string {
 
 const ADAPTER = `## Runtime adapter (Pi)
 
-The skills use abstract verbs. In this harness:
-- invoke-skill(id) -> the \`invoke_skill\` tool; its description lists the skills you have.
-- Spotlight durable state (orchestrator only) -> \`spotlight_resolve\` and \`spotlight_transition\`. Both are bound by the harness to the active case; never name a case path.
-- spawn-agent(id, prompt) / wait-agent -> the \`spawn_agent\` tool (orchestrator only). It returns the worker's final answer.
-- Any other verb (fetch, search, read-file, write-file, edit-file, list-files, grep-files, execute-shell, query-vault, vault-write) is not available in this harness version. Do not improvise around it: say which verb the step needs and stop that step.
+The skills use abstract verbs and some shell steps. This harness has no shell: every step you may take is one of the tools in your tool list.
+- invoke-skill(id) -> \`invoke_skill\`; its description lists the skills you have.
+- Spotlight durable state (orchestrator only) -> \`spotlight_resolve\` and \`spotlight_transition\`. Both are bound by the harness to the active case.
+- spawn-agent(id, prompt) / wait-agent -> \`spawn_agent\` (orchestrator only). It returns the worker's final answer.
+- read-file, write-file, edit-file, list-files, grep-files -> \`read_file\`, \`write_file\`, \`edit_file\`, \`list_files\`, \`grep_files\`. {CASE_DIR} is the active case folder: give paths relative to it (for example \`data/findings.json\`). Files under the checkout's \`schemas/\` are readable. Writes outside your folder, through a symlink, or to resolver, review or receipt files are refused.
+- fetch -> \`fetch\` (use save_as for output_path); search -> \`search\`; query-vault -> \`query_vault\`.
+- Shell steps in the skills map to typed tools: a \`curl\` GET to a registry, archive or API -> \`http_get\` (query parameters in the URL); a dev-browser script -> \`browse\` (one page: rendered text, HTML or a screenshot); \`scripts/osint-tools.py find|categories\` -> \`osint_tools\`; \`navigator tools find|show\` -> \`navigator_tools\`; \`exiftool {file}\` -> \`exiftool\`; \`scripts/decision-signals.py\` -> \`decision_signals\`; \`scripts/build-provenance-manifest.py\` -> \`provenance_manifest\`; \`integrations/rlm/run_rlm.py\` -> \`run_rlm\`; \`integrations/preflight.py\` -> \`integration_status\`. \`scripts/spotlight_safe.py validate-*\` checks are not needed: each tool checks its own arguments, and the web tools reach only public http(s) addresses.
+- \`scripts/validate-case.py\`, \`scripts/validate-fact-check.py\` and \`scripts/validate-methodology-navigator.py\` are run by the harness itself when a worker finishes; their outcome is appended to the \`spawn_agent\` result. Act on that outcome; do not try to run them.
+- Preflight step 0 (the shell check): skipped. A \`spotlight_resolve\` that answers confirms the checkout.
+- Anything else (a POST request, Apify, vault-write, the ingest scripts, a tool not in your list): do not improvise around it. Say which step needs it and stop that step.
 
 Gate approvals, the report decision and the ingest request or decline are recorded by the review page, never by you. At a gate, present the synthesis and END YOUR TURN.`;
 
