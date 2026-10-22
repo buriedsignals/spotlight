@@ -40,6 +40,9 @@ jobs:
       - name: Install Flue test dependencies
         run: npm ci --prefix harness/flue
 
+      - name: Install Pi harness test dependencies
+        run: npm ci --prefix harness/pi
+
       - name: Install Python test deps
         run: pip install --quiet jsonschema==4.25.1 requests==2.32.5
 
