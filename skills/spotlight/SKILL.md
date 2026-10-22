@@ -124,9 +124,8 @@ The dispatcher never:
   `evidence-map.json`) — only `scripts/finalize-report.py` renders them.
 - Treats file presence as phase completion (see Operating contract).
 - Silently substitutes an unsupported verb or integration.
-New-case source-expression activation stays disabled — the pilot is **NOT
-APPROVED**. Do not enable
-`1.1` as the new-case default.
+New cases start activated (exact passages, findings contract `1.1`);
+`phase-investigation` resolves the mode. Never downgrade an activated case.
 
 ## Tuning knobs
 

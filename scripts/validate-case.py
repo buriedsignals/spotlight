@@ -43,6 +43,7 @@ from evidence_anchors import (
     sha256_file,
 )
 from source_expression_contract import (
+    bound_hashes,
     canonical_fingerprint,
     passage_core,
 )
@@ -133,16 +134,40 @@ def validate_case_contract(data: Any) -> list[str]:
     if not isinstance(events, list) or not events:
         return errors + [f"{prefix}: activation_events must be a non-empty list"]
     event_ids: set[str] = set()
+    hash_fields = ("findings_sha256", "fact_check_sha256", "evidence_bundle_sha256", "source_expressions_sha256")
+
+    def check_hashes(hashes: Any, where: str, require_expressions: bool) -> None:
+        required = set(hash_fields[:3]) | ({"source_expressions_sha256"} if require_expressions else set())
+        if not isinstance(hashes, dict):
+            errors.append(f"{where}: must be an object")
+            return
+        if set(hashes) - set(hash_fields):
+            errors.append(f"{where}: unknown fields {sorted(set(hashes) - set(hash_fields))}")
+        for field in hash_fields:
+            value = hashes.get(field)
+            if field in required or value is not None:
+                if not isinstance(value, str) or not re.fullmatch(r"[a-f0-9]{64}", value):
+                    errors.append(f"{where}.{field}: must be lowercase SHA-256")
+
     for index, event in enumerate(events):
         item = f"{prefix}.activation_events[{index}]"
         if not isinstance(event, dict):
             errors.append(f"{item}: must be an object")
             continue
+        kind = event.get("kind", "migration")
         allowed_event = {
-            "event_id", "previous_contract_version", "activated_contract_version",
-            "activated_at", "tool_version", "prior_input_hashes",
-            "activated_artifact_hashes",
-        }
+            "migration": {"event_id", "kind", "previous_contract_version", "activated_contract_version",
+                          "activated_at", "tool_version", "prior_input_hashes", "activated_artifact_hashes"},
+            "born": {"event_id", "kind", "activated_contract_version", "activated_at", "tool_version"},
+            "binding": {"event_id", "kind", "bound_at", "tool_version", "artifact_hashes"},
+        }.get(kind)
+        if allowed_event is None:
+            errors.append(f"{item}.kind: must be migration, born or binding")
+            continue
+        if index == 0 and kind == "binding":
+            errors.append(f"{item}: the first event must activate the case (migration or born)")
+        if index > 0 and kind != "binding":
+            errors.append(f"{item}: only binding events follow the activation")
         if set(event) - allowed_event:
             errors.append(f"{item}: unknown fields {sorted(set(event) - allowed_event)}")
         event_id = event.get("event_id")
@@ -152,28 +177,37 @@ def validate_case_contract(data: Any) -> list[str]:
             errors.append(f"{item}.event_id: duplicate {event_id!r}")
         else:
             event_ids.add(event_id)
-        if event.get("previous_contract_version") != "1.0" or event.get("activated_contract_version") != "1.1":
-            errors.append(f"{item}: must record the 1.0 to 1.1 transition")
-        if parse_datetime(event.get("activated_at")) is None:
-            errors.append(f"{item}.activated_at: must be a timezone-aware ISO timestamp")
         if not nonempty_string(event.get("tool_version")):
             errors.append(f"{item}.tool_version: must be a non-empty string")
-        for key, require_expressions in (("prior_input_hashes", False), ("activated_artifact_hashes", True)):
-            hashes = event.get(key)
-            required = {"findings_sha256", "fact_check_sha256", "evidence_bundle_sha256"}
-            if require_expressions:
-                required.add("source_expressions_sha256")
-            if not isinstance(hashes, dict):
-                errors.append(f"{item}.{key}: must be an object")
-                continue
-            allowed_hashes = required | ({"source_expressions_sha256"} if not require_expressions else set())
-            if set(hashes) - allowed_hashes:
-                errors.append(f"{item}.{key}: unknown fields {sorted(set(hashes) - allowed_hashes)}")
-            for field in required:
-                value = hashes.get(field)
-                if not isinstance(value, str) or not re.fullmatch(r"[a-f0-9]{64}", value):
-                    errors.append(f"{item}.{key}.{field}: must be lowercase SHA-256")
+        if kind == "binding":
+            if parse_datetime(event.get("bound_at")) is None:
+                errors.append(f"{item}.bound_at: must be a timezone-aware ISO timestamp")
+            check_hashes(event.get("artifact_hashes"), f"{item}.artifact_hashes", True)
+            continue
+        if event.get("activated_contract_version") != "1.1":
+            errors.append(f"{item}: must activate contract 1.1")
+        if parse_datetime(event.get("activated_at")) is None:
+            errors.append(f"{item}.activated_at: must be a timezone-aware ISO timestamp")
+        if kind == "migration":
+            if event.get("previous_contract_version") != "1.0":
+                errors.append(f"{item}: must record the 1.0 to 1.1 transition")
+            check_hashes(event.get("prior_input_hashes"), f"{item}.prior_input_hashes", False)
+            check_hashes(event.get("activated_artifact_hashes"), f"{item}.activated_artifact_hashes", True)
     return errors
+
+
+def investigation_gate_approved(case_dir: Path) -> bool:
+    """Whether data/orchestration.json records an Investigation-gate approval.
+    Activated artifacts are expected to change until then; the approval binds
+    them (transitions.approve appends the binding)."""
+    try:
+        state = json.loads((case_dir / "data" / "orchestration.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    approvals = state.get("approvals") if isinstance(state, dict) else None
+    if not isinstance(approvals, dict):
+        return False
+    return any(isinstance(approvals.get(key), dict) for key in ("investigation_gate", "gate1"))
 
 
 def _graph_cycles(edges: dict[str, str], label: str) -> list[str]:
@@ -1164,18 +1198,25 @@ def main() -> int:
             all_errors.extend(validate_source_expressions(
                 case_dir, expressions_data, findings_data, factcheck_data, evidence_bundle_data
             ))
-        latest = contract_data["activation_events"][-1].get("activated_artifact_hashes", {})
         artifact_paths = {
             "findings_sha256": findings_path,
             "fact_check_sha256": factcheck_path,
             "evidence_bundle_sha256": evidence_bundle_path,
             "source_expressions_sha256": expressions_path,
         }
-        for key, path in artifact_paths.items():
-            if not path.is_file():
-                all_errors.append(f"case-contract.json: activated artifact {path.name} is missing")
-            elif latest.get(key) != sha256_file(path):
-                all_errors.append(f"case-contract.json: {key} does not match the activated artifact")
+        # Until the Investigation gate is approved the artifacts are work in
+        # progress. From approval on, the latest binding (or a migration's
+        # activated hashes) must match exactly.
+        if investigation_gate_approved(case_dir):
+            latest = bound_hashes(contract_data)
+            if latest is None:
+                all_errors.append("case-contract.json: the approved Investigation gate has no artifact binding")
+            else:
+                for key, path in artifact_paths.items():
+                    if not path.is_file():
+                        all_errors.append(f"case-contract.json: activated artifact {path.name} is missing")
+                    elif latest.get(key) != sha256_file(path):
+                        all_errors.append(f"case-contract.json: {key} does not match the artifacts the approval covers")
     elif findings_version == "1.0":
         expressions_path = case_dir / "data" / "source-expressions.json"
         if expressions_path.exists():

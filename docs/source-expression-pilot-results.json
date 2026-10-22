@@ -2,8 +2,8 @@
   "schema_version": "1.0",
   "record_type": "source_expression_storage_pilot",
   "recorded_at": "2026-07-16",
-  "status": "not_approved",
-  "activation_recommendation": "NOT APPROVED",
+  "status": "approved_for_new_cases",
+  "activation_recommendation": "APPROVED: new cases start activated; existing cases stay forward-only",
   "fixture_subset": {
     "path": "tests/fixtures/source-expression-producer-cases.json",
     "findings": 2,
@@ -146,13 +146,48 @@
   "decision": {
     "candidate": "separate_source_expressions_artifact",
     "reason": "It is the only option currently validated end to end and avoids passage-core duplication on the representative fixture.",
-    "blocking_evidence": [
-      "timed human review and correction-yield results",
-      "longitudinal locator stability",
-      "same-fixture migration effort",
-      "interrupted and concurrent producer-write behavior",
-      "implemented comparison of the two alternative storage shapes"
-    ],
-    "activation_status": "NOT APPROVED"
+    "activation_status": "APPROVED FOR NEW CASES",
+    "approved_on": "2026-10-22",
+    "approval_basis": "Exact passages are the default for every new case once interrupted- and concurrent-write behaviour is closed (product decision, 22 October 2026).",
+    "blockers": [
+      {
+        "id": 1,
+        "blocker": "timed human review and correction-yield results",
+        "status": "open_measured_after_default",
+        "plan": "Compare review time per finding and correction yield against the legacy baseline over the first 10 real activated cases, read from the review pages. Closes after those 10."
+      },
+      {
+        "id": 2,
+        "blocker": "longitudinal locator stability",
+        "status": "open_measured_after_default",
+        "plan": "Re-validate every activated case's locators on a schedule (scripts/validate-case.py over the case root) and track the revalidation rate."
+      },
+      {
+        "id": 3,
+        "blocker": "same-fixture migration effort",
+        "status": "closed_by_measurement",
+        "evidence": "A dry run of scripts/migrate-source-expressions.py on copies of 19 local legacy cases migrated 0 findings: 18 were refused at legacy input validation and the remaining case had 0 mappings and 23 skips. Old cases are forward-only."
+      },
+      {
+        "id": 4,
+        "blocker": "interrupted and concurrent producer-write behavior",
+        "status": "closed_by_tests",
+        "evidence": "Producers write passages only through scripts/write-source-expressions.py, which merges by expression id under the case lock and publishes atomically; tests/source-expression-writer-check.py injects a failure mid-publish (the previous file survives byte for byte, no temporary file remains) and runs six concurrent writers (no update is lost). Case-contract writes use the same lock and atomic publish."
+      },
+      {
+        "id": 5,
+        "blocker": "implemented comparison of the two alternative storage shapes",
+        "status": "closed_by_decision",
+        "evidence": "Batch 1.1 fixes the separate-record shape (source expressions as their own records linked to claims), so the embedded alternatives are no longer candidates."
+      }
+    ]
+  },
+  "stop_thresholds": {
+    "set_on": "2026-10-22",
+    "status": "proposed",
+    "locator_revalidation_rate_min": 0.95,
+    "activated_case_validation_failure_rate_max": 0.05,
+    "review_time_and_correction_yield": "compared with the legacy baseline over the first 10 real activated cases",
+    "stop_rule": "When a threshold is breached, new cases start in legacy mode until the producer is fixed. An activated case never falls back to legacy."
   }
 }

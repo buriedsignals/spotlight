@@ -55,3 +55,17 @@ def fact_check_rows(document: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(rows, list):
             return [row for row in rows if isinstance(row, dict)]
     return []
+
+
+def bound_hashes(contract: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """Artifact hashes from the latest event that binds them: a migration's
+    activated hashes or a gate-approval binding. A born case that has not
+    reached its gate yet has none."""
+    events = contract.get("activation_events") if isinstance(contract, dict) else None
+    for event in reversed(events if isinstance(events, list) else []):
+        if not isinstance(event, dict):
+            continue
+        hashes = event.get("artifact_hashes") if event.get("kind") == "binding" else event.get("activated_artifact_hashes")
+        if isinstance(hashes, dict):
+            return hashes
+    return None

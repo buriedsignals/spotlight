@@ -386,9 +386,26 @@ each exact passage used to support, contradict, or contextualize a finding:
    original-language expression, and `direct_quote: false`. A translation never
    replaces the original expression.
 
-Write or merge `{CASE_DIR}/data/source-expressions.json` using
-`schemas/source-expressions.schema.json`. Compute passage, finding, and link
-fingerprints exactly as that schema specifies. In `pilot` mode this is an
+Never write `{CASE_DIR}/data/source-expressions.json` with file tools. Every
+passage goes through the one writer, which merges by expression id, computes
+every hash and fingerprint, validates, and publishes atomically under the case
+lock:
+
+```text
+python3 scripts/write-source-expressions.py {CASE_DIR} --actor investigator --cycle N < proposal.json
+```
+
+The proposal lists each passage's `id`, exact `text`, `anchor_ref`,
+`original_evidence_bundle_id`, optional `language`, `direct_quote`,
+`attribution`, `derived_from_expression_id` and `derivative_type`, and its
+`finding_links` (`finding_id` and `relation`). Supersede or withdraw a passage
+with a `lifecycle` entry. Do not supply hashes or fingerprints; a refused
+write changes nothing and says why.
+
+After writing or merging `findings.json` in `activated` mode, set the finding
+fingerprints with
+`python3 scripts/write-source-expressions.py {CASE_DIR} --fingerprint-findings`
+(never compute them yourself). In `pilot` mode the passages are an
 experimental side artifact and does not activate or upgrade a legacy case. In
 `activated` mode, preserve the existing `1.1` contract; the orchestrator or
 migration workflow owns the activation receipt.
@@ -576,8 +593,8 @@ Do not force recommendations. If nothing warrants monitoring, omit the array ent
 - Reads prior fact-checks from: `{CASE_DIR}/data/fact-check.json`
 - Writes methodology to: `{CASE_DIR}/data/methodology.json` (PLANNING mode)
 - Writes findings to: `{CASE_DIR}/data/findings.json` (EXECUTION mode)
-- Writes source expressions to: `{CASE_DIR}/data/source-expressions.json`
-  (EXECUTION mode only when explicitly enabled)
+- Writes source expressions through `scripts/write-source-expressions.py`
+  (EXECUTION mode, when `SOURCE_EXPRESSION_MODE` is set)
 - Appends to: `{CASE_DIR}/data/investigation-log.json` (EXECUTION mode)
 - Reads from: `{VAULT_PATH}` registries and notes (PLANNING and EXECUTION modes — if `VAULT_PATH` is not `"none"`)
 

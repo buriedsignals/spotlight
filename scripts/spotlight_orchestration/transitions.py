@@ -24,6 +24,7 @@ from .dependencies import (
     validate_approval,
 )
 from .resolver import load_ingestion_marker, status_for
+from .case_contract import bind as bind_case_contract
 from .case_writer import atomic_write_files, restore_files_on_error
 from .review import LEDGER_FILE, consume_nonce, ledger_bytes, load_ledger
 from .storage import (
@@ -101,6 +102,9 @@ def approve(
             state.pop("follow_up", None)
             state.pop("investigation_gate_finalization", None)
     else:
+        # Bind the activated artifacts this approval covers before computing
+        # the digest, so the binding itself is part of what was approved.
+        bind_case_contract(case, data_descriptor)
         dependency_digest = require_investigation_gate_digest(case)
         gate_receipt = {
             "approved_by": approved_by,

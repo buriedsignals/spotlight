@@ -11,6 +11,29 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   decisions. Indicator Lab starts it through Osaurus. The runtimes guide, README
   and landing page describe it in place of the Flue harness.
 
+### Changed — Exact passages are the default for new cases
+
+- Every new case starts activated: before the first Investigation cycle,
+  `scripts/case-contract.py activate-new` writes a `born` activation event,
+  and findings and fact-check use contract `1.1`. Existing cases are
+  forward-only and keep contract `1.0`.
+- One writer for passages: producers no longer write
+  `data/source-expressions.json` with file tools.
+  `scripts/write-source-expressions.py` merges by expression id, computes
+  every hash and fingerprint, validates, and publishes atomically under the
+  case lock; `--fingerprint-findings` sets finding fingerprints. Fault-
+  injection tests cover interrupted and concurrent writes (pilot blocker 4).
+- Artifact hashes are bound when the Investigation gate is approved: the
+  approval appends a `binding` event to `case-contract.json` before it
+  computes its digest. Until then activated artifacts may change; from then
+  on they must match the binding.
+- `docs/source-expression-pilot-results.json` records the decision, the stop
+  thresholds (locator revalidation at least 95%, validation failures at most
+  5% of new cases, review time and correction yield against the legacy
+  baseline over the first 10 real cases) and the blockers closed by
+  decision, measurement and tests. `scripts/revalidate-locators.py` reports
+  the locator revalidation rate across a cases root.
+
 ### Changed — Five verdicts and three confidence levels (Batch 1.1)
 
 - New fact-checks use contract `1.1` with Batch 1.1's five verdicts:
