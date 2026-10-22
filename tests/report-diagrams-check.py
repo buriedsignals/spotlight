@@ -175,11 +175,13 @@ def main() -> int:
             if kind == "bar":
                 assert "xychart-beta" in html
                 mermaid = compiled_mermaid(html)
-                # Canonical verdict order, not input or alphabetical order.
-                assert mermaid.index('"Verified"') < mermaid.index('"Partially verified"')
-                assert mermaid.index('"Partially verified"') < mermaid.index('"Unverified"')
+                # Canonical verdict order, not input or alphabetical order;
+                # Batch 1.1's five verdicts, no legacy bar the case never used.
+                assert mermaid.index('"Verified"') < mermaid.index('"Unverified"')
+                assert mermaid.index('"Unverified"') < mermaid.index('"Not checkable"')
+                assert '"Partially verified"' not in mermaid
                 assert 'y-axis "Findings" 0 --> 1' in mermaid
-                assert "bar [1, 0, 1, 0, 0, 0]" in mermaid
+                assert "bar [1, 1, 0, 0, 0]" in mermaid
             again = run([sys.executable, str(FINALIZER), str(case)])
             assert again.returncode == 0, again.stdout + again.stderr
             assert [sha(path) for path in outputs] == hashes

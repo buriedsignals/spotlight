@@ -44,6 +44,7 @@ AI_NOTICE = (
     "authenticity, assessing risks, and deciding what is publishable."
 )
 CONFIDENCE_VALUE = {"low": 1, "medium": 2, "high": 3}
+VERDICTS_1_1 = ("verified", "unverified", "disputed", "false", "not_checkable")
 VERDICT_LABEL = {
     "verified": "Verified",
     "partially_verified": "Partially verified",
@@ -51,6 +52,7 @@ VERDICT_LABEL = {
     "disputed": "Disputed",
     "false": "False",
     "mischaracterized": "Mischaracterized",
+    "not_checkable": "Not checkable",
 }
 MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/mermaid.esm.min.mjs"
 ELK_LAYOUT_URL = "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.2.2/dist/mermaid-layout-elk.esm.min.mjs"
@@ -144,6 +146,11 @@ def aggregate_verdict(finding: dict[str, Any], checks: list[dict[str, Any]]) -> 
     elif "mischaracterized" in statuses:
         status = "mischaracterized"
     elif "unverified" in statuses:
+        status = "unverified"
+    elif all(status == "not_checkable" for status in statuses):
+        status = "not_checkable"
+    elif "not_checkable" in statuses:
+        # Part of the finding could not be checked, so the whole is not established.
         status = "unverified"
     else:
         status = "partially_verified"
@@ -544,7 +551,10 @@ def compile_bar_diagram(
         counts = {status: 0 for status in VERDICT_LABEL}
         for verdict in verdicts:
             counts[verdict["status"]] = counts.get(verdict["status"], 0) + 1
-        categories = [(VERDICT_LABEL[status], counts[status]) for status in VERDICT_LABEL]
+        # Batch 1.1's five verdicts always show; a legacy verdict shows only
+        # when an old case actually records it.
+        categories = [(VERDICT_LABEL[status], counts[status]) for status in VERDICT_LABEL
+                      if status in VERDICTS_1_1 or counts[status]]
         axis_title = "Findings"
     elif metric == "confidence_distribution":
         confidence_labels = {"low": "Low", "medium": "Medium", "high": "High"}

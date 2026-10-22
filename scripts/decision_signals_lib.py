@@ -118,6 +118,7 @@ VERDICT_FRAME = {
     "disputed": "Disputed (credible sources conflict on this): {c}",
     "false": "Established as false (this claim is not true): {c}",
     "mischaracterized": "Established as mischaracterized (this claim misrepresents the record): {c}",
+    "not_checkable": "Not checkable (a prediction, opinion or statement that cannot be verified): {c}",
 }
 PROSE_FIELDS = ("headline", "summary", "why_it_matters")
 

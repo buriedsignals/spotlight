@@ -37,9 +37,9 @@ from evidence_anchors import (  # noqa: E402
     sha256_file,
 )
 from source_expression_contract import (  # noqa: E402
-    POSITIVE_VERDICTS,
     canonical_fingerprint,
 )
+from verdicts import LEGACY_POSITIVE  # migration reads legacy 1.0 inputs
 
 
 TOOL_VERSION = "spotlight-source-expression-migration/1"
@@ -382,7 +382,7 @@ def build_documents(
         if finding_id not in finding_index:
             skips.append(skip(row_path, "unknown_finding", "finding_id does not resolve", finding_id))
             continue
-        if verdict in POSITIVE_VERDICTS:
+        if verdict in LEGACY_POSITIVE:
             positive_findings.add(finding_id)
         for evidence_key, relation in (("evidence_for", "supports"), ("evidence_against", "contradicts")):
             evidence = row.get(evidence_key)
@@ -393,7 +393,7 @@ def build_documents(
                 if not isinstance(entry, dict):
                     skips.append(skip(entry_path, "missing_exact_quote", "evidence entry is not an object", finding_id))
                     continue
-                if evidence_key == "evidence_for" and verdict not in POSITIVE_VERDICTS:
+                if evidence_key == "evidence_for" and verdict not in LEGACY_POSITIVE:
                     skips.append(skip(
                         entry_path,
                         "ambiguous_relation",
@@ -519,6 +519,24 @@ def build_documents(
         if isinstance(finding, dict):
             finding["finding_fingerprint"] = fingerprint({"claim": finding.get("claim")})
     updated_findings["schema_version"] = "1.1"
+    # An activated case carries fact-check contract 1.1. The legacy verdicts
+    # Batch 1.1 removed, and a finding's "disputed" confidence, each need a
+    # person's judgement (forward-only policy), so they block the migration.
+    updated_fact["schema_version"] = "1.1"
+    removed: list[dict[str, str]] = []
+    if container != "claims":
+        removed.append({"finding_id": "-", "reason": "legacy_verdict_container",
+                        "detail": f"contract 1.1 records verdicts only in claims[], not {container}[]"})
+    for row in rows:
+        if isinstance(row, dict):
+            _, verdict = row_values(container, row)
+            if verdict in ("partially_verified", "mischaracterized"):
+                removed.append({"finding_id": str(row.get("finding_id") or "-"), "reason": "removed_verdict",
+                                "detail": f"{verdict} is not a Batch 1.1 verdict; a person must re-assess it"})
+    for finding in updated_findings.get("findings", []):
+        if isinstance(finding, dict) and finding.get("confidence") == "disputed":
+            removed.append({"finding_id": str(finding.get("id") or "-"), "reason": "removed_confidence",
+                            "detail": "finding confidence 'disputed' is not a Batch 1.1 level; a person must set high, medium or low"})
     expressions_doc = {
         "schema_version": "1.0",
         "project": updated_findings.get("project"),
@@ -532,7 +550,7 @@ def build_documents(
             "detail": "no recoverable active supporting expression remains for this positive verdict",
         }
         for finding_id in sorted(positive_findings - supporting_findings)
-    ]
+    ] + removed
     skips.sort(key=lambda item: (
         item.get("fact_check_path", ""), item.get("reason", ""), item.get("detail", "")
     ))

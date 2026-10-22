@@ -4,7 +4,7 @@
   "type": "object",
   "required": ["project"],
   "properties": {
-    "schema_version": { "const": "1.0" },
+    "schema_version": { "enum": ["1.0", "1.1"] },
     "project": { "type": "string" },
     "source_document": { "type": "string" },
     "checked_at": { "type": "string" },
@@ -20,7 +20,8 @@
             "unverified": { "type": "integer" },
             "disputed": { "type": "integer" },
             "false": { "type": "integer" },
-            "mischaracterized": { "type": "integer" }
+            "mischaracterized": { "type": "integer" },
+            "not_checkable": { "type": "integer" }
           }
         },
         { "type": "string" }
@@ -47,8 +48,21 @@
             "description": "Explicit technical indicators assessed by this claim. Values must appear in claim_text and resolve to the same finding_id."
           },
           "claim_text": { "type": "string" },
-          "verdict": { "enum": ["verified","partially_verified","unverified","disputed","false","mischaracterized"] },
+          "verdict": { "enum": ["verified","partially_verified","unverified","disputed","false","mischaracterized","not_checkable"] },
           "confidence": { "enum": ["high","medium","low"] },
+          "flags": {
+            "type": "array",
+            "description": "Batch 1.1 assessment flags (semantic-and-versioning rules §8.4) the fact-checker proposes; a person gives each its disposition at review.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "reason"],
+              "properties": {
+                "code": { "$ref": "#/definitions/flag_code" },
+                "reason": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
           "grounding_assessment": { "$ref": "#/definitions/grounding_assessment" },
           "evidence_for": { "type": "array", "items": { "$ref": "#/definitions/evidence_item" } },
           "evidence_against": { "type": "array", "items": { "$ref": "#/definitions/evidence_item" } },
@@ -102,12 +116,42 @@
     },
     "gaps_for_next_cycle": { "type": "array", "items": { "type": "string" } }
   },
+  "oneOf": [
+    {
+      "description": "Legacy contract 1.0 (schema_version absent or 1.0): old cases keep their recorded verdicts and stay readable.",
+      "properties": {
+        "schema_version": { "const": "1.0" },
+        "claims": { "items": { "properties": { "verdict": { "not": { "const": "not_checkable" } } } } }
+      }
+    },
+    {
+      "description": "Contract 1.1: Batch 1.1's five verdicts and three confidence levels; claims only. Required for activated cases.",
+      "required": ["schema_version", "claims"],
+      "not": { "anyOf": [{ "required": ["fact_checks"] }, { "required": ["verdicts"] }] },
+      "properties": {
+        "schema_version": { "const": "1.1" },
+        "claims": {
+          "items": {
+            "properties": { "verdict": { "enum": ["verified","unverified","disputed","false","not_checkable"] } }
+          }
+        }
+      }
+    }
+  ],
   "allOf": [
     { "not": { "required": ["claims", "fact_checks"] } },
     { "not": { "required": ["claims", "verdicts"] } },
     { "not": { "required": ["fact_checks", "verdicts"] } }
   ],
   "definitions": {
+    "flag_code": {
+      "enum": [
+        "partial_support", "contradiction", "allegation_as_fact", "amount_mismatch", "date_mismatch",
+        "added_scope", "added_causation", "proposition_drift", "ambiguous_entity", "unresolved_semantic_ambiguity",
+        "announced_not_current", "incomplete_list", "address_as_legal_domicile", "direction_mismatch",
+        "control_overstated", "beneficial_owner_not_stated", "stage_overstated", "dispute_unrecorded"
+      ]
+    },
     "legacy_fact_check": {
       "type": "object",
       "required": ["claim", "status"],

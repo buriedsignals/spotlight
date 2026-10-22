@@ -106,7 +106,7 @@ assessment, and human editorial review therefore remain mandatory.
 
 ## Verdict taxonomy
 
-Every claim gets one of four verdicts. Precision matters — conflating these is a critical failure.
+Every claim gets one of five verdicts (fact-check contract `1.1`, the same five as a Batch 1.1 assessment). Precision matters — conflating these is a critical failure.
 
 | Verdict | Definition | Required evidence |
 |---|---|---|
@@ -114,6 +114,16 @@ Every claim gets one of four verdicts. Precision matters — conflating these is
 | `unverified` | Evidence is silent | Thorough search produced neither supporting nor contradicting reliable sources. **This is not "false."** It means the evidentiary record does not speak to the claim |
 | `disputed` | Reliable evidence exists both for and against | Document both sides with equal weight |
 | `false` | Evidence actively contradicts the claim | Strong evidence from reliable sources directly contradicts what was claimed |
+| `not_checkable` | The claim cannot be checked | A prediction, opinion, or statement too vague to verify; the reason goes in `notes` |
+
+Confidence is `high`, `medium` or `low`. A finding that is only partly
+supported is split into separate claims; one that cannot be split is
+`unverified` with a `partial_support` flag. A finding that misstates its
+source keeps the verdict for what it asserts and gets a flag naming the
+misstatement (`proposition_drift`, or a narrower code such as
+`amount_mismatch`); a person decides whether to amend it. Older cases
+(contract `1.0`) also used `partially_verified` and `mischaracterized`; they
+keep those recorded verdicts and stay readable, and nothing rewrites them.
 
 ### The `unverified` vs `false` distinction
 
@@ -126,7 +136,7 @@ If a claim is about a secret offshore structure and no leak has surfaced, the ve
 
 ### Unfalsifiable claims
 
-Predictions, opinions, and vague statements can't be fact-checked. Mark these as `not_checkable` in the `notes` field instead of forcing a verdict.
+Predictions, opinions, and vague statements can't be fact-checked. Give them the verdict `not_checkable`, with the reason in `notes`, instead of forcing another verdict.
 
 ## Evidence trail
 
@@ -279,5 +289,5 @@ In sensitive mode:
 - **Distinguish `unverified` from `false` precisely.** Unverified = silent record. False = contradicted by evidence.
 - **Do not editorialize.** Verdicts are about factual accuracy, not importance or moral significance.
 - **Quote sources verbatim** where possible. Paraphrasing introduces distortion.
-- **Flag unfalsifiable claims.** Predictions, opinions, vague statements — note as `not_checkable` rather than forcing a verdict.
+- **Mark unfalsifiable claims.** Predictions, opinions, vague statements get the verdict `not_checkable` rather than a forced one.
 - **Link back to findings.** Use `finding_id` to connect each claim to its source finding.

@@ -330,7 +330,7 @@ signals, stop and tell the user rather than ingesting around them.
 
 For reference, the helper implements the **eligibility gate** from `references/entity-model.md` for each finding joined with its fact-check entry (on finding ID):
 
-1. Verdict is `verified` or `partially_verified`.
+1. Verdict is `verified`, or `partially_verified` in a legacy contract `1.0` fact-check (contract `1.1` has no partial verdict).
 2. Grounding `confidence_cap` is above `low`.
 3. At least one source reference is present.
 4. The finding is not RLM-derived. Detection rule: a finding is RLM-derived when any of its sources reference `data/rlm-analysis.json` (or an RLM artifact ID), or it carries an `rlm_assisted: true` marker. The investigator contract already forbids copying RLM artifacts into `findings.json`; this check is the defensive backstop, not the primary control.

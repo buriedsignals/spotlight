@@ -110,6 +110,7 @@ def activate_case(case_dir: Path) -> None:
     write_json(data / "source-expressions.json", expressions)
 
     fact_check = json.loads((data / "fact-check.json").read_text(encoding="utf-8"))
+    fact_check["schema_version"] = "1.1"  # activated cases use fact-check contract 1.1
     fact_check["claims"][0]["evidence_for"][0]["source_expression_refs"] = [{
         "expression_id": "SX1",
         "expression_fingerprint": expression_fp,

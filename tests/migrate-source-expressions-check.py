@@ -219,12 +219,26 @@ def main() -> int:
         assert snapshot(ambiguous / "data") == before_ambiguous_apply
         assert json.loads((ambiguous / "data/findings.json").read_text())["schema_version"] == "1.0"
 
+        # Batch 1.1 removed partially_verified, mischaracterized and the
+        # finding confidence "disputed"; each needs a person, so it blocks.
+        removed = build_case(root / "removed-verdict")
+        fact_path = removed / "data/fact-check.json"
+        fact = json.loads(fact_path.read_text(encoding="utf-8"))
+        fact["claims"][0]["verdict"] = "mischaracterized"
+        write_json(fact_path, fact)
+        removed_dry = run(removed)
+        assert removed_dry.returncode == 0 and "DRY-RUN BLOCKED" in removed_dry.stdout, removed_dry.stdout
+        removed_audit = json.loads((removed / "data/source-expression-migration.json").read_text(encoding="utf-8"))
+        validate_schema(removed_audit)
+        assert any(item["reason"] == "removed_verdict" for item in removed_audit["blocking_reasons"])
+
         before_apply = snapshot(exact / "data")
         applied = run(exact, "--apply")
         assert applied.returncode == 0 and "case contract written last" in applied.stdout, applied.stderr
         data = exact / "data"
         assert (data / "case-contract.json").exists()
         assert json.loads((data / "findings.json").read_text())["schema_version"] == "1.1"
+        assert json.loads((data / "fact-check.json").read_text())["schema_version"] == "1.1"
         expressions = json.loads((data / "source-expressions.json").read_text())
         assert len(expressions["expressions"]) == 1
         contract = json.loads((data / "case-contract.json").read_text())

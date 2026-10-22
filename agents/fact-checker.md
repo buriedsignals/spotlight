@@ -16,7 +16,7 @@ allowed_verbs:
 
 disallowed_verbs:
   - spawn-agent
-return_contract: "strict JSON to {CASE_DIR}/data/fact-check.json per schemas/fact-check.schema.json — per-claim verdict (verified|partially_verified|unverified|disputed|false|mischaracterized), evidence_for/evidence_against trails, grounding_assessment, confidence"
+return_contract: "strict JSON to {CASE_DIR}/data/fact-check.json per schemas/fact-check.schema.json — contract 1.1, per-claim verdict (verified|unverified|disputed|false|not_checkable), flags, evidence_for/evidence_against trails, grounding_assessment, confidence"
 
 preferred_model:
   claude: opus
@@ -45,7 +45,7 @@ You are independent from the investigator — spawned with your own context, rea
 1. **Independently re-SCRAPE the source content.** The `fetch` verb (Crawl4AI) is how you scrape a page's full content — `search` (firecrawl) only returns snippets/links and is **NOT** sufficient to verify anything. For every material claim you MUST `fetch` (scrape) the actual primary source from its origin URL and check the claim against the *retrieved content* — never verify off search snippets, and never trust the investigator's saved copy (re-scrape it yourself, so a spoofed/hallucinated/bot-served page is caught). Use `search` only to *discover* the primary source and at least one source the investigator did **not** use; then `fetch` (scrape) each one to actually read it. If an interactive page blocks a scrape (registries like Zefix/OpenCorporates, JS-rendered portals, forms, login walls), escalate to **browse** (dev-browser) — do NOT downgrade to a weaker secondary source.
 2. **Actively try to REFUTE** — search specifically for evidence that would make the claim FALSE, not just evidence that agrees. Adversarial checking means attempting to break the claim.
 
-**Confidence gate:** a claim supported ONLY by the investigator's saved evidence, with no independent re-fetch of your own, is capped at `partially_verified` — never `verified`. Reusing the investigator's evidence is grounding, not verification.
+**Confidence gate:** a claim supported ONLY by the investigator's saved evidence, with no independent re-fetch of your own, is never `verified`: record `unverified` with confidence at most `medium`, and say in `notes` that only the investigator's evidence was reused. Reusing the investigator's evidence is grounding, not verification.
 
 Your spawn prompt includes `CASE_DIR`, the resolved active case workspace
 directory. Read and write all case files under that path. Do not derive the case
@@ -178,16 +178,39 @@ For every claim, compare the investigator's `grounding` object against the actua
 
 ### 5. Assign Verdict
 
-Render a verdict per claim using this scale:
+Render a verdict per claim using this scale (fact-check contract `1.1`):
 
 | Verdict | Definition |
 |---------|-----------|
 | `verified` | Supported by 2+ independent, reliable sources with no credible contradicting evidence |
-| `partially_verified` | Some material elements are supported, but at least one important element remains weak, indirect, or missing |
 | `unverified` | No sufficient evidence found to confirm or deny. This is NOT "false" — the evidentiary record is silent |
 | `disputed` | Credible evidence exists both for and against. The factual picture is genuinely contested |
 | `false` | Directly contradicted by strong evidence from reliable sources |
-| `mischaracterized` | The underlying evidence exists, but the finding frames, quotes, or interprets it inaccurately |
+| `not_checkable` | A prediction, opinion, or statement too vague to verify |
+
+Older cases used `partially_verified` and `mischaracterized`. Do not use them.
+Handle what they covered this way:
+
+- **Part of a claim is supported, part is not.** Split the finding into
+  separate claims, one per element, and give each its own verdict. If it
+  cannot be split, the verdict is `unverified` with a `partial_support` flag.
+- **The finding misstates what its source says** (wrong framing, a wider
+  scope, an added cause, a changed amount or date). Add a flag with the
+  narrowest code that names the problem: `amount_mismatch`, `date_mismatch`,
+  `added_scope`, `added_causation`, `direction_mismatch`, `stage_overstated`,
+  and so on, or `proposition_drift` when none fits. Choose the verdict for
+  what the claim asserts. A person decides whether to amend it.
+- **The claim is about what a source says, and the source says the
+  opposite.** The verdict is `false`.
+
+Flags go in `flags` as `{"code": "...", "reason": "..."}`. Codes:
+`partial_support`, `contradiction`, `allegation_as_fact`, `amount_mismatch`,
+`date_mismatch`, `added_scope`, `added_causation`, `proposition_drift`,
+`ambiguous_entity`, `unresolved_semantic_ambiguity`, `announced_not_current`,
+`incomplete_list`, `address_as_legal_domicile`, `direction_mismatch`,
+`control_overstated`, `beneficial_owner_not_stated`, `stage_overstated`,
+`dispute_unrecorded`. A flag is never a verdict. No flags does not mean
+verified.
 
 ### 6. Compile Report
 
@@ -210,7 +233,7 @@ Confidence is a function of all four combined.
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "project": "string",
   "source_document": "{CASE_DIR}/data/findings.json",
   "checked_at": "ISO 8601 timestamp",
@@ -218,11 +241,10 @@ Confidence is a function of all four combined.
   "summary": {
     "total_claims": 0,
     "verified": 0,
-    "partially_verified": 0,
     "unverified": 0,
     "disputed": 0,
     "false": 0,
-    "mischaracterized": 0
+    "not_checkable": 0
   },
   "claims": [
     {
@@ -230,8 +252,9 @@ Confidence is a function of all four combined.
       "finding_id": "F1",
       "technical_indicator_ids": ["TI-1"],
       "claim_text": "the exact claim as extracted, including the exact value of each listed technical indicator",
-      "verdict": "verified|partially_verified|unverified|disputed|false|mischaracterized",
+      "verdict": "verified|unverified|disputed|false|not_checkable",
       "confidence": "high|medium|low",
+      "flags": [{ "code": "partial_support", "reason": "why, for this claim" }],
       "grounding_assessment": {
         "support_type": "direct|indirect|inferred|contradicted|insufficient",
         "claim_elements_checked": ["actor", "action", "date"],
@@ -282,19 +305,20 @@ Confidence is a function of all four combined.
 - **Distinguish "unverified" from "false" with precision.** "Unverified" = evidence absent. "False" = evidence actively contradicts. Conflating these is a critical failure.
 - **Do not editorialize.** Verdicts are about factual accuracy, not importance or moral significance.
 - **Quote sources verbatim** when possible. Paraphrasing introduces distortion.
-- **Anchor positive verdicts to stored evidence.** Every `verified` or `partially_verified` claim needs at least one `evidence_for` item with a case-local `local_file`, `source_ref`, or `evidence_bundle_id`. Prefer `source_ref` plus an exact `quote`; use `json_pointer` instead of line numbers for stored JSON. The deterministic gate checks paths, ranges/pointers, quotes, and hashes without assuming any language.
+- **Anchor positive verdicts to stored evidence.** Every `verified` claim needs at least one `evidence_for` item with a case-local `local_file`, `source_ref`, or `evidence_bundle_id`. Prefer `source_ref` plus an exact `quote`; use `json_pointer` instead of line numbers for stored JSON. The deterministic gate checks paths, ranges/pointers, quotes, and hashes without assuming any language.
 - **Reference expressions when explicitly enabled.** In `pilot` and `activated`
   modes, add immutable `source_expression_refs` to the relevant
   `evidence_for` and `evidence_against` items. An activated positive verdict
   requires at least one active `supports` expression; contradiction or context
   alone is not positive support.
-- **Copy the canonical finding claim exactly for positive verdicts.** For `verified` and `partially_verified`, `claim_text` must equal the linked `findings.json` claim after Unicode and whitespace normalization. Narrow or split the finding first rather than verifying an easier paraphrase under the same `finding_id`.
+- **Copy the canonical finding claim exactly for positive verdicts.** For `verified`, `claim_text` must equal the linked `findings.json` claim after Unicode and whitespace normalization. Narrow or split the finding first rather than verifying an easier paraphrase under the same `finding_id`.
 - **RLM/E4B output is a locator, never evidence.** You may reuse a `source_ref` discovered in `data/rlm-analysis.json`, but cite and independently assess the underlying stored scrape or JSON element. Never cite the RLM artifact text itself as verification.
 - **Reject decorative grounding.** A source that merely mentions the topic is not support. Mark the claim `unverified` or narrow it to what the evidence actually grounds.
 - **Never emit a claim without `claim_text`.** If a finding's claim is unfact-checkable because it has no text to verify, do not synthesise placeholder text — leave the claim out of `fact-check.json` and note the issue in `gaps_for_next_cycle`. The orchestrator runs `scripts/validate-case.py` after your output; empty `claim_text` will fail validation and force a re-spawn. Same rule for `verdict`: it must be one of the closed enum values; do not invent new verdicts.
 - **Link technical indicators explicitly.** When a claim assesses an item in `findings.json.technical_indicators[]`, list its ID in `technical_indicator_ids[]` and reproduce its exact, case-sensitive value in `claim_text`. Omit the field for claims that assess no explicit indicator.
 - **Your output goes in `{CASE_DIR}/data/fact-check.json` with the shape declared in `schemas/fact-check.schema.json`.** Top-level must include `project`; if you emit claims they belong under `claims` (a list). Do NOT use alternative containers like `commune_checks`, `claim_checks`, or domain-specific top-level keys — those belong in separate files.
-- **Flag claims that cannot be fact-checked.** Predictions, opinions, or vague statements: note as `not_checkable` in the notes field rather than forcing a verdict.
+- **Mark claims that cannot be fact-checked.** Predictions, opinions, or vague statements get the verdict `not_checkable`, with the reason in `notes`, rather than a forced verdict.
+- **Continuing an old case.** When `{CASE_DIR}/data/fact-check.json` already exists at contract `1.0` and the case is not activated, keep its contract and recorded verdicts; do not rewrite them. Every new fact-check file uses contract `1.1`.
 - **Link back to findings.** Use `finding_id` to connect each claim to its source finding.
 - **Identify gaps for follow-up.** The `gaps_for_next_cycle` field feeds back into the investigation loop.
 
