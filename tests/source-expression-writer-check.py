@@ -132,22 +132,56 @@ def main() -> int:
         leftovers = [p.name for p in (case / "data").iterdir() if p.name.startswith(".source-expressions.json.")]
         require(not leftovers, f"an interrupted write left {leftovers}")
 
-        # Concurrent writers: every update survives.
+        # Concurrent writers: each reads its proposal from a file, so all six
+        # start at once and contend for the case lock; every update survives.
+        files = []
+        for i in range(2, 8):
+            path = root / f"proposal-{i}.json"
+            path.write_text(json.dumps(proposal(i)), encoding="utf-8")
+            files.append(path)
         procs = [
             subprocess.Popen(
                 [sys.executable, str(SCRIPTS / "write-source-expressions.py"), str(case),
-                 "--actor", "investigator" if i % 2 else "fact-checker", "--cycle", "1"],
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                 "--actor", "investigator" if i % 2 else "fact-checker", "--cycle", "1", "--file", str(path)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             )
-            for i in range(2, 8)
+            for i, path in zip(range(2, 8), files)
         ]
         for i, proc in zip(range(2, 8), procs):
-            proc.communicate(json.dumps(proposal(i)))
-            require(proc.returncode == 0, f"concurrent writer {i} failed")
+            _, err = proc.communicate()
+            require(proc.returncode == 0, f"concurrent writer {i} failed: {err}")
         ids = {e["id"] for e in expressions(case)["expressions"]}
         require({"SXW0"} | {f"SXW{i}" for i in range(2, 8)} <= ids, f"a concurrent write was lost: {sorted(ids)}")
         validation = subprocess.run([sys.executable, str(SCRIPTS / "validate-case.py"), str(case)], capture_output=True, text=True)
         require(validation.returncode == 0, validation.stdout + validation.stderr)
+
+        # A two-file publish that fails on its second file puts the first
+        # back: findings and passages never disagree after a failure.
+        findings_path = case / "data" / "findings.json"
+        original_findings, original_passages = findings_path.read_bytes(), target.read_bytes()
+        changed_claim = json.loads(original_findings)
+        changed_claim["findings"][0]["claim"] = "Acme paid Doe in full."
+        findings_path.write_text(json.dumps(changed_claim), encoding="utf-8")
+        staged_findings = findings_path.read_bytes()
+        calls = {"n": 0}
+
+        def fail_second_replace(*args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise OSError("injected failure on the second file")
+            return real_replace(*args, **kwargs)
+
+        case_writer.os.replace = fail_second_replace
+        try:
+            WRITER.fingerprint_findings(case)
+            raise AssertionError("a failed two-file publish reported success")
+        except (OSError, OrchestrationError):
+            pass
+        finally:
+            case_writer.os.replace = real_replace
+        require(findings_path.read_bytes() == staged_findings and target.read_bytes() == original_passages,
+                "a failed two-file publish left one file changed")
+        findings_path.write_bytes(original_findings)
 
         # Finding fingerprints come from code, and a changed claim refreshes
         # its passage links in the same write.
@@ -189,6 +223,11 @@ def main() -> int:
         require(not CASES.vc.validate_case_contract(contract), CASES.vc.validate_case_contract(contract))
         twice = subprocess.run([sys.executable, str(SCRIPTS / "case-contract.py"), "activate-new", str(born)], capture_output=True, text=True)
         require(twice.returncode == 2, "a case was activated twice")
+        # A run that stopped after the contract but before the passages file
+        # (an older publish order) is finished, not refused.
+        (born / "data" / "source-expressions.json").unlink()
+        resumed = subprocess.run([sys.executable, str(SCRIPTS / "case-contract.py"), "activate-new", str(born)], capture_output=True, text=True)
+        require(resumed.returncode == 0 and (born / "data" / "source-expressions.json").is_file(), resumed.stderr)
         legacy = root / "legacy"
         (legacy / "data").mkdir(parents=True)
         (legacy / "data" / "findings.json").write_text(json.dumps(CASES.valid_findings()), encoding="utf-8")

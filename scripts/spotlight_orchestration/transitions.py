@@ -104,22 +104,26 @@ def approve(
     else:
         # Bind the activated artifacts this approval covers before computing
         # the digest, so the binding itself is part of what was approved.
-        bind_case_contract(case, data_descriptor)
-        dependency_digest = require_investigation_gate_digest(case)
-        gate_receipt = {
-            "approved_by": approved_by,
-            "approved_at": approved_at,
-            "dependency_digest": dependency_digest,
-            "review": binding,
-        }
-        review_path = case_path(case, "review.html")
-        if review_path.is_file():
-            gate_receipt["review_sha256_at_approval"] = sha256(review_path)
-        state["approvals"][gate] = gate_receipt
-        if not investigation_gate_approval_matches(previous, dependency_digest):
-            state["decisions"].clear()
-            state.pop("investigation_gate_finalization", None)
-        state.pop("follow_up", None)
+        # A failure anywhere up to the state write puts the contract back.
+        with restore_files_on_error(case, ("data/case-contract.json",), data_descriptor=data_descriptor):
+            bind_case_contract(case, data_descriptor)
+            dependency_digest = require_investigation_gate_digest(case)
+            gate_receipt = {
+                "approved_by": approved_by,
+                "approved_at": approved_at,
+                "dependency_digest": dependency_digest,
+                "review": binding,
+            }
+            review_path = case_path(case, "review.html")
+            if review_path.is_file():
+                gate_receipt["review_sha256_at_approval"] = sha256(review_path)
+            state["approvals"][gate] = gate_receipt
+            if not investigation_gate_approval_matches(previous, dependency_digest):
+                state["decisions"].clear()
+                state.pop("investigation_gate_finalization", None)
+            state.pop("follow_up", None)
+            _publish(case, data_descriptor, state, ledger)
+        return
     _publish(case, data_descriptor, state, ledger)
 
 

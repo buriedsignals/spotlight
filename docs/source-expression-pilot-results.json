@@ -172,7 +172,8 @@
         "id": 4,
         "blocker": "interrupted and concurrent producer-write behavior",
         "status": "closed_by_tests",
-        "evidence": "Producers write passages only through scripts/write-source-expressions.py, which merges by expression id under the case lock and publishes atomically; tests/source-expression-writer-check.py injects a failure mid-publish (the previous file survives byte for byte, no temporary file remains) and runs six concurrent writers (no update is lost). Case-contract writes use the same lock and atomic publish."
+        "evidence": "Producers write passages only through scripts/write-source-expressions.py, which merges by expression id under the case lock and publishes atomically. tests/source-expression-writer-check.py injects a failure mid-publish (the previous file survives byte for byte, no temporary file remains), fails the second file of a two-file publish (the first is put back), and runs six writers at once (no update is lost; with the lock removed the same test loses updates). Case-contract writes use the same lock and publish the contract last.",
+        "scope": "Measured on macOS (POSIX flock). The Windows lock path (msvcrt) has not been run yet."
       },
       {
         "id": 5,

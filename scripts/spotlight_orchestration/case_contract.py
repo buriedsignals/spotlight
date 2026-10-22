@@ -47,28 +47,41 @@ def _project(case: Path) -> str:
 
 
 def activate_new(case: Path, data_descriptor: int) -> dict[str, Any]:
-    if (case / CONTRACT).exists():
-        raise ContractError("the case already has a case contract")
-    findings = case / "data" / "findings.json"
-    if findings.exists():
+    contract_path = case / CONTRACT
+    expressions_path = case / "data" / "source-expressions.json"
+    if (case / "data" / "findings.json").exists():
         raise ContractError("the case already has findings; migrate a legacy case instead of re-activating it")
-    doc = {
-        "schema_version": "1.0",
-        "project": _project(case),
-        "current_contract_version": "1.1",
-        "activation_events": [{
-            "event_id": f"born-{secrets.token_hex(8)}",
-            "kind": "born",
-            "activated_contract_version": "1.1",
-            "activated_at": _now(),
-            "tool_version": TOOL_VERSION,
-        }],
-    }
-    expressions = {"schema_version": "1.0", "project": doc["project"], "created_at": _now(), "expressions": []}
-    outputs = {CONTRACT: _bytes(doc)}
-    if not (case / "data" / "source-expressions.json").exists():
-        outputs["data/source-expressions.json"] = _bytes(expressions)
-    atomic_write_files(case, outputs, data_descriptor=data_descriptor)
+    if contract_path.exists():
+        try:
+            existing = json.loads(contract_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ContractError(f"cannot read the existing case contract: {exc}") from exc
+        events = existing.get("activation_events") if isinstance(existing, dict) else None
+        born_only = isinstance(events, list) and len(events) == 1 and events[0].get("kind") == "born"
+        if not (born_only and not expressions_path.exists()):
+            raise ContractError("the case already has a case contract")
+        # An earlier run stopped between its two writes: finish it.
+        doc = existing
+    else:
+        doc = {
+            "schema_version": "1.0",
+            "project": _project(case),
+            "current_contract_version": "1.1",
+            "activation_events": [{
+                "event_id": f"born-{secrets.token_hex(8)}",
+                "kind": "born",
+                "activated_contract_version": "1.1",
+                "activated_at": _now(),
+                "tool_version": TOOL_VERSION,
+            }],
+        }
+    # The passages file first, the contract last: the contract is the commit
+    # point, so a crash between the two leaves an unactivated case.
+    if not expressions_path.exists():
+        expressions = {"schema_version": "1.0", "project": doc["project"], "created_at": _now(), "expressions": []}
+        atomic_write_files(case, {"data/source-expressions.json": _bytes(expressions)}, data_descriptor=data_descriptor)
+    if not contract_path.exists():
+        atomic_write_files(case, {CONTRACT: _bytes(doc)}, data_descriptor=data_descriptor)
     return doc
 
 
