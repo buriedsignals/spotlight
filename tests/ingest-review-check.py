@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import unittest
@@ -126,6 +127,24 @@ class SoloIngest(SoloCase):
         view = self.view(case, "ingest")
         self.assertTrue(any("cannot be built" in b and "no source position" in b for b in view["blocking"]), view["blocking"])
         self.seam(case, "decide-ingest", "declined", "--nonce", self.nonce(case, "ingest"), "--digest", view["digest"])
+
+    def test_the_page_reads_the_install_config_named_by_spotlight_config(self) -> None:
+        case = self.build("newsroom", "ingest", "--clean", "--activated")
+        config = self.root / "installed" / "spotlight-config.json"
+        config.parent.mkdir()
+        config.write_text(json.dumps({"knowledge_destination": {"mode": "newsroom"}}), encoding="utf-8")
+
+        def view(value: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run([sys.executable, str(GATES.SEAM), "review-view", "ingest", str(case)],
+                                  capture_output=True, text=True, env={**os.environ, "SPOTLIGHT_CONFIG": value})
+
+        shown = view(str(config))
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        self.assertEqual(json.loads(shown.stdout)["content"]["batch"]["state"], "newsroom")
+        # A relative path is refused, as the harness refuses it, rather than read from wherever the page runs.
+        refused = view("spotlight-config.json")
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("SPOTLIGHT_CONFIG must be an absolute path", refused.stderr + refused.stdout)
 
     def page_decide(self, case: Path, view: dict, expect: int = 0):
         nonce = self.nonce(case, "ingest")

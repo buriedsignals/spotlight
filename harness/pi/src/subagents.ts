@@ -79,6 +79,8 @@ export type WorkerLaunch = {
 // Runs one task on a fresh worker: send the prompt, wait for `agent_settled`,
 // read the last assistant text, then close stdin so Pi shuts down in order.
 export async function runWorker(launch: WorkerLaunch, task: string, signal: AbortSignal): Promise<string> {
+	// A task cancelled while it waited in the queue never starts a worker.
+	signal.throwIfAborted();
 	mkdirSync(launch.cwd, { recursive: true, mode: 0o700 });
 	const child = spawn(launch.command, launch.args, {
 		cwd: launch.cwd,
@@ -87,18 +89,25 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 	});
 	launch.onSpawn(child);
 	launch.onStderr(child);
-	const exited = new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code)));
 	const answer = Promise.withResolvers<string>();
+	// A worker that cannot start emits 'error' and may never emit 'exit'.
+	const exited = new Promise<number | null>((resolve) => {
+		child.once('exit', (code) => resolve(code));
+		child.once('error', (error) => {
+			answer.reject(new Error(`worker could not start: ${error.message}`));
+			if (child.pid === undefined) resolve(null);
+		});
+	});
+	// A worker that exits early closes its stdin: a pending write fails with
+	// EPIPE. That is this task's failure; the exit handler reports it.
+	child.stdin.on('error', (error) => answer.reject(new Error(`worker stopped reading its input: ${error.message}`)));
 	const send = (command: Record<string, unknown>) => {
 		if (child.stdin.writable) child.stdin.write(`${JSON.stringify(command)}\n`);
 	};
 	let started = false;
-	// Opt-in debugging: the worker's RPC records (which carry case text) go to a
-	// folder the operator names, never to stderr or the chat.
-	const transcriptDir = process.env.SPOTLIGHT_WORKER_TRANSCRIPT_DIR;
-	const transcript = transcriptDir ? join(transcriptDir, `worker-${Date.now()}.jsonl`) : '';
+	const transcript = openTranscript();
 	onJsonlRecords(child.stdout, (record) => {
-		if (transcript) appendFileSync(transcript, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+		transcript?.(record);
 		if (record.type === 'response' && record.id === 'prompt') {
 			if (!record.success) answer.reject(new Error(`worker refused the task: ${String(record.error)}`));
 			started = (record.data as { disposition?: string } | undefined)?.disposition !== 'handled';
@@ -124,6 +133,27 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 		await exited;
 		clearTimeout(timer);
 	}
+}
+
+// Opt-in debugging: the worker's RPC records (which carry case text) go to a
+// folder the operator names, never to stderr or the chat. A transcript that
+// cannot be written stops being written; it never fails the task.
+function openTranscript(): ((record: Record<string, unknown>) => void) | undefined {
+	const dir = process.env.SPOTLIGHT_WORKER_TRANSCRIPT_DIR;
+	if (!dir) return undefined;
+	const file = join(dir, `worker-${Date.now()}-${randomUUID()}.jsonl`);
+	let failed = false;
+	const attempt = (write: () => void) => {
+		if (failed) return;
+		try {
+			write();
+		} catch (error) {
+			failed = true;
+			process.stderr.write(`spotlight: worker transcript disabled for this task (${(error as NodeJS.ErrnoException).code ?? 'write failed'})\n`);
+		}
+	};
+	attempt(() => mkdirSync(dir, { recursive: true, mode: 0o700 }));
+	return (record) => attempt(() => appendFileSync(file, `${JSON.stringify(record)}\n`, { mode: 0o600 }));
 }
 
 export class WorkerQueue {

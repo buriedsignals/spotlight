@@ -42,9 +42,14 @@ function track(harness: Harness, child: ChildProcess): void {
 	const record = () =>
 		harness.lock.setChildren([...harness.children].map((each) => each.pid).filter((pid): pid is number => !!pid));
 	record();
-	child.once('exit', () => {
+	const forget = () => {
 		harness.children.delete(child);
 		record();
+	};
+	child.once('exit', forget);
+	// A process that never started emits 'error' and may never emit 'exit'.
+	child.once('error', () => {
+		if (child.pid === undefined) forget();
 	});
 }
 
@@ -149,6 +154,15 @@ function start(harness: Harness): void {
 	track(harness, orchestrator);
 	forwardStderr(harness, orchestrator);
 	serveWorkers(harness, orchestrator);
+
+	orchestrator.once('error', (error) => {
+		if (orchestrator.pid !== undefined) return;
+		harness.log(`cannot start: ${harness.redact(error.message)}`);
+		process.exit(EXIT.failed);
+	});
+	// The orchestrator closing its input early (EPIPE) is not a launcher crash;
+	// its exit handler below shuts the chat down.
+	orchestrator.stdin!.on('error', (error) => harness.log(`the orchestrator stopped reading the chat: ${harness.redact(error.message)}`));
 
 	let stdinWatchdog: NodeJS.Timeout | undefined;
 	process.stdin.pipe(orchestrator.stdin!);

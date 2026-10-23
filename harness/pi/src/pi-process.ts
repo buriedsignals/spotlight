@@ -51,12 +51,25 @@ export function piArguments(spec: PiProcessSpec): string[] {
 
 // Strict JSONL: split on LF only (Node's readline also splits on U+2028/9,
 // which are legal inside JSON strings). The stream keeps flowing until it
-// ends, so the writer never hits a closed pipe.
+// ends, so the writer never hits a closed pipe. A line that is not a JSON
+// object is skipped with a note on stderr that names only its length, since
+// the line may carry case text.
 export function onJsonlRecords(stream: Readable, onRecord: (record: Record<string, unknown>) => void): void {
 	let buffer = '';
 	const emit = (line: string) => {
 		const trimmed = line.replace(/\r$/, '');
-		if (trimmed.trim()) onRecord(JSON.parse(trimmed) as Record<string, unknown>);
+		if (!trimmed.trim()) return;
+		let record: unknown;
+		try {
+			record = JSON.parse(trimmed);
+		} catch {
+			record = undefined;
+		}
+		if (record === null || typeof record !== 'object' || Array.isArray(record)) {
+			process.stderr.write(`spotlight: skipped a ${trimmed.length}-character stdout line that is not an RPC record\n`);
+			return;
+		}
+		onRecord(record as Record<string, unknown>);
 	};
 	stream.setEncoding('utf8');
 	stream.on('data', (chunk: string) => {

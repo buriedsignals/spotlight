@@ -144,3 +144,16 @@ test('fetch, browse and http_get refuse loopback, private and metadata targets b
 	}
 	assert.deepEqual(await recorded(), []);
 });
+
+test('integration_status passes an all-red report through but surfaces a crash as a tool error', async (t) => {
+	const { context, call } = await fixture(t);
+	const standIn = (body: string) => writeFile(context.python, `#!${process.execPath}\n${body}\n`);
+	const report = { integrations: [{ id: 'search', status: 'red' }], summary: { green: 0, yellow: 0, red: 1 } };
+
+	await standIn(`process.stdout.write(${JSON.stringify(JSON.stringify(report))}); process.exit(1);`);
+	const allRed = await call('integration_status', {});
+	assert.deepEqual(JSON.parse(allRed.content[0].text), report);
+
+	await standIn(`process.stderr.write('Traceback: ModuleNotFoundError'); process.exit(1);`);
+	await assert.rejects(call('integration_status', {}), /integration_status failed \(exit 1\): Traceback/);
+});

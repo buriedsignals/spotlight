@@ -1,7 +1,7 @@
 // Opening, reopening and the MCP tool, through the real child process.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
@@ -71,6 +71,24 @@ test("reopening a running page issues a fresh capability and ends the old sessio
   assert.equal(new URL(second).origin, first.origin);
   assert.equal((await api(first.origin, first.cookie)("/api/view")).status, 403);
   await viewThrough(second);
+});
+
+test("a review child that stops reading its commands fails the reopen instead of crashing the server", async (t) => {
+  const root = tempRoot(t);
+  const child = join(root, "deaf-child.mjs");
+  // Closes its command channel, reports ready, then lingers like a stuck child.
+  writeFileSync(
+    child,
+    'import { closeSync } from "node:fs";\n' +
+      "closeSync(0);\n" +
+      'process.stdout.write(JSON.stringify({ event: "ready", url: "http://127.0.0.1:9/#capability" }) + "\\n");\n' +
+      "setTimeout(() => {}, 3000);\n",
+  );
+  const { sessions } = manager(t, root, { childPath: child });
+  const caseDir = join(root, "case");
+  assert.deepEqual(await sessions.start(caseDir), { status: "ready" });
+
+  await assert.rejects(sessions.start(caseDir), /stopped reading|exited/);
 });
 
 test("opening refuses a case with no pending gate", async (t) => {

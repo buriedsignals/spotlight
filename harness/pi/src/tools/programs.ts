@@ -143,6 +143,15 @@ function rlmTool(context: ToolContext): ToolDefinition {
 	};
 }
 
+function isPreflightReport(stdout: string): boolean {
+	try {
+		const report = JSON.parse(stdout) as { integrations?: unknown; summary?: unknown } | null;
+		return Array.isArray(report?.integrations) && typeof report.summary === 'object' && report.summary !== null;
+	} catch {
+		return false;
+	}
+}
+
 function integrationStatusTool(context: ToolContext): ToolDefinition {
 	const params = Type.Object(
 		{ model_tier: Type.Optional(Type.String({ pattern: '^[a-z][a-z0-9_-]{0,31}$' })) },
@@ -158,8 +167,9 @@ function integrationStatusTool(context: ToolContext): ToolDefinition {
 			const args = [script('integrations/preflight.py'), '--json'];
 			if (model_tier) args.push('--model-tier', model_tier);
 			const result = await runPython(context, args, { signal });
-			// Exit 1 means "every integration is red": still a report, not a tool failure.
-			if (result.code === 0 || result.code === 1) return textResult(result.stdout);
+			// Exit 1 with a report means "every integration is red": still a report,
+			// not a tool failure. Exit 1 without one is a crash.
+			if (result.code === 1 && isPreflightReport(result.stdout)) return textResult(result.stdout);
 			return textResult(programOutput('integration_status', result));
 		},
 	};
