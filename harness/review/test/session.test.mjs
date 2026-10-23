@@ -215,6 +215,18 @@ test("an Engine failure is reported, not taken for nothing staged, and the gate 
   assert.match(JSON.parse(listed.text).message, /Could not read staged changes: permission denied/);
 });
 
+test("open_spotlight_wiki_changes refuses a case outside the authorized root before asking Engine", async (t) => {
+  const root = tempRoot(t);
+  mkdirSync(join(root, "cases"));
+  const outside = buildCase(root, "outside", "methodology");
+  const { sessions, record } = manager(t, root, { casesRoot: join(root, "cases") });
+  let asked = false;
+  const wiki = { staged: async () => { asked = true; return [change("c1", "a")]; } };
+  assert.deepEqual(await createWikiChangesOpener({ sessions, wiki })({ caseDir: outside }), { status: "start-failed" });
+  assert.equal(asked, false);
+  assert.deepEqual(openedUrls(record), []);
+});
+
 test("the stdio MCP server answers initialize and lists its tools", async () => {
   const child = spawn(process.execPath, [fileURLToPath(new URL("../mcp.mjs", import.meta.url))], {
     stdio: ["pipe", "pipe", "ignore"],

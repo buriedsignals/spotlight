@@ -31,6 +31,12 @@ export function createWikiChangesOpener(options = {}) {
   const sessions = options.sessions ?? createReviewSessionManager(options);
   const wiki = options.wiki ?? createWikiBridge({ env: safeChildEnvironment(options.env) });
   return async function openWikiChanges({ caseDir }) {
+    // A case outside the authorized root never reaches Engine.
+    try {
+      await sessions.authorize(caseDir);
+    } catch {
+      return { status: "start-failed" };
+    }
     let staged;
     try {
       staged = await wiki.staged();

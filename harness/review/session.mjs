@@ -5,7 +5,7 @@ import { spawn as nodeSpawn } from "node:child_process";
 import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
-import { safeChildEnvironment, which as findExecutable } from "./case-bridge.mjs";
+import { createCaseBridge, safeChildEnvironment, which as findExecutable } from "./case-bridge.mjs";
 
 const MAX_CONTROL_BYTES = 64 << 10;
 const START_TIMEOUT_MS = 60_000;
@@ -218,7 +218,15 @@ export function createReviewSessionManager({
     }
   }
 
+  // The case-root check the review server makes when it starts (the seam's
+  // status under the same boundary), for callers that act before starting it.
+  async function authorize(caseDir) {
+    if (!isAbsolute(caseDir ?? "")) throw new Error("the case directory must be absolute");
+    await createCaseBridge({ caseDir, casesRoot, env: safeChildEnvironment(env) }).status();
+  }
+
   return Object.freeze({
+    authorize,
     start,
     openLocally,
     close,

@@ -893,7 +893,7 @@ function wikiChangeCard(change) {
 function wikiSection() {
   return el(
     "section",
-    { "aria-labelledby": "wiki-heading" },
+    { id: "wiki-section", "aria-labelledby": "wiki-heading" },
     el("h2", { id: "wiki-heading", text: `Wiki changes (${wikiChanges.length})` }),
     el("p", { text: "The agent staged these writes to your wiki. Nothing is written until you apply it." }),
     wikiChanges.map(wikiChangeCard),
@@ -976,10 +976,18 @@ async function load() {
   }
   render(data);
   if (view.gate) say(readOnly() ? "This gate is decided." : "Review loaded. Your edits are saved as you make them.");
-  // The gate shows at once; the staged wiki changes follow when Engine answers.
+  // The gate shows at once; the staged wiki changes follow when Engine answers,
+  // and only their section is drawn, so nothing the member is typing is lost.
   await loadWiki();
-  render(view);
-  if (!view.gate) say("Wiki changes loaded.");
+  if (!view.gate) {
+    render(view);
+    say("Wiki changes loaded.");
+  } else if (wikiChanges.length) {
+    const section = wikiSection();
+    const current = document.getElementById("wiki-section");
+    if (current) current.replaceWith(section);
+    else app.append(section);
+  }
 }
 
 function typeReviewer(value) {
