@@ -1824,7 +1824,7 @@
         <div class="counter" id="counter">01</div>
         <div class="counter-label" id="counter-label">Lead</div>
       </div>
-      <div class="progress"><div class="fill" id="progress-fill" style="width: 20%"></div></div>
+      <div class="progress"><div class="fill" id="progress-fill" style="width: 16.6667%"></div></div>
     </div>
     <div class="split-right" id="steps">
       <article class="step active" data-label="Lead" data-num="01">
@@ -1833,35 +1833,43 @@
           <div class="step-label">Lead</div>
         </div>
         <h3 class="step-title">Start with a lead. Spotlight proposes the methodology before the research starts</h3>
-        <p class="step-body">You approve the plan first. Indicator members can connect <a href="https://navigator.indicator.media/" target="_blank" rel="noreferrer">Navigator</a> to add current OSINT tool discovery to the research plan.</p>
+        <p class="step-body">You approve the plan first, including the research topics. Indicator members can connect <a href="https://navigator.indicator.media/" target="_blank" rel="noreferrer">Navigator</a> to add current OSINT tool discovery to the research plan.</p>
       </article>
-      <article class="step" data-label="Cycles" data-num="02">
+      <article class="step" data-label="Research" data-num="02">
         <div class="step-meta">
           <div class="step-num">02</div>
+          <div class="step-label">Research</div>
+        </div>
+        <h3 class="step-title">Research lanes bring back leads. You mark the clues</h3>
+        <p class="step-body">Each approved topic runs as its own lane and saves its sources. Spotlight checks every quote against the saved page, then shows the clues first for you to pursue or dismiss. Cloud lanes are opt-in, see only the topic brief and stop at a $1 budget per round by default.</p>
+      </article>
+      <article class="step" data-label="Cycles" data-num="03">
+        <div class="step-meta">
+          <div class="step-num">03</div>
           <div class="step-label">Cycles</div>
         </div>
         <h3 class="step-title">The investigator works the lead. The fact-checker comes after each cycle</h3>
-        <p class="step-body">One agent pushes the reporting forward. A second agent checks the claims, looks for contradictions, and flags what still does not hold.</p>
+        <p class="step-body">One agent pushes the reporting forward. A second agent checks the claims, looks for contradictions, and flags what still does not hold. Up to three cycles. A case that stalls can go back for one targeted research round.</p>
       </article>
-      <article class="step" data-label="Findings" data-num="03">
+      <article class="step" data-label="Findings" data-num="04">
         <div class="step-meta">
-          <div class="step-num">03</div>
+          <div class="step-num">04</div>
           <div class="step-label">Findings</div>
         </div>
         <h3 class="step-title">Findings arrive with evidence attached</h3>
         <p class="step-body">Primary documents captured locally. Independent sourcing where possible. Disputes, weak points, and missing perspectives made explicit.</p>
       </article>
-      <article class="step" data-label="Review" data-num="04">
+      <article class="step" data-label="Review" data-num="05">
         <div class="step-meta">
-          <div class="step-num">04</div>
+          <div class="step-num">05</div>
           <div class="step-label">Review</div>
         </div>
         <h3 class="step-title">You stay the editor at every gate</h3>
-        <p class="step-body">You approve the methodology, review the findings, challenge weak points, and decide what deserves another cycle. Nothing clears the gate without a human decision.</p>
+        <p class="step-body">You approve the methodology, mark the research clues, review the findings, challenge weak points, and decide what deserves another cycle. Nothing clears a gate without a human decision.</p>
       </article>
-      <article class="step" data-label="Vault" data-num="05">
+      <article class="step" data-label="Vault" data-num="06">
         <div class="step-meta">
-          <div class="step-num">05</div>
+          <div class="step-num">06</div>
           <div class="step-label">Vault</div>
         </div>
         <h3 class="step-title">When the case is solid, it becomes infrastructure for the next one</h3>
@@ -2440,6 +2448,7 @@
     // Step shapes — each form illustrates the step's action verb, sized up
     // so the silhouette is unmistakable even viewed from the iso camera.
     //   Lead      → arrow    → (shaft + big fletched tip)
+    //   Research → fan      (one cube, three lanes spreading out)
     //   Cycles   → loop     (10-cube ring, clearer circumference)
     //   Findings → pyramid  (3D stepped pyramid: 5 base + 3 mid + 1 apex)
     //   Review   → check    (thick checkmark diagonal)
@@ -2457,6 +2466,12 @@
       new THREE.Vector3( 1.2, 0, 0),  // tip
       new THREE.Vector3( 0.6, 0.6, 0),
       new THREE.Vector3( 0.6,-0.6, 0),
+    ];
+    const SHAPE_FAN = [
+      new THREE.Vector3(-1.4, 0, 0),                                   // origin
+      new THREE.Vector3(-0.1, 0.8, 0), new THREE.Vector3(1.2, 1.5, 0),  // upper lane
+      new THREE.Vector3(-0.1, 0, 0),   new THREE.Vector3(1.2, 0, 0),    // middle lane
+      new THREE.Vector3(-0.1,-0.8, 0), new THREE.Vector3(1.2,-1.5, 0),  // lower lane
     ];
     const SHAPE_LOOP = (() => {
       const out = [];
@@ -2495,6 +2510,7 @@
     ];
     const STEP_LAYOUTS = [
       { count: SHAPE_ARROW.length,   positions: SHAPE_ARROW   }, // Lead
+      { count: SHAPE_FAN.length,     positions: SHAPE_FAN     }, // Research
       { count: SHAPE_LOOP.length,    positions: SHAPE_LOOP    }, // Cycles
       { count: SHAPE_PYRAMID.length, positions: SHAPE_PYRAMID }, // Findings
       { count: SHAPE_CHECK.length,   positions: SHAPE_CHECK   }, // Review
@@ -3903,7 +3919,7 @@
         // Ch. 03 (sparse): a ring of cubes orbiting a central axis — "any
         // agent plugs in around the same system".
         const mood = window.__sceneMood || 'chaos';
-        const step = Math.max(0, Math.min(4, window.__fiveThingsStep | 0));
+        const step = Math.max(0, Math.min(STEP_LAYOUTS.length - 1, window.__fiveThingsStep | 0));
         const layout = (mood === 'aligned') ? STEP_LAYOUTS[step] : null;
         const tSec = performance.now() * 0.001;
         const RING_N = 10;
@@ -4235,7 +4251,7 @@
       // Mapping step N → STEP_CUBE_COUNTS[N] cubes active (sorted by distance
       // from origin so the activation radiates outward).
       if (mood === 'aligned') {
-        const step = Math.max(0, Math.min(4, window.__fiveThingsStep | 0));
+        const step = Math.max(0, Math.min(STEP_LAYOUTS.length - 1, window.__fiveThingsStep | 0));
         const layout = STEP_LAYOUTS[step];
         if (layout.useGrid) {
           for (let i = 0; i < N_CELLS; i++) targetActivity[i] = 1;
@@ -4470,7 +4486,7 @@
       labelEl.textContent = step.dataset.label;
       fillEl.style.width = ((active + 1) / total * 100) + '%';
 
-      // Expose the active step (0..4) to the global canvas — the Five-things
+      // Expose the active step (0..5) to the global canvas — the Five-things
       // slot reads it to drive progressive cube reveal across scroll steps.
       window.__fiveThingsStep = active;
     }

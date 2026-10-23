@@ -99,8 +99,8 @@ Runtime-specific backings (vary):
 
 ## Gate decisions in chat runtimes
 
-The member decides each human gate (Methodology, Investigation gate, Report,
-Ingest) on the local review page. The Pi harness opens it with its
+The member decides each human gate (Methodology, Research, Investigation gate,
+Report, Ingest) on the local review page. The Pi harness opens it with its
 `open_review` tool. In Claude Code, Codex and the other chat runtimes,
 register `harness/review/mcp.mjs` as a stdio MCP server
 ([`harness/review/README.md`](../harness/review/README.md)); the agent then
@@ -115,9 +115,9 @@ recorded on the `direct` channel.
 
 **What it is:** the repo's `harness/pi/`, built on [Pi](https://pi.dev) at a
 pinned version. Indicator Lab starts it through Osaurus; a newsroom client can
-start the same launcher. It runs today's pipeline (Preflight, Brief,
-Methodology, Investigation, Report, Ingest) with the shared skills and role
-files. Full reference: [`harness/pi/README.md`](../harness/pi/README.md).
+start the same launcher. It runs the pipeline (Preflight, Brief,
+Methodology, Research, Investigation, Report, Ingest) with the shared skills
+and role files. Full reference: [`harness/pi/README.md`](../harness/pi/README.md).
 
 - **Launch:** one `node harness/pi/src/launcher.ts` per chat, in Pi's RPC mode
   only. stdout carries only Pi's JSONL records; logs go to stderr; closing stdin
@@ -133,7 +133,48 @@ files. Full reference: [`harness/pi/README.md`](../harness/pi/README.md).
 - **Model route:** the case may hold journalist input, so the whole pipeline
   runs only on a model the operator runs itself: the local model in the solo
   edition, or a route the newsroom marks as its own. Files, tools and case
-  state stay on the member's machine.
+  state stay on the member's machine. The research swarm is the one exception,
+  and it receives no case material (below).
+
+---
+
+## Research mode per runtime
+
+Research runs only when the approved methodology has a `research_plan`
+([investigating.md](investigating.md#research)). The plan's mode decides who
+runs the lanes, and the Research page and report state which mode ran, the
+spend and the topics left out.
+
+| Mode | Where | Who runs the lanes | Spend |
+|---|---|---|---|
+| Local lanes only (`local_only`) | any runtime; what runs without the swarm opt-in | the local-corpus and prior-knowledge lanes, on the local model. Web research stays in Investigation | none |
+| OpenRouter swarm (`openrouter_swarm`) | Spotlight Pi harness | one cloud agent per approved topic, on OpenRouter with the member's key | $1 a round by default, at most $5 per case |
+| Subscription subagents (`subscription_subagents`) | Claude Code, Codex and other frontier hosts | the host's own subagents, one `researcher` per approved topic | not reported |
+| Newsroom (`newsroom`) | newsroom edition | only endpoints the newsroom allows | as the newsroom sets it |
+
+- **The swarm is opt-in and never local.** In the Pi harness it runs only when
+  Engine's "Research swarms" switch is on (it is off by default) and an
+  OpenRouter key is set; the harness reads `SPOTLIGHT_RESEARCH_SWARMS=on`.
+  It never runs in sensitive mode. Requests ask for zero data retention. The
+  default model is DeepSeek V4 Flash, with GLM 5.3 as fallback.
+- **What it receives.** Each swarm agent gets only its approved topic brief and
+  what it fetches from the public web. Case files, findings, evidence and
+  journalist input are refused in code before every request. Briefs are built
+  from the approved methodology, never from journalist input.
+- **Local lanes stay local.** The local-corpus and prior-knowledge lanes, and
+  any topic that reads journalist input, run only on a local model. In
+  subscription mode without a configured local model endpoint, they are
+  refused.
+- **Failures.** A rejected key, no credit or upstream errors that outlast the
+  retries stop Research with a message that says what to fix. Nothing falls
+  back to the local model, and only the topics that did not finish run again
+  on retry.
+- **Newsroom.** No OpenRouter swarm or cloud triage unless the newsroom allows
+  the endpoint. The prior-knowledge lane is left out in the harness until the
+  newsroom knowledge search is available there.
+
+Lane details, environment variables and the budget mechanics are in
+[`harness/pi/README.md`](../harness/pi/README.md#research-lanes).
 
 ---
 
