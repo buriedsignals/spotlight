@@ -26,6 +26,7 @@ from .dependencies import (
 from .resolver import load_ingestion_marker, status_for
 from .case_contract import bind as bind_case_contract
 from .case_writer import atomic_write_files, restore_files_on_error
+from . import review
 from .review import LEDGER_FILE, consume_nonce, ledger_bytes, load_ledger
 from .storage import (
     LEGACY_CHANNEL,
@@ -280,7 +281,13 @@ def decide_ingest(
             raise OrchestrationError("the requested ingestion decision has no review receipt")
         ledger = None
     else:
-        ledger, binding = consume_nonce(case, data_descriptor, "ingest", nonce, digest)
+        # A decline needs no finished batch; a solo request on an activated
+        # case does, on every channel (the page also blocks without one).
+        if decision == "requested" and review.activated_case(case) and review.ingest_mode() == "solo":
+            if not case_path(case, review.INGEST_BATCH).is_file():
+                raise OrchestrationError("build and review the knowledge batch before requesting ingestion")
+        ledger, binding = consume_nonce(case, data_descriptor, "ingest", nonce, digest,
+                                        ready_check=decision == "requested")
     marker["status"] = decision
     marker["dependency_digest"] = dependency_digest
     marker["review"] = binding

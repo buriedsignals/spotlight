@@ -10,6 +10,13 @@ The OpenRouter provider always sends ``provider: {"zdr": true,
 Decisions endpoint, so a request that cannot be served under zero data
 retention fails instead of silently routing elsewhere. Sensitive mode blocks
 all egress before a request is built.
+
+Another endpoint (a newsroom's own inference, or a later deployment) may serve
+the same questions if it speaks the same Decisions API. It is named only in
+the install config Engine writes (``endpoint_from_config``): https, or plain
+http on loopback, with its own named credential. The OpenRouter key and the
+zero-retention provider body go only to openrouter.ai. A server with another
+API needs an adapter here, not just a URL.
 """
 
 from __future__ import annotations
@@ -19,6 +26,7 @@ import os
 import time
 from typing import Any, Callable, Mapping, Protocol
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
@@ -26,6 +34,40 @@ DEFAULT_MODEL = "typesafe/jev-1.13"
 KEY_ENV = "OPENROUTER_API_KEY"
 REQUIRED_PROVIDER = {"zdr": True, "allow_fallbacks": False}
 RETRYABLE = {429, 500, 502, 503, 529}
+OPENROUTER_HOST = "openrouter.ai"
+LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+ADAPTERS = ("openrouter-decisions",)
+
+
+def is_openrouter(host: str) -> bool:
+    return host == OPENROUTER_HOST or host.endswith("." + OPENROUTER_HOST)
+
+
+def endpoint_from_config(block: Mapping[str, Any] | None) -> tuple[str, str]:
+    """(url, credential env name) for integrations.decisions.endpoint, or the
+    OpenRouter default. Raises DecisionUnavailable for anything it cannot use."""
+    if not block:
+        return DECISIONS_URL, KEY_ENV
+    if not isinstance(block, Mapping) or set(block) - {"url", "credential_env", "api"}:
+        raise DecisionUnavailable("integrations.decisions.endpoint must give url, credential_env and api only")
+    url, api, credential = block.get("url"), block.get("api"), block.get("credential_env")
+    if api not in ADAPTERS:
+        raise DecisionUnavailable(f"decision endpoint api {api!r} has no adapter; supported: {', '.join(ADAPTERS)}")
+    try:
+        parsed = urlparse(url if isinstance(url, str) else "")
+        host = (parsed.hostname or "").lower()
+        parsed.port  # an invalid port raises here
+    except ValueError:
+        raise DecisionUnavailable("the decision endpoint url is malformed") from None
+    if parsed.username or parsed.password:
+        raise DecisionUnavailable("a decision endpoint url must not carry credentials")
+    if not (parsed.scheme == "https" or (parsed.scheme == "http" and host in LOOPBACK)) or not host:
+        raise DecisionUnavailable("a decision endpoint must be https, or http on loopback")
+    if is_openrouter(host):
+        return url, KEY_ENV
+    if not isinstance(credential, str) or not credential or credential == KEY_ENV:
+        raise DecisionUnavailable(f"a non-OpenRouter decision endpoint needs its own credential_env (never {KEY_ENV})")
+    return url, credential
 
 
 class DecisionUnavailable(RuntimeError):
@@ -51,11 +93,14 @@ class JevOpenRouterProvider:
         timeout: float = 30.0,
         retries: int = 2,
         opener: Callable[..., Any] | None = None,
+        url: str = DECISIONS_URL,
     ) -> None:
         if sensitive:
             raise DecisionUnavailable("sensitive mode blocks decision-model egress")
         if not api_key:
-            raise DecisionUnavailable(f"{KEY_ENV} is not set")
+            raise DecisionUnavailable(f"{KEY_ENV} is not set" if url == DECISIONS_URL else "the decision endpoint's credential is not set")
+        self._url = url
+        self._openrouter = is_openrouter((urlparse(url).hostname or "").lower())
         self._key = api_key
         self.model = model
         self._timeout = timeout
@@ -68,17 +113,20 @@ class JevOpenRouterProvider:
         return cls(values.get(KEY_ENV, ""), **kwargs)
 
     def request_body(self, state: Any, questions: Mapping[str, Any]) -> dict[str, Any]:
-        return {"model": self.model, "provider": dict(REQUIRED_PROVIDER), "state": state, "questions": dict(questions)}
+        body = {"model": self.model, "state": state, "questions": dict(questions)}
+        if self._openrouter:
+            body["provider"] = dict(REQUIRED_PROVIDER)  # OpenRouter's routing filter; meaningless elsewhere
+        return body
 
     def decide(self, state: Any, questions: Mapping[str, Any]) -> dict[str, Any]:
         body = self.request_body(state, questions)
-        if body.get("provider") != REQUIRED_PROVIDER:
+        if self._openrouter and body.get("provider") != REQUIRED_PROVIDER:
             raise DecisionUnavailable("refusing to send without zero-data-retention routing")
         raw = json.dumps(body, ensure_ascii=False).encode("utf-8")
         last_error = "unknown error"
         for attempt in range(self._retries + 1):
             request = Request(
-                DECISIONS_URL,
+                self._url,
                 data=raw,
                 headers={"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"},
                 method="POST",

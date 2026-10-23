@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Build the Knowledge Batch 1.1 (core) for an activated case.
 
-  python3 scripts/build-knowledge-batch.py {CASE_DIR} --model investigator=ID --model fact-checker=ID [--draft]
+  python3 scripts/build-knowledge-batch.py {CASE_DIR} [--model investigator=ID --model fact-checker=ID] [--draft | --review]
+
+Producer models are required on the first build and kept in the id map.
 
 The analyst proposes only what needs judgment, in data/knowledge-proposal.json
 (schemas/knowledge-proposal.schema.json): normalized claims per finding,
@@ -28,12 +30,15 @@ accept_with_reason, the reason in its note. A changed flag needs a new
 disposition.
 
 --draft writes data/knowledge-batch-draft.json: the batch without the flags
-still awaiting a disposition (null when nothing is new yet), and those flags
-listed apart for the review page; it removes any earlier final batch. Without
+still awaiting a disposition (null when nothing is new yet), those flags
+listed apart, and every flag with whether it is decided, for the review page; it removes any earlier final batch. Without
 --draft, any pending flag refuses the build, and the batch goes
 to data/knowledge-batch.json. The proposal must match its schema, the case
 must validate (bindings included), and the output must pass the core schema
-and the cross-record rules, or nothing is written.
+and the cross-record rules, or nothing is written. --review (run by the ingest
+page after each edit) writes the draft and, when nothing is pending, the final
+batch; when it refuses, the draft records the error and no final batch is
+left.
 
 Exit codes: 0 = written; 2 = refused (the reason is on stderr).
 """
@@ -195,7 +200,7 @@ class Ids:
         return placed, True
 
 
-def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     findings = _load(case, "data/findings.json")
     if not isinstance(findings, dict) or findings.get("schema_version") != "1.1" or not (case / "data" / "case-contract.json").is_file():
         raise BuildError("only an activated case (findings contract 1.1) builds a Batch 1.1")
@@ -217,10 +222,15 @@ def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, An
     review = _review_items(_load(case, REVIEW, required=False))
     ids = Ids(_load(case, IDS, required=False))
 
+    # Producer models given once are kept in the id map, so a rebuild from
+    # the review page needs no arguments.
+    known_models = ids.doc.setdefault("models", {})
+    known_models.update({k: v for k, v in models.items() if _text(v)})
+
     def provenance(actor: str) -> dict[str, Any]:
         if actor == "human":
             return {"method": "journalist"}
-        model = models.get(actor)
+        model = known_models.get(actor)
         if not _text(model):
             raise BuildError(f"no model given for {actor}; pass --model {actor}=ID")
         return {"method": "agent_candidate", "model": model}
@@ -291,6 +301,7 @@ def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, An
         return emit("source_expression", expression_id, record)
 
     pending: list[dict[str, Any]] = []
+    all_flags: list[dict[str, Any]] = []
     claim_refs: dict[str, dict[str, Any]] = {}
     for claim in proposal["claims"]:
         if not selected(claim["key"]):
@@ -366,7 +377,9 @@ def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, An
             action = decision.get("final") if isinstance(decision, dict) else None
             note = decision.get("note") if isinstance(decision, dict) else None
             related = groundings or positions or [{"type": "claim", **ref}]
-            if action not in ACTIONS or (action == "accept_with_reason" and not _text(note)):
+            decided = action in ACTIONS and not (action == "accept_with_reason" and not _text(note))
+            all_flags.append({"key": key, "claim_key": claim["key"], "code": flag["code"], "reason": flag["reason"], "decided": decided})
+            if not decided:
                 pending.append({"key": key, "claim_key": claim["key"], "code": flag["code"], "reason": flag["reason"]})
                 continue
             disposition = {"action": action}
@@ -403,7 +416,7 @@ def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, An
         raise BuildError(f"{len(pending)} flag(s) await a disposition: " + ", ".join(p["key"] for p in pending[:8]))
     if not any(batch.get(array) for array in RULES.ARRAYS):
         if draft:
-            return None, pending, ids.doc  # nothing new yet, but the review page still lists the pending flags
+            return None, pending, all_flags, ids.doc  # nothing new yet, but the review page still lists the pending flags
         raise BuildError("nothing new to submit: every selected record is already admitted unchanged")
     errors = schema_check.load(SCHEMAS / "knowledge-batch-1.1.schema.json").errors(batch)
     if errors:
@@ -411,7 +424,7 @@ def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, An
     errors = RULES.validate(batch, [admitted_store(ids)])
     if errors:
         raise BuildError("the built batch breaks the cross-record rules: " + "; ".join(errors[:8]))
-    return batch, pending, ids.doc
+    return batch, pending, all_flags, ids.doc
 
 
 def admitted_store(ids: Ids) -> dict[str, Any]:
@@ -425,25 +438,41 @@ def admitted_store(ids: Ids) -> dict[str, Any]:
     return store
 
 
-def write(case: Path, models: dict[str, str], draft: bool) -> dict[str, Any]:
+def _dump(doc: Any) -> bytes:
+    return (json.dumps(doc, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+
+
+def write(case: Path, models: dict[str, str], mode: str = "final") -> dict[str, Any]:
+    """mode final: the batch or a refusal; draft: the draft only; review: the
+    draft, plus the final batch when no flag is pending (what the ingest page
+    shows after each edit). A review-mode refusal is itself recorded as the
+    draft's error, so the page blocks on it instead of showing a stale batch."""
+    draft = mode in ("draft", "review")
     with transaction(case) as descriptor:
         try:
-            batch, pending, ids = build(case, models, draft)
-        except (KeyError, TypeError, AttributeError) as exc:
-            raise BuildError(f"a case file is malformed ({type(exc).__name__}: {exc}); run validate-case.py") from exc
-        dump = lambda doc: (json.dumps(doc, indent=2, ensure_ascii=False) + "\n").encode("utf-8")  # noqa: E731
-        out = {IDS: dump(ids)}
+            try:
+                batch, pending, flags, ids = build(case, models, draft)
+            except (KeyError, TypeError, AttributeError) as exc:
+                raise BuildError(f"a case file is malformed ({type(exc).__name__}: {exc}); run validate-case.py") from exc
+        except BuildError as exc:
+            if mode != "review":
+                raise
+            atomic_write_files(case, {DRAFT: _dump({"schema_version": "1.0", "error": str(exc)})}, data_descriptor=descriptor)
+            (case / BATCH).unlink(missing_ok=True)
+            raise
+        out = {IDS: _dump(ids)}
+        final = mode == "final" or (mode == "review" and batch is not None and not pending)
         if draft:
-            out[DRAFT] = dump({"schema_version": "1.0", "batch": batch, "pending_flags": pending})
-        else:
-            out[BATCH] = dump(batch)
+            out[DRAFT] = _dump({"schema_version": "1.0", "batch": batch, "pending_flags": pending, "flags": flags})
+        if final:
+            out[BATCH] = _dump(batch)
         atomic_write_files(case, out, data_descriptor=descriptor)
-        if draft:
+        if not final:
             # A draft supersedes any earlier final batch: until the review
             # finishes, there is no batch to ingest.
             (case / BATCH).unlink(missing_ok=True)
     records = sum(len(batch.get(a, [])) for a in RULES.ARRAYS) if batch else 0
-    return {"ok": True, "draft": draft, "records": records, "pending_flags": len(pending)}
+    return {"ok": True, "mode": mode, "final": final, "records": records, "pending_flags": len(pending)}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -451,11 +480,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("case_dir")
     parser.add_argument("--model", action="append", default=[], metavar="ACTOR=ID",
                         help="model identifier per producer (investigator, fact-checker)")
-    parser.add_argument("--draft", action="store_true")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--draft", action="store_true", help="write the draft only")
+    group.add_argument("--review", action="store_true", help="write the draft, and the final batch when nothing is pending")
     args = parser.parse_args(argv)
     models = dict(item.split("=", 1) for item in args.model if "=" in item)
     try:
-        result = write(Path(args.case_dir), models, args.draft)
+        result = write(Path(args.case_dir), models, "review" if args.review else "draft" if args.draft else "final")
     except (BuildError, OrchestrationError, OSError) as exc:
         print(f"build-knowledge-batch: refused: {exc}", file=sys.stderr)
         return 2

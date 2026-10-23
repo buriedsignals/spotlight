@@ -2,18 +2,22 @@
 """Build an offline case paused at one review gate, for the review-page checks.
 
 Usage: review_case.py CASE_DIR {methodology,investigation_gate,report,ingest}
-       [--excerpt TEXT] [--clean]
+       [--excerpt TEXT] [--clean] [--activated]
 
 Earlier gates are passed on the command-line channel, the same path the
 current skills use. ``--excerpt`` places hostile case text in the finding's
 claim and evidence. Without ``--clean`` the Investigation gate shows the shared
 fixture as it is: one unverified finding (an open disposition) and a log the
 case validator rejects (a blocking failure). ``--clean`` marks the finding
-verified and writes a valid log, so nothing blocks approval.
+verified and writes a valid log, so nothing blocks approval. ``--activated``
+replaces the investigation artifacts with an activated (findings 1.1) case,
+born and bound at the Investigation-gate approval like a new case;
+``--flagged`` gives its fact-check one flag for the ingest page to decide.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -47,7 +51,15 @@ def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
-def build(case: Path, stage: str, excerpt: str | None, clean: bool) -> None:
+def load_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def build(case: Path, stage: str, excerpt: str | None, clean: bool, activated: bool = False, flagged: bool = False) -> None:
     fixtures = conformance_fixtures()
     (case / "data").mkdir(parents=True)
     (case / "brief-directions.txt").write_text("Verify the offline fixture.\n", encoding="utf-8")
@@ -79,6 +91,27 @@ def build(case: Path, stage: str, excerpt: str | None, clean: bool) -> None:
             write_json(case / "data/investigation-log.json", log)
         write_json(case / "data/findings.json", findings)
         write_json(case / "data/fact-check.json", check)
+    if activated:
+        cases = load_module("validate_case_check", ROOT / "tests" / "validate-case-check.py")
+        findings, check, bundle, expressions = cases.activated_documents(case)
+        project = json.loads((case / "data/methodology.json").read_text(encoding="utf-8")).get("project", findings["project"])
+        for document in (findings, check, bundle, expressions):
+            document["project"] = project
+        # Anchor the fact-check evidence to the stored passage text.
+        anchor = case / "research" / "filing.txt"
+        evidence = check["claims"][0]["evidence_for"][0]
+        evidence.update({"local_file": "research/filing.txt",
+                         "source_ref": {"path": "research/filing.txt", "line_start": 2, "line_end": 2},
+                         "sha256": hashlib.sha256(anchor.read_bytes()).hexdigest()})
+        if flagged:
+            check["claims"][0]["flags"] = [{"code": "partial_support", "reason": "Only part of the payment is documented."}]
+        for name, document in (("findings.json", findings), ("fact-check.json", check),
+                               ("evidence-bundle.json", bundle), ("source-expressions.json", expressions)):
+            write_json(case / "data" / name, document)
+        write_json(case / "data/case-contract.json", {
+            "schema_version": "1.0", "project": project, "current_contract_version": "1.1",
+            "activation_events": [{"event_id": "born-fixture", "kind": "born", "activated_contract_version": "1.1",
+                                   "activated_at": "2026-08-23T11:00:00Z", "tool_version": "fixture"}]})
     if stage == "investigation_gate":
         return
     run(str(SEAM), "approve", "investigation_gate", *approval, str(case))
@@ -96,8 +129,10 @@ def main() -> int:
     parser.add_argument("stage", choices=STAGES)
     parser.add_argument("--excerpt")
     parser.add_argument("--clean", action="store_true")
+    parser.add_argument("--activated", action="store_true")
+    parser.add_argument("--flagged", action="store_true", help="with --activated: the fact-check carries one flag")
     args = parser.parse_args()
-    build(Path(args.case_dir), args.stage, args.excerpt, args.clean)
+    build(Path(args.case_dir), args.stage, args.excerpt, args.clean, args.activated, args.flagged)
     return 0
 
 

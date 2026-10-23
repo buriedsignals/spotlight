@@ -160,11 +160,18 @@ def main() -> int:
         again = read(case, "knowledge-batch.json")
         require({r["id"] for array in RULES.ARRAYS for r in again.get(array, [])} == first_ids, "ids changed on rebuild")
 
-        # Nothing is written on a refusal.
+        # Producer models given once are remembered for page rebuilds.
+        require(build(case, models=[]).returncode == 0, "a rebuild without --model failed")
+
+        # Nothing is written on a refusal, and a first build needs the models.
         before = (case / "data" / "knowledge-batch.json").read_bytes()
+        ids_before = (case / "data" / "knowledge-ids.json").read_bytes()
+        (case / "data" / "knowledge-ids.json").unlink()
         refused = build(case, models=["--model", "investigator=inv-model-1"])
         require(refused.returncode == 2 and "--model fact-checker" in refused.stderr, "a missing producer model was accepted")
-        require((case / "data" / "knowledge-batch.json").read_bytes() == before, "a refused build changed the batch")
+        require((case / "data" / "knowledge-batch.json").read_bytes() == before and not (case / "data" / "knowledge-ids.json").exists(),
+                "a refused build wrote a file")
+        (case / "data" / "knowledge-ids.json").write_bytes(ids_before)
 
         # An attributed claim needs a source position (R5).
         (case / "data" / "source-positions.json").unlink()
@@ -183,6 +190,7 @@ def main() -> int:
         require(not (case / "data" / "knowledge-batch.json").exists(), "a draft left an earlier final batch to ingest")
         draft = read(case, "knowledge-batch-draft.json")
         flag_key = draft["pending_flags"][0]["key"] if draft["pending_flags"] else ""
+        require(draft["flags"] == [dict(draft["pending_flags"][0], decided=False)], f"the draft does not list every flag: {draft}")
         require(len(draft["pending_flags"]) == 1 and flag_key.startswith("flag:c1:partial_support:")
                 and not draft["batch"]["assessments"][0].get("flags"),
                 f"the draft does not hold the pending flag apart: {draft['pending_flags']}")

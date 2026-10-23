@@ -160,10 +160,16 @@ def review_edit(
     *,
     authorized_cases_root: str | Path | None = None,
 ) -> None:
-    """Apply one page edit and save ``data/<gate>-review.json`` under the case lock."""
+    """Apply one page edit and save ``data/<gate>-review.json`` under the case lock.
+
+    An ingest edit then rebuilds the knowledge batch, after the lock is
+    released (the builder takes it itself), so the page's next view shows the
+    batch and digest the edit produced."""
     _transition(
         case_dir, review.apply_edit, gate, edit, authorized_cases_root=authorized_cases_root
     )
+    if gate == "ingest":
+        review.rebuild_ingest_batch(resolve_case(case_dir, authorized_cases_root))
 
 
 def review_view(

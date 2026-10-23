@@ -246,6 +246,7 @@ absolute path and the result in `.spotlight-config.json` under `storage`.
 │   ├── knowledge-ids.json        # Builder id map: proposal and case keys to record ids and versions
 │   ├── knowledge-batch.json      # Reviewed batch: 1.0 for existing cases, Batch 1.1 (core) when built by scripts/build-knowledge-batch.py
 │   ├── knowledge-batch-draft.json # Builder draft for review, with flags awaiting a disposition
+│   ├── ingest-review.json        # Ingest page choices: record selection and flag dispositions
 │   ├── decision-signals.json     # Optional decision-model review signals (opt-in; never evidence)
 │   └── monitoring.json          # (optional) External monitor registry for the case
 └── research/
@@ -281,6 +282,27 @@ activation documents use their own schema versions as declared below.
 | Methodology | `schemas/methodology.schema.json` | Investigation plan with directions, steps, tools_required, opsec_considerations |
 | Investigation Log | `schemas/investigation-log.schema.json` | Append-only cycle audit trail |
 | Summary | `schemas/summary.schema.json` | Investigation gate summary for review |
+
+## Solo wiki destination
+
+An activated case in solo mode is written to the member's wiki by
+`scripts/wiki-destination.py`, after the ingest page's request, under
+`spotlight/` only:
+
+- `spotlight/batches/<batch>.json`: each approved batch, whole and append-only;
+- `spotlight/decisions.jsonl`: the local decision journal, one line per batch;
+- `spotlight/claims/`, `spotlight/events/`, `spotlight/story-arcs/`: one note
+  per lineage, regenerated from the kept batches, status derived from the
+  journal;
+- `spotlight/generated-notes.json`: the hash of every generated note, so a
+  hand edit is detected and never overwritten.
+
+Entity mentions link to `wiki/entities/` only on an exact register match from
+`bsig wiki resolve`; the register links on a strong identifier, which Batch
+1.1 core mentions do not carry, so most mentions stay plain text. Spotlight
+never writes the register. Without Engine there are no links. The write holds
+the wiki's `.wiki-lock` and the case lock throughout. Newsroom-mode cases
+write nothing locally.
 
 ## Source-Expression Release Modes
 

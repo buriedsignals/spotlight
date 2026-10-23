@@ -4,6 +4,32 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added — Solo wiki destination
+
+- `scripts/wiki-destination.py` writes an approved Batch 1.1 into the
+  member's wiki under `spotlight/`: the batch kept whole, a decision journal,
+  and one note per claim, event and story-arc lineage with its status derived
+  from the journal. It checks the batch against the digest the request bound,
+  admits it in `data/knowledge-ids.json`, records the completed receipt, and
+  refuses to overwrite a generated note edited by hand. Entity mentions link
+  to the shared register only on an exact match.
+
+### Changed — Solo Ingest reviews the Batch 1.1 on the ingest page
+
+- For an activated case in solo mode (`knowledge_destination.mode`, default
+  `solo`), the ingest page shows the batch the builder made, with one
+  selection per proposed claim, event and arc and one disposition per
+  fact-check flag. Each edit rebuilds the batch (`build-knowledge-batch.py
+  --review`), and the page shows the recomputed digest.
+- Requesting ingestion needs the final batch, on every channel, and the
+  decision's digest covers its bytes, so the request binds exactly the batch
+  that was shown. A decline needs no batch.
+- Newsroom-mode cases build and write nothing on this computer.
+- The decision client can use another endpoint that speaks the Decisions API,
+  named only in the install config: https or loopback, its own credential,
+  and no OpenRouter key or zero-retention body sent anywhere but
+  openrouter.ai.
+
 ### Added — Batch 1.1 builder
 
 - `scripts/build-knowledge-batch.py` turns the analyst's proposal

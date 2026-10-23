@@ -42,7 +42,7 @@ from integrations import _credentials as credentials  # noqa: E402
 import decision_signals_lib as lib  # noqa: E402
 import questions  # noqa: E402
 import rules  # noqa: E402
-from client import KEY_ENV, DecisionUnavailable, JevOpenRouterProvider, answer_problem  # noqa: E402
+from client import KEY_ENV, DecisionUnavailable, JevOpenRouterProvider, answer_problem, endpoint_from_config  # noqa: E402
 
 PHASES = ("investigation_gate", "report", "ingest")
 # Before the phases were named, the Investigation gate was "gate1"; saved
@@ -84,21 +84,35 @@ def read_env_file(path: Path) -> dict[str, str]:
     return values
 
 
-def resolve_key(cfg: dict[str, Any], env_file: Path | None) -> tuple[str, str]:
+def install_endpoint() -> tuple[str, str]:
+    """The decision endpoint from the install config Engine writes at the
+    checkout root, never from --config, case files or agent arguments."""
+    try:
+        config = json.loads((ROOT / ".spotlight-config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        config = {}
+    try:
+        block = ((config.get("integrations") or {}).get("decisions") or {}).get("endpoint")
+    except AttributeError:
+        raise DecisionUnavailable("integrations.decisions in .spotlight-config.json is not an object") from None
+    return endpoint_from_config(block)
+
+
+def resolve_key(cfg: dict[str, Any], env_file: Path | None, key_env: str = KEY_ENV) -> tuple[str, str]:
     """Return (key, where). A top-level `env_file` in the config that holds or
     manages the key decides alone (integrations/_credentials.py); otherwise the
     environment, then --env-file, then integrations.decisions.env_file, then
     the checkout .env."""
-    decided = credentials.from_authority(KEY_ENV, ROOT)
+    decided = credentials.from_authority(key_env, ROOT)
     if decided is not None:
         return decided
-    if os.environ.get(KEY_ENV):
-        return os.environ[KEY_ENV], "environment"
+    if os.environ.get(key_env):
+        return os.environ[key_env], "environment"
     for candidate in (env_file, cfg.get("env_file"), ROOT / ".env"):
         if not candidate:
             continue
         path = Path(str(candidate)).expanduser()
-        key = read_env_file(path).get(KEY_ENV, "")
+        key = read_env_file(path).get(key_env, "")
         if key:
             return key, str(path)
     return "", ""
@@ -329,11 +343,17 @@ def run(args: argparse.Namespace, case: Path, cfg: dict[str, Any], sensitive: bo
     opted_in = recorded_opt_in is not None
 
     if args.check:
-        key, where = resolve_key(cfg, args.env_file)
+        try:
+            _url, key_env = install_endpoint()
+            endpoint_error = ""
+        except DecisionUnavailable as exc:
+            key_env, endpoint_error = KEY_ENV, str(exc)
+        key, where = resolve_key(cfg, args.env_file, key_env)
         blockers = [reason for reason, blocked in (
             ("sensitive mode", sensitive),
             ("integrations.decisions.enabled is not true", not cfg["enabled"]),
-            (f"{KEY_ENV} not found", not key),
+            (endpoint_error, bool(endpoint_error)),
+            (f"{key_env} not found", not key),
             ("case has not opted in", not opted_in and not args.case_opt_in),
         ) if blocked]
         print(json.dumps({"ready": not blockers, "blockers": blockers, "key_source": where or None,
@@ -355,9 +375,10 @@ def run(args: argparse.Namespace, case: Path, cfg: dict[str, Any], sensitive: bo
                 raise DecisionUnavailable("dry run")
         provider = Recorder()
     elif provider is None:
-        key, _where = resolve_key(cfg, args.env_file)
         try:
-            provider = JevOpenRouterProvider(key, model=cfg["model"], sensitive=sensitive)
+            url, key_env = install_endpoint()
+            key, _where = resolve_key(cfg, args.env_file, key_env)
+            provider = JevOpenRouterProvider(key, model=cfg["model"], sensitive=sensitive, url=url)
         except DecisionUnavailable as exc:
             return refuse(str(exc))
 
