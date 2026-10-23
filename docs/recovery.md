@@ -10,7 +10,7 @@ consumers import and call `spotlight_orchestration.resolve(CASE_DIR)`. The
 optional CI/debug adapter is:
 
 ```text
-python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}
+scripts/spotlight-python scripts/spotlight-orchestration.py status --json {CASE_DIR}
 ```
 
 All three paths call the same importable authority. Resolution is read-only and
@@ -84,7 +84,7 @@ spotlight_transition({
 
 If the ingest handler reports a stale `.ingest-lock`:
 
-1. Probe it with `python3 scripts/spotlight_safe.py destructive-probe --base {vault} --path .ingest-lock`.
+1. Probe it with `scripts/spotlight-python scripts/spotlight_safe.py destructive-probe --base {vault} --path .ingest-lock`.
 2. Delete only the resolved lock path after the probe confirms containment.
 3. Re-run the ingest handler only while the resolver still returns `requested`
    / `ingest`.
@@ -127,7 +127,7 @@ If a cycle wrote malformed JSON (e.g. the agent was interrupted mid-write):
 
 ## Nuclear option: start fresh
 
-Probe the path first: `python3 scripts/spotlight_safe.py destructive-probe --base cases --path {project}`
+Probe the path first: `scripts/spotlight-python scripts/spotlight_safe.py destructive-probe --base cases --path {project}`
 
 Backup the resolved case directory, then delete only the resolved `data/` directory after a second probe confirms it is inside that case. Re-run `spotlight`. The orchestrator will re-enter from Phase 1. Research files in `{CASE_DIR}/research/` survive.
 
