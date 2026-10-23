@@ -246,10 +246,12 @@ export function secretValues(config: HarnessConfig, composition: Composition, en
 
 const PASSTHROUGH = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT'];
 // Non-secret settings of the backings the typed tools wrap (Tor posture for
-// fetch, the RLM endpoint), passed to every process unchanged.
+// fetch, browse's Chromium, the RLM endpoint), passed to every process unchanged.
 const BACKING_SETTINGS = [
 	'SPOTLIGHT_ANONYMIZE_FETCH',
 	'TOR_SOCKS',
+	'SPOTLIGHT_BROWSE_CHROMIUM',
+	'PLAYWRIGHT_BROWSERS_PATH',
 	'SPOTLIGHT_RLM_MODE',
 	'SPOTLIGHT_RLM_OPENAI_BASE_URL',
 	'SPOTLIGHT_RLM_OPENAI_MODEL',
