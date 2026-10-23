@@ -417,7 +417,7 @@ class OrchestrationConformance(unittest.TestCase):
         v2 = json.loads(state_path.read_text(encoding="utf-8"))
         refused = {
             "v2 carrying a v1 attempt kind": {**v2, "attempts": {"execution-cycle": 1}},
-            "v2 unknown attempt kind": {**v2, "attempts": {"research-lane": 1}},
+            "v2 unknown attempt kind": {**v2, "attempts": {"lane-retry": 1}},
             "v1 carrying a v2 attempt kind": {
                 **as_v1_state(v2), "attempts": {"investigation-cycle": 1}
             },

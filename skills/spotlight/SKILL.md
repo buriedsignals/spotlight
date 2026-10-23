@@ -87,6 +87,7 @@ Then re-spawn without the model hint.
 |---|---|---|
 | Brief gate — direction approved | `brief-directions.txt` | user |
 | Methodology gate — methodology approved | Current attributable, hash-bound approval returned by `spotlight_resolve` | user |
+| Research gate (only when the methodology has a `research_plan`) — leads and clues marked and approved | Current attributable approval over `data/leads.json`, `data/clues.json` and the saved review | user — **ends the turn** |
 | Investigation gate (end of Investigation) — findings from investigation cycles 1–5 approved | Current attributable approval over the provenance registry's dependency digest, followed by sealed provenance and review outputs | user — **ends the turn** |
 | Report gate — report finalized or declined | Hash-bound `decideReport` transition; rendering/decline artifacts remain owned by deterministic helpers | deterministic code after the user's decision |
 | Ingest gate — ingestion confirmed or declined | `decideIngest` requested/completed/declined state plus `data/ingestion.json` | user |
@@ -96,10 +97,14 @@ human gate for the user, and never treat a transcript mention of approval as
 closure — closure is the attributable, current-hash receipt on disk.
 
 Phases and gates are named, never numbered: Preflight, Brief, Methodology,
-Investigation, Report, Ingest. Each gate is named after the phase it closes.
+Research, Investigation, Report, Ingest. Each gate is named after the phase it
+closes. Research runs only when the approved methodology carries a
+`research_plan`; a case approved without one goes from Methodology straight to
+Investigation. Code, never the model, starts the research lanes.
 Investigation runs up to five investigation cycles, which are not gates, and
 ends at the Investigation gate. Machine identifiers use the same names
-(`investigation`, `investigation_gate`, `phase-investigation`,
+(`research`, `research_approval`, `phase-research`, `investigation`,
+`investigation_gate`, `phase-investigation`,
 `phase-investigation-gate`, `sealInvestigationGate`). A case saved under the
 old identifiers (`gate1`, `execution`) is read under the new ones and
 rewritten at its next transition.
@@ -139,6 +144,8 @@ New cases start activated (exact passages, findings contract `1.1`);
 | Independent sources per key claim | 2+ | readiness criteria, `skills/phase-investigation` |
 | Fact-checker re-spawns on evidence-validator failure | 1 | `skills/phase-investigation` |
 | Structural correction failures | 2 | `data/orchestration.json` via `skills/phase-investigation` |
+| Stopped research rounds | 3, then the case blocks at Research | `data/orchestration.json` via `skills/phase-research` |
+| Research round budget | $1 default, $5 per case | `research_plan` in `data/methodology.json` |
 
 ---
 
@@ -163,6 +170,7 @@ present the unresolved gap and exhausted attempt. If phase is `complete`, stop.
 
 The resolver hashes current inputs before accepting either approval or a
 downstream decision. Changed methodology inputs reopen methodology approval;
+changed leads, clues or saved Research review reopen Research approval;
 changed registry-owned Investigation gate dependencies reopen Investigation gate approval. A draft or
 pending artifact never closes a human gate. Do not reconstruct a phase or
 substep by inspecting files.

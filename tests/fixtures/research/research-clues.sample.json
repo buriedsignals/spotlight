@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-10-23T09:21:00Z",
+  "leads_sha256": "0f1c410c644f9c2924a33bf769094830505fb111e9f201b64d0595b0ff869abe",
+  "triage": {
+    "mode": "flag_only",
+    "backend": "rules"
+  },
+  "clues": [
+    {
+      "clue_id": "clue-1",
+      "type": "absence",
+      "source": "K5",
+      "lead_ids": [
+        "lead-7f3a1c"
+      ],
+      "direction_ids": [
+        "ownership"
+      ],
+      "summary": "No beneficial-owner entry for Example Trust.",
+      "warning": "Absence is not clearance."
+    }
+  ]
+}

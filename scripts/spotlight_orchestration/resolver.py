@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .contract import METHODOLOGY_INPUTS, STATUS_VERSION, OrchestrationError
+from .contract import METHODOLOGY_INPUTS, RESEARCH_OUTPUTS, STATUS_VERSION, OrchestrationError
 from .dependencies import (
     approval_matches,
     current_hashes,
@@ -25,6 +25,8 @@ _PHASE_OWNERS = {
     "brief": "phase-methodology",
     "methodology": "phase-methodology",
     "methodology_approval": "phase-methodology",
+    "research": "phase-research",
+    "research_approval": "phase-research",
     "investigation": "phase-investigation",
     "blocked": "phase-investigation",
     "investigation_gate_approval": "phase-investigation-gate",
@@ -50,6 +52,42 @@ def load_ingestion_marker(
         raise OrchestrationError("data/ingestion.json must be an object")
     marker.update(existing)
     return marker
+
+
+def research_plan(case: Path) -> dict[str, Any] | None:
+    """The approved methodology's research plan, or None for a case planned
+    without one (every case approved before the Research phase existed)."""
+    path = case_path(case, "data/methodology.json")
+    try:
+        methodology = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise OrchestrationError(f"cannot read data/methodology.json: {exc}") from exc
+    plan = methodology.get("research_plan") if isinstance(methodology, dict) else None
+    if plan is None:
+        return None
+    if not isinstance(plan, dict):
+        raise OrchestrationError("data/methodology.json research_plan must be an object")
+    return plan
+
+
+def research_status(
+    case: Path, state: dict[str, Any], backed: Any
+) -> dict[str, Any] | None:
+    """Research and its gate, or None once the Research approval covers the
+    current leads, clues and saved review."""
+    missing = [relative for relative in RESEARCH_OUTPUTS if not case_path(case, relative).is_file()]
+    if missing:
+        value: dict[str, Any] = {"status": "active", "next_phase": "research", "missing": missing}
+        open_research = state.get("open_research")
+        if isinstance(open_research, dict):
+            value["open_research"] = {"kind": open_research.get("kind"), "gap": open_research.get("gap")}
+        return value
+    approval = state["approvals"].get("research")
+    if approval_matches(approval, current_hashes(case, RESEARCH_OUTPUTS)) and backed(
+        "research", approval
+    ):
+        return None
+    return {"next_phase": "research_approval"}
 
 
 def investigation_status(
@@ -94,6 +132,10 @@ def status_for(
         return {**status, "next_phase": "methodology_approval"}
     if "blocked" in state:
         return {**status, "status": "blocked", "next_phase": "blocked", "blocked": state["blocked"]}
+    if research_plan(case) is not None:
+        research = research_status(case, state, backed)
+        if research is not None:
+            return {**status, **research}
 
     dependencies = investigation_gate_dependencies(case)
     dependency_digest = str(dependencies["dependency_digest"])
@@ -214,6 +256,10 @@ def _missing_for(status: dict[str, Any]) -> list[str]:
         return ["data/methodology.json"]
     if phase == "methodology_approval":
         return ["methodology approval"]
+    if phase == "research":
+        return list(status.get("missing", []))
+    if phase == "research_approval":
+        return ["Research gate approval"]
     if phase == "investigation":
         return list(status.get("missing", []))
     if phase == "investigation_gate_approval":
@@ -235,12 +281,16 @@ def normalized_resolution(case: Path, state: dict[str, Any]) -> dict[str, Any]:
         or status.get("ingest")
         or status.get("follow_up")
         or status.get("open_cycle")
+        or status.get("open_research")
         or {}
     )
+    owner = _PHASE_OWNERS[phase]
+    if phase == "blocked" and status["blocked"].get("phase") == "research":
+        owner = "phase-research"
     return {
         **status,
         "phase": phase,
-        "owner": _PHASE_OWNERS[phase],
+        "owner": owner,
         "missing": _missing_for(status),
         "attempts": dict(state["attempts"]),
         "resume": resume,

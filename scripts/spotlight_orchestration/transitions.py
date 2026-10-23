@@ -15,6 +15,7 @@ from .contract import (
     INVESTIGATION_GATE_FINALIZATION_OUTPUTS,
     METHODOLOGY_INPUTS,
     OrchestrationError,
+    RESEARCH_OUTPUTS,
     SCRIPT_DIR,
 )
 from .dependencies import (
@@ -76,13 +77,11 @@ def approve(
     nonce: str | None = None,
     digest: str | None = None,
 ) -> None:
-    if gate not in {"methodology", "investigation_gate"}:
-        raise OrchestrationError("gate must be methodology or investigation_gate")
+    expected_phase = _APPROVAL_PHASES.get(gate)
+    if expected_phase is None:
+        raise OrchestrationError("gate must be methodology, research or investigation_gate")
     validate_approval(approved_by, approved_at)
     state = load_state(case, data_descriptor)
-    expected_phase = (
-        "methodology_approval" if gate == "methodology" else "investigation_gate_approval"
-    )
     if status_for(case, state, data_descriptor)["next_phase"] != expected_phase:
         raise OrchestrationError(f"case is not awaiting {gate} approval")
     ledger, binding = consume_nonce(case, data_descriptor, gate, nonce, digest)
@@ -98,12 +97,32 @@ def approve(
         }
         record_decision(ledger, binding, "approved")
         if not approval_matches(previous, hashes):
+            state["approvals"].pop("research", None)
             state["approvals"].pop("investigation_gate", None)
             state["decisions"].clear()
             state["attempts"].clear()
             state.pop("blocked", None)
             state.pop("follow_up", None)
             state.pop("open_cycle", None)
+            state.pop("open_research", None)
+            state.pop("investigation_gate_finalization", None)
+    elif gate == "research":
+        # The receipt binds the merged leads and clues; its review binding
+        # carries the saved review's hash, so all three are approved together.
+        hashes = current_hashes(case, RESEARCH_OUTPUTS)
+        state["approvals"][gate] = {
+            "approved_by": approved_by,
+            "approved_at": approved_at,
+            "input_sha256": hashes,
+            "review": binding,
+        }
+        record_decision(ledger, binding, "approved")
+        state.pop("open_research", None)
+        if not approval_matches(previous, hashes):
+            # Downstream receipts covered other research. Attempts stay: a
+            # new research round does not reset the case's cycle count.
+            state["approvals"].pop("investigation_gate", None)
+            state["decisions"].clear()
             state.pop("investigation_gate_finalization", None)
     else:
         # Bind the activated artifacts this approval covers before computing
@@ -133,6 +152,18 @@ def approve(
     _publish(case, data_descriptor, state, ledger)
 
 
+_APPROVAL_PHASES = {
+    "methodology": "methodology_approval",
+    "research": "research_approval",
+    "investigation_gate": "investigation_gate_approval",
+}
+# Where each attempt kind may be recorded: a stopped research round during
+# Research; the investigation kinds until a human approves the gate (cycle
+# outputs exist before readiness is judged, so the gate may already be offered).
+_INVESTIGATION_ATTEMPT_PHASES = frozenset({"investigation", "investigation_gate_approval"})
+_RESEARCH_ATTEMPT_PHASES = frozenset({"research"})
+
+
 def _decider(
     nonce: str | None, decided_by: str | None, decided_at: str | None
 ) -> dict[str, str]:
@@ -152,20 +183,20 @@ def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> Non
     if not gap.strip():
         raise OrchestrationError("gap must describe the unresolved gap")
     state = load_state(case, data_descriptor)
-    # Cycle outputs exist before readiness is judged, so the resolver may
-    # already offer the gate; an attempt is still recordable until a human
-    # approves it.
-    if status_for(case, state, data_descriptor)["next_phase"] not in {
-        "investigation",
-        "investigation_gate_approval",
-    }:
-        raise OrchestrationError("attempts can only be recorded during investigation")
+    research = kind == "research-lane"
+    allowed = _RESEARCH_ATTEMPT_PHASES if research else _INVESTIGATION_ATTEMPT_PHASES
+    if status_for(case, state, data_descriptor)["next_phase"] not in allowed:
+        where = "research" if research else "investigation"
+        raise OrchestrationError(f"{kind} attempts can only be recorded during {where}")
     attempts = state["attempts"]
     attempts[kind] = attempts.get(kind, 0) + 1
-    state["open_cycle"] = {"kind": kind, "gap": gap, **rework_snapshot(case)}
+    if research:
+        state["open_research"] = {"kind": kind, "gap": gap}
+    else:
+        state["open_cycle"] = {"kind": kind, "gap": gap, **rework_snapshot(case)}
     if attempts[kind] >= ATTEMPT_LIMITS[kind]:
         state["blocked"] = {
-            "phase": "investigation",
+            "phase": "research" if research else "investigation",
             "exhausted_attempt": kind,
             "gap": gap,
             "attempts": dict(attempts),

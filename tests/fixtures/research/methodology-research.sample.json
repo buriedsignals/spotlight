@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "project": "northwind-review",
+  "investigation_plan": [
+    {
+      "direction": "Who owns Northwind Holdings?",
+      "direction_id": "ownership",
+      "questions": ["Who are the registered shareholders?"],
+      "steps": [{"order": 1, "action": "Read the registry filings", "tool": "fetch"}]
+    }
+  ],
+  "research_plan": {
+    "round_budget_usd": 1,
+    "case_budget_usd": 5,
+    "mode": "openrouter_swarm",
+    "consent": {"swarm": true, "decided_by": "journalist:fixture", "decided_at": "2026-10-23T09:00:00Z"},
+    "keys": [{"name": "OPENROUTER_API_KEY", "topics": ["ownership-registries"]}],
+    "egress": [{"topic_id": "ownership-registries", "destination": "openrouter"}, {"topic_id": "ownership-registries", "destination": "public_web"}],
+    "topics": [
+      {
+        "topic_id": "ownership-registries",
+        "direction_id": "ownership",
+        "lane_type": "registries",
+        "route": "swarm",
+        "questions": ["Which shareholders does the 2025 annual return name?"],
+        "seed_queries": ["Northwind Holdings annual return"],
+        "sources_to_try": ["registry.example.test"],
+        "anomaly_methods": ["method:shell-signals@1.2.0"],
+        "token_budget": 200000
+      }
+    ]
+  }
+}

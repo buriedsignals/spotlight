@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "topic_id": "ownership-registries",
+  "direction_id": "ownership",
+  "lane_type": "registries",
+  "route": "swarm",
+  "model": "deepseek/deepseek-v4-flash",
+  "status": "completed",
+  "started_at": "2026-10-23T09:12:00Z",
+  "finished_at": "2026-10-23T09:16:40Z",
+  "budget": {
+    "usd": 0.25,
+    "tokens": 200000
+  },
+  "spend": {
+    "usd": 0.006,
+    "tokens": 41210,
+    "tool_calls": 9,
+    "seconds": 280
+  },
+  "queries_tried": [
+    "Northwind Holdings annual return"
+  ],
+  "lead_count": 1
+}
