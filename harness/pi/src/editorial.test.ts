@@ -2,7 +2,6 @@
 // where a request carrying the newsroom token may go, and what a revoked
 // token does. No network.
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -13,6 +12,7 @@ import type { RunPackage } from './editorial.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import { caseAtIngest, newsroomEnv, requestNewsroomIngest, workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT } from './roles.ts';
+import { runFixed } from './tools/run.ts';
 import { readConfig } from './config.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
 
@@ -183,19 +183,19 @@ test('a knowledge answer reaches the model without any review capability: no rev
 	assert.match(answer, /registry\.example\.org\/company\/42/, 'a source address on another host stays');
 });
 
-async function submittable(t: { after(fn: () => unknown): void }, handlers: Parameters<typeof startFakeEditorial>[0]['handlers']) {
+async function submittable(t: { after(fn: () => unknown): void }, handlers: Parameters<typeof startFakeEditorial>[0]['handlers'], fixtureEnv: Record<string, string> = {}) {
 	const space = await workspace(t);
 	const newsroom = await startFakeEditorial({ handlers });
 	t.after(() => newsroom.close());
 	const env = newsroomEnv(space, [], newsroom);
-	const caseDir = await caseAtIngest(space);
+	const caseDir = await caseAtIngest(space, fixtureEnv);
 	await requestNewsroomIngest(caseDir, env);
+	// Run as the launcher runs it (runFixed, with its output limit).
 	const runPackage: RunPackage = (args, input) =>
-		new Promise((done) => {
-			const child = execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'newsroom-package.py'), ...args], { env: { ...process.env, SPOTLIGHT_CONFIG: env.SPOTLIGHT_CONFIG } }, (error, stdout, stderr) =>
-				done({ code: error ? Number(error.code ?? 1) : 0, stdout, stderr }),
-			);
-			child.stdin?.end(input === undefined ? '' : JSON.stringify(input));
+		runFixed(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'newsroom-package.py'), ...args], {
+			env: { ...process.env, SPOTLIGHT_CONFIG: env.SPOTLIGHT_CONFIG } as Record<string, string>,
+			cwd: CHECKOUT_ROOT,
+			input: input === undefined ? '' : JSON.stringify(input),
 		});
 	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)] });
 	await runPackage(['register', caseDir], { case_ref: 'nr-case-1', title: 'case-a', custody_mode: 'hosted', editorial_origin: origin(newsroom.url), client_case_id: 'case-a' });
@@ -220,6 +220,23 @@ test('Submit opens the newsroom review page in the member\'s browser and keeps i
 	}
 	assert.ok(!written.join('\n').includes('secret-capability'), 'the review address is nowhere a model can read');
 	assert.ok(!written.join('\n').includes('review_url'));
+});
+
+test('a package near the size cap reaches the newsroom whole: its base64 is larger than a program\'s output limit', { timeout: 120_000 }, async (t) => {
+	// The cited original, 24.5 MiB: under the 25 MB file cap, over 32 MiB as base64.
+	const { caseDir, runPackage, client } = await submittable(t, {}, { SPOTLIGHT_FIXTURE_ORIGINAL_BYTES: String(24.5 * 1024 * 1024) });
+
+	const outcome = await submitCase({ client, caseDir, runPackage, openReview: async () => false });
+
+	assert.equal(outcome.state, 'submitted');
+});
+
+test('a case file the harness cannot write after a newsroom answer stops the newsroom case', async (t) => {
+	const { caseDir, runPackage, client } = await submittable(t, {});
+	const failing: RunPackage = (args, input) => (args[0] === 'checks' ? Promise.resolve({ code: 2, stdout: '', stderr: 'disk full' }) : runPackage(args, input));
+	const error = await runChecks(client, caseDir, 'findings', failing, { pollMs: 1 }).then(() => assert.fail('the check was taken as recorded'), (caught: Error) => caught);
+	assert.ok(stopsTheNewsroomCase(error), String(error));
+	assert.match(error.message, /disk full/);
 });
 
 test('a review page that does not open leaves the submission pending, and a retry with the same key opens it and completes', async (t) => {

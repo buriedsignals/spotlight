@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the newsroom Submit package, and record what the Editorial MCP answered.
 
-  python3 scripts/newsroom-package.py build {CASE_DIR}
+  python3 scripts/newsroom-package.py build {CASE_DIR} --out FILE      (the package goes to FILE)
   python3 scripts/newsroom-package.py register {CASE_DIR}          < reference JSON
   python3 scripts/newsroom-package.py checks {CASE_DIR}            < check record JSON
   python3 scripts/newsroom-package.py begin {CASE_DIR} --package-sha256 SHA
@@ -454,6 +454,9 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("build", "register", "checks", "pending"):
         sub.add_parser(name).add_argument("case_dir")
+    # The package (up to MAX_PACKAGE_BYTES, as base64) goes to a file: it is
+    # larger than a program's output the harness reads.
+    sub.choices["build"].add_argument("--out", required=True)
     for name in ("begin", "blocked", "complete"):
         command = sub.add_parser(name)
         command.add_argument("case_dir")
@@ -465,7 +468,8 @@ def main(argv: list[str] | None = None) -> int:
     case = Path(args.case_dir).resolve()
     try:
         if args.command == "build":
-            result = build(case)
+            Path(args.out).write_text(json.dumps(build(case)), encoding="utf-8")
+            result = {"written": args.out}
         elif args.command == "register":
             result = register(case, _object(sys.stdin.read(), "the case reference"))
         elif args.command == "checks":

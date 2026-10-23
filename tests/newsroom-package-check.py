@@ -20,6 +20,7 @@ import sys
 import unittest
 from unittest import mock
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -43,6 +44,12 @@ class NewsroomPackage(GATES.CaseFixture):
         result = subprocess.run([sys.executable, str(script), *args], capture_output=True, text=True, env=self.env)
         self.assertEqual(result.returncode, expect, result.stderr or result.stdout)
         return result
+
+    def build_package(self, case: Path, expect: int = 0) -> Any:
+        """The built package (written to --out), or the refused run."""
+        out = self.root / f"{case.name}-package.json"
+        result = self.run_seam("build", str(case), "--out", str(out), expect=expect)
+        return json.loads(out.read_text(encoding="utf-8")) if expect == 0 else result
 
     def case(self, name: str) -> Path:
         case = self.build(name, "ingest", "--clean", "--activated")
@@ -69,7 +76,7 @@ class NewsroomPackage(GATES.CaseFixture):
 
     def test_the_package_carries_only_cited_evidence_with_hashes_matching_its_manifest(self) -> None:
         case = self.case("cited")
-        built = json.loads(self.run_seam("build", str(case)).stdout)
+        built = self.build_package(case)
         package, files = built["package"], built["files"]
         manifest = package["evidence_manifest"]
 
@@ -99,12 +106,12 @@ class NewsroomPackage(GATES.CaseFixture):
         # The package is what the published contract says the server receives.
         self.assertEqual(schema_check.load(ROOT / "schemas" / "editorial-mcp" / "package.schema.json").errors(package), [])
         # Same case, same key: the idempotency key is stable.
-        self.assertEqual(json.loads(self.run_seam("build", str(case)).stdout)["package_sha256"], built["package_sha256"])
+        self.assertEqual(self.build_package(case)["package_sha256"], built["package_sha256"])
 
     def test_a_cited_file_changed_after_it_was_declared_stops_the_build(self) -> None:
         case = self.case("changed")
         (case / "research" / "filing.txt").write_text("Someone edited the filing.\n", encoding="utf-8")
-        refused = self.run_seam("build", str(case), expect=2)
+        refused = self.build_package(case, expect=2)
         self.assertIn("research/filing.txt no longer matches its declared sha256", refused.stderr)
 
     def test_a_windows_absolute_path_never_travels(self) -> None:
@@ -156,7 +163,7 @@ class NewsroomPackage(GATES.CaseFixture):
     def test_a_solo_install_builds_nothing(self) -> None:
         case = self.case("solo")
         self.config.write_text(json.dumps({"knowledge_destination": {"mode": "solo"}}), encoding="utf-8")
-        self.assertIn("not in newsroom mode", self.run_seam("build", str(case), expect=2).stderr)
+        self.assertIn("not in newsroom mode", self.build_package(case, expect=2).stderr)
 
     def run_with(self, *args: str, payload: dict, expect: int = 0) -> subprocess.CompletedProcess[str]:
         result = subprocess.run([sys.executable, str(PACKAGE), *args], input=json.dumps(payload),
@@ -205,9 +212,9 @@ class NewsroomPackage(GATES.CaseFixture):
         item = bundle["items"][0]
         item["screenshot_path"] = item.pop("raw_path")
         bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
-        self.run_seam("build", str(case))
+        self.build_package(case)
         (case / "research" / "filing.bin").write_bytes(b"a different capture\n")
-        refused = self.run_seam("build", str(case), expect=2)
+        refused = self.build_package(case, expect=2)
         self.assertIn("research/filing.bin no longer matches its declared sha256 (screenshot_path)", refused.stderr)
 
     def test_a_screenshot_beside_a_raw_capture_is_checked_against_its_anchor_hash(self) -> None:
@@ -222,9 +229,9 @@ class NewsroomPackage(GATES.CaseFixture):
         passages["expressions"][0]["anchor_ref"] = {"path": "research/filing.png"}
         passages["expressions"][0]["anchor_sha256"] = hashlib.sha256(b"the capture as cited\n").hexdigest()
         passages_path.write_text(json.dumps(passages), encoding="utf-8")
-        self.run_seam("build", str(case))
+        self.build_package(case)
         (case / "research" / "filing.png").write_bytes(b"an edited capture\n")
-        refused = self.run_seam("build", str(case), expect=2)
+        refused = self.build_package(case, expect=2)
         self.assertIn("research/filing.png no longer matches its declared sha256 (anchor)", refused.stderr)
 
     def test_the_pages_show_the_newsroom_flags_and_a_refused_submissions_reasons(self) -> None:

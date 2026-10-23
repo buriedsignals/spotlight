@@ -10,6 +10,7 @@ import { resolve } from 'node:path';
 import { ConfigError, RouteRefused, checkNewsroomInstall, checkRouteSecrets, childEnv, piSettings, readConfig, routeFor, secretValues } from './config.ts';
 import {
 	CASE_REFERENCE_FILE,
+	CaseRecordError,
 	EditorialCredentialError,
 	EditorialToolError,
 	KNOWLEDGE_TOOLS,
@@ -66,9 +67,9 @@ type Harness = {
 // not go on without the newsroom's knowledge and checks, and nothing falls
 // back to another route or service.
 function newsroomStop(error: unknown): { code: number; message: string } {
-	return error instanceof EditorialCredentialError
-		? { code: EXIT.signIn, message: error.message }
-		: { code: EXIT.newsroom, message: NEWSROOM_UNAVAILABLE };
+	if (error instanceof EditorialCredentialError) return { code: EXIT.signIn, message: error.message };
+	if (error instanceof CaseRecordError) return { code: EXIT.newsroom, message: `${error.message}. Spotlight stopped; resume the case to finish.` };
+	return { code: EXIT.newsroom, message: NEWSROOM_UNAVAILABLE };
 }
 
 let stoppingForNewsroom = false;

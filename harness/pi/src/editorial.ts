@@ -15,8 +15,9 @@
 // The launcher writes nothing into the case itself: scripts/newsroom-package.py
 // records every answer under the case lock (RunPackage below).
 import { createHash, randomUUID } from 'node:crypto';
-import { lstatSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { lstatSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import type { HarnessConfig } from './config.ts';
 import { redactor } from './log.ts';
 
@@ -50,8 +51,13 @@ export class EditorialRefused extends EditorialError {}
 // model reads, such as an unknown record id. The service is working.
 export class EditorialToolError extends Error {}
 
+// The case could not record what the newsroom answered (a check, a
+// submission): the case stops rather than go on without the record; a
+// pending submission resumes at the next start.
+export class CaseRecordError extends Error {}
+
 export function stopsTheNewsroomCase(error: unknown): boolean {
-	return error instanceof EditorialCredentialError || error instanceof EditorialError;
+	return error instanceof EditorialCredentialError || error instanceof EditorialError || error instanceof CaseRecordError;
 }
 
 export function isAllowedOrigin(origins: readonly string[], url: string): boolean {
@@ -367,7 +373,7 @@ export type RunPackage = (args: string[], input?: unknown) => Promise<{ code: nu
 
 async function recordInCase(runPackage: RunPackage, args: string[], input?: unknown): Promise<Record<string, unknown>> {
 	const result = await runPackage(args, input);
-	if (result.code !== 0) throw new Error(`the case could not record the newsroom's answer: ${(result.stderr || result.stdout).trim().slice(-1500)}`);
+	if (result.code !== 0) throw new CaseRecordError(`the case could not record the newsroom's answer: ${(result.stderr || result.stdout).trim().slice(-1500)}`);
 	return JSON.parse(result.stdout) as Record<string, unknown>;
 }
 
@@ -554,9 +560,16 @@ export async function pendingSubmission(runPackage: RunPackage, caseDir: string)
 export async function submitCase(deps: SubmitDeps): Promise<SubmitOutcome> {
 	const { client, caseDir, runPackage } = deps;
 	const caseRef = storedCaseRef(caseDir);
-	const built = await runPackage(['build', caseDir]);
-	if (built.code !== 0) throw new Error(`the Submit package could not be built: ${(built.stderr || built.stdout).trim().slice(-1500)}`);
-	const build = JSON.parse(built.stdout) as PackageBuild;
+	const scratch = mkdtempSync(join(tmpdir(), 'spotlight-package-'));
+	let build: PackageBuild;
+	try {
+		const out = join(scratch, 'package.json');
+		const built = await runPackage(['build', caseDir, '--out', out]);
+		if (built.code !== 0) throw new Error(`the Submit package could not be built: ${(built.stderr || built.stdout).trim().slice(-1500)}`);
+		build = JSON.parse(readFileSync(out, 'utf8')) as PackageBuild;
+	} finally {
+		rmSync(scratch, { recursive: true, force: true });
+	}
 	const key = build.package_sha256;
 	await recordInCase(runPackage, ['begin', caseDir, '--package-sha256', key]);
 	const answer = await client.call('submit_case_review', { case_ref: caseRef, idempotency_key: key, package: build.package, files: build.files }, deps.signal);
