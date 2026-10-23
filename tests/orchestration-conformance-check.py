@@ -326,6 +326,22 @@ class OrchestrationConformance(unittest.TestCase):
                 "findings": [],
             },
         )
+        # The gate runs the fact-check validator, which resolves every
+        # case-local source the samples cite; the fixture copy writes only F1's.
+        for cited in (
+            "research/offshoreleaks-acme-trust-services.json",
+            "research/occrp-aleph-acme-trust.html",
+            "research/registry-acme-trust-services.html",
+            "evidence/registry-acme-trust-services.png",
+        ):
+            (self.case / cited).parent.mkdir(parents=True, exist_ok=True)
+            (self.case / cited).write_text("fixture source\n", encoding="utf-8")
+        self.rewrite_json(
+            "data/evidence-bundle.json",
+            lambda bundle: next(i for i in bundle["items"] if i["id"] == "E2").update(
+                sha256=hashlib.sha256(b"fixture source\n").hexdigest()
+            ),
+        )
         PROVENANCE_FIXTURE.activate_case(self.case)
         self.assert_case_valid()
 
