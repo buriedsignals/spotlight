@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
-import { loadComposition } from './roles.ts';
+import { loadComposition, systemPrompt } from './roles.ts';
 import type { AgentSpec } from './roles.ts';
 
 async function compositionWith(t: TestContext, spec: AgentSpec): Promise<string> {
@@ -42,3 +42,18 @@ test('a denyReads entry must be a case-relative file, pattern or folder, and doe
 	assert.deepEqual(loadComposition(path).narrowed.tools, ['read_file', 'fetch', 'exiftool']);
 });
 
+// The 12b reads only the distilled leads and opens a raw page only for an exact
+// citation passage; the larger tiers keep the longer leash.
+test('the raw-page rule in every prompt follows the model tier', () => {
+	const composition = loadComposition();
+	const leash = /Read only the leads\. Do not read a `\.raw` file unless you need the exact source passage for a citation; then grep it first/;
+	const longer = /Read a section of a `\.raw` file only when the leads look thin or you need exact wording for a citation/;
+	for (const role of ['orchestrator', 'investigator', 'fact-checker']) {
+		assert.match(systemPrompt(composition, role, '12b'), leash, role);
+		assert.doesNotMatch(systemPrompt(composition, role, '12b'), longer, role);
+		for (const tier of ['26b', '31b', 'frontier'] as const) {
+			assert.match(systemPrompt(composition, role, tier), longer, `${role} ${tier}`);
+			assert.doesNotMatch(systemPrompt(composition, role, tier), leash, `${role} ${tier}`);
+		}
+	}
+});
