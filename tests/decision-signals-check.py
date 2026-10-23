@@ -472,6 +472,15 @@ def test_ingest_phase(tmp: Path) -> None:
     assert {c["status"] for c in checks if c["group"] in ("propositions", "memberships")} == {"judged"}
     assert {c["group"] for c in checks if c["status"] == "inputs_not_supplied"} == {"entities", "matches"}, \
         "stored entity/match results are never presented as current without their inputs"
+    # Results asked with other question wording are stale, inputs unchanged.
+    stored_path = case / "data" / lib.INGEST_SIGNALS_NAME
+    stored = json.loads(stored_path.read_text())
+    current_version, stored["question_bank_version"] = stored["question_bank_version"], "older-wording"
+    stored_path.write_text(json.dumps(stored))
+    checks = json.loads(run_script("ingest-eligibility.py", case).stdout)["ingest_checks"]
+    assert {c["status"] for c in checks if c["group"] in ("propositions", "memberships")} == {"stale"}, checks
+    stored["question_bank_version"] = current_version
+    stored_path.write_text(json.dumps(stored))
     batch["claims"][0]["proposition"] = "Acme paid Doe twice."
     (case / "data" / "knowledge-batch.json").write_text(json.dumps(batch))
     checks = json.loads(run_script("ingest-eligibility.py", case).stdout)["ingest_checks"]
