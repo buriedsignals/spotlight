@@ -932,6 +932,36 @@ function writeEndedLane(caseDir: string, topic: TopicBrief, laneType: LaneType |
 	writeConfined(caseDir, laneDir, `${LANES_DIRECTORY}/${topic.topic_id}/lane.json`, `${JSON.stringify(lane, null, 2)}\n`);
 }
 
+// The merge's own work, and the adapter's cap on one Anomaly runner
+// (integrations/anomaly/adapter.py RUN_TIMEOUT_SECONDS): one run per table.
+const MERGE_BASE_MS = 120_000;
+const METHOD_RUN_MS = 120_000;
+
+// How long the merge may take: its own work plus one Anomaly run per distinct
+// table (topic, lead, format) the lanes named in their method inputs.
+export function mergeTimeoutMs(caseDir: string): number {
+	const tables = new Set<string>();
+	let topics: string[] = [];
+	try {
+		topics = readdirSync(resolve(caseDir, LANES_DIRECTORY));
+	} catch {
+		return MERGE_BASE_MS;
+	}
+	for (const topicId of topics) {
+		let inputs: unknown;
+		try {
+			inputs = (JSON.parse(readFileSync(resolve(caseDir, LANES_DIRECTORY, topicId, METHOD_INPUTS_FILE), 'utf8')) as { inputs?: unknown }).inputs;
+		} catch {
+			continue; // missing or unreadable: the merge reports it and runs nothing for it
+		}
+		if (!Array.isArray(inputs)) continue;
+		for (const input of inputs as Array<{ lead_id?: unknown; format?: unknown }>) {
+			if (input && typeof input.lead_id === 'string') tables.add(`${topicId}\u0000${input.lead_id}\u0000${String(input.format)}`);
+		}
+	}
+	return MERGE_BASE_MS + tables.size * METHOD_RUN_MS;
+}
+
 // The Pi harness has no shell, so it runs the merge itself once every approved
 // topic has ended: data/leads.json and data/clues.json (scripts/research-merge.py).
 async function runMerge(options: RoundOptions, round: number): Promise<MergeOutcome> {
@@ -940,7 +970,7 @@ async function runMerge(options: RoundOptions, round: number): Promise<MergeOutc
 		// Anomaly methods on the lanes' tables (integrations/anomaly).
 		env: programEnv(options.env, ['ANOMALY_HOME'], { SPOTLIGHT_CONFIG: options.config.spotlightConfig }),
 		cwd: CHECKOUT_ROOT,
-		timeoutMs: 120_000,
+		timeoutMs: mergeTimeoutMs(options.caseDir),
 	});
 	if (result.code !== 0) return { ok: false, error: (result.stderr || result.stdout).trim().slice(-2000) };
 	try {

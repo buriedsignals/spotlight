@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { readConfig } from './config.ts';
-import { ROUND_LEDGER, runResearchRound } from './lanes.ts';
+import { mergeTimeoutMs, ROUND_LEDGER, runResearchRound } from './lanes.ts';
 import type { ResearchPlan, RoundSummary, TopicBrief } from './lanes.ts';
 import { startFakeOpenAI } from './test-support/fake-openai.ts';
 import type { ChatRequest, FakeOpenAI, Reply, ToolCall } from './test-support/fake-openai.ts';
@@ -369,4 +369,20 @@ test('a topic with Anomaly methods names its stored tables as method inputs, and
 	assert.deepEqual(written, { schema_version: '1.0', inputs: [{ method: ZSCORE, lead_id: 'a-web-l1', format: 'csv', fields: { id: 'record_id', amount: 'value' } }] });
 	assert.equal(summary.merge?.ok, true, JSON.stringify(summary.merge));
 	assert.ok((summary.merge as { report: string[] }).report.some((line) => /methods not run: detectors\/catalogue\.json is missing/.test(line)), JSON.stringify(summary.merge));
+});
+
+// The merge runs one Anomaly runner per table (each capped at 120 s by the
+// adapter), so its own timeout grows with the tables the lanes named.
+test('the merge timeout allows one Anomaly run per named table on top of the merge itself', async (t) => {
+	const space = await setup(t);
+	assert.equal(mergeTimeoutMs(space.caseDir), 120_000, 'no method inputs: the merge alone');
+	const inputs = (rows: Array<[string, string, string]>) => JSON.stringify({ schema_version: '1.0', inputs: rows.map(([method, lead_id, format]) => ({ method, lead_id, format, fields: {} })) });
+	await mkdir(join(space.caseDir, 'research/swarm/a-web'), { recursive: true });
+	await mkdir(join(space.caseDir, 'research/swarm/b-web'), { recursive: true });
+	// Two methods on one table share a run; a second table and another lane's table each add one.
+	await writeFile(join(space.caseDir, 'research/swarm/a-web/method-inputs.json'), inputs([['method:x@1', 'a-web-l1', 'csv'], ['method:y@1', 'a-web-l1', 'csv'], ['method:x@1', 'a-web-l2', 'csv']]));
+	await writeFile(join(space.caseDir, 'research/swarm/b-web/method-inputs.json'), inputs([['method:x@1', 'b-web-l1', 'csv']]));
+	assert.equal(mergeTimeoutMs(space.caseDir), 120_000 + 3 * 120_000);
+	await writeFile(join(space.caseDir, 'research/swarm/b-web/method-inputs.json'), 'not json');
+	assert.equal(mergeTimeoutMs(space.caseDir), 120_000 + 2 * 120_000, 'an unreadable file adds nothing; the merge reports it');
 });
