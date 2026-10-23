@@ -15,14 +15,9 @@ The investigator's suggested marks, when present, prefill the marks and the
 review file keeps each suggestion beside the member's final mark.
 
 ``data/research-suggestions.json`` (written by the investigator's AMENDMENT
-mode before the page opens). The page reads only this minimal shape:
-
-    {"schema_version": "1.0",
-     "clues":      [{"clue_id": str, "mark": "pursue" | "dismiss", "reason": str}],
-     "directions": [{"direction_id": slug, "mark": "keep" | "drop" | "add",
-                     "reason": str, "direction": str (add only)}]}
-
-Anything else in it is ignored; a malformed entry is skipped.
+mode before the page opens) follows schemas/research-suggestions.schema.json.
+The gate's rule (research.suggestions_problems) decides whether they count:
+suggestions it refuses block the page and prefill nothing.
 """
 
 from __future__ import annotations
@@ -35,6 +30,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .contract import OrchestrationError, RESEARCH_OUTPUTS, SCRIPT_DIR
+from .research import suggestions_problems
 from .storage import case_path
 
 TRIAGE = "data/research-triage.json"
@@ -388,8 +384,17 @@ def content(case: Path, saved_items: Mapping[str, Any]) -> tuple[dict[str, Any],
 
     triage_view, triage_blocking = _triage_summary(triage, triage_present, merge.rr)
     blocking += triage_blocking
+    suggestions_state = "present" if isinstance(suggestions, dict) else "missing"
     if suggestions_present and not isinstance(suggestions, dict):
         blocking.append(f"{SUGGESTIONS} is unreadable")
+    elif suggestions_present:
+        # The gate's own rule (schema, inputs bound to these leads, clues and
+        # triage, every clue and planned direction marked) decides whether
+        # the suggestions count; refused ones do not prefill the marks.
+        refused = suggestions_problems(case)
+        if refused:
+            blocking += refused
+            suggestions, suggestions_state = None, "refused"
     triage_doc = triage if isinstance(triage, dict) and triage_view["state"] == "ok" else None
 
     entries = [e for e in leads_doc.get("leads") or [] if isinstance(e, dict) and isinstance(e.get("lead"), dict)
@@ -429,7 +434,7 @@ def content(case: Path, saved_items: Mapping[str, Any]) -> tuple[dict[str, Any],
     return {
         "run": _run_summary(leads_doc, rounds, plan),
         "triage": triage_view,
-        "suggestions": "present" if isinstance(suggestions, dict) else "missing",
+        "suggestions": suggestions_state,
         "clues": clues,
         "directions": directions,
         "leads": leads,

@@ -127,6 +127,7 @@ def build_research(case: Path, excerpt: str | None, suggestions: bool) -> None:
     clues_doc = json.loads((case / "data/clues.json").read_text(encoding="utf-8"))
     document = triage.run_triage([e["lead"] for e in leads_doc["leads"]], triage.brief_from_methodology(method),
                                  clues_doc, {"jev": provider}.get, lambda _ji: ("jev", ""))
+    document["generated_at"] = "2026-10-23T09:30:00Z"  # after the merge, as the triage script stamps it
     triage.write_output(case, document)
     write_json(case / "research/rounds.json", {"schema_version": "1.0", "rounds": [{
         "round": 1, "plan_sha256": "0" * 64, "mode": "openrouter_swarm", "budget_usd": 1, "spent_usd": 0.03,
@@ -134,14 +135,24 @@ def build_research(case: Path, excerpt: str | None, suggestions: bool) -> None:
         "ran": ["ownership-registries", "ownership-web", "contracts-news-courts"],
         "left_out": [{"topic_id": "contracts-archives", "reason": "the round budget was spent"}], "refused": []}]})
     if suggestions:
-        clue_ids = {c["type"]: c["clue_id"] for c in clues_doc["clues"]}
+        # The Research gate's schema: a mark for every clue and approved
+        # direction, bound to the leads, clues and triage it was written for.
+        clue_marks = {"absence": ("dismiss", "A registry gap is common here.")}
+        inputs = {relative: hashlib.sha256((case / relative).read_bytes()).hexdigest()
+                  for relative in ("data/leads.json", "data/clues.json", "data/research-triage.json")}
         write_json(case / "data/research-suggestions.json", {
             "schema_version": "1.0",
-            "clues": [{"clue_id": clue_ids["absence"], "mark": "dismiss", "reason": "A registry gap is common here."}],
+            "generated_at": "2026-10-23T09:40:00Z",
+            "inputs": inputs,
+            "clues": [{"clue_id": c["clue_id"],
+                       "mark": clue_marks.get(c["type"], ("pursue", "The clue bears on the premise."))[0],
+                       "reason": clue_marks.get(c["type"], ("pursue", "The clue bears on the premise."))[1]}
+                      for c in clues_doc["clues"]],
             "directions": [
                 {"direction_id": "ownership", "mark": "keep", "reason": "The register names an owner."},
                 {"direction_id": "contracts", "mark": "drop", "reason": "The court record answers it."},
                 {"direction_id": "sanctions", "mark": "add", "direction": "Sanctions on Example Trust",
+                 "questions": ["Is Example Trust under sanctions?"],
                  "reason": "A watchlist clue names the shareholder."},
             ]})
 

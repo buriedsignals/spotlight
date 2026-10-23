@@ -218,7 +218,7 @@ test("a page nonce that starts with a dash is redeemed", async (t) => {
 
 test("the Research gate page opens, saves clue marks and approves with the member's name", async (t) => {
   const root = tempRoot(t);
-  const caseDir = buildCase(root, "case", "research", "--no-suggestions");
+  const caseDir = buildCase(root, "case", "research");
   const { json } = await authed(t, caseDir);
   let view = (await json("/api/view")).body;
   assert.equal(view.gate, "research");
@@ -226,16 +226,19 @@ test("the Research gate page opens, saves clue marks and approves with the membe
   assert.equal(view.content.clues[0].type, "watchlist");
   const watchlist = `clue:${view.content.clues[0].clue_id}`;
   const absence = view.items.find((item) => item.key.startsWith("clue:k5-")).key;
-  assert.equal(view.open_required, 1);
+  // The gate opens only with a suggested mark for every clue and direction.
+  assert.equal(view.open_required, 0);
+  assert.equal(view.items.find((item) => item.key === absence).final, "dismiss");
 
   const refused = await json("/api/edit", { edit: { kind: "mark", key: watchlist, value: "dismiss" } });
   assert.equal(refused.status, 422);
   view = (await json("/api/edit", { edit: { kind: "mark", key: absence, value: "pursue" } })).body;
   view = (await json("/api/edit", { edit: { kind: "reviewer", value: "A. Reviewer" } })).body;
-  assert.equal(view.open_required, 0);
+  assert.equal(view.items.find((item) => item.key === absence).final, "pursue");
   const decided = await json("/api/decide", { decision: "approved", digest: view.digest });
   assert.equal(decided.status, 200, JSON.stringify(decided.body));
   assert.equal(decided.body.receipt.approved_by, "A. Reviewer");
   assert.equal(decided.body.receipt.channel, "page");
-  assert.equal(seamStatus(caseDir).phase, "investigation");
+  // The Research receipt binds the methodology; the amendment comes next.
+  assert.equal(seamStatus(caseDir).research.resume_at, "amendment");
 });

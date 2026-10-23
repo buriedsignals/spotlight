@@ -107,22 +107,62 @@ class ResearchPage(unittest.TestCase):
         self.edit(case, {"kind": "mark", "key": absence, "value": "pursue"})
         self.assertEqual(self.items(self.view(case))[absence]["final"], "pursue")
 
-    def test_without_suggestions_an_unmarked_clue_blocks_approval(self) -> None:
+    def test_without_suggestions_the_gate_is_not_offered(self) -> None:
+        # The Research gate opens only once the investigator's suggested marks
+        # cover every clue and approved direction; until then the page shows
+        # the open clue and approval is refused.
         case = self.build("--no-suggestions")
         view = self.view(case)
         self.assertEqual(view["content"]["suggestions"], "missing")
         self.assertEqual(view["open_required"], 1)
         self.edit(case, {"kind": "reviewer", "value": "A. Reviewer"})
+        nonce = json.loads(self.seam(case, "issue-review-nonce", "research").stdout)["nonce"]
+        refused = self.seam(case, "approve", "research", *APPROVER, "--nonce", nonce, "--digest", self.view(case)["digest"],
+                            expect=REFUSED)
+        self.assertIn("not awaiting research approval", refused.stderr)
+        status = json.loads(self.seam(case, "status", "--json").stdout)
+        self.assertEqual(status["research"]["resume_at"], "suggestions")
+
+    def test_suggestions_the_gate_would_refuse_block_the_page_and_do_not_prefill(self) -> None:
+        case = self.build()
+        path = case / "data/research-suggestions.json"
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["inputs"]["data/research-triage.json"] = "0" * 64
+        path.write_text(json.dumps(document), encoding="utf-8")
+        view = self.view(case)
+        self.assertEqual(view["content"]["suggestions"], "refused")
+        self.assertIn("data/research-suggestions.json was written for other leads, clues or triage", view["blocking"])
+        absence = next(k for k in self.items(view) if k.startswith("clue:k5-"))
+        self.assertIsNone(self.items(view)[absence]["suggested"])
+
+    def test_the_page_approval_binds_the_methodology_and_its_marks_drive_the_amendment(self) -> None:
+        case = self.build()
+        self.edit(case, {"kind": "reviewer", "value": "A. Reviewer"})
         view = self.view(case)
         nonce = json.loads(self.seam(case, "issue-review-nonce", "research").stdout)["nonce"]
-        refused = self.seam(case, "approve", "research", *APPROVER, "--nonce", nonce, "--digest", view["digest"], expect=REFUSED)
-        self.assertIn("open dispositions", refused.stderr)
-        absence = next(k for k in self.items(view) if k.startswith("clue:k5-"))
-        self.edit(case, {"kind": "mark", "key": absence, "value": "dismiss"})
-        view = self.view(case)
         self.seam(case, "approve", "research", *APPROVER, "--nonce", nonce, "--digest", view["digest"])
         receipt = self.view(case)["receipt"]
         self.assertEqual((receipt["channel"], receipt["approved_by"], receipt["review_digest"]), ("page", "A. Reviewer", view["digest"]))
+        state = json.loads((case / "data/orchestration.json").read_text(encoding="utf-8"))
+        self.assertIn("data/methodology.json", state["approvals"]["research"]["methodology_sha256"])
+        status = json.loads(self.seam(case, "status", "--json").stdout)
+        self.assertEqual(status["research"]["resume_at"], "amendment")
+        # The page's marks: keep ownership, drop contracts, add sanctions.
+        methodology = json.loads((case / "data/methodology.json").read_text(encoding="utf-8"))
+        plan = [d for d in methodology["investigation_plan"] if d["direction_id"] != "contracts"]
+        plan.append({"direction": "Sanctions on Example Trust", "direction_id": "sanctions",
+                     "questions": ["Is Example Trust under sanctions?"],
+                     "steps": [{"order": 1, "action": "Read the sanctions list", "tool": "fetch",
+                                "cites": ["direction:sanctions"]}]})
+        unmarked = {**methodology, "investigation_plan": plan + [
+            {"direction": "Unmarked", "direction_id": "unmarked", "questions": ["?"], "steps": []}]}
+        (case / "data/methodology-amendment.json").write_text(json.dumps(unmarked), encoding="utf-8")
+        self.seam(case, "record-amendment")
+        refused = json.loads(self.seam(case, "status", "--json").stdout)
+        self.assertIn("direction unmarked was added but not marked add", refused["research"]["refused"])
+        (case / "data/methodology-amendment.json").write_text(json.dumps({**methodology, "investigation_plan": plan}),
+                                                              encoding="utf-8")
+        self.seam(case, "record-amendment")
         self.assertEqual(json.loads(self.seam(case, "status", "--json").stdout)["phase"], "investigation")
 
     def test_a_member_adds_a_direction_and_d8_reads_the_marks(self) -> None:
