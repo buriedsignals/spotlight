@@ -24,6 +24,10 @@ from .contract import METHODOLOGY_INPUTS, RESEARCH_OUTPUTS, OrchestrationError, 
 from .dependencies import current_hashes, investigation_gate_dependencies
 from .storage import LEGACY_CHANNEL, LEGACY_LEDGER_KEY, case_path, read_data_bytes
 
+if str(SCRIPT_DIR.parent) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR.parent))
+from integrations.anomaly import adapter as anomaly_methods  # noqa: E402
+
 REVIEW_VERSION = "spotlight-review/v1"
 LEDGER_VERSION = "spotlight-review-nonces/v1"
 LEDGER_FILE = "review-nonces.json"
@@ -463,6 +467,11 @@ def _methodology_content(case: Path) -> tuple[dict[str, Any], list[str]]:
         if isinstance(methodology.get("limitations"), list)
         else [],
     }
+    # Anomaly methods that fit a lane, and each topic's attached ones; absent
+    # when the pinned catalogue is not installed and no topic names a method.
+    methods = anomaly_methods.view(methodology)
+    if methods is not None:
+        content["anomaly_methods"] = methods
     return content, blocking
 
 
