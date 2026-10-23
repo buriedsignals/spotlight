@@ -19,6 +19,7 @@ import { discardIncompleteLanes } from './resume.ts';
 import { ORCHESTRATOR, agentSpec, allowedTools, isolationRefusal, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
 import type { Composition } from './roles.ts';
 import { WorkerQueue, runWorker } from './subagents.ts';
+import { withCasePassages } from './case-search.ts';
 import type { CancelRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
 import { bindActiveCase, pythonAdapter, runsResearchRound } from './tools/spotlight.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
@@ -114,18 +115,26 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 		refusalFor(harness, request.agent, request.task)
 			.then((refusal) => {
 				if (refusal) throw new Error(`spawn_agent: ${refusal}`);
-				return queue.run(() =>
+				return withCasePassages(request.agent, request.task, {
+					caseDir: harness.active.caseDir,
+					python: harness.config.python,
+					env: process.env,
+					log: harness.log,
+				});
+			})
+			.then((task) =>
+				queue.run(() =>
 					runWorker(
 						{
 							...processLaunch(harness, request.agent),
 							onSpawn: (child) => track(harness, child),
 							onStderr: (child) => forwardStderr(harness, child),
 						},
-						request.task,
+						task,
 						controller.signal,
 					),
-				);
-			})
+				),
+			)
 			.then((text) => withValidation(harness, request.agent, text))
 			.then((text) => reply({ ok: true, text }))
 			.catch((error: Error) => reply({ ok: false, error: harness.redact(error.message) }))

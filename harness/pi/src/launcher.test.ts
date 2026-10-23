@@ -604,6 +604,55 @@ test('D9: the fact-checker\'s own file tools cannot list or read the research le
 	assert.doesNotMatch(grepped, /leads|clues|research-|swarm/);
 });
 
+// A stand-in Engine `bsig` answering `wiki find-evidence` with the NDJSON
+// result contract, or refusing as Engine does while its switch is off.
+async function standInBsig(dir: string, off = false): Promise<string> {
+	const path = join(dir, off ? 'bsig-off' : 'bsig');
+	const body = off
+		? 'print(json.dumps({"event": "error", "message": "wiki: the evidence finder is off"}))\nsys.exit(1)\n'
+		: 'claim = sys.argv[sys.argv.index("--claim") + 1]\n' +
+			'passages = [{"path": "research/swarm/web/sources/s1.md", "text": "Swarm capture on " + claim, "score": 9},\n' +
+			'            {"path": "research/registry.md", "text": "Registry contradicts: " + claim, "score": 8}]\n' +
+			'print(json.dumps({"event": "result", "data": {"tool": "find-evidence", "result": {"claim": claim, "passages": passages}}}))\n';
+	await writeFile(path, `#!/usr/bin/env python3\nimport json, sys\n${body}`, { mode: 0o755 });
+	return path;
+}
+
+function userText(request: ChatRequest): string {
+	const message = request.messages.find((each) => each.role === 'user');
+	const content = message?.content;
+	if (typeof content === 'string') return content;
+	return Array.isArray(content) ? content.map((part) => (part as { text?: string }).text ?? '').join('') : '';
+}
+
+test('every fact-checker task carries each claim\'s case passages between markers, without the research swarm\'s; with Engine\'s switch off the task is unchanged', async (t) => {
+	for (const off of [false, true]) {
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
+			return toolResults(request).length === 0
+				? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check data/findings.json.' } }] }
+				: { text: 'Done.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = await caseAtInvestigation(space);
+		await writeFile(join(caseDir, 'data', 'findings.json'), JSON.stringify({ findings: [{ id: 'F1', claim: 'Acme paid Doe' }] }));
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_BSIG: await standInBsig(space.root, off) });
+		await settledPrompt(chat, 'Continue.');
+
+		const worker = fake.requests.find((request) => isWorkerRequest(request, 'fact-checker'));
+		assert.ok(worker, 'the fact-checker ran');
+		const task = userText(worker);
+		if (off) {
+			assert.equal(task, 'Check data/findings.json.');
+			continue;
+		}
+		assert.match(task, /^Check data\/findings\.json\.\n\nCASE PASSAGES\. Retrieval only/);
+		assert.match(task, /Finding F1: Acme paid Doe\n<<<PASSAGE 1 research\/registry\.md\nRegistry contradicts: Acme paid Doe\nPASSAGE 1>>>/);
+		assert.ok(!task.includes('research/swarm') && !task.includes('Swarm capture'), 'D9: no research swarm passage');
+	}
+});
+
 test('at Research the orchestrator\'s resolve runs the approved topics in code: each brief goes to the swarm route, the round is merged, and the case moves to the Research gate', async (t) => {
 	const orchestratorModel = await startFakeOpenAI(resolveThenStop);
 	const swarm = await startFakeOpenAI(() => ({ text: 'No leads.', usage: { total_tokens: 10, cost: 0.0001 } }));

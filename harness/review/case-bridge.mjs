@@ -119,6 +119,8 @@ export function createCaseBridge({
   return Object.freeze({
     status: () => json(["status", "--json"]),
     view: (gate) => json(["review-view", gate]),
+    // Case search for the claims the gate shows; retrieval only, outside the digest.
+    passages: (gate) => json(["review-passages", gate]),
     edit: (gate, edit) => json(["review-edit", gate, "--edit", JSON.stringify(edit)]),
     issueNonce: async (gate) => (await json(["issue-review-nonce", gate])).nonce,
     async decide({ gate, decision, nonce, digest, approvedBy, approvedAt }) {

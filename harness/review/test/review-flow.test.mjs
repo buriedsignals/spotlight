@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createCaseBridge } from "../case-bridge.mjs";
-import { authed, buildCase, seamStatus, tempRoot } from "./helpers.mjs";
+import { authed, buildCase, seamStatus, standInBsig, tempRoot } from "./helpers.mjs";
 
 const HOSTILE = '</script><script type="module">fetch("/api/decide",{method:"POST"})</script>';
 
@@ -188,6 +188,27 @@ test("the Report page shows each finding's fact-check verdict and confidence", a
     { id: unknown.finding_id, verdict: unknown.verdict, confidence: unknown.confidence, verified: unknown.verified },
     { id: "F9", verdict: "not checked", confidence: "", verified: false },
   );
+});
+
+test("the gate page gets case-search passages next to each claim, outside the digest; with Engine's switch off only a quiet note", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "investigation_gate");
+  const { json } = await authed(t, caseDir, { bridgeEnv: { ...process.env, SPOTLIGHT_BSIG: standInBsig(root) } });
+  const before = (await json("/api/view")).body;
+  const { status, body } = await json("/api/passages");
+  assert.equal(status, 200);
+  assert.equal(body.available, true);
+  assert.deepEqual(body.claims.map((claim) => claim.target), before.content.findings.map((finding) => `finding:${finding.id}`));
+  assert.deepEqual(body.claims[0].passages, [
+    { file: "research/registry.md", excerpt: `<img src=x onerror=alert(1)> Registry entry on ${before.content.findings[0].claim}`, score: 12.5 },
+  ]);
+  assert.equal((await json("/api/view")).body.digest, before.digest);
+
+  const off = await authed(t, caseDir, { bridgeEnv: { ...process.env, SPOTLIGHT_BSIG: standInBsig(root, { off: true }) } });
+  const quiet = await off.json("/api/passages");
+  assert.equal(quiet.status, 200);
+  assert.deepEqual([quiet.body.available, quiet.body.claims], [false, []]);
+  assert.match(quiet.body.note, /^case search unavailable: wiki: the evidence finder is off/);
 });
 
 test("a page nonce that starts with a dash is redeemed", async (t) => {

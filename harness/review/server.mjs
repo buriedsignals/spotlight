@@ -161,6 +161,18 @@ export async function startReviewServer({
     return { ...view, gate_label: GATE_LABELS[gate] };
   }
 
+  // Passages most worth reading next to each claim (case search through
+  // Engine). Retrieval only: a failure leaves the page as it was, with a quiet note.
+  async function passages() {
+    const unavailable = { gate, available: false, note: "case search unavailable", claims: [] };
+    if (typeof bridge.passages !== "function") return unavailable;
+    try {
+      return { ...(await bridge.passages(gate)), gate };
+    } catch {
+      return unavailable;
+    }
+  }
+
   // Checks shared by every decision: the gate still waits, the page saw the
   // current record, and the member's name is recorded.
   async function decisionPreconditions(digest) {
@@ -264,6 +276,10 @@ export async function startReviewServer({
         if (url.pathname === "/api/view") {
           exactObject(await readJson(request), [], "view request");
           return sendJson(response, 200, await currentView());
+        }
+        if (url.pathname === "/api/passages") {
+          exactObject(await readJson(request), [], "passages request");
+          return sendJson(response, 200, await passages());
         }
         if (url.pathname === "/api/edit") {
           const { edit } = exactObject(await readJson(request), ["edit"], "edit request");

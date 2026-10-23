@@ -45,6 +45,21 @@ default `orchestrator`) and the time, and it refuses a member name. The page
 shows "Recorded through: the agent (orchestrator)"; a follow-up recorded before
 follow-ups said who asked shows as not recorded.
 
+## Case passages
+
+Every gate page shows, after the gate's content, the passages most worth
+reading next to each claim it shows: the findings' claims (none before
+Investigation, so the Methodology page is usually empty) or, at Ingest, the
+analyst's proposed claims. The page asks for them once per gate
+(`/api/passages`, `spotlight-orchestration.py review-passages <gate>`), after
+the view, so a slow search never delays the page or a decision. Case search
+(`integrations/case_search.py` over Engine's `bsig wiki find-evidence`) ranks
+the case's own `research/` captures for each claim and leaves out Spotlight's
+bookkeeping files and link-list chunks. It is retrieval only: it is not part of
+the digest and never sets a mark, a disposition or a link. Passage text is
+inserted as text. Without Engine, or with Engine's evidence-finder switch off,
+the page shows only "Case search unavailable."
+
 ## The Research page
 
 The Research gate page (`scripts/spotlight_orchestration/research_view.py`)

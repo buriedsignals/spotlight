@@ -18,6 +18,8 @@ let reviewerTimer = 0;
 let reviewerSaving = null;
 // The follow-up note is sent with the request, not saved as a review edit.
 let followUpNote = "";
+// Case-search passages for the gate on show, fetched once per gate after the view.
+let passages = { gate: "", data: null };
 
 const DECISION_LABELS = {
   methodology: { approved: "Approve the methodology" },
@@ -858,10 +860,56 @@ function receiptSection() {
   );
 }
 
+// ---------------------------------------------------------------- passages
+
+// Every gate: next to each claim the page shows, the case's own research
+// passages most worth reading (case search). Retrieval only, never a mark.
+function passageCard(claim) {
+  return el(
+    "div",
+    { className: "card" },
+    el("h3", { text: claim.label }),
+    el("p", { className: "quote", text: claim.claim }),
+    claim.passages.length
+      ? el(
+          "ol",
+          { "aria-label": `Passages for ${claim.label}` },
+          claim.passages.map((passage) =>
+            el("li", {}, el("span", { className: "tag", text: passage.file }), el("p", { className: "quote muted", text: passage.excerpt })),
+          ),
+        )
+      : el("p", { className: "muted", text: "No passage in the case's research matched this claim." }),
+  );
+}
+
+function passagesSection() {
+  const data = passages.gate === view.gate ? passages.data : null;
+  if (!data) return null;
+  if (!data.available) return el("p", { className: "muted", text: "Case search unavailable." });
+  if (!data.claims.length) return null;
+  return el(
+    "section",
+    { "aria-labelledby": "passages-heading" },
+    el("h2", { id: "passages-heading", text: "Passages worth reading" }),
+    el("p", { className: "muted", text: "Retrieval only: passages from this case's research that may support or contradict each claim. They are not verdicts." }),
+    data.note ? el("p", { className: "muted", text: data.note }) : null,
+    data.claims.map(passageCard),
+  );
+}
+
+async function loadPassages(gate) {
+  passages = { gate, data: null };
+  const { status, data } = await post("/api/passages", {});
+  if (status !== 200 || data.gate !== gate || passages.gate !== gate) return;
+  passages = { gate, data };
+  if (view?.gate === gate) render(view);
+}
+
 // ---------------------------------------------------------------- render
 
 function render(next) {
   view = next;
+  if (passages.gate !== view.gate) loadPassages(view.gate).catch(() => {});
   title.textContent = `Spotlight review: ${view.gate_label || boot.gates?.[view.gate] || view.gate}`;
   keepFocus(() => {
     const parts = [];
@@ -882,8 +930,9 @@ function render(next) {
     if (view.gate === "investigation_gate") parts.push(...investigationContent(view.content, view.items));
     if (view.gate === "report") parts.push(reportContent(view.content));
     if (view.gate === "ingest") parts.push(...ingestContent(view.content, view.items));
+    parts.push(passagesSection());
     if (!readOnly()) parts.push(decisionSection());
-    app.replaceChildren(...parts);
+    app.replaceChildren(...parts.filter(Boolean));
   });
   app.setAttribute("aria-busy", busy ? "true" : "false");
 }
