@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://buriedsignals.com/schemas/source-positions.schema.json",
+  "schema_version": "1.0",
+  "title": "Spotlight source positions",
+  "description": "Case-local record of who asserts or disputes each finding, with the exact passages and the verbatim attribution. Written only by scripts/write-source-expressions.py. The Batch 1.1 builder re-keys positions to claim ids; the finding stays as provenance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project", "created_at", "positions"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "project": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "positions": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/source_position" }
+    }
+  },
+  "definitions": {
+    "source_position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "finding_id", "actor", "stance", "source_expression_ids", "attribution_verbatim", "created_by", "cycle"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "finding_id": { "type": "string", "minLength": 1 },
+        "actor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label"],
+          "properties": { "label": { "type": "string", "minLength": 1 } }
+        },
+        "stance": { "enum": ["asserts", "disputes"] },
+        "source_expression_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "attribution_verbatim": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The attribution exactly as one of the cited passages words it, for example 'the ministry said'."
+        },
+        "created_by": { "enum": ["investigator", "fact-checker", "human"] },
+        "cycle": { "type": "integer", "minimum": 0 },
+        "withdrawn": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["timestamp", "actor", "reason"],
+          "properties": {
+            "timestamp": { "type": "string", "format": "date-time" },
+            "actor": { "enum": ["investigator", "fact-checker", "human"] },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  }
+}

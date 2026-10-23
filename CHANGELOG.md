@@ -11,6 +11,17 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   decisions. Indicator Lab starts it through Osaurus. The runtimes guide, README
   and landing page describe it in place of the Flue harness.
 
+### Added — Source positions
+
+- `data/source-positions.json` records who asserts or disputes each finding:
+  actor, stance, cited passages and the attribution verbatim. Producers add
+  positions through `scripts/write-source-expressions.py`, which publishes
+  them with the passages in one locked write and refuses a position whose
+  attribution does not appear in its passages or whose passages are inactive
+  or linked to another finding.
+- The Investigation-gate binding covers the positions file when it exists;
+  validate-case refuses positions changed, added or removed after approval.
+
 ### Added — Knowledge Batch 1.1 core
 
 - `schemas/knowledge-batch-1.1.schema.json`: the open-source core of Batch

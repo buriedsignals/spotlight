@@ -163,6 +163,75 @@ def main() -> int:
         validation = subprocess.run([sys.executable, str(SCRIPTS / "validate-case.py"), str(case)], capture_output=True, text=True)
         require(validation.returncode == 0, validation.stdout + validation.stderr)
 
+        # Source positions go through the same writer and publish with the
+        # passages in one locked write.
+        positions_path = case / "data" / "source-positions.json"
+
+        def position(**overrides) -> dict:
+            body = {"id": "SP1", "finding_id": "F1", "actor": {"label": "Acme spokesperson"},
+                    "stance": "disputes", "source_expression_ids": ["SXW2"],
+                    "attribution_verbatim": "Passage number 2"}
+            body.update(overrides)
+            return {"expressions": [], "positions": [body]}
+
+        made = run_writer(case, position())
+        require(made.returncode == 0 and json.loads(positions_path.read_text(encoding="utf-8"))["positions"][0]["created_by"] == "investigator",
+                "a valid position was not written: " + made.stderr)
+        positions_before, passages_before = positions_path.read_bytes(), target.read_bytes()
+        for bad, reason in (
+            (position(id="SP2", attribution_verbatim="the ministry said"), "does not appear"),
+            (position(id="SP2", source_expression_ids=["SXW404"]), "does not exist"),
+            (position(id="SP2", finding_id="F404"), "does not exist"),
+            (position(stance="asserts"), "already exists"),
+            (position(id="SP2", created_by="human"), "unknown fields"),
+        ):
+            refused = run_writer(case, bad)
+            require(refused.returncode == 2 and reason in refused.stderr, f"a bad position was accepted: {bad} {refused.stderr}")
+            require(positions_path.read_bytes() == positions_before and target.read_bytes() == passages_before,
+                    "a refused position changed a file")
+        unioned = run_writer(case, position(source_expression_ids=["SXW3"], attribution_verbatim="Passage number 2"))
+        require(unioned.returncode == 0 and json.loads(positions_path.read_text(encoding="utf-8"))["positions"][0]["source_expression_ids"] == ["SXW2", "SXW3"],
+                "re-proposing a position did not union its passages: " + unioned.stderr)
+        # A refused position refuses the passages proposed with it.
+        mixed = proposal(1)
+        mixed["positions"] = position(id="SP2", attribution_verbatim="not in any passage")["positions"]
+        refused = run_writer(case, mixed)
+        require(refused.returncode == 2 and target.read_bytes() == passages_before
+                and "SXW1" not in {e["id"] for e in expressions(case)["expressions"]},
+                "passages were written although their position was refused")
+        # Withdrawing every cited passage is refused while the position stands.
+        supersede = {"expressions": [], "lifecycle": [
+            {"expression_id": "SXW2", "event": "withdrawn", "reason": "test"},
+            {"expression_id": "SXW3", "event": "withdrawn", "reason": "test"}]}
+        stuck = run_writer(case, supersede)
+        require(stuck.returncode == 2 and "cites no active passage" in stuck.stderr and target.read_bytes() == passages_before,
+                "a lifecycle change that leaves a position citing nothing active was accepted: " + stuck.stderr)
+        # Withdrawing the position frees the passages to change.
+        withdrawn = run_writer(case, {"expressions": [], "withdraw_positions": [{"id": "SP1", "reason": "statement retracted"}]})
+        require(withdrawn.returncode == 0 and json.loads(positions_path.read_text(encoding="utf-8"))["positions"][0]["withdrawn"]["reason"] == "statement retracted",
+                "a position could not be withdrawn: " + withdrawn.stderr)
+        require(run_writer(case, position(source_expression_ids=["SXW3"])).returncode == 2, "a withdrawn position was re-proposed")
+        # An inactive cited passage is reported by the validator.
+        inactive = expressions(case)
+        for expression in inactive["expressions"]:
+            if expression["id"] in ("SXW2", "SXW3"):
+                expression["lifecycle_events"].append({"event": "withdrawn", "timestamp": "2026-10-22T13:00:00Z", "actor": "human", "reason": "t"})
+        live = json.loads(positions_path.read_text(encoding="utf-8"))
+        live["positions"][0].pop("withdrawn")
+        errors = CASES.vc.validate_source_positions(live, json.loads((case / "data" / "findings.json").read_text(encoding="utf-8")), inactive)
+        require(any("cites no active passage" in e for e in errors), f"an inactive-only position was accepted: {errors}")
+        # Positions are written for a new live position again.
+        require(run_writer(case, position(id="SP3", source_expression_ids=["SXW4"], attribution_verbatim="Passage number 4")).returncode == 0,
+                "a second position was refused")
+        # A cited passage must be linked to the position's finding.
+        unlinked = expressions(case)
+        for expression in unlinked["expressions"]:
+            if expression["id"] == "SXW3":
+                expression["finding_links"] = [dict(expression["finding_links"][0], finding_id="F2")]
+        errors = CASES.vc.validate_source_positions(json.loads(positions_path.read_text(encoding="utf-8")),
+                                                     json.loads((case / "data" / "findings.json").read_text(encoding="utf-8")), unlinked)
+        require(any("not linked to finding" in e for e in errors), f"an unlinked passage was accepted: {errors}")
+
         # A two-file publish that fails on its second file puts the first
         # back: findings and passages never disagree after a failure.
         findings_path = case / "data" / "findings.json"
@@ -271,6 +340,36 @@ def main() -> int:
         after = subprocess.run([sys.executable, str(SCRIPTS / "validate-case.py"), str(case)], capture_output=True, text=True)
         require(after.returncode != 0 and "approval covers" in after.stdout + after.stderr,
                 "a change after approval was not caught by the binding: " + after.stdout[-800:] + after.stderr[-800:])
+        # The binding covers the positions that existed at approval.
+        bound = json.loads((case / "data" / "case-contract.json").read_text(encoding="utf-8"))["activation_events"][-1]["artifact_hashes"]
+        require(bound.get("source_positions_sha256") == hashlib.sha256(positions_path.read_bytes()).hexdigest(),
+                "the gate binding does not cover the source positions")
+        bound_positions = positions_path.read_bytes()
+        changed = json.loads(bound_positions)
+        changed["positions"][-1]["actor"]["label"] = "Someone else"
+        positions_path.write_text(json.dumps(changed), encoding="utf-8")
+        edited = subprocess.run([sys.executable, str(SCRIPTS / "validate-case.py"), str(case)], capture_output=True, text=True)
+        require(edited.returncode != 0 and "source_positions_sha256 does not match" in edited.stdout + edited.stderr,
+                "positions edited after approval were not caught")
+        positions_path.write_bytes(bound_positions)
+        positions_path.unlink()
+        dropped = subprocess.run([sys.executable, str(SCRIPTS / "validate-case.py"), str(case)], capture_output=True, text=True)
+        require(dropped.returncode != 0 and "source-positions.json is missing" in dropped.stdout + dropped.stderr,
+                "positions removed after approval were not caught")
+
+        # A migrated case's activation hashes predate positions: positions
+        # written before its gate approval are not an integrity failure.
+        migrated = root / "migrated"
+        CASES.write_activated_case(migrated)
+        passage = json.loads((migrated / "data" / "source-expressions.json").read_text(encoding="utf-8"))["expressions"][0]
+        (migrated / "data" / "source-positions.json").write_text(json.dumps({
+            "schema_version": "1.0", "project": json.loads((migrated / "data" / "findings.json").read_text(encoding="utf-8"))["project"],
+            "created_at": "2026-10-22T12:00:00Z",
+            "positions": [{"id": "SP1", "finding_id": passage["finding_links"][0]["finding_id"], "actor": {"label": "A source"},
+                           "stance": "asserts", "source_expression_ids": [passage["id"]],
+                           "attribution_verbatim": passage["text"], "created_by": "investigator", "cycle": 1}]}), encoding="utf-8")
+        before_gate = subprocess.run([sys.executable, str(SCRIPTS / "validate-case.py"), str(migrated)], capture_output=True, text=True)
+        require(before_gate.returncode == 0, "positions on a migrated case before its gate failed: " + before_gate.stdout[-800:] + before_gate.stderr[-800:])
 
     print("source-expression writer and case contract: PASS")
     return 0

@@ -106,6 +106,7 @@ The cases root is trusted journalist-owned local storage. Active case directorie
   │   ├── findings.json
   │   ├── fact-check.json
 │   ├── source-expressions.json  # opt-in pilot or activated cases
+│   ├── source-positions.json    # who asserts or disputes each finding
 │   ├── case-contract.json       # activated 1.1 cases only
 │   ├── evidence-bundle.json
 │   ├── investigation-log.json
