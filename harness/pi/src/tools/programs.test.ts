@@ -2,6 +2,10 @@
 // every typed tool refuses arguments outside its schema. The backing programs
 // here are stand-ins on PATH that record the argv they receive.
 import assert from 'node:assert/strict';
+import dns from 'node:dns';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { syncBuiltinESMExports } from 'node:module';
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,15 +19,16 @@ import { typedTools } from './index.ts';
 import { validateAfterWorker } from '../validators.ts';
 
 const RECORDER = `#!/usr/bin/env node
-const { appendFileSync } = require('node:fs');
+const { appendFileSync, existsSync, readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const args = process.argv.slice(2);
 appendFileSync(join(__dirname, 'argv.jsonl'), JSON.stringify({ program: require('node:path').basename(process.argv[1]), args }) + '\\n');
-if (args.includes('integrations.search')) process.stdout.write('[]');
+if (existsSync(join(__dirname, 'result.json'))) process.stdout.write(readFileSync(join(__dirname, 'result.json')));
+else if (args.includes('integrations.search')) process.stdout.write('[]');
 else process.stdout.write('{}');
 `;
 
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, env: Record<string, string> = {}) {
 	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-programs-')));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const bin = join(root, 'bin');
@@ -39,7 +44,7 @@ async function fixture(t: TestContext) {
 		writeRoot: caseDir,
 		python: join(bin, 'python'),
 		configPath: join(root, 'config.json'),
-		env: { PATH: `${bin}${delimiter}${dirname(process.execPath)}`, HOME: root },
+		env: { PATH: `${bin}${delimiter}${dirname(process.execPath)}`, HOME: root, ...env },
 	};
 	const tools = new Map(typedTools(context).map((tool) => [tool.name, tool]));
 	const call = (name: string, params: Record<string, unknown>) =>
@@ -49,7 +54,7 @@ async function fixture(t: TestContext) {
 			.split('\n')
 			.filter(Boolean)
 			.map((line) => JSON.parse(line) as { program: string; args: string[] });
-	return { root, caseDir, context, tools, call, recorded };
+	return { root, bin, caseDir, context, tools, call, recorded };
 }
 
 const PYTHON = process.platform === 'win32' ? 'python' : 'python3';
@@ -175,6 +180,64 @@ test('fetch, browse and http_get refuse loopback, private and metadata targets b
 			await assert.rejects(call(name, { url }), /refused/i, `${name} ${url}`);
 		}
 	}
+	assert.deepEqual(await recorded(), []);
+});
+
+// Tor mode: the target must never see a connection, or a DNS query, from the
+// operator's machine. The target here is a local server that counts requests;
+// node:dns lookup is replaced by a recorder that maps the target's name to it.
+async function torTarget(t: TestContext) {
+	const hits: string[] = [];
+	const server = createServer((request, response) => {
+		hits.push(request.url ?? '');
+		response.writeHead(200).end('target');
+	});
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+	t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+	const lookups: string[] = [];
+	t.mock.method(dns, 'lookup', (hostname: string, _options: unknown, callback: (error: Error | null, addresses: unknown) => void) => {
+		lookups.push(hostname);
+		callback(null, [{ address: '127.0.0.1', family: 4 }]);
+	});
+	syncBuiltinESMExports();
+	t.after(() => {
+		t.mock.restoreAll();
+		syncBuiltinESMExports();
+	});
+	return { url: `http://target.example.com:${(server.address() as AddressInfo).port}/page`, hits, lookups };
+}
+
+test('in Tor mode fetch makes no direct connection or lookup and hands the URL to the seam with --tor', async (t) => {
+	const { bin, call, recorded } = await fixture(t, { SPOTLIGHT_ANONYMIZE_FETCH: 'true' });
+	const target = await torTarget(t);
+	await writeFile(join(bin, 'result.json'), JSON.stringify({ markdown: 'page', source_url: target.url, provider: 'crawl4ai' }));
+
+	await call('fetch', { url: target.url });
+
+	assert.deepEqual(target.hits, []);
+	assert.deepEqual(target.lookups, []);
+	const [run] = await recorded();
+	assert.deepEqual(run.args.slice(-3), ['--tor', '--', target.url]);
+});
+
+test('in Tor mode the URL the seam reports ending on is still checked', async (t) => {
+	const { bin, call, recorded } = await fixture(t, { SPOTLIGHT_ANONYMIZE_FETCH: '1' });
+	await torTarget(t);
+	await writeFile(join(bin, 'result.json'), JSON.stringify({ markdown: 'admin', source_url: 'http://127.0.0.1:4173/review' }));
+
+	await assert.rejects(call('fetch', { url: 'https://example.com/' }), /refused: 127\.0\.0\.1 is not a public address/);
+	assert.equal((await recorded()).length, 1);
+});
+
+test('in Tor mode http_get and browse refuse without connecting, looking up or starting anything', async (t) => {
+	const { call, recorded } = await fixture(t, { SPOTLIGHT_ANONYMIZE_FETCH: 'yes' });
+	const target = await torTarget(t);
+
+	await assert.rejects(call('http_get', { url: target.url }), /cannot go through Tor/);
+	await assert.rejects(call('browse', { url: target.url }), /cannot go through Tor/);
+
+	assert.deepEqual(target.hits, []);
+	assert.deepEqual(target.lookups, []);
 	assert.deepEqual(await recorded(), []);
 });
 

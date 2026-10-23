@@ -8,10 +8,17 @@
 // guard as well, or the content is discarded. What the seam's browser loads
 // on its own (scripts, subresources, a redirect it sees but the harness did
 // not) is not checked address by address.
+//
+// Tor mode (SPOTLIGHT_ANONYMIZE_FETCH): the harness itself makes no connection
+// and no DNS query for the target. It checks the URL without the network
+// (scheme, credentials, literal addresses, local names) and hands it to the
+// seam with --tor; Chromium resolves names through a SOCKS5 proxy, so the name
+// is resolved behind Tor. The URL the seam reports ending on is checked the
+// same way before anything is returned.
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { writeConfined } from './case-files.ts';
-import { assertPublicDestination, publicDestination } from './egress.ts';
+import { anonymizedFetch, assertPublicDestination, checkURL, publicDestination } from './egress.ts';
 import { checkedParams, jsonResult, programOutput, runPython, savePath } from './run.ts';
 import type { ToolContext } from './run.ts';
 
@@ -34,17 +41,21 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 		parameters: params,
 		async execute(_id, raw, signal) {
 			const input = checkedParams<{ url: string; save_as?: string }>('fetch', params, raw);
-			const destination = await publicDestination(input.url, signal);
+			const viaTor = anonymizedFetch(context.env);
+			const destination = viaTor ? checkURL(input.url).href : await publicDestination(input.url, signal);
 			const output = programOutput(
 				'fetch',
-				await runPython(context, ['-m', 'integrations.scraping', '--json', '--', destination], {
+				await runPython(context, ['-m', 'integrations.scraping', '--json', ...(viaTor ? ['--tor'] : []), '--', destination], {
 					keys: SEAM_ENV,
 					signal,
 					timeoutMs: 180_000,
 				}),
 			);
 			const result = JSON.parse(output) as ScrapeResult;
-			if (result.source_url) await assertPublicDestination(result.source_url, signal);
+			if (result.source_url) {
+				if (viaTor) checkURL(result.source_url);
+				else await assertPublicDestination(result.source_url, signal);
+			}
 			const markdown = result.markdown ?? '';
 			const saved = input.save_as ? writeConfined(context.caseDir, context.writeRoot, input.save_as, markdown) : undefined;
 			return jsonResult({
