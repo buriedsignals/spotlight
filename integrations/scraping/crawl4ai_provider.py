@@ -21,6 +21,7 @@ from .mapping import crawl_failure_detail, map_crawl_result
 from .scrape_types import ScrapeError, ScrapeResult
 
 DEFAULT_TIMEOUT_MS = 45_000
+_BROWSER_PROXY = "SPOTLIGHT_BROWSER_PROXY"
 
 
 async def _afetch(url: str, timeout_ms: int, proxy: str | None = None) -> ScrapeResult:  # pragma: no cover - live path
@@ -34,9 +35,15 @@ async def _afetch(url: str, timeout_ms: int, proxy: str | None = None) -> Scrape
 
     # proxy (U7): a Tor SOCKS endpoint routes the browser's egress so the target
     # never sees the operator's IP. Passed straight to Playwright's launch proxy.
+    # Otherwise SPOTLIGHT_BROWSER_PROXY, set only by a harness (never from agent
+    # input), sends every connection the browser makes through the harness's
+    # egress-guard proxy. "<-loopback>" stops Chromium's implicit loopback
+    # bypass, so loopback requests reach the proxy (and its refusal) too.
     browser_kwargs = {"headless": True, "verbose": False}
-    if proxy:
-        browser_kwargs["proxy"] = proxy
+    browser_proxy = proxy or os.environ.get(_BROWSER_PROXY, "").strip()
+    if browser_proxy:
+        browser_kwargs["proxy"] = browser_proxy
+        browser_kwargs["extra_args"] = ["--proxy-bypass-list=<-loopback>"]
     async with AsyncWebCrawler(config=BrowserConfig(**browser_kwargs)) as crawler:
         result = await crawler.arun(
             url=url,
