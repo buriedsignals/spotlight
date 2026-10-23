@@ -2,7 +2,7 @@
 """Build the private acceptance fixture from fact-checked cases, and merge its labels.
 
     build_claims_fixture.py build --case NAME=FACT_CHECK_JSON[:METHODOLOGY_JSON] ... --out DIR
-    build_claims_fixture.py merge --fixture DIR/claims-fixture.json --a A.csv --b B.csv [--adjudicated ADJ.csv]
+    build_claims_fixture.py merge --fixture DIR/claims-fixture.json --a A.csv [--b B.csv] [--adjudicated ADJ.csv]
 
 Case material is private, so everything this writes goes to a directory
 outside the public checkout (refused otherwise). ``build`` writes
@@ -11,6 +11,8 @@ blank sheet two people fill in independently, blind to any model output.
 ``merge`` takes their two copies: a label both gave is kept; a disagreement is
 listed in ``disagreements.csv`` and needs a row in the adjudicated sheet. Until
 every disagreement is adjudicated, the fixture keeps those labels empty.
+With only ``--a``, one person's approved sheet is applied and recorded as
+``single_labeller_approved``, so a later second labeller can still be added.
 
 How a fact-checked claim becomes a lead (the fixture's ``lead``):
 
@@ -187,8 +189,10 @@ def _valid(column: str, value: str) -> bool:
     return bool(value)
 
 
-def merge_labels(fixture_paths: list[Path], a: Path, b: Path, adjudicated: Path | None) -> dict[str, Any]:
-    first, second = _read_sheet(a), _read_sheet(b)
+def merge_labels(fixture_paths: list[Path], a: Path, b: Path | None, adjudicated: Path | None) -> dict[str, Any]:
+    single = b is None
+    first = _read_sheet(a)
+    second = first if single else _read_sheet(b)
     final = _read_sheet(adjudicated) if adjudicated else {}
     disagreements, applied = [], 0
     for path in fixture_paths:
@@ -214,7 +218,7 @@ def merge_labels(fixture_paths: list[Path], a: Path, b: Path, adjudicated: Path 
                 gold["failure"] = {"class": labels.get("failure_class"),
                                    "research_visible": {"yes": True, "no": False}.get(labels.get("research_visible", ""))}
             if labels:
-                gold["label_source"] = "two_labellers_adjudicated"
+                gold["label_source"] = "single_labeller_approved" if single else "two_labellers_adjudicated"
                 applied += 1
         path.write_text(json.dumps(fixture, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     report = a.parent / "disagreements.csv"
@@ -234,7 +238,7 @@ def main(argv: list[str] | None = None) -> int:
     m = sub.add_parser("merge")
     m.add_argument("--fixture", action="append", required=True)
     m.add_argument("--a", required=True)
-    m.add_argument("--b", required=True)
+    m.add_argument("--b")
     m.add_argument("--adjudicated")
     args = parser.parse_args(argv)
     try:
@@ -247,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(build(cases, Path(args.out)), indent=1))
         else:
             fixtures = [outside_checkout(Path(p)) for p in args.fixture]
-            print(json.dumps(merge_labels(fixtures, Path(args.a), Path(args.b),
+            print(json.dumps(merge_labels(fixtures, Path(args.a), Path(args.b) if args.b else None,
                                           Path(args.adjudicated) if args.adjudicated else None), indent=1))
     except BuildError as exc:
         print(f"build_claims_fixture: {exc}", file=sys.stderr)
