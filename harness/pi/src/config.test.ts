@@ -184,10 +184,12 @@ test('newsroom: a route token is never the Editorial MCP token or a tool secret,
 	// Accepted, the Editorial token would reach every pi process as its route key.
 	assert.throws(() => readConfig(env('SPOTLIGHT_EDITORIAL_MCP_TOKEN')), /key_env may not name SPOTLIGHT_EDITORIAL_MCP_TOKEN/);
 	// A variable Spotlight passes on to helper programs (the browser opener, every tool) is never a route token.
-	for (const name of ['DBUS_SESSION_BUS_ADDRESS', 'HOME']) assert.throws(() => readConfig({ ...env(name), [name]: 'route-secret-0123456789' }), new RegExp(`key_env may not name ${name}`));
-	assert.throws(() => checkRouteSecrets(readConfig(env('REGISTRY_API_KEY')), COMPOSITION), /REGISTRY_API_KEY .*tool secret/);
+	for (const name of ['DBUS_SESSION_BUS_ADDRESS', 'HOME', 'TOR_SOCKS', 'ANOMALY_HOME', 'SCRAPE_PROVIDER']) assert.throws(() => readConfig({ ...env(name), [name]: 'route-secret-0123456789' }), new RegExp(`key_env may not name ${name}`));
+	assert.throws(() => checkRouteSecrets(readConfig(env('REGISTRY_API_KEY')), COMPOSITION, env('REGISTRY_API_KEY')), /REGISTRY_API_KEY .*tool secret/);
 	const ok = readConfig(env('ROUTE_TOKEN'));
-	assert.doesNotThrow(() => checkRouteSecrets(ok, COMPOSITION));
+	assert.doesNotThrow(() => checkRouteSecrets(ok, COMPOSITION, env('ROUTE_TOKEN')));
+	// A tool secret too short for the redactor to catch is refused, not left unredacted.
+	assert.throws(() => checkRouteSecrets(ok, COMPOSITION, { ...env('ROUTE_TOKEN'), REGISTRY_API_KEY: 'abc' }), /REGISTRY_API_KEY is shorter than 4 characters/);
 	assert.equal(childEnv(ok, COMPOSITION, 'orchestrator', env('ROUTE_TOKEN')).SPOTLIGHT_PROVIDER_API_KEY, 'route-secret-0123456789');
 	assert.throws(() => readConfig(env('ROUTE_TOKEN', 'abc')), /shorter than 16 characters/);
 	assert.throws(() => readConfig({ ...env('ROUTE_TOKEN'), ROUTE_TOKEN: 'tok' }), /ROUTE_TOKEN is shorter than 16 characters/);	// A role that declares the Editorial token as one of its keys still never receives it.

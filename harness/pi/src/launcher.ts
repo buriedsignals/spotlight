@@ -438,7 +438,7 @@ function main(): void {
 		config = readConfig(process.env);
 		composition = loadComposition();
 		routeFor(config);
-		checkRouteSecrets(config, composition);
+		checkRouteSecrets(config, composition, process.env);
 		checkNewsroomInstall(config);
 	} catch (error) {
 		if (error instanceof ConfigError || error instanceof RouteRefused) {

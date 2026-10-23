@@ -38,7 +38,7 @@ import type { ToolContext } from './run.ts';
 
 const MAX_RETURNED_CHARS = 30_000;
 // Variables the seam reads: the optional fallback key and the Tor posture.
-const SEAM_ENV = ['FIRECRAWL_API_KEY', 'SPOTLIGHT_ANONYMIZE_FETCH', 'TOR_SOCKS', 'SCRAPE_PROVIDER'];
+export const SEAM_ENV = ['FIRECRAWL_API_KEY', 'SPOTLIGHT_ANONYMIZE_FETCH', 'TOR_SOCKS', 'SCRAPE_PROVIDER'];
 
 export const webURL = Type.String({ minLength: 1, maxLength: 2048, pattern: '^[Hh][Tt][Tt][Pp][Ss]?://' });
 

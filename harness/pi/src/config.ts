@@ -6,6 +6,8 @@ import { isAbsolute, resolve } from 'node:path';
 import { parseFixedRequestBody } from './provider-policy.ts';
 import { CHECKOUT_ROOT, agentSpec } from './roles.ts';
 import type { Composition } from './roles.ts';
+import { MIN_REDACTED_LENGTH } from './log.ts';
+import { SEAM_ENV } from './tools/fetch.ts';
 import { BASE_ENV, DESKTOP_ENV } from './tools/run.ts';
 
 export type Edition = 'solo' | 'newsroom';
@@ -172,8 +174,8 @@ function parseRoutes(raw: string | undefined): Route[] {
 		// A route's token is handed to every pi process and its model
 		// endpoint, so it may never be one of the harness's own variables (the
 		// Editorial MCP token among them).
-		// Nor one Spotlight passes on to helper programs (every tool, the browser opener).
-		if (typeof item.key_env === 'string' && (item.key_env.startsWith('SPOTLIGHT_') || [...BASE_ENV, ...DESKTOP_ENV].includes(item.key_env))) {
+		// Nor one Spotlight passes on to helper programs (HELPER_ENV).
+		if (typeof item.key_env === 'string' && (item.key_env.startsWith('SPOTLIGHT_') || HELPER_ENV.has(item.key_env))) {
 			throw new ConfigError(`${label}.key_env may not name ${item.key_env}: a route's token is its own variable, never one of Spotlight's (the Editorial MCP token is never a route token).`);
 		}
 		return {
@@ -477,7 +479,6 @@ export function secretValues(config: HarnessConfig, composition: Composition, en
 	return [...names].map((name) => env[name]).filter((value): value is string => !!value);
 }
 
-const PASSTHROUGH = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT'];
 // Non-secret settings of the backings the typed tools wrap (Tor posture for
 // fetch, browse's Chromium, the RLM model), passed to every process unchanged.
 // The RLM endpoint itself is passed only after readConfig confirmed it is own.
@@ -493,6 +494,11 @@ const BACKING_SETTINGS = [
 	'SPOTLIGHT_RLM_MODEL',
 ];
 
+// Every variable Spotlight hands unchanged to a helper program: pi processes,
+// lane and fetch tools, the Navigator and Anomaly programs, the browser
+// opener. None of them may hold a route token.
+const HELPER_ENV = new Set([...BASE_ENV, ...BACKING_SETTINGS, ...SEAM_ENV, ...DESKTOP_ENV, 'XDG_CONFIG_HOME']);
+
 // The complete environment of one pi process: system basics, the harness's own
 // settings, the selected route's token under a fixed name, and only the keys
 // the role declares. Everything else in the launcher's environment is dropped.
@@ -505,7 +511,7 @@ export function childEnv(
 	const route = routeFor(config);
 	const spec = agentSpec(composition, role);
 	const out: Record<string, string> = {};
-	for (const name of [...PASSTHROUGH, ...BACKING_SETTINGS]) if (env[name]) out[name] = env[name] as string;
+	for (const name of [...BASE_ENV, ...BACKING_SETTINGS]) if (env[name]) out[name] = env[name] as string;
 	// The Editorial token stays in the harness even if a composition names it.
 	for (const key of spec.keys ?? []) if (env[key] && key !== EDITORIAL_TOKEN_ENV) out[key] = env[key] as string;
 	const token = route.keyEnv ? env[route.keyEnv] : undefined;
@@ -544,11 +550,18 @@ export function childEnv(
 
 // A route's token goes to every pi process (childEnv), so it may not be a
 // secret an agent declares for its own tools (harness/composition.json keys).
-export function checkRouteSecrets(config: HarnessConfig, composition: Composition): void {
+// A tool secret too short to redact (log.ts) is refused rather than leaked.
+export function checkRouteSecrets(config: HarnessConfig, composition: Composition, env: Env): void {
 	const declared = new Set(Object.values(composition).flatMap((spec) => spec.keys ?? []));
 	for (const route of config.routes) {
 		if (route.keyEnv && declared.has(route.keyEnv)) {
 			throw new ConfigError(`route "${route.name}" may not use ${route.keyEnv} as its token: that variable is a tool secret, never a route token.`);
+		}
+	}
+	for (const name of declared) {
+		const value = env[name];
+		if (value && value.length < MIN_REDACTED_LENGTH) {
+			throw new ConfigError(`${name} is shorter than ${MIN_REDACTED_LENGTH} characters, so it cannot be redacted reliably; set its full value or unset it.`);
 		}
 	}
 }
