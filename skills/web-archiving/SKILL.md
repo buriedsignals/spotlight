@@ -35,7 +35,7 @@ Capture the page as a content-addressed **MHTML archive + full-page screenshot +
 headers** using the local `dev-browser` CLI. Full recipe: `references/capture-dev-browser.md`;
 record schema: `references/snapshot-record.md`. In brief:
 
-1. `execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"`
+1. `execute-shell: scripts/spotlight-python scripts/spotlight_safe.py validate-url "{URL}"`
 2. Write + run the capture script (`dev-browser --headless --timeout 90 run …`) → JSON with the
    temp MHTML/PNG paths, status, headers, and an `access_wall` flag.
 3. Hash each artifact (`spotlight_safe.py sha256`) and copy it to
@@ -58,7 +58,7 @@ record schema: `references/snapshot-record.md`. In brief:
   **content-only, no MHTML**; mark it accordingly and continue to Tier 1.
 
   ```
-  execute-shell: python3 -m integrations.scraping {URL} --out {CASE_DIR}/evidence/snapshots/{slug}.md
+  execute-shell: scripts/spotlight-python -m integrations.scraping {URL} --out {CASE_DIR}/evidence/snapshots/{slug}.md
   ```
 
 ### 1. Wayback Machine (Internet Archive)
@@ -66,14 +66,14 @@ record schema: `references/snapshot-record.md`. In brief:
 Check if already archived:
 
 ```
-execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+execute-shell: scripts/spotlight-python scripts/spotlight_safe.py validate-url "{URL}"
 execute-shell: curl -s --get "https://archive.org/wayback/available" --data-urlencode "url={URL}"
 ```
 
 Submit for archiving:
 
 ```
-execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+execute-shell: scripts/spotlight-python scripts/spotlight_safe.py validate-url "{URL}"
 execute-shell: curl -s -I "https://web.archive.org/save/{URL}"
 ```
 
@@ -82,7 +82,7 @@ The response `Location` header contains the new snapshot URL.
 Find all snapshots (CDX API):
 
 ```
-execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+execute-shell: scripts/spotlight-python scripts/spotlight_safe.py validate-url "{URL}"
 execute-shell: curl --get "http://web.archive.org/cdx/search/cdx" \
   --data-urlencode "url={URL}" \
   --data-urlencode "output=json" \
@@ -106,7 +106,7 @@ Follow redirects — the final URL is the archived copy.
 Check for existing copy:
 
 ```
-execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+execute-shell: scripts/spotlight-python scripts/spotlight_safe.py validate-url "{URL}"
 execute-shell: curl -s "https://archive.ph/newest/" --get --data-urlencode "url={URL}"
 ```
 
@@ -158,7 +158,7 @@ write-file: path={CASE_DIR}/research/archived/{domain}-{slug}-archived-{YYYYMMDD
 If the original URL returns 404 or is otherwise gone, check Wayback Machine before marking the source as unavailable:
 
 ```
-execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+execute-shell: scripts/spotlight-python scripts/spotlight_safe.py validate-url "{URL}"
 execute-shell: curl --get "http://web.archive.org/cdx/search/cdx" \
   --data-urlencode "url={URL}" \
   --data-urlencode "output=json" \
@@ -169,8 +169,8 @@ execute-shell: curl --get "http://web.archive.org/cdx/search/cdx" \
 If a snapshot exists, retrieve it:
 
 ```
-execute-shell: python3 scripts/spotlight_safe.py validate-timestamp "{TIMESTAMP}"
-execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+execute-shell: scripts/spotlight-python scripts/spotlight_safe.py validate-timestamp "{TIMESTAMP}"
+execute-shell: scripts/spotlight-python scripts/spotlight_safe.py validate-url "{URL}"
 fetch: url=https://web.archive.org/web/{TIMESTAMP}/{URL}, output_path={CASE_DIR}/research/archived/{filename}.md
 ```
 

@@ -85,10 +85,11 @@ def read_env_file(path: Path) -> dict[str, str]:
 
 
 def install_endpoint() -> tuple[str, str]:
-    """The decision endpoint from the install config Engine writes at the
-    checkout root, never from --config, case files or agent arguments."""
+    """The decision endpoint from the install config Engine writes (the
+    checkout root's, or $SPOTLIGHT_CONFIG), never from --config, case files or
+    agent arguments."""
     try:
-        config = json.loads((ROOT / ".spotlight-config.json").read_text(encoding="utf-8"))
+        config = json.loads(credentials.config_path(ROOT).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         config = {}
     try:
@@ -297,7 +298,7 @@ def main(argv: list[str] | None = None, provider: Any = None) -> int:
     parser.add_argument(
         "--phase", type=lambda value: value.replace("-", "_"), choices=PHASES, required=True
     )
-    parser.add_argument("--config", default=str(ROOT / ".spotlight-config.json"))
+    parser.add_argument("--config", default=None, help="install config (default: $SPOTLIGHT_CONFIG, else the checkout root's)")
     parser.add_argument("--case-opt-in", action="store_true", help="record that the user agreed to decision checks for this case")
     parser.add_argument("--dry-run", action="store_true", help="print the states that would be sent and exit")
     parser.add_argument("--check", action="store_true", help="report whether a run would make requests, without any request")
@@ -308,7 +309,7 @@ def main(argv: list[str] | None = None, provider: Any = None) -> int:
     args = parser.parse_args(argv)
 
     case = Path(args.case_dir).resolve()
-    config_path = Path(args.config)
+    config_path = Path(args.config) if args.config else credentials.config_path(ROOT)
     config = load_json(config_path) if config_path.is_file() else {}
     cfg = settings(config)
     sensitive = args.sensitive or config.get("sensitive") is True or manifest_sensitive() or os.environ.get("SPOTLIGHT_SENSITIVE", "").lower() == "true"

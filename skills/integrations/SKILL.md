@@ -96,7 +96,7 @@ What's the task?
 │
 ├── "Methodology tool selection" / "Need a tool I don't know for category X" / "Compare tools" / "Niche country-specific tool"
 │     → osint-navigator  (first pass ONLY if entitled + green + sensitive mode false — subscription tier)
-│     → otherwise (DEFAULT for local / open tier): execute-shell("python3 scripts/osint-tools.py find \"<keywords>\" [--category X]")  — local SQL index, 12,500 tools, offline, no Navigator needed
+│     → otherwise (DEFAULT for local / open tier): execute-shell("scripts/spotlight-python scripts/osint-tools.py find \"<keywords>\" [--category X]")  — local SQL index, 12,500 tools, offline, no Navigator needed
 │
 ├── "Static page scrape / web search"
 │     → fetch / search (verbs, no integration needed)
@@ -119,7 +119,7 @@ What's the task?
 ## How to check preflight status mid-execution
 
 ```
-execute-shell("python3 integrations/preflight.py --model-tier {config.model_tier} --json")
+execute-shell("scripts/spotlight-python integrations/preflight.py --model-tier {config.model_tier} --json")
 ```
 
 Parse the JSON output. `summary.green` tells you how many integrations are usable. `integrations[].status` tells you per-integration. Only route to `green` integrations; log a note and fall back for `red`/`yellow`/`unconfigured`.

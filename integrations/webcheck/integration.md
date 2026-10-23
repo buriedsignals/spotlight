@@ -52,7 +52,7 @@ The aggregate `/api` endpoint is never called, because it runs every check.
 ## Request
 
 ```bash
-python3 integrations/_runner.py webcheck path/to/request.json [--dry-run]
+scripts/spotlight-python integrations/_runner.py webcheck path/to/request.json [--dry-run]
 ```
 
 ```json

@@ -65,4 +65,4 @@ When all readiness criteria pass, present the investigation for review:
 
 ## summary.json
 
-Generated at the Investigation gate and written to `{CASE_DIR}/data/summary.json` per the summary schema (`schemas/summary.schema.json`). Contains the structured data for the investigation summary: title, overview, scope, conclusions, findings summary, limitations, and methodology summary.
+Generated at the Investigation gate and written to `{CASE_DIR}/data/summary.json` per the summary schema (`schemas/summary.schema.json`). Contains the structured data for the investigation summary: title, generation time, status, cycles, narrative summary, key conclusions, limitations, methodology summary, and one row per finding with its confidence and fact-check verdict. `scripts/validate-case.py` checks it.

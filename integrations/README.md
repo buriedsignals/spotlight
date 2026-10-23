@@ -99,9 +99,9 @@ Every integration directory has a `manifest.json`:
 Usage:
 
 ```bash
-python3 integrations/preflight.py                 # JSON output
-python3 integrations/preflight.py --text          # Human-readable table
-python3 integrations/preflight.py --smoke-test    # Also runs a minimal API call per integration
+scripts/spotlight-python integrations/preflight.py                 # JSON output
+scripts/spotlight-python integrations/preflight.py --text          # Human-readable table
+scripts/spotlight-python integrations/preflight.py --smoke-test    # Also runs a minimal API call per integration
 ```
 
 The orchestrator runs this in Preflight step 10, alongside its local Mycroft/passive-monitor checks, so the user sees which integrations are live before starting an investigation.
@@ -125,7 +125,7 @@ The skill `skills/integrations/SKILL.md` is the routing layer — it tells agent
 1. **Directory**: `mkdir integrations/<new_id>/`
 2. **Manifest**: write `manifest.json` per the contract above
 3. **Usage instructions**: write `integration.md` — when to use, exact verb calls, output format, examples
-4. **Verify**: `python3 integrations/preflight.py --text` — the new integration should appear in the status table
+4. **Verify**: `scripts/spotlight-python integrations/preflight.py --text` — the new integration should appear in the status table
 
 Also register in `skills/integrations/SKILL.md`'s routing table so agents can discover it. If journalists should save a key at install time, add it to Indicator Labs.
 

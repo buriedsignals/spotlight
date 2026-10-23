@@ -10,7 +10,7 @@ SHA-256. No Docker/Postgres/service — real Chrome via the local `dev-browser` 
 
 ## Preconditions
 
-- `dev-browser` on PATH (`command -v dev-browser`). If absent, use the Crawl4AI seam fallback (`python3 -m integrations.scraping <url>`)
+- `dev-browser` on PATH (`command -v dev-browser`). If absent, use the Crawl4AI seam fallback (`scripts/spotlight-python -m integrations.scraping <url>`)
   (see SKILL.md) — do not block.
 - Sensitive mode: do **not** run a live capture. The `web-archiving` skill is disabled in
   sensitive mode; if reached, fall back to Tier 1 (Wayback) or require explicit egress approval.
@@ -18,7 +18,7 @@ SHA-256. No Docker/Postgres/service — real Chrome via the local `dev-browser` 
 ## Step 1 — validate the URL (shell-safety)
 
 ```
-execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+execute-shell: scripts/spotlight-python scripts/spotlight_safe.py validate-url "{URL}"
 ```
 
 Only after this passes, embed the URL into the script below **as a JSON-quoted string literal**
@@ -80,7 +80,7 @@ to Tier 1/2 (do not abort the archive).
 For each of `tmp_mhtml` (ext `mhtml`) and `tmp_png` (ext `png`):
 
 ```
-execute-shell: python3 scripts/spotlight_safe.py sha256 "{TMP_PATH}"      # -> <sha>
+execute-shell: scripts/spotlight-python scripts/spotlight_safe.py sha256 "{TMP_PATH}"      # -> <sha>
 execute-shell: mkdir -p {CASE_DIR}/evidence/snapshots
 execute-shell: cp "{TMP_PATH}" {CASE_DIR}/evidence/snapshots/<sha>.<ext>
 execute-shell: rm -f "{TMP_PATH}"

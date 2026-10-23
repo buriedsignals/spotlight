@@ -32,6 +32,24 @@ CONFIG_NAME = ".spotlight-config.json"
 REDACTED = "[redacted]"
 
 
+class ConfigPathError(RuntimeError):
+    """SPOTLIGHT_CONFIG is set but cannot name the install config."""
+
+
+def config_path(root: Path = ROOT) -> Path:
+    """The install config: ``$SPOTLIGHT_CONFIG`` when set (an absolute path),
+    else ``.spotlight-config.json`` at the checkout root. The Pi harness and
+    the review seam apply the same rule. A relative ``SPOTLIGHT_CONFIG`` is
+    refused, never read against the working directory."""
+    value = os.environ.get("SPOTLIGHT_CONFIG", "").strip()
+    if not value:
+        return root / CONFIG_NAME
+    path = Path(value)
+    if not path.is_absolute():
+        raise ConfigPathError("SPOTLIGHT_CONFIG must be an absolute path.")
+    return path
+
+
 def _unquote(raw: str) -> str:
     raw = raw.strip()
     if len(raw) >= 2 and raw[0] == raw[-1] == '"':
@@ -104,7 +122,7 @@ def _parse(text: str) -> dict[str, str]:
 def config_env_file(root: Path = ROOT) -> Path | None:
     """The top-level ``env_file`` named in the checkout config, if any."""
     try:
-        config = json.loads((root / CONFIG_NAME).read_text(encoding="utf-8"))
+        config = json.loads(config_path(root).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     value = config.get("env_file") if isinstance(config, dict) else None
@@ -186,7 +204,7 @@ def executable(name: str, root: Path = ROOT) -> str | None:
     if found:
         return found
     try:
-        config = json.loads((root / CONFIG_NAME).read_text(encoding="utf-8"))
+        config = json.loads(config_path(root).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     configured = (config.get("executables") or {}).get(name) if isinstance(config, dict) else None

@@ -105,7 +105,7 @@ Every `execute-shell` step in `agents/` and in the skills these roles load, and 
 | investigator, fact-checker | `grep -n`, `sed -n` or Python to find a line range or resolve a JSON Pointer for a `source_ref` | `grep_files` (line numbers), `read_file` with `offset`/`limit` or `json_pointer` |
 | technical-investigation (`references/github-public.md`; no step names a command) | `git clone` and `git merge-base` of a public repository, as an agent with a shell may improvise | not available: no git in this harness; the step reports that it needs a clone. The repository's public web API is reachable through `http_get` |
 | editorial-review | building `review.html` (payload serialization and template injection) | `build_review_html` (`scripts/build-review-html.py`) |
-| web-archiving | `python3 -m integrations.scraping {URL} --out ...` | `fetch` with `save_as` |
+| web-archiving | `scripts/spotlight-python -m integrations.scraping {URL} --out ...` | `fetch` with `save_as` |
 | dev-browser integration, web-archiving dev-browser capture | `dev-browser run <script>`, then `mkdir`, `cp`, `rm` of the capture | `browse` (text, HTML or screenshot saved with `save_as`) |
 | fact-checker, technical-investigation | `exiftool {file}` | `exiftool` |
 | phase-methodology, osint, integrations | `scripts/osint-tools.py find` | `osint_tools` |

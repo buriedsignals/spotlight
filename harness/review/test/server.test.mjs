@@ -3,7 +3,9 @@
 import assert from "node:assert/strict";
 import { request } from "node:http";
 import { test } from "node:test";
-import { safeChildEnvironment } from "../case-bridge.mjs";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { safeChildEnvironment, spotlightPython, which } from "../case-bridge.mjs";
 import { api, buildCase, openSession, startFor, tempRoot } from "./helpers.mjs";
 
 function rawGet(origin, host) {
@@ -119,6 +121,19 @@ test("the overall limit closes a signed-in session that is still active", async 
   const call = api(origin, cookie);
   assert.equal((await call("/api/view")).status, 200);
   assert.deepEqual(await server.closed, { reason: "expired" });
+});
+
+test("the seam runs the Spotlight interpreter: SPOTLIGHT_PYTHON, else the checkout venv, else python3", (t) => {
+  const root = tempRoot(t);
+  const PATH = process.env.PATH;
+  assert.equal(spotlightPython({ env: { PATH, SPOTLIGHT_PYTHON: "/opt/spotlight/bin/python" }, root }), "/opt/spotlight/bin/python");
+  assert.throws(() => spotlightPython({ env: { PATH, SPOTLIGHT_PYTHON: "python3.12" }, root }), /absolute path/);
+  assert.equal(spotlightPython({ env: { PATH }, root }), which("python3", PATH));
+  const venvPython = join(root, ".venv", "bin", "python");
+  mkdirSync(join(root, ".venv", "bin"), { recursive: true });
+  writeFileSync(venvPython, "#!/bin/sh\n");
+  chmodSync(venvPython, 0o755);
+  assert.equal(spotlightPython({ env: { PATH }, root }), venvPython);
 });
 
 test("the child environment drops keys, tokens and loader hooks", () => {

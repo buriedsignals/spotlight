@@ -157,7 +157,7 @@ every hash and fingerprint, validates, and publishes atomically under the case
 lock:
 
 ```text
-python3 scripts/write-source-expressions.py {CASE_DIR} --actor fact-checker --cycle N < proposal.json
+scripts/spotlight-python scripts/write-source-expressions.py {CASE_DIR} --actor fact-checker --cycle N < proposal.json
 ```
 
 The proposal lists each passage's `id`, exact `text`, `anchor_ref`,

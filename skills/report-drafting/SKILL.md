@@ -100,7 +100,7 @@ The renderer places this at the top of the page. Do not soften:
    (`data/decision-signals.json` exists), check the prose before finalizing:
 
    ```
-   execute-shell("python3 scripts/decision-signals.py {CASE_DIR} --phase report")
+   execute-shell("scripts/spotlight-python scripts/decision-signals.py {CASE_DIR} --phase report")
    ```
 
    It asks the decision model whether each deck, headline, summary,

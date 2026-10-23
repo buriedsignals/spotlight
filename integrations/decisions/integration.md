@@ -3,7 +3,7 @@
 Optional. Uses the member's OpenRouter key, `OPENROUTER_API_KEY`, read from the
 environment or from the file named by `integrations.decisions.env_file` in
 `.spotlight-config.json` (for example `~/buried_signals/investigations/.env`).
-`python3 scripts/decision-signals.py CASE_DIR --phase investigation-gate --check` reports whether a run
+`scripts/spotlight-python scripts/decision-signals.py CASE_DIR --phase investigation-gate --check` reports whether a run
 would happen, without any request. The default model is `typesafe/jev-1.13` (TypeSafe's
 decision model served by OpenRouter); change it with `integrations.decisions.model` only
 after re-running the evaluation, because thresholds are measured against that model.
@@ -11,12 +11,13 @@ after re-running the evaluation, because thresholds are measured against that mo
 Another server that speaks the same Decisions API, such as a newsroom's own
 inference, can answer instead. Engine names it in the install config's
 `integrations.decisions.endpoint`, as `{"url", "credential_env", "api"}`.
-Spotlight reads it only from the checkout's `.spotlight-config.json`, never
-from `--config`, case files or agent arguments. The URL must be https, or
-plain http on loopback. The credential is the one named in `credential_env`,
-never `OPENROUTER_API_KEY`, and the zero-retention provider body is sent only
-to openrouter.ai. `api` must be `openrouter-decisions`; a server with another
-API needs an adapter in `client.py`.
+Spotlight reads it only from the install config (`$SPOTLIGHT_CONFIG`, else the
+checkout's `.spotlight-config.json`), never from `--config`, case files or
+agent arguments. The URL must be https, or plain http on loopback. The
+credential is the one named in `credential_env`, never `OPENROUTER_API_KEY`,
+and the zero-retention provider body is sent only to openrouter.ai. `api`
+must be `openrouter-decisions`; a server with another API needs an adapter in
+`client.py`.
 
 ## What it does
 

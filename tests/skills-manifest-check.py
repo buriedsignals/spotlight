@@ -35,6 +35,50 @@ def agents_registry_skills() -> set[str]:
     return set(re.findall(r"\| `([^`]+)` \| `skills/[^`]+/SKILL\.md` \|", text))
 
 
+def agent_frontmatter_skills(agent: str) -> list[str]:
+    text = (ROOT / "agents" / f"{agent}.md").read_text(encoding="utf-8")
+    frontmatter = text.split("---", 2)[1]
+    block = re.search(r"^skills:\n((?:  - .+\n)+)", frontmatter, re.MULTILINE)
+    return re.findall(r"^  - (\S+)", block.group(1), re.MULTILINE) if block else []
+
+
+def spawn_skill_lists() -> list[tuple[str, str, list[str]]]:
+    """(location, spawned agent, SKILLS ids) for every spawn prompt in a phase skill."""
+    spawns = []
+    for path in sorted((ROOT / "skills").glob("*/SKILL.md")):
+        agent = None
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            spawned = re.search(r'agent_id: "([^"{]+)"', line)
+            if spawned:
+                agent = spawned.group(1)
+            if line.startswith("SKILLS:") and agent:
+                listed = re.sub(r"\([^)]*\)", "", line[len("SKILLS:"):])
+                ids = [part.strip() for part in listed.split(",") if part.strip()]
+                spawns.append((f"{path.relative_to(ROOT)}:{number}", agent, ids))
+    return spawns
+
+
+def skill_reference_errors(dirs: set[str]) -> list[str]:
+    """A spawned worker is told to load only skills that exist, and every skill its prompt requires."""
+    errors: list[str] = []
+    for agent_path in sorted((ROOT / "agents").glob("*.md")):
+        unknown = set(agent_frontmatter_skills(agent_path.stem)) - dirs
+        if unknown:
+            errors.append(f"agents/{agent_path.name}: skills references unknown skills {sorted(unknown)}")
+    for path in sorted([*(ROOT / "agents").glob("*.md"), *(ROOT / "skills").rglob("*.md")]):
+        named = set(re.findall(r'invoke-skill\(\\?"([a-z0-9-]+)\\?"\)', path.read_text(encoding="utf-8")))
+        if named - dirs:
+            errors.append(f"{path.relative_to(ROOT)}: invoke-skill names unknown skills {sorted(named - dirs)}")
+    for location, agent, ids in spawn_skill_lists():
+        unknown = set(ids) - dirs
+        if unknown:
+            errors.append(f"{location}: SKILLS references unknown skills {sorted(unknown)}")
+        omitted = [skill for skill in agent_frontmatter_skills(agent) if skill not in ids]
+        if omitted:
+            errors.append(f"{location}: SKILLS for {agent} omits its required skills {omitted}")
+    return errors
+
+
 def main() -> int:
     manifest = json.loads((ROOT / "skills-manifest.json").read_text(encoding="utf-8"))
     errors: list[str] = []
@@ -58,6 +102,7 @@ def main() -> int:
         errors.append(f"manifest skills differ from skills/*/SKILL.md: manifest={sorted(manifest_ids)} dirs={sorted(dirs)}")
     if manifest_ids != registry:
         errors.append(f"manifest skills differ from AGENTS.md registry: manifest={sorted(manifest_ids)} registry={sorted(registry)}")
+    errors.extend(skill_reference_errors(dirs))
     installed = install_manifest_skills()
     if manifest_ids != installed:
         errors.append(f"manifest skills differ from skills.manifest: manifest={sorted(manifest_ids)} skills.manifest={sorted(installed)}")

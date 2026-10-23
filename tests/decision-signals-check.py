@@ -186,13 +186,20 @@ def test_preflight_opt_in_states(tmp: Path) -> None:
     base = load("spotlight_preflight_base", ROOT / "integrations" / "_preflight_base.py")
     manifest = json.loads((ROOT / "integrations" / "decisions" / "manifest.json").read_text())
     cfg = tmp / "pf-config.json"
-    preflight.CONFIG_PATH = cfg
-    cfg.write_text("{}")
-    assert preflight.extra_fields(manifest)["opt_in"] == "undecided" and "choice" in preflight.extra_fields(manifest)
-    cfg.write_text(json.dumps({"integrations": {"decisions": {"enabled": True, "decided_at": "2026-09-28"}}}))
-    assert preflight.extra_fields(manifest)["opt_in"] == "enabled"
-    cfg.write_text(json.dumps({"integrations": {"decisions": {"enabled": False, "decided_at": "2026-09-28"}}}))
-    declined = preflight.extra_fields(manifest)
+    saved_config = os.environ.get("SPOTLIGHT_CONFIG")
+    os.environ["SPOTLIGHT_CONFIG"] = str(cfg)
+    try:
+        cfg.write_text("{}")
+        assert preflight.extra_fields(manifest)["opt_in"] == "undecided" and "choice" in preflight.extra_fields(manifest)
+        cfg.write_text(json.dumps({"integrations": {"decisions": {"enabled": True, "decided_at": "2026-09-28"}}}))
+        assert preflight.extra_fields(manifest)["opt_in"] == "enabled"
+        cfg.write_text(json.dumps({"integrations": {"decisions": {"enabled": False, "decided_at": "2026-09-28"}}}))
+        declined = preflight.extra_fields(manifest)
+    finally:
+        if saved_config is None:
+            os.environ.pop("SPOTLIGHT_CONFIG", None)
+        else:
+            os.environ["SPOTLIGHT_CONFIG"] = saved_config
     assert declined["opt_in"] == "declined" and declined["status"] == "dismissed"
     assert preflight.extra_fields({"id": "apify", "type": "api"})["opt_in"] == ""
 

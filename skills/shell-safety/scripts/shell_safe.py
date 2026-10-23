@@ -11,6 +11,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 DOI_RE = re.compile(r"^10\.\d{4,9}/[-._;()/:A-Z0-9]+$", re.IGNORECASE)
+TIMESTAMP_RE = re.compile(r"^\d{4}(-\d{2}){0,2}([T ][0-9:.+-]+Z?)?$")
+SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 UNSAFE_CHARS_RE = re.compile(r"[\x00\r\n`$;&|<>]")
 
 
@@ -44,6 +46,22 @@ def validate_doi(value: str) -> str:
     return value
 
 
+def validate_timestamp(value: str) -> str:
+    reject_shell_metacharacters(value, "timestamp")
+    if not TIMESTAMP_RE.match(value):
+        raise SafetyError("invalid timestamp")
+    return value
+
+
+def validate_slug(value: str) -> str:
+    reject_shell_metacharacters(value, "slug")
+    if not SLUG_RE.match(value):
+        raise SafetyError("invalid slug")
+    if ".." in value:
+        raise SafetyError("slug cannot contain path traversal")
+    return value
+
+
 def resolve_path(base: str, candidate: str) -> Path:
     reject_shell_metacharacters(candidate, "path")
     raw = Path(candidate)
@@ -67,11 +85,13 @@ def sha256_file(path: str) -> str:
     return digest.hexdigest()
 
 
-def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="shell-safety validation helper")
+def main(argv: list[str], description: str = "shell-safety validation helper") -> int:
+    parser = argparse.ArgumentParser(description=description)
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("validate-url").add_argument("url")
     sub.add_parser("validate-doi").add_argument("doi")
+    sub.add_parser("validate-timestamp").add_argument("timestamp")
+    sub.add_parser("validate-slug").add_argument("slug")
     path = sub.add_parser("resolve-path")
     path.add_argument("--base", required=True)
     path.add_argument("--path", required=True)
@@ -85,6 +105,10 @@ def main(argv: list[str]) -> int:
             print(validate_url(args.url))
         elif args.cmd == "validate-doi":
             print(validate_doi(args.doi))
+        elif args.cmd == "validate-timestamp":
+            print(validate_timestamp(args.timestamp))
+        elif args.cmd == "validate-slug":
+            print(validate_slug(args.slug))
         elif args.cmd == "resolve-path":
             print(resolve_path(args.base, args.path))
         elif args.cmd == "destructive-probe":

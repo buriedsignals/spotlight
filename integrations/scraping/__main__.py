@@ -7,6 +7,7 @@
     python3 -m integrations.scraping <url> --tor              # route via Tor (U7, anonymize)
     python3 -m integrations.scraping <path.pdf> --pdf         # parse a local PDF
     python3 -m integrations.scraping <url> --json             # full ScrapeResult + hash
+    python3 -m integrations.scraping <url> --json --out page.md  # markdown to the file, JSON to stdout
 
 Default provider is Crawl4AI (open-source, no API key); on a bot-block it escalates
 to Firecrawl only when FIRECRAWL_API_KEY is set. Exit 0 on success; 3 on a
@@ -70,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("target", help="URL to scrape, or a local .pdf path with --pdf")
     ap.add_argument("--provider", default=None, help="crawl4ai (default) | firecrawl")
     ap.add_argument("--pdf", action="store_true", help="treat target as a local PDF path (pdftotext)")
-    ap.add_argument("--out", default=None, help="write output to this path instead of stdout")
+    ap.add_argument("--out", default=None, help="write the page content (markdown) to this path instead of stdout")
     ap.add_argument("--no-escalate", action="store_true", help="disable the Firecrawl bot-block escalation")
     # Tor (U7): --tor anonymizes this fetch; --no-tor forces direct even when
     # SPOTLIGHT_ANONYMIZE_FETCH is set for the run. Neither = defer to the env.
@@ -79,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
                      help="route this fetch through Tor SOCKS (hide operator IP)")
     tor.add_argument("--no-tor", dest="anonymize", action="store_false",
                      help="force a direct fetch even if SPOTLIGHT_ANONYMIZE_FETCH is set")
-    ap.add_argument("--json", action="store_true", help="emit the full ScrapeResult (with content_sha256) as JSON")
+    ap.add_argument("--json", action="store_true", help="print the full ScrapeResult (with content_sha256) as JSON on stdout, also with --out")
     ap.add_argument("--rlm", action="store_true",
                     help="runtime-auto RLM: distill the page to compact leads (local tier); raw kept as <out>.raw")
     args = ap.parse_args(argv)
@@ -97,12 +98,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"scrape failed: {exc}", file=sys.stderr)
         return 3
 
+    # --out always receives the page content; --json always goes to stdout,
+    # so `--json --out page.md` saves the markdown and prints the envelope.
+    out = result.markdown
+    envelope = None
     if args.json:
         payload = dataclasses.asdict(result)
         payload["content_sha256"] = result.content_sha256
-        out = json.dumps(payload, indent=2)
-    else:
-        out = result.markdown
+        envelope = json.dumps(payload, indent=2)
 
     # Runtime-auto RLM: the model reads compact leads (--out); raw stays as <out>.raw for provenance.
     leads = _rlm_distill(result.markdown, args.target) if (args.rlm and not args.json and not args.pdf) else None
@@ -120,8 +123,10 @@ def main(argv: list[str] | None = None) -> int:
                 fh.write(out)
             note = " (RLM off/failed — raw)" if args.rlm else ""
             print(f"wrote {len(result.markdown)} chars via {result.provider} -> {args.out}{note}", file=sys.stderr)
+        if envelope is not None:
+            sys.stdout.write(envelope)
     else:
-        sys.stdout.write(leads if leads is not None else out)
+        sys.stdout.write(envelope if envelope is not None else (leads if leads is not None else out))
     return 0
 
 

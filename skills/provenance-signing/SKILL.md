@@ -59,7 +59,7 @@ Never store private keys, certificates, API keys, bearer tokens, or signing secr
 For a local unsigned package:
 
 ```text
-execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR}")
+execute-shell("scripts/spotlight-python scripts/build-provenance-manifest.py {CASE_DIR}")
 ```
 
 For a legacy case this writes the existing unsigned 1.0 manifest. For an
@@ -71,7 +71,7 @@ Before delivering or signing an existing manifest, check that findings,
 fact-check, source expressions, review, and report inputs have not changed:
 
 ```text
-execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR} --check-current")
+execute-shell("scripts/spotlight-python scripts/build-provenance-manifest.py {CASE_DIR} --check-current")
 ```
 
 The command exits non-zero and marks an activated pointer `stale` on any input
@@ -83,7 +83,7 @@ revision file in place.
 If a Noosphere C2PA signer endpoint is available:
 
 ```text
-execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR} --sign-endpoint \"$NOOSPHERE_C2PA_URL\" --credential-id \"$NOOSPHERE_C2PA_CREDENTIAL_ID\" --artifact review.html")
+execute-shell("scripts/spotlight-python scripts/build-provenance-manifest.py {CASE_DIR} --sign-endpoint \"$NOOSPHERE_C2PA_URL\" --credential-id \"$NOOSPHERE_C2PA_CREDENTIAL_ID\" --artifact review.html")
 ```
 
 The signing request carries this body. `NOOSPHERE_PROVENANCE_API_KEY` is sent

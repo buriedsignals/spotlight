@@ -65,7 +65,7 @@ Use `read-file` on `.spotlight-config.json` in the working directory. If it exis
 Spotlight is **sovereign by default**: `fetch` → Crawl4AI (`integrations.scraping`, no API key), `search` → SearXNG (`integrations.search`, self-hosted). Firecrawl is an **optional** escape hatch (scrape fallback on a hard bot-block, or a `--union` search engine) enabled only when `FIRECRAWL_API_KEY` is present. Check the sovereign backings with:
 
 ```
-execute-shell("python3 -m integrations.scraping https://example.com --provider crawl4ai --no-escalate > /dev/null && echo fetch:ok")   # Crawl4AI, a real fetch
+execute-shell("scripts/spotlight-python -m integrations.scraping https://example.com --provider crawl4ai --no-escalate > /dev/null && echo fetch:ok")   # Crawl4AI, a real fetch
 execute-shell("curl -s --get --data-urlencode 'q=wikipedia' --data-urlencode 'format=json' \"${SEARXNG_URL:-http://localhost:8899}/search\" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(\"searxng results:\", len(d[\"results\"]), \"unresponsive:\", d[\"unresponsive_engines\"])'")   # SearXNG, a real query
 ```
 
@@ -80,7 +80,7 @@ If SearXNG is unreachable or returns zero results, report the unresponsive engin
 Apify is a second **optional** escape hatch — hosted social-media collection actors (X, Instagram, TikTok, Facebook, LinkedIn) used by `social-media-intelligence` — enabled only when an `APIFY_API_TOKEN` is configured. Indicator Labs writes keys to the credential file named by `env_file` in `.spotlight-config.json`; from-repo users set them in their environment, that file, or the checkout `.env`. Check presence only; never print a key or open a credential file:
 
 ```
-execute-shell('python3 -m integrations.apify status')   # Apify (optional)
+execute-shell('scripts/spotlight-python -m integrations.apify status')   # Apify (optional)
 ```
 
 If this prints `apify:unavailable`, report:
@@ -106,7 +106,7 @@ These ship in `skills/` in this repo. If your runtime cannot resolve them, fix t
 Then confirm the local tool index that Methodology falls back to whenever Navigator is not green:
 
 ```
-execute-shell("python3 scripts/osint-tools.py categories")
+execute-shell("scripts/spotlight-python scripts/osint-tools.py categories")
 ```
 
 If it reports `index missing`, build it once (network, about a minute) before leaving preflight:
@@ -229,7 +229,7 @@ resolution to the dispatcher without inspecting case artifacts or
 
 Use `list-files("{CASE_ROOT}/*")` to enumerate case directories, then use the
 thin non-Flue adapter for each valid case:
-`python3 scripts/spotlight-orchestration.py status --json {CASE_DIR}`.
+`scripts/spotlight-python scripts/spotlight-orchestration.py status --json {CASE_DIR}`.
 Cases whose returned phase is not `complete` are active:
 
 > "Note: {N} investigation(s) in progress: {names}. Continuing with `{project}`."
@@ -285,7 +285,7 @@ selection when sensitive mode is false.
 Run the manifest-based preflight and parse the `osint-navigator` entry:
 
 ```
-execute-shell("python3 integrations/preflight.py --model-tier {config.model_tier} --json")
+execute-shell("scripts/spotlight-python integrations/preflight.py --model-tier {config.model_tier} --json")
 ```
 
 Update `.spotlight-config.json` with the full status, not a boolean:
@@ -398,7 +398,7 @@ resumes.
 Run integration preflight and check whether Mycroft passive monitoring is installed:
 
 ```
-execute-shell("python3 integrations/preflight.py --model-tier {config.model_tier} --json")
+execute-shell("scripts/spotlight-python integrations/preflight.py --model-tier {config.model_tier} --json")
 execute-shell('test -f ~/.mycroft/monitoring/monitor.py && echo true || echo false')
 ```
 

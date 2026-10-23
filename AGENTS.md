@@ -156,6 +156,17 @@ step 0). A runtime without `execute-shell` (see the Tool Verb Registry) skips
 that shell check and confirms the checkout through its typed tools. Do not
 rewrite script paths per runtime.
 
+Skills run Python through `scripts/spotlight-python`, never a bare `python3`
+(a system Python may lack Crawl4AI and the other dependencies). It runs
+`$SPOTLIGHT_PYTHON` when set (an absolute path; an unusable one is an error,
+not a fallback), else the checkout's `.venv/` interpreter, else `python3` on
+`PATH`. The review server resolves the same interpreter.
+
+`.spotlight-config.json` is `$SPOTLIGHT_CONFIG` when set (an absolute path),
+else `.spotlight-config.json` at the checkout root. Every script that reads
+the config resolves it through `config_path()` in
+`integrations/_credentials.py`; skills pass `--config` only to override it.
+
 | Skill ID | Path | Description | Invocable By |
 |----------|------|-------------|--------------|
 | `spotlight` | `skills/spotlight/SKILL.md` | Investigation orchestrator — pipeline phases, gates, cycle evaluation | orchestrator (top-level) |

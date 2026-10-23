@@ -36,7 +36,7 @@ Use the routing table below to match the user's query to the correct reference f
 
 6. **Point to osint for tool alternatives.** If the user needs to compare tools or find alternatives, say: "For a full comparison of financial tools, `invoke-skill(\"osint\")`."
 
-7. **Point to investigate for person pivot chains.** Once you've identified the person behind the company, say: "To investigate this person further, `invoke-skill(\"investigate\")` for pivot chain methodology."
+7. **Point to investigate for person pivot chains.** Once you've identified the person behind the company, say: "To investigate this person further, `invoke-skill(\"investigation-methodology\")` for pivot chain methodology."
 
 ## Cross-Skill Integration
 

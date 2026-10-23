@@ -19,7 +19,7 @@ affect local unsigned manifest generation.
 ## Build Manifest
 
 ```text
-execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR}")
+execute-shell("scripts/spotlight-python scripts/build-provenance-manifest.py {CASE_DIR}")
 ```
 
 Output:
@@ -31,7 +31,7 @@ Output:
 If `NOOSPHERE_C2PA_URL` is configured:
 
 ```text
-execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR} --sign-endpoint \"$NOOSPHERE_C2PA_URL\" --credential-id \"$NOOSPHERE_C2PA_CREDENTIAL_ID\" --artifact review.html")
+execute-shell("scripts/spotlight-python scripts/build-provenance-manifest.py {CASE_DIR} --sign-endpoint \"$NOOSPHERE_C2PA_URL\" --credential-id \"$NOOSPHERE_C2PA_CREDENTIAL_ID\" --artifact review.html")
 ```
 
 The helper checks the response against the Noosphere contract and the manifest

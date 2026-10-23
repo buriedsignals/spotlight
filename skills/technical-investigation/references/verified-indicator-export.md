@@ -20,7 +20,7 @@ URL indicators containing user information, query strings, or fragments are reje
 Invoke `shell-safety`, then pass paths as arguments to:
 
 ```text
-python3 scripts/export-verified-indicators.py \
+scripts/spotlight-python scripts/export-verified-indicators.py \
   --findings CASE_DIR/data/findings.json \
   --fact-check CASE_DIR/data/fact-check.json \
   --format json|csv|stix \

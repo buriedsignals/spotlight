@@ -30,7 +30,7 @@ skills:
   - integrations
   - acquisition-graduation
   - osint
-  - investigate
+  - investigation-methodology
   - follow-the-money
   - social-media-intelligence
   - technical-investigation
@@ -148,7 +148,7 @@ These skills contain the full methodology. Follow them.
 
 1. **`search` / `fetch`** (primary) — web search and scraping. Output to `{CASE_DIR}/research/`.
 2. **`invoke-skill("osint")`** — specialized tool recommendations. In PLANNING mode, if `osint_navigator_required=true`, Navigator is the first tool-discovery pass and the curated catalog is fallback.
-3. **dev-browser fallback** — use only when Firecrawl cannot acquire the needed source because the page is dynamic, interactive, authenticated, form-driven, download-based, or requires visual verification. Save screenshots/downloads to `{CASE_DIR}/evidence/`.
+3. **dev-browser fallback** — use only when `fetch` cannot acquire the needed source because the page is dynamic, interactive, authenticated, form-driven, download-based, or requires visual verification. Save screenshots/downloads to `{CASE_DIR}/evidence/`.
 4. **`execute-shell("curl ...")`** — direct API calls to public databases and registries. Save responses to `{CASE_DIR}/research/`.
 5. **`grep-files` / `list-files` / `read-file`** — search local files, prior research, existing investigation data in `{CASE_DIR}/research/`.
 
@@ -325,16 +325,16 @@ Follow it step-by-step. For each step:
 
 ### Missing-Source Gate
 
-After every Firecrawl-backed `search` or `fetch`, answer these questions before deciding whether to use a browser:
+After every `search` or `fetch`, answer these questions before deciding whether to use a browser:
 
 - What source was requested?
-- What did Firecrawl return?
+- What did `search` or `fetch` return?
 - What artifact path was saved?
 - What is still missing?
 - Does the remaining gap require a browser, authenticated session, download, screenshot, or manual human verification?
 - Does the gap cap confidence or require a human-verification flag?
 
-If Firecrawl returned enough evidence, do not use dev-browser. dev-browser is for specific investigative tasks that require browser automation; it is not the first acquisition layer.
+If `search` or `fetch` returned enough evidence, do not use dev-browser. dev-browser is for specific investigative tasks that require browser automation; it is not the first acquisition layer.
 
 ### Evidence Bundle
 

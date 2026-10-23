@@ -12,6 +12,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "install"))
+sys.path.insert(0, str(ROOT))
+
+from integrations._credentials import config_path  # noqa: E402
 
 from navigator_bridge import (  # noqa: E402
     NAVIGATOR_RUNTIME_IDS,
@@ -27,10 +30,10 @@ def emit(value: dict) -> None:
 
 def selected_runtime(explicit: str | None) -> str:
     choice = (explicit or os.environ.get("SPOTLIGHT_RUNTIME") or "").strip()
-    config_path = ROOT / ".spotlight-config.json"
-    if not choice and config_path.is_file():
+    path = config_path()
+    if not choice and path.is_file():
         try:
-            config = json.loads(config_path.read_text("utf-8"))
+            config = json.loads(path.read_text("utf-8"))
             choice = str(config.get("runtime") or "").strip()
         except (OSError, json.JSONDecodeError) as error:
             raise NavigatorBridgeError("Spotlight's saved runtime configuration is unreadable") from error

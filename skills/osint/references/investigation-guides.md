@@ -2,9 +2,9 @@
 
 Quick-reference checklists for common OSINT investigation types. Each step names the tool or tool category to use. Steps are ordered — follow them sequentially for best results.
 
-For step-by-step methodology with case studies and worked examples, use `/investigate`.
+For step-by-step methodology with case studies and worked examples, use `invoke-skill("investigation-methodology")`.
 
-| Investigation Type | /investigate Reference |
+| Investigation Type | investigation-methodology reference |
 |---|---|
 | Image/video verification | verification-methods.md |
 | Geolocation from photos | geolocation-methods.md |
@@ -27,7 +27,7 @@ Goal: Determine whether an image or video is authentic and represents what it cl
 5. **Verify context** — Cross-check the claimed date/location against: metadata timestamps, historical weather data for that location, sun position and shadows (SunCalc), known events on that date, satellite imagery from that period.
 6. **Archive evidence** — Archive.today for instant snapshots, Wayback Machine for long-term preservation. Do this early — originals may be deleted once an investigation becomes known.
 
-For the full 5Ws checklist, chronolocation methodology, and case studies: `/investigate` → verification-methods.md
+For the full 5Ws checklist, chronolocation methodology, and case studies: `invoke-skill("investigation-methodology")` → verification-methods.md
 
 ## Geolocation from Media
 
@@ -41,7 +41,7 @@ Goal: Determine where a photo or video was taken using visual and technical evid
 6. **Confirm with satellite imagery** — Google Earth Pro (historical imagery slider for temporal matching), Sentinel Hub (free Copernicus data, recent), Planet Labs (daily captures, highest temporal resolution).
 7. **Triangulate landmarks** — PeakVisor (match mountain silhouettes against global terrain data), GeoHints (reference database of country-specific visual indicators like bollards, road signs, phone numbers).
 
-For the full 4-step methodology, visual clue taxonomy, satellite comparison, and case studies: `/investigate` → geolocation-methods.md
+For the full 4-step methodology, visual clue taxonomy, satellite comparison, and case studies: `invoke-skill("investigation-methodology")` → geolocation-methods.md
 
 ## Domain Investigation
 
@@ -55,7 +55,7 @@ Goal: Uncover who owns a domain, what infrastructure it uses, and what other dom
 6. **Web archives** — Wayback Machine for historical content snapshots. Look for past contact pages, about pages, privacy policies, and DNS/hosting changes over time.
 7. **Related domains** — Reverse IP lookup (who else is on this server), shared analytics ID search, favicon hash search via Shodan, reverse Google Analytics lookup. These techniques reveal networks of related sites.
 
-For WordPress-specific enumeration techniques and case studies: `/investigate` → platform-techniques.md > WordPress
+For WordPress-specific enumeration techniques and case studies: `invoke-skill("investigation-methodology")` → platform-techniques.md > WordPress
 
 ## Corporate Investigation
 
@@ -79,21 +79,21 @@ Goal: Build a comprehensive picture of a person or organization's online presenc
 5. **Network mapping** — Analyze followers/following overlap, group memberships, tagged users, co-appearances in photos. Build a social graph and visualize with Gephi or Maltego to identify clusters and key connections.
 6. **Timeline reconstruction** — Build a chronological history from all discovered accounts. Establish patterns of life: work hours, travel dates, relationships, affiliations, and changes over time.
 
-For platform-specific techniques (TikTok timestamps, Instagram full-res, WordPress enumeration): `/investigate` → platform-techniques.md
+For platform-specific techniques (TikTok timestamps, Instagram full-res, WordPress enumeration): `invoke-skill("investigation-methodology")` → platform-techniques.md
 
 ## People Search
 
 Goal: Identify and build a profile on a person of interest from limited starting information.
 
-For detailed pivot chain methodology, platform-specific techniques, life events research, and case studies: `/investigate` → person-investigation.md
+For detailed pivot chain methodology, platform-specific techniques, life events research, and case studies: `invoke-skill("investigation-methodology")` → person-investigation.md
 
 1. **Username enumeration** — Start with any known username. Sherlock and Maigret search 400+ sites. Also check namechk.com and checkusernames.com.
-2. **Email investigation** — GHunt (Google account data), Have I Been Pwned (breach exposure), email permutation tools. Facebook Page Roles method confirms email-to-account connection (see /investigate).
+2. **Email investigation** — GHunt (Google account data), Have I Been Pwned (breach exposure), email permutation tools. Facebook Page Roles method confirms email-to-account connection (see `invoke-skill("investigation-methodology")`).
 3. **Breach data** — Have I Been Pwned (free), DeHashed, Intelligence X (intelx.io). Note: legal and ethical considerations apply.
-4. **Social media profiles** — Cross-reference usernames and emails. Check LinkedIn, Facebook, Instagram, Twitter/X, Reddit, GitHub, VK, Odnoklassniki. Facebook default URL trick: facebook.com/first.last1 (see /investigate).
+4. **Social media profiles** — Cross-reference usernames and emails. Check LinkedIn, Facebook, Instagram, Twitter/X, Reddit, GitHub, VK, Odnoklassniki. Facebook default URL trick: facebook.com/first.last1 (see `invoke-skill("investigation-methodology")`).
 5. **Public records** — Court records (PACER in US), voter registrations, property records, business registrations. Country-specific — see Navigator.
-6. **Phone number investigation** — Telegram/Skype contact lookup, TrueCaller, regional contact book apps. See /investigate for step-by-step platform techniques.
-7. **Life events research** — Obituaries (most fruitful), wedding announcements, birth announcements. See /investigate for techniques and case studies.
+6. **Phone number investigation** — Telegram/Skype contact lookup, TrueCaller, regional contact book apps. See `invoke-skill("investigation-methodology")` for step-by-step platform techniques.
+7. **Life events research** — Obituaries (most fruitful), wedding announcements, birth announcements. See `invoke-skill("investigation-methodology")` for techniques and case studies.
 
 ## Financial Tracking
 
@@ -120,4 +120,4 @@ Goal: Track the movements of aircraft, ships, or vehicles.
 4. **Historical routes** — ADS-B Exchange for aircraft, MarineTraffic for vessels, satellite imagery time series for ground vehicles.
 5. **Anomaly detection** — Transponder gaps, unusual route deviations, ship-to-ship transfers, flights to unusual airports, sanctions evasion patterns.
 
-For maritime AIS methodology, transponder deception detection, and the Hudaydah case study: `/investigate` → transport-investigation.md
+For maritime AIS methodology, transponder deception detection, and the Hudaydah case study: `invoke-skill("investigation-methodology")` → transport-investigation.md

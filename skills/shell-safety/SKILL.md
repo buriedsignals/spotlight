@@ -28,9 +28,16 @@ checkout or the current working directory:
 ```text
 python3 <skill-dir>/scripts/shell_safe.py validate-url "<url>"
 python3 <skill-dir>/scripts/shell_safe.py validate-doi "<doi>"
+python3 <skill-dir>/scripts/shell_safe.py validate-timestamp "<timestamp>"
+python3 <skill-dir>/scripts/shell_safe.py validate-slug "<slug>"
 python3 <skill-dir>/scripts/shell_safe.py resolve-path --base "<allowed-base>" --path "<candidate>"
 python3 <skill-dir>/scripts/shell_safe.py destructive-probe --base "<allowed-base>" --path "<candidate>"
+python3 <skill-dir>/scripts/shell_safe.py sha256 "<file>"
 ```
+
+Inside a Spotlight checkout, other skills call `scripts/spotlight_safe.py`
+with the same commands. It runs this same helper (it imports
+`shell_safe.py`), so either path gives the same result.
 
 The helper rejects shell metacharacters in identifiers, invalid URL schemes, path traversal outside the allowed base, leading-dash path segments, NUL bytes, and unsafe destructive targets.
 

@@ -195,7 +195,7 @@ Key invariants:
 - `expressions_feedback[].expression_id` and `.finding_id` must resolve to a current authoritative expression link
 - `expressions_feedback[].category` is one of `omitted_context`, `attribution_error`, `wrong_relation`, `mistranscription`, `bad_locator`, `stale_source`, `other`
 - Expression feedback is an annotation routed through validation and independent re-fact-check; it never changes a verdict directly
-- Before a follow-up transition, the Investigation gate owner runs `python3 scripts/validate-case.py {CASE_DIR}` to validate the referenced case and expression state.
+- Before a follow-up transition, the Investigation gate owner runs `scripts/spotlight-python scripts/validate-case.py {CASE_DIR}` to validate the referenced case and expression state.
 - The independent fact-checker is the only actor in this loop that may change a verdict.
 - Feedback comments and existing finding fields remain free-form; only the expression category uses a fixed enum
 

@@ -20,7 +20,7 @@ Apify is a REST API over HTTPS. Invoke `shell-safety` first. Write the actor inp
 
 ```
 write-file("{CASE_DIR}/research/apify-<platform>-input.json", <serialized actor input JSON>)
-execute-shell('python3 -m integrations.apify run <actor> --input {CASE_DIR}/research/apify-<platform>-input.json --output {CASE_DIR}/research/apify-<platform>-<slug>.json')
+execute-shell('scripts/spotlight-python -m integrations.apify run <actor> --input {CASE_DIR}/research/apify-<platform>-input.json --output {CASE_DIR}/research/apify-<platform>-<slug>.json')
 ```
 
 | Platform | `<actor>` | Input shape used by the shared recipes |
