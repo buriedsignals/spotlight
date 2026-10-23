@@ -298,7 +298,7 @@ export function editorialClient(config: HarnessConfig, env: Record<string, strin
 	if (!config.editorial) return undefined;
 	return new EditorialClient({
 		url: config.editorial.url,
-		token: env[config.editorial.tokenEnv] ?? '',
+		token: (env[config.editorial.tokenEnv] ?? '').trim(),
 		origins: config.newsroomOrigins,
 		secrets,
 	});

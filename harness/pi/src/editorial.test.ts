@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { EditorialClient, EditorialCredentialError, EditorialRefused, ensureCaseRegistered, pendingSubmission, stopsTheNewsroomCase, submitCase } from './editorial.ts';
+import { EditorialClient, EditorialCredentialError, EditorialRefused, editorialClient, ensureCaseRegistered, pendingSubmission, stopsTheNewsroomCase, submitCase } from './editorial.ts';
 import type { RunPackage } from './editorial.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import { caseAtIngest, newsroomEnv, requestNewsroomIngest, workspace } from './test-support/launch.ts';
@@ -213,4 +213,13 @@ test('a case folder copied from another case does not reuse that case\'s newsroo
 	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)] });
 	await assert.rejects(ensureCaseRegistered(client, config, async () => ({ code: 0, stdout: '{}', stderr: '' })), /reference of another case \(case-a\)/);
 	assert.deepEqual(newsroom.callsOf('register_case'), []);
+});
+
+test('a token copied with surrounding whitespace is sent trimmed, as it was validated', async (t) => {
+	const newsroom = await startFakeEditorial({});
+	t.after(() => newsroom.close());
+	const config = { editorial: { url: newsroom.url, tokenEnv: 'EDITORIAL_TOKEN' }, newsroomOrigins: [origin(newsroom.url)] };
+	const client = editorialClient(config as never, { EDITORIAL_TOKEN: `  ${newsroom.token}\n` }, []);
+	await client!.call('search_knowledge', { query: 'Acme' });
+	assert.ok(newsroom.requests.every((request) => request.authorization === `Bearer ${newsroom.token}`));
 });

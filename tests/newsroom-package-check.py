@@ -102,6 +102,18 @@ class NewsroomPackage(GATES.CaseFixture):
         refused = self.run_seam("build", str(case), expect=2)
         self.assertIn("research/filing.txt no longer matches its declared sha256", refused.stderr)
 
+    def test_a_windows_absolute_path_never_travels(self) -> None:
+        case = self.make_case() if hasattr(self, "make_case") else None
+        mod = self.module() if hasattr(self, "module") else None
+        if mod is None:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("newsroom_package", ROOT / "scripts" / "newsroom-package.py")
+            mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+        for rel in ("C:/Users/alice/case/evidence/file.pdf", "C:evidence/file.pdf", "//host/share/evidence/f.pdf"):
+            _, path, why = mod._case_file(Path("/tmp/no-such-case"), rel)
+            self.assertIsNone(path, rel)
+            self.assertEqual(why, "the path leads outside the case", rel)
+
     def test_a_solo_install_builds_nothing(self) -> None:
         case = self.case("solo")
         self.config.write_text(json.dumps({"knowledge_destination": {"mode": "solo"}}), encoding="utf-8")

@@ -504,7 +504,8 @@ export function childEnv(
 	const spec = agentSpec(composition, role);
 	const out: Record<string, string> = {};
 	for (const name of [...PASSTHROUGH, ...BACKING_SETTINGS]) if (env[name]) out[name] = env[name] as string;
-	for (const key of spec.keys ?? []) if (env[key]) out[key] = env[key] as string;
+	// The Editorial token stays in the harness even if a composition names it.
+	for (const key of spec.keys ?? []) if (env[key] && key !== EDITORIAL_TOKEN_ENV) out[key] = env[key] as string;
 	const token = route.keyEnv ? env[route.keyEnv] : undefined;
 	if (token) out[PROVIDER_KEY] = token;
 	else delete out[PROVIDER_KEY];

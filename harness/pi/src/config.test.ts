@@ -188,7 +188,9 @@ test('newsroom: a route token is never the Editorial MCP token or a tool secret,
 	assert.doesNotThrow(() => checkRouteSecrets(ok, COMPOSITION));
 	assert.equal(childEnv(ok, COMPOSITION, 'orchestrator', env('ROUTE_TOKEN')).SPOTLIGHT_PROVIDER_API_KEY, 'route-secret-0123456789');
 	assert.throws(() => readConfig(env('ROUTE_TOKEN', 'abc')), /shorter than 16 characters/);
-	assert.throws(() => readConfig({ ...env('ROUTE_TOKEN'), ROUTE_TOKEN: 'tok' }), /ROUTE_TOKEN is shorter than 16 characters/);
+	assert.throws(() => readConfig({ ...env('ROUTE_TOKEN'), ROUTE_TOKEN: 'tok' }), /ROUTE_TOKEN is shorter than 16 characters/);	// A role that declares the Editorial token as one of its keys still never receives it.
+	const leaky: Composition = { ...COMPOSITION, orchestrator: { ...COMPOSITION.orchestrator, keys: ['SPOTLIGHT_EDITORIAL_MCP_TOKEN'] } };
+	assert.equal(childEnv(ok, leaky, 'orchestrator', env('ROUTE_TOKEN')).SPOTLIGHT_EDITORIAL_MCP_TOKEN, undefined);
 });
 
 test('a newsroom install starts only as the newsroom edition: omitted or solo SPOTLIGHT_EDITION is refused', () => {

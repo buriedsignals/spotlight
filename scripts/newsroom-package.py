@@ -134,7 +134,7 @@ def _case_file(case: Path, rel: object) -> tuple[str, Path | None, str | None]:
     if not isinstance(rel, str) or not rel:
         return str(rel), None, "no path recorded"
     text = rel.replace("\\", "/").removeprefix("{CASE_DIR}/")
-    if text.startswith("/") or ".." in text.split("/"):
+    if text.startswith("/") or re.match(r"[A-Za-z]:", text) or ".." in text.split("/"):
         return text, None, "the path leads outside the case"
     if (case / text).is_symlink():
         return text, None, "the path is a symlink"
