@@ -213,12 +213,12 @@ def triage_settings(config: Mapping[str, Any]) -> dict[str, Any]:
     if backend not in backends.BACKENDS:
         raise SystemExit(f"integrations.decisions.research_triage.backend must be one of {', '.join(backends.BACKENDS)}")
     try:
-        endpoint = endpoint_from_config(block.get("endpoint"))[0]
+        endpoint = endpoint_from_config(block.get("endpoint"))
     except DecisionUnavailable:
-        endpoint = ""
+        endpoint = ("", "")
     return {"backend": backend, "local_url": triage.get("local_url") or "",
             # A decision endpoint on this computer (Kev in Ninja mode) is the local triage model.
-            "local_endpoint": endpoint if is_local(endpoint) else "", "cloud_enabled": block.get("enabled") is True,
+            "local_endpoint": endpoint if is_local(endpoint[0]) else None, "cloud_enabled": block.get("enabled") is True,
             "model": block.get("model") or "typesafe/jev-1.13", "env_file": block.get("env_file")}
 
 
@@ -233,7 +233,9 @@ def build_providers(cfg: Mapping[str, Any], signals: Any) -> tuple[dict[str, Any
         except DecisionUnavailable as exc:
             notes.append(f"local: {exc}")
     elif cfg["local_endpoint"]:
-        providers["local"] = JevOpenRouterProvider("", model=cfg["model"], url=cfg["local_endpoint"])
+        url, key_env = cfg["local_endpoint"]
+        key, _where = signals.resolve_key({"env_file": cfg["env_file"]}, None, key_env)
+        providers["local"] = JevOpenRouterProvider(key, model=cfg["model"], url=url)
     if cfg["backend"] == "jev":
         try:
             url, key_env = signals.install_endpoint()
