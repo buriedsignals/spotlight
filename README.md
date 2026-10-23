@@ -133,16 +133,20 @@ Spotlight can preserve an exact source passage as a first-class
 language, lifecycle, and explicit links to one or more findings. This layer
 does not replace findings or fact-check verdicts.
 
-The pilot-capable release has three distinct states:
+A case is in one of three states:
 
-- **Legacy (default):** new cases emit findings contract `1.0` and do not
-  produce source expressions.
-- **Pilot (explicit opt-in):** producers write `data/source-expressions.json`
-  as a side artifact while the case remains legacy `1.0`. File presence does
-  not activate the case.
-- **Activated:** findings contract `1.1` and a valid append-only
-  `data/case-contract.json` are both present. The receipt is the sole activation
-  authority; activated cases cannot silently fall back to legacy handling.
+- **Activated (default for new cases):** before the first Investigation
+  cycle, `scripts/case-contract.py activate-new` writes an append-only
+  `data/case-contract.json`, and findings use contract `1.1`. Producers write
+  passages only through `scripts/write-source-expressions.py`. The receipt is
+  the sole activation authority; activated cases never fall back to legacy
+  handling.
+- **Legacy (existing cases):** a case that already has findings keeps contract
+  `1.0` and is activated only through the reviewed migration, or continued as
+  a new follow-up case.
+- **Pilot (explicit opt-in on a legacy case):** producers write
+  `data/source-expressions.json` as a side artifact while the case remains
+  legacy `1.0`. File presence does not activate the case.
 
 The checks are deliberately bounded. They can prove that selected text,
 locators, hashes, references, lifecycle state, and rendered quotations agree.
@@ -150,11 +154,12 @@ They cannot prove that a passage is true, entails a finding, captures all
 relevant context, or is framed fairly. Independent fact-checking and human
 editorial review still own those judgments.
 
-The comparative pilot record is
-[`docs/source-expression-pilot-results.json`](docs/source-expression-pilot-results.json).
-Human correction yield and review time have not yet been measured, so strict
-activation is **NOT APPROVED** and default new-case emission remains `1.0`.
-Recovery, migration, and mode-selection instructions are in
+The decision and its stop thresholds are recorded in
+[`docs/source-expression-pilot-results.json`](docs/source-expression-pilot-results.json):
+approved for new cases, with review time, correction yield and locator
+stability measured over the first real activated cases. When a threshold is
+breached, new cases return to legacy until the producer is fixed. Recovery,
+migration, and mode-selection instructions are in
 [`docs/investigating.md`](docs/investigating.md#source-expression-mode).
 
 ### Reviewed claim–event–story graph
