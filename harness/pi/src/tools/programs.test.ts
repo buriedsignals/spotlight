@@ -94,7 +94,7 @@ test('every program-backed tool and harness validator runs without a shell', asy
 		['integration_status', {}],
 	];
 	for (const [name, params] of calls) await call(name, params);
-	for (const role of ['investigator', 'fact-checker']) await validateAfterWorker(role, 'investigation', context);
+	for (const role of ['investigator', 'fact-checker']) await validateAfterWorker(role, 'investigation', 'stub-model', context);
 
 	const runs = await recorded();
 	assert.equal(existsSync(join(root, 'PWNED')), false);

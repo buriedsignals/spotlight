@@ -10,7 +10,7 @@ import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { ToolArgumentError, checkedParams, jsonResult, textResult } from './run.ts';
-import type { ToolContext } from './run.ts';
+import type { CaseScope, ToolContext } from './run.ts';
 
 export class FileRefused extends Error {}
 
@@ -51,6 +51,12 @@ function requested(base: string, path: string): string {
 	return isAbsolute(relative) ? resolve(relative) : resolve(base, relative);
 }
 
+// A role narrowed in harness/composition.json reaches only its named case
+// files. Names compare case-insensitively, as the protected list does.
+function inScope(allowed: string[] | undefined, name: string): boolean {
+	return allowed === undefined || allowed.some((entry) => entry.toLowerCase() === name.toLowerCase());
+}
+
 function lstatOrUndefined(path: string): Stats | undefined {
 	try {
 		return lstatSync(path);
@@ -63,9 +69,13 @@ function lstatOrUndefined(path: string): Stats | undefined {
 // Resolves a write target under `root` without following any symlink: every
 // existing parent must be a real directory, missing ones are created owner-only,
 // and an existing target must be a regular file.
-export function writeTarget(caseDir: string, root: string, path: string): string {
+export function writeTarget(caseDir: string, root: string, path: string, writes?: string[]): string {
 	const target = requested(caseDir, path);
 	if (!inside(root, target) || target === root) throw new FileRefused(`refused: ${path} is outside the folder this agent may write`);
+	// Checked before any parent folder is created.
+	if (!inScope(writes, caseRelative(caseDir, target))) {
+		throw new FileRefused(`refused: ${path} is not a file this agent may write (${(writes ?? []).join(', ') || 'none'})`);
+	}
 	const parts = relative(root, target).split(sep);
 	let current = root;
 	for (const part of parts.slice(0, -1)) {
@@ -86,8 +96,8 @@ export function writeTarget(caseDir: string, root: string, path: string): string
 }
 
 // Writes without following a symlink at the last step either.
-export function writeConfined(caseDir: string, root: string, path: string, content: string | Buffer): string {
-	const target = writeTarget(caseDir, root, path);
+export function writeConfined(caseDir: string, root: string, path: string, content: string | Buffer, writes?: string[]): string {
+	const target = writeTarget(caseDir, root, path, writes);
 	const bytes = typeof content === 'string' ? Buffer.from(content, 'utf8') : content;
 	if (bytes.length > MAX_WRITE_BYTES) throw new FileRefused(`refused: content is larger than ${MAX_WRITE_BYTES} bytes`);
 	const fd = openSync(target, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600);
@@ -99,13 +109,20 @@ export function writeConfined(caseDir: string, root: string, path: string, conte
 	return caseRelative(caseDir, target);
 }
 
+// Inside the case and, for a narrowed role, one of its named files; or under
+// the checkout's schemas/.
+function readable(caseDir: string, path: string, reads: string[] | undefined): boolean {
+	if (inside(SCHEMAS_DIR, path)) return true;
+	return inside(caseDir, path) && inScope(reads, caseRelative(caseDir, path));
+}
+
 // A read target is wherever the path really leads, which must be inside the case
-// or the checkout's schemas/.
-export function readTarget(caseDir: string, path: string): string {
+// (within the role's scope) or the checkout's schemas/.
+export function readTarget(caseDir: string, path: string, reads?: string[]): string {
 	const target = requested(caseDir, path);
 	// Refuse before looking: "not found" for an outside path would tell the model
-	// which files exist beyond the case.
-	if (!inside(caseDir, target) && !inside(SCHEMAS_DIR, target)) throw new FileRefused(`refused: ${path} is outside the case`);
+	// which files exist beyond the case or the scope.
+	if (!readable(caseDir, target, reads)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
 	let real: string;
 	try {
 		real = realpathSync(target);
@@ -113,7 +130,7 @@ export function readTarget(caseDir: string, path: string): string {
 		if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`not found: ${path}`);
 		throw error;
 	}
-	if (!inside(caseDir, real) && !inside(SCHEMAS_DIR, real)) throw new FileRefused(`refused: ${path} is outside the case`);
+	if (!readable(caseDir, real, reads)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
 	return real;
 }
 
@@ -198,6 +215,15 @@ const grepParams = Type.Object(
 	{ additionalProperties: false },
 );
 
+// A folder inside the case, or one of the scope's files.
+function scopedFolderOrFile(caseDir: string, path: string, reads: string[]): string {
+	const target = requested(caseDir, path);
+	if (!inside(caseDir, target)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
+	const stats = lstatOrUndefined(target);
+	if (stats?.isDirectory()) return realpathSync(target);
+	return readTarget(caseDir, path, reads);
+}
+
 function* caseFiles(caseDir: string, start: string): Generator<string> {
 	const stats = lstatSync(start);
 	if (stats.isFile()) {
@@ -213,8 +239,10 @@ function* caseFiles(caseDir: string, start: string): Generator<string> {
 	}
 }
 
-export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'>): ToolDefinition[] {
+export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot' | 'scope'>): ToolDefinition[] {
 	const { caseDir, writeRoot } = context;
+	const reads = context.scope?.reads;
+	const writes = context.scope?.writes;
 	return [
 		{
 			name: 'read_file',
@@ -227,7 +255,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				if (input.json_pointer !== undefined && (input.offset || input.limit)) {
 					throw new ToolArgumentError('read_file: use either json_pointer or offset/limit');
 				}
-				const text = readFileSync(readTarget(caseDir, input.path), 'utf8');
+				const text = readFileSync(readTarget(caseDir, input.path, reads), 'utf8');
 				let selected = text;
 				if (input.json_pointer !== undefined) {
 					selected = selectJsonPointer(text, input.json_pointer, input.path);
@@ -251,7 +279,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			executionMode: 'sequential',
 			async execute(_id, params) {
 				const input = checkedParams<{ path: string; content: string }>('write_file', writeParams, params);
-				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, input.content)}`);
+				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, input.content, writes)}`);
 			},
 		},
 		{
@@ -262,7 +290,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			executionMode: 'sequential',
 			async execute(_id, params) {
 				const input = checkedParams<{ path: string; old_text: string; new_text: string }>('edit_file', editParams, params);
-				const target = writeTarget(caseDir, writeRoot, input.path);
+				const target = writeTarget(caseDir, writeRoot, input.path, writes);
 				let text: string;
 				try {
 					text = readFileSync(target, 'utf8');
@@ -276,7 +304,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 					throw new Error(`edit_file: old_text occurs more than once in ${input.path}; include more context`);
 				}
 				const updated = text.slice(0, first) + input.new_text + text.slice(first + input.old_text.length);
-				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated)}`);
+				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes)}`);
 			},
 		},
 		{
@@ -291,7 +319,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				}
 				const matches = globSync(pattern, { cwd: caseDir })
 					.map((path) => path.split(sep).join('/'))
-					.filter((path) => inside(caseDir, resolve(caseDir, path)))
+					.filter((path) => inside(caseDir, resolve(caseDir, path)) && inScope(reads, path))
 					.sort();
 				const shown = matches.slice(0, MAX_LIST);
 				const more = matches.length > MAX_LIST ? `\n[${matches.length - MAX_LIST} more not shown]` : '';
@@ -312,10 +340,12 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				} catch (error) {
 					throw new Error(`grep_files: invalid regular expression: ${(error as Error).message}`);
 				}
-				const start = input.path ? readTarget(caseDir, input.path) : caseDir;
+				// A narrowed role may name a folder; only its files in scope are searched.
+				const start = input.path ? (reads ? scopedFolderOrFile(caseDir, input.path, reads) : readTarget(caseDir, input.path)) : caseDir;
 				if (!inside(caseDir, start)) throw new FileRefused(`refused: ${input.path} is outside the case`);
 				const matches: string[] = [];
 				for (const file of caseFiles(caseDir, start)) {
+					if (!inScope(reads, caseRelative(caseDir, file))) continue;
 					if (lstatSync(file).size > MAX_GREP_FILE_BYTES) continue;
 					const lines = sourceLines(readFileSync(file, 'utf8'));
 					for (let index = 0; index < lines.length && matches.length < MAX_MATCHES; index += 1) {
@@ -338,7 +368,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				const { paths } = checkedParams<{ paths: string[] }>('hash_files', hashParams, params);
 				return jsonResult(
 					paths.map((path) => {
-						const target = readTarget(caseDir, path);
+						const target = readTarget(caseDir, path, reads);
 						if (!lstatSync(target).isFile()) throw new Error(`hash_files: ${path} is not a regular file`);
 						const bytes = readFileSync(target);
 						return { path: inside(caseDir, target) ? caseRelative(caseDir, target) : path, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };

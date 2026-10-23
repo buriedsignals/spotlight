@@ -16,15 +16,56 @@ export type AgentSpec = {
 	skills: string[];
 	tools: string[];
 	keys?: string[];
+	// Optional narrowing to named case files (case-relative paths). Without
+	// `reads` the role reads the whole case; without `writes` it writes anywhere
+	// its write folder allows.
+	reads?: string[];
+	writes?: string[];
+	// Optional spawn conditions: the resolver phases and the editions in which
+	// the launcher starts this worker. Absent means any.
+	phases?: string[];
+	editions?: string[];
 };
 export type Composition = Record<string, AgentSpec>;
+
+// The tools that honour a role's `reads` and `writes`. A role narrowed to named
+// case files may declare only these, so no other tool (a web tool's save_as, a
+// script wrapper reading a request file) reads or writes around its scope.
+export const SCOPED_TOOLS = ['invoke_skill', 'read_file', 'write_file', 'edit_file', 'list_files', 'grep_files', 'hash_files', 'query_vault'];
+
+const CASE_FILE = /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/;
+
+function checkScope(name: string, spec: AgentSpec): void {
+	if (spec.reads === undefined && spec.writes === undefined) return;
+	for (const path of [...(spec.reads ?? []), ...(spec.writes ?? [])]) {
+		if (!CASE_FILE.test(path) || path.split('/').some((part) => part === '..' || part === '.')) {
+			throw new Error(`harness/composition.json: ${name} scope entry ${JSON.stringify(path)} is not a case-relative file path`);
+		}
+	}
+	const unscoped = spec.tools.filter((tool) => !SCOPED_TOOLS.includes(tool));
+	if (unscoped.length > 0) {
+		throw new Error(`harness/composition.json: ${name} is narrowed to named case files but declares ${unscoped.join(', ')}, which do not honour that scope`);
+	}
+}
 
 export function loadComposition(path = resolve(CHECKOUT_ROOT, 'harness/composition.json')): Composition {
 	const parsed = JSON.parse(readFileSync(path, 'utf8')) as { agents?: Composition };
 	if (!parsed.agents || typeof parsed.agents !== 'object') {
 		throw new Error('harness/composition.json has no agents map');
 	}
+	for (const [name, spec] of Object.entries(parsed.agents)) checkScope(name, spec);
 	return parsed.agents;
+}
+
+// Why the launcher will not start this worker now, or undefined when it may.
+export function spawnRefusal(spec: AgentSpec, role: string, phase: string, edition: string): string | undefined {
+	if (spec.editions && !spec.editions.includes(edition)) {
+		return `the ${role} does not run in the ${edition} edition`;
+	}
+	if (spec.phases && !spec.phases.includes(phase)) {
+		return `the ${role} runs only at ${spec.phases.join(', ')}; the case is at ${phase || 'an unknown phase'}`;
+	}
+	return undefined;
 }
 
 export function agentSpec(composition: Composition, role: string): AgentSpec {
@@ -95,7 +136,8 @@ The skills use abstract verbs and some shell steps. This harness has no shell: e
 - Shell steps in the skills map to typed tools: a \`curl\` GET to a registry, archive or API -> \`http_get\` (\`--data-urlencode\` values go in its \`query\` object, unencoded); a dev-browser script -> \`browse\` (one page: rendered text, HTML or a screenshot); \`scripts/osint-tools.py find|categories\` -> \`osint_tools\`; \`navigator tools find|show\` -> \`navigator_tools\`; \`exiftool {file}\` -> \`exiftool\`; \`scripts/decision-signals.py\` -> \`decision_signals\`; \`scripts/build-provenance-manifest.py\` -> \`provenance_manifest\`; \`integrations/rlm/run_rlm.py\` -> \`run_rlm\`; \`integrations/preflight.py\` -> \`integration_status\`; \`scripts/build-review-html.py\` -> \`build_review_html\`; \`spotlight_safe.py sha256\` or any SHA-256 of a case file -> \`hash_files\`; \`grep -n\`, \`sed -n\` or Python to find a source_ref line range or JSON Pointer -> \`grep_files\` and \`read_file\` (offset/limit or json_pointer), which count and select exactly as the validators do. \`scripts/spotlight_safe.py validate-*\` checks are not needed: each tool checks its own arguments, and the web tools reach only public http(s) addresses.
 - \`scripts/validate-case.py\`, \`scripts/validate-fact-check.py\` and \`scripts/validate-methodology-navigator.py\` are run by the harness itself when a worker finishes; their outcome is appended to the \`spawn_agent\` result. Act on that outcome; do not try to run them.
 - Preflight step 0 (the shell check): skipped. A \`spotlight_resolve\` that answers confirms the checkout.
-- Anything else (a POST request, git clone, Apify, vault-write, the ingest scripts, a tool not in your list): do not improvise around it. Say which step needs it and stop that step.
+- Ingest, the analyst proposal (orchestrator only): \`spawn_agent\` with agent \`analyst\`, at Ingest in the solo edition. It reads the approved case files and writes only \`data/knowledge-proposal.json\`. When it finishes, the harness runs \`scripts/build-knowledge-batch.py --review\` itself with the producers' model ids and appends the outcome to the result; do not try to run it. A refusal names what to fix.
+- Anything else (a POST request, git clone, Apify, vault-write, the other ingest scripts, a tool not in your list): do not improvise around it. Say which step needs it and stop that step.
 
 Gate approvals, the report decision and the ingest request or decline are recorded by the review page, never by you. At a gate, present the synthesis, call \`open_review\` so the member can decide on the page, and END YOUR TURN. When the member says they are done, call \`spotlight_resolve\` again.`;
 

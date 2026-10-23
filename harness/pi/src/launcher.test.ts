@@ -2,6 +2,7 @@
 // scripted OpenAI-compatible server on 127.0.0.1. No network, no model.
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -405,4 +406,136 @@ test('after a planning task the harness runs the methodology check, not the find
 	const delegated = toolResults(orchestrator[orchestrator.length - 1]).join('\n');
 	assert.match(delegated, /validate-methodology-navigator\.py: FAILED/);
 	assert.doesNotMatch(delegated, /validate-case\.py/);
+});
+
+// An activated case paused at the Ingest decision, built by the review-page
+// fixture (tests/fixtures/review_case.py) through the resolver's own seam.
+async function caseAtIngest(space: Workspace): Promise<string> {
+	const caseDir = join(space.casesRoot, 'case-a');
+	await mkdir(space.casesRoot, { recursive: true });
+	await new Promise<void>((done, fail) =>
+		execFile(
+			process.env.SPOTLIGHT_PYTHON ?? 'python3',
+			[join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'ingest', '--activated', '--clean'],
+			(error, _stdout, stderr) => (error ? fail(new Error(stderr || error.message)) : done()),
+		),
+	);
+	return caseDir;
+}
+
+async function caseDigests(caseDir: string): Promise<Map<string, string>> {
+	const digests = new Map<string, string>();
+	for (const entry of await readdir(caseDir, { recursive: true, withFileTypes: true })) {
+		if (!entry.isFile()) continue;
+		const path = join(entry.parentPath, entry.name);
+		digests.set(path.slice(caseDir.length + 1), createHash('sha256').update(await readFile(path)).digest('hex'));
+	}
+	return digests;
+}
+
+const PROPOSAL = {
+	interface_version: '1',
+	model: 'stub-model',
+	claims: [
+		{
+			key: 'c1',
+			finding_id: 'F1',
+			origin_expression_id: 'SX1',
+			proposition: 'Acme paid Doe.',
+			language: 'en',
+			attributed: false,
+			statement: { subject: { text: 'Acme' }, predicate: 'paid', object: { text: 'Doe' } },
+		},
+	],
+};
+
+// The orchestrator delegates once to the analyst, then stops.
+function delegateToAnalyst(analyst: (request: ChatRequest) => Reply) {
+	return (request: ChatRequest): Reply => {
+		if (isWorkerRequest(request, 'analyst')) return analyst(request);
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'analyst', task: 'Propose the knowledge batch.' } }] }
+			: { text: 'Done.' };
+	};
+}
+
+test('at Ingest the analyst reads only its inputs and writes only its proposal, and the harness builds the batch from it', async (t) => {
+	const fake = await startFakeOpenAI(
+		delegateToAnalyst((request) =>
+			toolResults(request).length === 0
+				? {
+						toolCalls: [
+							{ name: 'read_file', arguments: { path: 'data/findings.json' } },
+							{ name: 'read_file', arguments: { path: 'research/filing.txt' } },
+							{ name: 'write_file', arguments: { path: 'data/findings.json', content: '{}' } },
+							{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(PROPOSAL) } },
+						],
+					}
+				: { text: 'Proposed one claim.' },
+		),
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtIngest(space);
+	const before = await caseDigests(caseDir);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const analyst = fake.requests.filter((request) => isWorkerRequest(request, 'analyst'));
+	assert.ok(analyst.length >= 2, 'the analyst ran');
+	assert.deepEqual(toolNames(analyst[0]), [...loadComposition().analyst.tools].sort());
+	const results = toolResults(analyst[analyst.length - 1]);
+	assert.match(results[0], /"project"/);
+	assert.match(results[1], /refused: research\/filing\.txt is outside the case files this agent may read/);
+	assert.match(results[2], /refused: data\/findings\.json is not a file this agent may write/);
+	assert.match(results[3], /wrote data\/knowledge-proposal\.json/);
+
+	// The analyst's one write is the proposal; the builder the harness ran
+	// afterwards wrote its id map, draft and batch. Nothing else changed.
+	const after = await caseDigests(caseDir);
+	const changed = [...after.keys()].filter((path) => before.get(path) !== after.get(path)).sort();
+	assert.deepEqual(changed, [
+		'data/knowledge-batch-draft.json',
+		'data/knowledge-batch.json',
+		'data/knowledge-ids.json',
+		'data/knowledge-proposal.json',
+	]);
+	assert.deepEqual([...before.keys()].filter((path) => !after.has(path)), []);
+	const batch = JSON.parse(await readFile(join(caseDir, 'data', 'knowledge-batch.json'), 'utf8')) as { claims: Array<{ provenance: unknown }> };
+	assert.deepEqual(batch.claims[0].provenance, { method: 'agent_candidate', model: 'stub-model' });
+	const ids = JSON.parse(await readFile(join(caseDir, 'data', 'knowledge-ids.json'), 'utf8')) as { models: Record<string, string> };
+	assert.deepEqual(ids.models, { investigator: 'stub-model', 'fact-checker': 'stub-model' });
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'analyst'));
+	const delegated = toolResults(orchestrator[orchestrator.length - 1]).join('\n');
+	assert.match(delegated, /Proposed one claim\./);
+	assert.match(delegated, /build-knowledge-batch\.py: PASSED/);
+});
+
+test('the analyst is not started before Ingest or in the newsroom edition', async (t) => {
+	const fake = await startFakeOpenAI(delegateToAnalyst(() => ({ text: 'Proposed.' })));
+	t.after(() => fake.close());
+	const solo = await workspace(t);
+	await caseAtInvestigation(solo);
+	const early = launch(t, baseEnv(solo, fake.baseURL));
+	await settledPrompt(early, 'Continue.');
+	early.process.stdin.end();
+	await early.exited;
+
+	const newsroom = await workspace(t);
+	await caseAtIngest(newsroom);
+	const routes = JSON.stringify([{ name: 'newsroom-model', base_url: fake.baseURL, model: 'stub-model', inference: 'own' }]);
+	const env: Record<string, string> = { ...baseEnv(newsroom, ''), SPOTLIGHT_EDITION: 'newsroom', SPOTLIGHT_ROUTES: routes };
+	delete env.SPOTLIGHT_MODEL_BASE_URL;
+	const routed = launch(t, env);
+	await settledPrompt(routed, 'Continue.');
+
+	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'analyst')).length, 0);
+	const refusals = fake.requests
+		.filter((request) => toolResults(request).length > 0)
+		.map((request) => toolResults(request).join('\n'));
+	assert.equal(refusals.length, 2);
+	assert.match(refusals[0], /the analyst runs only at ingest; the case is at investigation/);
+	assert.match(refusals[1], /the analyst does not run in the newsroom edition/);
+	await assert.rejects(readFile(join(newsroom.casesRoot, 'case-a', 'data', 'knowledge-proposal.json')), { code: 'ENOENT' });
 });

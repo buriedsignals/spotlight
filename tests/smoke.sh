@@ -166,6 +166,13 @@ if [ $rc -eq 0 ]; then
 else
   fail "integration routing rows drifted"
 fi
+python3 harness/validate_composition.py >/dev/null 2>&1
+rc=$?
+if [ $rc -eq 0 ]; then
+  ok "harness/composition.json bundles name existing skills"
+else
+  fail "harness/composition.json bundles drifted (python3 harness/validate_composition.py)"
+fi
 
 
 

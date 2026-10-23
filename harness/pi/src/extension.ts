@@ -24,6 +24,7 @@ function toolsFor(role: string): ToolDefinition[] {
 	const composition = loadComposition();
 	const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
 	const python = process.env.SPOTLIGHT_PYTHON || 'python3';
+	const spec = agentSpec(composition, role);
 	const tools: ToolDefinition[] = [
 		invokeSkillTool(skillsFor(composition, role)),
 		...typedTools({
@@ -32,6 +33,7 @@ function toolsFor(role: string): ToolDefinition[] {
 			python,
 			configPath: process.env.SPOTLIGHT_CONFIG || `${CHECKOUT_ROOT}/.spotlight-config.json`,
 			env: process.env,
+			scope: { reads: spec.reads, writes: spec.writes },
 		}),
 	];
 	if (role === ORCHESTRATOR) {
@@ -39,7 +41,7 @@ function toolsFor(role: string): ToolDefinition[] {
 		tools.push(spawnAgentTool(spawnableWorkers(composition)));
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT')));
 	}
-	const allowlist = new Set(allowedTools(agentSpec(composition, role), process.env.SPOTLIGHT_SENSITIVE === 'true'));
+	const allowlist = new Set(allowedTools(spec, process.env.SPOTLIGHT_SENSITIVE === 'true'));
 	return tools.filter((tool) => allowlist.has(tool.name));
 }
 
