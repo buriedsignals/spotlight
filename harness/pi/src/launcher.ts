@@ -132,7 +132,7 @@ async function editorialOperation(harness: Harness, role: string, op: string, ar
 		return JSON.stringify(await runChecks(client, active.caseDir, kind as CheckKind, packageRunner(harness), { signal }));
 	}
 	if (op === 'newsroom_submit') {
-		const status = await caseStatus(harness);
+		const status = await caseStatus(harness, true);
 		const step = (status.ingest as { resume_at?: string } | undefined)?.resume_at;
 		if (status.phase !== 'ingest' || step !== 'ingest') {
 			return JSON.stringify({ skipped: `the case is at ${String(status.phase ?? '') || 'an unknown phase'}${step ? ` (${step})` : ''}; Submit runs only after the member requested ingestion on the page` });
@@ -280,13 +280,16 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 	});
 }
 
-async function caseStatus(harness: Harness): Promise<Record<string, unknown>> {
+// `strict`: a resolver failure is an error, never an unknown phase.
+async function caseStatus(harness: Harness, strict = false): Promise<Record<string, unknown>> {
 	const { config, active } = harness;
 	try {
 		const status = await pythonAdapter(config.python)(['status', '--json', '--authorized-cases-root', active.casesRoot, active.caseDir]);
 		return JSON.parse(status) as Record<string, unknown>;
 	} catch (error) {
-		harness.log(`could not resolve the case phase: ${harness.redact((error as Error).message)}`);
+		const message = `could not resolve the case phase: ${harness.redact((error as Error).message)}`;
+		if (strict) throw new Error(message);
+		harness.log(message);
 		return {};
 	}
 }

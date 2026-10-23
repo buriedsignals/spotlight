@@ -114,6 +114,21 @@ class NewsroomPackage(GATES.CaseFixture):
             self.assertIsNone(path, rel)
             self.assertEqual(why, "the path leads outside the case", rel)
 
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_a_cited_path_through_a_symlinked_evidence_folder_never_travels(self) -> None:
+        spec = importlib.util.spec_from_file_location("newsroom_package", PACKAGE)
+        mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+        case = self.root / "linked"
+        (case / "data").mkdir(parents=True)
+        (case / "data" / "editorial-case.json").write_text('{"case_ref": "private"}', encoding="utf-8")
+        (case / "research").mkdir()
+        (case / "evidence").symlink_to(case / "data")
+        (case / "research" / "inner").symlink_to(case / "data")
+        for rel in ("evidence/editorial-case.json", "research/inner/editorial-case.json"):
+            _, path, why = mod._case_file(case, rel)
+            self.assertIsNone(path, rel)
+            self.assertEqual(why, "the path passes through a symlink", rel)
+
     def test_a_solo_install_builds_nothing(self) -> None:
         case = self.case("solo")
         self.config.write_text(json.dumps({"knowledge_destination": {"mode": "solo"}}), encoding="utf-8")

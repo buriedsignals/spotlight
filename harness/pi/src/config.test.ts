@@ -203,3 +203,15 @@ test('a newsroom install starts only as the newsroom edition: omitted or solo SP
 	writeFileSync(install, JSON.stringify({ knowledge_destination: { mode: 'solo' } }));
 	assert.doesNotThrow(() => checkNewsroomInstall(readConfig(env)));
 });
+
+test('an install config that exists but cannot be read, or names no valid mode, stops the start; a missing one is solo', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'spotlight-install-'));
+	const install = join(dir, 'config.json');
+	const env = { ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', SPOTLIGHT_CONFIG: install };
+	assert.doesNotThrow(() => checkNewsroomInstall(readConfig(env)), 'no install config: the documented solo default');
+	for (const [content, error] of [['{"knowledge_destination": {"mode": "newsroom"', /cannot be read/], [JSON.stringify({ knowledge_destination: { mode: 'team' } }), /mode must be "solo" or "newsroom"/]] as const) {
+		writeFileSync(install, content);
+		assert.throws(() => checkNewsroomInstall(readConfig(env)), error);
+	}
+	assert.throws(() => checkNewsroomInstall(readConfig({ ...env, SPOTLIGHT_CONFIG: dir })), /cannot be read/);
+});

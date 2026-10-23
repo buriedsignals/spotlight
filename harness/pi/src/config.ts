@@ -556,12 +556,23 @@ export function checkRouteSecrets(config: HarnessConfig, composition: Compositio
 // the install config, and a solo-mode install would ask for a local batch
 // that the newsroom edition never builds; a newsroom install launched as
 // solo would split custody between local and newsroom paths.
+// No install config, or no mode in it, is solo (validate-install-config.py);
+// a config that exists but cannot be read, or names another mode, stops.
 export function checkNewsroomInstall(config: HarnessConfig): void {
-	let mode: unknown;
+	let mode: unknown = 'solo';
+	let text: string | undefined;
 	try {
-		mode = (JSON.parse(readFileSync(config.spotlightConfig, 'utf8')) as { knowledge_destination?: { mode?: unknown } }).knowledge_destination?.mode;
-	} catch {
-		mode = undefined;
+		text = readFileSync(config.spotlightConfig, 'utf8');
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new ConfigError(`the install config (${config.spotlightConfig}) cannot be read: ${(error as Error).message}`);
+	}
+	if (text !== undefined) {
+		try {
+			mode = (JSON.parse(text) as { knowledge_destination?: { mode?: unknown } }).knowledge_destination?.mode ?? 'solo';
+		} catch (error) {
+			throw new ConfigError(`the install config (${config.spotlightConfig}) cannot be read: ${(error as Error).message}`);
+		}
+		if (mode !== 'solo' && mode !== 'newsroom') throw new ConfigError(`the install config (${config.spotlightConfig}): knowledge_destination.mode must be "solo" or "newsroom".`);
 	}
 	if (mode === 'newsroom' && config.edition !== 'newsroom') {
 		throw new ConfigError(`the install config (${config.spotlightConfig}) is in newsroom mode, so SPOTLIGHT_EDITION must be "newsroom".`);

@@ -136,8 +136,11 @@ def _case_file(case: Path, rel: object) -> tuple[str, Path | None, str | None]:
     text = rel.replace("\\", "/").removeprefix("{CASE_DIR}/")
     if text.startswith("/") or re.match(r"[A-Za-z]:", text) or ".." in text.split("/"):
         return text, None, "the path leads outside the case"
-    if (case / text).is_symlink():
-        return text, None, "the path is a symlink"
+    # No component may be a symlink: a linked research/ or evidence/ (or a
+    # folder in them) would lead into data/ or out of the case.
+    parts = text.split("/")
+    if any(case.joinpath(*parts[: i + 1]).is_symlink() for i in range(len(parts))):
+        return text, None, "the path passes through a symlink"
     # Only evidence locations travel (research/ and evidence/, on the real
     # path); data/, receipts/ and review state never do. Compared without
     # case, so a case variant cannot slip past on a case-insensitive disk.
@@ -166,6 +169,7 @@ def build(case: Path) -> dict[str, Any]:
     items = {str(item.get("id")): item for item in bundle.get("items", []) if isinstance(item, dict)}
 
     entries: dict[str, dict[str, Any]] = {}
+    contents: dict[str, bytes] = {}  # each cited file's bytes, read once from its validated path
     omissions: list[dict[str, Any]] = []
     problems: list[str] = []
 
@@ -176,6 +180,7 @@ def build(case: Path) -> dict[str, Any]:
             omissions.append({"path": text, "expression_id": expression_id, "reason": why})
             return
         data = path.read_bytes()
+        contents[text] = data
         digest = _sha(data)
         if declared and declared.lower() != digest:
             problems.append(f"{text} no longer matches its declared sha256 ({kind})")
@@ -241,7 +246,7 @@ def build(case: Path) -> dict[str, Any]:
     files = []
     total = 0
     for entry in manifest:
-        data = (case / entry["path"]).read_bytes()
+        data = contents[entry["path"]]
         total += len(data)
         if total > MAX_PACKAGE_BYTES:
             raise Refused(f"the cited evidence is larger than {MAX_PACKAGE_BYTES} bytes")

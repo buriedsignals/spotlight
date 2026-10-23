@@ -789,6 +789,29 @@ test('newsroom Submit: a failed integrity check leaves the case at Ingest with t
 	assert.deepEqual(sent.files.map((file) => [file.path, file.sha256]), sent.package.evidence_manifest.files.map((file) => [file.path, file.sha256]));
 });
 
+test('newsroom Submit: a case phase the resolver cannot read is an error, never a skip, and nothing is sent', async (t) => {
+	const fake = await startFakeOpenAI(orchestratorScript([{ name: 'newsroom_submit', arguments: {} }]));
+	const editorial = await startFakeEditorial();
+	t.after(() => Promise.all([fake.close(), editorial.close()]));
+	const space = await workspace(t);
+	const caseDir = await caseAtIngest(space);
+	const env = newsroomEnv(space, newsroomRoute(fake.baseURL), editorial);
+	await requestNewsroomIngest(caseDir, env);
+	// The resolver (the adapter's `status`) fails; everything else runs on the real interpreter.
+	const python = join(space.root, 'python-broken-status');
+	await writeFile(python, `#!/bin/sh\nfor a in "$@"; do [ "$a" = status ] && { echo 'the resolver broke' >&2; exit 3; }; done\nexec '${process.env.SPOTLIGHT_PYTHON ?? 'python3'}' "$@"\n`, { mode: 0o755 });
+
+	const chat = launch(t, { ...env, SPOTLIGHT_PYTHON: python });
+	await settledPrompt(chat, 'Continue.');
+	chat.process.stdin.end();
+	await chat.exited;
+
+	const shown = fake.requests.map((request) => toolResults(request).join('\n')).join('\n');
+	assert.match(shown, /could not resolve the case phase/);
+	assert.doesNotMatch(shown, /skipped/);
+	assert.deepEqual(editorial.callsOf('submit_case_review'), []);
+});
+
 test('a revoked newsroom token stops the harness with a plain message and exit code 4, and the token never appears in the logs', async (t) => {
 	const fake = await startFakeOpenAI(orchestratorScript([{ name: 'run_checks', arguments: { kind: 'findings' } }]));
 	const editorial = await startFakeEditorial();
