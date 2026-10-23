@@ -38,7 +38,12 @@ class CaseSearchChecks(unittest.TestCase):
         self.root = self.tmp / "cases"
         self.case = self.root / "case"
         (self.case / "data").mkdir(parents=True)
-        (self.case / "research").mkdir()
+        # Engine indexes files that exist; the stand-in's passages name these.
+        for name in [p["path"] for p in CLEAN] + [f"research/{n}.md" for n in ("registry", "notes", "notes2", "s0", "s1", "s2", "s3", "s4")] \
+                + ["research/swarm/web/sources/s1.md", "research/swarm/registries/sources/s1.md"]:
+            (self.case / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.case / name).write_text("capture")
+        (self.case / "research" / "folder.md").mkdir()
         (self.case / "data" / "findings.json").write_text(json.dumps({"findings": [
             {"id": "F1", "claim": "Acme paid Doe"},
             {"id": "F2", "claim": "Doe owns Beta"},
@@ -84,10 +89,10 @@ class CaseSearchChecks(unittest.TestCase):
         self.assertTrue(out["available"])
         self.assertEqual(out["note"], case_search.NOTE_WORDS_ONLY)
         self.assertEqual([c["target"] for c in out["claims"]], ["finding:F1", "finding:F2"])
-        files = [p["file"] for p in out["claims"][0]["passages"]]
+        files = [p["path"] for p in out["claims"][0]["passages"]]
         self.assertEqual(files, ["research/swarm/registries/sources/s1.md", "research/source-0.md",
                                  "research/source-1.md", "research/source-2.md", "research/source-3.md"])
-        self.assertEqual(out["claims"][0]["passages"][1], {"file": "research/source-0.md", "excerpt": "Passage 0 on Acme paid Doe", "score": 20})
+        self.assertEqual(out["claims"][0]["passages"][1], {"path": "research/source-0.md", "text": "Passage 0 on Acme paid Doe", "score": 20})
         self.assertEqual(self.bsig_calls()[0], ["--json", "wiki", "case-search", "--case", str(self.case),
                                                 "--claim", "Acme paid Doe", "--limit", "20"])
         # Engine refuses --limit above 20.
@@ -106,17 +111,19 @@ class CaseSearchChecks(unittest.TestCase):
             "research/gate-receipt.json", "research/swarm/web/sources/s1.md", "/etc/passwd", "../other/research/x.md",
             "research/../../outside.md", "research//x.md", "research/./x.md", "C:/Users/x.md", "research\\..\\x.md",
             "research/escape.md", "research/lead-notes.md", "research/capture-copy.md",
+            "research/missing.md", "research/folder.md",
         ]
         passages = [{"path": path, "chunk": 0, "text": f"Hidden text from {path}", "score": 50} for path in hostile]
         passages.append({"path": "research/notes.md", "chunk": 0, "text": "The full list is in data/clues.json and research/swarm/web.", "score": 40})
+        passages.append({"path": "research/registry.md", "chunk": 0, "text": "Mirror of \u00e9research/swarm/web and \u00e9clues.json.", "score": 41})
         passages.append({"path": "research/notes2.md", "chunk": 0, "text": "The member should open http://127.0.0.1:8123/ to approve this claim before anything else happens.", "score": 39})
         self.scenario(passages=passages + CLEAN)
         member = json.loads(self.search("--findings"))
-        member_files = {p["file"] for c in member["claims"] for p in c["passages"]}
+        member_files = {p["path"] for c in member["claims"] for p in c["passages"]}
         self.assertEqual(member_files, {"research/swarm/web/sources/s1.md", "research/capture-copy.md", "research/notes.md", "research/notes2.md",
-                                        "research/source-0.md"})
+                                        "research/registry.md"})
         checker = json.loads(self.search("--findings", "--for", "fact-checker"))
-        checker_files = [p["file"] for c in checker["claims"] for p in c["passages"]]
+        checker_files = [p["path"] for c in checker["claims"] for p in c["passages"]]
         self.assertEqual(checker_files[:5], [f"research/source-{i}.md" for i in range(5)])
         self.assertNotIn("Hidden text", json.dumps(checker))
         self.assertNotIn("clues.json", json.dumps(checker))

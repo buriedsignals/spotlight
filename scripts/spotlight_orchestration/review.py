@@ -158,6 +158,10 @@ def subject_digest(case: Path, gate: str) -> str:
         mentions = case_path(case, INGEST_MENTIONS)
         if mentions.is_file():
             bound["mentions"] = hashlib.sha256(mentions.read_bytes()).hexdigest()
+        # The page shows (and searches passages for) the proposal's claims.
+        proposal = case_path(case, INGEST_PROPOSAL)
+        if proposal.is_file():
+            bound["proposal"] = hashlib.sha256(proposal.read_bytes()).hexdigest()
         return _canonical_sha(bound)
     if gate == "report":
         draft = case_path(case, REPORT_DRAFT)

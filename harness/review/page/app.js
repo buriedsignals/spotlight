@@ -875,7 +875,7 @@ function passageCard(claim) {
           "ol",
           { "aria-label": `Passages for ${claim.label}` },
           claim.passages.map((passage) =>
-            el("li", {}, el("span", { className: "tag", text: passage.file }), el("p", { className: "quote muted", text: passage.excerpt })),
+            el("li", {}, el("span", { className: "tag", text: passage.path }), el("p", { className: "quote muted", text: passage.text })),
           ),
         )
       : el("p", { className: "muted", text: claim.searched === false ? "Not searched: case search stopped before this claim." : "No passage in the case's research matched this claim." }),

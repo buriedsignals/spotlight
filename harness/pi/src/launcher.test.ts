@@ -623,6 +623,12 @@ async function standInBsig(dir: string, scenario: Record<string, unknown> = {}):
 	return path;
 }
 
+// Engine only indexes files that exist: the captures the stand-in's passages name.
+async function researchFiles(caseDir: string): Promise<void> {
+	await mkdir(join(caseDir, 'research'), { recursive: true });
+	for (const name of ['registry', 'filing', 'notes']) await writeFile(join(caseDir, 'research', `${name}.md`), 'capture');
+}
+
 function userText(request: ChatRequest): string {
 	const message = request.messages.find((each) => each.role === 'user');
 	const content = message?.content;
@@ -642,6 +648,7 @@ test('every fact-checker task carries each claim\'s case passages between marker
 		const space = await workspace(t);
 		const caseDir = await caseAtInvestigation(space);
 		await writeFile(join(caseDir, 'data', 'findings.json'), JSON.stringify({ findings: [{ id: 'F1', claim: 'Acme paid Doe' }] }));
+	await researchFiles(caseDir);
 		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_BSIG: await standInBsig(space.root, off ? { mode: 'off' } : {}) });
 		await settledPrompt(chat, 'Continue.');
 
@@ -671,6 +678,7 @@ async function factCheckerTask(t: TestContext, scenario: Record<string, unknown>
 	const space = await workspace(t);
 	const caseDir = await caseAtInvestigation(space);
 	await writeFile(join(caseDir, 'data', 'findings.json'), JSON.stringify({ findings: [{ id: 'F1', claim: 'Acme paid Doe' }] }));
+	await researchFiles(caseDir);
 	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_BSIG: await standInBsig(space.root, scenario) });
 	await settledPrompt(chat, 'Continue.');
 	const worker = fake.requests.find((request) => isWorkerRequest(request, 'fact-checker'));

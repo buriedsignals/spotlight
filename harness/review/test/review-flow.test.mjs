@@ -1,7 +1,7 @@
 // Page edits and decisions through the real server and orchestration seam.
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createCaseBridge } from "../case-bridge.mjs";
@@ -193,6 +193,8 @@ test("the Report page shows each finding's fact-check verdict and confidence", a
 test("the gate page gets case-search passages next to each claim, outside the digest; with Engine's switch off only a quiet note", async (t) => {
   const root = tempRoot(t);
   const caseDir = buildCase(root, "case", "investigation_gate");
+  mkdirSync(join(caseDir, "research"), { recursive: true });
+  writeFileSync(join(caseDir, "research", "registry.md"), "Registry entry");
   const { json } = await authed(t, caseDir, { bridgeEnv: { ...process.env, SPOTLIGHT_BSIG: standInBsig(root) } });
   const before = (await json("/api/view")).body;
   const { status, body } = await json("/api/passages");
@@ -200,7 +202,7 @@ test("the gate page gets case-search passages next to each claim, outside the di
   assert.equal(body.available, true);
   assert.deepEqual(body.claims.map((claim) => claim.target), before.content.findings.map((finding) => `finding:${finding.id}`));
   assert.deepEqual(body.claims[0].passages, [
-    { file: "research/registry.md", excerpt: `<img src=x onerror=alert(1)> Registry entry on ${before.content.findings[0].claim}`, score: 12.5 },
+    { path: "research/registry.md", text: `<img src=x onerror=alert(1)> Registry entry on ${before.content.findings[0].claim}`, score: 12.5 },
   ]);
   assert.equal(body.digest, before.digest, "the passages name the record they were searched for");
   assert.equal((await json("/api/view")).body.digest, before.digest);

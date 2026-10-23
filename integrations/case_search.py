@@ -152,7 +152,9 @@ def fact_checker_rules() -> tuple[list[re.Pattern[str]], list[re.Pattern[str]]]:
     composition = json.loads((CHECKOUT / "harness" / "composition.json").read_text(encoding="utf-8"))
     isolation = json.loads((CHECKOUT / "harness" / "fact-checker-isolation.json").read_text(encoding="utf-8"))
     deny = [_deny_pattern(entry) for entry in composition["agents"]["fact-checker"].get("denyReads", [])]
-    naming = [re.compile(item["pattern"], re.IGNORECASE) for item in isolation["taskNaming"]]
+    # ASCII: JavaScript's \b and \w (no "u" flag) are ASCII-only, so both sides
+    # agree that a non-ASCII letter before a name is a boundary.
+    naming = [re.compile(item["pattern"], re.IGNORECASE | re.ASCII) for item in isolation["taskNaming"]]
     if not naming:
         raise ValueError("no D9 naming patterns")
     return deny, naming
@@ -277,14 +279,16 @@ def _research_file(file: str) -> bool:
 
 def _case_file(case: Path, file: str) -> str | None:
     """The real case-relative path of ``file`` when both it and the file a
-    symlink resolves to are plain research files inside the case."""
+    symlink resolves to are plain research files inside the case, and that
+    file exists as a regular file."""
     if not _research_file(file):
         return None
     try:
-        real = (case / file).resolve(strict=False).relative_to(case).as_posix()
+        target = (case / file).resolve(strict=False)
+        real = target.relative_to(case).as_posix()
     except (OSError, ValueError):
         return None
-    return real if _research_file(real) else None
+    return real if _research_file(real) and target.is_file() else None
 
 
 def _passages(case: Path, result: dict[str, Any], rules: tuple[list[re.Pattern[str]], list[re.Pattern[str]]] | None) -> list[dict[str, Any]]:
@@ -307,8 +311,8 @@ def _passages(case: Path, result: dict[str, Any], rules: tuple[list[re.Pattern[s
                 continue
         score = raw.get("score")
         shown.append({
-            "file": file,
-            "excerpt": text.strip()[:EXCERPT_CHARS],
+            "path": file,
+            "text": text.strip()[:EXCERPT_CHARS],
             "score": score if isinstance(score, (int, float)) and not isinstance(score, bool) else None,
         })
         if len(shown) == SHOWN:
@@ -398,8 +402,8 @@ def _claim_group(claim: dict[str, Any], per_claim: int, naming: list[re.Pattern[
     head = f"{label}: {statement}" if not _names_hidden(naming, statement) else f"{label} (claim text in data/findings.json)"
     parts = [head]
     for rank, passage in enumerate(claim["passages"][:per_claim], start=1):
-        excerpt = _inert(passage["excerpt"][:PROMPT_EXCERPT_CHARS])
-        parts.append(f"<<<PASSAGE {rank} {_line(passage['file'], 512)}\n{excerpt}\nPASSAGE {rank}>>>")
+        excerpt = _inert(passage["text"][:PROMPT_EXCERPT_CHARS])
+        parts.append(f"<<<PASSAGE {rank} {_line(passage['path'], 512)}\n{excerpt}\nPASSAGE {rank}>>>")
     return "\n".join(parts)
 
 
