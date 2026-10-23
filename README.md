@@ -179,28 +179,14 @@ breached, new cases return to legacy until the producer is fixed. Recovery,
 migration, and mode-selection instructions are in
 [`docs/investigating.md`](docs/investigating.md#source-expression-mode).
 
-### Reviewed claim–event–story graph
+### Claims, events and story arcs in the wiki
 
-Approved knowledge is committed to a local SQLite graph whose versioned
-relation records support deterministic traversal in both directions:
-
-```text
-source expression ↔ claim ↔ event ↔ story arc
-```
-
-Broad discovery stays in the journalist's local Open Knowledge project. A
-Spotlight-local writer creates one managed investigation block and one
-case-scoped page per linked story, journals changes, and attaches receipts; it does not create a Markdown
-file per claim or event. Open Knowledge owns indexing and reuses its installed
-BGE-M3 embeddings. Exact claim, event, deduplication, and prior-verdict queries
-read the SQLite graph directly. Engine remains responsible for installation,
-updates, configuration, and doctor, not the runtime knowledge path.
-
-Local activation can retire new standalone claim notes after the graph,
-projection, receipt-aware discovery, logical-removal, and migrated-workflow
-checks pass. Existing claim notes remain untouched as legacy records.
-The supported boundary is a same-user local workspace; multi-user newsroom
-authorization is outside this release. See
+At Ingest, a solo-mode case's approved Batch 1.1 is written to the member's
+wiki by `scripts/wiki-destination.py`, under `spotlight/`: one note per claim,
+event and story arc, with the batches and a decision journal beside them.
+`scripts/query_vault.py` searches that wiki, with the member's own notes,
+through Engine's `bsig wiki search`. The 1.0 SQLite graph is retired; Engine's
+update exports an old graph into the wiki and deletes it. See
 [`docs/knowledge-destination.md`](docs/knowledge-destination.md).
 
 ## Source Acquisition

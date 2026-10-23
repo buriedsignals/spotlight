@@ -108,8 +108,8 @@ rewritten at its next transition.
 
 `read-file`, `write-file`, `edit-file`, `list-files`, `grep-files`,
 `execute-shell`, `fetch`, `search`, `spawn-agent`, `wait-agent`,
-`invoke-skill`, `query-vault`, `vault-write` — full signatures and universal
-backings in the `AGENTS.md` Tool Verb Registry. Unsupported verbs are reported
+`invoke-skill`, `query-vault` — full signatures and universal backings in the
+`AGENTS.md` Tool Verb Registry (`vault-write` is retired). Unsupported verbs are reported
 as a gap, never silently substituted.
 
 ## Never-list

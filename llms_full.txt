@@ -208,8 +208,8 @@ The fixed verb registry is:
 Universal backings documented by Spotlight:
 
 - `fetch`, `search` -> `firecrawl` CLI
-- `query-vault` -> OpenKnowledge MCP for the configured workspace
-- `vault-write` -> OpenKnowledge MCP with explicit approval and journal reconciliation
+- `query-vault` -> Engine's `bsig wiki search` over the member wiki
+- `vault-write` -> retired with the 1.0 knowledge graph
 
 ## 11. Agents
 

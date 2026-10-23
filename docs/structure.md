@@ -1,11 +1,5 @@
 # Structure
 
-Knowledge projection uses the configured `knowledge_destination.namespace`,
-with `projection_namespace: investigations` and `story_namespace: stories`.
-The optional typed activation receipt lives under the configured Open Knowledge
-workspace; file presence alone never retires claim notes. The deterministic
-activation validator must approve it for the exact destination and case.
-
 This doc describes the repo layout: what's where, why, and how the pieces connect. If you want to add a skill, monitoring backend, schema, or runtime adapter, start here.
 
 ## Top-level layout
@@ -53,8 +47,8 @@ spotlight/
 | `spawn-agent` | `spawn-agent(agent_id, prompt, config)` | Launch sub-agent |
 | `wait-agent` | `wait-agent(handle)` | Block until agent completes |
 | `invoke-skill` | `invoke-skill(skill_id)` | Load skill instructions into context |
-| `query-vault` | `query-vault(workspace_path, query)` | Direct local Open Knowledge discovery plus exact SQLite traversal |
-| `vault-write` | `vault-write(vault_path, note_path, content)` | Project a signed graph batch through Spotlight's local journaled writer |
+| `query-vault` | `query-vault(workspace_path, query)` | Search the member wiki through Engine's `bsig wiki search` |
+| `vault-write` | — | Retired with the 1.0 graph; solo Ingest writes the wiki through `scripts/wiki-destination.py` |
 
 These are **abstract** — the runtime adapter binds each to a concrete tool. See [integrations.md](integrations.md) for per-runtime mappings.
 
@@ -117,7 +111,7 @@ Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for larg
 
 - **`editorial-review`** — post-Investigation-gate HTML review artifact. Renders a self-contained `{CASE_DIR}/review.html` that exports structured feedback for validation by the Investigation gate owner. It never spawns agents or derives phase state. No server required.
 - **`integrations`** — routing layer for external tool integrations (dev-browser, Junkipedia, Apify, Arbiter, Noosphere C2PA, OSINT Navigator, Unpaywall). Reads live preflight status, maps investigation tasks to integrations. See `integrations/` at repo root for manifests + per-integration usage docs.
-- **`ingest`** — Phase 5 archival from the resolver-selected case to its configured vault. It runs only after a durable requested transition and uses an `.ingest-lock` plus the Knowledge Workspace Port for concurrency and projection.
+- **`ingest`** — retired 1.0 ingest. A `1.0` case is no longer ingested; it is activated or continued as a follow-up 1.1 case. Activated cases are written to the wiki by `scripts/wiki-destination.py` (see `phase-ingest`).
 - **`monitoring`** — case-level monitoring recommendations and explicit Mycroft handoff.
 - **`acquisition-graduation`** — turns repeated dev-browser acquisition successes into durable source/domain guidance without secrets or brittle session details.
 - **`report-drafting`** — post-Investigation-gate report drafting with methodology and evidence ledgers. An optional diagram selects existing `findings.json.connections`; the renderer produces `flow`, `hierarchy`, `network`, or `loop` diagrams without accepting model-authored Mermaid or layout code.
@@ -232,8 +226,7 @@ Per-machine config created during Phase 0. Fields:
     "type": "openknowledge|markdown|obsidian_legacy|none",
     "workspace_path": "/Users/you/Documents/OpenKnowledge",
     "namespace": "spotlight",
-    "project_id": "<OpenKnowledge project identity>",
-    "legacy_mode": "compare|fallback_read|off"
+    "mode": "solo|newsroom"
   },
   "case_workspace_root": "/Users/you/Documents/Spotlight/cases",
   "cases_root": "/Users/you/Documents/Spotlight/cases",

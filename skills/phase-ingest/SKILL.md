@@ -1,6 +1,6 @@
 ---
 name: phase-ingest
-description: "Spotlight Ingest: resolver-owned transition, ingestion.json status lifecycle, user confirmation, invoke-skill ingest or decline"
+description: "Spotlight Ingest: resolver-owned transition, ingestion.json status lifecycle, user confirmation, wiki write or decline"
 invocable_by: [orchestrator]
 phase: ingest
 ---
@@ -50,6 +50,11 @@ decline needs no batch.
 **Activated case, newsroom mode:** nothing is built or written on this
 computer; the newsroom's service drafts the batch from the submitted case.
 
+**Legacy case** (findings contract `1.0`): it can no longer be ingested; the
+1.0 graph is retired. Invoke `ingest`, which explains this and offers to
+activate the case or continue it as a follow-up 1.1 case, then record a
+decline.
+
 Remind the user before asking for ingestion confirmation:
 
 > **AI assistance notice:** Spotlight is designed to help surface, organize, and cross-check information, but AI can make mistakes. You are responsible for verifying sources, confirming authenticity, assessing risks, and deciding what is publishable.
@@ -81,8 +86,9 @@ The human decision is already durable. Do not ask again.
   re-run after an interruption is safe.
 - **Activated case, newsroom mode:** the case goes to the newsroom; do not
   invoke `ingest` and write nothing locally.
-- **Legacy case** (findings contract `1.0`): invoke `ingest` with the project
-  path and vault config from `.spotlight-config.json`.
+- **Legacy case** (findings contract `1.0`), requested before the 1.0 graph
+  was retired: nothing can complete it. Invoke `ingest`, which writes nothing
+  and offers to activate the case or continue it as a follow-up 1.1 case.
 
 After the completed receipt exists, call `spotlight_resolve`; do not run the
 write a second time.

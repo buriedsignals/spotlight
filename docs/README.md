@@ -18,7 +18,7 @@ If you are new to Spotlight, read in this order:
 7. **[epistemic-grounding.md](epistemic-grounding.md)** — claim-to-evidence grounding, evidence bundles, confidence caps
 8. **[vulnerabilities.md](vulnerabilities.md)** — shell-safety vulnerabilities and v2 mitigations
 9. **[sensitivity.md](sensitivity.md)** — design doc (not yet implemented): protecting sensitive material via physical separation, escalation, and one-way declassification
-10. **[knowledge-destination.md](knowledge-destination.md)** — reviewed claim–event–story records, staging, SQLite reference storage, traversal, and coverage
+10. **[knowledge-destination.md](knowledge-destination.md)** — where approved claims, events and story arcs go, how prior work is searched, and what happened to the 1.0 graph
 11. **[monitoring.md](monitoring.md)** — monitoring recommendations and explicit Mycroft handoff
 12. **[recovery.md](recovery.md)** — when things break: agent crashes, corrupted files, stale locks, API failures
 

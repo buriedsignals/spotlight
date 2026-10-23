@@ -35,10 +35,10 @@ for agent in agents/*.md; do
     fail "$agent_id frontmatter missing required fields"
   fi
 
-  # allowed_verbs should all be in the canonical 13-verb list from AGENTS.md
+  # allowed_verbs should all be live verbs from the AGENTS.md registry (vault-write is retired)
   # Extract the verb list from the agent's frontmatter (between allowed_verbs: and next top-level key)
   agent_verbs=$(awk '/^allowed_verbs:/{flag=1; next} flag && /^  - / {print $2} flag && /^[a-z_]+:/ {exit}' "$agent")
-  known_verbs="fetch search read-file write-file edit-file list-files grep-files execute-shell spawn-agent wait-agent invoke-skill query-vault vault-write"
+  known_verbs="fetch search read-file write-file edit-file list-files grep-files execute-shell spawn-agent wait-agent invoke-skill query-vault"
   bad_verb=""
   for v in $agent_verbs; do
     if ! echo " $known_verbs " | grep -q " $v "; then
@@ -82,7 +82,7 @@ if ! python3 -c "import jsonschema" 2>/dev/null; then
   printf "%s⊘%s jsonschema not installed — skipping sample validation%s\n" "$_c_dim" "$_c_reset" "$_c_dim"
   printf "   Install: python3 -m pip install --user jsonschema==4.25.1   (CI installs this automatically)%s\n" "$_c_reset"
 else
-  for pair in "findings.sample.json:findings.schema.json" "fact-check.sample.json:fact-check.schema.json" "evidence-bundle.sample.json:evidence-bundle.schema.json" "provenance-manifest.sample.json:provenance-manifest.schema.json" "knowledge-batch.sample.json:knowledge-batch.schema.json" "knowledge-batch-1.1.sample.json:knowledge-batch-1.1.schema.json"; do
+  for pair in "findings.sample.json:findings.schema.json" "fact-check.sample.json:fact-check.schema.json" "evidence-bundle.sample.json:evidence-bundle.schema.json" "provenance-manifest.sample.json:provenance-manifest.schema.json" "knowledge-batch-1.1.sample.json:knowledge-batch-1.1.schema.json"; do
     sample="tests/fixtures/${pair%%:*}"
     schema="schemas/${pair##*:}"
     if python3 -c "
