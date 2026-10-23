@@ -86,7 +86,8 @@ apply them. The server takes a one-time nonce per change from
 `staged-apply`/`staged-discard` on stdin with the digest the page showed. A
 change edited since the page loaded is refused and the list reloads; a stale
 change offers only Discard. Without Engine, or with a bsig that lacks these
-verbs, the view does not appear. With no gate pending, the page shows only
+verbs, the view does not appear; any other Engine failure shows as a warning
+and the gate stays usable. With no gate pending, the page shows only
 this view; it is opened on demand by `open_spotlight_wiki_changes` (below).
 
 The limit depends on the runtime. In Pi mode agents cannot run `bsig`, so
@@ -140,7 +141,9 @@ It exposes two tools that return "page opened" text and no URL.
 chat when they are done, and the agent resolves the case, which reads the
 decision from disk. `open_spotlight_wiki_changes({case_dir})`, called after the
 agent stages a wiki write, opens the same page on its Wiki changes view,
-starting the server if none runs; with nothing staged it opens nothing.
+starting the server if none runs; with nothing staged it opens nothing. A
+page already open for the case is left alone, so the member's session and
+unsaved input survive; the agent asks them to reload it.
 
 ## Tests
 

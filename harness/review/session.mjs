@@ -85,7 +85,7 @@ export function createReviewSessionManager({
     });
   }
 
-  async function startChild(caseDir) {
+  async function startChild(caseDir, view) {
     const [node, child] = await Promise.all([
       realFile(nodeExecutable, "Node executable"),
       realFile(childPath, "review child"),
@@ -94,6 +94,7 @@ export function createReviewSessionManager({
     if (casesRoot) args.push("--cases-root", casesRoot);
     if (idleMs) args.push("--idle-ms", String(idleMs));
     if (overallMs) args.push("--overall-ms", String(overallMs));
+    if (view) args.push("--view", view);
     const process_ = spawn(node, args, {
       env: safeChildEnvironment(env),
       stdio: ["pipe", "pipe", "pipe"],
@@ -166,7 +167,8 @@ export function createReviewSessionManager({
   }
 
   // Start the server for a case, or give a running one a fresh capability.
-  async function start(caseDir) {
+  // view "wiki" lets it start with no gate pending, for the Wiki changes view.
+  async function start(caseDir, view = "") {
     if (!isAbsolute(caseDir ?? "")) throw new Error("the case directory must be absolute");
     if (active && active.caseDir !== caseDir) {
       close();
@@ -179,7 +181,7 @@ export function createReviewSessionManager({
       await withTimeout(ready, current);
       return { status: "reopened" };
     }
-    const current = await startChild(caseDir);
+    const current = await startChild(caseDir, view);
     await withTimeout(nextReady(current), current);
     return { status: "ready" };
   }
@@ -221,6 +223,6 @@ export function createReviewSessionManager({
     openLocally,
     close,
     wait: () => active?.exited ?? Promise.resolve(),
-    status: () => (active ? { active: true, events: [...active.events] } : { active: false, events: [] }),
+    status: () => (active ? { active: true, caseDir: active.caseDir, events: [...active.events] } : { active: false, events: [] }),
   });
 }

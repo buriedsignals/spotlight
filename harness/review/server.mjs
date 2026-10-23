@@ -95,6 +95,7 @@ async function readJson(request) {
 export async function startReviewServer({
   bridge,
   wiki = null,
+  view = "",
   host = "127.0.0.1",
   idleMs = DEFAULT_IDLE_MS,
   overallMs = DEFAULT_OVERALL_MS,
@@ -106,22 +107,23 @@ export async function startReviewServer({
   if (host !== "127.0.0.1") throw new Error("the review server binds only 127.0.0.1");
 
   // Staged wiki changes; none without Engine or with a bsig that lacks the verb,
-  // so the page hides the view.
+  // so the page hides the view. Any other failure is reported, not hidden.
   async function wikiChanges() {
     if (!wiki) return [];
     try {
       const changes = await wiki.staged();
       return Array.isArray(changes) ? changes : [];
-    } catch {
-      return [];
+    } catch (error) {
+      if (error.code === "unsupported") return [];
+      throw Object.assign(new Error(`Could not read staged changes: ${error.message}`), { status: 502, code: "wiki-unreadable" });
     }
   }
 
   // The gate this session shows. It stays after a decision so the page can
-  // show the receipt read-only. With no gate pending, the page shows only the
-  // staged wiki changes ("" here), and it does not start when there are none.
+  // show the receipt read-only. With no gate pending ("" here), the server
+  // starts only for the Wiki changes view, which its opener found non-empty.
   let gate = pendingGate(await bridge.status());
-  if (!gate && !(await wikiChanges()).length)
+  if (!gate && view !== "wiki")
     throw Object.assign(new Error("no review is pending for this case"), { code: "no-pending-gate" });
 
   let capability = randomToken();
@@ -383,7 +385,7 @@ export async function startReviewServer({
   async function reopen() {
     if (!active) throw Object.assign(new Error("the review server has closed"), { code: "closed" });
     const pending = pendingGate(await bridge.status());
-    if (!pending && !(await wikiChanges()).length)
+    if (!pending && view !== "wiki")
       throw Object.assign(new Error("no review is pending for this case"), { code: "no-pending-gate" });
     if (pending && pending !== gate) {
       gate = pending;

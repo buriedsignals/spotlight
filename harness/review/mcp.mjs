@@ -71,7 +71,7 @@ export function createMcpHandler({ open, openWiki }) {
       }
       const result = await opener({ caseDir: args.case_dir });
       return reply({
-        isError: result.status === "start-failed",
+        isError: result.status === "start-failed" || result.status === "wiki-unreadable",
         content: [{ type: "text", text: describe(result) }],
         structuredContent: { review: result.status, reopened: Boolean(result.reopened) },
       });

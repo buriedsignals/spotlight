@@ -71,6 +71,13 @@ export async function authed(t, caseDir, options) {
   } };
 }
 
+export function approveMethodology(caseDir) {
+  execFileSync(PYTHON, [
+    join(CHECKOUT_ROOT, "scripts", "spotlight-orchestration.py"), "approve", "methodology",
+    "--approved-by", "journalist:fixture", "--approved-at", "2026-08-23T12:00:00Z", caseDir,
+  ]);
+}
+
 // A stand-in browser opener that records the URL it was asked to open.
 export function recordingOpener(root) {
   const record = join(root, "opened-urls.txt");
@@ -94,6 +101,7 @@ appendFileSync(statePath + ".log", JSON.stringify({ argv, stdin }) + "\\n");
 const out = (event, code = 0) => { process.stdout.write(JSON.stringify(event) + "\\n"); writeFileSync(statePath, JSON.stringify(state)); process.exit(code); };
 const [, , verb, id] = argv;
 if (state.old || !verb.startsWith("staged")) out({ event: "error", message: "usage: bsig wiki <search|read>" }, 4);
+if (state.fail) out({ event: "error", message: state.fail }, 1);
 if (argv.some((arg) => arg.startsWith("--nonce"))) out({ event: "error", message: "usage" }, 4);
 if (verb === "staged") out({ event: "result", data: { tool: verb, result: state.changes } });
 const change = state.changes.find((item) => item.id === id);

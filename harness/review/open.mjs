@@ -7,7 +7,7 @@ import { createReviewSessionManager } from "./session.mjs";
 
 async function openPage(sessions, caseDir, view = "") {
   try {
-    const started = await sessions.start(caseDir);
+    const started = await sessions.start(caseDir, view);
     const opened = await sessions.openLocally(view);
     return {
       status: opened.ok ? "opened" : opened.status,
@@ -24,21 +24,34 @@ export function createReviewOpener(options = {}) {
 }
 
 // After an agent stages a wiki write: the same page, opened on its Wiki
-// changes view, with or without a pending gate. Nothing staged opens nothing.
+// changes view, with or without a pending gate. Nothing staged opens nothing,
+// and a page already open for the case is left alone: reopening it would end
+// its session and lose the member's unsaved input.
 export function createWikiChangesOpener(options = {}) {
   const sessions = options.sessions ?? createReviewSessionManager(options);
   const wiki = options.wiki ?? createWikiBridge({ env: safeChildEnvironment(options.env) });
   return async function openWikiChanges({ caseDir }) {
-    const staged = await wiki.staged().catch(() => []);
+    let staged;
+    try {
+      staged = await wiki.staged();
+    } catch (error) {
+      if (error.code === "unsupported") return { status: "nothing-staged" };
+      return { status: "wiki-unreadable", message: String(error.message).slice(0, 300) };
+    }
     if (!Array.isArray(staged) || !staged.length) return { status: "nothing-staged" };
-    const result = await openPage(sessions, caseDir, "wiki");
-    return result.status === "no-pending-gate" ? { status: "nothing-staged" } : result;
+    const running = sessions.status();
+    if (running.active && running.caseDir === caseDir) return { status: "already-open" };
+    return openPage(sessions, caseDir, "wiki");
   };
 }
 
 export function describeWikiChangesResult(result) {
   if (result.status === "opened")
     return "The Wiki changes page is open in the member's browser. Ask them to apply or discard each staged change there; nothing reaches the wiki until they do. The page address is private to the member's browser.";
+  if (result.status === "already-open")
+    return "The review page for this case is already open in the member's browser. Ask them to reload it to see the staged wiki changes, then apply or discard each one.";
+  if (result.status === "wiki-unreadable")
+    return `Could not read the staged wiki changes: ${result.message} Nothing was opened.`;
   return describeOpenResult(result);
 }
 

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createWikiBridge, safeChildEnvironment } from "../case-bridge.mjs";
-import { authed, buildCase, change, fakeBsig, tempRoot } from "./helpers.mjs";
+import { approveMethodology, authed, buildCase, change, fakeBsig, startFor, tempRoot } from "./helpers.mjs";
 
 const HOSTILE_DIFF = '--- a/notes/a.md\n+++ b/notes/a.md\n@@ -1 +1 @@\n-old\n+</pre><script>alert(1)</script><img src=x onerror=alert(2)>';
 
@@ -76,4 +76,19 @@ test("without Engine, or with a bsig that lacks the verb, the list is empty and 
     const confirm = await json("/api/wiki-changes/apply", { id: "c1", digest: "a".repeat(64) });
     assert.ok([400, 422].includes(confirm.status));
   }
+});
+
+test("with no gate pending, the server starts without waiting for Engine", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  approveMethodology(caseDir);
+  // An Engine that never answers: the page loads the list later, through its
+  // own request, so readiness does not wait on it.
+  const wiki = { staged: () => new Promise(() => {}) };
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("the server waited for Engine")), 10_000);
+  });
+  const { server } = await Promise.race([startFor(t, caseDir, { wiki, view: "wiki" }), timeout]).finally(() => clearTimeout(timer));
+  assert.equal(server.gate(), "");
 });

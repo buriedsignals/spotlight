@@ -8,7 +8,7 @@ import { createCaseBridge, createWikiBridge } from "./case-bridge.mjs";
 import { startReviewServer } from "./server.mjs";
 
 const MAX_CONTROL_BYTES = 4096;
-const ALLOWED = new Set(["--case-dir", "--cases-root", "--idle-ms", "--overall-ms"]);
+const ALLOWED = new Set(["--case-dir", "--cases-root", "--idle-ms", "--overall-ms", "--view"]);
 
 function option(argv, name, fallback) {
   const at = argv.indexOf(name);
@@ -75,6 +75,7 @@ async function main() {
   const server = await startReviewServer({
     bridge,
     wiki: createWikiBridge(),
+    view: option(argv, "--view", "") === "wiki" ? "wiki" : "",
     idleMs: numberOption(argv, "--idle-ms", 45 * 60_000),
     overallMs: numberOption(argv, "--overall-ms", 8 * 60 * 60_000),
     onLifecycle(value) {

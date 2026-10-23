@@ -198,7 +198,7 @@ export function createWikiBridge({
   // The last JSON event bsig printed: its result, or an error with the refusal.
   async function run(args, input = "") {
     const file = await bsigPath();
-    if (!file) throw Object.assign(new Error("Engine is not installed"), { code: "unavailable" });
+    if (!file) throw Object.assign(new Error("Engine is not installed"), { code: "unsupported" });
     const result = await exec(file, ["--json", "wiki", ...args], input);
     let event = {};
     try {
@@ -208,7 +208,8 @@ export function createWikiBridge({
     }
     if (result.code === 0 && event.event === "result") return event.data?.result;
     const error = new Error(String(event.message ?? "Engine refused the request").replace(/^wiki: /, "").slice(0, 2048));
-    error.code = event.data?.refusal ?? "failed";
+    // Exit 4 is bsig's usage error: a bsig older than these verbs.
+    error.code = event.data?.refusal ?? (result.code === 4 ? "unsupported" : "failed");
     throw error;
   }
 

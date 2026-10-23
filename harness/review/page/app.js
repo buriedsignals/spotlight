@@ -902,6 +902,7 @@ function wikiSection() {
 async function loadWiki() {
   const { status, data } = await post("/api/wiki-changes", {});
   if (status === 200 && Array.isArray(data.changes)) wikiChanges = data.changes;
+  else if (status !== 403) warn(data.message || "Could not read staged changes.");
 }
 
 async function confirmWiki(action, change) {

@@ -1,7 +1,7 @@
 // Opening, reopening and the MCP tool, through the real child process.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
@@ -9,7 +9,7 @@ import { CHECKOUT_ROOT, which } from "../case-bridge.mjs";
 import { createMcpHandler } from "../mcp.mjs";
 import { createReviewOpener, createWikiChangesOpener } from "../open.mjs";
 import { createReviewSessionManager } from "../session.mjs";
-import { api, buildCase, change, fakeBsig, openSession, recordingOpener, tempRoot } from "./helpers.mjs";
+import { api, approveMethodology, buildCase, change, fakeBsig, openSession, recordingOpener, tempRoot } from "./helpers.mjs";
 
 function openedUrls(record) {
   return existsSync(record) ? readFileSync(record, "utf8").trim().split("\n").filter(Boolean) : [];
@@ -141,13 +141,6 @@ test("open_spotlight_review opens the page and its result carries no URL", async
   assert.equal(openedUrls(record).length, 2);
 });
 
-function approveMethodology(caseDir) {
-  execFileSync(which("python3"), [
-    join(CHECKOUT_ROOT, "scripts", "spotlight-orchestration.py"), "approve", "methodology",
-    "--approved-by", "journalist:fixture", "--approved-at", "2026-08-23T12:00:00Z", caseDir,
-  ]);
-}
-
 test("open_spotlight_wiki_changes opens the Wiki changes view with no gate pending, and returns no URL or nonce", async (t) => {
   const root = tempRoot(t);
   const caseDir = buildCase(root, "case", "methodology");
@@ -181,12 +174,45 @@ test("open_spotlight_wiki_changes opens no browser when nothing is staged, even 
   const caseDir = buildCase(root, "case", "methodology");
   const fake = fakeBsig(root, { changes: [] });
   const { sessions, record } = manager(t, root, { env: fake.env });
-  for (const env of [fake.env, { ...process.env, SPOTLIGHT_BSIG: join(root, "no-bsig") }]) {
+  mkdirSync(join(root, "old"));
+  const old = fakeBsig(join(root, "old"), { old: true, changes: [change("c1", "a")] });
+  for (const env of [fake.env, old.env, { ...process.env, SPOTLIGHT_BSIG: join(root, "no-bsig") }]) {
     const open = createWikiChangesOpener({ sessions, env });
     assert.deepEqual(await open({ caseDir }), { status: "nothing-staged" });
   }
   assert.equal(sessions.status().active, false);
   assert.deepEqual(openedUrls(record), []);
+});
+
+test("open_spotlight_wiki_changes leaves a gate page that is already open alone", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  const fake = fakeBsig(root, { changes: [change("c1", "a")] });
+  const { sessions, record } = manager(t, root, { env: fake.env });
+  assert.equal((await createReviewOpener({ sessions })({ caseDir })).status, "opened");
+  const { origin, cookie } = await viewThrough(openedUrls(record).at(-1));
+
+  assert.deepEqual(await createWikiChangesOpener({ sessions, env: fake.env })({ caseDir }), { status: "already-open" });
+  assert.equal(openedUrls(record).length, 1);
+  // The member's session survives, so nothing typed on the gate page is lost.
+  assert.equal((await api(origin, cookie)("/api/view")).status, 200);
+});
+
+test("an Engine failure is reported, not taken for nothing staged, and the gate page still works", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  const fake = fakeBsig(root, { fail: "wiki: permission denied", changes: [] });
+  const { sessions, record } = manager(t, root, { env: fake.env });
+  const result = await createWikiChangesOpener({ sessions, env: fake.env })({ caseDir });
+  assert.equal(result.status, "wiki-unreadable");
+  assert.match(result.message, /permission denied/);
+  assert.deepEqual(openedUrls(record), []);
+
+  await createReviewOpener({ sessions })({ caseDir });
+  const { origin, cookie } = await viewThrough(openedUrls(record).at(-1));
+  const listed = await api(origin, cookie)("/api/wiki-changes");
+  assert.equal(listed.status, 502);
+  assert.match(JSON.parse(listed.text).message, /Could not read staged changes: permission denied/);
 });
 
 test("the stdio MCP server answers initialize and lists its tools", async () => {
