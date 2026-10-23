@@ -2,12 +2,16 @@
 // 127.0.0.1 (initialize, notifications/initialized, tools/call) with the
 // tool shapes of docs/newsroom-editorial-mcp.md. It records every tool call
 // and the Authorization header it came with. Each tool's answer is the test's
-// handler, or the default below.
+// handler, or the default below. Like the contract's server, it answers a
+// repeated submit_case_review idempotency key with the submission it staged
+// for that key, and answers 404 on a session it ended.
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-export type ToolAnswer = Record<string, unknown> | { isError: true; text: string };
+// `httpStatus`: answer the call with that HTTP status; `unstructured`: a text
+// result with no structuredContent.
+export type ToolAnswer = Record<string, unknown> | { isError: true; text: string } | { httpStatus: number } | { unstructured: string };
 export type ToolHandler = (args: Record<string, unknown>, index: number) => ToolAnswer;
 
 export type FakeEditorial = {
@@ -19,6 +23,10 @@ export type FakeEditorial = {
 	callsOf(tool: string): Array<Record<string, unknown>>;
 	// From now on the token is refused with HTTP 401.
 	revoke(): void;
+	// Ends every open MCP session: the next request on one gets HTTP 404.
+	endSessions(): void;
+	// The idempotency keys of the submissions staged, one per staged revision.
+	staged: string[];
 	close(): Promise<void>;
 };
 
@@ -51,9 +59,13 @@ export async function startFakeEditorial(
 ): Promise<FakeEditorial> {
 	const token = options.token ?? 'newsroom-editorial-token-123';
 	const calls: FakeEditorial['calls'] = [];
+	const staged: string[] = [];
 	const requests: FakeEditorial['requests'] = [];
 	let revoked = false;
 	const counts = new Map<string, number>();
+	let sessions = 0;
+	const ended = new Set<string>();
+	const stagedByKey = new Map<string, Record<string, unknown>>();
 	const server: Server = createServer(async (request: IncomingMessage, response: ServerResponse) => {
 		const raw = await readBody(request);
 		const authorization = request.headers.authorization;
@@ -74,6 +86,11 @@ export async function startFakeEditorial(
 			response.end(JSON.stringify({ error: `token ${authorization ?? ''} is not valid` }));
 			return;
 		}
+		const session = request.headers['mcp-session-id'];
+		if (typeof session === 'string' && ended.has(session) && message.method !== 'initialize') {
+			response.writeHead(404).end();
+			return;
+		}
 		if (message.id === undefined) {
 			response.writeHead(202).end();
 			return;
@@ -88,15 +105,27 @@ export async function startFakeEditorial(
 			const index = counts.get(tool) ?? 0;
 			counts.set(tool, index + 1);
 			const handler = options.handlers?.[tool] ?? DEFAULTS[tool];
-			const answer = handler ? handler(args, index) : { isError: true as const, text: `unknown tool ${tool}` };
+			const key = tool === 'submit_case_review' ? String(args.idempotency_key) : undefined;
+			let answer: ToolAnswer = key && stagedByKey.has(key) ? stagedByKey.get(key)! : handler ? handler(args, index) : { isError: true as const, text: `unknown tool ${tool}` };
+			if (key && !stagedByKey.has(key) && (answer as { status?: unknown }).status === 'staged') {
+				stagedByKey.set(key, answer as Record<string, unknown>);
+				staged.push(key);
+			}
+			if ('httpStatus' in answer && typeof answer.httpStatus === 'number') {
+				response.writeHead(answer.httpStatus, { 'content-type': 'text/plain' }).end('the service is unavailable');
+				return;
+			}
+			if ('unstructured' in answer && typeof answer.unstructured === 'string') answer = { unstructured: answer.unstructured };
 			result = 'isError' in answer && answer.isError === true
 				? { content: [{ type: 'text', text: answer.text }], isError: true }
-				: { content: [{ type: 'text', text: JSON.stringify(answer) }], structuredContent: answer };
+				: 'unstructured' in answer
+					? { content: [{ type: 'text', text: answer.unstructured }] }
+					: { content: [{ type: 'text', text: JSON.stringify(answer) }], structuredContent: answer };
 		} else {
 			result = {};
 		}
 		const body = JSON.stringify({ jsonrpc: '2.0', id: message.id, result });
-		const headers: Record<string, string> = message.method === 'initialize' ? { 'mcp-session-id': 'fake-session' } : {};
+		const headers: Record<string, string> = message.method === 'initialize' ? { 'mcp-session-id': `fake-session-${(sessions += 1)}` } : {};
 		if (options.sse) {
 			response.writeHead(200, { ...headers, 'content-type': 'text/event-stream' });
 			response.end(`id: 1\ndata:\n\nid: 2\ndata: ${body}\n\n`);
@@ -116,6 +145,10 @@ export async function startFakeEditorial(
 		revoke: () => {
 			revoked = true;
 		},
+		endSessions: () => {
+			for (let n = 1; n <= sessions; n += 1) ended.add(`fake-session-${n}`);
+		},
+		staged,
 		close: () => new Promise<void>((done) => server.close(() => done())),
 	};
 }

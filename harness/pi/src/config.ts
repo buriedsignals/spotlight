@@ -70,6 +70,7 @@ export type HarnessConfig = {
 
 export type CustodyMode = 'hosted' | 'local_until_share';
 export const EDITORIAL_TOKEN_ENV = 'SPOTLIGHT_EDITORIAL_MCP_TOKEN';
+export const MIN_EDITORIAL_TOKEN_LENGTH = 16;
 
 // The Editorial MCP endpoint and what register_case sends at case start.
 // The token is named, never held here: editorial.ts reads it from the
@@ -166,6 +167,12 @@ function parseRoutes(raw: string | undefined): Route[] {
 		}
 		if (item.key_env !== undefined && (typeof item.key_env !== 'string' || !/^[A-Z][A-Z0-9_]*$/.test(item.key_env))) {
 			throw new ConfigError(`${label}.key_env must name an environment variable.`);
+		}
+		// A route's token is handed to every pi process and its model
+		// endpoint, so it may never be one of the harness's own variables (the
+		// Editorial MCP token among them).
+		if (typeof item.key_env === 'string' && item.key_env.startsWith('SPOTLIGHT_')) {
+			throw new ConfigError(`${label}.key_env may not name ${item.key_env}: a route's token is its own variable, never one of Spotlight's (the Editorial MCP token is never a route token).`);
 		}
 		return {
 			name: item.name as string,
@@ -323,7 +330,13 @@ function editorialSetting(env: Env, caseId: string, sensitive: boolean): Editori
 	const parsed = new URL(url);
 	if (parsed.username || parsed.password) throw new ConfigError('SPOTLIGHT_EDITORIAL_MCP_URL must not carry credentials; the token comes from SPOTLIGHT_EDITORIAL_MCP_TOKEN.');
 	if (parsed.protocol !== 'https:' && !isLoopback(url)) throw new ConfigError('SPOTLIGHT_EDITORIAL_MCP_URL must be https (plain http only on a loopback address).');
-	if (!env[EDITORIAL_TOKEN_ENV]?.trim()) throw new ConfigError(`the newsroom edition needs the newsroom sign-in token (${EDITORIAL_TOKEN_ENV} is not set); sign in through the newsroom extension.`);
+	const token = env[EDITORIAL_TOKEN_ENV]?.trim();
+	if (!token) throw new ConfigError(`the newsroom edition needs the newsroom sign-in token (${EDITORIAL_TOKEN_ENV} is not set); sign in through the newsroom extension.`);
+	// A short token could not be told apart from ordinary text when it is
+	// redacted from logs and answers.
+	if (token.length < MIN_EDITORIAL_TOKEN_LENGTH) {
+		throw new ConfigError(`${EDITORIAL_TOKEN_ENV} is shorter than ${MIN_EDITORIAL_TOKEN_LENGTH} characters, so it cannot be redacted reliably; sign in again through the newsroom extension.`);
+	}
 	const custody = env.SPOTLIGHT_CUSTODY_MODE?.trim() || (sensitive ? 'local_until_share' : 'hosted');
 	if (custody !== 'hosted' && custody !== 'local_until_share') throw new ConfigError('SPOTLIGHT_CUSTODY_MODE must be "hosted" or "local_until_share".');
 	const title = env.SPOTLIGHT_CASE_TITLE?.trim() || caseId;
@@ -521,6 +534,17 @@ export function childEnv(
 	}
 	if (config.requestBody) out.SPOTLIGHT_PROVIDER_REQUEST_BODY = config.requestBody;
 	return out;
+}
+
+// A route's token goes to every pi process (childEnv), so it may not be a
+// secret an agent declares for its own tools (harness/composition.json keys).
+export function checkRouteSecrets(config: HarnessConfig, composition: Composition): void {
+	const declared = new Set(Object.values(composition).flatMap((spec) => spec.keys ?? []));
+	for (const route of config.routes) {
+		if (route.keyEnv && declared.has(route.keyEnv)) {
+			throw new ConfigError(`route "${route.name}" may not use ${route.keyEnv} as its token: that variable is a tool secret, never a route token.`);
+		}
+	}
 }
 
 // The newsroom edition and the install's knowledge destination must agree:

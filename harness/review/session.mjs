@@ -62,6 +62,24 @@ function exited(child) {
   });
 }
 
+// Opens `url` in the member's browser; the address goes to no one else.
+export async function openInBrowser(
+  url,
+  { spawn = nodeSpawn, which = findExecutable, platform = process.platform, env = process.env } = {},
+) {
+  const discovered =
+    platform === "darwin" ? which("open") : platform === "win32" ? which("rundll32.exe") : which("xdg-open");
+  if (!discovered) return { ok: false, status: "opener-unavailable" };
+  const args = platform === "win32" ? ["url.dll,FileProtocolHandler", url] : [url];
+  try {
+    const opener = spawn(discovered, args, { stdio: "ignore", env: safeChildEnvironment(env), windowsHide: true });
+    const code = await exited(opener);
+    return code === 0 ? { ok: true, status: "opened" } : { ok: false, status: "opener-failed" };
+  } catch {
+    return { ok: false, status: "opener-failed" };
+  }
+}
+
 export function createReviewSessionManager({
   nodeExecutable = process.execPath,
   childPath = CHILD,
@@ -186,21 +204,7 @@ export function createReviewSessionManager({
 
   async function openLocally() {
     if (!active?.url) return { ok: false, status: "session-expired" };
-    const discovered =
-      platform === "darwin" ? which("open") : platform === "win32" ? which("rundll32.exe") : which("xdg-open");
-    if (!discovered) return { ok: false, status: "opener-unavailable" };
-    const args = platform === "win32" ? ["url.dll,FileProtocolHandler", active.url] : [active.url];
-    try {
-      const opener = spawn(discovered, args, {
-        stdio: "ignore",
-        env: safeChildEnvironment(env),
-        windowsHide: true,
-      });
-      const code = await exited(opener);
-      return code === 0 ? { ok: true, status: "opened" } : { ok: false, status: "opener-failed" };
-    } catch {
-      return { ok: false, status: "opener-failed" };
-    }
+    return openInBrowser(active.url, { spawn, which, platform, env });
   }
 
   function close() {

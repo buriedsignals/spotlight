@@ -19,7 +19,7 @@ The launcher runs `pi --mode rpc` for the orchestrator and passes stdin and stdo
 
 ## Environment
 
-Configuration comes only from the environment. A missing or invalid required variable stops the launcher with a plain message on stderr and exit code 2. A case held by another chat gives exit code 3. In the newsroom edition, a revoked or expired newsroom sign-in gives exit code 4.
+Configuration comes only from the environment. A missing or invalid required variable stops the launcher with a plain message on stderr and exit code 2. A case held by another chat gives exit code 3. In the newsroom edition, a revoked or expired newsroom sign-in gives exit code 4, and an Editorial MCP that cannot be used gives exit code 5.
 
 | Variable | Required | Meaning |
 |---|---|---|
@@ -76,9 +76,10 @@ With `SPOTLIGHT_EDITION=newsroom` the harness runs the same pipeline and routes 
 - **Tools.** In every role `query_vault` becomes `search_knowledge`, `get_record`, `traverse` and `coverage`, and the orchestrator's `decision_signals` becomes `run_checks` and `newsroom_submit` (`NEWSROOM_TOOL_SWAPS` in `src/roles.ts`). They stay in sensitive mode: they reach the newsroom's own service, not the public web. Each tool asks the launcher over IPC; the launcher checks the tool against the asking process's role and makes the call. No pi process receives the token.
 - **Prior-knowledge lane.** Runs on `search_knowledge` through the launcher, on the operator's own route.
 - **Decision checks.** `run_checks` sends the findings (with passages and fact-check) or the report draft with the findings, polls the job and writes the flags to `data/newsroom-checks.json`; the Investigation and Report pages show them. A flag never blocks; "unavailable" is shown as such.
-- **Submit.** No analyst and no local batch. After the member requests ingestion on the page, `newsroom_submit` runs `scripts/newsroom-package.py build`, calls `submit_case_review`, then `get_review_status`, copies the receipts to `receipts/`, and records the completed ingest (`newsroom-package.py complete`), which the phase seals. A rejected package leaves the case at Ingest; the reasons are in `data/newsroom-submission.json`, the tool result and the ingest page. Journalist-input intake and its units belong to the newsroom edition (extension point: `journalist_input_units()` in the package script).
+- **Submit.** No analyst and no local batch. After the member requests ingestion on the page, `newsroom_submit` runs `scripts/newsroom-package.py build`, records the intent (`begin`, under the case lock), calls `submit_case_review`, then `get_review_status`, and records the receipts and the completed ingest (`complete`), which the phase seals. The review page opens in the member's browser; its address never reaches a model or the case. A start that finds a pending intent resubmits it with the same idempotency key first. A rejected package leaves the case at Ingest; the reasons are in `data/newsroom-submission.json`, the tool result and the ingest page. Journalist-input intake and its units belong to the newsroom edition (extension point: `journalist_input_units()` in the package script).
 - **Allowlist.** A request carrying the newsroom token goes only to the origins of `SPOTLIGHT_ROUTES` and the Editorial MCP; anything else, and any redirect, is refused before it leaves. Model processes and swarm lanes were already held to those routes.
-- **Protected files.** The model's file tools cannot write `receipts/`, `data/editorial-case.json` or `data/newsroom-*.json`.
+- **Protected files.** The model's file tools cannot write `receipts/`, `data/editorial-case.json` or `data/newsroom-*.json`; only `newsroom-package.py` writes them, under the case lock.
+- **Stops.** An Editorial MCP that cannot be used (unreachable, a redirect, an HTTP or protocol error, an unreadable answer) stops the harness (exit code 5). Its answers reach agents as delimited data.
 
 ## Research lanes
 

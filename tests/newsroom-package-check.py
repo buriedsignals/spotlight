@@ -5,7 +5,7 @@ review pages.
 The package carries the cited evidence only, with hashes that match its
 evidence manifest; raw research stays behind; a file changed after it was
 cited stops the build; the submission is recorded only after the member
-requested ingestion; the pages show the newsroom's check flags and a refused
+requested ingestion, under a recorded intent; the pages show the newsroom's check flags and a refused
 submission's reasons. Offline cases from tests/fixtures/review_case.py.
 """
 from __future__ import annotations
@@ -98,19 +98,57 @@ class NewsroomPackage(GATES.CaseFixture):
         self.config.write_text(json.dumps({"knowledge_destination": {"mode": "solo"}}), encoding="utf-8")
         self.assertIn("not in newsroom mode", self.run_seam("build", str(case), expect=2).stderr)
 
-    def test_a_submission_is_recorded_only_after_ingestion_was_requested(self) -> None:
-        case = self.build("requested", "ingest", "--clean", "--activated")
-        args = ("complete", str(case), "--package-sha256", "a" * 64, "--submission-id", "sub-1", "--review-id", "rev-1")
-        self.assertIn("ingestion has not been requested", self.run_seam(*args, expect=2).stderr)
+    def run_with(self, *args: str, payload: dict, expect: int = 0) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run([sys.executable, str(PACKAGE), *args], input=json.dumps(payload),
+                                capture_output=True, text=True, env=self.env)
+        self.assertEqual(result.returncode, expect, result.stderr or result.stdout)
+        return result
+
+    def request_ingest(self, case: Path) -> None:
         seam = ROOT / "scripts" / "spotlight-orchestration.py"
         view = json.loads(self.run_seam("review-view", "ingest", str(case), script=seam).stdout)
         nonce = json.loads(self.run_seam("issue-review-nonce", "ingest", str(case), script=seam).stdout)["nonce"]
         self.run_seam("decide-ingest", "requested", "--nonce", nonce, "--digest", view["digest"], *GATES.DECIDER, str(case), script=seam)
-        self.run_seam(*args)
+
+    def test_a_submission_starts_only_after_the_member_requested_ingestion_and_is_recorded_under_its_intent(self) -> None:
+        case = self.build("requested", "ingest", "--clean", "--activated")
+        key, other = "a" * 64, "b" * 64
+        receipts = {"receipts": {"submission-sub-1.json": {"tool": "submit_case_review"}}, "review_state": "pending"}
+        complete = ("complete", str(case), "--package-sha256", key, "--submission-id", "sub-1", "--review-id", "rev-1")
+        # No member decision on the ingest page yet: nothing starts.
+        self.assertIn("ingestion has not been requested", self.run_seam("begin", str(case), "--package-sha256", key, expect=2).stderr)
+        self.request_ingest(case)
+        # No recorded intent: nothing is recorded as submitted.
+        self.assertIn("no submission of this package is pending", self.run_with(*complete, payload=receipts, expect=2).stderr)
+        self.assertFalse(json.loads(self.run_seam("pending", str(case)).stdout)["pending"])
+        self.run_seam("begin", str(case), "--package-sha256", key)
+        self.assertEqual(json.loads(self.run_seam("pending", str(case)).stdout), {"pending": True, "idempotency_key": key})
+        # A resumed start with the same key goes on; a different package waits.
+        self.assertTrue(json.loads(self.run_seam("begin", str(case), "--package-sha256", key).stdout)["resumed"])
+        self.assertIn("different version of this case is pending", self.run_seam("begin", str(case), "--package-sha256", other, expect=2).stderr)
+        self.run_with(*complete, payload=receipts)
         marker = json.loads((case / "data" / "ingestion.json").read_text(encoding="utf-8"))
         self.assertEqual((marker["status"], marker["destination"], marker["submission_id"]), ("completed", "newsroom", "sub-1"))
+        submission = json.loads((case / "data" / "newsroom-submission.json").read_text(encoding="utf-8"))
+        self.assertEqual((submission["state"], submission["idempotency_key"]), ("submitted", key))
+        self.assertEqual(json.loads((case / "receipts" / "submission-sub-1.json").read_text(encoding="utf-8")), {"tool": "submit_case_review"})
+        seam = ROOT / "scripts" / "spotlight-orchestration.py"
         status = json.loads(self.run_seam("status", "--json", str(case), script=seam).stdout)
         self.assertEqual(status["ingest"], {"state": "completed", "resume_at": "seal"})
+        # Recording the same outcome again changes nothing.
+        self.assertTrue(json.loads(self.run_with(*complete, payload=receipts).stdout)["already_recorded"])
+
+    def test_a_screenshot_that_is_the_only_original_is_checked_against_its_declared_hash(self) -> None:
+        case = self.case("screenshot")
+        bundle_path = case / "data" / "evidence-bundle.json"
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        item = bundle["items"][0]
+        item["screenshot_path"] = item.pop("raw_path")
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        self.run_seam("build", str(case))
+        (case / "research" / "filing.bin").write_bytes(b"a different capture\n")
+        refused = self.run_seam("build", str(case), expect=2)
+        self.assertIn("research/filing.bin no longer matches its declared sha256 (screenshot_path)", refused.stderr)
 
     def test_the_pages_show_the_newsroom_flags_and_a_refused_submissions_reasons(self) -> None:
         case = self.case("pages")

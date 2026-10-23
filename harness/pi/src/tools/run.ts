@@ -68,6 +68,8 @@ export type RunOptions = {
 	cwd: string;
 	timeoutMs?: number;
 	signal?: AbortSignal;
+	// Written to the program's stdin, which is then closed.
+	input?: string;
 };
 
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
@@ -78,7 +80,7 @@ const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 // aborted rejects.
 export function runFixed(command: string, args: readonly string[], options: RunOptions): Promise<RunResult> {
 	const { promise, resolve, reject } = Promise.withResolvers<RunResult>();
-	execFile(
+	const child = execFile(
 		command,
 		[...args],
 		{
@@ -98,6 +100,10 @@ export function runFixed(command: string, args: readonly string[], options: RunO
 			reject(new Error(`${command} could not run: ${reason}`));
 		},
 	);
+	if (options.input !== undefined) {
+		child.stdin?.on('error', () => {}); // a program that exits early fails through its exit code
+		child.stdin?.end(options.input);
+	}
 	return promise;
 }
 

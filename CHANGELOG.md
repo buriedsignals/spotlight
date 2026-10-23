@@ -34,13 +34,17 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 - Ingest: `newsroom_submit` builds the Submit package
   (`scripts/newsroom-package.py`: cited evidence only, hashed manifest,
   declared omissions), calls `submit_case_review` and `get_review_status`,
-  and copies the receipts to `{case}/receipts/`. A failed integrity check
-  leaves the case at Ingest with the reasons on the ingest page.
+  and records the receipts in `{case}/receipts/` under the case lock, after
+  a recorded intent that a restart resumes with the same idempotency key.
+  The review page opens in the member's browser only. A failed integrity
+  check leaves the case at Ingest with the reasons on the ingest page.
 - Credentials: `SPOTLIGHT_EDITORIAL_MCP_URL` and `SPOTLIGHT_EDITORIAL_MCP_TOKEN`
   are required in the newsroom edition, with an install config in newsroom
   mode. A token goes only to the newsroom's routes and Editorial MCP;
   redirects are not followed; a revoked or expired token stops the harness
-  with a plain message (exit code 4); tokens never appear in logs.
+  with a plain message (exit code 4), and so does an Editorial MCP that
+  cannot be used (exit code 5); the token never appears in logs or answers,
+  and no route may use it as its key.
 - Journalist-input intake stays in the newsroom edition;
   `journalist_input_units()` in `scripts/newsroom-package.py` is the
   extension point and contributes nothing here.

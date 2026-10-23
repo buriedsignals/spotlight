@@ -409,7 +409,7 @@ test('newsroom edition: the prior-knowledge lane reads search_knowledge, never q
 		SPOTLIGHT_ROUTES: JSON.stringify(routes),
 		SPOTLIGHT_MODEL_BASE_URL: fakes.local.baseURL,
 		SPOTLIGHT_EDITORIAL_MCP_URL: 'http://127.0.0.1:9/mcp',
-		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token',
+		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token-0123456789',
 		NEWSROOM_CLOUD_TOKEN: 'cloud-token',
 		SPOTLIGHT_RESEARCH_SWARMS: 'on',
 		SPOTLIGHT_SWARM_BASE_URL: fakes.swarm.baseURL,

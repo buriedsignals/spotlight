@@ -1,12 +1,13 @@
 // Starts the real launcher as a chat client would, and speaks RPC to it.
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TestContext } from 'node:test';
+import { CHECKOUT_ROOT } from '../roles.ts';
 
 const LAUNCHER = resolve(fileURLToPath(import.meta.url), '../../launcher.ts');
 
@@ -129,4 +130,29 @@ export function waitUntil(check: () => boolean, timeoutMs = 10_000): Promise<voi
 		};
 		poll();
 	});
+}
+
+function python(args: string[], env: Record<string, string> = {}): Promise<string> {
+	return new Promise((done, fail) =>
+		execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', args, { env: { ...process.env, ...env } }, (error, stdout, stderr) =>
+			error ? fail(new Error(stderr || error.message)) : done(stdout),
+		),
+	);
+}
+
+// A case at Ingest (tests/fixtures/review_case.py): activated and clean.
+export async function caseAtIngest(space: Workspace): Promise<string> {
+	const caseDir = join(space.casesRoot, 'case-a');
+	await mkdir(space.casesRoot, { recursive: true });
+	await python([join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'ingest', '--activated', '--clean']);
+	return caseDir;
+}
+
+// The member requests ingestion on the ingest page (the page's seam and its
+// one-time nonce), in a newsroom-mode install.
+export async function requestNewsroomIngest(caseDir: string, env: Record<string, string>): Promise<void> {
+	const seam = (args: string[]) => python([join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'), ...args], { SPOTLIGHT_CONFIG: env.SPOTLIGHT_CONFIG });
+	const view = JSON.parse(await seam(['review-view', 'ingest', caseDir])) as { digest: string };
+	const nonce = (JSON.parse(await seam(['issue-review-nonce', 'ingest', caseDir])) as { nonce: string }).nonce;
+	await seam(['decide-ingest', 'requested', '--nonce', nonce, '--digest', view.digest, '--decided-by', 'journalist:fixture', '--decided-at', '2026-10-23T12:00:00Z', caseDir]);
 }

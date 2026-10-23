@@ -13,6 +13,7 @@
           "pattern": "^[A-Za-z0-9._:-]{1,200}$"
         },
         "idempotency_key": {
+          "description": "The package sha256. A key already staged returns that submission's answer and stages nothing new; the same key with different content is refused.",
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },

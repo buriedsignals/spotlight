@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { childEnv, readConfig, routeFor } from './config.ts';
+import { checkRouteSecrets, childEnv, readConfig, routeFor } from './config.ts';
 import type { Composition } from './roles.ts';
 
 const COMPOSITION: Composition = {
@@ -58,7 +58,7 @@ test('newsroom routes: every process goes only to an own-inference route', () =>
 		...BASE,
 		SPOTLIGHT_EDITION: 'newsroom',
 		SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
-		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token',
+		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token-0123456789',
 		SPOTLIGHT_ROUTES: routes(inference),
 		ROUTE_0_TOKEN: 'tok-0',
 		ROUTE_1_TOKEN: 'tok-1',
@@ -106,7 +106,7 @@ test('the RLM endpoint that distills fetched pages must be one the operator runs
 		...BASE,
 		SPOTLIGHT_EDITION: 'newsroom',
 		SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
-		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token',
+		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token-0123456789',
 		SPOTLIGHT_ROUTES: JSON.stringify([
 			{ name: 'model', base_url: 'https://model.newsroom.example/v1', model: 'm', inference: 'own' },
 			{ name: 'rlm', base_url: 'https://rlm.newsroom.example/v1', model: 'e4b', inference: 'own' },
@@ -151,9 +151,7 @@ test('the swarm route exists only with the switch and a key, keeps zero data ret
 			...BASE,
 			SPOTLIGHT_EDITION: 'newsroom',
 			SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
-			SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token',
-		SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
-		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token',
+			SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token-0123456789',
 			SPOTLIGHT_SENSITIVE: 'false',
 			SPOTLIGHT_ROUTES: JSON.stringify([
 				{ name: 'model', base_url: 'https://model.newsroom.example/v1', model: 'm', inference: 'own' },
@@ -168,4 +166,23 @@ test('the swarm route exists only with the switch and a key, keeps zero data ret
 	const allowed = newsroom('https://cloud.newsroom.example/v1');
 	assert.ok(allowed.available);
 	assert.equal(allowed.route.keyEnv, 'CLOUD_TOKEN');
+});
+
+test('newsroom: a route token is never the Editorial MCP token or a tool secret, and a token too short to redact is refused', () => {
+	const env = (keyEnv: string, token = 'editorial-token-0123456789') => ({
+		...BASE,
+		SPOTLIGHT_EDITION: 'newsroom',
+		SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
+		SPOTLIGHT_EDITORIAL_MCP_TOKEN: token,
+		SPOTLIGHT_ROUTES: JSON.stringify([{ name: 'model', base_url: 'https://model.newsroom.example/v1', model: 'm', inference: 'own', key_env: keyEnv }]),
+		REGISTRY_API_KEY: 'reg-secret',
+		ROUTE_TOKEN: 'route-secret',
+	});
+	// Accepted, the Editorial token would reach every pi process as its route key.
+	assert.throws(() => readConfig(env('SPOTLIGHT_EDITORIAL_MCP_TOKEN')), /key_env may not name SPOTLIGHT_EDITORIAL_MCP_TOKEN/);
+	assert.throws(() => checkRouteSecrets(readConfig(env('REGISTRY_API_KEY')), COMPOSITION), /REGISTRY_API_KEY .*tool secret/);
+	const ok = readConfig(env('ROUTE_TOKEN'));
+	assert.doesNotThrow(() => checkRouteSecrets(ok, COMPOSITION));
+	assert.equal(childEnv(ok, COMPOSITION, 'orchestrator', env('ROUTE_TOKEN')).SPOTLIGHT_PROVIDER_API_KEY, 'route-secret');
+	assert.throws(() => readConfig(env('ROUTE_TOKEN', 'abc')), /shorter than 16 characters/);
 });
