@@ -4,6 +4,17 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed — Ingest decision checks read Batch 1.1
+
+- The proposition check passes each claim's source positions in its state,
+  and its question treats attribution held in a position as no change, so a
+  correctly normalized attributed claim is not flagged as broader or
+  changed. Memberships resolve through `claim_ref`/`event_ref` with a
+  generated event label.
+- The question text changed, so `QUESTION_BANK_VERSION` changed. The ingest
+  thresholds have not been re-measured: the September labelled set is not in
+  this checkout. Until they are, keep ingest decision checks advisory.
+
 ### Added — Solo wiki destination
 
 - `scripts/wiki-destination.py` writes an approved Batch 1.1 into the
