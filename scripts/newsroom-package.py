@@ -172,13 +172,15 @@ def build(case: Path) -> dict[str, Any]:
     contents: dict[str, bytes] = {}  # each cited file's bytes, read once from its validated path
     omissions: list[dict[str, Any]] = []
     problems: list[str] = []
+    shipped: list[dict[str, Any]] = []
 
     def cite(rel: object, role: str, expression_id: str, finding_id: str, evidence_id: str | None,
-             kind: str, declared: str | None) -> None:
+             kind: str, declared: str | None) -> bool:
+        """True when the file travels."""
         text, path, why = _case_file(case, rel)
         if path is None:
             omissions.append({"path": text, "expression_id": expression_id, "reason": why})
-            return
+            return False
         data = contents.get(text)
         if data is None:
             # The cap holds before a file is buffered, not only after all are.
@@ -188,7 +190,7 @@ def build(case: Path) -> dict[str, Any]:
         digest = _sha(data)
         if declared and declared.lower() != digest:
             problems.append(f"{text} no longer matches its declared sha256 ({kind})")
-            return
+            return False
         entry = entries.setdefault(text, {
             "path": text, "sha256": digest, "bytes": len(data),
             "media_type": mimetypes.guess_type(text)[0] or "application/octet-stream",
@@ -198,17 +200,20 @@ def build(case: Path) -> dict[str, Any]:
                            ("expression_ids", expression_id), ("evidence_ids", evidence_id)):
             if value and value not in entry[key]:
                 entry[key].append(value)
+        return True
 
     for expression in passages.get("expressions", []):
         if not isinstance(expression, dict) or lifecycle_state(expression) != "activated":
             continue
         expression_id = str(expression.get("id"))
         item = items.get(str(expression.get("original_evidence_bundle_id")))
+        anchor = (expression.get("anchor_ref") or {}).get("path")
+        anchored = False
         for link in expression.get("finding_links", []) or []:
             role = ROLES.get(link.get("relation"), "contextual")
             finding_id = str(link.get("finding_id"))
-            cite((expression.get("anchor_ref") or {}).get("path"), role, expression_id, finding_id,
-                 item.get("id") if item else None, "anchor", expression.get("anchor_sha256"))
+            anchored = cite(anchor, role, expression_id, finding_id,
+                            item.get("id") if item else None, "anchor", expression.get("anchor_sha256")) or anchored
             if item is None:
                 omissions.append({"path": None, "expression_id": expression_id,
                                   "reason": "its evidence item is not in the evidence bundle"})
@@ -226,6 +231,12 @@ def build(case: Path) -> dict[str, Any]:
                 if isinstance(derivative, dict) and derivative.get("path"):
                     cite(derivative["path"], role, expression_id, finding_id, item.get("id"),
                          "text_derivative", derivative.get("sha256"))
+        # A passage travels only with its anchor: its text quotes that file.
+        if anchored:
+            shipped.append(expression)
+        else:
+            omissions.append({"path": anchor if isinstance(anchor, str) else None, "expression_id": expression_id,
+                              "reason": "the passage stays behind: its anchor file did not travel"})
     if problems:
         raise Refused("; ".join(sorted(set(problems))[:10]))
 
@@ -240,7 +251,7 @@ def build(case: Path) -> dict[str, Any]:
         "case_id": case.name,
         "findings": findings,
         "fact_check": fact_check,
-        "passages": passages,
+        "passages": {**passages, "expressions": shipped},
         "source_positions": positions,
         "evidence_manifest": {"files": manifest, "omissions": omissions},
         "decision_flags": (checks or {}).get("checks", {}),

@@ -89,8 +89,12 @@ class NewsroomPackage(GATES.CaseFixture):
             self.assertNotIn(stays, text)
         self.assertEqual(manifest["omissions"][0], {"path": "research/swarm/ownership-web/leads.jsonl", "expression_id": "SX2",
                                                     "reason": "research-phase material stays on this computer"})
-        self.assertEqual([o["path"] for o in manifest["omissions"][1:]],
-                         ["data/orchestration.json", "research/Swarm/ownership-web/leads.jsonl"])
+        # A passage whose anchor stays behind stays behind too, recorded by id.
+        self.assertEqual([e["id"] for e in package["passages"]["expressions"]], ["SX1"])
+        self.assertEqual([(o["expression_id"], o["reason"]) for o in manifest["omissions"] if o["reason"].startswith("the passage")],
+                         [(sx, "the passage stays behind: its anchor file did not travel") for sx in ("SX2", "SX3", "SX4")])
+        self.assertEqual(sorted({o["path"] for o in manifest["omissions"][1:]}),
+                         ["data/orchestration.json", "research/Swarm/ownership-web/leads.jsonl", "research/swarm/ownership-web/leads.jsonl"])
         self.assertEqual(package["journalist_input_units"], [])
         # The package is what the published contract says the server receives.
         self.assertEqual(schema_check.load(ROOT / "schemas" / "editorial-mcp" / "package.schema.json").errors(package), [])

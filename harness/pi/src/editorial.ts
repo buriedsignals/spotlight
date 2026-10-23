@@ -298,7 +298,7 @@ export class EditorialClient {
 		};
 		// The envelope is checked here, once: a malformed answer is the service
 		// failing, which stops the case like any other.
-		const isObject = (value: unknown) => !!value && typeof value === 'object' && !Array.isArray(value);
+		const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 		if (!isObject(result) || (result.content !== undefined && !(Array.isArray(result.content) && result.content.every(isObject)))) {
 			throw new EditorialError(`${tool}: the Editorial MCP returned a malformed result`);
 		}
@@ -308,10 +308,15 @@ export class EditorialClient {
 		if (result.isError) {
 			throw new EditorialToolError(`${tool}: ${this.#said(text || 'the Editorial MCP reported an error').replace(/\bhttps?:\/\/\S+/gi, '[address removed]')}`);
 		}
-		const answer = (value: unknown) => {
-			if (tool === 'run_checks' && !JOB_STATES.has(String((value as { state?: unknown }).state))) {
-				throw new EditorialError('run_checks: the Editorial MCP answered with a state outside the contract');
-			}
+		const answer = (value: Record<string, unknown>) => {
+			const nonEmpty = (field: unknown) => typeof field === 'string' && field.length > 0;
+			const malformed =
+				(tool === 'run_checks' &&
+					(!JOB_STATES.has(String(value.state)) ||
+						(value.flags !== undefined &&
+							!(Array.isArray(value.flags) && value.flags.every((flag) => isObject(flag) && nonEmpty(flag.target) && nonEmpty(flag.reason) && ['string', 'undefined'].includes(typeof flag.question)))))) ||
+				(tool === 'submit_case_review' && value.review_url !== undefined && typeof value.review_url !== 'string');
+			if (malformed) throw new EditorialError(`${tool}: the Editorial MCP answered outside the contract`);
 			return this.sanitize(value, { keepReview: tool === 'submit_case_review' }) as Record<string, unknown>;
 		};
 		if (isObject(result.structuredContent)) {
@@ -382,7 +387,12 @@ export async function ensureCaseRegistered(
 	const editorial = config.editorial!;
 	const origin = new URL(editorial.url).origin;
 	const stored = readCaseJson(config.caseDir, CASE_REFERENCE_FILE);
-	if (stored && typeof stored.case_ref === 'string' && stored.case_ref && stored.editorial_origin === origin) {
+	if (stored && typeof stored.case_ref === 'string' && stored.case_ref) {
+		// The reference belongs to the endpoint that issued it: another endpoint
+		// would register the case again and lose it.
+		if (stored.editorial_origin !== origin) {
+			throw new Error(`this case is registered with another newsroom endpoint (${String(stored.editorial_origin)}), so it was not started; start it with that endpoint`);
+		}
 		// A case folder copied or restored under another name carries the
 		// other case's reference: refuse rather than review under it.
 		if (stored.client_case_id !== config.caseId) {
@@ -444,12 +454,10 @@ function checkArtifact(caseDir: string, kind: CheckKind): Record<string, unknown
 	return artifact;
 }
 
+// The client checked each flag against the contract.
 function flagsOf(value: unknown): CheckRecord['flags'] {
-	if (!Array.isArray(value)) return [];
-	return value
-		.filter((flag): flag is Record<string, unknown> => !!flag && typeof flag === 'object')
-		.map((flag) => ({ target: String(flag.target ?? ''), question: String(flag.question ?? ''), reason: String(flag.reason ?? '') }))
-		.filter((flag) => flag.target && flag.reason)
+	return ((value ?? []) as Array<Record<string, string>>)
+		.map((flag) => ({ target: flag.target, question: flag.question ?? '', reason: flag.reason }))
 		.slice(0, 500);
 }
 

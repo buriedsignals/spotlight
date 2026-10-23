@@ -97,12 +97,15 @@ test('an HTTP or protocol error from the server reaches no log or case file with
 	}
 });
 
-test('a successful but malformed tool result stops the newsroom case, and so does a run_checks state outside the contract', async () => {
+test('a successful but malformed tool result stops the newsroom case: a run_checks state or flag outside the contract, a review address that is not a string', async () => {
 	const url = 'https://editorial.newsroom.example/mcp';
 	for (const [tool, result] of [
 		['get_record', { content: 'not a list' }],
 		['get_record', { content: [null] }],
 		['run_checks', { structuredContent: { job_id: 'job-1', state: 'finished' } }],
+		['run_checks', { structuredContent: { job_id: 'job-1', state: 'done', flags: [{ target: 'finding:F1', reason: 'ok' }, { target: 'finding:F2' }] } }],
+		['run_checks', { structuredContent: { job_id: 'job-1', state: 'done', flags: 'none' } }],
+		['submit_case_review', { structuredContent: { status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: 42 } }],
 	] as const) {
 		const fetchImpl: typeof fetch = async (_url, init) => {
 			const message = JSON.parse(String(init?.body)) as { id?: string; method: string };
@@ -292,7 +295,7 @@ test('an answer carrying another request\'s id is not taken as this request\'s a
 	await assert.rejects(client.call('get_record', { record_id: 'claim:1' }), /no readable answer to tools\/call/);
 });
 
-test('a case folder copied from another case does not reuse that case\'s newsroom reference', async (t) => {
+test('a case folder holding another case\'s or another endpoint\'s newsroom reference is not started', async (t) => {
 	const space = await workspace(t);
 	const newsroom = await startFakeEditorial();
 	t.after(() => newsroom.close());
@@ -301,6 +304,9 @@ test('a case folder copied from another case does not reuse that case\'s newsroo
 	await writeFile(join(config.caseDir, 'data', 'editorial-case.json'), JSON.stringify({ case_ref: 'nr-case-a', title: 'case-a', custody_mode: 'hosted', editorial_origin: origin(newsroom.url), client_case_id: 'case-a' }));
 	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)] });
 	await assert.rejects(ensureCaseRegistered(client, config, async () => ({ code: 0, stdout: '{}', stderr: '' })), /reference of another case \(case-a\)/);
+	// A reference from another Editorial endpoint is not replaced by a new registration.
+	await writeFile(join(config.caseDir, 'data', 'editorial-case.json'), JSON.stringify({ case_ref: 'nr-case-b', title: 'case-b', custody_mode: 'hosted', editorial_origin: 'https://old.newsroom.example', client_case_id: 'case-b' }));
+	await assert.rejects(ensureCaseRegistered(client, config, async () => ({ code: 0, stdout: '{}', stderr: '' })), /registered with another newsroom endpoint \(https:\/\/old\.newsroom\.example\)/);
 	assert.deepEqual(newsroom.callsOf('register_case'), []);
 });
 
