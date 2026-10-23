@@ -190,7 +190,8 @@ def issue_nonce(case: Path, data_descriptor: int, gate: str) -> str:
     """Record a fresh page nonce for one gate and return it to the caller only."""
     require_gate(gate)
     ledger = load_ledger(case, data_descriptor)
-    nonce = secrets.token_urlsafe(32)
+    # Hex, so a nonce never starts with "-" and passes safely as a CLI argument.
+    nonce = secrets.token_hex(32)
     ledger["nonces"][nonce_sha256(nonce)] = {"gate": gate, "channel": "page", "used": False}
     atomic_write_files(
         case, {f"data/{LEDGER_FILE}": ledger_bytes(ledger)}, data_descriptor=data_descriptor
