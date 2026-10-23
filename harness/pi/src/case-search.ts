@@ -4,8 +4,10 @@
 // for each claim's top passages in the case's own research/ captures, leaving
 // out everything D9 hides, and appends them to the task inside one labelled
 // untrusted-data block. Retrieval only: it sets no verdict. Without Engine,
-// with Engine's switch off, or on any failure, the task goes unchanged. The
-// launcher runs this inside the worker queue, and a cancelled spawn stops it.
+// with Engine's switch off, or on any failure, the task goes unchanged; a
+// refusal (exit 2: not the active case) rejects, so the spawn fails and the
+// orchestrator gets the reason. The launcher runs this inside the worker
+// queue, and a cancelled spawn stops it.
 import { CHECKOUT_ROOT } from './roles.ts';
 import { programEnv, runFixed } from './tools/run.ts';
 import type { Env } from './tools/run.ts';
@@ -24,8 +26,9 @@ export async function withCasePassages(
 	options: { caseDir: string; casesRoot: string; python: string; env: Env; log: (message: string) => void; signal?: AbortSignal },
 ): Promise<string> {
 	if (role !== 'fact-checker') return task;
+	let result;
 	try {
-		const result = await runFixed(
+		result = await runFixed(
 			options.python,
 			['-m', 'integrations.case_search', '--case', options.caseDir, '--findings', '--for', 'fact-checker', '--format', 'prompt'],
 			{
@@ -35,15 +38,16 @@ export async function withCasePassages(
 				signal: options.signal,
 			},
 		);
-		if (result.code !== 0) {
-			options.log(`case search skipped (exit ${result.code})`);
-			return task;
-		}
-		const block = result.stdout.trim();
-		return block ? `${task}\n\n${block}` : task;
-	} catch (error) {
+	} catch {
 		options.signal?.throwIfAborted();
 		options.log('case search skipped: it could not run');
 		return task;
 	}
+	if (result.code === 2) throw new Error(result.stderr.match(/case search refused: .*/)?.[0] ?? 'case search refused');
+	if (result.code !== 0) {
+		options.log(`case search skipped (exit ${result.code})`);
+		return task;
+	}
+	const block = result.stdout.trim();
+	return block ? `${task}\n\n${block}` : task;
 }

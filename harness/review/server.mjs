@@ -162,7 +162,9 @@ export async function startReviewServer({
   }
 
   // Passages most worth reading next to each claim (case search through
-  // Engine). Retrieval only: a failure leaves the page as it was, with a quiet note.
+  // Engine). Retrieval only: Engine absent or off, or a search stopped, leaves
+  // a quiet "unavailable" note; any other failure a distinct "failed" one,
+  // never its text. The answer names the record digest it was searched for.
   // One search per gate, for the record's latest digest (the claims are in
   // the record), shared by concurrent requests. A new digest replaces the
   // gate's search and stops the old one if still running; so does shutdown.
@@ -170,10 +172,11 @@ export async function startReviewServer({
   async function passages() {
     const unavailable = { gate, available: false, note: "case search unavailable", claims: [] };
     if (typeof bridge.passages !== "function") return unavailable;
+    let search;
     try {
       const shown = gate;
       const digest = (await bridge.view(shown)).digest;
-      let search = searches.get(shown);
+      search = searches.get(shown);
       if (search?.digest !== digest) {
         search?.stop.abort();
         const stop = new AbortController();
@@ -182,9 +185,9 @@ export async function startReviewServer({
         const current = search;
         search.result.catch(() => searches.get(shown) === current && searches.delete(shown));
       }
-      return { ...(await search.result), gate: shown };
+      return { ...(await search.result), gate: shown, digest: search.digest };
     } catch {
-      return unavailable;
+      return search?.stop.signal.aborted ? unavailable : { ...unavailable, failed: true, note: "case search failed" };
     }
   }
 

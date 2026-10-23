@@ -202,6 +202,7 @@ test("the gate page gets case-search passages next to each claim, outside the di
   assert.deepEqual(body.claims[0].passages, [
     { file: "research/registry.md", excerpt: `<img src=x onerror=alert(1)> Registry entry on ${before.content.findings[0].claim}`, score: 12.5 },
   ]);
+  assert.equal(body.digest, before.digest, "the passages name the record they were searched for");
   assert.equal((await json("/api/view")).body.digest, before.digest);
 
   const off = await authed(t, caseDir, { bridgeEnv: { ...process.env, SPOTLIGHT_BSIG: standInBsig(root, { off: true }) } });
@@ -209,6 +210,18 @@ test("the gate page gets case-search passages next to each claim, outside the di
   assert.equal(quiet.status, 200);
   assert.deepEqual([quiet.body.available, quiet.body.claims], [false, []]);
   assert.equal(quiet.body.note, "case search unavailable: Engine's case search is switched off");
+});
+
+test("a failing case search shows a distinct failure, not \"unavailable\", and never its error text", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "investigation_gate");
+  const real = createCaseBridge({ caseDir });
+  const bridge = { ...real, passages: async () => { throw new Error("seam crashed at /private/secret"); } };
+  const { json } = await authed(t, caseDir, { bridge });
+  const { status, body } = await json("/api/passages");
+  assert.equal(status, 200);
+  assert.deepEqual([body.available, body.failed, body.note, body.claims], [false, true, "case search failed", []]);
+  assert.doesNotMatch(JSON.stringify(body), /seam crashed|secret/);
 });
 
 test("passages requests share one case search per record; a changed record or closing the review stops a running one", async (t) => {

@@ -18,8 +18,8 @@ let reviewerTimer = 0;
 let reviewerSaving = null;
 // The follow-up note is sent with the request, not saved as a review edit.
 let followUpNote = "";
-// Case-search passages for the gate on show, fetched once per gate after the view.
-let passages = { gate: "", data: null };
+// Case-search passages for the gate and record digest on show, fetched once each after the view.
+let passages = { gate: "", digest: "", data: null };
 
 const DECISION_LABELS = {
   methodology: { approved: "Approve the methodology" },
@@ -883,9 +883,9 @@ function passageCard(claim) {
 }
 
 function passagesSection() {
-  const data = passages.gate === view.gate ? passages.data : null;
+  const data = passages.gate === view.gate && passages.digest === view.digest ? passages.data : null;
   if (!data) return null;
-  if (!data.available) return el("p", { className: "muted", text: "Case search unavailable." });
+  if (!data.available) return el("p", { className: "muted", text: data.failed ? "Case search failed." : "Case search unavailable." });
   if (!data.claims.length) return null;
   return el(
     "section",
@@ -897,19 +897,21 @@ function passagesSection() {
   );
 }
 
-async function loadPassages(gate) {
-  passages = { gate, data: null };
+// Passages count only for the record digest they were searched for.
+async function loadPassages(gate, digest) {
+  passages = { gate, digest, data: null };
   const { status, data } = await post("/api/passages", {});
-  if (status !== 200 || data.gate !== gate || passages.gate !== gate) return;
-  passages = { gate, data };
-  if (view?.gate === gate) render(view);
+  if (status !== 200 || data.gate !== gate || (data.available && data.digest !== digest)) return;
+  if (passages.gate !== gate || passages.digest !== digest) return;
+  passages = { gate, digest, data };
+  if (view?.gate === gate && view.digest === digest) render(view);
 }
 
 // ---------------------------------------------------------------- render
 
 function render(next) {
   view = next;
-  if (passages.gate !== view.gate) loadPassages(view.gate).catch(() => {});
+  if (passages.gate !== view.gate || passages.digest !== view.digest) loadPassages(view.gate, view.digest).catch(() => {});
   title.textContent = `Spotlight review: ${view.gate_label || boot.gates?.[view.gate] || view.gate}`;
   keepFocus(() => {
     const parts = [];

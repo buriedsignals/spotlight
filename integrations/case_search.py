@@ -265,20 +265,26 @@ def _link_list(text: str) -> bool:
     return linked / len(stripped) > 0.5
 
 
-def _case_file(case: Path, file: str) -> bool:
-    """A plain case-relative file under research/ that stays inside the case."""
+def _research_file(file: str) -> bool:
+    """A plain case-relative path under research/ that is not bookkeeping."""
     if len(file) > 512 or not CASE_FILE.match(file) or "\\" in file:
         return False
     if any(part in {"", ".", ".."} for part in file.split("/")):
         return False
     # Receipts are protected wherever they sit (as harness/pi/src/tools/case-files.ts).
-    if BOOKKEEPING.match(file) or "receipt" in file.rsplit("/", 1)[-1].lower():
-        return False
+    return not (BOOKKEEPING.match(file) or "receipt" in file.rsplit("/", 1)[-1].lower())
+
+
+def _case_file(case: Path, file: str) -> str | None:
+    """The real case-relative path of ``file`` when both it and the file a
+    symlink resolves to are plain research files inside the case."""
+    if not _research_file(file):
+        return None
     try:
-        (case / file).resolve(strict=False).relative_to(case)
+        real = (case / file).resolve(strict=False).relative_to(case).as_posix()
     except (OSError, ValueError):
-        return False
-    return True
+        return None
+    return real if _research_file(real) else None
 
 
 def _passages(case: Path, result: dict[str, Any], rules: tuple[list[re.Pattern[str]], list[re.Pattern[str]]] | None) -> list[dict[str, Any]]:
@@ -289,11 +295,15 @@ def _passages(case: Path, result: dict[str, Any], rules: tuple[list[re.Pattern[s
         file, text = raw.get("path"), raw.get("text")
         if not isinstance(file, str) or not isinstance(text, str):
             continue
-        if not _case_file(case, file) or _link_list(text):
+        real = _case_file(case, file)
+        if real is None or _link_list(text):
             continue
         if rules is not None:
             deny, naming = rules
-            if any(pattern.match(file) for pattern in deny) or _names_hidden(naming, file) or _names_hidden(naming, text):
+            # Both the name Engine gave and the file it resolves to (a symlink alias).
+            names = (file, real)
+            if any(pattern.match(name) for pattern in deny for name in names) \
+                    or any(_names_hidden(naming, value) for value in (*names, text)):
                 continue
         score = raw.get("score")
         shown.append({

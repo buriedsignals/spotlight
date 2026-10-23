@@ -97,12 +97,15 @@ class CaseSearchChecks(unittest.TestCase):
         outside = self.tmp / "outside.md"
         outside.write_text("private")
         (self.case / "research" / "escape.md").symlink_to(outside)
+        # Harmless-looking aliases of what D9 hides.
+        (self.case / "research" / "lead-notes.md").symlink_to(Path("..") / "data" / "leads.json")
+        (self.case / "research" / "capture-copy.md").symlink_to(Path("swarm") / "web" / "sources" / "s1.md")
         hostile = [
             "data/leads.json", "data/leads.jsonl", "data/clues.json", "data/research-triage.json", "data/findings.json",
             "data/orchestration.json", "data/review-nonces.json", "data/investigation_gate-review.json",
             "research/gate-receipt.json", "research/swarm/web/sources/s1.md", "/etc/passwd", "../other/research/x.md",
             "research/../../outside.md", "research//x.md", "research/./x.md", "C:/Users/x.md", "research\\..\\x.md",
-            "research/escape.md",
+            "research/escape.md", "research/lead-notes.md", "research/capture-copy.md",
         ]
         passages = [{"path": path, "chunk": 0, "text": f"Hidden text from {path}", "score": 50} for path in hostile]
         passages.append({"path": "research/notes.md", "chunk": 0, "text": "The full list is in data/clues.json and research/swarm/web.", "score": 40})
@@ -110,8 +113,8 @@ class CaseSearchChecks(unittest.TestCase):
         self.scenario(passages=passages + CLEAN)
         member = json.loads(self.search("--findings"))
         member_files = {p["file"] for c in member["claims"] for p in c["passages"]}
-        self.assertEqual(member_files, {"research/swarm/web/sources/s1.md", "research/notes.md", "research/notes2.md",
-                                        "research/source-0.md", "research/source-1.md"})
+        self.assertEqual(member_files, {"research/swarm/web/sources/s1.md", "research/capture-copy.md", "research/notes.md", "research/notes2.md",
+                                        "research/source-0.md"})
         checker = json.loads(self.search("--findings", "--for", "fact-checker"))
         checker_files = [p["file"] for c in checker["claims"] for p in c["passages"]]
         self.assertEqual(checker_files[:5], [f"research/source-{i}.md" for i in range(5)])
