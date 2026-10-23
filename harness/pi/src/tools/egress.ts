@@ -11,8 +11,9 @@ import { BlockList, isIP } from 'node:net';
 
 export class EgressRefused extends Error {}
 
-const NOT_PUBLIC = new BlockList();
-for (const [network, prefix] of [
+// IPv4 networks that are not public. The browser-side request guard in
+// browse.ts is built from this same table.
+export const NOT_PUBLIC_V4 = [
 	['0.0.0.0', 8], // "this" network
 	['10.0.0.0', 8], // private
 	['100.64.0.0', 10], // carrier-grade NAT
@@ -28,7 +29,10 @@ for (const [network, prefix] of [
 	['203.0.113.0', 24], // documentation
 	['224.0.0.0', 4], // multicast
 	['240.0.0.0', 4], // reserved, broadcast
-] as const) {
+] as const;
+
+const NOT_PUBLIC = new BlockList();
+for (const [network, prefix] of NOT_PUBLIC_V4) {
 	NOT_PUBLIC.addSubnet(network, prefix, 'ipv4');
 }
 for (const [network, prefix] of [
@@ -58,6 +62,33 @@ export function isPublicAddress(address: string): boolean {
 	return !NOT_PUBLIC.check(bare, family === 4 ? 'ipv4' : 'ipv6');
 }
 
+// Names that only mean something on the operator's own machine or network:
+// single-label names, plus these suffixes and their subdomains.
+export const LOCAL_NAME_SUFFIXES = ['localhost', 'local', 'internal', 'lan', 'home.arpa'] as const;
+
+export function isLocalName(host: string): boolean {
+	const name = host.replace(/\.$/, '').toLowerCase();
+	if (!name.includes('.')) return true;
+	return LOCAL_NAME_SUFFIXES.some((suffix) => name === suffix || name.endsWith(`.${suffix}`));
+}
+
+// The run's Tor posture, read exactly as the scraping seam reads it
+// (integrations/scraping/scrape.py _resolve_proxy).
+export function anonymizedFetch(env: Record<string, string | undefined>): boolean {
+	return ['1', 'true', 'yes', 'on'].includes((env.SPOTLIGHT_ANONYMIZE_FETCH ?? '').trim().toLowerCase());
+}
+
+// http_get connects from the harness itself and browse from the operator's
+// browser; neither can route through Tor, so in Tor mode they refuse rather
+// than reveal the operator's address to the target.
+export function refuseDirectWhenAnonymized(tool: string, env: Record<string, string | undefined>): void {
+	if (anonymizedFetch(env)) {
+		throw new EgressRefused(
+			`refused: ${tool} connects directly and cannot go through Tor; SPOTLIGHT_ANONYMIZE_FETCH is on, so only fetch may reach the web in this run`,
+		);
+	}
+}
+
 export type AddressPolicy = (address: string) => boolean;
 
 // Checks everything that can be checked without the network. Returns the
@@ -79,7 +110,7 @@ export function checkURL(raw: string, allowAddress: AddressPolicy = isPublicAddr
 		if (!allowAddress(literal)) throw new EgressRefused(`refused: ${literal} is not a public address`);
 		return url;
 	}
-	if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || !host.includes('.')) {
+	if (isLocalName(host)) {
 		throw new EgressRefused(`refused: ${host} is a local name`);
 	}
 	return url;

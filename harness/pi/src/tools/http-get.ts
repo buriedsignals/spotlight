@@ -1,12 +1,13 @@
 // http_get: one plain HTTP GET to a public registry, archive or API endpoint
 // (company registries, Wayback CDX, Unpaywall, OpenAlex, WHOIS/RDAP...). It is
 // the typed replacement for the skills' `curl` calls. Every hop of the request,
-// redirects included, passes the public-address guard.
+// redirects included, passes the public-address guard. In Tor mode it refuses:
+// its request would leave from the operator's own address.
 import { createHash } from 'node:crypto';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { writeConfined } from './case-files.ts';
-import { egressGet } from './egress.ts';
+import { egressGet, refuseDirectWhenAnonymized } from './egress.ts';
 import { webURL } from './fetch.ts';
 import { checkedParams, jsonResult, savePath } from './run.ts';
 import type { ToolContext } from './run.ts';
@@ -33,6 +34,7 @@ export function httpGetTool(context: ToolContext): ToolDefinition {
 		parameters: params,
 		async execute(_id, raw, signal) {
 			const input = checkedParams<{ url: string; accept?: keyof typeof ACCEPT; save_as?: string }>('http_get', params, raw);
+			refuseDirectWhenAnonymized('http_get', context.env);
 			const response = await egressGet(input.url, {
 				readBody: true,
 				signal,

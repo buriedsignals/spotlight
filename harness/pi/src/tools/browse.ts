@@ -7,11 +7,14 @@
 // The model supplies a URL, never a script: the harness writes the whole
 // script, so the browser opens exactly one guarded page. Egress: the harness
 // walks the URL's redirect chain under the public-address guard first; inside
-// the browser a route guard holds every request to a literal loopback,
-// private, link-local or bracketed IPv6 address, or a localhost/.local name;
-// the page's final URL must pass the guard again before anything is returned.
-// A public hostname that the browser later resolves to a private address is
-// not caught by the in-browser guard (the browser does its own DNS).
+// the browser a route guard holds every request whose host is an IPv4 literal
+// in egress.ts's non-public table, any bracketed IPv6 literal, a single-label
+// name, or a local name (localhost, .local, .internal, .lan, .home.arpa); the
+// page's final URL must pass the guard again before anything is returned.
+// Limits: the browser does its own DNS, so a public name that resolves to a
+// private address is not caught in the browser; WebSocket and service-worker
+// requests are not seen by the route guard. In Tor mode browse refuses: the
+// browser would connect from the operator's address.
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -19,7 +22,7 @@ import { join, resolve, sep } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { writeConfined } from './case-files.ts';
-import { assertPublicDestination, publicDestination } from './egress.ts';
+import { LOCAL_NAME_SUFFIXES, NOT_PUBLIC_V4, assertPublicDestination, publicDestination, refuseDirectWhenAnonymized } from './egress.ts';
 import { webURL } from './fetch.ts';
 import { checkedParams, jsonResult, programEnv, programOutput, runFixed, savePath } from './run.ts';
 import type { ToolContext } from './run.ts';
@@ -39,11 +42,41 @@ const params = Type.Object(
 
 type Input = { url: string; capture?: 'text' | 'html' | 'screenshot'; wait_ms?: number; save_as?: string };
 
-// Requests the in-browser guard holds (it cannot resolve names itself).
-const BLOCKED_REQUEST =
-	'^[a-z][a-z0-9+.-]*://(?:[^/@]*@)?(?:localhost|[^/:?#]*\\.localhost|[^/:?#]*\\.local|\\[[^\\]]*\\]|(?:0|10|127)\\.\\d+\\.\\d+\\.\\d+|169\\.254\\.\\d+\\.\\d+|192\\.168\\.\\d+\\.\\d+|172\\.(?:1[6-9]|2\\d|3[01])\\.\\d+\\.\\d+|100\\.(?:6[4-9]|[7-9]\\d|1[01]\\d|12[0-7])\\.\\d+\\.\\d+)\\.?(?:[:/?#]|$)';
+// Inside the browser a route guard holds requests by URL alone. In the
+// dev-browser sandbox a handler that calls route.continue() or fallback(), or a
+// function matcher, stalls or breaks the navigation, so the guard is one
+// RegExp whose handler only aborts. The
+// pattern is built from egress.ts's non-public IPv4 table and local-name list.
+// The browser has already normalised the URL (integer and hex IPv4 forms
+// become dotted quads) before a route sees it.
+function octets(from: number, to: number): string {
+	return Array.from({ length: to - from + 1 }, (_, index) => String(from + index)).join('|');
+}
 
-function script(url: string, capture: string, waitMs: number, screenshotName: string): string {
+function ipv4Pattern(network: string, prefix: number): string {
+	const parts = network.split('.').map(Number);
+	const fixed = Math.floor(prefix / 8);
+	const span = 2 ** (8 - (prefix % 8));
+	return parts
+		.map((part, index) => {
+			if (index < fixed) return String(part);
+			if (index === fixed && prefix % 8 !== 0) return `(?:${octets(part, part + span - 1)})`;
+			return '\\d{1,3}';
+		})
+		.join('\\.');
+}
+
+const BLOCKED_HOSTS = [
+	'\\[[^\\]]*\\]', // every IPv6 literal
+	...NOT_PUBLIC_V4.map(([network, prefix]) => ipv4Pattern(network, prefix)),
+	'[^/:?#.@]+', // single-label names
+	`(?:[^/:?#@]*\\.)?(?:${LOCAL_NAME_SUFFIXES.map((suffix) => suffix.replace('.', '\\.')).join('|')})`,
+];
+
+const BLOCKED_REQUEST = `^[a-z][a-z0-9+.-]*://(?:[^/@?#]*@)?(?:${BLOCKED_HOSTS.join('|')})\\.?(?:[:/?#]|$)`;
+
+// The whole script dev-browser runs for one browse call.
+export function browseScript(url: string, capture: string, waitMs: number, screenshotName: string): string {
 	return `const page = await browser.newPage();
 await page.route(new RegExp(${JSON.stringify(BLOCKED_REQUEST)}, 'i'), (route) => route.abort());
 const response = await page.goto(${JSON.stringify(url)}, { waitUntil: 'domcontentloaded', timeout: 45000 });
@@ -67,12 +100,13 @@ export function browseTool(context: ToolContext): ToolDefinition {
 		parameters: params,
 		async execute(_id, raw, signal) {
 			const input = checkedParams<Input>('browse', params, raw);
+			refuseDirectWhenAnonymized('browse', context.env);
 			const capture = input.capture ?? 'text';
 			if (capture === 'screenshot' && !input.save_as) throw new Error('browse: a screenshot needs save_as');
 			const destination = await publicDestination(input.url, signal);
 			const screenshotName = `spotlight-${randomUUID()}.png`;
 			const scriptPath = join(tmpdir(), `spotlight-browse-${randomUUID()}.js`);
-			writeFileSync(scriptPath, script(destination, capture, input.wait_ms ?? 1000, screenshotName), { mode: 0o600 });
+			writeFileSync(scriptPath, browseScript(destination, capture, input.wait_ms ?? 1000, screenshotName), { mode: 0o600 });
 			let output: string;
 			try {
 				output = programOutput(
