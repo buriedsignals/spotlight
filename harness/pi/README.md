@@ -27,6 +27,8 @@ Configuration comes only from the environment. A missing or invalid required var
 | `SPOTLIGHT_PROVIDER_API_KEY` | no | Key for the model endpoint. A local server without a key needs none. |
 | `SPOTLIGHT_PROVIDER_REQUEST_BODY` | no | JSON object merged into every model request body, for example `{"provider":{"zdr":true}}`. Fixed fields win. |
 | `SPOTLIGHT_MODEL_CONTEXT_WINDOW` | no | Context window in tokens (default 32768). |
+| `SPOTLIGHT_MODEL_TIER` | no | `12b` (default), `26b`, `31b` or `frontier`. Sets where the conversation is folded (see [Conversation folding](#conversation-folding)). Any other value stops the launcher. |
+| `SPOTLIGHT_COMPACT_AT`, `SPOTLIGHT_COMPACT_KEEP` | no | Override the local tier's fold point and the recent tokens kept verbatim. The fold point must be below the context window, and the kept tokens below the fold point. |
 | `SPOTLIGHT_HELPER_URL` | no | Base URL of the helper model. |
 | `SPOTLIGHT_SEARCH_URL` | no | Base URL of the search service. There is no default. |
 | `SPOTLIGHT_CASES_ROOT` | yes | Absolute path of the cases folder. |
@@ -55,6 +57,21 @@ Every process reads the case, which may hold journalist input or local-corpus co
 ```json
 [{"name": "model", "base_url": "https://models.newsroom.example/v1", "model": "model-id", "inference": "own", "key_env": "NEWSROOM_MODEL_TOKEN"}]
 ```
+
+## Conversation folding
+
+A small local model degrades as its context grows: the conversation alone (reasoning, delegations, tool results) can stall it after a single gate. The case's state lives in the case folder and the resolver, not in the transcript, so on the local tiers the harness folds the conversation into a checkpoint once it passes the tier's fold point.
+
+| Tier | Fold point (tokens) | Kept verbatim (tokens) |
+|---|---|---|
+| `12b` | 16384 | 4000 |
+| `26b` | 24576 | 6000 |
+| `31b` | 28672 | 7000 |
+| `frontier` | Pi's default (context window - 16384) | Pi's default (20000) |
+
+- **Mechanism.** Pi's own compaction. Before every pi process starts, the launcher writes `settings.json` in that process's Pi configuration folder with `compaction.reserveTokens` = context window - fold point and `compaction.keepRecentTokens` = the kept tokens. Pi compacts when the estimated context passes context window - `reserveTokens`, between turns and before a new prompt. `--no-session` keeps the session in memory and does not turn compaction off. The frontier tier's file holds no compaction settings, so Pi's defaults apply. The same settings apply to the orchestrator and to every worker.
+- **Checkpoint.** On the local tiers the extension's `session_before_compact` handler replaces Pi's summary with a checkpoint in five sections: Goal, Progress, Decisions, Next, Open gate. The session model writes it, on the same route as every other request. The RLM endpoint is not used: it is not one of the routes the launcher checks, and sensitive mode removes it. The checkpoint ends with a note that the case files and `spotlight_resolve` are the source of truth. If the checkpoint request fails, the compaction is skipped and Pi tries again at its next check.
+- **Privacy policy.** Pi sends a summary request outside the agent loop, where `before_provider_request` does not run. The extension therefore applies the fixed request-body fields to every summary request itself, on every tier; a request the policy cannot apply to is discarded and the compaction is skipped.
 
 ## Tools
 

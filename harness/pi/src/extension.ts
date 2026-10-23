@@ -2,6 +2,7 @@
 // registers the model route chosen by the launcher, applies the fixed
 // provider request-body policy, and registers exactly the role's tools.
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { registerCompaction } from './checkpoint.ts';
 import { applyFixedRequestBody, parseFixedRequestBody } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillsFor, spawnableWorkers } from './roles.ts';
@@ -76,6 +77,9 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		}
 		return outcome.payload;
 	});
+	// The launcher sets the local tier's fold point in Pi's settings; the
+	// frontier tier keeps Pi's default threshold and summary.
+	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier');
 	const tools = toolsFor(role);
 	for (const tool of tools) pi.registerTool(tool);
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));

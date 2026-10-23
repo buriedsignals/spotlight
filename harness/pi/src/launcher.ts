@@ -7,12 +7,12 @@ import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ConfigError, RouteRefused, childEnv, readConfig, routeFor, secretValues } from './config.ts';
+import { ConfigError, RouteRefused, childEnv, piSettings, readConfig, routeFor, secretValues } from './config.ts';
 import type { HarnessConfig } from './config.ts';
 import { CaseHeldError, acquireCaseLock } from './lock.ts';
 import type { CaseLock } from './lock.ts';
 import { redactingLines, redactor, stderrLogger } from './log.ts';
-import { piArguments, piCliPath } from './pi-process.ts';
+import { piArguments, piCliPath, writePiSettings } from './pi-process.ts';
 import { discardIncompleteLanes } from './resume.ts';
 import { ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillsFor, spawnableWorkers, systemPrompt } from './roles.ts';
 import type { Composition } from './roles.ts';
@@ -57,9 +57,13 @@ function forwardStderr(harness: Harness, child: ChildProcess): void {
 	child.stderr?.pipe(redactingLines(harness.redact)).pipe(process.stderr, { end: false });
 }
 
+// Called right before each pi process starts: it also writes that process's
+// Pi settings (the local tier's fold point) into its configuration folder.
 function processLaunch(harness: Harness, role: string) {
 	const route = routeFor(harness.config);
 	const spec = agentSpec(harness.composition, role);
+	const env = childEnv(harness.config, harness.composition, role, process.env);
+	writePiSettings(env.PI_CODING_AGENT_DIR, piSettings(harness.config));
 	return {
 		command: process.execPath,
 		args: piArguments({
@@ -68,7 +72,7 @@ function processLaunch(harness: Harness, role: string) {
 			tools: allowedTools(spec, harness.config.sensitive),
 			model: route.model,
 		}),
-		env: childEnv(harness.config, harness.composition, role, process.env),
+		env,
 		cwd: resolve(harness.config.dataDir, 'work', role),
 	};
 }
