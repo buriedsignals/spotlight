@@ -160,27 +160,40 @@ export async function startReviewServer({
     return active && Boolean(session) && cookie(request, cookieName) === session;
   }
 
-  // Engine's confirmation nonce per staged wiki change, by id. Like the gate
-  // nonce it lives only in this process; the page never receives it.
-  const wikiNonces = new Map();
+  // Wiki changes being confirmed, by id: one action at a time per change, from
+  // its nonce to Engine's answer, so two tabs cannot race Apply and Discard.
+  const wikiBusy = new Set();
+  const WIKI_REFUSALS = new Set(["nonce_unknown", "nonce_used", "nonce_other_change"]);
 
+  // Each confirmation takes a fresh Engine nonce, kept only in this call; the
+  // page never receives it.
   async function confirmWikiChange(action, body) {
     const { id, digest } = exactObject(body, ["id", "digest"], "wiki change");
     if (!wiki || typeof id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(id) || typeof digest !== "string" || !/^[0-9a-f]{64}$/.test(digest))
       return [400, { code: "invalid-change", message: "That wiki change is not recognised." }];
+    if (wikiBusy.has(id))
+      return [409, { code: "in-progress", message: "This wiki change is already being applied or discarded. Reload the page to see the outcome." }];
+    wikiBusy.add(id);
     try {
-      if (!wikiNonces.has(id)) wikiNonces.set(id, await wiki.nonce(id));
-      await wiki[action](id, digest, wikiNonces.get(id));
-    } catch (error) {
-      if (error.code === "digest_changed") {
-        wikiNonces.delete(id);
-        return [409, { code: "digest-changed", message: "This wiki change was edited since you loaded it. The list has been reloaded: check it and decide again.", changes: await wikiChanges() }];
+      let nonce;
+      try {
+        nonce = await wiki.nonce(id);
+      } catch (error) {
+        return [422, { code: "refused", message: `Could not confirm the change: ${error.message}` }];
       }
-      if (/^nonce_/.test(error.code)) wikiNonces.delete(id);
-      return [422, { code: "refused", message: error.message }];
+      try {
+        await wiki[action](id, digest, nonce);
+      } catch (error) {
+        if (error.code === "digest_changed")
+          return [409, { code: "digest-changed", message: "This wiki change was edited since you loaded it. The list has been reloaded: check it and decide again.", changes: await wikiChanges().catch(() => undefined) }];
+        if (WIKI_REFUSALS.has(error.code)) return [422, { code: "refused", message: error.message }];
+        return [502, { code: "outcome-unknown", message: "Engine did not confirm the outcome. Reload the page to see whether the change was made." }];
+      }
+      // Done: a failed refresh of the list does not turn it into a failure.
+      return [200, { changes: await wikiChanges().catch(() => undefined) }];
+    } finally {
+      wikiBusy.delete(id);
     }
-    wikiNonces.delete(id);
-    return [200, { changes: await wikiChanges() }];
   }
 
   // The decision nonce lives only in this process and in the case ledger's
@@ -370,7 +383,6 @@ export async function startReviewServer({
     capability = "";
     session = "";
     pageNonce = "";
-    wikiNonces.clear();
     clearTimeout(idleTimer);
     clearTimeout(overallTimer);
     server.close(() => {

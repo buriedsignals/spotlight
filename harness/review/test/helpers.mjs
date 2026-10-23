@@ -115,6 +115,8 @@ const refuse = (refusal) => out({ event: "error", message: "wiki: refused " + re
 const nonce = JSON.parse(stdin).nonce;
 const issued = state.nonces[nonce];
 const digest = argv.find((arg) => arg.startsWith("--digest=")).slice(9);
+if (state.slowMs) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, state.slowMs);
+if (state.failOnce) { const message = state.failOnce; delete state.failOnce; out({ event: "error", message }, 1); }
 if (state.refuseOnce) { const reason = state.refuseOnce; delete state.refuseOnce; refuse(reason); }
 if (!issued) refuse("nonce_unknown");
 if (issued.used) refuse("nonce_used");
@@ -122,6 +124,7 @@ if (issued.id !== id) refuse("nonce_other_change");
 if (digest !== change.digest || issued.digest !== change.digest) refuse("digest_changed");
 issued.used = true;
 state.changes = state.changes.filter((item) => item.id !== id);
+if (state.breakListing) state.fail = state.breakListing;
 out({ event: "result", data: { tool: verb, result: verb === "staged-apply" ? { op: change.op, applied: true, paths: change.paths } : { id, discarded: true } } });
 `;
 

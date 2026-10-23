@@ -18,8 +18,9 @@ let reviewerTimer = 0;
 let reviewerSaving = null;
 // The follow-up note is sent with the request, not saved as a review edit.
 let followUpNote = "";
-// Engine's staged wiki writes; empty without Engine, which hides the view.
-let wikiChanges = [];
+// Engine's staged wiki writes, loaded after the gate (null until then); empty
+// without Engine, which hides the view.
+let wikiChanges = null;
 
 const DECISION_LABELS = {
   methodology: { approved: "Approve the methodology" },
@@ -901,8 +902,8 @@ function wikiSection() {
 
 async function loadWiki() {
   const { status, data } = await post("/api/wiki-changes", {});
-  if (status === 200 && Array.isArray(data.changes)) wikiChanges = data.changes;
-  else if (status !== 403) warn(data.message || "Could not read staged changes.");
+  wikiChanges = status === 200 && Array.isArray(data.changes) ? data.changes : [];
+  if (status !== 200 && status !== 403) warn(data.message || "Could not read staged changes.");
 }
 
 async function confirmWiki(action, change) {
@@ -913,10 +914,11 @@ async function confirmWiki(action, change) {
   try {
     const { status, data } = await post(`/api/wiki-changes/${action}`, { id: change.id, digest: change.digest });
     if (Array.isArray(data.changes)) wikiChanges = data.changes;
-    if (status === 200) say(action === "apply" ? "Wiki change applied." : "Wiki change discarded.");
+    const done = action === "apply" ? "Wiki change applied." : "Wiki change discarded.";
+    if (status === 200) say(Array.isArray(data.changes) ? done : `${done} Reload the page to refresh the list.`);
     else if (status !== 403) {
       warn(data.message || "The wiki change was refused.");
-      say(status === 409 ? "Reloaded." : "Nothing changed.");
+      say(data.code === "digest-changed" ? "Reloaded." : data.code === "refused" ? "Nothing changed." : "Reload the page.");
     }
   } finally {
     setBusy(false);
@@ -931,7 +933,13 @@ function render(next) {
   keepFocus(() => {
     // No gate pending: the page shows only the staged wiki changes.
     if (!view.gate) {
-      app.replaceChildren(wikiChanges.length ? wikiSection() : el("p", { text: "No wiki changes are waiting. You can close this page." }));
+      app.replaceChildren(
+        wikiChanges === null
+          ? el("p", { text: "Loading the wiki changes…" })
+          : wikiChanges.length
+            ? wikiSection()
+            : el("p", { text: "No wiki changes are waiting. You can close this page." }),
+      );
       return;
     }
     const parts = [];
@@ -953,7 +961,7 @@ function render(next) {
     if (view.gate === "report") parts.push(reportContent(view.content));
     if (view.gate === "ingest") parts.push(...ingestContent(view.content, view.items));
     if (!readOnly()) parts.push(decisionSection());
-    if (wikiChanges.length) parts.push(wikiSection());
+    if (wikiChanges?.length) parts.push(wikiSection());
     app.replaceChildren(...parts);
   });
   app.setAttribute("aria-busy", busy ? "true" : "false");
@@ -966,10 +974,12 @@ async function load() {
     if (status !== 403) warn(data.message || "The review could not load.");
     return;
   }
-  await loadWiki();
   render(data);
+  if (view.gate) say(readOnly() ? "This gate is decided." : "Review loaded. Your edits are saved as you make them.");
+  // The gate shows at once; the staged wiki changes follow when Engine answers.
+  await loadWiki();
+  render(view);
   if (!view.gate) say("Wiki changes loaded.");
-  else say(readOnly() ? "This gate is decided." : "Review loaded. Your edits are saved as you make them.");
 }
 
 function typeReviewer(value) {

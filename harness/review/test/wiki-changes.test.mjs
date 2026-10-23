@@ -92,3 +92,35 @@ test("with no gate pending, the server starts without waiting for Engine", async
   const { server } = await Promise.race([startFor(t, caseDir, { wiki, view: "wiki" }), timeout]).finally(() => clearTimeout(timer));
   assert.equal(server.gate(), "");
 });
+
+test("an Engine failure that is not a documented refusal reports the outcome as unknown and takes a new nonce next time", async (t) => {
+  const root = tempRoot(t);
+  const fake = fakeBsig(root, { changes: [change("c1", "a")], failOnce: "wiki: helper timed out" });
+  const { json } = await authed(t, buildCase(root, "case", "methodology"), { wiki: fake.wiki });
+  const unknown = await json("/api/wiki-changes/apply", { id: "c1", digest: "a".repeat(64) });
+  assert.equal(unknown.status, 502);
+  assert.equal(unknown.body.code, "outcome-unknown");
+  const applied = await json("/api/wiki-changes/apply", { id: "c1", digest: "a".repeat(64) });
+  assert.equal(applied.status, 200);
+  assert.equal(fake.issued().length, 2);
+});
+
+test("a confirmed apply succeeds even when the list cannot be read afterwards", async (t) => {
+  const root = tempRoot(t);
+  const fake = fakeBsig(root, { changes: [change("c1", "a")], breakListing: "wiki: listing failed" });
+  const { json } = await authed(t, buildCase(root, "case", "methodology"), { wiki: fake.wiki });
+  const applied = await json("/api/wiki-changes/apply", { id: "c1", digest: "a".repeat(64) });
+  assert.equal(applied.status, 200);
+  assert.equal(applied.body.changes, undefined);
+});
+
+test("a second action on a change that is being confirmed answers 409 without reaching Engine", async (t) => {
+  const root = tempRoot(t);
+  const fake = fakeBsig(root, { changes: [change("c1", "a")], slowMs: 800 });
+  const { json } = await authed(t, buildCase(root, "case", "methodology"), { wiki: fake.wiki });
+  const body = { id: "c1", digest: "a".repeat(64) };
+  const results = await Promise.all([json("/api/wiki-changes/apply", body), json("/api/wiki-changes/discard", body)]);
+  assert.deepEqual(results.map((r) => r.status), [200, 409]);
+  assert.equal(results[1].body.code, "in-progress");
+  assert.equal(fake.calls().filter(({ argv }) => argv[2] === "staged-discard").length, 0);
+});
