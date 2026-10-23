@@ -4,6 +4,15 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Removed — Flue harness
+
+- `harness/flue/` and `tests/flue-build-check.sh` are gone; the Pi harness
+  (`harness/pi/`) is the local harness. Smoke and CI no longer install, build
+  or test Flue.
+- The preflight skill's case-binding branch names the Pi harness.
+- The Navigator runtime ID for the local harness stays `pi-flue`: it is
+  Navigator's contract ID, shared with Engine.
+
 ### Added — Research triage seam (questions, rules, backends)
 
 - `integrations/decisions/research_questions.py`: the research question bank

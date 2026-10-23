@@ -759,29 +759,29 @@ class OrchestrationConformance(unittest.TestCase):
             complete["ingest"], {"state": "completed", "resume_at": "complete"}
         )
 
-    def test_preflight_binds_flue_without_removing_non_flue_case_discovery(
+    def test_preflight_binds_pi_harness_without_removing_other_runtime_case_discovery(
         self,
     ) -> None:
         preflight = PREFLIGHT_SKILL.read_text(encoding="utf-8")
-        self.assertIn("### Flue-native case binding", preflight)
-        self.assertIn("### Non-Flue case selection", preflight)
-        flue_branch = preflight.split("### Flue-native case binding", 1)[1].split(
-            "### Non-Flue case selection", 1
+        self.assertIn("### Pi harness case binding", preflight)
+        self.assertIn("### Case selection on other runtimes", preflight)
+        harness_branch = preflight.split("### Pi harness case binding", 1)[1].split(
+            "### Case selection on other runtimes", 1
         )[0]
-        non_flue_branch = preflight.split("### Non-Flue case selection", 1)[1].split(
+        other_runtime_branch = preflight.split("### Case selection on other runtimes", 1)[1].split(
             "## 8. Write config", 1
         )[0]
 
-        self.assertIn("launcher-bound", flue_branch)
-        self.assertIn("spotlight_resolve({})", flue_branch)
-        self.assertNotIn("list-files(", flue_branch)
-        self.assertNotIn("spotlight-orchestration.py", flue_branch)
+        self.assertIn("launcher-bound", harness_branch)
+        self.assertIn("spotlight_resolve({})", harness_branch)
+        self.assertNotIn("list-files(", harness_branch)
+        self.assertNotIn("spotlight-orchestration.py", harness_branch)
 
         documented = re.findall(
             r"`(scripts/spotlight-python scripts/spotlight-orchestration\.py status --json[^`]*)`",
-            non_flue_branch,
+            other_runtime_branch,
         )
-        self.assertEqual(len(documented), 1, non_flue_branch)
+        self.assertEqual(len(documented), 1, other_runtime_branch)
         arguments = shlex.split(documented[0])
         arguments = [
             str(self.case) if argument == "{CASE_DIR}" else argument

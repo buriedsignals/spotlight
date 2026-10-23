@@ -111,20 +111,6 @@ else
   fail "tests/feedback-widget-check.js failed with rc=$rc"
 fi
 
-if bash tests/flue-build-check.sh >/dev/null 2>&1; then
-  ok "tests/flue-build-check.sh passes"
-else
-  fail "tests/flue-build-check.sh failed"
-fi
-
-npm test --prefix harness/flue >/dev/null 2>&1
-rc=$?
-if [ $rc -eq 0 ]; then
-  ok "harness/flue node --test suite passes"
-else
-  fail "harness/flue node --test suite failed with rc=$rc"
-fi
-
 npm test --prefix harness/pi >/dev/null 2>&1
 rc=$?
 if [ $rc -eq 0 ]; then

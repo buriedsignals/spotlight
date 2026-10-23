@@ -37,9 +37,6 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install Flue test dependencies
-        run: npm ci --prefix harness/flue
-
       - name: Install Pi harness test dependencies
         run: npm ci --prefix harness/pi
 

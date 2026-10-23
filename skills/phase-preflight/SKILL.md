@@ -188,9 +188,9 @@ nonce differs, `CASE_ROOT` is not durable storage: stop and ask the user for an
 absolute path, exactly as in step 0. On a match, delete the probe file and
 continue.
 
-### Flue-native case binding
+### Pi harness case binding
 
-When running in Flue, use only the host's launcher-bound active case. The
+When running in the Pi harness, use only the host's launcher-bound active case. The
 registered Spotlight tools have already established that exact case and its
 `data/` directory beneath the configured cases root. Do not derive another
 slug, create or enumerate sibling cases, accept a model-selected case path, or
@@ -200,7 +200,7 @@ After the preceding preflight checks, call `spotlight_resolve({})` and return
 its resolution to the dispatcher without inspecting case artifacts or
 `data/orchestration.json`.
 
-### Non-Flue case selection
+### Case selection on other runtimes
 
 Derive a project slug from the user's lead (lowercase, hyphens, no spaces).
 Resolve `CASE_ROOT` from `case_workspace_root`; if absent, use legacy
@@ -228,7 +228,7 @@ resolution to the dispatcher without inspecting case artifacts or
 #### Active investigation check
 
 Use `list-files("{CASE_ROOT}/*")` to enumerate case directories, then use the
-thin non-Flue adapter for each valid case:
+thin Python adapter for each valid case:
 `scripts/spotlight-python scripts/spotlight-orchestration.py status --json {CASE_DIR}`.
 Cases whose returned phase is not `complete` are active:
 
