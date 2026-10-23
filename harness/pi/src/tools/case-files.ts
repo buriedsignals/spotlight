@@ -1,14 +1,15 @@
-// read_file, write_file, edit_file, list_files and grep_files, confined to the
-// active case. Reads stay inside the case (plus the checkout's schemas/);
+// read_file, write_file, edit_file, list_files, grep_files and hash_files,
+// confined to the active case. Reads stay inside the case (plus the checkout's schemas/);
 // writes stay inside the caller's write folder, never follow a symlink, and
 // never touch the files only the resolver and the review page may write.
+import { createHash } from 'node:crypto';
 import { closeSync, constants, globSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, writeSync } from 'node:fs';
 import type { Stats } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT } from '../roles.ts';
-import { checkedParams, textResult } from './run.ts';
+import { ToolArgumentError, checkedParams, jsonResult, textResult } from './run.ts';
 import type { ToolContext } from './run.ts';
 
 export class FileRefused extends Error {}
@@ -19,6 +20,7 @@ const MAX_WRITE_BYTES = 20 * 1024 * 1024;
 const MAX_LIST = 500;
 const MAX_MATCHES = 200;
 const MAX_GREP_FILE_BYTES = 4 * 1024 * 1024;
+const MAX_HASH_FILES = 50;
 
 // Case-relative, lower-case (case-insensitive file systems), forward slashes.
 const PROTECTED = [
@@ -115,12 +117,63 @@ export function readTarget(caseDir: string, path: string): string {
 	return real;
 }
 
+// Lines as the evidence validators count them (scripts/evidence_anchors.py:
+// Python's read_text() then splitlines()), so a line number read here is a
+// valid source_ref line_start/line_end there.
+const LINE_BREAK = /\r\n|[\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029]/;
+
+function sourceLines(text: string): string[] {
+	const lines = text.split(LINE_BREAK);
+	if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+	return text === '' ? [] : lines;
+}
+
+// json.dumps(value, ensure_ascii=False, sort_keys=True) with Python's default
+// separators: what the validators select for a non-string JSON Pointer value.
+function pythonDumps(value: unknown): string {
+	if (Array.isArray(value)) return `[${value.map(pythonDumps).join(', ')}]`;
+	if (value !== null && typeof value === 'object') {
+		const keys = Object.keys(value).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+		return `{${keys.map((key) => `${JSON.stringify(key)}: ${pythonDumps((value as Record<string, unknown>)[key])}`).join(', ')}}`;
+	}
+	return JSON.stringify(value);
+}
+
+// RFC 6901, resolved as scripts/evidence_anchors.py json_pointer does.
+function selectJsonPointer(text: string, pointer: string, path: string): string {
+	let current: unknown;
+	try {
+		current = JSON.parse(text);
+	} catch (error) {
+		throw new Error(`read_file: ${path} is not valid JSON: ${(error as Error).message}`);
+	}
+	if (pointer !== '') {
+		if (!pointer.startsWith('/')) throw new Error(`read_file: JSON pointer ${JSON.stringify(pointer)} must start with '/'`);
+		for (const encoded of pointer.slice(1).split('/')) {
+			const token = encoded.replaceAll('~1', '/').replaceAll('~0', '~');
+			if (current !== null && typeof current === 'object' && !Array.isArray(current) && Object.hasOwn(current, token)) {
+				current = (current as Record<string, unknown>)[token];
+			} else if (Array.isArray(current) && /^[0-9]+$/.test(token) && Number(token) < current.length) {
+				current = current[Number(token)];
+			} else {
+				throw new Error(`read_file: JSON pointer ${JSON.stringify(pointer)} does not resolve at ${JSON.stringify(token)} in ${path}`);
+			}
+		}
+	}
+	return typeof current === 'string' ? current : pythonDumps(current);
+}
+
 const readParams = Type.Object(
 	{
 		path: Type.String({ minLength: 1, maxLength: 1024 }),
 		offset: Type.Optional(Type.Integer({ minimum: 1 })),
 		limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 5000 })),
+		json_pointer: Type.Optional(Type.String({ maxLength: 1024 })),
 	},
+	{ additionalProperties: false },
+);
+const hashParams = Type.Object(
+	{ paths: Type.Array(Type.String({ minLength: 1, maxLength: 1024 }), { minItems: 1, maxItems: MAX_HASH_FILES }) },
 	{ additionalProperties: false },
 );
 const writeParams = Type.Object(
@@ -167,14 +220,21 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			name: 'read_file',
 			label: 'Read file',
 			description:
-				'Read a text file in the active case (path relative to the case folder, or absolute inside it), or a Spotlight schema under the checkout schemas/ folder. Optional 1-based line offset and line limit.',
+				'Read a text file in the active case (path relative to the case folder, or absolute inside it), or a Spotlight schema under the checkout schemas/ folder. Optional 1-based line offset and line limit; lines are counted as the evidence validators count them, so they serve as source_ref line_start/line_end. Optional json_pointer (RFC 6901, for a JSON file) returns exactly the text the validators select for a source_ref json_pointer: a string value as is, anything else as compact sorted JSON.',
 			parameters: readParams,
 			async execute(_id, params) {
-				const input = checkedParams<{ path: string; offset?: number; limit?: number }>('read_file', readParams, params);
+				const input = checkedParams<{ path: string; offset?: number; limit?: number; json_pointer?: string }>('read_file', readParams, params);
+				if (input.json_pointer !== undefined && (input.offset || input.limit)) {
+					throw new ToolArgumentError('read_file: use either json_pointer or offset/limit');
+				}
 				const text = readFileSync(readTarget(caseDir, input.path), 'utf8');
-				const lines = text.split('\n');
-				const from = (input.offset ?? 1) - 1;
-				const selected = input.offset || input.limit ? lines.slice(from, from + (input.limit ?? lines.length)).join('\n') : text;
+				let selected = text;
+				if (input.json_pointer !== undefined) {
+					selected = selectJsonPointer(text, input.json_pointer, input.path);
+				} else if (input.offset || input.limit) {
+					const from = (input.offset ?? 1) - 1;
+					selected = sourceLines(text).slice(from, from + (input.limit ?? Number.MAX_SAFE_INTEGER)).join('\n');
+				}
 				return textResult(
 					selected.length > MAX_READ_CHARS
 						? `${selected.slice(0, MAX_READ_CHARS)}\n[truncated: use offset and limit to read the rest]`
@@ -242,7 +302,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			name: 'grep_files',
 			label: 'Grep files',
 			description:
-				'Search case files for a regular expression. Optional path (file or folder, relative to the case) narrows the search. Returns path:line:text.',
+				'Search case files for a regular expression. Optional path (file or folder, relative to the case) narrows the search. Returns path:line:text, with lines counted as read_file and the evidence validators count them.',
 			parameters: grepParams,
 			async execute(_id, params) {
 				const input = checkedParams<{ pattern: string; path?: string; ignore_case?: boolean }>('grep_files', grepParams, params);
@@ -257,7 +317,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				const matches: string[] = [];
 				for (const file of caseFiles(caseDir, start)) {
 					if (lstatSync(file).size > MAX_GREP_FILE_BYTES) continue;
-					const lines = readFileSync(file, 'utf8').split('\n');
+					const lines = sourceLines(readFileSync(file, 'utf8'));
 					for (let index = 0; index < lines.length && matches.length < MAX_MATCHES; index += 1) {
 						if (expression.test(lines[index])) {
 							matches.push(`${caseRelative(caseDir, file)}:${index + 1}:${lines[index].slice(0, 400)}`);
@@ -266,6 +326,24 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 					if (matches.length >= MAX_MATCHES) break;
 				}
 				return textResult(matches.length ? matches.join('\n') : 'no matches');
+			},
+		},
+		{
+			name: 'hash_files',
+			label: 'Hash files',
+			description:
+				'SHA-256 of case files exactly as stored on disk (raw bytes), the digest the evidence validators recompute for sha256, anchor_sha256 and original_artifact_sha256. Use it for any artifact you wrote or derived yourself (extracted text, saved API JSON, transcripts). Paths relative to the case folder; up to 50 per call.',
+			parameters: hashParams,
+			async execute(_id, params) {
+				const { paths } = checkedParams<{ paths: string[] }>('hash_files', hashParams, params);
+				return jsonResult(
+					paths.map((path) => {
+						const target = readTarget(caseDir, path);
+						if (!lstatSync(target).isFile()) throw new Error(`hash_files: ${path} is not a regular file`);
+						const bytes = readFileSync(target);
+						return { path: inside(caseDir, target) ? caseRelative(caseDir, target) : path, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };
+					}),
+				);
 			},
 		},
 	];

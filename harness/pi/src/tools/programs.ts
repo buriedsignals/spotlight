@@ -1,15 +1,17 @@
 // Typed tools for the remaining fixed programs the skills used to start through
 // a shell: exiftool, the Navigator CLI, decision checks, the provenance
-// manifest and signing, RLM analysis and the integration status check. Each
+// manifest and signing, the editorial review artifact, RLM analysis and the
+// integration status check. Each
 // is bound to the active case; the model picks only the documented options.
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT } from '../roles.ts';
-import { FileRefused, readTarget } from './case-files.ts';
-import { checkedParams, programEnv, programOutput, runFixed, runPython, textResult } from './run.ts';
+import { FileRefused, readTarget, writeConfined } from './case-files.ts';
+import { checkedParams, jsonResult, programEnv, programOutput, runFixed, runPython, textResult } from './run.ts';
 import type { ToolContext } from './run.ts';
 
 const script = (path: string) => `${CHECKOUT_ROOT}/${path}`;
@@ -126,6 +128,28 @@ function provenanceTool(context: ToolContext): ToolDefinition {
 	};
 }
 
+// The script builds the page; the harness writes it, so review.html passes the
+// same write confinement as every other case write.
+function reviewHtmlTool(context: ToolContext): ToolDefinition {
+	const params = Type.Object({}, { additionalProperties: false });
+	return {
+		name: 'build_review_html',
+		label: 'Build review.html',
+		description:
+			'Build the editorial review artifact review.html in the case (scripts/build-review-html.py): joins data/findings.json with data/fact-check.json and adds source expressions, the provenance manifest and data/summary.json, serialized safely into the template. Returns the path, bytes and SHA-256.',
+		parameters: params,
+		executionMode: 'sequential',
+		async execute(_id, raw, signal) {
+			checkedParams('build_review_html', params, raw);
+			const result = await runPython(context, [script('scripts/build-review-html.py'), context.caseDir, '--stdout'], { signal });
+			const html = programOutput('build_review_html', result);
+			const written = writeConfined(context.caseDir, context.writeRoot, 'review.html', html);
+			const bytes = Buffer.from(html, 'utf8');
+			return jsonResult({ written, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
+		},
+	};
+}
+
 function rlmTool(context: ToolContext): ToolDefinition {
 	const params = Type.Object({ request: caseDataFile }, { additionalProperties: false });
 	return {
@@ -203,6 +227,7 @@ export function programTools(context: ToolContext): ToolDefinition[] {
 		navigatorTool(context),
 		decisionSignalsTool(context),
 		provenanceTool(context),
+		reviewHtmlTool(context),
 		rlmTool(context),
 		integrationStatusTool(context),
 	];

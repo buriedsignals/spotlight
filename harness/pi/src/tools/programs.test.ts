@@ -3,6 +3,9 @@
 // here are stand-ins on PATH that record the argv they receive.
 import assert from 'node:assert/strict';
 import dns from 'node:dns';
+import http from 'node:http';
+import { EventEmitter } from 'node:events';
+import { Readable } from 'node:stream';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { syncBuiltinESMExports } from 'node:module';
@@ -163,6 +166,8 @@ test('each tool rejects arguments outside its schema without starting anything',
 		edit_file: { path: 'a.txt', old_text: 'a' },
 		list_files: { pattern: null },
 		grep_files: { pattern: 1 },
+		hash_files: { paths: [] },
+		build_review_html: { case: 'other' },
 	};
 	assert.deepEqual([...tools.keys()].sort(), Object.keys(wrongType).sort());
 	for (const [name, params] of Object.entries(wrongType)) {
@@ -252,4 +257,77 @@ test('integration_status passes an all-red report through but surfaces a crash a
 
 	await standIn(`process.stderr.write('Traceback: ModuleNotFoundError'); process.exit(1);`);
 	await assert.rejects(call('integration_status', {}), /integration_status failed \(exit 1\): Traceback/);
+});
+
+test('http_get percent-encodes its query parameters and appends them to the URL', async (t) => {
+	const { call } = await fixture(t);
+	// A stand-in for the HTTP transport that answers with the request target it
+	// was given, so the test sees exactly what would go on the wire.
+	const asked: string[] = [];
+	t.mock.method(http, 'request', (url: URL) => {
+		asked.push(url.href);
+		const request = Object.assign(new EventEmitter(), {
+			end() {
+				const response = Object.assign(Readable.from([Buffer.from(url.pathname + url.search)]), { statusCode: 200, headers: {} });
+				queueMicrotask(() => request.emit('response', response));
+			},
+			destroy() {},
+		});
+		return request;
+	});
+	syncBuiltinESMExports();
+	t.after(() => {
+		t.mock.restoreAll();
+		syncBuiltinESMExports();
+	});
+
+	const result = JSON.parse(
+		(
+			await call('http_get', {
+				url: 'http://web.archive.org/cdx/search/cdx?output=json',
+				query: { url: 'https://example.com/a b?x=1&y=ü#frag', limit: 3, fl: 'timestamp,original' },
+			})
+		).content[0].text,
+	);
+
+	assert.deepEqual(asked, [
+		'http://web.archive.org/cdx/search/cdx?output=json&url=https%3A%2F%2Fexample.com%2Fa%20b%3Fx%3D1%26y%3D%C3%BC%23frag&limit=3&fl=timestamp%2Coriginal',
+	]);
+	assert.equal(result.final_url, asked[0]);
+	await assert.rejects(call('http_get', { url: 'http://example.com/', query: { 'a b': 'x' } }), /outside the schema/);
+});
+
+test('build_review_html builds review.html from the case files with script-safe data', async (t) => {
+	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-review-')));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const caseDir = join(root, 'case');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	const hostile = 'Filed </script><script>globalThis.pwned = 1</script>\u2028 in Zürich';
+	await writeFile(
+		join(caseDir, 'data', 'findings.json'),
+		JSON.stringify({ project: 'case', cycle: 2, findings: [{ id: 'F1', claim: hostile, evidence: ['one', 'two'], confidence: 'medium' }, { id: 'F2', claim: 'second' }] }),
+	);
+	await writeFile(
+		join(caseDir, 'data', 'fact-check.json'),
+		JSON.stringify({ project: 'case', cycle: 2, claims: [{ finding_id: 'F1', verdict: 'verified', notes: 'checked' }, { finding_id: 'F2', verdict: 'not_checkable' }] }),
+	);
+	await writeFile(join(caseDir, 'data', 'summary.json'), JSON.stringify({ title: 'Case title', summary: 'Overview.', key_conclusions: ['C1'], limitations: ['L1'], cycles: 2 }));
+	const context: ToolContext = { caseDir, writeRoot: caseDir, python: PYTHON, configPath: join(root, 'config.json'), env: { PATH: process.env.PATH, HOME: root } };
+	const tool = typedTools(context).find((each) => each.name === 'build_review_html') as ToolDefinition;
+
+	const result = JSON.parse((await tool.execute('call', {}, undefined, undefined, undefined as never)).content[0].text);
+
+	const html = await readFile(join(caseDir, 'review.html'), 'utf8');
+	assert.equal(result.written, 'review.html');
+	assert.doesNotMatch(html, /<script>globalThis\.pwned/);
+	const data = JSON.parse(/<script id="investigation-data" type="application\/json">([\s\S]*?)<\/script>/.exec(html)![1]);
+	assert.equal(data.project, 'case');
+	assert.equal(data.findings[0].claim, hostile);
+	assert.equal(data.findings[0].evidence, 'one\n\ntwo');
+	assert.deepEqual(data.findings[0].verdict, { finding_id: 'F1', verdict: 'verified', notes: 'checked' });
+	assert.deepEqual(data.fact_check_summary, { total_claims: 2, verified: 1, unverified: 0, disputed: 0, false: 0, not_checkable: 1 });
+	assert.deepEqual(data.summary, { headline: 'Case title', overview: 'Overview.', conclusions: ['C1'], limitations: ['L1'] });
+	assert.equal(data.cycles, 2);
+	assert.deepEqual(data.source_expressions, []);
+	assert.equal(data.provenance_manifest, null);
 });
