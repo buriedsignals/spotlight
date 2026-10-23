@@ -9,7 +9,9 @@ through the shipped triage path (scripts/research-triage.py ``run_triage``),
 the clue rules and the page ranking (scripts/research-merge.py) on fixture
 cases, once per contender, and reports:
 
-- lost leads: leads whose gold label says keep that triage would set aside;
+- lost leads: leads whose gold label says keep that triage would set aside.
+  A lead kept as circumstantial (about another subject or event) is not lost:
+  it stays on the page, and the count of such keeps is reported beside;
 - research-visible failures caught (fact-checked claims that failed, labelled
   as visible before Investigation), reported apart from the measures on real leads;
 - clue recall and false clues per 100 leads (planted clues, synthetic cases);
@@ -277,14 +279,20 @@ def signals(entry: Mapping[str, Any]) -> set[str]:
 
 
 def lost_leads(runs: list[Mapping[str, Any]]) -> dict[str, Any]:
-    lost, kept = [], 0
+    """Keep-labelled leads triage set aside. A circumstantial keep is shown on
+    the page, so it is counted apart and never as lost."""
+    lost, kept, circumstantial = [], 0, 0
     for run in runs:
         for entry in run["items"]:
             if entry["gold"].get("keep") is True:
                 kept += 1
-                if (entry["result"] or {}).get("disposition") == "set_aside":
+                result = entry["result"] or {}
+                if result.get("disposition") == "set_aside":
                     lost.append(entry["item_id"] if run["synthetic"] else "private")
-    return {"lost": len(lost), "keep_items": kept, "lost_ids": [i for i in lost if i != "private"]}
+                elif rr.CIRCUMSTANTIAL in (result.get("context") or []):
+                    circumstantial += 1
+    return {"lost": len(lost), "keep_items": kept, "lost_ids": [i for i in lost if i != "private"],
+            "circumstantial_kept": circumstantial}
 
 
 def failures_caught(runs: list[Mapping[str, Any]]) -> dict[str, Any]:

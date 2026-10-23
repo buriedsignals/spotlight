@@ -65,7 +65,8 @@ def build_research(case: Path, excerpt: str | None, suggestions: bool) -> None:
     """A case paused at the Research gate, built by the real producers: lane
     folders as the runner writes them, the real merge (leads, clues K1-K6),
     triage in flag-only mode with a deterministic in-process model (one lead
-    complicates the premise, one has orders that disagree), a round ledger
+    complicates the premise, one has orders that disagree, one is about none
+    of the brief's subjects), a round ledger
     with a topic the budget left out and, unless ``suggestions`` is false,
     the investigator's suggested marks."""
     sys.path.insert(0, str(ROOT / "tests"))
@@ -113,7 +114,8 @@ def build_research(case: Path, excerpt: str | None, suggestions: bool) -> None:
         options = list(question["criteria"])
         summary = state.get("item", {}).get("summary", "")
         base = qid.removesuffix("_rev")
-        picks = {"q1_identity": "same_identifier", "q3_source": "primary_record", "q4_assertion": "asserted",
+        picks = {"q1_identity": "none_of_the_brief" if "harbour authority" in summary else "same_identifier",
+                 "q3_source": "primary_record", "q4_assertion": "asserted",
                  "q5_status": "done", "q6_fidelity": "faithful",
                  "c1_premise": "complicates" if "Portside" in summary else "supports"}
         pick = picks.get(base, sorted(options)[0])  # the same option in both orders

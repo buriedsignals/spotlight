@@ -27,7 +27,8 @@ research lead (`schemas/research-lead.schema.json`, checked when loaded), a
 `split` (`dev` or `heldout`) and `gold`:
 
 - `keep`: `true` means setting the lead aside loses it (a **lost lead**, the
-  costliest error); `false` means setting it aside is right; `null` is not scored.
+  costliest error; a lead kept as circumstantial is not lost and is counted
+  apart); `false` means setting it aside is right; `null` is not scored.
 - `answers`: the gold option per question (`q1_identity` ... `c1_premise`;
   `c2_new_actor` and `c3_change` as true/false). A question left out is not
   scored on that item, and a clue from it there is not counted as false.

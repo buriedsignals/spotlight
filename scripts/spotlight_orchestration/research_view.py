@@ -1,10 +1,12 @@
 """The Research gate page model: clues first, then directions with their leads,
-then the leads the page keeps apart (flagged, set aside, unverifiable, snippet
-only), the research mode, the spend and what the round left out.
+then the leads the page keeps apart (circumstantial, flagged, set aside,
+unverifiable, snippet only), the research mode, the spend and what the round left out.
 
 Layout below "clues first": each clue lists the leads it rests on; each
 direction lists its remaining leads in rank order, with its gap and its
-counts; leads that triage flagged, that were set aside, whose excerpt was not
+counts; leads triage found to be about another subject or event
+(circumstantial: kept, never set aside for it), leads that triage flagged,
+that were set aside, whose excerpt was not
 found verbatim, or that are only a search snippet each get their own section,
 so none of them is hidden inside a direction. Every lead appears once outside
 the clues.
@@ -47,6 +49,11 @@ MODE_LABELS = {
     "newsroom": "Newsroom",
 }
 CLUE_MARKS = ("pursue", "dismiss")
+# Where a lead is listed below the clues (``_section``).
+SECTIONS = ("direction", "circumstantial", "flagged", "set_aside", "unverifiable", "snippet")
+# Triage context labels (research_rules): kept leads, never set aside for them.
+CIRCUMSTANTIAL = "circumstantial"
+CONTEXT_LABELS = (CIRCUMSTANTIAL, "outside_directions")
 PLANNED_MARKS = ("keep", "drop")
 NEW_MARK = "add"
 # K6 watchlist and C1 premise clues are always shown and never dismissed (D7).
@@ -180,8 +187,8 @@ def _triage_summary(triage: Any, present: bool, rr: Any) -> tuple[dict[str, Any]
 def _section(lead: Mapping[str, Any], result: Mapping[str, Any]) -> str:
     """Where a lead is listed below the clues. Set aside first (lost leads hide
     there), then snippet only (a snippet has no stored source, so it is also
-    unverifiable), then unverifiable, then flagged; the rest under their
-    direction."""
+    unverifiable), then unverifiable, then flagged, then circumstantial (about
+    another subject or event); the rest under their direction."""
     if lead.get("status") == "set_aside" or result.get("disposition") == "set_aside":
         return "set_aside"
     if lead.get("stored") == "snippet":
@@ -190,6 +197,8 @@ def _section(lead: Mapping[str, Any], result: Mapping[str, Any]) -> str:
         return "unverifiable"
     if result.get("disposition") == "flag":
         return "flagged"
+    if CIRCUMSTANTIAL in (result.get("context") or []):
+        return "circumstantial"
     return "direction"
 
 
@@ -227,6 +236,7 @@ def _lead_view(entry: Mapping[str, Any], rank: int, ranked: Mapping[str, Any], r
                       for f in result.get("flags") or [] if isinstance(f, dict)],
             "labels": {k: _text(v, 80) for k, v in labels.items() if isinstance(k, str)},
             "set_aside_reasons": [_text(r, 80) for r in result.get("set_aside_reasons") or []],
+            "context": [c for c in result.get("context") or [] if c in CONTEXT_LABELS],
             "backend": _text(result.get("backend"), 40),
         } if result else None,
     }
@@ -426,7 +436,7 @@ def content(case: Path, saved_items: Mapping[str, Any]) -> tuple[dict[str, Any],
     for direction_id in direction_ids:
         own = [lead for lead in leads if lead["direction_id"] == direction_id]
         counts = {section: sum(1 for lead in own if lead["section"] == section)
-                  for section in ("direction", "flagged", "set_aside", "unverifiable", "snippet")}
+                  for section in SECTIONS}
         directions.append({"direction_id": direction_id, "label": planned.get(direction_id, direction_id),
                            "planned": direction_id in planned, "gap": gaps.get(direction_id),
                            "counts": counts, "total": len(own)})

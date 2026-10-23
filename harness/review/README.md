@@ -63,8 +63,10 @@ shows, after any blocking failure:
 3. each direction with its mark (keep or drop; a new direction is added, by
    the investigator's suggestion or by the member), its gap and its remaining
    leads;
-4. the leads triage flagged, the leads set aside, the snippet-only leads and
-   the unverifiable leads, each in its own section, so none is hidden inside a
+4. the circumstantial leads (about another person, company or event than the
+   brief's: kept and labelled, never set aside for it), the leads triage
+   flagged, the leads set aside, the snippet-only leads and the unverifiable
+   leads, each in its own section, so none is hidden inside a
    direction. Every lead appears once outside the clues.
 
 The investigator's suggested marks (`data/research-suggestions.json`, shape in

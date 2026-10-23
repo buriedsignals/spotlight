@@ -136,7 +136,7 @@ def test_flag_only_until_acceptance() -> None:
     require(rr.triage_mode() == rr.FLAG_ONLY, "triage left flag-only mode without an acceptance record")
     stale = dict(ACCEPTED, bank_version="0" * 64)
     require(rr.triage_mode(stale) == rr.FLAG_ONLY, "an acceptance for another bank version switched triage on")
-    provider = client.FakeProvider(answers_from({"q1_identity": "different_subject_or_event"}))
+    provider = client.FakeProvider(answers_from({"q4_assertion": "not_found"}))
     document = run([lead()], provider)
     result = by_id(document, "lead-1")
     require(document["mode"] == "flag_only" and "notice" in document, "the page has no flag-only notice to show")
@@ -158,21 +158,38 @@ def test_flag_only_until_acceptance() -> None:
 
 def test_always_shown_clues_and_effects() -> None:
     # K6 watchlist and a contradicted premise are never set aside, even in full mode.
-    provider = client.FakeProvider(answers_from({"q1_identity": "different_subject_or_event"}))
+    provider = client.FakeProvider(answers_from({"q4_assertion": "not_found"}))
     result = by_id(run([lead()], provider, acceptance=ACCEPTED, clues=clues(("K6", ["lead-1"]))), "lead-1")
     require(result["disposition"] != "set_aside" and "watchlist" in result["clues"], "a watchlist lead was set aside")
     provider = client.FakeProvider(answers_from({"q4_assertion": "not_found", "c1_premise": "contradicts"}))
     result = by_id(run([lead()], provider, acceptance=ACCEPTED), "lead-1")
     require(result["disposition"] != "set_aside" and "premise_contradicted" in result["clues"], "a premise clue was set aside")
-    # none_of_the_brief is kept when K1 fires.
-    provider = client.FakeProvider(answers_from({"q1_identity": "none_of_the_brief"}, noul=0.1))
-    result = by_id(run([lead()], provider, acceptance=ACCEPTED, clues=clues(("K1", ["lead-1"]))), "lead-1")
-    require(result["disposition"] != "set_aside", "K1 did not keep an out-of-brief lead")
     # A denial of the premise by an actor records the stance "disputes".
     provider = client.FakeProvider(answers_from({"q4_assertion": "reported_claim", "c1_premise": "contradicts"}))
     result = by_id(run([lead()], provider), "lead-1")
     require(result["source_position"] == {"stance": "disputes"}, "a denial did not record stance disputes")
     require(any(f["reason"] == "allegation" for f in result["flags"]), "a reported claim was not labelled an allegation")
+
+
+def test_topical_answers_keep_the_lead() -> None:
+    # Even in full mode, a lead about another subject or event, or about none
+    # of the brief's, is kept and labelled circumstantial; one that informs no
+    # direction is kept and labelled outside the directions. Nothing suggests
+    # setting them aside.
+    for identity in ("different_subject_or_event", "none_of_the_brief"):
+        provider = client.FakeProvider(answers_from({"q1_identity": identity, "q2_direction": "ownership"}, noul=0.1))
+        result = by_id(run([lead()], provider, acceptance=ACCEPTED), "lead-1")
+        require(result["disposition"] == "keep" and result["set_aside_reasons"] == [], f"{identity} lost the lead: {result}")
+        require(result["context"] == ["circumstantial"], f"{identity} not labelled circumstantial: {result['context']}")
+        require(not any(f["reason"] == "model_suggests_set_aside" for f in result["flags"]), f"{identity} suggested a set aside")
+    provider = client.FakeProvider(answers_from({"q2_direction": "none"}, noul=0.1))
+    result = by_id(run([lead()], provider, acceptance=ACCEPTED), "lead-1")
+    require(result["disposition"] == "keep" and result["context"] == ["outside_directions"], f"Q2 none lost the lead: {result}")
+    # The dismissing answer still acts on a circumstantial lead: the source does not contain it.
+    provider = client.FakeProvider(answers_from({"q1_identity": "different_subject_or_event", "q4_assertion": "not_found"}))
+    result = by_id(run([lead()], provider, acceptance=ACCEPTED), "lead-1")
+    require(result["disposition"] == "set_aside" and result["set_aside_reasons"] == ["content_not_found"],
+            f"content not found no longer sets aside: {result}")
 
 
 def test_conflict_pairs() -> None:
@@ -198,6 +215,10 @@ def test_d7_invariants() -> None:
         require(needle in problems, f"D7 missed: {needle}")
     full = {"mode": "full", "leads": [{"lead_id": "w", "disposition": "set_aside", "set_aside_reasons": ["x"], "clues": ["watchlist"]}]}
     require("always-shown clue" in "".join(rr.triage_violations(full)), "D7 let a watchlist lead be set aside")
+    topical = {"mode": "full", "leads": [{"lead_id": "t", "disposition": "set_aside", "clues": [],
+                                          "set_aside_reasons": ["content_not_found", "different_subject_or_event"]}]}
+    require(rr.triage_violations(topical) == ["t: set aside for different_subject_or_event, which never sets a lead aside"],
+            f"D7 let a topical answer set a lead aside: {rr.triage_violations(topical)}")
 
 
 def test_rules_s1_s2_n1() -> None:
