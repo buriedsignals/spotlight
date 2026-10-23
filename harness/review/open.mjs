@@ -30,10 +30,11 @@ export function createReviewOpener(options = {}) {
 export function createWikiChangesOpener(options = {}) {
   const sessions = options.sessions ?? createReviewSessionManager(options);
   const wiki = options.wiki ?? createWikiBridge({ env: safeChildEnvironment(options.env) });
-  return async function openWikiChanges({ caseDir }) {
+  return async function openWikiChanges({ caseDir: rawCaseDir }) {
     // A case outside the authorized root never reaches Engine.
+    let caseDir;
     try {
-      await sessions.authorize(caseDir);
+      caseDir = await sessions.authorize(rawCaseDir);
     } catch {
       return { status: "start-failed" };
     }
@@ -42,7 +43,9 @@ export function createWikiChangesOpener(options = {}) {
       staged = await wiki.staged();
     } catch (error) {
       if (error.code === "unsupported") return { status: "nothing-staged" };
-      return { status: "wiki-unreadable", message: String(error.message).slice(0, 300) };
+      // Engine's text stays out of the model's reply; the log keeps it.
+      process.stderr.write(`spotlight-review: could not read staged changes: ${String(error.message).slice(0, 300)}\n`);
+      return { status: "wiki-unreadable" };
     }
     if (!Array.isArray(staged) || !staged.length) return { status: "nothing-staged" };
     const running = sessions.status();
@@ -57,7 +60,7 @@ export function describeWikiChangesResult(result) {
   if (result.status === "already-open")
     return "The review page for this case is already open in the member's browser. Ask them to reload it to see the staged wiki changes, then apply or discard each one.";
   if (result.status === "wiki-unreadable")
-    return `Could not read the staged wiki changes: ${result.message} Nothing was opened.`;
+    return "Could not read the staged wiki changes. Nothing was opened.";
   return describeOpenResult(result);
 }
 

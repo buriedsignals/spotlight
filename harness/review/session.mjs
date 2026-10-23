@@ -168,8 +168,11 @@ export function createReviewSessionManager({
 
   // Start the server for a case, or give a running one a fresh capability.
   // view "wiki" lets it start with no gate pending, for the Wiki changes view.
-  async function start(caseDir, view = "") {
-    if (!isAbsolute(caseDir ?? "")) throw new Error("the case directory must be absolute");
+  async function start(rawCaseDir, view = "") {
+    if (!isAbsolute(rawCaseDir ?? "")) throw new Error("the case directory must be absolute");
+    // One spelling per case, so an alias of the open case is not a new one; a
+    // missing case is left to the child to refuse.
+    const caseDir = await realpath(rawCaseDir).catch(() => rawCaseDir);
     if (active && active.caseDir !== caseDir) {
       close();
       await active?.exited;
@@ -220,9 +223,12 @@ export function createReviewSessionManager({
 
   // The case-root check the review server makes when it starts (the seam's
   // status under the same boundary), for callers that act before starting it.
-  async function authorize(caseDir) {
-    if (!isAbsolute(caseDir ?? "")) throw new Error("the case directory must be absolute");
+  // Returns the case's real path, the spelling start() keeps.
+  async function authorize(rawCaseDir) {
+    if (!isAbsolute(rawCaseDir ?? "")) throw new Error("the case directory must be absolute");
+    const caseDir = await realpath(rawCaseDir);
     await createCaseBridge({ caseDir, casesRoot, env: safeChildEnvironment(env) }).status();
+    return caseDir;
   }
 
   return Object.freeze({

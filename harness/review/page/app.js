@@ -21,6 +21,8 @@ let followUpNote = "";
 // Engine's staged wiki writes, loaded after the gate (null until then); empty
 // without Engine, which hides the view.
 let wikiChanges = null;
+// Why the last wiki request failed; shown with a retry, apart from "none".
+let wikiError = "";
 
 const DECISION_LABELS = {
   methodology: { approved: "Approve the methodology" },
@@ -902,8 +904,29 @@ function wikiSection() {
 
 async function loadWiki() {
   const { status, data } = await post("/api/wiki-changes", {});
-  wikiChanges = status === 200 && Array.isArray(data.changes) ? data.changes : [];
-  if (status !== 200 && status !== 403) warn(data.message || "Could not read staged changes.");
+  wikiError = "";
+  if (status === 200 && Array.isArray(data.changes)) wikiChanges = data.changes;
+  else if (status !== 403) wikiError = data.message || "Could not read staged changes.";
+}
+
+function wikiErrorSection() {
+  return el(
+    "section",
+    { id: "wiki-section", "aria-labelledby": "wiki-heading" },
+    el("h2", { id: "wiki-heading", text: "Wiki changes" }),
+    el("p", { className: "warning", text: wikiError }),
+    el("button", { id: "wiki-retry", type: "button", className: "secondary", text: "Try again", on: { click: () => loadWiki().then(showWiki) } }),
+  );
+}
+
+// Draws only the wiki section beside a gate, so nothing the member is typing
+// is replaced; with no gate the page is the wiki section.
+function showWiki() {
+  if (!view.gate) return render(view);
+  const section = wikiError ? wikiErrorSection() : wikiChanges?.length ? wikiSection() : null;
+  const current = document.getElementById("wiki-section");
+  if (current) current.replaceWith(...(section ? [section] : []));
+  else if (section) app.append(section);
 }
 
 async function confirmWiki(action, change) {
@@ -934,11 +957,13 @@ function render(next) {
     // No gate pending: the page shows only the staged wiki changes.
     if (!view.gate) {
       app.replaceChildren(
-        wikiChanges === null
-          ? el("p", { text: "Loading the wiki changes…" })
-          : wikiChanges.length
-            ? wikiSection()
-            : el("p", { text: "No wiki changes are waiting. You can close this page." }),
+        wikiError
+          ? wikiErrorSection()
+          : wikiChanges === null
+            ? el("p", { text: "Loading the wiki changes…" })
+            : wikiChanges.length
+              ? wikiSection()
+              : el("p", { text: "No wiki changes are waiting. You can close this page." }),
       );
       return;
     }
@@ -961,7 +986,8 @@ function render(next) {
     if (view.gate === "report") parts.push(reportContent(view.content));
     if (view.gate === "ingest") parts.push(...ingestContent(view.content, view.items));
     if (!readOnly()) parts.push(decisionSection());
-    if (wikiChanges?.length) parts.push(wikiSection());
+    if (wikiError) parts.push(wikiErrorSection());
+    else if (wikiChanges?.length) parts.push(wikiSection());
     app.replaceChildren(...parts);
   });
   app.setAttribute("aria-busy", busy ? "true" : "false");
@@ -976,18 +1002,10 @@ async function load() {
   }
   render(data);
   if (view.gate) say(readOnly() ? "This gate is decided." : "Review loaded. Your edits are saved as you make them.");
-  // The gate shows at once; the staged wiki changes follow when Engine answers,
-  // and only their section is drawn, so nothing the member is typing is lost.
+  // The gate shows at once; the staged wiki changes follow when Engine answers.
   await loadWiki();
-  if (!view.gate) {
-    render(view);
-    say("Wiki changes loaded.");
-  } else if (wikiChanges.length) {
-    const section = wikiSection();
-    const current = document.getElementById("wiki-section");
-    if (current) current.replaceWith(section);
-    else app.append(section);
-  }
+  showWiki();
+  if (!view.gate && !wikiError) say("Wiki changes loaded.");
 }
 
 function typeReviewer(value) {

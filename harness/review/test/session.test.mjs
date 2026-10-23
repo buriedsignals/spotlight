@@ -1,7 +1,7 @@
 // Opening, reopening and the MCP tool, through the real child process.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
@@ -203,9 +203,11 @@ test("an Engine failure is reported, not taken for nothing staged, and the gate 
   const caseDir = buildCase(root, "case", "methodology");
   const fake = fakeBsig(root, { fail: "wiki: permission denied", changes: [] });
   const { sessions, record } = manager(t, root, { env: fake.env });
-  const result = await createWikiChangesOpener({ sessions, env: fake.env })({ caseDir });
-  assert.equal(result.status, "wiki-unreadable");
-  assert.match(result.message, /permission denied/);
+  const handle = createMcpHandler({ open: createReviewOpener({ sessions }), openWiki: createWikiChangesOpener({ sessions, env: fake.env }) });
+  const result = await handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "open_spotlight_wiki_changes", arguments: { case_dir: caseDir } } });
+  assert.equal(result.result.structuredContent.review, "wiki-unreadable");
+  // Engine's own text never reaches the model.
+  assert.ok(!JSON.stringify(result).includes("permission denied"));
   assert.deepEqual(openedUrls(record), []);
 
   await createReviewOpener({ sessions })({ caseDir });
@@ -225,6 +227,19 @@ test("open_spotlight_wiki_changes refuses a case outside the authorized root bef
   assert.deepEqual(await createWikiChangesOpener({ sessions, wiki })({ caseDir: outside }), { status: "start-failed" });
   assert.equal(asked, false);
   assert.deepEqual(openedUrls(record), []);
+});
+
+test("open_spotlight_wiki_changes treats another spelling of the open case as the same case", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  symlinkSync(caseDir, join(root, "alias"));
+  const fake = fakeBsig(root, { changes: [change("c1", "a")] });
+  const { sessions, record } = manager(t, root, { env: fake.env });
+  assert.equal((await createReviewOpener({ sessions })({ caseDir: join(root, "alias") })).status, "opened");
+  const { origin, cookie } = await viewThrough(openedUrls(record).at(-1));
+
+  assert.deepEqual(await createWikiChangesOpener({ sessions, env: fake.env })({ caseDir }), { status: "already-open" });
+  assert.equal((await api(origin, cookie)("/api/view")).status, 200);
 });
 
 test("the stdio MCP server answers initialize and lists its tools", async () => {
