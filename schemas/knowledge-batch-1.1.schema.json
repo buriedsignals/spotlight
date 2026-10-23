@@ -1,0 +1,1024 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://spotlight.buriedsignals.com/schemas/knowledge-batch-1.1.schema.json",
+  "title": "Spotlight Knowledge Batch 1.1 (core)",
+  "description": "The open-source core of Knowledge Batch 1.1: one proposed knowledge batch built from a case. It keeps the full Batch 1.1 names and rules and only its open-source record types and fields, so every core batch also validates against the full schema.",
+  "$comment": "Derived from the full Knowledge Batch 1.1 schema with sha256 8ca0442770e9a939685519407f91e6b77c7c5604e52554d7ea012a74627b095e. MIT. Never set in a batch: approval decisions, who submitted it and when; the service adds them. Cross-record rules C1-C10 and C13 are enforced by scripts/validate-knowledge-batch.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "batch_id",
+    "case_id"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.1"
+    },
+    "batch_id": {
+      "$ref": "#/definitions/id"
+    },
+    "case_id": {
+      "$ref": "#/definitions/id"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/evidence"
+      }
+    },
+    "source_expressions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/source_expression"
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/claim"
+      }
+    },
+    "claim_source_expressions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/claim_source_expression"
+      }
+    },
+    "source_positions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/source_position"
+      }
+    },
+    "assessments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/assessment"
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/event"
+      }
+    },
+    "claim_event_memberships": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/claim_event_membership"
+      }
+    },
+    "story_arcs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/story_arc"
+      }
+    },
+    "event_story_arc_memberships": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/event_story_arc_membership"
+      }
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "evidence"
+      ],
+      "properties": {
+        "evidence": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "required": [
+        "source_expressions"
+      ],
+      "properties": {
+        "source_expressions": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "required": [
+        "claims"
+      ],
+      "properties": {
+        "claims": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "required": [
+        "claim_source_expressions"
+      ],
+      "properties": {
+        "claim_source_expressions": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "required": [
+        "source_positions"
+      ],
+      "properties": {
+        "source_positions": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "required": [
+        "assessments"
+      ],
+      "properties": {
+        "assessments": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "required": [
+        "events"
+      ],
+      "properties": {
+        "events": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "required": [
+        "claim_event_memberships"
+      ],
+      "properties": {
+        "claim_event_memberships": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "required": [
+        "story_arcs"
+      ],
+      "properties": {
+        "story_arcs": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "required": [
+        "event_story_arc_memberships"
+      ],
+      "properties": {
+        "event_story_arc_memberships": {
+          "minItems": 1
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "nonempty_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*:.+$",
+      "$comment": "The prefix names the record type."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "date_time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "language": {
+      "type": "string",
+      "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+      "$comment": "BCP 47 everywhere."
+    },
+    "time_value": {
+      "type": "string",
+      "pattern": "^[0-9]{4}(-W(0[1-9]|[1-4][0-9]|5[0-3])|-(0[1-9]|1[0-2])(-(0[1-9]|[12][0-9]|3[01])(T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]+)?)?(Z|[+-][0-9]{2}:[0-9]{2}))?)?)?$",
+      "$comment": "ISO 8601 at the precision the source supports: year, year-week, year-month, date, or timestamp with offset. Validators must also reject impossible calendar values such as 31 February."
+    },
+    "record_type": {
+      "enum": [
+        "evidence",
+        "source_expression",
+        "claim",
+        "claim_source_expression",
+        "source_position",
+        "assessment",
+        "event",
+        "claim_event_membership",
+        "story_arc",
+        "event_story_arc_membership"
+      ]
+    },
+    "exact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "version": {
+          "$ref": "#/definitions/version"
+        }
+      },
+      "$comment": "The field that holds the reference fixes the record type."
+    },
+    "typed_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "version"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/definitions/record_type"
+        },
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "version": {
+          "$ref": "#/definitions/version"
+        }
+      },
+      "$comment": "Used only where a field may point at more than one record type."
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method"
+      ],
+      "properties": {
+        "method": {
+          "enum": [
+            "journalist",
+            "agent_candidate",
+            "migration"
+          ]
+        },
+        "model": {
+          "$ref": "#/definitions/nonempty_text"
+        }
+      },
+      "if": {
+        "properties": {
+          "method": {
+            "const": "agent_candidate"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "model"
+        ]
+      },
+      "$comment": "How this record version was created. Who submitted it and when are recorded once per batch by the server."
+    },
+    "entity_text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "$ref": "#/definitions/nonempty_text"
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "origin",
+        "proposition",
+        "origin_source_expression_ref",
+        "language",
+        "statement",
+        "provenance"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "version": {
+          "$ref": "#/definitions/version"
+        },
+        "origin": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "finding_id"
+          ],
+          "properties": {
+            "finding_id": {
+              "$ref": "#/definitions/nonempty_text"
+            },
+            "legacy_claim_id": {
+              "$ref": "#/definitions/nonempty_text"
+            }
+          }
+        },
+        "proposition": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "origin_source_expression_ref": {
+          "$ref": "#/definitions/exact_ref"
+        },
+        "language": {
+          "$ref": "#/definitions/language"
+        },
+        "statement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "subject",
+            "predicate"
+          ],
+          "properties": {
+            "subject": {
+              "$ref": "#/definitions/entity_text"
+            },
+            "predicate": {
+              "$ref": "#/definitions/nonempty_text"
+            },
+            "object": {
+              "$ref": "#/definitions/entity_text"
+            }
+          }
+        },
+        "provenance": {
+          "$ref": "#/definitions/provenance"
+        }
+      }
+    },
+    "derivative": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "content_ref",
+        "content_sha256"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "type": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "content_ref": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "content_sha256": {
+          "$ref": "#/definitions/sha256"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "capture",
+        "content_ref",
+        "content_sha256",
+        "provenance"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "version": {
+          "$ref": "#/definitions/version"
+        },
+        "capture": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "route",
+            "captured_at"
+          ],
+          "properties": {
+            "route": {
+              "enum": [
+                "browser",
+                "api",
+                "manual",
+                "other"
+              ]
+            },
+            "tool": {
+              "$ref": "#/definitions/nonempty_text"
+            },
+            "source_url": {
+              "type": "string",
+              "format": "uri"
+            },
+            "captured_at": {
+              "$ref": "#/definitions/date_time"
+            }
+          }
+        },
+        "content_ref": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "content_sha256": {
+          "$ref": "#/definitions/sha256"
+        },
+        "derivatives": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/derivative"
+          }
+        },
+        "provenance": {
+          "$ref": "#/definitions/provenance"
+        }
+      }
+    },
+    "origin_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "version"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "evidence"
+          ]
+        },
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "version": {
+          "$ref": "#/definitions/version"
+        },
+        "derivative_id": {
+          "$ref": "#/definitions/nonempty_text"
+        }
+      }
+    },
+    "source_expression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "text",
+        "language",
+        "direct_quote",
+        "provenance",
+        "origin_ref"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "version": {
+          "$ref": "#/definitions/version"
+        },
+        "text": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "language": {
+          "$ref": "#/definitions/language"
+        },
+        "direct_quote": {
+          "type": "boolean"
+        },
+        "origin_ref": {
+          "$ref": "#/definitions/origin_ref"
+        },
+        "speaker": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "provenance": {
+          "$ref": "#/definitions/provenance"
+        }
+      }
+    },
+    "claim_source_expression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "claim_ref",
+        "source_expression_ref",
+        "role",
+        "provenance"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "version": {
+          "$ref": "#/definitions/version"
+        },
+        "claim_ref": {
+          "$ref": "#/definitions/exact_ref"
+        },
+        "source_expression_ref": {
+          "$ref": "#/definitions/exact_ref"
+        },
+        "role": {
+          "enum": [
+            "supports",
+            "contradicts",
+            "context"
+          ]
+        },
+        "provenance": {
+          "$ref": "#/definitions/provenance"
+        }
+      }
+    },
+    "source_position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "claim_ref",
+        "actor",
+        "stance",
+        "source_expression_refs",
+        "provenance"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "version": {
+          "$ref": "#/definitions/version"
+        },
+        "claim_ref": {
+          "$ref": "#/definitions/exact_ref"
+        },
+        "actor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "label"
+          ],
+          "properties": {
+            "label": {
+              "$ref": "#/definitions/nonempty_text"
+            }
+          }
+        },
+        "stance": {
+          "enum": [
+            "asserts",
+            "disputes"
+          ]
+        },
+        "source_expression_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/exact_ref"
+          }
+        },
+        "attribution_verbatim": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "provenance": {
+          "$ref": "#/definitions/provenance"
+        }
+      }
+    },
+    "assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "claim_ref",
+        "verdict",
+        "confidence",
+        "rationale",
+        "provenance"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "version": {
+          "$ref": "#/definitions/version"
+        },
+        "claim_ref": {
+          "$ref": "#/definitions/exact_ref"
+        },
+        "verdict": {
+          "enum": [
+            "verified",
+            "unverified",
+            "disputed",
+            "false",
+            "not_checkable"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "rationale": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "verification_methods": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "journalist_attested",
+              "document_authenticated",
+              "second_source",
+              "re_fetched"
+            ]
+          }
+        },
+        "basis_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/typed_ref"
+              },
+              {
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "claim_source_expression",
+                      "source_position",
+                      "source_expression",
+                      "evidence"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "$comment": "The exact grounding relationships, source positions, expressions or evidence reviewed for this judgment."
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "reason",
+              "related_refs",
+              "disposition"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "reason": {
+                "$ref": "#/definitions/nonempty_text"
+              },
+              "related_refs": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/definitions/typed_ref"
+                }
+              },
+              "disposition": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "action"
+                ],
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "amend",
+                      "exclude",
+                      "investigate_further",
+                      "accept_with_reason"
+                    ]
+                  },
+                  "reason": {
+                    "$ref": "#/definitions/nonempty_text"
+                  }
+                },
+                "if": {
+                  "properties": {
+                    "action": {
+                      "const": "accept_with_reason"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "reason"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "provenance": {
+          "$ref": "#/definitions/provenance"
+        }
+      },
+      "if": {
+        "properties": {
+          "verdict": {
+            "enum": [
+              "verified",
+              "disputed",
+              "false"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "verification_methods",
+          "basis_refs"
+        ],
+        "properties": {
+          "verification_methods": {
+            "minItems": 1
+          },
+          "basis_refs": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "language",
+        "actors",
+        "action",
+        "provenance"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "version": {
+          "$ref": "#/definitions/version"
+        },
+        "language": {
+          "$ref": "#/definitions/language"
+        },
+        "actors": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "role"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/definitions/nonempty_text"
+              },
+              "role": {
+                "enum": [
+                  "agent",
+                  "participant"
+                ]
+              }
+            }
+          }
+        },
+        "action": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "object": {
+          "$ref": "#/definitions/entity_text"
+        },
+        "time": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "point",
+                "interval"
+              ]
+            },
+            "value": {
+              "$ref": "#/definitions/time_value"
+            },
+            "start": {
+              "$ref": "#/definitions/time_value"
+            },
+            "end": {
+              "$ref": "#/definitions/time_value"
+            }
+          },
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "point"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "value"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "start"
+                  ]
+                },
+                {
+                  "required": [
+                    "end"
+                  ]
+                }
+              ]
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "value"
+              ]
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "start"
+                ]
+              },
+              {
+                "required": [
+                  "end"
+                ]
+              }
+            ]
+          }
+        },
+        "place": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/definitions/nonempty_text"
+            }
+          }
+        },
+        "provenance": {
+          "$ref": "#/definitions/provenance"
+        }
+      }
+    },
+    "claim_event_membership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "claim_ref",
+        "event_ref",
+        "provenance"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "version": {
+          "$ref": "#/definitions/version"
+        },
+        "claim_ref": {
+          "$ref": "#/definitions/exact_ref"
+        },
+        "event_ref": {
+          "$ref": "#/definitions/exact_ref"
+        },
+        "provenance": {
+          "$ref": "#/definitions/provenance"
+        }
+      }
+    },
+    "story_arc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "language",
+        "title",
+        "description",
+        "provenance"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "version": {
+          "$ref": "#/definitions/version"
+        },
+        "language": {
+          "$ref": "#/definitions/language"
+        },
+        "title": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "description": {
+          "$ref": "#/definitions/nonempty_text"
+        },
+        "provenance": {
+          "$ref": "#/definitions/provenance"
+        }
+      }
+    },
+    "event_story_arc_membership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "event_ref",
+        "story_arc_ref",
+        "provenance"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "version": {
+          "$ref": "#/definitions/version"
+        },
+        "event_ref": {
+          "$ref": "#/definitions/exact_ref"
+        },
+        "story_arc_ref": {
+          "$ref": "#/definitions/exact_ref"
+        },
+        "provenance": {
+          "$ref": "#/definitions/provenance"
+        }
+      }
+    }
+  }
+}
