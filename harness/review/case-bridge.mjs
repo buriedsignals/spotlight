@@ -178,16 +178,16 @@ export function createWikiBridge({
   python = spotlightPython({ root: checkoutRoot }),
   env = safeChildEnvironment(),
 } = {}) {
-  let bsig;
+  let bsig = "";
   const exec = (file, args, input) => runBounded(file, args, { cwd: checkoutRoot, env, input });
 
+  // Only a found bsig is kept; a miss or a failed lookup is tried again next
+  // time, and a failed lookup is an error, not "no Engine".
   async function bsigPath() {
-    if (bsig === undefined) {
-      const found = python
-        ? await exec(python, ["-E", "-s", "-c", "import sys; sys.path.insert(0, sys.argv[1]); from integrations._engine import bsig_path; print(bsig_path() or '')", checkoutRoot])
-        : { code: -1 };
-      bsig = found.code === 0 ? found.stdout.trim() : "";
-    }
+    if (bsig || !python) return bsig;
+    const found = await exec(python, ["-E", "-s", "-c", "import sys; sys.path.insert(0, sys.argv[1]); from integrations._engine import bsig_path; print(bsig_path() or '')", checkoutRoot]);
+    if (found.code !== 0) throw Object.assign(new Error("could not look up bsig"), { code: "failed", exitCode: found.code });
+    bsig = found.stdout.trim();
     return bsig;
   }
 

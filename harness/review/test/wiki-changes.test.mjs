@@ -1,7 +1,7 @@
 // The Wiki changes view: Engine's staged wiki writes, confirmed or discarded
 // through a fake `bsig` that keeps Engine's nonce and digest rules.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createWikiBridge, safeChildEnvironment } from "../case-bridge.mjs";
@@ -142,4 +142,18 @@ test("concurrent page listings share one Engine call", async (t) => {
 test("the page script has no HTML sink, so diff text can only render as text", () => {
   const source = readFileSync(new URL("../page/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(source, /\b(?:innerHTML|outerHTML|insertAdjacentHTML)\b/);
+});
+
+test("a failed bsig lookup is an error and is tried again, not cached as no Engine", async (t) => {
+  const root = tempRoot(t);
+  const fake = fakeBsig(root, { changes: [change("c1", "a")] });
+  // Stands in for Python's bsig lookup: fails until the flag file exists.
+  const flag = join(root, "lookup-works");
+  const python = join(root, "lookup.sh");
+  writeFileSync(python, `#!/bin/sh\n[ -e '${flag}' ] || exit 1\nprintf '%s\\n' '${fake.env.SPOTLIGHT_BSIG}'\n`);
+  chmodSync(python, 0o755);
+  const wiki = createWikiBridge({ python, env: safeChildEnvironment(fake.env) });
+  await assert.rejects(wiki.staged(), (error) => error.code === "failed");
+  writeFileSync(flag, "");
+  assert.equal((await wiki.staged()).length, 1);
 });

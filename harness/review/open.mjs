@@ -5,7 +5,13 @@
 import { createWikiBridge, safeChildEnvironment } from "./case-bridge.mjs";
 import { createReviewSessionManager } from "./session.mjs";
 
-async function openPage(sessions, caseDir, view = "") {
+// refuse(status) may answer instead of starting; it runs in the same turn as
+// the start, so two opens cannot both see no page and then both start one.
+function openPage(sessions, caseDir, view = "", refuse = () => null) {
+  return sessions.exclusive(async () => (refuse(sessions.status()) ?? (await startAndOpen(sessions, caseDir, view))));
+}
+
+async function startAndOpen(sessions, caseDir, view) {
   try {
     const started = await sessions.start(caseDir, view);
     const opened = await sessions.openLocally(view);
@@ -55,9 +61,9 @@ export function createWikiChangesOpener(options = {}) {
     if (!Array.isArray(staged) || !staged.length) return { status: "nothing-staged" };
     // A running page is never closed or reopened from here: that would end
     // the member's session and lose what they typed.
-    const running = sessions.status();
-    if (running.active) return { status: running.caseDir === caseDir ? "already-open" : "other-review-open" };
-    return openPage(sessions, caseDir, "wiki");
+    return openPage(sessions, caseDir, "wiki", (running) =>
+      running.active ? { status: running.caseDir === caseDir ? "already-open" : "other-review-open" } : null,
+    );
   };
 }
 

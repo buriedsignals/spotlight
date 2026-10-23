@@ -283,6 +283,19 @@ test("a page the browser could not open is closed, not left to read as already o
   assert.equal((await createWikiChangesOpener({ sessions, env: fake.env })({ caseDir })).status, "opener-failed");
 });
 
+test("two concurrent Wiki changes opens start one page and leave it alone", async (t) => {
+  const root = tempRoot(t);
+  const first = buildCase(root, "first", "methodology");
+  const second = buildCase(root, "second", "methodology");
+  const fake = fakeBsig(root, { changes: [change("c1", "a")] });
+  const { sessions, record } = manager(t, root, { env: fake.env });
+  const open = createWikiChangesOpener({ sessions, env: fake.env });
+  const results = await Promise.all([open({ caseDir: first }), open({ caseDir: second })]);
+  assert.deepEqual(results.map((r) => r.status).sort(), ["opened", "other-review-open"]);
+  assert.equal(openedUrls(record).length, 1);
+  assert.equal((await viewThrough(openedUrls(record)[0])).view.gate, "methodology");
+});
+
 test("the stdio MCP server answers initialize and lists its tools", async () => {
   const child = spawn(process.execPath, [fileURLToPath(new URL("../mcp.mjs", import.meta.url))], {
     stdio: ["pipe", "pipe", "ignore"],

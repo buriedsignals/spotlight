@@ -231,8 +231,18 @@ export function createReviewSessionManager({
     return caseDir;
   }
 
+  // Runs opens one after another, so a check of the running page and the
+  // start that follows it cannot interleave with another open.
+  let queue = Promise.resolve();
+  function exclusive(task) {
+    const run = queue.then(task);
+    queue = run.catch(() => {});
+    return run;
+  }
+
   return Object.freeze({
     authorize,
+    exclusive,
     start,
     openLocally,
     close,
