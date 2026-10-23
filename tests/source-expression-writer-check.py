@@ -272,6 +272,21 @@ def main() -> int:
         doc = expressions(case)
         errors = CASES.vc.validate_source_expressions(case, doc, json.loads(findings_path.read_text(encoding="utf-8")), None, None, enforce_positive_verdicts=False)
         require(not [e for e in errors if "fingerprint" in e], f"stale fingerprints after --fingerprint-findings: {errors}")
+
+        # A claim rewritten in a new cycle leaves the previous fact-check's
+        # expression refs stale. The investigator's passages still publish,
+        # and the case validator hands the stale refs to the fact-checker,
+        # whose next fact-check replaces them.
+        before = target.read_bytes()
+        new_cycle = proposal(7, relation="supports")
+        new_cycle["expressions"][0]["id"] = "SXN1"
+        result = run_writer(case, new_cycle)
+        require(result.returncode == 0, f"a stale previous fact-check blocked a new-cycle passage: {result.stderr}")
+        require(target.read_bytes() != before, "the new-cycle passage was not published")
+        checked = subprocess.run([sys.executable, str(SCRIPTS / "validate-case.py"), str(case)], capture_output=True, text=True)
+        stale = [line for line in checked.stderr.splitlines() if "stale expression ref '" in line]
+        require(checked.returncode == 1 and stale and all("[fact-checker] fact-check.json" in line for line in stale),
+                f"stale fact-check refs are not routed to the fact-checker: {checked.stderr}")
         findings["findings"][0]["claim"] = "Acme paid Doe."
         findings_path.write_text(json.dumps(findings), encoding="utf-8")
         subprocess.run([sys.executable, str(SCRIPTS / "write-source-expressions.py"), str(case), "--fingerprint-findings"], check=True, capture_output=True)

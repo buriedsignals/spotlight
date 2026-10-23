@@ -134,15 +134,15 @@ export function readTarget(caseDir: string, path: string, reads?: string[]): str
 	return real;
 }
 
-// Lines as the evidence validators count them (scripts/evidence_anchors.py:
-// Python's read_text() then splitlines()), so a line number read here is a
-// valid source_ref line_start/line_end there.
-const LINE_BREAK = /\r\n|[\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029]/;
-
+// Lines as the evidence validators count them (scripts/evidence_anchors.py
+// source_lines) and as grep -n numbers them: only a line feed ends a line, and
+// a carriage return just before it is dropped. Form feeds (pdftotext page
+// breaks) and other separators stay inside the line.
 function sourceLines(text: string): string[] {
-	const lines = text.split(LINE_BREAK);
-	if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
-	return text === '' ? [] : lines;
+	if (text === '') return [];
+	const lines = text.split('\n');
+	if (lines[lines.length - 1] === '') lines.pop();
+	return lines.map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line));
 }
 
 // json.dumps(value, ensure_ascii=False, sort_keys=True) with Python's default

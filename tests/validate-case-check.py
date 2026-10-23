@@ -451,6 +451,8 @@ def main() -> int:
     schema_methods = json.loads((ROOT / "schemas" / "evidence-bundle.schema.json").read_text(encoding="utf-8"))["definitions"]["evidence_item"]["properties"]["acquisition_method"]["enum"]
     for method in schema_methods:
         check(f"evidence: schema acquisition_method {method} accepted", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d, m=method: d["items"][0].__setitem__("acquisition_method", m))), False)
+    check("evidence: unknown created_by", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0].__setitem__("created_by", "human"))), True)
+    check("evidence: fact-checker created_by accepted", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0].__setitem__("created_by", "fact-checker"))), False)
     check("evidence: bad extraction_confidence", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0].__setitem__("extraction_confidence", "total"))), True)
     check("evidence: human_verification non-bool", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0].__setitem__("human_verification_required", "no"))), True)
     check("evidence: bad sha256", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0].__setitem__("sha256", "zz"))), True)
@@ -679,6 +681,18 @@ def main() -> int:
         (activated / "data" / "source-expressions.json").write_text("{}", encoding="utf-8")
         rc = subprocess.run([sys.executable, str(SCRIPT), str(activated)], capture_output=True).returncode
         check("e2e: activated artifact mutation exits 1", [] if rc == 1 else [f"rc={rc}"], False)
+
+        # A case activated before its first cycle has a contract and no
+        # findings yet; the validator reports only the missing findings file.
+        born = Path(tmp) / "born-before-findings"
+        (born / "data").mkdir(parents=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts" / "case-contract.py"), "activate-new", str(born)],
+                       check=True, capture_output=True)
+        out = subprocess.run([sys.executable, str(SCRIPT), str(born)], capture_output=True, text=True)
+        check("e2e: an activated case before findings reports only the missing findings",
+              [] if out.returncode == 1 and "Traceback" not in out.stderr
+              and "1 validation error" in out.stderr and "findings.json: not found" in out.stderr
+              else [f"rc={out.returncode} {out.stderr.strip()[-300:]}"], False)
 
         legacy = Path(tmp) / "legacy-with-expression-file"
         (legacy / "data").mkdir(parents=True)

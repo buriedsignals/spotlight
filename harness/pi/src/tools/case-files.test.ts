@@ -163,23 +163,26 @@ test('hash_files returns the digest the evidence validators recompute for an art
 
 test('read_file line ranges, grep_files line numbers and json_pointer select what the evidence validators select', async (t) => {
 	const { caseDir, call } = await fixture(t);
-	const text = 'alpha\r\nbeta gamma\rdelta\n\nepsilon\n';
+	// Numbered as grep -n numbers them: only a line feed ends a line, so the
+	// line separator, lone carriage return and form feed (a pdftotext page
+	// break) stay inside line 2, and epsilon is line 4.
+	const text = 'alpha\r\nbeta gamma\rdelta\fpage two\n\nepsilon\n';
 	await mkdir(join(caseDir, 'research'));
 	await writeFile(join(caseDir, 'research', 'page.md'), text);
 	const doc = { items: [{ 'a/b': 'Grüße </script>', n: 3 }, { z: [1, 'x'], a: { é: true, b: null } }] };
 	await writeFile(join(caseDir, 'research', 'api.json'), JSON.stringify(doc));
 	const select = (name: string, ref: object) =>
 		validatorSays(
-			'text, error = selected_source_text(__import__("pathlib").Path(sys.argv[2]), json.loads(sys.argv[3]))\nassert error is None, error\nprint(json.dumps(text))',
+			'texts, error = selected_source_texts(__import__("pathlib").Path(sys.argv[2]), json.loads(sys.argv[3]))\nassert error is None, error\nprint(json.dumps(texts[0]))',
 			join(caseDir, 'research', name),
 			JSON.stringify(ref),
 		);
 
-	for (const [start, end] of [[3, 3], [4, 6], [1, 2]]) {
+	for (const [start, end] of [[2, 2], [3, 4], [1, 2]]) {
 		const expected = JSON.parse(select('page.md', { line_start: start, line_end: end }));
 		assert.equal(await call('read_file', { path: 'research/page.md', offset: start, limit: end - start + 1 }), expected, `${start}-${end}`);
 	}
-	assert.match(await call('grep_files', { pattern: '^epsilon$' }), /^research\/page\.md:6:epsilon$/m);
+	assert.match(await call('grep_files', { pattern: '^epsilon$' }), /^research\/page\.md:4:epsilon$/m);
 	for (const pointer of ['/items/0/a~1b', '/items/1', '/items/0/n', '']) {
 		const expected = JSON.parse(select('api.json', { json_pointer: pointer }));
 		assert.equal(await call('read_file', { path: 'research/api.json', json_pointer: pointer }), expected, pointer);

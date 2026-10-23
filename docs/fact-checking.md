@@ -49,7 +49,9 @@ Both must be sought. Do not stop at the first agreeing source. This is structura
 When the orchestrator explicitly passes
 `SOURCE_EXPRESSION_MODE: pilot|activated`, the fact-checker records exact
 passages from sources it independently acquires. It appends its expressions to
-the case artifact without rewriting investigator-owned passage cores.
+the case artifact without rewriting investigator-owned passage cores, and
+records each such source as its own evidence-bundle item
+(`created_by: fact-checker`) without editing the investigator's items.
 
 Each expression preserves original-language text, an exact case-local locator,
 the acquiring role and cycle, and an explicit `supports`, `contradicts`, or
