@@ -382,7 +382,9 @@ function decisionSection() {
       const label = DECISION_LABELS[view.gate][decision];
       const missingDraft = view.gate === "report" && decision === "completed" && !view.content.draft_ready;
       const missingName = approval && !view.reviewer;
-      const unavailable = readOnly() || busy || Boolean(blocker) || missingDraft || missingName;
+      // Declining ingestion needs no finished batch, as the backend allows.
+      const blocked = Boolean(blocker) && !(view.gate === "ingest" && decision === "declined");
+      const unavailable = readOnly() || busy || blocked || missingDraft || missingName;
       // aria-disabled keeps the button in the tab order so a keyboard user
       // can reach it and hear why it is unavailable; the handler refuses.
       return el("button", {

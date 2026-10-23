@@ -39,6 +39,10 @@ LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 ADAPTERS = ("openrouter-decisions",)
 
 
+def is_openrouter(host: str) -> bool:
+    return host == OPENROUTER_HOST or host.endswith("." + OPENROUTER_HOST)
+
+
 def endpoint_from_config(block: Mapping[str, Any] | None) -> tuple[str, str]:
     """(url, credential env name) for integrations.decisions.endpoint, or the
     OpenRouter default. Raises DecisionUnavailable for anything it cannot use."""
@@ -49,11 +53,17 @@ def endpoint_from_config(block: Mapping[str, Any] | None) -> tuple[str, str]:
     url, api, credential = block.get("url"), block.get("api"), block.get("credential_env")
     if api not in ADAPTERS:
         raise DecisionUnavailable(f"decision endpoint api {api!r} has no adapter; supported: {', '.join(ADAPTERS)}")
-    parsed = urlparse(url if isinstance(url, str) else "")
-    host = (parsed.hostname or "").lower()
+    try:
+        parsed = urlparse(url if isinstance(url, str) else "")
+        host = (parsed.hostname or "").lower()
+        parsed.port  # an invalid port raises here
+    except ValueError:
+        raise DecisionUnavailable("the decision endpoint url is malformed") from None
+    if parsed.username or parsed.password:
+        raise DecisionUnavailable("a decision endpoint url must not carry credentials")
     if not (parsed.scheme == "https" or (parsed.scheme == "http" and host in LOOPBACK)) or not host:
         raise DecisionUnavailable("a decision endpoint must be https, or http on loopback")
-    if host == OPENROUTER_HOST:
+    if is_openrouter(host):
         return url, KEY_ENV
     if not isinstance(credential, str) or not credential or credential == KEY_ENV:
         raise DecisionUnavailable(f"a non-OpenRouter decision endpoint needs its own credential_env (never {KEY_ENV})")
@@ -90,7 +100,7 @@ class JevOpenRouterProvider:
         if not api_key:
             raise DecisionUnavailable(f"{KEY_ENV} is not set" if url == DECISIONS_URL else "the decision endpoint's credential is not set")
         self._url = url
-        self._openrouter = (urlparse(url).hostname or "").lower() == OPENROUTER_HOST
+        self._openrouter = is_openrouter((urlparse(url).hostname or "").lower())
         self._key = api_key
         self.model = model
         self._timeout = timeout

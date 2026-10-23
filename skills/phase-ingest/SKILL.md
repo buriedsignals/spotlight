@@ -26,15 +26,23 @@ decision:
    Without an analyst (an open-source install without Engine), decline:
    "Ingesting into the wiki needs the analyst, which Indicator Lab installs."
 2. **Build.** Run
-   `python3 scripts/build-knowledge-batch.py {CASE_DIR} --review --model investigator=<id> --model fact-checker=<id>`
-   with the models that produced the case. A refusal names what to fix (for
-   example an attributed claim with no source position); fix it in the case
-   through its writers, then build again.
-3. **Review.** Open the ingest page. The member selects the proposed records
-   and gives every flag a disposition; each edit rebuilds the batch, and
-   approval binds the final batch's digest. Without the page, show the draft
-   (`data/knowledge-batch-draft.json`) and record the member's choices in
-   `data/ingest-review.json` before building again.
+   `python3 scripts/build-knowledge-batch.py {CASE_DIR} --review --model investigator=<id> --model fact-checker=<id>`.
+   The model ids are the exact models the investigator and fact-checker ran
+   on, as the harness or the runtime reports them; they are needed only on
+   the first build. A refusal names what to fix (for example an attributed
+   claim with no source position); fix it in the case through its writers,
+   then build again.
+3. **Review on the page.** In harness mode the harness opens the ingest page
+   at this step; in Subscription mode call the `open_spotlight_review` tool.
+   The member selects the proposed records and gives every flag a
+   disposition; each edit rebuilds the batch, and the page's Ingest button
+   records the decision, bound to the final batch's digest. Then resolve
+   again and continue at the returned substep; do not also ask in chat.
+   Without the page, make each choice through the same seam the page uses
+   (`python3 scripts/spotlight-orchestration.py review-edit ingest --edit JSON {CASE_DIR}`, one edit per
+   choice, as listed by `review-view ingest`), then ask in chat as below.
+   `amend` and `investigate_further` only record the disposition; offer the
+   member a follow-up on the case instead of editing it now.
 
 A request is refused until the final `data/knowledge-batch.json` exists. A
 decline needs no batch.
@@ -56,14 +64,20 @@ Remind the user before asking for ingestion confirmation:
 
 ### `requested` / `ingest`
 
-The human decision is already durable. Do not ask again. For an activated
-case in solo mode, run
-`python3 scripts/wiki-destination.py {CASE_DIR}`: it checks the batch against
-the approved digest, admits it, appends the local decision journal, writes the
-member's wiki and the completed receipt. For other cases invoke `ingest` with
-the project path and vault config from `.spotlight-config.json`. After it writes
-its completed receipt, call `spotlight_resolve`; do not invoke ingestion a
-second time.
+The human decision is already durable. Do not ask again.
+
+- **Activated case, solo mode:** run `python3 scripts/wiki-destination.py {CASE_DIR}`.
+  It checks the batch against the approved digest, admits it, appends the
+  local decision journal, writes the member's wiki under `spotlight/` and the
+  completed receipt. Do not invoke `ingest`. A refusal names what to fix; a
+  re-run after an interruption is safe.
+- **Activated case, newsroom mode:** the case goes to the newsroom; do not
+  invoke `ingest` and write nothing locally.
+- **Legacy case** (findings contract `1.0`): invoke `ingest` with the project
+  path and vault config from `.spotlight-config.json`.
+
+After the completed receipt exists, call `spotlight_resolve`; do not run the
+write a second time.
 
 ### `completed` / `seal`
 

@@ -34,7 +34,9 @@ PROPOSAL = {
 }
 
 
-class SoloIngest(GATES.CaseFixture):
+class SoloCase(GATES.CaseFixture):
+    """An activated case at the ingest gate with a built batch (no tests)."""
+
     def prepared(self, name: str, *flags: str) -> Path:
         case = self.build(name, "ingest", "--clean", "--activated", *flags)
         (case / "data" / "knowledge-proposal.json").write_text(json.dumps(PROPOSAL), encoding="utf-8")
@@ -44,6 +46,8 @@ class SoloIngest(GATES.CaseFixture):
         self.assertEqual(built.returncode, 0, built.stderr)
         return case
 
+
+class SoloIngest(SoloCase):
     def test_a_request_needs_a_built_batch(self) -> None:
         case = self.build("unbuilt", "ingest", "--clean", "--activated")
         view = self.view(case, "ingest")
@@ -87,6 +91,41 @@ class SoloIngest(GATES.CaseFixture):
         batch = json.loads((case / "data" / "knowledge-batch.json").read_text(encoding="utf-8"))
         self.assertNotIn("story_arcs", batch)
         self.assertNotEqual(self.view(case, "ingest")["digest"], before)
+
+    def test_an_edit_withdraws_the_batch_until_its_rebuild(self) -> None:
+        # The race: a page loaded between an edit and its rebuild would see
+        # the new review beside the old batch. The edit itself removes the
+        # batch, so nothing can be requested until the rebuild writes it.
+        case = self.prepared("race").resolve()
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from spotlight_orchestration import review
+        from spotlight_orchestration.storage import transaction
+        with transaction(case) as descriptor:
+            review.apply_edit(case, descriptor, "ingest", {"kind": "mark", "key": "record:a1", "value": False})
+        self.assertFalse((case / "data" / "knowledge-batch.json").exists())
+        self.seam(case, "decide-ingest", "requested", expect=3)
+
+    def test_a_flag_decision_survives_deselecting_and_reselecting_its_claim(self) -> None:
+        case = self.prepared("reselect", "--flagged")
+        flag = next(i for i in self.view(case, "ingest")["items"] if i["kind"] == "flag")
+        self.edit(case, "ingest", {"kind": "note", "key": flag["key"], "value": "Documented part only."})
+        self.edit(case, "ingest", {"kind": "mark", "key": flag["key"], "value": "accept_with_reason"})
+        self.edit(case, "ingest", {"kind": "mark", "key": "record:c1", "value": False})
+        self.edit(case, "ingest", {"kind": "mark", "key": "record:c1", "value": True})
+        back = next(i for i in self.view(case, "ingest")["items"] if i["key"] == flag["key"])
+        self.assertEqual((back["final"], back["note"]), ("accept_with_reason", "Documented part only."))
+        self.assertTrue((case / "data" / "knowledge-batch.json").is_file())
+
+    def test_a_rebuild_refusal_blocks_with_its_reason(self) -> None:
+        case = self.prepared("refusal")
+        proposal = json.loads((case / "data" / "knowledge-proposal.json").read_text(encoding="utf-8"))
+        proposal["claims"][0]["attributed"] = True  # no source position exists
+        (case / "data" / "knowledge-proposal.json").write_text(json.dumps(proposal), encoding="utf-8")
+        self.edit(case, "ingest", {"kind": "mark", "key": "record:a1", "value": False})
+        self.assertFalse((case / "data" / "knowledge-batch.json").exists())
+        view = self.view(case, "ingest")
+        self.assertTrue(any("cannot be built" in b and "no source position" in b for b in view["blocking"]), view["blocking"])
+        self.seam(case, "decide-ingest", "declined", "--nonce", self.nonce(case, "ingest"), "--digest", view["digest"])
 
     def page_decide(self, case: Path, view: dict, expect: int = 0):
         nonce = self.nonce(case, "ingest")

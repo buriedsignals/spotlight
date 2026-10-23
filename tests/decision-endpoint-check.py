@@ -44,6 +44,30 @@ def main() -> int:
     require("no adapter" in refused(dict(ours, api="clef")), "unknown API")
     require("url, credential_env and api only" in refused(dict(ours, headers={"x": "y"})), "extra fields")
 
+    require(client.endpoint_from_config(dict(ours, url="https://api.openrouter.ai/x"))[1] == "OPENROUTER_API_KEY",
+            "an OpenRouter subdomain was treated as another endpoint")
+    require("malformed" in refused(dict(ours, url="https://decisions.example:99999/x")), "a bad port crashed")
+    require("must not carry credentials" in refused(dict(ours, url="https://user:pw@decisions.example/x")), "userinfo accepted")
+    require(client.endpoint_from_config(dict(ours, url="http://[::1]:8080/d"))[0] == "http://[::1]:8080/d", "IPv6 loopback")
+
+    # The script reads the endpoint from the checkout's install config only.
+    import importlib.util
+    import tempfile
+    spec = importlib.util.spec_from_file_location("decision_signals", ROOT / "scripts" / "decision-signals.py")
+    signals = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(signals)
+    with tempfile.TemporaryDirectory() as tmp:
+        signals.ROOT = Path(tmp)
+        (Path(tmp) / ".spotlight-config.json").write_text(json.dumps({"integrations": {"decisions": {"endpoint": ours}}}), encoding="utf-8")
+        require(signals.install_endpoint() == (ours["url"], "NEWSROOM_DECISIONS_KEY"), "install config endpoint not read")
+        (Path(tmp) / ".spotlight-config.json").write_text(json.dumps({"integrations": {"decisions": "on"}}), encoding="utf-8")
+        try:
+            signals.install_endpoint()
+            raise AssertionError("a malformed decisions block was accepted")
+        except client.DecisionUnavailable:
+            pass
+
     sent = []
 
     def opener(request, timeout):

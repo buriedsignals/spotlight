@@ -91,7 +91,10 @@ def install_endpoint() -> tuple[str, str]:
         config = json.loads((ROOT / ".spotlight-config.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         config = {}
-    block = ((config.get("integrations") or {}).get("decisions") or {}).get("endpoint") if isinstance(config, dict) else None
+    try:
+        block = ((config.get("integrations") or {}).get("decisions") or {}).get("endpoint")
+    except AttributeError:
+        raise DecisionUnavailable("integrations.decisions in .spotlight-config.json is not an object") from None
     return endpoint_from_config(block)
 
 

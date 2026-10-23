@@ -166,8 +166,12 @@ def rebuild_ingest_batch(case: Path) -> None:
     A refusal is recorded in the draft, which the page shows as blocking."""
     if not activated_case(case) or ingest_mode() != "solo" or not case_path(case, INGEST_PROPOSAL).is_file():
         return
-    subprocess.run([sys.executable, str(SCRIPT_DIR / "build-knowledge-batch.py"), str(case), "--review"],
-                   capture_output=True, text=True, check=False)
+    done = subprocess.run([sys.executable, str(SCRIPT_DIR / "build-knowledge-batch.py"), str(case), "--review"],
+                          capture_output=True, text=True, check=False)
+    if done.returncode not in (0, 2):
+        # Not a recorded refusal: the builder failed outright. The edit has
+        # already removed the final batch, so the page blocks; say why.
+        raise OrchestrationError(f"the knowledge batch rebuild failed: {(done.stderr or done.stdout).strip()[-500:]}")
 
 
 def review_digest(case: Path, gate: str, data_descriptor: int | None = None) -> str:
@@ -489,7 +493,12 @@ def _ingest_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[st
     elif draft.get("error"):
         blocking.append(f"the knowledge batch cannot be built: {_text(draft['error'], 2000)}")
     elif not isinstance(final, dict):
-        blocking.append("every flag needs a disposition before the batch can be approved")
+        if draft.get("pending_flags"):
+            blocking.append("every flag needs a disposition before the batch can be approved")
+        elif draft.get("batch") is None:
+            blocking.append("nothing new to ingest: no proposed record is selected, or all are already admitted unchanged")
+        else:
+            blocking.append("the batch is not rebuilt for the latest edit yet; reload, or ask the agent to rebuild it")
     batch = final if isinstance(final, dict) else (draft or {}).get("batch") if isinstance(draft, dict) else None
     records = []
     for array in ("claims", "events", "story_arcs", "assessments", "source_positions"):
@@ -505,11 +514,14 @@ def _ingest_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[st
                 items.append({"key": f"record:{record['key']}", "kind": "selection", "target": f"{label}:{record['key']}",
                               "suggested": True, "suggestion_source": "analyst proposal",
                               "suggestion_reason": f"The analyst proposed this {label}.", "required": False})
+    propositions = {c.get("key"): c.get("proposition") for c in proposal.get("claims", []) if isinstance(c, dict)} \
+        if isinstance(proposal, dict) and isinstance(proposal.get("claims"), list) else {}
     for flag in (draft or {}).get("flags", []) if isinstance(draft, dict) else []:
         if isinstance(flag, dict) and isinstance(flag.get("key"), str):
+            claim = _text(propositions.get(flag.get("claim_key")), 1000)
             items.append({"key": flag["key"], "kind": "flag", "target": f"claim:{flag.get('claim_key')}",
                           "suggested": None, "suggestion_source": "fact-check flag",
-                          "suggestion_reason": f"{_text(flag.get('code'), 80)}: {_text(flag.get('reason'), 1000)}",
+                          "suggestion_reason": f"Claim: {claim}. Flag {_text(flag.get('code'), 80)}: {_text(flag.get('reason'), 1000)}",
                           "required": True})
     state = "final" if isinstance(final, dict) else "draft" if isinstance(batch, dict) else "empty"
     content = {"batch": {"state": state, "records": records,
@@ -629,7 +641,9 @@ def apply_edit(case: Path, data_descriptor: int, gate: str, edit: object) -> Non
         current[edit["key"]]["note"] = edit["value"]
     else:
         current[edit["key"]]["final"] = edit["value"]
-    stored = {}
+    # Items the gate does not show right now (a flag of a deselected claim)
+    # keep their saved decision for when they come back.
+    stored = {key: value for key, value in review["items"].items() if key not in current}
     for key, item in current.items():
         stored[key] = {
             "kind": item["kind"],
@@ -647,3 +661,7 @@ def apply_edit(case: Path, data_descriptor: int, gate: str, edit: object) -> Non
     atomic_write_files(
         case, {f"data/{review_file(gate)}": content}, data_descriptor=data_descriptor
     )
+    if gate == "ingest" and activated_case(case):
+        # The batch no longer reflects the review: no request may bind it
+        # until the rebuild that follows this edit writes the new one.
+        case_path(case, INGEST_BATCH).unlink(missing_ok=True)
