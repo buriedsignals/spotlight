@@ -133,6 +133,21 @@ test('when the server ends the session under concurrent calls, the client starts
 
 // A case at ingest with ingestion requested and registered, and a client for
 // a fake Editorial MCP answering with `handlers`.
+test('a knowledge answer reaches the model without any review capability, by key or as an address on a newsroom endpoint', async (t) => {
+	let reviewPage = '';
+	const newsroom = await startFakeEditorial({
+		handlers: {
+			get_record: () => ({ record: { record_id: 'claim:1', source_url: 'https://registry.example.org/company/42', note: `reviewed at ${reviewPage}`, links: [{ review_url: 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }] } }),
+		},
+	});
+	t.after(() => newsroom.close());
+	reviewPage = `${origin(newsroom.url)}/review/rev-1?cap=secret-capability`;
+	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)] });
+	const answer = JSON.stringify(await client.call('get_record', { record_id: 'claim:1' }));
+	assert.ok(!answer.includes('secret-capability') && !answer.includes('review_url'), answer);
+	assert.match(answer, /registry\.example\.org\/company\/42/, 'a source address on another host stays');
+});
+
 async function submittable(t: { after(fn: () => unknown): void }, handlers: Parameters<typeof startFakeEditorial>[0]['handlers']) {
 	const space = await workspace(t);
 	const newsroom = await startFakeEditorial({ handlers });
@@ -170,6 +185,21 @@ test('Submit opens the newsroom review page in the member\'s browser and keeps i
 	}
 	assert.ok(!written.join('\n').includes('secret-capability'), 'the review address is nowhere a model can read');
 	assert.ok(!written.join('\n').includes('review_url'));
+});
+
+test('a review page that does not open leaves the submission pending, and a retry with the same key opens it and completes', async (t) => {
+	const { caseDir, runPackage, client } = await submittable(t, {
+		submit_case_review: () => ({ status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }),
+		get_review_status: (args) => ({ review_id: args.review_id, state: 'pending' }),
+	});
+	await assert.rejects(submitCase({ client, caseDir, runPackage, openReview: async () => { throw new Error('no browser'); } }), /no browser/);
+	assert.equal(await pendingSubmission(runPackage, caseDir), true);
+
+	const opened: string[] = [];
+	const outcome = await submitCase({ client, caseDir, runPackage, openReview: async (url) => (opened.push(url), true) });
+	assert.equal(outcome.state, 'submitted');
+	assert.deepEqual(opened, ['https://editorial.newsroom.example/review/rev-1?cap=secret-capability']);
+	assert.equal(await pendingSubmission(runPackage, caseDir), false);
 });
 
 test('an answer whose body breaks after its headers stops the newsroom case', async (t) => {

@@ -166,7 +166,8 @@ function reviewOpener(harness: Harness): (url: string) => Promise<boolean> {
 		// The opener sees the system basics and the desktop session, never the
 		// launcher's tokens, whatever their variable names.
 		const env = programEnv(process.env, ['DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS']);
-		return (await openInBrowser(url, { env })).ok;
+		if (!(await openInBrowser(url, { env })).ok) throw new Error('the newsroom review page could not be opened; the submission stays pending and is resumed at the next start');
+		return true;
 	};
 }
 

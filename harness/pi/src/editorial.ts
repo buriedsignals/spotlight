@@ -142,6 +142,25 @@ export class EditorialClient {
 		return this.#redact(text);
 	}
 
+	// A knowledge answer reaches a model, which never receives a review
+	// capability: no review_url key, and no address on a newsroom endpoint
+	// (where review pages live). Other addresses, such as a record's sources,
+	// stay.
+	#withoutReviewCapabilities(value: unknown): unknown {
+		if (typeof value === 'string') {
+			return value.replace(/\bhttps?:\/\/[^\s"'<>]+/gi, (address) => (isAllowedOrigin(this.#options.origins, address) ? '[address removed]' : address));
+		}
+		if (Array.isArray(value)) return value.map((item) => this.#withoutReviewCapabilities(item));
+		if (value && typeof value === 'object') {
+			return Object.fromEntries(
+				Object.entries(value)
+					.filter(([key]) => key !== 'review_url')
+					.map(([key, item]) => [key, this.#withoutReviewCapabilities(item)]),
+			);
+		}
+		return value;
+	}
+
 	#scrub(value: unknown): unknown {
 		if (typeof value === 'string') return this.#clean(value);
 		if (Array.isArray(value)) return value.map((item) => this.#scrub(item));
@@ -281,12 +300,14 @@ export class EditorialClient {
 		if (result?.isError) {
 			throw new EditorialToolError(`${tool}: ${this.#clean(text || 'the Editorial MCP reported an error').replace(/\bhttps?:\/\/\S+/gi, '[address removed]')}`);
 		}
+		const answer = (value: unknown) =>
+			((KNOWLEDGE_TOOLS as readonly string[]).includes(tool) ? this.#withoutReviewCapabilities(this.#scrub(value)) : this.#scrub(value)) as Record<string, unknown>;
 		if (result?.structuredContent && typeof result.structuredContent === 'object' && !Array.isArray(result.structuredContent)) {
-			return this.#scrub(result.structuredContent) as Record<string, unknown>;
+			return answer(result.structuredContent);
 		}
 		try {
 			const parsed = JSON.parse(text) as unknown;
-			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return this.#scrub(parsed) as Record<string, unknown>;
+			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return answer(parsed);
 		} catch {
 			// fall through
 		}
@@ -478,7 +499,9 @@ export type SubmitDeps = {
 	runPackage: RunPackage;
 	// Opens the newsroom's review page in the member's browser. The address
 	// is the member's capability: it is never returned, stored or shown to a
-	// model process.
+	// model process. False: refused, not on the newsroom's endpoints. It
+	// rejects when the page could not be opened, which leaves the submission
+	// pending.
 	openReview(url: string): Promise<boolean>;
 	signal?: AbortSignal;
 };
@@ -552,12 +575,15 @@ export async function submitCase(deps: SubmitDeps): Promise<SubmitOutcome> {
 		throw new EditorialError('get_review_status answered for another review or without a valid state');
 	}
 	const reviewState = String(status.state);
+	// The address is kept nowhere, so the page opens before the submission is
+	// marked complete: if opening fails, the intent stays pending and a retry
+	// with the same key gets the address again.
+	const opened = address ? await deps.openReview(address) : false;
 	await recordInCase(
 		runPackage,
 		['complete', caseDir, '--package-sha256', key, '--submission-id', submissionId, '--review-id', reviewId],
 		{ receipts, review_state: reviewState },
 	);
-	const opened = address ? await deps.openReview(address) : false;
 	return {
 		state: 'submitted',
 		submission_id: submissionId,

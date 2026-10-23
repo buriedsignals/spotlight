@@ -34,7 +34,7 @@ import { CHECKOUT_ROOT } from './roles.ts';
 import { FileRefused, readTarget, writeConfined } from './tools/case-files.ts';
 import { fetchTool } from './tools/fetch.ts';
 import { httpGetTool } from './tools/http-get.ts';
-import { EditorialCredentialError } from './editorial.ts';
+import { EditorialCredentialError, EditorialToolError } from './editorial.ts';
 import { newsroomData } from './tools/editorial.ts';
 import { queryVaultTool } from './tools/query-vault.ts';
 import { programEnv, runFixed } from './tools/run.ts';
@@ -880,7 +880,10 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 				} catch (error) {
 					if (job.signal.aborted || error instanceof EditorialCredentialError) throw error;
 					if (error instanceof FileRefused && /outside the folder|symlink|not a real folder/.test(error.message)) throw error;
-					content = `error: ${(error as Error).message}`;
+					// A tool's own error text comes from the Editorial MCP: data, as in the launcher.
+					content = error instanceof EditorialToolError
+						? `error: the newsroom answered ${call.function.name} with an error:\n${newsroomData(error.message)}`
+						: `error: ${(error as Error).message}`;
 				}
 				const message: Message = { role: 'tool', tool_call_id: call.id, content };
 				produced.add(message);
