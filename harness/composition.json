@@ -33,7 +33,8 @@
         "provenance_manifest",
         "run_rlm",
         "integration_status",
-        "osint_tools"
+        "osint_tools",
+        "open_review"
       ],
       "keys": [
         "NOOSPHERE_C2PA_URL",

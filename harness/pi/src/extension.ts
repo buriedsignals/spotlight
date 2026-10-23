@@ -9,6 +9,7 @@ import { typedTools } from './tools/index.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import { bindActiveCase, pythonAdapter, spotlightTools } from './tools/spotlight.ts';
 import { spawnAgentTool } from './subagents.ts';
+import { openReviewTool } from './tools/review.ts';
 
 const log = (message: string) => process.stderr.write(`spotlight-extension: ${message}\n`);
 
@@ -35,6 +36,7 @@ function toolsFor(role: string): ToolDefinition[] {
 	if (role === ORCHESTRATOR) {
 		tools.push(...spotlightTools(active, pythonAdapter(python)));
 		tools.push(spawnAgentTool(spawnableWorkers(composition)));
+		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT')));
 	}
 	const allowlist = new Set(allowedTools(agentSpec(composition, role), process.env.SPOTLIGHT_SENSITIVE === 'true'));
 	return tools.filter((tool) => allowlist.has(tool.name));
