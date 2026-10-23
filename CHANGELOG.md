@@ -4,6 +4,19 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added — Batch 1.1 builder
+
+- `scripts/build-knowledge-batch.py` turns the analyst's proposal
+  (`data/knowledge-proposal.json`, interface 1) and an activated case into a
+  Batch 1.1 (core): evidence, passages, claim–passage links, source positions
+  and assessments come from the case files, and the batch passes the
+  cross-record rules or nothing is written.
+- Ids persist in `data/knowledge-ids.json`, so a rebuild after review edits
+  reuses them; an admitted record is resubmitted only when it changed, at its
+  next version.
+- An attributed claim without a source position is refused; fact-check flags
+  wait for a person's disposition (`--draft` lists them for review).
+
 ### Changed — The local harness runs on Pi
 
 - The non-frontier harness is now `harness/pi/`: one Pi RPC launcher per chat,

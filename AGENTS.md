@@ -242,7 +242,10 @@ absolute path and the result in `.spotlight-config.json` under `storage`.
 │   ├── investigation-log.json   # Schema: schemas/investigation-log.schema.json
 │   ├── summary.json             # Schema: schemas/summary.schema.json
 │   ├── provenance-manifest.json  # Schema: schemas/provenance-manifest.schema.json
-│   ├── knowledge-batch.json      # Optional reviewed claim/event/story promotion package
+│   ├── knowledge-proposal.json   # Analyst proposal at Ingest (claims, events, arcs); interface 1
+│   ├── knowledge-ids.json        # Builder id map: proposal and case keys to record ids and versions
+│   ├── knowledge-batch.json      # Reviewed batch: 1.0 for existing cases, Batch 1.1 (core) when built by scripts/build-knowledge-batch.py
+│   ├── knowledge-batch-draft.json # Builder draft for review, with flags awaiting a disposition
 │   ├── decision-signals.json     # Optional decision-model review signals (opt-in; never evidence)
 │   └── monitoring.json          # (optional) External monitor registry for the case
 └── research/
@@ -274,6 +277,7 @@ activation documents use their own schema versions as declared below.
 | Decision Signals | `schemas/decision-signals.schema.json` | Opt-in Jev decision-model answers and derived review signals for grounding, report prose and ingest; can only lower confidence or add flags |
 | Reviewed Knowledge Batch | `schemas/knowledge-batch.schema.json` | Additive canonical claims, events, story arcs, review decisions, and versioned membership records for the Knowledge Destination Port |
 | Knowledge Batch 1.1 (core) | `schemas/knowledge-batch-1.1.schema.json` | Open-source core of Batch 1.1: evidence, passages, claims, claim–passage links, source positions, assessments, events, story arcs and memberships, with continuous versions and exact refs. Cross-record rules C1–C10 and C13 are checked by `scripts/validate-knowledge-batch.py`; 1.0 stays for existing cases |
+| Knowledge Proposal | `schemas/knowledge-proposal.schema.json` | Analyst interface 1: normalized claims per finding (with `attributed`), events, story arcs and memberships; `scripts/build-knowledge-batch.py` adds the rest |
 | Methodology | `schemas/methodology.schema.json` | Investigation plan with directions, steps, tools_required, opsec_considerations |
 | Investigation Log | `schemas/investigation-log.schema.json` | Append-only cycle audit trail |
 | Summary | `schemas/summary.schema.json` | Investigation gate summary for review |
