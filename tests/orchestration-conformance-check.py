@@ -576,7 +576,68 @@ class OrchestrationConformance(unittest.TestCase):
         (self.case / "summary.md").write_text(
             "# Follow-up summary\n", encoding="utf-8"
         )
+        self.assertEqual(self.status()["next_phase"], "investigation")
+
+        # The investigator's update alone does not offer the gate on the
+        # previous cycle's fact-check; a fresh fact-check does.
+        self.rewrite_json("data/findings.json", lambda d: d["findings"][0].update(evidence="Follow-up evidence."))
+        stale = self.status()
+        self.assertEqual(stale["next_phase"], "investigation")
+        self.assertEqual(stale["missing"], ["fresh data/fact-check.json after the investigator's update"])
+        self.command("approve", "investigation_gate", "--approved-by", FIXED_APPROVAL[0],
+                     "--approved-at", FIXED_APPROVAL[1], expect=3)
+        self.rewrite_json("data/fact-check.json", lambda d: d.update(cycle=2))
         self.assertEqual(self.status()["next_phase"], "investigation_gate_approval")
+
+        # A follow-up recorded before follow-ups carried output hashes keeps
+        # its earlier rule: any dependency change clears it.
+        self.command("request-follow-up", "--instructions", "Recheck again.")
+        state_path = self.case / "data/orchestration.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        for key in ("investigator_sha256", "fact_check_sha256"):
+            state["follow_up"].pop(key)
+        write_json(state_path, state)
+        self.assertEqual(self.status()["next_phase"], "investigation")
+        (self.case / "summary.md").write_text("# Older follow-up\n", encoding="utf-8")
+        self.assertEqual(self.status()["next_phase"], "investigation_gate_approval")
+
+    def test_unmet_readiness_runs_further_cycles_until_the_cap(self) -> None:
+        self.approve("methodology")
+        investigation_outputs(self.case)
+        self.assertEqual(self.status()["next_phase"], "investigation_gate_approval")
+        for cycle in range(1, 5):
+            # Readiness is judged after the cycle's fact-check exists.
+            self.command("record-attempt", "investigation-cycle", "--gap", f"gap {cycle}")
+            reopened = self.status()
+            self.assertEqual((reopened["phase"], reopened["attempts"]),
+                             ("investigation", {"investigation-cycle": cycle}))
+            self.assertEqual(reopened["resume"], {"kind": "investigation-cycle", "gap": f"gap {cycle}"})
+            self.rewrite_json("data/findings.json", lambda d, c=cycle: d["findings"][0].update(evidence=f"Cycle {c + 1}."))
+            self.assertEqual(self.status()["phase"], "investigation")
+            self.rewrite_json("data/fact-check.json", lambda d, c=cycle: d.update(cycle=c + 1))
+            self.assertEqual(self.status()["phase"], "investigation_gate_approval")
+        self.command("record-attempt", "investigation-cycle", "--gap", "gap 5")
+        blocked = self.status()
+        self.assertEqual((blocked["status"], blocked["owner"]), ("blocked", "phase-investigation"))
+        self.assertEqual(blocked["blocked"]["attempts"], {"investigation-cycle": 5})
+        self.command("record-attempt", "investigation-cycle", "--gap", "gap 6", expect=3)
+
+        # Once a human approves the gate, no further attempt is recordable.
+        other = Path(self.temp.name) / "approved"
+        (other / "data").mkdir(parents=True)
+        (other / "brief-directions.txt").write_text("Approved brief.\n", encoding="utf-8")
+        write_json(other / "data/methodology.json", methodology())
+        self.case = other
+        self.approve("methodology")
+        investigation_outputs(self.case)
+        self.approve("investigation_gate")
+        self.command("record-attempt", "investigation-cycle", "--gap", "late", expect=3)
+
+    def rewrite_json(self, relative: str, change) -> None:
+        path = self.case / relative
+        value = json.loads(path.read_text(encoding="utf-8"))
+        change(value)
+        write_json(path, value)
 
     def test_concurrent_attempts_serialize_at_the_cap(self) -> None:
         methodology_path = self.case / "data/methodology.json"
@@ -950,8 +1011,13 @@ class OrchestrationConformance(unittest.TestCase):
                         "4. When complete",
                     ),
                     (
-                        "fact-checker evidence correction",
+                        "investigator evidence correction",
                         "4.5. Validate the fact-checker output",
+                        "Re-run both validators. If reasons remain",
+                    ),
+                    (
+                        "fact-checker evidence correction",
+                        "Re-run both validators. If reasons remain",
                         "5. Run editorial standards check",
                     ),
                     (

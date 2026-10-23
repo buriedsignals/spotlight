@@ -50,7 +50,7 @@
             "required": ["finding_id", "claim_text", "support_type"],
             "properties": {
               "finding_id": { "type": "string" },
-              "claim_text": { "type": "string" },
+              "claim_text": { "type": "string", "description": "The linked finding's claim, copied verbatim." },
               "support_type": { "enum": ["direct", "indirect", "inferred", "contradicted", "insufficient"] }
             }
           }
@@ -64,7 +64,14 @@
             "requested_source": { "type": "string" },
             "returned_artifact": { "type": "string" },
             "missing": { "type": "string" },
-            "fallback_required": { "type": "boolean" },
+            "fallback_required": {
+              "type": "boolean",
+              "description": "True when the requested source was not returned, so a fallback acquisition was needed. It stays true once the fallback ran; fallback_outcome records the result."
+            },
+            "fallback_outcome": {
+              "enum": ["succeeded", "failed", "not_attempted"],
+              "description": "Result of the fallback when fallback_required is true. Only succeeded lets this item anchor a positive verdict; true with no outcome counts as still outstanding."
+            },
             "fallback_reason": { "type": "string" },
             "confidence_effect": { "enum": ["none", "cap_medium", "cap_low", "human_verification_required"] }
           }

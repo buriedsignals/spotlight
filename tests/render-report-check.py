@@ -104,7 +104,7 @@ def build_case(root: Path) -> Path:
                 "claim_text": "<script>alert('unsafe')</script> An unsupported second claim.",
                 "verdict": "unverified",
                 "confidence": "high",
-                "notes": "No source supports this claim.",
+                "notes": "Pipeline note: the evidence-correction pass re-ran validate-fact-check.",
             },
         ],
     })
@@ -309,6 +309,9 @@ def main() -> int:
         ledger = json.loads(outputs[2].read_text())
 
         assert "{{" not in html
+        # Fact-checker notes are internal working notes, never public copy.
+        for output in outputs:
+            assert "evidence-correction pass" not in output.read_text(), output.name
         assert "<script>alert('unsafe')</script>" not in html
         assert "&lt;script&gt;alert" in html
         assert "<script>alert('unsafe')</script>" not in markdown
@@ -537,6 +540,12 @@ def main() -> int:
         findings = json.loads(findings_path.read_text())
         findings["findings"][0]["claim"] = "Ada Lovelace diverted all Northwind funds."
         write_json(findings_path, findings)
+        # The investigator's bundle link follows the finding, so only the
+        # fact-check claim is out of step.
+        bundle_path = case / "data" / "evidence-bundle.json"
+        bundle = json.loads(bundle_path.read_text())
+        bundle["items"][0]["claim_links"][0]["claim_text"] = findings["findings"][0]["claim"]
+        write_json(bundle_path, bundle)
         mismatch = subprocess.run(
             [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
         )

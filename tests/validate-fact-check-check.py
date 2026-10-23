@@ -16,6 +16,12 @@ SPEC = importlib.util.spec_from_file_location("validate_fact_check", SCRIPT)
 VALIDATOR = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(VALIDATOR)
+REPORT_FIXTURE_SPEC = importlib.util.spec_from_file_location(
+    "spotlight_report_fixture", ROOT / "tests" / "render-report-check.py"
+)
+REPORT_FIXTURE = importlib.util.module_from_spec(REPORT_FIXTURE_SPEC)
+assert REPORT_FIXTURE_SPEC.loader is not None
+REPORT_FIXTURE_SPEC.loader.exec_module(REPORT_FIXTURE)
 
 
 def require(condition: bool, message: str) -> None:
@@ -125,7 +131,44 @@ def main() -> int:
         results, code = VALIDATOR.validate(case)
         require(code == 0, f"an explicit no-qualifying-findings outcome failed: {results}")
 
-    print("validate-fact-check characterization: 11 passed")
+    # The evidence bundle is the investigator's record: its failures name the
+    # investigator, and downgrading verdicts cannot hide a broken claim link.
+    with tempfile.TemporaryDirectory() as tmp:
+        case = REPORT_FIXTURE.build_case(Path(tmp))
+        bundle_path = case / "data" / "evidence-bundle.json"
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        gate = {
+            "requested_source": "official record",
+            "returned_artifact": "primary fetch failed; archive copy saved",
+            "missing": "nothing material",
+            "fallback_required": True,
+            "fallback_outcome": "succeeded",
+        }
+        bundle["items"][0]["missing_source_gate"] = gate
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        results, code = VALIDATOR.validate(case)
+        require(code == 0, f"a fallback that succeeded still fails: {results}")
+
+        gate.pop("fallback_outcome")
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        results, code = VALIDATOR.validate(case)
+        owners = {result.get("owner") for result in results if not result["ok"]}
+        require(code == 3 and owners == {"investigator"},
+                f"an outstanding fallback is not routed to the investigator: {results}")
+
+        gate["fallback_outcome"] = "succeeded"
+        bundle["items"][0]["claim_links"][0]["claim_text"] = "Ada Lovelace leads Northwind."
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        fact_check_path = case / "data" / "fact-check.json"
+        fact_check = json.loads(fact_check_path.read_text(encoding="utf-8"))
+        for claim in fact_check["claims"]:
+            claim["verdict"] = "unverified"
+        fact_check_path.write_text(json.dumps(fact_check), encoding="utf-8")
+        results, code = VALIDATOR.validate(case)
+        require(code == 3 and "claim verbatim" in json.dumps(results),
+                f"downgrading every verdict hid a broken claim link: {results}")
+
+    print("validate-fact-check characterization: 14 passed")
     return 0
 
 

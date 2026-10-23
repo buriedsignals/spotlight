@@ -219,8 +219,9 @@ as skipped by policy and use permitted local fallbacks.
 Valid exceptions: sensitive mode, Navigator status red/yellow, a local/vault-only
 lead, explicit user instruction not to use external APIs, or continuation of an
 already approved plan with no new tool-selection decision. In every exception,
-write `navigator.required=false`, `navigator.used=false`, `fallback_used=true`,
-and a concrete `fallback_reason`.
+write `navigator.required=false`, `navigator.used=false` and a concrete
+`fallback_reason` (the validator requires the reason; `fallback_used` is
+optional).
 
 For each planned step, specify the verb to use:
 
@@ -347,12 +348,23 @@ Create or update `{CASE_DIR}/data/evidence-bundle.json` during every investigati
 - `raw_path` where available,
 - `screenshot_path` where relevant,
 - `downloaded_document_path` and `sha256` where relevant,
-- `claim_links` to findings,
+- `claim_links` to findings: `{finding_id, claim_text, support_type}`, where
+  `claim_text` is the finding's `claim` copied verbatim, character for
+  character (no paraphrase, shortening or translation),
 - `extraction_confidence`,
 - `human_verification_required`,
-- `missing_source_gate`.
+- `missing_source_gate`: set `fallback_required=true` when the requested source
+  was not returned and a fallback acquisition was needed, and record its result
+  in `fallback_outcome` (`succeeded`, `failed` or `not_attempted`). Keep
+  `fallback_required=true` after a fallback ran; only `fallback_outcome:
+  "succeeded"` lets the item support a positive verdict.
 
 Link each finding to relevant evidence bundle items with `evidence_bundle_refs`.
+The bundle is yours: the fact-checker cannot change it. When a validator names
+an `[investigator]` evidence failure you are re-spawned in `MODE: EVIDENCE
+CORRECTION`; correct only the named bundle records (claim links, missing-source
+gate, artifact paths and hashes) to match what you actually acquired, and do
+not change findings or verdicts.
 
 ### Source Expressions (opt-in pilot and activated cases)
 

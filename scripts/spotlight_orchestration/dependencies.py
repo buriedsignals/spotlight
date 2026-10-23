@@ -10,7 +10,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .contract import DEPENDENCY_STATUS_VERSION, OrchestrationError, SCRIPT_DIR
+from .contract import (
+    DEPENDENCY_STATUS_VERSION,
+    FACT_CHECK_OUTPUT,
+    INVESTIGATOR_OUTPUTS,
+    OrchestrationError,
+    SCRIPT_DIR,
+)
 from .storage import case_path
 
 
@@ -142,6 +148,43 @@ def provenance_matches(case: Path, dependency_digest: str) -> bool:
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return False
     return isinstance(manifest, dict) and manifest.get("input_set_hash") == dependency_digest
+
+
+def _optional_hash(case: Path, relative: str) -> str | None:
+    path = case_path(case, relative)
+    return sha256(path) if path.is_file() else None
+
+
+def rework_snapshot(case: Path) -> dict[str, Any]:
+    """The investigation outputs at the moment an investigation is reopened."""
+    return {
+        "investigator_sha256": {
+            relative: _optional_hash(case, relative) for relative in INVESTIGATOR_OUTPUTS
+        },
+        "fact_check_sha256": _optional_hash(case, FACT_CHECK_OUTPUT),
+    }
+
+
+def rework_pending(case: Path, record: object, dependency_digest: str) -> list[str]:
+    """What a reopened investigation still needs before the gate; [] when none.
+
+    It needs both a changed investigator output and a changed fact-check, so
+    the investigator's update alone never reopens the gate on a stale
+    fact-check. A record written before reopenings carried these hashes keeps
+    the earlier rule: it stays open until any gate dependency changes.
+    """
+    if not isinstance(record, dict):
+        return []
+    investigator = record.get("investigator_sha256")
+    if not isinstance(investigator, dict) or "fact_check_sha256" not in record:
+        return ["investigation follow-up"] if digest_receipt_matches(record, dependency_digest) else []
+    current = rework_snapshot(case)
+    pending = []
+    if current["investigator_sha256"] == investigator:
+        pending.append("investigator update to data/findings.json or data/evidence-bundle.json")
+    if current["fact_check_sha256"] == record["fact_check_sha256"]:
+        pending.append(f"fresh {FACT_CHECK_OUTPUT} after the investigator's update")
+    return pending
 
 
 def review_is_fresh(case: Path, approval: object) -> bool:

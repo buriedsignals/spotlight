@@ -37,6 +37,8 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from evidence_anchors import (
     case_evidence_path,
+    FALLBACK_OUTCOMES,
+    fallback_outstanding,
     normalized,
     rlm_lead_failure,
     selected_source_text,
@@ -346,7 +348,7 @@ def validate_source_expressions(
             if bundle.get("human_verification_required") is True:
                 blocked_support.add(expression_id)
             gate = bundle.get("missing_source_gate")
-            if isinstance(gate, dict) and gate.get("fallback_required") is not False:
+            if fallback_outstanding(gate):
                 blocked_support.add(expression_id)
             if anchor_path is not None and original_paths:
                 known_paths = {
@@ -1078,8 +1080,54 @@ def validate_missing_source_gate(data: Any, prefix: str) -> list[str]:
             errors.append(f"{prefix}: missing or empty '{key}'")
     if not isinstance(data.get("fallback_required"), bool):
         errors.append(f"{prefix}.fallback_required: must be boolean")
+    if "fallback_outcome" in data and data.get("fallback_outcome") not in FALLBACK_OUTCOMES:
+        errors.append(f"{prefix}.fallback_outcome: must be one of {sorted(FALLBACK_OUTCOMES)}")
     if "confidence_effect" in data and data.get("confidence_effect") not in MISSING_SOURCE_CONFIDENCE_EFFECTS:
         errors.append(f"{prefix}.confidence_effect: must be one of {sorted(MISSING_SOURCE_CONFIDENCE_EFFECTS)}")
+    return errors
+
+
+def evidence_bundle_links(findings_data: Any, bundle_data: Any) -> list[str]:
+    """Investigator-owned links between findings and the evidence bundle.
+
+    These hold whatever the fact-check verdicts are, so a downgraded verdict
+    cannot hide a broken evidence chain, and they are checked at the
+    investigator's own checkpoint, where only the investigator can fix them.
+    """
+    if not isinstance(findings_data, dict) or not isinstance(bundle_data, dict):
+        return []
+    items = bundle_data.get("items")
+    if not isinstance(items, list):
+        return []
+    claims = {
+        finding["id"]: normalized(finding.get("claim"))
+        for finding in findings_data.get("findings") or []
+        if isinstance(finding, dict) and nonempty_string(finding.get("id"))
+    }
+    errors: list[str] = []
+    item_ids: set[str] = set()
+    for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        prefix = f"evidence-bundle.json.items[{i}]"
+        if nonempty_string(item.get("id")):
+            item_ids.add(normalized(item["id"]))
+        links = item.get("claim_links")
+        for j, link in enumerate(links if isinstance(links, list) else []):
+            if not isinstance(link, dict) or not nonempty_string(link.get("finding_id")):
+                continue
+            finding_id = link["finding_id"]
+            if finding_id not in claims:
+                errors.append(f"{prefix}.claim_links[{j}]: finding_id {finding_id!r} does not match any id in findings.json")
+            elif normalized(link.get("claim_text")) != claims[finding_id]:
+                errors.append(
+                    f"{prefix}.claim_links[{j}].claim_text: must copy finding {finding_id}'s claim verbatim"
+                )
+    for i, finding in enumerate(findings_data.get("findings") or []):
+        refs = finding.get("evidence_bundle_refs") if isinstance(finding, dict) else None
+        for ref in refs if isinstance(refs, list) else []:
+            if nonempty_string(ref) and normalized(ref) not in item_ids:
+                errors.append(f"findings.json.findings[{i}].evidence_bundle_refs: {ref!r} does not match any evidence-bundle item")
     return errors
 
 
@@ -1252,6 +1300,7 @@ def main() -> int:
         ):
             if evidence_bundle_data is not None:
                 all_errors.extend(validate_evidence_bundle(evidence_bundle_data))
+                all_errors.extend(evidence_bundle_links(findings_data, evidence_bundle_data))
 
     contract_path = case_dir / "data" / "case-contract.json"
     contract_data = None

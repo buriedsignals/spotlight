@@ -32,6 +32,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from evidence_anchors import (  # noqa: E402
     case_evidence_path,
+    fallback_outstanding,
     rlm_lead_failure,
     selected_source_text,
     sha256_file,
@@ -280,7 +281,7 @@ def extract_candidate(
             entry_path, "pending_human_verification", "evidence bundle is not human-verified", finding_id
         )
     gate = bundle.get("missing_source_gate")
-    if isinstance(gate, dict) and gate.get("fallback_required") is not False:
+    if fallback_outstanding(gate):
         return None, skip(
             entry_path, "pending_human_verification", "evidence bundle still requires source fallback", finding_id
         )
