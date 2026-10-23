@@ -1,6 +1,7 @@
 // Launch configuration. The harness reads its configuration only from the
 // environment the caller sets; nothing comes from the member's own Pi config.
 import { readFileSync } from 'node:fs';
+import { isIP } from 'node:net';
 import { isAbsolute, resolve } from 'node:path';
 import { parseFixedRequestBody } from './provider-policy.ts';
 import { CHECKOUT_ROOT, agentSpec } from './roles.ts';
@@ -19,10 +20,6 @@ export type Route = {
 	keyEnv?: string;
 };
 
-// What a process is allowed to send to its model. Restricted material
-// (journalist input, local-corpus content) may reach only an own-inference route.
-export type Material = 'general' | 'restricted';
-
 export type HarnessConfig = {
 	edition: Edition;
 	casesRoot: string;
@@ -40,6 +37,9 @@ export type HarnessConfig = {
 	spotlightConfig: string;
 	// Sensitive mode: no egress tools in any process.
 	sensitive: boolean;
+	// What this case's processes may send to their model. Every process reads
+	// the case (the orchestrator also gets the member's chat), so all of them
+	// launch with this one value.
 };
 
 export class ConfigError extends Error {}
@@ -73,9 +73,12 @@ function optionalURL(env: Env, name: string): string | undefined {
 	return value ? httpURL(name, value) : undefined;
 }
 
+// Only a real loopback address counts: an IPv4 literal in 127.0.0.0/8,
+// `localhost` or [::1]. A name that merely starts with "127." is a remote host.
 function isLoopback(baseURL: string): boolean {
 	const host = new URL(baseURL).hostname;
-	return host === 'localhost' || host === '[::1]' || /^127\./.test(host);
+	if (host === 'localhost' || host === '[::1]') return true;
+	return isIP(host) === 4 && host.startsWith('127.');
 }
 
 function parseRoutes(raw: string | undefined): Route[] {
@@ -218,10 +221,10 @@ function spotlightConfigPath(env: Env): string {
 
 export class RouteRefused extends Error {}
 
-// No silent fallback: restricted material goes to an own-inference route or
-// nowhere.
-export function routeFor(config: HarnessConfig, material: Material): Route {
-	if (material === 'general') return config.pipelineRoute;
+// Every process reads the case, which may hold journalist input or
+// local-corpus content, so it runs only on a route the operator runs itself.
+// No silent fallback: an own-inference route or nowhere.
+export function routeFor(config: HarnessConfig): Route {
 	if (config.pipelineRoute.inference === 'own') return config.pipelineRoute;
 	const own = config.routes.find((route) => route.inference === 'own');
 	if (!own) {
@@ -260,10 +263,9 @@ export function childEnv(
 	config: HarnessConfig,
 	composition: Composition,
 	role: string,
-	material: Material,
 	env: Env,
 ): Record<string, string> {
-	const route = routeFor(config, material);
+	const route = routeFor(config);
 	const spec = agentSpec(composition, role);
 	const out: Record<string, string> = {};
 	for (const name of [...PASSTHROUGH, ...BACKING_SETTINGS]) if (env[name]) out[name] = env[name] as string;
@@ -279,7 +281,6 @@ export function childEnv(
 		PI_SKIP_VERSION_CHECK: '1',
 		PI_TELEMETRY: '0',
 		SPOTLIGHT_ROLE: role,
-		SPOTLIGHT_MATERIAL: material,
 		SPOTLIGHT_CASES_ROOT: config.casesRoot,
 		SPOTLIGHT_CASE_DIR: config.caseDir,
 		SPOTLIGHT_MODEL_BASE_URL: route.baseURL,

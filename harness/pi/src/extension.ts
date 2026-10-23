@@ -44,9 +44,9 @@ function toolsFor(role: string): ToolDefinition[] {
 
 export default function spotlightExtension(pi: ExtensionAPI): void {
 	const role = required('SPOTLIGHT_ROLE');
-	if (process.env.SPOTLIGHT_MATERIAL === 'restricted' && process.env.SPOTLIGHT_ROUTE_INFERENCE !== 'own') {
+	if (process.env.SPOTLIGHT_ROUTE_INFERENCE !== 'own') {
 		// The launcher never starts this combination; refuse here too.
-		log('restricted material on a route the operator does not run; refusing to start');
+		log('case material on a route the operator does not run; refusing to start');
 		process.exit(78);
 	}
 	const fixedBody = parseFixedRequestBody(process.env.SPOTLIGHT_PROVIDER_REQUEST_BODY);

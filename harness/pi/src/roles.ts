@@ -50,9 +50,13 @@ function workerPersonaPath(spec: AgentSpec): string | undefined {
 	return path;
 }
 
-// Tools that reach a network service on the model's behalf. Sensitive mode
-// removes them from every role (AGENTS.md, "Sensitive Mode").
-export const EGRESS_TOOLS = ['fetch', 'search', 'http_get', 'browse', 'navigator_tools'];
+// Tools that can reach a network service on the model's behalf. Sensitive
+// mode removes them from every role (AGENTS.md, "Sensitive Mode"). run_rlm can
+// send case text to SPOTLIGHT_RLM_OPENAI_BASE_URL, and integration_status runs
+// the integration preflight, which can probe endpoints; neither is proven
+// local, so both go. decision_signals and provenance_manifest stay: they get
+// SPOTLIGHT_SENSITIVE and refuse their remote step themselves.
+export const EGRESS_TOOLS = ['fetch', 'search', 'http_get', 'browse', 'navigator_tools', 'run_rlm', 'integration_status'];
 
 // The tools a process declares and registers: its allowlist, minus egress in
 // sensitive mode.

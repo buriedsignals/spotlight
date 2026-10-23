@@ -110,7 +110,7 @@ recorded on the `direct` channel.
 
 ---
 
-## Spotlight Pi harness — the local & cloud non-frontier harness
+## Spotlight Pi harness — the local harness
 
 **What it is:** the repo's `harness/pi/`, built on [Pi](https://pi.dev) at a
 pinned version. Indicator Lab starts it through Osaurus; a newsroom client can
@@ -118,48 +118,21 @@ start the same launcher. It runs today's pipeline (Preflight, Brief,
 Methodology, Investigation, Report, Ingest) with the shared skills and role
 files. Full reference: [`harness/pi/README.md`](../harness/pi/README.md).
 
-### Launch
-
-One long-lived launcher per chat, in Pi's RPC mode only:
-
-```bash
-node harness/pi/src/launcher.ts
-```
-
-The launcher runs `pi --mode rpc` and passes stdin and stdout through
-untouched, so stdout carries only Pi's JSONL records; the launcher, the
-extension and every pi process log to stderr. Closing stdin ends the chat in
-order, with SIGTERM as the fallback. Case state stays on disk in the case
-folder and the resolver, so a closed chat or a quit app resumes from the same
-phase in a new chat.
-
-Configuration comes only from the environment: model base URL and id, helper
-URL, search URL, cases root, case id, harness data folder, and only the keys
-each role declares. A missing variable stops the launcher with a plain message.
-The full variable list is in the harness README.
-
-### Processes and tools
-
-- The orchestrator, investigator and fact-checker each run as their own pi
-  process. Workers start on the orchestrator's request and cannot delegate.
-- Every pi process starts with Pi's built-in tools, discovery, MCP and context
-  files off, loads only Spotlight's extension and its role's skills by path,
-  and declares an explicit tool list (`harness/composition.json`). A personal
-  Pi configuration never applies.
-- One writer per case: a second chat on a case already open is refused.
-- The model never records a gate decision. Approvals, the report decision and
-  the ingest request come from the review page; the model can only record
-  attempts, request a follow-up and seal finished steps.
-- A fixed request-body policy (for example zero data retention) is merged into
-  every model request inside each pi process.
-
-### Model routes
-
-Any OpenAI-compatible endpoint works: the local model through Osaurus or
-llama-server, or a hosted API provider. Inference may be remote; files, tools
-and case state stay on the member's machine. In the newsroom edition the
-launcher accepts only the routes the newsroom allows, and material that must
-stay in-house goes only to a route the newsroom runs itself.
+- **Launch:** one `node harness/pi/src/launcher.ts` per chat, in Pi's RPC mode
+  only. stdout carries only Pi's JSONL records; logs go to stderr; closing stdin
+  ends the chat. Case state stays on disk, so a new chat resumes the same phase.
+- **Configuration:** environment only, and each role receives only the keys it
+  declares. A missing variable stops the launcher with a plain message.
+- **Processes:** the orchestrator, investigator and fact-checker each run as
+  their own pi process with Pi's built-in tools, discovery and personal
+  configuration off, and an explicit tool list (`harness/composition.json`).
+  One chat per case.
+- **Gates:** the model never records a gate decision. It opens the review page
+  with `open_review`, and the member decides there.
+- **Model route:** the case may hold journalist input, so the whole pipeline
+  runs only on a model the operator runs itself: the local model in the solo
+  edition, or a route the newsroom marks as its own. Files, tools and case
+  state stay on the member's machine.
 
 ---
 
