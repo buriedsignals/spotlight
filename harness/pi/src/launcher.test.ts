@@ -492,13 +492,15 @@ test('at Ingest the analyst reads only its inputs and writes only its proposal, 
 	assert.match(results[3], /wrote data\/knowledge-proposal\.json/);
 
 	// The analyst's one write is the proposal; the builder the harness ran
-	// afterwards wrote its id map, draft and batch. Nothing else changed.
+	// afterwards wrote its id map, draft, batch and local mentions file. Nothing
+	// else changed.
 	const after = await caseDigests(caseDir);
 	const changed = [...after.keys()].filter((path) => before.get(path) !== after.get(path)).sort();
 	assert.deepEqual(changed, [
 		'data/knowledge-batch-draft.json',
 		'data/knowledge-batch.json',
 		'data/knowledge-ids.json',
+		'data/knowledge-mentions.json',
 		'data/knowledge-proposal.json',
 	]);
 	assert.deepEqual([...before.keys()].filter((path) => !after.has(path)), []);
