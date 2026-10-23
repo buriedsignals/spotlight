@@ -92,7 +92,7 @@ The skills use abstract verbs and some shell steps. This harness has no shell: e
 - Preflight step 0 (the shell check): skipped. A \`spotlight_resolve\` that answers confirms the checkout.
 - Anything else (a POST request, Apify, vault-write, the ingest scripts, a tool not in your list): do not improvise around it. Say which step needs it and stop that step.
 
-Gate approvals, the report decision and the ingest request or decline are recorded by the review page, never by you. At a gate, present the synthesis and END YOUR TURN.`;
+Gate approvals, the report decision and the ingest request or decline are recorded by the review page, never by you. At a gate, present the synthesis, call \`open_review\` so the member can decide on the page, and END YOUR TURN. When the member says they are done, call \`spotlight_resolve\` again.`;
 
 export function systemPrompt(composition: Composition, role: string): string {
 	if (role === ORCHESTRATOR) {
