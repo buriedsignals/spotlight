@@ -129,6 +129,67 @@ test("the Investigation gate page requests a follow-up with a note and the membe
   assert.deepEqual(status.resume, { instructions: "Find a second filing." });
 });
 
+test("the reopened Investigation gate after a follow-up starts with no decider's name", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "investigation_gate");
+  const { json } = await authed(t, caseDir);
+  let view = (await json("/api/edit", { edit: { kind: "reviewer", value: "A. Reviewer" } })).body;
+  const requested = await json("/api/follow-up", { instructions: "Find a second filing.", digest: view.digest });
+  assert.equal(requested.status, 200, JSON.stringify(requested.body));
+
+  // The investigator and the fact-checker answer the follow-up; the gate reopens.
+  for (const [name, change] of [
+    ["findings.json", (doc) => { doc.findings[0].evidence = "A second filing confirms the payment."; }],
+    ["fact-check.json", (doc) => { doc.claims[0].notes = "Rechecked after the follow-up."; }],
+  ]) {
+    const path = join(caseDir, "data", name);
+    const doc = JSON.parse(readFileSync(path, "utf8"));
+    change(doc);
+    writeFileSync(path, JSON.stringify(doc));
+  }
+  assert.equal(seamStatus(caseDir).phase, "investigation_gate_approval");
+
+  const reopened = await authed(t, caseDir);
+  view = (await reopened.json("/api/view")).body;
+  assert.equal(view.reviewer, "", "the previous decider's name is not offered as this decision's name");
+  assert.equal(view.previous_reviewer, "A. Reviewer", "the previous decider is shown as history");
+  const unnamed = await reopened.json("/api/follow-up", { instructions: "Check again.", digest: view.digest });
+  assert.equal(unnamed.status, 422);
+  assert.equal(unnamed.body.code, "reviewer-required");
+  assert.equal(seamStatus(caseDir).phase, "investigation_gate_approval");
+
+  view = (await reopened.json("/api/edit", { edit: { kind: "reviewer", value: "B. Reviewer" } })).body;
+  assert.equal(view.reviewer, "B. Reviewer");
+  const second = await reopened.json("/api/follow-up", { instructions: "Check again.", digest: view.digest });
+  assert.equal(second.status, 200, JSON.stringify(second.body));
+  assert.equal(second.body.receipt.approved_by, "B. Reviewer");
+});
+
+test("the Report page shows each finding's fact-check verdict and confidence", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "report");
+  writeFileSync(join(caseDir, "data", "report-draft.json"), JSON.stringify({
+    title: "Draft",
+    finding_order: ["F1", "F9"],
+    finding_treatments: [
+      { finding_id: "F1", headline: "The payment", summary: "One payment." },
+      { finding_id: "F9", headline: "Not in the record", summary: "No such finding." },
+    ],
+  }));
+  const { json } = await authed(t, caseDir);
+  const view = (await json("/api/view")).body;
+  assert.equal(view.gate, "report");
+  const [first, unknown] = view.content.treatments;
+  assert.deepEqual(
+    { id: first.finding_id, verdict: first.verdict, confidence: first.confidence, verified: first.verified },
+    { id: "F1", verdict: "unverified", confidence: "low", verified: false },
+  );
+  assert.deepEqual(
+    { id: unknown.finding_id, verdict: unknown.verdict, confidence: unknown.confidence, verified: unknown.verified },
+    { id: "F9", verdict: "not checked", confidence: "", verified: false },
+  );
+});
+
 test("a page nonce that starts with a dash is redeemed", async (t) => {
   const root = tempRoot(t);
   const caseDir = buildCase(root, "case", "methodology");

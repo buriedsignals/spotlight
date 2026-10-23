@@ -288,12 +288,22 @@ function investigationContent(content, items) {
   ];
 }
 
+// A finding the fact-check did not verify says so in words, not only in the
+// card's border, so it reads differently without colour.
 function treatmentCard(treatment) {
   return el(
     "div",
-    { className: "card" },
+    { className: treatment.verified ? "card" : "card unverified" },
+    treatment.verified ? null : el("p", { className: "warning", text: `Not verified by the fact-check (verdict: ${treatment.verdict}).` }),
     el("h4", { text: treatment.headline || `Finding ${treatment.finding_id}` }),
-    el("p", {}, el("span", { className: "tag", text: `Finding ${treatment.finding_id}` }), treatment.quotes ? el("span", { className: "tag", text: `Quoted passages: ${treatment.quotes}` }) : null),
+    el(
+      "p",
+      {},
+      el("span", { className: "tag", text: `Finding ${treatment.finding_id}` }),
+      el("span", { className: treatment.verified ? "tag" : "tag strong", text: `Fact-check verdict: ${treatment.verdict}` }),
+      el("span", { className: "tag", text: `Confidence: ${treatment.confidence || "not stated"}` }),
+      treatment.quotes ? el("span", { className: "tag", text: `Quoted passages: ${treatment.quotes}` }) : null,
+    ),
     treatment.summary ? el("p", { className: "quote", text: treatment.summary }) : null,
     treatment.why_it_matters ? el("p", { className: "quote muted", text: `Why it matters: ${treatment.why_it_matters}` }) : null,
   );
@@ -383,6 +393,9 @@ function reviewerField() {
   return el(
     "div",
     {},
+    view.previous_reviewer
+      ? el("p", { className: "muted", text: `Name entered for the previous decision on this gate: ${view.previous_reviewer}. Each decision records its own name.` })
+      : null,
     el("label", { for: "reviewer", text: "Your name (recorded with your decision)" }),
     el("input", {
       type: "text",
