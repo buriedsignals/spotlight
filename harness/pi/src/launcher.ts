@@ -14,7 +14,7 @@ import type { CaseLock } from './lock.ts';
 import { redactingLines, redactor, stderrLogger } from './log.ts';
 import { piArguments, piCliPath, writePiSettings } from './pi-process.ts';
 import { discardIncompleteLanes } from './resume.ts';
-import { ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillsFor, spawnableWorkers, systemPrompt } from './roles.ts';
+import { ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
 import type { Composition } from './roles.ts';
 import { WorkerQueue, runWorker } from './subagents.ts';
 import type { CancelRequest, SpawnRequest, SpawnResult } from './subagents.ts';
@@ -97,18 +97,21 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 		}
 		const controller = new AbortController();
 		running.set(request.id, controller);
-		queue
-			.run(() =>
-				runWorker(
-					{
-						...processLaunch(harness, request.agent),
-						onSpawn: (child) => track(harness, child),
-						onStderr: (child) => forwardStderr(harness, child),
-					},
-					request.task,
-					controller.signal,
-				),
-			)
+		refusalFor(harness, request.agent)
+			.then((refusal) => {
+				if (refusal) throw new Error(`spawn_agent: ${refusal}`);
+				return queue.run(() =>
+					runWorker(
+						{
+							...processLaunch(harness, request.agent),
+							onSpawn: (child) => track(harness, child),
+							onStderr: (child) => forwardStderr(harness, child),
+						},
+						request.task,
+						controller.signal,
+					),
+				);
+			})
 			.then((text) => withValidation(harness, request.agent, text))
 			.then((text) => reply({ ok: true, text }))
 			.catch((error: Error) => reply({ ok: false, error: harness.redact(error.message) }))
@@ -116,19 +119,34 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 	});
 }
 
+async function casePhase(harness: Harness): Promise<string> {
+	const { config, active } = harness;
+	try {
+		const status = await pythonAdapter(config.python)(['status', '--json', '--authorized-cases-root', active.casesRoot, active.caseDir]);
+		return String((JSON.parse(status) as { phase?: unknown }).phase ?? '');
+	} catch (error) {
+		harness.log(`could not resolve the case phase: ${harness.redact((error as Error).message)}`);
+		return '';
+	}
+}
+
+// A worker with spawn conditions in harness/composition.json (the analyst:
+// Ingest, solo edition) starts only when the case meets them.
+async function refusalFor(harness: Harness, role: string): Promise<string | undefined> {
+	const spec = agentSpec(harness.composition, role);
+	if (!spec.phases && !spec.editions) return undefined;
+	return spawnRefusal(spec, role, spec.phases ? await casePhase(harness) : '', harness.config.edition);
+}
+
 // Fixed point: when a worker finishes, the harness runs the validators for
 // what that worker writes and hands their outcome to the orchestrator with the
 // worker's answer. The resolver's phase tells planning from investigation.
 async function withValidation(harness: Harness, role: string, text: string): Promise<string> {
 	const { config, active } = harness;
-	let phase = '';
-	try {
-		const status = await pythonAdapter(config.python)(['status', '--json', '--authorized-cases-root', active.casesRoot, active.caseDir]);
-		phase = String((JSON.parse(status) as { phase?: unknown }).phase ?? '');
-	} catch (error) {
-		harness.log(`could not resolve the case phase before validation: ${harness.redact((error as Error).message)}`);
-	}
-	const outcome = await validateAfterWorker(role, phase, {
+	const phase = await casePhase(harness);
+	// Every Pi process runs on the one route the launcher chose, so the
+	// investigator and the fact-checker ran on this model.
+	const outcome = await validateAfterWorker(role, phase, routeFor(config).model, {
 		caseDir: active.caseDir,
 		writeRoot: active.caseDir,
 		python: config.python,

@@ -9,15 +9,16 @@ import test from 'node:test';
 import type { TestContext } from 'node:test';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { caseFileTools } from './case-files.ts';
+import type { CaseScope } from './run.ts';
 
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, scope?: CaseScope) {
 	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-files-')));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const caseDir = join(root, 'case');
 	const outside = join(root, 'outside');
 	await mkdir(join(caseDir, 'data'), { recursive: true });
 	await mkdir(outside);
-	const tools = new Map(caseFileTools({ caseDir, writeRoot: caseDir }).map((tool) => [tool.name, tool]));
+	const tools = new Map(caseFileTools({ caseDir, writeRoot: caseDir, scope }).map((tool) => [tool.name, tool]));
 	const call = async (name: string, params: Record<string, unknown>) => {
 		const tool = tools.get(name) as ToolDefinition;
 		const result = await tool.execute('call', params, undefined, undefined, undefined as never);
@@ -98,6 +99,39 @@ test('reads through a symlink that leaves the case are refused', async (t) => {
 	await assert.rejects(call('read_file', { path: 'data/secret.txt' }), /outside/);
 	await assert.rejects(call('read_file', { path: '../outside/secret.txt' }), /outside/);
 	assert.doesNotMatch(await call('grep_files', { pattern: 'secret' }), /secret\.txt:/);
+});
+
+// A role narrowed in harness/composition.json (the analyst) reaches only its
+// named case files, whatever path, glob, folder or symlink it gives.
+test('a narrowed role reads only its named files and writes only its one file', async (t) => {
+	const scope = { reads: ['data/findings.json', 'data/proposal.json', 'data/linked.json'], writes: ['data/proposal.json'] };
+	const { caseDir, call } = await fixture(t, scope);
+	await mkdir(join(caseDir, 'research'));
+	await writeFile(join(caseDir, 'data', 'findings.json'), '{"finding": "needle"}');
+	await writeFile(join(caseDir, 'research', 'page.md'), 'needle in a captured page');
+	await writeFile(join(caseDir, 'data', 'journalist-input.json'), '{"note": "needle"}');
+	await symlink(join(caseDir, 'research', 'page.md'), join(caseDir, 'data', 'linked.json'));
+
+	assert.match(await call('read_file', { path: 'data/findings.json' }), /needle/);
+	assert.equal(await call('list_files', { pattern: '**/*' }), 'data/findings.json\ndata/linked.json');
+	assert.equal(await call('grep_files', { pattern: 'needle' }), 'data/findings.json:1:{"finding": "needle"}');
+	assert.equal(await call('grep_files', { pattern: 'needle', path: 'data' }), 'data/findings.json:1:{"finding": "needle"}');
+	for (const path of ['research/page.md', 'data/journalist-input.json', 'data/linked.json', 'data/absent.json']) {
+		await assert.rejects(call('read_file', { path }), /may read/, path);
+		await assert.rejects(call('grep_files', { pattern: 'needle', path }), /may read/, path);
+		await assert.rejects(call('hash_files', { paths: [path] }), /may read/, path);
+	}
+
+	await call('write_file', { path: 'data/proposal.json', content: '{"claims": []}' });
+	await call('edit_file', { path: 'data/proposal.json', old_text: '[]', new_text: '[1]' });
+	assert.equal(await readFile(join(caseDir, 'data', 'proposal.json'), 'utf8'), '{"claims": [1]}');
+	for (const path of ['data/findings.json', 'research/new/notes.md', 'data/knowledge-batch.json']) {
+		await assert.rejects(call('write_file', { path, content: 'x' }), /may write/, path);
+		await assert.rejects(call('edit_file', { path, old_text: 'needle', new_text: 'x' }), /may write/, path);
+	}
+	assert.equal(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8'), '{"finding": "needle"}');
+	assert.equal(existsSync(join(caseDir, 'research', 'new')), false);
+	assert.equal(existsSync(join(caseDir, 'data', 'knowledge-batch.json')), false);
 });
 
 // The evidence validators (scripts/evidence_anchors.py) recompute every
