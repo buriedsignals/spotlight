@@ -746,7 +746,88 @@ def test_round_seven_regression(tmp: Path) -> None:
         assert lib.case_findings(pinned), "data/ remains readable"
 
 
+def test_protected_sources_are_masked_before_sending(tmp: Path) -> None:
+    """With Engine present, every text goes through `bsig wiki redact` over the
+    configured wiki before the provider sees it; a failed redaction sends
+    nothing."""
+    bin_dir = tmp / "redact-bin"
+    bin_dir.mkdir()
+    log = tmp / "redact-args.txt"
+    fake = bin_dir / "bsig"
+    fake.write_text(f"""#!{sys.executable}
+import json, os, sys
+open({str(log)!r}, "a").write(json.dumps(sys.argv[1:]) + "\\n")
+if os.environ.get("FAKE_REDACT_FAIL"):
+    sys.exit(1)
+texts = json.load(sys.stdin)["texts"]
+print("[1, 2]")  # a JSON line that is not an event
+print(json.dumps({{"event": "result", "data": {{"result": {{"texts": ["MASKED:" + str(len(t)) for t in texts], "redacted": len(texts)}}}}}}))
+""")
+    fake.chmod(0o755)
+    wiki = tmp / "wiki-ws"
+    wiki.mkdir()
+    cfg = tmp / "redact-config.json"
+    cfg.write_text(json.dumps({"integrations": {"decisions": {"enabled": True, "modes": {"investigation_gate": "advisory"}}},
+                               "knowledge_destination": {"workspace_path": str(wiki)}}))
+    path, home = os.environ["PATH"], os.environ.get("HOME")
+    os.environ["PATH"] = f"{bin_dir}{os.pathsep}{path}"
+    os.environ["HOME"] = str(tmp / "no-engine-home")  # no ~/.local/bin/spotlight link
+    try:
+        provider = provider_with()
+        run_phase(fresh_case(tmp / "redact"), cfg, "investigation-gate", provider)
+        assert provider.calls, "nothing was asked"
+        def strings(value, skip=()):
+            if isinstance(value, str):
+                return [value]
+            if isinstance(value, dict):
+                return [t for k, v in value.items() if k not in skip for t in strings(v, skip)]
+            if isinstance(value, list):
+                return [t for v in value for t in strings(v, skip)]
+            return []
+
+        for call in provider.calls:
+            sent = strings(call["state"])
+            for question in call["questions"].values():
+                sent += strings(question, ("type",))
+                assert question["type"] in ("noul", "choice"), "the question type was masked"
+            # Each text comes back in its own place: the fake encodes its length.
+            assert sent and all(t.startswith("MASKED:") for t in sent), sent[:5]
+        args = json.loads(log.read_text().splitlines()[0])
+        assert args[:3] == ["--json", "wiki", "redact"] and args[args.index("--workspace") + 1] == str(wiki), args
+        os.environ["FAKE_REDACT_FAIL"] = "1"
+        failing = provider_with()
+        run_phase(fresh_case(tmp / "redact-fail"), cfg, "investigation-gate", failing)
+        assert not failing.calls, "unmasked text was sent after a failed redaction"
+        os.environ.pop("FAKE_REDACT_FAIL", None)
+        # Engine names a wiki but its bsig cannot be found: nothing is sent.
+        os.environ["PATH"] = path.replace(str(bin_dir), "")
+        lost = provider_with()
+        run_phase(fresh_case(tmp / "redact-lost"), cfg, "investigation-gate", lost)
+        assert not lost.calls or shutil.which("bsig"), "unmasked text was sent without Engine's bsig"
+        # Engine's launcher link is how a real install exposes bsig.
+        os.environ["PATH"] = path
+        launcher = tmp / "no-engine-home" / ".local" / "bin"
+        launcher.mkdir(parents=True)
+        (bin_dir / "bsig").rename(bin_dir / "real-bsig")
+        real = tmp / "engine" / "bsig"
+        real.parent.mkdir()
+        (bin_dir / "real-bsig").rename(real)
+        (launcher / "spotlight").symlink_to(real)
+        linked = provider_with()
+        run_phase(fresh_case(tmp / "redact-link"), cfg, "investigation-gate", linked)
+        assert linked.calls and all(t.startswith("MASKED:") for call in linked.calls for t in strings(call["state"])), "the launcher's bsig was not used"
+    finally:
+        os.environ["PATH"] = path
+        if home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = home
+        os.environ.pop("FAKE_REDACT_FAIL", None)
+
+
 def main() -> int:
+    # No test may find this computer's own Engine (its ~/.local/bin link).
+    os.environ["HOME"] = tempfile.mkdtemp(prefix="decision-signals-home-")
     for test in (test_client_boundary, test_rules):
         test()
     with tempfile.TemporaryDirectory() as raw:
@@ -758,7 +839,8 @@ def main() -> int:
                      test_invalid_and_unsafe_signal_files, test_symlinked_research_is_not_read,
                      test_malformed_answer_keeps_other_results, test_ingest_phase, test_missing_grounding_cap_warns,
                      test_round_two_regressions, test_round_three_regressions, test_input_containment,
-                     test_round_five_regressions, test_round_six_regression, test_round_seven_regression):
+                     test_round_five_regressions, test_round_six_regression, test_round_seven_regression,
+                     test_protected_sources_are_masked_before_sending):
             test(tmp)
     print("decision-signals-check: PASS")
     return 0

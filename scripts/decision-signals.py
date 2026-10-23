@@ -42,7 +42,7 @@ from integrations import _credentials as credentials  # noqa: E402
 import decision_signals_lib as lib  # noqa: E402
 import questions  # noqa: E402
 import rules  # noqa: E402
-from client import KEY_ENV, DecisionUnavailable, JevOpenRouterProvider, answer_problem, endpoint_from_config  # noqa: E402
+from client import KEY_ENV, DecisionUnavailable, JevOpenRouterProvider, RedactingProvider, answer_problem, endpoint_from_config, wiki_redactor  # noqa: E402
 
 PHASES = ("investigation_gate", "report", "ingest")
 # Before the phases were named, the Investigation gate was "gate1"; saved
@@ -134,6 +134,7 @@ def settings(config: dict[str, Any]) -> dict[str, Any]:
         "env_file": block.get("env_file"),
         "model": block.get("model") or "typesafe/jev-1.13",
         "modes": {phase: _mode(modes, phase) for phase in PHASES},
+        "workspace": ((config.get("knowledge_destination") or {}).get("workspace_path") or None),
     }
 
 
@@ -383,6 +384,10 @@ def run(args: argparse.Namespace, case: Path, cfg: dict[str, Any], sensitive: bo
         except DecisionUnavailable as exc:
             return refuse(str(exc))
 
+    # Protected sources in the member's wiki never reach the provider.
+    redact = wiki_redactor(Path(cfg["workspace"]).expanduser() if cfg["workspace"] else None)
+    if redact is not None:
+        provider = RedactingProvider(provider, redact)
     asker = Asker(provider)
     mode = cfg["modes"][args.phase]
     try:

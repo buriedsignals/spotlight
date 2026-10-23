@@ -4,6 +4,17 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed — Decision-model requests mask protected sources
+
+- With Engine installed, `scripts/decision-signals.py` sends every text in a
+  decision request through `bsig wiki redact` over the member's wiki
+  (`knowledge_destination.workspace_path`) first: protected-source names,
+  aliases and identifiers reach the provider as `[protected]`. Engine's
+  binary is found through the `spotlight` link Engine installs in
+  `~/.local/bin` (`integrations/_engine.py`). A redaction that fails, or a
+  wiki named without a findable `bsig`, sends nothing. Without Engine there
+  is no protected-source register and the text is unchanged.
+
 ### Added — Old cases and the 1.0 graph's retirement
 
 - README and AGENTS describe the forward-only path for old cases and what
