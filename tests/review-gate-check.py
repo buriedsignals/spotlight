@@ -261,6 +261,35 @@ class ReviewGate(CaseFixture):
         self.seam(case, *request, "--nonce", nonce, "--digest", view["digest"], expect=3)
         self.assertEqual(self.phase(case), "investigation")
 
+    def test_agent_follow_up_records_the_requesting_role_not_a_member(self) -> None:
+        case = self.build("agentfollowup", "investigation_gate")
+        request = ("request-follow-up", "--instructions", "Find a second filing.")
+        # Without a page nonce nothing can stand for the member: a name is refused.
+        refused = self.seam(case, *request, *DECIDER, expect=3)
+        self.assertIn("review page", refused.stderr)
+        self.seam(case, *request)
+        self.assertEqual(self.phase(case), "investigation")
+        receipt = self.view(case, "investigation_gate")["receipt"]
+        self.assertEqual(
+            (receipt["decision"], receipt["channel"], receipt["requested_by_role"], receipt["approved_by"]),
+            ("follow_up", "agent", "orchestrator", None),
+        )
+        self.assertTrue(receipt["approved_at"].endswith("Z"), receipt["approved_at"])
+
+    def test_follow_up_recorded_before_receipts_reads_as_legacy(self) -> None:
+        case = self.build("legacyfollowup", "investigation_gate")
+        self.seam(case, "request-follow-up", "--instructions", "Recheck the filing.")
+        state_path = case / "data/orchestration.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        # A follow-up written before follow-ups recorded who asked.
+        for key in ("decision", "review", "requested_by_role", "decided_at"):
+            state["follow_up"].pop(key, None)
+        state_path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+        self.assertEqual(self.phase(case), "investigation")
+        receipt = self.view(case, "investigation_gate")["receipt"]
+        self.assertEqual((receipt["decision"], receipt["channel"], receipt["approved_by"]),
+                         ("follow_up", "legacy", None))
+
     def test_a_nonce_for_one_gate_cannot_decide_another(self) -> None:
         case = self.build("crossgate", "report")
         wrong = self.nonce(case, "ingest")

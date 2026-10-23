@@ -34,7 +34,7 @@ function toolsFor(role: string): ToolDefinition[] {
 		}),
 	];
 	if (role === ORCHESTRATOR) {
-		tools.push(...spotlightTools(active, pythonAdapter(python)));
+		tools.push(...spotlightTools(active, pythonAdapter(python), role));
 		tools.push(spawnAgentTool(spawnableWorkers(composition)));
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT')));
 	}

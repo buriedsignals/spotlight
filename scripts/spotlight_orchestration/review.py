@@ -227,13 +227,15 @@ def consume_nonce(
     digest: str | None,
     *,
     ready_check: bool = True,
+    unpaged_channel: str = "direct",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Validate a decision's nonce and digest; return (ledger, receipt binding).
 
     The caller publishes the returned ledger with its state write so the nonce
     is spent exactly when the decision becomes durable. Without a nonce the
     decision comes from the command-line adapter: it is recorded under its own
-    ``direct`` channel so a hand-written state file is still not backed.
+    ``direct`` channel (or ``unpaged_channel``, e.g. ``agent`` for a follow-up
+    the model requested) so a hand-written state file is still not backed.
     """
     ledger = load_ledger(case, data_descriptor)
     current = review_digest(case, gate, data_descriptor)
@@ -241,8 +243,8 @@ def consume_nonce(
         if digest is not None:
             raise OrchestrationError("a review digest requires its review nonce")
         hashed = nonce_sha256(secrets.token_urlsafe(32))
-        ledger["nonces"][hashed] = {"gate": gate, "channel": "direct", "used": True}
-        channel = "direct"
+        channel = unpaged_channel
+        ledger["nonces"][hashed] = {"gate": gate, "channel": channel, "used": True}
     else:
         hashed = nonce_sha256(nonce)
         entry = ledger["nonces"].get(hashed)

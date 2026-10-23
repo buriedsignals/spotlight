@@ -35,6 +35,11 @@ The command-line adapter (`spotlight-orchestration.py approve`, `decide-report`,
 `decide-ingest`, `request-follow-up`) still works without a nonce. Approvals
 and report and ingest decisions are recorded on its own `direct` channel, which
 the receipt shows; a name (`--decided-by`, `--decided-at`) is optional there.
+A follow-up without a nonce is the agent's: it is recorded on the `agent`
+channel with the requesting role (`--requested-by-role`, set by the harness,
+default `orchestrator`) and the time, and it refuses a member name. The page
+shows "Recorded through: the agent (orchestrator)"; a follow-up recorded before
+follow-ups said who asked shows as not recorded.
 
 ## Security model
 

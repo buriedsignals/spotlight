@@ -88,7 +88,8 @@ function stringField(payload: Payload, name: string): string {
 
 // Refuses anything outside the model's operations, whatever the schema let
 // through. The refusal names where the decision does come from.
-export function transitionArguments(operation: unknown, payload: Payload, active: ActiveCase): string[] {
+// `role` is the harness's: the process role that holds the tool, never model input.
+export function transitionArguments(operation: unknown, payload: Payload, active: ActiveCase, role: string): string[] {
 	const boundary = ['--authorized-cases-root', active.casesRoot, active.caseDir];
 	if (!MODEL_OPERATIONS.includes(operation as ModelOperation)) {
 		throw new TransitionRefused(
@@ -99,7 +100,15 @@ export function transitionArguments(operation: unknown, payload: Payload, active
 		case 'recordAttempt':
 			return ['record-attempt', stringField(payload, 'kind'), '--gap', stringField(payload, 'gap'), ...boundary];
 		case 'requestFollowUp':
-			return ['request-follow-up', '--instructions', stringField(payload, 'instructions'), ...boundary];
+			// Recorded on the agent channel with the requesting role, never a member name.
+			return [
+				'request-follow-up',
+				'--instructions',
+				stringField(payload, 'instructions'),
+				'--requested-by-role',
+				role,
+				...boundary,
+			];
 		case 'sealInvestigationGate':
 			return ['seal-investigation-gate', ...boundary];
 		case 'decideIngest': {
@@ -130,7 +139,7 @@ function jsonResult(value: unknown) {
 	return { content: [{ type: 'text' as const, text: JSON.stringify(value) }], details: undefined };
 }
 
-export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner): ToolDefinition[] {
+export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, role: string): ToolDefinition[] {
 	const resolveTool: ToolDefinition = {
 		name: 'spotlight_resolve',
 		label: 'Spotlight resolve',
@@ -153,7 +162,7 @@ export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner): T
 		executionMode: 'sequential',
 		async execute(_id, params, signal) {
 			const input = params as { operation: unknown; payload?: Payload };
-			const arguments_ = transitionArguments(input.operation, input.payload ?? {}, active);
+			const arguments_ = transitionArguments(input.operation, input.payload ?? {}, active, role);
 			if (signal?.aborted) throw signal.reason ?? new Error('Spotlight transition aborted before commit');
 			// Once started, a transition runs to its durable outcome even if the
 			// caller aborts: the resolver write is atomic and must not be orphaned.
