@@ -1204,6 +1204,102 @@
    }
   },
   {
+   "item_id": "ca-d24",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d24",
+    "topic_id": "ownership-registries",
+    "direction_id": "ownership",
+    "summary": "The commercial register gives Company A's seat as Zurich.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://www.zefix.ch/en/search/entity/list/firm/100200300",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A AG, Sitz: Zürich",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/f681d27a3943d347f1f2733f868f32e89f79f4082bdec3588e32b82b16d6704f.md",
+    "content_sha256": "f681d27a3943d347f1f2733f868f32e89f79f4082bdec3588e32b82b16d6704f"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "ownership",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d25",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d25",
+    "topic_id": "people-social",
+    "direction_id": "people",
+    "summary": "A post on X says Company A's director spoke at a waste-industry fair.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://x.com/anselm_q/status/1849000000000000000",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A's director gave the opening talk at the waste fair today.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/9f305e2d87d47b7e20f52f5e43475b5fbdb7e44c5fa5a41e2715b103e100d8f3.md",
+    "content_sha256": "9f305e2d87d47b7e20f52f5e43475b5fbdb7e44c5fa5a41e2715b103e100d8f3"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "people",
+     "q3_source": "user_generated",
+     "q4_assertion": "asserted",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
    "item_id": "ca-h01",
    "split": "heldout",
    "origin": "synthetic",

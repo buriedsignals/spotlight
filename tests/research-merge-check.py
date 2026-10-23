@@ -275,18 +275,16 @@ class Ranking(unittest.TestCase):
 
     def test_circumstantial_leads_rank_after_same_subject_leads_unless_a_clue_lifts_them(self) -> None:
         leads = {"leads": [{"lead": self.lead(i, f"https://{i}.example{n}.org/"), "merge_key": {}, "copies": []}
-                           for n, i in enumerate(["other", "none", "unplaced", "name", "other-clue", "rule-off"])]}
+                           for n, i in enumerate(["other", "none", "unplaced", "name", "other-clue"])]}
         clues = {"clues": [{"clue_id": "k1", "type": "new_actor", "source": "K1", "lead_ids": ["other-clue"], "summary": "n"}]}
         triage = {"leads": [
             {"lead_id": "other", "labels": {"identity": "different_subject_or_event"}, "clues": []},
             {"lead_id": "none", "labels": {"identity": "none_of_the_brief"}, "clues": []},
             {"lead_id": "name", "labels": {"identity": "name_only"}, "clues": []},
             {"lead_id": "other-clue", "labels": {"identity": "different_subject_or_event"}, "clues": []},
-            # The off-brief rule labels it circumstantial whatever Q1 said: it ranks with them.
-            {"lead_id": "rule-off", "labels": {"identity": "same_identifier"}, "context": ["circumstantial"], "clues": []},
         ]}
         self.assertEqual([r["lead_id"] for r in merge.rank(leads, clues, triage)],
-                         ["other-clue", "name", "unplaced", "none", "other", "rule-off"])
+                         ["other-clue", "name", "unplaced", "none", "other"])
 
     def test_a_k2_pair_the_conflict_question_declined_no_longer_ranks_as_a_conflict(self) -> None:
         leads = {"leads": [{"lead": self.lead(i, f"https://{i}.example.org/"), "merge_key": {}, "copies": []} for i in ("a", "b", "c")]}

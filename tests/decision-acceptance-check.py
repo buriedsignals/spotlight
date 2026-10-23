@@ -96,11 +96,26 @@ def test_circumstantial_keeps_are_not_lost_leads() -> None:
     def factory(_contender):
         return fake(lambda qid, options: "different_subject_or_event" if qid.startswith("q1_identity") else options[0]), "fake.test"
     jev = results(acc.run(args("dev", ["jev"]), provider_factory=factory))["jev"]["metrics"]
-    # The 19 triaged keep items of the dev half (the watchlist lead too) are
+    # The 21 triaged keep items of the dev half (the watchlist lead too) are
     # kept as circumstantial, none lost; the absence lead is never triaged.
-    require(jev["lost_leads"]["lost"] == 0 and jev["lost_leads"]["circumstantial_kept"] == 19,
+    require(jev["lost_leads"]["lost"] == 0 and jev["lost_leads"]["circumstantial_kept"] == 21,
             f"a circumstantial keep was counted as lost: {jev['lost_leads']}")
     require(jev["cost"]["requests"] > 0 and jev["cost"]["egress_hosts"] == ["fake.test"], "requests are metered")
+
+
+def test_host_labels_are_rule_catches_not_model_gains() -> None:
+    # The X post (ca-d25), made a research-visible weak source chain. The two
+    # orders disagree on every choice, so no answer counts and the social host
+    # labels the source: the failure is caught, by a rule, not by Q3.
+    fixture = acc.load_fixture(acc.COMPANY_A)
+    entry = next(i for i in fixture["items"] if i["item_id"] == "ca-d25")
+    entry["gold"]["failure"] = {"class": "weak_source_chain", "research_visible": True}
+    provider = acc.Metered(fake(lambda qid, options: options[0]), "fake.test")
+    run = acc.run_case(fixture, "dev", "jev", provider, acc.trial_acceptance(acc.load_targets()))
+    item = next(e for e in run["items"] if e["item_id"] == "ca-d25")
+    require(item["result"]["labels"].get("source") == "user_generated", f"the social prior did not label the source: {item['result']}")
+    require(acc.failures_caught([run])["caught"] == 1, "a host-labelled weak source was not caught")
+    require(acc.adds_over_rules([run])["q3_source"] == 0, "a label the host set counted as a Q3 gain")
 
 
 def test_order_disagreement_has_no_effect() -> None:
