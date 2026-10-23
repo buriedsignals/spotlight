@@ -492,6 +492,21 @@ def validate_findings(data: dict[str, Any]) -> list[str]:
         errors.append("findings.json: 'findings' must be a list")
         return errors
 
+    # "Nothing qualified" is a legitimate outcome, but only when it is stated:
+    # an empty list must carry an explicit no_qualifying_findings record, and
+    # the record cannot sit beside findings.
+    nothing = data.get("no_qualifying_findings")
+    if nothing is not None:
+        if not isinstance(nothing, dict) or not nonempty_string(nothing.get("reason")):
+            errors.append("findings.json: 'no_qualifying_findings' must be an object with a non-empty 'reason'")
+        if data["findings"]:
+            errors.append("findings.json: 'no_qualifying_findings' is only allowed with an empty 'findings' list")
+    elif not data["findings"]:
+        errors.append(
+            "findings.json: 'findings' is empty. If nothing qualified, say so explicitly: add "
+            "'no_qualifying_findings': {\"reason\": \"...\"} explaining what was searched and why nothing met the bar."
+        )
+
     # Per-finding checks
     for i, finding in enumerate(data["findings"]):
         prefix = f"findings.json[{i}]"

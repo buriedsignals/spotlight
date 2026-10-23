@@ -49,6 +49,11 @@ execute-shell("test -f skills/phase-preflight/SKILL.md && test -f scripts/spotli
 If this does not print `ok`, establish such a shell before continuing. Do not
 rewrite script paths to guessed locations.
 
+A runtime without `execute-shell` (`AGENTS.md`, Tool Verb Registry) skips this
+shell check. It confirms the checkout through its typed tools instead: the
+Spotlight resolver answering for the active case is enough. If it does not
+answer, stop.
+
 ## 1. Config check
 
 Use `read-file` on `.spotlight-config.json` in the working directory. If it exists and contains valid `search_library`, `vault_path`, and `case_workspace_root` (or legacy `cases_root`) fields, update `last_used` to the current timestamp, refresh the `storage` block from step 0, and skip to step 5 (project setup).

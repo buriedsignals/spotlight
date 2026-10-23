@@ -1,7 +1,7 @@
 {
   "version": 1,
   "runtime": "pi",
-  "description": "Per-agent skill bundles for the Pi+Flue harness (PRD D2). Each sub-agent is composed with only its role-relevant subset of the catalog, and bodies load on invoke (D1). Grounded in agents/*.md invoke-skill() calls + the orchestrator's skill-inventory table (skills/spotlight/SKILL.md §3.5). Consumed by U7 (Flue subagents) and measured by U13. Pi harness (harness/pi): each agent runs as its own pi process that loads exactly these skills by path and declares exactly `tools`; optional `keys` lists the environment variables (secrets) that agent's process receives. An agent whose role file is absent cannot be spawned.",
+  "description": "Per-agent skill bundles for the Pi+Flue harness (PRD D2). Each sub-agent is composed with only its role-relevant subset of the catalog, and bodies load on invoke (D1). Grounded in agents/*.md invoke-skill() calls + the orchestrator's skill-inventory table (skills/spotlight/SKILL.md §3.5). Consumed by U7 (Flue subagents) and measured by U13. Pi harness (harness/pi): each agent runs as its own pi process that loads exactly these skills by path and declares exactly `tools`; optional `keys` lists the environment variables (secrets) that agent's process receives. An agent whose role file is absent cannot be spawned. Tools are typed (no shell): case-confined file tools, egress-guarded web tools and fixed-argument wrappers of the checkout's scripts; sensitive mode removes fetch, search, http_get, browse and navigator_tools from every agent.",
   "agents": {
     "orchestrator": {
       "role": "skills/spotlight/SKILL.md",
@@ -24,7 +24,23 @@
         "spotlight_resolve",
         "spotlight_transition",
         "spawn_agent",
-        "invoke_skill"
+        "invoke_skill",
+        "read_file",
+        "write_file",
+        "list_files",
+        "grep_files",
+        "decision_signals",
+        "provenance_manifest",
+        "run_rlm",
+        "integration_status",
+        "osint_tools"
+      ],
+      "keys": [
+        "NOOSPHERE_C2PA_URL",
+        "NOOSPHERE_C2PA_CREDENTIAL_ID",
+        "NOOSPHERE_PROVENANCE_API_KEY",
+        "OPENROUTER_API_KEY",
+        "SPOTLIGHT_RLM_API_KEY"
       ]
     },
     "investigator": {
@@ -43,7 +59,23 @@
         "technical-investigation"
       ],
       "tools": [
-        "invoke_skill"
+        "invoke_skill",
+        "read_file",
+        "write_file",
+        "edit_file",
+        "list_files",
+        "grep_files",
+        "fetch",
+        "search",
+        "http_get",
+        "browse",
+        "query_vault",
+        "osint_tools",
+        "navigator_tools",
+        "exiftool"
+      ],
+      "keys": [
+        "FIRECRAWL_API_KEY"
       ]
     },
     "fact-checker": {
@@ -59,7 +91,22 @@
         "technical-investigation"
       ],
       "tools": [
-        "invoke_skill"
+        "invoke_skill",
+        "read_file",
+        "write_file",
+        "list_files",
+        "grep_files",
+        "fetch",
+        "search",
+        "http_get",
+        "browse",
+        "query_vault",
+        "osint_tools",
+        "navigator_tools",
+        "exiftool"
+      ],
+      "keys": [
+        "FIRECRAWL_API_KEY"
       ]
     },
     "researcher": {

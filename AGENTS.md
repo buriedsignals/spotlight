@@ -46,6 +46,8 @@ Before coding in this project on a Buried Signals dev machine, load the shared `
 
 Fixed vocabulary of abstract operations. Every runtime adapter MUST implement all verbs. If a verb is unsupported, the adapter raises an explicit error at load time.
 
+One exception: a runtime MAY omit `execute-shell` when every shell step in `agents/` and `skills/` either has a typed equivalent in that runtime or is run by the runtime itself at a fixed point (the validators, when a worker finishes), and every other step reports itself unavailable instead of being improvised. Such a runtime keeps `{CASE_DIR}` confinement and public-only egress in its typed tools. The Pi harness (`harness/pi`) is such a runtime; its step-by-step mapping is in `harness/pi/README.md`. Claude Code, Codex, Goose and subscription mode keep `execute-shell` and run the shell steps as written.
+
 | Verb | Signature | Semantics | Universal backing |
 |------|-----------|-----------|-------------------|
 | `fetch` | `fetch(url, output_path)` | Scrape URL content, save to file | `integrations.scraping` (Crawl4AI; Firecrawl fallback if keyed) |
@@ -150,7 +152,9 @@ co-located in one checkout and reachable from a single shell whose working
 directory is that root. A runtime may link or copy `skills/` elsewhere for
 discovery, but `execute-shell` runs against the checkout. The agent establishes
 that shell before Phase 0 and stops if it cannot (`skills/phase-preflight`,
-step 0). Do not rewrite script paths per runtime.
+step 0). A runtime without `execute-shell` (see the Tool Verb Registry) skips
+that shell check and confirms the checkout through its typed tools. Do not
+rewrite script paths per runtime.
 
 | Skill ID | Path | Description | Invocable By |
 |----------|------|-------------|--------------|

@@ -346,6 +346,13 @@ def main() -> int:
     check("findings: missing project", vc.validate_findings(mutate(valid_findings(), lambda d: d.pop("project"))), True)
     check("findings: missing findings key", vc.validate_findings(mutate(valid_findings(), lambda d: d.pop("findings"))), True)
     check("findings: findings not a list", vc.validate_findings(mutate(valid_findings(), lambda d: d.__setitem__("findings", {}))), True)
+    nothing = {"reason": "No candidate claim met the evidence threshold in the approved directions."}
+    check("findings: empty list without a no-qualifying-findings record", vc.validate_findings(mutate(valid_findings(), lambda d: d.__setitem__("findings", []))), True)
+    check("findings: empty list with an explicit no-qualifying-findings record", vc.validate_findings(mutate(valid_findings(), lambda d: d.update(findings=[], no_qualifying_findings=nothing))), False)
+    check("findings: no-qualifying-findings record without a reason", vc.validate_findings(mutate(valid_findings(), lambda d: d.update(findings=[], no_qualifying_findings={"reason": " "}))), True)
+    check("findings: no-qualifying-findings record beside findings", vc.validate_findings(mutate(valid_findings(), lambda d: d.__setitem__("no_qualifying_findings", nothing))), True)
+    check("findings schema: empty list with the record", schema_errors("findings.schema.json", mutate(valid_findings(), lambda d: d.update(findings=[], no_qualifying_findings=nothing))), False)
+    check("findings schema: empty list without the record", schema_errors("findings.schema.json", mutate(valid_findings(), lambda d: d.__setitem__("findings", []))), True)
     check("findings: empty claim", vc.validate_findings(mutate(valid_findings(), lambda d: d["findings"][0].__setitem__("claim", " "))), True)
     check("findings: missing evidence", vc.validate_findings(mutate(valid_findings(), lambda d: d["findings"][0].pop("evidence"))), True)
     check("findings: empty sources", vc.validate_findings(mutate(valid_findings(), lambda d: d["findings"][0].__setitem__("sources", []))), True)

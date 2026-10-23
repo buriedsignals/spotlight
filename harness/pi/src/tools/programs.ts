@@ -1,0 +1,177 @@
+// Typed tools for the remaining fixed programs the skills used to start through
+// a shell: exiftool, the Navigator CLI, decision checks, the provenance
+// manifest and signing, RLM analysis and the integration status check. Each
+// is bound to the active case; the model picks only the documented options.
+import { Type } from 'typebox';
+import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { CHECKOUT_ROOT } from '../roles.ts';
+import { readTarget } from './case-files.ts';
+import { checkedParams, programEnv, programOutput, runFixed, runPython, textResult } from './run.ts';
+import type { ToolContext } from './run.ts';
+
+const script = (path: string) => `${CHECKOUT_ROOT}/${path}`;
+const caseDataFile = Type.String({ pattern: '^data/[A-Za-z0-9._-]+\\.json$' });
+
+function exiftoolTool(context: ToolContext): ToolDefinition {
+	const params = Type.Object({ path: Type.String({ minLength: 1, maxLength: 1024 }) }, { additionalProperties: false });
+	return {
+		name: 'exiftool',
+		label: 'Exiftool',
+		description: 'Read the embedded metadata (author, creation and modification dates, software, GPS) of one file in the case with exiftool. Returns exiftool JSON.',
+		parameters: params,
+		async execute(_id, raw, signal) {
+			const { path } = checkedParams<{ path: string }>('exiftool', params, raw);
+			const target = readTarget(context.caseDir, path);
+			const result = await runFixed('exiftool', ['-json', '-G', target], {
+				env: programEnv(context.env),
+				cwd: context.caseDir,
+				signal,
+			});
+			return textResult(programOutput('exiftool', result));
+		},
+	};
+}
+
+function navigatorTool(context: ToolContext): ToolDefinition {
+	const params = Type.Object(
+		{
+			action: Type.Union([Type.Literal('find'), Type.Literal('show')]),
+			value: Type.String({ minLength: 1, maxLength: 500 }),
+		},
+		{ additionalProperties: false },
+	);
+	return {
+		name: 'navigator_tools',
+		label: 'Navigator tools',
+		description:
+			'Search the OSINT Navigator tool catalogue: {action: "find", value: "<what you need, in plain words>"} or {action: "show", value: "<tool id>"}. Needs the Navigator CLI installed and signed in.',
+		parameters: params,
+		async execute(_id, raw, signal) {
+			const input = checkedParams<{ action: 'find' | 'show'; value: string }>('navigator_tools', params, raw);
+			const result = await runFixed('navigator', ['tools', input.action, '--json', '--', input.value], {
+				env: programEnv(context.env, ['NAVIGATOR_API_URL', 'NAVIGATOR_TOKEN', 'XDG_CONFIG_HOME']),
+				cwd: context.caseDir,
+				signal,
+			});
+			return textResult(programOutput('navigator_tools', result));
+		},
+	};
+}
+
+function decisionSignalsTool(context: ToolContext): ToolDefinition {
+	const params = Type.Object(
+		{
+			phase: Type.Union([Type.Literal('investigation_gate'), Type.Literal('report'), Type.Literal('ingest')]),
+			entities: Type.Optional(caseDataFile),
+			check: Type.Optional(Type.Boolean()),
+			case_opt_in: Type.Optional(Type.Boolean()),
+		},
+		{ additionalProperties: false },
+	);
+	return {
+		name: 'decision_signals',
+		label: 'Decision signals',
+		description:
+			'Run the optional decision checks (scripts/decision-signals.py) for the active case at a phase: investigation_gate, report or ingest. Optional entities: a JSON file directly under data/. check: true reports readiness without any request; case_opt_in: true records the user\'s agreement on the first run. Refuses itself when not enabled or in sensitive mode.',
+		parameters: params,
+		async execute(_id, raw, signal) {
+			const input = checkedParams<{ phase: string; entities?: string; check?: boolean; case_opt_in?: boolean }>('decision_signals', params, raw);
+			const args = [script('scripts/decision-signals.py'), context.caseDir, '--phase', input.phase, '--config', context.configPath];
+			if (input.entities) args.push('--entities', `${context.caseDir}/${input.entities}`);
+			if (input.check) args.push('--check');
+			if (input.case_opt_in) args.push('--case-opt-in');
+			const result = await runPython(context, args, { keys: ['OPENROUTER_API_KEY', 'SPOTLIGHT_SENSITIVE'], signal, timeoutMs: 600_000 });
+			return textResult(programOutput('decision_signals', result));
+		},
+	};
+}
+
+function provenanceTool(context: ToolContext): ToolDefinition {
+	const params = Type.Object(
+		{
+			action: Type.Union([Type.Literal('build'), Type.Literal('check_current'), Type.Literal('sign')]),
+			artifact: Type.Optional(Type.String({ pattern: '^(?!.*\\.\\.)[A-Za-z0-9._/-]{1,256}$' })),
+		},
+		{ additionalProperties: false },
+	);
+	return {
+		name: 'provenance_manifest',
+		label: 'Provenance manifest',
+		description:
+			'Build the case provenance manifest (action "build"), check it still matches the case inputs ("check_current"), or build and sign it through the configured Noosphere C2PA signer ("sign", optional artifact such as "review.html").',
+		parameters: params,
+		async execute(_id, raw, signal) {
+			const input = checkedParams<{ action: string; artifact?: string }>('provenance_manifest', params, raw);
+			const args = [script('scripts/build-provenance-manifest.py'), context.caseDir];
+			if (input.action === 'check_current') args.push('--check-current');
+			if (input.action === 'sign') {
+				const endpoint = context.env.NOOSPHERE_C2PA_URL;
+				const credential = context.env.NOOSPHERE_C2PA_CREDENTIAL_ID;
+				if (!endpoint || !credential) {
+					throw new Error('provenance_manifest: signing is not configured (NOOSPHERE_C2PA_URL and NOOSPHERE_C2PA_CREDENTIAL_ID)');
+				}
+				args.push('--sign-endpoint', endpoint, '--credential-id', credential);
+				if (input.artifact) args.push('--artifact', input.artifact);
+			}
+			const result = await runPython(context, args, {
+				keys: ['NOOSPHERE_PROVENANCE_API_KEY', 'SPOTLIGHT_SENSITIVE'],
+				signal,
+				timeoutMs: 300_000,
+			});
+			return textResult(programOutput('provenance_manifest', result));
+		},
+	};
+}
+
+function rlmTool(context: ToolContext): ToolDefinition {
+	const params = Type.Object({ request: caseDataFile }, { additionalProperties: false });
+	return {
+		name: 'run_rlm',
+		label: 'Run RLM',
+		description: 'Run the approved RLM analysis (integrations/rlm/run_rlm.py) on a request file directly under data/, normally data/rlm-request.json. Output is lead-routing context, never evidence.',
+		parameters: params,
+		async execute(_id, raw, signal) {
+			const { request } = checkedParams<{ request: string }>('run_rlm', params, raw);
+			const result = await runPython(context, [script('integrations/rlm/run_rlm.py'), `${context.caseDir}/${request}`], {
+				keys: ['SPOTLIGHT_RLM_MODE', 'SPOTLIGHT_RLM_OPENAI_BASE_URL', 'SPOTLIGHT_RLM_OPENAI_MODEL', 'SPOTLIGHT_RLM_MODEL', 'SPOTLIGHT_RLM_API_KEY'],
+				extra: { SPOTLIGHT_CASES_ROOT: context.env.SPOTLIGHT_CASES_ROOT ?? '' },
+				signal,
+				timeoutMs: 1_800_000,
+			});
+			return textResult(programOutput('run_rlm', result));
+		},
+	};
+}
+
+function integrationStatusTool(context: ToolContext): ToolDefinition {
+	const params = Type.Object(
+		{ model_tier: Type.Optional(Type.String({ pattern: '^[a-z][a-z0-9_-]{0,31}$' })) },
+		{ additionalProperties: false },
+	);
+	return {
+		name: 'integration_status',
+		label: 'Integration status',
+		description: 'Report which external integrations are ready (integrations/preflight.py --json): green, yellow, red or unconfigured per integration. Optional model_tier from the Spotlight config.',
+		parameters: params,
+		async execute(_id, raw, signal) {
+			const { model_tier } = checkedParams<{ model_tier?: string }>('integration_status', params, raw);
+			const args = [script('integrations/preflight.py'), '--json'];
+			if (model_tier) args.push('--model-tier', model_tier);
+			const result = await runPython(context, args, { signal });
+			// Exit 1 means "every integration is red": still a report, not a tool failure.
+			if (result.code === 0 || result.code === 1) return textResult(result.stdout);
+			return textResult(programOutput('integration_status', result));
+		},
+	};
+}
+
+export function programTools(context: ToolContext): ToolDefinition[] {
+	return [
+		exiftoolTool(context),
+		navigatorTool(context),
+		decisionSignalsTool(context),
+		provenanceTool(context),
+		rlmTool(context),
+		integrationStatusTool(context),
+	];
+}

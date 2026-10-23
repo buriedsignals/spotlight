@@ -82,7 +82,24 @@ def main() -> int:
         )
         require(any("does not match" in item for item in failures), "stale hash accepted")
 
-    print("validate-fact-check characterization: 6 passed")
+    with tempfile.TemporaryDirectory() as tmp:
+        case = Path(tmp) / "case"
+        (case / "data").mkdir(parents=True)
+        (case / "data" / "fact-check.json").write_text(
+            json.dumps({"project": "nothing-qualified", "claims": []}), encoding="utf-8"
+        )
+        findings = {"project": "nothing-qualified", "findings": []}
+        (case / "data" / "findings.json").write_text(json.dumps(findings), encoding="utf-8")
+        _, code = VALIDATOR.validate(case)
+        require(code == 3, "an empty findings list without an explicit record passed")
+        findings["no_qualifying_findings"] = {
+            "reason": "No candidate claim met the evidence threshold in the approved directions."
+        }
+        (case / "data" / "findings.json").write_text(json.dumps(findings), encoding="utf-8")
+        results, code = VALIDATOR.validate(case)
+        require(code == 0, f"an explicit no-qualifying-findings outcome failed: {results}")
+
+    print("validate-fact-check characterization: 8 passed")
     return 0
 
 

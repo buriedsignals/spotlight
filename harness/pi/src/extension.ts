@@ -4,7 +4,8 @@
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { applyFixedRequestBody, parseFixedRequestBody } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
-import { ORCHESTRATOR, agentSpec, loadComposition, skillsFor, spawnableWorkers } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillsFor, spawnableWorkers } from './roles.ts';
+import { typedTools } from './tools/index.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import { bindActiveCase, pythonAdapter, spotlightTools } from './tools/spotlight.ts';
 import { spawnAgentTool } from './subagents.ts';
@@ -19,13 +20,23 @@ function required(name: string): string {
 
 function toolsFor(role: string): ToolDefinition[] {
 	const composition = loadComposition();
-	const tools: ToolDefinition[] = [invokeSkillTool(skillsFor(composition, role))];
+	const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
+	const python = process.env.SPOTLIGHT_PYTHON || 'python3';
+	const tools: ToolDefinition[] = [
+		invokeSkillTool(skillsFor(composition, role)),
+		...typedTools({
+			caseDir: active.caseDir,
+			writeRoot: active.caseDir,
+			python,
+			configPath: process.env.SPOTLIGHT_CONFIG || `${CHECKOUT_ROOT}/.spotlight-config.json`,
+			env: process.env,
+		}),
+	];
 	if (role === ORCHESTRATOR) {
-		const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
-		tools.push(...spotlightTools(active, pythonAdapter(process.env.SPOTLIGHT_PYTHON || 'python3')));
+		tools.push(...spotlightTools(active, pythonAdapter(python)));
 		tools.push(spawnAgentTool(spawnableWorkers(composition)));
 	}
-	const allowlist = new Set(agentSpec(composition, role).tools);
+	const allowlist = new Set(allowedTools(agentSpec(composition, role), process.env.SPOTLIGHT_SENSITIVE === 'true'));
 	return tools.filter((tool) => allowlist.has(tool.name));
 }
 

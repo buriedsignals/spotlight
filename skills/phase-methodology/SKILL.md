@@ -88,6 +88,8 @@ When the agent completes:
    execute-shell("python3 scripts/validate-methodology-navigator.py {CASE_DIR} --config .spotlight-config.json")
    ```
 
+   In a runtime without `execute-shell`, the runtime runs this validator itself when the investigator finishes and returns the outcome with the investigator's answer; act on that outcome.
+
    If validation fails, do not present the methodology for approval. Re-spawn
    the investigator with one bounded correction prompt:
 

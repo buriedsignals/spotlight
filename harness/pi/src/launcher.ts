@@ -14,11 +14,13 @@ import type { CaseLock } from './lock.ts';
 import { redactingLines, redactor, stderrLogger } from './log.ts';
 import { piArguments, piCliPath } from './pi-process.ts';
 import { discardIncompleteLanes } from './resume.ts';
-import { ORCHESTRATOR, agentSpec, loadComposition, skillsFor, spawnableWorkers, systemPrompt } from './roles.ts';
+import { ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillsFor, spawnableWorkers, systemPrompt } from './roles.ts';
 import type { Composition } from './roles.ts';
 import { WorkerQueue, runWorker } from './subagents.ts';
 import type { CancelRequest, SpawnRequest, SpawnResult } from './subagents.ts';
-import { bindActiveCase } from './tools/spotlight.ts';
+import { bindActiveCase, pythonAdapter } from './tools/spotlight.ts';
+import type { ActiveCase } from './tools/spotlight.ts';
+import { validateAfterWorker } from './validators.ts';
 
 const STDIN_CLOSE_GRACE_MS = 15_000;
 const KILL_GRACE_MS = 5_000;
@@ -27,6 +29,7 @@ const EXIT = { config: 2, held: 3, failed: 1 } as const;
 
 type Harness = {
 	config: HarnessConfig;
+	active: ActiveCase;
 	composition: Composition;
 	lock: CaseLock;
 	log: (message: string) => void;
@@ -57,7 +60,7 @@ function processLaunch(harness: Harness, role: string) {
 		args: piArguments({
 			systemPrompt: systemPrompt(harness.composition, role),
 			skills: skillsFor(harness.composition, role),
-			tools: spec.tools,
+			tools: allowedTools(spec, harness.config.sensitive),
 			model: route.model,
 		}),
 		env: childEnv(harness.config, harness.composition, role, 'general', process.env),
@@ -97,10 +100,35 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 					controller.signal,
 				),
 			)
+			.then((text) => withValidation(harness, request.agent, text))
 			.then((text) => reply({ ok: true, text }))
 			.catch((error: Error) => reply({ ok: false, error: harness.redact(error.message) }))
 			.finally(() => running.delete(request.id));
 	});
+}
+
+// Fixed point: when a worker finishes, the harness runs the validators for
+// what that worker writes and hands their outcome to the orchestrator with the
+// worker's answer. The resolver's phase tells planning from investigation.
+async function withValidation(harness: Harness, role: string, text: string): Promise<string> {
+	const { config, active } = harness;
+	let phase = '';
+	try {
+		const status = await pythonAdapter(config.python)(['status', '--json', '--authorized-cases-root', active.casesRoot, active.caseDir]);
+		phase = String((JSON.parse(status) as { phase?: unknown }).phase ?? '');
+	} catch (error) {
+		harness.log(`could not resolve the case phase before validation: ${harness.redact((error as Error).message)}`);
+	}
+	const outcome = await validateAfterWorker(role, phase, {
+		caseDir: active.caseDir,
+		writeRoot: active.caseDir,
+		python: config.python,
+		configPath: config.spotlightConfig,
+		env: process.env,
+	});
+	if (outcome.ran.length === 0) return text;
+	const verdict = outcome.passed ? 'all passed' : 'FAILED: send the worker the correction the phase skill describes';
+	return `${text}\n\n[Harness checks after the ${role} finished: ${verdict}]\n${outcome.report}`;
 }
 
 function terminate(harness: Harness): void {
@@ -171,10 +199,11 @@ function main(): void {
 	const redact = redactor(secretValues(config, composition, process.env));
 	const log = stderrLogger('spotlight', redact);
 	let lock: CaseLock;
+	let active: ActiveCase;
 	try {
 		mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
 		mkdirSync(config.casesRoot, { recursive: true, mode: 0o700 });
-		bindActiveCase(config.casesRoot, config.caseDir);
+		active = bindActiveCase(config.casesRoot, config.caseDir);
 		lock = acquireCaseLock(config.dataDir, config.caseId, piCliPath());
 	} catch (error) {
 		log(`cannot start: ${(error as Error).message}`);
@@ -182,7 +211,7 @@ function main(): void {
 	}
 	const discarded = discardIncompleteLanes(config.caseDir);
 	if (discarded.length > 0) log(`discarded ${discarded.length} unfinished research lane(s); they will rerun`);
-	start({ config, composition, lock, log, redact, children: new Set() });
+	start({ config, active, composition, lock, log, redact, children: new Set() });
 }
 
 main();
