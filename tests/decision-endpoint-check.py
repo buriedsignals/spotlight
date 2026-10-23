@@ -49,6 +49,9 @@ def main() -> int:
     require("malformed" in refused(dict(ours, url="https://decisions.example:99999/x")), "a bad port crashed")
     require("must not carry credentials" in refused(dict(ours, url="https://user:pw@decisions.example/x")), "userinfo accepted")
     require(client.endpoint_from_config(dict(ours, url="http://[::1]:8080/d"))[0] == "http://[::1]:8080/d", "IPv6 loopback")
+    # A model on this computer (Kev in Ninja mode) needs no key; anything else still does.
+    local = {"url": "http://127.0.0.1:8009/v1/systemone", "api": "openrouter-decisions"}
+    require(client.endpoint_from_config(local) == (local["url"], ""), "a loopback endpoint without a key was refused")
 
     # The script reads the endpoint from the checkout's install config only.
     import importlib.util
@@ -84,6 +87,17 @@ def main() -> int:
     default.decide({"s": 1}, question)
     url, auth, body = sent[-1]
     require(url == client.DECISIONS_URL and body["provider"] == client.REQUIRED_PROVIDER, "OpenRouter lost its zero-retention body")
+    # Keyless loopback: no Authorization header, and sensitive mode allows it (no egress).
+    kev = client.JevOpenRouterProvider("", url=local["url"], sensitive=True, opener=opener, retries=0)
+    kev.decide({"s": 1}, question)
+    url, auth, body = sent[-1]
+    require(url == local["url"] and auth is None and "provider" not in body, f"the local endpoint got a key or routing body: {sent[-1]}")
+    for blocked in ({"api_key": "", "url": ours["url"]}, {"api_key": "k", "url": ours["url"], "sensitive": True}):
+        try:
+            client.JevOpenRouterProvider(**blocked)
+            raise AssertionError(f"accepted {blocked}")
+        except client.DecisionUnavailable:
+            pass
     print("decision-endpoint-check: ok")
     return 0
 

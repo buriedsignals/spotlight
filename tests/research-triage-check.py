@@ -410,6 +410,14 @@ def test_cli_rules_only_case() -> None:
         done = subprocess.run([sys.executable, str(ROOT / "scripts" / "research-triage.py"), str(case)], env=env,
                               capture_output=True, text=True, check=False)
         require(done.returncode == 2 and "methodology.json does not validate" in done.stderr, f"invalid methodology accepted: {done.stderr}")
+        # Kev on this computer (Ninja mode) is the local triage model: the decision endpoint on loopback, no llama-server.
+        config.write_text(json.dumps({"integrations": {"decisions": {"research_triage": {"backend": "local"}, "endpoint": {
+            "url": "http://127.0.0.1:8009/v1/systemone", "api": "openrouter-decisions"}}}}))
+        done = subprocess.run([sys.executable, str(ROOT / "scripts" / "research-triage.py"), str(case), "--check"], env=env,
+                              capture_output=True, text=True, check=False)
+        routed = json.loads(done.stdout)
+        require(routed["leads"]["backend"] == "local" and routed["journalist_input_leads"]["backend"] == "local",
+                f"a local decision endpoint was not used as the local triage model: {routed}")
 
 
 def main() -> int:

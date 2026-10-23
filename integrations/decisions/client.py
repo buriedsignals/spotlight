@@ -16,7 +16,9 @@ before it is sent.
 Another endpoint (a newsroom's own inference, or a later deployment) may serve
 the same questions if it speaks the same Decisions API. It is named only in
 the install config Engine writes (``endpoint_from_config``): https, or plain
-http on loopback, with its own named credential. The OpenRouter key and the
+http on loopback, with its own named credential. A loopback endpoint may name
+no credential: that is a model on this computer (Kev in Ninja mode), which
+takes no key and which sensitive mode allows. The OpenRouter key and the
 zero-retention provider body go only to openrouter.ai. A server with another
 API needs an adapter here, not just a URL.
 """
@@ -51,6 +53,11 @@ def is_openrouter(host: str) -> bool:
     return host == OPENROUTER_HOST or host.endswith("." + OPENROUTER_HOST)
 
 
+def is_local(url: str) -> bool:
+    """A decision model on this computer (Kev in Ninja mode): no key, no egress."""
+    return (urlparse(url).hostname or "").lower() in LOOPBACK
+
+
 def endpoint_from_config(block: Mapping[str, Any] | None) -> tuple[str, str]:
     """(url, credential env name) for integrations.decisions.endpoint, or the
     OpenRouter default. Raises DecisionUnavailable for anything it cannot use."""
@@ -73,6 +80,8 @@ def endpoint_from_config(block: Mapping[str, Any] | None) -> tuple[str, str]:
         raise DecisionUnavailable("a decision endpoint must be https, or http on loopback")
     if is_openrouter(host):
         return url, KEY_ENV
+    if host in LOOPBACK and credential is None:
+        return url, ""
     if not isinstance(credential, str) or not credential or credential == KEY_ENV:
         raise DecisionUnavailable(f"a non-OpenRouter decision endpoint needs its own credential_env (never {KEY_ENV})")
     return url, credential
@@ -103,9 +112,9 @@ class JevOpenRouterProvider:
         opener: Callable[..., Any] | None = None,
         url: str = DECISIONS_URL,
     ) -> None:
-        if sensitive:
+        if sensitive and not is_local(url):
             raise DecisionUnavailable("sensitive mode blocks decision-model egress")
-        if not api_key:
+        if not api_key and not is_local(url):
             raise DecisionUnavailable(f"{KEY_ENV} is not set" if url == DECISIONS_URL else "the decision endpoint's credential is not set")
         self._url = url
         self._openrouter = is_openrouter((urlparse(url).hostname or "").lower())
@@ -136,7 +145,7 @@ class JevOpenRouterProvider:
             request = Request(
                 self._url,
                 data=raw,
-                headers={"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"},
+                headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {self._key}"} if self._key else {})},
                 method="POST",
             )
             started = time.monotonic()

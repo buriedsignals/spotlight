@@ -42,7 +42,7 @@ from integrations import _credentials as credentials  # noqa: E402
 import decision_signals_lib as lib  # noqa: E402
 import questions  # noqa: E402
 import rules  # noqa: E402
-from client import KEY_ENV, DecisionUnavailable, JevOpenRouterProvider, RedactingProvider, answer_problem, endpoint_from_config, wiki_redactor  # noqa: E402
+from client import KEY_ENV, DecisionUnavailable, JevOpenRouterProvider, is_local, RedactingProvider, answer_problem, endpoint_from_config, wiki_redactor  # noqa: E402
 
 PHASES = ("investigation_gate", "report", "ingest")
 # Before the phases were named, the Investigation gate was "gate1"; saved
@@ -104,6 +104,8 @@ def resolve_key(cfg: dict[str, Any], env_file: Path | None, key_env: str = KEY_E
     manages the key decides alone (integrations/_credentials.py); otherwise the
     environment, then --env-file, then integrations.decisions.env_file, then
     the checkout .env."""
+    if not key_env:  # a model on this computer takes no key
+        return "", ""
     decided = credentials.from_authority(key_env, ROOT)
     if decided is not None:
         return decided
@@ -344,18 +346,19 @@ def run(args: argparse.Namespace, case: Path, cfg: dict[str, Any], sensitive: bo
     recorded_opt_in = next((d["opt_in"] for d in (main_doc, ingest_doc) if d and lib.valid_opt_in(d.get("opt_in"))), None)
     opted_in = recorded_opt_in is not None
 
+    try:
+        url, key_env = install_endpoint()
+        endpoint_error = ""
+    except DecisionUnavailable as exc:
+        url, key_env, endpoint_error = "", KEY_ENV, str(exc)
+    sensitive = sensitive and not is_local(url)  # sensitive mode only blocks egress
     if args.check:
-        try:
-            _url, key_env = install_endpoint()
-            endpoint_error = ""
-        except DecisionUnavailable as exc:
-            key_env, endpoint_error = KEY_ENV, str(exc)
         key, where = resolve_key(cfg, args.env_file, key_env)
         blockers = [reason for reason, blocked in (
             ("sensitive mode", sensitive),
             ("integrations.decisions.enabled is not true", not cfg["enabled"]),
             (endpoint_error, bool(endpoint_error)),
-            (f"{key_env} not found", not key),
+            (f"{key_env} not found", bool(key_env) and not key),
             ("case has not opted in", not opted_in and not args.case_opt_in),
         ) if blocked]
         print(json.dumps({"ready": not blockers, "blockers": blockers, "key_source": where or None,
@@ -378,7 +381,8 @@ def run(args: argparse.Namespace, case: Path, cfg: dict[str, Any], sensitive: bo
         provider = Recorder()
     elif provider is None:
         try:
-            url, key_env = install_endpoint()
+            if endpoint_error:
+                raise DecisionUnavailable(endpoint_error)
             key, _where = resolve_key(cfg, args.env_file, key_env)
             provider = JevOpenRouterProvider(key, model=cfg["model"], sensitive=sensitive, url=url)
         except DecisionUnavailable as exc:
