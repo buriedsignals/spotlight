@@ -565,6 +565,44 @@ test('D9: a fact-checker task that points at the research leads, clues, lane fol
 	assert.match(results[results.length - 1].join('\n'), /Checked\./);
 });
 
+test('D9: the fact-checker\'s own file tools cannot list or read the research leads, clues, lane folders or research reviews', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) {
+			return toolResults(request).length === 0
+				? {
+						toolCalls: [
+							{ name: 'list_files', arguments: { pattern: '**/*.json*' } },
+							{ name: 'read_file', arguments: { path: 'data/leads.json' } },
+							{ name: 'grep_files', arguments: { pattern: 'needle' } },
+						],
+					}
+				: { text: 'Checked.' };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check data/findings.json.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	await mkdir(join(caseDir, 'research', 'swarm', 'ownership-web'), { recursive: true });
+	await writeFile(join(caseDir, 'research', 'swarm', 'ownership-web', 'leads.jsonl'), '{"lead": "needle"}\n');
+	for (const name of ['leads.json', 'clues.json', 'research-triage.json', 'research-review.json']) {
+		await writeFile(join(caseDir, 'data', name), '{"lead": "needle"}');
+	}
+	await writeFile(join(caseDir, 'data', 'findings.json'), '{"finding": "needle"}');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+	await settledPrompt(chat, 'Continue.');
+
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker'));
+	const [listed, read, grepped] = toolResults(worker[worker.length - 1]);
+	assert.match(listed, /data\/findings\.json/);
+	assert.doesNotMatch(listed, /leads|clues|research-|swarm/);
+	assert.match(read, /refused: data\/leads\.json is outside the case files this agent may read/);
+	assert.match(grepped, /data\/findings\.json:1:/);
+	assert.doesNotMatch(grepped, /leads|clues|research-|swarm/);
+});
+
 test('at Research the orchestrator\'s resolve runs the approved topics in code: each brief goes to the swarm route, the round is merged, and the case moves to the Research gate', async (t) => {
 	const orchestratorModel = await startFakeOpenAI(resolveThenStop);
 	const swarm = await startFakeOpenAI(() => ({ text: 'No leads.', usage: { total_tokens: 10, cost: 0.0001 } }));

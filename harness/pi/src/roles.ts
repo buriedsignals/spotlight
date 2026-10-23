@@ -21,6 +21,11 @@ export type AgentSpec = {
 	// its write folder allows.
 	reads?: string[];
 	writes?: string[];
+	// Optional case files hidden from the role's file tools (and exiftool), the
+	// rest of the case staying readable: an entry ending in "/" is a folder,
+	// "*" matches within one path segment. Unlike `reads`, it leaves the role's
+	// other tools as they are.
+	denyReads?: string[];
 	// Optional spawn conditions: the resolver phases and the editions in which
 	// the launcher starts this worker. Absent means any.
 	phases?: string[];
@@ -37,11 +42,21 @@ export type Composition = Record<string, AgentSpec>;
 export const SCOPED_TOOLS = ['invoke_skill', 'read_file', 'write_file', 'edit_file', 'list_files', 'grep_files', 'hash_files', 'query_vault'];
 
 const CASE_FILE = /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/;
+const DENY_ENTRY = /^[A-Za-z0-9_.*-]+(?:\/[A-Za-z0-9_.*-]+)*\/?$/;
+
+function plainSegments(path: string): boolean {
+	return !path.replace(/\/$/, '').split('/').some((part) => part === '..' || part === '.');
+}
 
 function checkScope(name: string, spec: AgentSpec): void {
+	for (const entry of spec.denyReads ?? []) {
+		if (!DENY_ENTRY.test(entry) || !plainSegments(entry)) {
+			throw new Error(`harness/composition.json: ${name} denyReads entry ${JSON.stringify(entry)} is not a case-relative file, pattern or folder/`);
+		}
+	}
 	if (spec.reads === undefined && spec.writes === undefined) return;
 	for (const path of [...(spec.reads ?? []), ...(spec.writes ?? [])]) {
-		if (!CASE_FILE.test(path) || path.split('/').some((part) => part === '..' || part === '.')) {
+		if (!CASE_FILE.test(path) || !plainSegments(path)) {
 			throw new Error(`harness/composition.json: ${name} scope entry ${JSON.stringify(path)} is not a case-relative file path`);
 		}
 	}

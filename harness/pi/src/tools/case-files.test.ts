@@ -134,7 +134,33 @@ test('a narrowed role reads only its named files and writes only its one file', 
 	assert.equal(existsSync(join(caseDir, 'data', 'knowledge-batch.json')), false);
 });
 
-// The evidence validators (scripts/evidence_anchors.py) recompute every
+// D9: the fact-checker's `denyReads` (harness/composition.json) hides the
+// research phase's material from every file tool, by path, glob, folder or
+// symlink, while the rest of the case stays readable.
+test('a role denied case files cannot read, list, grep, hash or edit them, and reads the rest of the case', async (t) => {
+	const { caseDir, call } = await fixture(t, { denyReads: ['research/swarm/', 'data/leads.json', 'data/research-*.json'] });
+	await mkdir(join(caseDir, 'research', 'swarm', 'lane-a'), { recursive: true });
+	await writeFile(join(caseDir, 'research', 'swarm', 'lane-a', 'leads.jsonl'), 'needle from a lane');
+	await writeFile(join(caseDir, 'data', 'leads.json'), '{"lead": "needle"}');
+	await writeFile(join(caseDir, 'data', 'research-triage.json'), '{"triage": "needle"}');
+	await writeFile(join(caseDir, 'data', 'findings.json'), '{"finding": "needle"}');
+	await writeFile(join(caseDir, 'research', 'page.md'), 'needle in a captured page');
+	await symlink(join(caseDir, 'data', 'leads.json'), join(caseDir, 'research', 'linked.md'));
+
+	assert.match(await call('read_file', { path: 'data/findings.json' }), /needle/);
+	assert.equal(await call('list_files', { pattern: '**/*' }), 'data\ndata/findings.json\nresearch\nresearch/linked.md\nresearch/page.md');
+	assert.equal(await call('grep_files', { pattern: 'needle' }), 'data/findings.json:1:{"finding": "needle"}\nresearch/page.md:1:needle in a captured page');
+	assert.equal(await call('grep_files', { pattern: 'needle', path: 'research' }), 'research/page.md:1:needle in a captured page');
+	for (const path of ['data/leads.json', 'DATA/Research-Triage.json', 'research/swarm', 'research/swarm/lane-a/leads.jsonl', 'research/linked.md', '{CASE_DIR}/research/swarm/absent.md']) {
+		await assert.rejects(call('read_file', { path }), /may read/, path);
+		await assert.rejects(call('grep_files', { pattern: 'needle', path }), /may read/, path);
+		await assert.rejects(call('hash_files', { paths: [path] }), /may read/, path);
+	}
+	await assert.rejects(call('edit_file', { path: 'data/leads.json', old_text: 'needle', new_text: 'x' }), /may read/);
+	assert.equal(await readFile(join(caseDir, 'data', 'leads.json'), 'utf8'), '{"lead": "needle"}');
+});
+
+
 // declared sha256 and re-select every source_ref. A digest, line range or JSON
 // Pointer read through these tools must be the one the validators compute.
 const PYTHON = process.platform === 'win32' ? 'python' : 'python3';

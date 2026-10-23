@@ -26,7 +26,7 @@ function exiftoolTool(context: ToolContext): ToolDefinition {
 		parameters: params,
 		async execute(_id, raw, signal) {
 			const { path } = checkedParams<{ path: string }>('exiftool', params, raw);
-			const target = readTarget(context.caseDir, path);
+			const target = readTarget(context.caseDir, path, context.scope);
 			const result = await runFixed('exiftool', ['-json', '-G', target], {
 				env: programEnv(context.env),
 				cwd: context.caseDir,

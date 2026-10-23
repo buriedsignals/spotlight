@@ -9,7 +9,7 @@ import { CHECKOUT_ROOT } from '../roles.ts';
 
 export type Env = Record<string, string | undefined>;
 
-export type CaseScope = { reads?: string[]; writes?: string[] };
+export type CaseScope = { reads?: string[]; writes?: string[]; denyReads?: string[] };
 
 // What every typed tool is bound to at launch. The model never names these.
 export type ToolContext = {
@@ -18,8 +18,9 @@ export type ToolContext = {
 	// The folder this process may write in. The whole case for today's roles;
 	// a narrower folder for a role that must stay inside one subfolder.
 	writeRoot: string;
-	// The role's case-file scope from harness/composition.json (reads, writes):
-	// when set, the file tools reach only those case-relative files.
+	// The role's case-file scope from harness/composition.json (reads, writes,
+	// denyReads): the file tools reach only the named case-relative files, and
+	// never the denied ones.
 	scope?: CaseScope;
 	// Pinned interpreter for every Python seam (SPOTLIGHT_PYTHON).
 	python: string;

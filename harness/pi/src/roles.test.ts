@@ -32,3 +32,13 @@ test('a scope entry must be a plain case-relative file path', async (t) => {
 		assert.throws(() => loadComposition(path), /not a case-relative file path/, entry);
 	}
 });
+
+test('a denyReads entry must be a case-relative file, pattern or folder, and does not narrow the role\'s other tools', async (t) => {
+	for (const entry of ['../outside.json', '/etc', 'research/../data/', 'data/./x.json', 'data//x.json', '']) {
+		const path = await compositionWith(t, { role: 'agents/denied.md', skills: [], tools: ['read_file'], denyReads: [entry] });
+		assert.throws(() => loadComposition(path), /denyReads entry/, entry);
+	}
+	const path = await compositionWith(t, { role: 'agents/denied.md', skills: [], tools: ['read_file', 'fetch', 'exiftool'], denyReads: ['research/swarm/', 'data/research-*.json'] });
+	assert.deepEqual(loadComposition(path).narrowed.tools, ['read_file', 'fetch', 'exiftool']);
+});
+
