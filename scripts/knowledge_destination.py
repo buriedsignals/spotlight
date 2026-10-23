@@ -3097,6 +3097,17 @@ def coverage_report(
     }
 
 
+GRAPH_TABLES = ("batches", "claims", "events", "story_arcs", "claim_event_memberships",
+                "event_story_arc_memberships", "source_expression_refs", "review_decisions")
+
+
+def count_graph_rows(connection: sqlite3.Connection) -> dict[str, Any]:
+    """Rows of approved knowledge per table, for the 1.0 graph's retirement:
+    with none, Engine may remove the database; otherwise it stays, read-only."""
+    tables = {name: connection.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0] for name in GRAPH_TABLES}
+    return {"schema_version": "spotlight-graph-rows/v1", "tables": tables, "total": sum(tables.values())}
+
+
 def open_existing_database(path: Path) -> sqlite3.Connection:
     path = path.expanduser().resolve(strict=False)
     _reject_symlink_path(path)
@@ -3588,6 +3599,11 @@ def build_parser() -> argparse.ArgumentParser:
     coverage_parser.add_argument("--db", required=True, type=Path)
     coverage_parser.add_argument("--limit", type=int, default=DEFAULT_QUERY_LIMIT)
     coverage_parser.add_argument("--offset", type=int, default=0)
+    count_parser = subcommands.add_parser(
+        "count-rows", help="count the graph's knowledge rows, read-only (Engine's retirement check)"
+    )
+    count_parser.add_argument("--workspace-root", required=True, type=Path)
+    count_parser.add_argument("--db", required=True, type=Path)
     verify_parser = subcommands.add_parser(
         "verify", help="check database schema, integrity, and stored batch receipts"
     )
@@ -3811,6 +3827,9 @@ def main(argv: Iterable[str] | None = None) -> int:
                 return 0
             if args.command == "verify":
                 print_json(verify_database(connection))
+                return 0
+            if args.command == "count-rows":
+                print_json(count_graph_rows(connection))
                 return 0
         finally:
             connection.close()

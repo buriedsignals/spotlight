@@ -324,6 +324,9 @@ def main() -> int:
 
         policy_db = workspace / "knowledge" / "policy.sqlite"
         PORT.initialize_database(policy_db, "destination:test")
+        # A graph with no approved knowledge counts zero rows: Engine may remove it.
+        empty = json.loads(run_cli("count-rows", "--workspace-root", str(workspace), "--db", "knowledge/policy.sqlite").stdout)
+        assert empty["total"] == 0, empty
         policy_jobs = []
         for revision, status in ((1, "active"), (2, "active"), (3, "revoked")):
             receipt = policy_receipt(revision, status)
@@ -590,6 +593,12 @@ def main() -> int:
         ).stdout)
         assert health["status"] == "healthy" and health["verified_batches"] == 1
         assert health["projection_heads"] == 1
+        # Engine's retirement check: a graph holding approved knowledge is kept.
+        counted = json.loads(run_cli(
+            "count-rows", "--workspace-root", str(workspace),
+            "--db", "knowledge/spotlight.sqlite",
+        ).stdout)
+        assert counted["tables"]["batches"] == 1 and counted["tables"]["claims"] >= 1 and counted["total"] > 0, counted
         claimed_graph = json.loads(run_cli(
             "job-claim", "--workspace-root", str(workspace),
             "--db", "knowledge/spotlight.sqlite", "--unsafe-local-reference-commit",

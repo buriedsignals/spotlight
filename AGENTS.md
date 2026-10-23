@@ -283,6 +283,22 @@ activation documents use their own schema versions as declared below.
 | Investigation Log | `schemas/investigation-log.schema.json` | Append-only cycle audit trail |
 | Summary | `schemas/summary.schema.json` | Investigation gate summary for review |
 
+## Old cases
+
+Cases from before Batch 1.1 are forward-only:
+
+1. They stay readable as findings contract `1.0`, and nothing converts them.
+2. To activate one, run `python3 scripts/migrate-source-expressions.py {CASE_DIR}`
+   as a dry run, and apply it with `--apply` only when the dry run says the
+   case is eligible.
+3. Otherwise start a follow-up case from the old brief, with the old
+   `research/` and `evidence/` available as local sources.
+
+Some things cannot be migrated mechanically and need a person: normalized
+propositions, source positions, the old `partially_verified` and
+`mischaracterized` verdicts, a finding's `disputed` confidence, flag
+dispositions, events and story arcs.
+
 ## Solo wiki destination
 
 An activated case in solo mode is written to the member's wiki by
