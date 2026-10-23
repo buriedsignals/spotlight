@@ -6,6 +6,7 @@ built from the orchestration conformance fixtures.
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -36,6 +37,49 @@ CONFORMANCE = _load("spotlight_conformance_fixtures", ROOT / "tests" / "orchestr
 def write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+
+def sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def prepare_research_gate(case: Path, marks: dict[str, str] | None = None) -> None:
+    """What opens the Research page after the merge: the triage (written
+    after the merge it reads) and the investigator's suggested marks for the
+    current leads, clues and triage. ``marks`` overrides the suggestions."""
+    leads = json.loads((case / "data/leads.json").read_text(encoding="utf-8"))
+    write_json(case / "data/research-triage.json", {"generated_at": leads["generated_at"], "leads": []})
+    clues = json.loads((case / "data/clues.json").read_text(encoding="utf-8"))
+    methodology = json.loads((case / "data/methodology.json").read_text(encoding="utf-8"))
+    write_json(case / "data/research-suggestions.json", {
+        "schema_version": "1.0",
+        "generated_at": "2026-10-23T09:40:00Z",
+        "inputs": {relative: sha(case / relative) for relative in
+                   ("data/leads.json", "data/clues.json", "data/research-triage.json")},
+        "clues": [{"clue_id": clue["clue_id"], "mark": (marks or {}).get(clue["clue_id"], "pursue"),
+                   "reason": "Worth a filing check."} for clue in clues["clues"]],
+        "directions": [{"direction_id": d["direction_id"], "mark": "keep", "reason": "Still open."}
+                       for d in methodology["investigation_plan"] if d.get("direction_id")],
+    })
+
+
+def amend(case: Path, change) -> None:
+    """AMENDMENT mode's output: the current methodology with ``change`` applied."""
+    methodology = json.loads((case / "data/methodology.json").read_text(encoding="utf-8"))
+    change(methodology)
+    write_json(case / "data/methodology-amendment.json", methodology)
+
+
+def cover_directions(case: Path) -> None:
+    """D10: the investigation names a finding or an explicit gap for every direction."""
+    path = case / "data/findings.json"
+    findings = json.loads(path.read_text(encoding="utf-8"))
+    methodology = json.loads((case / "data/methodology.json").read_text(encoding="utf-8"))
+    findings["research_gaps"] = [
+        {"ref": f"direction:{d['direction_id']}", "reason": "The fixture has no source for it."}
+        for d in methodology["investigation_plan"] if d.get("direction_id")
+    ]
+    write_json(path, findings)
 
 
 def research_methodology() -> dict:
@@ -74,11 +118,16 @@ class ResearchPhase(unittest.TestCase):
         case = case or self.case
         write_json(case / "data/leads.json", json.loads(LEADS_SAMPLE.read_text(encoding="utf-8")))
         write_json(case / "data/clues.json", json.loads(CLUES_SAMPLE.read_text(encoding="utf-8")))
+        prepare_research_gate(case)
 
     def through_research(self, case: Path | None = None) -> None:
         self.seam("approve", "methodology", *APPROVER, case=case)
         self.write_research_outputs(case)
         self.seam("approve", "research", *APPROVER, case=case)
+        # The approval's marks change nothing here: the amendment is the
+        # approved methodology itself, which D8 accepts.
+        amend(case or self.case, lambda methodology: None)
+        self.seam("record-amendment", case=case)
 
     def test_research_sits_between_methodology_approval_and_investigation(self) -> None:
         self.assertEqual(self.status()["phase"], "methodology_approval")
@@ -92,11 +141,31 @@ class ResearchPhase(unittest.TestCase):
         # A Research approval before the merged outputs exist is refused.
         self.seam("approve", "research", *APPROVER, expect=3)
 
-        self.write_research_outputs()
+        # After the merge, the triage and then the suggested marks come
+        # before the page opens.
+        write_json(self.case / "data/leads.json", json.loads(LEADS_SAMPLE.read_text(encoding="utf-8")))
+        write_json(self.case / "data/clues.json", json.loads(CLUES_SAMPLE.read_text(encoding="utf-8")))
+        steps = []
+        for _ in range(2):
+            current = self.status()
+            steps.append((current["phase"], current["research"]["resume_at"], current["missing"]))
+            if current["research"]["resume_at"] == "triage":
+                write_json(self.case / "data/research-triage.json", {"generated_at": "2026-10-23T09:30:00Z"})
+        self.assertEqual(steps, [
+            ("research", "triage", ["data/research-triage.json"]),
+            ("research", "suggestions", ["data/research-suggestions.json"]),
+        ])
+        self.seam("approve", "research", *APPROVER, expect=3)
+        prepare_research_gate(self.case)
         gate = self.status()
         self.assertEqual((gate["phase"], gate["owner"]), ("research_approval", "phase-research"))
         self.assertEqual(gate["missing"], ["Research gate approval"])
         self.seam("approve", "research", *APPROVER)
+        amending = self.status()
+        self.assertEqual((amending["phase"], amending["owner"], amending["research"]["resume_at"]),
+                         ("research", "phase-research", "amendment"))
+        amend(self.case, lambda methodology: None)
+        self.seam("record-amendment")
         self.assertEqual(self.status()["phase"], "investigation")
 
         CONFORMANCE.investigation_outputs(self.case)
@@ -109,6 +178,11 @@ class ResearchPhase(unittest.TestCase):
         leads = json.loads((self.case / "data/leads.json").read_text(encoding="utf-8"))
         leads["leads"][0]["lead"]["summary"] = "A different summary."
         write_json(self.case / "data/leads.json", leads)
+        # The suggested marks were written for the old leads: they are
+        # written again before the page reopens.
+        stale = self.status()
+        self.assertEqual((stale["phase"], stale["research"]["resume_at"]), ("research", "suggestions"))
+        prepare_research_gate(self.case)
         self.assertEqual(self.status()["phase"], "research_approval")
 
     def test_receipt_binds_the_clues_and_the_saved_review(self) -> None:
@@ -127,6 +201,7 @@ class ResearchPhase(unittest.TestCase):
         clues = json.loads((self.case / "data/clues.json").read_text(encoding="utf-8"))
         clues["clues"] = []
         write_json(self.case / "data/clues.json", clues)
+        prepare_research_gate(self.case)
         self.assertEqual(self.status()["phase"], "research_approval")
 
     def test_a_hand_written_research_approval_does_not_advance(self) -> None:
@@ -148,6 +223,9 @@ class ResearchPhase(unittest.TestCase):
         self.assertEqual((view["pending_gate"], view["decisions"]), ("research", ["approved"]))
         nonce = json.loads(self.seam("issue-review-nonce", "research").stdout)["nonce"]
         self.seam("approve", "research", *APPROVER, "--nonce", nonce, "--digest", view["digest"])
+        self.assertEqual(self.status()["research"]["resume_at"], "amendment")
+        amend(self.case, lambda methodology: None)
+        self.seam("record-amendment")
         self.assertEqual(self.status()["phase"], "investigation")
         receipt = json.loads(self.seam("review-view", "research").stdout)["receipt"]
         self.assertEqual((receipt["decision"], receipt["channel"]), ("approved", "page"))

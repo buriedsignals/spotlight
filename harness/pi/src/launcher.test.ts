@@ -598,10 +598,18 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 	assert.match(brief, /Which shareholders does the 2025 annual return name\?/);
 	assert.ok(!JSON.stringify(swarm.requests[0]).includes('CASE-SENTINEL'));
 	assert.ok(orchestratorModel.requests.every((request) => !toolNames(request).some((name) => /swarm|research/.test(name))), 'the orchestrator has no swarm tool');
-	const resolution = lastResolution(chat) as { phase: string; research_round: { ran: string[]; completed: string[]; merge: { ok: boolean } } };
-	// Every topic ended, so the harness merged the lanes and the case waits at the Research gate.
+	const resolution = lastResolution(chat) as {
+		phase: string;
+		research: { resume_at: string };
+		research_round: { ran: string[]; completed: string[]; merge: { ok: boolean }; triage: { ok: boolean } };
+	};
+	// Every topic ended, so the harness merged the lanes and triaged the
+	// leads; the case waits for the investigator's suggested marks, which
+	// come before the Research page opens.
 	assert.equal(resolution.research_round.merge.ok, true);
-	assert.equal(resolution.phase, 'research_approval');
+	assert.equal(resolution.research_round.triage.ok, true, JSON.stringify(resolution.research_round.triage));
+	await readFile(join(caseDir, 'data/research-triage.json'));
+	assert.deepEqual([resolution.phase, resolution.research.resume_at], ['research', 'suggestions']);
 	assert.deepEqual(resolution.research_round.ran, ['ownership-registries']);
 	assert.deepEqual(resolution.research_round.completed, ['ownership-registries']);
 	const lane = JSON.parse(await readFile(join(caseDir, 'research/swarm/ownership-registries/lane.json'), 'utf8'));

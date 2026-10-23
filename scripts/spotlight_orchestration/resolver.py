@@ -6,9 +6,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .contract import METHODOLOGY_INPUTS, RESEARCH_OUTPUTS, STATUS_VERSION, OrchestrationError
+from .contract import METHODOLOGY_INPUTS, RESEARCH_ROUND, STATUS_VERSION, SUMMARY_OUTPUTS, OrchestrationError
+from . import research
 from .dependencies import (
-    approval_matches,
     current_hashes,
     digest_receipt_matches,
     investigation_gate_approval_matches,
@@ -17,6 +17,7 @@ from .dependencies import (
     provenance_matches,
     review_is_fresh,
     rework_pending,
+    sha256,
 )
 from .review import decision_backed, effective_ledger
 from .storage import case_path, read_data_bytes
@@ -70,31 +71,12 @@ def research_plan(case: Path) -> dict[str, Any] | None:
     return plan
 
 
-def research_status(
-    case: Path, state: dict[str, Any], backed: Any
-) -> dict[str, Any] | None:
-    """Research and its gate, or None once the Research approval covers the
-    current leads, clues and saved review."""
-    missing = [relative for relative in RESEARCH_OUTPUTS if not case_path(case, relative).is_file()]
-    if missing:
-        value: dict[str, Any] = {"status": "active", "next_phase": "research", "missing": missing}
-        open_research = state.get("open_research")
-        if isinstance(open_research, dict):
-            value["open_research"] = {"kind": open_research.get("kind"), "gap": open_research.get("gap")}
-        return value
-    approval = state["approvals"].get("research")
-    if approval_matches(approval, current_hashes(case, RESEARCH_OUTPUTS)) and backed(
-        "research", approval
-    ):
-        return None
-    return {"next_phase": "research_approval"}
-
-
 def investigation_status(
     status: dict[str, Any],
     missing: list[str],
     follow_up: object = None,
     open_cycle: object = None,
+    checks: list[str] | None = None,
 ) -> dict[str, Any]:
     value = {
         **status,
@@ -102,11 +84,34 @@ def investigation_status(
         "next_phase": "investigation",
         "missing": missing,
     }
+    if checks:
+        # Readiness checks that keep the Investigation gate closed: the
+        # fact-check validator and, for a researched case, D10.
+        value["checks"] = checks
     if isinstance(follow_up, dict):
         value["follow_up"] = {"instructions": follow_up["instructions"]}
     if isinstance(open_cycle, dict):
         value["open_cycle"] = {"kind": open_cycle.get("kind"), "gap": open_cycle.get("gap")}
     return value
+
+
+def stale_summaries(case: Path, *records: object) -> list[str]:
+    """Summaries a reopened investigation (a follow-up or a recorded cycle)
+    left as they were: the gate owner regenerates them before the gate is
+    offered again. Records written before reopenings carried summary hashes
+    are not checked."""
+    stale: list[str] = []
+    for record in records:
+        snapshot = record.get("summary_sha256") if isinstance(record, dict) else None
+        if not isinstance(snapshot, dict):
+            continue
+        for relative in SUMMARY_OUTPUTS:
+            before = snapshot.get(relative)
+            path = case_path(case, relative)
+            item = f"{relative} regenerated after the reopened investigation"
+            if isinstance(before, str) and path.is_file() and sha256(path) == before and item not in stale:
+                stale.append(item)
+    return stale
 
 
 def status_for(
@@ -125,17 +130,28 @@ def status_for(
     def backed(gate: str, receipt: object, *, require_bound: bool = False) -> bool:
         return decision_backed(case, gate, receipt, ledger, require_bound=require_bound)
 
-    methodology_approval = state["approvals"].get("methodology")
-    if not approval_matches(methodology_approval, methodology_hashes) or not backed(
-        "methodology", methodology_approval
-    ):
+    # The approved methodology, or an approved amendment of it: accepting
+    # an amendment keeps the attempts (only a new Methodology approval
+    # clears them).
+    if not research.methodology_accepted(state, methodology_hashes, ledger, backed):
         return {**status, "next_phase": "methodology_approval"}
-    if "blocked" in state:
+    plan = research_plan(case)
+    stall = research.stall_due(state, plan)
+    if "blocked" in state and stall is None:
         return {**status, "status": "blocked", "next_phase": "blocked", "blocked": state["blocked"]}
-    if research_plan(case) is not None:
-        research = research_status(case, state, backed)
-        if research is not None:
-            return {**status, **research}
+    if stall is not None:
+        # The cycle cap is spent: a targeted research round, not a stop.
+        return {
+            **status,
+            "status": "active",
+            "next_phase": "research",
+            "missing": [RESEARCH_ROUND],
+            "research": stall,
+        }
+    if plan is not None:
+        steps = research.research_steps(case, state, plan, ledger, backed)
+        if steps is not None:
+            return {**status, **steps}
 
     dependencies = investigation_gate_dependencies(case)
     dependency_digest = str(dependencies["dependency_digest"])
@@ -153,16 +169,22 @@ def status_for(
     pending = rework_pending(case, open_cycle, dependency_digest)
     if pending:
         return investigation_status(status, pending, open_cycle=open_cycle)
-    if dependencies["investigation_gate_missing"]:
-        return {
-            **status,
-            "next_phase": "investigation_gate_approval",
-            "missing": list(dependencies["investigation_gate_missing"]),
-        }
     gate_approval = state["approvals"].get("investigation_gate")
     if not investigation_gate_approval_matches(
         gate_approval, dependency_digest
     ) or not backed("investigation_gate", gate_approval):
+        # The gate is never offered while the fact-check validator fails, or,
+        # for a researched case, while a direction or pursued clue has
+        # neither a finding nor an explicit gap (D10).
+        checks = research.fact_check_problems(case)
+        if plan is not None:
+            checks += research.d10_problems(case)
+        if checks:
+            return investigation_status(status, checks, open_cycle=open_cycle, checks=checks)
+        missing = list(dependencies["investigation_gate_missing"])
+        missing += [item for item in stale_summaries(case, follow_up, open_cycle) if item not in missing]
+        if missing:
+            return {**status, "next_phase": "investigation_gate_approval", "missing": missing}
         return {**status, "next_phase": "investigation_gate_approval"}
     finalization = state.get("investigation_gate_finalization")
     if not digest_receipt_matches(finalization, dependency_digest) or not outputs_match(
@@ -282,6 +304,7 @@ def normalized_resolution(case: Path, state: dict[str, Any]) -> dict[str, Any]:
         or status.get("follow_up")
         or status.get("open_cycle")
         or status.get("open_research")
+        or status.get("research")
         or {}
     )
     owner = _PHASE_OWNERS[phase]

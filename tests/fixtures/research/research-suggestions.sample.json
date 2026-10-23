@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-10-23T10:00:00Z",
+  "inputs": {
+    "data/leads.json": "0000000000000000000000000000000000000000000000000000000000000000",
+    "data/clues.json": "1111111111111111111111111111111111111111111111111111111111111111",
+    "data/research-triage.json": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "clues": [
+    {
+      "clue_id": "clue-1",
+      "mark": "pursue",
+      "reason": "Two registries name the same new director; worth a filing check."
+    }
+  ],
+  "directions": [
+    {
+      "direction_id": "ownership",
+      "mark": "keep",
+      "reason": "Leads cover it but the shareholder list is still unconfirmed."
+    },
+    {
+      "direction_id": "funding",
+      "mark": "add",
+      "reason": "A grant lead points to an unplanned funder.",
+      "direction": "Who funds Northwind Holdings?",
+      "questions": [
+        "Which grants did it receive in 2025?"
+      ]
+    }
+  ]
+}

@@ -843,7 +843,8 @@ export type RoundOptions = {
 };
 
 export type MergeOutcome = { ok: true; report: unknown } | { ok: false; error: string };
-export type RoundSummary = RoundRecord & { case_spent_usd: number; completed: string[]; failed: LeftOut[]; nothing_to_run: boolean; merge?: MergeOutcome };
+export type TriageOutcome = { ok: true; message: string } | { ok: false; error: string };
+export type RoundSummary = RoundRecord & { case_spent_usd: number; completed: string[]; failed: LeftOut[]; nothing_to_run: boolean; merge?: MergeOutcome; triage?: TriageOutcome };
 
 // A topic that ends without running (left out by the budget or the opt-in, or
 // refused) still gets its lane.json, so the merge sees every approved topic
@@ -887,6 +888,21 @@ async function runMerge(options: RoundOptions, round: number): Promise<MergeOutc
 	} catch {
 		return { ok: true, report: [] };
 	}
+}
+
+// Then the triage of the merged leads (scripts/research-triage.py), so
+// data/research-triage.json exists before the Research page opens. Its
+// backend comes from the install config; it never blocks on a model.
+async function runTriage(options: RoundOptions): Promise<TriageOutcome> {
+	const env = programEnv(options.env);
+	if (options.config.spotlightConfig) env.SPOTLIGHT_CONFIG = options.config.spotlightConfig;
+	const result = await runFixed(options.config.python, [resolve(CHECKOUT_ROOT, 'scripts/research-triage.py'), options.caseDir], {
+		env,
+		cwd: CHECKOUT_ROOT,
+		timeoutMs: 600_000,
+	});
+	if (result.code !== 0) return { ok: false, error: (result.stderr || result.stdout).trim().slice(-2000) };
+	return { ok: true, message: result.stdout.trim().slice(-500) };
 }
 
 const BACKING = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT', 'SPOTLIGHT_ANONYMIZE_FETCH', 'TOR_SOCKS', 'SCRAPE_PROVIDER'];
@@ -1084,6 +1100,8 @@ export async function runResearchRound(options: RoundOptions): Promise<RoundSumm
 	if (providerStop) return { ...stop({ code: providerStop.code, message: providerStop.message }), failed };
 	record.finished_at = now();
 	writeLedger(caseDir, ledger);
-	// Every approved topic has ended: merge the lanes and derive the clues.
-	return summary({ failed, nothing_to_run: nothingToRun, merge: await runMerge(options, record.round) });
+	// Every approved topic has ended: merge the lanes, derive the clues, and
+	// triage the merged leads.
+	const merge = await runMerge(options, record.round);
+	return summary({ failed, nothing_to_run: nothingToRun, merge, ...(merge.ok ? { triage: await runTriage(options) } : {}) });
 }

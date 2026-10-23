@@ -16,12 +16,14 @@ __all__ = [
     "decide_ingest",
     "decide_report",
     "issue_review_nonce",
+    "record_amendment",
     "record_attempt",
     "request_follow_up",
     "resolve",
     "review_edit",
     "review_view",
     "seal_investigation_gate",
+    "start_research_round",
 ]
 
 
@@ -81,6 +83,26 @@ def record_attempt(
         kind,
         gap,
         authorized_cases_root=authorized_cases_root,
+    )
+
+
+def start_research_round(
+    case_dir: str | Path, *, authorized_cases_root: str | Path | None = None
+) -> None:
+    """Append a stalled investigation's proposed round (data/research-round.json)
+    to the research plan after D1; the Research page approves it with its leads."""
+    _transition(
+        case_dir, transitions.start_research_round, authorized_cases_root=authorized_cases_root
+    )
+
+
+def record_amendment(
+    case_dir: str | Path, *, authorized_cases_root: str | Path | None = None
+) -> None:
+    """Check AMENDMENT mode's data/methodology-amendment.json against the
+    member's Research marks (D8); apply and bind it, or send it back."""
+    _transition(
+        case_dir, transitions.record_amendment, authorized_cases_root=authorized_cases_root
     )
 
 
