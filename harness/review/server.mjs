@@ -406,9 +406,9 @@ export async function startReviewServer({
   async function reopen() {
     if (!active) throw Object.assign(new Error("the review server has closed"), { code: "closed" });
     const pending = pendingGate(await bridge.status());
-    if (!pending && view !== "wiki")
-      throw Object.assign(new Error("no review is pending for this case"), { code: "no-pending-gate" });
-    if (pending && pending !== gate) {
+    // Only a gate is reopened: the Wiki changes opener never reopens a page.
+    if (!pending) throw Object.assign(new Error("no review is pending for this case"), { code: "no-pending-gate" });
+    if (pending !== gate) {
       gate = pending;
       pageNonce = "";
     }

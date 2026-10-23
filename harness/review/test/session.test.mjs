@@ -256,6 +256,20 @@ test("open_spotlight_wiki_changes leaves another case's open review alone", asyn
   assert.equal((await api(origin, cookie)("/api/view")).status, 200);
 });
 
+test("open_spotlight_review leaves a Wiki-changes-only page alone when no gate is pending", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  approveMethodology(caseDir);
+  const fake = fakeBsig(root, { changes: [change("c1", "a")] });
+  const { sessions, record } = manager(t, root, { env: fake.env });
+  assert.equal((await createWikiChangesOpener({ sessions, env: fake.env })({ caseDir })).status, "opened");
+  const { origin, cookie } = await viewThrough(openedUrls(record).at(-1));
+
+  assert.deepEqual(await createReviewOpener({ sessions })({ caseDir }), { status: "no-pending-gate" });
+  assert.equal(openedUrls(record).length, 1);
+  assert.equal((await api(origin, cookie)("/api/view")).status, 200);
+});
+
 test("the stdio MCP server answers initialize and lists its tools", async () => {
   const child = spawn(process.execPath, [fileURLToPath(new URL("../mcp.mjs", import.meta.url))], {
     stdio: ["pipe", "pipe", "ignore"],
