@@ -42,7 +42,7 @@
       "claim_links": [
         {
           "finding_id": "F2",
-          "claim_text": "The registered agent Acme Trust Services provides incorporation services for at least 43 other companies sharing the same Tortola address.",
+          "claim_text": "The registered agent Acme Trust Services provides incorporation services for at least 43 other companies sharing the same Tortola address, 12 of which are connected to a single ultimate beneficial owner.",
           "support_type": "indirect"
         }
       ],
@@ -53,6 +53,7 @@
         "returned_artifact": "cases/sample-investigation/research/registry-acme-trust-services.html",
         "missing": "Primary UBO disclosure is still unavailable.",
         "fallback_required": true,
+        "fallback_outcome": "succeeded",
         "fallback_reason": "Firecrawl could not render the registry's document table; Browser Harness captured the rendered page and screenshot.",
         "confidence_effect": "cap_medium"
       },

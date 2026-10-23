@@ -67,7 +67,7 @@
           "evidence_for": { "type": "array", "items": { "$ref": "#/definitions/evidence_item" } },
           "evidence_against": { "type": "array", "items": { "$ref": "#/definitions/evidence_item" } },
           "sources": { "type": "array", "items": { "type": "string" } },
-          "notes": { "type": "string" }
+          "notes": { "type": "string", "description": "Internal working notes for reviewers. Never rendered in the public report; reader-facing reasoning goes in grounding_assessment.assessment." }
         },
         "allOf": [
           {

@@ -12,6 +12,10 @@ STATUS_VERSION = "spotlight-orchestration-status/v2"
 DEPENDENCY_STATUS_VERSION = "spotlight-investigation-gate-dependencies/v2"
 METHODOLOGY_INPUTS = ("brief-directions.txt", "data/methodology.json")
 INVESTIGATION_GATE_FINALIZATION_OUTPUTS = ("data/provenance-manifest.json", "review.html")
+# What a reopened investigation must refresh before the gate is offered again:
+# the investigator's outputs, then a fact-check of them.
+INVESTIGATOR_OUTPUTS = ("data/findings.json", "data/evidence-bundle.json")
+FACT_CHECK_OUTPUT = "data/fact-check.json"
 ATTEMPT_LIMITS = {
     "investigation-cycle": 5,
     "fact-check-evidence-repair": 1,

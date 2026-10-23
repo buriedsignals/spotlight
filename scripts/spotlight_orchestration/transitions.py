@@ -20,6 +20,7 @@ from .dependencies import (
     current_hashes,
     investigation_gate_approval_matches,
     require_investigation_gate_digest,
+    rework_snapshot,
     sha256,
     validate_approval,
 )
@@ -100,6 +101,7 @@ def approve(
             state["attempts"].clear()
             state.pop("blocked", None)
             state.pop("follow_up", None)
+            state.pop("open_cycle", None)
             state.pop("investigation_gate_finalization", None)
     else:
         # Bind the activated artifacts this approval covers before computing
@@ -123,6 +125,7 @@ def approve(
                 state["decisions"].clear()
                 state.pop("investigation_gate_finalization", None)
             state.pop("follow_up", None)
+            state.pop("open_cycle", None)
             _publish(case, data_descriptor, state, ledger)
         return
     _publish(case, data_descriptor, state, ledger)
@@ -134,10 +137,17 @@ def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> Non
     if not gap.strip():
         raise OrchestrationError("gap must describe the unresolved gap")
     state = load_state(case, data_descriptor)
-    if status_for(case, state, data_descriptor)["next_phase"] != "investigation":
+    # Cycle outputs exist before readiness is judged, so the resolver may
+    # already offer the gate; an attempt is still recordable until a human
+    # approves it.
+    if status_for(case, state, data_descriptor)["next_phase"] not in {
+        "investigation",
+        "investigation_gate_approval",
+    }:
         raise OrchestrationError("attempts can only be recorded during investigation")
     attempts = state["attempts"]
     attempts[kind] = attempts.get(kind, 0) + 1
+    state["open_cycle"] = {"kind": kind, "gap": gap, **rework_snapshot(case)}
     if attempts[kind] >= ATTEMPT_LIMITS[kind]:
         state["blocked"] = {
             "phase": "investigation",
@@ -163,6 +173,7 @@ def request_follow_up(
     state["follow_up"] = {
         "instructions": instructions,
         "dependency_digest": require_investigation_gate_digest(case),
+        **rework_snapshot(case),
     }
     state["approvals"].pop("investigation_gate", None)
     state.pop("investigation_gate_finalization", None)

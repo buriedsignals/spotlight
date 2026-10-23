@@ -22,6 +22,21 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+FALLBACK_OUTCOMES = {"succeeded", "failed", "not_attempted"}
+
+
+def fallback_outstanding(gate: Any) -> bool:
+    """True when an evidence item's missing-source gate still lacks its source.
+
+    ``fallback_required`` records that the requested source was not returned,
+    so a fallback acquisition was needed; ``fallback_outcome`` records what
+    that fallback produced. Only a fallback that succeeded clears the gate.
+    """
+    if not isinstance(gate, dict) or gate.get("fallback_required") is False:
+        return False
+    return not (gate.get("fallback_required") is True and gate.get("fallback_outcome") == "succeeded")
+
+
 def case_evidence_path(case_dir: Path, value: Any) -> Path | None:
     """Resolve a regular artifact only within this case's research/evidence roots."""
     raw = value.strip() if isinstance(value, str) else ""

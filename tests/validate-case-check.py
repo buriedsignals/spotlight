@@ -437,6 +437,24 @@ def main() -> int:
     check("evidence: claim_link bad support_type", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0]["claim_links"][0].__setitem__("support_type", "loose"))), True)
     check("evidence: gate bad confidence_effect", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0]["missing_source_gate"].__setitem__("confidence_effect", "cap_zero"))), True)
     check("evidence: gate fallback non-bool", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0]["missing_source_gate"].__setitem__("fallback_required", "yes"))), True)
+    check("evidence: gate fallback_outcome outside its enum", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0]["missing_source_gate"].update(fallback_required=True, fallback_outcome="done"))), True)
+
+    # Investigator-owned links between findings and the bundle.
+    linked = mutate(valid_findings(), lambda d: d["findings"][0].__setitem__("evidence_bundle_refs", ["E1"]))
+    check("evidence links: verbatim claim and resolving refs", vc.evidence_bundle_links(linked, valid_evidence_bundle()), False)
+    check("evidence links: unknown finding_id", vc.evidence_bundle_links(linked, mutate(valid_evidence_bundle(), lambda d: d["items"][0]["claim_links"][0].__setitem__("finding_id", "F9"))), True)
+    check("evidence links: dangling evidence_bundle_refs", vc.evidence_bundle_links(mutate(linked, lambda d: d["findings"][0].__setitem__("evidence_bundle_refs", ["E9"])), valid_evidence_bundle()), True)
+    with tempfile.TemporaryDirectory() as tmp:
+        # At the investigator's checkpoint (no fact-check yet) a paraphrased
+        # claim link already fails, so it never reaches the fact-checker.
+        checkpoint = Path(tmp) / "checkpoint"
+        (checkpoint / "data").mkdir(parents=True)
+        (checkpoint / "data" / "findings.json").write_text(json.dumps(linked))
+        (checkpoint / "data" / "evidence-bundle.json").write_text(json.dumps(mutate(
+            valid_evidence_bundle(), lambda d: d["items"][0]["claim_links"][0].__setitem__("claim_text", "Acme paid Doe in 2020."))))
+        out = subprocess.run([sys.executable, str(SCRIPT), str(checkpoint)], capture_output=True, text=True)
+        check("e2e: investigator checkpoint refuses a paraphrased claim link",
+              [] if out.returncode == 1 and "claim verbatim" in out.stderr else [f"rc={out.returncode}: {out.stderr[-300:]}"], False)
 
     # --- source-expression and activation schemas (U1; runtime enforcement is U2) ---
     expressions = valid_source_expressions()

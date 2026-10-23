@@ -319,7 +319,7 @@ Confidence is a function of all four combined.
         }
       ],
       "sources": ["all URLs referenced"],
-      "notes": "any relevant context about the verification"
+      "notes": "internal working notes for reviewers; never shown in the public report"
     }
   ],
   "gaps_for_next_cycle": ["claims that need more evidence", "specific sources to check"]
@@ -345,7 +345,8 @@ Confidence is a function of all four combined.
 - **Never emit a claim without `claim_text`.** If a finding's claim is unfact-checkable because it has no text to verify, do not synthesise placeholder text — leave the claim out of `fact-check.json` and note the issue in `gaps_for_next_cycle`. The orchestrator runs `scripts/validate-case.py` after your output; empty `claim_text` will fail validation and force a re-spawn. Same rule for `verdict`: it must be one of the closed enum values; do not invent new verdicts.
 - **Link technical indicators explicitly.** When a claim assesses an item in `findings.json.technical_indicators[]`, list its ID in `technical_indicator_ids[]` and reproduce its exact, case-sensitive value in `claim_text`. Omit the field for claims that assess no explicit indicator.
 - **Your output goes in `{CASE_DIR}/data/fact-check.json` with the shape declared in `schemas/fact-check.schema.json`.** Top-level must include `project`; if you emit claims they belong under `claims` (a list). Do NOT use alternative containers like `commune_checks`, `claim_checks`, or domain-specific top-level keys — those belong in separate files.
-- **Mark claims that cannot be fact-checked.** Predictions, opinions, or vague statements get the verdict `not_checkable`, with the reason in `notes`, rather than a forced verdict.
+- **Mark claims that cannot be fact-checked.** Predictions, opinions, or vague statements get the verdict `not_checkable`, with the reason in `grounding_assessment.assessment`, rather than a forced verdict.
+- **Keep `notes` internal.** `notes` never reach the public report. Write anything a reader needs in `grounding_assessment.assessment`, and keep pipeline details (validator runs, correction passes, file names, field names) out of it.
 - **Continuing an old case.** When `{CASE_DIR}/data/fact-check.json` already exists at contract `1.0` and the case is not activated, keep its contract and recorded verdicts; do not rewrite them. Every new fact-check file uses contract `1.1`.
 - **Link back to findings.** Use `finding_id` to connect each claim to its source finding.
 - **Identify gaps for follow-up.** The `gaps_for_next_cycle` field feeds back into the investigation loop.

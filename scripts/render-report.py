@@ -112,7 +112,10 @@ def canonical_checks(fact_check: dict[str, Any]) -> list[dict[str, Any]]:
             "claim": text(item.get("claim") or item.get("claim_text")),
             "status": text(item.get("status") or item.get("verdict")).lower() or "unverified",
             "confidence": text(item.get("confidence")).lower() or "low",
-            "assessment": text(item.get("verification_evidence") or item.get("notes") or assessment),
+            # ``notes`` are the fact-checker's internal working notes (pipeline
+            # steps, file names, reuse of the investigator's evidence); the
+            # public report shows only the assessment written for readers.
+            "assessment": text(item.get("verification_evidence") or assessment),
             "grounding": grounding if isinstance(grounding, dict) else {},
             "evidence_for": [entry for entry in evidence_for if isinstance(entry, dict)],
             "evidence_against": [entry for entry in item.get("evidence_against", [])

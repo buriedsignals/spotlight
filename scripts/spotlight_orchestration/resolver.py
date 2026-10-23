@@ -16,6 +16,7 @@ from .dependencies import (
     outputs_match,
     provenance_matches,
     review_is_fresh,
+    rework_pending,
 )
 from .review import decision_backed, effective_ledger
 from .storage import case_path, read_data_bytes
@@ -55,6 +56,7 @@ def investigation_status(
     status: dict[str, Any],
     missing: list[str],
     follow_up: object = None,
+    open_cycle: object = None,
 ) -> dict[str, Any]:
     value = {
         **status,
@@ -64,6 +66,8 @@ def investigation_status(
     }
     if isinstance(follow_up, dict):
         value["follow_up"] = {"instructions": follow_up["instructions"]}
+    if isinstance(open_cycle, dict):
+        value["open_cycle"] = {"kind": open_cycle.get("kind"), "gap": open_cycle.get("gap")}
     return value
 
 
@@ -96,14 +100,17 @@ def status_for(
     follow_up = state.get("follow_up")
     if not dependencies["investigation_ready"]:
         return investigation_status(status, list(dependencies["investigation_missing"]))
-    if (
-        isinstance(follow_up, dict)
-        and digest_receipt_matches(follow_up, dependency_digest)
-        and isinstance(follow_up.get("instructions"), str)
-    ):
-        return investigation_status(
-            status, list(dependencies["investigation_missing"]), follow_up
-        )
+    if isinstance(follow_up, dict) and isinstance(follow_up.get("instructions"), str):
+        pending = rework_pending(case, follow_up, dependency_digest)
+        if pending:
+            return investigation_status(status, pending, follow_up)
+    # A recorded unsuccessful attempt (readiness not met, or a failed
+    # correction) keeps the investigation open until the next cycle has
+    # refreshed the investigator's outputs and the fact-check.
+    open_cycle = state.get("open_cycle")
+    pending = rework_pending(case, open_cycle, dependency_digest)
+    if pending:
+        return investigation_status(status, pending, open_cycle=open_cycle)
     if dependencies["investigation_gate_missing"]:
         return {
             **status,
@@ -227,6 +234,7 @@ def normalized_resolution(case: Path, state: dict[str, Any]) -> dict[str, Any]:
         status.get("investigation_gate")
         or status.get("ingest")
         or status.get("follow_up")
+        or status.get("open_cycle")
         or {}
     )
     return {
