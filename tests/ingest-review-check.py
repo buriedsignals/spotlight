@@ -76,9 +76,9 @@ class SoloIngest(SoloCase):
         nonce = self.nonce(case, "ingest")
         original = (case / "data" / "knowledge-batch.json").read_bytes()
         (case / "data" / "knowledge-batch.json").write_bytes(original.replace(b"Acme paid Doe.", b"Acme paid Doe twice."))
-        self.seam(case, "decide-ingest", "requested", "--nonce", nonce, "--digest", view["digest"], expect=4)
+        self.seam(case, "decide-ingest", "requested", "--nonce", nonce, "--digest", view["digest"], *GATES.DECIDER, expect=4)
         (case / "data" / "knowledge-batch.json").write_bytes(original)
-        self.seam(case, "decide-ingest", "requested", "--nonce", self.nonce(case, "ingest"), "--digest", self.view(case, "ingest")["digest"])
+        self.seam(case, "decide-ingest", "requested", "--nonce", self.nonce(case, "ingest"), "--digest", self.view(case, "ingest")["digest"], *GATES.DECIDER)
         status = json.loads(self.seam(case, "status", "--json").stdout)
         self.assertEqual(status["ingest"]["resume_at"], "ingest")
 
@@ -126,7 +126,7 @@ class SoloIngest(SoloCase):
         self.assertFalse((case / "data" / "knowledge-batch.json").exists())
         view = self.view(case, "ingest")
         self.assertTrue(any("cannot be built" in b and "no source position" in b for b in view["blocking"]), view["blocking"])
-        self.seam(case, "decide-ingest", "declined", "--nonce", self.nonce(case, "ingest"), "--digest", view["digest"])
+        self.seam(case, "decide-ingest", "declined", "--nonce", self.nonce(case, "ingest"), "--digest", view["digest"], *GATES.DECIDER)
 
     def test_the_page_reads_the_install_config_named_by_spotlight_config(self) -> None:
         case = self.build("newsroom", "ingest", "--clean", "--activated")
@@ -148,7 +148,7 @@ class SoloIngest(SoloCase):
 
     def page_decide(self, case: Path, view: dict, expect: int = 0):
         nonce = self.nonce(case, "ingest")
-        return self.seam(case, "decide-ingest", "requested", "--nonce", nonce, "--digest", view["digest"], expect=expect)
+        return self.seam(case, "decide-ingest", "requested", "--nonce", nonce, "--digest", view["digest"], *GATES.DECIDER, expect=expect)
 
 
 if __name__ == "__main__":

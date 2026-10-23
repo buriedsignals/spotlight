@@ -40,6 +40,7 @@ FLAG_ACTIONS = ("amend", "exclude", "investigate_further", "accept_with_reason")
 INGEST_BATCH = "data/knowledge-batch.json"
 INGEST_DRAFT = "data/knowledge-batch-draft.json"
 INGEST_PROPOSAL = "data/knowledge-proposal.json"
+REPORT_DRAFT = "data/report-draft.json"
 MAX_NOTE = 2000
 MAX_REVIEWER = 200
 _POSITIVE_VERDICTS = frozenset({"verified", "partially_verified"})
@@ -131,12 +132,17 @@ def ledger_bytes(ledger: dict[str, Any]) -> bytes:
 def subject_digest(case: Path, gate: str) -> str:
     """What the decision is about: the methodology inputs, or the gate
     dependencies. For ingest it also covers the final knowledge batch, so a
-    requested ingestion binds exactly the batch the page showed (R6)."""
+    requested ingestion binds exactly the batch the page showed (R6). For the
+    report it also covers the draft the page showed, which publishing renders."""
     if gate == "methodology":
         return _canonical_sha(current_hashes(case, METHODOLOGY_INPUTS))
     dependency = str(investigation_gate_dependencies(case)["dependency_digest"])
     if gate == "ingest" and activated_case(case):
         return _canonical_sha({"dependencies": dependency, "batch": _batch_sha256(case)})
+    if gate == "report":
+        draft = case_path(case, REPORT_DRAFT)
+        draft_sha = hashlib.sha256(draft.read_bytes()).hexdigest() if draft.is_file() else None
+        return _canonical_sha({"dependencies": dependency, "draft": draft_sha})
     return dependency
 
 
@@ -519,14 +525,53 @@ def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[
     return content, blocking, items
 
 
+def _items_text(value: object, limit: int = 30) -> list[str]:
+    """The text of a draft's caveats or next steps (objects with ``text``)."""
+    items = value if isinstance(value, list) else []
+    return [_text(item.get("text") if isinstance(item, dict) else item, 2000) for item in items[:limit]]
+
+
+def _report_treatments(draft: dict[str, Any]) -> list[dict[str, Any]]:
+    """Finding treatments in the draft's finding order, then any it leaves out."""
+    raw = draft.get("finding_treatments")
+    treatments = [t for t in raw if isinstance(t, dict)] if isinstance(raw, list) else []
+    order = draft.get("finding_order") if isinstance(draft.get("finding_order"), list) else []
+    rank = {finding_id: index for index, finding_id in enumerate(order) if isinstance(finding_id, str)}
+    treatments.sort(key=lambda t: rank.get(t.get("finding_id"), len(rank)))
+    return [
+        {
+            "finding_id": _text(t.get("finding_id"), 200),
+            "headline": _text(t.get("headline"), 1000),
+            "summary": _text(t.get("summary")),
+            "why_it_matters": _text(t.get("why_it_matters")),
+            "quotes": len(t["quote_selections"]) if isinstance(t.get("quote_selections"), list) else 0,
+        }
+        for t in treatments[:60]
+    ]
+
+
 def _report_content(case: Path) -> dict[str, Any]:
-    draft = _read_case_json(case, "data/report-draft.json")
+    """The draft the member publishes or declines, as text for the page."""
+    draft = _read_case_json(case, REPORT_DRAFT)
     summary = _read_case_json(case, "data/summary.json")
-    return {
+    content: dict[str, Any] = {
         "title": _text(summary.get("title"), 500) if isinstance(summary, dict) else "",
         "draft_ready": isinstance(draft, dict),
         "draft_title": _text(draft.get("title"), 500) if isinstance(draft, dict) else "",
     }
+    if isinstance(draft, dict):
+        diagrams = draft.get("diagrams") if isinstance(draft.get("diagrams"), list) else []
+        content.update({
+            "deck": _text(draft.get("deck")),
+            "treatments": _report_treatments(draft),
+            "diagrams": [
+                {"title": _text(d.get("title"), 500), "caption": _text(d.get("caption"), 2000)}
+                for d in diagrams[:20] if isinstance(d, dict)
+            ],
+            "caveats": _items_text(draft.get("caveats")),
+            "next_steps": _items_text(draft.get("next_steps")),
+        })
+    return content
 
 
 def _ingest_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[str, Any]]]:

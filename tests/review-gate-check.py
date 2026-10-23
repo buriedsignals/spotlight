@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SEAM = ROOT / "scripts" / "spotlight-orchestration.py"
 BUILDER = ROOT / "tests" / "fixtures" / "review_case.py"
 APPROVER = ("--approved-by", "journalist:fixture", "--approved-at", "2026-08-23T12:00:00Z")
+DECIDER = ("--decided-by", "journalist:fixture", "--decided-at", "2026-08-23T12:00:00Z")
 
 
 class CaseFixture(unittest.TestCase):
@@ -172,10 +173,10 @@ class ReviewGate(CaseFixture):
     def test_report_and_ingest_decisions_from_the_page_complete_the_case(self) -> None:
         case = self.build("tail", "report")
         report_digest = self.view(case, "report")["digest"]
-        self.seam(case, "decide-report", "declined", "--nonce", self.nonce(case, "report"), "--digest", report_digest)
+        self.seam(case, "decide-report", "declined", "--nonce", self.nonce(case, "report"), "--digest", report_digest, *DECIDER)
         self.assertEqual(self.phase(case), "ingest")
         nonce = self.nonce(case, "ingest")
-        self.seam(case, "decide-ingest", "requested", "--nonce", nonce, "--digest", self.view(case, "ingest")["digest"])
+        self.seam(case, "decide-ingest", "requested", "--nonce", nonce, "--digest", self.view(case, "ingest")["digest"], *DECIDER)
         self.assertEqual(json.loads(self.seam(case, "status", "--json").stdout)["ingest"]["resume_at"], "ingest")
         marker_path = case / "data/ingestion.json"
         marker = json.loads(marker_path.read_text(encoding="utf-8"))
@@ -187,7 +188,7 @@ class ReviewGate(CaseFixture):
     def test_ingest_marker_cannot_replay_another_decision_binding(self) -> None:
         case = self.build("markerreplay", "ingest")
         self.seam(case, "decide-ingest", "declined", "--nonce=" + self.nonce(case, "ingest"),
-                  "--digest", self.view(case, "ingest")["digest"])
+                  "--digest", self.view(case, "ingest")["digest"], *DECIDER)
         # A state without the ingest decision, and a marker the model wrote
         # claiming a request under the member's spent decline binding.
         state_path = case / "data/orchestration.json"
@@ -201,12 +202,71 @@ class ReviewGate(CaseFixture):
         status = json.loads(self.seam(case, "status", "--json").stdout)
         self.assertEqual(status["ingest"], {"state": "pending", "resume_at": "decision"})
 
+    def test_report_page_shows_the_draft_and_its_digest_binds_it(self) -> None:
+        case = self.build("draft", "report")
+        draft = {
+            "schema_version": "1.0", "title": "Fixture report", "deck": "What the fixture shows.",
+            "framing_finding_ids": ["F1"], "finding_order": ["F1"],
+            "finding_treatments": [{"finding_id": "F1", "headline": "The filing <b>names</b> the payer",
+                                    "summary": "One filing.", "why_it_matters": "It is primary."}],
+            "caveats": [{"text": "Only one filing.", "finding_ids": ["F1"]}],
+            "next_steps": [{"text": "Ask the payer.", "finding_ids": ["F1"]}],
+        }
+        draft_path = case / "data/report-draft.json"
+        draft_path.write_text(json.dumps(draft), encoding="utf-8")
+        view = self.view(case, "report")
+        content = view["content"]
+        self.assertEqual(content["deck"], "What the fixture shows.")
+        self.assertEqual(content["treatments"][0]["headline"], "The filing <b>names</b> the payer")
+        self.assertEqual(content["caveats"], ["Only one filing."])
+        self.assertEqual(content["next_steps"], ["Ask the payer."])
+        # A draft changed after the page loaded is not what the member saw.
+        draft["caveats"].append({"text": "Added later.", "finding_ids": ["F1"]})
+        draft_path.write_text(json.dumps(draft), encoding="utf-8")
+        self.assertNotEqual(self.view(case, "report")["digest"], view["digest"])
+
+    def test_page_report_and_ingest_decisions_record_the_members_name(self) -> None:
+        case = self.build("named", "report")
+        nonce = self.nonce(case, "report")
+        digest = self.view(case, "report")["digest"]
+        refused = self.seam(case, "decide-report", "declined", "--nonce", nonce, "--digest", digest, expect=3)
+        self.assertIn("decided_by", refused.stderr)
+        self.seam(case, "decide-report", "declined", "--nonce", nonce, "--digest", digest,
+                  "--decided-by", "A. Member", "--decided-at", "2026-08-23T12:00:00Z")
+        self.assertEqual(self.view(case, "report")["receipt"]["approved_by"], "A. Member")
+        self.seam(case, "decide-ingest", "declined", "--nonce", self.nonce(case, "ingest"),
+                  "--digest", self.view(case, "ingest")["digest"],
+                  "--decided-by", "B. Member", "--decided-at", "2026-08-23T12:05:00Z")
+        receipt = self.view(case, "ingest")["receipt"]
+        self.assertEqual((receipt["approved_by"], receipt["approved_at"]), ("B. Member", "2026-08-23T12:05:00Z"))
+        self.assertEqual(self.phase(case), "complete")
+
+    def test_page_follow_up_sends_the_case_back_to_investigation(self) -> None:
+        case = self.build("followup", "investigation_gate")
+        view = self.view(case, "investigation_gate")
+        # A follow-up is how the member answers open flags and failures.
+        self.assertTrue(view["blocking"])
+        nonce = self.nonce(case, "investigation_gate")
+        request = ("request-follow-up", "--instructions", "Find a second filing.",
+                   "--decided-by", "A. Member", "--decided-at", "2026-08-23T12:00:00Z")
+        unknown = self.seam(case, *request, "--nonce", "0" * 64, "--digest", view["digest"], expect=3)
+        self.assertIn("not recorded", unknown.stderr)
+        self.seam(case, *request, "--nonce", nonce, "--digest", view["digest"])
+        status = json.loads(self.seam(case, "status", "--json").stdout)
+        self.assertEqual((status["phase"], status["resume"]), ("investigation", {"instructions": "Find a second filing."}))
+        receipt = self.view(case, "investigation_gate")["receipt"]
+        self.assertEqual((receipt["decision"], receipt["approved_by"], receipt["channel"]),
+                         ("follow_up", "A. Member", "page"))
+        # The spent nonce cannot record anything further.
+        self.seam(case, *request, "--nonce", nonce, "--digest", view["digest"], expect=3)
+        self.assertEqual(self.phase(case), "investigation")
+
     def test_a_nonce_for_one_gate_cannot_decide_another(self) -> None:
         case = self.build("crossgate", "report")
         wrong = self.nonce(case, "ingest")
         refused = self.seam(
             case, "decide-report", "declined", "--nonce", wrong,
-            "--digest", self.view(case, "report")["digest"], expect=3,
+            "--digest", self.view(case, "report")["digest"], *DECIDER, expect=3,
         )
         self.assertIn("another gate", refused.stderr)
 

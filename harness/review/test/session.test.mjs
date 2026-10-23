@@ -69,6 +69,10 @@ test("reopening a running page issues a fresh capability and ends the old sessio
   await sessions.openLocally();
   const second = openedUrls(record)[1];
   assert.equal(new URL(second).origin, first.origin);
+  // A tab already on the page loads the reopened link as a new document,
+  // which a change to the fragment alone would not do.
+  const firstUrl = new URL(openedUrls(record)[0]);
+  assert.notEqual(`${new URL(second).pathname}${new URL(second).search}`, `${firstUrl.pathname}${firstUrl.search}`);
   assert.equal((await api(first.origin, first.cookie)("/api/view")).status, 403);
   await viewThrough(second);
 });

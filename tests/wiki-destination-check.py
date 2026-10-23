@@ -27,7 +27,7 @@ class WikiDestination(INGEST.SoloCase):
     def requested(self, name: str) -> Path:
         case = self.prepared(name)
         self.seam(case, "decide-ingest", "requested", "--nonce", self.nonce(case, "ingest"),
-                  "--digest", self.view(case, "ingest")["digest"])
+                  "--digest", self.view(case, "ingest")["digest"], *INGEST.GATES.DECIDER)
         return case
 
     def write(self, case: Path, wiki: Path, *extra: str, path: str = "/usr/bin:/bin") -> subprocess.CompletedProcess:
@@ -121,7 +121,7 @@ class WikiDestination(INGEST.SoloCase):
         rebuilt = subprocess.run([sys.executable, str(ROOT / "scripts" / "build-knowledge-batch.py"), str(case), "--review"],
                                  capture_output=True, text=True)
         self.assertEqual(rebuilt.returncode, 0, rebuilt.stderr)
-        self.seam(case, "decide-ingest", "requested", "--nonce", self.nonce(case, "ingest"), "--digest", self.view(case, "ingest")["digest"])
+        self.seam(case, "decide-ingest", "requested", "--nonce", self.nonce(case, "ingest"), "--digest", self.view(case, "ingest")["digest"], *INGEST.GATES.DECIDER)
         wiki = self.wiki()
         outside = Path(tempfile.mkdtemp(dir=self.root))
         (wiki / "spotlight").mkdir()

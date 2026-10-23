@@ -85,16 +85,48 @@ test("report and ingest decisions from the page complete the case", async (t) =>
   let view = (await json("/api/view")).body;
   assert.equal(view.gate, "report");
   assert.equal(view.content.draft_ready, false);
+  const unnamed = await json("/api/decide", { decision: "declined", digest: view.digest });
+  assert.equal(unnamed.status, 422);
+  assert.equal(unnamed.body.code, "reviewer-required");
+  view = (await json("/api/edit", { edit: { kind: "reviewer", value: "A. Reviewer" } })).body;
   view = (await json("/api/decide", { decision: "declined", digest: view.digest })).body;
   assert.equal(view.receipt.decision, "declined");
+  assert.equal(view.receipt.approved_by, "A. Reviewer");
 
   // The same session follows the resolver to the next pending gate.
   view = (await json("/api/view")).body;
   assert.equal(view.gate, "ingest");
   assert.deepEqual(view.content.batch, { state: "empty", records: [] });
+  view = (await json("/api/edit", { edit: { kind: "reviewer", value: "B. Reviewer" } })).body;
   const decided = await json("/api/decide", { decision: "declined", digest: view.digest });
   assert.equal(decided.status, 200);
+  assert.equal(decided.body.receipt.approved_by, "B. Reviewer");
   assert.equal(seamStatus(caseDir).phase, "complete");
+});
+
+test("the Investigation gate page requests a follow-up with a note and the member's name", async (t) => {
+  const root = tempRoot(t);
+  // Blocking failures and an open flag do not prevent a follow-up: it is the answer to them.
+  const caseDir = buildCase(root, "case", "investigation_gate");
+  const { json } = await authed(t, caseDir);
+  let view = (await json("/api/view")).body;
+  assert.ok(view.blocking.length > 0);
+  const unnamed = await json("/api/follow-up", { instructions: "Find a second filing.", digest: view.digest });
+  assert.equal(unnamed.status, 422);
+  assert.equal(unnamed.body.code, "reviewer-required");
+  view = (await json("/api/edit", { edit: { kind: "reviewer", value: "A. Reviewer" } })).body;
+  const empty = await json("/api/follow-up", { instructions: "  ", digest: view.digest });
+  assert.equal(empty.status, 400);
+  assert.equal(seamStatus(caseDir).phase, "investigation_gate_approval");
+
+  const requested = await json("/api/follow-up", { instructions: "Find a second filing.", digest: view.digest });
+  assert.equal(requested.status, 200, JSON.stringify(requested.body));
+  assert.equal(requested.body.receipt.decision, "follow_up");
+  assert.equal(requested.body.receipt.approved_by, "A. Reviewer");
+  assert.equal(requested.body.receipt.channel, "page");
+  const status = seamStatus(caseDir);
+  assert.equal(status.phase, "investigation");
+  assert.deepEqual(status.resume, { instructions: "Find a second filing." });
 });
 
 test("a page nonce that starts with a dash is redeemed", async (t) => {

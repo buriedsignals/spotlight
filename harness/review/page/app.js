@@ -12,12 +12,25 @@ let ended = false;
 // Disabling a focused control while a request runs drops focus to the body,
 // so the control's id is kept to restore focus after the re-render.
 let focusAfterRender = "";
+// The name as typed, before it is saved; Approve follows it as the member types.
+let reviewerDraft = null;
+let reviewerTimer = 0;
+let reviewerSaving = null;
+// The follow-up note is sent with the request, not saved as a review edit.
+let followUpNote = "";
 
 const DECISION_LABELS = {
   methodology: { approved: "Approve the methodology" },
   investigation_gate: { approved: "Approve the investigation" },
   report: { completed: "Publish the drafted report", declined: "Decline the report" },
   ingest: { requested: "Ingest into the knowledge base", declined: "Do not ingest" },
+};
+const DECISION_NAMES = {
+  approved: "Approved",
+  completed: "Report published",
+  declined: "Declined",
+  requested: "Ingestion requested",
+  follow_up: "Follow-up requested",
 };
 const DISPOSITION_LABELS = { keep: "Keep in the record", set_aside: "Set aside" };
 const FLAG_LABELS = {
@@ -38,7 +51,7 @@ function el(tag, options = {}, ...children) {
     else if (name === "on") for (const [type, fn] of Object.entries(value)) node.addEventListener(type, fn);
     else node.setAttribute(name, value === true ? "" : String(value));
   }
-  for (const child of children.flat()) {
+  for (const child of children.flat(Infinity)) {
     if (child === null || child === undefined || child === false) continue;
     node.append(typeof child === "string" ? document.createTextNode(child) : child);
   }
@@ -55,7 +68,8 @@ function warn(message) {
     alertBox.textContent = "";
     return;
   }
-  alertBox.textContent = message;
+  // The prefix is part of the alert's text, so it is never announced alone.
+  alertBox.replaceChildren(el("strong", { text: "Attention: " }), message);
   alertBox.hidden = false;
 }
 
@@ -274,13 +288,40 @@ function investigationContent(content, items) {
   ];
 }
 
+function treatmentCard(treatment) {
+  return el(
+    "div",
+    { className: "card" },
+    el("h4", { text: treatment.headline || `Finding ${treatment.finding_id}` }),
+    el("p", {}, el("span", { className: "tag", text: `Finding ${treatment.finding_id}` }), treatment.quotes ? el("span", { className: "tag", text: `Quoted passages: ${treatment.quotes}` }) : null),
+    treatment.summary ? el("p", { className: "quote", text: treatment.summary }) : null,
+    treatment.why_it_matters ? el("p", { className: "quote muted", text: `Why it matters: ${treatment.why_it_matters}` }) : null,
+  );
+}
+
+function reportDraft(content) {
+  return [
+    el("h3", { text: content.draft_title || "Untitled draft" }),
+    content.deck ? el("p", { className: "quote", text: content.deck }) : null,
+    el("h3", { text: "Findings, in the order the report presents them" }),
+    content.treatments.length ? content.treatments.map(treatmentCard) : el("p", { className: "muted", text: "The draft treats no findings." }),
+    content.diagrams.length
+      ? [el("h3", { text: "Diagrams" }), list(content.diagrams.map((diagram) => (diagram.caption ? `${diagram.title}: ${diagram.caption}` : diagram.title)), "")]
+      : null,
+    el("h3", { text: "Caveats" }),
+    list(content.caveats, "The draft states no caveats."),
+    el("h3", { text: "Next steps" }),
+    list(content.next_steps, "The draft lists no next steps."),
+  ];
+}
+
 function reportContent(content) {
   return el(
     "section",
     { "aria-labelledby": "report-heading" },
     el("h2", { id: "report-heading", text: content.title || "Public report" }),
     content.draft_ready
-      ? el("p", { text: `A report draft is ready${content.draft_title ? `: ${content.draft_title}` : ""}. Publishing renders it from the draft.` })
+      ? [el("p", { text: "This is the draft that publishing renders. Read it before you decide." }), el("div", { className: "card" }, reportDraft(content))]
       : el("p", { text: "No report draft exists yet. Ask the agent to draft the report first, or decline it." }),
   );
 }
@@ -334,26 +375,30 @@ function decisionBlockers() {
   return "";
 }
 
+function memberName() {
+  return (reviewerDraft ?? view.reviewer).trim();
+}
+
 function reviewerField() {
   return el(
     "div",
     {},
-    el("label", { for: "reviewer", text: "Your name (recorded with the approval)" }),
+    el("label", { for: "reviewer", text: "Your name (recorded with your decision)" }),
     el("input", {
       type: "text",
       id: "reviewer",
       autocomplete: "name",
       maxlength: "200",
-      value: view.reviewer,
+      value: reviewerDraft ?? view.reviewer,
       disabled: readOnly() || busy,
-      on: { change: (event) => edit({ kind: "reviewer", value: event.target.value }) },
+      on: { input: (event) => typeReviewer(event.target.value), change: () => flushReviewer() },
     }),
   );
 }
 
 function reasonFor(blocker, missingDraft, missingName) {
   if (blocker) return blocker;
-  if (missingName) return "Enter your name before approving.";
+  if (missingName) return "Enter your name before deciding.";
   if (missingDraft) return "Publishing needs a report draft. Ask the agent to draft the report, or decline it.";
   return "";
 }
@@ -363,25 +408,16 @@ function reasonLine(blocker, missingName, missingDraft) {
   return reason ? el("p", { id: "decide-reason", text: reason }) : null;
 }
 
-function decisionSection() {
-  const approval = view.gate === "methodology" || view.gate === "investigation_gate";
+function decisionControls() {
   const blocker = decisionBlockers();
-  const counts = view.counts;
-  return el(
-    "section",
-    { "aria-labelledby": "decision-heading" },
-    el("h2", { id: "decision-heading", text: "Decision" }),
-    counts.items
-      ? el("p", { className: "muted", text: `Items: ${counts.items}. As suggested: ${counts.accepted_unchanged}. Changed: ${counts.changed}. Open: ${counts.open_required}.` })
-      : null,
-    approval ? reviewerField() : null,
+  const missingName = !memberName();
+  return [
     el("p", { text: "Digest of the record you are deciding:" }),
     el("code", { className: "digest", id: "digest", text: view.digest }),
-    reasonLine(blocker, approval && !view.reviewer, view.gate === "report" && !view.content.draft_ready),
+    reasonLine(blocker, missingName, view.gate === "report" && !view.content.draft_ready),
     view.decisions.map((decision) => {
       const label = DECISION_LABELS[view.gate][decision];
       const missingDraft = view.gate === "report" && decision === "completed" && !view.content.draft_ready;
-      const missingName = approval && !view.reviewer;
       // Declining ingestion needs no finished batch, as the backend allows.
       const blocked = Boolean(blocker) && !(view.gate === "ingest" && decision === "declined");
       const unavailable = readOnly() || busy || blocked || missingDraft || missingName;
@@ -397,7 +433,72 @@ function decisionSection() {
         on: { click: () => (unavailable ? warn(reasonFor(blocker, missingDraft, missingName)) : decide(decision)) },
       });
     }),
+  ];
+}
+
+function followUpControls() {
+  const reason = !memberName() ? "Enter your name before deciding." : !followUpNote.trim() ? "Describe the follow-up you want first." : "";
+  const unavailable = readOnly() || busy || Boolean(reason);
+  return [
+    reason ? el("p", { id: "follow-up-reason", text: reason }) : null,
+    el("button", {
+      type: "button",
+      id: "request-follow-up",
+      className: "secondary",
+      "aria-disabled": unavailable ? "true" : "false",
+      "aria-describedby": unavailable && reason ? "follow-up-reason" : undefined,
+      text: "Request follow-up",
+      on: { click: () => (unavailable ? warn(reason) : requestFollowUp()) },
+    }),
+  ];
+}
+
+function followUpSection() {
+  return el(
+    "div",
+    { className: "card" },
+    el("h3", { text: "Or send the case back to Investigation" }),
+    el("p", { className: "muted", text: "The agent investigates again with your note, then brings the case back to this gate." }),
+    el("label", { for: "follow-up-note", text: "What should the follow-up establish? (required)" }),
+    el("textarea", {
+      id: "follow-up-note",
+      maxlength: "4000",
+      value: followUpNote,
+      disabled: readOnly() || busy,
+      on: {
+        input: (event) => {
+          followUpNote = event.target.value;
+          refreshControls();
+        },
+      },
+    }),
+    el("div", { id: "follow-up-controls" }, followUpControls()),
   );
+}
+
+function decisionSection() {
+  const counts = view.counts;
+  return el(
+    "section",
+    { "aria-labelledby": "decision-heading" },
+    el("h2", { id: "decision-heading", text: "Decision" }),
+    counts.items
+      ? el("p", { className: "muted", text: `Items: ${counts.items}. As suggested: ${counts.accepted_unchanged}. Changed: ${counts.changed}. Open: ${counts.open_required}.` })
+      : null,
+    reviewerField(),
+    el("div", { id: "decision-controls" }, decisionControls()),
+    view.gate === "investigation_gate" ? followUpSection() : null,
+  );
+}
+
+// Re-renders only the buttons and reasons, so a field being typed in keeps
+// its caret and its text.
+function refreshControls() {
+  if (readOnly()) return;
+  const focused = document.activeElement?.id;
+  document.getElementById("decision-controls")?.replaceChildren(...decisionControls().flat().filter(Boolean));
+  document.getElementById("follow-up-controls")?.replaceChildren(...followUpControls().filter(Boolean));
+  if (focused && document.activeElement?.id !== focused) document.getElementById(focused)?.focus();
 }
 
 function receiptSection() {
@@ -406,7 +507,7 @@ function receiptSection() {
     return el("section", { "aria-labelledby": "receipt-heading" }, el("h2", { id: "receipt-heading", text: "Read-only" }), el("p", { text: "This gate is not waiting for a decision now. Return to the agent." }));
   }
   const rows = [
-    ["Decision", receipt.decision],
+    ["Decision", DECISION_NAMES[receipt.decision] ?? receipt.decision],
     ["By", receipt.approved_by],
     ["At", receipt.approved_at],
     ["Digest", receipt.review_digest],
@@ -461,7 +562,44 @@ async function load() {
   say(readOnly() ? "This gate is decided." : "Review loaded. Your edits are saved as you make them.");
 }
 
+function typeReviewer(value) {
+  reviewerDraft = value;
+  refreshControls();
+  clearTimeout(reviewerTimer);
+  reviewerTimer = setTimeout(() => flushReviewer(), 400);
+}
+
+// Saves the typed name. It does not re-render the field, so typing goes on
+// while it saves; every decision waits for it first.
+async function flushReviewer() {
+  clearTimeout(reviewerTimer);
+  while (reviewerSaving) await reviewerSaving;
+  if (reviewerDraft === null || readOnly() || reviewerDraft.trim() === view.reviewer) return;
+  const value = reviewerDraft;
+  reviewerSaving = (async () => {
+    const { status, data } = await post("/api/edit", { edit: { kind: "reviewer", value } });
+    if (status === 200) {
+      view = data;
+      say("Saved.");
+    } else if (data.view) {
+      view = data.view;
+      warn(data.message);
+    } else if (status !== 403) {
+      warn(data.message || "Your name was not saved.");
+    }
+  })();
+  try {
+    await reviewerSaving;
+  } finally {
+    reviewerSaving = null;
+  }
+  if (readOnly()) render(view);
+  else refreshControls();
+}
+
 async function edit(change) {
+  if (busy || readOnly()) return;
+  await flushReviewer();
   if (busy || readOnly()) return;
   warn("");
   setBusy(true);
@@ -485,6 +623,8 @@ async function edit(change) {
 
 async function decide(decision) {
   if (busy || readOnly()) return;
+  await flushReviewer();
+  if (busy || readOnly()) return;
   warn("");
   setBusy(true);
   say("Recording the decision…");
@@ -499,6 +639,32 @@ async function decide(decision) {
       say("Reloaded.");
     } else if (status !== 403) {
       warn(data.message || "The decision was refused.");
+      say("Not recorded.");
+    }
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function requestFollowUp() {
+  if (busy || readOnly()) return;
+  await flushReviewer();
+  if (busy || readOnly()) return;
+  warn("");
+  setBusy(true);
+  say("Recording the follow-up request…");
+  try {
+    const { status, data } = await post("/api/follow-up", { instructions: followUpNote, digest: view.digest });
+    if (status === 200) {
+      view = data;
+      followUpNote = "";
+      say("Follow-up requested.");
+    } else if (data.view) {
+      view = data.view;
+      warn(data.message);
+      say("Reloaded.");
+    } else if (status !== 403) {
+      warn(data.message || "The follow-up request was refused.");
       say("Not recorded.");
     }
   } finally {

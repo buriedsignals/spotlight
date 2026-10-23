@@ -88,12 +88,22 @@ def request_follow_up(
     case_dir: str | Path,
     instructions: str,
     *,
+    nonce: str | None = None,
+    digest: str | None = None,
+    decided_by: str | None = None,
+    decided_at: str | None = None,
     authorized_cases_root: str | Path | None = None,
 ) -> None:
+    """Send the case back to Investigation. ``nonce``/``digest`` come from the
+    Investigation gate page, which also names the member."""
     _transition(
         case_dir,
         transitions.request_follow_up,
         instructions,
+        nonce,
+        digest,
+        decided_by,
+        decided_at,
         authorized_cases_root=authorized_cases_root,
     )
 
@@ -114,6 +124,8 @@ def decide_report(
     *,
     nonce: str | None = None,
     digest: str | None = None,
+    decided_by: str | None = None,
+    decided_at: str | None = None,
     authorized_cases_root: str | Path | None = None,
 ) -> None:
     _transition(
@@ -122,6 +134,8 @@ def decide_report(
         decision,
         nonce,
         digest,
+        decided_by,
+        decided_at,
         authorized_cases_root=authorized_cases_root,
     )
 
@@ -132,6 +146,8 @@ def decide_ingest(
     *,
     nonce: str | None = None,
     digest: str | None = None,
+    decided_by: str | None = None,
+    decided_at: str | None = None,
     authorized_cases_root: str | Path | None = None,
 ) -> None:
     _transition(
@@ -140,6 +156,8 @@ def decide_ingest(
         decision,
         nonce,
         digest,
+        decided_by,
+        decided_at,
         authorized_cases_root=authorized_cases_root,
     )
 
@@ -187,14 +205,19 @@ def review_view(
         if gate in {"methodology", "investigation_gate"}
         else state["decisions"].get(gate)
     )
+    if gate == "investigation_gate" and stored is None:
+        # The gate's other outcome: the member sent the case back to Investigation.
+        stored = state.get("follow_up")
     receipt = None
     if pending != gate and review.decision_backed(
         case, gate, stored, review.effective_ledger(case, state), bind_review=False
     ):
+        # Approvals record approved_by; the other decisions decided_by.
+        # Receipts written before names were recorded show no name.
         receipt = {
             "decision": stored.get("decision", "approved"),
-            "approved_by": stored.get("approved_by"),
-            "approved_at": stored.get("approved_at"),
+            "approved_by": stored.get("approved_by", stored.get("decided_by")),
+            "approved_at": stored.get("approved_at", stored.get("decided_at")),
             **{k: stored["review"][k] for k in ("channel", "review_digest", "nonce_sha256")},
         }
     return {**view, "phase": status["phase"], "pending_gate": pending, "receipt": receipt}

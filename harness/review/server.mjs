@@ -9,6 +9,7 @@ import { pendingGate } from "./case-bridge.mjs";
 import { inlineJson, renderShell } from "./shell.mjs";
 
 const BODY_LIMIT = 64 << 10;
+const MAX_FOLLOW_UP = 4000;
 const REQUEST_TIMEOUT_MS = 150_000;
 // A gate review can take a while; the idle limit resets on every page request.
 export const DEFAULT_IDLE_MS = 45 * 60_000;
@@ -98,7 +99,7 @@ export async function startReviewServer({
   now = () => new Date(),
   onLifecycle = () => {},
 } = {}) {
-  if (!bridge || ["status", "view", "edit", "issueNonce", "decide"].some((name) => typeof bridge[name] !== "function"))
+  if (!bridge || ["status", "view", "edit", "issueNonce", "decide", "requestFollowUp"].some((name) => typeof bridge[name] !== "function"))
     throw new Error("the review server requires a case bridge");
   if (host !== "127.0.0.1") throw new Error("the review server binds only 127.0.0.1");
 
@@ -114,6 +115,7 @@ export async function startReviewServer({
   let origin = "";
   let expectedHost = "";
   let pageNonce = "";
+  let opened = 0;
   let inFlight = 0;
   let pendingShutdown = "";
   let idleTimer;
@@ -158,27 +160,60 @@ export async function startReviewServer({
     return { ...view, gate_label: GATE_LABELS[gate] };
   }
 
-  async function decide(body) {
-    const { decision, digest } = exactObject(body, ["decision", "digest"], "decision");
+  // Checks shared by every decision: the gate still waits, the page saw the
+  // current record, and the member's name is recorded.
+  async function decisionPreconditions(digest) {
     const view = await bridge.view(gate);
     if (view.pending_gate !== gate)
       return [409, { code: "not-pending", message: "This gate is no longer waiting for a decision.", view: { ...view, gate_label: GATE_LABELS[gate] } }];
     if (typeof digest !== "string" || digest !== view.digest)
       return [409, { code: "digest-changed", message: "The record changed since you loaded it. It has been reloaded: review it and decide again.", view: { ...view, gate_label: GATE_LABELS[gate] } }];
+    if (!view.reviewer)
+      return [422, { code: "reviewer-required", message: "Enter your name before deciding." }];
+    return [0, view];
+  }
+
+  async function decide(body) {
+    const { decision, digest } = exactObject(body, ["decision", "digest"], "decision");
+    const [refusal, view] = await decisionPreconditions(digest);
+    if (refusal) return [refusal, view];
     if (!view.decisions.includes(decision))
       return [400, { code: "invalid-decision", message: "That decision is not offered at this gate." }];
-    const approval = gate === "methodology" || gate === "investigation_gate";
-    if (approval && !view.reviewer)
-      return [422, { code: "reviewer-required", message: "Enter your name before approving." }];
-    try {
-      await bridge.decide({
+    return record((nonce) =>
+      bridge.decide({
         gate,
         decision,
-        nonce: await decisionNonce(),
+        nonce,
         digest,
         approvedBy: view.reviewer,
         approvedAt: now().toISOString(),
-      });
+      }),
+    );
+  }
+
+  async function requestFollowUp(body) {
+    const { instructions, digest } = exactObject(body, ["instructions", "digest"], "follow-up");
+    if (gate !== "investigation_gate")
+      return [400, { code: "invalid-decision", message: "A follow-up is requested at the Investigation gate." }];
+    if (typeof instructions !== "string" || !instructions.trim() || instructions.length > MAX_FOLLOW_UP)
+      return [400, { code: "note-required", message: `Describe the follow-up in at most ${MAX_FOLLOW_UP} characters.` }];
+    const [refusal, view] = await decisionPreconditions(digest);
+    if (refusal) return [refusal, view];
+    return record((nonce) =>
+      bridge.requestFollowUp({
+        instructions,
+        nonce,
+        digest,
+        requestedBy: view.reviewer,
+        requestedAt: now().toISOString(),
+      }),
+    );
+  }
+
+  // Records one decision with the nonce this page holds.
+  async function record(write) {
+    try {
+      await write(await decisionNonce());
     } catch (error) {
       if (error.code === "digest-changed") {
         const fresh = await bridge.view(gate);
@@ -238,6 +273,10 @@ export async function startReviewServer({
         }
         if (url.pathname === "/api/decide") {
           const [status, body] = await decide(await readJson(request));
+          return sendJson(response, status, body);
+        }
+        if (url.pathname === "/api/follow-up") {
+          const [status, body] = await requestFollowUp(await readJson(request));
           return sendJson(response, status, body);
         }
         if (url.pathname === "/api/close") {
@@ -301,7 +340,10 @@ export async function startReviewServer({
     capability = randomToken();
     session = "";
     resetIdle();
-    return `${origin}/#${capability}`;
+    // A fresh query makes a tab already on the page load it as a new
+    // document; a change to the fragment alone would not reload it.
+    opened += 1;
+    return `${origin}/?open=${opened}#${capability}`;
   }
 
   await new Promise((settle, reject) => {

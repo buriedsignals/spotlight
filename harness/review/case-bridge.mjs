@@ -126,9 +126,27 @@ export function createCaseBridge({
       const receipt = [`--nonce=${nonce}`, `--digest=${digest}`];
       const args =
         gate === "methodology" || gate === "investigation_gate"
-          ? ["approve", gate, "--approved-by", approvedBy, "--approved-at", approvedAt, ...receipt]
-          : [gate === "report" ? "decide-report" : "decide-ingest", decision, ...receipt];
+          ? ["approve", gate, `--approved-by=${approvedBy}`, `--approved-at=${approvedAt}`, ...receipt]
+          : [
+              gate === "report" ? "decide-report" : "decide-ingest",
+              decision,
+              `--decided-by=${approvedBy}`,
+              `--decided-at=${approvedAt}`,
+              ...receipt,
+            ];
       const result = await run(args);
+      if (result.code !== 0) throw seamError(result);
+    },
+    // The Investigation gate's other outcome: back to Investigation with the member's note.
+    async requestFollowUp({ instructions, nonce, digest, requestedBy, requestedAt }) {
+      const result = await run([
+        "request-follow-up",
+        `--instructions=${instructions}`,
+        `--decided-by=${requestedBy}`,
+        `--decided-at=${requestedAt}`,
+        `--nonce=${nonce}`,
+        `--digest=${digest}`,
+      ]);
       if (result.code !== 0) throw seamError(result);
     },
   });
