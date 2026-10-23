@@ -1,0 +1,26 @@
+{
+ "status": "proposed",
+ "approved_by": null,
+ "approved_at": null,
+ "bank_version": "bc1631a1b45387dad1134df8446c664624de5d6fb95c2e70d811daec68865e25",
+ "note": "Proposed pass targets. They are the maintainer's decision: approve or change them here, set status to approved with approved_by, and only then run the held-out half. Thresholds are the trial P(yes) cut-offs for the on-trial questions; a passing run freezes them into the acceptance record.",
+ "thresholds": {
+  "c2_new_actor": 0.5,
+  "c3_change": 0.8
+ },
+ "targets": {
+  "lost_leads_max": 0,
+  "research_visible_caught_min": 0.6,
+  "clue_recall_min": 0.8,
+  "on_trial_planted_recall_min": 0.75,
+  "false_clues_per_100_max": 10,
+  "both_order_agreement_min": 0.85,
+  "question_agreement_min": 0.7,
+  "ece_max": 0.15,
+  "fallbacks_max": 0,
+  "cost_per_100_leads_usd_max": 0.25,
+  "latency_ms_p95_max": 10000
+ },
+ "cut_rule": "A question is cut when its agreement with gold is below question_agreement_min, or when it catches no research-visible failure and finds no planted clue that the rules missed. An on-trial question (C2, C3) is kept only when its planted recall meets on_trial_planted_recall_min.",
+ "choose": "Among contenders that meet every target on the held-out half: fewest lost leads, then most research-visible failures caught, then lowest cost per 100 leads. Rules only is the baseline and is never chosen as the backend."
+}

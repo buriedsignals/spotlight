@@ -1,0 +1,1127 @@
+{
+ "record_version": "1.0",
+ "split": "dev",
+ "bank_version": "bc1631a1b45387dad1134df8446c664624de5d6fb95c2e70d811daec68865e25",
+ "targets_sha256": "bb60ccbf4966647005e67ad798f50ce19d2981e786260d816adcfedba983c3ca",
+ "targets_status": "proposed",
+ "trial_thresholds": {
+  "c2_new_actor": 0.5,
+  "c3_change": 0.8
+ },
+ "fixtures": [
+  {
+   "name": "company-a",
+   "synthetic": true,
+   "items": 23
+  },
+  {
+   "name": "case-4df778",
+   "synthetic": false,
+   "items": 10
+  },
+  {
+   "name": "case-52118e",
+   "synthetic": false,
+   "items": 16
+  },
+  {
+   "name": "case-7cd967",
+   "synthetic": false,
+   "items": 4
+  },
+  {
+   "name": "case-88106c",
+   "synthetic": false,
+   "items": 21
+  },
+  {
+   "name": "case-f9f1ba",
+   "synthetic": false,
+   "items": 16
+  }
+ ],
+ "ran_at": "2026-10-23T16:49:23Z",
+ "results": [
+  {
+   "metrics": {
+    "contender": "rules",
+    "leads": 89,
+    "fallbacks_to_rules": 0,
+    "triage_violations": 0,
+    "invalid_leads": 0,
+    "lost_leads": {
+     "lost": 0,
+     "keep_items": 72,
+     "lost_ids": []
+    },
+    "lost_leads_by_fixture": {
+     "company-a": {
+      "lost": 0,
+      "keep_items": 20,
+      "lost_ids": []
+     },
+     "case-4df778": {
+      "lost": 0,
+      "keep_items": 8,
+      "lost_ids": []
+     },
+     "case-52118e": {
+      "lost": 0,
+      "keep_items": 12,
+      "lost_ids": []
+     },
+     "case-7cd967": {
+      "lost": 0,
+      "keep_items": 4,
+      "lost_ids": []
+     },
+     "case-88106c": {
+      "lost": 0,
+      "keep_items": 16,
+      "lost_ids": []
+     },
+     "case-f9f1ba": {
+      "lost": 0,
+      "keep_items": 12,
+      "lost_ids": []
+     }
+    },
+    "research_visible_failures": {
+     "research_visible": 0,
+     "caught": 0,
+     "rate": null,
+     "by_class": {},
+     "unlabelled_failures": 15,
+     "proxy_unlabelled": {
+      "failures": 15,
+      "failures_flagged": 8,
+      "verified": 52,
+      "verified_flagged": 28,
+      "failure_flag_rate": 0.5333,
+      "verified_flag_rate": 0.5385
+     }
+    },
+    "clues": {
+     "planted": 11,
+     "found": 6,
+     "recall": 0.5455,
+     "false_clues": 0,
+     "leads": 23,
+     "false_clues_per_100_leads": 0.0,
+     "by_group": {
+      "new_actor": {
+       "planted": 2,
+       "found": 1
+      },
+      "change_or_absence": {
+       "planted": 4,
+       "found": 1
+      },
+      "conflict": {
+       "planted": 1,
+       "found": 1
+      },
+      "premise": {
+       "planted": 1,
+       "found": 0
+      },
+      "watchlist": {
+       "planted": 1,
+       "found": 1
+      },
+      "timing": {
+       "planted": 1,
+       "found": 1
+      },
+      "shared_identifier": {
+       "planted": 1,
+       "found": 1
+      }
+     },
+     "on_trial": {
+      "c2_new_actor": {
+       "planted": 1,
+       "found": 0
+      },
+      "c3_change": {
+       "planted": 3,
+       "found": 0
+      },
+      "c1_premise": {
+       "planted": 1,
+       "found": 0
+      }
+     },
+     "missed": [
+      "ca-d-c2",
+      "ca-d-c3a",
+      "ca-d-c3b",
+      "ca-d-c1",
+      "ca-d-c3c"
+     ]
+    },
+    "questions": {},
+    "adds_over_rules": {},
+    "cost": {
+     "requests": 0,
+     "failed_requests": 0,
+     "cost_usd": 0.0,
+     "cost_per_100_leads_usd": 0.0,
+     "latency_ms_mean": null,
+     "latency_ms_p95": null,
+     "egress_bytes": 0,
+     "egress_hosts": []
+    }
+   },
+   "targets": {
+    "checks": {
+     "lost_leads_max": {
+      "value": 0,
+      "target": 0,
+      "status": "pass"
+     },
+     "research_visible_caught_min": {
+      "value": null,
+      "target": 0.6,
+      "status": "unmeasured"
+     },
+     "clue_recall_min": {
+      "value": 0.5455,
+      "target": 0.8,
+      "status": "fail"
+     },
+     "false_clues_per_100_max": {
+      "value": 0.0,
+      "target": 10,
+      "status": "pass"
+     },
+     "fallbacks_max": {
+      "value": 0,
+      "target": 0,
+      "status": "pass"
+     },
+     "triage_violations_max": {
+      "value": 0,
+      "target": 0,
+      "status": "pass"
+     },
+     "cost_per_100_leads_usd_max": {
+      "value": 0.0,
+      "target": 0.25,
+      "status": "pass"
+     },
+     "latency_ms_p95_max": {
+      "value": 0,
+      "target": 10000,
+      "status": "pass"
+     }
+    },
+    "verdict": "fail"
+   },
+   "cut": {
+    "cut": [],
+    "undecided": []
+   },
+   "synthetic_detail": [
+    {
+     "item_id": "ca-d01",
+     "page_clues": [
+      "new_actor"
+     ],
+     "rule_clues": [
+      "new_actor"
+     ],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d02",
+     "page_clues": [
+      "new_actor"
+     ],
+     "rule_clues": [
+      "new_actor"
+     ],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d03",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d04",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d05",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d06",
+     "page_clues": [
+      "change_or_absence"
+     ],
+     "rule_clues": [
+      "change_or_absence"
+     ],
+     "disposition": null,
+     "flags": []
+    },
+    {
+     "item_id": "ca-d07",
+     "page_clues": [
+      "conflict"
+     ],
+     "rule_clues": [
+      "conflict"
+     ],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d08",
+     "page_clues": [
+      "conflict"
+     ],
+     "rule_clues": [
+      "conflict"
+     ],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d09",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d10",
+     "page_clues": [
+      "watchlist"
+     ],
+     "rule_clues": [
+      "watchlist"
+     ],
+     "disposition": "flag",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d11",
+     "page_clues": [
+      "timing"
+     ],
+     "rule_clues": [
+      "timing"
+     ],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d12",
+     "page_clues": [
+      "timing"
+     ],
+     "rule_clues": [
+      "timing"
+     ],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d13",
+     "page_clues": [
+      "shared_identifier"
+     ],
+     "rule_clues": [
+      "shared_identifier"
+     ],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d14",
+     "page_clues": [
+      "shared_identifier"
+     ],
+     "rule_clues": [
+      "shared_identifier"
+     ],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d15",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d16",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d17",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d18",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d19",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d20",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "flag",
+     "flags": [
+      "summary_refused"
+     ]
+    },
+    {
+     "item_id": "ca-d21",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d22",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "flag",
+     "flags": [
+      "snippet_only"
+     ]
+    },
+    {
+     "item_id": "ca-d23",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "keep",
+     "flags": []
+    }
+   ]
+  },
+  {
+   "metrics": {
+    "contender": "jev",
+    "leads": 89,
+    "fallbacks_to_rules": 0,
+    "triage_violations": 0,
+    "invalid_leads": 0,
+    "lost_leads": {
+     "lost": 27,
+     "keep_items": 72,
+     "lost_ids": [
+      "ca-d14"
+     ]
+    },
+    "lost_leads_by_fixture": {
+     "company-a": {
+      "lost": 1,
+      "keep_items": 20,
+      "lost_ids": [
+       "ca-d14"
+      ]
+     },
+     "case-4df778": {
+      "lost": 2,
+      "keep_items": 8,
+      "lost_ids": []
+     },
+     "case-52118e": {
+      "lost": 9,
+      "keep_items": 12,
+      "lost_ids": []
+     },
+     "case-7cd967": {
+      "lost": 2,
+      "keep_items": 4,
+      "lost_ids": []
+     },
+     "case-88106c": {
+      "lost": 6,
+      "keep_items": 16,
+      "lost_ids": []
+     },
+     "case-f9f1ba": {
+      "lost": 7,
+      "keep_items": 12,
+      "lost_ids": []
+     }
+    },
+    "research_visible_failures": {
+     "research_visible": 0,
+     "caught": 0,
+     "rate": null,
+     "by_class": {},
+     "unlabelled_failures": 15,
+     "proxy_unlabelled": {
+      "failures": 15,
+      "failures_flagged": 14,
+      "verified": 52,
+      "verified_flagged": 49,
+      "failure_flag_rate": 0.9333,
+      "verified_flag_rate": 0.9423
+     }
+    },
+    "clues": {
+     "planted": 11,
+     "found": 11,
+     "recall": 1.0,
+     "false_clues": 0,
+     "leads": 23,
+     "false_clues_per_100_leads": 0.0,
+     "by_group": {
+      "new_actor": {
+       "planted": 2,
+       "found": 2
+      },
+      "change_or_absence": {
+       "planted": 4,
+       "found": 4
+      },
+      "conflict": {
+       "planted": 1,
+       "found": 1
+      },
+      "premise": {
+       "planted": 1,
+       "found": 1
+      },
+      "watchlist": {
+       "planted": 1,
+       "found": 1
+      },
+      "timing": {
+       "planted": 1,
+       "found": 1
+      },
+      "shared_identifier": {
+       "planted": 1,
+       "found": 1
+      }
+     },
+     "on_trial": {
+      "c2_new_actor": {
+       "planted": 1,
+       "found": 1
+      },
+      "c3_change": {
+       "planted": 3,
+       "found": 3
+      },
+      "c1_premise": {
+       "planted": 1,
+       "found": 1
+      }
+     },
+     "missed": []
+    },
+    "questions": {
+     "q1_identity": {
+      "asked": 89,
+      "both_order_agreement": 0.9213,
+      "gold_items": 20,
+      "agreement_with_gold": 0.7,
+      "ece": 0.1032
+     },
+     "q2_direction": {
+      "asked": 89,
+      "both_order_agreement": 0.8876,
+      "gold_items": 89,
+      "agreement_with_gold": 0.6742,
+      "ece": 0.1106
+     },
+     "q3_source": {
+      "asked": 89,
+      "both_order_agreement": 0.9213,
+      "gold_items": 19,
+      "agreement_with_gold": 0.8947,
+      "ece": 0.0647
+     },
+     "q4_assertion": {
+      "asked": 89,
+      "both_order_agreement": 0.9326,
+      "gold_items": 21,
+      "agreement_with_gold": 0.9048,
+      "ece": 0.1068
+     },
+     "q5_status": {
+      "asked": 89,
+      "both_order_agreement": 0.9438,
+      "gold_items": 17,
+      "agreement_with_gold": 0.7059,
+      "ece": 0.0771
+     },
+     "q6_fidelity": {
+      "asked": 89,
+      "both_order_agreement": 0.9326,
+      "gold_items": 22,
+      "agreement_with_gold": 0.9545,
+      "ece": 0.1452
+     },
+     "c1_premise": {
+      "asked": 89,
+      "both_order_agreement": 0.9438,
+      "gold_items": 10,
+      "agreement_with_gold": 0.9,
+      "ece": 0.1317
+     },
+     "c2_new_actor": {
+      "gold_items": 22,
+      "brier": 0.083,
+      "ece": 0.2318,
+      "threshold_sweep": {
+       "0.5": {
+        "recall": 1.0,
+        "false_positives": 0,
+        "negatives": 19
+       },
+       "0.6": {
+        "recall": 0.6667,
+        "false_positives": 0,
+        "negatives": 19
+       },
+       "0.7": {
+        "recall": 0.3333,
+        "false_positives": 0,
+        "negatives": 19
+       },
+       "0.8": {
+        "recall": 0.3333,
+        "false_positives": 0,
+        "negatives": 19
+       },
+       "0.9": {
+        "recall": 0.0,
+        "false_positives": 0,
+        "negatives": 19
+       }
+      }
+     },
+     "c3_change": {
+      "gold_items": 18,
+      "brier": 0.1974,
+      "ece": 0.3883,
+      "threshold_sweep": {
+       "0.5": {
+        "recall": 1.0,
+        "false_positives": 7,
+        "negatives": 15
+       },
+       "0.6": {
+        "recall": 1.0,
+        "false_positives": 3,
+        "negatives": 15
+       },
+       "0.7": {
+        "recall": 1.0,
+        "false_positives": 1,
+        "negatives": 15
+       },
+       "0.8": {
+        "recall": 1.0,
+        "false_positives": 0,
+        "negatives": 15
+       },
+       "0.9": {
+        "recall": 1.0,
+        "false_positives": 0,
+        "negatives": 15
+       }
+      }
+     },
+     "c4_conflict": {
+      "gold_pairs": 1,
+      "both_order_agreement": 1.0,
+      "agreement_with_gold": 1.0
+     }
+    },
+    "adds_over_rules": {
+     "q1_identity": 0,
+     "q2_direction": 0,
+     "q3_source": 0,
+     "q4_assertion": 0,
+     "q5_status": 0,
+     "q6_fidelity": 0,
+     "c1_premise": 1,
+     "c2_new_actor": 1,
+     "c3_change": 3,
+     "c4_conflict": 0
+    },
+    "cost": {
+     "requests": 90,
+     "failed_requests": 0,
+     "cost_usd": 0.015883,
+     "cost_per_100_leads_usd": 0.017846,
+     "latency_ms_mean": 284,
+     "latency_ms_p95": 399,
+     "egress_bytes": 1259978,
+     "egress_hosts": [
+      "openrouter.ai"
+     ]
+    }
+   },
+   "targets": {
+    "checks": {
+     "lost_leads_max": {
+      "value": 27,
+      "target": 0,
+      "status": "fail"
+     },
+     "research_visible_caught_min": {
+      "value": null,
+      "target": 0.6,
+      "status": "unmeasured"
+     },
+     "clue_recall_min": {
+      "value": 1.0,
+      "target": 0.8,
+      "status": "pass"
+     },
+     "false_clues_per_100_max": {
+      "value": 0.0,
+      "target": 10,
+      "status": "pass"
+     },
+     "fallbacks_max": {
+      "value": 0,
+      "target": 0,
+      "status": "pass"
+     },
+     "triage_violations_max": {
+      "value": 0,
+      "target": 0,
+      "status": "pass"
+     },
+     "cost_per_100_leads_usd_max": {
+      "value": 0.017846,
+      "target": 0.25,
+      "status": "pass"
+     },
+     "latency_ms_p95_max": {
+      "value": 399,
+      "target": 10000,
+      "status": "pass"
+     },
+     "q1_identity_both_order_min": {
+      "value": 0.9213,
+      "target": 0.85,
+      "status": "pass"
+     },
+     "q1_identity_gold_agreement_min": {
+      "value": 0.7,
+      "target": 0.7,
+      "status": "pass"
+     },
+     "q1_identity_ece_max": {
+      "value": 0.1032,
+      "target": 0.15,
+      "status": "pass"
+     },
+     "q2_direction_both_order_min": {
+      "value": 0.8876,
+      "target": 0.85,
+      "status": "pass"
+     },
+     "q3_source_both_order_min": {
+      "value": 0.9213,
+      "target": 0.85,
+      "status": "pass"
+     },
+     "q3_source_gold_agreement_min": {
+      "value": 0.8947,
+      "target": 0.7,
+      "status": "pass"
+     },
+     "q3_source_ece_max": {
+      "value": 0.0647,
+      "target": 0.15,
+      "status": "pass"
+     },
+     "q4_assertion_both_order_min": {
+      "value": 0.9326,
+      "target": 0.85,
+      "status": "pass"
+     },
+     "q4_assertion_gold_agreement_min": {
+      "value": 0.9048,
+      "target": 0.7,
+      "status": "pass"
+     },
+     "q4_assertion_ece_max": {
+      "value": 0.1068,
+      "target": 0.15,
+      "status": "pass"
+     },
+     "q5_status_both_order_min": {
+      "value": 0.9438,
+      "target": 0.85,
+      "status": "pass"
+     },
+     "q5_status_gold_agreement_min": {
+      "value": 0.7059,
+      "target": 0.7,
+      "status": "pass"
+     },
+     "q5_status_ece_max": {
+      "value": 0.0771,
+      "target": 0.15,
+      "status": "pass"
+     },
+     "q6_fidelity_both_order_min": {
+      "value": 0.9326,
+      "target": 0.85,
+      "status": "pass"
+     },
+     "q6_fidelity_gold_agreement_min": {
+      "value": 0.9545,
+      "target": 0.7,
+      "status": "pass"
+     },
+     "q6_fidelity_ece_max": {
+      "value": 0.1452,
+      "target": 0.15,
+      "status": "pass"
+     },
+     "c1_premise_both_order_min": {
+      "value": 0.9438,
+      "target": 0.85,
+      "status": "pass"
+     },
+     "c1_premise_gold_agreement_min": {
+      "value": 0.9,
+      "target": 0.7,
+      "status": "pass"
+     },
+     "c1_premise_ece_max": {
+      "value": 0.1317,
+      "target": 0.15,
+      "status": "pass"
+     }
+    },
+    "verdict": "fail"
+   },
+   "cut": {
+    "cut": [
+     "q2_direction"
+    ],
+    "undecided": [
+     "c4_conflict",
+     "q1_identity",
+     "q3_source",
+     "q4_assertion",
+     "q5_status",
+     "q6_fidelity"
+    ]
+   },
+   "synthetic_detail": [
+    {
+     "item_id": "ca-d01",
+     "page_clues": [
+      "change_or_absence",
+      "new_actor"
+     ],
+     "rule_clues": [
+      "new_actor"
+     ],
+     "disposition": "flag",
+     "flags": [
+      "model_unsure",
+      "absence_is_not_clearance"
+     ]
+    },
+    {
+     "item_id": "ca-d02",
+     "page_clues": [
+      "change_or_absence",
+      "new_actor"
+     ],
+     "rule_clues": [
+      "new_actor"
+     ],
+     "disposition": "flag",
+     "flags": [
+      "absence_is_not_clearance"
+     ]
+    },
+    {
+     "item_id": "ca-d03",
+     "page_clues": [
+      "new_actor"
+     ],
+     "rule_clues": [],
+     "disposition": "flag",
+     "flags": [
+      "model_unsure"
+     ]
+    },
+    {
+     "item_id": "ca-d04",
+     "page_clues": [
+      "change_or_absence"
+     ],
+     "rule_clues": [],
+     "disposition": "flag",
+     "flags": [
+      "model_unsure",
+      "identity_unconfirmed",
+      "no_direction",
+      "absence_is_not_clearance"
+     ]
+    },
+    {
+     "item_id": "ca-d05",
+     "page_clues": [
+      "change_or_absence",
+      "premise"
+     ],
+     "rule_clues": [],
+     "disposition": "flag",
+     "flags": [
+      "absence_is_not_clearance"
+     ]
+    },
+    {
+     "item_id": "ca-d06",
+     "page_clues": [
+      "change_or_absence"
+     ],
+     "rule_clues": [
+      "change_or_absence"
+     ],
+     "disposition": null,
+     "flags": []
+    },
+    {
+     "item_id": "ca-d07",
+     "page_clues": [
+      "conflict"
+     ],
+     "rule_clues": [
+      "conflict"
+     ],
+     "disposition": "flag",
+     "flags": [
+      "model_unsure"
+     ]
+    },
+    {
+     "item_id": "ca-d08",
+     "page_clues": [
+      "conflict"
+     ],
+     "rule_clues": [
+      "conflict"
+     ],
+     "disposition": "flag",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d09",
+     "page_clues": [
+      "premise"
+     ],
+     "rule_clues": [],
+     "disposition": "flag",
+     "flags": [
+      "allegation",
+      "status_unknown"
+     ]
+    },
+    {
+     "item_id": "ca-d10",
+     "page_clues": [
+      "premise",
+      "watchlist"
+     ],
+     "rule_clues": [
+      "watchlist"
+     ],
+     "disposition": "flag",
+     "flags": [
+      "identity_unconfirmed",
+      "no_direction"
+     ]
+    },
+    {
+     "item_id": "ca-d11",
+     "page_clues": [
+      "change_or_absence",
+      "timing"
+     ],
+     "rule_clues": [
+      "timing"
+     ],
+     "disposition": "flag",
+     "flags": [
+      "absence_is_not_clearance"
+     ]
+    },
+    {
+     "item_id": "ca-d12",
+     "page_clues": [
+      "timing"
+     ],
+     "rule_clues": [
+      "timing"
+     ],
+     "disposition": "keep",
+     "flags": []
+    },
+    {
+     "item_id": "ca-d13",
+     "page_clues": [
+      "shared_identifier"
+     ],
+     "rule_clues": [
+      "shared_identifier"
+     ],
+     "disposition": "flag",
+     "flags": [
+      "identity_unconfirmed",
+      "no_direction"
+     ]
+    },
+    {
+     "item_id": "ca-d14",
+     "page_clues": [
+      "shared_identifier"
+     ],
+     "rule_clues": [
+      "shared_identifier"
+     ],
+     "disposition": "set_aside",
+     "flags": [
+      "no_direction"
+     ]
+    },
+    {
+     "item_id": "ca-d15",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "set_aside",
+     "flags": [
+      "model_unsure",
+      "no_direction"
+     ]
+    },
+    {
+     "item_id": "ca-d16",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "set_aside",
+     "flags": [
+      "model_unsure",
+      "no_direction"
+     ]
+    },
+    {
+     "item_id": "ca-d17",
+     "page_clues": [
+      "premise"
+     ],
+     "rule_clues": [],
+     "disposition": "flag",
+     "flags": [
+      "allegation",
+      "status_unknown",
+      "model_suggests_set_aside"
+     ]
+    },
+    {
+     "item_id": "ca-d18",
+     "page_clues": [
+      "premise"
+     ],
+     "rule_clues": [],
+     "disposition": "flag",
+     "flags": [
+      "identity_unconfirmed"
+     ]
+    },
+    {
+     "item_id": "ca-d19",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "flag",
+     "flags": [
+      "model_unsure",
+      "summary_widens"
+     ]
+    },
+    {
+     "item_id": "ca-d20",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "flag",
+     "flags": [
+      "identity_unconfirmed",
+      "summary_contradicts",
+      "summary_refused"
+     ]
+    },
+    {
+     "item_id": "ca-d21",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "flag",
+     "flags": [
+      "model_unsure",
+      "interpretation"
+     ]
+    },
+    {
+     "item_id": "ca-d22",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "flag",
+     "flags": [
+      "status_unknown",
+      "snippet_only"
+     ]
+    },
+    {
+     "item_id": "ca-d23",
+     "page_clues": [],
+     "rule_clues": [],
+     "disposition": "flag",
+     "flags": [
+      "model_unsure",
+      "identity_unconfirmed"
+     ]
+    }
+   ]
+  }
+ ],
+ "chosen_backend": null
+}
