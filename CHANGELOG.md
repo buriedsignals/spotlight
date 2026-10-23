@@ -48,6 +48,27 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   only. Everything is flushed to disk, the counts it reports are read back
   from the archive, and a different export already there is refused.
 
+### Removed — The 1.0 knowledge graph's writer and reader
+
+- Spotlight no longer writes or reads the 1.0 SQLite graph. The batch
+  writer, signed approvals and case policies, the projection into Open
+  Knowledge pages (`scripts/knowledge_projection.py`), the 1.0 batch schema
+  and the projection, policy and package schemas are gone, with their tests.
+  `scripts/knowledge_destination.py` keeps only `count-rows` and
+  `export-notes`, which Engine's update runs on an old graph before deleting
+  it.
+- `scripts/query_vault.py` now searches the member wiki through Engine's
+  `bsig wiki search` and returns `spotlight-query-vault/v2`: one
+  `wiki_search` result list of path, type, title, score and snippet. Without
+  Engine or a wiki it returns an empty list with an `unavailable` reason and
+  exits 0. The graph options are still accepted and ignored.
+- `scripts/validate-install-config.py` checks only the knowledge destination
+  Engine writes (`type`, `workspace_path`, `namespace`, `mode`). The
+  activation receipt, the BGE-M3 provider policy and `--issue-local` /
+  `--initialize-local` are gone, and the retired graph keys are ignored.
+- The `vault-write` verb is retired. A findings contract 1.0 case is no
+  longer ingested; it is activated or continued as a follow-up 1.1 case.
+
 ### Changed — Ingest decision checks read Batch 1.1
 
 - The proposition check puts a claim's source-position attribution back into

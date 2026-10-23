@@ -72,20 +72,21 @@ fetch, search, read-file, write-file, edit-file, list-files, grep-files,
 execute-shell, spawn-agent, wait-agent, invoke-skill, query-vault, vault-write
 ```
 
+`vault-write` is retired with the 1.0 graph; runtimes need not implement it.
+
 Universal backings (never change):
 
 | Verb | Concrete tool |
 |---|---|
 | `fetch`, `search` | `fetch` → Crawl4AI via `integrations.scraping`; `search` → SearXNG via `integrations.search` (Firecrawl = optional fallback when `FIRECRAWL_API_KEY` is set) |
-| `query-vault` | `scripts/query_vault.py`: exact workflows use local SQLite; broad discovery uses Open Knowledge directly with local receipt filtering |
-| `vault-write` | Spotlight-local journaled projection writer (approved writes; no automatic fallback) |
+| `query-vault` | `scripts/query_vault.py` over Engine's `bsig wiki search` (empty, with an `unavailable` reason, without Engine or a wiki) |
+| `vault-write` | retired with the 1.0 graph; not implemented |
 | `execute-shell` | native shell subprocess |
 | `read-file`, `write-file`, `edit-file` | filesystem (runtime-native) |
 | `list-files`, `grep-files` | glob + ripgrep (runtime-native) |
 
-`query-vault` is a same-user local adapter over Open Knowledge and Spotlight's
-SQLite graph. It does not claim multi-user authorization isolation;
-the adapter must surface that typed blocker rather than report live success.
+`query-vault` searches the member's wiki as Engine's cloud audience, so
+protected sources are redacted from what it returns.
 
 Runtime-specific backings (vary):
 
@@ -220,8 +221,8 @@ opencode ships native `bash`, `read`, `write`, `edit`, `grep`, `glob`, `multi-ed
 | Verb | Concrete tool |
 |---|---|
 | `fetch`, `search` | `integrations.scraping` (Crawl4AI) / `integrations.search` (SearXNG) via `bash`; Firecrawl optional fallback |
-| `query-vault` | Local graph for exact workflows; direct Open Knowledge discovery for broad queries |
-| `vault-write` | Spotlight-local journaled projection writer |
+| `query-vault` | `scripts/query_vault.py` over Engine's `bsig wiki search` (empty, with an `unavailable` reason, without Engine or a wiki) |
+| `vault-write` | retired with the 1.0 graph; not implemented |
 | `invoke-skill` | opencode's native `skill` tool — agents see available skills and load them on demand |
 
 ### Sub-agents
@@ -331,8 +332,8 @@ The checkout's current skill ids become available by `invoke-skill` name. This i
 | `fetch`, `search` | shell call to `integrations.scraping` (Crawl4AI) / `integrations.search` (SearXNG); Firecrawl optional fallback |
 | `read-file`, `write-file`, `edit-file` | Hermes filesystem tools |
 | `execute-shell` | Hermes terminal |
-| `query-vault` | Receipt-aware adapter; no runtime receives a raw OpenKnowledge MCP tool |
-| `vault-write` | Knowledge Workspace Port with explicit approval and journal reconciliation |
+| `query-vault` | `scripts/query_vault.py` over Engine's `bsig wiki search` (empty, with an `unavailable` reason, without Engine or a wiki) |
+| `vault-write` | retired with the 1.0 graph; not implemented |
 | `spawn-agent` | `delegate_task()` with the agent prompt + iteration_limit |
 | `wait-agent` | `delegate_task` is synchronous by default; handle = task id |
 | `invoke-skill` | Hermes reads the SKILL.md file and injects into the active prompt |
@@ -432,8 +433,8 @@ Point Codex at the actual checkout as its working directory, with flat native le
 | `write-file`, `edit-file` | native edit tools — require `--sandbox workspace-write` or higher |
 | `execute-shell` | `bash -lc` tool — require `--sandbox workspace-write` or higher |
 | `fetch`, `search` | `execute-shell` running `python -m integrations.scraping` (Crawl4AI) / `integrations.search` (SearXNG); Firecrawl optional fallback |
-| `query-vault` | Local graph plus direct Open Knowledge search with receipt filtering |
-| `vault-write` | Spotlight-local projection writer; approved and journaled only |
+| `query-vault` | `scripts/query_vault.py` over Engine's `bsig wiki search` (empty, with an `unavailable` reason, without Engine or a wiki) |
+| `vault-write` | retired with the 1.0 graph; not implemented |
 | `invoke-skill` | loads the named native leaf from the checkout's `.agents/skills/` |
 | `spawn-agent`, `wait-agent` | `execute-shell` spawning a second `codex exec` subprocess — see below |
 

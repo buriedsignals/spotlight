@@ -44,7 +44,7 @@ Before coding in this project on a Buried Signals dev machine, load the shared `
 
 ## Tool Verb Registry
 
-Fixed vocabulary of abstract operations. Every runtime adapter MUST implement all verbs. If a verb is unsupported, the adapter raises an explicit error at load time.
+Fixed vocabulary of abstract operations. Every runtime adapter MUST implement all verbs except the retired `vault-write`. If a verb is unsupported, the adapter raises an explicit error at load time.
 
 One exception: a runtime MAY omit `execute-shell` when every shell step in `agents/` and `skills/` either has a typed equivalent in that runtime or is run by the runtime itself at a fixed point (the validators, when a worker finishes), and every other step reports itself unavailable instead of being improvised. Such a runtime keeps `{CASE_DIR}` confinement and public-only egress in its typed tools. The Pi harness (`harness/pi`) is such a runtime; its step-by-step mapping is in `harness/pi/README.md`. Claude Code, Codex, Goose and subscription mode keep `execute-shell` and run the shell steps as written.
 
@@ -61,8 +61,8 @@ One exception: a runtime MAY omit `execute-shell` when every shell step in `agen
 | `spawn-agent` | `spawn-agent(agent_id, prompt, config)` | Launch sub-agent with prompt and config | runtime-specific |
 | `wait-agent` | `wait-agent(handle)` | Block until agent completes, return output | runtime-specific |
 | `invoke-skill` | `invoke-skill(skill_id)` | Load skill instructions into current context | runtime-specific |
-| `query-vault` | `query-vault(workspace_path, query)` | Search durable knowledge through local Open Knowledge and exact SQLite traversal | Spotlight `query_vault.py`; managed results are receipt checked and legacy results labeled |
-| `vault-write` | `vault-write(workspace_path, note_path, content)` | Project an approved signed graph batch | Spotlight's local journaled projection writer; no raw Open Knowledge mutation |
+| `query-vault` | `query-vault(workspace_path, query)` | Search the member wiki for prior work: Spotlight's claim, event and story-arc notes and the member's own notes | Spotlight `query_vault.py` over Engine's `bsig wiki search` (cloud audience, protected sources redacted); without Engine or a wiki, an empty result with an `unavailable` reason |
+| `vault-write` | — | Retired with the 1.0 graph; adapters need not implement it | Solo Ingest writes the wiki through `scripts/wiki-destination.py` |
 
 ## Agent Manifests
 
@@ -172,7 +172,7 @@ the config resolves it through `config_path()` in
 | `spotlight` | `skills/spotlight/SKILL.md` | Investigation orchestrator — pipeline phases, gates, cycle evaluation | orchestrator (top-level) |
 | `editorial-review` | `skills/editorial-review/SKILL.md` | Post-Investigation-gate HTML review artifact; exports structured feedback to the Investigation gate owner | orchestrator, user |
 | `integrations` | `skills/integrations/SKILL.md` | Routing layer for external tool integrations — dev-browser, Junkipedia, Arbiter, Noosphere C2PA, OSINT Navigator, Unpaywall. Reads live preflight status, maps investigation tasks to integrations | investigator, fact-checker, orchestrator |
-| `ingest` | `skills/ingest/SKILL.md` | Ingest knowledge archival after a durable requested transition | orchestrator |
+| `ingest` | `skills/ingest/SKILL.md` | Retired 1.0 ingest: explains that an old case continues as a follow-up 1.1 case | orchestrator |
 | `report-drafting` | `skills/report-drafting/SKILL.md` | Post-Investigation-gate hybrid report: model-authored localized framing and priority in `data/report-draft.json`; deterministic finding-reference, verdict, confidence, escaping, and artifact rendering. | orchestrator, user |
 | `monitoring` | `skills/monitoring/SKILL.md` | Monitoring orchestration — Mycroft passive signals, coJournalist projects/scouts, runtime-native fallbacks | orchestrator |
 | `provenance-signing` | `skills/provenance-signing/SKILL.md` | Build a case-level provenance manifest and optionally hand it to Noosphere C2PA signing before final report delivery | orchestrator, user |
@@ -256,7 +256,7 @@ absolute path and the result in `.spotlight-config.json` under `storage`.
 │   ├── knowledge-proposal.json   # Analyst proposal at Ingest (claims, events, arcs); interface 1
 │   ├── knowledge-ids.json        # Builder id map: proposal and case keys to record ids and versions
 │   ├── knowledge-mentions.json   # Entity types and strong identifiers per mention, for the wiki's register lookup; never in a batch
-│   ├── knowledge-batch.json      # Reviewed batch: 1.0 for existing cases, Batch 1.1 (core) when built by scripts/build-knowledge-batch.py
+│   ├── knowledge-batch.json      # Reviewed Batch 1.1 (core), built by scripts/build-knowledge-batch.py
 │   ├── knowledge-batch-draft.json # Builder draft for review, with flags awaiting a disposition
 │   ├── ingest-review.json        # Ingest page choices: record selection and flag dispositions
 │   ├── decision-signals.json     # Optional decision-model review signals (opt-in; never evidence)
@@ -288,8 +288,7 @@ activation documents use their own schema versions as declared below.
 | Evidence Bundle | `schemas/evidence-bundle.schema.json` | Acquisition artifacts with method, missing-source gate, hashes, and claim links |
 | Provenance Manifest | `schemas/provenance-manifest.schema.json` | Case artifact hashes, claim/verdict links, evidence refs, and optional Noosphere C2PA signing metadata |
 | Decision Signals | `schemas/decision-signals.schema.json` | Opt-in Jev decision-model answers and derived review signals for grounding, report prose and ingest; can only lower confidence or add flags |
-| Reviewed Knowledge Batch | `schemas/knowledge-batch.schema.json` | Additive canonical claims, events, story arcs, review decisions, and versioned membership records for the Knowledge Destination Port |
-| Knowledge Batch 1.1 (core) | `schemas/knowledge-batch-1.1.schema.json` | Open-source core of Batch 1.1: evidence, passages, claims, claim–passage links, source positions, assessments, events, story arcs and memberships, with continuous versions and exact refs. Cross-record rules C1–C10 and C13 are checked by `scripts/validate-knowledge-batch.py`; 1.0 stays for existing cases |
+| Knowledge Batch 1.1 (core) | `schemas/knowledge-batch-1.1.schema.json` | Open-source core of Batch 1.1: evidence, passages, claims, claim–passage links, source positions, assessments, events, story arcs and memberships, with continuous versions and exact refs. Cross-record rules C1–C10 and C13 are checked by `scripts/validate-knowledge-batch.py` |
 | Knowledge Proposal | `schemas/knowledge-proposal.schema.json` | Analyst interface 1: normalized claims per finding (with `attributed`), events, story arcs and memberships; `scripts/build-knowledge-batch.py` adds the rest |
 | Methodology | `schemas/methodology.schema.json` | Investigation plan with directions, steps, tools_required, opsec_considerations |
 | Investigation Log | `schemas/investigation-log.schema.json` | Append-only cycle audit trail |
@@ -305,6 +304,11 @@ Cases from before Batch 1.1 are forward-only:
    case is eligible.
 3. Otherwise start a follow-up case from the old brief, with the old
    `research/` and `evidence/` available as local sources.
+
+A `1.0` case is no longer ingested: the 1.0 graph it went into is retired, and
+Engine's update exports any old graph to `spotlight/legacy-graph/` in the wiki
+before deleting it. To ingest an old case's findings, activate it (step 2) or
+continue it as a follow-up 1.1 case (step 3).
 
 Some things cannot be migrated mechanically and need a person: normalized
 propositions, source positions, the old `partially_verified` and

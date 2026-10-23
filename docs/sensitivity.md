@@ -1,9 +1,8 @@
 # Sensitivity — local-only investigations and durable knowledge
 
-Local knowledge activation does not create an isolation boundary. A
-`local_conformance` receipt can enable the local graph/projection workflow but
-cannot assert multi-user confidentiality or authorization isolation. Spotlight
-and Open Knowledge run with the current user's filesystem access.
+The member wiki is not an isolation boundary: it cannot assert multi-user
+confidentiality or authorization isolation. Spotlight and Engine run with the
+current user's filesystem access.
 
 Status: current behavior plus a deliberately unimplemented design boundary.
 
