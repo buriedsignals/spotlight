@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Spotlight suggested Research marks",
+  "description": "data/research-suggestions.json: written by the investigator in AMENDMENT mode before the Research page opens. One suggested mark and a one-line reason for every clue (pursue or dismiss) and every direction (keep or drop), plus any direction it suggests adding. The page shows them as suggestions; only the member's marks (data/research-review.json) count. `inputs` names the hashes of the leads, clues and triage the suggestions were written for; when any of them changes, the suggestions are written again before the page opens.",
+  "schema_version": "1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_at", "inputs", "clues", "directions"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data/leads.json", "data/clues.json", "data/research-triage.json"],
+      "properties": {
+        "data/leads.json": { "$ref": "#/definitions/sha256" },
+        "data/clues.json": { "$ref": "#/definitions/sha256" },
+        "data/research-triage.json": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "clues": {
+      "type": "array",
+      "description": "One entry per clue in data/clues.json.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["clue_id", "mark", "reason"],
+        "properties": {
+          "clue_id": { "type": "string", "minLength": 1 },
+          "mark": { "enum": ["pursue", "dismiss"] },
+          "reason": { "$ref": "#/definitions/reason" }
+        }
+      }
+    },
+    "directions": {
+      "type": "array",
+      "description": "One entry per direction of the approved investigation_plan (keep or drop), and one per direction the investigator suggests adding (add, with its text and questions).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["direction_id", "mark", "reason"],
+        "properties": {
+          "direction_id": { "$ref": "#/definitions/slug" },
+          "mark": { "enum": ["keep", "drop", "add"] },
+          "reason": { "$ref": "#/definitions/reason" },
+          "direction": { "type": "string", "minLength": 1, "description": "For add: the new direction's text." },
+          "questions": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "description": "For add: the questions it answers." }
+        },
+        "if": { "properties": { "mark": { "const": "add" } } },
+        "then": { "required": ["direction", "questions"] }
+      }
+    }
+  },
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "slug": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+    "reason": { "type": "string", "minLength": 1, "pattern": "^[^\\n]+$", "description": "One line." }
+  }
+}

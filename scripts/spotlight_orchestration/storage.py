@@ -21,6 +21,7 @@ from .contract import (
     LEGACY_STATE_VERSION,
     OrchestrationError,
     STATE_VERSION,
+    STORED_ATTEMPT_CEILINGS,
 )
 
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
@@ -217,13 +218,24 @@ def load_state(case: Path, data_descriptor: int | None = None) -> dict[str, Any]
         or not isinstance(count, int)
         or isinstance(count, bool)
         or count < 0
-        or count > ATTEMPT_LIMITS[kind]
+        or count > STORED_ATTEMPT_CEILINGS.get(kind, ATTEMPT_LIMITS[kind])
         for kind, count in state["attempts"].items()
     ):
         raise OrchestrationError("data/orchestration.json contains invalid attempt counts")
-    for field in ("blocked", "follow_up", "open_cycle", "open_research", "investigation_gate_finalization"):
+    for field in (
+        "blocked",
+        "follow_up",
+        "open_cycle",
+        "open_research",
+        "open_amendment",
+        "stall",
+        "investigation_gate_finalization",
+    ):
         if field in state and not isinstance(state[field], dict):
             raise OrchestrationError(f"data/orchestration.json field {field!r} must be an object")
+    gaps = state.get("cycle_gaps", [])
+    if not isinstance(gaps, list) or not all(isinstance(gap, str) for gap in gaps):
+        raise OrchestrationError("data/orchestration.json field 'cycle_gaps' must be a list of strings")
     return state
 
 

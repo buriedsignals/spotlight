@@ -20,7 +20,7 @@ import { ORCHESTRATOR, agentSpec, allowedTools, isolationRefusal, loadCompositio
 import type { Composition } from './roles.ts';
 import { WorkerQueue, runWorker } from './subagents.ts';
 import type { CancelRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
-import { bindActiveCase, pythonAdapter } from './tools/spotlight.ts';
+import { bindActiveCase, pythonAdapter, runsResearchRound } from './tools/spotlight.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
 import { validateAfterWorker } from './validators.ts';
 
@@ -133,15 +133,19 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 	});
 }
 
-async function casePhase(harness: Harness): Promise<string> {
+async function caseStatus(harness: Harness): Promise<Record<string, unknown>> {
 	const { config, active } = harness;
 	try {
 		const status = await pythonAdapter(config.python)(['status', '--json', '--authorized-cases-root', active.casesRoot, active.caseDir]);
-		return String((JSON.parse(status) as { phase?: unknown }).phase ?? '');
+		return JSON.parse(status) as Record<string, unknown>;
 	} catch (error) {
 		harness.log(`could not resolve the case phase: ${harness.redact((error as Error).message)}`);
-		return '';
+		return {};
 	}
+}
+
+async function casePhase(harness: Harness): Promise<string> {
+	return String((await caseStatus(harness)).phase ?? '');
 }
 
 // Research runs in code, never on a model's decision: only while the resolver
@@ -150,8 +154,11 @@ async function casePhase(harness: Harness): Promise<string> {
 let roundInFlight: Promise<RoundSummary | { skipped: string }> | undefined;
 function researchRound(harness: Harness, retry: boolean, signal: AbortSignal): Promise<RoundSummary | { skipped: string }> {
 	roundInFlight ??= (async () => {
-		const phase = await casePhase(harness);
-		if (phase !== 'research') return { skipped: `the case is at ${phase || 'an unknown phase'}, not Research` };
+		const status = await caseStatus(harness);
+		if (!runsResearchRound(status)) {
+			const step = (status.research as { resume_at?: string } | undefined)?.resume_at;
+			return { skipped: `the case is at ${String(status.phase ?? '') || 'an unknown phase'}${step ? ` (${step})` : ''}, not waiting for research lanes` };
+		}
 		const { config, active } = harness;
 		const methodology = JSON.parse(readFileSync(resolve(active.caseDir, 'data/methodology.json'), 'utf8')) as { research_plan?: ResearchPlan };
 		if (!methodology.research_plan) return { skipped: 'the approved methodology has no research plan' };

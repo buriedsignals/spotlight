@@ -488,6 +488,12 @@ class OrchestrationConformance(unittest.TestCase):
         evidence["items"] = [
             {
                 "id": "E1",
+                "query_or_task": "Transcribe the fixture recording",
+                "acquisition_method": "manual",
+                "source_url": "https://example.test/recording",
+                "accessed": "2026-08-23T11:00:00Z",
+                "extraction_confidence": "low",
+                "human_verification_required": False,
                 "text_derivatives": [
                     {
                         "id": "TD-E1",
@@ -605,7 +611,7 @@ class OrchestrationConformance(unittest.TestCase):
         self.approve("methodology")
         investigation_outputs(self.case)
         self.assertEqual(self.status()["next_phase"], "investigation_gate_approval")
-        for cycle in range(1, 5):
+        for cycle in range(1, 3):
             # Readiness is judged after the cycle's fact-check exists.
             self.command("record-attempt", "investigation-cycle", "--gap", f"gap {cycle}")
             reopened = self.status()
@@ -616,11 +622,14 @@ class OrchestrationConformance(unittest.TestCase):
             self.assertEqual(self.status()["phase"], "investigation")
             self.rewrite_json("data/fact-check.json", lambda d, c=cycle: d.update(cycle=c + 1))
             self.assertEqual(self.status()["phase"], "investigation_gate_approval")
-        self.command("record-attempt", "investigation-cycle", "--gap", "gap 5")
+        # A case planned without a research plan has no research round to
+        # go back to: the third unsuccessful cycle stops it with a gaps report.
+        self.command("record-attempt", "investigation-cycle", "--gap", "gap 3")
         blocked = self.status()
         self.assertEqual((blocked["status"], blocked["owner"]), ("blocked", "phase-investigation"))
-        self.assertEqual(blocked["blocked"]["attempts"], {"investigation-cycle": 5})
-        self.command("record-attempt", "investigation-cycle", "--gap", "gap 6", expect=3)
+        self.assertEqual(blocked["blocked"]["attempts"], {"investigation-cycle": 3})
+        self.assertEqual(blocked["blocked"]["gaps_report"], ["gap 1", "gap 2", "gap 3"])
+        self.command("record-attempt", "investigation-cycle", "--gap", "gap 4", expect=3)
 
         # Once a human approves the gate, no further attempt is recordable.
         other = Path(self.temp.name) / "approved"
@@ -688,17 +697,17 @@ class OrchestrationConformance(unittest.TestCase):
         results = [process.communicate() for process in processes]
         returncodes = [process.returncode for process in processes]
 
-        self.assertEqual(sum(code == 0 for code in returncodes), 5, results)
+        self.assertEqual(sum(code == 0 for code in returncodes), 3, results)
         self.assertTrue(all(code in {0, 3} for code in returncodes), results)
         blocked = self.status()
         self.assertEqual(
             (blocked["status"], blocked["next_phase"]), ("blocked", "blocked")
         )
-        self.assertEqual(blocked["blocked"]["attempts"]["investigation-cycle"], 5)
+        self.assertEqual(blocked["blocked"]["attempts"]["investigation-cycle"], 3)
 
     def test_investigation_and_repair_caps_persist_explicit_blocked_state(self) -> None:
         limits = (
-            ("investigation-cycle", 5),
+            ("investigation-cycle", 3),
             ("fact-check-evidence-repair", 1),
             ("structural-correction", 2),
         )

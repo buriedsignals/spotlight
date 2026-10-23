@@ -208,8 +208,8 @@ the config resolves it through `config_path()` in
 | `social-media-intelligence` | `skills/social-media-intelligence/SKILL.md` | Account authenticity, coordination detection, narrative tracking | investigator, fact-checker, user |
 | `phase-preflight` | `skills/phase-preflight/SKILL.md` | Preflight child skill — config, sovereign backings, workspace validation, project setup, integration tiering | orchestrator |
 | `phase-methodology` | `skills/phase-methodology/SKILL.md` | Brief and Methodology child skill — brief conversation with approval gate, investigator PLANNING spawn, methodology validation and approval | orchestrator |
-| `phase-research` | `skills/phase-research/SKILL.md` | Research child skill — approved topic briefs run as research lanes started by code, merged leads and clues, Research gate user approval | orchestrator |
-| `phase-investigation` | `skills/phase-investigation/SKILL.md` | Investigation child skill — autonomous investigation cycles (max 5), fact-check spawns, validators, readiness criteria, Stall Protocol | orchestrator |
+| `phase-research` | `skills/phase-research/SKILL.md` | Research child skill — approved topic briefs run as research lanes started by code, merged and triaged leads and clues, suggested marks, Research gate user approval, the AMENDMENT that turns the marks into the methodology change, and a stalled investigation's research round | orchestrator |
+| `phase-investigation` | `skills/phase-investigation/SKILL.md` | Investigation child skill — autonomous investigation cycles (max 3; a researched case then gets one targeted research round), fact-check spawns, validators, readiness criteria, Stall Protocol | orchestrator |
 | `phase-investigation-gate` | `skills/phase-investigation-gate/SKILL.md` | Investigation closing child skill — summary + machine contract generation, Investigation gate user approval (ends turn), provenance packaging, review artifact | orchestrator |
 | `phase-report` | `skills/phase-report/SKILL.md` | Report child skill — public-facing report drafting via report-drafting + deterministic finalize-report.py rendering | orchestrator |
 | `phase-ingest` | `skills/phase-ingest/SKILL.md` | Ingest child skill — ingestion transition marker, user confirmation, vault ingestion or decline | orchestrator |
@@ -314,6 +314,7 @@ activation documents use their own schema versions as declared below.
 | Research Lead | `schemas/research-lead.schema.json` | One `leads.jsonl` line: a candidate with Batch 1.1 evidence fields, a verbatim excerpt and optional attribution; never a finding |
 | Research Leads | `schemas/research-leads.schema.json` | `data/leads.json`: every approved lane's leads merged by canonical URL and content hash |
 | Research Clues | `schemas/research-clues.schema.json` | `data/clues.json`: clues from the rules, triage questions and approved methods; bound by the Research gate receipt |
+| Research Suggestions | `schemas/research-suggestions.schema.json` | `data/research-suggestions.json`: the investigator's suggested mark and one-line reason per clue and direction, written in AMENDMENT mode before the Research page opens; only the member's marks count |
 | Investigation Log | `schemas/investigation-log.schema.json` | Append-only cycle audit trail |
 | Summary | `schemas/summary.schema.json` | Investigation gate summary for review |
 

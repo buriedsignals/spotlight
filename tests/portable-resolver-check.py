@@ -27,11 +27,17 @@ def write_json(path: Path, value: object) -> None:
 
 
 def write_investigation_outputs(case: Path, *, include_investigation_gate_summaries: bool) -> None:
-    write_json(case / "data/findings.json", {"schema_version": "1.0", "findings": []})
-    write_json(case / "data/fact-check.json", {"schema_version": "1.0", "claims": []})
+    # Outputs the fact-check validator accepts: the Investigation gate is
+    # never offered while it fails.
+    write_json(case / "data/findings.json", {
+        "schema_version": "1.0", "project": "mature", "findings": [],
+        "no_qualifying_findings": {"reason": "The fixture searched nothing."},
+    })
+    write_json(case / "data/fact-check.json", {"schema_version": "1.0", "project": "mature", "claims": []})
     write_json(
         case / "data/evidence-bundle.json",
-        {"schema_version": "1.0", "items": []},
+        {"schema_version": "1.0", "project": "mature", "run_id": "mature-1",
+         "created_at": "2026-08-23T11:00:00Z", "items": []},
     )
     write_json(
         case / "data/investigation-log.json",

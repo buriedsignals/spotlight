@@ -42,9 +42,16 @@ def copy_fixture_case(tmp: Path) -> Path:
     research_dir.mkdir()
 
     fixtures = ROOT / "tests" / "fixtures"
-    shutil.copy(fixtures / "findings.sample.json", data_dir / "findings.json")
-    shutil.copy(fixtures / "fact-check.sample.json", data_dir / "fact-check.json")
-    shutil.copy(fixtures / "evidence-bundle.sample.json", data_dir / "evidence-bundle.json")
+    # The samples cite their source from the repository root; a case cites it
+    # case-locally, which is what the fact-check validator resolves.
+    for sample, name in (("findings.sample.json", "findings.json"), ("fact-check.sample.json", "fact-check.json"),
+                         ("evidence-bundle.sample.json", "evidence-bundle.json")):
+        text = (fixtures / sample).read_text(encoding="utf-8")
+        (data_dir / name).write_text(text.replace("cases/sample-investigation/", ""), encoding="utf-8")
+    findings = json.loads((data_dir / "findings.json").read_text(encoding="utf-8"))
+    (research_dir / "bvifsc-filing-2019-abc-123.md").write_text(
+        findings["findings"][0]["evidence"] + "\n", encoding="utf-8"
+    )
     write_json(data_dir / "investigation-log.json", {"schema_version": "1.0", "entries": []})
     (case_dir / "summary.md").write_text("# Sample Investigation\n", encoding="utf-8")
     return case_dir

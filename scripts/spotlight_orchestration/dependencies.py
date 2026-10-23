@@ -16,6 +16,7 @@ from .contract import (
     INVESTIGATOR_OUTPUTS,
     OrchestrationError,
     SCRIPT_DIR,
+    SUMMARY_OUTPUTS,
 )
 from .storage import case_path
 
@@ -162,6 +163,9 @@ def rework_snapshot(case: Path) -> dict[str, Any]:
             relative: _optional_hash(case, relative) for relative in INVESTIGATOR_OUTPUTS
         },
         "fact_check_sha256": _optional_hash(case, FACT_CHECK_OUTPUT),
+        # The gate owner's summaries describe the outputs above; once those
+        # change, the gate waits for regenerated summaries.
+        "summary_sha256": {relative: _optional_hash(case, relative) for relative in SUMMARY_OUTPUTS},
     }
 
 
