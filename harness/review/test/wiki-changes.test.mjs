@@ -1,6 +1,7 @@
 // The Wiki changes view: Engine's staged wiki writes, confirmed or discarded
 // through a fake `bsig` that keeps Engine's nonce and digest rules.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createWikiBridge, safeChildEnvironment } from "../case-bridge.mjs";
@@ -133,4 +134,12 @@ test("concurrent page listings share one Engine call", async (t) => {
   const lists = await Promise.all([1, 2, 3].map(() => json("/api/wiki-changes")));
   assert.deepEqual(lists.map((r) => r.body.changes.length), [1, 1, 1]);
   assert.equal(calls, 1);
+});
+
+// No DOM harness: the cheap guard for a security property. Diffs and every
+// other case text reach the page as untrusted data and are inserted with
+// textContent; no HTML sink may appear anywhere in the page script.
+test("the page script has no HTML sink, so diff text can only render as text", () => {
+  const source = readFileSync(new URL("../page/app.js", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /\b(?:innerHTML|outerHTML|insertAdjacentHTML)\b/);
 });

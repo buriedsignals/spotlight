@@ -206,6 +206,7 @@ export function createWikiBridge({
     const error = new Error(String(event.message ?? "Engine refused the request").replace(/^wiki: /, "").slice(0, 2048));
     // Exit 4 is bsig's usage error: a bsig older than these verbs.
     error.code = event.data?.refusal ?? (result.code === 4 ? "unsupported" : "failed");
+    error.exitCode = result.code;
     throw error;
   }
 

@@ -9,6 +9,11 @@ async function openPage(sessions, caseDir, view = "") {
   try {
     const started = await sessions.start(caseDir, view);
     const opened = await sessions.openLocally(view);
+    if (!opened.ok) {
+      // A page nobody can see must not stay running and read as "already open".
+      sessions.close();
+      await sessions.wait();
+    }
     return {
       status: opened.ok ? "opened" : opened.status,
       reopened: started.status === "reopened",
@@ -43,8 +48,8 @@ export function createWikiChangesOpener(options = {}) {
       staged = await wiki.staged();
     } catch (error) {
       if (error.code === "unsupported") return { status: "nothing-staged" };
-      // Engine's text stays out of the model's reply; the log keeps it.
-      process.stderr.write(`spotlight-review: could not read staged changes: ${String(error.message).slice(0, 300)}\n`);
+      // Engine's text stays out of the model's reply and the log alike.
+      process.stderr.write(`spotlight-review: could not read staged changes (bsig exit ${error.exitCode})\n`);
       return { status: "wiki-unreadable" };
     }
     if (!Array.isArray(staged) || !staged.length) return { status: "nothing-staged" };

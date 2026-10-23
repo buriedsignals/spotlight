@@ -1,7 +1,7 @@
 // Opening, reopening and the MCP tool, through the real child process.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
@@ -268,6 +268,19 @@ test("open_spotlight_review leaves a Wiki-changes-only page alone when no gate i
   assert.deepEqual(await createReviewOpener({ sessions })({ caseDir }), { status: "no-pending-gate" });
   assert.equal(openedUrls(record).length, 1);
   assert.equal((await api(origin, cookie)("/api/view")).status, 200);
+});
+
+test("a page the browser could not open is closed, not left to read as already open", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  const failing = join(root, "failing-open.sh");
+  writeFileSync(failing, "#!/bin/sh\nexit 1\n");
+  chmodSync(failing, 0o755);
+  const fake = fakeBsig(root, { changes: [change("c1", "a")] });
+  const { sessions } = manager(t, root, { env: fake.env, which: () => failing });
+  assert.equal((await createReviewOpener({ sessions })({ caseDir })).status, "opener-failed");
+  assert.equal(sessions.status().active, false);
+  assert.equal((await createWikiChangesOpener({ sessions, env: fake.env })({ caseDir })).status, "opener-failed");
 });
 
 test("the stdio MCP server answers initialize and lists its tools", async () => {
