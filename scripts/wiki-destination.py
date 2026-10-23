@@ -24,8 +24,11 @@ activated case in solo mode. In order:
    register.
 4. data/ingestion.json records the completed receipt, which the phase seals.
 
-Re-running after an interruption is safe: a kept batch with the same bytes
-and a journal line already present are not written twice.
+The wiki lock (the wiki service's .wiki-lock) and the case lock are held for
+the whole write. Re-running after an interruption is safe: a kept batch with
+the same bytes, a journal line already present and a note that is already
+what would be written are not treated as conflicts, and a completed
+admission is not repeated.
 
 Exit codes: 0 = written; 2 = refused (the reason is on stderr).
 """
@@ -33,6 +36,7 @@ Exit codes: 0 = written; 2 = refused (the reason is on stderr).
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import importlib.util
 import json
@@ -42,6 +46,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -54,8 +59,14 @@ import schema_check  # noqa: E402
 from spotlight_orchestration import review  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
-from spotlight_orchestration.resolver import load_ingestion_marker  # noqa: E402
+from spotlight_orchestration.resolver import load_ingestion_marker, status_for  # noqa: E402
 from spotlight_orchestration.storage import load_state, transaction  # noqa: E402
+
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
+    import msvcrt
 
 _SPEC = importlib.util.spec_from_file_location("validate_knowledge_batch", SCRIPT_DIR / "validate-knowledge-batch.py")
 RULES = importlib.util.module_from_spec(_SPEC)
@@ -106,11 +117,50 @@ def _write_atomic(target: Path, data: bytes) -> None:
 
 
 def _confined(workspace: Path, relative: str) -> Path:
-    target = (workspace / relative).resolve()
-    root = (workspace / NAMESPACE).resolve()
-    if root != target and root not in target.parents:
+    """A path under spotlight/ with no symbolic link on the way: a link
+    planted in the folder could otherwise redirect a write elsewhere."""
+    parts = Path(relative).parts
+    if not parts or parts[0] != NAMESPACE or ".." in parts:
         raise DestinationError(f"{relative} is outside {NAMESPACE}/")
-    return target
+    current = workspace
+    for part in parts:
+        current = current / part
+        if current.is_symlink():
+            raise DestinationError(f"{current} is a symbolic link; Spotlight writes only real folders under {NAMESPACE}/")
+    return current
+
+
+def _md(value: Any) -> str:
+    """Case and model text inside a note: never a wiki link or markup of its own."""
+    return str(value).replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]").replace("\n", " ")
+
+
+@contextlib.contextmanager
+def wiki_lock(workspace: Path, wait: float = 60.0):
+    """The wiki's shared write lock (the same .wiki-lock file the wiki service
+    takes), so two cases or a service write never interleave with ours."""
+    handle = open(workspace / ".wiki-lock", "a+b")
+    deadline = time.monotonic() + wait
+    try:
+        while True:
+            try:
+                if fcntl is not None:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                else:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise DestinationError("another process is writing the wiki; try again") from None
+                time.sleep(0.2)
+        yield
+    finally:
+        with contextlib.suppress(OSError):
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            else:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        handle.close()
 
 
 def workspace_from_config() -> Path:
@@ -122,7 +172,10 @@ def workspace_from_config() -> Path:
 
 
 class Resolver:
-    """Exact register matches through `bsig wiki resolve`; without Engine, no links."""
+    """Exact register matches through `bsig wiki resolve`; without Engine, no
+    links. The register links on a strong identifier, which Batch 1.1 core
+    mentions do not carry, so today a name alone links only when the
+    register's resolve says "linked"."""
 
     def __init__(self, workspace: Path):
         self.bsig = shutil.which("bsig")
@@ -151,8 +204,10 @@ class Resolver:
 
     def link(self, name: str) -> str:
         entity = self.entity(name)
-        label = name.replace("|", "/").replace("]", ")")
-        return f"[[wiki/entities/{entity}|{label}]]" if entity else name
+        if entity and re.fullmatch(r"[a-z0-9][a-z0-9_-]*", entity):
+            label = name.replace("|", "/").replace("[", "(").replace("]", ")").replace("\n", " ")
+            return f"[[wiki/entities/{entity}|{label}]]"
+        return _md(name)
 
 
 def _frontmatter(fields: dict[str, Any]) -> str:
@@ -162,21 +217,25 @@ def _frontmatter(fields: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def check_approval(case: Path) -> tuple[dict[str, Any], bytes, str]:
+def check_approval(case: Path, descriptor: int) -> tuple[dict[str, Any], bytes, str]:
     if not review.activated_case(case):
         raise DestinationError("only an activated case writes a Batch 1.1 to the wiki")
     if review.ingest_mode() != "solo":
         raise DestinationError("newsroom-mode cases write nothing to this computer's wiki")
-    state = load_state(case)
-    decision = state["decisions"].get("ingest")
-    if not isinstance(decision, dict) or decision.get("decision") != "requested":
+    state = load_state(case, descriptor)
+    status = status_for(case, state, descriptor)
+    detail = status.get("ingest") or {}
+    # The resolver accepts a requested decision only when the nonce ledger
+    # backs it; a hand-written state never reaches this step.
+    if status.get("next_phase") != "ingest" or detail.get("resume_at") not in ("ingest", "seal"):
         raise DestinationError("ingestion has not been requested")
-    bound = (decision.get("review") or {}).get("review_digest")
+    decision = state["decisions"].get("ingest")
+    bound = (decision.get("review") or {}).get("review_digest") if isinstance(decision, dict) else None
     batch_path = case / review.INGEST_BATCH
     if not batch_path.is_file():
         raise DestinationError("data/knowledge-batch.json is missing")
     raw = batch_path.read_bytes()
-    if review.review_digest(case, "ingest") != bound:
+    if not bound or review.review_digest(case, "ingest", descriptor) != bound:
         raise DestinationError("the batch or its review changed after the request; review it and request again")
     return decision, raw, bound
 
@@ -210,7 +269,7 @@ def notes_for(batches: list[dict[str, Any]], journal: dict[str, dict[str, Any]],
 
     def note_link(record_id: str, label: str) -> str:
         kind = records.get(record_id, {}).get("type")
-        return f"[[{NAMESPACE}/{FOLDERS[kind]}/{_slug(record_id)}|{label}]]" if kind else label
+        return f"[[{NAMESPACE}/{FOLDERS[kind]}/{_slug(record_id)}|{_slug(record_id)}]]" if kind else _md(label)
 
     out: dict[str, str] = {}
     for record_id, entry in sorted(records.items()):
@@ -224,18 +283,18 @@ def notes_for(batches: list[dict[str, Any]], journal: dict[str, dict[str, Any]],
         if record_type == "claim":
             fields["title"] = record["proposition"]
             statement = record["statement"]
-            body += [f"# {record['proposition']}", "",
+            body += [f"# {_md(record['proposition'])}", "",
                      f"- Subject: {resolver.link(statement['subject']['text'])}",
-                     f"- Predicate: {statement['predicate']}"]
+                     f"- Predicate: {_md(statement['predicate'])}"]
             if "object" in statement:
                 body.append(f"- Object: {resolver.link(statement['object']['text'])}")
             for assessment in about("assessment", "claim_ref", record_id):
                 fields.update({"verdict": assessment["verdict"], "confidence": assessment["confidence"]})
-                body += ["", "## Assessment", "", f"{assessment['verdict']}, {assessment['confidence']} confidence.", "", assessment["rationale"]]
+                body += ["", "## Assessment", "", f"{assessment['verdict']}, {assessment['confidence']} confidence.", "", _md(assessment["rationale"])]
                 for flag in assessment.get("flags", []):
                     disposition = flag["disposition"]
-                    body.append(f"- Flag `{flag['code']}`: {flag['reason']} Disposition: {disposition['action']}"
-                                + (f" ({disposition['reason']})" if disposition.get("reason") else ""))
+                    body.append(f"- Flag `{flag['code']}`: {_md(flag['reason'])} Disposition: {disposition['action']}"
+                                + (f" ({_md(disposition['reason'])})" if disposition.get("reason") else ""))
             passages = about("claim_source_expression", "claim_ref", record_id)
             if passages:
                 body += ["", "## Passages", ""]
@@ -243,24 +302,30 @@ def notes_for(batches: list[dict[str, Any]], journal: dict[str, dict[str, Any]],
                     passage = latest("source_expression", link["source_expression_ref"]["id"]) or {}
                     evidence = latest("evidence", ((passage.get("origin_ref") or {}).get("id")) or "") or {}
                     source = (evidence.get("capture") or {}).get("source_url", "")
-                    speaker = f" ({passage['speaker']})" if passage.get("speaker") else ""
-                    body.append(f"- {link['role']}: \"{passage.get('text', '')}\"{speaker} {source}".rstrip())
+                    speaker = f" ({_md(passage['speaker'])})" if passage.get("speaker") else ""
+                    body.append(f"- {link['role']}: \"{_md(passage.get('text', ''))}\"{speaker} <{_md(source)}>".rstrip(" <>"))
             positions = about("source_position", "claim_ref", record_id)
             if positions:
                 body += ["", "## Source positions", ""]
-                body += [f"- {resolver.link(p['actor']['label'])} {p['stance']}: \"{p['attribution_verbatim']}\"" for p in positions]
+                body += [f"- {resolver.link(p['actor']['label'])} {p['stance']}: \"{_md(p['attribution_verbatim'])}\"" for p in positions]
             events = about("claim_event_membership", "claim_ref", record_id)
             if events:
                 body += ["", "## Events", ""] + [f"- {note_link(m['event_ref']['id'], m['event_ref']['id'])}" for m in events]
         elif record_type == "event":
             actors = ", ".join(f"{resolver.link(a['name'])} ({a['role']})" for a in record["actors"])
             fields["title"] = f"{', '.join(a['name'] for a in record['actors'])} {record['action']}"
-            body += [f"# {fields['title']}", "", f"- Actors: {actors}", f"- Action: {record['action']}"]
+            body += [f"# {_md(fields['title'])}", "", f"- Actors: {actors}", f"- Action: {_md(record['action'])}"]
             if "object" in record:
                 body.append(f"- Object: {resolver.link(record['object']['text'])}")
             if "time" in record:
                 time = record["time"]
-                body.append(f"- Time: {time.get('value') or (str(time.get('start', '')) + ' to ' + str(time.get('end', ''))).strip()}")
+                if "value" in time:
+                    when = time["value"]
+                elif "start" in time and "end" in time:
+                    when = f"{time['start']} to {time['end']}"
+                else:
+                    when = f"from {time['start']}" if "start" in time else f"until {time['end']}"
+                body.append(f"- Time: {_md(when)}")
             if "place" in record:
                 body.append(f"- Place: {resolver.link(record['place']['name'])}")
             claims = about("claim_event_membership", "event_ref", record_id)
@@ -270,7 +335,7 @@ def notes_for(batches: list[dict[str, Any]], journal: dict[str, dict[str, Any]],
                 body += ["", "## Story arcs", ""] + [f"- {note_link(m['story_arc_ref']['id'], m['story_arc_ref']['id'])}" for m in arcs]
         else:
             fields["title"] = record["title"]
-            body += [f"# {record['title']}", "", record["description"]]
+            body += [f"# {_md(record['title'])}", "", _md(record["description"])]
             events = about("event_story_arc_membership", "story_arc_ref", record_id)
             body += ["", "## Events", ""] + [f"- {note_link(m['event_ref']['id'], m['event_ref']['id'])}" for m in events]
         body += ["", "## Versions", ""] + [f"- v{v}: batch {b}" for v, b in history]
@@ -279,87 +344,102 @@ def notes_for(batches: list[dict[str, Any]], journal: dict[str, dict[str, Any]],
     return out
 
 
-def write(case: Path, workspace: Path, overwrite_hand_edits: bool = False) -> dict[str, Any]:
-    decision, raw, bound = check_approval(case)
-    batch = json.loads(raw)
-    ids_path = case / "data" / "knowledge-ids.json"
-    ids = _load(ids_path)
-    admitted: dict[str, Any] = {}
+def _admitted_store(ids: dict[str, Any]) -> dict[str, Any]:
+    store: dict[str, Any] = {}
     for entry in ids.get("records", {}).values():
         if isinstance(entry.get("admitted"), dict) and isinstance(entry["admitted"].get("record"), dict):
-            admitted.setdefault(next(a for a, t in RULES.ARRAYS.items() if t == entry["type"]), []).append(entry["admitted"]["record"])
-    batch_ids = {(t, r["id"], r["version"]) for a, t in RULES.ARRAYS.items() for r in batch.get(a, [])}
-    resuming = any((entry["type"], entry["id"], entry["admitted"]["version"]) in batch_ids
-                   for entry in ids.get("records", {}).values() if isinstance(entry.get("admitted"), dict))
-    store = [] if resuming else [admitted]  # an interrupted run already admitted this batch
-    errors = schema_check.load(SCRIPT_DIR.parent / "schemas" / "knowledge-batch-1.1.schema.json").errors(batch)
-    errors += RULES.validate(batch, store)
-    if errors:
-        raise DestinationError("the approved batch is not valid: " + "; ".join(errors[:6]))
+            store.setdefault(next(a for a, t in RULES.ARRAYS.items() if t == entry["type"]), []).append(entry["admitted"]["record"])
+    return store
+
+
+def write(case: Path, workspace: Path, overwrite_hand_edits: bool = False) -> dict[str, Any]:
     if not (workspace / ".ok").is_dir() and not (workspace / NAMESPACE).is_dir():
         raise DestinationError(f"{workspace} is not a member wiki (no .ok/ or {NAMESPACE}/)")
-
-    # Wiki: the batch whole, then the journal, then the regenerated notes.
-    batch_file = _confined(workspace, f"{NAMESPACE}/batches/{_slug(batch['batch_id'])}.json")
-    if batch_file.is_file() and batch_file.read_bytes() != raw:
-        raise DestinationError(f"{batch_file.name} already holds a different batch; kept batches are append-only")
-    if not batch_file.is_file():
-        _write_atomic(batch_file, raw)
-    journal_path = _confined(workspace, f"{NAMESPACE}/decisions.jsonl")
-    journal: dict[str, dict[str, Any]] = {}
-    lines = journal_path.read_text(encoding="utf-8").splitlines() if journal_path.is_file() else []
-    for line in lines:
-        try:
-            item = json.loads(line)
-        except ValueError:
-            raise DestinationError("decisions.jsonl has an unreadable line; it is append-only and must not be edited") from None
-        journal[item.get("batch_id")] = item
-    if batch["batch_id"] not in journal:
-        item = {"batch_id": batch["batch_id"], "case_id": batch["case_id"], "batch_sha256": _sha(raw), "review_digest": bound,
-                "decided_at": _now(), "records": sorted([list(k) for k in batch_ids])}
-        _write_atomic(journal_path, ("\n".join(lines + [json.dumps(item, sort_keys=True)]) + "\n").encode("utf-8"))
-        journal[batch["batch_id"]] = item
-    kept = []
-    for path in sorted((workspace / NAMESPACE / "batches").glob("*.json")):
-        doc = _load(path)
-        if doc.get("batch_id") in journal:  # only approved batches feed the notes
-            kept.append(doc)
-    manifest_path = _confined(workspace, f"{NAMESPACE}/generated-notes.json")
-    manifest = _load(manifest_path) if manifest_path.is_file() else {"schema_version": "1.0", "notes": {}}
-    base = workspace / ".ok" / "schemas" / "base.schema.json"
-    base_checker = schema_check.load(base) if base.is_file() else None
-    notes = notes_for(kept, journal, Resolver(workspace))
-    edited = [rel for rel in notes if (_confined(workspace, rel)).is_file() and rel in manifest["notes"]
-              and _sha(_confined(workspace, rel).read_bytes()) != manifest["notes"][rel]]
-    edited += [rel for rel in notes if (_confined(workspace, rel)).is_file() and rel not in manifest["notes"]]
-    if edited and not overwrite_hand_edits:
-        raise DestinationError("generated notes were edited by hand: " + ", ".join(sorted(edited)[:8])
-                               + "; move the edits elsewhere or rerun with --overwrite-hand-edits")
-    for rel, text in notes.items():
-        if base_checker is not None:
-            front = {k: json.loads(v) for k, v in (line.split(": ", 1) for line in text.split("---\n")[1].splitlines())}
-            problems = base_checker.errors(front)
-            if problems:
-                raise DestinationError(f"{rel} fails the wiki's base schema: {problems[:3]}")
-        data = text.encode("utf-8")
-        _write_atomic(_confined(workspace, rel), data)
-        manifest["notes"][rel] = _sha(data)
-    _write_atomic(manifest_path, (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8"))
-
-    # Case: admission and the completed receipt, in one locked write.
-    with transaction(case) as descriptor:
-        for entry in ids.get("records", {}).values():
-            pending = entry.get("pending")
-            if isinstance(pending, dict) and (entry["type"], entry["id"], pending.get("version")) in batch_ids:
-                entry["admitted"] = entry.pop("pending")
+    # The wiki lock, then the case lock, held for the whole write: no review
+    # edit, builder run or other case can change what is checked below.
+    with wiki_lock(workspace), transaction(case) as descriptor:
+        decision, raw, bound = check_approval(case, descriptor)
+        batch = json.loads(raw)
+        batch_sha = _sha(raw)
         marker = load_ingestion_marker(case, descriptor)
-        marker.update({"status": "completed", "destination": "wiki", "batch_id": batch["batch_id"],
-                       "batch_sha256": _sha(raw), "notes_written": len(notes), "completed_at": _now()})
-        atomic_write_files(case, {
-            "data/knowledge-ids.json": (json.dumps(ids, indent=2, ensure_ascii=False) + "\n").encode("utf-8"),
-            "data/ingestion.json": (json.dumps(marker, indent=2, sort_keys=True) + "\n").encode("utf-8"),
-        }, data_descriptor=descriptor)
-    return {"ok": True, "batch_id": batch["batch_id"], "notes": len(notes), "workspace": str(workspace)}
+        done = marker.get("status") == "completed" and marker.get("batch_sha256") == batch_sha
+        ids = _load(case / "data" / "knowledge-ids.json")
+        errors = schema_check.load(SCRIPT_DIR.parent / "schemas" / "knowledge-batch-1.1.schema.json").errors(batch)
+        if not done:
+            # Before admission the rules run against what is already admitted;
+            # a completed run admitted this batch already and is only redone.
+            errors += RULES.validate(batch, [_admitted_store(ids)])
+        if errors:
+            raise DestinationError("the approved batch is not valid: " + "; ".join(errors[:6]))
+        batch_ids = {(t, r["id"], r["version"]) for a, t in RULES.ARRAYS.items() for r in batch.get(a, [])}
+
+        # Wiki: the batch whole, then the journal, then the regenerated notes.
+        batch_file = _confined(workspace, f"{NAMESPACE}/batches/{_slug(batch['batch_id'])}.json")
+        if batch_file.is_file() and batch_file.read_bytes() != raw:
+            raise DestinationError(f"{batch_file.name} already holds a different batch; kept batches are append-only")
+        if not batch_file.is_file():
+            _write_atomic(batch_file, raw)
+        journal_path = _confined(workspace, f"{NAMESPACE}/decisions.jsonl")
+        journal: dict[str, dict[str, Any]] = {}
+        lines = journal_path.read_text(encoding="utf-8").splitlines() if journal_path.is_file() else []
+        for line in lines:
+            try:
+                item = json.loads(line)
+            except ValueError:
+                raise DestinationError("decisions.jsonl has an unreadable line; it is append-only and must not be edited") from None
+            journal[item.get("batch_id")] = item
+        if batch["batch_id"] not in journal:
+            item = {"batch_id": batch["batch_id"], "case_id": batch["case_id"], "batch_sha256": batch_sha, "review_digest": bound,
+                    "admitted_at": _now(), "records": sorted([list(k) for k in batch_ids])}
+            _write_atomic(journal_path, ("\n".join(lines + [json.dumps(item, sort_keys=True)]) + "\n").encode("utf-8"))
+            journal[batch["batch_id"]] = item
+        kept = []
+        batches_dir = _confined(workspace, f"{NAMESPACE}/batches")
+        for path in sorted(batches_dir.glob("*.json")):
+            doc = _load(path)
+            if doc.get("batch_id") in journal:  # only journaled batches feed the notes
+                kept.append(doc)
+        manifest_path = _confined(workspace, f"{NAMESPACE}/generated-notes.json")
+        manifest = _load(manifest_path) if manifest_path.is_file() else {"schema_version": "1.0", "notes": {}}
+        base = workspace / ".ok" / "schemas" / "base.schema.json"
+        base_checker = schema_check.load(base) if base.is_file() else None
+        notes = notes_for(kept, journal, Resolver(workspace))
+        edited = []
+        for rel, text in notes.items():
+            target = _confined(workspace, rel)
+            if target.is_file():
+                current = _sha(target.read_bytes())
+                # Ours when it is what we wrote last or what we write now (a
+                # run interrupted before the manifest was saved).
+                if current not in (manifest["notes"].get(rel), _sha(text.encode("utf-8"))):
+                    edited.append(rel)
+        if edited and not overwrite_hand_edits:
+            raise DestinationError("generated notes were edited by hand: " + ", ".join(sorted(edited)[:8])
+                                   + "; move the edits elsewhere or rerun with --overwrite-hand-edits")
+        for rel, text in notes.items():
+            if base_checker is not None:
+                front = {k: json.loads(v) for k, v in (line.split(": ", 1) for line in text.split("---\n")[1].splitlines())}
+                problems = base_checker.errors(front)
+                if problems:
+                    raise DestinationError(f"{rel} fails the wiki's base schema: {problems[:3]}")
+            data = text.encode("utf-8")
+            _write_atomic(_confined(workspace, rel), data)
+            manifest["notes"][rel] = _sha(data)
+        _write_atomic(manifest_path, (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8"))
+
+        # Case: admission and the completed receipt, in one write.
+        if not done:
+            for entry in ids.get("records", {}).values():
+                pending = entry.get("pending")
+                if isinstance(pending, dict) and (entry["type"], entry["id"], pending.get("version")) in batch_ids:
+                    entry["admitted"] = entry.pop("pending")
+            marker.update({"status": "completed", "destination": "wiki", "batch_id": batch["batch_id"],
+                           "batch_sha256": batch_sha, "notes_written": len(notes), "completed_at": _now()})
+            atomic_write_files(case, {
+                "data/knowledge-ids.json": (json.dumps(ids, indent=2, ensure_ascii=False) + "\n").encode("utf-8"),
+                "data/ingestion.json": (json.dumps(marker, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+            }, data_descriptor=descriptor)
+    return {"ok": True, "batch_id": batch["batch_id"], "notes": len(notes), "already_admitted": done, "workspace": str(workspace)}
 
 
 def main(argv: list[str] | None = None) -> int:

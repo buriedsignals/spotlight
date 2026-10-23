@@ -298,8 +298,11 @@ An activated case in solo mode is written to the member's wiki by
   hand edit is detected and never overwritten.
 
 Entity mentions link to `wiki/entities/` only on an exact register match from
-`bsig wiki resolve`; Spotlight never writes the register. Without Engine there
-are no links. Newsroom-mode cases write nothing locally.
+`bsig wiki resolve`; the register links on a strong identifier, which Batch
+1.1 core mentions do not carry, so most mentions stay plain text. Spotlight
+never writes the register. Without Engine there are no links. The write holds
+the wiki's `.wiki-lock` and the case lock throughout. Newsroom-mode cases
+write nothing locally.
 
 ## Source-Expression Release Modes
 
