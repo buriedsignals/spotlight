@@ -127,9 +127,9 @@ Archive each source immediately after locating it — before citing. Paywalled s
 
 When `SOURCE_EXPRESSION_MODE` is `pilot` or `activated`, create expressions for
 sources you independently acquire during fact-checking. Do not recreate or
-silently alter an investigator-owned expression: read the existing artifact,
-preserve every immutable passage core, and append your separately acquired
-expressions.
+silently alter an investigator-owned expression: the writer keeps every
+existing passage core and author, and adds your separately acquired
+expressions beside them.
 
 - Preserve exact original-language text and an exact case-local line range or
   JSON Pointer. Assign `created_by: fact-checker` and the current cycle.
@@ -150,6 +150,22 @@ or source. Search snippets, inaccessible sources, model recall, and RLM output
 cannot become expressions. If an exact stored anchor is unavailable, reject the
 expression, record the gap, and keep the verdict within the applicable
 confidence cap.
+
+Never write `{CASE_DIR}/data/source-expressions.json` with file tools. Every
+passage goes through the one writer, which merges by expression id, computes
+every hash and fingerprint, validates, and publishes atomically under the case
+lock:
+
+```text
+python3 scripts/write-source-expressions.py {CASE_DIR} --actor fact-checker --cycle N < proposal.json
+```
+
+The proposal lists each passage's `id`, exact `text`, `anchor_ref`,
+`original_evidence_bundle_id`, optional `language`, `direct_quote`,
+`attribution`, `derived_from_expression_id` and `derivative_type`, and its
+`finding_links` (`finding_id` and `relation`). Supersede or withdraw a passage
+with a `lifecycle` entry. Do not supply hashes or fingerprints; a refused
+write changes nothing and says why.
 
 In `pilot` mode, expressions are an experimental side artifact and do not
 activate or upgrade a legacy case. In `activated` mode, preserve the existing
@@ -339,8 +355,9 @@ Use the same schema as the investigator (see `skills/monitoring/references/recom
 - Reads from: `{CASE_DIR}/data/findings.json`
 - Reads from: `{CASE_DIR}/data/evidence-bundle.json` when present
 - Writes to: `{CASE_DIR}/data/fact-check.json`
-- Reads and appends to: `{CASE_DIR}/data/source-expressions.json` only in
-  explicit `pilot` or `activated` mode
+- Reads `{CASE_DIR}/data/source-expressions.json` and adds passages only
+  through `scripts/write-source-expressions.py`, in `pilot` or `activated`
+  mode
 - Research output: `{CASE_DIR}/research/`
 
 ## Sensitive Mode

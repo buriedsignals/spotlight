@@ -137,10 +137,12 @@ Cycles are autonomous. The orchestrator runs up to 5 without user intervention, 
 
 ### Source-expression mode
 
-Source expressions are opt-in during the pilot-capable release. The orchestrator
-passes `SOURCE_EXPRESSION_MODE: pilot|activated` to producer agents only for a
-selected case. If the field is absent, agents retain legacy `1.0` output and do
-not emit `data/source-expressions.json`.
+New cases are activated by default: before the first Investigation cycle the
+orchestrator runs `scripts/case-contract.py activate-new` and passes
+`SOURCE_EXPRESSION_MODE: activated` to both producers. An existing case that
+already has findings stays legacy: the field is absent, and agents keep `1.0`
+output without `data/source-expressions.json`, unless the case is selected for
+`pilot`.
 
 - `pilot` records the experimental side artifact without upgrading or
   activating the case. It is used to measure duplicate expressions, unresolved
@@ -199,9 +201,9 @@ treated as a recovery event.
 
 The comparative record at `docs/source-expression-pilot-results.json` covers
 the separate artifact, embedded-findings, and richer evidence/fact-check
-alternatives on the same fixture subset. Human correction yield and review time
-remain unmeasured, so activation of default new-case emission is **NOT
-APPROVED**.
+alternatives on the same fixture subset. It also records the decision to
+activate new cases by default and the stop thresholds measured over the first
+real activated cases.
 
 ### A cycle
 

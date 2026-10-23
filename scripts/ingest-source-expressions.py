@@ -24,7 +24,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from source_expression_contract import canonical_json_bytes, fact_check_rows, lifecycle_state
+from source_expression_contract import bound_hashes, canonical_json_bytes, fact_check_rows, lifecycle_state
 
 
 TOOL_VERSION = "spotlight-source-expression-ingest/1"
@@ -217,10 +217,9 @@ def verify_activation(case_dir: Path, source_hash: str, project: str) -> None:
         raise IngestError("invalid case contract: " + "; ".join(contract_errors))
     if contract.get("project") != project or contract.get("current_contract_version") != "1.1":
         raise IngestError("source-expression ingest requires a matching activated 1.1 case")
-    events = contract.get("activation_events")
-    if not isinstance(events, list) or not events:
-        raise IngestError("case contract has no activation event")
-    hashes = events[-1].get("activated_artifact_hashes", {})
+    hashes = bound_hashes(contract)
+    if hashes is None:
+        raise IngestError("case contract has no artifact binding; approve the Investigation gate first")
     if hashes.get("source_expressions_sha256") != source_hash:
         raise IngestError("source-expressions.json does not match the activated artifact hash")
     artifact_paths = {

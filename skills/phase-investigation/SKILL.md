@@ -19,20 +19,30 @@ conversation context or artifact presence.
 Resolve this once before the first cycle and preserve it on every investigator
 and fact-checker spawn:
 
-1. If `data/case-contract.json` validates, findings use contract `1.1`, and
-   `python3 scripts/validate-case.py {CASE_DIR}` passes, set
-   `SOURCE_EXPRESSION_MODE: activated`.
-2. Otherwise, set `SOURCE_EXPRESSION_MODE: pilot` only when the operator has
-   explicitly selected this case for the source-expression pilot. Record or
-   preserve a clean pre-pilot legacy bundle for later comparison/recovery.
-3. In every other case, omit the field. This is the default and preserves
-   findings contract `1.0`; do not create `data/source-expressions.json`.
+1. If `data/case-contract.json` exists, the case is activated: run
+   `python3 scripts/validate-case.py {CASE_DIR}` and set
+   `SOURCE_EXPRESSION_MODE: activated`. An activated case never falls back to
+   legacy.
+2. Otherwise, if the case has no `data/findings.json` yet, it is a new case
+   and starts activated (exact passages are the default for every new case):
+
+   ```text
+   python3 scripts/case-contract.py activate-new {CASE_DIR}
+   ```
+
+   Then set `SOURCE_EXPRESSION_MODE: activated`. Findings use contract `1.1`
+   and the fact-check uses contract `1.1`.
+3. Otherwise the case is an existing legacy case. Omit the field: it keeps
+   findings contract `1.0` and gets no `data/source-expressions.json`. Set
+   `SOURCE_EXPRESSION_MODE: pilot` only when the operator has explicitly
+   selected this case for the pilot.
 
 Never infer activation from `source-expressions.json`, findings version, or a
 migration audit alone. `data/case-contract.json` is the sole activation
-authority. Pilot output is a side artifact and cannot be promoted in place by
-the current migration command. Activation of a clean legacy case is a separate
-operator-reviewed dry-run/apply flow:
+authority. Its artifact hashes are bound when the Investigation gate is
+approved (the approval appends the binding), not at activation, so passages
+and findings can change freely during the cycles. An old case can be
+activated only through the operator-reviewed dry-run/apply flow:
 
 ```text
 python3 scripts/migrate-source-expressions.py {CASE_DIR}
@@ -41,11 +51,9 @@ python3 scripts/validate-case.py {CASE_DIR}
 python3 scripts/validate-fact-check.py {CASE_DIR}
 ```
 
-The checked-in comparison is
-`docs/source-expression-pilot-results.json`. Its activation status is **NOT
-APPROVED** because timed human review, correction yield, longitudinal locator
-stability, and same-fixture migration effort remain unmeasured. Do not enable
-`1.1` as the new-case default.
+The decision record is `docs/source-expression-pilot-results.json`. Its stop
+rule: when a threshold there is breached, a release returns new cases to
+legacy until the producer is fixed; an activated case never falls back.
 
 Expression validation proves exact-text, locator, hash, reference, lifecycle,
 and status integrity. It does not prove truth, entailment, completeness, or

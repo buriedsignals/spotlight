@@ -91,13 +91,12 @@ The release modes are deliberately explicit:
 
 | Mode | Authoritative state | Meaning |
 |---|---|---|
-| Legacy | Findings contract `1.0`, no valid case contract | Default. Expression protection is not claimed. |
+| Activated | Findings contract `1.1` plus a valid `case-contract.json` | Default for every new case. Strict expression validation applies and cannot be downgraded; from the Investigation-gate approval on, the artifacts must match the binding that approval wrote. |
+| Legacy | Findings contract `1.0`, no valid case contract | Existing cases. Expression protection is not claimed; forward-only. |
 | Pilot | Legacy state plus an explicitly requested side artifact | Evaluation only. Artifact presence never activates a case. |
-| Activated | Findings contract `1.1` plus valid `case-contract.json` with matching hashes | Strict expression validation applies and cannot be downgraded. |
 
-See `source-expression-pilot-results.json` for the current comparative result.
-Activation remains **NOT APPROVED** until the missing human and longitudinal
-measurements are recorded.
+See `source-expression-pilot-results.json` for the decision, the stop
+thresholds and the measurements still due after the default changed.
 
 Validate a case file:
 

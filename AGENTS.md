@@ -229,7 +229,7 @@ absolute path and the result in `.spotlight-config.json` under `storage`.
 │   ├── methodology.json         # Schema: schemas/methodology.schema.json
 │   ├── findings.json            # Schema: schemas/findings.schema.json
 │   ├── fact-check.json          # Schema: schemas/fact-check.schema.json
-│   ├── source-expressions.json  # Opt-in pilot side artifact; required by activated 1.1 cases
+│   ├── source-expressions.json  # Exact passages; written only by scripts/write-source-expressions.py
 │   ├── case-contract.json       # Sole authoritative 1.1 activation receipt
 │   ├── source-expression-migration.json # Dry-run audit only; never activates a case
 │   ├── report-draft.json        # Schema: schemas/report-draft.schema.json (when report requested)
@@ -254,9 +254,9 @@ absolute path and the result in `.spotlight-config.json` under `storage`.
     └── *.pdf                    # Downloaded or preserved source documents
 ```
 
-All schemas are in `schemas/` at the repo root. The default findings contract
-remains `1.0`; source-expression and activation documents use their own
-schema versions as declared below.
+All schemas are in `schemas/` at the repo root. New cases start at findings
+contract `1.1` (activated); existing cases keep `1.0`. Source-expression and
+activation documents use their own schema versions as declared below.
 
 ## Schema Reference
 
@@ -277,21 +277,31 @@ schema versions as declared below.
 
 ## Source-Expression Release Modes
 
-- **Legacy (default):** `findings.json` stays at contract `1.0`; producer spawn
-  prompts omit `SOURCE_EXPRESSION_MODE`; no expression protection is claimed.
-- **Pilot (explicit opt-in):** pass `SOURCE_EXPRESSION_MODE: pilot` to both
-  producers. `data/source-expressions.json` is an experimental side artifact;
-  it does not upgrade the findings contract and never activates the case.
-- **Activated:** a valid `data/case-contract.json` plus matching findings
-  contract `1.1` is authoritative. File presence, a migration audit, or a
-  findings version alone is insufficient. Activated cases remain strict and
-  must never be treated as legacy during recovery or rollback.
+- **Activated (default for new cases):** before the first Investigation cycle
+  of a case with no findings yet, `scripts/case-contract.py activate-new`
+  writes `data/case-contract.json` with a `born` event. Findings use contract
+  `1.1`, the fact-check uses contract `1.1`, and producers write passages only
+  through `scripts/write-source-expressions.py`. The Investigation-gate
+  approval binds the artifact hashes it covers. Activated cases remain strict
+  and must never be treated as legacy during recovery or rollback.
+- **Legacy (existing cases):** a case that already has findings keeps contract
+  `1.0`; producer spawn prompts omit `SOURCE_EXPRESSION_MODE`; no expression
+  protection is claimed. Old cases are forward-only: they are activated only
+  through the operator-reviewed `scripts/migrate-source-expressions.py`
+  dry-run/apply flow, or continued as a new follow-up case.
+- **Pilot (explicit opt-in on a legacy case):** pass
+  `SOURCE_EXPRESSION_MODE: pilot` to both producers.
+  `data/source-expressions.json` is an experimental side artifact; it does not
+  upgrade the findings contract and never activates the case.
 
 Deterministic checks establish exact-text, locator, hash, lifecycle, reference,
 and status integrity. They do not establish truth, entailment, completeness, or
 fair editorial framing. Independent fact-checking and human review remain
 required.
 
-The pilot decision is recorded in
-`docs/source-expression-pilot-results.json`. Its current activation status is
-**NOT APPROVED**; new-case emission therefore remains legacy `1.0` by default.
+The decision and its stop thresholds are recorded in
+`docs/source-expression-pilot-results.json`: approved for new cases on 22
+October 2026, with review time, correction yield and locator stability
+measured over the first real activated cases. When a threshold is breached, a
+release returns new cases to legacy until the producer is fixed; an
+activated case never falls back.

@@ -24,6 +24,7 @@ from .dependencies import (
     validate_approval,
 )
 from .resolver import load_ingestion_marker, status_for
+from .case_contract import bind as bind_case_contract
 from .case_writer import atomic_write_files, restore_files_on_error
 from .review import LEDGER_FILE, consume_nonce, ledger_bytes, load_ledger
 from .storage import (
@@ -101,21 +102,28 @@ def approve(
             state.pop("follow_up", None)
             state.pop("investigation_gate_finalization", None)
     else:
-        dependency_digest = require_investigation_gate_digest(case)
-        gate_receipt = {
-            "approved_by": approved_by,
-            "approved_at": approved_at,
-            "dependency_digest": dependency_digest,
-            "review": binding,
-        }
-        review_path = case_path(case, "review.html")
-        if review_path.is_file():
-            gate_receipt["review_sha256_at_approval"] = sha256(review_path)
-        state["approvals"][gate] = gate_receipt
-        if not investigation_gate_approval_matches(previous, dependency_digest):
-            state["decisions"].clear()
-            state.pop("investigation_gate_finalization", None)
-        state.pop("follow_up", None)
+        # Bind the activated artifacts this approval covers before computing
+        # the digest, so the binding itself is part of what was approved.
+        # A failure anywhere up to the state write puts the contract back.
+        with restore_files_on_error(case, ("data/case-contract.json",), data_descriptor=data_descriptor):
+            bind_case_contract(case, data_descriptor)
+            dependency_digest = require_investigation_gate_digest(case)
+            gate_receipt = {
+                "approved_by": approved_by,
+                "approved_at": approved_at,
+                "dependency_digest": dependency_digest,
+                "review": binding,
+            }
+            review_path = case_path(case, "review.html")
+            if review_path.is_file():
+                gate_receipt["review_sha256_at_approval"] = sha256(review_path)
+            state["approvals"][gate] = gate_receipt
+            if not investigation_gate_approval_matches(previous, dependency_digest):
+                state["decisions"].clear()
+                state.pop("investigation_gate_finalization", None)
+            state.pop("follow_up", None)
+            _publish(case, data_descriptor, state, ledger)
+        return
     _publish(case, data_descriptor, state, ledger)
 
 

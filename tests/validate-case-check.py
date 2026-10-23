@@ -590,6 +590,17 @@ def main() -> int:
         write_activated_case(activated)
         rc = subprocess.run([sys.executable, str(SCRIPT), str(activated)], capture_output=True).returncode
         check("e2e: activated case exits 0", [] if rc == 0 else [f"rc={rc}"], False)
+        # A migrated case keeps its activation-time hashes enforced, with or
+        # without a gate approval (only born cases wait for their binding).
+        migrated = Path(tmp) / "migrated-edited"
+        write_activated_case(migrated)
+        fc_path = migrated / "data" / "fact-check.json"
+        fc = json.loads(fc_path.read_text(encoding="utf-8"))
+        fc["claims"][0]["notes"] = "edited after migration"
+        fc_path.write_text(json.dumps(fc), encoding="utf-8")
+        out = subprocess.run([sys.executable, str(SCRIPT), str(migrated)], capture_output=True, text=True)
+        check("e2e: a migrated case edited after activation fails its hash check",
+              [] if "fact_check_sha256 does not match" in out.stdout + out.stderr else ["no hash error"], False)
         # A case activated before contract 1.1 keeps its 1.0 fact-check and
         # stays valid; a removed verdict in an activated case is refused.
         earlier = Path(tmp) / "activated-before-1.1"

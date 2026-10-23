@@ -107,6 +107,11 @@ def rebind_decisions(batch: dict) -> None:
 
 def activated_batch(case_dir: Path) -> dict:
     CASE_HELPERS.write_activated_case(case_dir)
+    # Destination commits follow an approved Investigation gate, from which
+    # point the activated artifacts must match their binding.
+    (case_dir / "data" / "orchestration.json").write_text(
+        json.dumps({"approvals": {"investigation_gate": {}}}), encoding="utf-8"
+    )
     batch = load_fixture()
     findings = json.loads((case_dir / "data" / "findings.json").read_text(encoding="utf-8"))
     expressions = json.loads(

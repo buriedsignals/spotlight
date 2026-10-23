@@ -403,7 +403,12 @@ class OrchestrationConformance(unittest.TestCase):
         written = json.loads(state_path.read_text(encoding="utf-8"))
         self.assertEqual(written["schema_version"], "spotlight-orchestration/v2")
         self.assertEqual(set(written["approvals"]), {"methodology", "investigation_gate"})
-        self.assertEqual((self.case / "data/case-contract.json").read_bytes(), contract)
+        # The case stays activated: its activation events are kept as they
+        # were, and the approval appends one binding of what it covers.
+        before = json.loads(contract)["activation_events"]
+        after = json.loads((self.case / "data/case-contract.json").read_text(encoding="utf-8"))["activation_events"]
+        self.assertEqual(after[: len(before)], before)
+        self.assertEqual([event.get("kind") for event in after[len(before):]], ["binding"])
         self.assert_case_valid()
 
     def test_unknown_or_mixed_state_keys_are_refused(self) -> None:
@@ -464,7 +469,7 @@ class OrchestrationConformance(unittest.TestCase):
         write_json(expressions_path, expressions)
         contract_path = self.case / "data/case-contract.json"
         contract = json.loads(contract_path.read_text(encoding="utf-8"))
-        contract["activation_events"][-1]["activated_artifact_hashes"][
+        contract["activation_events"][-1]["artifact_hashes"][
             "source_expressions_sha256"
         ] = sha256(expressions_path)
         write_json(contract_path, contract)
