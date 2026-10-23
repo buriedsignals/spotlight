@@ -1,0 +1,16 @@
+{
+  "name": "spotlight-review",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local review pages for Spotlight's human gates",
+  "type": "module",
+  "bin": {
+    "spotlight-review-mcp": "./mcp.mjs"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

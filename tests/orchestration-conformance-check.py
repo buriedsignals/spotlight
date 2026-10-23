@@ -829,6 +829,8 @@ class OrchestrationConformance(unittest.TestCase):
                     (self.case / name).write_bytes(content)
                 state_path = self.case / "data/orchestration.json"
                 state_before = state_path.read_bytes()
+                ledger_path = self.case / "data/review-nonces.json"
+                ledger_before = ledger_path.read_bytes()
 
                 def fail_state_publication(
                     *_args: object, **_kwargs: object
@@ -839,7 +841,7 @@ class OrchestrationConformance(unittest.TestCase):
 
                 with mock.patch.object(
                     spotlight_orchestration.transitions,
-                    "atomic_write_json",
+                    "atomic_write_files",
                     fail_state_publication,
                 ):
                     with self.assertRaises(
@@ -852,6 +854,8 @@ class OrchestrationConformance(unittest.TestCase):
                     originals,
                 )
                 self.assertEqual(state_path.read_bytes(), state_before)
+                # The decision's nonce is spent only with the state it backs.
+                self.assertEqual(ledger_path.read_bytes(), ledger_before)
 
     def test_public_workflow_surfaces_require_report_before_ingest_and_name_outputs(
         self,

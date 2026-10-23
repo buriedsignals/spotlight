@@ -17,6 +17,8 @@ from .dependencies import (
     provenance_matches,
     review_is_fresh,
 )
+from .review import decision_backed, effective_ledger
+from .storage import LEGACY_LEDGER_KEY
 from .storage import case_path, read_data_bytes
 
 _PHASE_OWNERS = {
@@ -75,7 +77,18 @@ def status_for(
     if not case_path(case, "data/methodology.json").is_file():
         return {**status, "next_phase": "methodology"}
     methodology_hashes = current_hashes(case, METHODOLOGY_INPUTS)
-    if not approval_matches(state["approvals"].get("methodology"), methodology_hashes):
+    # A decision counts only when the nonce ledger backs it, so a decision
+    # written into orchestration.json by hand does not advance the case.
+    ledger = effective_ledger(case, state, data_descriptor)
+    from_v1 = LEGACY_LEDGER_KEY in state
+
+    def backed(gate: str, receipt: object) -> bool:
+        return decision_backed(case, gate, receipt, ledger)
+
+    methodology_approval = state["approvals"].get("methodology")
+    if not approval_matches(methodology_approval, methodology_hashes) or not backed(
+        "methodology", methodology_approval
+    ):
         return {**status, "next_phase": "methodology_approval"}
     if "blocked" in state:
         return {**status, "status": "blocked", "next_phase": "blocked", "blocked": state["blocked"]}
@@ -100,7 +113,9 @@ def status_for(
             "missing": list(dependencies["investigation_gate_missing"]),
         }
     gate_approval = state["approvals"].get("investigation_gate")
-    if not investigation_gate_approval_matches(gate_approval, dependency_digest):
+    if not investigation_gate_approval_matches(
+        gate_approval, dependency_digest
+    ) or not backed("investigation_gate", gate_approval):
         return {**status, "next_phase": "investigation_gate_approval"}
     finalization = state.get("investigation_gate_finalization")
     if not digest_receipt_matches(finalization, dependency_digest) or not outputs_match(
@@ -125,17 +140,24 @@ def status_for(
         or report.get("decision") not in {"completed", "declined"}
         or not digest_receipt_matches(report, dependency_digest)
         or not outputs_match(case, report)
+        or not backed("report", report)
     ):
         return {**status, "next_phase": "report"}
 
     marker = load_ingestion_marker(case, data_descriptor)
     marker_status = marker.get("status")
     ingest = state["decisions"].get("ingest")
-    if not digest_receipt_matches(ingest, dependency_digest):
-        if digest_receipt_matches(marker, dependency_digest) and marker_status in {
-            "requested",
-            "completed",
-        }:
+    if not digest_receipt_matches(ingest, dependency_digest) or not backed("ingest", ingest):
+        if (
+            digest_receipt_matches(marker, dependency_digest)
+            # A v1 case's marker predates the ledger like its state does.
+            and (backed("ingest", marker) or (from_v1 and "review" not in marker))
+            and marker_status
+            in {
+                "requested",
+                "completed",
+            }
+        ):
             detail = (
                 {"state": "completed", "resume_at": "seal"}
                 if marker_status == "completed"
