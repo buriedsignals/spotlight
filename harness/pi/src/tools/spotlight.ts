@@ -139,15 +139,25 @@ function jsonResult(value: unknown) {
 	return { content: [{ type: 'text' as const, text: JSON.stringify(value) }], details: undefined };
 }
 
-export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, role: string): ToolDefinition[] {
+// Runs the approved research topics in code (the launcher's lane runner) and
+// returns the round's outcome. `retry` repeats a round that stopped.
+export type ResearchRunner = (retry: boolean, signal?: AbortSignal) => Promise<unknown>;
+
+export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, role: string, research?: ResearchRunner): ToolDefinition[] {
 	const resolveTool: ToolDefinition = {
 		name: 'spotlight_resolve',
 		label: 'Spotlight resolve',
 		description:
-			'Resolve the durable phase, owner, requirements, attempts, and resume point for the harness-bound active Spotlight case without writing state.',
-		parameters: Type.Object({}),
-		async execute(_id, _params, signal) {
-			return jsonResult(await resolveCase(active, runAdapter, signal));
+			'Resolve the durable phase, owner, requirements, attempts, and resume point for the harness-bound active Spotlight case. At Research the harness first runs the approved research topics itself and adds the round\'s outcome as research_round. Set retry_research only when the member asks to retry a research round that stopped.',
+		parameters: Type.Object({ retry_research: Type.Optional(Type.Boolean()) }),
+		async execute(_id, params, signal) {
+			const resolved = await resolveCase(active, runAdapter, signal);
+			// Approval of the methodology is what starts Research: the resolver
+			// reports the phase and code runs the approved topics. The model only
+			// resolves; it chooses no topic and starts no swarm.
+			if (!research || resolved.phase !== 'research') return jsonResult(resolved);
+			const round = await research((params as { retry_research?: boolean }).retry_research === true, signal);
+			return jsonResult({ ...(await resolveCase(active, runAdapter, signal)), research_round: round });
 		},
 	};
 	const transitionTool: ToolDefinition = {

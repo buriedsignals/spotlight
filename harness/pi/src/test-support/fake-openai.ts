@@ -1,6 +1,8 @@
 // A scripted OpenAI-compatible chat-completions server for network-free tests.
 // It records every request body and answers with whatever the test's responder
-// returns: plain text, tool calls, or a request that never completes.
+// returns: plain text, tool calls, an HTTP error, or a request that never
+// completes. A request with `stream: false` gets one JSON body (with the
+// reply's usage, as OpenRouter reports it); any other request gets SSE.
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -13,7 +15,8 @@ export type ChatRequest = {
 };
 
 export type ToolCall = { name: string; arguments: Record<string, unknown> };
-export type Reply = { text: string } | { toolCalls: ToolCall[] } | 'hang';
+export type Usage = { total_tokens?: number; cost?: number };
+export type Reply = ({ text: string } | { toolCalls: ToolCall[] }) & { usage?: Usage } | { status: number } | 'hang';
 export type Responder = (request: ChatRequest, index: number) => Reply;
 
 export type FakeOpenAI = {
@@ -55,7 +58,22 @@ function chunk(response: ServerResponse, delta: Record<string, unknown>, finish:
 	response.write(`data: ${JSON.stringify(body)}\n\n`);
 }
 
-function answer(response: ServerResponse, reply: Exclude<Reply, 'hang'>) {
+function toolCallsOf(calls: ToolCall[]) {
+	return calls.map((call, index) => ({
+		index,
+		id: `call_${index}_${call.name}`,
+		type: 'function',
+		function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+	}));
+}
+
+function answerJSON(response: ServerResponse, reply: Exclude<Reply, 'hang' | { status: number }>) {
+	const message = 'text' in reply ? { role: 'assistant', content: reply.text } : { role: 'assistant', content: null, tool_calls: toolCallsOf(reply.toolCalls) };
+	response.writeHead(200, { 'content-type': 'application/json' });
+	response.end(JSON.stringify({ id: 'chatcmpl-fake', object: 'chat.completion', model: 'fake', choices: [{ index: 0, message, finish_reason: 'text' in reply ? 'stop' : 'tool_calls' }], usage: reply.usage ?? {} }));
+}
+
+function answer(response: ServerResponse, reply: Exclude<Reply, 'hang' | { status: number }>) {
 	response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
 	if ('text' in reply) {
 		chunk(response, { role: 'assistant', content: reply.text }, null);
@@ -63,15 +81,7 @@ function answer(response: ServerResponse, reply: Exclude<Reply, 'hang'>) {
 	} else {
 		chunk(
 			response,
-			{
-				role: 'assistant',
-				tool_calls: reply.toolCalls.map((call, index) => ({
-					index,
-					id: `call_${index}_${call.name}`,
-					type: 'function',
-					function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-				})),
-			},
+			{ role: 'assistant', tool_calls: toolCallsOf(reply.toolCalls) },
 			null,
 		);
 		chunk(response, {}, 'tool_calls');
@@ -105,7 +115,13 @@ export async function startFakeOpenAI(responder: Responder): Promise<FakeOpenAI>
 			response.writeHead(200, { 'content-type': 'text/event-stream' });
 			return;
 		}
-		answer(response, reply);
+		if ('status' in reply) {
+			response.writeHead(reply.status, { 'content-type': 'application/json' });
+			response.end(JSON.stringify({ error: { code: reply.status, message: 'scripted error' } }));
+			return;
+		}
+		if (body.stream === false) answerJSON(response, reply);
+		else answer(response, reply);
 	});
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 	const { port } = server.address() as AddressInfo;

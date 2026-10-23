@@ -138,6 +138,24 @@ The fact-checker operates independently from the investigator. Spawned with its 
 
 Full prompt bundle: `agents/fact-checker.md`.
 
+### researcher
+
+```yaml
+name: researcher
+description: Works one approved research topic brief and returns leads with captured sources
+iteration_limit: 40
+allowed_verbs: [fetch, search, read-file, write-file, list-files, query-vault]
+disallowed_verbs: [spawn-agent, execute-shell]
+preferred_model:
+  swarm: deepseek/deepseek-v4-flash
+  swarm_fallback: z-ai/glm-5.3
+  local: the harness's local model (local corpus and prior knowledge lanes only)
+```
+
+The researcher never sees the case: it gets one approved topic brief from the methodology's `research_plan` and writes only its lane folder `{CASE_DIR}/research/swarm/<topic-id>/`. Code starts it, never a model: the Pi harness runs each approved topic as a lane (`harness/pi/src/lanes.ts`, lane types in `lanes/*.yaml`); in subscription mode `phase-research` spawns it through the host's subagents. Web lanes run only on the opt-in research swarm; the local corpus and prior-knowledge lanes only on the local model.
+
+Full prompt bundle: `agents/researcher.md`.
+
 ## Skill Registry
 
 Skills are markdown playbooks loaded via `invoke-skill(skill_id)`. Each skill lives in `skills/{skill_id}/SKILL.md` with optional reference files in `skills/{skill_id}/references/`.

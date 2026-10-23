@@ -1,0 +1,9 @@
+id: ad-hoc
+title: Ad hoc
+description: A topic the member wrote that fits no other lane type. Generic search and fetch only, and no keys.
+route: swarm
+tools: [search, fetch]
+keys: []
+egress: [public_web]
+guidance: >-
+  Work the brief's questions with search and fetch only.

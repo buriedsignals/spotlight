@@ -1,0 +1,11 @@
+id: web
+title: Open web
+description: General web search and scraping for pages that answer the brief's questions.
+route: swarm
+tools: [search, fetch]
+keys: [FIRECRAWL_API_KEY]
+egress: [public_web]
+guidance: >-
+  Search with the seed queries first, then refine. Fetch the pages that look
+  primary (the organisation's own site, official publications) before
+  secondary coverage.
