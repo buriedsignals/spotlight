@@ -365,7 +365,7 @@ for the runtime you will actually launch:
 
 | Local runtime | Skills directory relative to checkout |
 |---|---|
-| Pi / Flue, Codex CLI, ChatGPT Desktop Codex Local, Goose | `.agents/skills/` |
+| Pi, Codex CLI, ChatGPT Desktop Codex Local, Goose | `.agents/skills/` |
 | Claude Code / Claude Desktop Code Local | `.claude/skills/` |
 | Cursor | `.cursor/skills/` |
 | Gemini CLI | `.gemini/skills/` |
@@ -402,20 +402,20 @@ Two shapes, one source of truth (the skills + `agents/*.md` role files):
 
 - **Frontier runtimes** (Claude Code, Codex CLI, Pi): the runtime *is* the
   harness — it loads the skills natively, gates are chat turns, nothing else installs.
-- **Non-frontier** (local GGUFs and API providers like Fireworks/OpenRouter): the
-  repo's **Flue-on-Pi harness** (`harness/flue/`) provides orchestration — native
-  investigator/fact-checker subagents, durable resumable sessions, RLM distillation,
-  and conversation compaction. Engine launches from the actual checkout with an
-  explicit `harness/flue/flue.config.ts`, not from the harness subdirectory, and
-  passes scoped dependency paths and the sandbox's explicit environment.
+- **Non-frontier** (local models and API providers like Fireworks/OpenRouter): the
+  repo's **Pi harness** (`harness/pi/`) provides orchestration. One launcher per
+  chat runs Pi in RPC mode; the investigator and fact-checker run as isolated pi
+  processes with explicit tool lists; case state stays on disk, so a new chat
+  resumes where the last one stopped. Indicator Lab starts it through Osaurus.
+  See [`harness/pi/README.md`](harness/pi/README.md).
 
 Per-runtime wiring lives in [docs/runtimes.md](docs/runtimes.md). The
 machine-readable contract lives in [AGENTS.md](AGENTS.md).
 
 Goose remains a supported local workflow route; native discovery does not
 require rewriting the workflow skills. Local evidence for this cutover includes
-Goose 1.50.0 discovering 25 intended skills in an isolated checkout, Flue SDK
-discovery and actual sandbox cwd/dependency/environment checks, mixed-ownership
+Goose 1.50.0 discovering 25 intended skills in an isolated checkout, the Pi
+harness's process isolation and scoped-environment checks, mixed-ownership
 migration/update/uninstall preserving Mycroft and synthetic case/knowledge/graph
 bytes, and missing-browser repair followed by an actual Crawl4AI raw-HTML task.
 These are bounded checks, not a completed model investigation, native Windows
@@ -487,7 +487,7 @@ exist without them. *(Listing does not imply affiliation or endorsement.)*
 
 | Category | Projects we're grateful to |
 |----------|----------------------------|
-| **Loop harness** | [pi](https://pi.dev/) (Mario Zechner, MIT — the loop-harness coding agent) · [Flue](https://github.com/withastro/flue) (Apache-2.0 — the harness runtime) |
+| **Loop harness** | [pi](https://pi.dev/) (Mario Zechner, MIT — the loop-harness coding agent and the base of Spotlight's harness) |
 | **Sovereign search & scraping** | [SearXNG](https://github.com/searxng/searxng) (AGPL-3.0) · [Crawl4AI](https://github.com/unclecode/crawl4ai) (unclecode, Apache-2.0) · [Playwright](https://playwright.dev/) (browser automation) · [Poppler](https://poppler.freedesktop.org/) (`pdftotext` — PDF extraction) · [Tor](https://www.torproject.org/) (opt-in anonymous fetching) |
 | **Local inference** | [llama.cpp](https://github.com/ggml-org/llama.cpp) (ggml, MIT) · [Unsloth](https://unsloth.ai/) (GGUF quants of the local operator model) |
 | **OSINT tooling** | [Maigret](https://github.com/soxoj/maigret) (soxoj, MIT) · [Sherlock](https://github.com/sherlock-project/sherlock) (MIT) · [Holehe](https://github.com/megadose/holehe) (GPL-3.0) · [ExifTool](https://exiftool.org/) (Phil Harvey) · [Unpaywall](https://unpaywall.org/) (OurResearch — open-access paper lookup) |

@@ -26,7 +26,7 @@ spotlight parent
 
 There is no CTI pack manager, second agent hierarchy, upstream workspace, or
 runtime-specific command surface. Codex and Claude load the child from the
-Spotlight plugin. Flue/Pi discovers the same skill ID through the canonical
+Spotlight plugin. The Pi harness loads the same skill ID through the canonical
 manifest-resolved skill store.
 
 `harness/composition.json` lists the child for the orchestrator, investigator,

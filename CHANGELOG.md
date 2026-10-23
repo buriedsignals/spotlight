@@ -4,6 +4,13 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed — The local harness runs on Pi
+
+- The non-frontier harness is now `harness/pi/`: one Pi RPC launcher per chat,
+  isolated worker processes with explicit tool lists, and no model-callable gate
+  decisions. Indicator Lab starts it through Osaurus. The runtimes guide, README
+  and landing page describe it in place of the Flue harness.
+
 ### Changed — Machine identifiers follow the phase names
 
 - Phases are named, not numbered: Preflight, Brief, Methodology,
