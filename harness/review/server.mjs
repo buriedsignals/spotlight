@@ -163,11 +163,21 @@ export async function startReviewServer({
 
   // Passages most worth reading next to each claim (case search through
   // Engine). Retrieval only: a failure leaves the page as it was, with a quiet note.
+  // One search per gate and record digest (the claims are in the record),
+  // shared by concurrent requests; shutdown stops any still running.
+  const searches = new Map();
+  const stopSearches = new AbortController();
   async function passages() {
     const unavailable = { gate, available: false, note: "case search unavailable", claims: [] };
     if (typeof bridge.passages !== "function") return unavailable;
     try {
-      return { ...(await bridge.passages(gate)), gate };
+      const shown = gate;
+      const key = `${shown}:${(await bridge.view(shown)).digest}`;
+      if (!searches.has(key)) {
+        searches.set(key, bridge.passages(shown, stopSearches.signal));
+        searches.get(key).catch(() => searches.delete(key));
+      }
+      return { ...(await searches.get(key)), gate: shown };
     } catch {
       return unavailable;
     }
@@ -323,6 +333,7 @@ export async function startReviewServer({
   let stopped = false;
   function shutdown(reason = "closed") {
     if (stopped) return;
+    stopSearches.abort();
     if (inFlight) {
       active = false;
       pendingShutdown = reason;

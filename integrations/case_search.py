@@ -14,8 +14,7 @@ inserts it as text.
 
 Boundaries:
 - ``--case`` must be the active case: a folder inside the cases root
-  (``$SPOTLIGHT_CASES_ROOT``, else the install config's
-  ``case_workspace_root``, else the checkout's ``cases/``), and the one
+  (``$SPOTLIGHT_CASES_ROOT``, else the checkout's ``cases/``), and the one
   ``$SPOTLIGHT_CASE_DIR`` names when that is set. Symlinks and ``..`` are refused.
 - Only passages from plain case-relative files under ``research/`` are shown,
   never Spotlight's bookkeeping or a receipt. For the fact-checker (D9), nothing
@@ -42,7 +41,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-from ._credentials import ConfigPathError, config_path
 from ._engine import bsig_path
 
 CHECKOUT = Path(__file__).resolve().parents[1]
@@ -103,13 +101,6 @@ class CaseRefused(Exception):
 
 def cases_root() -> Path:
     configured = os.environ.get("SPOTLIGHT_CASES_ROOT", "").strip()
-    if not configured:
-        try:
-            config = json.loads(config_path().read_text(encoding="utf-8"))
-        except (ConfigPathError, OSError, UnicodeDecodeError, json.JSONDecodeError):
-            config = {}
-        if isinstance(config, dict):
-            configured = str(config.get("case_workspace_root") or config.get("cases_root") or "")
     root = Path(configured).expanduser() if configured else CHECKOUT / "cases"
     try:
         return root.resolve(strict=True)
@@ -318,6 +309,10 @@ def search_claims(case: Path, claims: list[dict[str, str]], *, fact_checker: boo
             rules = fact_checker_rules()
         except (OSError, KeyError, TypeError, ValueError, re.error):
             return {**out, "available": False, "note": NOTE_FAILED}
+    # Whoever runs the search (this CLI, the review seam) stops Engine with it.
+    for name in ("SIGTERM", "SIGINT"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), _terminate)
     started = time.monotonic()
     stopped = None
     words_only = False
@@ -345,7 +340,7 @@ def search_claims(case: Path, claims: list[dict[str, str]], *, fact_checker: boo
     return out
 
 
-def findings_claims(case: Path, limit: int = 40) -> list[dict[str, str]]:
+def findings_claims(case: Path) -> list[dict[str, str]]:
     """The claims of ``data/findings.json``, one per finding with an id."""
     try:
         doc = json.loads((case / "data" / "findings.json").read_text(encoding="utf-8"))
@@ -356,7 +351,7 @@ def findings_claims(case: Path, limit: int = 40) -> list[dict[str, str]]:
     for finding in findings if isinstance(findings, list) else []:
         if isinstance(finding, dict) and isinstance(finding.get("id"), str) and isinstance(finding.get("claim"), str) and finding["claim"].strip():
             claims.append({"target": f"finding:{finding['id']}", "label": f"Finding {finding['id']}", "claim": finding["claim"].strip()[:2000]})
-    return claims[:limit]
+    return claims
 
 
 def _inert(text: str) -> str:
@@ -388,15 +383,13 @@ def prompt_block(answer: dict[str, Any]) -> str:
     """The fact-checker's view: each claim's passages inside one untrusted-data
     block, within a budget a local model's context can hold. Whole claim groups
     are left out when over budget, and every claim shown without passages is
-    named. Empty when there is nothing to show."""
+    named; those notices carry case-derived labels, so they stay inside the
+    block too. Empty when there is nothing to show."""
     claims = answer.get("claims", []) if answer.get("available") else []
     with_passages = [claim for claim in claims if claim.get("passages")]
     if not with_passages:
         return ""
-    try:
-        naming = fact_checker_rules()[1]
-    except (OSError, KeyError, TypeError, ValueError, re.error):
-        return ""
+    naming = fact_checker_rules()[1]
 
     def tail(left_out: list[dict[str, Any]]) -> str:
         unsearched = [_line(c["label"], LABEL_CHARS) for c in claims if not c.get("searched", True)]
@@ -411,24 +404,23 @@ def prompt_block(answer: dict[str, Any]) -> str:
             lines.append(f"Not searched: {', '.join(unsearched)}.")
         return "\n".join(lines)
 
+    def fenced(groups: list[str], notes: str) -> str:
+        return "\n".join(part for part in [PREAMBLE, BEGIN, *groups, notes, END] if part)
+
     for per_claim in range(SHOWN, 0, -1):
         groups = [_claim_group(claim, per_claim, naming) for claim in with_passages]
-        block = "\n".join([PREAMBLE, BEGIN, *groups, END, tail([])]).rstrip()
+        block = fenced(groups, tail([]))
         if len(block) <= PROMPT_BUDGET_CHARS:
             return block
     # Still over budget with one passage each: keep whole claim groups in order.
     kept: list[str] = []
-    reserve = len(tail(with_passages)) + len(PREAMBLE) + len(BEGIN) + len(END) + 4
-    used = reserve
-    for claim, group in zip(with_passages, groups):
-        if used + len(group) + 1 > PROMPT_BUDGET_CHARS:
+    used = len(fenced([], tail(with_passages)))
+    for group in groups:
+        used += len(group) + 1
+        if used > PROMPT_BUDGET_CHARS:
             break
         kept.append(group)
-        used += len(group) + 1
-    left_out = with_passages[len(kept):]
-    if not kept:
-        return ""
-    return "\n".join([PREAMBLE, BEGIN, *kept, END, tail(left_out)]).rstrip()
+    return fenced(kept, tail(with_passages[len(kept):])) if kept else ""
 
 
 def _terminate(signum: int, _frame: Any) -> None:
@@ -450,9 +442,6 @@ def main(argv: list[str] | None = None) -> int:
         case = active_case(args.case)
     except CaseRefused as exc:
         parser.error(str(exc))
-    for name in ("SIGTERM", "SIGINT"):
-        if hasattr(signal, name):
-            signal.signal(getattr(signal, name), _terminate)
     if args.findings:
         claims = findings_claims(case)
     else:

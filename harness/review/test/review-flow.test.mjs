@@ -1,7 +1,7 @@
 // Page edits and decisions through the real server and orchestration seam.
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createCaseBridge } from "../case-bridge.mjs";
@@ -209,6 +209,42 @@ test("the gate page gets case-search passages next to each claim, outside the di
   assert.equal(quiet.status, 200);
   assert.deepEqual([quiet.body.available, quiet.body.claims], [false, []]);
   assert.equal(quiet.body.note, "case search unavailable: Engine's case search is switched off");
+});
+
+test("passages requests share one case search per record, and closing the review stops a running one", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "investigation_gate");
+  const argsLog = join(root, "bsig-args.jsonl");
+  const { json } = await authed(t, caseDir, { bridgeEnv: { ...process.env, SPOTLIGHT_BSIG: standInBsig(root, { args_log: argsLog }) } });
+  const claims = (await json("/api/view")).body.content.findings.length;
+  const [first, second] = await Promise.all([json("/api/passages"), json("/api/passages")]);
+  const third = await json("/api/passages");
+  assert.equal(first.body.available, true);
+  assert.deepEqual([second.body, third.body], [first.body, first.body]);
+  assert.equal(readFileSync(argsLog, "utf8").trim().split("\n").length, claims, "one Engine call per claim, once");
+
+  const pidLog = join(root, "bsig-pids.jsonl");
+  const slow = await authed(t, caseDir, { bridgeEnv: { ...process.env, SPOTLIGHT_BSIG: standInBsig(root, { mode: "slow", slow_s: 60, pid_log: pidLog }) } });
+  const pending = slow.json("/api/passages");
+  let pid;
+  for (let i = 0; i < 200 && !pid; i += 1) {
+    await new Promise((settle) => setTimeout(settle, 50));
+    pid = existsSync(pidLog) ? JSON.parse(readFileSync(pidLog, "utf8").split("\n")[0]).pid : undefined;
+  }
+  assert.ok(pid, "the stand-in Engine started");
+  slow.server.close("closed");
+  assert.equal((await pending).body.available, false);
+  await slow.server.closed;
+  const alive = () => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  for (let i = 0; i < 100 && alive(); i += 1) await new Promise((settle) => setTimeout(settle, 50));
+  assert.equal(alive(), false, "the running Engine search was stopped");
 });
 
 test("a page nonce that starts with a dash is redeemed", async (t) => {

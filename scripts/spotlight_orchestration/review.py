@@ -798,7 +798,7 @@ def _gate_claims(case: Path, gate: str) -> list[dict[str, str]]:
             and isinstance(c.get("proposition"), str) and c["proposition"].strip()
         ]
         if claims:
-            return claims[:40]
+            return claims
     return case_search.findings_claims(case)
 
 

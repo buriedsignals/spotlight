@@ -96,12 +96,12 @@ export function createCaseBridge({
   const seam = join(checkoutRoot, "scripts", "spotlight-orchestration.py");
   const boundary = casesRoot ? ["--authorized-cases-root", casesRoot] : [];
 
-  function run(args) {
+  function run(args, signal) {
     return new Promise((settle) => {
       execFile(
         python,
         ["-E", "-s", seam, ...args, ...boundary, caseDir],
-        { cwd: checkoutRoot, env, timeout: SEAM_TIMEOUT_MS, maxBuffer: MAX_OUTPUT, windowsHide: true },
+        { cwd: checkoutRoot, env, timeout: SEAM_TIMEOUT_MS, maxBuffer: MAX_OUTPUT, windowsHide: true, signal },
         (error, stdout, stderr) => {
           const code = error ? (typeof error.code === "number" ? error.code : -1) : 0;
           settle({ code, stdout: String(stdout), message: String(stderr).replace(/^FAIL\s+/, "").trim() });
@@ -110,8 +110,8 @@ export function createCaseBridge({
     });
   }
 
-  async function json(args) {
-    const result = await run(args);
+  async function json(args, signal) {
+    const result = await run(args, signal);
     if (result.code !== 0) throw seamError(result);
     return JSON.parse(result.stdout);
   }
@@ -120,7 +120,7 @@ export function createCaseBridge({
     status: () => json(["status", "--json"]),
     view: (gate) => json(["review-view", gate]),
     // Case search for the claims the gate shows; retrieval only, outside the digest.
-    passages: (gate) => json(["review-passages", gate]),
+    passages: (gate, signal) => json(["review-passages", gate], signal),
     edit: (gate, edit) => json(["review-edit", gate, "--edit", JSON.stringify(edit)]),
     issueNonce: async (gate) => (await json(["issue-review-nonce", gate])).nonce,
     async decide({ gate, decision, nonce, digest, approvedBy, approvedAt }) {
