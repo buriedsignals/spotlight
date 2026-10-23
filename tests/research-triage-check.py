@@ -443,6 +443,9 @@ def test_cli_rules_only_case() -> None:
             os.environ.pop("KEV_TEST_KEY")
             server.shutdown()
         require(seen == ["Bearer kev-secret"], f"a local endpoint's named credential was not sent: {seen} {notes}")
+        # A named credential that is not set stops the local model; it is never sent keyless.
+        providers, _newsroom, notes = triage.build_providers(cfg, triage._signals_cli())
+        require("local" not in providers and any("KEV_TEST_KEY" in note for note in notes), f"missing credential ignored: {notes}")
 
 
 def main() -> int:

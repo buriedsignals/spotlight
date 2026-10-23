@@ -98,6 +98,48 @@ def main() -> int:
             raise AssertionError(f"accepted {blocked}")
         except client.DecisionUnavailable:
             pass
+    # Only a literal loopback address is "this computer": localhost can resolve elsewhere.
+    require("own credential_env" in refused(dict(local, url="http://localhost:8009/v1/systemone")), "keyless localhost accepted")
+    try:
+        client.JevOpenRouterProvider("k", url="http://localhost:8009/v1/systemone", sensitive=True)
+        raise AssertionError("sensitive mode trusted the name localhost")
+    except client.DecisionUnavailable:
+        pass
+
+    # A local request never goes through an ambient proxy.
+    import http.server
+    import os
+    import threading
+    hits = {"kev": 0, "proxy": 0}
+
+    def handler(name):
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                hits[name] += 1
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                self.send_response(200); self.end_headers(); self.wfile.write(b'{"model":"kev","answers":{"q":{"noul":0.2}}}')
+
+            def log_message(self, *args):
+                pass
+        return Handler
+
+    servers = {name: http.server.HTTPServer(("127.0.0.1", 0), handler(name)) for name in hits}
+    for server in servers.values():
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+    saved = {k: os.environ.get(k) for k in ("http_proxy", "HTTP_PROXY", "no_proxy", "NO_PROXY")}
+    os.environ.update(http_proxy=f"http://127.0.0.1:{servers['proxy'].server_port}", HTTP_PROXY=f"http://127.0.0.1:{servers['proxy'].server_port}",
+                      no_proxy="", NO_PROXY="")
+    try:
+        client.JevOpenRouterProvider("", url=f"http://127.0.0.1:{servers['kev'].server_port}/v1/systemone", sensitive=True,
+                                     retries=0).decide({"s": 1}, question)
+    finally:
+        for key, value in saved.items():
+            os.environ.pop(key, None)
+            if value is not None:
+                os.environ[key] = value
+        for server in servers.values():
+            server.shutdown()
+    require(hits == {"kev": 1, "proxy": 0}, f"a local decision request went through the proxy: {hits}")
     print("decision-endpoint-check: ok")
     return 0
 

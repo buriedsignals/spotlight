@@ -234,14 +234,17 @@ def build_providers(cfg: Mapping[str, Any], signals: Any) -> tuple[dict[str, Any
             notes.append(f"local: {exc}")
     elif cfg["local_endpoint"]:
         url, key_env = cfg["local_endpoint"]
-        key, _where = signals.resolve_key({"env_file": cfg["env_file"]}, None, key_env)
-        providers["local"] = JevOpenRouterProvider(key, model=cfg["model"], url=url)
+        try:
+            providers["local"] = JevOpenRouterProvider(signals.require_key({"env_file": cfg["env_file"]}, None, key_env),
+                                                       model=cfg["model"], url=url)
+        except DecisionUnavailable as exc:
+            notes.append(f"local: {exc}")
     if cfg["backend"] == "jev":
         try:
             url, key_env = signals.install_endpoint()
             newsroom_endpoint = not is_openrouter((urlparse(url).hostname or "").lower())
-            key, _where = signals.resolve_key({"env_file": cfg["env_file"]}, None, key_env)
-            providers["jev"] = JevOpenRouterProvider(key, model=cfg["model"], url=url)
+            providers["jev"] = JevOpenRouterProvider(signals.require_key({"env_file": cfg["env_file"]}, None, key_env),
+                                                     model=cfg["model"], url=url)
         except DecisionUnavailable as exc:
             notes.append(f"jev: {exc}")
     if cfg["backend"] in ("clef", "clef-flash"):

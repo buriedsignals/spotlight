@@ -16,8 +16,8 @@ before it is sent.
 Another endpoint (a newsroom's own inference, or a later deployment) may serve
 the same questions if it speaks the same Decisions API. It is named only in
 the install config Engine writes (``endpoint_from_config``): https, or plain
-http on loopback, with its own named credential. A loopback endpoint may name
-no credential: that is a model on this computer (Kev in Ninja mode), which
+http on loopback, with its own named credential. A literal loopback address
+(never the name localhost) may name no credential: that is a model on this computer (Kev in Ninja mode), which
 takes no key and which sensitive mode allows. The OpenRouter key and the
 zero-retention provider body go only to openrouter.ai. A server with another
 API needs an adapter here, not just a URL.
@@ -34,7 +34,8 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+import ipaddress
+from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _engine import bsig_path  # noqa: E402
@@ -54,8 +55,12 @@ def is_openrouter(host: str) -> bool:
 
 
 def is_local(url: str) -> bool:
-    """A decision model on this computer (Kev in Ninja mode): no key, no egress."""
-    return (urlparse(url).hostname or "").lower() in LOOPBACK
+    """A decision model on this computer (Kev in Ninja mode): no key, no egress.
+    Only a literal loopback address counts; the name localhost can resolve elsewhere."""
+    try:
+        return ipaddress.ip_address(urlparse(url).hostname or "").is_loopback
+    except ValueError:
+        return False
 
 
 def endpoint_from_config(block: Mapping[str, Any] | None) -> tuple[str, str]:
@@ -80,7 +85,7 @@ def endpoint_from_config(block: Mapping[str, Any] | None) -> tuple[str, str]:
         raise DecisionUnavailable("a decision endpoint must be https, or http on loopback")
     if is_openrouter(host):
         return url, KEY_ENV
-    if host in LOOPBACK and credential is None:
+    if is_local(url) and credential is None:
         return url, ""
     if not isinstance(credential, str) or not credential or credential == KEY_ENV:
         raise DecisionUnavailable(f"a non-OpenRouter decision endpoint needs its own credential_env (never {KEY_ENV})")
@@ -122,7 +127,8 @@ class JevOpenRouterProvider:
         self.model = model
         self._timeout = timeout
         self._retries = retries
-        self._open = opener or urlopen
+        # A local request never goes through an ambient proxy.
+        self._open = opener or (build_opener(ProxyHandler({})).open if is_local(url) else urlopen)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None, **kwargs: Any) -> "JevOpenRouterProvider":

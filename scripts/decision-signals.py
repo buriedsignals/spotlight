@@ -121,6 +121,14 @@ def resolve_key(cfg: dict[str, Any], env_file: Path | None, key_env: str = KEY_E
     return "", ""
 
 
+def require_key(cfg: dict[str, Any], env_file: Path | None, key_env: str) -> str:
+    """The key for a run: empty only for a local endpoint that names no credential."""
+    key, _where = resolve_key(cfg, env_file, key_env)
+    if key_env and not key:
+        raise DecisionUnavailable(f"{key_env} not found")
+    return key
+
+
 def _mode(modes: dict[str, Any], phase: str) -> str:
     value = modes.get(phase)
     if value is None and phase in LEGACY_MODE_KEYS:
@@ -383,8 +391,7 @@ def run(args: argparse.Namespace, case: Path, cfg: dict[str, Any], sensitive: bo
         try:
             if endpoint_error:
                 raise DecisionUnavailable(endpoint_error)
-            key, _where = resolve_key(cfg, args.env_file, key_env)
-            provider = JevOpenRouterProvider(key, model=cfg["model"], sensitive=sensitive, url=url)
+            provider = JevOpenRouterProvider(require_key(cfg, args.env_file, key_env), model=cfg["model"], sensitive=sensitive, url=url)
         except DecisionUnavailable as exc:
             return refuse(str(exc))
 
