@@ -198,6 +198,47 @@ def test_no_answer_sets_a_lead_aside() -> None:
             require(rr.triage_violations(document) == [], f"{qid}={option} broke D7: {rr.triage_violations(document)}")
 
 
+def test_host_prior_backs_q3() -> None:
+    # A register host is certain: it overrides a model answer that disagrees and says so.
+    result = by_id(run([lead()], client.FakeProvider(answers_from({"q3_source": "secondary"})), acceptance=ACCEPTED), "lead-1")
+    require(result["labels"]["source"] == "primary_record", f"the register host did not set the source: {result['labels']}")
+    require(any(f["reason"] == "source_rule_override" for f in result["flags"]), "the override was not flagged")
+    # A social host is only a prior: the model's answer stands, and rules alone use the prior.
+    social = lead(capture={"source_url": "https://x.com/someone/status/1"})
+    result = by_id(run([social], client.FakeProvider(answers_from({"q3_source": "interested_party"})), acceptance=ACCEPTED), "lead-1")
+    require(result["labels"]["source"] == "interested_party" and not any(f["reason"] == "source_rule_override" for f in result["flags"]),
+            f"a social host overrode the model: {result}")
+    result = by_id(run([social], None), "lead-1")
+    require(result["labels"].get("source") == "user_generated", f"rules alone ignored the social prior: {result['labels']}")
+    result = by_id(run([lead(capture={"source_url": "https://news.example.org/a"})], None), "lead-1")
+    require("source" not in result["labels"], "an unknown host got a source label")
+
+
+def test_n1_dates_and_names_back_q6() -> None:
+    # A month or a named actor in the summary that the excerpt lacks flags the summary as wider.
+    shareholder = {"subjects": ["Company A", "Valtor Trust"], "summary": "Valtor Trust became Company A's sole shareholder in February 2025."}
+    wide_date = lead(excerpt={"text": "Sole shareholder since 2025-03-14: Valtor Trust", "language": "en"}, **shareholder)
+    wide_name = lead(excerpt={"text": "Sole shareholder since 14 February 2025: Nordbank AG", "language": "en"},
+                     **{**shareholder, "subjects": ["Company A", "Valtor Trust", "Nordbank AG"]})
+    same = lead(excerpt={"text": "Sole shareholder since 14 February 2025: Valtor Trust", "language": "en"}, **shareholder)
+    for item, expect in ((wide_date, "2025-02"), (wide_name, "Valtor Trust")):
+        result = by_id(run([item], client.FakeProvider(answers_from({}))), "lead-1")
+        widens = [f for f in result["flags"] if f["reason"] == "summary_widens"]
+        require(widens and expect in widens[0]["detail"], f"N1 missed {expect}: {result['flags']}")
+    result = by_id(run([same], client.FakeProvider(answers_from({}))), "lead-1")
+    require(not any(f["reason"] == "summary_widens" for f in result["flags"]), f"N1 flagged a faithful summary: {result['flags']}")
+
+
+def test_lead_off_the_brief_is_circumstantial() -> None:
+    # No brief subject in the summary or excerpt: labelled circumstantial, kept, whatever Q1 said.
+    other = lead(subjects=["Valtor Trust"], summary="Valtor Trust is registered in Vaduz.",
+                 excerpt={"text": "Valtor Trust, Vaduz", "language": "en"})
+    result = by_id(run([other], client.FakeProvider(answers_from({})), acceptance=ACCEPTED), "lead-1")
+    require(result["context"] == ["circumstantial"] and result["disposition"] != "set_aside", f"an off-brief lead: {result}")
+    result = by_id(run([lead()], client.FakeProvider(answers_from({})), acceptance=ACCEPTED), "lead-1")
+    require(result["context"] == [], f"a lead naming a brief subject was labelled circumstantial: {result['context']}")
+
+
 def test_conflict_pairs() -> None:
     provider = client.FakeProvider(answers_from({"c4_conflict": "conflict"}))
     pair = clues(("K2", ["a", "b"], "sole shareholder"))

@@ -60,6 +60,13 @@ No answer sets a lead aside: answers label, flag or raise clues. Whether the
 stored source holds a lead's excerpt is D3's check (`research_checks.py`),
 which marks a failing lead unverifiable.
 
+Rules back three questions without replacing them: a register, gazette,
+court or procurement host sets Q3's source to `primary_record` (overriding a
+disagreeing answer, flagged) and a social host is Q3's prior when no answer
+counted; N1 also flags a summary naming a month or another actor that its
+excerpt lacks (Q6); and a lead whose listed subjects include none the premise
+names in its summary or excerpt is labelled circumstantial (Q1).
+
 - **Backend** (install config only): `integrations.decisions.research_triage`
   = `{"backend": "jev" | "clef" | "clef-flash" | "local" | "rules",
   "local_url": "http://127.0.0.1:PORT"}`. Clef reads `CLOUDFLARE_ACCOUNT_ID`

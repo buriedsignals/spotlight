@@ -4,6 +4,17 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added — Rule backstops for research triage
+
+- Q3: a small host list in `research_rules.py`. Registers, gazettes, courts
+  and procurement portals set the source to `primary_record`, overriding a
+  disagreeing model answer with a `source_rule_override` flag; social hosts
+  give `user_generated` only when no model answer counted.
+- Q6: N1 also flags a summary as wider when it names a month or one of the
+  lead's other subjects that the excerpt lacks.
+- Q1: a lead whose subjects include none the premise names in its summary or
+  excerpt is labelled circumstantial and ranks with circumstantial leads.
+
 ### Changed — Research question bank v3
 
 - The research questions use plainer wording that names the fields a

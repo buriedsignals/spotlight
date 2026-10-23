@@ -270,6 +270,12 @@ def signals(entry: Mapping[str, Any]) -> set[str]:
     out = {f"{qid}={a['value']}" for qid, a in (result.get("answers") or {}).items()
            if a.get("counted") and isinstance(a.get("value"), str)}
     reasons = {f["reason"] for f in result.get("flags", [])}
+    # What the page shows: Q3's label after the host rule, and N1's wider-summary flag.
+    source = (result.get("labels") or {}).get("source")
+    if source:
+        out = {s for s in out if not s.startswith("q3_source=")} | {f"q3_source={source}"}
+    if "summary_widens" in reasons:
+        out.add("q6_fidelity=widens")
     if "summary_refused" in reasons:
         out.add("N1")
     if "snippet_only" in reasons:

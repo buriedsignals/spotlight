@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -209,6 +210,79 @@ def missing_figures(lead: TriageLead) -> list[str]:
     return sorted(_figures(lead.summary) - _figures(lead.excerpt))
 
 
+def name_key(text: str) -> str:
+    """Comparable form of a name or value: NFKC, casefold, punctuation to spaces."""
+    text = unicodedata.normalize("NFKC", text).casefold()
+    return " ".join(re.sub(r"[^\w@.+]+", " ", text).split())
+
+
+def _mentions(text: str, name: str) -> bool:
+    key = name_key(name)
+    return bool(key) and f" {key} " in f" {name_key(text)} "
+
+
+_MONTHS = {name: n for n, names in enumerate((
+    "january januar janvier", "february februar février fevrier", "march märz maerz mars", "april avril",
+    "may mai", "june juni juin", "july juli juillet", "august août aout", "september septembre",
+    "october oktober octobre", "november novembre", "december dezember décembre decembre"), 1)
+    for name in names.split()}
+_NUMERIC_DATE = re.compile(r"\b(\d{4})-(\d{1,2})-\d{1,2}\b|\b\d{1,2}\.(\d{1,2})\.(\d{4})\b")
+_WORD_DATE = re.compile(r"\b([^\W\d_]+)\.?\s+(?:\d{1,2},?\s+)?(\d{4})\b")
+
+
+def _months(text: str) -> set[str]:
+    """Year-months a text names: 2025-02-14, 14.02.2025, (14) February 2025,
+    February 14, 2025 (English, German and French month names)."""
+    found = set()
+    for iso_y, iso_m, eu_m, eu_y in _NUMERIC_DATE.findall(text):
+        year, month = (iso_y, iso_m) if iso_y else (eu_y, eu_m)
+        if 1 <= int(month) <= 12:
+            found.add(f"{year}-{int(month):02d}")
+    for word, year in _WORD_DATE.findall(text):
+        if word.casefold() in _MONTHS:
+            found.add(f"{year}-{_MONTHS[word.casefold()]:02d}")
+    return found
+
+
+def wider_summary(lead: TriageLead, premise: str) -> list[str]:
+    """N1, dates and names: year-months the summary names that the excerpt does
+    not, and the lead's subjects (other than the brief's own) that the summary
+    names and the excerpt does not. Years and days are figures, checked above."""
+    months = sorted(_months(lead.summary) - _months(lead.excerpt))
+    names = [s for s in lead.subjects if name_key(premise) and not _mentions(premise, s)
+             and _mentions(lead.summary, s) and not _mentions(lead.excerpt, s)]
+    return months + names
+
+
+def off_brief(lead: TriageLead, premise: str) -> bool:
+    """Q1's backstop: the lead lists its subjects and none that the brief names
+    appears in its summary or excerpt."""
+    return bool(lead.subjects) and bool(name_key(premise)) and not any(
+        _mentions(premise, s) and (_mentions(lead.summary, s) or _mentions(lead.excerpt, s)) for s in lead.subjects)
+
+
+# Q3's backstop: hosts whose pages are primary records (registers, gazettes,
+# courts, procurement portals) are certain; social hosts are only a prior,
+# since an official account posting there is an interested party.
+PRIMARY_RECORD_HOSTS = ("zefix.ch", "handelsregister.de", "find-and-update.company-information.service.gov.uk",
+                        "thegazette.co.uk", "ted.europa.eu", "simap.ch", "sam.gov", "curia.europa.eu", "bger.ch")
+SOCIAL_HOSTS = ("x.com", "twitter.com", "facebook.com", "instagram.com", "tiktok.com", "reddit.com",
+                "youtube.com", "t.me", "threads.net", "bsky.app")
+
+
+def host_source(lead: TriageLead) -> tuple[str | None, bool]:
+    """(Q3 source the host implies, whether that is certain)."""
+    host = (urlparse(lead.source_url).hostname or "").lower()
+
+    def on(domains: tuple[str, ...]) -> bool:
+        return any(host == d or host.endswith("." + d) for d in domains)
+    if on(PRIMARY_RECORD_HOSTS):
+        return "primary_record", True
+    if on(SOCIAL_HOSTS):
+        return "user_generated", False
+    return None, False
+
+
 # ------------------------------------------------------------- answers
 def agreed_choice(answers: Mapping[str, Any], qid: str) -> str | None:
     """The option both orders chose, or None when they disagree or either is missing."""
@@ -239,7 +313,7 @@ def record_answers(answers: Mapping[str, Any], choice_ids: Iterable[str], noul_i
 
 
 def lead_outcome(lead: TriageLead, recorded: Mapping[str, Mapping[str, Any]],
-                 rule_clues: Iterable[str] = ()) -> dict[str, Any]:
+                 rule_clues: Iterable[str] = (), brief_premise: str = "") -> dict[str, Any]:
     """Apply Appendix B's effects to one lead. Only counted answers act."""
     value = {qid: r["value"] for qid, r in recorded.items() if r.get("counted")}
     flags: list[dict[str, str]] = []
@@ -261,12 +335,17 @@ def lead_outcome(lead: TriageLead, recorded: Mapping[str, Mapping[str, Any]],
         labels["identity"] = identity
     if identity == "name_only":
         flag("identity_unconfirmed")
-    elif identity in CIRCUMSTANTIAL_IDENTITIES:
+    if identity in CIRCUMSTANTIAL_IDENTITIES or off_brief(lead, brief_premise):
         context.append(CIRCUMSTANTIAL)
     if value.get("q2_direction") == "none":
         context.append(OUTSIDE_DIRECTIONS)
-    if value.get("q3_source"):
-        labels["source"] = value["q3_source"]
+    source, (prior, certain) = value.get("q3_source"), host_source(lead)
+    if prior and source and certain and source != prior:
+        flag("source_rule_override", f"the model said {source}; the host publishes {prior}")
+    if prior and (certain or not source):
+        source = prior
+    if source:
+        labels["source"] = source
     assertion = value.get("q4_assertion")
     if assertion:
         labels["assertion"] = assertion
@@ -298,6 +377,9 @@ def lead_outcome(lead: TriageLead, recorded: Mapping[str, Mapping[str, Any]],
     missing = missing_figures(lead)
     if missing:
         flag("summary_refused", "figures not in the excerpt: " + ", ".join(missing))
+    wider = wider_summary(lead, brief_premise)
+    if wider and not any(f["reason"] == "summary_widens" for f in flags):
+        flag("summary_widens", "dates or names not in the excerpt: " + ", ".join(wider))
 
     disposition = "flag" if flags or clues else "keep"
     position = None
