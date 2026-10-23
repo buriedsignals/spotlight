@@ -2,10 +2,13 @@
 // a shell: exiftool, the Navigator CLI, decision checks, the provenance
 // manifest and signing, RLM analysis and the integration status check. Each
 // is bound to the active case; the model picks only the documented options.
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT } from '../roles.ts';
-import { readTarget } from './case-files.ts';
+import { FileRefused, readTarget } from './case-files.ts';
 import { checkedParams, programEnv, programOutput, runFixed, runPython, textResult } from './run.ts';
 import type { ToolContext } from './run.ts';
 
@@ -132,13 +135,32 @@ function rlmTool(context: ToolContext): ToolDefinition {
 		parameters: params,
 		async execute(_id, raw, signal) {
 			const { request } = checkedParams<{ request: string }>('run_rlm', params, raw);
-			const result = await runPython(context, [script('integrations/rlm/run_rlm.py'), `${context.caseDir}/${request}`], {
-				keys: ['SPOTLIGHT_RLM_MODE', 'SPOTLIGHT_RLM_OPENAI_BASE_URL', 'SPOTLIGHT_RLM_OPENAI_MODEL', 'SPOTLIGHT_RLM_MODEL', 'SPOTLIGHT_RLM_API_KEY'],
-				extra: { SPOTLIGHT_CASES_ROOT: context.env.SPOTLIGHT_CASES_ROOT ?? '' },
-				signal,
-				timeoutMs: 1_800_000,
-			});
-			return textResult(programOutput('run_rlm', result));
+			// The script reads and writes the case its request names under the
+			// cases root, so the request must name the active case. It runs on a
+			// private copy of the checked request, so a later edit cannot redirect it.
+			const bytes = readFileSync(readTarget(context.caseDir, request));
+			let project: unknown;
+			try {
+				project = (JSON.parse(bytes.toString('utf8')) as { project?: unknown } | null)?.project;
+			} catch {
+				throw new Error(`run_rlm: ${request} is not valid JSON`);
+			}
+			const active = basename(context.caseDir);
+			if (project !== active) throw new FileRefused(`refused: run_rlm request must name the active case ("project": "${active}")`);
+			const copyDir = mkdtempSync(join(tmpdir(), 'spotlight-rlm-'));
+			try {
+				const copy = join(copyDir, 'request.json');
+				writeFileSync(copy, bytes, { mode: 0o600 });
+				const result = await runPython(context, [script('integrations/rlm/run_rlm.py'), copy], {
+					keys: ['SPOTLIGHT_RLM_MODE', 'SPOTLIGHT_RLM_OPENAI_BASE_URL', 'SPOTLIGHT_RLM_OPENAI_MODEL', 'SPOTLIGHT_RLM_MODEL', 'SPOTLIGHT_RLM_API_KEY'],
+					extra: { SPOTLIGHT_CASES_ROOT: dirname(context.caseDir) },
+					signal,
+					timeoutMs: 1_800_000,
+				});
+				return textResult(programOutput('run_rlm', result));
+			} finally {
+				rmSync(copyDir, { recursive: true, force: true });
+			}
 		},
 	};
 }

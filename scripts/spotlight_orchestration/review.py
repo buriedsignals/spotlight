@@ -252,6 +252,35 @@ def consume_nonce(
     return ledger, binding
 
 
+def record_decision(
+    ledger: dict[str, Any],
+    binding: dict[str, Any],
+    decision: str,
+    dependency_digest: str | None = None,
+) -> None:
+    """Bind a spent nonce's ledger entry to the decision it backed and, for
+    the gates after the investigation, the dependency digest it covered, so
+    the binding cannot be replayed onto another decision or another case state."""
+    entry = ledger["nonces"][binding["nonce_sha256"]]
+    entry["decision"] = decision
+    if dependency_digest is not None:
+        entry["dependency_digest"] = dependency_digest
+
+
+def _entry_covers(gate: str, entry: dict[str, Any], receipt: dict[str, Any]) -> bool:
+    recorded = entry.get("decision")
+    if recorded is not None:
+        # Approval receipts carry no decision field; their decision is the approval.
+        claimed = receipt.get("decision", receipt.get("status", "approved"))
+        # A requested ingestion is later sealed as completed under the same nonce.
+        sealed = gate == "ingest" and recorded == "requested" and claimed == "completed"
+        if claimed != recorded and not sealed:
+            return False
+    if "dependency_digest" in entry and receipt.get("dependency_digest") != entry["dependency_digest"]:
+        return False
+    return True
+
+
 def decision_backed(
     case: Path,
     gate: str,
@@ -259,8 +288,15 @@ def decision_backed(
     ledger: dict[str, Any] | None = None,
     *,
     bind_review: bool = True,
+    require_bound: bool = False,
 ) -> bool:
-    """True when a stored decision cites a spent nonce for its gate."""
+    """True when a stored decision cites a spent nonce for its gate.
+
+    A ledger entry bound to a decision and digest backs only a receipt that
+    claims that decision and digest. ``require_bound`` refuses entries spent
+    before entries were bound (and legacy ones): it guards receipts the model
+    can write, such as data/ingestion.json.
+    """
     if not isinstance(receipt, dict):
         return False
     binding = receipt.get("review")
@@ -278,6 +314,10 @@ def decision_backed(
         and entry.get("used") is True
         and entry.get("channel") == binding.get("channel")
     ):
+        return False
+    if require_bound and not {"decision", "dependency_digest"} <= entry.keys():
+        return False
+    if not _entry_covers(gate, entry, receipt):
         return False
     if binding.get("channel") == LEGACY_CHANNEL:
         return True  # nothing was reviewed on a page before the ledger existed

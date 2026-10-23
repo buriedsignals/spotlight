@@ -20,13 +20,22 @@ Enter this phase only from a `spotlight_resolve` result with `phase: report` and
 
 If (a): invoke `report-drafting`. The orchestrator authors
 `data/report-draft.json` to choose localized title, deck, finding order,
-editorial summaries, emphasis, caveats, and next steps. Then apply the
-`decideReport` transition; the resolver module invokes the existing
+editorial summaries, emphasis, caveats, and next steps. The `decideReport`
+transition then has the resolver module invoke the existing
 deterministic `finalize-report.py`, validates finding references, attaches
 canonical verdict/confidence, safely renders `report.html`,
 `findings-report.md`, and `evidence-map.json`, and records hashes of those
 outputs. Semantic accuracy remains part of the independent fact-check and final
 human editorial gate. Do not hand-edit generated HTML or Markdown.
+
+The member records the decision on the review page, after the draft exists
+for (a). Open the page: `open_review` in the Pi harness, or the
+`open_spotlight_review` tool where the review server is registered
+(`harness/review/README.md`). End the turn. When the member says they are
+done, call `spotlight_resolve` again; never record the decision yourself.
+
+Only in a runtime with neither tool, apply the transition through the
+command-line adapter (its `direct` channel) after the user answers in chat:
 
 ```text
 spotlight_transition({

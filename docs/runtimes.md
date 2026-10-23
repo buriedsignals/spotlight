@@ -96,6 +96,20 @@ Runtime-specific backings (vary):
 
 ---
 
+## Gate decisions in chat runtimes
+
+The member decides each human gate (Methodology, Investigation gate, Report,
+Ingest) on the local review page. The Pi harness opens it with its
+`open_review` tool. In Claude Code, Codex and the other chat runtimes,
+register `harness/review/mcp.mjs` as a stdio MCP server
+([`harness/review/README.md`](../harness/review/README.md)); the agent then
+calls `open_spotlight_review`, ends its turn, and resolves again when the
+member says they are done. Without that server, the phase skills fall back to
+the command-line adapter after the member answers in chat; those decisions are
+recorded on the `direct` channel.
+
+---
+
 ## Spotlight Pi harness — the local & cloud non-frontier harness
 
 **What it is:** the repo's `harness/pi/`, built on [Pi](https://pi.dev) at a

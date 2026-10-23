@@ -25,6 +25,8 @@ const PROTECTED = [
 	/^data\/orchestration\.json$/, // resolver state
 	/^data\/review-nonces\.json$/, // review page
 	/^data\/[^/]*-review\.json$/, // review page decisions
+	/^data\/ingestion\.json$/, // ingest decision marker (resolver)
+	/^data\/report-declined\.json$/, // report decline marker (resolver)
 	/(^|\/)[^/]*receipt[^/]*$/, // signing, gate and ingest receipts
 ];
 
