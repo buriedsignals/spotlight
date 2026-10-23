@@ -1,0 +1,10 @@
+id: news-courts
+title: News and court records
+description: News coverage and published court decisions, dockets and enforcement notices.
+route: swarm
+tools: [search, fetch]
+keys: [FIRECRAWL_API_KEY]
+egress: [public_web]
+guidance: >-
+  Prefer the court's or regulator's own publication over coverage of it. A
+  news report of an allegation is a reported claim: record who alleges it.

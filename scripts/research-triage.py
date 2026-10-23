@@ -3,9 +3,12 @@
 
     scripts/spotlight-python scripts/research-triage.py CASE_DIR [--check] [--dry-run]
 
-Reads data/leads.json (the merged leads), the approved research plan in
-data/methodology.json and, when present, data/clues.json (rule clues from the
-merge: K1 and K6 lead ids, K2 pairs). Writes data/research-triage.json.
+Reads data/leads.json (the merged leads, schemas/research-leads.schema.json;
+each entry's lead also validates against research-lead.schema.json), the
+approved methodology (schemas/methodology.schema.json) and, when present,
+data/clues.json (schemas/research-clues.schema.json: the K1 and K6 lead ids,
+the K2 pairs). Writes data/research-triage.json. Absence leads have no source
+to ask about; they are listed, not triaged.
 
 The backend comes from the install config only:
 ``integrations.decisions.research_triage`` = {"backend": "jev" | "clef" |
@@ -51,7 +54,11 @@ from spotlight_orchestration.storage import transaction  # noqa: E402
 
 OUTPUT = "research-triage.json"
 SCHEMA_VERSION = "1.0"
-LEADS_SCHEMA = ROOT / "schemas" / "research-leads.schema.json"
+SCHEMAS = ROOT / "schemas"
+LEADS_SCHEMA = SCHEMAS / "research-leads.schema.json"
+LEAD_SCHEMA = SCHEMAS / "research-lead.schema.json"
+CLUES_SCHEMA = SCHEMAS / "research-clues.schema.json"
+METHODOLOGY_SCHEMA = SCHEMAS / "methodology.schema.json"
 
 
 def _signals_cli():
@@ -64,39 +71,44 @@ def _signals_cli():
 
 # ------------------------------------------------------------------ case inputs
 def brief_from_methodology(methodology: Mapping[str, Any]) -> rr.TriageBrief:
-    """The brief context Q1, Q2 and C1 need, from the approved research plan.
+    """The brief context Q1, Q2 and C1 need, from the approved methodology.
 
-    Minimal contract until the research-plan schema lands: ``research_plan``
-    may carry ``premise``, ``subjects`` and ``directions``
-    ([{direction_id, label}]); otherwise the premise is the methodology's
-    ``lead`` and the directions are the topics' ``direction_id``s."""
-    plan = methodology.get("research_plan") if isinstance(methodology.get("research_plan"), Mapping) else {}
-    premise = plan.get("premise") if isinstance(plan.get("premise"), str) else methodology.get("lead", "")
-    subjects = tuple(s for s in plan.get("subjects", []) if isinstance(s, str) and s.strip())
+    The premise is the methodology's ``lead``; the directions are the
+    investigation plan's ``direction_id``s (labelled with their ``direction``)
+    plus any research-plan topic's ``direction_id``. The methodology schema has
+    no subjects list, so Q1 compares against the premise alone."""
+    premise = methodology.get("lead") if isinstance(methodology.get("lead"), str) else ""
     directions: dict[str, str] = {}
-    for item in plan.get("directions", []) or []:
+    for item in methodology.get("investigation_plan", []) or []:
         if isinstance(item, Mapping) and isinstance(item.get("direction_id"), str):
-            directions[item["direction_id"]] = str(item.get("label") or item["direction_id"])
+            directions[item["direction_id"]] = str(item.get("direction") or item["direction_id"])
+    plan = methodology.get("research_plan") if isinstance(methodology.get("research_plan"), Mapping) else {}
     for topic in plan.get("topics", []) or []:
         if isinstance(topic, Mapping) and isinstance(topic.get("direction_id"), str):
             directions.setdefault(topic["direction_id"], topic["direction_id"])
-    return rr.TriageBrief(premise=str(premise or ""), subjects=subjects, directions=directions)
+    return rr.TriageBrief(premise=premise, subjects=(), directions=directions)
 
 
 def rule_clues(clues_doc: Mapping[str, Any] | None) -> tuple[dict[str, set[str]], list[dict[str, Any]]]:
-    """Per lead, the rule clues triage acts on (K1, K6); and the K2 pairs for C4."""
+    """Per lead, the rule clues triage acts on (K1, K6); and the K2 pairs for C4.
+    Reads a research-clues document: each clue's ``source`` names its rule."""
     per_lead: dict[str, set[str]] = {}
     pairs: list[dict[str, Any]] = []
     for clue in (clues_doc or {}).get("clues", []) or []:
         if not isinstance(clue, Mapping):
             continue
-        rule, ids = clue.get("rule"), [i for i in clue.get("lead_ids", []) or [] if isinstance(i, str)]
+        rule, ids = clue.get("source"), [i for i in clue.get("lead_ids", []) or [] if isinstance(i, str)]
         if rule in ("K1", "K6"):
             for lead_id in ids:
                 per_lead.setdefault(lead_id, set()).add(rule)
         elif rule == "K2" and len(ids) == 2 and isinstance(clue.get("attribute"), str):
             pairs.append({"lead_ids": ids, "attribute": clue["attribute"]})
     return per_lead, pairs
+
+
+def schema_errors(schema: Path, document: Any) -> list[str]:
+    import schema_check
+    return schema_check.load(schema).errors(document)
 
 
 # ------------------------------------------------------------------ triage
@@ -125,7 +137,15 @@ def run_triage(raw_leads: list[Any], brief: rr.TriageBrief, clues_doc: Mapping[s
     per_lead, pairs = rule_clues(clues_doc)
     leads: dict[str, rr.TriageLead] = {}
     invalid = []
+    absence: list[dict[str, str]] = []
     for index, raw in enumerate(raw_leads):
+        errors = schema_errors(LEAD_SCHEMA, raw)
+        if errors:
+            invalid.append({"index": index, "reason": f"not a research lead: {errors[0]}"})
+            continue
+        if raw["absence"]:
+            absence.append({"lead_id": raw["lead_id"], "direction_id": raw["direction_id"]})
+            continue
         try:
             lead = rr.parse_lead(raw)
         except rr.LeadInvalid as exc:
@@ -178,7 +198,7 @@ def run_triage(raw_leads: list[Any], brief: rr.TriageBrief, clues_doc: Mapping[s
         "bank_version": rq.RESEARCH_BANK_VERSION, "mode": mode,
         **({"notice": rr.FLAG_ONLY_NOTICE} if mode == rr.FLAG_ONLY else {}),
         "questions_asked": sorted(q for q in questions if not q.endswith("_rev")),
-        "leads": results, "conflicts": conflicts, "invalid_leads": invalid,
+        "leads": results, "conflicts": conflicts, "invalid_leads": invalid, "absence_leads": absence,
     }
     return document
 
@@ -273,16 +293,14 @@ def main(argv: list[str] | None = None) -> int:
     except lib.SignalsError as exc:
         print(f"research-triage: {exc}", file=sys.stderr)
         return 2
-    if LEADS_SCHEMA.is_file():
-        import schema_check
-        errors = schema_check.load(LEADS_SCHEMA).errors(leads_doc)
+    for name, schema, document in (("leads.json", LEADS_SCHEMA, leads_doc), ("methodology.json", METHODOLOGY_SCHEMA, methodology),
+                                    ("clues.json", CLUES_SCHEMA, clues_doc)):
+        errors = schema_errors(schema, document) if document is not None else []
         if errors:
-            print(f"research-triage: data/leads.json does not validate: {errors[:3]}", file=sys.stderr)
+            print(f"research-triage: data/{name} does not validate: {errors[:3]}", file=sys.stderr)
             return 2
-    raw_leads = leads_doc.get("leads")
-    if not isinstance(raw_leads, list):
-        print("research-triage: data/leads.json has no leads list", file=sys.stderr)
-        return 2
+    # Each merged entry carries the kept lane lead; the lead itself is checked per lead in run_triage.
+    raw_leads = [entry["lead"] for entry in leads_doc["leads"]]
     brief = brief_from_methodology(methodology)
 
     if args.dry_run:
@@ -305,6 +323,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _valid(raw: Any) -> bool:
+    if schema_errors(LEAD_SCHEMA, raw) or raw["absence"]:
+        return False
     try:
         rr.parse_lead(raw)
     except rr.LeadInvalid:

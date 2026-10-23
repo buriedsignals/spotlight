@@ -1,11 +1,11 @@
 ---
 name: phase-investigation
-description: "Spotlight Investigation — autonomous investigation cycles (max 5): source-expression release mode resolution, investigator EXECUTION + fact-checker spawns, validators, editorial checks, monitoring recommendations, readiness criteria; includes the Stall Protocol"
+description: "Spotlight Investigation — autonomous investigation cycles (max 3, then one targeted research round for a researched case): source-expression release mode resolution, investigator EXECUTION + fact-checker spawns, validators, editorial checks, monitoring recommendations, readiness criteria; includes the Stall Protocol"
 invocable_by: [orchestrator]
 phase: investigation
 ---
 
-# Investigation (Autonomous Cycles, Max 5)
+# Investigation (Autonomous Cycles, Max 3)
 
 With approved methodology, begin the investigation loop. No user involvement between cycles — decide autonomously.
 
@@ -330,6 +330,16 @@ Apply only the specific fixes required by these gaps.",
      resolution to the parent. The resolver selects the existing Investigation gate owner,
      which authors the summaries and presents the human gate.
 
+     The resolver checks readiness itself before it offers the gate. While
+     `scripts/validate-fact-check.py` fails, or, for a case whose methodology
+     has a `research_plan`, a direction or a clue the member marked `pursue`
+     has neither a finding naming it in `research_refs` nor an entry in
+     `research_gaps` (D10), it returns `phase: investigation` with the
+     failures in `checks` (and `missing`). Route `validate-fact-check:` lines
+     through step 4.5 and `D10` lines to the investigator as gaps of this
+     cycle; if they cannot be closed, record the cycle as unsuccessful (step 8).
+     Never present the Investigation gate while `checks` is set.
+
   8. If NOT met: record the completed unsuccessful cycle and the current gaps:
 
      ```
@@ -347,19 +357,37 @@ Apply only the specific fixes required by these gaps.",
      output and then a new `data/fact-check.json`; `missing` names what is
      still owed. If the resolution returns `phase: investigation`, resume at
      the disk-derived next cycle. If it returns `status: blocked`, trigger the
-     Stall Protocol. Five unsuccessful cycles exhaust the case.
+     Stall Protocol. Three unsuccessful cycles exhaust the cycle cap: a case
+     whose methodology has a `research_plan` then goes to `phase: research`
+     (`owner: phase-research`, `research.resume_at: "round_topics"`) for one
+     targeted research round with its own approval on the Research page;
+     return that resolution to the parent. The approved round grants one more
+     cycle, recorded the same way (code counts it under its own attempt
+     kind). If it fails too, or the case has no research plan, the case stops
+     with a gaps report.
 
      A follow-up requested at the Investigation gate works the same way: it
      stays open until the investigator's update and a fresh fact-check both
-     exist. Run the full cycle (steps 1-8) for it.
+     exist. Run the full cycle (steps 1-8) for it. After a follow-up or a
+     recorded cycle, the gate also waits for `summary.md` and
+     `data/summary.json` to be regenerated from the new outputs: the
+     resolution lists them in `missing`, and the Investigation gate owner
+     rewrites them before presenting the gate.
 ```
 
 ---
 
 # Stall Protocol
 
-> "Investigation blocked after {attempts.investigation-cycle} cycles. Missing:
-> {blocked.gap}."
+The Stall Protocol runs only when the resolver returns `status: blocked`: the
+cycle cap is spent and there is no research round left (the case has no
+`research_plan`, or its one stall round's cycle also failed).
+
+> "Investigation stopped after {attempts.investigation-cycle} cycles{ and one
+> research round}. Missing: {blocked.gap}."
+
+Present `blocked.gaps_report`, every gap the cycles recorded, as the gaps
+report.
 
 **STOP**. Present the persisted blocked evidence and counts. Continuing requires
 a revised methodology and a new human approval receipt; never extend the cap,

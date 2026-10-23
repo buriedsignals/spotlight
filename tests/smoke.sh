@@ -30,7 +30,7 @@ done
 
 echo ""
 echo "── Schemas ──"
-for s in findings fact-check report-draft methodology investigation-log summary evidence-bundle provenance-manifest rlm-analysis source-expressions case-contract; do
+for s in findings fact-check report-draft methodology investigation-log summary evidence-bundle provenance-manifest rlm-analysis source-expressions case-contract research-lane research-lead research-leads research-clues; do
   if [ -f "schemas/$s.schema.json" ]; then
     if python3 -c "import json; json.load(open('schemas/$s.schema.json'))" 2>/dev/null; then
       ok "schemas/$s.schema.json parses"
@@ -90,8 +90,8 @@ fi
 
 echo ""
 echo "── Validators and helpers ──"
-for t in credentials-check protected-egress-check spotlight-python-check firecrawl-cli-check decision-signals-check research-triage-check validate-case-check validate-fact-check-check source-expression-producer-contract-check migrate-source-expressions-check source-expression-writer-check validate-report-check render-report-check report-diagrams-check provenance-manifest-check knowledge-batch-1.1-check knowledge-batch-builder-check ingest-review-check wiki-destination-check decision-endpoint-check decision-ingest-batch-check knowledge-destination-check query-vault-check preflight-check scoutpost-boundary-check cti-upstream-check technical-investigation-check verified-indicator-export-check install-config-check \
-         orchestration-conformance-check portable-resolver-check review-gate-check arbiter-match-check arbiter-report-check arbiter-create-check arbiter-appendix-check arbiter-themes-check arbiter-id-check arbiter-api-routing-check \
+for t in credentials-check protected-egress-check spotlight-python-check firecrawl-cli-check decision-signals-check research-triage-check decision-acceptance-check validate-case-check validate-fact-check-check source-expression-producer-contract-check migrate-source-expressions-check source-expression-writer-check validate-report-check render-report-check report-diagrams-check provenance-manifest-check knowledge-batch-1.1-check knowledge-batch-builder-check ingest-review-check wiki-destination-check decision-endpoint-check decision-ingest-batch-check knowledge-destination-check query-vault-check preflight-check scoutpost-boundary-check cti-upstream-check technical-investigation-check verified-indicator-export-check install-config-check \
+         orchestration-conformance-check portable-resolver-check research-phase-check research-gate-check research-schema-check research-checks-check research-merge-check research-review-check anomaly-methods-check review-gate-check arbiter-match-check arbiter-report-check arbiter-create-check arbiter-appendix-check arbiter-themes-check arbiter-id-check arbiter-api-routing-check \
          arbiter-client-check arbiter-hardening-check \
          integration-runner-check maigret-wrapper-check webcheck-wrapper-check rea-wrapper-check test_pdfparse test_scraping_seam test_search_cli; do
   python3 "tests/$t.py" >/dev/null 2>&1

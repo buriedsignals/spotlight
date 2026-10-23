@@ -151,6 +151,13 @@
       "disabled_in_sensitive_mode": false
     },
     {
+      "id": "phase-research",
+      "role": "core-child",
+      "phases": ["research"],
+      "may_make_external_calls": false,
+      "disabled_in_sensitive_mode": false
+    },
+    {
       "id": "phase-investigation",
       "role": "core-child",
       "phases": ["investigation", "investigation-fact-check"],
@@ -189,6 +196,11 @@
       "required": ["phase-methodology", "integrations", "osint", "investigation-methodology", "epistemic-grounding"],
       "conditional": ["navigator", "arbiter", "follow-the-money", "social-media-intelligence", "technical-investigation", "content-access"],
       "validation": "methodology.json includes skills_invoked[] and required Navigator fields when green."
+    },
+    "research": {
+      "required": ["phase-research"],
+      "conditional": [],
+      "validation": "data/leads.json and data/clues.json validate; the Research gate receipt binds them and the saved review."
     },
     "investigation": {
       "required": ["phase-investigation", "epistemic-grounding", "shell-safety", "web-archiving"],

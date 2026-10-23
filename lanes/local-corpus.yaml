@@ -1,0 +1,10 @@
+id: local-corpus
+title: Local corpus
+description: The case's own stored material (research/ and evidence/), read on the local model with no search or fetch.
+route: local
+tools: [list_case_files, read_case_file]
+keys: []
+egress: [local_model]
+guidance: >-
+  Read only what the brief points to. Every lead quotes a case file exactly.
+  This lane never reaches the network.

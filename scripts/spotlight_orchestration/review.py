@@ -1,6 +1,6 @@
 """Gate review records, page views and one-time decision nonces.
 
-A gate page (methodology, Investigation gate, report, ingest) reads a view built
+A gate page (methodology, research, Investigation gate, report, ingest) reads a view built
 here, saves the member's edits to one canonical review file per gate, and posts
 its decision with the digest it showed. The local review server holds a nonce
 issued here; the transitions accept a page decision only with that recorded,
@@ -20,16 +20,22 @@ from pathlib import Path
 from typing import Any
 
 from .case_writer import atomic_write_files
-from .contract import METHODOLOGY_INPUTS, OrchestrationError, SCRIPT_DIR
+from .contract import METHODOLOGY_INPUTS, RESEARCH_OUTPUTS, OrchestrationError, SCRIPT_DIR
 from .dependencies import current_hashes, investigation_gate_dependencies
+from . import research_view
 from .storage import LEGACY_CHANNEL, LEGACY_LEDGER_KEY, case_path, read_data_bytes
+
+if str(SCRIPT_DIR.parent) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR.parent))
+from integrations.anomaly import adapter as anomaly_methods  # noqa: E402
 
 REVIEW_VERSION = "spotlight-review/v1"
 LEDGER_VERSION = "spotlight-review-nonces/v1"
 LEDGER_FILE = "review-nonces.json"
-REVIEW_GATES = ("methodology", "investigation_gate", "report", "ingest")
+REVIEW_GATES = ("methodology", "research", "investigation_gate", "report", "ingest")
 DECISIONS = {
     "methodology": ("approved",),
+    "research": ("approved",),
     "investigation_gate": ("approved",),
     "report": ("completed", "declined"),
     "ingest": ("requested", "declined"),
@@ -64,6 +70,8 @@ def pending_gate(status: dict[str, Any]) -> str | None:
     phase = status.get("next_phase")
     if phase == "methodology_approval":
         return "methodology"
+    if phase == "research_approval":
+        return "research"
     if phase == "investigation_gate_approval":
         return "investigation_gate"
     if phase == "report":
@@ -136,6 +144,11 @@ def subject_digest(case: Path, gate: str) -> str:
     report it also covers the draft the page showed, which publishing renders."""
     if gate == "methodology":
         return _canonical_sha(current_hashes(case, METHODOLOGY_INPUTS))
+    if gate == "research":
+        # The receipt's input hashes bind the leads and clues; the page digest
+        # also covers the triage, suggestions and round ledger the page shows.
+        return _canonical_sha({"outputs": current_hashes(case, RESEARCH_OUTPUTS),
+                               "shown": research_view.shown_hashes(case)})
     dependency = str(investigation_gate_dependencies(case)["dependency_digest"])
     if gate == "ingest" and activated_case(case):
         bound = {"dependencies": dependency, "batch": _batch_sha256(case)}
@@ -458,6 +471,11 @@ def _methodology_content(case: Path) -> tuple[dict[str, Any], list[str]]:
         if isinstance(methodology.get("limitations"), list)
         else [],
     }
+    # Anomaly methods that fit a lane, and each topic's attached ones; absent
+    # when the pinned catalogue is not installed and no topic names a method.
+    methods = anomaly_methods.view(methodology)
+    if methods is not None:
+        content["anomaly_methods"] = methods
     return content, blocking
 
 
@@ -704,10 +722,14 @@ def _counts(items: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
-def _gate_parts(case: Path, gate: str) -> tuple[dict[str, Any], list[str], list[dict[str, Any]]]:
+def _gate_parts(
+    case: Path, gate: str, review: dict[str, Any] | None = None
+) -> tuple[dict[str, Any], list[str], list[dict[str, Any]]]:
     if gate == "methodology":
         content, blocking = _methodology_content(case)
         return content, blocking, []
+    if gate == "research":
+        return research_view.content(case, (review or {}).get("items", {}))
     if gate == "investigation_gate":
         return _investigation_content(case)
     if gate == "report":
@@ -741,8 +763,8 @@ def _reviewer_names(case: Path, gate: str, review: dict[str, Any], data_descript
 def build_view(case: Path, gate: str, data_descriptor: int | None = None) -> dict[str, Any]:
     """The page model: content, blocking failures, flags, selection and digest."""
     require_gate(gate)
-    content, blocking, suggested = _gate_parts(case, gate)
     review = load_review(case, gate, data_descriptor)
+    content, blocking, suggested = _gate_parts(case, gate, review)
     items = _merge_items(suggested, review["items"])
     counts = _counts(items)
     reviewer, previous_reviewer = _reviewer_names(case, gate, review, data_descriptor)
@@ -782,6 +804,8 @@ def _validated_edit(edit: object, items: dict[str, dict[str, Any]]) -> dict[str,
     elif item["kind"] == "selection":
         if not isinstance(value, bool):
             raise OrchestrationError("a selection mark is true or false")
+    elif item["kind"] in ("clue", "direction"):
+        research_view.validate_mark(item, value)
     elif item["kind"] == "flag":
         if value not in FLAG_ACTIONS:
             raise OrchestrationError(f"a flag disposition is one of: {', '.join(FLAG_ACTIONS)}")
@@ -793,11 +817,20 @@ def _validated_edit(edit: object, items: dict[str, dict[str, Any]]) -> dict[str,
 def apply_edit(case: Path, data_descriptor: int, gate: str, edit: object) -> None:
     """Apply one page edit in code and save the canonical review file."""
     require_gate(gate)
-    _, _, suggested = _gate_parts(case, gate)
     review = load_review(case, gate, data_descriptor)
+    _, _, suggested = _gate_parts(case, gate, review)
     current = {item["key"]: item for item in _merge_items(suggested, review["items"])}
-    edit = _validated_edit(edit, current)
-    if edit["kind"] == "reviewer":
+    if gate == "research" and isinstance(edit, dict) and edit.get("kind") == "add_direction":
+        if set(edit) != {"kind", "key", "value"}:
+            raise OrchestrationError("a review edit has the wrong fields")
+        added = research_view.added_direction(edit, current)
+        current[added["key"]] = added
+        edit = None
+    else:
+        edit = _validated_edit(edit, current)
+    if edit is None:
+        pass
+    elif edit["kind"] == "reviewer":
         review["reviewer"] = edit["value"].strip()
         review["reviewer_after_decisions"] = _decisions_recorded(case, gate, data_descriptor)
     elif edit["kind"] == "note":
@@ -816,6 +849,8 @@ def apply_edit(case: Path, data_descriptor: int, gate: str, edit: object) -> Non
             "suggestion_reason": item["suggestion_reason"],
             "final": item["final"],
             "note": item["note"],
+            # A direction's description, and who added it when the member did.
+            **{field: item[field] for field in ("label", "added_by") if field in item},
         }
     review["items"] = stored
     review["counts"] = _counts(list(current.values()))

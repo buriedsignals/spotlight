@@ -26,7 +26,7 @@ function exiftoolTool(context: ToolContext): ToolDefinition {
 		parameters: params,
 		async execute(_id, raw, signal) {
 			const { path } = checkedParams<{ path: string }>('exiftool', params, raw);
-			const target = readTarget(context.caseDir, path);
+			const target = readTarget(context.caseDir, path, context.scope);
 			const result = await runFixed('exiftool', ['-json', '-G', target], {
 				env: programEnv(context.env),
 				cwd: context.caseDir,
@@ -221,6 +221,28 @@ function integrationStatusTool(context: ToolContext): ToolDefinition {
 	};
 }
 
+// Read-only: the adapter reads the installed catalogue and makes no network
+// request, so the tool stays in sensitive mode (roles.ts EGRESS_TOOLS).
+function anomalyMethodsTool(context: ToolContext): ToolDefinition {
+	const params = Type.Object({}, { additionalProperties: false });
+	return {
+		name: 'anomaly_methods',
+		label: 'Anomaly methods',
+		description:
+			'List the Anomaly clue methods a research topic can name in anomaly_methods (integrations/anomaly/adapter.py methods): the single-table methods of the pinned catalogue, each with its required fields, assumptions and known false positives. available: false with a reason, and no methods, when ANOMALY_HOME is unset or the installed catalogue is not the pinned one; then name none.',
+		parameters: params,
+		async execute(_id, raw, signal) {
+			checkedParams('anomaly_methods', params, raw);
+			const result = await runPython(context, [script('integrations/anomaly/adapter.py'), 'methods'], {
+				keys: ['ANOMALY_HOME'],
+				extra: { SPOTLIGHT_CONFIG: context.configPath },
+				signal,
+			});
+			return textResult(programOutput('anomaly_methods', result));
+		},
+	};
+}
+
 export function programTools(context: ToolContext): ToolDefinition[] {
 	return [
 		exiftoolTool(context),
@@ -230,5 +252,6 @@ export function programTools(context: ToolContext): ToolDefinition[] {
 		reviewHtmlTool(context),
 		rlmTool(context),
 		integrationStatusTool(context),
+		anomalyMethodsTool(context),
 	];
 }

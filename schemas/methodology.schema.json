@@ -118,6 +118,11 @@
         "required": ["direction", "questions", "steps"],
         "properties": {
           "direction": { "type": "string" },
+          "direction_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "description": "Stable slug the research plan's topics and the research leads refer to."
+          },
           "questions": { "type": "array", "items": { "type": "string" } },
           "navigator_not_applicable_reason": { "type": "string" },
           "steps": {
@@ -135,7 +140,12 @@
                 "tool_source": {
                   "enum": ["navigator", "curated-catalog", "prior-vault", "user-specified"]
                 },
-                "navigator_response_path": { "type": "string" }
+                "navigator_response_path": { "type": "string" },
+                "cites": {
+                  "type": "array",
+                  "description": "A step added by a Research-gate amendment cites the pursued clue or kept or added direction it serves (D8).",
+                  "items": { "type": "string", "pattern": "^(clue|direction):[A-Za-z0-9][A-Za-z0-9._:-]*$" }
+                }
 				,"navigator_catalog_id": { "type": "string" }
 				,"navigator_retrieved_at": { "type": "string", "format": "date-time" }
               }
@@ -148,8 +158,112 @@
         }
       }
     },
+    "research_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Opt-in Research phase between Methodology and Investigation. Absent: the case goes straight to Investigation. Each topic brief runs as one lane; code starts the lanes once the methodology is approved, never the model.",
+      "required": ["round_budget_usd", "case_budget_usd", "mode", "consent", "keys", "egress", "topics"],
+      "properties": {
+        "round_budget_usd": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 5,
+          "default": 1,
+          "description": "Spend ceiling for one research round. When it is spent no new topic starts; running ones finish."
+        },
+        "case_budget_usd": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 5,
+          "description": "Spend ceiling across every research round of the case; never above 5."
+        },
+        "timing_window_days": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Clue rule K3: two dated events of the same subject this many days apart or closer are a timing clue. Unset: K3 does not fire."
+        },
+        "mode": {
+          "enum": ["local_only", "openrouter_swarm", "subscription_subagents", "newsroom"],
+          "description": "local_only: only the local lanes run. openrouter_swarm: the member's key with the swarm switch on. subscription_subagents: the host's own subagents. newsroom: the newsroom's allowed endpoints only."
+        },
+        "consent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["swarm", "decided_by", "decided_at"],
+          "properties": {
+            "swarm": { "type": "boolean", "description": "The member opted in to sending the approved topic briefs to a cloud model." },
+            "journalist_input": { "type": "boolean", "description": "The member granted the local corpus lane access to journalist input (local model only)." },
+            "decided_by": { "type": "string", "minLength": 1 },
+            "decided_at": { "type": "string", "format": "date-time" }
+          }
+        },
+        "keys": {
+          "type": "array",
+          "description": "Names of the keys the lanes use, never their values.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "topics"],
+            "properties": {
+              "name": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+              "topics": { "type": "array", "items": { "$ref": "#/definitions/slug" } }
+            }
+          }
+        },
+        "egress": {
+          "type": "array",
+          "description": "Where each topic's requests go.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["topic_id", "destination"],
+            "properties": {
+              "topic_id": { "$ref": "#/definitions/slug" },
+              "destination": { "enum": ["openrouter", "subscription_host", "local_model", "public_web", "registry_api", "newsroom"] },
+              "hosts": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+            }
+          }
+        },
+        "topics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["topic_id", "direction_id", "lane_type", "questions"],
+            "properties": {
+              "topic_id": {
+                "$ref": "#/definitions/slug",
+                "description": "<direction_id>-<lane_type>[-n], e.g. ownership-registries; also the lane folder research/swarm/<topic_id>/."
+              },
+              "direction_id": { "$ref": "#/definitions/slug" },
+              "lane_type": {
+                "$ref": "#/definitions/slug",
+                "description": "A lane catalogue id, or ad-hoc (generic search and fetch only, no keys)."
+              },
+              "route": { "enum": ["swarm", "subscription", "local"] },
+              "questions": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+              "seed_queries": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+              "sources_to_try": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+              "anomaly_methods": {
+                "type": "array",
+                "maxItems": 10,
+                "uniqueItems": true,
+                "description": "Anomaly catalogue methods whose input tables the lane should collect.",
+                "items": { "type": "string", "pattern": "^method:[a-z0-9][a-z0-9._-]*@[0-9A-Za-z][0-9A-Za-z.+-]*$" }
+              },
+              "token_budget": { "type": "integer", "minimum": 1, "description": "Keeps one topic from taking the round." },
+              "journalist_input": { "type": "boolean", "description": "Local corpus lane only, on the local model, with no search or fetch." }
+            }
+          }
+        }
+      }
+    },
     "tools_required": { "type": "array", "items": { "type": "string" } },
     "opsec_considerations": { "type": "array", "items": { "type": "string" } },
     "limitations": { "type": "array", "items": { "type": "string" } }
+  },
+  "definitions": {
+    "slug": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" }
   }
 }

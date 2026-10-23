@@ -4,6 +4,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { ModelTier } from './config.ts';
 
 // harness/pi/src -> checkout root.
 export const CHECKOUT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -21,10 +22,18 @@ export type AgentSpec = {
 	// its write folder allows.
 	reads?: string[];
 	writes?: string[];
+	// Optional case files hidden from the role's file tools (and exiftool), the
+	// rest of the case staying readable: an entry ending in "/" is a folder,
+	// "*" matches within one path segment. Unlike `reads`, it leaves the role's
+	// other tools as they are.
+	denyReads?: string[];
 	// Optional spawn conditions: the resolver phases and the editions in which
 	// the launcher starts this worker. Absent means any.
 	phases?: string[];
 	editions?: string[];
+	// Set when code runs the role itself (the researcher: the research lane
+	// runner, lanes.ts). Such a role is never a spawn_agent worker.
+	runner?: string;
 };
 export type Composition = Record<string, AgentSpec>;
 
@@ -34,11 +43,21 @@ export type Composition = Record<string, AgentSpec>;
 export const SCOPED_TOOLS = ['invoke_skill', 'read_file', 'write_file', 'edit_file', 'list_files', 'grep_files', 'hash_files', 'query_vault'];
 
 const CASE_FILE = /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/;
+const DENY_ENTRY = /^[A-Za-z0-9_.*-]+(?:\/[A-Za-z0-9_.*-]+)*\/?$/;
+
+function plainSegments(path: string): boolean {
+	return !path.replace(/\/$/, '').split('/').some((part) => part === '..' || part === '.');
+}
 
 function checkScope(name: string, spec: AgentSpec): void {
+	for (const entry of spec.denyReads ?? []) {
+		if (!DENY_ENTRY.test(entry) || !plainSegments(entry)) {
+			throw new Error(`harness/composition.json: ${name} denyReads entry ${JSON.stringify(entry)} is not a case-relative file, pattern or folder/`);
+		}
+	}
 	if (spec.reads === undefined && spec.writes === undefined) return;
 	for (const path of [...(spec.reads ?? []), ...(spec.writes ?? [])]) {
-		if (!CASE_FILE.test(path) || path.split('/').some((part) => part === '..' || part === '.')) {
+		if (!CASE_FILE.test(path) || !plainSegments(path)) {
 			throw new Error(`harness/composition.json: ${name} scope entry ${JSON.stringify(path)} is not a case-relative file path`);
 		}
 	}
@@ -68,6 +87,24 @@ export function spawnRefusal(spec: AgentSpec, role: string, phase: string, editi
 	return undefined;
 }
 
+// D9: the fact-checker verifies findings independently of the research that
+// led to them. A task that points it at the research leads, the clues, the
+// lane folders or a review page is refused before any process starts.
+const FACT_CHECKER_FORBIDDEN: Array<[RegExp, string]> = [
+	[/\bresearch\/swarm\b/i, 'research/swarm/'],
+	[/\bleads\.jsonl?\b/i, 'the research leads'],
+	[/\bclues\.json\b/i, 'the research clues'],
+	[/\bresearch-(?:triage|review|suggestions)\.json\b/i, 'the research triage or review'],
+	[/(?<![\w.-])(?:https?:\/\/)?(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?(?![\w.-])/i, 'a review page'],
+];
+
+export function isolationRefusal(role: string, task: string): string | undefined {
+	if (role !== 'fact-checker') return undefined;
+	const text = task.replaceAll('\\', '/');
+	const named = FACT_CHECKER_FORBIDDEN.filter(([pattern]) => pattern.test(text)).map(([, label]) => label);
+	return named.length ? `the fact-checker works without the research phase's material; the task names ${named.join(', ')}` : undefined;
+}
+
 export function agentSpec(composition: Composition, role: string): AgentSpec {
 	const spec = composition[role];
 	if (!spec) throw new Error(`unknown Spotlight agent: ${role}`);
@@ -81,7 +118,7 @@ function stripFrontmatter(markdown: string): string {
 // A worker can be spawned only when its persona exists under agents/.
 export function spawnableWorkers(composition: Composition): string[] {
 	return Object.entries(composition)
-		.filter(([name, spec]) => name !== ORCHESTRATOR && workerPersonaPath(spec) !== undefined)
+		.filter(([name, spec]) => name !== ORCHESTRATOR && !spec.runner && workerPersonaPath(spec) !== undefined)
 		.map(([name]) => name);
 }
 
@@ -124,7 +161,18 @@ function stripSkillPath(rolePath: string): string {
 	return match[1];
 }
 
-const ADAPTER = `## Runtime adapter (Pi)
+// How far a model may read the raw page behind the distilled leads, by tier
+// (SPOTLIGHT_MODEL_TIER). The 12b degrades as its context grows, so it reads
+// only the leads and touches a raw page only for an exact citation passage;
+// the larger local tiers and the frontier tier may also read a section when
+// the leads look thin.
+const RAW_PAGE_RULE = {
+	'12b': 'Read only the leads. Do not read a `.raw` file unless you need the exact source passage for a citation; then grep it first with `grep_files` for a distinctive locator, read only that bounded line range with `read_file` (offset/limit, or json_pointer) and record that range or pointer in `source_ref`. Never load a raw page whole.',
+	default:
+		'Read the leads. Read a section of a `.raw` file only when the leads look thin or you need exact wording for a citation: find it with `grep_files`, then `read_file` with offset/limit. Never load a raw page whole.',
+};
+
+const adapter = (tier: ModelTier) => `## Runtime adapter (Pi)
 
 The skills use abstract verbs and some shell steps. This harness has no shell: every step you may take is one of the tools in your tool list.
 - invoke-skill(id) -> \`invoke_skill\`; its description lists the skills you have.
@@ -132,31 +180,32 @@ The skills use abstract verbs and some shell steps. This harness has no shell: e
 - spawn-agent(id, prompt) / wait-agent -> \`spawn_agent\` (orchestrator only). It returns the worker's final answer.
 - read-file, write-file, edit-file, list-files, grep-files -> \`read_file\`, \`write_file\`, \`edit_file\`, \`list_files\`, \`grep_files\`. {CASE_DIR} is the active case folder: give paths relative to it, keeping every folder the skill names and adding none (\`{CASE_DIR}/brief-directions.txt\` -> \`brief-directions.txt\`, \`{CASE_DIR}/data/methodology.json\` -> \`data/methodology.json\`). Files under the checkout's \`schemas/\` are readable. Writes outside your folder, through a symlink, or to resolver, review or receipt files are refused.
 - fetch -> \`fetch\` (use save_as for output_path); search -> \`search\`; query-vault -> \`query_vault\`.
-- Context hygiene: when the harness has a local RLM, \`fetch\` distills every page itself. You do not run the RLM. The result says \`distilled: true\` and gives you compact leads; save_as holds those leads and \`raw_path\` (save_as + \`.raw\`) the page as fetched, for citations and provenance. Read the leads. Read a section of a \`.raw\` file only when the leads look thin or you need exact wording for a citation: find it with \`grep_files\`, then \`read_file\` with offset/limit. Never load a raw page whole. Leads are unverified pointers, never facts, and never evidence: a \`source_ref\` must point at the \`.raw\` file, not the lead file (the validators refuse lead files). If the result says the RLM failed, the page is only at \`raw_path\`; treat it the same way.
-- Shell steps in the skills map to typed tools: a \`curl\` GET to a registry, archive or API -> \`http_get\` (\`--data-urlencode\` values go in its \`query\` object, unencoded); a dev-browser script -> \`browse\` (one page: rendered text, HTML or a screenshot); \`scripts/osint-tools.py find|categories\` -> \`osint_tools\`; \`navigator tools find|show\` -> \`navigator_tools\`; \`exiftool {file}\` -> \`exiftool\`; \`scripts/decision-signals.py\` -> \`decision_signals\`; \`scripts/build-provenance-manifest.py\` -> \`provenance_manifest\`; \`integrations/rlm/run_rlm.py\` -> \`run_rlm\`; \`integrations/preflight.py\` -> \`integration_status\`; \`scripts/build-review-html.py\` -> \`build_review_html\`; \`spotlight_safe.py sha256\` or any SHA-256 of a case file -> \`hash_files\`; \`grep -n\`, \`sed -n\` or Python to find a source_ref line range or JSON Pointer -> \`grep_files\` and \`read_file\` (offset/limit or json_pointer), which count and select exactly as the validators do. \`scripts/spotlight_safe.py validate-*\` checks are not needed: each tool checks its own arguments, and the web tools reach only public http(s) addresses.
+- Context hygiene: when the harness has a local RLM, \`fetch\` distills every page itself. You do not run the RLM. The result says \`distilled: true\` and gives you compact leads; save_as holds those leads and \`raw_path\` (save_as + \`.raw\`) the page as fetched, for citations and provenance. ${RAW_PAGE_RULE[tier === '12b' ? '12b' : 'default']} Leads are unverified pointers, never facts, and never evidence: a \`source_ref\` must point at the \`.raw\` file, not the lead file (the validators refuse lead files). If the result says the RLM failed, the page is only at \`raw_path\`; treat it the same way.
+- Shell steps in the skills map to typed tools: a \`curl\` GET to a registry, archive or API -> \`http_get\` (\`--data-urlencode\` values go in its \`query\` object, unencoded); a dev-browser script -> \`browse\` (one page: rendered text, HTML or a screenshot); \`scripts/osint-tools.py find|categories\` -> \`osint_tools\`; \`navigator tools find|show\` -> \`navigator_tools\`; \`exiftool {file}\` -> \`exiftool\`; \`scripts/decision-signals.py\` -> \`decision_signals\`; \`scripts/build-provenance-manifest.py\` -> \`provenance_manifest\`; \`integrations/rlm/run_rlm.py\` -> \`run_rlm\`; \`integrations/preflight.py\` -> \`integration_status\`; \`integrations/anomaly/adapter.py methods\` -> \`anomaly_methods\`; \`scripts/build-review-html.py\` -> \`build_review_html\`; \`spotlight_safe.py sha256\` or any SHA-256 of a case file -> \`hash_files\`; \`grep -n\`, \`sed -n\` or Python to find a source_ref line range or JSON Pointer -> \`grep_files\` and \`read_file\` (offset/limit or json_pointer), which count and select exactly as the validators do. \`scripts/spotlight_safe.py validate-*\` checks are not needed: each tool checks its own arguments, and the web tools reach only public http(s) addresses.
 - \`scripts/validate-case.py\`, \`scripts/validate-fact-check.py\` and \`scripts/validate-methodology-navigator.py\` are run by the harness itself when a worker finishes; their outcome is appended to the \`spawn_agent\` result. Act on that outcome; do not try to run them.
+- Research (orchestrator only): at the Research phase \`spotlight_resolve\` runs the approved research topics itself and returns the round as \`research_round\` (what ran, the spend, the topics left out, and \`stopped\` with the fix when the provider failed). You never start, widen or choose topics. Pass \`retry_research: true\` only when the member asks to retry a stopped round.
 - Preflight step 0 (the shell check): skipped. A \`spotlight_resolve\` that answers confirms the checkout.
 - Ingest, the analyst proposal (orchestrator only): \`spawn_agent\` with agent \`analyst\`, at Ingest in the solo edition. It reads the approved case files and writes only \`data/knowledge-proposal.json\`. When it finishes, the harness runs \`scripts/build-knowledge-batch.py --review\` itself with the producers' model ids and appends the outcome to the result; do not try to run it. A refusal names what to fix.
 - Anything else (a POST request, git clone, Apify, vault-write, the other ingest scripts, a tool not in your list): do not improvise around it. Say which step needs it and stop that step.
 
 Gate approvals, the report decision and the ingest request or decline are recorded by the review page, never by you. At a gate, present the synthesis, call \`open_review\` so the member can decide on the page, and END YOUR TURN. When the member says they are done, call \`spotlight_resolve\` again.`;
 
-export function systemPrompt(composition: Composition, role: string): string {
+export function systemPrompt(composition: Composition, role: string, tier: ModelTier): string {
 	if (role === ORCHESTRATOR) {
 		return `You are the Spotlight orchestrator. You never investigate directly: research goes to the \`investigator\` worker and verification to the \`fact-checker\` worker through \`spawn_agent\`.
 
-Start and resume by calling \`spotlight_resolve\`. Follow the \`spotlight\` skill, invoke exactly the returned phase owner, apply only the transitions it names through \`spotlight_transition\`, then resolve again. The durable sequence is Brief -> Methodology -> Investigation -> Investigation gate -> Report -> Ingest; never infer phase completion from files.
+Start and resume by calling \`spotlight_resolve\`. Follow the \`spotlight\` skill, invoke exactly the returned phase owner, apply only the transitions it names through \`spotlight_transition\`, then resolve again. The durable sequence is Brief -> Methodology -> Research (only when the approved methodology has a research plan) -> Investigation -> Investigation gate -> Report -> Ingest; never infer phase completion from files.
 
 Human gates are real. When the phase owner presents a gate, present its synthesis and decisions, then END YOUR TURN. Do not proceed, delegate, or transition until the gate is recorded.
 
-${ADAPTER}`;
+${adapter(tier)}`;
 	}
 	const spec = agentSpec(composition, role);
 	const persona = workerPersonaPath(spec);
 	if (!persona) throw new Error(`Spotlight agent ${role} has no persona in agents/`);
 	return `You are the Spotlight ${role} worker. You were delegated a task by the orchestrator. You have no user and no gates: never wait for input or approval, and never delegate. Do the task yourself with your own tools and return your result.
 
-${ADAPTER}
+${adapter(tier)}
 
 ${stripFrontmatter(readFileSync(persona, 'utf8'))}`;
 }

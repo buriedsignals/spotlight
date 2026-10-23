@@ -14,25 +14,47 @@ import { onJsonlRecords } from './pi-process.ts';
 
 export type SpawnRequest = { kind: 'spotlight-spawn'; id: string; agent: string; task: string };
 export type CancelRequest = { kind: 'spotlight-cancel'; id: string };
-export type SpawnResult = { kind: 'spotlight-result'; id: string; ok: boolean; text?: string; error?: string };
+export type SpawnResult = { kind: 'spotlight-result'; id: string; ok: boolean; text?: string; error?: string; round?: unknown };
+// The orchestrator's resolve asks the launcher to run the approved research
+// topics; the launcher checks the phase and the plan itself.
+export type ResearchRequest = { kind: 'spotlight-research'; id: string; retry: boolean };
 
 export const MAX_CONCURRENT_WORKERS = 4;
 
 // ── Orchestrator side ────────────────────────────────────────────────────────
 
+const pending = new Map<string, (result: SpawnResult) => void>();
+let listening = false;
+function listen(): void {
+	if (listening) return;
+	listening = true;
+	process.on('message', (message: unknown) => {
+		const result = message as SpawnResult;
+		if (result?.kind !== 'spotlight-result') return;
+		pending.get(result.id)?.(result);
+		pending.delete(result.id);
+	});
+}
+
+export async function requestResearchRound(retry: boolean, signal?: AbortSignal): Promise<unknown> {
+	if (typeof process.send !== 'function') throw new Error('Research needs the Spotlight launcher; this process was started without it');
+	listen();
+	const id = randomUUID();
+	const { promise, resolve } = Promise.withResolvers<SpawnResult>();
+	pending.set(id, resolve);
+	const onAbort = () => process.send?.({ kind: 'spotlight-cancel', id } satisfies CancelRequest);
+	signal?.addEventListener('abort', onAbort, { once: true });
+	process.send({ kind: 'spotlight-research', id, retry } satisfies ResearchRequest);
+	try {
+		const result = await promise;
+		if (!result.ok) throw new Error(result.error ?? 'the research round failed');
+		return result.round;
+	} finally {
+		signal?.removeEventListener('abort', onAbort);
+	}
+}
+
 export function spawnAgentTool(workers: string[]): ToolDefinition {
-	const pending = new Map<string, (result: SpawnResult) => void>();
-	let listening = false;
-	const listen = () => {
-		if (listening) return;
-		listening = true;
-		process.on('message', (message: unknown) => {
-			const result = message as SpawnResult;
-			if (result?.kind !== 'spotlight-result') return;
-			pending.get(result.id)?.(result);
-			pending.delete(result.id);
-		});
-	};
 	return {
 		name: 'spawn_agent',
 		label: 'Spawn agent',

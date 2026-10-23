@@ -54,10 +54,37 @@ export type HarnessConfig = {
 	spotlightConfig: string;
 	// Sensitive mode: no egress tools in any process.
 	sensitive: boolean;
-	// What this case's processes may send to their model. Every process reads
-	// the case (the orchestrator also gets the member's chat), so all of them
-	// launch with this one value.
+	// The third route, beside the pipeline route (`general`, the process
+	// route) and the own-inference route every case-reading process is held to
+	// (`restricted`, routeFor): the research swarm. It carries only approved
+	// topic briefs, so it may be a third-party endpoint. Off unless the member
+	// opted in (the "Research swarms" switch plus a key).
+	swarm: SwarmSetting;
 };
+
+// The swarm route when the member opted in, or why there is none. The key is
+// named, never held here: lanes.ts reads it from the environment per request.
+export type SwarmRoute = {
+	name: 'swarm';
+	baseURL: string;
+	// Primary model first, then the fallbacks OpenRouter tries in order.
+	models: string[];
+	keyEnv: string;
+	// Fixed request-body fields; zero data retention is always among them.
+	requestBody: Record<string, unknown>;
+	concurrency: number;
+	// OpenRouter routes `models` as a fallback list; another endpoint gets `model`.
+	openRouter: boolean;
+};
+export type SwarmSetting = { available: true; route: SwarmRoute } | { available: false; reason: string };
+
+export const SWARM_DEFAULTS = {
+	baseURL: 'https://openrouter.ai/api/v1',
+	model: 'deepseek/deepseek-v4-flash',
+	fallbackModel: 'z-ai/glm-5.3',
+	keyEnv: 'OPENROUTER_API_KEY',
+	concurrency: 8,
+} as const;
 
 export class ConfigError extends Error {}
 
@@ -229,6 +256,7 @@ export function readConfig(env: Env): HarnessConfig {
 		throw new ConfigError('SPOTLIGHT_MODEL_CONTEXT_WINDOW must be an integer of at least 1024.');
 	}
 	const modelTier = readModelTier(env);
+	const sensitive = sensitiveMode(env);
 	return {
 		edition,
 		casesRoot: resolve(casesRoot),
@@ -246,7 +274,57 @@ export function readConfig(env: Env): HarnessConfig {
 		fold: readFold(env, modelTier, contextWindow),
 		python: env.SPOTLIGHT_PYTHON?.trim() || 'python3',
 		spotlightConfig: spotlightConfigPath(env),
-		sensitive: sensitiveMode(env),
+		sensitive,
+		swarm: swarmSetting(env, edition, routes, sensitive),
+	};
+}
+
+const SWITCH_ON = new Set(['on', 'true', '1', 'yes']);
+const SWITCH_OFF = new Set(['', 'off', 'false', '0', 'no']);
+
+// The swarm route. Opt-in only: the "Research swarms" switch
+// (SPOTLIGHT_RESEARCH_SWARMS, set by Engine) and the member's key. Sensitive
+// mode has none. In the newsroom edition the endpoint must be one of the
+// newsroom's allowed routes, and that route's token is the key.
+function swarmSetting(env: Env, edition: Edition, routes: Route[], sensitive: boolean): SwarmSetting {
+	const switchValue = env.SPOTLIGHT_RESEARCH_SWARMS?.trim().toLowerCase() ?? '';
+	if (!SWITCH_ON.has(switchValue) && !SWITCH_OFF.has(switchValue)) {
+		throw new ConfigError('SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off".');
+	}
+	if (!SWITCH_ON.has(switchValue)) return { available: false, reason: 'the Research swarms switch is off' };
+	if (sensitive) return { available: false, reason: 'sensitive mode sends nothing to a cloud model' };
+	const baseURL = optionalURL(env, 'SPOTLIGHT_SWARM_BASE_URL') ?? SWARM_DEFAULTS.baseURL;
+	let keyEnv: string = SWARM_DEFAULTS.keyEnv;
+	if (edition === 'newsroom') {
+		const allowed = routes.find((route) => route.baseURL === baseURL);
+		if (!allowed) return { available: false, reason: 'the swarm endpoint is not one of the newsroom\'s allowed routes' };
+		if (allowed.keyEnv) keyEnv = allowed.keyEnv;
+	}
+	if (!env[keyEnv]?.trim()) return { available: false, reason: `no key for the swarm endpoint (${keyEnv} is not set)` };
+	const models = [
+		env.SPOTLIGHT_SWARM_MODEL?.trim() || SWARM_DEFAULTS.model,
+		...(env.SPOTLIGHT_SWARM_FALLBACK_MODEL === undefined
+			? [SWARM_DEFAULTS.fallbackModel]
+			: env.SPOTLIGHT_SWARM_FALLBACK_MODEL.trim() ? [env.SPOTLIGHT_SWARM_FALLBACK_MODEL.trim()] : []),
+	];
+	let extra: Record<string, unknown> | undefined;
+	try {
+		extra = parseFixedRequestBody(env.SPOTLIGHT_SWARM_REQUEST_BODY);
+	} catch (error) {
+		throw new ConfigError((error as Error).message.replace('SPOTLIGHT_PROVIDER_REQUEST_BODY', 'SPOTLIGHT_SWARM_REQUEST_BODY'));
+	}
+	const provider = { ...((extra?.provider as Record<string, unknown> | undefined) ?? {}), zdr: true };
+	return {
+		available: true,
+		route: {
+			name: 'swarm',
+			baseURL,
+			models,
+			keyEnv,
+			requestBody: { ...extra, provider },
+			concurrency: positiveInteger(env, 'SPOTLIGHT_SWARM_CONCURRENCY', SWARM_DEFAULTS.concurrency),
+			openRouter: new URL(baseURL).hostname === 'openrouter.ai',
+		},
 	};
 }
 
@@ -324,6 +402,7 @@ export function secretValues(config: HarnessConfig, composition: Composition, en
 	const names = new Set<string>([PROVIDER_KEY]);
 	for (const route of config.routes) if (route.keyEnv) names.add(route.keyEnv);
 	for (const spec of Object.values(composition)) for (const key of spec.keys ?? []) names.add(key);
+	if (config.swarm.available) names.add(config.swarm.route.keyEnv);
 	return [...names].map((name) => env[name]).filter((value): value is string => !!value);
 }
 
@@ -332,6 +411,8 @@ const PASSTHROUGH = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 
 // fetch, browse's Chromium, the RLM model), passed to every process unchanged.
 // The RLM endpoint itself is passed only after readConfig confirmed it is own.
 const BACKING_SETTINGS = [
+	// The Anomaly install the anomaly_methods tool reads (a path, not a secret).
+	'ANOMALY_HOME',
 	'SPOTLIGHT_ANONYMIZE_FETCH',
 	'TOR_SOCKS',
 	'SPOTLIGHT_BROWSE_CHROMIUM',

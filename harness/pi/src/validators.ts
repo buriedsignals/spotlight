@@ -13,6 +13,10 @@ type Check = { name: string; args: string[] };
 // planning, or waiting for methodology approval because methodology.json now
 // exists. Either way the investigator wrote a methodology, not findings.
 const PLANNING_PHASES = new Set(['brief', 'methodology', 'methodology_approval']);
+// At Research the investigator works in AMENDMENT mode: suggested marks, an
+// amendment or a stall round, which the resolver and its transitions check
+// (the suggestions' schema, D8, D1). It wrote no findings to validate.
+const RESEARCH_PHASES = new Set(['research', 'research_approval']);
 
 function checksAfter(role: string, phase: string, producerModel: string, context: ToolContext): Check[] {
 	const script = (name: string) => `${CHECKOUT_ROOT}/scripts/${name}`;
@@ -25,6 +29,7 @@ function checksAfter(role: string, phase: string, producerModel: string, context
 			},
 		];
 	}
+	if (role === 'investigator' && RESEARCH_PHASES.has(phase)) return [];
 	if (role === 'investigator') return [caseCheck];
 	if (role === 'fact-checker') {
 		return [caseCheck, { name: 'validate-fact-check.py', args: [script('validate-fact-check.py'), context.caseDir] }];

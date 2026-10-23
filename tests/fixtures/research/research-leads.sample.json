@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-10-23T09:20:00Z",
+  "round": 1,
+  "mode": "openrouter_swarm",
+  "spend_usd": 0.006,
+  "lanes": [
+    {
+      "topic_id": "ownership-registries",
+      "status": "completed",
+      "lane_sha256": "8fb49867592ac5e01b33d5ccdf97644fa3951be8282c7a4599d0b5523c07dc1b"
+    },
+    {
+      "topic_id": "ownership-archives",
+      "status": "not_started",
+      "lane_sha256": null
+    }
+  ],
+  "leads": [
+    {
+      "merge_key": {
+        "canonical_url": "https://registry.example.test/companies/0001234/filings/2025",
+        "content_sha256": "0682c5f2076f099c34cfdd15a9e063849ed437a49677e6fcc5b4198c76575be5"
+      },
+      "lead": {
+        "schema_version": "1.0",
+        "lead_id": "lead-7f3a1c",
+        "topic_id": "ownership-registries",
+        "direction_id": "ownership",
+        "summary": "Northwind Holdings filed its 2025 annual return naming Example Trust as sole shareholder.",
+        "subjects": [
+          "Northwind Holdings",
+          "Example Trust"
+        ],
+        "absence": false,
+        "status": "candidate",
+        "stored": "page",
+        "capture": {
+          "route": "api",
+          "tool": "firecrawl",
+          "source_url": "https://registry.example.test/companies/0001234/filings/2025",
+          "captured_at": "2026-10-23T09:14:02Z"
+        },
+        "content_ref": "sources/0682c5f2076f099c34cfdd15a9e063849ed437a49677e6fcc5b4198c76575be5.html",
+        "content_sha256": "0682c5f2076f099c34cfdd15a9e063849ed437a49677e6fcc5b4198c76575be5",
+        "derivatives": [
+          {
+            "id": "d1",
+            "type": "extracted_text",
+            "content_ref": "sources/bc18f7068971a44e264848ecd54b72b02d38216abb8ce3c3d2148e37e8a12398.md",
+            "content_sha256": "bc18f7068971a44e264848ecd54b72b02d38216abb8ce3c3d2148e37e8a12398"
+          }
+        ],
+        "provenance": {
+          "method": "agent_candidate",
+          "model": "deepseek/deepseek-v4-flash"
+        },
+        "excerpt": {
+          "text": "Shareholder: Example Trust (100 ordinary shares)",
+          "language": "en",
+          "direct_quote": true,
+          "derivative_id": "d1"
+        },
+        "attribution": {
+          "actor": {
+            "label": "Companies Registry"
+          },
+          "stance": "asserts",
+          "attribution_verbatim": "Annual return filed 2025-03-31"
+        }
+      },
+      "copies": []
+    }
+  ],
+  "left_out": [
+    "ownership-archives"
+  ],
+  "gaps": []
+}

@@ -11,7 +11,7 @@ const ADAPTER = resolve(CHECKOUT_ROOT, 'scripts/spotlight-orchestration.py');
 
 // The only transitions a model may request. Gate approvals, the report
 // decision and the ingest request or decline come from the review page.
-export const MODEL_OPERATIONS = ['recordAttempt', 'requestFollowUp', 'sealInvestigationGate', 'decideIngest'] as const;
+export const MODEL_OPERATIONS = ['recordAttempt', 'requestFollowUp', 'sealInvestigationGate', 'decideIngest', 'startResearchRound', 'recordAmendment'] as const;
 type ModelOperation = (typeof MODEL_OPERATIONS)[number];
 type Payload = Record<string, unknown>;
 
@@ -111,6 +111,12 @@ export function transitionArguments(operation: unknown, payload: Payload, active
 			];
 		case 'sealInvestigationGate':
 			return ['seal-investigation-gate', ...boundary];
+		// Both read case files the model wrote and are checked in code: the
+		// round against D1, the amendment against the member's marks (D8).
+		case 'startResearchRound':
+			return ['start-research-round', ...boundary];
+		case 'recordAmendment':
+			return ['record-amendment', ...boundary];
 		case 'decideIngest': {
 			const decision = stringField(payload, 'decision');
 			if (decision !== 'completed') {
@@ -139,22 +145,40 @@ function jsonResult(value: unknown) {
 	return { content: [{ type: 'text' as const, text: JSON.stringify(value) }], details: undefined };
 }
 
-export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, role: string): ToolDefinition[] {
+// Code runs the round while the resolver waits for merged lanes or their
+// triage; the other Research steps (a stall round's topics, the suggested
+// marks, the amendment) are the model's.
+export function runsResearchRound(resolved: Record<string, unknown>): boolean {
+	const step = (resolved.research as { resume_at?: unknown } | undefined)?.resume_at;
+	return resolved.phase === 'research' && (step === 'lanes' || step === 'triage');
+}
+
+// Runs the approved research topics in code (the launcher's lane runner) and
+// returns the round's outcome. `retry` repeats a round that stopped.
+export type ResearchRunner = (retry: boolean, signal?: AbortSignal) => Promise<unknown>;
+
+export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, role: string, research?: ResearchRunner): ToolDefinition[] {
 	const resolveTool: ToolDefinition = {
 		name: 'spotlight_resolve',
 		label: 'Spotlight resolve',
 		description:
-			'Resolve the durable phase, owner, requirements, attempts, and resume point for the harness-bound active Spotlight case without writing state.',
-		parameters: Type.Object({}),
-		async execute(_id, _params, signal) {
-			return jsonResult(await resolveCase(active, runAdapter, signal));
+			'Resolve the durable phase, owner, requirements, attempts, and resume point for the harness-bound active Spotlight case. At Research the harness first runs the approved research topics itself and adds the round\'s outcome as research_round. Set retry_research only when the member asks to retry a research round that stopped.',
+		parameters: Type.Object({ retry_research: Type.Optional(Type.Boolean()) }),
+		async execute(_id, params, signal) {
+			const resolved = await resolveCase(active, runAdapter, signal);
+			// Approval of the methodology is what starts Research: the resolver
+			// reports the phase and code runs the approved topics. The model only
+			// resolves; it chooses no topic and starts no swarm.
+			if (!research || !runsResearchRound(resolved)) return jsonResult(resolved);
+			const round = await research((params as { retry_research?: boolean }).retry_research === true, signal);
+			return jsonResult({ ...(await resolveCase(active, runAdapter, signal)), research_round: round });
 		},
 	};
 	const transitionTool: ToolDefinition = {
 		name: 'spotlight_transition',
 		label: 'Spotlight transition',
 		description:
-			'Apply one validated transition to the harness-bound active Spotlight case, then return its newly resolved state. Allowed: recordAttempt {kind, gap}, requestFollowUp {instructions}, sealInvestigationGate {}, decideIngest {decision: "completed"}.',
+			'Apply one validated transition to the harness-bound active Spotlight case, then return its newly resolved state. Allowed: recordAttempt {kind, gap}, requestFollowUp {instructions}, sealInvestigationGate {}, decideIngest {decision: "completed"}, startResearchRound {} (after writing data/research-round.json), recordAmendment {} (after writing data/methodology-amendment.json).',
 		parameters: Type.Object({
 			operation: Type.Union(MODEL_OPERATIONS.map((name) => Type.Literal(name))),
 			payload: Type.Optional(Type.Record(Type.String(), Type.Unknown())),

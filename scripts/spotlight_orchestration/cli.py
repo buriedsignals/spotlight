@@ -12,14 +12,16 @@ from . import (
     decide_ingest,
     decide_report,
     issue_review_nonce,
+    record_amendment,
     record_attempt,
     request_follow_up,
     resolve,
     review_edit,
     review_view,
     seal_investigation_gate,
+    start_research_round,
 )
-from .contract import ATTEMPT_LIMITS
+from .contract import RECORDABLE_ATTEMPTS
 from .review import REVIEW_GATES, ReviewDigestChanged
 
 # Exit code the review server reads as "the record changed; reload the page".
@@ -51,15 +53,19 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--json", action="store_true")
     add_case_boundary(status)
     approval = commands.add_parser("approve")
-    approval.add_argument("gate", choices=("methodology", "investigation_gate"))
+    approval.add_argument("gate", choices=("methodology", "research", "investigation_gate"))
     approval.add_argument("--approved-by", required=True)
     approval.add_argument("--approved-at", required=True)
     add_review_receipt(approval)
     add_case_boundary(approval)
     attempt = commands.add_parser("record-attempt")
-    attempt.add_argument("kind", choices=tuple(ATTEMPT_LIMITS))
+    attempt.add_argument("kind", choices=RECORDABLE_ATTEMPTS)
     attempt.add_argument("--gap", required=True)
     add_case_boundary(attempt)
+    research_round = commands.add_parser("start-research-round")
+    add_case_boundary(research_round)
+    amendment = commands.add_parser("record-amendment")
+    add_case_boundary(amendment)
     follow_up = commands.add_parser("request-follow-up")
     follow_up.add_argument("--instructions", required=True)
     add_review_receipt(follow_up)
@@ -127,6 +133,10 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
         )
     elif args.command == "record-attempt":
         record_attempt(args.case_dir, args.kind, args.gap, **boundary)
+    elif args.command == "start-research-round":
+        start_research_round(args.case_dir, **boundary)
+    elif args.command == "record-amendment":
+        record_amendment(args.case_dir, **boundary)
     elif args.command == "request-follow-up":
         request_follow_up(
             args.case_dir,

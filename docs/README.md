@@ -1,6 +1,6 @@
 # Spotlight — Documentation
 
-Spotlight is a runtime-agnostic OSINT investigation system with 17 skills, 2 agents, versioned data contracts, and investigation-scoped monitoring orchestration. Point your agent runtime (Pi, Hermes, Goose, Codex, or any OpenAI-compatible harness) at this repo and run full-fidelity investigations end-to-end.
+Spotlight is a runtime-agnostic OSINT investigation system with 26 skills, 4 agent roles (investigator, fact-checker, researcher, analyst), versioned data contracts, and investigation-scoped monitoring orchestration. Point your agent runtime (Pi, Hermes, Goose, Codex, or any OpenAI-compatible harness) at this repo and run full-fidelity investigations end-to-end.
 
 This `docs/` directory is the operator manual. `AGENTS.md` at the repo root is the machine-readable contract your runtime loads at startup.
 
@@ -12,7 +12,7 @@ If you are new to Spotlight, read in this order:
 2. **[runtimes.md](runtimes.md)** — how to wire Spotlight into Pi, Hermes, Goose, Codex, or a local OpenAI-compatible fine-tune
 3. **[integrations.md](integrations.md)** — external OSINT tool integrations (dev-browser, Junkipedia, Apify, Arbiter, Noosphere C2PA, OSINT Navigator, Unpaywall), manifest contract, preflight
    - **[arbiter-api.md](arbiter-api.md)** — Spotlight's local reference for the native Arbiter HTTPS integration: endpoints, auth, credits, pagination, and lifecycle
-4. **[investigating.md](investigating.md)** — the investigation pipeline: brief, methodology, cycles, gates, readiness, stall protocol
+4. **[investigating.md](investigating.md)** — the investigation pipeline: named phases, the Research phase, cycles, gates, readiness, stall protocol
 5. **[technical-investigation.md](technical-investigation.md)** — CTI-derived methods, tier loading, case contracts, verified export, source review, and update policy
 6. **[fact-checking.md](fact-checking.md)** — the independent verification pass: SIFT, verdict taxonomy, evidence trails
 7. **[epistemic-grounding.md](epistemic-grounding.md)** — claim-to-evidence grounding, evidence bundles, confidence caps
@@ -68,10 +68,12 @@ The repository root is itself a Claude Code plugin root (`.claude-plugin/plugin.
 
 Every runtime must preserve these — they are the editorial contract:
 
-- Pipeline: Preflight → Brief → Methodology → Investigation → Investigation gate → Report → Ingest
-- Cycle limit 5, stall protocol on N ≥ 5 without readiness
+- Pipeline: Preflight → Brief → Methodology → Research (only with a research plan) → Investigation → Investigation gate → Report → Ingest
+- Six human gates: Brief, Methodology, Research, Investigation, Report, Ingest; code, never a model, starts the research lanes
+- Cycle limit 3; a researched case that stalls gets one targeted research round and one more cycle, then the stall protocol with a gaps report
+- Research swarm: opt-in, never on the local model, receives only approved topic briefs; never case files, findings, evidence or journalist input
 - Six readiness criteria (findings, independence, disputes, affected perspective, document trail, gap assessment)
-- Investigator modes: PLANNING and EXECUTION
+- Investigator modes: PLANNING, EXECUTION and AMENDMENT
 - Fact-checker: SIFT methodology, verdicts `verified | unverified | disputed | false`, independent spawn
 - Evidence grounding: scrape-before-cite, `local_file` on every source, archive before cite
 - Epistemic grounding: every claim records why the evidence supports, partially supports, contradicts, or fails to support it

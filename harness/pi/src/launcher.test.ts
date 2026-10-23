@@ -325,7 +325,7 @@ test('a worker writes through its typed tools and the harness validates its outp
 });
 
 // Tools whose effects stay on this machine (case files, the local vault and
-// tool index, the resolver, the loopback review page), plus the two checks
+// tool index, the Anomaly catalogue, the resolver, the loopback review page), plus the two checks
 // that refuse their remote step themselves when SPOTLIGHT_SENSITIVE is set.
 // Any other tool a sensitive process declares is a possible way out.
 const LOCAL_TOOLS = new Set([
@@ -346,6 +346,7 @@ const LOCAL_TOOLS = new Set([
 	'exiftool',
 	'decision_signals',
 	'provenance_manifest',
+	'anomaly_methods',
 ]);
 
 test('sensitive mode leaves every process only local tools, and a tool that can send case text out does not run', async (t) => {
@@ -540,4 +541,117 @@ test('the analyst is not started before Ingest or in the newsroom edition', asyn
 	assert.match(refusals[0], /the analyst runs only at ingest; the case is at investigation/);
 	assert.match(refusals[1], /the analyst does not run in the newsroom edition/);
 	await assert.rejects(readFile(join(newsroom.casesRoot, 'case-a', 'data', 'knowledge-proposal.json')), { code: 'ENOENT' });
+});
+
+test('D9: a fact-checker task that points at the research leads, clues, lane folders or a review page is refused before any worker starts', async (t) => {
+	const tainted = 'Check data/findings.json. Compare research/swarm/ownership-registries/leads.jsonl, data/clues.json and http://127.0.0.1:41234/review.';
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
+		const done = toolResults(request).length;
+		if (done === 0) return { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: tainted } }] };
+		if (done === 1) return { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check data/findings.json.' } }] };
+		return { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+	await settledPrompt(chat, 'Continue.');
+
+	const workerTasks = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker'));
+	assert.equal(workerTasks.some((request) => JSON.stringify(request).includes('research/swarm')), false);
+	assert.ok(workerTasks.length > 0, 'the clean task reaches the fact-checker');
+	const results = fake.requests.map((request) => toolResults(request)).filter((r) => r.length > 0);
+	assert.match(results[0][0], /the fact-checker works without the research phase's material; the task names research\/swarm\/, the research leads, the research clues, a review page/);
+	assert.match(results[results.length - 1].join('\n'), /Checked\./);
+});
+
+test('D9: the fact-checker\'s own file tools cannot list or read the research leads, clues, lane folders or research reviews', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) {
+			return toolResults(request).length === 0
+				? {
+						toolCalls: [
+							{ name: 'list_files', arguments: { pattern: '**/*.json*' } },
+							{ name: 'read_file', arguments: { path: 'data/leads.json' } },
+							{ name: 'grep_files', arguments: { pattern: 'needle' } },
+						],
+					}
+				: { text: 'Checked.' };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check data/findings.json.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	await mkdir(join(caseDir, 'research', 'swarm', 'ownership-web'), { recursive: true });
+	await writeFile(join(caseDir, 'research', 'swarm', 'ownership-web', 'leads.jsonl'), '{"lead": "needle"}\n');
+	for (const name of ['leads.json', 'clues.json', 'research-triage.json', 'research-review.json']) {
+		await writeFile(join(caseDir, 'data', name), '{"lead": "needle"}');
+	}
+	await writeFile(join(caseDir, 'data', 'findings.json'), '{"finding": "needle"}');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+	await settledPrompt(chat, 'Continue.');
+
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker'));
+	const [listed, read, grepped] = toolResults(worker[worker.length - 1]);
+	assert.match(listed, /data\/findings\.json/);
+	assert.doesNotMatch(listed, /leads|clues|research-|swarm/);
+	assert.match(read, /refused: data\/leads\.json is outside the case files this agent may read/);
+	assert.match(grepped, /data\/findings\.json:1:/);
+	assert.doesNotMatch(grepped, /leads|clues|research-|swarm/);
+});
+
+test('at Research the orchestrator\'s resolve runs the approved topics in code: each brief goes to the swarm route, the round is merged, and the case moves to the Research gate', async (t) => {
+	const orchestratorModel = await startFakeOpenAI(resolveThenStop);
+	const swarm = await startFakeOpenAI(() => ({ text: 'No leads.', usage: { total_tokens: 10, cost: 0.0001 } }));
+	t.after(() => Promise.all([orchestratorModel.close(), swarm.close()]));
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
+	await writeFile(join(caseDir, 'data', 'findings.json'), '{"findings": [{"claim": "CASE-SENTINEL"}]}\n');
+	const methodology = JSON.parse(await readFile(join(CHECKOUT_ROOT, 'tests/fixtures/research/methodology-research.sample.json'), 'utf8'));
+	await writeFile(join(caseDir, 'data', 'methodology.json'), JSON.stringify(methodology));
+	await new Promise<void>((done, fail) =>
+		execFile(
+			process.env.SPOTLIGHT_PYTHON ?? 'python3',
+			[join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'), 'approve', 'methodology', '--approved-by', 'journalist:fixture', '--approved-at', '2026-10-23T12:00:00Z', '--authorized-cases-root', space.casesRoot, caseDir],
+			(error, _stdout, stderr) => (error ? fail(new Error(stderr || error.message)) : done()),
+		),
+	);
+	const chat = launch(t, {
+		...baseEnv(space, orchestratorModel.baseURL),
+		SPOTLIGHT_RESEARCH_SWARMS: 'on',
+		OPENROUTER_API_KEY: 'sk-or-v1-launcher-secret',
+		SPOTLIGHT_SWARM_BASE_URL: swarm.baseURL,
+	});
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(swarm.requests.length, 1);
+	const brief = String(swarm.requests[0].messages[1].content);
+	assert.match(brief, /"topic_id": "ownership-registries"/);
+	assert.match(brief, /Which shareholders does the 2025 annual return name\?/);
+	assert.ok(!JSON.stringify(swarm.requests[0]).includes('CASE-SENTINEL'));
+	assert.ok(orchestratorModel.requests.every((request) => !toolNames(request).some((name) => /swarm|research/.test(name))), 'the orchestrator has no swarm tool');
+	const resolution = lastResolution(chat) as {
+		phase: string;
+		research: { resume_at: string };
+		research_round: { ran: string[]; completed: string[]; merge: { ok: boolean }; triage: { ok: boolean } };
+	};
+	// Every topic ended, so the harness merged the lanes and triaged the
+	// leads; the case waits for the investigator's suggested marks, which
+	// come before the Research page opens.
+	assert.equal(resolution.research_round.merge.ok, true);
+	assert.equal(resolution.research_round.triage.ok, true, JSON.stringify(resolution.research_round.triage));
+	await readFile(join(caseDir, 'data/research-triage.json'));
+	assert.deepEqual([resolution.phase, resolution.research.resume_at], ['research', 'suggestions']);
+	assert.deepEqual(resolution.research_round.ran, ['ownership-registries']);
+	assert.deepEqual(resolution.research_round.completed, ['ownership-registries']);
+	const lane = JSON.parse(await readFile(join(caseDir, 'research/swarm/ownership-registries/lane.json'), 'utf8'));
+	assert.equal(lane.status, 'completed');
+	assert.ok(!chat.stderr().includes('sk-or-v1-launcher-secret'));
 });

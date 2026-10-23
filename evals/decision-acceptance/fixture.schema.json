@@ -1,0 +1,121 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Decision-model acceptance fixture",
+  "description": "One case for the research-triage acceptance test: the brief the questions read, the leads (each a research lead, schemas/research-lead.schema.json, checked separately), their gold labels and split, and any planted clues. See evals/decision-acceptance/README.md.",
+  "schema_version": "1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["fixture_version", "name", "synthetic", "case", "items", "planted_clues"],
+  "properties": {
+    "fixture_version": { "const": "1.0" },
+    "name": { "$ref": "#/definitions/slug" },
+    "synthetic": { "type": "boolean" },
+    "description": { "type": "string" },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_id", "premise", "directions", "topics"],
+      "properties": {
+        "case_id": { "$ref": "#/definitions/slug" },
+        "premise": { "type": "string", "minLength": 1 },
+        "directions": { "type": "object", "description": "Approved direction id -> label (Q2's options)." },
+        "direction_questions": { "type": "object" },
+        "topics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["topic_id", "direction_id", "lane_type"],
+            "properties": {
+              "topic_id": { "$ref": "#/definitions/slug" },
+              "direction_id": { "$ref": "#/definitions/slug" },
+              "lane_type": { "$ref": "#/definitions/slug" }
+            }
+          }
+        },
+        "timing_window_days": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["item_id", "split", "origin", "lead", "gold"],
+        "properties": {
+          "item_id": { "type": "string", "minLength": 1 },
+          "split": { "enum": ["dev", "heldout"] },
+          "origin": { "enum": ["synthetic", "fact_check_claim", "gold_case_lead"] },
+          "lead": { "type": "object" },
+          "gold": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["keep", "label_source"],
+            "properties": {
+              "keep": {
+                "type": ["boolean", "null"],
+                "description": "true: the lead must not be set aside (a set-aside is a lost lead). false: setting it aside is correct. null: not scored."
+              },
+              "label_source": { "enum": ["by_construction", "fact_check_verdict", "two_labellers_adjudicated", "unlabelled"] },
+              "verdict": { "type": "string" },
+              "answers": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Gold option per question; a question left out is not scored on this item.",
+                "properties": {
+                  "q1_identity": { "enum": ["same_identifier", "consistent_details", "name_only", "different_subject_or_event", "none_of_the_brief"] },
+                  "q2_direction": { "type": "string" },
+                  "q3_source": { "enum": ["primary_record", "original_reporting", "secondary", "interested_party", "user_generated", "unclear"] },
+                  "q4_assertion": { "enum": ["asserted", "reported_claim", "interpretation", "not_found"] },
+                  "q5_status": { "enum": ["done", "decided_not_done", "proposed_or_offered", "not_established", "no_event"] },
+                  "q6_fidelity": { "enum": ["faithful", "widens", "contradicts", "unsupported"] },
+                  "c1_premise": { "enum": ["supports", "complicates", "contradicts", "unrelated"] },
+                  "c2_new_actor": { "type": "boolean" },
+                  "c3_change": { "type": "boolean" }
+                }
+              },
+              "failure": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["class", "research_visible"],
+                "description": "For a fact-checked claim that was not verified. null values: not yet labelled.",
+                "properties": {
+                  "class": { "enum": [null, "weak_source_chain", "summary_wider", "inference_as_fact", "conflicting_values", "wrong_subject", "weak_relevance", "allegation"] },
+                  "research_visible": { "type": ["boolean", "null"] }
+                }
+              },
+              "acceptable_clues": {
+                "type": "array",
+                "description": "Clue groups that are defensible on this lead although not planted: not counted as false clues.",
+                "items": { "$ref": "#/definitions/clue_group" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "planted_clues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["clue_id", "split", "group", "lead_ids", "via"],
+        "properties": {
+          "clue_id": { "type": "string", "minLength": 1 },
+          "split": { "enum": ["dev", "heldout"] },
+          "group": { "$ref": "#/definitions/clue_group" },
+          "lead_ids": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "via": { "type": "string", "description": "The rule or question meant to find it (K1-K6, C1-C4)." },
+          "question": { "enum": ["c1_premise", "c2_new_actor", "c3_change"] },
+          "c4": { "enum": ["agree", "differ_but_compatible", "conflict", "not_comparable"] }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "slug": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+    "clue_group": { "enum": ["watchlist", "premise", "conflict", "new_actor", "change_or_absence", "timing", "shared_identifier"] }
+  }
+}

@@ -161,6 +161,7 @@ test('each tool rejects arguments outside its schema without starting anything',
 		provenance_manifest: { action: 'delete' },
 		run_rlm: { request: 7 },
 		integration_status: { model_tier: '$(id)' },
+		anomaly_methods: { anomaly_home: '/elsewhere' },
 		read_file: { path: 3 },
 		write_file: { path: 'a.txt' },
 		edit_file: { path: 'a.txt', old_text: 'a' },
@@ -330,4 +331,32 @@ test('build_review_html builds review.html from the case files with script-safe 
 	assert.equal(data.cycles, 2);
 	assert.deepEqual(data.source_expressions, []);
 	assert.equal(data.provenance_manifest, null);
+});
+
+// anomaly_methods runs the real adapter (integrations/anomaly/adapter.py
+// methods). The pinned catalogue's listing is the adapter's own contract
+// (tests/anomaly-methods-check.py); here: the tool reaches the install named by
+// ANOMALY_HOME and reports the hidden feature with its reason, no methods.
+test('anomaly_methods reports the feature hidden, with the reason, unless the pinned catalogue is installed', async (t) => {
+	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-anomaly-')));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const caseDir = join(root, 'case');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	const other = join(root, 'anomaly-other');
+	await mkdir(join(other, 'detectors'), { recursive: true });
+	await writeFile(join(other, 'detectors', 'catalogue.json'), JSON.stringify({ schema_version: 1, detectors: [], catalogue_hash: `sha256:${'0'.repeat(64)}` }));
+	const list = async (env: Record<string, string>) => {
+		const context: ToolContext = { caseDir, writeRoot: caseDir, python: PYTHON, configPath: join(root, 'config.json'), env: { PATH: process.env.PATH, HOME: root, ...env } };
+		const tool = typedTools(context).find((each) => each.name === 'anomaly_methods') as ToolDefinition;
+		const result = await tool.execute('call', {}, undefined, undefined, undefined as never);
+		return JSON.parse((result.content[0] as { text: string }).text) as { available: boolean; reason: string; methods: unknown[] };
+	};
+
+	const unset = await list({});
+	assert.equal(unset.available, false);
+	assert.match(unset.reason, /ANOMALY_HOME is not set/);
+	const unpinned = await list({ ANOMALY_HOME: other });
+	assert.equal(unpinned.available, false);
+	assert.match(unpinned.reason, /not the pinned release/);
+	for (const outcome of [unset, unpinned]) assert.deepEqual(outcome.methods, []);
 });

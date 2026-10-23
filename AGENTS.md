@@ -138,6 +138,24 @@ The fact-checker operates independently from the investigator. Spawned with its 
 
 Full prompt bundle: `agents/fact-checker.md`.
 
+### researcher
+
+```yaml
+name: researcher
+description: Works one approved research topic brief and returns leads with captured sources
+iteration_limit: 40
+allowed_verbs: [fetch, search, read-file, write-file, list-files, query-vault]
+disallowed_verbs: [spawn-agent, execute-shell]
+preferred_model:
+  swarm: deepseek/deepseek-v4-flash
+  swarm_fallback: z-ai/glm-5.3
+  local: the harness's local model (local corpus and prior knowledge lanes only)
+```
+
+The researcher never sees the case: it gets one approved topic brief from the methodology's `research_plan` and writes only its lane folder `{CASE_DIR}/research/swarm/<topic-id>/`. Code starts it, never a model: the Pi harness runs each approved topic as a lane (`harness/pi/src/lanes.ts`, lane types in `lanes/*.yaml`); in subscription mode `phase-research` spawns it through the host's subagents. Web lanes run only on the opt-in research swarm; the local corpus and prior-knowledge lanes only on the local model.
+
+Full prompt bundle: `agents/researcher.md`.
+
 ## Skill Registry
 
 Skills are markdown playbooks loaded via `invoke-skill(skill_id)`. Each skill lives in `skills/{skill_id}/SKILL.md` with optional reference files in `skills/{skill_id}/references/`.
@@ -190,7 +208,8 @@ the config resolves it through `config_path()` in
 | `social-media-intelligence` | `skills/social-media-intelligence/SKILL.md` | Account authenticity, coordination detection, narrative tracking | investigator, fact-checker, user |
 | `phase-preflight` | `skills/phase-preflight/SKILL.md` | Preflight child skill — config, sovereign backings, workspace validation, project setup, integration tiering | orchestrator |
 | `phase-methodology` | `skills/phase-methodology/SKILL.md` | Brief and Methodology child skill — brief conversation with approval gate, investigator PLANNING spawn, methodology validation and approval | orchestrator |
-| `phase-investigation` | `skills/phase-investigation/SKILL.md` | Investigation child skill — autonomous investigation cycles (max 5), fact-check spawns, validators, readiness criteria, Stall Protocol | orchestrator |
+| `phase-research` | `skills/phase-research/SKILL.md` | Research child skill — approved topic briefs run as research lanes started by code, merged and triaged leads and clues, suggested marks, Research gate user approval, the AMENDMENT that turns the marks into the methodology change, and a stalled investigation's research round | orchestrator |
+| `phase-investigation` | `skills/phase-investigation/SKILL.md` | Investigation child skill — autonomous investigation cycles (max 3; a researched case then gets one targeted research round), fact-check spawns, validators, readiness criteria, Stall Protocol | orchestrator |
 | `phase-investigation-gate` | `skills/phase-investigation-gate/SKILL.md` | Investigation closing child skill — summary + machine contract generation, Investigation gate user approval (ends turn), provenance packaging, review artifact | orchestrator |
 | `phase-report` | `skills/phase-report/SKILL.md` | Report child skill — public-facing report drafting via report-drafting + deterministic finalize-report.py rendering | orchestrator |
 | `phase-ingest` | `skills/phase-ingest/SKILL.md` | Ingest child skill — ingestion transition marker, user confirmation, vault ingestion or decline | orchestrator |
@@ -290,7 +309,12 @@ activation documents use their own schema versions as declared below.
 | Decision Signals | `schemas/decision-signals.schema.json` | Opt-in Jev decision-model answers and derived review signals for grounding, report prose and ingest; can only lower confidence or add flags |
 | Knowledge Batch 1.1 (core) | `schemas/knowledge-batch-1.1.schema.json` | Open-source core of Batch 1.1: evidence, passages, claims, claim–passage links, source positions, assessments, events, story arcs and memberships, with continuous versions and exact refs. Cross-record rules C1–C10 and C13 are checked by `scripts/validate-knowledge-batch.py` |
 | Knowledge Proposal | `schemas/knowledge-proposal.schema.json` | Analyst interface 1: normalized claims per finding (with `attributed`), events, story arcs and memberships; `scripts/build-knowledge-batch.py` adds the rest |
-| Methodology | `schemas/methodology.schema.json` | Investigation plan with directions, steps, tools_required, opsec_considerations |
+| Methodology | `schemas/methodology.schema.json` | Investigation plan with directions, steps, tools_required, opsec_considerations, and the optional `research_plan` (topic briefs, round budget, keys, egress, consent) |
+| Research Lane | `schemas/research-lane.schema.json` | `research/swarm/<topic-id>/lane.json`: one lane's route, status, budget and spend |
+| Research Lead | `schemas/research-lead.schema.json` | One `leads.jsonl` line: a candidate with Batch 1.1 evidence fields, a verbatim excerpt and optional attribution; never a finding |
+| Research Leads | `schemas/research-leads.schema.json` | `data/leads.json`: every approved lane's leads merged by canonical URL and content hash |
+| Research Clues | `schemas/research-clues.schema.json` | `data/clues.json`: clues from the rules, triage questions and approved methods; bound by the Research gate receipt |
+| Research Suggestions | `schemas/research-suggestions.schema.json` | `data/research-suggestions.json`: the investigator's suggested mark and one-line reason per clue and direction, written in AMENDMENT mode before the Research page opens; only the member's marks count |
 | Investigation Log | `schemas/investigation-log.schema.json` | Append-only cycle audit trail |
 | Summary | `schemas/summary.schema.json` | Investigation gate summary for review |
 

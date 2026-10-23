@@ -13,8 +13,13 @@ from pathlib import Path
 from .contract import (
     ATTEMPT_LIMITS,
     INVESTIGATION_GATE_FINALIZATION_OUTPUTS,
+    METHODOLOGY_AMENDMENT,
     METHODOLOGY_INPUTS,
     OrchestrationError,
+    RECORDABLE_ATTEMPTS,
+    RESEARCH_OUTPUTS,
+    RESEARCH_REVIEW,
+    RESEARCH_ROUND,
     SCRIPT_DIR,
 )
 from .dependencies import (
@@ -26,7 +31,9 @@ from .dependencies import (
     sha256,
     validate_approval,
 )
-from .resolver import load_ingestion_marker, status_for
+from .resolver import load_ingestion_marker, research_plan, status_for
+from . import research as research_rules
+from .research import AMENDMENT_CORRECTION, CYCLE, ROUND_CYCLE
 from .case_contract import bind as bind_case_contract
 from .case_writer import atomic_write_files, restore_files_on_error
 from . import review
@@ -76,15 +83,18 @@ def approve(
     nonce: str | None = None,
     digest: str | None = None,
 ) -> None:
-    if gate not in {"methodology", "investigation_gate"}:
-        raise OrchestrationError("gate must be methodology or investigation_gate")
+    expected_phase = _APPROVAL_PHASES.get(gate)
+    if expected_phase is None:
+        raise OrchestrationError("gate must be methodology, research or investigation_gate")
     validate_approval(approved_by, approved_at)
     state = load_state(case, data_descriptor)
-    expected_phase = (
-        "methodology_approval" if gate == "methodology" else "investigation_gate_approval"
-    )
-    if status_for(case, state, data_descriptor)["next_phase"] != expected_phase:
+    status = status_for(case, state, data_descriptor)
+    if status["next_phase"] != expected_phase:
         raise OrchestrationError(f"case is not awaiting {gate} approval")
+    if gate == "investigation_gate" and status.get("missing"):
+        raise OrchestrationError(
+            f"the Investigation gate still needs: {', '.join(status['missing'])}"
+        )
     ledger, binding = consume_nonce(case, data_descriptor, gate, nonce, digest)
 
     previous = state["approvals"].get(gate)
@@ -98,12 +108,47 @@ def approve(
         }
         record_decision(ledger, binding, "approved")
         if not approval_matches(previous, hashes):
+            state["approvals"].pop("research", None)
             state["approvals"].pop("investigation_gate", None)
             state["decisions"].clear()
             state["attempts"].clear()
             state.pop("blocked", None)
             state.pop("follow_up", None)
             state.pop("open_cycle", None)
+            state.pop("open_research", None)
+            state.pop("open_amendment", None)
+            state.pop("stall", None)
+            state.pop("cycle_gaps", None)
+            state.pop("investigation_gate_finalization", None)
+    elif gate == "research":
+        # The receipt binds the merged leads and clues; its review binding
+        # carries the saved review's hash, so all three are approved together.
+        # It also names the methodology the marks apply to (with a stall
+        # round's topics, approved here); the amendment those marks produce
+        # is bound to it once D8 passes (record_amendment).
+        hashes = current_hashes(case, RESEARCH_OUTPUTS)
+        methodology = current_hashes(case, METHODOLOGY_INPUTS)
+        state["approvals"][gate] = {
+            "approved_by": approved_by,
+            "approved_at": approved_at,
+            "input_sha256": hashes,
+            "methodology_sha256": methodology,
+            "review": binding,
+        }
+        record_decision(ledger, binding, "approved")
+        ledger["nonces"][binding["nonce_sha256"]]["methodology_sha256"] = methodology
+        state.pop("open_research", None)
+        state.pop("open_amendment", None)
+        state["attempts"].pop(AMENDMENT_CORRECTION, None)
+        stall = state.get("stall")
+        if isinstance(stall, dict) and not stall.get("approved"):
+            # Approving the stall round grants one more investigation cycle.
+            stall["approved"] = True
+        if not approval_matches(previous, hashes):
+            # Downstream receipts covered other research. Attempts stay: a
+            # new research round does not reset the case's cycle count.
+            state["approvals"].pop("investigation_gate", None)
+            state["decisions"].clear()
             state.pop("investigation_gate_finalization", None)
     else:
         # Bind the activated artifacts this approval covers before computing
@@ -133,6 +178,18 @@ def approve(
     _publish(case, data_descriptor, state, ledger)
 
 
+_APPROVAL_PHASES = {
+    "methodology": "methodology_approval",
+    "research": "research_approval",
+    "investigation_gate": "investigation_gate_approval",
+}
+# Where each attempt kind may be recorded: a stopped research round during
+# Research; the investigation kinds until a human approves the gate (cycle
+# outputs exist before readiness is judged, so the gate may already be offered).
+_INVESTIGATION_ATTEMPT_PHASES = frozenset({"investigation", "investigation_gate_approval"})
+_RESEARCH_ATTEMPT_PHASES = frozenset({"research"})
+
+
 def _decider(
     nonce: str | None, decided_by: str | None, decided_at: str | None
 ) -> dict[str, str]:
@@ -147,30 +204,175 @@ def _decider(
 
 
 def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> None:
-    if kind not in ATTEMPT_LIMITS:
+    if kind not in RECORDABLE_ATTEMPTS:
         raise OrchestrationError(f"unsupported attempt kind: {kind}")
     if not gap.strip():
         raise OrchestrationError("gap must describe the unresolved gap")
     state = load_state(case, data_descriptor)
-    # Cycle outputs exist before readiness is judged, so the resolver may
-    # already offer the gate; an attempt is still recordable until a human
-    # approves it.
-    if status_for(case, state, data_descriptor)["next_phase"] not in {
-        "investigation",
-        "investigation_gate_approval",
-    }:
-        raise OrchestrationError("attempts can only be recorded during investigation")
+    research = kind == "research-lane"
+    allowed = _RESEARCH_ATTEMPT_PHASES if research else _INVESTIGATION_ATTEMPT_PHASES
+    if status_for(case, state, data_descriptor)["next_phase"] not in allowed:
+        where = "research" if research else "investigation"
+        raise OrchestrationError(f"{kind} attempts can only be recorded during {where}")
     attempts = state["attempts"]
+    stall = state.get("stall")
+    if kind == CYCLE and isinstance(stall, dict) and stall.get("approved"):
+        # The cycle the approved stall round granted has its own count.
+        kind = ROUND_CYCLE
     attempts[kind] = attempts.get(kind, 0) + 1
-    state["open_cycle"] = {"kind": kind, "gap": gap, **rework_snapshot(case)}
-    if attempts[kind] >= ATTEMPT_LIMITS[kind]:
+    if research:
+        state["open_research"] = {"kind": kind, "gap": gap}
+    else:
+        state["open_cycle"] = {"kind": kind, "gap": gap, **rework_snapshot(case)}
+    if kind in (CYCLE, ROUND_CYCLE):
+        state["cycle_gaps"] = [*state.get("cycle_gaps", []), gap]
+    exhausted = attempts[kind] >= ATTEMPT_LIMITS[kind]
+    # A researched case whose cycle cap is spent goes to a targeted research
+    # round (the resolver routes it there), not to a stop; once.
+    stall_next = kind == CYCLE and research_plan(case) is not None and "stall" not in state
+    if exhausted and not stall_next:
         state["blocked"] = {
-            "phase": "investigation",
+            "phase": "research" if research else "investigation",
             "exhausted_attempt": kind,
             "gap": gap,
             "attempts": dict(attempts),
         }
+        if kind in (CYCLE, ROUND_CYCLE):
+            # The gaps report: every unresolved gap the cycles recorded.
+            state["blocked"]["gaps_report"] = list(state["cycle_gaps"])
     _publish(case, data_descriptor, state)
+
+
+def start_research_round(case: Path, data_descriptor: int) -> None:
+    """Append a stalled investigation's targeted round to research_plan.
+
+    The investigator proposes the round in data/research-round.json; code
+    appends its topic briefs and their egress, checks the whole plan with
+    D1, and records the stall. The round runs under the plan's consent and
+    budget, and the member approves it, with its leads, on the Research page.
+    """
+    state = load_state(case, data_descriptor)
+    status = status_for(case, state, data_descriptor)
+    if status.get("research", {}).get("resume_at") != "round_topics":
+        raise OrchestrationError("no stalled investigation is waiting for a research round")
+    proposal = research_rules.read_case_json(case, RESEARCH_ROUND)
+    if not isinstance(proposal, dict):
+        raise OrchestrationError(f"{RESEARCH_ROUND} is missing or not an object")
+    topics = proposal.get("topics")
+    egress = proposal.get("egress", [])
+    gap = proposal.get("gap")
+    if not isinstance(topics, list) or not topics or not isinstance(egress, list):
+        raise OrchestrationError(f"{RESEARCH_ROUND} needs a non-empty topics list (and an egress list)")
+    if not isinstance(gap, str) or not gap.strip():
+        raise OrchestrationError(f"{RESEARCH_ROUND} gap must name the gaps the round targets")
+    methodology_path = case_path(case, "data/methodology.json")
+    try:
+        methodology = json.loads(methodology_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise OrchestrationError(f"cannot read data/methodology.json: {exc}") from exc
+    plan = methodology["research_plan"]
+    known = {topic.get("topic_id") for topic in plan["topics"] if isinstance(topic, dict)}
+    reused = sorted(str(t.get("topic_id")) for t in topics if isinstance(t, dict) and t.get("topic_id") in known)
+    if reused:
+        raise OrchestrationError(f"a round adds new topics; already in the plan: {', '.join(reused)}")
+    plan["topics"] = [*plan["topics"], *topics]
+    plan["egress"] = [*plan.get("egress", []), *egress]
+    problems = _schema_problems(methodology) + _d1_problems(methodology)
+    if problems:
+        raise OrchestrationError("the research round fails D1: " + "; ".join(problems[:10]))
+    base = current_hashes(case, METHODOLOGY_INPUTS)
+    updated = (json.dumps(methodology, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    hashes = {**base, "data/methodology.json": hashlib.sha256(updated).hexdigest()}
+    state["stall"] = {
+        "round": 1,
+        "gap": gap,
+        "topics": [str(t.get("topic_id")) for t in topics if isinstance(t, dict)],
+        "base_methodology_sha256": base,
+        "methodology_sha256": hashes,
+        "approved": False,
+    }
+    # The granted cycle reopens the investigation: the gate waits for new
+    # investigator output and a fresh fact-check after the round.
+    state["open_cycle"] = {"kind": ROUND_CYCLE, "gap": gap, **rework_snapshot(case)}
+    blocked = state.get("blocked")
+    if isinstance(blocked, dict) and blocked.get("exhausted_attempt") == CYCLE:
+        state.pop("blocked")  # a case stopped under the old cap of 5
+    _publish(case, data_descriptor, state, extra={"data/methodology.json": updated})
+
+
+def record_amendment(case: Path, data_descriptor: int) -> None:
+    """Check AMENDMENT mode's proposal against the member's marks (D8).
+
+    On a pass the proposal becomes data/methodology.json and its hash is
+    bound to the Research approval and its ledger entry, so the resolver
+    accepts it without a new Methodology approval and keeps the attempts.
+    On a refusal the problems go back to AMENDMENT once; a second refusal
+    stops the case at Research.
+    """
+    state = load_state(case, data_descriptor)
+    status = status_for(case, state, data_descriptor)
+    if status.get("research", {}).get("resume_at") != "amendment":
+        raise OrchestrationError("the case is not waiting for a methodology amendment")
+    approved = research_rules.read_case_json(case, "data/methodology.json")
+    amendment_path = case_path(case, METHODOLOGY_AMENDMENT)
+    if not amendment_path.is_file():
+        raise OrchestrationError(f"{METHODOLOGY_AMENDMENT} is missing")
+    amendment_bytes = amendment_path.read_bytes()
+    try:
+        amended = json.loads(amendment_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise OrchestrationError(f"cannot read {METHODOLOGY_AMENDMENT}: {exc}") from exc
+    if not isinstance(amended, dict) or not isinstance(approved, dict):
+        raise OrchestrationError("the methodology and its amendment must be JSON objects")
+    review_doc = research_rules.read_case_json(case, RESEARCH_REVIEW)
+    problems = research_rules.checks().d8_amendment(
+        approved, amended, review_doc if isinstance(review_doc, dict) else None
+    )
+    problems += _schema_problems(amended)
+    if problems:
+        attempts = state["attempts"]
+        attempts[AMENDMENT_CORRECTION] = attempts.get(AMENDMENT_CORRECTION, 0) + 1
+        state["open_amendment"] = {"problems": problems[:50]}
+        if attempts[AMENDMENT_CORRECTION] >= ATTEMPT_LIMITS[AMENDMENT_CORRECTION]:
+            state["blocked"] = {
+                "phase": "research",
+                "exhausted_attempt": AMENDMENT_CORRECTION,
+                "gap": "D8: " + "; ".join(problems[:5]),
+                "attempts": dict(attempts),
+            }
+        _publish(case, data_descriptor, state)
+        return
+    receipt = state["approvals"]["research"]
+    amended_hashes = {
+        **current_hashes(case, METHODOLOGY_INPUTS),
+        "data/methodology.json": hashlib.sha256(amendment_bytes).hexdigest(),
+    }
+    ledger = load_ledger(case, data_descriptor)
+    entry = research_rules.ledger_entry(ledger, receipt)
+    if entry is None:
+        raise OrchestrationError("the Research approval has no ledger entry")
+    entry["amended_methodology_sha256"] = amended_hashes
+    receipt["amended_methodology_sha256"] = amended_hashes
+    state.pop("open_amendment", None)
+    state["attempts"].pop(AMENDMENT_CORRECTION, None)
+    _publish(case, data_descriptor, state, ledger, {"data/methodology.json": amendment_bytes})
+
+
+def _schema_problems(methodology: dict) -> list[str]:
+    checker = research_rules.checks().schema_check.load(SCRIPT_DIR.parent / "schemas" / "methodology.schema.json")
+    return [f"schema: {error}" for error in checker.errors(methodology)][:10]
+
+
+def _d1_problems(methodology: dict) -> list[str]:
+    config: dict = {}
+    path = review.spotlight_config_path()
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise OrchestrationError(f"cannot read the install config: {exc}") from exc
+        config = loaded if isinstance(loaded, dict) else {}
+    return research_rules.checks().d1_from_config(methodology, config)
 
 
 # A follow-up without a page nonce comes from the agent: the harness names the

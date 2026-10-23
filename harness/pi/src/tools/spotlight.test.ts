@@ -172,3 +172,29 @@ test('an in-flight transition reaches one durable outcome after caller abort', a
 
 	assert.equal((await pending).phase, 'investigation');
 });
+
+test('resolve runs the research round only while lanes or their triage are owed, never at the model\'s Research steps', async (t) => {
+	const { caseDir, root } = await casePath(t);
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	for (const [step, runs] of [['lanes', true], ['triage', true], ['round_topics', false], ['suggestions', false], ['amendment', false]] as const) {
+		let rounds = 0;
+		const adapter: AdapterRunner = async () => JSON.stringify({ phase: 'research', research: { resume_at: step } });
+		const [resolveTool] = spotlightTools(bindActiveCase(root, caseDir), adapter, ORCHESTRATOR, async () => {
+			rounds += 1;
+			return { ran: [] };
+		});
+		const result = await resolveTool.execute('call', {}, undefined, undefined, undefined as never);
+		const resolved = JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>;
+		assert.equal(rounds, runs ? 1 : 0, step);
+		assert.equal('research_round' in resolved, runs, step);
+	}
+});
+
+test('a stall round and an amendment are model operations that reach their checked transitions', async (t) => {
+	const { caseDir, root } = await caseAwaitingInvestigation(t);
+	const { transition } = tools(caseDir, root);
+	// The case is not stalled and has no Research approval: both are refused
+	// by the product module, which owns D1 and D8, not by the tool.
+	await assert.rejects(transition({ operation: 'startResearchRound' }), /no stalled investigation/);
+	await assert.rejects(transition({ operation: 'recordAmendment' }), /not waiting for a methodology amendment/);
+});

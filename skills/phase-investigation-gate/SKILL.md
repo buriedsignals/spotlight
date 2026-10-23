@@ -11,7 +11,9 @@ Start or resume only from a `spotlight_resolve` result passed by the parent
 with `owner: phase-investigation-gate`. When `phase: investigation_gate_approval`, regenerate both
 summary artifacts below from current execution outputs, then call
 `spotlight_resolve({})` before presenting the human gate. This applies whether
-the summaries were missing or stale. For finalization, follow `resume` without
+the summaries were missing or stale: after a follow-up or a recorded cycle the
+resolution lists summaries left unchanged in `missing`, and the gate cannot be
+approved until they are rewritten. For finalization, follow `resume` without
 inferring a substep from artifact presence.
 
 

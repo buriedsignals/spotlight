@@ -1,0 +1,11 @@
+id: technical
+title: Technical footprint
+description: Domains, DNS and RDAP records, certificates, public code repositories and their public APIs.
+route: swarm
+tools: [search, fetch, http_get]
+keys: []
+egress: [public_web, registry_api]
+guidance: >-
+  Use RDAP (http_get on rdap.org) and certificate transparency search
+  (crt.sh with output=json) for domains, and the public GitHub API for
+  repositories. Passive lookups only.

@@ -189,6 +189,50 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    `--case-opt-in`, which records the consent in `data/decision-signals.json`;
    otherwise never run it for this case.
 
+   **Research plan (optional).** A Research phase can run between Methodology
+   and Investigation: one research lane per approved topic brief, started by
+   code once the methodology is approved. Propose it from the methodology;
+   never from journalist-input content. Give each `investigation_plan`
+   direction a `direction_id` slug, then propose topic briefs, each on one
+   direction and one lane type (a lane catalogue id, or `ad-hoc` for generic
+   search and fetch with no keys), with the questions it answers, seed
+   queries, sources to try and, where an Anomaly method catalogue is
+   available, the methods whose input data the lane should collect
+   (`execute-shell("scripts/spotlight-python integrations/anomaly/adapter.py methods")`
+   lists them with the fields each needs; an empty list means the feature is
+   off, so name none). Several
+   topics may serve one direction. The member approves, edits, deletes or adds
+   topics. Write the result to `methodology.json` as `research_plan`
+   (`schemas/methodology.schema.json`): the topics, a round budget in USD
+   (default 1), the case budget (at most 5), the research mode, the names of
+   the keys each topic uses (never their values), where each topic's requests
+   go (egress), and the member's consent record. Without a `research_plan` the
+   case goes straight to Investigation.
+
+   The methodology validator above also checks the research plan (D1,
+   `scripts/research_checks.py`). If any check fails,
+   correct the plan with the investigator's METHODOLOGY CORRECTION re-spawn
+   above, with the failed checks as its validator errors:
+
+   - The round budget is set, no higher than the case budget, and the case
+     budget is at most $5; every topic has its own token budget, so one topic
+     cannot take the round.
+   - Every topic id is `<direction_id>-<lane_type>` with an optional `-<n>`,
+     names a direction in `investigation_plan`, has at least one question and
+     a lane type that exists in the lane catalogue or is `ad-hoc`.
+   - Keys, egress and consent are listed for every topic; at most 10 Anomaly
+     methods across the plan, each a single-table method of the pinned
+     Anomaly catalogue.
+   - No cloud topic (`swarm` or `subscription` route) without the member's
+     swarm consent. The swarm needs the member's OpenRouter key and the
+     research-swarm switch, or a subscription host's own subagents.
+   - Sensitive mode: only the local corpus lane.
+   - Journalist input: only the local corpus lane, only when the consent
+     record grants it, only on the local model, with no search or fetch.
+     Contacts and off-record material are never eligible.
+   - Newsroom mode: no OpenRouter swarm and no cloud triage unless the
+     newsroom allows the endpoint.
+
 5. **Gate: user approves the methodology.** Iterate if the user has changes.
    Re-run the methodology validator after the final change. Present the
    synthesis, then open the review page: `open_review` in the Pi harness, or
@@ -210,7 +254,8 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    The receipt binds the current `brief-directions.txt` and
    `data/methodology.json`. The methodology file alone remains a draft; if
    either input changes, the next `spotlight_resolve` returns methodology
-   approval again.
+   approval again. With a `research_plan`, the next phase is Research
+   (`phase-research`); without one, Investigation.
    If the methodology changes after an approved RLM run, update
    `methodology.json`, regenerate `rlm-request.json` with the changed
    methodology/corpus paths, rerun RLM, revalidate, and record a new approval

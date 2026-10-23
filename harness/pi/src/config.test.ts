@@ -15,6 +15,11 @@ const BASE = {
 	PATH: '/usr/bin',
 };
 
+test('the Anomaly install path reaches the processes, so anomaly_methods can read its catalogue', () => {
+	const env = { ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', ANOMALY_HOME: '/opt/anomaly' };
+	assert.equal(childEnv(readConfig(env), COMPOSITION, 'orchestrator', env).ANOMALY_HOME, '/opt/anomaly');
+});
+
 test('each process gets only its role\'s declared keys and its route token, nothing else', () => {
 	const env = {
 		...BASE,
@@ -122,4 +127,37 @@ test('model tier: an unknown tier or a fold point the window cannot reach stops 
 	assert.throws(() => readConfig(env({ SPOTLIGHT_MODEL_TIER: '31b', SPOTLIGHT_MODEL_CONTEXT_WINDOW: '16384' })), /fold point/);
 	assert.throws(() => readConfig(env({ SPOTLIGHT_COMPACT_KEEP: '20000' })), /SPOTLIGHT_COMPACT_KEEP/);
 	assert.doesNotThrow(() => readConfig(env({ SPOTLIGHT_MODEL_TIER: 'frontier', SPOTLIGHT_MODEL_CONTEXT_WINDOW: '16384' })));
+});
+
+test('the swarm route exists only with the switch and a key, keeps zero data retention, and in a newsroom only on an allowed endpoint', () => {
+	const solo = (extra: Record<string, string>) =>
+		readConfig({ ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', SPOTLIGHT_SENSITIVE: 'false', ...extra }).swarm;
+	assert.equal(solo({ OPENROUTER_API_KEY: 'k' }).available, false, 'off by default');
+	assert.equal(solo({ SPOTLIGHT_RESEARCH_SWARMS: 'on' }).available, false, 'no key');
+	assert.equal(solo({ SPOTLIGHT_RESEARCH_SWARMS: 'on', OPENROUTER_API_KEY: 'k', SPOTLIGHT_SENSITIVE: 'true' }).available, false, 'sensitive mode');
+	assert.throws(() => solo({ SPOTLIGHT_RESEARCH_SWARMS: 'maybe' }), /SPOTLIGHT_RESEARCH_SWARMS/);
+	const on = solo({ SPOTLIGHT_RESEARCH_SWARMS: 'on', OPENROUTER_API_KEY: 'k', SPOTLIGHT_SWARM_REQUEST_BODY: '{"provider":{"zdr":false,"sort":"price"}}' });
+	assert.ok(on.available);
+	assert.deepEqual(on.route.models, ['deepseek/deepseek-v4-flash', 'z-ai/glm-5.3']);
+	assert.deepEqual(on.route.requestBody, { provider: { zdr: true, sort: 'price' } });
+	assert.equal(on.route.baseURL, 'https://openrouter.ai/api/v1');
+
+	const newsroom = (swarmURL: string) =>
+		readConfig({
+			...BASE,
+			SPOTLIGHT_EDITION: 'newsroom',
+			SPOTLIGHT_SENSITIVE: 'false',
+			SPOTLIGHT_ROUTES: JSON.stringify([
+				{ name: 'model', base_url: 'https://model.newsroom.example/v1', model: 'm', inference: 'own' },
+				{ name: 'cloud', base_url: 'https://cloud.newsroom.example/v1', model: 'c', inference: 'third-party', key_env: 'CLOUD_TOKEN' },
+			]),
+			CLOUD_TOKEN: 'tok',
+			OPENROUTER_API_KEY: 'k',
+			SPOTLIGHT_RESEARCH_SWARMS: 'on',
+			SPOTLIGHT_SWARM_BASE_URL: swarmURL,
+		}).swarm;
+	assert.equal(newsroom('https://openrouter.ai/api/v1').available, false);
+	const allowed = newsroom('https://cloud.newsroom.example/v1');
+	assert.ok(allowed.available);
+	assert.equal(allowed.route.keyEnv, 'CLOUD_TOKEN');
 });

@@ -1,0 +1,2571 @@
+{
+ "fixture_version": "1.0",
+ "name": "company-a",
+ "synthetic": true,
+ "description": "Synthetic Company A case with planted clues. All names, registers and domains are invented (.test). Gold answers are set by construction; null means the item is not scored on that question.",
+ "case": {
+  "case_id": "company-a",
+  "premise": "Company A, a Zurich waste-transport firm, won municipal contracts after its ownership passed to an undisclosed holder in 2025.",
+  "directions": {
+   "ownership": "Who owns Company A",
+   "contracts": "Which municipal contracts Company A won",
+   "people": "Who runs Company A"
+  },
+  "direction_questions": {
+   "ownership": [
+    "Who has held Company A's shares since 2025?"
+   ],
+   "contracts": [
+    "Which contracts did Company A win in 2025?"
+   ],
+   "people": [
+    "Who are Company A's directors?"
+   ]
+  },
+  "topics": [
+   {
+    "topic_id": "ownership-registries",
+    "direction_id": "ownership",
+    "lane_type": "registries"
+   },
+   {
+    "topic_id": "ownership-archives",
+    "direction_id": "ownership",
+    "lane_type": "archives"
+   },
+   {
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "lane_type": "news-courts"
+   },
+   {
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "lane_type": "web"
+   },
+   {
+    "topic_id": "people-social",
+    "direction_id": "people",
+    "lane_type": "social"
+   }
+  ],
+  "timing_window_days": 30
+ },
+ "items": [
+  {
+   "item_id": "ca-d01",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d01",
+    "topic_id": "ownership-registries",
+    "direction_id": "ownership",
+    "summary": "The commercial register lists Valtor Trust of Vaduz as Company A's sole shareholder since February 2025.",
+    "subjects": [
+     "Company A",
+     "Valtor Trust"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://register-ch.test/entity/che-100.200.300",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A AG, CHE-100.200.300. Sole shareholder since 2025-02-14: Valtor Trust, Vaduz (100%).",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/bbea74290b863dbbd6280d5735764ab86799cb06458855200f5fc47a1d076f0f.md",
+    "content_sha256": "bbea74290b863dbbd6280d5735764ab86799cb06458855200f5fc47a1d076f0f"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "ownership",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "supports",
+     "c2_new_actor": true
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d02",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d02",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "A news report says Valtor Trust bought Company A last year and did not answer questions about its owners.",
+    "subjects": [
+     "Company A",
+     "Valtor Trust"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-one.test/2025/valtor",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Valtor Trust, the Liechtenstein vehicle that bought Company A last year, did not answer questions about who stands behind it.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/da29d2c3955862f68f011d78c75aa60fd0f9cecc6797a815963e89d34d476e0d.md",
+    "content_sha256": "da29d2c3955862f68f011d78c75aa60fd0f9cecc6797a815963e89d34d476e0d"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "ownership",
+     "q3_source": "original_reporting",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "supports",
+     "c2_new_actor": true
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d03",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d03",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "Anselm Quorrin chairs Company A's board.",
+    "subjects": [
+     "Company A",
+     "Anselm Quorrin"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://register-ch.test/entity/che-100.200.300/board",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A AG. Board of directors: Anselm Quorrin, chair, with sole signing authority.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/f5b4bd03cb73428aba7a8d7b52a738f6871a98078e702fed775f294314b1f9b3.md",
+    "content_sha256": "f5b4bd03cb73428aba7a8d7b52a738f6871a98078e702fed775f294314b1f9b3"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "people",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": true
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d04",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d04",
+    "topic_id": "ownership-archives",
+    "direction_id": "ownership",
+    "summary": "Company A was called Alpentrans AG until January 2025.",
+    "subjects": [
+     "Company A",
+     "Alpentrans AG"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://archive-ch.test/gazette/2025-01-20",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Gazette entry of 2025-01-20: the company Alpentrans AG changes its name to Company A AG.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/921d8da87ccc2f48fe1d4ab75cabde564afdabb5591d42a0bab6b90042a9ed16.md",
+    "content_sha256": "921d8da87ccc2f48fe1d4ab75cabde564afdabb5591d42a0bab6b90042a9ed16"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "ownership",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": true
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d05",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d05",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "The city withdrew its notice 118 awarding a contract to Company A and removed it from publication.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://procure-zh.test/notices/118",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Notice 118 (award to Company A AG, waste transport) has been withdrawn and removed from publication.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/588d86996c0ec573918d9ba059ea55d6eabafe36fa143bc8125137c9cd13ac51.md",
+    "content_sha256": "588d86996c0ec573918d9ba059ea55d6eabafe36fa143bc8125137c9cd13ac51"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "contracts",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": true
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d06",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d06",
+    "topic_id": "ownership-registries",
+    "direction_id": "ownership",
+    "summary": "No record found: Company A beneficial owner register entry.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": true,
+    "queries_tried": [
+     "Company A beneficial owner register entry"
+    ],
+    "status": "candidate"
+   },
+   "gold": {
+    "keep": true,
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d07",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d07",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "Company A won the waste-transport lot for CHF 4.2 million.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-one.test/2025/lot-award",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A AG was awarded the waste-transport lot for CHF 4.2 million.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/3e913d327ff17cef238afa4ea51de16d8092177eaf86dbc166785dd52887272e.md",
+    "content_sha256": "3e913d327ff17cef238afa4ea51de16d8092177eaf86dbc166785dd52887272e",
+    "facts": [
+     {
+      "subject": "Company A",
+      "attribute": "contract value",
+      "value": "CHF 4.2 million"
+     }
+    ]
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "contracts",
+     "q3_source": "original_reporting",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "supports",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d08",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d08",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "The award notice gives Company A's contract a total value of CHF 2.4 million.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://procure-zh.test/notices/112",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Award: Company A AG. Waste transport, lot 1. Total value: CHF 2.4 million.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/2698b4d4d475c0139dca6a43b856af762a4b42eb3e639f21dacdd75e47157bd8.md",
+    "content_sha256": "2698b4d4d475c0139dca6a43b856af762a4b42eb3e639f21dacdd75e47157bd8",
+    "facts": [
+     {
+      "subject": "Company A",
+      "attribute": "contract value",
+      "value": "CHF 2.4 million"
+     }
+    ]
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "contracts",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "supports",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d09",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d09",
+    "topic_id": "ownership-archives",
+    "direction_id": "ownership",
+    "summary": "Company A's spokesperson denies any change of ownership since 2010.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-two.test/2025/denial",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "A spokesperson for Company A said the firm's ownership \"has not changed since 2010\".",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/e5023f4aac6fffaba6892e6ebcb59e1c5a78a0f5090b5e904da085a6765ab8e1.md",
+    "content_sha256": "e5023f4aac6fffaba6892e6ebcb59e1c5a78a0f5090b5e904da085a6765ab8e1",
+    "attribution": {
+     "actor": {
+      "label": "Company A spokesperson"
+     },
+     "stance": "disputes",
+     "attribution_verbatim": "A spokesperson for Company A said"
+    }
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "ownership",
+     "q3_source": "interested_party",
+     "q4_assertion": "reported_claim",
+     "q6_fidelity": "faithful",
+     "c1_premise": "contradicts",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d10",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d10",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "Company A was on the federal debarment list for public tenders from 2019 to 2021.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://debarment-list.test/entries/company-a",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A AG, Zurich. Debarment from public tenders: 2019-04-01 to 2021-03-31.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/56fe5ed3b19f1aeaac5dda968bbedb7eecfd65136535d8e8259c48da41737578.md",
+    "content_sha256": "56fe5ed3b19f1aeaac5dda968bbedb7eecfd65136535d8e8259c48da41737578"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "contracts",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false
+    },
+    "acceptable_clues": [
+     "premise"
+    ],
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d11",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d11",
+    "topic_id": "ownership-registries",
+    "direction_id": "ownership",
+    "summary": "All shares of Company A were transferred to a new holder in March 2025.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://register-ch.test/entity/che-100.200.300/transfers",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Share transfer registered 2025-03-03: all shares of Company A AG transferred to a new holder.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/bbee74d35ce48349932885838f5d9633cf712c06d146d4dec3cb514d20fec9e3.md",
+    "content_sha256": "bbee74d35ce48349932885838f5d9633cf712c06d146d4dec3cb514d20fec9e3",
+    "facts": [
+     {
+      "subject": "Company A",
+      "attribute": "share transfer",
+      "value": "2025-03-03"
+     }
+    ]
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "ownership",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "supports",
+     "c2_new_actor": false,
+     "c3_change": true
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d12",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d12",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "The city awarded waste-transport lot 2 to Company A in March 2025.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://procure-zh.test/notices/121",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Contract award 2025-03-20: waste transport, lot 2, to Company A AG.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/0bddd06e40524c8a4b05c85aa4cd1d2cd8d61ea5f65d4940250c356489de0d6e.md",
+    "content_sha256": "0bddd06e40524c8a4b05c85aa4cd1d2cd8d61ea5f65d4940250c356489de0d6e",
+    "facts": [
+     {
+      "subject": "Company A",
+      "attribute": "contract award",
+      "value": "2025-03-20"
+     }
+    ]
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "contracts",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "supports",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d13",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d13",
+    "topic_id": "ownership-registries",
+    "direction_id": "ownership",
+    "summary": "Company A's registered address is Industriestrasse 9, 8005 Zurich.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://register-ch.test/entity/che-100.200.300/address",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A AG, registered address: Industriestrasse 9, 8005 Zurich.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/29754660fc04b77a837cb818e709de0be5e414021908ffe0ff319d5fa4e0dc9f.md",
+    "content_sha256": "29754660fc04b77a837cb818e709de0be5e414021908ffe0ff319d5fa4e0dc9f",
+    "facts": [
+     {
+      "subject": "Company A",
+      "attribute": "registered address",
+      "value": "Industriestrasse 9, 8005 Zurich"
+     }
+    ]
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "ownership",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "no_event",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d14",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d14",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "Kestrel Fleet GmbH is registered at Industriestrasse 9, 8005 Zurich.",
+    "subjects": [
+     "Kestrel Fleet GmbH"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://register-ch.test/entity/che-400.500.600",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Kestrel Fleet GmbH, registered address: Industriestrasse 9, 8005 Zurich.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/634e13720cecc5f6aede22b6acbc89a7de0d668087c0811080a503b05c67572b.md",
+    "content_sha256": "634e13720cecc5f6aede22b6acbc89a7de0d668087c0811080a503b05c67572b",
+    "facts": [
+     {
+      "subject": "Kestrel Fleet GmbH",
+      "attribute": "registered address",
+      "value": "Industriestrasse 9, 8005 Zurich"
+     }
+    ]
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q2_direction": "people",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "no_event",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d15",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d15",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "Company A opened a second kitchen in Brisbane.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-au.test/business/catering",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A Pty Ltd, a Brisbane catering business, has opened a second commercial kitchen.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/5f8b8b942ee1a867945c21aa8cb497b3329d0d37eb2e9272eafca2c527081cbe.md",
+    "content_sha256": "5f8b8b942ee1a867945c21aa8cb497b3329d0d37eb2e9272eafca2c527081cbe"
+   },
+   "gold": {
+    "keep": false,
+    "answers": {
+     "q1_identity": "different_subject_or_event",
+     "q2_direction": "none",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "unrelated",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d16",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d16",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "The city council debated new bike lanes.",
+    "subjects": [
+     "city council"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-two.test/city/bike-lanes",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "The city council spent Tuesday evening debating a network of new bike lanes.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/e2448998b627e69b38d8d43ef4bb22b871291652b55c591167b6b46e8da4972d.md",
+    "content_sha256": "e2448998b627e69b38d8d43ef4bb22b871291652b55c591167b6b46e8da4972d"
+   },
+   "gold": {
+    "keep": false,
+    "answers": {
+     "q1_identity": "none_of_the_brief",
+     "q2_direction": "none",
+     "q3_source": "original_reporting",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "unrelated",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d17",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d17",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "A procurement researcher says waste-transport contracts are rarely contested.",
+    "subjects": [
+     "Nora Feld"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-two.test/2025/procurement-explainer",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "\"Waste-transport contracts are rarely contested,\" said Nora Feld, a procurement researcher.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/e16172443918f31d533cf05d09746560bfc3b15ca4bb06444f42f01d322cfe66.md",
+    "content_sha256": "e16172443918f31d533cf05d09746560bfc3b15ca4bb06444f42f01d322cfe66"
+   },
+   "gold": {
+    "keep": null,
+    "answers": {
+     "q2_direction": "contracts",
+     "q3_source": "original_reporting",
+     "q4_assertion": "reported_claim",
+     "q5_status": "no_event",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d18",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d18",
+    "topic_id": "ownership-registries",
+    "direction_id": "ownership",
+    "summary": "Company A filed its annual accounts with no change to its board.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://register-ch.test/entity/che-100.200.300/accounts",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A AG filed its annual accounts on time. No changes to the board were reported.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/51f9274e4c9bebfc26af9e1e1e10d09454f7f7efcb64ae97c2572b200aa8fd3e.md",
+    "content_sha256": "51f9274e4c9bebfc26af9e1e1e10d09454f7f7efcb64ae97c2572b200aa8fd3e"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "ownership",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d19",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d19",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "Company A won all of the city's waste-transport contracts.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-one.test/2025/lot-three",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A AG was awarded lot 3 of the city's waste-transport tender.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/32fb6a20b2188784a61df91c444c735807e004869d2af4c4d6358d71b3b4c775.md",
+    "content_sha256": "32fb6a20b2188784a61df91c444c735807e004869d2af4c4d6358d71b3b4c775"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "contracts",
+     "q3_source": "original_reporting",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "widens",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d20",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d20",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "Company A's contract runs for 7 years.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://procure-zh.test/notices/119",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "The contract with Company A AG runs for four years from signature.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/5dbd4ef0a1816f6dac48e19a51cc0703df854607f546e5cd3f0a275b4003905c.md",
+    "content_sha256": "5dbd4ef0a1816f6dac48e19a51cc0703df854607f546e5cd3f0a275b4003905c"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "contracts",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q6_fidelity": "contradicts",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d21",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d21",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "A columnist argues the speed of the award suggests the city favoured Company A.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://opinion-zh.test/columns/award-speed",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "In my view, the speed of the award suggests the city favoured Company A from the start.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/e3f2e7a02f24120f1f039738d32eec117d49c19cec40370439ba1cfbf5914c8e.md",
+    "content_sha256": "e3f2e7a02f24120f1f039738d32eec117d49c19cec40370439ba1cfbf5914c8e"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "contracts",
+     "q4_assertion": "interpretation",
+     "q6_fidelity": "faithful",
+     "c1_premise": "supports",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d22",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d22",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "A search result mentions Company A in connection with tender lot 2.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "snippet",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-one.test/search?q=company-a",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A AG ... tender lot 2 ... waste transport ...",
+     "language": "en",
+     "direct_quote": true
+    }
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "contracts",
+     "q5_status": "not_established",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-d23",
+   "split": "dev",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-d23",
+    "topic_id": "people-social",
+    "direction_id": "people",
+    "summary": "A social media user says he started a new job at Company A.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://social.test/anselm.q/posts/1",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Started a new chapter at Company A today!",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/c167b82dccd28d6ca00ce9c70701ad367f28f79fc0198852c107b200b75b6af1.md",
+    "content_sha256": "c167b82dccd28d6ca00ce9c70701ad367f28f79fc0198852c107b200b75b6af1"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "name_only",
+     "q2_direction": "people",
+     "q3_source": "user_generated",
+     "q4_assertion": "asserted",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h01",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h01",
+    "topic_id": "ownership-archives",
+    "direction_id": "ownership",
+    "summary": "The gazette records Orsana Holding as Company A's majority shareholder.",
+    "subjects": [
+     "Company A",
+     "Orsana Holding"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://archive-ch.test/gazette/2025-06-02",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A AG: majority shareholder Orsana Holding SA, Geneva (entered 2025-06-02).",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/a2e3bc94834cb9710472880b5e3bc738c6c868b8a482f1c4e62e6d9d2601667a.md",
+    "content_sha256": "a2e3bc94834cb9710472880b5e3bc738c6c868b8a482f1c4e62e6d9d2601667a"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "ownership",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "supports",
+     "c2_new_actor": true
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h02",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h02",
+    "topic_id": "people-social",
+    "direction_id": "people",
+    "summary": "A report says Orsana Holding took control of Company A through a Geneva lawyer.",
+    "subjects": [
+     "Company A",
+     "Orsana Holding"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-two.test/2025/orsana",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Orsana Holding, which took control of Company A, is represented by a Geneva lawyer who declined to name its owners.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/f62f585b6ef3ccb531bb77e7693f86f478b3ec5a6c504ea1ad04aac6b80e30e7.md",
+    "content_sha256": "f62f585b6ef3ccb531bb77e7693f86f478b3ec5a6c504ea1ad04aac6b80e30e7"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "ownership",
+     "q3_source": "original_reporting",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "supports",
+     "c2_new_actor": true
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h03",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h03",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "Petra Valsky is Company A's managing director.",
+    "subjects": [
+     "Company A",
+     "Petra Valsky"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://register-ch.test/entity/che-100.200.300/management",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A AG. Managing director: Petra Valsky, joint signature.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/16e7f0189d808084d52e4bc47d4d180a9d15543311fc7656e66a7fb2ade7624b.md",
+    "content_sha256": "16e7f0189d808084d52e4bc47d4d180a9d15543311fc7656e66a7fb2ade7624b"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "people",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": true
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h04",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h04",
+    "topic_id": "ownership-registries",
+    "direction_id": "ownership",
+    "summary": "Company A moved its registered office from Basel to Zug in April 2025.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://register-ch.test/entity/che-100.200.300/seat",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A AG moves its registered office from Basel to Zug (entry of 2025-04-11).",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/d21714edd58a056f4be8db14e3f508ca1cabd2180a8759e870acabea6868cb57.md",
+    "content_sha256": "d21714edd58a056f4be8db14e3f508ca1cabd2180a8759e870acabea6868cb57"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "ownership",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": true
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h05",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h05",
+    "topic_id": "ownership-archives",
+    "direction_id": "ownership",
+    "summary": "A correction backdates Company A's board change to the end of 2024.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://archive-ch.test/gazette/2025-07-02",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Correction of 2025-07-02: the board change of Company A AG is entered with effect from 2024-12-31.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/e095753f2389a4e12a2a4d05b8410f6f82e66773dff556e486477178ee135326.md",
+    "content_sha256": "e095753f2389a4e12a2a4d05b8410f6f82e66773dff556e486477178ee135326"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "ownership",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": true
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h06",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h06",
+    "topic_id": "ownership-archives",
+    "direction_id": "ownership",
+    "summary": "No record found: Company A procurement appeal court docket.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": true,
+    "queries_tried": [
+     "Company A procurement appeal court docket"
+    ],
+    "status": "candidate"
+   },
+   "gold": {
+    "keep": true,
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h07",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h07",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "Company A employs 85 drivers.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-one.test/2025/drivers",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A AG employs 85 drivers on its municipal routes.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/ea7e7ad46d6bb6a3a438585e66985e2fe25d8182b939cbad3627b6ca80f98110.md",
+    "content_sha256": "ea7e7ad46d6bb6a3a438585e66985e2fe25d8182b939cbad3627b6ca80f98110",
+    "facts": [
+     {
+      "subject": "Company A",
+      "attribute": "drivers",
+      "value": "85"
+     }
+    ]
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "contracts",
+     "q3_source": "original_reporting",
+     "q4_assertion": "asserted",
+     "q5_status": "no_event",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h08",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h08",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "A union report says Company A has 140 drivers.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-two.test/2025/union",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "According to the drivers' union, Company A has 140 drivers.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/af1c8a5e7311b0386ca8bb663d29833cc0c8f5fa4988c439c45f3e38ad7367bf.md",
+    "content_sha256": "af1c8a5e7311b0386ca8bb663d29833cc0c8f5fa4988c439c45f3e38ad7367bf",
+    "facts": [
+     {
+      "subject": "Company A",
+      "attribute": "drivers",
+      "value": "140"
+     }
+    ],
+    "attribution": {
+     "actor": {
+      "label": "drivers' union"
+     },
+     "stance": "asserts",
+     "attribution_verbatim": "According to the drivers' union"
+    }
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "people",
+     "q3_source": "interested_party",
+     "q4_assertion": "reported_claim",
+     "q5_status": "no_event",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h09",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h09",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "The city says the 2025 contracts went to Company A under the same open procedure it had already won in 2021.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://procure-zh.test/statements/2025-award",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "The city said the 2025 contracts were awarded to Company A under the same open procedure the firm had already won in 2021.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/8e57483f062244843c6dae11f6234b2ab8095e78edc51c912fdc419a35f75637.md",
+    "content_sha256": "8e57483f062244843c6dae11f6234b2ab8095e78edc51c912fdc419a35f75637",
+    "attribution": {
+     "actor": {
+      "label": "the city"
+     },
+     "stance": "asserts",
+     "attribution_verbatim": "The city said"
+    }
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "contracts",
+     "q3_source": "interested_party",
+     "q4_assertion": "reported_claim",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "complicates",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h10",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h10",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "The cantonal register lists Company A's chair as a politically exposed person.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://pep-register.test/entries/zh-2291",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Entry 2291: chair of Company A AG, listed as a politically exposed person (domestic).",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/c47f55cb4c2edddf3f129f7db0f6f0f311cbf51b79026903c79d1ecb3484775c.md",
+    "content_sha256": "c47f55cb4c2edddf3f129f7db0f6f0f311cbf51b79026903c79d1ecb3484775c"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "people",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "no_event",
+     "q6_fidelity": "faithful",
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h11",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h11",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "Company A registered a new board chair in May 2025.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://register-ch.test/entity/che-100.200.300/changes",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Board change registered 2025-05-02: new chair at Company A AG.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/834e319743374ebd5a82d975b6b957de532724a349de5e45ba733ba8acc8e374.md",
+    "content_sha256": "834e319743374ebd5a82d975b6b957de532724a349de5e45ba733ba8acc8e374",
+    "facts": [
+     {
+      "subject": "Company A",
+      "attribute": "board change",
+      "value": "2025-05-02"
+     }
+    ]
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "people",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false
+    },
+    "acceptable_clues": [
+     "change_or_absence"
+    ],
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h12",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h12",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "The city signed a contract extension with Company A in May 2025.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://procure-zh.test/notices/131",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Contract extension signed 2025-05-19 with Company A AG for waste transport.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/255b67ac0aca6fce3cb68c93142bdd1b4afd344cbcf514d7758223748d3033e1.md",
+    "content_sha256": "255b67ac0aca6fce3cb68c93142bdd1b4afd344cbcf514d7758223748d3033e1",
+    "facts": [
+     {
+      "subject": "Company A",
+      "attribute": "contract extension",
+      "value": "2025-05-19"
+     }
+    ]
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "contracts",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "supports",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h13",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h13",
+    "topic_id": "ownership-registries",
+    "direction_id": "ownership",
+    "summary": "Company A's listed phone number is +41 44 000 12 34.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://register-ch.test/entity/che-100.200.300/contact",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A AG. Phone: +41 44 000 12 34.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/b1afdd201f3cd5bc28baf63947c9a0c7fb259a3acfbbf41d34bfb2f119138ff9.md",
+    "content_sha256": "b1afdd201f3cd5bc28baf63947c9a0c7fb259a3acfbbf41d34bfb2f119138ff9",
+    "facts": [
+     {
+      "subject": "Company A",
+      "attribute": "phone",
+      "value": "+41 44 000 12 34"
+     }
+    ]
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "ownership",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "no_event",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h14",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h14",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "Kestrel Fleet GmbH's listed phone number is +41 44 000 12 34.",
+    "subjects": [
+     "Kestrel Fleet GmbH"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://register-ch.test/entity/che-700.800.900/contact",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Kestrel Fleet GmbH. Phone: +41 44 000 12 34.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/7b1ab6cc9d33bb2e925c6ddb28cbb609ab146aecf667a72df33746b5ee24edd6.md",
+    "content_sha256": "7b1ab6cc9d33bb2e925c6ddb28cbb609ab146aecf667a72df33746b5ee24edd6",
+    "facts": [
+     {
+      "subject": "Kestrel Fleet GmbH",
+      "attribute": "phone",
+      "value": "+41 44 000 12 34"
+     }
+    ]
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q2_direction": "people",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "no_event",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h15",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h15",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "Company A raised a seed round in Toronto.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-ca.test/tech/seed-round",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A Inc., a Toronto software start-up, has raised a seed round.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/591dba7e41f24fb70e4f2e37223726a56be92b663fc809944ec98eb774f0ccf1.md",
+    "content_sha256": "591dba7e41f24fb70e4f2e37223726a56be92b663fc809944ec98eb774f0ccf1"
+   },
+   "gold": {
+    "keep": false,
+    "answers": {
+     "q1_identity": "different_subject_or_event",
+     "q2_direction": "none",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "unrelated",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h16",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h16",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "The lake reached a record water temperature.",
+    "subjects": [
+     "the lake"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-two.test/weather/lake",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "The lake reached a record water temperature on Sunday afternoon.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/7ecbdb7a06f12bd9cebe8bd6b350e470070e3b735011b687452226217000b805.md",
+    "content_sha256": "7ecbdb7a06f12bd9cebe8bd6b350e470070e3b735011b687452226217000b805"
+   },
+   "gold": {
+    "keep": false,
+    "answers": {
+     "q1_identity": "none_of_the_brief",
+     "q2_direction": "none",
+     "q3_source": "original_reporting",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "unrelated",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h17",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h17",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "A union representative says drivers' pay has not risen.",
+    "subjects": [
+     "Lukas Imhof"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-one.test/2025/union-view",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "\"Pay for drivers has not risen in years,\" said Lukas Imhof, a union representative.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/bda3f76da53776675ad691e5c60ba6bf217464ae85331a6f76587dd0891e6f1d.md",
+    "content_sha256": "bda3f76da53776675ad691e5c60ba6bf217464ae85331a6f76587dd0891e6f1d"
+   },
+   "gold": {
+    "keep": null,
+    "answers": {
+     "q3_source": "interested_party",
+     "q4_assertion": "reported_claim",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h18",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h18",
+    "topic_id": "ownership-registries",
+    "direction_id": "ownership",
+    "summary": "Company A's auditor approved its accounts without qualification.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://audit-news.test/2025/company-a-accounts",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A AG's auditor approved the accounts without qualification.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/09d7f9c429a0f7080f6301ba2e4b7e9be8725f48ac0b4edab85b65ba5a21aa18.md",
+    "content_sha256": "09d7f9c429a0f7080f6301ba2e4b7e9be8725f48ac0b4edab85b65ba5a21aa18"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "ownership",
+     "q3_source": "original_reporting",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h19",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h19",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "Company A's trucks failed emissions tests.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-one.test/2025/emissions",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "One of Company A's trucks failed an emissions test during a roadside check.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/a519e9a38be16feedcc262daabe538a4b5c39fa1e0c91be26091a09393e0c103.md",
+    "content_sha256": "a519e9a38be16feedcc262daabe538a4b5c39fa1e0c91be26091a09393e0c103"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "contracts",
+     "q3_source": "original_reporting",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "widens",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h20",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h20",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "The tender Company A won drew 5 bids.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://procure-zh.test/notices/131/bids",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "The tender won by Company A AG drew three bids.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/276743f009056a5b58ab8efa5d1507257e69bf1b76d93e6e26f28b6d502cc9b3.md",
+    "content_sha256": "276743f009056a5b58ab8efa5d1507257e69bf1b76d93e6e26f28b6d502cc9b3"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "contracts",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "contradicts",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h21",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h21",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "A columnist thinks the city designed the tender for Company A.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://opinion-zh.test/columns/one-bidder",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "It is hard not to conclude that the tender was written with Company A in mind.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/5b7279c8539f1719f180be2452d0d6b7cfa82568cebe74bc84cf38eaed2cabe5.md",
+    "content_sha256": "5b7279c8539f1719f180be2452d0d6b7cfa82568cebe74bc84cf38eaed2cabe5"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "contracts",
+     "q4_assertion": "interpretation",
+     "q6_fidelity": "faithful",
+     "c1_premise": "supports",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h22",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h22",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "A search result mentions Company A's board in connection with a hearing.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "snippet",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-two.test/search?q=company-a-board",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Company A AG ... board ... hearing ...",
+     "language": "en",
+     "direct_quote": true
+    }
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q2_direction": "people",
+     "q5_status": "not_established",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "ca-h23",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "ca-h23",
+    "topic_id": "people-social",
+    "direction_id": "people",
+    "summary": "A social media user says she thanked her team at Company A.",
+    "subjects": [
+     "Company A"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://social.test/p.valsky/posts/9",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-a"
+    },
+    "excerpt": {
+     "text": "Thank you to the whole team at Company A for a great year!",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/a84de6bf8c84550b6e3b2fd4455dd553dd6404dc8c6c938b31ba931699e57d2f.md",
+    "content_sha256": "a84de6bf8c84550b6e3b2fd4455dd553dd6404dc8c6c938b31ba931699e57d2f"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "name_only",
+     "q2_direction": "people",
+     "q3_source": "user_generated",
+     "q4_assertion": "asserted",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  }
+ ],
+ "planted_clues": [
+  {
+   "clue_id": "ca-d-k1",
+   "split": "dev",
+   "group": "new_actor",
+   "lead_ids": [
+    "ca-d01",
+    "ca-d02"
+   ],
+   "via": "K1+C2"
+  },
+  {
+   "clue_id": "ca-d-c2",
+   "split": "dev",
+   "group": "new_actor",
+   "lead_ids": [
+    "ca-d03"
+   ],
+   "via": "C2",
+   "question": "c2_new_actor"
+  },
+  {
+   "clue_id": "ca-d-c3a",
+   "split": "dev",
+   "group": "change_or_absence",
+   "lead_ids": [
+    "ca-d04"
+   ],
+   "via": "C3",
+   "question": "c3_change"
+  },
+  {
+   "clue_id": "ca-d-c3b",
+   "split": "dev",
+   "group": "change_or_absence",
+   "lead_ids": [
+    "ca-d05"
+   ],
+   "via": "C3",
+   "question": "c3_change"
+  },
+  {
+   "clue_id": "ca-d-k5",
+   "split": "dev",
+   "group": "change_or_absence",
+   "lead_ids": [
+    "ca-d06"
+   ],
+   "via": "K5"
+  },
+  {
+   "clue_id": "ca-d-k2",
+   "split": "dev",
+   "group": "conflict",
+   "lead_ids": [
+    "ca-d07",
+    "ca-d08"
+   ],
+   "via": "K2+C4",
+   "c4": "conflict"
+  },
+  {
+   "clue_id": "ca-d-c1",
+   "split": "dev",
+   "group": "premise",
+   "lead_ids": [
+    "ca-d09"
+   ],
+   "via": "C1",
+   "question": "c1_premise"
+  },
+  {
+   "clue_id": "ca-d-k6",
+   "split": "dev",
+   "group": "watchlist",
+   "lead_ids": [
+    "ca-d10"
+   ],
+   "via": "K6"
+  },
+  {
+   "clue_id": "ca-d-c3c",
+   "split": "dev",
+   "group": "change_or_absence",
+   "lead_ids": [
+    "ca-d11"
+   ],
+   "via": "C3",
+   "question": "c3_change"
+  },
+  {
+   "clue_id": "ca-d-k3",
+   "split": "dev",
+   "group": "timing",
+   "lead_ids": [
+    "ca-d11",
+    "ca-d12"
+   ],
+   "via": "K3"
+  },
+  {
+   "clue_id": "ca-d-k4",
+   "split": "dev",
+   "group": "shared_identifier",
+   "lead_ids": [
+    "ca-d13",
+    "ca-d14"
+   ],
+   "via": "K4"
+  },
+  {
+   "clue_id": "ca-h-k1",
+   "split": "heldout",
+   "group": "new_actor",
+   "lead_ids": [
+    "ca-h01",
+    "ca-h02"
+   ],
+   "via": "K1+C2"
+  },
+  {
+   "clue_id": "ca-h-c2",
+   "split": "heldout",
+   "group": "new_actor",
+   "lead_ids": [
+    "ca-h03"
+   ],
+   "via": "C2",
+   "question": "c2_new_actor"
+  },
+  {
+   "clue_id": "ca-h-c3a",
+   "split": "heldout",
+   "group": "change_or_absence",
+   "lead_ids": [
+    "ca-h04"
+   ],
+   "via": "C3",
+   "question": "c3_change"
+  },
+  {
+   "clue_id": "ca-h-c3b",
+   "split": "heldout",
+   "group": "change_or_absence",
+   "lead_ids": [
+    "ca-h05"
+   ],
+   "via": "C3",
+   "question": "c3_change"
+  },
+  {
+   "clue_id": "ca-h-k5",
+   "split": "heldout",
+   "group": "change_or_absence",
+   "lead_ids": [
+    "ca-h06"
+   ],
+   "via": "K5"
+  },
+  {
+   "clue_id": "ca-h-k2",
+   "split": "heldout",
+   "group": "conflict",
+   "lead_ids": [
+    "ca-h07",
+    "ca-h08"
+   ],
+   "via": "K2+C4",
+   "c4": "conflict"
+  },
+  {
+   "clue_id": "ca-h-c1",
+   "split": "heldout",
+   "group": "premise",
+   "lead_ids": [
+    "ca-h09"
+   ],
+   "via": "C1",
+   "question": "c1_premise"
+  },
+  {
+   "clue_id": "ca-h-k6",
+   "split": "heldout",
+   "group": "watchlist",
+   "lead_ids": [
+    "ca-h10"
+   ],
+   "via": "K6"
+  },
+  {
+   "clue_id": "ca-h-k3",
+   "split": "heldout",
+   "group": "timing",
+   "lead_ids": [
+    "ca-h11",
+    "ca-h12"
+   ],
+   "via": "K3"
+  },
+  {
+   "clue_id": "ca-h-k4",
+   "split": "heldout",
+   "group": "shared_identifier",
+   "lead_ids": [
+    "ca-h13",
+    "ca-h14"
+   ],
+   "via": "K4"
+  }
+ ]
+}

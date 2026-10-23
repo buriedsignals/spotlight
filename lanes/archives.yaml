@@ -1,0 +1,11 @@
+id: archives
+title: Web archives
+description: Archived and removed pages through the Wayback Machine CDX and availability APIs and archive snapshots.
+route: swarm
+tools: [search, fetch, http_get]
+keys: []
+egress: [public_web, registry_api]
+guidance: >-
+  Use the Wayback CDX API (http_get on web.archive.org/cdx/search/cdx) to list
+  captures, then fetch the capture itself. A lead from an archived page names
+  the capture date in its summary.

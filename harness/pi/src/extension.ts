@@ -9,7 +9,7 @@ import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, 
 import { typedTools } from './tools/index.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import { bindActiveCase, pythonAdapter, spotlightTools } from './tools/spotlight.ts';
-import { spawnAgentTool } from './subagents.ts';
+import { requestResearchRound, spawnAgentTool } from './subagents.ts';
 import { openReviewTool } from './tools/review.ts';
 
 const log = (message: string) => process.stderr.write(`spotlight-extension: ${message}\n`);
@@ -33,11 +33,11 @@ function toolsFor(role: string): ToolDefinition[] {
 			python,
 			configPath: process.env.SPOTLIGHT_CONFIG || `${CHECKOUT_ROOT}/.spotlight-config.json`,
 			env: process.env,
-			scope: { reads: spec.reads, writes: spec.writes },
+			scope: { reads: spec.reads, writes: spec.writes, denyReads: spec.denyReads },
 		}),
 	];
 	if (role === ORCHESTRATOR) {
-		tools.push(...spotlightTools(active, pythonAdapter(python), role));
+		tools.push(...spotlightTools(active, pythonAdapter(python), role, requestResearchRound));
 		tools.push(spawnAgentTool(spawnableWorkers(composition)));
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT')));
 	}

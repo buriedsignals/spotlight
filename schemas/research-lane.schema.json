@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Spotlight research lane",
+  "description": "research/swarm/<topic-id>/lane.json: what one lane ran for one approved topic brief, what it spent and how it ended. Its leads are in leads.jsonl beside it and its stored sources in sources/.",
+  "schema_version": "1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "topic_id", "direction_id", "lane_type", "route", "status", "started_at", "spend"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "topic_id": { "$ref": "#/definitions/slug" },
+    "direction_id": { "$ref": "#/definitions/slug" },
+    "lane_type": {
+      "$ref": "#/definitions/slug",
+      "description": "A lane catalogue id, or ad-hoc."
+    },
+    "route": {
+      "enum": ["swarm", "subscription", "local"],
+      "description": "swarm: the member's OpenRouter key; subscription: the host's own subagents; local: the local model (local corpus and prior knowledge lanes)."
+    },
+    "model": { "type": "string", "minLength": 1 },
+    "status": {
+      "enum": ["running", "completed", "partial", "failed", "not_started"],
+      "description": "partial: stopped by its budget (D5); failed: invalid after its retry (D2) or stopped by the provider; not_started: left out because the round budget was spent."
+    },
+    "started_at": { "type": ["string", "null"], "format": "date-time" },
+    "finished_at": { "type": ["string", "null"], "format": "date-time" },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "usd": { "type": "number", "minimum": 0 },
+        "tokens": { "type": "integer", "minimum": 0 },
+        "tool_calls": { "type": "integer", "minimum": 0 },
+        "seconds": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "spend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["usd"],
+      "properties": {
+        "usd": { "type": "number", "minimum": 0 },
+        "tokens": { "type": "integer", "minimum": 0 },
+        "tool_calls": { "type": "integer", "minimum": 0 },
+        "seconds": { "type": "number", "minimum": 0 }
+      }
+    },
+    "queries_tried": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "lead_count": { "type": "integer", "minimum": 0 },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "description": "Why the lane stopped. The message names the fix and never contains a key.",
+      "properties": {
+        "code": { "enum": ["key_rejected", "no_credit", "upstream_error", "budget_spent", "schema_invalid", "outside_folder", "other"] },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "failed" } } },
+      "then": { "required": ["failure"] }
+    }
+  ],
+  "definitions": {
+    "slug": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" }
+  }
+}

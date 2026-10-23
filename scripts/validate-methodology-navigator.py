@@ -24,6 +24,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from integrations._credentials import config_path as install_config_path  # noqa: E402
+from integrations.anomaly import adapter as anomaly  # noqa: E402
+
+sys.path.insert(0, str(ROOT / "scripts"))
+import research_checks  # noqa: E402
 DEFAULT_CTI_LOCK = ROOT / "upstreams" / "cti-expert" / "source.lock.json"
 DEFAULT_CTI_REVISIONS = ROOT / "upstreams" / "cti-expert" / "reviewed-revisions.json"
 CTI_REFERENCES = {
@@ -284,6 +288,11 @@ def main() -> int:
             not args.allow_historical_cti,
         )
     )
+    # D1: a research plan must be runnable as approved (budgets, topic ids,
+    # lane types, consent, egress, sensitive, newsroom and journalist-input rules).
+    errors.extend(f"methodology.json: {problem}" for problem in research_checks.d1_from_config(methodology, config))
+    # Named Anomaly methods must be single-table methods of the pinned catalogue.
+    errors.extend(f"methodology.json: {problem}" for problem in anomaly.plan_problems(methodology))
 
     if errors:
         for error in errors:

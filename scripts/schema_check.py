@@ -16,10 +16,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-ANNOTATIONS = {"$schema", "$id", "$comment", "title", "description", "definitions", "schema_version"}
+ANNOTATIONS = {"$schema", "$id", "$comment", "title", "description", "definitions", "schema_version", "default"}
 KEYWORDS = {
     "$ref", "type", "properties", "required", "additionalProperties", "enum", "const", "pattern",
-    "minLength", "minItems", "minimum", "uniqueItems", "items", "allOf", "anyOf", "not", "if", "then",
+    "minLength", "minItems", "maxItems", "minimum", "maximum", "exclusiveMinimum", "uniqueItems", "items", "allOf", "anyOf", "not", "if", "then",
     "else", "format",
 }
 TYPES = {
@@ -108,11 +108,18 @@ class Checker:
                 out.append(f"{path}: does not match {schema['pattern']}")
             if "format" in schema and not _format_ok(schema["format"], value):
                 out.append(f"{path}: not a valid {schema['format']}")
-        if TYPES["number"](value) and "minimum" in schema and value < schema["minimum"]:
-            out.append(f"{path}: below {schema['minimum']}")
+        if TYPES["number"](value):
+            if "minimum" in schema and value < schema["minimum"]:
+                out.append(f"{path}: below {schema['minimum']}")
+            if "exclusiveMinimum" in schema and value <= schema["exclusiveMinimum"]:
+                out.append(f"{path}: must be above {schema['exclusiveMinimum']}")
+            if "maximum" in schema and value > schema["maximum"]:
+                out.append(f"{path}: above {schema['maximum']}")
         if isinstance(value, list):
             if len(value) < schema.get("minItems", 0):
                 out.append(f"{path}: needs at least {schema['minItems']} items")
+            if "maxItems" in schema and len(value) > schema["maxItems"]:
+                out.append(f"{path}: allows at most {schema['maxItems']} items")
             if schema.get("uniqueItems"):
                 seen = [json.dumps(v, sort_keys=True) for v in value]
                 if len(seen) != len(set(seen)):
