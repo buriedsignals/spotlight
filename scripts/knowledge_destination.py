@@ -3097,8 +3097,11 @@ def coverage_report(
     }
 
 
+# Approved knowledge and the signed case policies that govern it: a graph
+# with any of these is kept.
 GRAPH_TABLES = ("batches", "claims", "events", "story_arcs", "claim_event_memberships",
-                "event_story_arc_memberships", "source_expression_refs", "review_decisions")
+                "event_story_arc_memberships", "source_expression_refs", "review_decisions",
+                "case_policy_receipts")
 
 
 def count_graph_rows(connection: sqlite3.Connection) -> dict[str, Any]:
