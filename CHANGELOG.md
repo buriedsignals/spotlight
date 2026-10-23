@@ -4,6 +4,31 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added — Research triage seam (questions, rules, backends)
+
+- `integrations/decisions/research_questions.py`: the research question bank
+  (Q1 identity, Q2 direction, Q3 source, Q4 assertion, Q5 status, Q6
+  fidelity, C1 premise, C4 conflict; C2 new actor and C3 change or absence
+  on trial), with its own `RESEARCH_BANK_VERSION`, outside `questions.ALL`.
+  Every choice is asked in both option orders.
+- `integrations/decisions/research_rules.py`: the lead fields triage reads
+  (type-checked; nothing else reaches a question), rules S1 (snippet only),
+  S2 (source families) and N1 (figures in a summary that are not in its
+  excerpt), the questions' effects, and the triage invariants (D7). An answer
+  counts only when both orders agree; disagreement flags the lead "model
+  unsure" and changes nothing else.
+- Until the decision-model acceptance test passes for this bank version,
+  triage only flags: no model answer sets a lead aside, C2 and C3 are not
+  asked, no probability band is set, and the output carries a notice for the
+  Research page.
+- `integrations/decisions/research_backends.py`: Jev (the existing client),
+  Clef and Clef-flash on Workers AI, the local tune through llama-server
+  (grammar-constrained letter, `n_probs`), and rules only. Journalist-input
+  leads and sensitive cases stay on the local tune or rules; newsroom mode
+  turns cloud backends off unless the decision endpoint is the newsroom's own.
+- `scripts/research-triage.py CASE_DIR [--check] [--dry-run]` writes
+  `data/research-triage.json`, and writes nothing when the result breaks D7.
+
 ### Changed — Decision-model requests mask protected sources
 
 - With Engine installed, `scripts/decision-signals.py` sends every text in a
