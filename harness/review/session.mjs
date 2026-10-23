@@ -184,12 +184,15 @@ export function createReviewSessionManager({
     return { status: "ready" };
   }
 
-  async function openLocally() {
+  // view "wiki" opens the page on its Wiki changes view.
+  async function openLocally(view = "") {
     if (!active?.url) return { ok: false, status: "session-expired" };
+    const url = new URL(active.url);
+    if (view) url.searchParams.set("view", view);
     const discovered =
       platform === "darwin" ? which("open") : platform === "win32" ? which("rundll32.exe") : which("xdg-open");
     if (!discovered) return { ok: false, status: "opener-unavailable" };
-    const args = platform === "win32" ? ["url.dll,FileProtocolHandler", active.url] : [active.url];
+    const args = platform === "win32" ? ["url.dll,FileProtocolHandler", url.href] : [url.href];
     try {
       const opener = spawn(discovered, args, {
         stdio: "ignore",

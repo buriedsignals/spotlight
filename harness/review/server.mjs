@@ -105,10 +105,24 @@ export async function startReviewServer({
     throw new Error("the review server requires a case bridge");
   if (host !== "127.0.0.1") throw new Error("the review server binds only 127.0.0.1");
 
+  // Staged wiki changes; none without Engine or with a bsig that lacks the verb,
+  // so the page hides the view.
+  async function wikiChanges() {
+    if (!wiki) return [];
+    try {
+      const changes = await wiki.staged();
+      return Array.isArray(changes) ? changes : [];
+    } catch {
+      return [];
+    }
+  }
+
   // The gate this session shows. It stays after a decision so the page can
-  // show the receipt read-only.
+  // show the receipt read-only. With no gate pending, the page shows only the
+  // staged wiki changes ("" here), and it does not start when there are none.
   let gate = pendingGate(await bridge.status());
-  if (!gate) throw Object.assign(new Error("no review is pending for this case"), { code: "no-pending-gate" });
+  if (!gate && !(await wikiChanges()).length)
+    throw Object.assign(new Error("no review is pending for this case"), { code: "no-pending-gate" });
 
   let capability = randomToken();
   let session = "";
@@ -148,18 +162,6 @@ export async function startReviewServer({
   // nonce it lives only in this process; the page never receives it.
   const wikiNonces = new Map();
 
-  // Staged wiki changes; none without Engine or with a bsig that lacks the verb,
-  // so the page hides the view.
-  async function wikiChanges() {
-    if (!wiki) return [];
-    try {
-      const changes = await wiki.staged();
-      return Array.isArray(changes) ? changes : [];
-    } catch {
-      return [];
-    }
-  }
-
   async function confirmWikiChange(action, body) {
     const { id, digest } = exactObject(body, ["id", "digest"], "wiki change");
     if (!wiki || typeof id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(id) || typeof digest !== "string" || !/^[0-9a-f]{64}$/.test(digest))
@@ -192,6 +194,7 @@ export async function startReviewServer({
       gate = pending;
       pageNonce = "";
     }
+    if (!gate) return { gate: "", pending_gate: "", gate_label: "Wiki changes" };
     const view = await bridge.view(gate);
     if (view.pending_gate === gate) await decisionNonce();
     return { ...view, gate_label: GATE_LABELS[gate] };
@@ -301,6 +304,8 @@ export async function startReviewServer({
           exactObject(await readJson(request), [], "view request");
           return sendJson(response, 200, await currentView());
         }
+        if (!gate && ["/api/edit", "/api/decide", "/api/follow-up"].includes(url.pathname))
+          return sendJson(response, 409, { code: "not-pending", message: "No gate is waiting for a decision." });
         if (url.pathname === "/api/edit") {
           const { edit } = exactObject(await readJson(request), ["edit"], "edit request");
           const view = await bridge.view(gate);
@@ -378,8 +383,9 @@ export async function startReviewServer({
   async function reopen() {
     if (!active) throw Object.assign(new Error("the review server has closed"), { code: "closed" });
     const pending = pendingGate(await bridge.status());
-    if (!pending) throw Object.assign(new Error("no review is pending for this case"), { code: "no-pending-gate" });
-    if (pending !== gate) {
+    if (!pending && !(await wikiChanges()).length)
+      throw Object.assign(new Error("no review is pending for this case"), { code: "no-pending-gate" });
+    if (pending && pending !== gate) {
       gate = pending;
       pageNonce = "";
     }

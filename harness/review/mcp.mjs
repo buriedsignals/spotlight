@@ -1,31 +1,45 @@
 #!/usr/bin/env node
-// Small stdio MCP server with one tool, open_spotlight_review, for hosts that
-// run Spotlight in a chat app. Like Splash's open_splash, the tool opens the
-// page in the member's browser and returns only that it did: never the URL.
+// Small stdio MCP server for hosts that run Spotlight in a chat app. Its two
+// tools, open_spotlight_review and open_spotlight_wiki_changes, open the
+// review page in the member's browser (like Splash's open_splash) and return
+// only that they did: never the URL.
 // Newline-delimited JSON-RPC 2.0 on stdin/stdout; nothing else is written to
 // stdout.
 import { realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createReviewOpener, describeOpenResult } from "./open.mjs";
+import { createReviewSessionManager } from "./session.mjs";
+import { createReviewOpener, createWikiChangesOpener, describeOpenResult, describeWikiChangesResult } from "./open.mjs";
 
 const PROTOCOL_VERSION = "2025-06-18";
 const MAX_LINE = 1 << 20;
-const TOOL = {
+const CASE_DIR_SCHEMA = {
+  type: "object",
+  properties: { case_dir: { type: "string", description: "Absolute path of the case directory." } },
+  required: ["case_dir"],
+  additionalProperties: false,
+};
+const REVIEW_TOOL = {
   name: "open_spotlight_review",
   title: "Open Spotlight review",
   description:
     "Open the pending gate's review page (methodology, Investigation gate, report or ingest) for one Spotlight case in the member's browser. Call it when the case resolver reports a pending gate, or again to reopen an expired page. The member reviews and decides on the page; when they say they are done, resolve the case again. Pass only the absolute case directory.",
-  inputSchema: {
-    type: "object",
-    properties: { case_dir: { type: "string", description: "Absolute path of the case directory." } },
-    required: ["case_dir"],
-    additionalProperties: false,
-  },
+  inputSchema: CASE_DIR_SCHEMA,
+};
+const WIKI_TOOL = {
+  name: "open_spotlight_wiki_changes",
+  title: "Open Spotlight wiki changes",
+  description:
+    "Open the Wiki changes page in the member's browser after you stage a wiki write, so the member applies or discards it. You cannot apply a staged wiki write yourself. Returns that the page opened, or that nothing is staged. Pass only the absolute case directory.",
+  inputSchema: CASE_DIR_SCHEMA,
 };
 
-export function createMcpHandler({ open }) {
-  if (typeof open !== "function") throw new Error("the MCP server needs an opener");
+export function createMcpHandler({ open, openWiki }) {
+  if (typeof open !== "function" || typeof openWiki !== "function") throw new Error("the MCP server needs its openers");
+  const tools = {
+    [REVIEW_TOOL.name]: [REVIEW_TOOL, open, describeOpenResult],
+    [WIKI_TOOL.name]: [WIKI_TOOL, openWiki, describeWikiChangesResult],
+  };
   return async function handle(message) {
     if (!message || typeof message !== "object" || message.jsonrpc !== "2.0") {
       return { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid request" } };
@@ -42,10 +56,11 @@ export function createMcpHandler({ open }) {
       });
     }
     if (method === "ping") return reply({});
-    if (method === "tools/list") return reply({ tools: [TOOL] });
+    if (method === "tools/list") return reply({ tools: Object.values(tools).map(([tool]) => tool) });
     if (method === "tools/call") {
-      if (params?.name !== TOOL.name)
+      if (!Object.hasOwn(tools, params?.name ?? ""))
         return { jsonrpc: "2.0", id, error: { code: -32602, message: "Unknown tool" } };
+      const [, opener, describe] = tools[params.name];
       const args = params.arguments ?? {};
       const keys = Object.keys(args);
       if (keys.length !== 1 || typeof args.case_dir !== "string" || !isAbsolute(args.case_dir)) {
@@ -54,10 +69,10 @@ export function createMcpHandler({ open }) {
           content: [{ type: "text", text: "Pass only case_dir, the absolute case directory." }],
         });
       }
-      const result = await open({ caseDir: args.case_dir });
+      const result = await opener({ caseDir: args.case_dir });
       return reply({
         isError: result.status === "start-failed",
-        content: [{ type: "text", text: describeOpenResult(result) }],
+        content: [{ type: "text", text: describe(result) }],
         structuredContent: { review: result.status, reopened: Boolean(result.reopened) },
       });
     }
@@ -67,7 +82,9 @@ export function createMcpHandler({ open }) {
 
 async function serve() {
   const casesRoot = process.env.SPOTLIGHT_CASES_ROOT ?? "";
-  const handle = createMcpHandler({ open: createReviewOpener({ casesRoot }) });
+  // One session manager: both tools open the same review server.
+  const sessions = createReviewSessionManager({ casesRoot });
+  const handle = createMcpHandler({ open: createReviewOpener({ sessions }), openWiki: createWikiChangesOpener({ sessions }) });
   let buffer = "";
   process.stdin.setEncoding("utf8");
   for await (const chunk of process.stdin) {

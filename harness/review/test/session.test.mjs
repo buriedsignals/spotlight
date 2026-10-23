@@ -7,9 +7,9 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { CHECKOUT_ROOT, which } from "../case-bridge.mjs";
 import { createMcpHandler } from "../mcp.mjs";
-import { createReviewOpener } from "../open.mjs";
+import { createReviewOpener, createWikiChangesOpener } from "../open.mjs";
 import { createReviewSessionManager } from "../session.mjs";
-import { api, buildCase, openSession, recordingOpener, tempRoot } from "./helpers.mjs";
+import { api, buildCase, change, fakeBsig, openSession, recordingOpener, tempRoot } from "./helpers.mjs";
 
 function openedUrls(record) {
   return existsSync(record) ? readFileSync(record, "utf8").trim().split("\n").filter(Boolean) : [];
@@ -17,7 +17,9 @@ function openedUrls(record) {
 
 function manager(t, root, options = {}) {
   const opener = recordingOpener(root);
-  const sessions = createReviewSessionManager({ which: () => opener.script, ...options });
+  // No Engine unless a test supplies a fake bsig.
+  const env = { ...process.env, SPOTLIGHT_BSIG: join(root, "no-bsig") };
+  const sessions = createReviewSessionManager({ which: () => opener.script, env, ...options });
   t.after(async () => {
     sessions.close();
     await sessions.wait();
@@ -114,10 +116,10 @@ test("open_spotlight_review opens the page and its result carries no URL", async
   const root = tempRoot(t);
   const caseDir = buildCase(root, "case", "methodology");
   const { sessions, record } = manager(t, root);
-  const handle = createMcpHandler({ open: createReviewOpener({ sessions }) });
+  const handle = createMcpHandler({ open: createReviewOpener({ sessions }), openWiki: createWikiChangesOpener({ sessions }) });
 
   const listed = await handle({ jsonrpc: "2.0", id: 1, method: "tools/list" });
-  assert.deepEqual(listed.result.tools.map((tool) => tool.name), ["open_spotlight_review"]);
+  assert.deepEqual(listed.result.tools.map((tool) => tool.name), ["open_spotlight_review", "open_spotlight_wiki_changes"]);
 
   for (const id of [2, 3]) {
     const result = await handle({
@@ -139,7 +141,55 @@ test("open_spotlight_review opens the page and its result carries no URL", async
   assert.equal(openedUrls(record).length, 2);
 });
 
-test("the stdio MCP server answers initialize and lists one tool", async () => {
+function approveMethodology(caseDir) {
+  execFileSync(which("python3"), [
+    join(CHECKOUT_ROOT, "scripts", "spotlight-orchestration.py"), "approve", "methodology",
+    "--approved-by", "journalist:fixture", "--approved-at", "2026-08-23T12:00:00Z", caseDir,
+  ]);
+}
+
+test("open_spotlight_wiki_changes opens the Wiki changes view with no gate pending, and returns no URL or nonce", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  approveMethodology(caseDir);
+  const fake = fakeBsig(root, { changes: [change("c1", "a")] });
+  const { sessions, record } = manager(t, root, { env: fake.env });
+  const handle = createMcpHandler({ open: createReviewOpener({ sessions }), openWiki: createWikiChangesOpener({ sessions, env: fake.env }) });
+  const call = (id) => handle({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "open_spotlight_wiki_changes", arguments: { case_dir: caseDir } } });
+
+  const result = await call(1);
+  assert.equal(result.result.structuredContent.review, "opened");
+  const url = openedUrls(record).at(-1);
+  assert.equal(new URL(url).searchParams.get("view"), "wiki");
+  const { view, origin, cookie } = await viewThrough(url);
+  assert.equal(view.gate, "");
+  const applied = await api(origin, cookie)("/api/wiki-changes/apply", { id: "c1", digest: "a".repeat(64) });
+  assert.equal(applied.status, 200);
+
+  const text = JSON.stringify(result) + JSON.stringify(await call(2));
+  const nonces = fake.issued();
+  assert.equal(nonces.length, 1);
+  for (const secret of [url, new URL(url).port, new URL(url).hash.slice(1), "127.0.0.1", "http", ...nonces])
+    assert.ok(!text.includes(secret), `tool result leaks ${secret}`);
+  // The second call found nothing staged after the apply.
+  assert.match(text, /No wiki changes are staged/);
+  assert.equal(openedUrls(record).length, 1);
+});
+
+test("open_spotlight_wiki_changes opens no browser when nothing is staged, even with a gate pending", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  const fake = fakeBsig(root, { changes: [] });
+  const { sessions, record } = manager(t, root, { env: fake.env });
+  for (const env of [fake.env, { ...process.env, SPOTLIGHT_BSIG: join(root, "no-bsig") }]) {
+    const open = createWikiChangesOpener({ sessions, env });
+    assert.deepEqual(await open({ caseDir }), { status: "nothing-staged" });
+  }
+  assert.equal(sessions.status().active, false);
+  assert.deepEqual(openedUrls(record), []);
+});
+
+test("the stdio MCP server answers initialize and lists its tools", async () => {
   const child = spawn(process.execPath, [fileURLToPath(new URL("../mcp.mjs", import.meta.url))], {
     stdio: ["pipe", "pipe", "ignore"],
   });
@@ -161,5 +211,5 @@ test("the stdio MCP server answers initialize and lists one tool", async () => {
   await new Promise((settle) => child.on("exit", settle));
   assert.equal(lines.length, 2);
   assert.equal(lines[0].result.serverInfo.name, "spotlight-review");
-  assert.deepEqual(lines[1].result.tools.map((tool) => tool.name), ["open_spotlight_review"]);
+  assert.deepEqual(lines[1].result.tools.map((tool) => tool.name), ["open_spotlight_review", "open_spotlight_wiki_changes"]);
 });

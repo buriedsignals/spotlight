@@ -86,7 +86,8 @@ apply them. The server takes a one-time nonce per change from
 `staged-apply`/`staged-discard` on stdin with the digest the page showed. A
 change edited since the page loaded is refused and the list reloads; a stale
 change offers only Discard. Without Engine, or with a bsig that lacks these
-verbs, the view does not appear. It shows only while a gate page is open.
+verbs, the view does not appear. With no gate pending, the page shows only
+this view; it is opened on demand by `open_spotlight_wiki_changes` (below).
 
 The limit depends on the runtime. In Pi mode agents cannot run `bsig`, so
 confirming on this page is a real boundary. In subscription mode an agent with
@@ -134,9 +135,12 @@ args:    ["<checkout>/harness/review/mcp.mjs"]
 env:     SPOTLIGHT_CASES_ROOT=<case workspace root>   (optional; refuses cases outside it)
 ```
 
-It exposes one tool, `open_spotlight_review({case_dir})`, which returns "page
-opened" text and no URL. The member says in chat when they are done, and the
-agent resolves the case, which reads the decision from disk.
+It exposes two tools that return "page opened" text and no URL.
+`open_spotlight_review({case_dir})` opens the pending gate. The member says in
+chat when they are done, and the agent resolves the case, which reads the
+decision from disk. `open_spotlight_wiki_changes({case_dir})`, called after the
+agent stages a wiki write, opens the same page on its Wiki changes view,
+starting the server if none runs; with nothing staged it opens nothing.
 
 ## Tests
 

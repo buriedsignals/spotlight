@@ -928,6 +928,11 @@ function render(next) {
   view = next;
   title.textContent = `Spotlight review: ${view.gate_label || boot.gates?.[view.gate] || view.gate}`;
   keepFocus(() => {
+    // No gate pending: the page shows only the staged wiki changes.
+    if (!view.gate) {
+      app.replaceChildren(wikiChanges.length ? wikiSection() : el("p", { text: "No wiki changes are waiting. You can close this page." }));
+      return;
+    }
     const parts = [];
     if (readOnly()) parts.push(receiptSection());
     if (view.blocking.length) {
@@ -962,7 +967,8 @@ async function load() {
   }
   await loadWiki();
   render(data);
-  say(readOnly() ? "This gate is decided." : "Review loaded. Your edits are saved as you make them.");
+  if (!view.gate) say("Wiki changes loaded.");
+  else say(readOnly() ? "This gate is decided." : "Review loaded. Your edits are saved as you make them.");
 }
 
 function typeReviewer(value) {
@@ -1077,10 +1083,13 @@ async function requestFollowUp() {
 
 async function start() {
   const capability = location.hash.slice(1);
+  const showWiki = new URLSearchParams(location.search).get("view") === "wiki";
   history.replaceState(null, "", location.pathname);
   const { status } = await post("/session", { capability });
   if (status !== 200) return;
   await load();
+  // Opened after an agent staged a wiki write: go straight to the changes.
+  if (showWiki) document.getElementById("wiki-heading")?.scrollIntoView();
 }
 
 start().catch(() => warn("The review page could not reach its local server. Ask the agent to reopen the review."));

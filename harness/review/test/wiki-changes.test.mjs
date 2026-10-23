@@ -1,73 +1,12 @@
 // The Wiki changes view: Engine's staged wiki writes, confirmed or discarded
 // through a fake `bsig` that keeps Engine's nonce and digest rules.
 import assert from "node:assert/strict";
-import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createWikiBridge, safeChildEnvironment } from "../case-bridge.mjs";
-import { authed, buildCase, tempRoot } from "./helpers.mjs";
+import { authed, buildCase, change, fakeBsig, tempRoot } from "./helpers.mjs";
 
 const HOSTILE_DIFF = '--- a/notes/a.md\n+++ b/notes/a.md\n@@ -1 +1 @@\n-old\n+</pre><script>alert(1)</script><img src=x onerror=alert(2)>';
-
-// Engine's verbs as the fake implements them: a nonce binds one id and the
-// digest at issue time, travels on stdin, and a refusal leaves it unspent.
-const FAKE_BSIG = `#!/usr/bin/env node
-const { appendFileSync, readFileSync, writeFileSync } = require("node:fs");
-const { randomBytes } = require("node:crypto");
-const statePath = process.env.FAKE_BSIG_STATE;
-const state = JSON.parse(readFileSync(statePath, "utf8"));
-const argv = process.argv.slice(2);
-let stdin = "";
-try { stdin = readFileSync(0, "utf8"); } catch {}
-appendFileSync(statePath + ".log", JSON.stringify({ argv, stdin }) + "\\n");
-const out = (event, code = 0) => { process.stdout.write(JSON.stringify(event) + "\\n"); writeFileSync(statePath, JSON.stringify(state)); process.exit(code); };
-const [, , verb, id] = argv;
-if (state.old || !verb.startsWith("staged")) out({ event: "error", message: "usage: bsig wiki <search|read>" }, 4);
-if (argv.some((arg) => arg.startsWith("--nonce"))) out({ event: "error", message: "usage" }, 4);
-if (verb === "staged") out({ event: "result", data: { tool: verb, result: state.changes } });
-const change = state.changes.find((item) => item.id === id);
-if (!change) out({ event: "error", message: "wiki: not found" }, 1);
-if (verb === "staged-nonce") {
-  const nonce = randomBytes(32).toString("hex");
-  state.nonces[nonce] = { id, digest: change.digest, used: false };
-  out({ event: "result", data: { tool: verb, result: { nonce } } });
-}
-const refuse = (refusal) => out({ event: "error", message: "wiki: refused " + refusal, data: { refusal } }, 1);
-const nonce = JSON.parse(stdin).nonce;
-const issued = state.nonces[nonce];
-const digest = argv.find((arg) => arg.startsWith("--digest=")).slice(9);
-if (state.refuseOnce) { const reason = state.refuseOnce; delete state.refuseOnce; refuse(reason); }
-if (!issued) refuse("nonce_unknown");
-if (issued.used) refuse("nonce_used");
-if (issued.id !== id) refuse("nonce_other_change");
-if (digest !== change.digest || issued.digest !== change.digest) refuse("digest_changed");
-issued.used = true;
-state.changes = state.changes.filter((item) => item.id !== id);
-out({ event: "result", data: { tool: verb, result: verb === "staged-apply" ? { op: change.op, applied: true, paths: change.paths } : { id, discarded: true } } });
-`;
-
-function change(id, digestChar, diff = "--- a/notes/a.md\n+++ b/notes/a.md\n@@ -1 +1 @@\n-old\n+new") {
-  return { id, op: "edit", summary: `Edit ${id}`, created: "2026-10-23T10:00:00Z", paths: ["notes/a.md"], diff, digest: digestChar.repeat(64), stale: false };
-}
-
-function fakeBsig(root, state) {
-  const script = join(root, "bsig");
-  const statePath = join(root, "bsig-state.json");
-  writeFileSync(script, FAKE_BSIG);
-  chmodSync(script, 0o755);
-  writeFileSync(statePath, JSON.stringify({ nonces: {}, ...state }));
-  return {
-    statePath,
-    wiki: createWikiBridge({ env: { ...safeChildEnvironment(), SPOTLIGHT_BSIG: script, FAKE_BSIG_STATE: statePath } }),
-    edit: (fn) => {
-      const next = JSON.parse(readFileSync(statePath, "utf8"));
-      fn(next);
-      writeFileSync(statePath, JSON.stringify(next));
-    },
-    calls: () => readFileSync(`${statePath}.log`, "utf8").trim().split("\n").map((line) => JSON.parse(line)),
-    issued: () => Object.keys(JSON.parse(readFileSync(statePath, "utf8")).nonces),
-  };
-}
 
 test("apply sends Engine's nonce on stdin only and never returns it to the page", async (t) => {
   const root = tempRoot(t);
