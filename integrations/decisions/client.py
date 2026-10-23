@@ -9,7 +9,9 @@ The OpenRouter provider always sends ``provider: {"zdr": true,
 "allow_fallbacks": false}``. OpenRouter enforces provider filters on the
 Decisions endpoint, so a request that cannot be served under zero data
 retention fails instead of silently routing elsewhere. Sensitive mode blocks
-all egress before a request is built.
+all egress before a request is built. With Engine installed, RedactingProvider
+masks the member's protected sources (``bsig wiki redact``) in every text
+before it is sent.
 
 Another endpoint (a newsroom's own inference, or a later deployment) may serve
 the same questions if it speaks the same Decisions API. It is named only in
@@ -23,11 +25,17 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import time
+from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _engine import bsig_path  # noqa: E402
 
 DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
 DEFAULT_MODEL = "typesafe/jev-1.13"
@@ -183,6 +191,96 @@ def answer_problem(question: Mapping[str, Any], answer: Any) -> str | None:
             return "probabilities are not numbers between 0 and 1"
         return None
     return f"unsupported question type {kind!r}"
+
+
+def _strings(value: Any, out: list[str], skip_keys: frozenset[str] = frozenset()) -> None:
+    if isinstance(value, str):
+        out.append(value)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if key not in skip_keys:
+                _strings(item, out, skip_keys)
+    elif isinstance(value, list):
+        for item in value:
+            _strings(item, out, skip_keys)
+
+
+def _replace(value: Any, texts: list[str], skip_keys: frozenset[str] = frozenset()) -> Any:
+    if isinstance(value, str):
+        return texts.pop(0)
+    if isinstance(value, dict):
+        return {key: item if key in skip_keys else _replace(item, texts, skip_keys) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_replace(item, texts, skip_keys) for item in value]
+    return value
+
+
+# A question's type is the API's vocabulary, and criteria keys are the options
+# answers name: neither is case text.
+QUESTION_SKIP = frozenset({"type"})
+
+
+class RedactingProvider:
+    """Masks protected sources in everything a provider would send.
+
+    Every string in the state, and every question text and criterion
+    description, goes through ``redact`` in one call before ``decide``; dict
+    keys stay, so the answers still match the criteria."""
+
+    def __init__(self, provider: Any, redact: Callable[[list[str]], list[str]]) -> None:
+        self._provider = provider
+        self._redact = redact
+        self.model = provider.model
+
+    def decide(self, state: Any, questions: Mapping[str, Any]) -> dict[str, Any]:
+        texts: list[str] = []
+        _strings(state, texts)
+        for question in questions.values():
+            _strings(question, texts, QUESTION_SKIP)
+        masked = self._redact(texts) if texts else []
+        if len(masked) != len(texts) or not all(isinstance(t, str) for t in masked):
+            raise DecisionUnavailable("redaction returned a different number of texts")
+        state = _replace(state, masked)
+        questions = {key: _replace(question, masked, QUESTION_SKIP) for key, question in questions.items()}
+        return self._provider.decide(state, questions)
+
+
+def wiki_redactor(workspace: Path | None) -> Callable[[list[str]], list[str]] | None:
+    """`bsig wiki redact` over the member's wiki. Without a wiki in the
+    install config there is no protected-source register and nothing to mask:
+    None. With one, a redaction that cannot run or fails stops the request
+    rather than sending unmasked text."""
+    if workspace is None:
+        return None  # no wiki in the install config: no protected-source register
+    bsig = bsig_path()
+    if not bsig:
+        def unavailable(_texts: list[str]) -> list[str]:
+            raise DecisionUnavailable("Engine's bsig was not found, so protected sources cannot be masked")
+        return unavailable
+    command = [bsig, "--json", "wiki", "redact", "--workspace", str(workspace)]
+
+    def redact(texts: list[str]) -> list[str]:
+        try:
+            done = subprocess.run(command, input=json.dumps({"texts": texts}), capture_output=True,
+                                  text=True, encoding="utf-8", timeout=60, check=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise DecisionUnavailable(f"protected-source redaction failed: {type(exc).__name__}") from None
+        if done.returncode != 0:
+            raise DecisionUnavailable(f"protected-source redaction exited {done.returncode}")
+        for line in reversed(done.stdout.splitlines()):
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(event, dict) or event.get("event") != "result":
+                continue
+            result = (event.get("data") or {}).get("result") if isinstance(event.get("data"), dict) else None
+            masked = result.get("texts") if isinstance(result, dict) else None
+            if isinstance(masked, list):
+                return masked
+        raise DecisionUnavailable("protected-source redaction returned no texts")
+
+    return redact
 
 
 class FakeProvider:
