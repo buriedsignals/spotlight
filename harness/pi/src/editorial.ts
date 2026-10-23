@@ -226,6 +226,8 @@ export class EditorialClient {
 		} else {
 			try {
 				message = JSON.parse(answer.body) as JsonRpcResponse;
+				// Another request's answer is no answer to this one.
+				if (message?.id !== id) message = undefined;
 			} catch {
 				message = undefined;
 			}
@@ -332,7 +334,7 @@ async function recordInCase(runPackage: RunPackage, args: string[], input?: unkn
 
 // ── Step 1: case start ───────────────────────────────────────────────────────
 
-export type CaseReference = { case_ref: string; title: string; custody_mode: string; editorial_origin: string };
+export type CaseReference = { case_ref: string; title: string; custody_mode: string; editorial_origin: string; client_case_id: string };
 
 // register_case once per case: the reference is stored in the case, and a
 // resumed case reuses it without calling the Editorial MCP again. Owner and
@@ -347,6 +349,11 @@ export async function ensureCaseRegistered(
 	const origin = new URL(editorial.url).origin;
 	const stored = readCaseJson(config.caseDir, CASE_REFERENCE_FILE);
 	if (stored && typeof stored.case_ref === 'string' && stored.case_ref && stored.editorial_origin === origin) {
+		// A case folder copied or restored under another name carries the
+		// other case's reference: refuse rather than review under it.
+		if (stored.client_case_id !== config.caseId) {
+			throw new Error(`this case folder holds the newsroom reference of another case (${String(stored.client_case_id)}), so it was not started; start it as a new case instead`);
+		}
 		return { reference: stored as unknown as CaseReference, registered: false };
 	}
 	const answer = await client.call('register_case', {
@@ -358,7 +365,7 @@ export async function ensureCaseRegistered(
 	if (typeof caseRef !== 'string' || !SAFE_ID.test(caseRef)) {
 		throw new EditorialError('register_case returned no usable case_ref');
 	}
-	const reference: CaseReference = { case_ref: caseRef, title: editorial.caseTitle, custody_mode: editorial.custodyMode, editorial_origin: origin };
+	const reference: CaseReference = { case_ref: caseRef, title: editorial.caseTitle, custody_mode: editorial.custodyMode, editorial_origin: origin, client_case_id: config.caseId };
 	await recordInCase(runPackage, ['register', config.caseDir], reference);
 	return { reference, registered: true };
 }
@@ -378,6 +385,7 @@ const CHECK_INPUTS: Record<CheckKind, Array<[string, string, boolean]>> = {
 	report: [['report', 'data/report-draft.json', true], ['findings', 'data/findings.json', true]],
 };
 const JOB_STATES = new Set(['queued', 'running', 'done', 'failed', 'unavailable']);
+const REVIEW_STATES = new Set(['pending', 'approved', 'rejected', 'expired']);
 
 export type CheckRecord = {
 	kind: CheckKind;
@@ -538,7 +546,12 @@ export async function submitCase(deps: SubmitDeps): Promise<SubmitOutcome> {
 		[`review-status-${fileSafe(reviewId)}.json`]: { tool: 'get_review_status', received_at: now(), response: withoutReviewAddress(status, address) },
 	};
 	if (status.receipt && typeof status.receipt === 'object') receipts[`review-${fileSafe(reviewId)}.json`] = withoutReviewAddress(status.receipt, address);
-	const reviewState = String(status.state ?? 'pending');
+	// The status must be this review's, in a state the contract names, before
+	// the submission is marked complete; otherwise the intent stays pending.
+	if (status.review_id !== reviewId || !REVIEW_STATES.has(String(status.state))) {
+		throw new EditorialError('get_review_status answered for another review or without a valid state');
+	}
+	const reviewState = String(status.state);
 	await recordInCase(
 		runPackage,
 		['complete', caseDir, '--package-sha256', key, '--submission-id', submissionId, '--review-id', reviewId],

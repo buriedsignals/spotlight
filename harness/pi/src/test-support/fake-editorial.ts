@@ -55,7 +55,7 @@ async function readBody(request: IncomingMessage): Promise<string> {
 }
 
 export async function startFakeEditorial(
-	options: { token?: string; handlers?: Record<string, ToolHandler>; sse?: boolean; redirectTo?: string } = {},
+	options: { token?: string; handlers?: Record<string, ToolHandler>; sse?: boolean; redirectTo?: string; answerId?: string } = {},
 ): Promise<FakeEditorial> {
 	const token = options.token ?? 'newsroom-editorial-token-123';
 	const calls: FakeEditorial['calls'] = [];
@@ -124,7 +124,8 @@ export async function startFakeEditorial(
 		} else {
 			result = {};
 		}
-		const body = JSON.stringify({ jsonrpc: '2.0', id: message.id, result });
+		// `answerId`: answer tool calls under another request's id.
+		const body = JSON.stringify({ jsonrpc: '2.0', id: message.method === 'tools/call' && options.answerId ? options.answerId : message.id, result });
 		const headers: Record<string, string> = message.method === 'initialize' ? { 'mcp-session-id': `fake-session-${(sessions += 1)}` } : {};
 		if (options.sse) {
 			response.writeHead(200, { ...headers, 'content-type': 'text/event-stream' });

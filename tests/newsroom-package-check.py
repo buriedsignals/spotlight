@@ -56,6 +56,13 @@ class NewsroomPackage(GATES.CaseFixture):
         extra.update({"id": "SX2", "anchor_ref": {"path": "research/swarm/ownership-web/leads.jsonl", "line_start": 1, "line_end": 1}})
         extra["finding_links"][0]["relation"] = "context"
         passages["expressions"].append(extra)
+        # Case state cited as if it were evidence, and a case variant of the
+        # lane folder (the same folder on a case-insensitive disk).
+        for sx, path in (("SX3", "data/orchestration.json"), ("SX4", "research/Swarm/ownership-web/leads.jsonl")):
+            cited = json.loads(json.dumps(extra))
+            cited.update({"id": sx, "anchor_ref": {"path": path, "line_start": 1, "line_end": 1},
+                          "anchor_sha256": hashlib.sha256((case / path).read_bytes()).hexdigest() if (case / path).is_file() else None})
+            passages["expressions"].append(cited)
         (case / "data" / "source-expressions.json").write_text(json.dumps(passages), encoding="utf-8")
         return case
 
@@ -79,8 +86,10 @@ class NewsroomPackage(GATES.CaseFixture):
         text = json.dumps(built)
         for stays in ("primary-record.txt", "corroboration.txt", "L1", '"leads": []'):
             self.assertNotIn(stays, text)
-        self.assertEqual(manifest["omissions"], [{"path": "research/swarm/ownership-web/leads.jsonl", "expression_id": "SX2",
-                                                  "reason": "research-phase material stays on this computer"}])
+        self.assertEqual(manifest["omissions"][0], {"path": "research/swarm/ownership-web/leads.jsonl", "expression_id": "SX2",
+                                                    "reason": "research-phase material stays on this computer"})
+        self.assertEqual([o["path"] for o in manifest["omissions"][1:]],
+                         ["data/orchestration.json", "research/Swarm/ownership-web/leads.jsonl"])
         self.assertEqual(package["journalist_input_units"], [])
         # The package is what the published contract says the server receives.
         self.assertEqual(schema_check.load(ROOT / "schemas" / "editorial-mcp" / "package.schema.json").errors(package), [])

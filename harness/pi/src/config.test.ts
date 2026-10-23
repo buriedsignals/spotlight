@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { checkRouteSecrets, childEnv, readConfig, routeFor } from './config.ts';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { checkNewsroomInstall, checkRouteSecrets, childEnv, readConfig, routeFor } from './config.ts';
 import type { Composition } from './roles.ts';
 
 const COMPOSITION: Composition = {
@@ -186,4 +189,15 @@ test('newsroom: a route token is never the Editorial MCP token or a tool secret,
 	assert.equal(childEnv(ok, COMPOSITION, 'orchestrator', env('ROUTE_TOKEN')).SPOTLIGHT_PROVIDER_API_KEY, 'route-secret-0123456789');
 	assert.throws(() => readConfig(env('ROUTE_TOKEN', 'abc')), /shorter than 16 characters/);
 	assert.throws(() => readConfig({ ...env('ROUTE_TOKEN'), ROUTE_TOKEN: 'tok' }), /ROUTE_TOKEN is shorter than 16 characters/);
+});
+
+test('a newsroom install starts only as the newsroom edition: omitted or solo SPOTLIGHT_EDITION is refused', () => {
+	const install = join(mkdtempSync(join(tmpdir(), 'spotlight-install-')), 'config.json');
+	writeFileSync(install, JSON.stringify({ knowledge_destination: { mode: 'newsroom' } }));
+	const env = { ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', SPOTLIGHT_CONFIG: install };
+	for (const edition of [{}, { SPOTLIGHT_EDITION: 'solo' }]) {
+		assert.throws(() => checkNewsroomInstall(readConfig({ ...env, ...edition })), /is in newsroom mode, so SPOTLIGHT_EDITION must be "newsroom"/);
+	}
+	writeFileSync(install, JSON.stringify({ knowledge_destination: { mode: 'solo' } }));
+	assert.doesNotThrow(() => checkNewsroomInstall(readConfig(env)));
 });

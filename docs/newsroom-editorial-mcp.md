@@ -77,8 +77,10 @@ token and are unaffected.
 In: `{title, custody_mode, client_case_id}`. Out: `{case_ref}`. Owner and
 organization come from the sign-in. The same owner and `client_case_id` must
 return the same `case_ref`, so a retry after a lost answer registers nothing
-twice. The harness stores the reference in `data/editorial-case.json` and
-never calls `register_case` again for that case.
+twice. The harness stores the reference with its `client_case_id` in
+`data/editorial-case.json` and never calls `register_case` again for that
+case; a case folder whose stored `client_case_id` is another case's does not
+start.
 
 ### `search_knowledge`, `get_record`, `traverse`, `coverage`
 

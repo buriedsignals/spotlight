@@ -62,6 +62,7 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(SCRIPT_DIR.parent))
+from evidence_anchors import case_evidence_path  # noqa: E402
 from source_expression_contract import lifecycle_state  # noqa: E402
 from spotlight_orchestration import review  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
@@ -81,7 +82,7 @@ SAFE_ID = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
 SHA256 = re.compile(r"^[a-f0-9]{64}$")
 RECEIPT_NAME = re.compile(r"^(submission|review-status|review)-[A-Za-z0-9._-]{1,200}\.json$")
 # Research-phase material never travels, even when something cites it.
-STAYS_BEHIND = ("research/swarm/", "data/leads.json", "data/leads.jsonl", "data/clues.json")
+STAYS_BEHIND = ("research/swarm/",)
 MAX_FILE_BYTES = 25 * 1024 * 1024
 MAX_PACKAGE_BYTES = 200 * 1024 * 1024
 
@@ -135,17 +136,17 @@ def _case_file(case: Path, rel: object) -> tuple[str, Path | None, str | None]:
     text = rel.replace("\\", "/").removeprefix("{CASE_DIR}/")
     if text.startswith("/") or ".." in text.split("/"):
         return text, None, "the path leads outside the case"
-    if any(text == p or text.startswith(p) for p in STAYS_BEHIND):
-        return text, None, "research-phase material stays on this computer"
-    path = case / text
-    if path.is_symlink():
+    if (case / text).is_symlink():
         return text, None, "the path is a symlink"
-    if not path.is_file():
-        return text, None, "the file is missing"
-    try:
-        path.resolve().relative_to(case.resolve())
-    except ValueError:
-        return text, None, "the path leads outside the case"
+    # Only evidence locations travel (research/ and evidence/, on the real
+    # path); data/, receipts/ and review state never do. Compared without
+    # case, so a case variant cannot slip past on a case-insensitive disk.
+    path = case_evidence_path(case, text)
+    if path is None:
+        return text, None, "the file is missing or is not in an evidence location"
+    real = path.relative_to(case.resolve()).as_posix().lower()
+    if any(real.startswith(p) or text.lower().startswith(p) for p in STAYS_BEHIND):
+        return text, None, "research-phase material stays on this computer"
     if path.stat().st_size > MAX_FILE_BYTES:
         return text, None, f"the file is larger than {MAX_FILE_BYTES} bytes"
     return text, path, None
@@ -300,9 +301,9 @@ def register(case: Path, payload: dict[str, Any]) -> dict[str, Any]:
     case_ref = payload.get("case_ref")
     if not isinstance(case_ref, str) or not SAFE_ID.match(case_ref):
         raise Refused("register_case returned no usable case_ref")
-    reference = {key: payload.get(key) for key in ("case_ref", "title", "custody_mode", "editorial_origin")}
+    reference = {key: payload.get(key) for key in ("case_ref", "title", "custody_mode", "editorial_origin", "client_case_id")}
     if not all(isinstance(value, str) and value for value in reference.values()):
-        raise Refused("the case reference needs case_ref, title, custody_mode and editorial_origin")
+        raise Refused("the case reference needs case_ref, title, custody_mode, editorial_origin and client_case_id")
     with transaction(case) as descriptor:
         stored = _read_data(case, descriptor, CASE_REFERENCE)
         if stored and stored.get("case_ref") and stored.get("editorial_origin") == reference["editorial_origin"]:

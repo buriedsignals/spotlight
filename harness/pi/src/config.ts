@@ -553,16 +553,19 @@ export function checkRouteSecrets(config: HarnessConfig, composition: Compositio
 // The newsroom edition and the install's knowledge destination must agree:
 // the case scripts (the ingest page, the Submit package) read the mode from
 // the install config, and a solo-mode install would ask for a local batch
-// that the newsroom edition never builds.
+// that the newsroom edition never builds; a newsroom install launched as
+// solo would split custody between local and newsroom paths.
 export function checkNewsroomInstall(config: HarnessConfig): void {
-	if (config.edition !== 'newsroom') return;
 	let mode: unknown;
 	try {
 		mode = (JSON.parse(readFileSync(config.spotlightConfig, 'utf8')) as { knowledge_destination?: { mode?: unknown } }).knowledge_destination?.mode;
 	} catch {
 		mode = undefined;
 	}
-	if (mode !== 'newsroom') {
+	if (mode === 'newsroom' && config.edition !== 'newsroom') {
+		throw new ConfigError(`the install config (${config.spotlightConfig}) is in newsroom mode, so SPOTLIGHT_EDITION must be "newsroom".`);
+	}
+	if (mode !== 'newsroom' && config.edition === 'newsroom') {
 		throw new ConfigError(`the newsroom edition needs knowledge_destination.mode "newsroom" in the install config (${config.spotlightConfig}).`);
 	}
 }

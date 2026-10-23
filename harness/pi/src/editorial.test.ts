@@ -8,11 +8,13 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { EditorialClient, EditorialCredentialError, EditorialRefused, stopsTheNewsroomCase, submitCase } from './editorial.ts';
+import { EditorialClient, EditorialCredentialError, EditorialRefused, ensureCaseRegistered, pendingSubmission, stopsTheNewsroomCase, submitCase } from './editorial.ts';
 import type { RunPackage } from './editorial.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import { caseAtIngest, newsroomEnv, requestNewsroomIngest, workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT } from './roles.ts';
+import { readConfig } from './config.ts';
+import { mkdir, writeFile } from 'node:fs/promises';
 
 const origin = (url: string) => new URL(url).origin;
 
@@ -129,14 +131,11 @@ test('when the server ends the session under concurrent calls, the client starts
 	assert.equal(newsroom.requests.filter((request) => request.method === 'initialize').length, 2, 'the first session and one new one');
 });
 
-test('Submit opens the newsroom review page in the member\'s browser and keeps its address out of the outcome, the receipts and the case', async (t) => {
+// A case at ingest with ingestion requested and registered, and a client for
+// a fake Editorial MCP answering with `handlers`.
+async function submittable(t: { after(fn: () => unknown): void }, handlers: Parameters<typeof startFakeEditorial>[0]['handlers']) {
 	const space = await workspace(t);
-	const newsroom = await startFakeEditorial({
-		handlers: {
-			submit_case_review: () => ({ status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }),
-			get_review_status: (args) => ({ review_id: args.review_id, state: 'pending', review_url: 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }),
-		},
-	});
+	const newsroom = await startFakeEditorial({ handlers });
 	t.after(() => newsroom.close());
 	const env = newsroomEnv(space, [], newsroom);
 	const caseDir = await caseAtIngest(space);
@@ -149,7 +148,15 @@ test('Submit opens the newsroom review page in the member\'s browser and keeps i
 			child.stdin?.end(input === undefined ? '' : JSON.stringify(input));
 		});
 	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)] });
-	await runPackage(['register', caseDir], { case_ref: 'nr-case-1', title: 'case-a', custody_mode: 'hosted', editorial_origin: origin(newsroom.url) });
+	await runPackage(['register', caseDir], { case_ref: 'nr-case-1', title: 'case-a', custody_mode: 'hosted', editorial_origin: origin(newsroom.url), client_case_id: 'case-a' });
+	return { caseDir, runPackage, client };
+}
+
+test('Submit opens the newsroom review page in the member\'s browser and keeps its address out of the outcome, the receipts and the case', async (t) => {
+	const { caseDir, runPackage, client } = await submittable(t, {
+		submit_case_review: () => ({ status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }),
+		get_review_status: (args) => ({ review_id: args.review_id, state: 'pending', review_url: 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }),
+	});
 	const opened: string[] = [];
 
 	const outcome = await submitCase({ client, caseDir, runPackage, openReview: async (url) => (opened.push(url), true) });
@@ -179,4 +186,31 @@ test('a call the caller cancels is a cancellation, not a newsroom outage', async
 	const error = await call;
 	assert.equal((error as Error).name, 'AbortError');
 	assert.ok(!stopsTheNewsroomCase(error));
+});
+
+test('a review status for another review, or without a valid state, leaves the submission pending', async (t) => {
+	for (const status of [{ review_id: 'rev-other', state: 'approved' }, { review_id: 'rev-1' }]) {
+		const { caseDir, runPackage, client } = await submittable(t, { get_review_status: () => status });
+		await assert.rejects(submitCase({ client, caseDir, runPackage, openReview: async () => true }), /another review or without a valid state/);
+		assert.equal(await pendingSubmission(runPackage, caseDir), true);
+	}
+});
+
+test('an answer carrying another request\'s id is not taken as this request\'s answer', async (t) => {
+	const newsroom = await startFakeEditorial({ answerId: 'another-request' });
+	t.after(() => newsroom.close());
+	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)] });
+	await assert.rejects(client.call('get_record', { record_id: 'claim:1' }), /no readable answer to tools\/call/);
+});
+
+test('a case folder copied from another case does not reuse that case\'s newsroom reference', async (t) => {
+	const space = await workspace(t);
+	const newsroom = await startFakeEditorial();
+	t.after(() => newsroom.close());
+	const config = readConfig(newsroomEnv(space, [{ name: 'model', base_url: 'http://127.0.0.1:9/v1', model: 'm', inference: 'own' }], newsroom, { SPOTLIGHT_CASE_ID: 'case-b' }));
+	await mkdir(join(config.caseDir, 'data'), { recursive: true });
+	await writeFile(join(config.caseDir, 'data', 'editorial-case.json'), JSON.stringify({ case_ref: 'nr-case-a', title: 'case-a', custody_mode: 'hosted', editorial_origin: origin(newsroom.url), client_case_id: 'case-a' }));
+	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)] });
+	await assert.rejects(ensureCaseRegistered(client, config, async () => ({ code: 0, stdout: '{}', stderr: '' })), /reference of another case \(case-a\)/);
+	assert.deepEqual(newsroom.callsOf('register_case'), []);
 });
