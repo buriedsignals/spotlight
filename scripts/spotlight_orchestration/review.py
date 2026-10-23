@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import secrets
 import subprocess
 import sys
@@ -149,11 +150,24 @@ def activated_case(case: Path) -> bool:
     return isinstance(findings, dict) and findings.get("schema_version") == "1.1" and case_path(case, "data/case-contract.json").is_file()
 
 
+def spotlight_config_path() -> Path:
+    """The install config: SPOTLIGHT_CONFIG when set (an absolute path, the
+    rule the Pi harness applies), else the checkout root's file."""
+    value = os.environ.get("SPOTLIGHT_CONFIG", "").strip()
+    if not value:
+        return SCRIPT_DIR.parent / ".spotlight-config.json"
+    path = Path(value)
+    if not path.is_absolute():
+        raise OrchestrationError("SPOTLIGHT_CONFIG must be an absolute path.")
+    return path
+
+
 def ingest_mode() -> str:
     """knowledge_destination.mode from the install config Engine writes:
     "solo" (the default) or "newsroom"."""
+    path = spotlight_config_path()  # a misconfigured path refuses; it is not a missing config
     try:
-        config = json.loads((SCRIPT_DIR.parent / ".spotlight-config.json").read_text(encoding="utf-8"))
+        config = json.loads(path.read_text(encoding="utf-8"))
         mode = config.get("knowledge_destination", {}).get("mode", "solo")
     except (OSError, ValueError, AttributeError):
         return "solo"
@@ -343,9 +357,10 @@ def _methodology_content(case: Path) -> tuple[dict[str, Any], list[str]]:
             "data/methodology.json is missing or unreadable"
         ]
     # The validator needs the install's config; Preflight writes it at the
-    # checkout root. Without it the check cannot run, which is not a failure
-    # of the plan, so the page says so instead of blocking.
-    config = SCRIPT_DIR.parent / ".spotlight-config.json"
+    # checkout root, or SPOTLIGHT_CONFIG names it. Without it the check cannot
+    # run, which is not a failure of the plan, so the page says so instead of
+    # blocking.
+    config = spotlight_config_path()
     if config.is_file():
         blocking += _run_check(
             [

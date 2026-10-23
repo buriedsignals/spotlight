@@ -107,6 +107,11 @@ export function createReviewSessionManager({
     const fail = (error) => {
       for (const waiter of current.waiters.splice(0)) waiter.reject(error);
     };
+    // A child that stopped reading its commands (EPIPE) is ended, not a crash.
+    process_.stdin.on("error", () => {
+      process_.kill();
+      fail(new Error("the review child stopped reading its commands"));
+    });
     process_.stdout.on("data", (chunk) => {
       try {
         bytes += chunk.length;
