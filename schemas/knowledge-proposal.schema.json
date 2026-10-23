@@ -5,46 +5,117 @@
   "description": "What the analyst proposes at Ingest: only the parts that need judgment. Normalized claims per finding, events, story arcs and their memberships. scripts/build-knowledge-batch.py adds evidence, passages, claim-passage links, source positions and assessments from the case, assigns ids and versions, and writes data/knowledge-batch.json. Keys are the analyst's own handles; record ids never appear here.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["interface_version", "model", "claims"],
+  "required": [
+    "interface_version",
+    "model",
+    "claims"
+  ],
   "properties": {
-    "interface_version": { "const": "1" },
-    "model": { "$ref": "#/definitions/text", "description": "Exact model identifier of the analyst run." },
-    "claims": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/claim" } },
-    "events": { "type": "array", "items": { "$ref": "#/definitions/event" } },
-    "story_arcs": { "type": "array", "items": { "$ref": "#/definitions/story_arc" } }
+    "interface_version": {
+      "const": "1"
+    },
+    "model": {
+      "$ref": "#/definitions/text",
+      "description": "Exact model identifier of the analyst run."
+    },
+    "claims": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/claim"
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/event"
+      }
+    },
+    "story_arcs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/story_arc"
+      }
+    }
   },
   "definitions": {
-    "text": { "type": "string", "minLength": 1 },
-    "key": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
-    "language": { "type": "string", "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$" },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "language": {
+      "type": "string",
+      "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+    },
     "entity_text": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["text"],
-      "properties": { "text": { "$ref": "#/definitions/text" } }
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "$ref": "#/definitions/text"
+        }
+      }
     },
     "claim": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["key", "finding_id", "origin_expression_id", "proposition", "language", "statement", "attributed"],
+      "required": [
+        "key",
+        "finding_id",
+        "origin_expression_id",
+        "proposition",
+        "language",
+        "statement",
+        "attributed"
+      ],
       "properties": {
-        "key": { "$ref": "#/definitions/key" },
-        "finding_id": { "$ref": "#/definitions/text" },
+        "key": {
+          "$ref": "#/definitions/key"
+        },
+        "finding_id": {
+          "$ref": "#/definitions/text"
+        },
         "fact_check_id": {
-          "type": ["integer", "string"],
+          "type": [
+            "integer",
+            "string"
+          ],
           "description": "The fact-check row this claim's assessment comes from; required when the finding has more than one."
         },
-        "origin_expression_id": { "$ref": "#/definitions/text", "description": "The original-language passage the proposition was extracted from." },
-        "proposition": { "$ref": "#/definitions/text" },
-        "language": { "$ref": "#/definitions/language" },
+        "origin_expression_id": {
+          "$ref": "#/definitions/text",
+          "description": "The original-language passage the proposition was extracted from."
+        },
+        "proposition": {
+          "$ref": "#/definitions/text"
+        },
+        "language": {
+          "$ref": "#/definitions/language"
+        },
         "statement": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["subject", "predicate"],
+          "required": [
+            "subject",
+            "predicate"
+          ],
           "properties": {
-            "subject": { "$ref": "#/definitions/entity_text" },
-            "predicate": { "$ref": "#/definitions/text" },
-            "object": { "$ref": "#/definitions/entity_text" }
+            "subject": {
+              "$ref": "#/definitions/entity_text"
+            },
+            "predicate": {
+              "$ref": "#/definitions/text"
+            },
+            "object": {
+              "$ref": "#/definitions/entity_text"
+            }
           }
         },
         "attributed": {
@@ -60,52 +131,171 @@
     "event": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["key", "language", "actors", "action", "claim_keys"],
+      "required": [
+        "key",
+        "language",
+        "actors",
+        "action",
+        "claim_keys"
+      ],
       "properties": {
-        "key": { "$ref": "#/definitions/key" },
-        "language": { "$ref": "#/definitions/language" },
+        "key": {
+          "$ref": "#/definitions/key"
+        },
+        "language": {
+          "$ref": "#/definitions/language"
+        },
         "actors": {
           "type": "array",
           "minItems": 1,
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["name", "role"],
-            "properties": { "name": { "$ref": "#/definitions/text" }, "role": { "enum": ["agent", "participant"] } }
+            "required": [
+              "name",
+              "role"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/definitions/text"
+              },
+              "role": {
+                "enum": [
+                  "agent",
+                  "participant"
+                ]
+              }
+            }
           }
         },
-        "action": { "$ref": "#/definitions/text" },
-        "object": { "$ref": "#/definitions/entity_text" },
+        "action": {
+          "$ref": "#/definitions/text"
+        },
+        "object": {
+          "$ref": "#/definitions/entity_text"
+        },
         "time": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind"],
+          "required": [
+            "kind"
+          ],
           "properties": {
-            "kind": { "enum": ["point", "interval"] },
-            "value": { "$ref": "#/definitions/time_value" },
-            "start": { "$ref": "#/definitions/time_value" },
-            "end": { "$ref": "#/definitions/time_value" }
+            "kind": {
+              "enum": [
+                "point",
+                "interval"
+              ]
+            },
+            "value": {
+              "$ref": "#/definitions/time_value"
+            },
+            "start": {
+              "$ref": "#/definitions/time_value"
+            },
+            "end": {
+              "$ref": "#/definitions/time_value"
+            }
+          },
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "point"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "value"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "start"
+                  ]
+                },
+                {
+                  "required": [
+                    "end"
+                  ]
+                }
+              ]
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "value"
+              ]
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "start"
+                ]
+              },
+              {
+                "required": [
+                  "end"
+                ]
+              }
+            ]
           }
         },
         "place": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["name"],
-          "properties": { "name": { "$ref": "#/definitions/text" } }
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/definitions/text"
+            }
+          }
         },
-        "claim_keys": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/definitions/key" } }
+        "claim_keys": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/key"
+          }
+        }
       }
     },
     "story_arc": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["key", "language", "title", "description", "event_keys"],
+      "required": [
+        "key",
+        "language",
+        "title",
+        "description",
+        "event_keys"
+      ],
       "properties": {
-        "key": { "$ref": "#/definitions/key" },
-        "language": { "$ref": "#/definitions/language" },
-        "title": { "$ref": "#/definitions/text" },
-        "description": { "$ref": "#/definitions/text" },
-        "event_keys": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/definitions/key" } }
+        "key": {
+          "$ref": "#/definitions/key"
+        },
+        "language": {
+          "$ref": "#/definitions/language"
+        },
+        "title": {
+          "$ref": "#/definitions/text"
+        },
+        "description": {
+          "$ref": "#/definitions/text"
+        },
+        "event_keys": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/key"
+          }
+        }
       }
     }
   }

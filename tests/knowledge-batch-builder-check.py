@@ -87,10 +87,54 @@ def position_doc() -> dict:
                            "created_by": "investigator", "cycle": 1}]}
 
 
+def check_schema_checker() -> None:
+    """scripts/schema_check.py accepts the fixture and refuses every invalid
+    variant, never laxer than jsonschema."""
+    try:
+        from jsonschema import Draft7Validator, FormatChecker
+    except ImportError:
+        if os.environ.get("SPOTLIGHT_REQUIRE_JSONSCHEMA") == "1":
+            raise AssertionError("jsonschema is required for this contract test")
+        return
+    sys.path.insert(0, str(SCRIPTS))
+    import schema_check
+    schema = json.loads((ROOT / "schemas" / "knowledge-batch-1.1.schema.json").read_text(encoding="utf-8"))
+    ours = schema_check.Checker(schema)
+    theirs = Draft7Validator(schema, format_checker=FormatChecker())
+    sample = json.loads((ROOT / "tests" / "fixtures" / "knowledge-batch-1.1.sample.json").read_text(encoding="utf-8"))
+    variants = [sample]
+    for path, value in (
+        (["claims", 0, "statement", "subject"], "text"), (["claims", 0, "proposition"], ""),
+        (["events", 0, "time"], {"kind": "point", "start": "2025"}), (["evidence", 0, "capture", "captured_at"], "2026-13-01T00:00:00Z"),
+        (["evidence", 0, "capture", "source_url"], "not a url"), (["assessments", 0, "verdict"], "partially_verified"),
+        (["assessments", 0, "verification_methods"], []), (["claims", 0, "id"], "Claim 1"), (["claims", 0, "version"], 0),
+        (["source_positions", 0, "source_expression_refs"], []), (["claims", 0, "extra"], 1),
+    ):
+        doc = json.loads(json.dumps(sample))
+        node = doc
+        for step in path[:-1]:
+            node = node[step]
+        node[path[-1]] = value
+        variants.append(doc)
+    require(not ours.errors(sample) and not list(theirs.iter_errors(sample)), "the fixture is not valid")
+    # Never laxer than jsonschema; stricter on formats jsonschema checks only
+    # with optional packages (date-time, uri), so every mutation is refused.
+    for doc in variants[1:]:
+        require(bool(ours.errors(doc)), f"schema_check accepted an invalid batch: {doc}")
+        if list(theirs.iter_errors(doc)):
+            require(bool(ours.errors(doc)), "schema_check is laxer than jsonschema")
+
+
 def main() -> int:
+    check_schema_checker()
     with tempfile.TemporaryDirectory() as tmp:
         case = Path(tmp) / "case"
         CASES.write_activated_case(case)
+        # Born and not yet bound, so the test can change the fact-check freely.
+        contract = read(case, "case-contract.json")
+        contract["activation_events"] = [{"event_id": "born-test", "kind": "born", "activated_contract_version": "1.1",
+                                          "activated_at": "2026-10-22T12:00:00Z", "tool_version": "test"}]
+        write(case, "case-contract.json", contract)
         write(case, "source-positions.json", position_doc())
         write(case, "knowledge-proposal.json", PROPOSAL)
 
@@ -133,14 +177,17 @@ def main() -> int:
         fact_check["claims"][0]["flags"] = [{"code": "partial_support", "reason": "Only part of the payment is documented."}]
         write(case, "fact-check.json", fact_check)
         refused = build(case)
-        require(refused.returncode == 2 and "flag:c1:0" in refused.stderr, "a flag without a disposition was built")
+        require(refused.returncode == 2 and "await a disposition" in refused.stderr, "a flag without a disposition was built")
         drafted = build(case, "--draft")
         require(drafted.returncode == 0, drafted.stderr)
+        require(not (case / "data" / "knowledge-batch.json").exists(), "a draft left an earlier final batch to ingest")
         draft = read(case, "knowledge-batch-draft.json")
-        require([p["key"] for p in draft["pending_flags"]] == ["flag:c1:0"] and not draft["batch"]["assessments"][0].get("flags"),
+        flag_key = draft["pending_flags"][0]["key"] if draft["pending_flags"] else ""
+        require(len(draft["pending_flags"]) == 1 and flag_key.startswith("flag:c1:partial_support:")
+                and not draft["batch"]["assessments"][0].get("flags"),
                 f"the draft does not hold the pending flag apart: {draft['pending_flags']}")
         review = {"schema_version": "spotlight-review/v1", "gate": "ingest", "reviewer": "J", "items": {
-            "flag:c1:0": {"kind": "disposition", "final": "accept_with_reason", "note": "The documented part is what the claim says."},
+            flag_key: {"kind": "disposition", "final": "accept_with_reason", "note": "The documented part is what the claim says."},
             "record:a1": {"kind": "selection", "final": False}}}
         write(case, "ingest-review.json", review)
         made = build(case)
@@ -152,6 +199,18 @@ def main() -> int:
         require(not batch.get("story_arcs") and not batch.get("event_story_arc_memberships"), "a deselected arc was built")
         require(RULES.validate(batch, []) == [] and not schema_errors(batch), "the reviewed batch is invalid")
 
+        # A disposition decides only the flag it was given for.
+        changed_flag = read(case, "fact-check.json")
+        changed_flag["claims"][0]["flags"][0]["reason"] = "A different concern."
+        write(case, "fact-check.json", changed_flag)
+        refused = build(case)
+        require(refused.returncode == 2 and "await a disposition" in refused.stderr, "an old disposition decided a changed flag")
+        write(case, "fact-check.json", fact_check)
+        require(build(case).returncode == 0, "rebuild with the original flag failed")
+        ids_doc = read(case, "knowledge-ids.json")
+        require(not any("pending" in e for n, e in ids_doc["records"].items() if n.startswith(("story_arc:", "event_story_arc_membership:"))),
+                "a deselected record stayed pending admission")
+
         # Admitted records are not resubmitted; a changed one gets its next version.
         ids = read(case, "knowledge-ids.json")
         for entry in ids["records"].values():
@@ -160,6 +219,13 @@ def main() -> int:
         write(case, "knowledge-ids.json", ids)
         refused = build(case)
         require(refused.returncode == 2 and "nothing new" in refused.stderr, "an unchanged admitted batch was resubmitted")
+        # The review page still gets its pending flags when nothing else is new.
+        extra = read(case, "fact-check.json")
+        extra["claims"][0]["flags"].append({"code": "date_mismatch", "reason": "The month is not in the filing."})
+        write(case, "fact-check.json", extra)
+        drafted = build(case, "--draft")
+        require(drafted.returncode == 0 and len(read(case, "knowledge-batch-draft.json")["pending_flags"]) == 1, drafted.stderr)
+        write(case, "fact-check.json", fact_check)
         proposal = json.loads(json.dumps(PROPOSAL))
         proposal["claims"][0]["proposition"] = "Acme paid Doe in June 2026."
         write(case, "knowledge-proposal.json", proposal)
@@ -173,6 +239,33 @@ def main() -> int:
                 array = next(a for a, t in RULES.ARRAYS.items() if t == entry["type"])
                 admitted.setdefault(array, []).append(entry["admitted"]["record"])
         require(RULES.validate(batch, [admitted]) == [], RULES.validate(batch, [admitted]))
+
+        # The proposal is model output: anything outside interface 1 is refused.
+        for bad, reason in (
+            (lambda p: p["claims"][0].__setitem__("attributed", "yes"), "does not match interface"),
+            (lambda p: p["claims"][0]["statement"].__setitem__("subject", "Acme"), "does not match interface"),
+            (lambda p: p["claims"][0].__setitem__("proposition", ""), "does not match interface"),
+            (lambda p: p["events"][0].__setitem__("time", {"kind": "point", "start": "2026-06"}), "does not match interface"),
+            (lambda p: p["events"][0].__setitem__("claim_keys", ["c9"]), "unknown claims"),
+            (lambda p: p["claims"][0].__setitem__("id", "claim:forged"), "does not match interface"),
+        ):
+            mutated = json.loads(json.dumps(PROPOSAL))
+            bad(mutated)
+            write(case, "knowledge-proposal.json", mutated)
+            refused = build(case)
+            require(refused.returncode == 2 and reason in refused.stderr, f"a malformed proposal was built: {refused.stderr}")
+        write(case, "knowledge-proposal.json", proposal)
+
+        # Artifacts changed after the gate approval bound them: no batch.
+        approved = Path(tmp) / "approved"
+        CASES.write_activated_case(approved)  # migrated: its activation hashes are enforced
+        write(approved, "knowledge-proposal.json", PROPOSAL)
+        write(approved, "source-positions.json", position_doc())
+        changed = read(approved, "findings.json")
+        changed["findings"][0]["claim"] = "Acme paid Doe twice."
+        write(approved, "findings.json", changed)
+        refused = build(approved)
+        require(refused.returncode == 2 and "does not validate" in refused.stderr, "a batch was built from unbound artifacts")
 
         # Only an activated case builds a Batch 1.1.
         legacy = Path(tmp) / "legacy"

@@ -22,15 +22,18 @@ next version. Admission itself (the reviewed approval) is not done here.
 
 The reviewer's choices come from data/ingest-review.json: an item
 "record:<key>" with final false leaves that proposal record out, and an item
-"flag:<claim key>:<n>" holds the disposition of the claim's n-th fact-check
-flag (amend, exclude, investigate_further or accept_with_reason, the reason in
-its note).
+"flag:<claim key>:<code>:<reason hash>" (as listed in the draft) holds the
+disposition of that fact-check flag: amend, exclude, investigate_further or
+accept_with_reason, the reason in its note. A changed flag needs a new
+disposition.
 
 --draft writes data/knowledge-batch-draft.json: the batch without the flags
-still awaiting a disposition, and those flags listed apart for the review
-page. Without --draft, any pending flag refuses the build, and the batch goes
-to data/knowledge-batch.json. Either way the output passes the cross-record
-rules (scripts/validate-knowledge-batch.py) or nothing is written.
+still awaiting a disposition (null when nothing is new yet), and those flags
+listed apart for the review page; it removes any earlier final batch. Without
+--draft, any pending flag refuses the build, and the batch goes
+to data/knowledge-batch.json. The proposal must match its schema, the case
+must validate (bindings included), and the output must pass the core schema
+and the cross-record rules, or nothing is written.
 
 Exit codes: 0 = written; 2 = refused (the reason is on stderr).
 """
@@ -44,6 +47,7 @@ import importlib.util
 import json
 import re
 import secrets
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -52,6 +56,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+import schema_check  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
 from spotlight_orchestration.storage import transaction  # noqa: E402
@@ -85,6 +90,7 @@ PREFIX = {
     "event_story_arc_membership": "arc-membership",
 }
 ARRAY = {record_type: array for array, record_type in RULES.ARRAYS.items()}
+SCHEMAS = SCRIPT_DIR.parent / "schemas"
 
 
 class BuildError(Exception):
@@ -113,27 +119,32 @@ def _text(value: Any) -> bool:
 
 
 def check_proposal(proposal: Any) -> None:
-    """The proposal's contract, enforced in code (the schema documents it)."""
-    if not isinstance(proposal, dict) or proposal.get("interface_version") != INTERFACE_VERSION:
-        raise BuildError(f"{PROPOSAL}: interface_version must be {INTERFACE_VERSION!r}")
-    if set(proposal) - {"interface_version", "model", "claims", "events", "story_arcs"} or not _text(proposal.get("model")):
-        raise BuildError(f"{PROPOSAL}: unknown fields or no model")
+    """The proposal is model output: it must match its schema exactly, and
+    every key it refers to must be one it defines."""
+    errors = schema_check.load(SCHEMAS / "knowledge-proposal.schema.json").errors(proposal)
+    if errors:
+        raise BuildError(f"{PROPOSAL} does not match interface {INTERFACE_VERSION}: " + "; ".join(errors[:6]))
     keys: set[str] = set()
-    for array, required in (("claims", ("key", "finding_id", "origin_expression_id", "proposition", "language", "statement", "attributed")),
-                            ("events", ("key", "language", "actors", "action", "claim_keys")),
-                            ("story_arcs", ("key", "language", "title", "description", "event_keys"))):
-        items = proposal.get(array, [])
-        if not isinstance(items, list) or (array == "claims" and not items):
-            raise BuildError(f"{PROPOSAL}: {array} must be a list" + (" with at least one claim" if array == "claims" else ""))
-        for item in items:
-            if not isinstance(item, dict) or any(f not in item for f in required):
-                raise BuildError(f"{PROPOSAL}: every item of {array} needs {', '.join(required)}")
-            key = item["key"]
-            if not isinstance(key, str) or not KEY.match(key) or key in keys:
-                raise BuildError(f"{PROPOSAL}: key {key!r} must be unique, lowercase and simple")
-            keys.add(key)
-            if not isinstance(item["language"], str) or not LANGUAGE.match(item["language"]):
-                raise BuildError(f"{PROPOSAL}: {key} language must be a BCP 47 tag")
+    for array in ("claims", "events", "story_arcs"):
+        for item in proposal.get(array, []):
+            if item["key"] in keys:
+                raise BuildError(f"{PROPOSAL}: key {item['key']!r} is used twice")
+            keys.add(item["key"])
+    claims = {c["key"] for c in proposal["claims"]}
+    events = {e["key"] for e in proposal.get("events", [])}
+    for event in proposal.get("events", []):
+        if set(event["claim_keys"]) - claims:
+            raise BuildError(f"{PROPOSAL}: event {event['key']} names unknown claims {sorted(set(event['claim_keys']) - claims)}")
+    for arc in proposal.get("story_arcs", []):
+        if set(arc["event_keys"]) - events:
+            raise BuildError(f"{PROPOSAL}: story arc {arc['key']} names unknown events {sorted(set(arc['event_keys']) - events)}")
+
+
+def flag_key(claim_key: str, flag: dict[str, Any]) -> str:
+    """A disposition's review key, bound to the flag's code and reason, so a
+    reordered or changed flag is never decided by an old disposition."""
+    digest = hashlib.sha256(flag["reason"].encode("utf-8")).hexdigest()[:12]
+    return f"flag:{claim_key}:{flag['code']}:{digest}"
 
 
 def _review_items(review: Any) -> dict[str, Any]:
@@ -155,11 +166,23 @@ class Ids:
         if not isinstance(doc, dict) or doc.get("schema_version") != "1.0" or not isinstance(doc.get("records"), dict):
             raise BuildError(f"{IDS} has an unsupported shape")
         self.doc = doc
+        self.placed: set[str] = set()
+
+    def clear_unplaced(self) -> None:
+        """A record left out of this build is no longer pending admission."""
+        for name, entry in self.doc["records"].items():
+            if name not in self.placed:
+                entry.pop("pending", None)
 
     def place(self, record_type: str, key: str, record: dict[str, Any]) -> tuple[dict[str, Any], bool]:
         """Give a record its id and version; True when it must be submitted."""
-        entry = self.doc["records"].setdefault(f"{record_type}:{key}", {
+        name = f"{record_type}:{key}"
+        self.placed.add(name)
+        entry = self.doc["records"].setdefault(name, {
             "id": f"{PREFIX[record_type]}:{secrets.token_hex(6)}", "type": record_type})
+        if entry.get("type") != record_type or not isinstance(entry.get("id"), str) \
+                or not entry["id"].startswith(PREFIX[record_type] + ":"):
+            raise BuildError(f"{IDS}: entry {name!r} has the wrong type or id")
         sha = _content_sha(record)
         admitted = entry.get("admitted")
         placed = {"id": entry["id"], **record}
@@ -176,6 +199,13 @@ def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, An
     findings = _load(case, "data/findings.json")
     if not isinstance(findings, dict) or findings.get("schema_version") != "1.1" or not (case / "data" / "case-contract.json").is_file():
         raise BuildError("only an activated case (findings contract 1.1) builds a Batch 1.1")
+    if not _text(findings.get("project")):
+        raise BuildError("findings.json has no project")
+    # The case must validate, bindings included: a batch is never built from
+    # artifacts that changed after the gate approval covered them.
+    checked = subprocess.run([sys.executable, str(SCRIPT_DIR / "validate-case.py"), str(case)], capture_output=True, text=True)
+    if checked.returncode != 0:
+        raise BuildError("the case does not validate: " + (checked.stderr or checked.stdout).strip()[-600:])
     fact_check = _load(case, "data/fact-check.json")
     if not isinstance(fact_check, dict) or fact_check.get("schema_version") != "1.1":
         raise BuildError("the fact-check must use contract 1.1")
@@ -288,7 +318,10 @@ def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, An
         for position in positions_doc.get("positions", []):
             if not isinstance(position, dict) or position.get("finding_id") != finding_id or "withdrawn" in position:
                 continue
-            cited = [i for i in position.get("source_expression_ids", []) if i in expressions and active(expressions[i])]
+            cited = [i for i in position.get("source_expression_ids", []) if i in expressions and active(expressions[i])
+                     and not expressions[i].get("derived_from_expression_id") and expressions[i].get("derivative_type") != "translation"]
+            if not cited:
+                raise BuildError(f"position {position.get('id')!r} cites no active original-language passage")
             record = {"claim_ref": ref, "actor": {"label": position["actor"]["label"]}, "stance": position["stance"],
                       "source_expression_refs": [passage_ref(i) for i in cited],
                       "attribution_verbatim": position["attribution_verbatim"],
@@ -300,7 +333,7 @@ def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, An
         # The assessment comes from the fact-check row for this claim.
         candidates = [r for r in rows if r.get("finding_id") == finding_id]
         if "fact_check_id" in claim:
-            candidates = [r for r in candidates if r.get("id") == claim["fact_check_id"]]
+            candidates = [r for r in candidates if str(r.get("id")) == str(claim["fact_check_id"])]
         if len(candidates) != 1:
             raise BuildError(f"claim {claim['key']}: {len(candidates)} fact-check rows match finding {finding_id}; name one with fact_check_id")
         row = candidates[0]
@@ -328,12 +361,13 @@ def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, An
         for index, flag in enumerate(row.get("flags") or []):
             if not isinstance(flag, dict) or flag.get("code") not in FLAG_CODES or not _text(flag.get("reason")):
                 raise BuildError(f"claim {claim['key']}: fact-check flag {index} is malformed")
-            decision = review.get(f"flag:{claim['key']}:{index}")
+            key = flag_key(claim["key"], flag)
+            decision = review.get(key)
             action = decision.get("final") if isinstance(decision, dict) else None
             note = decision.get("note") if isinstance(decision, dict) else None
             related = groundings or positions or [{"type": "claim", **ref}]
             if action not in ACTIONS or (action == "accept_with_reason" and not _text(note)):
-                pending.append({"key": f"flag:{claim['key']}:{index}", "claim_key": claim["key"], "code": flag["code"], "reason": flag["reason"]})
+                pending.append({"key": key, "claim_key": claim["key"], "code": flag["code"], "reason": flag["reason"]})
                 continue
             disposition = {"action": action}
             if _text(note):
@@ -364,10 +398,16 @@ def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, An
             emit("event_story_arc_membership", f"{event_key}:{arc['key']}",
                  {"event_ref": event_refs[event_key], "story_arc_ref": arc_ref, "provenance": analyst})
 
+    ids.clear_unplaced()
     if pending and not draft:
         raise BuildError(f"{len(pending)} flag(s) await a disposition: " + ", ".join(p["key"] for p in pending[:8]))
     if not any(batch.get(array) for array in RULES.ARRAYS):
+        if draft:
+            return None, pending, ids.doc  # nothing new yet, but the review page still lists the pending flags
         raise BuildError("nothing new to submit: every selected record is already admitted unchanged")
+    errors = schema_check.load(SCHEMAS / "knowledge-batch-1.1.schema.json").errors(batch)
+    if errors:
+        raise BuildError("the built batch does not match the Batch 1.1 core schema: " + "; ".join(errors[:8]))
     errors = RULES.validate(batch, [admitted_store(ids)])
     if errors:
         raise BuildError("the built batch breaks the cross-record rules: " + "; ".join(errors[:8]))
@@ -387,7 +427,10 @@ def admitted_store(ids: Ids) -> dict[str, Any]:
 
 def write(case: Path, models: dict[str, str], draft: bool) -> dict[str, Any]:
     with transaction(case) as descriptor:
-        batch, pending, ids = build(case, models, draft)
+        try:
+            batch, pending, ids = build(case, models, draft)
+        except (KeyError, TypeError, AttributeError) as exc:
+            raise BuildError(f"a case file is malformed ({type(exc).__name__}: {exc}); run validate-case.py") from exc
         dump = lambda doc: (json.dumps(doc, indent=2, ensure_ascii=False) + "\n").encode("utf-8")  # noqa: E731
         out = {IDS: dump(ids)}
         if draft:
@@ -395,7 +438,12 @@ def write(case: Path, models: dict[str, str], draft: bool) -> dict[str, Any]:
         else:
             out[BATCH] = dump(batch)
         atomic_write_files(case, out, data_descriptor=descriptor)
-    return {"ok": True, "draft": draft, "records": sum(len(batch.get(a, [])) for a in RULES.ARRAYS), "pending_flags": len(pending)}
+        if draft:
+            # A draft supersedes any earlier final batch: until the review
+            # finishes, there is no batch to ingest.
+            (case / BATCH).unlink(missing_ok=True)
+    records = sum(len(batch.get(a, [])) for a in RULES.ARRAYS) if batch else 0
+    return {"ok": True, "draft": draft, "records": records, "pending_flags": len(pending)}
 
 
 def main(argv: list[str] | None = None) -> int:
