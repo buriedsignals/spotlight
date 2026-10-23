@@ -283,6 +283,24 @@ activation documents use their own schema versions as declared below.
 | Investigation Log | `schemas/investigation-log.schema.json` | Append-only cycle audit trail |
 | Summary | `schemas/summary.schema.json` | Investigation gate summary for review |
 
+## Solo wiki destination
+
+An activated case in solo mode is written to the member's wiki by
+`scripts/wiki-destination.py`, after the ingest page's request, under
+`spotlight/` only:
+
+- `spotlight/batches/<batch>.json`: each approved batch, whole and append-only;
+- `spotlight/decisions.jsonl`: the local decision journal, one line per batch;
+- `spotlight/claims/`, `spotlight/events/`, `spotlight/story-arcs/`: one note
+  per lineage, regenerated from the kept batches, status derived from the
+  journal;
+- `spotlight/generated-notes.json`: the hash of every generated note, so a
+  hand edit is detected and never overwritten.
+
+Entity mentions link to `wiki/entities/` only on an exact register match from
+`bsig wiki resolve`; Spotlight never writes the register. Without Engine there
+are no links. Newsroom-mode cases write nothing locally.
+
 ## Source-Expression Release Modes
 
 - **Activated (default for new cases):** before the first Investigation cycle
