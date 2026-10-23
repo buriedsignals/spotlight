@@ -1,6 +1,6 @@
 // Case semantic search for the fact-checker (D9-safe). Before each fact-checker
 // task starts, including follow-up cycles, the launcher asks the case-search
-// seam (`integrations/case_search.py`, over Engine's `bsig wiki find-evidence`)
+// seam (`integrations/case_search.py`, over Engine's `bsig wiki case-search`)
 // for each claim's top passages in the case's own research/ captures, leaving
 // out the research swarm's lane folders, and appends them to the task between
 // markers, as data. Retrieval only: it sets no verdict. Without Engine, with

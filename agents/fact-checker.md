@@ -85,7 +85,7 @@ The vault is read-only. Do not modify it during fact-checking.
 
 ### 1.6. Case Passages
 
-Before you write any verdict, read what the case itself already holds for and against each claim. Case search (Engine's `bsig wiki find-evidence`, ranked by words and meaning) returns, for each claim in `findings.json`, the five passages in `{CASE_DIR}/research/` most likely to support or contradict it, leaving out the research swarm's lane folders:
+Before you write any verdict, read what the case itself already holds for and against each claim. Case search (Engine's `bsig wiki case-search`, ranked by words and meaning) returns, for each claim in `findings.json`, the five passages in `{CASE_DIR}/research/` most likely to support or contradict it, leaving out the research swarm's lane folders:
 
 ```bash
 scripts/spotlight-python -m integrations.case_search --case {CASE_DIR} --findings --for fact-checker --format prompt

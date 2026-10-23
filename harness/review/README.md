@@ -53,7 +53,7 @@ Investigation, so the Methodology page is usually empty) or, at Ingest, the
 analyst's proposed claims. The page asks for them once per gate
 (`/api/passages`, `spotlight-orchestration.py review-passages <gate>`), after
 the view, so a slow search never delays the page or a decision. Case search
-(`integrations/case_search.py` over Engine's `bsig wiki find-evidence`) ranks
+(`integrations/case_search.py` over Engine's `bsig wiki case-search`) ranks
 the case's own `research/` captures for each claim and leaves out Spotlight's
 bookkeeping files and link-list chunks. It is retrieval only: it is not part of
 the digest and never sets a mark, a disposition or a link. Passage text is

@@ -604,7 +604,7 @@ test('D9: the fact-checker\'s own file tools cannot list or read the research le
 	assert.doesNotMatch(grepped, /leads|clues|research-|swarm/);
 });
 
-// A stand-in Engine `bsig` answering `wiki find-evidence` with the NDJSON
+// A stand-in Engine `bsig` answering `wiki case-search` with the NDJSON
 // result contract, or refusing as Engine does while its switch is off.
 async function standInBsig(dir: string, off = false): Promise<string> {
 	const path = join(dir, off ? 'bsig-off' : 'bsig');
@@ -613,7 +613,7 @@ async function standInBsig(dir: string, off = false): Promise<string> {
 		: 'claim = sys.argv[sys.argv.index("--claim") + 1]\n' +
 			'passages = [{"path": "research/swarm/web/sources/s1.md", "text": "Swarm capture on " + claim, "score": 9},\n' +
 			'            {"path": "research/registry.md", "text": "Registry contradicts: " + claim, "score": 8}]\n' +
-			'print(json.dumps({"event": "result", "data": {"tool": "find-evidence", "result": {"claim": claim, "passages": passages}}}))\n';
+			'print(json.dumps({"event": "result", "data": {"tool": "case-search", "result": {"claim": claim, "passages": passages}}}))\n';
 	await writeFile(path, `#!/usr/bin/env python3\nimport json, sys\n${body}`, { mode: 0o755 });
 	return path;
 }

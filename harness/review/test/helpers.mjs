@@ -81,7 +81,7 @@ export function recordingOpener(root) {
   return { script, record };
 }
 
-// A stand-in Engine `bsig` for case search: it answers `wiki find-evidence`
+// A stand-in Engine `bsig` for case search: it answers `wiki case-search`
 // with the NDJSON result contract, or refuses as Engine does while its
 // evidence-finder switch is off.
 export function standInBsig(root, { off = false } = {}) {
@@ -90,7 +90,7 @@ export function standInBsig(root, { off = false } = {}) {
     ? `print(json.dumps({"event": "error", "message": "wiki: the evidence finder is off"}))\nsys.exit(1)\n`
     : `claim = sys.argv[sys.argv.index("--claim") + 1]\n` +
       `passages = [{"path": "research/registry.md", "chunk": 0, "text": "<img src=x onerror=alert(1)> Registry entry on " + claim, "score": 12.5}]\n` +
-      `print(json.dumps({"event": "result", "data": {"tool": "find-evidence", "result": {"claim": claim, "passages": passages}}}))\n`;
+      `print(json.dumps({"event": "result", "data": {"tool": "case-search", "result": {"claim": claim, "passages": passages}}}))\n`;
   writeFileSync(script, `#!/usr/bin/env python3\nimport json, sys\n${body}`);
   chmodSync(script, 0o755);
   return script;

@@ -1,7 +1,7 @@
 """Case semantic search: for one claim, the case's own research passages most
 worth reading.
 
-Engine ranks the passages (`bsig --json wiki find-evidence --case DIR --claim
+Engine ranks the passages (`bsig --json wiki case-search --case DIR --claim
 TEXT`, BM25 fused with EmbeddingGemma 2 when its helper runs). The finder sits
 behind an Engine switch that is off by default; while it is off, or without
 Engine, every call here answers ``available: false`` with a short reason and
@@ -57,7 +57,7 @@ def _link_list(text: str) -> bool:
 
 
 def _bsig_result(bsig: str, case: Path, claim: str) -> dict[str, Any]:
-    command = [bsig, "--json", "wiki", "find-evidence", "--case", str(case), "--claim", claim, "--limit", str(REQUESTED)]
+    command = [bsig, "--json", "wiki", "case-search", "--case", str(case), "--claim", claim, "--limit", str(REQUESTED)]
     try:
         done = subprocess.run(command, capture_output=True, text=True, timeout=BSIG_TIMEOUT_S, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
