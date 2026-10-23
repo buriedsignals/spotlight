@@ -25,6 +25,9 @@ export type AgentSpec = {
 	// the launcher starts this worker. Absent means any.
 	phases?: string[];
 	editions?: string[];
+	// Set when code runs the role itself (the researcher: the research lane
+	// runner, lanes.ts). Such a role is never a spawn_agent worker.
+	runner?: string;
 };
 export type Composition = Record<string, AgentSpec>;
 
@@ -99,7 +102,7 @@ function stripFrontmatter(markdown: string): string {
 // A worker can be spawned only when its persona exists under agents/.
 export function spawnableWorkers(composition: Composition): string[] {
 	return Object.entries(composition)
-		.filter(([name, spec]) => name !== ORCHESTRATOR && workerPersonaPath(spec) !== undefined)
+		.filter(([name, spec]) => name !== ORCHESTRATOR && !spec.runner && workerPersonaPath(spec) !== undefined)
 		.map(([name]) => name);
 }
 
@@ -153,6 +156,7 @@ The skills use abstract verbs and some shell steps. This harness has no shell: e
 - Context hygiene: when the harness has a local RLM, \`fetch\` distills every page itself. You do not run the RLM. The result says \`distilled: true\` and gives you compact leads; save_as holds those leads and \`raw_path\` (save_as + \`.raw\`) the page as fetched, for citations and provenance. Read the leads. Read a section of a \`.raw\` file only when the leads look thin or you need exact wording for a citation: find it with \`grep_files\`, then \`read_file\` with offset/limit. Never load a raw page whole. Leads are unverified pointers, never facts, and never evidence: a \`source_ref\` must point at the \`.raw\` file, not the lead file (the validators refuse lead files). If the result says the RLM failed, the page is only at \`raw_path\`; treat it the same way.
 - Shell steps in the skills map to typed tools: a \`curl\` GET to a registry, archive or API -> \`http_get\` (\`--data-urlencode\` values go in its \`query\` object, unencoded); a dev-browser script -> \`browse\` (one page: rendered text, HTML or a screenshot); \`scripts/osint-tools.py find|categories\` -> \`osint_tools\`; \`navigator tools find|show\` -> \`navigator_tools\`; \`exiftool {file}\` -> \`exiftool\`; \`scripts/decision-signals.py\` -> \`decision_signals\`; \`scripts/build-provenance-manifest.py\` -> \`provenance_manifest\`; \`integrations/rlm/run_rlm.py\` -> \`run_rlm\`; \`integrations/preflight.py\` -> \`integration_status\`; \`scripts/build-review-html.py\` -> \`build_review_html\`; \`spotlight_safe.py sha256\` or any SHA-256 of a case file -> \`hash_files\`; \`grep -n\`, \`sed -n\` or Python to find a source_ref line range or JSON Pointer -> \`grep_files\` and \`read_file\` (offset/limit or json_pointer), which count and select exactly as the validators do. \`scripts/spotlight_safe.py validate-*\` checks are not needed: each tool checks its own arguments, and the web tools reach only public http(s) addresses.
 - \`scripts/validate-case.py\`, \`scripts/validate-fact-check.py\` and \`scripts/validate-methodology-navigator.py\` are run by the harness itself when a worker finishes; their outcome is appended to the \`spawn_agent\` result. Act on that outcome; do not try to run them.
+- Research (orchestrator only): at the Research phase \`spotlight_resolve\` runs the approved research topics itself and returns the round as \`research_round\` (what ran, the spend, the topics left out, and \`stopped\` with the fix when the provider failed). You never start, widen or choose topics. Pass \`retry_research: true\` only when the member asks to retry a stopped round.
 - Preflight step 0 (the shell check): skipped. A \`spotlight_resolve\` that answers confirms the checkout.
 - Ingest, the analyst proposal (orchestrator only): \`spawn_agent\` with agent \`analyst\`, at Ingest in the solo edition. It reads the approved case files and writes only \`data/knowledge-proposal.json\`. When it finishes, the harness runs \`scripts/build-knowledge-batch.py --review\` itself with the producers' model ids and appends the outcome to the result; do not try to run it. A refusal names what to fix.
 - Anything else (a POST request, git clone, Apify, vault-write, the other ingest scripts, a tool not in your list): do not improvise around it. Say which step needs it and stop that step.
@@ -163,7 +167,7 @@ export function systemPrompt(composition: Composition, role: string): string {
 	if (role === ORCHESTRATOR) {
 		return `You are the Spotlight orchestrator. You never investigate directly: research goes to the \`investigator\` worker and verification to the \`fact-checker\` worker through \`spawn_agent\`.
 
-Start and resume by calling \`spotlight_resolve\`. Follow the \`spotlight\` skill, invoke exactly the returned phase owner, apply only the transitions it names through \`spotlight_transition\`, then resolve again. The durable sequence is Brief -> Methodology -> Investigation -> Investigation gate -> Report -> Ingest; never infer phase completion from files.
+Start and resume by calling \`spotlight_resolve\`. Follow the \`spotlight\` skill, invoke exactly the returned phase owner, apply only the transitions it names through \`spotlight_transition\`, then resolve again. The durable sequence is Brief -> Methodology -> Research (only when the approved methodology has a research plan) -> Investigation -> Investigation gate -> Report -> Ingest; never infer phase completion from files.
 
 Human gates are real. When the phase owner presents a gate, present its synthesis and decisions, then END YOUR TURN. Do not proceed, delegate, or transition until the gate is recorded.
 

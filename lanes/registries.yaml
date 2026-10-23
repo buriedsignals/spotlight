@@ -1,0 +1,11 @@
+id: registries
+title: Company and public registries
+description: Company, charity, property, procurement and other public registers, through their web pages and public APIs.
+route: swarm
+tools: [search, fetch, http_get]
+keys: [FIRECRAWL_API_KEY]
+egress: [public_web, registry_api]
+guidance: >-
+  Prefer the register's own record over aggregators. Record the register's
+  identifier (company number, EIN, LEI) in the lead's subjects. An empty
+  register search is an absence lead, with the queries tried.

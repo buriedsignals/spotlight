@@ -1,0 +1,10 @@
+id: social
+title: Social media
+description: Public social media posts and profiles reachable without logging in.
+route: swarm
+tools: [search, fetch]
+keys: [FIRECRAWL_API_KEY]
+egress: [public_web]
+guidance: >-
+  Only public pages. A post is a reported claim by its author: record the
+  author as the actor. Never log in and never contact anyone.

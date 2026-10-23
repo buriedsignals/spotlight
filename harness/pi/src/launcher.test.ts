@@ -564,3 +564,47 @@ test('D9: a fact-checker task that points at the research leads, clues, lane fol
 	assert.match(results[0][0], /the fact-checker works without the research phase's material; the task names research\/swarm\/, the research leads, the research clues, a review page/);
 	assert.match(results[results.length - 1].join('\n'), /Checked\./);
 });
+
+test('at Research the orchestrator\'s resolve runs the approved topics in code: each brief goes to the swarm route, the round is merged, and the case moves to the Research gate', async (t) => {
+	const orchestratorModel = await startFakeOpenAI(resolveThenStop);
+	const swarm = await startFakeOpenAI(() => ({ text: 'No leads.', usage: { total_tokens: 10, cost: 0.0001 } }));
+	t.after(() => Promise.all([orchestratorModel.close(), swarm.close()]));
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
+	await writeFile(join(caseDir, 'data', 'findings.json'), '{"findings": [{"claim": "CASE-SENTINEL"}]}\n');
+	const methodology = JSON.parse(await readFile(join(CHECKOUT_ROOT, 'tests/fixtures/research/methodology-research.sample.json'), 'utf8'));
+	await writeFile(join(caseDir, 'data', 'methodology.json'), JSON.stringify(methodology));
+	await new Promise<void>((done, fail) =>
+		execFile(
+			process.env.SPOTLIGHT_PYTHON ?? 'python3',
+			[join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'), 'approve', 'methodology', '--approved-by', 'journalist:fixture', '--approved-at', '2026-10-23T12:00:00Z', '--authorized-cases-root', space.casesRoot, caseDir],
+			(error, _stdout, stderr) => (error ? fail(new Error(stderr || error.message)) : done()),
+		),
+	);
+	const chat = launch(t, {
+		...baseEnv(space, orchestratorModel.baseURL),
+		SPOTLIGHT_RESEARCH_SWARMS: 'on',
+		OPENROUTER_API_KEY: 'sk-or-v1-launcher-secret',
+		SPOTLIGHT_SWARM_BASE_URL: swarm.baseURL,
+	});
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(swarm.requests.length, 1);
+	const brief = String(swarm.requests[0].messages[1].content);
+	assert.match(brief, /"topic_id": "ownership-registries"/);
+	assert.match(brief, /Which shareholders does the 2025 annual return name\?/);
+	assert.ok(!JSON.stringify(swarm.requests[0]).includes('CASE-SENTINEL'));
+	assert.ok(orchestratorModel.requests.every((request) => !toolNames(request).some((name) => /swarm|research/.test(name))), 'the orchestrator has no swarm tool');
+	const resolution = lastResolution(chat) as { phase: string; research_round: { ran: string[]; completed: string[]; merge: { ok: boolean } } };
+	// Every topic ended, so the harness merged the lanes and the case waits at the Research gate.
+	assert.equal(resolution.research_round.merge.ok, true);
+	assert.equal(resolution.phase, 'research_approval');
+	assert.deepEqual(resolution.research_round.ran, ['ownership-registries']);
+	assert.deepEqual(resolution.research_round.completed, ['ownership-registries']);
+	const lane = JSON.parse(await readFile(join(caseDir, 'research/swarm/ownership-registries/lane.json'), 'utf8'));
+	assert.equal(lane.status, 'completed');
+	assert.ok(!chat.stderr().includes('sk-or-v1-launcher-secret'));
+});

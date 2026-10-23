@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { LANES_DIRECTORY, discardIncompleteLanes } from './resume.ts';
 
-test('only lanes with a completed lane.json survive a resume', async (t) => {
+test('only lanes that ended survive a resume; an interrupted one is discarded', async (t) => {
 	const caseDir = await mkdtemp(join(tmpdir(), 'spotlight-pi-lanes-'));
 	t.after(() => rm(caseDir, { recursive: true, force: true }));
 	const lanes = join(caseDir, LANES_DIRECTORY);
@@ -15,6 +15,8 @@ test('only lanes with a completed lane.json survive a resume', async (t) => {
 		if (laneJson !== undefined) await writeFile(join(lanes, name, 'lane.json'), laneJson);
 	};
 	await lane('ownership-registries', '{"status":"completed"}');
+	await lane('ownership-social', '{"status":"partial"}');
+	await lane('ownership-technical', '{"status":"not_started"}');
 	await lane('ownership-web', '{"status":"running"}');
 	await lane('people-news-courts');
 	await lane('people-archives', '{"status":"comp');
@@ -22,6 +24,6 @@ test('only lanes with a completed lane.json survive a resume', async (t) => {
 	const discarded = discardIncompleteLanes(caseDir);
 
 	assert.deepEqual(discarded.sort(), ['ownership-web', 'people-archives', 'people-news-courts']);
-	assert.deepEqual(await readdir(lanes), ['ownership-registries']);
+	assert.deepEqual((await readdir(lanes)).sort(), ['ownership-registries', 'ownership-social', 'ownership-technical']);
 	assert.deepEqual(discardIncompleteLanes(join(caseDir, 'no-such-case')), []);
 });

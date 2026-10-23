@@ -5,7 +5,7 @@
 // chat down in order, SIGTERM is the fallback, and no pi child outlives it.
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ConfigError, RouteRefused, childEnv, piSettings, readConfig, routeFor, secretValues } from './config.ts';
 import type { HarnessConfig } from './config.ts';
@@ -13,11 +13,13 @@ import { CaseHeldError, acquireCaseLock } from './lock.ts';
 import type { CaseLock } from './lock.ts';
 import { redactingLines, redactor, stderrLogger } from './log.ts';
 import { piArguments, piCliPath, writePiSettings } from './pi-process.ts';
+import { runResearchRound } from './lanes.ts';
+import type { ResearchPlan, RoundSummary } from './lanes.ts';
 import { discardIncompleteLanes } from './resume.ts';
 import { ORCHESTRATOR, agentSpec, allowedTools, isolationRefusal, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
 import type { Composition } from './roles.ts';
 import { WorkerQueue, runWorker } from './subagents.ts';
-import type { CancelRequest, SpawnRequest, SpawnResult } from './subagents.ts';
+import type { CancelRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
 import { bindActiveCase, pythonAdapter } from './tools/spotlight.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
 import { validateAfterWorker } from './validators.ts';
@@ -82,9 +84,21 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 	const running = new Map<string, AbortController>();
 	const workers = spawnableWorkers(harness.composition);
 	orchestrator.on('message', (message: unknown) => {
-		const request = message as SpawnRequest | CancelRequest;
+		const request = message as SpawnRequest | CancelRequest | ResearchRequest;
 		if (request?.kind === 'spotlight-cancel') {
 			running.get(request.id)?.abort();
+			return;
+		}
+		if (request?.kind === 'spotlight-research') {
+			const controller = new AbortController();
+			running.set(request.id, controller);
+			const reply = (result: Omit<SpawnResult, 'kind' | 'id'>) => {
+				if (orchestrator.connected) orchestrator.send({ kind: 'spotlight-result', id: request.id, ...result });
+			};
+			researchRound(harness, request.retry, controller.signal)
+				.then((round) => reply({ ok: true, round }))
+				.catch((error: Error) => reply({ ok: false, error: harness.redact(error.message) }))
+				.finally(() => running.delete(request.id));
 			return;
 		}
 		if (request?.kind !== 'spotlight-spawn') return;
@@ -128,6 +142,35 @@ async function casePhase(harness: Harness): Promise<string> {
 		harness.log(`could not resolve the case phase: ${harness.redact((error as Error).message)}`);
 		return '';
 	}
+}
+
+// Research runs in code, never on a model's decision: only while the resolver
+// reports the Research phase (so the approved methodology covers the plan
+// read here), one round at a time.
+let roundInFlight: Promise<RoundSummary | { skipped: string }> | undefined;
+function researchRound(harness: Harness, retry: boolean, signal: AbortSignal): Promise<RoundSummary | { skipped: string }> {
+	roundInFlight ??= (async () => {
+		const phase = await casePhase(harness);
+		if (phase !== 'research') return { skipped: `the case is at ${phase || 'an unknown phase'}, not Research` };
+		const { config, active } = harness;
+		const methodology = JSON.parse(readFileSync(resolve(active.caseDir, 'data/methodology.json'), 'utf8')) as { research_plan?: ResearchPlan };
+		if (!methodology.research_plan) return { skipped: 'the approved methodology has no research plan' };
+		const route = routeFor(config);
+		const summary = await runResearchRound({
+			caseDir: active.caseDir,
+			plan: methodology.research_plan,
+			config,
+			local: { baseURL: route.baseURL, model: route.model, key: route.keyEnv ? process.env[route.keyEnv] : undefined },
+			env: process.env,
+			retry,
+			signal,
+		});
+		harness.log(`research round ${summary.round}: ${summary.ran.length} topic(s) ran, ${summary.left_out.length} left out${summary.stopped ? `, stopped (${summary.stopped.code})` : ''}`);
+		return summary;
+	})().finally(() => {
+		roundInFlight = undefined;
+	});
+	return roundInFlight;
 }
 
 // A worker with spawn conditions in harness/composition.json (the analyst:

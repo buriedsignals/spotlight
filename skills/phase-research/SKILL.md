@@ -23,13 +23,32 @@ any agent.
   starts Research. You never decide to run a swarm, never widen it, and never
   run a topic the member did not approve. The harness runs each approved topic
   as its own lane with only that topic's brief.
-- In a runtime whose harness runs lanes itself, wait for it and resolve again.
-- In subscription mode (no harness lane runner), spawn one `researcher` per
-  approved topic through the host's subagents, passing only that topic's brief
-  from `research_plan.topics[]` and its lane folder. Never pass case files,
-  findings, evidence, or journalist input to a subagent. A local corpus topic
-  and any topic marked `journalist_input` run only on a configured local model;
+- In the Pi harness the lane runner is the harness: `spotlight_resolve` at
+  Research runs the approved topics and returns the round as
+  `research_round` (what ran, `spent_usd`, `left_out`, `refused`, `failed`,
+  `stopped` with what to fix, and `merge`: once every topic ended the harness
+  runs the merge below itself). Present it, then resolve again. The
+  runner sends a swarm lane only its brief; the local corpus and prior
+  knowledge lanes run on the local model. The round is recorded in
+  `research/rounds.json`.
+- In subscription mode (no harness lane runner), spawn one `researcher`
+  (`agents/researcher.md`) per approved swarm topic through the host's
+  subagents, as many at once as the host allows. Give each only that topic's
+  brief (`topic_id`, `direction_id`, `lane_type`, `questions`,
+  `seed_queries`, `sources_to_try`, `anomaly_methods` from
+  `research_plan.topics[]`), the lane type's entry in `lanes/<lane_type>.yaml`,
+  and its lane folder. Never pass case files, findings, evidence, leads of
+  other lanes, or journalist input to a subagent, and never write a brief
+  from journalist input. A local corpus topic, a prior-knowledge topic and any
+  topic marked `journalist_input` run only on a configured local model;
   without one, report the topic as refused and do not spawn it.
+- **Budget, not a count:** swarm topics start while the round budget
+  (`round_budget_usd`, $1 by default, never past `case_budget_usd` or $5 per
+  case) remains; once it is spent no new topic starts, running ones finish,
+  and the topics left out are listed. Each topic also has a token budget.
+  Subscription subagents report no spend: say so instead of a figure.
+- Lane types and their tools are in `lanes/*.yaml`. An `ad-hoc` topic gets
+  generic search and fetch only, and no keys.
 - Each lane writes only inside `{CASE_DIR}/research/swarm/<topic-id>/`:
   `lane.json` (`schemas/research-lane.schema.json`), `leads.jsonl`, one
   `schemas/research-lead.schema.json` object per line, and `sources/`. Lane
@@ -43,7 +62,8 @@ any agent.
 | `data/leads.json` | `schemas/research-leads.schema.json` | the deterministic merge, after every lane ended |
 | `data/clues.json` | `schemas/research-clues.schema.json` | the clue rules K1-K6, from `data/leads.json` |
 
-Once every approved lane has ended, the merge writes both files in one step:
+Once every approved lane has ended, the merge writes both files in one step
+(the Pi harness runs it itself; elsewhere run it):
 
 ```text
 execute-shell("scripts/spotlight-python scripts/research-merge.py {CASE_DIR}")
@@ -69,6 +89,13 @@ Research. Tell the member what failed and how to fix it (update the key in the
 app that holds it) without ever showing a key. Never fall back to the local
 model and never turn the swarm off yourself; that is the member's choice, made
 by editing the research plan at the Methodology gate.
+
+The Pi harness stops the round itself and returns `research_round.stopped`
+(`key_rejected`, `no_credit`, `upstream_error`, or `swarm_unavailable` when
+the plan uses the swarm but the switch is off or no key is set); its
+`message` already says what to fix. A stopped round is not retried until the
+member asks: then call `spotlight_resolve` with `retry_research: true`, which
+runs only the topics that did not finish.
 
 Record the stopped round once:
 

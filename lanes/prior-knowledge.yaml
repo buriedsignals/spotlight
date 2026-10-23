@@ -1,0 +1,10 @@
+id: prior-knowledge
+title: Prior knowledge
+description: The member's wiki of earlier work, searched through query-vault on the local model.
+route: local
+tools: [query_vault]
+keys: []
+egress: [local_model]
+guidance: >-
+  Search for the brief's subjects. A prior claim is a lead to re-check, never
+  a confirmed fact.
