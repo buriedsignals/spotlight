@@ -1,7 +1,7 @@
 # Spotlight review pages
 
 A local web page where the member reviews and decides each human gate of a
-case: Methodology, Investigation gate, Report and (solo) Ingest. Node only, no
+case: Methodology, Research, Investigation gate, Report and (solo) Ingest. Node only, no
 dependencies; it calls Spotlight's Python orchestration seam for every read and
 write.
 
@@ -40,6 +40,35 @@ channel with the requesting role (`--requested-by-role`, set by the harness,
 default `orchestrator`) and the time, and it refuses a member name. The page
 shows "Recorded through: the agent (orchestrator)"; a follow-up recorded before
 follow-ups said who asked shows as not recorded.
+
+## The Research page
+
+The Research gate page (`scripts/spotlight_orchestration/research_view.py`)
+shows, after any blocking failure:
+
+1. the research mode (local lanes only, OpenRouter swarm, subscription
+   subagents or newsroom), the round's spend against its budget and the topics
+   it left out or refused (`data/leads.json`, `research/rounds.json`), and the
+   triage notice: while the decision-model acceptance test has not passed,
+   triage only flags;
+2. the clues, in ranking order (`research-merge.py --rank`): the rule clues of
+   `data/clues.json` and the premise, new-actor and change clues triage raised.
+   Each is marked pursue or dismiss; watchlist (K6) and premise (C1) clues are
+   always pursued and cannot be dismissed. Every clue needs a mark before
+   approval;
+3. each direction with its mark (keep or drop; a new direction is added, by
+   the investigator's suggestion or by the member), its gap and its remaining
+   leads;
+4. the leads triage flagged, the leads set aside, the snippet-only leads and
+   the unverifiable leads, each in its own section, so none is hidden inside a
+   direction. Every lead appears once outside the clues.
+
+The investigator's suggested marks (`data/research-suggestions.json`, shape in
+`research_view.py`) prefill the marks; the review file keeps each suggestion
+beside the member's final mark, under the `clue:<id>` and `direction:<id>`
+targets the amendment check (D8) reads. The page digest also covers the
+triage, suggestions and round ledger the page shows, so an approval binds what
+the member saw; the receipt binds the leads, the clues and the saved review.
 
 ## Security model
 
@@ -91,4 +120,5 @@ agent resolves the case, which reads the decision from disk.
 ```bash
 npm test --prefix harness/review
 python3 tests/review-gate-check.py
+python3 tests/research-review-check.py
 ```

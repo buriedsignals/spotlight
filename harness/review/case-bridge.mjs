@@ -125,7 +125,7 @@ export function createCaseBridge({
       // "=" keeps a value that starts with "-" from being read as an option.
       const receipt = [`--nonce=${nonce}`, `--digest=${digest}`];
       const args =
-        gate === "methodology" || gate === "investigation_gate"
+        ["methodology", "research", "investigation_gate"].includes(gate)
           ? ["approve", gate, `--approved-by=${approvedBy}`, `--approved-at=${approvedAt}`, ...receipt]
           : [
               gate === "report" ? "decide-report" : "decide-ingest",
@@ -166,6 +166,7 @@ function seamError(result) {
 // Decision gates the resolver can report as pending, mapped from its status.
 export function pendingGate(status) {
   if (status?.next_phase === "methodology_approval") return "methodology";
+  if (status?.next_phase === "research_approval") return "research";
   if (status?.next_phase === "investigation_gate_approval") return "investigation_gate";
   if (status?.next_phase === "report") return "report";
   if (status?.next_phase === "ingest" && status?.ingest?.resume_at === "decision") return "ingest";
