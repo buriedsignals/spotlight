@@ -214,6 +214,26 @@ test("the gate page gets case-search passages next to each claim, outside the di
   assert.equal(quiet.body.note, "case search unavailable: Engine's case search is switched off");
 });
 
+test("passages searched for claims that changed during the search are not shown as the new record's", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "investigation_gate");
+  const real = createCaseBridge({ caseDir, env: { ...process.env, SPOTLIGHT_BSIG: standInBsig(root) } });
+  const findingsPath = join(caseDir, "data", "findings.json");
+  const bridge = {
+    ...real,
+    async passages(gate, signal) {
+      const result = await real.passages(gate, signal);
+      const findings = JSON.parse(readFileSync(findingsPath, "utf8"));
+      findings.findings[0].claim = `${findings.findings[0].claim} (revised)`;
+      writeFileSync(findingsPath, JSON.stringify(findings));
+      return result;
+    },
+  };
+  const { json } = await authed(t, caseDir, { bridge });
+  const { body } = await json("/api/passages");
+  assert.deepEqual([body.available, body.claims], [false, []]);
+});
+
 test("a failing case search shows a distinct failure, not \"unavailable\", and never its error text", async (t) => {
   const root = tempRoot(t);
   const caseDir = buildCase(root, "case", "investigation_gate");

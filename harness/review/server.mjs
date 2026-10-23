@@ -185,7 +185,10 @@ export async function startReviewServer({
         const current = search;
         search.result.catch(() => searches.get(shown) === current && searches.delete(shown));
       }
-      return { ...(await search.result), gate: shown, digest: search.digest };
+      const result = await search.result;
+      // The claims changed while Engine searched: these passages are not the record's.
+      if ((await bridge.view(shown)).digest !== search.digest) return unavailable;
+      return { ...result, gate: shown, digest: search.digest };
     } catch {
       return search?.stop.signal.aborted ? unavailable : { ...unavailable, failed: true, note: "case search failed" };
     }

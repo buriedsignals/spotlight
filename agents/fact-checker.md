@@ -88,7 +88,7 @@ The vault is read-only. Do not modify it during fact-checking.
 Before you write any verdict, read what the case itself already holds for and against each claim. Case search (Engine's `bsig wiki case-search`, ranked by words and meaning) returns, for each claim in `findings.json`, the five passages in `{CASE_DIR}/research/` most likely to support or contradict it, leaving out everything the research phase produced (D9). It searches only the active case:
 
 ```bash
-scripts/spotlight-python -m integrations.case_search --case {CASE_DIR} --findings --for fact-checker --format prompt
+scripts/spotlight-python -m integrations.case_search --case "{CASE_DIR}" --findings --for fact-checker --format prompt
 ```
 
 A runtime without `execute-shell` runs this itself and appends the result to your task as a `CASE PASSAGES` block. Empty output, or no block, means there are no passages to read (no Engine, its switch is off, or nothing matched): continue without it. A refusal (`case search refused: …`, exit status 2) is not empty output: `CASE_DIR` is not the active case under the configured cases root, so stop and report it to the orchestrator. Claims listed after the block as left out, unmatched or not searched have no passages shown.
