@@ -18,6 +18,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { lstatSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { HarnessConfig } from './config.ts';
+import { redactor } from './log.ts';
 
 export const PROTOCOL_VERSION = '2025-11-25';
 export const CASE_REFERENCE_FILE = 'data/editorial-case.json';
@@ -83,6 +84,9 @@ export type EditorialClientOptions = {
 	url: string;
 	token: string;
 	origins: readonly string[];
+	// Every other secret the launcher holds (route tokens, tool keys): scrubbed
+	// from every answer, like the token.
+	secrets?: Iterable<string | undefined>;
 	timeoutMs?: number;
 	fetchImpl?: Fetch;
 };
@@ -108,21 +112,34 @@ function parseEventStream(text: string, id: string): JsonRpcResponse | undefined
 	return undefined;
 }
 
+function untilAborted<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+	if (!signal) return promise;
+	return new Promise((done, fail) => {
+		const abort = () => fail(signal.reason);
+		if (signal.aborted) return abort();
+		signal.addEventListener('abort', abort, { once: true });
+		promise.then(done, fail).finally(() => signal.removeEventListener('abort', abort));
+	});
+}
+
 export class EditorialClient {
-	readonly #options: Required<Omit<EditorialClientOptions, 'fetchImpl'>> & { fetchImpl: Fetch };
+	readonly #options: Required<Omit<EditorialClientOptions, 'fetchImpl' | 'secrets'>> & { fetchImpl: Fetch };
+	readonly #redact: (text: string) => string;
 	#session: string | undefined;
 	#ready: Promise<void> | undefined;
 
 	constructor(options: EditorialClientOptions) {
 		this.#options = { ...options, timeoutMs: options.timeoutMs ?? 120_000, fetchImpl: options.fetchImpl ?? fetch };
+		this.#redact = redactor([options.token, ...(options.secrets ?? [])]);
 		assertNewsroomDestination(options.origins, options.url);
 	}
 
-	// The token never appears in what this client reports or returns, even
-	// when a server echoes it back. config.ts refuses short tokens.
+	// No secret the launcher holds appears in what this client reports or
+	// returns, even when a server echoes it back: this is the one scrub point
+	// for answers, errors and the receipts made from them. config.ts refuses
+	// short tokens.
 	#clean(text: string): string {
-		const token = this.#options.token;
-		return token ? text.split(token).join('[redacted]') : text;
+		return this.#redact(text);
 	}
 
 	#scrub(value: unknown): unknown {
@@ -220,14 +237,16 @@ export class EditorialClient {
 		return message.result;
 	}
 
+	// The session is shared, so its (re-)initialisation runs under the
+	// client's own timeout only; each caller's signal ends only its own wait.
 	#initialize(signal?: AbortSignal): Promise<void> {
 		this.#ready ??= (async () => {
 			await this.#request('initialize', {
 				protocolVersion: PROTOCOL_VERSION,
 				capabilities: {},
 				clientInfo: { name: 'spotlight-harness', version: '1' },
-			}, signal);
-			const sent = await this.#post({ jsonrpc: '2.0', method: 'notifications/initialized' }, signal);
+			});
+			const sent = await this.#post({ jsonrpc: '2.0', method: 'notifications/initialized' });
 			if (sent.status !== 202 && (sent.status < 200 || sent.status >= 300)) {
 				throw new EditorialError(`the Editorial MCP refused the initialized notification (HTTP ${sent.status})`);
 			}
@@ -235,7 +254,7 @@ export class EditorialClient {
 			this.#ready = undefined;
 			throw error;
 		});
-		return this.#ready;
+		return untilAborted(this.#ready, signal);
 	}
 
 	// Opens the MCP session. The launcher does this at every start, so a
@@ -255,7 +274,11 @@ export class EditorialClient {
 			isError?: boolean;
 		};
 		const text = (result?.content ?? []).filter((part) => part.type === 'text').map((part) => part.text ?? '').join('\n');
-		if (result?.isError) throw new EditorialToolError(`${tool}: ${this.#clean(text || 'the Editorial MCP reported an error')}`);
+		// Error text reaches the model: no address in it, since one may be a
+		// review page's capability.
+		if (result?.isError) {
+			throw new EditorialToolError(`${tool}: ${this.#clean(text || 'the Editorial MCP reported an error').replace(/\bhttps?:\/\/\S+/gi, '[address removed]')}`);
+		}
 		if (result?.structuredContent && typeof result.structuredContent === 'object' && !Array.isArray(result.structuredContent)) {
 			return this.#scrub(result.structuredContent) as Record<string, unknown>;
 		}
@@ -269,13 +292,13 @@ export class EditorialClient {
 	}
 }
 
-export function editorialClient(config: HarnessConfig, env: Record<string, string | undefined>, fetchImpl?: Fetch): EditorialClient | undefined {
+export function editorialClient(config: HarnessConfig, env: Record<string, string | undefined>, secrets: Iterable<string>): EditorialClient | undefined {
 	if (!config.editorial) return undefined;
 	return new EditorialClient({
 		url: config.editorial.url,
 		token: env[config.editorial.tokenEnv] ?? '',
 		origins: config.newsroomOrigins,
-		fetchImpl,
+		secrets,
 	});
 }
 

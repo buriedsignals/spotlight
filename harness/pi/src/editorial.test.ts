@@ -71,6 +71,36 @@ test('a revoked token stops with a plain sign-in message that never shows the to
 	assert.ok(!error.message.includes(newsroom.token));
 });
 
+test('a tool error reaches the caller without any address in it', async (t) => {
+	const newsroom = await startFakeEditorial({
+		handlers: { submit_case_review: () => ({ isError: true, text: 'already staged, see https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }) },
+	});
+	t.after(() => newsroom.close());
+	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)] });
+	const error = await client.call('submit_case_review', {}).then(() => assert.fail('a tool error was accepted'), (caught: Error) => caught);
+	assert.equal(error.message, 'submit_case_review: already staged, see [address removed]');
+});
+
+test('when the first caller cancels during a shared session restart, the other callers still get their answers', async (t) => {
+	const newsroom = await startFakeEditorial();
+	t.after(() => newsroom.close());
+	// The new session's initialize takes a moment, so the cancel lands mid-way.
+	let initializes = 0;
+	const slowInitialize: typeof fetch = async (url, init) => {
+		if (JSON.parse(String(init?.body)).method === 'initialize' && ++initializes === 2) await new Promise((done) => setTimeout(done, 200));
+		return fetch(url, init);
+	};
+	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)], fetchImpl: slowInitialize });
+	await client.connect();
+	newsroom.endSessions();
+	const first = new AbortController();
+	const cancelled = client.call('get_record', { record_id: 'claim:1' }, first.signal).then(() => assert.fail('a cancelled call finished'), (caught: Error) => caught);
+	const other = client.call('get_record', { record_id: 'claim:2' });
+	setTimeout(() => first.abort(), 50);
+	assert.equal((await cancelled).name, 'AbortError');
+	assert.equal(((await other).record as { record_id: string }).record_id, 'claim:2');
+});
+
 test('an answer that carries the token comes back with the token redacted, in values and in keys', async (t) => {
 	const newsroom = await startFakeEditorial({
 		handlers: {

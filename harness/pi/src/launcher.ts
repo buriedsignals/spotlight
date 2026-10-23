@@ -441,7 +441,8 @@ function main(): void {
 		}
 		throw error;
 	}
-	const redact = redactor(secretValues(config, composition, process.env));
+	const secrets = secretValues(config, composition, process.env);
+	const redact = redactor(secrets);
 	const log = stderrLogger('spotlight', redact);
 	let lock: CaseLock;
 	let active: ActiveCase;
@@ -456,7 +457,7 @@ function main(): void {
 	}
 	const discarded = discardIncompleteLanes(config.caseDir);
 	if (discarded.length > 0) log(`discarded ${discarded.length} unfinished research lane(s); they will rerun`);
-	const harness: Harness = { config, active, composition, lock, log, redact, children: new Set(), editorial: editorialClient(config, process.env) };
+	const harness: Harness = { config, active, composition, lock, log, redact, children: new Set(), editorial: editorialClient(config, process.env, secrets) };
 	if (!harness.editorial) return start(harness);
 	// Case start, newsroom edition: the sign-in is checked on every start, and
 	// register_case runs once; a resumed case reuses the stored reference. A
@@ -470,12 +471,11 @@ function main(): void {
 			log(registered ? `registered the case with the newsroom (${reference.case_ref})` : `newsroom case ${reference.case_ref}`);
 			if (await pendingSubmission(runPackage, config.caseDir)) {
 				log('resuming the submission that was pending when Spotlight last stopped');
-				try {
-					await submit(harness, client);
-				} catch (error) {
+				// Nothing runs while a submission is unresolved.
+				await submit(harness, client).catch((error: Error) => {
 					if (stopsTheNewsroomCase(error)) throw error;
-					log(`the pending submission could not be resumed: ${redact((error as Error).message)}`);
-				}
+					throw new Error(`the submission that was pending could not be resumed, so the case did not start: ${error.message}`);
+				});
 			}
 			start(harness);
 		})

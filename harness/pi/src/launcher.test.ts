@@ -728,7 +728,8 @@ test('newsroom Submit: a failed integrity check leaves the case at Ingest with t
 	});
 	let stagingOrigin = '';
 	const staging = await startFakeEditorial({
-		handlers: { submit_case_review: () => ({ status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: `${stagingOrigin}/review/rev-1` }) },
+		// It echoes the model route's token: no receipt keeps it.
+		handlers: { submit_case_review: () => ({ status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: `${stagingOrigin}/review/rev-1`, note: 'route-auth-token-0123456789' }) },
 	});
 	stagingOrigin = new URL(staging.url).origin;
 	t.after(() => Promise.all([fake.close(), rejecting.close(), staging.close()]));
@@ -765,6 +766,8 @@ test('newsroom Submit: a failed integrity check leaves the case at Ingest with t
 	await second.exited;
 
 	assert.deepEqual((await readdir(join(stagedCase, 'receipts'))).sort(), ['review-rev-1.json', 'review-status-rev-1.json', 'submission-sub-1.json']);
+	const receipt = await readFile(join(stagedCase, 'receipts', 'submission-sub-1.json'), 'utf8');
+	assert.ok(receipt.includes('[redacted]') && !receipt.includes('route-auth-token'), receipt);
 	// The review address is the member's: no model request carries it.
 	assert.ok(!JSON.stringify(fake.requests).includes('/review/rev-1'), 'the review address never reaches a model');
 	if (process.platform !== 'win32') {
@@ -825,12 +828,16 @@ test('an Editorial MCP that cannot be used stops the newsroom case with a plain 
 	await assert.rejects(lockRecord(space), 'the case lock is released');
 });
 
-test('newsroom Submit: a crash after the newsroom staged the package resumes on the next start with the same key; nothing is lost or sent twice', { timeout: 90_000 }, async (t) => {
+test('newsroom Submit: a crash after the newsroom staged the package resumes on the next start with the same key; a resume that fails stops the case; nothing is lost or sent twice', { timeout: 90_000 }, async (t) => {
 	const fake = await startFakeOpenAI(orchestratorScript([{ name: 'newsroom_submit', arguments: {} }, { name: 'spotlight_resolve', arguments: {} }]));
 	// The review status is unreadable once: the harness stops between the
-	// staged submission and recording it, as a crash there would.
+	// staged submission and recording it, as a crash there would. On the next
+	// start it answers with an error once, then normally.
 	const editorial = await startFakeEditorial({
-		handlers: { get_review_status: (args, index) => (index === 0 ? { unstructured: 'not json' } : { review_id: args.review_id, state: 'pending' }) },
+		handlers: {
+			get_review_status: (args, index) =>
+				index === 0 ? { unstructured: 'not json' } : index === 1 ? { isError: true, text: 'review store busy' } : { review_id: args.review_id, state: 'pending' },
+		},
 	});
 	t.after(() => Promise.all([fake.close(), editorial.close()]));
 	const space = await workspace(t);
@@ -843,14 +850,20 @@ test('newsroom Submit: a crash after the newsroom staged the package resumes on 
 	assert.equal((await first.exited).code, 5);
 	await assert.rejects(readFile(join(caseDir, 'receipts', 'submission-sub-1.json')), { code: 'ENOENT' });
 
+	// A resume that fails stops the case before any work starts.
+	const failed = launch(t, env);
+	assert.equal((await failed.exited).code, 1);
+	assert.match(failed.stderr(), /cannot start: the submission that was pending could not be resumed, so the case did not start: get_review_status: review store busy/);
+	assert.deepEqual(failed.lines, []);
+
 	const second = launch(t, env);
 	await waitUntil(() => second.stderr().includes('submitted the case to the newsroom'), 30_000);
 	second.process.stdin.end();
 	assert.equal((await second.exited).code, 0);
 
 	const keys = editorial.callsOf('submit_case_review').map((call) => call.idempotency_key);
-	assert.equal(keys.length, 2);
-	assert.equal(keys[0], keys[1], 'the resumed submission carries the same idempotency key');
+	assert.equal(keys.length, 3);
+	assert.ok(keys.every((key) => key === keys[0]), 'every resumed submission carries the same idempotency key');
 	assert.equal(editorial.staged.length, 1, 'the newsroom staged one revision');
 	assert.deepEqual((await readdir(join(caseDir, 'receipts'))).sort(), ['review-status-rev-1.json', 'submission-sub-1.json']);
 	const marker = JSON.parse(await readFile(join(caseDir, 'data', 'ingestion.json'), 'utf8')) as { status: string; submission_id: string };

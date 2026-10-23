@@ -150,6 +150,23 @@ class NewsroomPackage(GATES.CaseFixture):
         refused = self.run_seam("build", str(case), expect=2)
         self.assertIn("research/filing.bin no longer matches its declared sha256 (screenshot_path)", refused.stderr)
 
+    def test_a_screenshot_beside_a_raw_capture_is_checked_against_its_anchor_hash(self) -> None:
+        case = self.case("anchored-screenshot")
+        bundle_path = case / "data" / "evidence-bundle.json"
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        bundle["items"][0]["screenshot_path"] = "research/filing.png"
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        (case / "research" / "filing.png").write_bytes(b"the capture as cited\n")
+        passages_path = case / "data" / "source-expressions.json"
+        passages = json.loads(passages_path.read_text(encoding="utf-8"))
+        passages["expressions"][0]["anchor_ref"] = {"path": "research/filing.png"}
+        passages["expressions"][0]["anchor_sha256"] = hashlib.sha256(b"the capture as cited\n").hexdigest()
+        passages_path.write_text(json.dumps(passages), encoding="utf-8")
+        self.run_seam("build", str(case))
+        (case / "research" / "filing.png").write_bytes(b"an edited capture\n")
+        refused = self.run_seam("build", str(case), expect=2)
+        self.assertIn("research/filing.png no longer matches its declared sha256 (anchor)", refused.stderr)
+
     def test_the_pages_show_the_newsroom_flags_and_a_refused_submissions_reasons(self) -> None:
         case = self.case("pages")
         seam = ROOT / "scripts" / "spotlight-orchestration.py"

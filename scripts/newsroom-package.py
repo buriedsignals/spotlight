@@ -198,7 +198,7 @@ def build(case: Path) -> dict[str, Any]:
             role = ROLES.get(link.get("relation"), "contextual")
             finding_id = str(link.get("finding_id"))
             cite((expression.get("anchor_ref") or {}).get("path"), role, expression_id, finding_id,
-                 item.get("id") if item else None, "anchor", None)
+                 item.get("id") if item else None, "anchor", expression.get("anchor_sha256"))
             if item is None:
                 omissions.append({"path": None, "expression_id": expression_id,
                                   "reason": "its evidence item is not in the evidence bundle"})
