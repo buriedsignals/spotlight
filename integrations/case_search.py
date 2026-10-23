@@ -61,6 +61,8 @@ MAX_ENGINE_OUTPUT_BYTES = 2 * 1024 * 1024
 PROMPT_EXCERPT_CHARS = 480
 PROMPT_BUDGET_CHARS = 16_000
 LABEL_CHARS = 80
+# Each notice after the passages names claims up to this size, then counts the rest.
+NOTICE_CHARS = 1000
 
 NOTE_NO_ENGINE = "case search unavailable: Engine is not installed"
 NOTE_SWITCHED_OFF = "case search unavailable: Engine's case search is switched off"
@@ -370,10 +372,14 @@ def search_claims(case: Path, claims: list[dict[str, str]], *, fact_checker: boo
 
 
 def findings_claims(case: Path) -> list[dict[str, str]]:
-    """The claims of ``data/findings.json``, one per finding with an id."""
+    """The claims of ``data/findings.json``, one per finding with an id, read
+    as the orchestration reads case data (never through a symlink)."""
+    if str(CHECKOUT / "scripts") not in sys.path:
+        sys.path.insert(0, str(CHECKOUT / "scripts"))
+    from spotlight_orchestration.storage import read_data_bytes
     try:
-        doc = json.loads((case / "data" / "findings.json").read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        doc = json.loads(read_data_bytes(case, "findings.json") or b"null")
+    except (OSError, ValueError):  # OrchestrationError and JSON errors are ValueErrors
         return []
     findings = doc.get("findings") if isinstance(doc, dict) else None
     claims = []
@@ -408,6 +414,17 @@ def _claim_group(claim: dict[str, Any], per_claim: int, naming: list[re.Pattern[
     return "\n".join(parts)
 
 
+def _notice(prefix: str, labels: list[str]) -> str:
+    """Names claims up to NOTICE_CHARS, then counts the rest."""
+    named: list[str] = []
+    for label in labels:
+        if sum(len(each) + 2 for each in named) + len(label) > NOTICE_CHARS:
+            break
+        named.append(label)
+    rest = len(labels) - len(named)
+    return f"{prefix}: {', '.join(named)}{f' and {rest} more' if rest else ''}."
+
+
 def prompt_block(answer: dict[str, Any]) -> str:
     """The fact-checker's view: each claim's passages inside one untrusted-data
     block, within a budget a local model's context can hold. Whole claim groups
@@ -424,14 +441,8 @@ def prompt_block(answer: dict[str, Any]) -> str:
         unsearched = [_line(c["label"], LABEL_CHARS) for c in claims if not c.get("searched", True)]
         unmatched = [_line(c["label"], LABEL_CHARS) for c in claims if c.get("searched", True) and not c.get("passages")]
         dropped = [_line(c["label"], LABEL_CHARS) for c in left_out]
-        lines = []
-        if dropped:
-            lines.append(f"Passages left out to fit the prompt: {', '.join(dropped)}.")
-        if unmatched:
-            lines.append(f"No passage matched: {', '.join(unmatched)}.")
-        if unsearched:
-            lines.append(f"Not searched: {', '.join(unsearched)}.")
-        return "\n".join(lines)
+        notices = [("Passages left out to fit the prompt", dropped), ("No passage matched", unmatched), ("Not searched", unsearched)]
+        return "\n".join(_notice(prefix, labels) for prefix, labels in notices if labels)
 
     def fenced(groups: list[str], notes: str) -> str:
         return "\n".join(part for part in [PREAMBLE, BEGIN, *groups, notes, END] if part)

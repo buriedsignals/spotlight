@@ -151,6 +151,14 @@ class CaseSearchChecks(unittest.TestCase):
         self.assertEqual(self.bsig_calls(), [], "Engine is never asked about another folder")
         self.assertTrue(json.loads(self.search("--findings", case="case", SPOTLIGHT_CASE_DIR=str(self.case)))["available"])
 
+    def test_a_findings_file_that_is_a_symlink_is_not_read(self):
+        outside = self.tmp / "outside-findings.json"
+        outside.write_text(json.dumps({"findings": [{"id": "X1", "claim": "Private claim from elsewhere"}]}))
+        (self.case / "data" / "findings.json").unlink()
+        (self.case / "data" / "findings.json").symlink_to(outside)
+        self.assertEqual(json.loads(self.search("--findings"))["claims"], [])
+        self.assertEqual(self.bsig_calls(), [], "no claim from outside the case reaches Engine")
+
     def test_without_the_launcher_the_cases_root_comes_from_the_install_config(self):
         config = self.tmp / "config.json"
         config.write_text(json.dumps({"case_workspace_root": str(self.root)}))
@@ -193,6 +201,16 @@ class CaseSearchChecks(unittest.TestCase):
         self.assertTrue(0 < len(shown) < 41)
         left = re.search(r"^Passages left out to fit the prompt: (.*)\.$", block, re.M).group(1).split(", ")
         self.assertEqual(shown + [label.removeprefix("Finding ") for label in left], [f"F{i}" for i in range(41)])
+
+    def test_many_long_claim_labels_still_leave_room_for_passages(self):
+        passage = {"path": "research/s.md", "text": "evidence " * 60, "score": 1}
+        claims = [{"target": f"finding:{i}", "label": f"Finding {i:04d}-" + "x" * 70, "claim": "word " * 40,
+                   "passages": [passage], "searched": True} for i in range(400)]
+        block = case_search.prompt_block({"available": True, "claims": claims})
+        self.assertLessEqual(len(block), case_search.PROMPT_BUDGET_CHARS)
+        self.assertIn("<<<PASSAGE 1 research/s.md", block)
+        left = re.search(r"^Passages left out to fit the prompt: (.*) and (\d+) more\.$", block, re.M)
+        self.assertEqual(block.count("<<<PASSAGE ") + len(left.group(1).split(", ")) + int(left.group(2)), 400)
 
     def test_engine_runs_without_secrets_and_its_messages_never_reach_the_answer(self):
         extra = {"OPENROUTER_API_KEY": "sk-or-v1-caller", "FIRECRAWL_API_KEY": "fc-caller", "XDG_DATA_HOME": str(self.tmp), "APPDATA": str(self.tmp)}
