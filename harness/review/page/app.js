@@ -501,6 +501,16 @@ function refreshControls() {
   if (focused && document.activeElement?.id !== focused) document.getElementById(focused)?.focus();
 }
 
+// Who asked, as the receipt's channel records it: the member on this page,
+// the agent (by role), the command line, or a follow-up from before
+// follow-ups recorded who asked.
+function recordedThrough(receipt) {
+  if (receipt.channel === "page") return "this review page";
+  if (receipt.channel === "agent") return `the agent (${receipt.requested_by_role || "unknown role"})`;
+  if (receipt.channel === "legacy") return "not recorded (an older follow-up)";
+  return "the command line";
+}
+
 function receiptSection() {
   const receipt = view.receipt;
   if (!receipt) {
@@ -511,7 +521,7 @@ function receiptSection() {
     ["By", receipt.approved_by],
     ["At", receipt.approved_at],
     ["Digest", receipt.review_digest],
-    ["Recorded through", receipt.channel === "page" ? "this review page" : "the command line"],
+    ["Recorded through", recordedThrough(receipt)],
   ].filter(([, value]) => value);
   return el(
     "section",

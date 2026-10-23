@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
-import { CHECKOUT_ROOT } from '../roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR } from '../roles.ts';
 import { bindActiveCase, pythonAdapter, spotlightTools } from './spotlight.ts';
 import type { AdapterRunner } from './spotlight.ts';
 
@@ -42,7 +42,7 @@ async function caseAwaitingInvestigation(t: TestContext) {
 }
 
 function tools(caseDir: string, root: string, runAdapter: AdapterRunner = pythonAdapter(PYTHON)) {
-	const [resolveTool, transitionTool] = spotlightTools(bindActiveCase(root, caseDir), runAdapter);
+	const [resolveTool, transitionTool] = spotlightTools(bindActiveCase(root, caseDir), runAdapter, ORCHESTRATOR);
 	const call = async (tool: typeof resolveTool, params: Record<string, unknown>, signal?: AbortSignal) => {
 		const result = await tool.execute('call', params, signal, undefined, undefined as never);
 		const block = result.content[0];
@@ -103,6 +103,28 @@ test('a model-named sibling case is ignored: the tools act only on the bound cas
 	await assert.rejects(readFile(join(sibling, 'data', 'orchestration.json')));
 	const state = JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'));
 	assert.deepEqual(state.attempts, { 'investigation-cycle': 1 });
+});
+
+test('a model follow-up records the agent channel and the harness role, whatever the payload claims', async (t) => {
+	const { caseDir, root } = await casePath(t);
+	await new Promise<void>((done, fail) =>
+		execFile(
+			PYTHON,
+			[join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate'],
+			(error) => (error ? fail(error) : done()),
+		),
+	);
+
+	const resolution = await tools(caseDir, root).transition({
+		operation: 'requestFollowUp',
+		payload: { instructions: 'Find a second filing.', requestedByRole: 'member', decidedBy: 'A. Member' },
+	});
+
+	assert.equal(resolution.phase, 'investigation');
+	const { follow_up: followUp } = JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'));
+	assert.equal(followUp.review.channel, 'agent');
+	assert.equal(followUp.requested_by_role, 'orchestrator');
+	assert.equal(followUp.decided_by, undefined);
 });
 
 test('gate approvals, the report decision and an ingest request or decline are refused', async (t) => {

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .contract import (
@@ -171,6 +173,36 @@ def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> Non
     _publish(case, data_descriptor, state)
 
 
+# A follow-up without a page nonce comes from the agent: the harness names the
+# requesting role, and no member name can be recorded for it.
+AGENT_CHANNEL = "agent"
+DEFAULT_REQUESTING_ROLE = "orchestrator"
+_ROLE = re.compile(r"[a-z][a-z0-9-]{0,63}")
+
+
+def _follow_up_requester(
+    nonce: str | None,
+    decided_by: str | None,
+    decided_at: str | None,
+    requested_by_role: str | None,
+) -> dict[str, str]:
+    """Who asked for a follow-up: the member on the review page (name and
+    time), or the agent role that requested it through its own operation."""
+    if nonce is not None:
+        if requested_by_role is not None:
+            raise OrchestrationError("a page follow-up is the member's; it takes no agent role")
+        return _decider(nonce, decided_by, decided_at)
+    if decided_by is not None or decided_at is not None:
+        raise OrchestrationError(
+            "a follow-up names a member only through the review page; an agent follow-up records its role"
+        )
+    role = DEFAULT_REQUESTING_ROLE if requested_by_role is None else requested_by_role
+    if not _ROLE.fullmatch(role):
+        raise OrchestrationError("requested_by_role must be a Spotlight role name")
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return {"requested_by_role": role, "decided_at": now}
+
+
 def request_follow_up(
     case: Path,
     data_descriptor: int,
@@ -179,10 +211,11 @@ def request_follow_up(
     digest: str | None = None,
     decided_by: str | None = None,
     decided_at: str | None = None,
+    requested_by_role: str | None = None,
 ) -> None:
     if not instructions.strip():
         raise OrchestrationError("instructions must describe the requested follow-up")
-    decider = _decider(nonce, decided_by, decided_at)
+    requester = _follow_up_requester(nonce, decided_by, decided_at, requested_by_role)
     state = load_state(case, data_descriptor)
     phase = status_for(case, state, data_descriptor)["next_phase"]
     if phase not in {
@@ -191,29 +224,24 @@ def request_follow_up(
         "report",
     }:
         raise OrchestrationError("follow-up can only be requested from the Investigation gate")
-    ledger = None
-    receipt: dict = {}
-    if nonce is not None:
-        # The page asks for a follow-up while the gate waits for the member;
-        # open flags and blocking failures are what a follow-up answers, so
-        # they do not block it.
-        if phase != "investigation_gate_approval":
-            raise OrchestrationError("the Investigation gate is not waiting for the member")
-        ledger, binding = consume_nonce(
-            case, data_descriptor, "investigation_gate", nonce, digest, ready_check=False
-        )
-        receipt = {"decision": "follow_up", "review": binding}
-    elif digest is not None:
-        raise OrchestrationError("a review digest requires its review nonce")
+    if nonce is not None and phase != "investigation_gate_approval":
+        raise OrchestrationError("the Investigation gate is not waiting for the member")
+    # The page asks for a follow-up while the gate waits for the member; open
+    # flags and blocking failures are what a follow-up answers, so they do not
+    # block it. Without a nonce the request is recorded on the agent channel.
+    ledger, binding = consume_nonce(
+        case, data_descriptor, "investigation_gate", nonce, digest,
+        ready_check=False, unpaged_channel=AGENT_CHANNEL,
+    )
     dependency_digest = require_investigation_gate_digest(case)
-    if ledger is not None:
-        record_decision(ledger, receipt["review"], "follow_up", dependency_digest)
+    record_decision(ledger, binding, "follow_up", dependency_digest)
     state["follow_up"] = {
         "instructions": instructions,
         "dependency_digest": dependency_digest,
         **rework_snapshot(case),
-        **decider,
-        **receipt,
+        **requester,
+        "decision": "follow_up",
+        "review": binding,
     }
     state["approvals"].pop("investigation_gate", None)
     state.pop("investigation_gate_finalization", None)

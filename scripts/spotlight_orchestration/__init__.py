@@ -92,10 +92,13 @@ def request_follow_up(
     digest: str | None = None,
     decided_by: str | None = None,
     decided_at: str | None = None,
+    requested_by_role: str | None = None,
     authorized_cases_root: str | Path | None = None,
 ) -> None:
     """Send the case back to Investigation. ``nonce``/``digest`` come from the
-    Investigation gate page, which also names the member."""
+    Investigation gate page, which also names the member. Without them the
+    request is the agent's: ``requested_by_role`` (default ``orchestrator``),
+    set by the harness, is recorded instead of a name."""
     _transition(
         case_dir,
         transitions.request_follow_up,
@@ -104,6 +107,7 @@ def request_follow_up(
         digest,
         decided_by,
         decided_at,
+        requested_by_role,
         authorized_cases_root=authorized_cases_root,
     )
 
@@ -213,11 +217,30 @@ def review_view(
         case, gate, stored, review.effective_ledger(case, state), bind_review=False
     ):
         # Approvals record approved_by; the other decisions decided_by.
-        # Receipts written before names were recorded show no name.
+        # Receipts written before names were recorded show no name. A
+        # follow-up the agent requested records its role, never a name.
         receipt = {
             "decision": stored.get("decision", "approved"),
             "approved_by": stored.get("approved_by", stored.get("decided_by")),
             "approved_at": stored.get("approved_at", stored.get("decided_at")),
+            "requested_by_role": stored.get("requested_by_role"),
             **{k: stored["review"][k] for k in ("channel", "review_digest", "nonce_sha256")},
+        }
+    elif (
+        pending != gate
+        and isinstance(stored, dict)
+        and stored is state.get("follow_up")
+        and "review" not in stored
+    ):
+        # A follow-up recorded before follow-ups said who asked: shown as
+        # legacy, with no name, since nothing backs one.
+        receipt = {
+            "decision": "follow_up",
+            "approved_by": None,
+            "approved_at": None,
+            "requested_by_role": None,
+            "channel": "legacy",
+            "review_digest": None,
+            "nonce_sha256": None,
         }
     return {**view, "phase": status["phase"], "pending_gate": pending, "receipt": receipt}

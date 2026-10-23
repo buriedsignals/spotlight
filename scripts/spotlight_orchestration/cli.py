@@ -64,6 +64,9 @@ def build_parser() -> argparse.ArgumentParser:
     follow_up.add_argument("--instructions", required=True)
     add_review_receipt(follow_up)
     add_decider(follow_up)
+    # Without a page nonce the follow-up is the agent's; the harness names
+    # the requesting role (default orchestrator), never a member.
+    follow_up.add_argument("--requested-by-role")
     add_case_boundary(follow_up)
     seal = commands.add_parser("seal-investigation-gate")
     add_case_boundary(seal)
@@ -125,7 +128,14 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
     elif args.command == "record-attempt":
         record_attempt(args.case_dir, args.kind, args.gap, **boundary)
     elif args.command == "request-follow-up":
-        request_follow_up(args.case_dir, args.instructions, **receipt, **decider, **boundary)
+        request_follow_up(
+            args.case_dir,
+            args.instructions,
+            **receipt,
+            **decider,
+            requested_by_role=args.requested_by_role,
+            **boundary,
+        )
     elif args.command == "seal-investigation-gate":
         seal_investigation_gate(args.case_dir, **boundary)
     elif args.command == "decide-report":
