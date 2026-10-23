@@ -16,6 +16,7 @@ export const DEFAULT_IDLE_MS = 45 * 60_000;
 export const DEFAULT_OVERALL_MS = 8 * 60 * 60_000;
 const GATE_LABELS = {
   methodology: "Methodology",
+  research: "Research",
   investigation_gate: "Investigation gate",
   report: "Report",
   ingest: "Ingest",

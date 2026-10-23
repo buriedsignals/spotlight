@@ -22,6 +22,7 @@ from typing import Any
 from .case_writer import atomic_write_files
 from .contract import METHODOLOGY_INPUTS, RESEARCH_OUTPUTS, OrchestrationError, SCRIPT_DIR
 from .dependencies import current_hashes, investigation_gate_dependencies
+from . import research_view
 from .storage import LEGACY_CHANNEL, LEGACY_LEDGER_KEY, case_path, read_data_bytes
 
 REVIEW_VERSION = "spotlight-review/v1"
@@ -140,7 +141,10 @@ def subject_digest(case: Path, gate: str) -> str:
     if gate == "methodology":
         return _canonical_sha(current_hashes(case, METHODOLOGY_INPUTS))
     if gate == "research":
-        return _canonical_sha(current_hashes(case, RESEARCH_OUTPUTS))
+        # The receipt's input hashes bind the leads and clues; the page digest
+        # also covers the triage, suggestions and round ledger the page shows.
+        return _canonical_sha({"outputs": current_hashes(case, RESEARCH_OUTPUTS),
+                               "shown": research_view.shown_hashes(case)})
     dependency = str(investigation_gate_dependencies(case)["dependency_digest"])
     if gate == "ingest" and activated_case(case):
         bound = {"dependencies": dependency, "batch": _batch_sha256(case)}
@@ -551,29 +555,6 @@ def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[
     return content, blocking, items
 
 
-def _research_content(case: Path) -> tuple[dict[str, Any], list[str]]:
-    """What the Research gate approves, in counts: the merged leads and the
-    clues. The clue marks the member makes on the page are review items the
-    Research page adds; this view carries only what the gate binds."""
-    leads = _read_case_json(case, RESEARCH_OUTPUTS[0])
-    clues = _read_case_json(case, RESEARCH_OUTPUTS[1])
-    blocking = [
-        f"{relative} is missing or unreadable"
-        for relative, value in zip(RESEARCH_OUTPUTS, (leads, clues))
-        if not isinstance(value, dict)
-    ]
-    lead_list = leads.get("leads") if isinstance(leads, dict) else None
-    clue_list = clues.get("clues") if isinstance(clues, dict) else None
-    left_out = leads.get("left_out") if isinstance(leads, dict) else None
-    content = {
-        "mode": _text(leads.get("mode"), 40) if isinstance(leads, dict) else "",
-        "leads": len(lead_list) if isinstance(lead_list, list) else 0,
-        "clues": len(clue_list) if isinstance(clue_list, list) else 0,
-        "left_out": [_text(topic, 200) for topic in left_out[:100]] if isinstance(left_out, list) else [],
-    }
-    return content, blocking
-
-
 def _items_text(value: object, limit: int = 30) -> list[str]:
     """The text of a draft's caveats or next steps (objects with ``text``)."""
     items = value if isinstance(value, list) else []
@@ -732,13 +713,14 @@ def _counts(items: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
-def _gate_parts(case: Path, gate: str) -> tuple[dict[str, Any], list[str], list[dict[str, Any]]]:
+def _gate_parts(
+    case: Path, gate: str, review: dict[str, Any] | None = None
+) -> tuple[dict[str, Any], list[str], list[dict[str, Any]]]:
     if gate == "methodology":
         content, blocking = _methodology_content(case)
         return content, blocking, []
     if gate == "research":
-        content, blocking = _research_content(case)
-        return content, blocking, []
+        return research_view.content(case, (review or {}).get("items", {}))
     if gate == "investigation_gate":
         return _investigation_content(case)
     if gate == "report":
@@ -772,8 +754,8 @@ def _reviewer_names(case: Path, gate: str, review: dict[str, Any], data_descript
 def build_view(case: Path, gate: str, data_descriptor: int | None = None) -> dict[str, Any]:
     """The page model: content, blocking failures, flags, selection and digest."""
     require_gate(gate)
-    content, blocking, suggested = _gate_parts(case, gate)
     review = load_review(case, gate, data_descriptor)
+    content, blocking, suggested = _gate_parts(case, gate, review)
     items = _merge_items(suggested, review["items"])
     counts = _counts(items)
     reviewer, previous_reviewer = _reviewer_names(case, gate, review, data_descriptor)
@@ -813,6 +795,8 @@ def _validated_edit(edit: object, items: dict[str, dict[str, Any]]) -> dict[str,
     elif item["kind"] == "selection":
         if not isinstance(value, bool):
             raise OrchestrationError("a selection mark is true or false")
+    elif item["kind"] in ("clue", "direction"):
+        research_view.validate_mark(item, value)
     elif item["kind"] == "flag":
         if value not in FLAG_ACTIONS:
             raise OrchestrationError(f"a flag disposition is one of: {', '.join(FLAG_ACTIONS)}")
@@ -824,11 +808,20 @@ def _validated_edit(edit: object, items: dict[str, dict[str, Any]]) -> dict[str,
 def apply_edit(case: Path, data_descriptor: int, gate: str, edit: object) -> None:
     """Apply one page edit in code and save the canonical review file."""
     require_gate(gate)
-    _, _, suggested = _gate_parts(case, gate)
     review = load_review(case, gate, data_descriptor)
+    _, _, suggested = _gate_parts(case, gate, review)
     current = {item["key"]: item for item in _merge_items(suggested, review["items"])}
-    edit = _validated_edit(edit, current)
-    if edit["kind"] == "reviewer":
+    if gate == "research" and isinstance(edit, dict) and edit.get("kind") == "add_direction":
+        if set(edit) != {"kind", "key", "value"}:
+            raise OrchestrationError("a review edit has the wrong fields")
+        added = research_view.added_direction(edit, current)
+        current[added["key"]] = added
+        edit = None
+    else:
+        edit = _validated_edit(edit, current)
+    if edit is None:
+        pass
+    elif edit["kind"] == "reviewer":
         review["reviewer"] = edit["value"].strip()
         review["reviewer_after_decisions"] = _decisions_recorded(case, gate, data_descriptor)
     elif edit["kind"] == "note":
@@ -847,6 +840,8 @@ def apply_edit(case: Path, data_descriptor: int, gate: str, edit: object) -> Non
             "suggestion_reason": item["suggestion_reason"],
             "final": item["final"],
             "note": item["note"],
+            # A direction's description, and who added it when the member did.
+            **{field: item[field] for field in ("label", "added_by") if field in item},
         }
     review["items"] = stored
     review["counts"] = _counts(list(current.values()))

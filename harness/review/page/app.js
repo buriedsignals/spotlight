@@ -21,6 +21,7 @@ let followUpNote = "";
 
 const DECISION_LABELS = {
   methodology: { approved: "Approve the methodology" },
+  research: { approved: "Approve the research marks" },
   investigation_gate: { approved: "Approve the investigation" },
   report: { completed: "Publish the drafted report", declined: "Decline the report" },
   ingest: { requested: "Ingest into the knowledge base", declined: "Do not ingest" },
@@ -174,12 +175,16 @@ function findingDetails(finding) {
 }
 
 function suggestionLine(item) {
-  if (item.suggested === null) return el("p", { className: "muted", text: `No suggestion: you decide. ${item.suggestion_reason}` });
-  const shown = typeof item.suggested === "boolean" ? (item.suggested ? "include" : "leave out") : DISPOSITION_LABELS[item.suggested] ?? FLAG_LABELS[item.suggested];
+  if (item.suggested === null) {
+    if (item.suggestion_source === "added by the member") return el("p", { className: "muted", text: "You added this direction." });
+    return el("p", { className: "muted", text: `No suggestion: you decide. ${item.suggestion_reason}` });
+  }
+  const shown = typeof item.suggested === "boolean" ? (item.suggested ? "include" : "leave out") : item.kind === "clue" || item.kind === "direction" ? MARK_LABELS[item.suggested] : DISPOSITION_LABELS[item.suggested] ?? FLAG_LABELS[item.suggested];
   return el("p", { className: "muted", text: `Suggested: ${shown}. Source: ${item.suggestion_source}. ${item.suggestion_reason}` });
 }
 
 function changeTag(item) {
+  if (item.suggested === null && item.final === null && !item.required) return el("span", { className: "tag", text: "No mark" });
   if (item.suggested === null) return item.final === null ? el("span", { className: "tag strong", text: "Open: needs your decision" }) : el("span", { className: "tag", text: "Decided" });
   return item.final === item.suggested
     ? el("span", { className: "tag", text: "As suggested" })
@@ -376,11 +381,317 @@ function ingestContent(content, items) {
   ].filter(Boolean);
 }
 
+// ---------------------------------------------------------------- research
+
+const MARK_LABELS = { pursue: "Pursue", dismiss: "Dismiss", keep: "Keep", drop: "Drop", add: "Add to the plan" };
+const CLUE_TYPE_LABELS = {
+  watchlist: "Watchlist",
+  premise_complicated: "Premise complicated",
+  premise_contradicted: "Premise contradicted",
+  conflict: "Conflict",
+  new_actor: "New actor",
+  change: "Change",
+  absence: "Absence",
+  change_or_absence: "Change or absence",
+  timing: "Timing",
+  shared_identifier: "Shared identifier",
+};
+const LEAD_FLAG_LABELS = {
+  model_unsure: "Model unsure: the two option orders disagreed, so the answer had no effect",
+  identity_unconfirmed: "Identity unconfirmed: the name matches, nothing else does",
+  no_direction: "Fits no approved direction",
+  allegation: "Allegation: someone claims this",
+  interpretation: "Interpretation: never a factual lead",
+  status_unknown: "Status unknown: the item does not show whether it happened",
+  summary_widens: "Summary widens what the excerpt says",
+  summary_contradicts: "Summary contradicts the excerpt",
+  summary_unsupported: "Summary not supported by the excerpt",
+  absence_is_not_clearance: "Absence is not clearance",
+  snippet_only: "Snippet only: cannot support a finding",
+  summary_refused: "Summary refused: a figure is not in the excerpt",
+  model_suggests_set_aside: "The model would set this aside; while triage only flags, that has no effect",
+};
+const LABEL_NAMES = { identity: "Identity", source: "Source", assertion: "Assertion", status: "Status" };
+const SECTIONS = [
+  ["flagged", "Flagged by triage", "Leads triage flagged for a closer look. A flag never removes a lead."],
+  ["set_aside", "Set aside", "Leads set aside by their lane or by triage. They stay here so nothing is lost; read them before you approve."],
+  ["snippet", "Snippet only", "Only a search snippet was kept, not the page. A snippet is a case note and cannot support a finding."],
+  ["unverifiable", "Unverifiable", "The excerpt was not found word for word in the stored source. The lead is kept, never deleted."],
+];
+const SECTION_NAMES = { direction: "under its direction", flagged: "flagged", set_aside: "set aside", snippet: "snippet only", unverifiable: "unverifiable" };
+let newDirection = { key: "", value: "" };
+
+function words(value) {
+  return String(value ?? "").replace(/_/g, " ");
+}
+
+function usd(value) {
+  return typeof value === "number" ? `$${value.toFixed(value < 0.1 && value > 0 ? 3 : 2)}` : "not set";
+}
+
+function runSection(content) {
+  const run = content.run;
+  const spend = run.spend;
+  const spendLine = run.mode === "subscription_subagents"
+    ? "Subscription subagents report no spend."
+    : spend.reported
+      ? `Spent ${usd(spend.round_usd)} of a ${usd(spend.budget_usd)} round budget; ${usd(spend.case_usd)} of ${usd(spend.case_budget_usd)} for the case.`
+      : "No spend was recorded for this round.";
+  return el(
+    "section",
+    { "aria-labelledby": "run-heading", className: "card" },
+    el("h2", { id: "run-heading", text: "This research round" }),
+    el("p", {}, el("strong", { text: "Research mode: " }), run.mode_label),
+    run.round ? el("p", { text: `Round ${run.round}.` }) : null,
+    el("p", { text: spendLine }),
+    run.stopped ? el("p", {}, el("strong", { text: "The round stopped: " }), run.stopped.message || run.stopped.code) : null,
+    el("h3", { text: `Topics left out (${run.left_out.length})` }),
+    list(run.left_out.map((topic) => (topic.reason ? `${topic.topic_id}: ${topic.reason}` : topic.topic_id)), "Every approved topic ran."),
+    run.refused.length ? [el("h3", { text: `Topics refused (${run.refused.length})` }), list(run.refused.map((topic) => `${topic.topic_id}: ${topic.reason}`), "")] : null,
+    run.lanes.length ? [el("h3", { text: "Lanes that did not complete" }), list(run.lanes.map((lane) => `${lane.topic_id}: ${words(lane.status)}`), "")] : null,
+  );
+}
+
+function triageNotice(content) {
+  const triage = content.triage;
+  const lines = [];
+  if (triage.state === "missing") lines.push("Triage has not run: leads are ordered by the clue rules and the source checks only.");
+  if (triage.state === "broken") lines.push("Triage results break the triage rules and are not used on this page.");
+  if (triage.flag_only && triage.notice) lines.push(triage.notice);
+  if (triage.state === "ok" && triage.backends?.length) lines.push(`Answered by: ${triage.backends.join(", ")}.`);
+  if (content.suggestions === "missing") lines.push("The investigator has not suggested marks: every clue starts unmarked.");
+  if (!lines.length) return null;
+  return el("section", { "aria-labelledby": "triage-heading", className: "card" }, el("h2", { id: "triage-heading", text: "About these results" }), lines.map((line) => el("p", { text: line })));
+}
+
+function leadTags(lead) {
+  return el(
+    "p",
+    {},
+    el("span", { className: "tag", text: `Lead ${lead.lead_id}` }),
+    el("span", { className: "tag", text: `Rank ${lead.rank}` }),
+    el("span", { className: "tag", text: `Topic: ${lead.topic_id}` }),
+    lead.absence ? el("span", { className: "tag strong", text: "Absence: nothing found" }) : el("span", { className: "tag", text: lead.stored === "snippet" ? "Snippet only" : "Stored page" }),
+    lead.status !== "candidate" ? el("span", { className: "tag strong", text: words(lead.status) }) : null,
+    lead.source_families ? el("span", { className: "tag", text: `Source families: ${lead.source_families}` }) : null,
+    lead.copies ? el("span", { className: "tag", text: `Copies collapsed: ${lead.copies}` }) : null,
+    lead.journalist_input ? el("span", { className: "tag strong", text: "Journalist input (local only)" }) : null,
+    lead.clues.map((clue) => el("span", { className: "tag strong", text: `Clue: ${words(clue)}` })),
+  );
+}
+
+function leadCard(lead, directionLabel) {
+  const triage = lead.triage;
+  const labels = triage ? Object.entries(triage.labels) : [];
+  return el(
+    "article",
+    { className: "card", id: `lead-${lead.rank}`, "aria-label": `Lead ${lead.lead_id}` },
+    el("h4", { text: lead.summary || `Lead ${lead.lead_id}` }),
+    leadTags(lead),
+    directionLabel ? el("p", { className: "muted", text: `Direction: ${directionLabel}` }) : null,
+    lead.excerpt ? el("p", { className: "quote" }, el("strong", { text: lead.direct_quote ? "Excerpt (verbatim): " : "Excerpt (not a direct quote): " }), lead.excerpt) : null,
+    lead.source_url ? el("p", { className: "quote muted", text: `Source: ${lead.source_url}` }) : null,
+    lead.attribution ? el("p", { className: "quote", text: `Reported claim: ${lead.attribution.actor} ${lead.attribution.stance} (“${lead.attribution.verbatim}”)` }) : null,
+    lead.absence && lead.queries_tried.length ? el("p", { className: "muted", text: `Queries tried: ${lead.queries_tried.join("; ")}` }) : null,
+    labels.length ? el("p", { className: "muted", text: `Triage: ${labels.map(([name, value]) => `${LABEL_NAMES[name] ?? name} ${words(value)}`).join("; ")}.` }) : null,
+    triage?.flags.length
+      ? el("ul", { "aria-label": `Flags on lead ${lead.lead_id}` }, triage.flags.map((flag) => el("li", { text: `${LEAD_FLAG_LABELS[flag.reason] ?? words(flag.reason)}${flag.detail ? ` (${flag.detail})` : ""}` })))
+      : null,
+  );
+}
+
+function markGroup(item, options, groupLabel) {
+  const name = domId("mark", item.key);
+  return el(
+    "div",
+    { className: "choices", role: "radiogroup", "aria-label": groupLabel },
+    options.map(([value, label]) => {
+      const id = `${name}-${value ?? "none"}`;
+      return el(
+        "span",
+        { className: "choice" },
+        el("input", {
+          type: "radio",
+          id,
+          name,
+          value: value ?? "",
+          checked: item.final === value,
+          disabled: readOnly() || busy,
+          on: { change: () => edit({ kind: "mark", key: item.key, value }) },
+        }),
+        el("label", { for: id, text: label }),
+      );
+    }),
+  );
+}
+
+function clueCard(clue, item, leadsById, index) {
+  const name = domId("mark", item.key);
+  const options = item.protected ? [["pursue", "Pursue"]] : [["pursue", "Pursue"], ["dismiss", "Dismiss"]];
+  return el(
+    "fieldset",
+    { className: "card", "aria-describedby": `${name}-state` },
+    el("legend", { text: `Clue ${index + 1}: ${CLUE_TYPE_LABELS[clue.type] ?? words(clue.type)} (${clue.source})` }),
+    el(
+      "p",
+      {},
+      item.protected ? el("span", { className: "tag strong", text: "Always pursued" }) : null,
+      clue.model_unsure ? el("span", { className: "tag strong", text: "Model unsure" }) : null,
+      clue.conflict_answer?.counted ? el("span", { className: "tag", text: `Conflict question: ${words(clue.conflict_answer.value)}` }) : null,
+    ),
+    el("p", { className: "quote", text: clue.summary }),
+    clue.warning ? el("p", {}, el("strong", { text: "Warning: " }), clue.warning) : null,
+    el(
+      "ul",
+      { "aria-label": `Leads behind clue ${index + 1}` },
+      clue.lead_ids.map((id) => {
+        const lead = leadsById.get(id);
+        return el("li", { text: lead ? `Lead ${id} (rank ${lead.rank}, ${SECTION_NAMES[lead.section]}): ${lead.summary}` : `Lead ${id}` });
+      }),
+    ),
+    suggestionLine(item),
+    el("p", { id: `${name}-state` }, changeTag(item)),
+    markGroup(item, options, `Mark for clue ${index + 1}`),
+    item.protected ? el("p", { className: "muted", text: "Watchlist and premise clues cannot be dismissed." }) : null,
+    noteField(item),
+  );
+}
+
+function directionCard(direction, item, leads) {
+  const name = item ? domId("mark", item.key) : "";
+  const counts = direction?.counts;
+  const label = item?.label || direction?.label || direction?.direction_id;
+  const options = item?.planned ? [["keep", "Keep"], ["drop", "Drop"]] : [["add", "Add to the plan"], [null, "Withdraw"]];
+  return el(
+    "section",
+    { className: "card", "aria-label": `Direction: ${label}` },
+    el("h3", { text: item && !item.planned ? `New direction: ${label}` : `Direction: ${label}` }),
+    direction && !direction.planned ? el("p", { className: "muted", text: "This direction is not in the approved investigation plan." }) : null,
+    counts
+      ? el("p", { className: "muted", text: `${direction.total} leads: ${counts.direction} listed here, ${counts.flagged} flagged, ${counts.set_aside} set aside, ${counts.snippet} snippet only, ${counts.unverifiable} unverifiable.` })
+      : null,
+    direction?.gap ? el("p", {}, el("strong", { text: "Gap: " }), `no qualifying lead.${direction.gap.length ? ` Queries tried: ${direction.gap.join("; ")}` : ""}`) : null,
+    item
+      ? el(
+          "fieldset",
+          { "aria-describedby": `${name}-state` },
+          el("legend", { text: `Mark for ${label}` }),
+          suggestionLine(item),
+          el("p", { id: `${name}-state` }, changeTag(item)),
+          markGroup(item, options, `Mark for direction ${label}`),
+          noteField(item),
+        )
+      : null,
+    leads.map((lead) => leadCard(lead)),
+  );
+}
+
+function addDirectionForm() {
+  const reason = !newDirection.key.trim() ? "Give the direction a short id." : !newDirection.value.trim() ? "Describe the direction." : "";
+  const unavailable = readOnly() || busy || Boolean(reason);
+  return el(
+    "div",
+    { className: "card" },
+    el("h3", { text: "Add a direction" }),
+    el("label", { for: "new-direction-id", text: "Short id (lowercase letters, digits and hyphens)" }),
+    el("input", {
+      type: "text",
+      id: "new-direction-id",
+      maxlength: "64",
+      value: newDirection.key,
+      disabled: readOnly() || busy,
+      on: { input: (event) => { newDirection.key = event.target.value; refreshAddDirection(); } },
+    }),
+    el("label", { for: "new-direction-text", text: "What should it establish?" }),
+    el("textarea", {
+      id: "new-direction-text",
+      maxlength: "1000",
+      value: newDirection.value,
+      disabled: readOnly() || busy,
+      on: { input: (event) => { newDirection.value = event.target.value; refreshAddDirection(); } },
+    }),
+    el("div", { id: "add-direction-controls" }, addDirectionControls(reason, unavailable)),
+  );
+}
+
+function addDirectionControls(reason, unavailable) {
+  return [
+    reason ? el("p", { id: "add-direction-reason", className: "muted", text: reason }) : null,
+    el("button", {
+      type: "button",
+      id: "add-direction",
+      className: "secondary",
+      "aria-disabled": unavailable ? "true" : "false",
+      "aria-describedby": reason ? "add-direction-reason" : undefined,
+      text: "Add the direction",
+      on: { click: () => (unavailable ? warn(reason || "The review is busy.") : addDirection()) },
+    }),
+  ].filter(Boolean);
+}
+
+function refreshAddDirection() {
+  const reason = !newDirection.key.trim() ? "Give the direction a short id." : !newDirection.value.trim() ? "Describe the direction." : "";
+  document.getElementById("add-direction-controls")?.replaceChildren(...addDirectionControls(reason, readOnly() || busy || Boolean(reason)));
+}
+
+async function addDirection() {
+  const change = { kind: "add_direction", key: newDirection.key.trim(), value: newDirection.value.trim() };
+  await edit(change);
+  if (view.items.some((item) => item.key === `direction:${change.key}`)) newDirection = { key: "", value: "" };
+  if (view) render(view);
+}
+
+function researchContent(content, items) {
+  const leadsById = new Map(content.leads.map((lead) => [lead.lead_id, lead]));
+  const itemsByKey = new Map(items.map((item) => [item.key, item]));
+  const directionLabels = new Map(content.directions.map((direction) => [direction.direction_id, direction.label]));
+  const clueItems = items.filter((item) => item.kind === "clue");
+  const open = clueItems.filter((item) => item.final === null).length;
+  const directionItems = items.filter((item) => item.kind === "direction");
+  const shownDirections = new Set(content.directions.map((direction) => `direction:${direction.direction_id}`));
+  const sections = SECTIONS.map(([section, heading, explanation]) => {
+    const leads = content.leads.filter((lead) => lead.section === section);
+    return el(
+      "section",
+      { "aria-labelledby": `${section}-heading` },
+      el("h2", { id: `${section}-heading`, text: `${heading} (${leads.length})` }),
+      el("p", { className: "muted", text: explanation }),
+      leads.length ? leads.map((lead) => leadCard(lead, directionLabels.get(lead.direction_id) ?? lead.direction_id)) : el("p", { className: "muted", text: "None." }),
+    );
+  });
+  return [
+    runSection(content),
+    triageNotice(content),
+    el(
+      "section",
+      { "aria-labelledby": "clues-heading" },
+      el("h2", { id: "clues-heading", text: `Clues (${content.clues.length}; ${open} unmarked)` }),
+      el("p", { className: "muted", text: "Most telling first. Mark each clue pursue or dismiss; the investigator turns your marks into the methodology change." }),
+      content.clues.length
+        ? content.clues.map((clue, index) => clueCard(clue, itemsByKey.get(`clue:${clue.clue_id}`), leadsById, index))
+        : el("p", { className: "muted", text: "The rules found no clue in these leads." }),
+    ),
+    el(
+      "section",
+      { "aria-labelledby": "directions-heading" },
+      el("h2", { id: "directions-heading", text: `Directions and their leads (${content.lead_total} leads in all)` }),
+      el("p", { className: "muted", text: "Keep or drop each direction. A direction with no mark stays in the plan. Leads that are flagged, set aside, snippet only or unverifiable are listed in their own sections below." }),
+      content.directions.map((direction) =>
+        directionCard(direction, itemsByKey.get(`direction:${direction.direction_id}`), content.leads.filter((lead) => lead.direction_id === direction.direction_id && lead.section === "direction")),
+      ),
+      directionItems.filter((item) => !shownDirections.has(item.key)).map((item) => directionCard(null, item, [])),
+      readOnly() ? null : addDirectionForm(),
+    ),
+    ...sections,
+  ].filter(Boolean);
+}
+
 // ---------------------------------------------------------------- decision
 
 function decisionBlockers() {
   if (readOnly()) return "";
   if (view.blocking.length) return "Approval is unavailable while a blocking failure is open.";
+  if (view.open_required && view.gate === "research") return `Approval is unavailable until every clue is marked pursue or dismiss (${view.open_required} open).`;
   if (view.open_required) return `Approval is unavailable until every flag has a disposition (${view.open_required} open).`;
   return "";
 }
@@ -565,6 +876,7 @@ function render(next) {
       );
     }
     if (view.gate === "methodology") parts.push(methodologyContent(view.content));
+    if (view.gate === "research") parts.push(...researchContent(view.content, view.items));
     if (view.gate === "investigation_gate") parts.push(...investigationContent(view.content, view.items));
     if (view.gate === "report") parts.push(reportContent(view.content));
     if (view.gate === "ingest") parts.push(...ingestContent(view.content, view.items));
