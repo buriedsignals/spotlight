@@ -1,7 +1,7 @@
 # Spotlight skills — authoring contract
 
 Spotlight exposes a manifest-scoped skill catalog across Claude Code, Codex,
-Gemini, OpenCode, Pi, and Flue. Compatible runtimes discover skill metadata
+Gemini, OpenCode, and Pi. Compatible runtimes discover skill metadata
 first and load a `SKILL.md` body only when the skill is invoked. Role prompts and
 harness composition guide which skills an agent should use; not every runtime
 enforces a separate role-filtered catalog.

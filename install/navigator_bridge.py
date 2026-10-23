@@ -27,8 +27,9 @@ class NavigatorBridgeError(RuntimeError):
 
 NAVIGATOR_RUNTIME_IDS = {
     # Resolver tokens are Navigator's contract IDs; "local" names the
-    # Flue-on-Pi harness transport. "claude"/"codex" are legacy persisted
-    # choices, kept as aliases so saved configs still resolve.
+    # local Pi harness, whose Navigator contract ID is still "pi-flue".
+    # "claude"/"codex" are legacy persisted choices, kept as aliases so
+    # saved configs still resolve.
     "claude-code": "claude-code",
     "codex-cli": "codex-cli",
     "pi": "pi",
