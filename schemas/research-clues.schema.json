@@ -45,7 +45,7 @@
         "properties": {
           "clue_id": { "type": "string", "minLength": 1 },
           "type": {
-            "enum": ["watchlist", "premise_complicated", "premise_contradicted", "conflict", "new_actor", "change", "absence", "timing", "shared_identifier"]
+            "enum": ["watchlist", "premise_complicated", "premise_contradicted", "conflict", "new_actor", "change", "absence", "timing", "shared_identifier", "method_signal"]
           },
           "source": {
             "type": "string",
