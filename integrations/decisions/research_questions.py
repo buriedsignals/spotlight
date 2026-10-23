@@ -3,7 +3,8 @@
 Kept apart from ``questions.ALL``: these questions read research leads, not
 findings, and carry their own version. Changing any text here changes
 ``RESEARCH_BANK_VERSION``; thresholds measured against one version never
-apply to another.
+apply to another. So does a change to what an answer does
+(``EFFECTS_REVISION``, applied in ``research_rules.lead_outcome``).
 
 Q1-Q6 and C1, C4 are ``choice`` questions, asked in both option orders (the
 ``_rev`` twin). C2 and C3 are ``noul`` questions on trial: they are asked only
@@ -88,12 +89,19 @@ ON_TRIAL = {
 DIRECTION_TEXT = "Which approved research direction does this item inform?"
 CONFLICT_TEXT = "Compare item A and item B about the same subject. How do their values for {attribute} compare?"
 
+# What the answers do (research_rules.lead_outcome). Raise it whenever an
+# effect changes, so an acceptance measured under the old effects stops
+# counting. 2: an answer that only narrows to the brief's subjects or
+# directions never sets a lead aside; it labels it circumstantial or outside
+# the directions.
+EFFECTS_REVISION = 2
+
 # Every choice question is asked in both option orders.
 PERMUTED = ("q1_identity", "q2_direction", "q3_source", "q4_assertion", "q5_status", "q6_fidelity", "c1_premise", "c4_conflict")
 
 RESEARCH_BANK_VERSION = hashlib.sha256(json.dumps(
     {"questions": QUESTIONS, "on_trial": ON_TRIAL, "direction": [DIRECTION_TEXT, DIRECTION_NONE],
-     "conflict": [CONFLICT_TEXT, C4_CONFLICT], "permuted": PERMUTED},
+     "conflict": [CONFLICT_TEXT, C4_CONFLICT], "permuted": PERMUTED, "effects": EFFECTS_REVISION},
     sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 DIRECTION_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")

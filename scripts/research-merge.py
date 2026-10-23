@@ -400,10 +400,19 @@ def _position(order: tuple[str, ...], value: Any) -> int:
     return order.index(value) if value in order else len(order)
 
 
+def _identity_position(value: Any) -> int:
+    """Same-subject leads first, then leads triage did not place, then
+    circumstantial leads (about another subject or event): kept and ranked,
+    never set aside, and still lifted by any clue they carry."""
+    if value in rr.CIRCUMSTANTIAL_IDENTITIES:
+        return len(IDENTITY_ORDER) + 1
+    return _position(IDENTITY_ORDER, value)
+
+
 def rank(leads_doc: Mapping[str, Any], clues_doc: Mapping[str, Any] | None,
          triage_doc: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
     """The Research page's lead order. No question asks how important a lead
-    is: clue type, then identity, then source, then assertion (triage labels,
+    is: clue type, then identity (circumstantial leads after the rest), then source, then assertion (triage labels,
     counted only when both orders agreed), then more independent source
     families (S2), then stored pages before snippets (S1)."""
     entries = {entry["lead"]["lead_id"]: entry["lead"] for entry in leads_doc.get("leads") or []}
@@ -430,7 +439,7 @@ def rank(leads_doc: Mapping[str, Any], clues_doc: Mapping[str, Any] | None,
         labels = (triage.get(lead_id) or {}).get("labels") or {}
         best = min((CLUE_ORDER.index(t) for t in clue_types[lead_id]), default=len(CLUE_ORDER))
         own = 0 if lead.get("absence") else 1
-        key = (best, _position(IDENTITY_ORDER, labels.get("identity")), _position(SOURCE_ORDER, labels.get("source")),
+        key = (best, _identity_position(labels.get("identity")), _position(SOURCE_ORDER, labels.get("source")),
                _position(ASSERTION_ORDER, labels.get("assertion")), -max(families.get(lead_id, 0), own),
                {"page": 0, "snippet": 1}.get(lead.get("stored"), 2), lead_id)
         ranked.append({"lead_id": lead_id, "clues": sorted(clue_types[lead_id], key=CLUE_ORDER.index),

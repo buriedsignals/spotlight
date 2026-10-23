@@ -1,6 +1,12 @@
 """Deterministic rules for research triage: the lead seam, S1/S2/N1, the
 effects of the research questions, and the triage invariants (D7).
 
+A lead is never set aside for being about another subject, event or
+direction than the brief's: leads about other people, companies or events can
+be circumstantial, and that is what makes them clues. Such answers label the
+lead (``CIRCUMSTANTIAL``, ``OUTSIDE_DIRECTIONS``); only answers that dismiss
+the material itself (``SET_ASIDE_REASONS``) can set a lead aside.
+
 Nothing here calls a model. A model answer has an effect only when both
 option orders agree; disagreement flags the lead "model unsure" and changes
 nothing else. Until the decision-model acceptance test has passed for this
@@ -46,6 +52,12 @@ FLAG_ONLY_NOTICE = ("Triage only flags until the decision-model acceptance test 
                     "by a model answer, and the new-actor and change-or-absence questions are not asked.")
 DISPOSITIONS = ("keep", "flag", "set_aside")
 ALWAYS_SHOWN_CLUES = {"watchlist", "premise_complicated", "premise_contradicted"}
+# The only reasons a lead may be set aside: the source does not contain what
+# the lead says. Topical answers (another subject, no direction) never are.
+SET_ASIDE_REASONS = frozenset({"content_not_found"})
+# Context labels: kept leads, ranked after same-subject leads.
+CIRCUMSTANTIAL, OUTSIDE_DIRECTIONS = "circumstantial", "outside_directions"
+CIRCUMSTANTIAL_IDENTITIES = frozenset({"different_subject_or_event", "none_of_the_brief"})
 LEAD_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 MAX_TEXT = 4000
@@ -232,6 +244,7 @@ def lead_outcome(lead: TriageLead, recorded: Mapping[str, Mapping[str, Any]], mo
     flags: list[dict[str, str]] = []
     labels: dict[str, str] = {}
     clues: list[str] = []
+    context: list[str] = []
     set_aside: list[str] = []
     rule_clues = set(rule_clues)
 
@@ -248,12 +261,10 @@ def lead_outcome(lead: TriageLead, recorded: Mapping[str, Mapping[str, Any]], mo
         labels["identity"] = identity
     if identity == "name_only":
         flag("identity_unconfirmed")
-    elif identity == "different_subject_or_event":
-        set_aside.append("different_subject_or_event")
-    elif identity == "none_of_the_brief" and "K1" not in rule_clues and value.get("c2_new_actor") != "high":
-        set_aside.append("none_of_the_brief")
+    elif identity in CIRCUMSTANTIAL_IDENTITIES:
+        context.append(CIRCUMSTANTIAL)
     if value.get("q2_direction") == "none":
-        flag("no_direction", "set-aside candidate for review")
+        context.append(OUTSIDE_DIRECTIONS)
     if value.get("q3_source"):
         labels["source"] = value["q3_source"]
     assertion = value.get("q4_assertion")
@@ -299,7 +310,7 @@ def lead_outcome(lead: TriageLead, recorded: Mapping[str, Mapping[str, Any]], mo
     if premise == "contradicts" and assertion == "reported_claim":
         position = {"stance": "disputes"}  # an actor's denial of the premise
     return {"lead_id": lead.lead_id, "disposition": disposition, "set_aside_reasons": set_aside,
-            "flags": flags, "labels": labels, "clues": clues, "summary_refused": bool(missing),
+            "flags": flags, "labels": labels, "clues": clues, "context": context, "summary_refused": bool(missing),
             "source_position": position}
 
 
@@ -311,7 +322,8 @@ def conflict_outcome(recorded: Mapping[str, Any]) -> str | None:
 # ------------------------------------------------------------- D7
 def triage_violations(document: Mapping[str, Any]) -> list[str]:
     """D7: the model can only keep, flag or set aside; always-shown clues are
-    never set aside; nothing is set aside before the acceptance test; a set
+    never set aside; nothing is set aside before the acceptance test, nor for
+    a reason that only narrows to the brief's subjects or directions; a set
     aside rests only on answers both orders agreed on; no band before U15."""
     problems: list[str] = []
     mode = document.get("mode")
@@ -326,6 +338,9 @@ def triage_violations(document: Mapping[str, Any]) -> list[str]:
             problems.append(f"{lid}: an always-shown clue was set aside")
         if aside and not result.get("set_aside_reasons"):
             problems.append(f"{lid}: set aside without a reason")
+        topical = sorted(set(result.get("set_aside_reasons") or []) - SET_ASIDE_REASONS) if aside else []
+        if topical:
+            problems.append(f"{lid}: set aside for {', '.join(map(str, topical))}, which never sets a lead aside")
         for qid, answer in (result.get("answers") or {}).items():
             if answer.get("band") is not None and mode != FULL:
                 problems.append(f"{lid}: {qid} has a probability band before the acceptance test")

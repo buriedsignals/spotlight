@@ -4,6 +4,18 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed — Research triage keeps circumstantial leads
+
+- A lead is never set aside for being about another subject, event or
+  direction than the brief's. Q1 `different_subject_or_event` and
+  `none_of_the_brief` keep the lead and label it circumstantial (ranked after
+  same-subject leads, still eligible for every clue); Q2 `none` keeps it,
+  labelled outside the directions. Only Q4 `not_found` (the source does not
+  contain the content) sets a lead aside; D7 refuses any other reason.
+- `RESEARCH_BANK_VERSION` changes (the effects are part of it); the
+  acceptance harness reports circumstantial keeps apart from lost leads, and
+  the Research page lists them in a Circumstantial section.
+
 ### Removed — Flue harness
 
 - `harness/flue/` and `tests/flue-build-check.sh` are gone; the Pi harness

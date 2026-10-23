@@ -399,7 +399,6 @@ const CLUE_TYPE_LABELS = {
 const LEAD_FLAG_LABELS = {
   model_unsure: "Model unsure: the two option orders disagreed, so the answer had no effect",
   identity_unconfirmed: "Identity unconfirmed: the name matches, nothing else does",
-  no_direction: "Fits no approved direction",
   allegation: "Allegation: someone claims this",
   interpretation: "Interpretation: never a factual lead",
   status_unknown: "Status unknown: the item does not show whether it happened",
@@ -412,13 +411,15 @@ const LEAD_FLAG_LABELS = {
   model_suggests_set_aside: "The model would set this aside; while triage only flags, that has no effect",
 };
 const LABEL_NAMES = { identity: "Identity", source: "Source", assertion: "Assertion", status: "Status" };
+const CONTEXT_LABELS = { circumstantial: "Circumstantial", outside_directions: "Outside the directions" };
 const SECTIONS = [
+  ["circumstantial", "Circumstantial", "Leads about another person, company or event than the brief's. They are kept, never set aside for it: circumstantial material is what clues are made of."],
   ["flagged", "Flagged by triage", "Leads triage flagged for a closer look. A flag never removes a lead."],
   ["set_aside", "Set aside", "Leads set aside by their lane or by triage. They stay here so nothing is lost; read them before you approve."],
   ["snippet", "Snippet only", "Only a search snippet was kept, not the page. A snippet is a case note and cannot support a finding."],
   ["unverifiable", "Unverifiable", "The excerpt was not found word for word in the stored source. The lead is kept, never deleted."],
 ];
-const SECTION_NAMES = { direction: "under its direction", flagged: "flagged", set_aside: "set aside", snippet: "snippet only", unverifiable: "unverifiable" };
+const SECTION_NAMES = { direction: "under its direction", circumstantial: "circumstantial", flagged: "flagged", set_aside: "set aside", snippet: "snippet only", unverifiable: "unverifiable" };
 let newDirection = { key: "", value: "" };
 
 function words(value) {
@@ -476,6 +477,7 @@ function leadTags(lead) {
     lead.source_families ? el("span", { className: "tag", text: `Source families: ${lead.source_families}` }) : null,
     lead.copies ? el("span", { className: "tag", text: `Copies collapsed: ${lead.copies}` }) : null,
     lead.journalist_input ? el("span", { className: "tag strong", text: "Journalist input (local only)" }) : null,
+    (lead.triage?.context ?? []).map((context) => el("span", { className: "tag", text: CONTEXT_LABELS[context] ?? words(context) })),
     lead.clues.map((clue) => el("span", { className: "tag strong", text: `Clue: ${words(clue)}` })),
   );
 }
@@ -568,7 +570,7 @@ function directionCard(direction, item, leads) {
     el("h3", { text: item && !item.planned ? `New direction: ${label}` : `Direction: ${label}` }),
     direction && !direction.planned ? el("p", { className: "muted", text: "This direction is not in the approved investigation plan." }) : null,
     counts
-      ? el("p", { className: "muted", text: `${direction.total} leads: ${counts.direction} listed here, ${counts.flagged} flagged, ${counts.set_aside} set aside, ${counts.snippet} snippet only, ${counts.unverifiable} unverifiable.` })
+      ? el("p", { className: "muted", text: `${direction.total} leads: ${counts.direction} listed here, ${counts.circumstantial} circumstantial, ${counts.flagged} flagged, ${counts.set_aside} set aside, ${counts.snippet} snippet only, ${counts.unverifiable} unverifiable.` })
       : null,
     direction?.gap ? el("p", {}, el("strong", { text: "Gap: " }), `no qualifying lead.${direction.gap.length ? ` Queries tried: ${direction.gap.join("; ")}` : ""}`) : null,
     item
@@ -675,7 +677,7 @@ function researchContent(content, items) {
       "section",
       { "aria-labelledby": "directions-heading" },
       el("h2", { id: "directions-heading", text: `Directions and their leads (${content.lead_total} leads in all)` }),
-      el("p", { className: "muted", text: "Keep or drop each direction. A direction with no mark stays in the plan. Leads that are flagged, set aside, snippet only or unverifiable are listed in their own sections below." }),
+      el("p", { className: "muted", text: "Keep or drop each direction. A direction with no mark stays in the plan. Leads that are circumstantial, flagged, set aside, snippet only or unverifiable are listed in their own sections below." }),
       content.directions.map((direction) =>
         directionCard(direction, itemsByKey.get(`direction:${direction.direction_id}`), content.leads.filter((lead) => lead.direction_id === direction.direction_id && lead.section === "direction")),
       ),

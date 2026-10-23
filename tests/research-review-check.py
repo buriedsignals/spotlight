@@ -61,7 +61,7 @@ class ResearchPage(unittest.TestCase):
         self.assertEqual(content["clues"][2]["warning"].split(":")[0], "Absence is not clearance")
         sections = {lead["lead_id"]: lead["section"] for lead in content["leads"]}
         self.assertEqual(sections, {"reg-2": "flagged", "court-1": "flagged", "reg-1": "flagged",
-                                    "reg-gap": "direction", "court-2": "direction", "web-3": "set_aside",
+                                    "reg-gap": "direction", "court-2": "circumstantial", "web-3": "set_aside",
                                     "web-1": "snippet", "web-2": "unverifiable"})
         self.assertEqual(len(content["leads"]), content["lead_total"])
         # Leads follow U6's ranking.
@@ -71,7 +71,12 @@ class ResearchPage(unittest.TestCase):
         unsure = next(lead for lead in content["leads"] if lead["lead_id"] == "reg-1")
         self.assertIn("model_unsure", [f["reason"] for f in unsure["triage"]["flags"]])
         ownership = next(d for d in content["directions"] if d["direction_id"] == "ownership")
-        self.assertEqual(ownership["counts"], {"direction": 1, "flagged": 2, "set_aside": 1, "snippet": 1, "unverifiable": 1})
+        self.assertEqual(ownership["counts"], {"direction": 1, "circumstantial": 0, "flagged": 2, "set_aside": 1, "snippet": 1, "unverifiable": 1})
+        # A lead about none of the brief's subjects is kept, labelled and listed as circumstantial.
+        court = next(lead for lead in content["leads"] if lead["lead_id"] == "court-2")
+        self.assertEqual((court["triage"]["disposition"], court["triage"]["context"]), ("keep", ["circumstantial"]))
+        contracts = next(d for d in content["directions"] if d["direction_id"] == "contracts")
+        self.assertEqual(contracts["counts"]["circumstantial"], 1)
 
     def test_mode_spend_left_out_and_the_flag_only_notice(self) -> None:
         content = self.view(self.build())["content"]
