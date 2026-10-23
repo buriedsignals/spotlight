@@ -68,6 +68,24 @@ export function spawnRefusal(spec: AgentSpec, role: string, phase: string, editi
 	return undefined;
 }
 
+// D9: the fact-checker verifies findings independently of the research that
+// led to them. A task that points it at the research leads, the clues, the
+// lane folders or a review page is refused before any process starts.
+const FACT_CHECKER_FORBIDDEN: Array<[RegExp, string]> = [
+	[/\bresearch\/swarm\b/i, 'research/swarm/'],
+	[/\bleads\.jsonl?\b/i, 'the research leads'],
+	[/\bclues\.json\b/i, 'the research clues'],
+	[/\bresearch-(?:triage|review|suggestions)\.json\b/i, 'the research triage or review'],
+	[/(?<![\w.-])(?:https?:\/\/)?(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?(?![\w.-])/i, 'a review page'],
+];
+
+export function isolationRefusal(role: string, task: string): string | undefined {
+	if (role !== 'fact-checker') return undefined;
+	const text = task.replaceAll('\\', '/');
+	const named = FACT_CHECKER_FORBIDDEN.filter(([pattern]) => pattern.test(text)).map(([, label]) => label);
+	return named.length ? `the fact-checker works without the research phase's material; the task names ${named.join(', ')}` : undefined;
+}
+
 export function agentSpec(composition: Composition, role: string): AgentSpec {
 	const spec = composition[role];
 	if (!spec) throw new Error(`unknown Spotlight agent: ${role}`);

@@ -541,3 +541,26 @@ test('the analyst is not started before Ingest or in the newsroom edition', asyn
 	assert.match(refusals[1], /the analyst does not run in the newsroom edition/);
 	await assert.rejects(readFile(join(newsroom.casesRoot, 'case-a', 'data', 'knowledge-proposal.json')), { code: 'ENOENT' });
 });
+
+test('D9: a fact-checker task that points at the research leads, clues, lane folders or a review page is refused before any worker starts', async (t) => {
+	const tainted = 'Check data/findings.json. Compare research/swarm/ownership-registries/leads.jsonl, data/clues.json and http://127.0.0.1:41234/review.';
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
+		const done = toolResults(request).length;
+		if (done === 0) return { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: tainted } }] };
+		if (done === 1) return { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check data/findings.json.' } }] };
+		return { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+	await settledPrompt(chat, 'Continue.');
+
+	const workerTasks = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker'));
+	assert.equal(workerTasks.some((request) => JSON.stringify(request).includes('research/swarm')), false);
+	assert.ok(workerTasks.length > 0, 'the clean task reaches the fact-checker');
+	const results = fake.requests.map((request) => toolResults(request)).filter((r) => r.length > 0);
+	assert.match(results[0][0], /the fact-checker works without the research phase's material; the task names research\/swarm\/, the research leads, the research clues, a review page/);
+	assert.match(results[results.length - 1].join('\n'), /Checked\./);
+});

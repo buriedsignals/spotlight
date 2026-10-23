@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Spotlight research lead",
-  "description": "One line of research/swarm/<topic-id>/leads.jsonl. A lead is a candidate for the investigation, never a finding. The typed fetch and search tools write capture, content_ref, content_sha256, derivatives, provenance and lead_id; the lane model supplies only direction_id, summary, subjects, the excerpt text and attribution. Evidence fields follow Batch 1.1's evidence record.",
+  "description": "One line of research/swarm/<topic-id>/leads.jsonl. A lead is a candidate for the investigation, never a finding. The typed fetch and search tools write capture, content_ref, content_sha256, derivatives, provenance and lead_id; the lane model supplies only direction_id, summary, subjects, the excerpt text, facts and attribution. Evidence fields follow Batch 1.1's evidence record.",
   "schema_version": "1.0",
   "type": "object",
   "additionalProperties": false,
@@ -101,6 +101,20 @@
         "speaker": {
           "$ref": "#/definitions/nonempty_text",
           "description": "Only when the speaker label sits outside the excerpt."
+        }
+      }
+    },
+    "facts": {
+      "type": "array",
+      "description": "Structured values the lane model read in the excerpt, for the clue rules: K2 (different values for one subject and attribute), K3 (dates, as YYYY-MM-DD, within the plan's timing window) and K4 (an address, phone, email, director or agent shared by two entities). A fact counts only when its value appears verbatim in the excerpt.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["subject", "attribute", "value"],
+        "properties": {
+          "subject": { "$ref": "#/definitions/nonempty_text" },
+          "attribute": { "$ref": "#/definitions/nonempty_text" },
+          "value": { "$ref": "#/definitions/nonempty_text" }
         }
       }
     },

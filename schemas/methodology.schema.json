@@ -140,7 +140,12 @@
                 "tool_source": {
                   "enum": ["navigator", "curated-catalog", "prior-vault", "user-specified"]
                 },
-                "navigator_response_path": { "type": "string" }
+                "navigator_response_path": { "type": "string" },
+                "cites": {
+                  "type": "array",
+                  "description": "A step added by a Research-gate amendment cites the pursued clue or kept or added direction it serves (D8).",
+                  "items": { "type": "string", "pattern": "^(clue|direction):[A-Za-z0-9][A-Za-z0-9._:-]*$" }
+                }
 				,"navigator_catalog_id": { "type": "string" }
 				,"navigator_retrieved_at": { "type": "string", "format": "date-time" }
               }
@@ -171,6 +176,11 @@
           "exclusiveMinimum": 0,
           "maximum": 5,
           "description": "Spend ceiling across every research round of the case; never above 5."
+        },
+        "timing_window_days": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Clue rule K3: two dated events of the same subject this many days apart or closer are a timing clue. Unset: K3 does not fire."
         },
         "mode": {
           "enum": ["local_only", "openrouter_swarm", "subscription_subagents", "newsroom"],
