@@ -411,6 +411,8 @@ const PASSTHROUGH = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 
 // fetch, browse's Chromium, the RLM model), passed to every process unchanged.
 // The RLM endpoint itself is passed only after readConfig confirmed it is own.
 const BACKING_SETTINGS = [
+	// The Anomaly install the anomaly_methods tool reads (a path, not a secret).
+	'ANOMALY_HOME',
 	'SPOTLIGHT_ANONYMIZE_FETCH',
 	'TOR_SOCKS',
 	'SPOTLIGHT_BROWSE_CHROMIUM',

@@ -35,6 +35,7 @@
         "build_review_html",
         "run_rlm",
         "integration_status",
+        "anomaly_methods",
         "osint_tools",
         "open_review"
       ],

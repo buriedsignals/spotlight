@@ -325,7 +325,7 @@ test('a worker writes through its typed tools and the harness validates its outp
 });
 
 // Tools whose effects stay on this machine (case files, the local vault and
-// tool index, the resolver, the loopback review page), plus the two checks
+// tool index, the Anomaly catalogue, the resolver, the loopback review page), plus the two checks
 // that refuse their remote step themselves when SPOTLIGHT_SENSITIVE is set.
 // Any other tool a sensitive process declares is a possible way out.
 const LOCAL_TOOLS = new Set([
@@ -346,6 +346,7 @@ const LOCAL_TOOLS = new Set([
 	'exiftool',
 	'decision_signals',
 	'provenance_manifest',
+	'anomaly_methods',
 ]);
 
 test('sensitive mode leaves every process only local tools, and a tool that can send case text out does not run', async (t) => {

@@ -107,6 +107,9 @@ writes.
 - Spotlight does not sandbox the runner's network itself. The guarantees are
   Anomaly's: methods are SQL, validated read-only, run with external access
   disabled after the table is loaded.
-- The lane runner (`harness/pi/src/lanes.ts`) has no typed tool that writes
-  `method-inputs.json` yet; in subscription mode the researcher writes it
-  with `write-file`.
+- In subscription mode the researcher writes `method-inputs.json` with
+  `write-file`. Pi lanes name each table with `record_method_input`, and the
+  lane runner (`harness/pi/src/lanes.ts`) writes the file after checking the
+  method is approved for the topic and the lead is the lane's own stored page
+  that passed D3. The Pi orchestrator lists the methods with
+  `anomaly_methods`.

@@ -114,4 +114,5 @@ more good leads rather than one polished answer.
   `{LANE_DIR}/method-inputs.json`: the method, the lead id, the format and
   which column serves each field the method needs
   (`integrations/anomaly/integration.md`). Never edit a table to make a
-  method fit it.
+  method fit it. In a Pi lane, name each table with `record_method_input`
+  instead; the lane runner writes the file.
