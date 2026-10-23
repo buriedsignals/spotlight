@@ -155,6 +155,30 @@ def main() -> int:
         require(batch["claims"][0]["provenance"] == {"method": "agent_candidate", "model": "analyst-model-1"}, "claim provenance")
         first_ids = {r["id"] for array in RULES.ARRAYS for r in batch.get(array, [])}
 
+        # Identifiers the analyst found stay on this computer: in the
+        # mentions file for the register lookup, never in the batch.
+        with_ids = json.loads(json.dumps(PROPOSAL))
+        with_ids["claims"][0]["statement"]["subject"] = {"text": "Acme", "entity_type": "company",
+                                                         "identifiers": {"company": [{"number": "CHE-123", "jurisdiction": "CH"}]}}
+        write(case, "knowledge-proposal.json", with_ids)
+        require(build(case).returncode == 0, "a proposal with identifiers was refused")
+        built = read(case, "knowledge-batch.json")
+        require(built["claims"][0]["statement"]["subject"] == {"text": "Acme"}, f"identifiers leaked into the batch: {built['claims'][0]['statement']}")
+        require(read(case, "knowledge-mentions.json")["mentions"]["Acme"] ==
+                {"entity_type": "company", "identifiers": {"company": [{"number": "CHE-123", "jurisdiction": "CH"}]}},
+                "the mention's identifiers were not kept")
+        # The same text with an unrelated identifier may be someone else: the
+        # name goes to the register alone.
+        two = json.loads(json.dumps(with_ids))
+        two["claims"][0]["statement"]["object"] = {"text": "Acme", "entity_type": "company",
+                                                   "identifiers": {"company": [{"number": "CHE-999", "jurisdiction": "CH"}]}}
+        write(case, "knowledge-proposal.json", two)
+        require(build(case).returncode == 0, "a proposal with two same-name mentions was refused")
+        require(read(case, "knowledge-mentions.json")["mentions"]["Acme"] == {"ambiguous": True},
+                f"conflicting identifiers were merged: {read(case, 'knowledge-mentions.json')}")
+        write(case, "knowledge-proposal.json", PROPOSAL)
+        require(build(case).returncode == 0, "rebuild without identifiers failed")
+
         # A rebuild after review edits reuses every id.
         require(build(case).returncode == 0, "rebuild failed")
         again = read(case, "knowledge-batch.json")

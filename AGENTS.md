@@ -255,6 +255,7 @@ absolute path and the result in `.spotlight-config.json` under `storage`.
 │   ├── provenance-manifest.json  # Schema: schemas/provenance-manifest.schema.json
 │   ├── knowledge-proposal.json   # Analyst proposal at Ingest (claims, events, arcs); interface 1
 │   ├── knowledge-ids.json        # Builder id map: proposal and case keys to record ids and versions
+│   ├── knowledge-mentions.json   # Entity types and strong identifiers per mention, for the wiki's register lookup; never in a batch
 │   ├── knowledge-batch.json      # Reviewed batch: 1.0 for existing cases, Batch 1.1 (core) when built by scripts/build-knowledge-batch.py
 │   ├── knowledge-batch-draft.json # Builder draft for review, with flags awaiting a disposition
 │   ├── ingest-review.json        # Ingest page choices: record selection and flag dispositions
@@ -325,8 +326,11 @@ An activated case in solo mode is written to the member's wiki by
   hand edit is detected and never overwritten.
 
 Entity mentions link to `wiki/entities/` only on an exact register match from
-`bsig wiki resolve`; the register links on a strong identifier, which Batch
-1.1 core mentions do not carry, so most mentions stay plain text. Spotlight
+`bsig wiki resolve`; the register links on a strong identifier, so the
+lookup sends the analyst's identifiers for that mention
+(`data/knowledge-mentions.json`, bound by the ingest approval), which never
+enter a batch. Each batch's links are kept in `spotlight/entity-links.json`, so
+rebuilding the notes for a later batch keeps them. Spotlight
 never writes the register. Without Engine there are no links. The write holds
 the wiki's `.wiki-lock` and the case lock throughout. Newsroom-mode cases
 write nothing locally.

@@ -77,6 +77,8 @@ REVIEW = "data/ingest-review.json"
 IDS = "data/knowledge-ids.json"
 BATCH = "data/knowledge-batch.json"
 DRAFT = "data/knowledge-batch-draft.json"
+MENTIONS = "data/knowledge-mentions.json"
+MENTION_KEYS = ("entity_type", "identifiers")
 INTERFACE_VERSION = "1"
 LANGUAGE = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
 KEY = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
@@ -200,7 +202,7 @@ class Ids:
         return placed, True
 
 
-def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
     findings = _load(case, "data/findings.json")
     if not isinstance(findings, dict) or findings.get("schema_version") != "1.1" or not (case / "data" / "case-contract.json").is_file():
         raise BuildError("only an activated case (findings contract 1.1) builds a Batch 1.1")
@@ -300,6 +302,45 @@ def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, An
             record["speaker"] = expression["attribution"]
         return emit("source_expression", expression_id, record)
 
+    # Entity types and strong identifiers the analyst found for a mention
+    # stay on this computer, in data/knowledge-mentions.json, for the wiki's
+    # register lookup; the batch carries only the mention's text.
+    mentions: dict[str, dict[str, Any]] = {}
+
+    def values(found: Any) -> set[str]:
+        items = found if isinstance(found, list) else [found]
+        return {json.dumps(i, sort_keys=True) for i in items}
+
+    def conflicts(known: dict[str, Any], extra: dict[str, Any]) -> bool:
+        """Same text, but a different type or an identifier of the same kind
+        with no value in common: possibly two people."""
+        if known.get("entity_type") and extra.get("entity_type") and known["entity_type"] != extra["entity_type"]:
+            return True
+        ours, theirs = known.get("identifiers") or {}, extra.get("identifiers") or {}
+        return any(not values(ours[kind]) & values(theirs[kind]) for kind in set(ours) & set(theirs))
+
+    def mention(value: dict[str, Any], label: str) -> dict[str, Any]:
+        extra = {k: copy.deepcopy(value[k]) for k in MENTION_KEYS if k in value}
+        if extra:
+            name = value[label]
+            known = mentions.setdefault(name, {})
+            if known.get("ambiguous"):
+                pass
+            elif conflicts(known, extra):
+                # Send the name alone, so the register links only on its own
+                # exact match.
+                mentions[name] = {"ambiguous": True}
+            else:
+                if "entity_type" in extra:
+                    known["entity_type"] = extra["entity_type"]
+                for kind, found in (extra.get("identifiers") or {}).items():
+                    if isinstance(found, list):
+                        have = known.setdefault("identifiers", {}).setdefault(kind, [])
+                        have += [f for f in found if f not in have]
+                    else:
+                        known.setdefault("identifiers", {})[kind] = found
+        return {k: v for k, v in value.items() if k not in MENTION_KEYS}
+
     pending: list[dict[str, Any]] = []
     all_flags: list[dict[str, Any]] = []
     claim_refs: dict[str, dict[str, Any]] = {}
@@ -314,6 +355,9 @@ def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, An
         if claim["origin_expression_id"] not in {e["id"] for e in linked}:
             raise BuildError(f"claim {claim['key']}: origin passage {claim['origin_expression_id']!r} is not an active original passage of {finding_id}")
         statement = copy.deepcopy(claim["statement"])
+        for part in ("subject", "object"):
+            if part in statement:
+                statement[part] = mention(statement[part], "text")
         ref = emit("claim", claim["key"], {
             "origin": {"finding_id": finding_id}, "proposition": claim["proposition"],
             "origin_source_expression_ref": passage_ref(claim["origin_expression_id"]),
@@ -396,6 +440,9 @@ def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, An
         if not selected(event["key"]) or not members:
             continue  # an event needs a claim asserting it (C7)
         record = {key: copy.deepcopy(event[key]) for key in ("language", "actors", "action", "object", "time", "place") if key in event}
+        record["actors"] = [mention(actor, "name") for actor in record["actors"]]
+        if "object" in record:
+            record["object"] = mention(record["object"], "text")
         record["provenance"] = analyst
         event_refs[event["key"]] = emit("event", event["key"], record)
         for claim_key in members:
@@ -416,7 +463,7 @@ def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, An
         raise BuildError(f"{len(pending)} flag(s) await a disposition: " + ", ".join(p["key"] for p in pending[:8]))
     if not any(batch.get(array) for array in RULES.ARRAYS):
         if draft:
-            return None, pending, all_flags, ids.doc  # nothing new yet, but the review page still lists the pending flags
+            return None, pending, all_flags, ids.doc, mentions  # nothing new yet, but the review page still lists the pending flags
         raise BuildError("nothing new to submit: every selected record is already admitted unchanged")
     errors = schema_check.load(SCHEMAS / "knowledge-batch-1.1.schema.json").errors(batch)
     if errors:
@@ -424,7 +471,7 @@ def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, An
     errors = RULES.validate(batch, [admitted_store(ids)])
     if errors:
         raise BuildError("the built batch breaks the cross-record rules: " + "; ".join(errors[:8]))
-    return batch, pending, all_flags, ids.doc
+    return batch, pending, all_flags, ids.doc, mentions
 
 
 def admitted_store(ids: Ids) -> dict[str, Any]:
@@ -451,7 +498,7 @@ def write(case: Path, models: dict[str, str], mode: str = "final") -> dict[str, 
     with transaction(case) as descriptor:
         try:
             try:
-                batch, pending, flags, ids = build(case, models, draft)
+                batch, pending, flags, ids, mentions = build(case, models, draft)
             except (KeyError, TypeError, AttributeError) as exc:
                 raise BuildError(f"a case file is malformed ({type(exc).__name__}: {exc}); run validate-case.py") from exc
         except BuildError as exc:
@@ -460,7 +507,7 @@ def write(case: Path, models: dict[str, str], mode: str = "final") -> dict[str, 
             atomic_write_files(case, {DRAFT: _dump({"schema_version": "1.0", "error": str(exc)})}, data_descriptor=descriptor)
             (case / BATCH).unlink(missing_ok=True)
             raise
-        out = {IDS: _dump(ids)}
+        out = {IDS: _dump(ids), MENTIONS: _dump({"schema_version": "1.0", "mentions": mentions})}
         final = mode == "final" or (mode == "review" and batch is not None and not pending)
         if draft:
             out[DRAFT] = _dump({"schema_version": "1.0", "batch": batch, "pending_flags": pending, "flags": flags})

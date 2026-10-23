@@ -15,6 +15,18 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   wiki named without a findable `bsig`, sends nothing. Without Engine there
   is no protected-source register and the text is unchanged.
 
+### Added — Entity identifiers for wiki links
+
+- The analyst's proposal may give a mention its entity type and strong
+  identifiers (company number with jurisdiction, LEI, OpenCorporates,
+  Wikidata, email, phone, handle). The builder keeps them on this computer in
+  `data/knowledge-mentions.json` and out of the batch, so core batches still
+  validate against the full schema; the wiki writer sends them with the
+  register lookup, so identified mentions link to `wiki/entities/`. The
+  ingest approval binds the file. Other cases' notes keep the links their own
+  writes found (`spotlight/entity-links.json`). Two mentions with the same
+  text but a different type or unrelated identifiers send the name alone.
+
 ### Added — Old cases and the 1.0 graph's retirement
 
 - README and AGENTS describe the forward-only path for old cases and what
