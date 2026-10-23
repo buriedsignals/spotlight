@@ -521,9 +521,11 @@ POSITION_FIELDS = {"id", "finding_id", "actor", "stance", "source_expression_ids
 def validate_source_positions(data: Any, findings_data: Any, expressions_data: Any) -> list[str]:
     """Check data/source-positions.json against the findings and passages.
 
-    Every position names a finding, an actor and a stance, cites active
-    passages linked to that finding, and quotes its attribution exactly as
-    one of those passages words it (after whitespace normalization).
+    Every position names a finding, an actor and a stance, cites passages
+    linked to that finding (at least one still active unless the position is
+    withdrawn), and quotes its attribution as one of those passages words it.
+    The comparison normalizes Unicode (NFKC) and whitespace only, so a
+    line-wrapped attribution still matches.
     """
     prefix = "source-positions.json"
     if not isinstance(data, dict):
@@ -540,26 +542,28 @@ def validate_source_positions(data: Any, findings_data: Any, expressions_data: A
     positions = data.get("positions")
     if not isinstance(positions, list):
         return errors + [f"{prefix}: positions must be a list"]
-    finding_ids = {f.get("id") for f in (findings_data or {}).get("findings", []) if isinstance(f, dict)} if isinstance(findings_data, dict) else set()
-    expressions = {
-        e.get("id"): e for e in (expressions_data or {}).get("expressions", []) if isinstance(e, dict)
-    } if isinstance(expressions_data, dict) else {}
+    finding_ids = {f.get("id") for f in findings_data.get("findings", []) if isinstance(f, dict)} \
+        if isinstance(findings_data, dict) and isinstance(findings_data.get("findings"), list) else set()
+    raw_expressions = expressions_data.get("expressions") if isinstance(expressions_data, dict) else None
+    expressions = {e.get("id"): e for e in raw_expressions if isinstance(e, dict) and isinstance(e.get("id"), str)} \
+        if isinstance(raw_expressions, list) else {}
     seen: set[str] = set()
     for index, position in enumerate(positions):
         where = f"{prefix}.positions[{index}]"
         if not isinstance(position, dict):
             errors.append(f"{where}: must be an object")
             continue
-        missing, extra = POSITION_FIELDS - set(position), set(position) - POSITION_FIELDS
+        fields = set(position) - {"withdrawn"}
+        missing, extra = POSITION_FIELDS - fields, fields - POSITION_FIELDS
         if missing or extra:
             errors.append(f"{where}: missing {sorted(missing)} / unknown {sorted(extra)} fields")
             continue
-        position_id = position["id"]
+        position_id, finding_id = position["id"], position["finding_id"]
         if not nonempty_string(position_id) or position_id in seen:
             errors.append(f"{where}.id: must be a unique non-empty string")
-        seen.add(position_id)
-        finding_id = position["finding_id"]
-        if finding_id not in finding_ids:
+        else:
+            seen.add(position_id)
+        if not nonempty_string(finding_id) or finding_id not in finding_ids:
             errors.append(f"{where}: finding {finding_id!r} does not exist")
         actor = position["actor"]
         if not isinstance(actor, dict) or set(actor) != {"label"} or not nonempty_string(actor.get("label")):
@@ -570,22 +574,31 @@ def validate_source_positions(data: Any, findings_data: Any, expressions_data: A
             errors.append(f"{where}.created_by: must be investigator, fact-checker or human")
         if not isinstance(position["cycle"], int) or isinstance(position["cycle"], bool) or position["cycle"] < 0:
             errors.append(f"{where}.cycle: must be a non-negative integer")
+        withdrawn = position.get("withdrawn")
+        if withdrawn is not None and not (
+            isinstance(withdrawn, dict) and set(withdrawn) == {"timestamp", "actor", "reason"}
+            and parse_datetime(withdrawn.get("timestamp")) is not None and nonempty_string(withdrawn.get("reason"))
+            and withdrawn.get("actor") in ("investigator", "fact-checker", "human")
+        ):
+            errors.append(f"{where}.withdrawn: must give timestamp, actor and reason")
         ids = position["source_expression_ids"]
-        if not isinstance(ids, list) or not ids or len(set(map(str, ids))) != len(ids):
+        if not isinstance(ids, list) or not ids or not all(nonempty_string(i) for i in ids) or len(set(ids)) != len(ids):
             errors.append(f"{where}.source_expression_ids: must be a non-empty list of unique ids")
             continue
-        texts = []
+        texts, active = [], 0
         for expression_id in ids:
             expression = expressions.get(expression_id)
             if expression is None:
                 errors.append(f"{where}: passage {expression_id!r} does not exist")
                 continue
-            events = expression.get("lifecycle_events") or [{}]
-            if not isinstance(events[-1], dict) or events[-1].get("event") != "activated":
-                errors.append(f"{where}: passage {expression_id!r} is not active")
+            events = expression.get("lifecycle_events")
+            last = events[-1] if isinstance(events, list) and events else None
+            active += isinstance(last, dict) and last.get("event") == "activated"
             if not any(isinstance(l, dict) and l.get("finding_id") == finding_id for l in expression.get("finding_links") or []):
                 errors.append(f"{where}: passage {expression_id!r} is not linked to finding {finding_id!r}")
             texts.append(normalized(expression.get("text")))
+        if withdrawn is None and texts and not active:
+            errors.append(f"{where}: cites no active passage; add the successor passage or withdraw the position")
         verbatim = normalized(position["attribution_verbatim"])
         if not verbatim:
             errors.append(f"{where}.attribution_verbatim: must be non-empty")
@@ -1303,7 +1316,9 @@ def main() -> int:
             else:
                 # Positions are optional: a binding covers them when they
                 # existed at approval, and none may appear after it.
-                if "source_positions_sha256" in latest or positions_path.exists():
+                # A migration's hashes predate positions; positions written
+                # after it are bound by the gate approval.
+                if "source_positions_sha256" in latest or (positions_path.exists() and investigation_gate_approved(case_dir)):
                     artifact_paths["source_positions_sha256"] = positions_path
                 for key, path in artifact_paths.items():
                     if not path.is_file():
@@ -1324,6 +1339,13 @@ def main() -> int:
                     evidence_bundle_data,
                     enforce_positive_verdicts=False,
                 ))
+        positions_path = case_dir / "data" / "source-positions.json"
+        if positions_path.exists():
+            positions_data, errs = load_json(positions_path)
+            all_errors.extend(errs)
+            if positions_data is not None:
+                expressions_data = load_json(expressions_path)[0] if expressions_path.exists() else None
+                all_errors.extend(validate_source_positions(positions_data, findings_data, expressions_data))
 
     if not args.fact_check_only:
         investigation_log_path = case_dir / "data" / "investigation-log.json"

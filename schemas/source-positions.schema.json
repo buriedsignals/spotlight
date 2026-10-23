@@ -43,7 +43,17 @@
           "description": "The attribution exactly as one of the cited passages words it, for example 'the ministry said'."
         },
         "created_by": { "enum": ["investigator", "fact-checker", "human"] },
-        "cycle": { "type": "integer", "minimum": 0 }
+        "cycle": { "type": "integer", "minimum": 0 },
+        "withdrawn": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["timestamp", "actor", "reason"],
+          "properties": {
+            "timestamp": { "type": "string", "format": "date-time" },
+            "actor": { "enum": ["investigator", "fact-checker", "human"] },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        }
       }
     }
   }

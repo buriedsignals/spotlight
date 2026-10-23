@@ -25,12 +25,15 @@ Proposal (JSON on stdin, or --file):
                   "successor_expression_id": "SX3", "reason": "..."}],
    "positions": [{"id": "SP1", "finding_id": "F1", "actor": {"label": "Ministry of Health"},
                   "stance": "asserts", "source_expression_ids": ["SX3"],
-                  "attribution_verbatim": "the ministry said"}]}
+                  "attribution_verbatim": "the ministry said"}],
+   "withdraw_positions": [{"id": "SP0", "reason": "..."}]}
 
 A source position records who asserts or disputes a finding: one for every
 attributed finding, and one for every materially different actor position.
 Its attribution_verbatim must appear exactly in one of the cited passages,
-which must be active and linked to the finding.
+which must be linked to the finding; at least one must be active. When a
+cited passage is superseded, re-propose the position with the successor in the
+same write; a position that no longer stands is withdrawn with a reason.
 
 Merging rules:
 - a new id is created with an `activated` lifecycle event by --actor;
@@ -204,12 +207,14 @@ def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], 
 
 def merge_positions(current: dict[str, Any] | None, proposal: dict[str, Any], project: Any,
                     actor: str, cycle: int) -> dict[str, Any] | None:
-    """Return the merged positions document, or None when nothing is proposed
-    and none exist yet; raise WriteError on a conflicting position."""
+    """Return the merged positions document (None when there are none);
+    raise WriteError on a conflicting or malformed position."""
     proposed = proposal.get("positions", [])
-    if not isinstance(proposed, list) or not all(isinstance(p, dict) for p in proposed):
-        raise WriteError("positions must be a list of objects")
-    if not proposed:
+    withdrawals = proposal.get("withdraw_positions", [])
+    for name, value in (("positions", proposed), ("withdraw_positions", withdrawals)):
+        if not isinstance(value, list) or not all(isinstance(p, dict) for p in value):
+            raise WriteError(f"{name} must be a list of objects")
+    if not proposed and not withdrawals:
         return current
     doc = copy.deepcopy(current) if current else {
         "schema_version": "1.0", "project": project, "created_at": _now(), "positions": [],
@@ -222,8 +227,8 @@ def merge_positions(current: dict[str, Any] | None, proposal: dict[str, Any], pr
         if not isinstance(raw.get("id"), str) or not raw["id"]:
             raise WriteError("every proposed position needs a non-empty id")
         ids = raw.get("source_expression_ids")
-        if not isinstance(ids, list) or not ids:
-            raise WriteError(f"position {raw['id']!r}: source_expression_ids must be a non-empty list")
+        if not isinstance(ids, list) or not ids or not all(isinstance(i, str) and i for i in ids):
+            raise WriteError(f"position {raw['id']!r}: source_expression_ids must be a non-empty list of ids")
         existing = by_id.get(raw["id"])
         if existing is None:
             built = {key: copy.deepcopy(raw.get(key)) for key in ("id",) + POSITION_CORE}
@@ -231,10 +236,23 @@ def merge_positions(current: dict[str, Any] | None, proposal: dict[str, Any], pr
             doc["positions"].append(built)
             by_id[raw["id"]] = built
             continue
+        if "withdrawn" in existing:
+            raise WriteError(f"position {raw['id']!r} was withdrawn; record a changed position under a new id")
         if any(existing.get(key) != raw.get(key) for key in POSITION_CORE):
             raise WriteError(f"position {raw['id']!r} already exists with a different finding, actor, stance "
                              "or attribution; a changed position is a new id")
+        # Passages are unioned, never dropped: a superseded passage stays as
+        # history and its successor is added beside it.
         existing["source_expression_ids"] = list(dict.fromkeys(existing["source_expression_ids"] + ids))
+    for raw in withdrawals:
+        position = by_id.get(raw.get("id"))
+        reason = raw.get("reason")
+        if position is None:
+            raise WriteError(f"cannot withdraw unknown position {raw.get('id')!r}")
+        if not isinstance(reason, str) or not reason.strip():
+            raise WriteError(f"withdrawing position {raw.get('id')!r} needs a reason")
+        if "withdrawn" not in position:
+            position["withdrawn"] = {"timestamp": _now(), "actor": actor, "reason": reason}
     return doc
 
 
@@ -253,11 +271,15 @@ def write(case: Path, proposal: dict[str, Any], actor: str, cycle: int) -> dict[
         outputs = {TARGET: canonical_json_bytes(doc) + b"\n"}
         current_positions = _load(case / POSITIONS)
         positions = merge_positions(current_positions, proposal, doc.get("project"), actor, cycle)
-        if positions is not None and positions is not current_positions:
+        # Positions are re-checked on every write, so a passage change that
+        # would leave a position citing no active passage is refused here.
+        if positions is not None:
             errors = VALIDATOR.validate_source_positions(positions, findings, doc)
             if errors:
-                raise WriteError("the merged source positions are not valid: " + "; ".join(errors[:8]))
-            outputs[POSITIONS] = canonical_json_bytes(positions) + b"\n"
+                raise WriteError("the source positions would not be valid: " + "; ".join(errors[:8])
+                                 + " (re-propose the position with the successor passage, or withdraw it)")
+            if positions is not current_positions:
+                outputs[POSITIONS] = canonical_json_bytes(positions) + b"\n"
         # Both files publish together or not at all.
         atomic_write_files(case, outputs, data_descriptor=descriptor)
     return doc
