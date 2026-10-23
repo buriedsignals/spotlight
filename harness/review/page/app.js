@@ -878,7 +878,7 @@ function passageCard(claim) {
             el("li", {}, el("span", { className: "tag", text: passage.file }), el("p", { className: "quote muted", text: passage.excerpt })),
           ),
         )
-      : el("p", { className: "muted", text: "No passage in the case's research matched this claim." }),
+      : el("p", { className: "muted", text: claim.searched === false ? "Not searched: case search stopped before this claim." : "No passage in the case's research matched this claim." }),
   );
 }
 

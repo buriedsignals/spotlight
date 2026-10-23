@@ -1,7 +1,7 @@
 // Shared fixtures: real offline cases built by the Python fixture builder and a
 // real review server talking to the real orchestration seam.
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CHECKOUT_ROOT, createCaseBridge, which } from "../case-bridge.mjs";
@@ -81,17 +81,16 @@ export function recordingOpener(root) {
   return { script, record };
 }
 
-// A stand-in Engine `bsig` for case search: it answers `wiki case-search`
-// with the NDJSON result contract, or refuses as Engine does while its
-// evidence-finder switch is off.
+// The shared stand-in Engine `bsig` for case search
+// (tests/fixtures/case_search_bsig.py): it answers `wiki case-search` with the
+// NDJSON result contract, or refuses as Engine does while its switch is off.
 export function standInBsig(root, { off = false } = {}) {
   const script = join(root, off ? "bsig-off" : "bsig");
-  const body = off
-    ? `print(json.dumps({"event": "error", "message": "wiki: the evidence finder is off"}))\nsys.exit(1)\n`
-    : `claim = sys.argv[sys.argv.index("--claim") + 1]\n` +
-      `passages = [{"path": "research/registry.md", "chunk": 0, "text": "<img src=x onerror=alert(1)> Registry entry on " + claim, "score": 12.5}]\n` +
-      `print(json.dumps({"event": "result", "data": {"tool": "case-search", "result": {"claim": claim, "passages": passages}}}))\n`;
-  writeFileSync(script, `#!/usr/bin/env python3\nimport json, sys\n${body}`);
+  copyFileSync(join(CHECKOUT_ROOT, "tests", "fixtures", "case_search_bsig.py"), script);
   chmodSync(script, 0o755);
+  writeFileSync(`${script}.json`, JSON.stringify({
+    mode: off ? "off" : "ok",
+    passages: [{ path: "research/registry.md", chunk: 0, text: "<img src=x onerror=alert(1)> Registry entry on {claim}", score: 12.5 }],
+  }));
   return script;
 }

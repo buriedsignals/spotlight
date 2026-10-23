@@ -57,8 +57,10 @@ the view, so a slow search never delays the page or a decision. Case search
 the case's own `research/` captures for each claim and leaves out Spotlight's
 bookkeeping files and link-list chunks. It is retrieval only: it is not part of
 the digest and never sets a mark, a disposition or a link. Passage text is
-inserted as text. Without Engine, or with Engine's evidence-finder switch off,
-the page shows only "Case search unavailable."
+inserted as text. Without Engine, or with Engine's case-search switch off,
+the page shows only "Case search unavailable." When the search stops early
+(Engine fails or the overall deadline passes), the claims already searched keep
+their passages and the rest show "Not searched".
 
 ## The Research page
 

@@ -208,7 +208,7 @@ test("the gate page gets case-search passages next to each claim, outside the di
   const quiet = await off.json("/api/passages");
   assert.equal(quiet.status, 200);
   assert.deepEqual([quiet.body.available, quiet.body.claims], [false, []]);
-  assert.match(quiet.body.note, /^case search unavailable: wiki: the evidence finder is off/);
+  assert.equal(quiet.body.note, "case search unavailable: Engine's case search is switched off");
 });
 
 test("a page nonce that starts with a dash is redeemed", async (t) => {

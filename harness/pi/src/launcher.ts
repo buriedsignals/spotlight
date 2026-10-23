@@ -115,16 +115,11 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 		refusalFor(harness, request.agent, request.task)
 			.then((refusal) => {
 				if (refusal) throw new Error(`spawn_agent: ${refusal}`);
-				return withCasePassages(request.agent, request.task, {
-					caseDir: harness.active.caseDir,
-					python: harness.config.python,
-					env: process.env,
-					log: harness.log,
-				});
-			})
-			.then((task) =>
-				queue.run(() =>
-					runWorker(
+				// Case search runs inside the queue's admission, so it counts
+				// against the worker limit, and a cancel stops it.
+				return queue.run(async () => {
+					const task = await finalTask(harness, request.agent, request.task, controller.signal);
+					return runWorker(
 						{
 							...processLaunch(harness, request.agent),
 							onSpawn: (child) => track(harness, child),
@@ -132,9 +127,9 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 						},
 						task,
 						controller.signal,
-					),
-				),
-			)
+					);
+				});
+			})
 			.then((text) => withValidation(harness, request.agent, text))
 			.then((text) => reply({ ok: true, text }))
 			.catch((error: Error) => reply({ ok: false, error: harness.redact(error.message) }))
@@ -187,6 +182,25 @@ function researchRound(harness: Harness, retry: boolean, signal: AbortSignal): P
 		roundInFlight = undefined;
 	});
 	return roundInFlight;
+}
+
+// The task the worker gets: the requested one plus, for the fact-checker, the
+// case passages. D9 is checked again on that final text; passages that would
+// name what the fact-checker may not see are left out and the task goes as asked.
+async function finalTask(harness: Harness, role: string, task: string, signal: AbortSignal): Promise<string> {
+	const withPassages = await withCasePassages(role, task, {
+		caseDir: harness.active.caseDir,
+		casesRoot: harness.active.casesRoot,
+		python: harness.config.python,
+		env: process.env,
+		log: harness.log,
+		signal,
+	});
+	if (withPassages !== task && isolationRefusal(role, withPassages)) {
+		harness.log('case passages left out: they name material the fact-checker works without');
+		return task;
+	}
+	return withPassages;
 }
 
 // A worker with spawn conditions in harness/composition.json (the analyst:
