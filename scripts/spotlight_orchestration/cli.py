@@ -33,6 +33,12 @@ def add_review_receipt(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--digest", help=argparse.SUPPRESS)
 
 
+def add_decider(parser: argparse.ArgumentParser) -> None:
+    # The member who decided; the review server passes the page's name.
+    parser.add_argument("--decided-by")
+    parser.add_argument("--decided-at")
+
+
 def add_case_boundary(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--authorized-cases-root", help=argparse.SUPPRESS)
     parser.add_argument("case_dir")
@@ -56,16 +62,20 @@ def build_parser() -> argparse.ArgumentParser:
     add_case_boundary(attempt)
     follow_up = commands.add_parser("request-follow-up")
     follow_up.add_argument("--instructions", required=True)
+    add_review_receipt(follow_up)
+    add_decider(follow_up)
     add_case_boundary(follow_up)
     seal = commands.add_parser("seal-investigation-gate")
     add_case_boundary(seal)
     report = commands.add_parser("decide-report")
     report.add_argument("decision", choices=("completed", "declined"))
     add_review_receipt(report)
+    add_decider(report)
     add_case_boundary(report)
     ingest = commands.add_parser("decide-ingest")
     ingest.add_argument("decision", choices=("requested", "completed", "declined"))
     add_review_receipt(ingest)
+    add_decider(ingest)
     add_case_boundary(ingest)
     nonce = commands.add_parser("issue-review-nonce")
     nonce.add_argument("gate", choices=REVIEW_GATES)
@@ -99,6 +109,10 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
         "nonce": getattr(args, "nonce", None),
         "digest": getattr(args, "digest", None),
     }
+    decider = {
+        "decided_by": getattr(args, "decided_by", None),
+        "decided_at": getattr(args, "decided_at", None),
+    }
     if args.command == "approve":
         approve(
             args.case_dir,
@@ -111,13 +125,13 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
     elif args.command == "record-attempt":
         record_attempt(args.case_dir, args.kind, args.gap, **boundary)
     elif args.command == "request-follow-up":
-        request_follow_up(args.case_dir, args.instructions, **boundary)
+        request_follow_up(args.case_dir, args.instructions, **receipt, **decider, **boundary)
     elif args.command == "seal-investigation-gate":
         seal_investigation_gate(args.case_dir, **boundary)
     elif args.command == "decide-report":
-        decide_report(args.case_dir, args.decision, **receipt, **boundary)
+        decide_report(args.case_dir, args.decision, **receipt, **decider, **boundary)
     else:
-        decide_ingest(args.case_dir, args.decision, **receipt, **boundary)
+        decide_ingest(args.case_dir, args.decision, **receipt, **decider, **boundary)
     return None
 
 

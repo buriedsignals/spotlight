@@ -10,14 +10,19 @@ write.
 1. The harness (or the MCP tool below) starts the server for one case and opens
    the member's browser. The page address is never returned to the model.
 2. The page shows, in order: blocking integrity failures, flags that need a
-   disposition, the selection, then the digest and the decision buttons.
+   disposition, the selection (the Report page shows the draft that publishing
+   renders), then the member's name, the digest and the decision buttons.
 3. Every mark, disposition, selection change, note and the member's name is
    saved at once to `data/<gate>-review.json` by
    `scripts/spotlight-orchestration.py review-edit`, under the case lock. The
    file keeps each suggestion and the member's final value separately and counts
    how many suggestions were accepted unchanged.
-4. Approve stays unavailable while a blocking failure or a required disposition
-   is open. When the member decides, the server sends the digest the page showed
+4. Every decision needs the member's name, which is recorded with it. Approve
+   stays unavailable while a blocking failure or a required disposition is
+   open. The Investigation gate also offers "Request follow-up" with a
+   required note: it sends the case back to Investigation, on the same nonce
+   and digest rules, and open flags or failures do not block it. When the
+   member decides, the server sends the digest the page showed
    plus a one-time nonce it holds. The Python transition refuses a changed digest
    (the page reloads and asks again), an unknown or spent nonce, and open
    blockers, then spends the nonce and records the decision in the same atomic
@@ -27,8 +32,9 @@ write.
    case.
 
 The command-line adapter (`spotlight-orchestration.py approve`, `decide-report`,
-`decide-ingest`) still works without a nonce. It records its decisions on its
-own `direct` channel, which the receipt shows.
+`decide-ingest`, `request-follow-up`) still works without a nonce. Approvals
+and report and ingest decisions are recorded on its own `direct` channel, which
+the receipt shows; a name (`--decided-by`, `--decided-at`) is optional there.
 
 ## Security model
 
@@ -36,7 +42,8 @@ own `direct` channel, which the receipt shows.
   `Origin` on every POST.
 - The URL fragment carries a one-time capability, swapped on first use for an
   `HttpOnly; SameSite=Strict` session cookie. Reopening issues a fresh
-  capability and ends the previous page's session.
+  capability, with a fresh `?open=` query so an open tab loads it as a new
+  page, and ends the previous page's session.
 - Every HTML response carries a new CSP nonce, placed only on the shell's own
   `<script>` and `<style>` tags. The shell contains no case text; the page reads
   the case as JSON (with `<`, `>` and `&` escaped) and inserts it with

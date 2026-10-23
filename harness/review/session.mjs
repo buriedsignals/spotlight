@@ -27,7 +27,8 @@ function validateReviewURL(raw) {
     url.hostname !== "127.0.0.1" ||
     !url.port ||
     url.pathname !== "/" ||
-    url.search ||
+    // A reopened page carries only an open counter, so it loads afresh.
+    (url.search && !/^\?open=\d+$/.test(url.search)) ||
     !url.hash ||
     url.username ||
     url.password

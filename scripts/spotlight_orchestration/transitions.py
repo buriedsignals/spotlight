@@ -131,6 +131,19 @@ def approve(
     _publish(case, data_descriptor, state, ledger)
 
 
+def _decider(
+    nonce: str | None, decided_by: str | None, decided_at: str | None
+) -> dict[str, str]:
+    """Who made a report, ingest or follow-up decision. A page decision must
+    name the member; the command-line channel may, and keeps working without."""
+    if decided_by is None and decided_at is None:
+        if nonce is not None:
+            raise OrchestrationError("a page decision needs decided_by and decided_at")
+        return {}
+    validate_approval(decided_by or "", decided_at or "")
+    return {"decided_by": decided_by, "decided_at": decided_at}
+
+
 def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> None:
     if kind not in ATTEMPT_LIMITS:
         raise OrchestrationError(f"unsupported attempt kind: {kind}")
@@ -159,26 +172,53 @@ def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> Non
 
 
 def request_follow_up(
-    case: Path, data_descriptor: int, instructions: str
+    case: Path,
+    data_descriptor: int,
+    instructions: str,
+    nonce: str | None = None,
+    digest: str | None = None,
+    decided_by: str | None = None,
+    decided_at: str | None = None,
 ) -> None:
     if not instructions.strip():
         raise OrchestrationError("instructions must describe the requested follow-up")
+    decider = _decider(nonce, decided_by, decided_at)
     state = load_state(case, data_descriptor)
-    if status_for(case, state, data_descriptor)["next_phase"] not in {
+    phase = status_for(case, state, data_descriptor)["next_phase"]
+    if phase not in {
         "investigation_gate_approval",
         "investigation_gate_finalization",
         "report",
     }:
         raise OrchestrationError("follow-up can only be requested from the Investigation gate")
+    ledger = None
+    receipt: dict = {}
+    if nonce is not None:
+        # The page asks for a follow-up while the gate waits for the member;
+        # open flags and blocking failures are what a follow-up answers, so
+        # they do not block it.
+        if phase != "investigation_gate_approval":
+            raise OrchestrationError("the Investigation gate is not waiting for the member")
+        ledger, binding = consume_nonce(
+            case, data_descriptor, "investigation_gate", nonce, digest, ready_check=False
+        )
+        receipt = {"decision": "follow_up", "review": binding}
+    elif digest is not None:
+        raise OrchestrationError("a review digest requires its review nonce")
+    dependency_digest = require_investigation_gate_digest(case)
+    if ledger is not None:
+        record_decision(ledger, receipt["review"], "follow_up", dependency_digest)
     state["follow_up"] = {
         "instructions": instructions,
-        "dependency_digest": require_investigation_gate_digest(case),
+        "dependency_digest": dependency_digest,
         **rework_snapshot(case),
+        **decider,
+        **receipt,
     }
     state["approvals"].pop("investigation_gate", None)
     state.pop("investigation_gate_finalization", None)
     state["decisions"].clear()
-    _publish(case, data_descriptor, state)
+    _publish(case, data_descriptor, state, ledger)
 
 
 def seal_investigation_gate(case: Path, data_descriptor: int) -> None:
@@ -219,9 +259,12 @@ def decide_report(
     decision: str,
     nonce: str | None = None,
     digest: str | None = None,
+    decided_by: str | None = None,
+    decided_at: str | None = None,
 ) -> None:
     if decision not in {"completed", "declined"}:
         raise OrchestrationError("report decision must be completed or declined")
+    decider = _decider(nonce, decided_by, decided_at)
     state = load_state(case, data_descriptor)
     if status_for(case, state, data_descriptor)["next_phase"] != "report":
         raise OrchestrationError("case is not awaiting a report decision")
@@ -245,6 +288,7 @@ def decide_report(
             "dependency_digest": report_digest,
             "output_sha256": current_hashes(case, outputs),
             "review": binding,
+            **decider,
         }
         record_decision(ledger, binding, decision, report_digest)
         state["decisions"].pop("ingest", None)
@@ -257,9 +301,12 @@ def decide_ingest(
     decision: str,
     nonce: str | None = None,
     digest: str | None = None,
+    decided_by: str | None = None,
+    decided_at: str | None = None,
 ) -> None:
     if decision not in {"requested", "completed", "declined"}:
         raise OrchestrationError("ingest decision must be requested, completed, or declined")
+    decider = _decider(nonce, decided_by, decided_at)
     state = load_state(case, data_descriptor)
     status = status_for(case, state, data_descriptor)
     if status["next_phase"] != "ingest":
@@ -278,6 +325,9 @@ def decide_ingest(
         if nonce is not None or digest is not None:
             raise OrchestrationError("sealing a completed ingestion takes no review nonce")
         prior = state["decisions"].get("ingest")
+        # The seal keeps the name of the member who requested the ingestion.
+        if isinstance(prior, dict):
+            decider = {k: prior[k] for k in ("decided_by", "decided_at") if isinstance(prior.get(k), str)}
         binding = prior.get("review") if isinstance(prior, dict) else None
         if not isinstance(binding, dict):
             # The resolver reached the seal step through the marker only when
@@ -306,5 +356,6 @@ def decide_ingest(
             "data/ingestion.json": hashlib.sha256(marker_bytes).hexdigest()
         },
         "review": binding,
+        **decider,
     }
     _publish(case, data_descriptor, state, ledger, {"data/ingestion.json": marker_bytes})
