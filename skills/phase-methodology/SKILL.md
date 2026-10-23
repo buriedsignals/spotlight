@@ -206,12 +206,14 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    go (egress), and the member's consent record. Without a `research_plan` the
    case goes straight to Investigation.
 
-   Before presenting the plan for approval, check it (D1). If any check fails,
+   The methodology validator above also checks the research plan (D1,
+   `scripts/research_checks.py`). If any check fails,
    correct the plan with the investigator's METHODOLOGY CORRECTION re-spawn
    above, with the failed checks as its validator errors:
 
-   - The round budget is set and the case budget is at most $5; topics with
-     their own token budget keep one topic from taking the round.
+   - The round budget is set, no higher than the case budget, and the case
+     budget is at most $5; every topic has its own token budget, so one topic
+     cannot take the round.
    - Every topic id is `<direction_id>-<lane_type>` with an optional `-<n>`,
      names a direction in `investigation_plan`, has at least one question and
      a lane type that exists in the lane catalogue or is `ad-hoc`.

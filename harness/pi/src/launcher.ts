@@ -14,7 +14,7 @@ import type { CaseLock } from './lock.ts';
 import { redactingLines, redactor, stderrLogger } from './log.ts';
 import { piArguments, piCliPath, writePiSettings } from './pi-process.ts';
 import { discardIncompleteLanes } from './resume.ts';
-import { ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
+import { ORCHESTRATOR, agentSpec, allowedTools, isolationRefusal, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
 import type { Composition } from './roles.ts';
 import { WorkerQueue, runWorker } from './subagents.ts';
 import type { CancelRequest, SpawnRequest, SpawnResult } from './subagents.ts';
@@ -97,7 +97,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 		}
 		const controller = new AbortController();
 		running.set(request.id, controller);
-		refusalFor(harness, request.agent)
+		refusalFor(harness, request.agent, request.task)
 			.then((refusal) => {
 				if (refusal) throw new Error(`spawn_agent: ${refusal}`);
 				return queue.run(() =>
@@ -132,7 +132,9 @@ async function casePhase(harness: Harness): Promise<string> {
 
 // A worker with spawn conditions in harness/composition.json (the analyst:
 // Ingest, solo edition) starts only when the case meets them.
-async function refusalFor(harness: Harness, role: string): Promise<string | undefined> {
+async function refusalFor(harness: Harness, role: string, task: string): Promise<string | undefined> {
+	const isolation = isolationRefusal(role, task);
+	if (isolation) return isolation;
 	const spec = agentSpec(harness.composition, role);
 	if (!spec.phases && !spec.editions) return undefined;
 	return spawnRefusal(spec, role, spec.phases ? await casePhase(harness) : '', harness.config.edition);

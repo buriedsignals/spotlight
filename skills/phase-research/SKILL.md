@@ -41,7 +41,22 @@ any agent.
 | Output | Schema | Written by |
 |---|---|---|
 | `data/leads.json` | `schemas/research-leads.schema.json` | the deterministic merge, after every lane ended |
-| `data/clues.json` | `schemas/research-clues.schema.json` | the clue rules and triage, from `data/leads.json` |
+| `data/clues.json` | `schemas/research-clues.schema.json` | the clue rules K1-K6, from `data/leads.json` |
+
+Once every approved lane has ended, the merge writes both files in one step:
+
+```text
+execute-shell("scripts/spotlight-python scripts/research-merge.py {CASE_DIR}")
+```
+
+It reads only the lane folders the approved plan names and refuses while a
+lane is still running or a folder the plan does not name exists. It checks
+each lane (D2), keeps a lead whose excerpt is not verbatim in its stored
+source as `unverifiable` (D3), collapses copies of one source (D4), reports
+lanes that overran their budget (D5) and lists each direction without a
+qualifying lead under `gaps` (D6). Its output is deterministic: running it
+again on the same lanes does not reopen the Research gate. In a runtime
+without `execute-shell`, the harness runs it when the lanes end.
 
 While either is missing, `spotlight_resolve` returns `phase: research` with
 the missing files. Zero qualifying leads is a valid outcome: the merge still

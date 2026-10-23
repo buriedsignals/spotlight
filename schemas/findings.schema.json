@@ -57,7 +57,12 @@
           "confidence_rationale": { "type": "string" },
           "grounding": { "$ref": "#/definitions/grounding" },
           "evidence_bundle_refs": { "type": "array", "items": { "type": "string" } },
-          "perspective": { "type": "string" }
+          "perspective": { "type": "string" },
+          "research_refs": {
+            "type": "array",
+            "description": "The research directions and pursued clues this finding answers (D10).",
+            "items": { "type": "string", "pattern": "^(clue|direction):[A-Za-z0-9][A-Za-z0-9._:-]*$" }
+          }
         }
       }
     },
@@ -75,6 +80,18 @@
       }
     },
     "gaps": { "type": "array", "items": { "type": "string" } },
+    "research_gaps": {
+      "type": "array",
+      "description": "A research direction or pursued clue the cycle could not answer, and why (D10).",
+      "items": {
+        "type": "object",
+        "required": ["ref", "reason"],
+        "properties": {
+          "ref": { "type": "string", "pattern": "^(clue|direction):[A-Za-z0-9][A-Za-z0-9._:-]*$" },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
     "next_steps": { "type": "array", "items": { "type": "string" } },
     "technical_indicators": {
       "type": "array",
