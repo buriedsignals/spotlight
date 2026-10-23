@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -113,6 +114,25 @@ class NewsroomPackage(GATES.CaseFixture):
             _, path, why = mod._case_file(Path("/tmp/no-such-case"), rel)
             self.assertIsNone(path, rel)
             self.assertEqual(why, "the path leads outside the case", rel)
+
+    def test_the_package_cap_refuses_before_reading_the_file_that_would_cross_it(self) -> None:
+        case = self.case("capped").resolve()
+        spec = importlib.util.spec_from_file_location("newsroom_package_cap", PACKAGE)
+        mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+        cited = [case / "research" / "filing.txt", case / "research" / "filing.bin"]
+        mod.MAX_PACKAGE_BYTES = max(path.stat().st_size for path in cited)
+        read: list[Path] = []
+        original = Path.read_bytes
+
+        def counting(path: Path) -> bytes:
+            if path.resolve() in [c.resolve() for c in cited]:
+                read.append(path)
+            return original(path)
+
+        with mock.patch.dict(os.environ, {"SPOTLIGHT_CONFIG": str(self.config)}), mock.patch.object(Path, "read_bytes", counting):
+            with self.assertRaisesRegex(mod.Refused, "larger than"):
+                mod.build(case)
+        self.assertEqual(len(read), 1, read)
 
     @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
     def test_a_cited_path_through_a_symlinked_evidence_folder_never_travels(self) -> None:

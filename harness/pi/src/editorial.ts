@@ -296,22 +296,34 @@ export class EditorialClient {
 			structuredContent?: unknown;
 			isError?: boolean;
 		};
-		const text = (result?.content ?? []).filter((part) => part.type === 'text').map((part) => part.text ?? '').join('\n');
+		// The envelope is checked here, once: a malformed answer is the service
+		// failing, which stops the case like any other.
+		const isObject = (value: unknown) => !!value && typeof value === 'object' && !Array.isArray(value);
+		if (!isObject(result) || (result.content !== undefined && !(Array.isArray(result.content) && result.content.every(isObject)))) {
+			throw new EditorialError(`${tool}: the Editorial MCP returned a malformed result`);
+		}
+		const text = (result.content ?? []).filter((part) => part.type === 'text').map((part) => String(part.text ?? '')).join('\n');
 		// Error text reaches the model: no address in it, since one may be a
 		// review page's capability.
-		if (result?.isError) {
+		if (result.isError) {
 			throw new EditorialToolError(`${tool}: ${this.#said(text || 'the Editorial MCP reported an error').replace(/\bhttps?:\/\/\S+/gi, '[address removed]')}`);
 		}
-		const answer = (value: unknown) => this.sanitize(value, { keepReview: tool === 'submit_case_review' }) as Record<string, unknown>;
-		if (result?.structuredContent && typeof result.structuredContent === 'object' && !Array.isArray(result.structuredContent)) {
+		const answer = (value: unknown) => {
+			if (tool === 'run_checks' && !JOB_STATES.has(String((value as { state?: unknown }).state))) {
+				throw new EditorialError('run_checks: the Editorial MCP answered with a state outside the contract');
+			}
+			return this.sanitize(value, { keepReview: tool === 'submit_case_review' }) as Record<string, unknown>;
+		};
+		if (isObject(result.structuredContent)) {
 			return answer(result.structuredContent);
 		}
+		let parsed: unknown;
 		try {
-			const parsed = JSON.parse(text) as unknown;
-			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return answer(parsed);
+			parsed = JSON.parse(text);
 		} catch {
-			// fall through
+			// no structured result
 		}
+		if (isObject(parsed)) return answer(parsed);
 		throw new EditorialError(`${tool}: the Editorial MCP returned no structured result`);
 	}
 }
@@ -466,7 +478,7 @@ export async function runChecks(
 		options.signal?.throwIfAborted();
 		answer = await client.call('run_checks', { case_ref: caseRef, job_id: jobId }, options.signal);
 	}
-	const state = typeof answer.state === 'string' && JOB_STATES.has(answer.state) ? answer.state : 'unavailable';
+	const state = String(answer.state);
 	const record: CheckRecord = {
 		kind,
 		state: state === 'done' ? 'done' : state === 'failed' ? 'failed' : 'unavailable',

@@ -179,8 +179,12 @@ def build(case: Path) -> dict[str, Any]:
         if path is None:
             omissions.append({"path": text, "expression_id": expression_id, "reason": why})
             return
-        data = path.read_bytes()
-        contents[text] = data
+        data = contents.get(text)
+        if data is None:
+            # The cap holds before a file is buffered, not only after all are.
+            if sum(map(len, contents.values())) + path.stat().st_size > MAX_PACKAGE_BYTES:
+                raise Refused(f"the cited evidence is larger than {MAX_PACKAGE_BYTES} bytes")
+            data = contents[text] = path.read_bytes()
         digest = _sha(data)
         if declared and declared.lower() != digest:
             problems.append(f"{text} no longer matches its declared sha256 ({kind})")

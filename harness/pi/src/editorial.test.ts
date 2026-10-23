@@ -97,6 +97,24 @@ test('an HTTP or protocol error from the server reaches no log or case file with
 	}
 });
 
+test('a successful but malformed tool result stops the newsroom case, and so does a run_checks state outside the contract', async () => {
+	const url = 'https://editorial.newsroom.example/mcp';
+	for (const [tool, result] of [
+		['get_record', { content: 'not a list' }],
+		['get_record', { content: [null] }],
+		['run_checks', { structuredContent: { job_id: 'job-1', state: 'finished' } }],
+	] as const) {
+		const fetchImpl: typeof fetch = async (_url, init) => {
+			const message = JSON.parse(String(init?.body)) as { id?: string; method: string };
+			if (message.id === undefined) return new Response(null, { status: 202 });
+			return Response.json({ jsonrpc: '2.0', id: message.id, result: message.method === 'initialize' ? {} : result });
+		};
+		const client = new EditorialClient({ url, token: 'newsroom-editorial-token-123', origins: [origin(url)], fetchImpl });
+		const error = await client.call(tool, {}).then(() => assert.fail(`${tool} accepted ${JSON.stringify(result)}`), (caught: Error) => caught);
+		assert.ok(stopsTheNewsroomCase(error), `${JSON.stringify(result)}: ${String(error)}`);
+	}
+});
+
 test('when the first caller cancels during a shared session restart, the other callers still get their answers', async (t) => {
 	const newsroom = await startFakeEditorial();
 	t.after(() => newsroom.close());
