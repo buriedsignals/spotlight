@@ -49,3 +49,24 @@ invalidates a finalized report). Deterministic code turns the answers into signa
 - Every case input that can reach a request is read through descriptors pinned
   to the case root, never following symlinks. Platforms without that support
   (Windows) report the integration as `unavailable`; it never runs there.
+
+## Research triage
+
+`scripts/research-triage.py CASE_DIR` asks the research questions
+(`research_questions.py`, versioned on its own, outside `questions.ALL`) about
+each merged lead in `data/leads.json` and writes `data/research-triage.json`.
+Rules S1, S2 and N1 and the questions' effects are in `research_rules.py`.
+
+- **Backend** (install config only): `integrations.decisions.research_triage`
+  = `{"backend": "jev" | "clef" | "clef-flash" | "local" | "rules",
+  "local_url": "http://127.0.0.1:PORT"}`. Clef reads `CLOUDFLARE_ACCOUNT_ID`
+  and `CLOUDFLARE_AUTH_TOKEN`; the local tune is llama-server on loopback.
+  Cloud backends also need `integrations.decisions.enabled`.
+- **Routing:** journalist-input leads and sensitive cases are triaged only by
+  the local tune or by rules. In newsroom mode cloud backends are off unless
+  the decision endpoint is the newsroom's own. An unavailable backend falls
+  back to rules, and the output says why.
+- **Flag-only until the acceptance test passes:** no model answer sets a lead
+  aside, C2 and C3 are not asked and no probability band is set. The output
+  carries a notice the Research page shows.
+- A result that breaks the triage invariants (D7) is never written.
