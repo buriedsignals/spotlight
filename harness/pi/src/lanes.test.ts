@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { readConfig } from './config.ts';
-import { EditorialToolError } from './editorial.ts';
+import { EditorialError, EditorialToolError } from './editorial.ts';
 import { mergeTimeoutMs, ROUND_LEDGER, runResearchRound } from './lanes.ts';
 import type { ResearchPlan, RoundSummary, TopicBrief } from './lanes.ts';
 import { startFakeOpenAI } from './test-support/fake-openai.ts';
@@ -491,4 +491,33 @@ test('newsroom sensitive mode runs the approved prior-knowledge lane through the
 	assert.deepEqual(summary.left_out.map((item) => item.topic_id), ['ownership-web']);
 	assert.equal((await laneOf(space, 'ownership-prior')).status, 'completed');
 	assert.equal(fakes.swarm.requests.length, 0);
+});
+
+test('newsroom edition: an Editorial MCP that cannot be used stops the round; the prior-knowledge lane never completes without the newsroom\'s knowledge', async (t) => {
+	const space = await setup(t);
+	const fakes = await servers(t, () => done, scripted({ 'ownership-prior': [call('search_knowledge', { query: 'Acme' }), { text: 'Done: nothing found.' }] }));
+	const env = {
+		...space.env,
+		SPOTLIGHT_EDITION: 'newsroom',
+		SPOTLIGHT_ROUTES: JSON.stringify([{ name: 'own', base_url: fakes.local.baseURL, model: 'local-model', inference: 'own' }]),
+		SPOTLIGHT_MODEL_BASE_URL: fakes.local.baseURL,
+		SPOTLIGHT_EDITORIAL_MCP_URL: 'http://127.0.0.1:9/mcp',
+		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token-0123456789',
+	};
+	const researchPlan = plan([topic('ownership-prior', 'prior-knowledge')], { mode: 'newsroom' });
+	await writeFile(join(space.caseDir, 'data/methodology.json'), JSON.stringify({ schema_version: '1.0', investigation_plan: [], research_plan: researchPlan }));
+	const round = runResearchRound({
+		caseDir: space.caseDir,
+		plan: researchPlan,
+		config: readConfig(env),
+		local: { baseURL: fakes.local.baseURL, model: 'local-model' },
+		env,
+		retryDelayMs: 1,
+		knowledge: async () => {
+			throw new EditorialError('the Editorial MCP answered HTTP 503');
+		},
+	});
+
+	await assert.rejects(round, EditorialError);
+	assert.notEqual((await laneOf(space, 'ownership-prior')).status, 'completed');
 });

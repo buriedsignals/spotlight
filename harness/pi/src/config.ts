@@ -582,11 +582,14 @@ export function checkNewsroomInstall(config: HarnessConfig): void {
 		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new ConfigError(`the install config (${config.spotlightConfig}) cannot be read: ${(error as Error).message}`);
 	}
 	if (text !== undefined) {
+		let parsed: unknown;
 		try {
-			mode = (JSON.parse(text) as { knowledge_destination?: { mode?: unknown } }).knowledge_destination?.mode ?? 'solo';
+			parsed = JSON.parse(text);
 		} catch (error) {
 			throw new ConfigError(`the install config (${config.spotlightConfig}) cannot be read: ${(error as Error).message}`);
 		}
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new ConfigError(`the install config (${config.spotlightConfig}) is not a JSON object.`);
+		mode = (parsed as { knowledge_destination?: { mode?: unknown } }).knowledge_destination?.mode ?? 'solo';
 		if (mode !== 'solo' && mode !== 'newsroom') throw new ConfigError(`the install config (${config.spotlightConfig}): knowledge_destination.mode must be "solo" or "newsroom".`);
 	}
 	if (mode === 'newsroom' && config.edition !== 'newsroom') {

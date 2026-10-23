@@ -218,4 +218,8 @@ test('an install config that exists but cannot be read, or names no valid mode, 
 		assert.throws(() => checkNewsroomInstall(readConfig(env)), error);
 	}
 	assert.throws(() => checkNewsroomInstall(readConfig({ ...env, SPOTLIGHT_CONFIG: dir })), /cannot be read/);
+	for (const content of ['null', '[]', '"newsroom"', '3']) {
+		writeFileSync(install, content);
+		assert.throws(() => checkNewsroomInstall(readConfig(env)), /is not a JSON object/, content);
+	}
 });

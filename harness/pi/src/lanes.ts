@@ -34,7 +34,7 @@ import { CHECKOUT_ROOT } from './roles.ts';
 import { FileRefused, readTarget, writeConfined } from './tools/case-files.ts';
 import { fetchTool } from './tools/fetch.ts';
 import { httpGetTool } from './tools/http-get.ts';
-import { EditorialCredentialError, EditorialToolError } from './editorial.ts';
+import { EditorialToolError, stopsTheNewsroomCase } from './editorial.ts';
 import { newsroomData } from './tools/editorial.ts';
 import { queryVaultTool } from './tools/query-vault.ts';
 import { programEnv, runFixed } from './tools/run.ts';
@@ -878,7 +878,8 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 					const args = JSON.parse(call.function.arguments || '{}') as Record<string, unknown>;
 					content = await runTool(run, call.function.name, args);
 				} catch (error) {
-					if (job.signal.aborted || error instanceof EditorialCredentialError) throw error;
+					// The newsroom being unusable stops the round; only a tool's own error is data.
+					if (job.signal.aborted || stopsTheNewsroomCase(error)) throw error;
 					if (error instanceof FileRefused && /outside the folder|symlink|not a real folder/.test(error.message)) throw error;
 					// A tool's own error text comes from the Editorial MCP: data, as in the launcher.
 					content = error instanceof EditorialToolError
@@ -909,7 +910,7 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 		} catch {
 			// The lane folder itself is refused; the round ledger records the failure.
 		}
-		if (error instanceof ProviderStop || error instanceof EditorialCredentialError) throw error;
+		if (error instanceof ProviderStop || stopsTheNewsroomCase(error)) throw error;
 		return { status: 'failed', failure, usd: spend.usd };
 	}
 }
