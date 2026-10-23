@@ -58,7 +58,7 @@ record schema: `references/snapshot-record.md`. In brief:
   **content-only, no MHTML**; mark it accordingly and continue to Tier 1.
 
   ```
-  execute-shell: scripts/spotlight-python -m integrations.scraping {URL} --out {CASE_DIR}/evidence/snapshots/{slug}.md
+  execute-shell: scripts/spotlight-python -m integrations.scraping "{URL}" --out {CASE_DIR}/evidence/snapshots/{slug}.md
   ```
 
 ### 1. Wayback Machine (Internet Archive)

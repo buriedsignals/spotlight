@@ -42,7 +42,7 @@ Output:
 ### 1. Build the artifact
 
 ```
-execute-shell("python3 scripts/build-review-html.py {CASE_DIR}")
+execute-shell("scripts/spotlight-python scripts/build-review-html.py {CASE_DIR}")
 ```
 
 The script is deterministic and invents nothing. It reads the inputs above

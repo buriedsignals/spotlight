@@ -66,7 +66,7 @@ Spotlight is **sovereign by default**: `fetch` → Crawl4AI (`integrations.scrap
 
 ```
 execute-shell("scripts/spotlight-python -m integrations.scraping https://example.com --provider crawl4ai --no-escalate > /dev/null && echo fetch:ok")   # Crawl4AI, a real fetch
-execute-shell("curl -s --get --data-urlencode 'q=wikipedia' --data-urlencode 'format=json' \"${SEARXNG_URL:-http://localhost:8899}/search\" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(\"searxng results:\", len(d[\"results\"]), \"unresponsive:\", d[\"unresponsive_engines\"])'")   # SearXNG, a real query
+execute-shell("curl -s --get --data-urlencode 'q=wikipedia' --data-urlencode 'format=json' \"${SEARXNG_URL:-http://localhost:8899}/search\" | scripts/spotlight-python -c 'import json,sys; d=json.load(sys.stdin); print(\"searxng results:\", len(d[\"results\"]), \"unresponsive:\", d[\"unresponsive_engines\"])'")   # SearXNG, a real query
 ```
 
 Both probes test the backing end to end: an HTTP 200 from SearXNG with zero results (every engine suspended, CAPTCHA-blocked, or crashing) and an installed-but-unusable Crawl4AI are failures, not green.

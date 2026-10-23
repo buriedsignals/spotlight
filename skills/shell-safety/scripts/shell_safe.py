@@ -14,6 +14,10 @@ DOI_RE = re.compile(r"^10\.\d{4,9}/[-._;()/:A-Z0-9]+$", re.IGNORECASE)
 TIMESTAMP_RE = re.compile(r"^\d{4}(-\d{2}){0,2}([T ][0-9:.+-]+Z?)?$")
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 UNSAFE_CHARS_RE = re.compile(r"[\x00\r\n`$;&|<>]")
+# A URL is passed to the shell inside double quotes ("{URL}"). There "&" is
+# inert, so it is allowed in the query string, where it separates parameters.
+# Quotes, backslashes, whitespace and control characters never belong in a URL.
+URL_UNSAFE_RE = re.compile(r"[\x00-\x20\x7f`$;|<>\"'\\]")
 
 
 class SafetyError(ValueError):
@@ -26,8 +30,11 @@ def reject_shell_metacharacters(value: str, label: str) -> None:
 
 
 def validate_url(value: str) -> str:
-    reject_shell_metacharacters(value, "url")
+    if URL_UNSAFE_RE.search(value):
+        raise SafetyError("url contains shell metacharacters, quotes, whitespace or control characters")
     parsed = urlparse(value)
+    if "&" in value.split("?", 1)[0]:
+        raise SafetyError("url may contain '&' only in its query string")
     if parsed.scheme not in {"http", "https"}:
         raise SafetyError("url scheme must be http or https")
     if not parsed.netloc:

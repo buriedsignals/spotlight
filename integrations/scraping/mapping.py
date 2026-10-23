@@ -8,10 +8,23 @@ wrecked civic evidence pages under Firecrawl).
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
-from .scrape_types import ScrapeResult
+from .scrape_types import ScrapeError, ScrapeResult
+
+_WALL_STATUSES = {401, 403, 429}
+# An access wall (bot check, rate limit, "403: Access limited") is a short page.
+# Crawl4AI can report it as a success with the status of an earlier redirect hop,
+# so the body is checked too. Long pages are never treated as walls.
+_WALL_MAX_CHARS = 1500
+_WALL_TEXT = re.compile(
+    r"^\W*(401|403|429)\b|access (denied|limited)|just a moment\.\.\.|attention required"
+    r"|verify (that )?you are (a )?human|are you a robot|checking your browser"
+    r"|enable javascript and cookies to continue|request blocked|too many requests",
+    re.IGNORECASE,
+)
 
 
 def _extract_markdown(raw: Any) -> str:
@@ -30,10 +43,12 @@ def _extract_markdown(raw: Any) -> str:
 
 
 def map_crawl_result(result: Any, requested_url: str, provider: str = "crawl4ai") -> ScrapeResult:
+    """Map a successful crawl. An access-wall page raises ScrapeError (status
+    403 unless a wall status was reported), so it is never saved as evidence."""
     metadata = getattr(result, "metadata", None) or {}
     if not isinstance(metadata, dict):
         metadata = {}
-    return ScrapeResult(
+    mapped = ScrapeResult(
         markdown=_extract_markdown(getattr(result, "markdown", None)),
         requested_url=requested_url,
         source_url=getattr(result, "url", None) or requested_url,
@@ -45,6 +60,23 @@ def map_crawl_result(result: Any, requested_url: str, provider: str = "crawl4ai"
         raw_html=getattr(result, "html", None),
         metadata=metadata,
     )
+    wall = access_wall(mapped)
+    if wall:
+        status = mapped.status_code if mapped.status_code in _WALL_STATUSES else 403
+        raise ScrapeError(f"{requested_url} returned an access wall, not the page: {wall}", status_code=status)
+    return mapped
+
+
+def access_wall(result: ScrapeResult) -> str | None:
+    """Why this result is an access wall rather than the page, or None."""
+    if result.status_code in _WALL_STATUSES:
+        return f"HTTP {result.status_code}"
+    body = result.markdown.strip()
+    if body and len(body) <= _WALL_MAX_CHARS:
+        match = _WALL_TEXT.search(body)
+        if match:
+            return f"page text {match.group(0).strip()!r}"
+    return None
 
 
 def crawl_failure_detail(result: Any) -> str:

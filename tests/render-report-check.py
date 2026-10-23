@@ -295,6 +295,29 @@ def check_not_checkable_aggregation() -> None:
     assert module.VERDICT_LABEL["not_checkable"] == "Not checkable"
 
 
+def check_public_sources(root: Path) -> None:
+    """report.html is for publication: it names no case-local path and none of
+    the fact-checker's own source descriptions (its working notes). The
+    editor's markdown keeps the path for audit."""
+    case = build_case(root)
+    fact_check_path = case / "data" / "fact-check.json"
+    fact_check = json.loads(fact_check_path.read_text())
+    fact_check["claims"][0]["evidence_for"].append({
+        "description": "Working note: my cycle-2 re-download, byte-identical to the investigator's copy.",
+        "source": "https://registry.example.org/record",
+        "access_method": "full_text",
+        "local_file": "research/official-record.md",
+    })
+    write_json(fact_check_path, fact_check)
+    result = subprocess.run([sys.executable, str(FINALIZER), str(case)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    html = (case / "report.html").read_text()
+    assert "research/official-record.md" not in html
+    assert "byte-identical to the investigator" not in html
+    assert '<a href="https://registry.example.org/record" rel="noreferrer">registry.example.org</a>' in html
+    assert "`research/official-record.md`" in (case / "findings-report.md").read_text()
+
+
 def main() -> int:
     check_not_checkable_aggregation()
     with tempfile.TemporaryDirectory(prefix="render-report-") as tmp:
@@ -312,6 +335,7 @@ def main() -> int:
         # Fact-checker notes are internal working notes, never public copy.
         for output in outputs:
             assert "evidence-correction pass" not in output.read_text(), output.name
+        check_public_sources(Path(tmp) / "public-sources")
         assert "<script>alert('unsafe')</script>" not in html
         assert "&lt;script&gt;alert" in html
         assert "<script>alert('unsafe')</script>" not in markdown

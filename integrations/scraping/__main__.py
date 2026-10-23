@@ -10,9 +10,11 @@
     python3 -m integrations.scraping <url> --json --out page.md  # markdown to the file, JSON to stdout
 
 Default provider is Crawl4AI (open-source, no API key); on a bot-block it escalates
-to Firecrawl only when FIRECRAWL_API_KEY is set. Exit 0 on success; 3 on a
-scrape/parse failure (unreachable, bot-blocked, needs-OCR, backend not installed),
-with the error on stderr.
+to Firecrawl only when FIRECRAWL_API_KEY is set. A URL whose path ends in .pdf is
+downloaded and parsed with pdftotext instead of rendered. An access-wall page
+(bot check, "403: Access limited") counts as a block, never as the page. Exit 0
+on success; 3 on a scrape/parse failure (unreachable, bot-blocked, needs-OCR,
+backend not installed), with the error on stderr.
 """
 from __future__ import annotations
 

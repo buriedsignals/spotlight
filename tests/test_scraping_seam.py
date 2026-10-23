@@ -274,6 +274,83 @@ def test_cli_json_with_out_saves_markdown_and_prints_the_envelope():
         cli.scrape = old_scrape
 
 
+_WALL_PAGE = (
+    "# 403: Access limited\nThis page will set a cookie and reload after 5 seconds automatically, "
+    "which should bring you to your original destination.\n[Reload now](javascript:location.reload\\(\\);).\n"
+)
+
+
+def test_mapping_refuses_an_access_wall_reported_as_success():
+    """A wall page (seen live: '403: Access limited' with crawl status 302) is a
+    failure the seam can escalate, never saved evidence."""
+    try:
+        map_crawl_result(_FakeResult(_WALL_PAGE, status=302), "https://example.gov/doc")
+    except ScrapeError as e:
+        assert e.status_code == 403 and "access wall" in str(e)
+    else:
+        raise AssertionError("an access-wall page must raise ScrapeError")
+    long_page = "# Annual report\n" + "The board reviewed access denied claims. " * 80
+    assert map_crawl_result(_FakeResult(long_page), "https://example.gov/a").markdown == long_page
+
+
+class _Served:
+    """Serve fixed responses on 127.0.0.1 for the PDF download path."""
+
+    def __init__(self, routes):
+        import http.server
+        import threading
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                status, ctype, body = routes[self.path]
+                self.send_response(status)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def _pdf_bytes(text):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("pdf_fixture", pathlib.Path(__file__).with_name("test_pdfparse.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module._make_pdf(text)
+
+
+def test_remote_pdf_is_downloaded_and_its_text_extracted():
+    served = _Served({
+        "/filing.pdf": (200, "application/pdf", _pdf_bytes("Total revenue 12870581 for fiscal 2025")),
+        "/walled.pdf": (200, "text/html", _WALL_PAGE.encode()),
+        "/denied.pdf": (403, "text/html", b"<h1>Forbidden</h1>"),
+    })
+    try:
+        result = scrape(served.base + "/filing.pdf", escalate=False, anonymize=False)
+        assert "Total revenue 12870581" in result.markdown
+        assert result.provider == "pdftotext" and result.metadata["kind"] == "pdf"
+        assert len(result.metadata["pdf_sha256"]) == 64
+        for path, status in (("/walled.pdf", 403), ("/denied.pdf", 403)):
+            try:
+                scrape(served.base + path, escalate=False, anonymize=False)
+            except ScrapeError as e:
+                assert e.status_code == status, (path, e.status_code)
+            else:
+                raise AssertionError(f"{path}: a wall or refusal must not pass as the document")
+    finally:
+        served.close()
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

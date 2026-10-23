@@ -212,9 +212,9 @@ def source_records(case: Path, finding: dict[str, Any], verdict: dict[str, Any])
     raw_sources: list[dict[str, Any]] = []
     for source in finding.get("sources", []):
         if isinstance(source, dict):
-            raw_sources.append(source)
+            raw_sources.append({**source, "origin": "finding"})
         elif isinstance(source, str):
-            raw_sources.append({"url": source})
+            raw_sources.append({"url": source, "origin": "finding"})
     for check in verdict["checks"]:
         for source in check["evidence_for"] + check["evidence_against"]:
             raw_sources.append({
@@ -224,8 +224,9 @@ def source_records(case: Path, finding: dict[str, Any], verdict: dict[str, Any])
                 "type": source.get("source_type"),
                 "description": source.get("description"),
                 "access_method": source.get("access_method"),
+                "origin": "fact_check",
             })
-        raw_sources.extend({"url": source} for source in check["sources"])
+        raw_sources.extend({"url": source, "origin": "fact_check"} for source in check["sources"])
 
     records: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
@@ -245,17 +246,10 @@ def source_records(case: Path, finding: dict[str, Any], verdict: dict[str, Any])
             "description": text(source.get("description")),
             "accessed": text(source.get("accessed")),
             "access_method": text(source.get("access_method")),
+            "origin": source["origin"],
         }
         records.append({key: value for key, value in record.items() if value})
     return records
-
-
-def source_label(source: dict[str, str]) -> str:
-    if source.get("description"):
-        return source["description"]
-    if source.get("url"):
-        return urlparse(source["url"]).netloc.removeprefix("www.") or source["url"]
-    return source.get("local_file", "Source")
 
 
 def md_cell(value: Any) -> str:
@@ -289,17 +283,20 @@ def h(value: Any) -> str:
 
 
 def html_source(source: dict[str, str]) -> str:
-    label = h(source_label(source))
-    url = source.get("url")
-    if url:
-        rendered = f'<a href="{h(url)}" rel="noreferrer">{label}</a>'
-    elif source.get("local_file"):
-        rendered = f'<a href="{h(source["local_file"])}">{label}</a>'
+    """A source as readers see it. report.html is for publication, so it names
+    no case-local path, and the fact-checker's descriptions (its working notes
+    about its own downloads) are replaced by the source's host. The paths and
+    descriptions stay in findings-report.md and evidence-map.json."""
+    url = source.get("url") or source.get("archive_url")
+    if source.get("origin") == "finding" and source.get("description"):
+        label = source["description"]
+    elif url:
+        label = urlparse(url).netloc.removeprefix("www.") or url
     else:
-        rendered = label
-    if source.get("local_file"):
-        rendered += f' <code>{h(source["local_file"])}</code>'
-    return rendered
+        label = "Document held in the case file"
+    if url:
+        return f'<a href="{h(url)}" rel="noreferrer">{h(label)}</a>'
+    return h(label)
 
 
 def input_hashes(paths: list[Path]) -> dict[str, str]:
@@ -1113,7 +1110,7 @@ def render_html(case: Path, findings_doc: dict[str, Any], methodology: dict[str,
             f'<div class="tldr-claim"><a href="#{h(anchor)}"><strong>{h(treatment.get("headline"))}</strong>'
             f'{h(label)}</a></div></div>'
         )
-        source_html = '<span class="sep">·</span>'.join(html_source(source) for source in sources)
+        source_html = '<span class="sep">·</span>'.join(dict.fromkeys(html_source(source) for source in sources))
         if not source_html:
             source_html = "No accessible source URL or case-local evidence file was recorded."
         evidence = " ".join(list_of_text(finding.get("evidence")))

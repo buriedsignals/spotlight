@@ -299,7 +299,7 @@ activation documents use their own schema versions as declared below.
 Cases from before Batch 1.1 are forward-only:
 
 1. They stay readable as findings contract `1.0`, and nothing converts them.
-2. To activate one, run `python3 scripts/migrate-source-expressions.py {CASE_DIR}`
+2. To activate one, run `scripts/spotlight-python scripts/migrate-source-expressions.py {CASE_DIR}`
    as a dry run, and apply it with `--apply` only when the dry run says the
    case is eligible.
 3. Otherwise start a follow-up case from the old brief, with the old

@@ -3,6 +3,7 @@
     python3 -m integrations.search "<query>"                 # numbered results to stdout
     python3 -m integrations.search "<query>" --limit 20
     python3 -m integrations.search "<query>" --json          # structured hits
+    python3 -m integrations.search "<query>" --out hits.json  # structured hits to a file too
     python3 -m integrations.search "<query>" --union         # SearXNG + Firecrawl, deduped
     python3 -m integrations.search "<query>" --provider firecrawl
     python3 -m integrations.search "<query>" --categories news --time-range month
@@ -36,6 +37,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--categories", default=None, help="SearXNG categories, e.g. news")
     ap.add_argument("--time-range", dest="time_range", default=None, help="SearXNG time_range, e.g. month")
     ap.add_argument("--json", action="store_true", help="emit structured SearchHit JSON")
+    ap.add_argument("--out", default=None, help="also write the structured hits (JSON) to this path")
     args = ap.parse_args(argv)
     utf8_stdio()
 
@@ -52,8 +54,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"search failed: {exc}", file=sys.stderr)
         return 3
 
+    structured = json.dumps([dataclasses.asdict(h) for h in hits], indent=2)
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as fh:
+            fh.write(structured + "\n")
+        print(f"wrote {len(hits)} result(s) -> {args.out}", file=sys.stderr)
     if args.json:
-        print(json.dumps([dataclasses.asdict(h) for h in hits], indent=2))
+        print(structured)
     else:
         for i, h in enumerate(hits, 1):
             date = f" ({h.date[:10]})" if h.date else ""
