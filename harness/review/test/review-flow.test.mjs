@@ -1,8 +1,10 @@
 // Page edits and decisions through the real server and orchestration seam.
 import assert from "node:assert/strict";
+import { createHash, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
+import { createCaseBridge } from "../case-bridge.mjs";
 import { authed, buildCase, seamStatus, tempRoot } from "./helpers.mjs";
 
 const HOSTILE = '</script><script type="module">fetch("/api/decide",{method:"POST"})</script>';
@@ -93,4 +95,30 @@ test("report and ingest decisions from the page complete the case", async (t) =>
   const decided = await json("/api/decide", { decision: "declined", digest: view.digest });
   assert.equal(decided.status, 200);
   assert.equal(seamStatus(caseDir).phase, "complete");
+});
+
+test("a page nonce that starts with a dash is redeemed", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  const real = createCaseBridge({ caseDir });
+  // URL-safe tokens start with "-" about one time in 64; the seam must not read
+  // such a nonce as an option.
+  const bridge = {
+    ...real,
+    async issueNonce(gate) {
+      await real.issueNonce(gate);
+      const nonce = `-${randomBytes(24).toString("base64url")}`;
+      const ledgerPath = join(caseDir, "data", "review-nonces.json");
+      const ledger = JSON.parse(readFileSync(ledgerPath, "utf8"));
+      ledger.nonces[createHash("sha256").update(nonce).digest("hex")] = { gate, channel: "page", used: false };
+      writeFileSync(ledgerPath, JSON.stringify(ledger));
+      return nonce;
+    },
+  };
+  const { json } = await authed(t, caseDir, { bridge });
+  await json("/api/edit", { edit: { kind: "reviewer", value: "A. Reviewer" } });
+  const view = (await json("/api/view")).body;
+  const accepted = await json("/api/decide", { decision: "approved", digest: view.digest });
+  assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
+  assert.equal(seamStatus(caseDir).phase, "investigation");
 });

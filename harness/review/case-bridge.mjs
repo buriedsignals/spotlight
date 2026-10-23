@@ -100,7 +100,8 @@ export function createCaseBridge({
     edit: (gate, edit) => json(["review-edit", gate, "--edit", JSON.stringify(edit)]),
     issueNonce: async (gate) => (await json(["issue-review-nonce", gate])).nonce,
     async decide({ gate, decision, nonce, digest, approvedBy, approvedAt }) {
-      const receipt = ["--nonce", nonce, "--digest", digest];
+      // "=" keeps a value that starts with "-" from being read as an option.
+      const receipt = [`--nonce=${nonce}`, `--digest=${digest}`];
       const args =
         gate === "methodology" || gate === "investigation_gate"
           ? ["approve", gate, "--approved-by", approvedBy, "--approved-at", approvedAt, ...receipt]
