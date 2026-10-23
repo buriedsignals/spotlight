@@ -20,6 +20,12 @@ const DECISION_LABELS = {
   ingest: { requested: "Ingest into the knowledge base", declined: "Do not ingest" },
 };
 const DISPOSITION_LABELS = { keep: "Keep in the record", set_aside: "Set aside" };
+const FLAG_LABELS = {
+  amend: "Amend the claim",
+  exclude: "Leave the claim out",
+  investigate_further: "Investigate further",
+  accept_with_reason: "Accept, with the reason in the note",
+};
 
 function el(tag, options = {}, ...children) {
   const node = document.createElement(tag);
@@ -155,7 +161,7 @@ function findingDetails(finding) {
 
 function suggestionLine(item) {
   if (item.suggested === null) return el("p", { className: "muted", text: `No suggestion: you decide. ${item.suggestion_reason}` });
-  const shown = typeof item.suggested === "boolean" ? (item.suggested ? "include" : "leave out") : DISPOSITION_LABELS[item.suggested];
+  const shown = typeof item.suggested === "boolean" ? (item.suggested ? "include" : "leave out") : DISPOSITION_LABELS[item.suggested] ?? FLAG_LABELS[item.suggested];
   return el("p", { className: "muted", text: `Suggested: ${shown}. Source: ${item.suggestion_source}. ${item.suggestion_reason}` });
 }
 
@@ -182,19 +188,19 @@ function noteField(item) {
   );
 }
 
-function dispositionCard(item, finding) {
+function dispositionCard(item, finding, labels = DISPOSITION_LABELS, legend = `Finding ${finding?.id ?? item.target}`) {
   const name = domId("disposition", item.key);
   return el(
     "fieldset",
     { className: "card", "aria-describedby": `${name}-state` },
-    el("legend", { text: `Finding ${finding?.id ?? item.target}` }),
-    findingDetails(finding),
+    el("legend", { text: legend }),
+    finding ? findingDetails(finding) : null,
     suggestionLine(item),
     el("p", { id: `${name}-state` }, changeTag(item)),
     el(
       "div",
       { className: "choices", role: "radiogroup", "aria-label": `Disposition for ${item.target}` },
-      Object.entries(DISPOSITION_LABELS).map(([value, label]) => {
+      Object.entries(labels).map(([value, label]) => {
         const id = `${name}-${value}`;
         return el(
           "span",
@@ -216,7 +222,7 @@ function dispositionCard(item, finding) {
   );
 }
 
-function selectionCard(item, finding) {
+function selectionCard(item, finding, label = `Include finding ${finding?.id ?? item.target} in the record`) {
   const id = domId("select", item.key);
   return el(
     "div",
@@ -232,9 +238,9 @@ function selectionCard(item, finding) {
         "aria-describedby": `${id}-state`,
         on: { change: (event) => edit({ kind: "mark", key: item.key, value: event.target.checked }) },
       }),
-      el("label", { for: id, text: `Include finding ${finding?.id ?? item.target} in the record` }),
+      el("label", { for: id, text: label }),
     ),
-    findingDetails(finding),
+    finding ? findingDetails(finding) : null,
     suggestionLine(item),
     el("p", { id: `${id}-state` }, changeTag(item)),
     noteField(item),
@@ -279,16 +285,44 @@ function reportContent(content) {
   );
 }
 
-function ingestContent(content) {
-  const records = content.batch?.records ?? [];
-  return el(
-    "section",
-    { "aria-labelledby": "batch-heading" },
-    el("h2", { id: "batch-heading", text: "Knowledge batch" }),
-    records.length
-      ? list(records.map((record) => String(record.label ?? record.id ?? "")), "")
-      : el("p", { className: "muted", text: "No batch preview is available for this case. Deciding here records only whether to ingest." }),
-  );
+function ingestContent(content, items) {
+  const batch = content.batch ?? {};
+  const records = batch.records ?? [];
+  const flags = items.filter((item) => item.kind === "flag");
+  const selection = items.filter((item) => item.kind === "selection");
+  const open = flags.filter((item) => item.final === null).length;
+  const stateLine = {
+    final: `The final batch is built. Approving binds batch ${batch.batch_sha256 ?? ""} through the digest below.`,
+    draft: "This is a draft: some flags still need a disposition.",
+    newsroom: "Newsroom cases are reviewed in the newsroom's own system; nothing is written to this computer's wiki.",
+  }[batch.state];
+  return [
+    el(
+      "section",
+      { "aria-labelledby": "batch-heading" },
+      el("h2", { id: "batch-heading", text: "Knowledge batch" }),
+      stateLine ? el("p", { text: stateLine }) : null,
+      records.length
+        ? list(records.map((record) => `${record.type} ${record.id} v${record.version}: ${record.text}`), "")
+        : el("p", { className: "muted", text: "No batch preview is available for this case. Deciding here records only whether to ingest." }),
+    ),
+    flags.length
+      ? el(
+          "section",
+          { "aria-labelledby": "flags-heading" },
+          el("h2", { id: "flags-heading", text: `Flags needing a disposition (${open} open of ${flags.length})` }),
+          flags.map((item) => dispositionCard(item, null, FLAG_LABELS, `Flag on ${item.target}`)),
+        )
+      : null,
+    selection.length
+      ? el(
+          "section",
+          { "aria-labelledby": "selection-heading" },
+          el("h2", { id: "selection-heading", text: "Proposed records" }),
+          selection.map((item) => selectionCard(item, null, `Include ${item.target} in the batch`)),
+        )
+      : null,
+  ].filter(Boolean);
 }
 
 // ---------------------------------------------------------------- decision
@@ -407,7 +441,7 @@ function render(next) {
     if (view.gate === "methodology") parts.push(methodologyContent(view.content));
     if (view.gate === "investigation_gate") parts.push(...investigationContent(view.content, view.items));
     if (view.gate === "report") parts.push(reportContent(view.content));
-    if (view.gate === "ingest") parts.push(ingestContent(view.content));
+    if (view.gate === "ingest") parts.push(...ingestContent(view.content, view.items));
     if (!readOnly()) parts.push(decisionSection());
     app.replaceChildren(...parts);
   });

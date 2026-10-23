@@ -246,6 +246,7 @@ absolute path and the result in `.spotlight-config.json` under `storage`.
 │   ├── knowledge-ids.json        # Builder id map: proposal and case keys to record ids and versions
 │   ├── knowledge-batch.json      # Reviewed batch: 1.0 for existing cases, Batch 1.1 (core) when built by scripts/build-knowledge-batch.py
 │   ├── knowledge-batch-draft.json # Builder draft for review, with flags awaiting a disposition
+│   ├── ingest-review.json        # Ingest page choices: record selection and flag dispositions
 │   ├── decision-signals.json     # Optional decision-model review signals (opt-in; never evidence)
 │   └── monitoring.json          # (optional) External monitor registry for the case
 └── research/

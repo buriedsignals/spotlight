@@ -34,6 +34,11 @@ DECISIONS = {
     "ingest": ("requested", "declined"),
 }
 DISPOSITIONS = ("keep", "set_aside")
+# Batch 1.1 flag dispositions, decided on the ingest page.
+FLAG_ACTIONS = ("amend", "exclude", "investigate_further", "accept_with_reason")
+INGEST_BATCH = "data/knowledge-batch.json"
+INGEST_DRAFT = "data/knowledge-batch-draft.json"
+INGEST_PROPOSAL = "data/knowledge-proposal.json"
 MAX_NOTE = 2000
 MAX_REVIEWER = 200
 _POSITIVE_VERDICTS = frozenset({"verified", "partially_verified"})
@@ -123,10 +128,46 @@ def ledger_bytes(ledger: dict[str, Any]) -> bytes:
 
 
 def subject_digest(case: Path, gate: str) -> str:
-    """What the decision is about: the methodology inputs, or the gate dependencies."""
+    """What the decision is about: the methodology inputs, or the gate
+    dependencies. For ingest it also covers the final knowledge batch, so a
+    requested ingestion binds exactly the batch the page showed (R6)."""
     if gate == "methodology":
         return _canonical_sha(current_hashes(case, METHODOLOGY_INPUTS))
-    return str(investigation_gate_dependencies(case)["dependency_digest"])
+    dependency = str(investigation_gate_dependencies(case)["dependency_digest"])
+    if gate == "ingest" and activated_case(case):
+        return _canonical_sha({"dependencies": dependency, "batch": _batch_sha256(case)})
+    return dependency
+
+
+def _batch_sha256(case: Path) -> str | None:
+    path = case_path(case, INGEST_BATCH)
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+
+
+def activated_case(case: Path) -> bool:
+    findings = _read_case_json(case, "data/findings.json")
+    return isinstance(findings, dict) and findings.get("schema_version") == "1.1" and case_path(case, "data/case-contract.json").is_file()
+
+
+def ingest_mode() -> str:
+    """knowledge_destination.mode from the install config Engine writes:
+    "solo" (the default) or "newsroom"."""
+    try:
+        config = json.loads((SCRIPT_DIR.parent / ".spotlight-config.json").read_text(encoding="utf-8"))
+        mode = config.get("knowledge_destination", {}).get("mode", "solo")
+    except (OSError, ValueError, AttributeError):
+        return "solo"
+    return mode if mode in ("solo", "newsroom") else "solo"
+
+
+def rebuild_ingest_batch(case: Path) -> None:
+    """Rebuild the draft and, when nothing is pending, the final batch, after
+    a page edit. Runs outside the edit's lock: the builder takes it itself.
+    A refusal is recorded in the draft, which the page shows as blocking."""
+    if not activated_case(case) or ingest_mode() != "solo" or not case_path(case, INGEST_PROPOSAL).is_file():
+        return
+    subprocess.run([sys.executable, str(SCRIPT_DIR / "build-knowledge-batch.py"), str(case), "--review"],
+                   capture_output=True, text=True, check=False)
 
 
 def review_digest(case: Path, gate: str, data_descriptor: int | None = None) -> str:
@@ -428,9 +469,52 @@ def _report_content(case: Path) -> dict[str, Any]:
     }
 
 
-def _ingest_content() -> dict[str, Any]:
-    # The batch preview is filled by the knowledge-batch builder when it exists.
-    return {"batch": {"state": "empty", "records": []}}
+def _ingest_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[str, Any]]]:
+    """The batch preview the builder made, with one selection per proposed
+    record and one disposition per fact-check flag. Legacy (1.0) cases keep
+    their own ingest flow and show no batch."""
+    if not activated_case(case):
+        return {"batch": {"state": "empty", "records": []}}, [], []
+    if ingest_mode() == "newsroom":
+        # Newsroom cases write nothing locally; the package goes to the newsroom.
+        return {"batch": {"state": "newsroom", "records": []}}, [], []
+    proposal = _read_case_json(case, INGEST_PROPOSAL)
+    draft = _read_case_json(case, INGEST_DRAFT)
+    final = _read_case_json(case, INGEST_BATCH)
+    blocking: list[str] = []
+    if not isinstance(proposal, dict):
+        blocking.append("the analyst has not proposed a knowledge batch yet")
+    elif not isinstance(draft, dict):
+        blocking.append("the knowledge batch has not been built yet")
+    elif draft.get("error"):
+        blocking.append(f"the knowledge batch cannot be built: {_text(draft['error'], 2000)}")
+    elif not isinstance(final, dict):
+        blocking.append("every flag needs a disposition before the batch can be approved")
+    batch = final if isinstance(final, dict) else (draft or {}).get("batch") if isinstance(draft, dict) else None
+    records = []
+    for array in ("claims", "events", "story_arcs", "assessments", "source_positions"):
+        for record in (batch or {}).get(array, []) if isinstance(batch, dict) else []:
+            if isinstance(record, dict):
+                records.append({"type": array, "id": _text(record.get("id"), 200), "version": record.get("version"),
+                                "text": _text(record.get("proposition") or record.get("title") or record.get("action")
+                                              or record.get("verdict") or (record.get("actor") or {}).get("label"), 2000)})
+    items = []
+    for array, label in (("claims", "claim"), ("events", "event"), ("story_arcs", "story arc")):
+        for record in proposal.get(array, []) if isinstance(proposal, dict) and isinstance(proposal.get(array), list) else []:
+            if isinstance(record, dict) and isinstance(record.get("key"), str):
+                items.append({"key": f"record:{record['key']}", "kind": "selection", "target": f"{label}:{record['key']}",
+                              "suggested": True, "suggestion_source": "analyst proposal",
+                              "suggestion_reason": f"The analyst proposed this {label}.", "required": False})
+    for flag in (draft or {}).get("flags", []) if isinstance(draft, dict) else []:
+        if isinstance(flag, dict) and isinstance(flag.get("key"), str):
+            items.append({"key": flag["key"], "kind": "flag", "target": f"claim:{flag.get('claim_key')}",
+                          "suggested": None, "suggestion_source": "fact-check flag",
+                          "suggestion_reason": f"{_text(flag.get('code'), 80)}: {_text(flag.get('reason'), 1000)}",
+                          "required": True})
+    state = "final" if isinstance(final, dict) else "draft" if isinstance(batch, dict) else "empty"
+    content = {"batch": {"state": state, "records": records,
+                         "batch_sha256": _batch_sha256(case) if state == "final" else None}}
+    return content, blocking, items
 
 
 def load_review(case: Path, gate: str, data_descriptor: int | None = None) -> dict[str, Any]:
@@ -479,7 +563,7 @@ def _gate_parts(case: Path, gate: str) -> tuple[dict[str, Any], list[str], list[
         return _investigation_content(case)
     if gate == "report":
         return _report_content(case), [], []
-    return _ingest_content(), [], []
+    return _ingest_content(case)
 
 
 def build_view(case: Path, gate: str, data_descriptor: int | None = None) -> dict[str, Any]:
@@ -524,6 +608,9 @@ def _validated_edit(edit: object, items: dict[str, dict[str, Any]]) -> dict[str,
     elif item["kind"] == "selection":
         if not isinstance(value, bool):
             raise OrchestrationError("a selection mark is true or false")
+    elif item["kind"] == "flag":
+        if value not in FLAG_ACTIONS:
+            raise OrchestrationError(f"a flag disposition is one of: {', '.join(FLAG_ACTIONS)}")
     elif value not in DISPOSITIONS:
         raise OrchestrationError(f"a disposition is one of: {', '.join(DISPOSITIONS)}")
     return edit
