@@ -20,9 +20,9 @@ newsroom-mode case writes nothing locally; neither uses this skill.
 
 This skill is an Ingest handler, not a standalone entry point. Enter only when
 the parent passes a resolver result with `owner: phase-ingest`,
-`resume.state: requested`, and `resume.resume_at: ingest`. The preceding
-`decideIngest` transition already wrote the case-local requested receipt and
-bound its dependency digest; never recreate or discard that marker.
+`resume.state: requested`, and `resume.resume_at: ingest`. The member's
+ingest request (`decideIngest`) already wrote the case-local requested receipt
+and bound its dependency digest; never recreate or discard that marker.
 
 The orchestrator passes the exact `CASE_DIR`, project, and typed knowledge
 destination from `.spotlight-config.json`. Read:

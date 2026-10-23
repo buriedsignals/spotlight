@@ -190,8 +190,15 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    otherwise never run it for this case.
 
 5. **Gate: user approves the methodology.** Iterate if the user has changes.
-   Re-run the methodology validator after the final change. When the user
-   explicitly approves, persist the attributable, current-input receipt:
+   Re-run the methodology validator after the final change. Present the
+   synthesis, then open the review page: `open_review` in the Pi harness, or
+   the `open_spotlight_review` tool where the review server is registered
+   (`harness/review/README.md`). End the turn. When the member says they are
+   done, call `spotlight_resolve` again; never record the decision yourself.
+
+   Only in a runtime with neither tool, after the user explicitly approves in
+   chat, record the attributable, current-input receipt through the
+   command-line adapter (its `direct` channel):
 
    ```text
    spotlight_transition({

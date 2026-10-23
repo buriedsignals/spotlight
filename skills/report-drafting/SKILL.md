@@ -117,11 +117,13 @@ The renderer places this at the top of the page. Do not soften:
    mode it fails on unrevised flags or on prose changed after the check; in
    `advisory` mode it only warns.
 
-4. Return the completed structured draft to the `phase-report` owner. That
-   owner applies `spotlight_transition({operation: "decideReport", payload:
-   {decision: "completed"}})`; the resolver invokes the deterministic
-   finalizer, validates both inputs, renders all three artifacts, and records
-   their hashes before advancing to Ingest.
+4. Return the completed structured draft to the `phase-report` owner. The
+   member's decision on the review page (or, in a runtime without the page,
+   `spotlight_transition({operation: "decideReport", payload: {decision:
+   "completed"}})` after the user answers) applies the transition; the
+   resolver invokes the deterministic finalizer, validates both inputs,
+   renders all three artifacts, and records their hashes before advancing to
+   Ingest.
 5. If that transition reports a `report_draft` or `report_fidelity` failure, revise only
    `data/report-draft.json` using the exact failure. If fact-check fails, return
    to the fact-checker. **Never repair generated HTML or Markdown by hand.**

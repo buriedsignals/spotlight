@@ -184,6 +184,23 @@ class ReviewGate(CaseFixture):
         self.seam(case, "decide-ingest", "completed")
         self.assertEqual(self.phase(case), "complete")
 
+    def test_ingest_marker_cannot_replay_another_decision_binding(self) -> None:
+        case = self.build("markerreplay", "ingest")
+        self.seam(case, "decide-ingest", "declined", "--nonce=" + self.nonce(case, "ingest"),
+                  "--digest", self.view(case, "ingest")["digest"])
+        # A state without the ingest decision, and a marker the model wrote
+        # claiming a request under the member's spent decline binding.
+        state_path = case / "data/orchestration.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state["decisions"].pop("ingest")
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        marker_path = case / "data/ingestion.json"
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        marker["status"] = "requested"
+        marker_path.write_text(json.dumps(marker), encoding="utf-8")
+        status = json.loads(self.seam(case, "status", "--json").stdout)
+        self.assertEqual(status["ingest"], {"state": "pending", "resume_at": "decision"})
+
     def test_a_nonce_for_one_gate_cannot_decide_another(self) -> None:
         case = self.build("crossgate", "report")
         wrong = self.nonce(case, "ingest")
@@ -270,6 +287,25 @@ class LegacyV1Decisions(CaseFixture):
         state = json.loads((case / "data/orchestration.json").read_text(encoding="utf-8"))
         self.assertEqual(state["approvals"]["investigation_gate"]["review"]["channel"], "legacy-v1")
         self.assertEqual(self.ledger_channels(case)["investigation_gate"], "legacy-v1")
+
+    def test_v1_marker_counts_only_when_the_v1_state_recorded_the_request(self) -> None:
+        case = self.build("v1marker", "ingest")
+        as_pre_ledger_v1(case)
+        state = json.loads((case / "data/orchestration.json").read_text(encoding="utf-8"))
+        digest = state["decisions"]["report"]["dependency_digest"]
+        # A marker with no binding and no decision in the v1 state: refused.
+        (case / "data/ingestion.json").write_text(
+            json.dumps({"schema_version": "1.0", "status": "requested", "dependency_digest": digest}),
+            encoding="utf-8",
+        )
+        status = json.loads(self.seam(case, "status", "--json").stdout)
+        self.assertEqual(status["ingest"], {"state": "pending", "resume_at": "decision"})
+
+        recorded = self.build("v1recorded", "ingest")
+        self.seam(recorded, "decide-ingest", "requested")
+        as_pre_ledger_v1(recorded)
+        status = json.loads(self.seam(recorded, "status", "--json").stdout)
+        self.assertEqual(status["ingest"], {"state": "requested", "resume_at": "ingest"})
 
     def test_v2_state_without_its_ledger_entries_does_not_advance(self) -> None:
         upgraded = self.build("upgraded", "report")

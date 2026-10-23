@@ -18,7 +18,6 @@ from .dependencies import (
     review_is_fresh,
 )
 from .review import decision_backed, effective_ledger
-from .storage import LEGACY_LEDGER_KEY
 from .storage import case_path, read_data_bytes
 
 _PHASE_OWNERS = {
@@ -80,10 +79,9 @@ def status_for(
     # A decision counts only when the nonce ledger backs it, so a decision
     # written into orchestration.json by hand does not advance the case.
     ledger = effective_ledger(case, state, data_descriptor)
-    from_v1 = LEGACY_LEDGER_KEY in state
 
-    def backed(gate: str, receipt: object) -> bool:
-        return decision_backed(case, gate, receipt, ledger)
+    def backed(gate: str, receipt: object, *, require_bound: bool = False) -> bool:
+        return decision_backed(case, gate, receipt, ledger, require_bound=require_bound)
 
     methodology_approval = state["approvals"].get("methodology")
     if not approval_matches(methodology_approval, methodology_hashes) or not backed(
@@ -150,8 +148,11 @@ def status_for(
     if not digest_receipt_matches(ingest, dependency_digest) or not backed("ingest", ingest):
         if (
             digest_receipt_matches(marker, dependency_digest)
-            # A v1 case's marker predates the ledger like its state does.
-            and (backed("ingest", marker) or (from_v1 and "review" not in marker))
+            # The marker is written outside the resolver too (the ingest step
+            # records its receipt there), so it counts only with a ledger entry
+            # bound to this decision and digest. A v1 state that recorded the
+            # decision is carried by its own legacy-bound receipt above.
+            and backed("ingest", marker, require_bound=True)
             and marker_status
             in {
                 "requested",

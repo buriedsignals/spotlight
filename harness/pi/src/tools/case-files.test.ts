@@ -63,6 +63,8 @@ test('writes outside the case, through a symlink, or to a protected file are ref
 		'DATA/Orchestration.JSON',
 		'data/review-nonces.json',
 		'data/methodology-review.json',
+		'data/ingestion.json',
+		'data/report-declined.json',
 		'data/provenance-signing-receipt.json',
 		'evidence/capture-receipt.json',
 	]) {
@@ -72,7 +74,7 @@ test('writes outside the case, through a symlink, or to a protected file are ref
 	assert.equal(existsSync(join(outside, 'escape.txt')), false);
 	assert.equal(await readFile(join(outside, 'target.json'), 'utf8'), 'outside');
 	assert.equal(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'), '{"phase":"brief"}');
-	for (const name of ['review-nonces.json', 'methodology-review.json', 'provenance-signing-receipt.json']) {
+	for (const name of ['review-nonces.json', 'methodology-review.json', 'ingestion.json', 'report-declined.json', 'provenance-signing-receipt.json']) {
 		assert.equal(existsSync(join(caseDir, 'data', name)), false, name);
 	}
 });

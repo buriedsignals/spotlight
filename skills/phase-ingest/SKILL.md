@@ -56,6 +56,14 @@ Remind the user before asking for ingestion confirmation:
 
 > "Investigation complete. Ingest confirmed findings into your knowledge base?"
 
+Present the synthesis, then open the review page: `open_review` in the Pi
+harness, or the `open_spotlight_review` tool where the review server is
+registered (`harness/review/README.md`). End the turn. When the member says
+they are done, call `spotlight_resolve` again; never record the decision yourself.
+
+Only in a runtime with neither tool, ask in chat and record the answer through
+the command-line adapter (its `direct` channel):
+
 - If yes, call `spotlight_transition({operation: "decideIngest", payload:
   {decision: "requested"}})`, resolve again, and continue at the returned
   substep.

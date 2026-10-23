@@ -52,6 +52,7 @@ async function fixture(t: TestContext) {
 	return { root, caseDir, context, tools, call, recorded };
 }
 
+const PYTHON = process.platform === 'win32' ? 'python' : 'python3';
 const HOSTILE = '$(touch PWNED); touch PWNED && `touch PWNED` | touch PWNED';
 const HOSTILE_FILE = '$(touch PWNED);x.pdf';
 
@@ -67,7 +68,7 @@ test('the shared runner passes metacharacters to the program as literal argv', a
 test('every program-backed tool and harness validator runs without a shell', async (t) => {
 	const { root, caseDir, context, call, recorded } = await fixture(t);
 	await writeFile(join(caseDir, HOSTILE_FILE), 'pdf');
-	await writeFile(join(caseDir, 'data', 'rlm-request.json'), '{}');
+	await writeFile(join(caseDir, 'data', 'rlm-request.json'), '{"project":"case"}');
 	await writeFile(join(caseDir, 'data', 'entities.json'), '[]');
 
 	const calls: Array<[string, Record<string, unknown>]> = [
@@ -103,6 +104,38 @@ test('every program-backed tool and harness validator runs without a shell', asy
 	assert.equal(search.args[search.args.length - 1], '--limit=999');
 	assert.ok(search.args.indexOf('--') === search.args.length - 2, JSON.stringify(search));
 	assert.ok(runs.length >= calls.length + 3, `expected every call to start its program, saw ${runs.length}`);
+});
+
+test('run_rlm refuses a request naming another case and leaves that case untouched', async (t) => {
+	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-rlm-')));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const casesRoot = join(root, 'cases');
+	const caseDir = join(casesRoot, 'active');
+	const sibling = join(casesRoot, 'sibling');
+	for (const dir of [caseDir, sibling]) {
+		await mkdir(join(dir, 'data'), { recursive: true });
+		await mkdir(join(dir, 'research'), { recursive: true });
+		await writeFile(join(dir, 'research', 'notes.txt'), 'Contact press@example.org about the filing.\n');
+	}
+	const context: ToolContext = {
+		caseDir,
+		writeRoot: caseDir,
+		python: PYTHON,
+		configPath: join(root, 'config.json'),
+		env: { PATH: process.env.PATH, HOME: root, SPOTLIGHT_CASES_ROOT: casesRoot },
+	};
+	const rlm = typedTools(context).find((tool) => tool.name === 'run_rlm') as ToolDefinition;
+	const run = (project: string) =>
+		writeFile(
+			join(caseDir, 'data', 'rlm-request.json'),
+			JSON.stringify({ project, run_id: 'r1', mode: 'lite', corpus_paths: ['research/notes.txt'] }),
+		).then(() => rlm.execute('call', { request: 'data/rlm-request.json' }, undefined, undefined, undefined as never));
+
+	await assert.rejects(run('sibling'), /refused: run_rlm request must name the active case/);
+	assert.equal(existsSync(join(sibling, 'data', 'rlm-analysis.json')), false);
+
+	await run('active');
+	assert.equal(existsSync(join(caseDir, 'data', 'rlm-analysis.json')), true);
 });
 
 test('each tool rejects arguments outside its schema without starting anything', async (t) => {

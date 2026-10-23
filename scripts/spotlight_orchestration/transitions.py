@@ -27,12 +27,10 @@ from .resolver import load_ingestion_marker, status_for
 from .case_contract import bind as bind_case_contract
 from .case_writer import atomic_write_files, restore_files_on_error
 from . import review
-from .review import LEDGER_FILE, consume_nonce, ledger_bytes, load_ledger
+from .review import LEDGER_FILE, consume_nonce, ledger_bytes, load_ledger, record_decision
 from .storage import (
-    LEGACY_CHANNEL,
     LEGACY_LEDGER_KEY,
     case_path,
-    legacy_binding,
     load_state,
 )
 
@@ -95,6 +93,7 @@ def approve(
             "input_sha256": hashes,
             "review": binding,
         }
+        record_decision(ledger, binding, "approved")
         if not approval_matches(previous, hashes):
             state["approvals"].pop("investigation_gate", None)
             state["decisions"].clear()
@@ -119,6 +118,7 @@ def approve(
             if review_path.is_file():
                 gate_receipt["review_sha256_at_approval"] = sha256(review_path)
             state["approvals"][gate] = gate_receipt
+            record_decision(ledger, binding, "approved", dependency_digest)
             if not investigation_gate_approval_matches(previous, dependency_digest):
                 state["decisions"].clear()
                 state.pop("investigation_gate_finalization", None)
@@ -228,12 +228,14 @@ def decide_report(
 
     with recovery:
         _run_helper(helper, case)
+        report_digest = require_investigation_gate_digest(case)
         state["decisions"]["report"] = {
             "decision": decision,
-            "dependency_digest": require_investigation_gate_digest(case),
+            "dependency_digest": report_digest,
             "output_sha256": current_hashes(case, outputs),
             "review": binding,
         }
+        record_decision(ledger, binding, decision, report_digest)
         state["decisions"].pop("ingest", None)
         _publish(case, data_descriptor, state, ledger)
 
@@ -267,16 +269,9 @@ def decide_ingest(
         prior = state["decisions"].get("ingest")
         binding = prior.get("review") if isinstance(prior, dict) else None
         if not isinstance(binding, dict):
+            # The resolver reached the seal step through the marker only when
+            # its binding is a ledger entry bound to this request and digest.
             binding = marker.get("review")
-        if not isinstance(binding, dict) and LEGACY_LEDGER_KEY in state:
-            # A v1 case interrupted after its requested marker: the marker
-            # predates the ledger like the state, so it is carried over too.
-            hashed, binding = legacy_binding("ingest", marker)
-            state[LEGACY_LEDGER_KEY][hashed] = {
-                "gate": "ingest",
-                "channel": LEGACY_CHANNEL,
-                "used": True,
-            }
         if not isinstance(binding, dict):
             raise OrchestrationError("the requested ingestion decision has no review receipt")
         ledger = None
@@ -288,6 +283,7 @@ def decide_ingest(
                 raise OrchestrationError("build and review the knowledge batch before requesting ingestion")
         ledger, binding = consume_nonce(case, data_descriptor, "ingest", nonce, digest,
                                         ready_check=decision == "requested")
+        record_decision(ledger, binding, decision, dependency_digest)
     marker["status"] = decision
     marker["dependency_digest"] = dependency_digest
     marker["review"] = binding
