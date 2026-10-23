@@ -40,7 +40,8 @@ Configuration comes only from the environment. A missing or invalid required var
 | `SPOTLIGHT_SENSITIVE` | no | `true` removes every tool that can reach the network from every process. |
 | `SPOTLIGHT_ANONYMIZE_FETCH`, `TOR_SOCKS` | no | Tor posture, passed to the scraping seam. When on, `fetch` goes only through Tor and `http_get` and `browse` refuse. |
 | `SPOTLIGHT_BROWSE_CHROMIUM`, `PLAYWRIGHT_BROWSERS_PATH` | no | The Chromium `browse` starts: an explicit executable, or where Playwright (and so `dev-browser install`) keeps its browsers. Default: the Chromium `dev-browser install` downloads. |
-| `SPOTLIGHT_RLM_*` | no | RLM endpoint settings for `run_rlm`. |
+| `SPOTLIGHT_RLM_OPENAI_BASE_URL` | no | OpenAI-compatible base URL of the RLM, the small resident model that distills every `fetch` (see **Lead distillation** under [Tools](#tools)) and that `run_rlm` uses. It reads case material, so it must be an endpoint you run yourself: a loopback address in the solo edition, an `own` route in the newsroom edition. Anything else stops the launcher (exit code 2). |
+| `SPOTLIGHT_RLM_OPENAI_MODEL`, `SPOTLIGHT_RLM_MODE`, `SPOTLIGHT_RLM_MODEL` | no | RLM model and `run_rlm` settings. |
 
 Keys a role needs are listed by name under that role's `keys` in `harness/composition.json`. A pi process receives only its own role's keys and its route's token; every other variable is dropped. Log lines and error messages never show those values.
 
@@ -64,7 +65,7 @@ There is no shell in this harness. Each tool takes typed arguments, refuses anyt
 | `read_file`, `write_file`, `list_files`, `grep_files` | the case folder | orchestrator, investigator, fact-checker |
 | `edit_file` | the case folder | investigator |
 | `hash_files` | the case folder | investigator, fact-checker |
-| `fetch` | `python -m integrations.scraping` (Crawl4AI; Firecrawl fallback with `FIRECRAWL_API_KEY`) | investigator, fact-checker |
+| `fetch` | `python -m integrations.scraping` (Crawl4AI; Firecrawl fallback with `FIRECRAWL_API_KEY`), then the RLM when one is configured | investigator, fact-checker |
 | `search` | `python -m integrations.search` (SearXNG at `SPOTLIGHT_SEARCH_URL`) | investigator, fact-checker |
 | `http_get` | one GET from the harness itself | investigator, fact-checker |
 | `browse` | the dev-browser script runner (`dev-browser --connect <endpoint> run`) against a headless Chromium the harness starts behind the egress proxy, with a script the harness writes | investigator, fact-checker |
@@ -81,6 +82,8 @@ There is no shell in this harness. Each tool takes typed arguments, refuses anyt
 `browse` is backed by dev-browser. `integrations/browse` holds only a manifest for the optional browse.sh CLI and backs nothing here. The model gives `browse` a URL, never a script, so the browser opens exactly one guarded page and returns its text, its HTML or a screenshot saved in the case.
 
 **Evidence locators and hashes.** The validators re-select every `source_ref` and recompute every declared SHA-256 (`scripts/evidence_anchors.py`). `hash_files` returns the SHA-256 of a case file's bytes on disk, the digest the validators recompute for `sha256`, `anchor_sha256` and `original_artifact_sha256`, for any artifact an agent wrote or derived itself. `read_file` with `offset`/`limit`, and `grep_files` line numbers, count lines as the validators do (Python's universal newlines and `splitlines()`), so they serve as `line_start`/`line_end`. `read_file` with `json_pointer` returns the text the validators select for a `source_ref` `json_pointer`: a string value as is, anything else as `json.dumps(..., ensure_ascii=False, sort_keys=True)`. Limit: a non-integer number, or an integer beyond 2^53, can print differently from Python's; anchor quotes to string values.
+
+**Lead distillation.** A raw scraped page runs to tens of thousands of tokens, which a small local model cannot hold. Every pi process runs on a route the operator runs (see [Routes](#routes)), so the local tier is simply a harness started with `SPOTLIGHT_RLM_OPENAI_BASE_URL`; the launcher passes that endpoint to its processes only after confirming it is one the operator runs, and `fetch` refuses an endpoint without that confirmation. On this tier `fetch` needs `save_as`. Once the final URL has passed the egress guard, `fetch` writes the page as fetched to `<save_as>.raw`, sends it to the RLM (the request in `integrations/scraping/rlm-leads.json`, which the scraping seam's `--rlm` path also uses), writes the leads to `save_as` under a `# RLM-distilled leads from <url>` header, and returns the leads, both paths and the SHA-256 of both files. The page itself never comes back to the agent. If the RLM fails, the page stays at `<save_as>.raw`, no lead file is written, and the result says why, again without the page. The validators refuse a lead file as a `source_ref` and name its `.raw`; the `.raw` anchors like any case file. Without `SPOTLIGHT_RLM_OPENAI_BASE_URL`, `fetch` returns and saves the page as before, with `distilled: false` and the reason in the result. Sensitive mode removes `fetch`, so nothing is distilled there.
 
 **Case files.** Reads stay inside the case folder (plus the checkout's `schemas/`); a symlink that leads out is refused. Writes stay inside the caller's write folder (the case folder for these roles), never follow a symlink, and never touch `data/orchestration.json`, `data/review-nonces.json`, `data/*-review.json` or any file whose name contains `receipt`. The check ignores letter case.
 

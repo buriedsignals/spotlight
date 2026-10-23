@@ -86,3 +86,27 @@ test('solo edition: only a real loopback endpoint counts as a route the operator
 	];
 	for (const [baseURL, expected] of cases) assert.equal(inference(baseURL), expected, baseURL);
 });
+
+test('the RLM endpoint that distills fetched pages must be one the operator runs, or the launcher stops', () => {
+	const solo = (rlm: string) => ({ ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', SPOTLIGHT_RLM_OPENAI_BASE_URL: rlm });
+	const local = solo('http://127.0.0.1:8095/v1');
+	const child = childEnv(readConfig(local), COMPOSITION, 'investigator', local);
+	assert.equal(child.SPOTLIGHT_RLM_OPENAI_BASE_URL, 'http://127.0.0.1:8095/v1');
+	assert.equal(child.SPOTLIGHT_RLM_INFERENCE, 'own');
+	assert.throws(() => readConfig(solo('https://rlm.example/v1')), /SPOTLIGHT_RLM_OPENAI_BASE_URL .*run yourself/);
+
+	const newsroom = (rlm: string) => ({
+		...BASE,
+		SPOTLIGHT_EDITION: 'newsroom',
+		SPOTLIGHT_ROUTES: JSON.stringify([
+			{ name: 'model', base_url: 'https://model.newsroom.example/v1', model: 'm', inference: 'own' },
+			{ name: 'rlm', base_url: 'https://rlm.newsroom.example/v1', model: 'e4b', inference: 'own' },
+			{ name: 'cloud', base_url: 'https://cloud.example/v1', model: 'c', inference: 'third-party' },
+		]),
+		SPOTLIGHT_RLM_OPENAI_BASE_URL: rlm,
+	});
+	const own = newsroom('https://rlm.newsroom.example/v1');
+	assert.equal(childEnv(readConfig(own), COMPOSITION, 'investigator', own).SPOTLIGHT_RLM_INFERENCE, 'own');
+	assert.throws(() => readConfig(newsroom('https://cloud.example/v1')), /SPOTLIGHT_RLM_OPENAI_BASE_URL .*run yourself/);
+	assert.throws(() => readConfig(newsroom('http://127.0.0.1:8095/v1')), /SPOTLIGHT_RLM_OPENAI_BASE_URL .*run yourself/);
+});

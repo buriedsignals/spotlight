@@ -22,11 +22,16 @@ import json
 import os
 import sys
 import urllib.request
+from pathlib import Path
 
 from integrations._cli import utf8_stdio
 
 from .scrape import scrape
 from .scrape_types import ScrapeError
+
+# The lead-distillation request (prompt, input cap, output budget), shared with
+# the Pi harness's fetch tool so both runtimes distill the same way.
+_RLM_REQUEST = Path(__file__).with_name("rlm-leads.json")
 
 
 def _rlm_distill(markdown: str, source: str) -> str | None:
@@ -34,24 +39,14 @@ def _rlm_distill(markdown: str, source: str) -> str | None:
     (llama.cpp OpenAI endpoint). Keeps the orchestrator context small — the #1 local-tier failure mode
     is raw pages ballooning context. Returns None on any failure so the caller falls back to raw."""
     base = os.environ.get("SPOTLIGHT_RLM_OPENAI_BASE_URL")
-    model = os.environ.get("SPOTLIGHT_RLM_OPENAI_MODEL", "rlm-e4b")
+    request = json.loads(_RLM_REQUEST.read_text(encoding="utf-8"))
+    model = os.environ.get("SPOTLIGHT_RLM_OPENAI_MODEL", request["default_model"])
     if not base or not markdown.strip():
         return None
     # cap the input so a huge page doesn't blow the RLM's own context
-    text = markdown[:24000]
-    prompt = (
-        "You are a lead-extractor. From the SOURCE below, output a COMPACT bullet list of only the "
-        "investigation-relevant leads: named people (+roles), organizations, dates/events, "
-        "relationships, locations, and URLs. No prose, no preamble, no full sentences copied verbatim. "
-        "Leads are unverified pointers, not facts. "
-        # The e4b serves with --reasoning-budget 0, so any planning it does leaks into the
-        # answer; forbid it explicitly (grounded 2026-07-09: output opened with a restatement
-        # of these instructions before the bullets).
-        "Begin your reply DIRECTLY with the first bullet — do not restate these instructions, "
-        "do not describe what you are about to do.\n\nSOURCE:\n" + text
-    )
+    prompt = request["prompt"] + markdown[:request["max_input_chars"]]
     body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}],
-                       "max_tokens": 900, "temperature": 0}).encode()
+                       "max_tokens": request["max_tokens"], "temperature": request["temperature"]}).encode()
     url = base.rstrip("/") + ("/chat/completions" if base.rstrip("/").endswith("/v1") else "/v1/chat/completions")
     try:
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
