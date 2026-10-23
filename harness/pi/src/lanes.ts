@@ -1132,7 +1132,10 @@ export async function runResearchRound(options: RoundOptions): Promise<RoundSumm
 		}
 		const status = readLaneStatus(caseDir, topic.topic_id);
 		if (status === 'completed' || status === 'partial') continue; // finished topics keep their leads
-		if (config.sensitive && laneType!.id !== 'local-corpus') {
+		// Newsroom prior knowledge stays inside the newsroom (the Editorial MCP and
+		// the local model), so sensitive mode keeps it.
+		const newsroomKnowledge = laneType!.id === 'prior-knowledge' && config.edition === 'newsroom' && !!options.knowledge;
+		if (config.sensitive && laneType!.id !== 'local-corpus' && !newsroomKnowledge) {
 			leaveOut(topic, 'sensitive mode runs only the local corpus lane');
 		} else if (laneType!.id === 'prior-knowledge' && config.edition === 'newsroom' && !options.knowledge) {
 			leaveOut(topic, 'in the newsroom edition prior knowledge is read through the Editorial MCP\'s search_knowledge, which is not available');

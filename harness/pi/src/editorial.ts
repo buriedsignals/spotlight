@@ -142,30 +142,26 @@ export class EditorialClient {
 		return this.#redact(text);
 	}
 
-	// A knowledge answer reaches a model, which never receives a review
-	// capability: no review_url key, and no address on a newsroom endpoint
-	// (where review pages live). Other addresses, such as a record's sources,
-	// stay.
-	#withoutReviewCapabilities(value: unknown): unknown {
+	// What the harness passes on from an answer (to a model, the case, a
+	// receipt): no secret the launcher holds, in keys or values, and no review
+	// capability: no review_url key and no address on a newsroom endpoint
+	// (where review pages live), nor `address` itself. Other addresses, such
+	// as a record's sources, stay. `keepReview` is only for the submit answer,
+	// whose review address the harness itself opens.
+	sanitize(value: unknown, options: { address?: string; keepReview?: boolean } = {}): unknown {
 		if (typeof value === 'string') {
-			return value.replace(/\bhttps?:\/\/[^\s"'<>]+/gi, (address) => (isAllowedOrigin(this.#options.origins, address) ? '[address removed]' : address));
+			const text = this.#clean(value);
+			if (options.keepReview) return text;
+			return (options.address ? text.split(options.address).join('[review page]') : text)
+				.replace(/\bhttps?:\/\/[^\s"'<>]+/gi, (found) => (isAllowedOrigin(this.#options.origins, found) ? '[address removed]' : found));
 		}
-		if (Array.isArray(value)) return value.map((item) => this.#withoutReviewCapabilities(item));
+		if (Array.isArray(value)) return value.map((item) => this.sanitize(item, options));
 		if (value && typeof value === 'object') {
 			return Object.fromEntries(
 				Object.entries(value)
-					.filter(([key]) => key !== 'review_url')
-					.map(([key, item]) => [key, this.#withoutReviewCapabilities(item)]),
+					.filter(([key]) => options.keepReview || key !== 'review_url')
+					.map(([key, item]) => [this.#clean(key), this.sanitize(item, options)]),
 			);
-		}
-		return value;
-	}
-
-	#scrub(value: unknown): unknown {
-		if (typeof value === 'string') return this.#clean(value);
-		if (Array.isArray(value)) return value.map((item) => this.#scrub(item));
-		if (value && typeof value === 'object') {
-			return Object.fromEntries(Object.entries(value).map(([key, item]) => [this.#clean(key), this.#scrub(item)]));
 		}
 		return value;
 	}
@@ -300,8 +296,7 @@ export class EditorialClient {
 		if (result?.isError) {
 			throw new EditorialToolError(`${tool}: ${this.#clean(text || 'the Editorial MCP reported an error').replace(/\bhttps?:\/\/\S+/gi, '[address removed]')}`);
 		}
-		const answer = (value: unknown) =>
-			((KNOWLEDGE_TOOLS as readonly string[]).includes(tool) ? this.#withoutReviewCapabilities(this.#scrub(value)) : this.#scrub(value)) as Record<string, unknown>;
+		const answer = (value: unknown) => this.sanitize(value, { keepReview: tool === 'submit_case_review' }) as Record<string, unknown>;
 		if (result?.structuredContent && typeof result.structuredContent === 'object' && !Array.isArray(result.structuredContent)) {
 			return answer(result.structuredContent);
 		}
@@ -508,25 +503,13 @@ export type SubmitDeps = {
 
 export type SubmitOutcome =
 	| { state: 'blocked'; integrity_failures: Array<Record<string, unknown>> }
-	| { state: 'submitted'; submission_id: string; review_id: string; review_state: string; review_opened: boolean; receipts: string[] };
+	| { state: 'submitted'; submission_id: string; review_id: string; review_state: string; review_opened: boolean; notice?: string; receipts: string[] };
+
+const REVIEW_ADDRESS_REFUSED =
+	'the case was submitted, but the newsroom returned a review address outside the newsroom\'s allowed endpoints, so Spotlight did not open it. Open the review in the newsroom\'s own tool.';
 
 const SAFE_ID = /^[A-Za-z0-9._:-]{1,200}$/;
 const fileSafe = (id: string) => id.replace(/[^A-Za-z0-9._-]/g, '_');
-
-// What the case keeps of an answer: no review address, under any key or as
-// any value.
-function withoutReviewAddress(value: unknown, address: string | undefined): unknown {
-	if (typeof value === 'string') return address ? value.split(address).join('[review page]') : value;
-	if (Array.isArray(value)) return value.map((item) => withoutReviewAddress(item, address));
-	if (value && typeof value === 'object') {
-		return Object.fromEntries(
-			Object.entries(value)
-				.filter(([key]) => key !== 'review_url')
-				.map(([key, item]) => [key, withoutReviewAddress(item, address)]),
-		);
-	}
-	return value;
-}
 
 // A submission a crash left between its recorded intent and its outcome.
 export async function pendingSubmission(runPackage: RunPackage, caseDir: string): Promise<boolean> {
@@ -552,7 +535,7 @@ export async function submitCase(deps: SubmitDeps): Promise<SubmitOutcome> {
 	await recordInCase(runPackage, ['begin', caseDir, '--package-sha256', key]);
 	const answer = await client.call('submit_case_review', { case_ref: caseRef, idempotency_key: key, package: build.package, files: build.files }, deps.signal);
 	if (answer.status === 'rejected') {
-		const failures = Array.isArray(answer.integrity_failures) ? (answer.integrity_failures as Array<Record<string, unknown>>).slice(0, 200) : [];
+		const failures = Array.isArray(answer.integrity_failures) ? (client.sanitize(answer.integrity_failures.slice(0, 200)) as Array<Record<string, unknown>>) : [];
 		const reasons = failures.length > 0 ? failures : [{ check: 'unknown', reason: 'the service rejected the package without a reason' }];
 		await recordInCase(runPackage, ['blocked', caseDir, '--package-sha256', key], { integrity_failures: reasons });
 		return { state: 'blocked', integrity_failures: reasons };
@@ -564,11 +547,6 @@ export async function submitCase(deps: SubmitDeps): Promise<SubmitOutcome> {
 	}
 	const address = typeof answer.review_url === 'string' ? answer.review_url : undefined;
 	const status = await client.call('get_review_status', { review_id: reviewId }, deps.signal);
-	const receipts: Record<string, unknown> = {
-		[`submission-${fileSafe(submissionId)}.json`]: { tool: 'submit_case_review', received_at: now(), package_sha256: key, response: withoutReviewAddress(answer, address) },
-		[`review-status-${fileSafe(reviewId)}.json`]: { tool: 'get_review_status', received_at: now(), response: withoutReviewAddress(status, address) },
-	};
-	if (status.receipt && typeof status.receipt === 'object') receipts[`review-${fileSafe(reviewId)}.json`] = withoutReviewAddress(status.receipt, address);
 	// The status must be this review's, in a state the contract names, before
 	// the submission is marked complete; otherwise the intent stays pending.
 	if (status.review_id !== reviewId || !REVIEW_STATES.has(String(status.state))) {
@@ -577,8 +555,22 @@ export async function submitCase(deps: SubmitDeps): Promise<SubmitOutcome> {
 	const reviewState = String(status.state);
 	// The address is kept nowhere, so the page opens before the submission is
 	// marked complete: if opening fails, the intent stays pending and a retry
-	// with the same key gets the address again.
+	// with the same key gets the address again. An address off the newsroom's
+	// endpoints is refused for good, so it completes (pending would hold the
+	// case forever) and the member is told where the review is.
 	const opened = address ? await deps.openReview(address) : false;
+	const refused = address !== undefined && !opened;
+	const receipts: Record<string, unknown> = {
+		[`submission-${fileSafe(submissionId)}.json`]: {
+			tool: 'submit_case_review',
+			received_at: now(),
+			package_sha256: key,
+			response: client.sanitize(answer, { address }),
+			...(refused ? { review_address: 'refused: outside the newsroom\'s allowed endpoints, not opened' } : {}),
+		},
+		[`review-status-${fileSafe(reviewId)}.json`]: { tool: 'get_review_status', received_at: now(), response: client.sanitize(status, { address }) },
+	};
+	if (status.receipt && typeof status.receipt === 'object') receipts[`review-${fileSafe(reviewId)}.json`] = client.sanitize(status.receipt, { address });
 	await recordInCase(
 		runPackage,
 		['complete', caseDir, '--package-sha256', key, '--submission-id', submissionId, '--review-id', reviewId],
@@ -590,6 +582,7 @@ export async function submitCase(deps: SubmitDeps): Promise<SubmitOutcome> {
 		review_id: reviewId,
 		review_state: reviewState,
 		review_opened: opened,
+		...(refused ? { notice: REVIEW_ADDRESS_REFUSED } : {}),
 		receipts: Object.keys(receipts).map((name) => `${RECEIPTS_DIR}/${name}`).sort(),
 	};
 }

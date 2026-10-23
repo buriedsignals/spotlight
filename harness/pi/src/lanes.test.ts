@@ -461,3 +461,34 @@ test('newsroom edition: the prior-knowledge lane reads search_knowledge, never q
 		assert.ok(!body.includes(JOURNALIST_SENTINEL) && !body.includes(PRIOR), 'no journalist input or newsroom knowledge on a third-party route');
 	}
 });
+
+test('newsroom sensitive mode runs the approved prior-knowledge lane through the Editorial MCP and still leaves public-web lanes out', async (t) => {
+	const space = await setup(t);
+	const PRIOR = 'PRIOR-SENTINEL-8K Acme paid Doe in 2023.';
+	const fakes = await servers(t, () => done, scripted({ 'ownership-prior': [call('search_knowledge', { query: 'Acme' }), lead('s1', PRIOR)] }));
+	const env = {
+		...space.env,
+		SPOTLIGHT_SENSITIVE: 'true',
+		SPOTLIGHT_EDITION: 'newsroom',
+		SPOTLIGHT_ROUTES: JSON.stringify([{ name: 'own', base_url: fakes.local.baseURL, model: 'local-model', inference: 'own' }]),
+		SPOTLIGHT_MODEL_BASE_URL: fakes.local.baseURL,
+		SPOTLIGHT_EDITORIAL_MCP_URL: 'http://127.0.0.1:9/mcp',
+		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token-0123456789',
+	};
+	const config = readConfig(env);
+	const researchPlan = plan([topic('ownership-web'), topic('ownership-prior', 'prior-knowledge')], { mode: 'newsroom' });
+	await writeFile(join(space.caseDir, 'data/methodology.json'), JSON.stringify({ schema_version: '1.0', investigation_plan: [], research_plan: researchPlan }));
+	const summary = await runResearchRound({
+		caseDir: space.caseDir,
+		plan: researchPlan,
+		config,
+		local: { baseURL: fakes.local.baseURL, model: 'local-model' },
+		env,
+		retryDelayMs: 1,
+		knowledge: async () => JSON.stringify({ records: [{ record_id: 'claim:1', summary: PRIOR }] }),
+	});
+
+	assert.deepEqual(summary.left_out.map((item) => item.topic_id), ['ownership-web']);
+	assert.equal((await laneOf(space, 'ownership-prior')).status, 'completed');
+	assert.equal(fakes.swarm.requests.length, 0);
+});

@@ -174,6 +174,7 @@ function reviewOpener(harness: Harness): (url: string) => Promise<boolean> {
 async function submit(harness: Harness, client: EditorialClient, signal?: AbortSignal) {
 	const outcome = await submitCase({ client, caseDir: harness.active.caseDir, signal, runPackage: packageRunner(harness), openReview: reviewOpener(harness) });
 	harness.log(outcome.state === 'submitted' ? `submitted the case to the newsroom (${outcome.receipts.length} receipt(s) in receipts/)` : 'the newsroom refused the package: integrity checks failed');
+	if (outcome.state === 'submitted' && outcome.notice) harness.log(outcome.notice);
 	return outcome;
 }
 

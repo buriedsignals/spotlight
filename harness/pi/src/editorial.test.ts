@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { EditorialClient, EditorialCredentialError, EditorialRefused, editorialClient, ensureCaseRegistered, pendingSubmission, stopsTheNewsroomCase, submitCase } from './editorial.ts';
+import { EditorialClient, EditorialCredentialError, EditorialRefused, editorialClient, ensureCaseRegistered, pendingSubmission, runChecks, stopsTheNewsroomCase, submitCase } from './editorial.ts';
 import type { RunPackage } from './editorial.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import { caseAtIngest, newsroomEnv, requestNewsroomIngest, workspace } from './test-support/launch.ts';
@@ -164,7 +164,7 @@ async function submittable(t: { after(fn: () => unknown): void }, handlers: Para
 		});
 	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)] });
 	await runPackage(['register', caseDir], { case_ref: 'nr-case-1', title: 'case-a', custody_mode: 'hosted', editorial_origin: origin(newsroom.url), client_case_id: 'case-a' });
-	return { caseDir, runPackage, client };
+	return { caseDir, runPackage, client, newsroomOrigin: origin(newsroom.url) };
 }
 
 test('Submit opens the newsroom review page in the member\'s browser and keeps its address out of the outcome, the receipts and the case', async (t) => {
@@ -199,6 +199,33 @@ test('a review page that does not open leaves the submission pending, and a retr
 	const outcome = await submitCase({ client, caseDir, runPackage, openReview: async (url) => (opened.push(url), true) });
 	assert.equal(outcome.state, 'submitted');
 	assert.deepEqual(opened, ['https://editorial.newsroom.example/review/rev-1?cap=secret-capability']);
+	assert.equal(await pendingSubmission(runPackage, caseDir), false);
+});
+
+test('decision-check flags and integrity failures carry no review capability into the case or the outcome', async (t) => {
+	let page = '';
+	const { caseDir, runPackage, client, newsroomOrigin } = await submittable(t, {
+		run_checks: () => ({ job_id: 'job-1', state: 'done', flags: [{ target: 'finding:F1', question: 'partial_support', reason: `compare ${page}` }] }),
+		submit_case_review: () => ({ status: 'rejected', integrity_failures: [{ check: 'file_hash', reason: `see ${page}`, review_url: page }] }),
+	});
+	page = `${newsroomOrigin}/review/rev-1?cap=secret-capability`;
+
+	const checks = await runChecks(client, caseDir, 'findings', runPackage, { pollMs: 1 });
+	const outcome = await submitCase({ client, caseDir, runPackage, openReview: async () => true });
+
+	const written = [JSON.stringify(checks), JSON.stringify(outcome)];
+	for (const name of ['newsroom-checks.json', 'newsroom-submission.json']) written.push(await readFile(join(caseDir, 'data', name), 'utf8'));
+	assert.match(written.join('\n'), /compare \[address removed\]/);
+	assert.ok(!written.join('\n').includes('secret-capability') && !written.join('\n').includes('review_url'), written.join('\n'));
+});
+
+test('a review address outside the newsroom\'s endpoints is not opened, and the member and the receipt are told so', async (t) => {
+	const { caseDir, runPackage, client } = await submittable(t, {});
+	const outcome = await submitCase({ client, caseDir, runPackage, openReview: async () => false });
+	assert.equal(outcome.state, 'submitted');
+	assert.match((outcome as { notice?: string }).notice ?? '', /outside the newsroom's allowed endpoints.*newsroom's own tool/);
+	const receipt = JSON.parse(await readFile(join(caseDir, 'receipts', 'submission-sub-1.json'), 'utf8')) as { review_address?: string };
+	assert.match(receipt.review_address ?? '', /^refused/);
 	assert.equal(await pendingSubmission(runPackage, caseDir), false);
 });
 
