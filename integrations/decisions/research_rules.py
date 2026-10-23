@@ -74,7 +74,9 @@ def _text(raw: Mapping[str, Any], key: str, *, required: bool = True, limit: int
 
 
 def parse_lead(raw: Any) -> TriageLead:
-    """Type-check the fields triage reads (the plan's lead shape) and drop the rest."""
+    """Type-check the fields triage reads from a research lead
+    (schemas/research-lead.schema.json, already validated by the caller;
+    absence leads excluded) and drop the rest."""
     if not isinstance(raw, Mapping):
         raise LeadInvalid("a lead must be an object")
     lead_id = _text(raw, "lead_id", limit=128)

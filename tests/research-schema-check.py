@@ -77,6 +77,15 @@ REFUSED = {
     "a lead without provenance": ("lead", lambda d: d.pop("provenance")),
     "a failed lane without its failure": ("lane", lambda d: d.update(status="failed")),
     "a clue from an unknown source": ("clues", lambda d: d["clues"][0].update(source="K9")),
+    "a K2 conflict pair without the attribute": (
+        "clues", lambda d: d["clues"][0].update(source="K2", type="conflict", lead_ids=["lead-a", "lead-b"])
+    ),
+    "a K2 conflict pair with three leads": (
+        "clues", lambda d: d["clues"][0].update(source="K2", type="conflict", lead_ids=["a", "b", "c"], attribute="owner")
+    ),
+    "a K2 conflict pair with one lead": (
+        "clues", lambda d: d["clues"][0].update(source="K2", type="conflict", lead_ids=["lead-a"], attribute="owner")
+    ),
     "a round budget above the case ceiling": ("methodology", lambda d: d["research_plan"].update(round_budget_usd=6)),
     "a case budget above 5": ("methodology", lambda d: d["research_plan"].update(case_budget_usd=5.5)),
     "a plan without a consent record": ("methodology", lambda d: d["research_plan"].pop("consent")),
