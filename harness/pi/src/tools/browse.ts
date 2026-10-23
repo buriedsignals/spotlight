@@ -11,9 +11,10 @@
 // in egress.ts's non-public table, any bracketed IPv6 literal, a single-label
 // name, or a local name (localhost, .local, .internal, .lan, .home.arpa); the
 // page's final URL must pass the guard again before anything is returned.
-// Limits: the browser does its own DNS, so a public name that resolves to a
-// private address is not caught in the browser; WebSocket and service-worker
-// requests are not seen by the route guard. In Tor mode browse refuses: the
+// Limits: dev-browser takes no proxy setting, so browse cannot run behind the
+// egress proxy that fetch uses (proxy.ts). The browser does its own DNS, so a
+// public name that resolves to a private address is not caught in the browser;
+// WebSocket and service-worker requests are not seen by the route guard. In Tor mode browse refuses: the
 // browser would connect from the operator's address.
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';

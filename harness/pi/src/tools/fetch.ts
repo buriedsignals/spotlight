@@ -3,11 +3,12 @@
 // Firecrawl fallback when FIRECRAWL_API_KEY is set).
 //
 // Egress: the harness first walks the URL's redirect chain itself under the
-// public-address guard and hands the seam only the final URL. The seam's own
-// browser then fetches that URL; the URL it reports ending on must pass the
-// guard as well, or the content is discarded. What the seam's browser loads
-// on its own (scripts, subresources, a redirect it sees but the harness did
-// not) is not checked address by address.
+// public-address guard and hands the seam only the final URL. The seam's
+// browser then runs behind the harness's egress proxy (proxy.ts), so every
+// connection it makes (subresources, scripts, redirects, WebSockets) passes
+// the same guard, loopback included. The URL it reports ending on must pass
+// the guard as well, or the content is discarded. The optional Firecrawl
+// fallback fetches from Firecrawl's servers, not from this machine.
 //
 // Tor mode (SPOTLIGHT_ANONYMIZE_FETCH): the harness itself makes no connection
 // and no DNS query for the target. It checks the URL without the network
@@ -19,6 +20,7 @@ import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { writeConfined } from './case-files.ts';
 import { anonymizedFetch, assertPublicDestination, checkURL, publicDestination } from './egress.ts';
+import { startEgressProxy } from './proxy.ts';
 import { checkedParams, jsonResult, programOutput, runPython, savePath } from './run.ts';
 import type { ToolContext } from './run.ts';
 
@@ -43,14 +45,24 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			const input = checkedParams<{ url: string; save_as?: string }>('fetch', params, raw);
 			const viaTor = anonymizedFetch(context.env);
 			const destination = viaTor ? checkURL(input.url).href : await publicDestination(input.url, signal);
-			const output = programOutput(
-				'fetch',
-				await runPython(context, ['-m', 'integrations.scraping', '--json', ...(viaTor ? ['--tor'] : []), '--', destination], {
-					keys: SEAM_ENV,
-					signal,
-					timeoutMs: 180_000,
-				}),
-			);
+			// Outside Tor mode every connection the seam's browser makes goes through
+			// the guarded proxy; in Tor mode the browser goes to Tor and the harness
+			// connects to nothing.
+			const proxy = viaTor ? undefined : await startEgressProxy();
+			let output: string;
+			try {
+				output = programOutput(
+					'fetch',
+					await runPython(context, ['-m', 'integrations.scraping', '--json', ...(viaTor ? ['--tor'] : []), '--', destination], {
+						keys: SEAM_ENV,
+						extra: proxy ? { SPOTLIGHT_BROWSER_PROXY: proxy.url } : {},
+						signal,
+						timeoutMs: 180_000,
+					}),
+				);
+			} finally {
+				await proxy?.close();
+			}
 			const result = JSON.parse(output) as ScrapeResult;
 			if (result.source_url) {
 				if (viaTor) checkURL(result.source_url);

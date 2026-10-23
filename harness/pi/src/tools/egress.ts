@@ -116,7 +116,9 @@ export function checkURL(raw: string, allowAddress: AddressPolicy = isPublicAddr
 	return url;
 }
 
-function guardedLookup(allowAddress: AddressPolicy) {
+// A DNS lookup that refuses a name when any of its addresses is not allowed.
+// Used as the connection's own lookup, so the checked address is the connected one.
+export function guardedLookup(allowAddress: AddressPolicy) {
 	return (
 		hostname: string,
 		options: LookupOptions,
