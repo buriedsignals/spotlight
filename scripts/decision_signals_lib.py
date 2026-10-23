@@ -597,6 +597,15 @@ def batch_items(case: Path) -> list[dict[str, Any]]:
     claims = {key(c): c for c in batch.get("claims", []) if isinstance(c, dict)}
     events = {key(e): e for e in batch.get("events", []) if isinstance(e, dict)}
     items: list[dict[str, Any]] = []
+    # Batch 1.1 keeps attribution in source positions and names references
+    # claim_ref/event_ref; 1.0 batches keep claim/event and event labels.
+    v11 = batch.get("schema_version") == "1.1"
+    positions: dict[tuple[str, str], list[dict[str, str]]] = {}
+    for position in batch.get("source_positions", []) if v11 else []:
+        if isinstance(position, dict):
+            positions.setdefault(key(position.get("claim_ref")), []).append({
+                "actor": text((position.get("actor") or {}).get("label")), "stance": text(position.get("stance")),
+                "attribution_verbatim": text(position.get("attribution_verbatim"))})
 
     def item(group: str, target: str, state: dict[str, Any], rule_inputs: dict[str, Any], unresolved: bool = False) -> None:
         items.append({"group": group, "target": target, "state": state, "rule_inputs": rule_inputs, "unresolved": unresolved,
@@ -605,15 +614,24 @@ def batch_items(case: Path) -> list[dict[str, Any]]:
     for (cid, version), claim in claims.items():
         finding = by_id.get(text((claim.get("origin") or {}).get("finding_id")))
         state = {"finding_claim": text((finding or {}).get("claim")), "proposition": text(claim.get("proposition"))}
+        if v11 and positions.get((cid, version)):
+            state["source_positions"] = sorted(positions[(cid, version)], key=lambda p: json.dumps(p, sort_keys=True))
         item("propositions", f"claim:{cid}@{version}", state, {"claim_version": version}, unresolved=finding is None)
     for membership in batch.get("claim_event_memberships", []):
         if not isinstance(membership, dict):
             continue
-        claim_ref, event_ref = key(membership.get("claim")), key(membership.get("event"))
+        claim_ref = key(membership.get("claim_ref" if v11 else "claim"))
+        event_ref = key(membership.get("event_ref" if v11 else "event"))
         claim, event = claims.get(claim_ref), events.get(event_ref)
         target = f"membership:{text(membership.get('id'))}@{text(membership.get('version'))}"
-        state = {"claim": text((claim or {}).get("proposition")), "event_label": text((event or {}).get("label")),
-                 "event_core": (event or {}).get("core") or {}}
+        if v11:
+            # Batch 1.1 stores no event label; the display text is generated.
+            core = {k: (event or {}).get(k) for k in ("actors", "action", "object", "time", "place") if k in (event or {})}
+            label = " ".join([", ".join(text(a.get("name")) for a in (event or {}).get("actors", []) if isinstance(a, dict)),
+                              text((event or {}).get("action")), text(((event or {}).get("object") or {}).get("text"))]).strip()
+        else:
+            core, label = (event or {}).get("core") or {}, text((event or {}).get("label"))
+        state = {"claim": text((claim or {}).get("proposition")), "event_label": label, "event_core": core}
         rule_inputs = {"declared_relation": text(membership.get("relation")),
                        "claim_ref": list(claim_ref), "event_ref": list(event_ref)}
         item("memberships", target, state, rule_inputs, unresolved=claim is None or event is None)

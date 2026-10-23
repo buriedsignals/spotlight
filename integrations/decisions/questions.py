@@ -185,7 +185,7 @@ MATCHING = {
     "unrelated": "No meaningful connection.",
 }
 INGEST = {
-    "proposition": {"i_prop": choice("Compare the proposition with the finding claim it was derived from. Which describes the proposition?", PROPOSITION)},
+    "proposition": {"i_prop": choice("Compare the proposition with the finding claim it was derived from. If source_positions record who asserts or disputes the claim, attribution the finding claim states (who said it) that is held there instead of in the proposition is not a change. Which describes the proposition?", PROPOSITION)},
     "membership": {"i_member": choice("How does the claim relate to the event?", MEMBERSHIP)},
     "entities": {"i_entity": choice("What kind of entity is entity_name, as used in context_sentence?", ENTITY),
                  "i_entity_ambiguous": noul("Could entity_name, as used in context_sentence, plausibly be more than one kind of entity, for example a person, a company or a place with the same name, because the sentence gives no title, legal form, role or other clue?")},
