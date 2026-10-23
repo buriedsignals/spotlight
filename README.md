@@ -34,6 +34,9 @@ explicit end-of-case decision.
 
 - Builds an investigation brief with the journalist before research starts.
 - Drafts a methodology and waits for approval before execution.
+- Optionally runs a Research phase: each approved research topic becomes a
+  lane that returns leads with saved sources, code checks every quote, and you
+  mark the clues before the investigation starts.
 - Runs bounded research cycles against public sources, local case files, and the
   journalist's vault.
 - Saves source material into the case directory before citing it.
@@ -50,23 +53,54 @@ explicit end-of-case decision.
 Preflight
   -> Brief
   -> Methodology
-  -> Research and fact-check cycles
+  -> Research (only with a research plan)
+  -> Investigation and fact-check cycles
   -> Investigation gate review
   -> Report decision
   -> Ingest, monitor, export, or continue
 ```
 
-Every gate is explicit. Spotlight does not auto-advance through brief approval,
-methodology approval, Investigation gate review, the report decision, or vault ingestion.
+Phases are named, not numbered: Preflight, Brief, Methodology, Research,
+Investigation, Report, Ingest. Every gate is explicit. Spotlight does not
+auto-advance through brief approval, methodology approval, the Research gate,
+Investigation gate review, the report decision, or vault ingestion.
 
-The research loop runs up to five cycles by default:
+### Research
+
+Research runs only when the approved methodology has a research plan: short
+topic briefs, each on a lane type (web, registries, archives, social,
+technical, news-courts, local corpus, prior knowledge, or ad hoc). Code, never
+the model, runs each approved topic as a lane. Lanes save their sources; code
+checks every excerpt against the saved source, merges copies, and applies
+fixed clue rules. The Research page shows the clues first; you mark them and
+the directions in one stop, and the investigator turns your marks into the
+methodology change, which code checks against them.
+
+- **Local lanes** (your case files and your wiki) run on the local model.
+- **Cloud lanes are opt-in and never local:** OpenRouter with your own key and
+  the "Research swarms" switch on in Engine, or your frontier host's own
+  subagents. A cloud lane receives only its approved topic brief; case files,
+  findings, evidence and journalist input never reach it.
+- **Budget, not a count:** $1 a research round by default, at most $5 per case.
+  When it is spent, no new topic starts and the topics left out are listed.
+- A failed key or provider stops Research with a fix message; nothing falls
+  back to the local model silently.
+
+See [docs/runtimes.md](docs/runtimes.md#research-mode-per-runtime) for the
+research mode each runtime supports.
+
+### Investigation cycles
+
+The investigation runs up to three cycles:
 
 1. The investigator follows the approved methodology and writes findings.
 2. The fact-checker independently checks the findings and writes verdicts.
 3. The orchestrator checks source grounding, disputes, gaps, and readiness.
 4. If the case is not ready, the next cycle targets the specific gaps.
-5. If the case stalls, Spotlight asks the journalist whether to continue, pivot,
-   or review the current material as-is.
+5. If three cycles pass without readiness, a case with a research plan goes
+   back to Research for one targeted round; its approval grants one more
+   cycle. If that fails too, or the case has no research plan, the case stops
+   with a gaps report.
 
 See [docs/investigating.md](docs/investigating.md) for the full phase and gate
 contract.
@@ -102,9 +136,11 @@ The cases root is trusted journalist-owned local storage. Active case directorie
 ├── findings-report.md
 ├── evidence-map.json
 ├── data/
-  │   ├── methodology.json
-  │   ├── findings.json
-  │   ├── fact-check.json
+│   ├── methodology.json
+│   ├── leads.json               # Research phase: merged leads
+│   ├── clues.json               # Research phase: clues for you to mark
+│   ├── findings.json
+│   ├── fact-check.json
 │   ├── source-expressions.json  # opt-in pilot or activated cases
 │   ├── source-positions.json    # who asserts or disputes each finding
 │   ├── case-contract.json       # activated 1.1 cases only
@@ -117,6 +153,7 @@ The cases root is trusted journalist-owned local storage. Active case directorie
 ├── research/
 │   ├── *.md
 │   ├── *.json
+│   ├── swarm/<topic-id>/        # Research phase: one lane per approved topic
 │   └── archived/
 └── evidence/
     ├── *.png
@@ -242,7 +279,7 @@ never writes text and never decides a verdict:
   claim-to-event relation, entity types (ambiguous bare names become
   `unclear`), and matching against existing claims.
 
-It is off unless you choose it. Phase 0 preflight asks once per install
+It is off unless you choose it. Preflight asks once per install
 (`python3 integrations/preflight.py --json` shows `decisions` with `opt_in:
 undecided | enabled | declined`), and each investigation asks again before
 anything is sent. Sensitive mode never uses it.
@@ -313,7 +350,7 @@ operating-system or terminal prompt—never argv, chat, shell history, or a
 repository file. Manual updates use `bsig plan update spotlight`; Indicator
 Labs automates the same lifecycle.
 
-On the first run after either install route, Phase 0 preflight offers the
+On the first run after either install route, Preflight offers the
 optional [decision checks](#opt-in-decision-checks) once; declining leaves
 Spotlight exactly as before. If you accept, provide `OPENROUTER_API_KEY` through
 your runtime's environment (for Engine installs, the protected keychain flow or

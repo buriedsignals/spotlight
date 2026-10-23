@@ -79,8 +79,8 @@
   </style>
 </head>
 <body>
-  <svg class="diagram" viewBox="0 0 1180 1660" role="img" aria-labelledby="ttl">
-    <title id="ttl">Spotlight vertical flow with child skills and RLM details at the bottom.</title>
+  <svg class="diagram" viewBox="0 0 1180 2024" role="img" aria-labelledby="ttl">
+    <title id="ttl">Spotlight vertical flow: named phases, the Research phase, child skills and RLM details at the bottom.</title>
 
     <defs>
       <marker id="arrow-paper" markerWidth="13" markerHeight="13" refX="10" refY="6.5" orient="auto">
@@ -97,7 +97,7 @@
       </marker>
     </defs>
 
-    <rect x="0" y="0" width="1180" height="1660" fill="#0c0c10"></rect>
+    <rect x="0" y="0" width="1180" height="2024" fill="#0c0c10"></rect>
 
     <!-- Spine -->
     <g stroke="#ede8dc" stroke-width="3" fill="none">
@@ -108,9 +108,10 @@
       <path d="M590 528 L590 560" marker-end="url(#arrow-paper)"></path>
       <path d="M590 652 L590 682" marker-end="url(#arrow-paper)"></path>
       <path d="M590 746 L590 780" marker-end="url(#arrow-paper)"></path>
-      <path d="M590 1136 L590 1168" marker-end="url(#arrow-paper)"></path>
-      <path d="M590 1230 L590 1262" marker-end="url(#arrow-paper)"></path>
-      <path d="M590 1324 L590 1356" marker-end="url(#arrow-paper)"></path>
+      <path d="M590 1110 L590 1144" marker-end="url(#arrow-paper)"></path>
+      <path d="M590 1500 L590 1532" marker-end="url(#arrow-paper)"></path>
+      <path d="M590 1594 L590 1626" marker-end="url(#arrow-paper)"></path>
+      <path d="M590 1688 L590 1720" marker-end="url(#arrow-paper)"></path>
     </g>
 
     <!-- Lead -->
@@ -123,14 +124,14 @@
     <text x="590" y="184" text-anchor="middle" fill="#fff5d9" class="serif" font-size="32">Spotlight</text>
     <text x="590" y="207" text-anchor="middle" fill="rgba(237,232,220,0.72)" class="node-sub">manages gates · spawns agents · validates artifacts</text>
 
-    <!-- Phase 0 -->
+    <!-- Preflight -->
     <rect x="250" y="248" width="680" height="82" rx="8" fill="#e3ddce" stroke="rgba(237,232,220,0.30)" stroke-width="2.5"></rect>
-    <text x="590" y="280" text-anchor="middle" fill="#c16a34" class="eyebrow">PHASE 0 · PREFLIGHT</text>
+    <text x="590" y="280" text-anchor="middle" fill="#c16a34" class="eyebrow">PREFLIGHT</text>
     <text x="590" y="310" text-anchor="middle" fill="#17140e" class="node-title">Check tools and load skills (1)</text>
 
-    <!-- Phase 1 -->
+    <!-- Brief -->
     <rect x="250" y="360" width="680" height="82" rx="8" fill="#e3ddce" stroke="rgba(237,232,220,0.30)" stroke-width="2.5"></rect>
-    <text x="590" y="392" text-anchor="middle" fill="#c16a34" class="eyebrow">PHASE 1 · BRIEF</text>
+    <text x="590" y="392" text-anchor="middle" fill="#c16a34" class="eyebrow">BRIEF</text>
     <text x="590" y="422" text-anchor="middle" fill="#17140e" class="node-title">Scope the lead with the user</text>
 
     <!-- Brief gate -->
@@ -151,62 +152,86 @@
     <circle cx="332" cy="714" r="10" fill="none" stroke="#4a7d3f" stroke-width="2.5"></circle>
     <path d="M326 714 l4 4 l9 -10" fill="none" stroke="#4a7d3f" stroke-width="2.5"></path>
     <text x="358" y="707" fill="#c16a34" class="eyebrow">METHODOLOGY GATE</text>
-    <text x="358" y="730" fill="#ede8dc" class="node-sub">approve methodology · choose RLM if installed (2)</text>
+    <text x="358" y="730" fill="#ede8dc" class="node-sub">approve plan and research topics · RLM (2)</text>
+
+    <!-- Research (only when the methodology has a research plan) -->
+    <rect x="210" y="780" width="760" height="330" rx="12" fill="rgba(52,111,168,0.05)" stroke="#346fa8" stroke-width="2.5" stroke-dasharray="10 8"></rect>
+    <text x="235" y="814" fill="#86b9e8" class="eyebrow">RESEARCH · ONLY WITH A RESEARCH PLAN</text>
+
+    <rect x="250" y="830" width="680" height="88" rx="8" fill="#07070a" stroke="rgba(237,232,220,0.72)" stroke-width="2.5"></rect>
+    <text x="590" y="862" text-anchor="middle" fill="#c16a34" class="eyebrow">CODE · ONE LANE PER APPROVED TOPIC</text>
+    <text x="590" y="898" text-anchor="middle" fill="#fff5d9" class="serif" font-size="28">Research lanes bring back leads</text>
+    <path d="M590 918 L590 946" stroke="#ede8dc" stroke-width="3" fill="none" marker-end="url(#arrow-paper)"></path>
+
+    <rect x="300" y="948" width="580" height="54" rx="8" fill="#e3ddce" stroke="#346fa8" stroke-width="2.5"></rect>
+    <text x="590" y="970" text-anchor="middle" fill="#346fa8" class="eyebrow">CHECKS · MERGE · CLUES</text>
+    <text x="590" y="992" text-anchor="middle" fill="#17140e" class="node-sub" font-weight="600">quotes checked · clue rules · triage flags</text>
+    <path d="M590 1002 L590 1030" stroke="#ede8dc" stroke-width="3" fill="none" marker-end="url(#arrow-paper)"></path>
+
+    <rect x="300" y="1032" width="580" height="62" rx="8" fill="rgba(193,106,52,0.14)" stroke="#c16a34" stroke-width="2.5"></rect>
+    <circle cx="332" cy="1063" r="10" fill="none" stroke="#4a7d3f" stroke-width="2.5"></circle>
+    <path d="M326 1063 l4 4 l9 -10" fill="none" stroke="#4a7d3f" stroke-width="2.5"></path>
+    <text x="358" y="1056" fill="#c16a34" class="eyebrow">RESEARCH GATE</text>
+    <text x="358" y="1080" fill="#ede8dc" class="node-sub">mark clues and directions · one stop</text>
+
+    <!-- Stall: one targeted research round -->
+    <path d="M300 1474 C 140 1474 140 945 206 945" fill="none" stroke="#346fa8" stroke-width="3" stroke-dasharray="7 6" marker-end="url(#arrow-cool)"></path>
+    <text x="156" y="1210" fill="#86b9e8" class="callout" text-anchor="middle" transform="rotate(-90 156 1210)">STALL · ONE RESEARCH ROUND</text>
 
     <!-- Investigation loop -->
-    <rect x="210" y="780" width="760" height="356" rx="12" fill="rgba(193,106,52,0.05)" stroke="#8a6212" stroke-width="2.5" stroke-dasharray="10 8"></rect>
-    <text x="235" y="814" fill="#d9a65f" class="eyebrow">PHASE 3 · INVESTIGATION · CYCLES 1–5</text>
+    <rect x="210" y="1144" width="760" height="356" rx="12" fill="rgba(193,106,52,0.05)" stroke="#8a6212" stroke-width="2.5" stroke-dasharray="10 8"></rect>
+    <text x="235" y="1178" fill="#d9a65f" class="eyebrow">INVESTIGATION · CYCLES 1–3</text>
 
-    <rect x="250" y="842" width="680" height="88" rx="8" fill="#07070a" stroke="rgba(237,232,220,0.72)" stroke-width="2.5"></rect>
-    <text x="590" y="876" text-anchor="middle" fill="#c16a34" class="eyebrow">SUB-AGENT · EXECUTION</text>
-    <text x="590" y="910" text-anchor="middle" fill="#fff5d9" class="serif" font-size="28">Investigator collects evidence</text>
+    <rect x="250" y="1206" width="680" height="88" rx="8" fill="#07070a" stroke="rgba(237,232,220,0.72)" stroke-width="2.5"></rect>
+    <text x="590" y="1240" text-anchor="middle" fill="#c16a34" class="eyebrow">SUB-AGENT · EXECUTION</text>
+    <text x="590" y="1274" text-anchor="middle" fill="#fff5d9" class="serif" font-size="28">Investigator collects evidence</text>
 
-    <rect x="250" y="964" width="680" height="88" rx="8" fill="#07070a" stroke="rgba(237,232,220,0.72)" stroke-width="2.5"></rect>
-    <text x="590" y="998" text-anchor="middle" fill="#c16a34" class="eyebrow">SUB-AGENT · VERIFICATION</text>
-    <text x="590" y="1032" text-anchor="middle" fill="#fff5d9" class="serif" font-size="28">Fact-checker verifies claims</text>
+    <rect x="250" y="1328" width="680" height="88" rx="8" fill="#07070a" stroke="rgba(237,232,220,0.72)" stroke-width="2.5"></rect>
+    <text x="590" y="1362" text-anchor="middle" fill="#c16a34" class="eyebrow">SUB-AGENT · VERIFICATION</text>
+    <text x="590" y="1396" text-anchor="middle" fill="#fff5d9" class="serif" font-size="28">Fact-checker verifies claims</text>
 
-    <rect x="300" y="1082" width="580" height="54" rx="8" fill="#e3ddce" stroke="#8a6212" stroke-width="2.5"></rect>
-    <text x="590" y="1104" text-anchor="middle" fill="#8a6212" class="eyebrow">READINESS CHECK</text>
-    <text x="590" y="1126" text-anchor="middle" fill="#17140e" class="node-sub" font-weight="600">ready, or loop on gaps</text>
+    <rect x="300" y="1446" width="580" height="54" rx="8" fill="#e3ddce" stroke="#8a6212" stroke-width="2.5"></rect>
+    <text x="590" y="1468" text-anchor="middle" fill="#8a6212" class="eyebrow">READINESS CHECK</text>
+    <text x="590" y="1490" text-anchor="middle" fill="#17140e" class="node-sub" font-weight="600">ready, or loop on gaps</text>
 
-    <path d="M880 1110 C 1010 1110 1010 886 936 886" fill="none" stroke="#8a6212" stroke-width="3" stroke-dasharray="7 6" marker-end="url(#arrow-amber)"></path>
-    <text x="1018" y="1002" fill="#d9a65f" class="callout" transform="rotate(90 1018 1002)">NEXT CYCLE</text>
+    <path d="M880 1474 C 1010 1474 1010 1250 936 1250" fill="none" stroke="#8a6212" stroke-width="3" stroke-dasharray="7 6" marker-end="url(#arrow-amber)"></path>
+    <text x="1018" y="1366" fill="#d9a65f" class="callout" transform="rotate(90 1018 1366)">NEXT CYCLE</text>
 
-    <!-- Investigation gate (end of Phase 3) -->
-    <rect x="300" y="1168" width="580" height="62" rx="8" fill="rgba(193,106,52,0.14)" stroke="#c16a34" stroke-width="2.5"></rect>
-    <circle cx="332" cy="1199" r="10" fill="none" stroke="#4a7d3f" stroke-width="2.5"></circle>
-    <path d="M326 1199 l4 4 l9 -10" fill="none" stroke="#4a7d3f" stroke-width="2.5"></path>
-    <text x="358" y="1191" fill="#c16a34" class="eyebrow">INVESTIGATION GATE · END OF PHASE 3</text>
-    <text x="358" y="1215" fill="#ede8dc" class="node-sub">approve findings · review.html</text>
+    <!-- Investigation gate (end of Investigation) -->
+    <rect x="300" y="1532" width="580" height="62" rx="8" fill="rgba(193,106,52,0.14)" stroke="#c16a34" stroke-width="2.5"></rect>
+    <circle cx="332" cy="1563" r="10" fill="none" stroke="#4a7d3f" stroke-width="2.5"></circle>
+    <path d="M326 1563 l4 4 l9 -10" fill="none" stroke="#4a7d3f" stroke-width="2.5"></path>
+    <text x="358" y="1555" fill="#c16a34" class="eyebrow">INVESTIGATION GATE</text>
+    <text x="358" y="1579" fill="#ede8dc" class="node-sub">approve findings · review.html</text>
 
     <!-- Report -->
-    <rect x="250" y="1262" width="680" height="62" rx="8" fill="#e3ddce" stroke="rgba(237,232,220,0.30)" stroke-width="2.5"></rect>
-    <text x="590" y="1287" text-anchor="middle" fill="#c16a34" class="eyebrow">PHASE 4 · REPORT · ENDS AT REPORT GATE</text>
-    <text x="590" y="1312" text-anchor="middle" fill="#17140e" class="node-title">Draft report package</text>
+    <rect x="250" y="1626" width="680" height="62" rx="8" fill="#e3ddce" stroke="rgba(237,232,220,0.30)" stroke-width="2.5"></rect>
+    <text x="590" y="1651" text-anchor="middle" fill="#c16a34" class="eyebrow">REPORT · ENDS AT REPORT GATE</text>
+    <text x="590" y="1676" text-anchor="middle" fill="#17140e" class="node-title">Draft report package</text>
 
     <!-- Ingest -->
-    <rect x="250" y="1356" width="680" height="62" rx="8" fill="#e3ddce" stroke="rgba(237,232,220,0.30)" stroke-width="2.5"></rect>
-    <text x="590" y="1381" text-anchor="middle" fill="#c16a34" class="eyebrow">PHASE 5 · INGEST · ENDS AT INGEST GATE</text>
-    <text x="590" y="1406" text-anchor="middle" fill="#17140e" class="node-title">Ingest verified knowledge</text>
+    <rect x="250" y="1720" width="680" height="62" rx="8" fill="#e3ddce" stroke="rgba(237,232,220,0.30)" stroke-width="2.5"></rect>
+    <text x="590" y="1745" text-anchor="middle" fill="#c16a34" class="eyebrow">INGEST · ENDS AT INGEST GATE</text>
+    <text x="590" y="1770" text-anchor="middle" fill="#17140e" class="node-title">Ingest verified knowledge</text>
 
     <!-- Vault -->
-    <rect x="410" y="1450" width="360" height="54" rx="27" fill="#ede8dc" stroke="rgba(237,232,220,0.28)" stroke-width="2"></rect>
-    <text x="590" y="1484" text-anchor="middle" fill="#17140e" class="small" font-weight="600" letter-spacing="0.08em">VAULT · OBSIDIAN / DIRECTORY</text>
+    <rect x="410" y="1814" width="360" height="54" rx="27" fill="#ede8dc" stroke="rgba(237,232,220,0.28)" stroke-width="2"></rect>
+    <text x="590" y="1848" text-anchor="middle" fill="#17140e" class="small" font-weight="600" letter-spacing="0.08em">VAULT · OBSIDIAN / DIRECTORY</text>
 
     <!-- Detail boxes -->
-    <rect x="70" y="1540" width="500" height="96" rx="8" fill="rgba(237,232,220,0.05)" stroke="rgba(237,232,220,0.22)" stroke-width="2"></rect>
-    <circle cx="105" cy="1574" r="16" fill="#e3ddce"></circle>
-    <text x="105" y="1580" text-anchor="middle" fill="#17140e" font-size="15" font-weight="600">1</text>
-    <text x="136" y="1568" fill="#c16a34" class="eyebrow">CHILD SKILLS</text>
-    <text x="136" y="1594" fill="#ede8dc" class="node-sub">OSINT, grounding, shell safety, archiving,</text>
-    <text x="136" y="1618" fill="#ede8dc" class="node-sub">review, report drafting, monitoring, ingest.</text>
+    <rect x="70" y="1904" width="500" height="96" rx="8" fill="rgba(237,232,220,0.05)" stroke="rgba(237,232,220,0.22)" stroke-width="2"></rect>
+    <circle cx="105" cy="1938" r="16" fill="#e3ddce"></circle>
+    <text x="105" y="1944" text-anchor="middle" fill="#17140e" font-size="15" font-weight="600">1</text>
+    <text x="136" y="1932" fill="#c16a34" class="eyebrow">CHILD SKILLS</text>
+    <text x="136" y="1958" fill="#ede8dc" class="node-sub">OSINT, grounding, shell safety, archiving,</text>
+    <text x="136" y="1982" fill="#ede8dc" class="node-sub">review, report drafting, monitoring, ingest.</text>
 
-    <rect x="610" y="1540" width="500" height="96" rx="8" fill="rgba(52,111,168,0.08)" stroke="#346fa8" stroke-width="2.5" stroke-dasharray="9 7"></rect>
-    <circle cx="645" cy="1574" r="16" fill="#e3ddce"></circle>
-    <text x="645" y="1580" text-anchor="middle" fill="#17140e" font-size="15" font-weight="600">2</text>
-    <text x="676" y="1568" fill="#86b9e8" class="eyebrow">OPTIONAL LOCAL LEAD EXTRACTION</text>
-    <text x="676" y="1594" fill="#ede8dc" class="node-sub">RLM runs only after methodology approval.</text>
-    <text x="676" y="1618" fill="#ede8dc" class="node-sub">rlm-analysis.json is leads only.</text>
+    <rect x="610" y="1904" width="500" height="96" rx="8" fill="rgba(52,111,168,0.08)" stroke="#346fa8" stroke-width="2.5" stroke-dasharray="9 7"></rect>
+    <circle cx="645" cy="1938" r="16" fill="#e3ddce"></circle>
+    <text x="645" y="1944" text-anchor="middle" fill="#17140e" font-size="15" font-weight="600">2</text>
+    <text x="676" y="1932" fill="#86b9e8" class="eyebrow">OPTIONAL LOCAL LEAD EXTRACTION</text>
+    <text x="676" y="1958" fill="#ede8dc" class="node-sub">RLM runs only after methodology approval.</text>
+    <text x="676" y="1982" fill="#ede8dc" class="node-sub">rlm-analysis.json is leads only.</text>
   </svg>
 </body>
 </html>
