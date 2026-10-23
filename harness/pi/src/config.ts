@@ -8,6 +8,18 @@ import { CHECKOUT_ROOT, agentSpec } from './roles.ts';
 import type { Composition } from './roles.ts';
 
 export type Edition = 'solo' | 'newsroom';
+export type ModelTier = '12b' | '26b' | '31b' | 'frontier';
+
+// Conversation folding for a small local model: past `at` tokens the
+// conversation is rewritten into a checkpoint, keeping the last `keep` tokens
+// verbatim. Bigger models hold discipline deeper, so they fold later. The
+// frontier tier has no entry and keeps Pi's default compaction.
+export const LOCAL_TIER_FOLD: Record<Exclude<ModelTier, 'frontier'>, { at: number; keep: number }> = {
+	'12b': { at: 16384, keep: 4000 },
+	'26b': { at: 24576, keep: 6000 },
+	'31b': { at: 28672, keep: 7000 },
+};
+export type Fold = { at: number; keep: number };
 export type Inference = 'own' | 'third-party';
 
 // A model route. `own` means the operator runs the inference itself (a local
@@ -34,6 +46,9 @@ export type HarnessConfig = {
 	rlmURL?: string;
 	requestBody?: string;
 	contextWindow: number;
+	modelTier: ModelTier;
+	// Where the local tier folds the conversation; undefined on the frontier tier.
+	fold?: Fold;
 	python: string;
 	// Installed Spotlight config, read by the scripts the typed tools wrap.
 	spotlightConfig: string;
@@ -213,6 +228,7 @@ export function readConfig(env: Env): HarnessConfig {
 	if (!Number.isInteger(contextWindow) || contextWindow < 1024) {
 		throw new ConfigError('SPOTLIGHT_MODEL_CONTEXT_WINDOW must be an integer of at least 1024.');
 	}
+	const modelTier = readModelTier(env);
 	return {
 		edition,
 		casesRoot: resolve(casesRoot),
@@ -226,9 +242,56 @@ export function readConfig(env: Env): HarnessConfig {
 		rlmURL: rlmEndpoint(env, edition, routes),
 		requestBody: env.SPOTLIGHT_PROVIDER_REQUEST_BODY || undefined,
 		contextWindow,
+		modelTier,
+		fold: readFold(env, modelTier, contextWindow),
 		python: env.SPOTLIGHT_PYTHON?.trim() || 'python3',
 		spotlightConfig: spotlightConfigPath(env),
 		sensitive: sensitiveMode(env),
+	};
+}
+
+function readModelTier(env: Env): ModelTier {
+	const value = env.SPOTLIGHT_MODEL_TIER?.trim() || '12b';
+	if (value !== 'frontier' && !Object.hasOwn(LOCAL_TIER_FOLD, value)) {
+		throw new ConfigError('SPOTLIGHT_MODEL_TIER must be "12b", "26b", "31b" or "frontier".');
+	}
+	return value as ModelTier;
+}
+
+function positiveInteger(env: Env, name: string, fallback: number): number {
+	const raw = env[name]?.trim();
+	if (!raw) return fallback;
+	const value = Number(raw);
+	if (!Number.isSafeInteger(value) || value < 1) throw new ConfigError(`${name} must be a positive integer.`);
+	return value;
+}
+
+// The tier's fold point, with SPOTLIGHT_COMPACT_AT / SPOTLIGHT_COMPACT_KEEP
+// overriding it. A fold point at or past the context window would never fire
+// before the model overflows, so it is refused rather than silently moved.
+function readFold(env: Env, tier: ModelTier, contextWindow: number): Fold | undefined {
+	if (tier === 'frontier') return undefined;
+	const at = positiveInteger(env, 'SPOTLIGHT_COMPACT_AT', LOCAL_TIER_FOLD[tier].at);
+	const keep = positiveInteger(env, 'SPOTLIGHT_COMPACT_KEEP', LOCAL_TIER_FOLD[tier].keep);
+	if (at >= contextWindow) {
+		throw new ConfigError(`the ${tier} fold point (${at} tokens) must be below SPOTLIGHT_MODEL_CONTEXT_WINDOW (${contextWindow}); set SPOTLIGHT_COMPACT_AT or SPOTLIGHT_MODEL_TIER.`);
+	}
+	if (keep >= at) throw new ConfigError('SPOTLIGHT_COMPACT_KEEP must be below the fold point.');
+	return { at, keep };
+}
+
+// Pi reads compaction settings from settings.json in its configuration
+// folder. The local tier compacts when the context passes `fold.at`
+// (Pi triggers at contextWindow - reserveTokens). The frontier tier writes no
+// compaction settings, so Pi's defaults apply.
+export function piSettings(config: HarnessConfig): Record<string, unknown> {
+	if (!config.fold) return {};
+	return {
+		compaction: {
+			enabled: true,
+			reserveTokens: config.contextWindow - config.fold.at,
+			keepRecentTokens: config.fold.keep,
+		},
 	};
 }
 
@@ -309,6 +372,7 @@ export function childEnv(
 		SPOTLIGHT_MODEL_ID: route.model,
 		SPOTLIGHT_ROUTE_INFERENCE: route.inference,
 		SPOTLIGHT_MODEL_CONTEXT_WINDOW: String(config.contextWindow),
+		SPOTLIGHT_MODEL_TIER: config.modelTier,
 		SPOTLIGHT_PYTHON: config.python,
 		SPOTLIGHT_CONFIG: config.spotlightConfig,
 		SPOTLIGHT_SENSITIVE: config.sensitive ? 'true' : 'false',

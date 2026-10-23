@@ -1,8 +1,8 @@
 // How every Spotlight pi process starts: the pinned CLI, RPC mode, nothing
 // discovered, only the Spotlight extension and the role's skills by path, and
 // an explicit tool allowlist.
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Readable } from 'node:stream';
 import { skillDirectory } from './roles.ts';
@@ -47,6 +47,18 @@ export function piArguments(spec: PiProcessSpec): string[] {
 	if (spec.tools.length === 0) args.push('--no-tools');
 	else args.push('--tools', spec.tools.join(','));
 	return args;
+}
+
+// Writes the Pi settings a process starts with into its own configuration
+// folder (PI_CODING_AGENT_DIR), replacing whatever an earlier launch left
+// there. Workers of one role share the folder and may start together, so the
+// file is replaced atomically.
+export function writePiSettings(agentDir: string, settings: Record<string, unknown>): void {
+	mkdirSync(agentDir, { recursive: true, mode: 0o700 });
+	const target = join(agentDir, 'settings.json');
+	const temporary = `${target}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+	writeFileSync(temporary, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });
+	renameSync(temporary, target);
 }
 
 // Strict JSONL: split on LF only (Node's readline also splits on U+2028/9,

@@ -110,3 +110,16 @@ test('the RLM endpoint that distills fetched pages must be one the operator runs
 	assert.throws(() => readConfig(newsroom('https://cloud.example/v1')), /SPOTLIGHT_RLM_OPENAI_BASE_URL .*run yourself/);
 	assert.throws(() => readConfig(newsroom('http://127.0.0.1:8095/v1')), /SPOTLIGHT_RLM_OPENAI_BASE_URL .*run yourself/);
 });
+
+test('model tier: an unknown tier or a fold point the window cannot reach stops the launcher', () => {
+	const env = (extra: Record<string, string>) => ({
+		...BASE,
+		SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1',
+		SPOTLIGHT_MODEL_ID: 'm',
+		...extra,
+	});
+	assert.throws(() => readConfig(env({ SPOTLIGHT_MODEL_TIER: '70b' })), /SPOTLIGHT_MODEL_TIER must be/);
+	assert.throws(() => readConfig(env({ SPOTLIGHT_MODEL_TIER: '31b', SPOTLIGHT_MODEL_CONTEXT_WINDOW: '16384' })), /fold point/);
+	assert.throws(() => readConfig(env({ SPOTLIGHT_COMPACT_KEEP: '20000' })), /SPOTLIGHT_COMPACT_KEEP/);
+	assert.doesNotThrow(() => readConfig(env({ SPOTLIGHT_MODEL_TIER: 'frontier', SPOTLIGHT_MODEL_CONTEXT_WINDOW: '16384' })));
+});

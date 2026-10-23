@@ -1,0 +1,140 @@
+// Compaction summaries. Pi sends a compaction's summary request outside the
+// agent loop, so `before_provider_request` never sees it; every summary
+// request here goes through the fixed request-body policy itself.
+//
+// Local tier: a small local model degrades as its context grows, but a case's
+// state lives in its files on disk and in the resolver, not in the
+// transcript. Past the tier's fold point (set by the launcher in Pi's
+// compaction settings) Pi compacts, and this handler replaces Pi's generic
+// summary with a Spotlight checkpoint written by the session model on the
+// same route. Frontier tier: Pi's own threshold and summary, only with the
+// policy applied.
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { compact, convertToLlm, serializeConversation } from '@earendil-works/pi-coding-agent';
+import { applyFixedRequestBody } from './provider-policy.ts';
+
+type FixedBody = Parameters<typeof applyFixedRequestBody>[1];
+
+const CHECKPOINT_PROMPT = `Write a checkpoint of the Spotlight conversation above. It replaces those turns: the agent continues from this checkpoint plus the few most recent messages. The case files and the Spotlight resolver hold the case's state; the checkpoint records where the conversation stands so the agent knows what to re-read and do next.
+
+Use exactly these sections, in this order, and nothing else:
+
+## Goal
+What the member asked for and the case's question, in one or two lines.
+
+## Progress
+What was done: phases completed, workers delegated and what they returned, files written (exact paths relative to the case folder).
+
+## Decisions
+Decisions taken and by whom (the member, a review page, a harness check), with exact values where they matter.
+
+## Next
+The next concrete step.
+
+## Open gate
+The gate waiting for the member's decision on the review page, or "None".
+
+Keep exact file paths, tool names, finding ids and error messages. Do not invent anything that is not in the conversation.`;
+
+const STATE_NOTE = '\n\n(Checkpoint of earlier turns. The case files and `spotlight_resolve` are the source of truth: re-read them before acting on this.)';
+
+function log(message: string): void {
+	process.stderr.write(`spotlight-extension: ${message}\n`);
+}
+
+// The request-body policy as an onPayload callback. A payload the policy
+// cannot merge into is replaced by the fixed fields alone (no transcript) and
+// `blocked()` turns true, so the caller discards the result.
+function policy(fixedBody: FixedBody) {
+	let blocked = false;
+	return {
+		onPayload: (payload: unknown) => {
+			const outcome = applyFixedRequestBody(payload, fixedBody);
+			blocked ||= outcome.blocked;
+			return outcome.payload;
+		},
+		blocked: () => blocked,
+	};
+}
+
+export function registerCompaction(pi: ExtensionAPI, fixedBody: FixedBody, local: boolean): void {
+	if (local) registerCheckpoint(pi, fixedBody);
+	else if (fixedBody) registerPolicyOnDefaultSummary(pi, fixedBody);
+}
+
+function registerPolicyOnDefaultSummary(pi: ExtensionAPI, fixedBody: FixedBody): void {
+	pi.on('session_before_compact', async (event, ctx: ExtensionContext) => {
+		if (!ctx.model) return { cancel: true };
+		const guard = policy(fixedBody);
+		try {
+			const result = await compact(
+				event.preparation,
+				ctx.model,
+				undefined,
+				undefined,
+				event.customInstructions,
+				event.signal,
+				undefined,
+				(model, context, options) => ctx.modelRegistry.streamSimple(model, context, { ...options, onPayload: guard.onPayload }),
+			);
+			if (guard.blocked()) throw new Error('the provider privacy policy could not apply to the summary request');
+			return { compaction: result };
+		} catch (error) {
+			log(`summary failed, compaction skipped: ${(error as Error).message}`);
+			return { cancel: true };
+		}
+	});
+}
+
+function registerCheckpoint(pi: ExtensionAPI, fixedBody: FixedBody): void {
+	pi.on('session_before_compact', async (event, ctx) => {
+		const { preparation, signal } = event;
+		const model = ctx.model;
+		// Cancel rather than fall back to Pi's own summary request, which is
+		// sent without the before_provider_request policy.
+		if (!model) {
+			log('no session model for the checkpoint; compaction skipped');
+			return { cancel: true };
+		}
+		const messages = [...preparation.messagesToSummarize, ...preparation.turnPrefixMessages];
+		const previous = preparation.previousSummary
+			? `<previous-checkpoint>\n${preparation.previousSummary}\n</previous-checkpoint>\n\n`
+			: '';
+		const text = `<conversation>\n${serializeConversation(convertToLlm(messages))}\n</conversation>\n\n${previous}${CHECKPOINT_PROMPT}`;
+		const guard = policy(fixedBody);
+		try {
+			const response = await ctx.modelRegistry.complete(
+				model,
+				{ messages: [{ role: 'user', content: [{ type: 'text', text }], timestamp: Date.now() }] },
+				{
+					signal,
+					cacheRetention: 'none',
+					onPayload: guard.onPayload,
+				},
+			);
+			if (guard.blocked()) throw new Error('the provider privacy policy could not apply to the checkpoint request');
+			if (response.stopReason === 'error' || response.stopReason === 'aborted' || response.stopReason === 'length') {
+				throw new Error(`checkpoint request ended with ${response.stopReason}`);
+			}
+			const summary = response.content
+				.filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+				.map((block) => block.text)
+				.join('\n')
+				.trim();
+			if (!summary) throw new Error('the checkpoint came back empty');
+			return {
+				compaction: {
+					summary: `${summary}${STATE_NOTE}`,
+					firstKeptEntryId: preparation.firstKeptEntryId,
+					tokensBefore: preparation.tokensBefore,
+					usage: response.usage,
+					details: { kind: 'spotlight-checkpoint' },
+				},
+			};
+		} catch (error) {
+			// The conversation stays as it is; Pi tries again at its next check.
+			log(`checkpoint failed, compaction skipped: ${(error as Error).message}`);
+			return { cancel: true };
+		}
+	});
+}
