@@ -76,6 +76,23 @@ targets the amendment check (D8) reads. The page digest also covers the
 triage, suggestions and round ledger the page shows, so an approval binds what
 the member saw; the receipt binds the leads, the clues and the saved review.
 
+## Wiki changes
+
+When Engine is installed, the page also lists the wiki writes an agent staged
+(`bsig wiki staged`): each change's summary, files and diff, shown as text.
+The member applies or discards each one. Agents stage wiki writes; they never
+apply them. The server takes a one-time nonce per change from
+`bsig wiki staged-nonce`, keeps it in-process and hands it to
+`staged-apply`/`staged-discard` on stdin with the digest the page showed. A
+change edited since the page loaded is refused and the list reloads; a stale
+change offers only Discard. Without Engine, or with a bsig that lacks these
+verbs, the view does not appear. It shows only while a gate page is open.
+
+The limit depends on the runtime. In Pi mode agents cannot run `bsig`, so
+confirming on this page is a real boundary. In subscription mode an agent with
+a shell could call `staged-nonce` and `staged-apply` itself: there the page is
+a speed bump, not a boundary.
+
 ## Security model
 
 - Binds `127.0.0.1` on a random port; checks `Host` on every request and

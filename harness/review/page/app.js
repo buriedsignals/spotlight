@@ -18,6 +18,8 @@ let reviewerTimer = 0;
 let reviewerSaving = null;
 // The follow-up note is sent with the request, not saved as a review edit.
 let followUpNote = "";
+// Engine's staged wiki writes; empty without Engine, which hides the view.
+let wikiChanges = [];
 
 const DECISION_LABELS = {
   methodology: { approved: "Approve the methodology" },
@@ -858,6 +860,68 @@ function receiptSection() {
   );
 }
 
+// ---------------------------------------------------------------- wiki changes
+
+// Diffs are untrusted: each line goes in as text, never as HTML.
+function diffBlock(diff) {
+  return el(
+    "pre",
+    { className: "diff" },
+    String(diff ?? "").split("\n").map((line) =>
+      el("span", { className: line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "", text: `${line}\n` }),
+    ),
+  );
+}
+
+function wikiChangeCard(change) {
+  const unavailable = busy || ended ? "true" : "false";
+  const heading = domId("wiki", change.id, "heading");
+  return el(
+    "article",
+    { className: "card", "aria-labelledby": heading },
+    el("h3", { id: heading, text: change.summary || change.op }),
+    el("p", { className: "muted", text: `${change.op} · staged ${change.created}` }),
+    list(change.paths ?? [], "No files."),
+    change.stale ? el("p", { className: "warning", text: "A file changed since this was staged, so it can no longer be applied. Discard it, or ask the agent to stage it again." }) : null,
+    diffBlock(change.diff),
+    change.stale ? null : el("button", { id: domId("wiki", change.id, "apply"), type: "button", "aria-disabled": unavailable, text: "Apply", on: { click: () => confirmWiki("apply", change) } }),
+    el("button", { id: domId("wiki", change.id, "discard"), type: "button", className: "secondary", "aria-disabled": unavailable, text: "Discard", on: { click: () => confirmWiki("discard", change) } }),
+  );
+}
+
+function wikiSection() {
+  return el(
+    "section",
+    { "aria-labelledby": "wiki-heading" },
+    el("h2", { id: "wiki-heading", text: `Wiki changes (${wikiChanges.length})` }),
+    el("p", { text: "The agent staged these writes to your wiki. Nothing is written until you apply it." }),
+    wikiChanges.map(wikiChangeCard),
+  );
+}
+
+async function loadWiki() {
+  const { status, data } = await post("/api/wiki-changes", {});
+  if (status === 200 && Array.isArray(data.changes)) wikiChanges = data.changes;
+}
+
+async function confirmWiki(action, change) {
+  if (busy || ended) return;
+  warn("");
+  setBusy(true);
+  say(action === "apply" ? "Applying the wiki change…" : "Discarding the wiki change…");
+  try {
+    const { status, data } = await post(`/api/wiki-changes/${action}`, { id: change.id, digest: change.digest });
+    if (Array.isArray(data.changes)) wikiChanges = data.changes;
+    if (status === 200) say(action === "apply" ? "Wiki change applied." : "Wiki change discarded.");
+    else if (status !== 403) {
+      warn(data.message || "The wiki change was refused.");
+      say(status === 409 ? "Reloaded." : "Nothing changed.");
+    }
+  } finally {
+    setBusy(false);
+  }
+}
+
 // ---------------------------------------------------------------- render
 
 function render(next) {
@@ -883,6 +947,7 @@ function render(next) {
     if (view.gate === "report") parts.push(reportContent(view.content));
     if (view.gate === "ingest") parts.push(...ingestContent(view.content, view.items));
     if (!readOnly()) parts.push(decisionSection());
+    if (wikiChanges.length) parts.push(wikiSection());
     app.replaceChildren(...parts);
   });
   app.setAttribute("aria-busy", busy ? "true" : "false");
@@ -895,6 +960,7 @@ async function load() {
     if (status !== 403) warn(data.message || "The review could not load.");
     return;
   }
+  await loadWiki();
   render(data);
   say(readOnly() ? "This gate is decided." : "Review loaded. Your edits are saved as you make them.");
 }

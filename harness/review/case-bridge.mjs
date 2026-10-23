@@ -163,6 +163,63 @@ function seamError(result) {
   return error;
 }
 
+// Engine's staged wiki changes, through `bsig wiki staged*`. bsig is found the
+// way the rest of Spotlight finds it (integrations/_engine.py bsig_path). The
+// confirmation nonce goes to bsig on stdin only, never on argv.
+export function createWikiBridge({
+  checkoutRoot = CHECKOUT_ROOT,
+  python = spotlightPython({ root: checkoutRoot }),
+  env = safeChildEnvironment(),
+} = {}) {
+  let bsig;
+
+  function exec(file, args, input) {
+    return new Promise((settle) => {
+      const child = execFile(
+        file,
+        args,
+        { cwd: checkoutRoot, env, timeout: SEAM_TIMEOUT_MS, maxBuffer: MAX_OUTPUT, windowsHide: true },
+        (error, stdout) => settle({ code: error ? (typeof error.code === "number" ? error.code : -1) : 0, stdout: String(stdout) }),
+      );
+      child.stdin.end(input);
+    });
+  }
+
+  async function bsigPath() {
+    if (bsig === undefined) {
+      const found = python
+        ? await exec(python, ["-E", "-s", "-c", "import sys; sys.path.insert(0, sys.argv[1]); from integrations._engine import bsig_path; print(bsig_path() or '')", checkoutRoot])
+        : { code: -1 };
+      bsig = found.code === 0 ? found.stdout.trim() : "";
+    }
+    return bsig;
+  }
+
+  // The last JSON event bsig printed: its result, or an error with the refusal.
+  async function run(args, input = "") {
+    const file = await bsigPath();
+    if (!file) throw Object.assign(new Error("Engine is not installed"), { code: "unavailable" });
+    const result = await exec(file, ["--json", "wiki", ...args], input);
+    let event = {};
+    try {
+      event = JSON.parse(result.stdout.trim().split("\n").pop());
+    } catch {
+      // No event: reported below as a failure.
+    }
+    if (result.code === 0 && event.event === "result") return event.data?.result;
+    const error = new Error(String(event.message ?? "Engine refused the request").replace(/^wiki: /, "").slice(0, 2048));
+    error.code = event.data?.refusal ?? "failed";
+    throw error;
+  }
+
+  return Object.freeze({
+    staged: () => run(["staged"]),
+    nonce: async (id) => (await run(["staged-nonce", id])).nonce,
+    apply: (id, digest, nonce) => run(["staged-apply", id, `--digest=${digest}`], JSON.stringify({ nonce })),
+    discard: (id, digest, nonce) => run(["staged-discard", id, `--digest=${digest}`], JSON.stringify({ nonce })),
+  });
+}
+
 // Decision gates the resolver can report as pending, mapped from its status.
 export function pendingGate(status) {
   if (status?.next_phase === "methodology_approval") return "methodology";

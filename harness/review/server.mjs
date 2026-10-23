@@ -94,6 +94,7 @@ async function readJson(request) {
 
 export async function startReviewServer({
   bridge,
+  wiki = null,
   host = "127.0.0.1",
   idleMs = DEFAULT_IDLE_MS,
   overallMs = DEFAULT_OVERALL_MS,
@@ -141,6 +142,41 @@ export async function startReviewServer({
 
   function authorized(request) {
     return active && Boolean(session) && cookie(request, cookieName) === session;
+  }
+
+  // Engine's confirmation nonce per staged wiki change, by id. Like the gate
+  // nonce it lives only in this process; the page never receives it.
+  const wikiNonces = new Map();
+
+  // Staged wiki changes; none without Engine or with a bsig that lacks the verb,
+  // so the page hides the view.
+  async function wikiChanges() {
+    if (!wiki) return [];
+    try {
+      const changes = await wiki.staged();
+      return Array.isArray(changes) ? changes : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async function confirmWikiChange(action, body) {
+    const { id, digest } = exactObject(body, ["id", "digest"], "wiki change");
+    if (!wiki || typeof id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(id) || typeof digest !== "string" || !/^[0-9a-f]{64}$/.test(digest))
+      return [400, { code: "invalid-change", message: "That wiki change is not recognised." }];
+    try {
+      if (!wikiNonces.has(id)) wikiNonces.set(id, await wiki.nonce(id));
+      await wiki[action](id, digest, wikiNonces.get(id));
+    } catch (error) {
+      if (error.code === "digest_changed") {
+        wikiNonces.delete(id);
+        return [409, { code: "digest-changed", message: "This wiki change was edited since you loaded it. The list has been reloaded: check it and decide again.", changes: await wikiChanges() }];
+      }
+      if (/^nonce_/.test(error.code)) wikiNonces.delete(id);
+      return [422, { code: "refused", message: error.message }];
+    }
+    wikiNonces.delete(id);
+    return [200, { changes: await wikiChanges() }];
   }
 
   // The decision nonce lives only in this process and in the case ledger's
@@ -280,6 +316,14 @@ export async function startReviewServer({
           const [status, body] = await requestFollowUp(await readJson(request));
           return sendJson(response, status, body);
         }
+        if (url.pathname === "/api/wiki-changes") {
+          exactObject(await readJson(request), [], "wiki changes request");
+          return sendJson(response, 200, { changes: await wikiChanges() });
+        }
+        if (url.pathname === "/api/wiki-changes/apply" || url.pathname === "/api/wiki-changes/discard") {
+          const [status, body] = await confirmWikiChange(url.pathname.endsWith("apply") ? "apply" : "discard", await readJson(request));
+          return sendJson(response, status, body);
+        }
         if (url.pathname === "/api/close") {
           exactObject(await readJson(request), [], "close request");
           sendJson(response, 200, { ok: true, state: "closed" });
@@ -319,6 +363,7 @@ export async function startReviewServer({
     capability = "";
     session = "";
     pageNonce = "";
+    wikiNonces.clear();
     clearTimeout(idleTimer);
     clearTimeout(overallTimer);
     server.close(() => {

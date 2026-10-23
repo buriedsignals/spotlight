@@ -96,3 +96,6 @@ code.digest { display: block; overflow-wrap: anywhere; font-size: 0.9rem; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
 dt { font-weight: 600; }
 dd { margin: 0; overflow-wrap: anywhere; }
+pre.diff { overflow-x: auto; font-size: 0.85rem; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem; margin: 0.6rem 0; }
+pre.diff .add { font-weight: 700; }
+pre.diff .del { color: var(--muted); }
