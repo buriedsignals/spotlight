@@ -125,6 +125,14 @@ else
   fail "harness/flue node --test suite failed with rc=$rc"
 fi
 
+npm test --prefix harness/pi >/dev/null 2>&1
+rc=$?
+if [ $rc -eq 0 ]; then
+  ok "harness/pi node --test suite passes"
+else
+  fail "harness/pi node --test suite failed with rc=$rc"
+fi
+
 echo ""
 echo "── Cleanliness ──"
 

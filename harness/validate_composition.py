@@ -80,8 +80,14 @@ def main() -> int:
           f"(README.md is not a skill).\n")
 
     # Floor projection: role + bundle DESCRIPTIONS (bodies load on invoke).
-    role_tok = {ag: approx_tokens(open(os.path.join(ROOT, spec["role"])).read())
-                for ag, spec in agents.items()}
+    # A role whose file does not exist yet (declared ahead of its persona) has
+    # no prompt to measure; the Pi harness refuses to spawn it.
+    role_tok = {}
+    for ag, spec in agents.items():
+        role_path = os.path.join(ROOT, spec["role"])
+        role_tok[ag] = approx_tokens(open(role_path).read()) if os.path.exists(role_path) else 0
+        if not os.path.exists(role_path):
+            print(f"note: {ag} role file {spec['role']} is not present yet")
     on_invoke_count = full - 1
     all_bodies = sum(body_tok.values()) - body_tok.get("spotlight", 0)
     old_floor = role_tok["investigator"] + all_bodies  # heaviest agent, old model
