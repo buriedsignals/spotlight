@@ -233,6 +233,47 @@ test('newsroom edition: no allowed route refuses to start; with a route, request
 	assert.equal(elsewhere.requests.length, 0);
 });
 
+test('case material reaches only a route the operator runs: refused at start without one, every process on it with one', async (t) => {
+	const own = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { text: 'Investigator finished.' };
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Plan the case.' } }] }
+			: { text: 'Done.' };
+	});
+	const thirdParty = await startFakeOpenAI(resolveThenStop);
+	t.after(() => Promise.all([own.close(), thirdParty.close()]));
+	const space = await workspace(t);
+	const route = (name: string, baseURL: string, inference: string) => ({ name, base_url: baseURL, model: 'stub-model', inference });
+	const newsroom = (routes: object[], extra: Record<string, string> = {}) => {
+		const env: Record<string, string> = {
+			...baseEnv(space, ''),
+			SPOTLIGHT_EDITION: 'newsroom',
+			SPOTLIGHT_ROUTES: JSON.stringify(routes),
+			...extra,
+		};
+		delete env.SPOTLIGHT_MODEL_BASE_URL;
+		return env;
+	};
+
+	const refused = launch(t, newsroom([route('cloud', thirdParty.baseURL, 'third-party')]));
+	refused.send({ id: 'p', type: 'prompt', message: 'Start.' });
+	await waitUntil(() => refused.process.exitCode !== null || thirdParty.requests.length > 0, 30_000);
+	assert.equal(thirdParty.requests.length, 0);
+	assert.equal((await refused.exited).code, 2);
+	assert.match(refused.stderr(), /cannot start: .*route you run yourself/);
+	assert.deepEqual(refused.lines, []);
+
+	// The third-party route comes first, so it is the pipeline route.
+	const chat = launch(t, newsroom([route('cloud', thirdParty.baseURL, 'third-party'), route('own', own.baseURL, 'own')]));
+	await settledPrompt(chat, 'Start.');
+	chat.process.stdin.end();
+	await chat.exited;
+
+	assert.equal(thirdParty.requests.length, 0);
+	assert.ok(own.requests.some((request) => isWorkerRequest(request, 'investigator')));
+	assert.ok(own.requests.some((request) => !isWorkerRequest(request, 'investigator')));
+});
+
 // A case whose methodology is approved, so the next worker task is Investigation.
 async function caseAtInvestigation(space: Workspace): Promise<string> {
 	const caseDir = join(space.casesRoot, 'case-a');
@@ -282,27 +323,60 @@ test('a worker writes through its typed tools and the harness validates its outp
 	assert.match(delegated, /no_qualifying_findings/);
 });
 
-test('sensitive mode removes every egress tool from every process', async (t) => {
+// Tools whose effects stay on this machine (case files, the local vault and
+// tool index, the resolver, the loopback review page), plus the two checks
+// that refuse their remote step themselves when SPOTLIGHT_SENSITIVE is set.
+// Any other tool a sensitive process declares is a possible way out.
+const LOCAL_TOOLS = new Set([
+	'spotlight_resolve',
+	'spotlight_transition',
+	'spawn_agent',
+	'invoke_skill',
+	'open_review',
+	'read_file',
+	'write_file',
+	'edit_file',
+	'list_files',
+	'grep_files',
+	'query_vault',
+	'osint_tools',
+	'exiftool',
+	'decision_signals',
+	'provenance_manifest',
+]);
+
+test('sensitive mode leaves every process only local tools, and a tool that can send case text out does not run', async (t) => {
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) return { text: 'Investigator finished.' };
 		return toolResults(request).length === 0
-			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Plan the case.' } }] }
+			? {
+					toolCalls: [
+						{ name: 'run_rlm', arguments: { request: 'data/rlm-request.json' } },
+						{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Plan the case.' } },
+					],
+				}
 			: { text: 'Done.' };
 	});
 	t.after(() => fake.close());
 	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	await writeFile(join(caseDir, 'notes.txt'), 'Contact source@example.org on 2024-03-01.\n');
+	await writeFile(
+		join(caseDir, 'data', 'rlm-request.json'),
+		JSON.stringify({ project: 'case-a', run_id: 'r1', mode: 'lite', corpus_paths: ['notes.txt'] }),
+	);
 	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_SENSITIVE: 'true' });
 
 	await settledPrompt(chat, 'Start.');
 
-	const composition = loadComposition();
+	await assert.rejects(readFile(join(caseDir, 'data', 'rlm-analysis.json')), { code: 'ENOENT' });
 	const worker = fake.requests.find((request) => isWorkerRequest(request, 'investigator'));
 	assert.ok(worker, 'the investigator ran');
-	assert.ok(composition.investigator.tools.includes('fetch'), 'the investigator is normally allowed to fetch');
-	for (const request of fake.requests) {
-		assert.deepEqual(toolNames(request).filter((name) => /^(fetch|search|http_get|browse|navigator_tools)$/.test(name)), []);
-	}
 	assert.ok(toolNames(worker).includes('read_file'));
+	for (const request of fake.requests) {
+		assert.deepEqual(toolNames(request).filter((name) => !LOCAL_TOOLS.has(name)), []);
+	}
 });
 
 test('after a planning task the harness runs the methodology check, not the findings check', async (t) => {

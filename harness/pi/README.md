@@ -33,32 +33,26 @@ Configuration comes only from the environment. A missing or invalid required var
 | `SPOTLIGHT_CASE_ID` | yes | Folder name of the case this chat works on. |
 | `SPOTLIGHT_HARNESS_DATA` | yes | Absolute path of the harness data folder (locks, per-process Pi configuration). |
 | `SPOTLIGHT_EDITION` | no | `solo` (default) or `newsroom`. |
-| `SPOTLIGHT_ROUTES` | newsroom | JSON array of allowed model routes (see below). |
+| `SPOTLIGHT_ROUTES` | newsroom | JSON array of allowed model routes (see [Routes](#routes)). |
 | `SPOTLIGHT_PYTHON` | no | Python interpreter for the Spotlight resolver and every Python seam the tools wrap (default `python3`). |
 | `SPOTLIGHT_WORKER_TRANSCRIPT_DIR` | no | Debugging only: a folder where each worker's RPC records are written, one file per task. They contain case text; keep the folder private. |
 | `SPOTLIGHT_CONFIG` | no | Absolute path of the installed `.spotlight-config.json` (default: the checkout root's). |
-| `SPOTLIGHT_SENSITIVE` | no | `true` removes every web tool from every process. |
+| `SPOTLIGHT_SENSITIVE` | no | `true` removes every tool that can reach the network from every process. |
 | `SPOTLIGHT_ANONYMIZE_FETCH`, `TOR_SOCKS` | no | Tor posture, passed to the scraping seam. When on, `fetch` goes only through Tor and `http_get` and `browse` refuse. |
 | `SPOTLIGHT_RLM_*` | no | RLM endpoint settings for `run_rlm`. |
 
 Keys a role needs are listed by name under that role's `keys` in `harness/composition.json`. A pi process receives only its own role's keys and its route's token; every other variable is dropped. Log lines and error messages never show those values.
 
-### Routes and the newsroom edition
+### Routes
 
-In the solo edition the model endpoint is the only route. It counts as run by the operator (`own`) when it is on the loopback interface, and as `third-party` otherwise.
+Every process reads the case, which may hold journalist input or local-corpus content, so every process runs only on a route the operator runs itself (`own`). With none, the launcher stops before starting any pi process (exit code 2). There is no fallback to another route.
 
-In the newsroom edition, `SPOTLIGHT_ROUTES` lists every endpoint the harness may use:
+- **Solo:** the model endpoint is the only route. It is `own` when its host is `localhost`, `[::1]` or an IPv4 address in 127.0.0.0/8 (`127.example.com` is not).
+- **Newsroom:** `SPOTLIGHT_ROUTES` lists every endpoint the harness may use. `inference` is `own` for a route the newsroom runs or contracts itself, `third-party` otherwise; `key_env` names the variable holding the route's token. `SPOTLIGHT_MODEL_BASE_URL`, `SPOTLIGHT_HELPER_URL` and `SPOTLIGHT_SEARCH_URL` must each be one of the routes or unset.
 
 ```json
-[
-  {"name": "model", "base_url": "https://models.newsroom.example/v1", "model": "model-id", "inference": "own", "key_env": "NEWSROOM_MODEL_TOKEN"}
-]
+[{"name": "model", "base_url": "https://models.newsroom.example/v1", "model": "model-id", "inference": "own", "key_env": "NEWSROOM_MODEL_TOKEN"}]
 ```
-
-- `inference` is `own` for a route the newsroom runs itself and `third-party` otherwise.
-- `key_env` names the variable that holds the route's token. The harness passes it to pi processes as `SPOTLIGHT_PROVIDER_API_KEY`.
-- With no route, the harness does not start. `SPOTLIGHT_MODEL_BASE_URL`, `SPOTLIGHT_HELPER_URL` and `SPOTLIGHT_SEARCH_URL` must each be one of the routes or unset.
-- Journalist input and local-corpus material go only to an `own` route. With no `own` route the harness refuses to process them. There is no fallback to another route.
 
 ## Tools
 
@@ -89,7 +83,7 @@ There is no shell in this harness. Each tool takes typed arguments, refuses anyt
 
 **Tor mode** (`SPOTLIGHT_ANONYMIZE_FETCH` set to `1`, `true`, `yes` or `on`, read as the scraping seam reads it). `fetch` makes no connection and no DNS query of its own: it checks the URL without the network (scheme, credentials, literal addresses, local names), passes it to the seam with `--tor`, and checks the URL the seam reports ending on the same way. `http_get` and `browse` cannot route through Tor, so they refuse.
 
-**Sensitive mode** (`SPOTLIGHT_SENSITIVE=true`, or `sensitive: true` in the frontmatter of `AGENTS.md`) removes `fetch`, `search`, `http_get`, `browse` and `navigator_tools` from every process.
+**Sensitive mode** (`SPOTLIGHT_SENSITIVE=true`, or `sensitive: true` in the frontmatter of `AGENTS.md`) removes `fetch`, `search`, `http_get`, `browse`, `navigator_tools`, `run_rlm` (it can send case text to `SPOTLIGHT_RLM_OPENAI_BASE_URL`) and `integration_status` (the integration preflight can probe endpoints) from every process. `decision_signals` and `provenance_manifest` stay: they receive `SPOTLIGHT_SENSITIVE` and refuse their remote step themselves.
 
 **Checks at fixed points.** When a worker finishes, the launcher resolves the case phase and runs the validators for what that worker writes, then appends their outcome to the worker's answer: after the investigator while the case is in Brief, Methodology or awaiting methodology approval, `validate-methodology-navigator.py`; after the investigator in Investigation, `validate-case.py`; after the fact-checker, `validate-case.py` and `validate-fact-check.py`. A findings list may be empty only with an explicit `no_qualifying_findings: {"reason": ...}` record.
 

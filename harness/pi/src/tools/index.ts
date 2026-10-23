@@ -1,6 +1,6 @@
 // Every typed tool a Spotlight pi process can be given, bound to its context.
 // Which of them a process actually gets is its role's allowlist in
-// harness/composition.json, minus the egress tools in sensitive mode
+// harness/composition.json, minus the network-capable tools in sensitive mode
 // (roles.ts, allowedTools).
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { browseTool } from './browse.ts';

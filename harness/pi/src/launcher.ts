@@ -58,7 +58,7 @@ function forwardStderr(harness: Harness, child: ChildProcess): void {
 }
 
 function processLaunch(harness: Harness, role: string) {
-	const route = routeFor(harness.config, 'general');
+	const route = routeFor(harness.config);
 	const spec = agentSpec(harness.composition, role);
 	return {
 		command: process.execPath,
@@ -68,7 +68,7 @@ function processLaunch(harness: Harness, role: string) {
 			tools: allowedTools(spec, harness.config.sensitive),
 			model: route.model,
 		}),
-		env: childEnv(harness.config, harness.composition, role, 'general', process.env),
+		env: childEnv(harness.config, harness.composition, role, process.env),
 		cwd: resolve(harness.config.dataDir, 'work', role),
 	};
 }
@@ -202,7 +202,7 @@ function main(): void {
 	try {
 		config = readConfig(process.env);
 		composition = loadComposition();
-		routeFor(config, 'general');
+		routeFor(config);
 	} catch (error) {
 		if (error instanceof ConfigError || error instanceof RouteRefused) {
 			plain(`cannot start: ${error.message}`);
