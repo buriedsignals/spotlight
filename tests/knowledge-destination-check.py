@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import shutil
 import sqlite3
 import stat
 import subprocess
@@ -251,7 +252,56 @@ def schema_errors(batch: dict) -> list[str]:
     return [error.message for error in Draft7Validator(schema).iter_errors(batch)]
 
 
+def check_legacy_notes() -> None:
+    """Archived graph notes: approved records of shareable cases at their
+    latest version, linked only through live memberships, with row text kept
+    literal."""
+    def policy(case, classification, revision=1, status="active"):
+        return {"case_id": case, "policy_revision": revision, "status": status,
+                "payload_json": json.dumps({"classification": classification})}
+
+    def claim(cid, version, status, case, text):
+        return {"id": cid, "version": version, "status": status, "origin_project": case,
+                "origin_finding_id": "F1", "batch_id": "batch:b", "proposition": text}
+
+    rows = {table: [] for table in PORT.ARCHIVE_TABLES}
+    rows["case_policy_receipts"] = [policy("case-a", "internal", 1), policy("case-a", "shareable", 2),
+                                    policy("case-b", "personal"), policy("case-c", "shareable", status="revoked")]
+    rows["claims"] = [
+        claim("claim:a", 1, "approved", "case-a", "old wording"),
+        claim("claim:a", 2, "approved", "case-a", "## Heading [[wiki/entities/x]] ^id"),
+        claim("claim:gone", 1, "approved", "case-a", "x"), claim("claim:gone", 2, "rejected", "case-a", "x"),
+        claim("claim:private", 1, "approved", "case-b", "personal case"),
+        claim("claim:revoked", 1, "approved", "case-c", "revoked policy"),
+    ]
+    rows["events"] = [{"id": "event:e", "version": 1, "status": "approved", "label": "E", "actors_json": "[]",
+                       "action": "a", "object": "o", "place": "p", "event_time": "t", "batch_id": "batch:b"},
+                      {"id": "event:stale", "version": 1, "status": "approved", "label": "S", "actors_json": "[]",
+                       "action": "a", "object": "o", "place": "p", "event_time": "t", "batch_id": "batch:b"}]
+    rows["claim_event_memberships"] = [
+        {"id": "relation:claim-event:1", "version": 1, "status": "approved", "claim_id": "claim:a", "claim_version": 2,
+         "event_id": "event:e", "event_version": 1},
+        {"id": "relation:claim-event:2", "version": 1, "status": "approved", "claim_id": "claim:a", "claim_version": 1,
+         "event_id": "event:stale", "event_version": 1},
+        {"id": "relation:claim-event:3", "version": 1, "status": "approved", "claim_id": "claim:a", "claim_version": 2,
+         "event_id": "event:stale", "event_version": 1},
+        {"id": "relation:claim-event:3", "version": 2, "status": "rejected", "claim_id": "claim:a", "claim_version": 2,
+         "event_id": "event:stale", "event_version": 1},
+    ]
+    notes = PORT._legacy_notes(rows)
+    claims = {k: v for k, v in notes.items() if k.startswith("claims/")}
+    assert len(claims) == 1, sorted(notes)
+    text = next(iter(claims.values()))
+    assert '"claim:a"' in text and '"version": 2' not in text and "version: 2" in text, text
+    assert "old wording" not in text and "\\## Heading [\\[wiki/entities/x]] \\^id" in text, text
+    events = [k for k in notes if k.startswith("events/")]
+    assert len(events) == 1 and not events[0].startswith("events/stale-"), events
+    assert "event:stale" not in text, text
+
+
 def main() -> int:
+    check_legacy_notes()
+    print("ok   archived graph notes keep shareable, current, approved records only")
     with tempfile.TemporaryDirectory() as raw_tmp:
         workspace = Path(raw_tmp).resolve()
         preexisting = workspace / "preexisting" / ".knowledge-workspace"
@@ -608,6 +658,43 @@ def main() -> int:
         finally:
             graph_state.close()
         assert counted["tables"]["batches"] == 1 and counted["total"] > 0, counted
+        # Engine's retirement exports the graph, then deletes it: every row to
+        # the archive outside the wiki, approved shareable records as notes.
+        exported = json.loads(run_cli(
+            "export-notes", "--workspace-root", str(workspace),
+            "--db", "knowledge/spotlight.sqlite",
+        ).stdout)
+        assert exported["tables"] == counted["tables"] and exported["total"] == counted["total"], exported
+        archive_path = workspace / ".knowledge-workspace" / "spotlight-legacy-graph.json"
+        archived = json.loads(archive_path.read_text(encoding="utf-8"))["tables"]
+        assert {t: len(archived[t]) for t in PORT.GRAPH_TABLES} == counted["tables"], archived
+        assert "batch_items" in archived and "schema_metadata" in archived
+        assert stat.S_IMODE(archive_path.stat().st_mode) == 0o600
+        legacy = workspace / "spotlight" / "legacy-graph"
+        policies = {r["case_id"]: json.loads(r["payload_json"])["classification"] for r in archived["case_policy_receipts"]}
+        approved = {r["id"] for r in archived["claims"] if r["status"] == "approved" and policies.get(r["origin_project"]) == "shareable"}
+        claim_notes = sorted((legacy / "claims").glob("*.md")) if (legacy / "claims").exists() else []
+        assert len(claim_notes) == len(approved), (len(claim_notes), approved, policies)
+        for note in claim_notes:
+            text = note.read_text(encoding="utf-8")
+            row = next(r for r in archived["claims"] if json.dumps(r["id"]) in text)
+            assert row["id"] in approved and 'type: "spotlight-legacy-claim"' in text, text
+        assert all(":" not in p.name for p in legacy.rglob("*")), "note names must be valid on Windows"
+        before = sorted((p.relative_to(legacy), p.read_bytes()) for p in legacy.rglob("*") if p.is_file())
+        again = json.loads(run_cli(
+            "export-notes", "--workspace-root", str(workspace),
+            "--db", "knowledge/spotlight.sqlite",
+        ).stdout)
+        assert again == exported and sorted((p.relative_to(legacy), p.read_bytes()) for p in legacy.rglob("*") if p.is_file()) == before
+        # A hand-edited note folder is not this graph's export.
+        (legacy / "README.md").write_text("edited", encoding="utf-8")
+        refused = run_cli(
+            "export-notes", "--workspace-root", str(workspace),
+            "--db", "knowledge/spotlight.sqlite", ok=False,
+        )
+        assert refused.returncode != 0 and "different graph" in refused.stderr, refused
+        shutil.rmtree(legacy)
+        archive_path.unlink()
         claimed_graph = json.loads(run_cli(
             "job-claim", "--workspace-root", str(workspace),
             "--db", "knowledge/spotlight.sqlite", "--unsafe-local-reference-commit",

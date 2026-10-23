@@ -26,6 +26,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sqlite3
 import stat
 import subprocess
@@ -3106,9 +3107,191 @@ GRAPH_TABLES = ("batches", "claims", "events", "story_arcs", "claim_event_member
 
 def count_graph_rows(connection: sqlite3.Connection) -> dict[str, Any]:
     """Rows of approved knowledge per table, for the 1.0 graph's retirement:
-    with none, Engine may remove the database; otherwise it stays, read-only."""
+    Engine checks export-notes wrote the same counts before it deletes the
+    database."""
     tables = {name: connection.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0] for name in GRAPH_TABLES}
     return {"schema_version": "spotlight-graph-rows/v1", "tables": tables, "total": sum(tables.values())}
+
+
+LEGACY_GRAPH_DIR = Path("spotlight") / "legacy-graph"
+# The lossless archive stays beside the database, in Engine's folder that the
+# wiki neither indexes nor serves: it keeps rows of every classification.
+LEGACY_GRAPH_ARCHIVE = Path(".knowledge-workspace") / "spotlight-legacy-graph.json"
+ARCHIVE_TABLES = GRAPH_TABLES + ("batch_items", "schema_metadata")
+
+
+def _legacy_note_name(record_id: str) -> str:
+    # Ids hold ':' (not allowed in Windows file names); the hash keeps two ids
+    # that differ only there apart.
+    slug = re.sub(r"[^a-z0-9._-]+", "-", record_id.split(":", 1)[-1]).strip("-.")[:80] or "record"
+    return f"{slug}-{hashlib.sha256(record_id.encode()).hexdigest()[:8]}.md"
+
+
+def _legacy_frontmatter(fields: dict[str, Any]) -> str:
+    # JSON scalars are valid YAML, so the frontmatter is exact without a YAML library.
+    return "\n".join(["---"] + [f"{key}: {json.dumps(value, ensure_ascii=False)}" for key, value in fields.items()] + ["---", ""])
+
+
+def _legacy_text(value: Any) -> str:
+    """Row text as plain prose: wiki links, block ids and headings in it stay
+    literal, and it stays on one line."""
+    text = " ".join(str(value).split())
+    text = text.replace("[[", "[\\[").replace("^", "\\^")
+    return "\\" + text if text.startswith(("#", "-", ">", "---")) else text
+
+
+def _shareable_cases(rows: dict[str, list[dict[str, Any]]]) -> set[str]:
+    """Cases whose latest active policy is shareable. Internal and personal
+    cases, and cases with no readable policy, get no notes."""
+    latest: dict[str, dict[str, Any]] = {}
+    for row in rows["case_policy_receipts"]:
+        if row["case_id"] not in latest or row["policy_revision"] > latest[row["case_id"]]["policy_revision"]:
+            latest[row["case_id"]] = row
+    shareable = set()
+    for case, row in latest.items():
+        try:
+            classification = json.loads(row["payload_json"]).get("classification")
+        except (TypeError, ValueError):
+            continue
+        if row["status"] == "active" and classification == "shareable":
+            shareable.add(case)
+    return shareable
+
+
+def _legacy_notes(rows: dict[str, list[dict[str, Any]]]) -> dict[str, str]:
+    """One note per approved claim, event and story arc at its latest version,
+    from shareable cases only, linked through approved memberships."""
+    def latest(table: str) -> list[dict[str, Any]]:
+        best: dict[str, dict[str, Any]] = {}
+        for row in rows[table]:
+            if row["id"] not in best or row["version"] > best[row["id"]]["version"]:
+                best[row["id"]] = row
+        return [best[key] for key in sorted(best) if best[key]["status"] == "approved"]
+
+    shareable = _shareable_cases(rows)
+    claims = [c for c in latest("claims") if c["origin_project"] in shareable]
+    claim_ids = {c["id"]: c["version"] for c in claims}
+    claim_events = [m for m in latest("claim_event_memberships") if claim_ids.get(m["claim_id"]) == m["claim_version"]]
+    all_events = {e["id"]: e for e in latest("events")}
+    events = [all_events[i] for i in sorted({m["event_id"] for m in claim_events})
+              if i in all_events and any(m["event_version"] == all_events[i]["version"] for m in claim_events if m["event_id"] == i)]
+    event_ids = {e["id"]: e["version"] for e in events}
+    event_arcs = [m for m in latest("event_story_arc_memberships") if event_ids.get(m["event_id"]) == m["event_version"]]
+    all_arcs = {a["id"]: a for a in latest("story_arcs")}
+    arcs = [all_arcs[i] for i in sorted({m["story_arc_id"] for m in event_arcs})
+            if i in all_arcs and any(m["story_arc_version"] == all_arcs[i]["version"] for m in event_arcs if m["story_arc_id"] == i)]
+
+    names = {r["id"]: _legacy_note_name(r["id"]) for r in claims + events + arcs}
+    def link(folder: str, record_id: str) -> str:
+        return f"[{record_id}](../{folder}/{names[record_id]})"
+
+    notes: dict[str, str] = {}
+    for claim in claims:
+        linked = sorted({m["event_id"] for m in claim_events if m["claim_id"] == claim["id"]} & set(event_ids))
+        body = [_legacy_text(claim["proposition"]), ""]
+        if linked:
+            body += ["Events:", *[f"- {link('events', e)}" for e in linked], ""]
+        notes[f"claims/{names[claim['id']]}"] = _legacy_frontmatter({
+            "type": "spotlight-legacy-claim", "id": claim["id"], "version": claim["version"],
+            "case": claim["origin_project"], "finding": claim["origin_finding_id"], "batch": claim["batch_id"],
+        }) + "\n".join(body)
+    for event in events:
+        linked = sorted({m["story_arc_id"] for m in event_arcs if m["event_id"] == event["id"]} & {a["id"] for a in arcs})
+        actors = json.loads(event["actors_json"] or "[]")
+        names_of = ", ".join(_legacy_text(a.get("name", a) if isinstance(a, dict) else a) for a in actors) or "none"
+        body = [_legacy_text(event["label"]), "", f"- Actors: {names_of}", f"- Action: {_legacy_text(event['action'])}",
+                f"- Object: {_legacy_text(event['object'])}", f"- Place: {_legacy_text(event['place'])}",
+                f"- Time: {_legacy_text(event['event_time'])}", ""]
+        if linked:
+            body += ["Story arcs:", *[f"- {link('story-arcs', a)}" for a in linked], ""]
+        notes[f"events/{names[event['id']]}"] = _legacy_frontmatter({
+            "type": "spotlight-legacy-event", "id": event["id"], "version": event["version"], "batch": event["batch_id"],
+        }) + "\n".join(body)
+    for arc in arcs:
+        notes[f"story-arcs/{names[arc['id']]}"] = _legacy_frontmatter({
+            "type": "spotlight-legacy-story-arc", "id": arc["id"], "version": arc["version"], "batch": arc["batch_id"],
+        }) + "\n".join([_legacy_text(arc["title"]), "", _legacy_text(arc["description"]), ""])
+    notes["README.md"] = (
+        "# Spotlight 1.0 graph (archived)\n\n"
+        "Spotlight 1.0 kept approved knowledge in a database that is now retired. "
+        "These notes are the approved claims of shareable cases, with their events and story "
+        "arcs, at their latest version. Every row of every case is kept unchanged in "
+        "`.knowledge-workspace/spotlight-legacy-graph.json`. Nothing updates them.\n"
+    )
+    return notes
+
+
+def _fsync_dir(path: Path) -> None:
+    if os.name == "nt":
+        return  # Windows cannot open a directory to flush it; the rename is durable on NTFS
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _write_durable(path: Path, data: bytes) -> None:
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "wb") as handle:
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _publish(target: Path, files: dict[str, bytes]) -> None:
+    """Write files into target whole or not at all, flushed to disk; a target
+    already holding exactly these files is left as it is."""
+    if target.exists():
+        existing = {p.relative_to(target).as_posix(): p.read_bytes() for p in target.rglob("*") if p.is_file() and not p.is_symlink()}
+        if existing == files:
+            return
+        raise ContractError(f"{target} already exists and holds a different graph")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{target.name}-", dir=target.parent))
+    try:
+        for rel, data in files.items():
+            path = staging / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            _write_durable(path, data)
+        for directory in sorted({(staging / rel).parent for rel in files}, key=lambda p: -len(p.parts)):
+            _fsync_dir(directory)
+        os.rename(staging, target)
+        _fsync_dir(target.parent)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+
+def export_graph_notes(connection: sqlite3.Connection, workspace_root: Path) -> dict[str, Any]:
+    """Write the 1.0 graph out before Engine deletes the database: every row
+    of every table to the archive, and readable notes into the wiki. Both are
+    flushed to disk, and the counts returned are read back from the archive
+    on disk, so Engine compares what was written, not what was meant."""
+    rows = {
+        table: [dict(row) for row in connection.execute(f"SELECT * FROM {table} ORDER BY rowid")]
+        for table in ARCHIVE_TABLES
+    }
+    archive = (json.dumps({"schema_version": "spotlight-legacy-graph/v1", "tables": rows}, indent=2, ensure_ascii=False, sort_keys=True) + "\n").encode()
+    root = workspace_root.expanduser().resolve(strict=True)
+    archive_path = root / LEGACY_GRAPH_ARCHIVE
+    notes_dir = root / LEGACY_GRAPH_DIR
+    for path in (archive_path, notes_dir):
+        _reject_symlink_path(path)
+    if archive_path.exists():
+        if archive_path.is_symlink() or archive_path.read_bytes() != archive:
+            raise ContractError(f"{archive_path} already exists and holds a different graph")
+    else:
+        archive_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        temporary = archive_path.with_name(f".{archive_path.name}.{os.getpid()}")
+        _write_durable(temporary, archive)
+        os.replace(temporary, archive_path)
+        _fsync_dir(archive_path.parent)
+    _publish(notes_dir, {rel: text.encode("utf-8") for rel, text in _legacy_notes(rows).items()})
+    written = json.loads(archive_path.read_bytes())["tables"]
+    counts = {table: len(written.get(table) or []) for table in GRAPH_TABLES}
+    return {"schema_version": "spotlight-graph-export/v1", "archive": LEGACY_GRAPH_ARCHIVE.as_posix(),
+            "notes": LEGACY_GRAPH_DIR.as_posix(), "tables": counts, "total": sum(counts.values())}
 
 
 def open_existing_database(path: Path) -> sqlite3.Connection:
@@ -3607,6 +3790,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     count_parser.add_argument("--workspace-root", required=True, type=Path)
     count_parser.add_argument("--db", required=True, type=Path)
+    export_parser = subcommands.add_parser(
+        "export-notes", help="archive the graph and write its shareable records as wiki notes (Engine's retirement, before it deletes the database)"
+    )
+    export_parser.add_argument("--workspace-root", required=True, type=Path)
+    export_parser.add_argument("--db", required=True, type=Path)
     verify_parser = subcommands.add_parser(
         "verify", help="check database schema, integrity, and stored batch receipts"
     )
@@ -3833,6 +4021,9 @@ def main(argv: Iterable[str] | None = None) -> int:
                 return 0
             if args.command == "count-rows":
                 print_json(count_graph_rows(connection))
+                return 0
+            if args.command == "export-notes":
+                print_json(export_graph_notes(connection, args.workspace_root))
                 return 0
         finally:
             connection.close()
