@@ -206,7 +206,7 @@ def review_view(
     view = review.build_view(case, gate)
     stored = (
         state["approvals"].get(gate)
-        if gate in {"methodology", "investigation_gate"}
+        if gate in {"methodology", "research", "investigation_gate"}
         else state["decisions"].get(gate)
     )
     if gate == "investigation_gate" and stored is None:

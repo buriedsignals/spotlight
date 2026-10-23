@@ -1,0 +1,159 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Spotlight research lead",
+  "description": "One line of research/swarm/<topic-id>/leads.jsonl. A lead is a candidate for the investigation, never a finding. The typed fetch and search tools write capture, content_ref, content_sha256, derivatives, provenance and lead_id; the lane model supplies only direction_id, summary, subjects, the excerpt text and attribution. Evidence fields follow Batch 1.1's evidence record.",
+  "schema_version": "1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "lead_id", "topic_id", "direction_id", "summary", "subjects", "absence", "status"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "lead_id": {
+      "$ref": "#/definitions/nonempty_text",
+      "$comment": "Assigned by the tool that captured the source; never derived from a content fingerprint."
+    },
+    "topic_id": { "$ref": "#/definitions/slug" },
+    "direction_id": { "$ref": "#/definitions/slug" },
+    "summary": { "$ref": "#/definitions/nonempty_text" },
+    "subjects": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/nonempty_text" }
+    },
+    "absence": {
+      "type": "boolean",
+      "description": "True for an absence lead: the lane looked and found nothing. It carries the queries tried and no source."
+    },
+    "queries_tried": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/nonempty_text" }
+    },
+    "status": {
+      "enum": ["candidate", "unverifiable", "set_aside"],
+      "description": "unverifiable: the excerpt was not found verbatim in a stored source (D3); the lead is kept, never deleted."
+    },
+    "stored": {
+      "enum": ["page", "snippet"],
+      "description": "page: the lane retained the source. snippet: only a search snippet; a case note, never evidence."
+    },
+    "journalist_input": {
+      "type": "boolean",
+      "description": "True when the lane read journalist input. Such a lead never reaches a cloud model."
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route", "captured_at"],
+      "properties": {
+        "route": { "enum": ["browser", "api", "manual"] },
+        "tool": { "$ref": "#/definitions/nonempty_text" },
+        "source_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Set only when the evidence came from an external URL."
+        },
+        "captured_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the copy entered custody; never the search result's date."
+        }
+      }
+    },
+    "content_ref": {
+      "$ref": "#/definitions/nonempty_text",
+      "description": "The retained original, relative to the lane folder (sources/...)."
+    },
+    "content_sha256": { "$ref": "#/definitions/sha256" },
+    "derivatives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "content_ref", "content_sha256"],
+        "properties": {
+          "id": { "$ref": "#/definitions/nonempty_text" },
+          "type": { "$ref": "#/definitions/nonempty_text" },
+          "content_ref": { "$ref": "#/definitions/nonempty_text" },
+          "content_sha256": { "$ref": "#/definitions/sha256" }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "model"],
+      "properties": {
+        "method": { "const": "agent_candidate" },
+        "model": { "$ref": "#/definitions/nonempty_text" }
+      }
+    },
+    "excerpt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "language", "direct_quote"],
+      "properties": {
+        "text": { "$ref": "#/definitions/nonempty_text" },
+        "language": { "type": "string", "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$" },
+        "direct_quote": { "type": "boolean" },
+        "derivative_id": {
+          "$ref": "#/definitions/nonempty_text",
+          "description": "The derivative the excerpt came from, so a passage's origin_ref.derivative_id can be filled."
+        },
+        "speaker": {
+          "$ref": "#/definitions/nonempty_text",
+          "description": "Only when the speaker label sits outside the excerpt."
+        }
+      }
+    },
+    "attribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor", "stance", "attribution_verbatim"],
+      "description": "For reported claims only; interpretation leads carry none. Not a source position.",
+      "properties": {
+        "actor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label"],
+          "properties": { "label": { "$ref": "#/definitions/nonempty_text" } }
+        },
+        "stance": { "enum": ["asserts", "disputes"] },
+        "attribution_verbatim": { "$ref": "#/definitions/nonempty_text" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "absence": { "const": true } } },
+      "then": {
+        "required": ["queries_tried"],
+        "properties": { "queries_tried": { "minItems": 1 } },
+        "not": { "anyOf": [
+          { "required": ["capture"] }, { "required": ["content_ref"] }, { "required": ["excerpt"] }
+        ] }
+      },
+      "else": { "required": ["stored", "capture", "provenance", "excerpt"] }
+    },
+    {
+      "if": { "required": ["stored"], "properties": { "stored": { "const": "page" } } },
+      "then": { "required": ["content_ref", "content_sha256"] }
+    },
+    {
+      "if": { "required": ["stored"], "properties": { "stored": { "const": "snippet" } } },
+      "then": {
+        "$comment": "A snippet lead has no evidence record.",
+        "not": { "anyOf": [
+          { "required": ["content_ref"] }, { "required": ["content_sha256"] }, { "required": ["derivatives"] }
+        ] }
+      }
+    },
+    {
+      "if": { "required": ["capture"], "properties": { "capture": { "properties": { "route": { "enum": ["browser", "api"] } } } } },
+      "then": { "properties": { "capture": { "required": ["tool"] } } }
+    }
+  ],
+  "definitions": {
+    "nonempty_text": { "type": "string", "minLength": 1 },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "slug": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" }
+  }
+}

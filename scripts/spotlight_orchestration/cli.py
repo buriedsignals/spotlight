@@ -51,7 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--json", action="store_true")
     add_case_boundary(status)
     approval = commands.add_parser("approve")
-    approval.add_argument("gate", choices=("methodology", "investigation_gate"))
+    approval.add_argument("gate", choices=("methodology", "research", "investigation_gate"))
     approval.add_argument("--approved-by", required=True)
     approval.add_argument("--approved-at", required=True)
     add_review_receipt(approval)

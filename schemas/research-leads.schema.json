@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Spotlight merged research leads",
+  "description": "data/leads.json: the leads of every approved lane, merged (D4) and keyed by canonical URL and content hash. Syndicated copies collapse into one entry; the same source twice is not corroboration. Each entry's lead is a copy of a lane's leads.jsonl line and validates against research-lead.schema.json. The Research gate receipt binds this file's hash.",
+  "schema_version": "1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_at", "lanes", "leads"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "round": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The research round these leads come from."
+    },
+    "mode": {
+      "enum": ["local_only", "openrouter_swarm", "subscription_subagents", "newsroom"],
+      "description": "The research mode that ran; the Research page and the report state it."
+    },
+    "spend_usd": { "type": "number", "minimum": 0 },
+    "lanes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["topic_id", "status", "lane_sha256"],
+        "properties": {
+          "topic_id": { "$ref": "#/definitions/slug" },
+          "status": { "enum": ["completed", "partial", "failed", "not_started"] },
+          "lane_sha256": {
+            "anyOf": [{ "$ref": "#/definitions/sha256" }, { "type": "null" }],
+            "description": "sha256 of the lane's leads.jsonl as merged; null when the lane wrote none."
+          }
+        }
+      }
+    },
+    "leads": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["merge_key", "lead", "copies"],
+        "properties": {
+          "merge_key": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "canonical_url": { "type": ["string", "null"] },
+              "content_sha256": { "anyOf": [{ "$ref": "#/definitions/sha256" }, { "type": "null" }] }
+            }
+          },
+          "lead": {
+            "type": "object",
+            "required": ["schema_version", "lead_id", "topic_id", "direction_id", "summary", "subjects", "absence", "status"],
+            "description": "The kept copy; validates against research-lead.schema.json."
+          },
+          "copies": {
+            "type": "array",
+            "description": "The other lane leads that collapsed into this one.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["topic_id", "lead_id"],
+              "properties": {
+                "topic_id": { "$ref": "#/definitions/slug" },
+                "lead_id": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "left_out": {
+      "type": "array",
+      "description": "Approved topics that did not run because the round budget was spent.",
+      "items": { "$ref": "#/definitions/slug" }
+    },
+    "gaps": {
+      "type": "array",
+      "description": "Directions with no qualifying lead (D6). Zero qualifying leads is a valid outcome.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["direction_id"],
+        "properties": {
+          "direction_id": { "$ref": "#/definitions/slug" },
+          "queries_tried": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "slug": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" }
+  }
+}

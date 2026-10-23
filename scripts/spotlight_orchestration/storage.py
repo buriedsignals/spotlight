@@ -221,7 +221,7 @@ def load_state(case: Path, data_descriptor: int | None = None) -> dict[str, Any]
         for kind, count in state["attempts"].items()
     ):
         raise OrchestrationError("data/orchestration.json contains invalid attempt counts")
-    for field in ("blocked", "follow_up", "open_cycle", "investigation_gate_finalization"):
+    for field in ("blocked", "follow_up", "open_cycle", "open_research", "investigation_gate_finalization"):
         if field in state and not isinstance(state[field], dict):
             raise OrchestrationError(f"data/orchestration.json field {field!r} must be an object")
     return state

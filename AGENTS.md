@@ -190,6 +190,7 @@ the config resolves it through `config_path()` in
 | `social-media-intelligence` | `skills/social-media-intelligence/SKILL.md` | Account authenticity, coordination detection, narrative tracking | investigator, fact-checker, user |
 | `phase-preflight` | `skills/phase-preflight/SKILL.md` | Preflight child skill — config, sovereign backings, workspace validation, project setup, integration tiering | orchestrator |
 | `phase-methodology` | `skills/phase-methodology/SKILL.md` | Brief and Methodology child skill — brief conversation with approval gate, investigator PLANNING spawn, methodology validation and approval | orchestrator |
+| `phase-research` | `skills/phase-research/SKILL.md` | Research child skill — approved topic briefs run as research lanes started by code, merged leads and clues, Research gate user approval | orchestrator |
 | `phase-investigation` | `skills/phase-investigation/SKILL.md` | Investigation child skill — autonomous investigation cycles (max 5), fact-check spawns, validators, readiness criteria, Stall Protocol | orchestrator |
 | `phase-investigation-gate` | `skills/phase-investigation-gate/SKILL.md` | Investigation closing child skill — summary + machine contract generation, Investigation gate user approval (ends turn), provenance packaging, review artifact | orchestrator |
 | `phase-report` | `skills/phase-report/SKILL.md` | Report child skill — public-facing report drafting via report-drafting + deterministic finalize-report.py rendering | orchestrator |
@@ -290,7 +291,11 @@ activation documents use their own schema versions as declared below.
 | Decision Signals | `schemas/decision-signals.schema.json` | Opt-in Jev decision-model answers and derived review signals for grounding, report prose and ingest; can only lower confidence or add flags |
 | Knowledge Batch 1.1 (core) | `schemas/knowledge-batch-1.1.schema.json` | Open-source core of Batch 1.1: evidence, passages, claims, claim–passage links, source positions, assessments, events, story arcs and memberships, with continuous versions and exact refs. Cross-record rules C1–C10 and C13 are checked by `scripts/validate-knowledge-batch.py` |
 | Knowledge Proposal | `schemas/knowledge-proposal.schema.json` | Analyst interface 1: normalized claims per finding (with `attributed`), events, story arcs and memberships; `scripts/build-knowledge-batch.py` adds the rest |
-| Methodology | `schemas/methodology.schema.json` | Investigation plan with directions, steps, tools_required, opsec_considerations |
+| Methodology | `schemas/methodology.schema.json` | Investigation plan with directions, steps, tools_required, opsec_considerations, and the optional `research_plan` (topic briefs, round budget, keys, egress, consent) |
+| Research Lane | `schemas/research-lane.schema.json` | `research/swarm/<topic-id>/lane.json`: one lane's route, status, budget and spend |
+| Research Lead | `schemas/research-lead.schema.json` | One `leads.jsonl` line: a candidate with Batch 1.1 evidence fields, a verbatim excerpt and optional attribution; never a finding |
+| Research Leads | `schemas/research-leads.schema.json` | `data/leads.json`: every approved lane's leads merged by canonical URL and content hash |
+| Research Clues | `schemas/research-clues.schema.json` | `data/clues.json`: clues from the rules, triage questions and approved methods; bound by the Research gate receipt |
 | Investigation Log | `schemas/investigation-log.schema.json` | Append-only cycle audit trail |
 | Summary | `schemas/summary.schema.json` | Investigation gate summary for review |
 

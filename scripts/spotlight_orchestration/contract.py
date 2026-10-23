@@ -16,10 +16,18 @@ INVESTIGATION_GATE_FINALIZATION_OUTPUTS = ("data/provenance-manifest.json", "rev
 # the investigator's outputs, then a fact-check of them.
 INVESTIGATOR_OUTPUTS = ("data/findings.json", "data/evidence-bundle.json")
 FACT_CHECK_OUTPUT = "data/fact-check.json"
+# What the Research gate approves: the merged leads and the clues derived from
+# them. The receipt also binds the saved review (data/research-review.json)
+# through its review binding.
+RESEARCH_OUTPUTS = ("data/leads.json", "data/clues.json")
 ATTEMPT_LIMITS = {
     "investigation-cycle": 5,
     "fact-check-evidence-repair": 1,
     "structural-correction": 2,
+    # A research round stopped by its provider (rejected key, no credit,
+    # upstream errors). The member fixes it and retries; the cap stops the
+    # case at Research instead of retrying forever.
+    "research-lane": 3,
 }
 SCRIPT_DIR = Path(__file__).resolve().parent.parent
 

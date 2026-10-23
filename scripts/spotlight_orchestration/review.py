@@ -1,6 +1,6 @@
 """Gate review records, page views and one-time decision nonces.
 
-A gate page (methodology, Investigation gate, report, ingest) reads a view built
+A gate page (methodology, research, Investigation gate, report, ingest) reads a view built
 here, saves the member's edits to one canonical review file per gate, and posts
 its decision with the digest it showed. The local review server holds a nonce
 issued here; the transitions accept a page decision only with that recorded,
@@ -20,16 +20,17 @@ from pathlib import Path
 from typing import Any
 
 from .case_writer import atomic_write_files
-from .contract import METHODOLOGY_INPUTS, OrchestrationError, SCRIPT_DIR
+from .contract import METHODOLOGY_INPUTS, RESEARCH_OUTPUTS, OrchestrationError, SCRIPT_DIR
 from .dependencies import current_hashes, investigation_gate_dependencies
 from .storage import LEGACY_CHANNEL, LEGACY_LEDGER_KEY, case_path, read_data_bytes
 
 REVIEW_VERSION = "spotlight-review/v1"
 LEDGER_VERSION = "spotlight-review-nonces/v1"
 LEDGER_FILE = "review-nonces.json"
-REVIEW_GATES = ("methodology", "investigation_gate", "report", "ingest")
+REVIEW_GATES = ("methodology", "research", "investigation_gate", "report", "ingest")
 DECISIONS = {
     "methodology": ("approved",),
+    "research": ("approved",),
     "investigation_gate": ("approved",),
     "report": ("completed", "declined"),
     "ingest": ("requested", "declined"),
@@ -64,6 +65,8 @@ def pending_gate(status: dict[str, Any]) -> str | None:
     phase = status.get("next_phase")
     if phase == "methodology_approval":
         return "methodology"
+    if phase == "research_approval":
+        return "research"
     if phase == "investigation_gate_approval":
         return "investigation_gate"
     if phase == "report":
@@ -136,6 +139,8 @@ def subject_digest(case: Path, gate: str) -> str:
     report it also covers the draft the page showed, which publishing renders."""
     if gate == "methodology":
         return _canonical_sha(current_hashes(case, METHODOLOGY_INPUTS))
+    if gate == "research":
+        return _canonical_sha(current_hashes(case, RESEARCH_OUTPUTS))
     dependency = str(investigation_gate_dependencies(case)["dependency_digest"])
     if gate == "ingest" and activated_case(case):
         bound = {"dependencies": dependency, "batch": _batch_sha256(case)}
@@ -546,6 +551,29 @@ def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[
     return content, blocking, items
 
 
+def _research_content(case: Path) -> tuple[dict[str, Any], list[str]]:
+    """What the Research gate approves, in counts: the merged leads and the
+    clues. The clue marks the member makes on the page are review items the
+    Research page adds; this view carries only what the gate binds."""
+    leads = _read_case_json(case, RESEARCH_OUTPUTS[0])
+    clues = _read_case_json(case, RESEARCH_OUTPUTS[1])
+    blocking = [
+        f"{relative} is missing or unreadable"
+        for relative, value in zip(RESEARCH_OUTPUTS, (leads, clues))
+        if not isinstance(value, dict)
+    ]
+    lead_list = leads.get("leads") if isinstance(leads, dict) else None
+    clue_list = clues.get("clues") if isinstance(clues, dict) else None
+    left_out = leads.get("left_out") if isinstance(leads, dict) else None
+    content = {
+        "mode": _text(leads.get("mode"), 40) if isinstance(leads, dict) else "",
+        "leads": len(lead_list) if isinstance(lead_list, list) else 0,
+        "clues": len(clue_list) if isinstance(clue_list, list) else 0,
+        "left_out": [_text(topic, 200) for topic in left_out[:100]] if isinstance(left_out, list) else [],
+    }
+    return content, blocking
+
+
 def _items_text(value: object, limit: int = 30) -> list[str]:
     """The text of a draft's caveats or next steps (objects with ``text``)."""
     items = value if isinstance(value, list) else []
@@ -707,6 +735,9 @@ def _counts(items: list[dict[str, Any]]) -> dict[str, int]:
 def _gate_parts(case: Path, gate: str) -> tuple[dict[str, Any], list[str], list[dict[str, Any]]]:
     if gate == "methodology":
         content, blocking = _methodology_content(case)
+        return content, blocking, []
+    if gate == "research":
+        content, blocking = _research_content(case)
         return content, blocking, []
     if gate == "investigation_gate":
         return _investigation_content(case)
