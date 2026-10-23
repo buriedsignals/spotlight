@@ -105,7 +105,7 @@ Each skill is a directory with `SKILL.md` (+ optional `references/*.md` for larg
 
 ### Orchestrator skill
 
-- **`spotlight`** — the investigation dispatcher. After preflight it resolves durable state, dynamically invokes one phase owner, and repeats through Brief → Methodology → Investigation cycles (max 5) → Investigation gate → Report → Ingest.
+- **`spotlight`** — the investigation dispatcher. After preflight it resolves durable state, dynamically invokes one phase owner, and repeats through Brief → Methodology → Research (only with a research plan) → Investigation cycles (max 3) → Investigation gate → Report → Ingest.
 
 ### Pipeline-support skills (invocable by orchestrator)
 
@@ -213,6 +213,36 @@ decision.
     ├── *.json                # Search results
     └── archived/             # Wayback / Archive.today preservation
 ```
+
+<!-- research-phase case files: start. Written for the Research phase; the
+     knowledge-model docs may fold these entries into the tree above. -->
+### Research-phase case files
+
+Only a case whose approved methodology has a `research_plan` has these.
+
+```
+{CASE_DIR}/
+├── data/
+│   ├── leads.json                # merged leads, gaps and topics left out (research-leads schema)
+│   ├── clues.json                # clue rules K1-K6 and method signals (research-clues schema)
+│   ├── research-triage.json      # triage flags and answers per lead
+│   ├── research-suggestions.json # the investigator's suggested marks
+│   ├── research-review.json      # your marks, saved by the Research page
+│   ├── methodology-amendment.json # the change your marks produce, checked by D8
+│   └── research-round.json       # a stalled investigation's round topics
+└── research/
+    ├── rounds.json               # per round: mode, budget, spend, ran, left out, stopped
+    └── swarm/<topic-id>/         # one folder per approved topic, owner-only
+        ├── lane.json             # lane status and budget (research-lane schema)
+        ├── leads.jsonl           # one lead per line (research-lead schema)
+        ├── method-inputs.json    # optional: tables for approved Anomaly methods
+        └── sources/              # the pages the lane captured
+```
+
+The Research page is served by the local review server; it is not a file in
+the case. The fact-checker cannot read `research/swarm/`, `data/leads.json`,
+`data/clues.json` or any `data/research-*.json`.
+<!-- research-phase case files: end -->
 
 ## .spotlight-config.json
 

@@ -266,7 +266,7 @@
   /* Pipeline diagram */
   .pipeline {
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
     margin: 28px 0 12px 0;
   }
@@ -383,7 +383,7 @@
   }
   .spec-flow-frame {
     width: 100%;
-    aspect-ratio: 1180 / 1660;
+    aspect-ratio: 1180 / 2024;
     height: auto;
     border: 1px solid var(--muted-faint-dark);
     border-radius: 4px;
@@ -541,7 +541,7 @@
   <header class="doc-hero">
     <span class="chap">Documentation</span>
     <h1 class="serif">How <span class="accent">Spotlight</span> works.</h1>
-    <p class="lede">A versioned skill bundle that turns any AI agent runtime into an OSINT investigation pipeline. Brief → methodology → investigation cycles → investigation gate → report → vault. Open by default; opt-in sensitive track for local-model sessions.</p>
+    <p class="lede">A versioned skill bundle that turns any AI agent runtime into an OSINT investigation pipeline. Brief → methodology → research → investigation cycles → investigation gate → report → vault. Open by default; opt-in sensitive track for local-model sessions.</p>
   </header>
 
   <div class="doc-grid">
@@ -573,8 +573,8 @@
 
       <!-- ── 02 Pipeline ─────────────────────────────── -->
       <section id="pipeline">
-        <h2><span class="num">02 — The pipeline</span>Seven stages, one editorial loop.</h2>
-        <p>Every investigation runs through the same seven stages. The agent moves between them under explicit gates — no silent transitions, no half-finished cases.</p>
+        <h2><span class="num">02 — The pipeline</span>Seven named phases, six gates.</h2>
+        <p>Every investigation runs through the same named phases: Preflight, Brief, Methodology, Research, Investigation, Report, Ingest. The agent moves between them under explicit gates — no silent transitions, no half-finished cases. Research runs only when the approved methodology has a research plan; without one, the case goes straight to Investigation.</p>
         <p>The cases root is trusted journalist-owned local storage. Active case directories must not be moved or replaced during an operation.</p>
 
         <iframe
@@ -588,9 +588,10 @@
           <div class="pipeline-step"><div class="step-n">01</div><div class="step-name">Preflight</div></div>
           <div class="pipeline-step"><div class="step-n">02</div><div class="step-name">Brief</div></div>
           <div class="pipeline-step"><div class="step-n">03</div><div class="step-name">Methodology</div></div>
-          <div class="pipeline-step"><div class="step-n">04</div><div class="step-name">Investigation × 5 + gate</div></div>
-          <div class="pipeline-step"><div class="step-n">05</div><div class="step-name">Report</div></div>
-          <div class="pipeline-step"><div class="step-n">06</div><div class="step-name">Ingestion</div></div>
+          <div class="pipeline-step"><div class="step-n">04</div><div class="step-name">Research + gate</div></div>
+          <div class="pipeline-step"><div class="step-n">05</div><div class="step-name">Investigation × 3 + gate</div></div>
+          <div class="pipeline-step"><div class="step-n">06</div><div class="step-name">Report</div></div>
+          <div class="pipeline-step"><div class="step-n">07</div><div class="step-name">Ingest</div></div>
         </div>
 
         <h3>Preflight</h3>
@@ -600,10 +601,14 @@
         <p>The agent restates the lead in its own words, names the affected parties, sets a scope, and writes a hypothesis. You read it back. If the agent has misunderstood the lead, you correct it here — it's faster to redirect in two sentences of prose than three investigation cycles later.</p>
 
         <h3>Methodology</h3>
-        <p>The agent writes a methodology JSON: which entities to investigate, which sources to consult (corporate registries, social media, archived web, OSINT Navigator tool lookups), which fact-check threshold applies. The file is editable. The investigation cycles will follow this plan; if you don't like the plan, change it before the agent starts.</p>
+        <p>The agent writes a methodology JSON: which entities to investigate, which sources to consult (corporate registries, social media, archived web, OSINT Navigator tool lookups), which fact-check threshold applies. The file is editable. The investigation cycles will follow this plan; if you don't like the plan, change it before the agent starts. The methodology can also propose research topics: short briefs, each on a lane type (web, registries, archives, social, technical, news-courts, local corpus, prior knowledge, or ad hoc), with a round budget. You approve, edit, delete or add topics at the Methodology gate.</p>
+
+        <h3>Research</h3>
+        <p>Code, never the model, runs each approved topic as its own research lane. Lanes return leads: a summary, an exact quote and the source they saved. Code checks every quote against the saved source, merges copies of the same source, and applies fixed clue rules (convergence, conflicts, timing, shared identifiers, expected absence, watchlist). The Research page shows the clues first, with the investigator's suggested marks. You mark each clue pursue or dismiss and each direction keep, drop or add, and approve in one stop. The investigator then turns your marks into the methodology change, and code checks that it matches them.</p>
+        <p>Local lanes (your case files and your wiki) run on the local model. Cloud lanes are opt-in: OpenRouter with your own key, switched on in Engine, or your frontier host's subagents. A cloud lane gets only its topic brief — never case files, findings, evidence or journalist input — and a budget of $1 a round by default, at most $5 per case, bounds it.</p>
 
         <h3>Investigation cycles</h3>
-        <p>Up to five investigation cycles, each in two modes: <strong>PLANNING</strong> (what to do next) and <strong>EXECUTION</strong> (do it, record what came back). The investigator agent runs the cycles; every source is archived locally before it can be cited; every claim gets an evidence trail with grounding rationale.</p>
+        <p>Up to three investigation cycles. The investigator follows the approved methodology in <strong>EXECUTION</strong> mode (after planning it in <strong>PLANNING</strong> mode). The investigator agent runs the cycles; every source is archived locally before it can be cited; every claim gets an evidence trail with grounding rationale.</p>
 
         <h3>Investigation gate — six readiness criteria</h3>
         <p>Before the report decision, the case has to pass six checks:</p>
@@ -615,22 +620,23 @@
           <li>Document trail intact — every source has an <code>access_method</code> and a local file.</li>
           <li>Gap assessment — what we don't know is named, not hidden.</li>
         </ol>
-        <p>If a criterion fails, the agent loops back. If it persists past cycle five, the stall protocol triggers — the investigation is paused and the journalist decides whether to continue, change scope, or shelf.</p>
+        <p>If a criterion fails, the agent loops back. After three cycles, a case with a research plan goes back to Research for one targeted round; your approval of that round grants one more cycle. If the case still isn't ready, or has no research plan, it stops with a gaps report.</p>
 
         <h3>Report</h3>
         <p>After the Investigation gate, the journalist completes or declines the resolver-owned report phase. A completed report publishes the canonical <code>report.html</code>, <code>findings-report.md</code>, and <code>evidence-map.json</code> artifacts as one validated package before the case can proceed to ingestion.</p>
 
-        <h3>Ingestion</h3>
+        <h3>Ingest</h3>
         <p>During a case, source archives and working JSON stay in the active case workspace. After explicit approval, verified or clearly caveated findings, fact-check verdicts, methodology lessons, and entity notes can be ingested into your knowledge vault as structured markdown with wikilinks. Future investigations search the vault through OpenKnowledge's MCP interface and build on prior work without rediscovering the same entities from scratch.</p>
       </section>
 
       <!-- ── 03 Skills ───────────────────────────────── -->
       <section id="skills">
-        <h2><span class="num">03 — Skills inside Spotlight</span>17 skills that compose the pipeline.</h2>
+        <h2><span class="num">03 — Skills inside Spotlight</span>The skills that compose the pipeline.</h2>
         <p>Each skill is a markdown file with a frontmatter contract (name, description, allowed verbs). The agent loads them at runtime. You can edit any of them.</p>
 
         <div class="skill-grid">
           <div class="skill-card"><div class="sk-name">spotlight</div><div class="sk-desc">Orchestrator — walks the pipeline, manages state, calls other skills.</div></div>
+          <div class="skill-card"><div class="sk-name">phase-research</div><div class="sk-desc">Research phase — lanes, merge, triage, the Research gate, the amendment and the stall round.</div></div>
           <div class="skill-card"><div class="sk-name">investigate</div><div class="sk-desc">Investigation-cycle logic. PLANNING/EXECUTION modes, stall protocol.</div></div>
           <div class="skill-card"><div class="sk-name">review</div><div class="sk-desc">Investigation gate readiness checks. Renders human-review HTML.</div></div>
           <div class="skill-card"><div class="sk-name">ingest</div><div class="sk-desc">Vault archival — entity notes, methodology notes, source notes, registries.</div></div>
@@ -649,7 +655,7 @@
           <div class="skill-card"><div class="sk-name">shell-safety</div><div class="sk-desc">Validates untrusted input before any shell execution; probes for destructive ops.</div></div>
         </div>
 
-        <p>Two agent prompts sit alongside the skills — <code>investigator</code> and <code>fact-checker</code> — and a thin runtime contract in <code>AGENTS.md</code> defines the 13 verbs the host runtime has to implement.</p>
+        <p>Four agent prompts sit alongside the skills — <code>investigator</code>, <code>fact-checker</code>, <code>researcher</code> (one research lane) and <code>analyst</code> (Ingest) — and a thin runtime contract in <code>AGENTS.md</code> defines the 13 verbs the host runtime has to implement.</p>
       </section>
 
       <!-- ── 04 Runtimes ─────────────────────────────── -->
@@ -787,7 +793,7 @@ SPOTLIGHT_INT_DEVBROWSER=true   # dev-browser for interactive browser acquisitio
         <details>
           <summary>What happens if the agent gets stuck?</summary>
           <div class="answer">
-            <p>The stall protocol fires after five investigation cycles without passing the Investigation gate's readiness criteria. The investigation pauses, the agent writes a stall summary (what was tried, what didn't work, what's missing), and you decide: continue with a different scope, shelf the case, or escalate to a manual investigation. The stall summary becomes part of the case record either way — no investigation silently abandons.</p>
+            <p>After three investigation cycles without passing the Investigation gate's readiness criteria, a case with a research plan goes back to Research for one targeted round, which you approve on the Research page; that grants one more cycle. If that cycle fails too, or the case has no research plan, the case stops with a gaps report: every gap the cycles recorded. Continuing takes a revised methodology and a new approval. No investigation silently abandons.</p>
           </div>
         </details>
 
