@@ -69,7 +69,7 @@ function processLaunch(harness: Harness, role: string) {
 	return {
 		command: process.execPath,
 		args: piArguments({
-			systemPrompt: systemPrompt(harness.composition, role),
+			systemPrompt: systemPrompt(harness.composition, role, harness.config.modelTier),
 			skills: skillsFor(harness.composition, role),
 			tools: allowedTools(spec, harness.config.sensitive),
 			model: route.model,

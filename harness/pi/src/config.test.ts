@@ -15,6 +15,11 @@ const BASE = {
 	PATH: '/usr/bin',
 };
 
+test('the Anomaly install path reaches the processes, so anomaly_methods can read its catalogue', () => {
+	const env = { ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', ANOMALY_HOME: '/opt/anomaly' };
+	assert.equal(childEnv(readConfig(env), COMPOSITION, 'orchestrator', env).ANOMALY_HOME, '/opt/anomaly');
+});
+
 test('each process gets only its role\'s declared keys and its route token, nothing else', () => {
 	const env = {
 		...BASE,

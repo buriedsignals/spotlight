@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+"""Build the private acceptance fixture from fact-checked cases, and merge its labels.
+
+    build_claims_fixture.py build --case NAME=FACT_CHECK_JSON[:METHODOLOGY_JSON] ... --out DIR
+    build_claims_fixture.py merge --fixture DIR/claims-fixture.json --a A.csv --b B.csv [--adjudicated ADJ.csv]
+
+Case material is private, so everything this writes goes to a directory
+outside the public checkout (refused otherwise). ``build`` writes
+``claims-fixture.json`` (fixture.schema.json) and ``labelling-sheet.csv``, a
+blank sheet two people fill in independently, blind to any model output.
+``merge`` takes their two copies: a label both gave is kept; a disagreement is
+listed in ``disagreements.csv`` and needs a row in the adjudicated sheet. Until
+every disagreement is adjudicated, the fixture keeps those labels empty.
+
+How a fact-checked claim becomes a lead (the fixture's ``lead``):
+
+- summary: the claim text, as a lane would state it;
+- excerpt: the longest quoted passage (20+ characters, in straight or curly
+  quotes) in the first piece of supporting evidence that has a web source,
+  else in the first piece; ``direct_quote`` true. Without a quoted passage the
+  evidence description itself, ``direct_quote`` false (the fact-checker's
+  paraphrase: weaker than a lane's excerpt, said so in the sheet);
+- source: that evidence's URL when it is http(s), else the first http(s) URL in
+  the claim's sources; with none, a manual capture without a URL;
+- direction: the claim's finding (``F3-C1`` -> ``f3``), labelled with the
+  finding's first claim; topic ``<direction>-web``;
+- the brief's premise: the methodology's ``lead``, else the fact-check's project;
+- gold: verdict ``verified`` -> keep (setting it aside would lose a lead that
+  turned out true); any other verdict -> a failure whose class and research
+  visibility come only from the labelling sheet; keep is then not scored.
+
+Items are split into dev and held-out halves by a salted hash of the item id,
+alternating within verified and not-verified claims so both halves carry
+failures.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+from typing import Any, Mapping
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[1]
+SPLIT_SALT = "spotlight-acceptance-split-1"
+FAILURE_CLASSES = ("weak_source_chain", "summary_wider", "inference_as_fact", "conflicting_values", "wrong_subject",
+                   "weak_relevance", "allegation")
+QUESTION_COLUMNS = ("q1_identity", "q3_source", "q4_assertion", "q5_status", "q6_fidelity", "c1_premise")
+SHEET_FIELDS = ("item_id", "split", "verdict", "summary", "excerpt", "excerpt_is_quote", "source_url",
+                "fact_check_notes", "failure_class", "research_visible", *QUESTION_COLUMNS)
+QUOTED = re.compile(r"'([^']{20,})'|\"([^\"]{20,})\"|“([^”]{20,})”|‘([^’]{20,})’")
+CAPTURED_AT = "2026-10-23T00:00:00Z"
+
+
+class BuildError(Exception):
+    pass
+
+
+def outside_checkout(path: Path) -> Path:
+    path = path.expanduser().resolve()
+    if path == ROOT or ROOT in path.parents:
+        raise BuildError(f"{path} is inside the public checkout; the private fixture stays outside it")
+    return path
+
+
+def slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "x"
+
+
+def _http(url: Any) -> str:
+    return url if isinstance(url, str) and url.startswith(("http://", "https://")) else ""
+
+
+def excerpt_of(description: str) -> tuple[str, bool]:
+    quotes = [next(g for g in m.groups() if g) for m in QUOTED.finditer(description)]
+    if quotes:
+        return max(quotes, key=len).strip(), True
+    return description.strip(), False
+
+
+def claim_lead(alias: str, claim: Mapping[str, Any], direction: str) -> dict[str, Any]:
+    evidence = claim.get("evidence_for") or []
+    chosen = next((e for e in evidence if _http(e.get("source"))), evidence[0] if evidence else {})
+    text, quoted = excerpt_of(str(chosen.get("description") or claim.get("notes") or claim["claim_text"]))
+    url = _http(chosen.get("source")) or next((u for u in claim.get("sources") or [] if _http(u)), "")
+    sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    lead = {
+        "schema_version": "1.0", "lead_id": f"{alias}-{claim['id']}", "topic_id": f"{direction}-web",
+        "direction_id": direction, "summary": str(claim["claim_text"])[:4000], "subjects": [], "absence": False,
+        "status": "candidate", "stored": "page",
+        "capture": ({"route": "api", "tool": "fact-check", "source_url": url, "captured_at": CAPTURED_AT} if url
+                    else {"route": "manual", "captured_at": CAPTURED_AT}),
+        "content_ref": f"sources/{sha}.txt", "content_sha256": sha,
+        "provenance": {"method": "agent_candidate", "model": "fact-check-claim"},
+        "excerpt": {"text": text[:4000], "language": "en", "direct_quote": quoted},
+    }
+    return lead
+
+
+def direction_of(claim: Mapping[str, Any]) -> str:
+    match = re.match(r"\s*F?(\d+)", str(claim.get("finding_id") or ""), re.IGNORECASE)
+    return f"f{match.group(1)}" if match else "f0"
+
+
+def split_of(item_id: str) -> str:
+    return hashlib.sha256(f"{SPLIT_SALT}:{item_id}".encode()).hexdigest()
+
+
+def build_case(name: str, fact_check: Mapping[str, Any], methodology: Mapping[str, Any] | None) -> dict[str, Any]:
+    alias = "case-" + hashlib.sha256(name.encode()).hexdigest()[:6]
+    claims = [c for c in fact_check.get("claims") or [] if isinstance(c, Mapping) and c.get("claim_text")]
+    directions: dict[str, str] = {}
+    for claim in claims:
+        directions.setdefault(direction_of(claim), str(claim["claim_text"])[:160])
+    items = []
+    for claim in claims:
+        direction = direction_of(claim)
+        lead = claim_lead(alias, claim, direction)
+        verdict = str(claim.get("verdict") or "")
+        gold: dict[str, Any] = {"keep": True if verdict == "verified" else None, "verdict": verdict,
+                                "label_source": "fact_check_verdict", "answers": {"q2_direction": direction}}
+        if verdict != "verified":
+            gold["failure"] = {"class": None, "research_visible": None}
+        items.append({"item_id": lead["lead_id"], "split": "dev", "origin": "fact_check_claim", "lead": lead, "gold": gold,
+                      "_notes": str(claim.get("notes") or "")})
+    for group in ([i for i in items if i["gold"]["verdict"] == "verified"], [i for i in items if i["gold"]["verdict"] != "verified"]):
+        for n, item in enumerate(sorted(group, key=lambda i: split_of(i["item_id"]))):
+            item["split"] = "dev" if n % 2 == 0 else "heldout"
+    premise = str((methodology or {}).get("lead") or fact_check.get("project") or name)
+    return {"alias": alias, "premise": premise, "directions": directions, "items": items}
+
+
+def build(cases: list[tuple[str, Path, Path | None]], out: Path) -> dict[str, Any]:
+    out = outside_checkout(out)
+    built = [build_case(name, json.loads(fc.read_text(encoding="utf-8")),
+                        json.loads(m.read_text(encoding="utf-8")) if m else None) for name, fc, m in cases]
+    # One fixture per case keeps each case's brief; all go in one file list.
+    out.mkdir(parents=True, exist_ok=True)
+    rows, written = [], []
+    for case in built:
+        fixture = {
+            "fixture_version": "1.0", "name": case["alias"], "synthetic": False,
+            "description": "Fact-checked claims as leads (private; built by build_claims_fixture.py).",
+            "case": {"case_id": case["alias"], "premise": case["premise"], "directions": case["directions"],
+                     "topics": [{"topic_id": f"{d}-web", "direction_id": d, "lane_type": "web"} for d in case["directions"]]},
+            "items": [{k: v for k, v in item.items() if k != "_notes"} for item in case["items"]],
+            "planted_clues": [],
+        }
+        path = out / f"{case['alias']}.json"
+        path.write_text(json.dumps(fixture, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+        written.append(path)
+        for item in case["items"]:
+            lead = item["lead"]
+            rows.append({"item_id": item["item_id"], "split": item["split"], "verdict": item["gold"]["verdict"],
+                         "summary": lead["summary"], "excerpt": lead["excerpt"]["text"],
+                         "excerpt_is_quote": "yes" if lead["excerpt"]["direct_quote"] else "no (fact-checker paraphrase)",
+                         "source_url": lead["capture"].get("source_url", ""), "fact_check_notes": item["_notes"],
+                         **{k: "" for k in ("failure_class", "research_visible", *QUESTION_COLUMNS)}})
+    with (out / "labelling-sheet.csv").open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=SHEET_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+    return {"fixtures": [str(p) for p in written], "items": len(rows),
+            "not_verified": sum(1 for r in rows if r["verdict"] != "verified"),
+            "dev": sum(1 for r in rows if r["split"] == "dev"), "sheet": str(out / "labelling-sheet.csv")}
+
+
+# ------------------------------------------------------------------ merge
+LABEL_COLUMNS = ("failure_class", "research_visible", *QUESTION_COLUMNS)
+
+
+def _read_sheet(path: Path) -> dict[str, dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as fh:
+        return {row["item_id"]: {k: (row.get(k) or "").strip() for k in LABEL_COLUMNS} for row in csv.DictReader(fh)}
+
+
+def _valid(column: str, value: str) -> bool:
+    if column == "failure_class":
+        return value in FAILURE_CLASSES
+    if column == "research_visible":
+        return value in ("yes", "no")
+    return bool(value)
+
+
+def merge_labels(fixture_paths: list[Path], a: Path, b: Path, adjudicated: Path | None) -> dict[str, Any]:
+    first, second = _read_sheet(a), _read_sheet(b)
+    final = _read_sheet(adjudicated) if adjudicated else {}
+    disagreements, applied = [], 0
+    for path in fixture_paths:
+        fixture = json.loads(path.read_text(encoding="utf-8"))
+        for item in fixture["items"]:
+            iid, gold = item["item_id"], item["gold"]
+            labels: dict[str, str] = {}
+            for column in LABEL_COLUMNS:
+                x, y = first.get(iid, {}).get(column, ""), second.get(iid, {}).get(column, "")
+                if not x and not y:
+                    continue
+                if x == y and _valid(column, x):
+                    labels[column] = x
+                elif _valid(column, final.get(iid, {}).get(column, "")):
+                    labels[column] = final[iid][column]
+                else:
+                    disagreements.append({"item_id": iid, "column": column, "labeller_a": x, "labeller_b": y})
+            answers = gold.setdefault("answers", {})
+            for column in QUESTION_COLUMNS:
+                if column in labels:
+                    answers[column] = labels[column]
+            if "failure" in gold:
+                gold["failure"] = {"class": labels.get("failure_class"),
+                                   "research_visible": {"yes": True, "no": False}.get(labels.get("research_visible", ""))}
+            if labels:
+                gold["label_source"] = "two_labellers_adjudicated"
+                applied += 1
+        path.write_text(json.dumps(fixture, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    report = a.parent / "disagreements.csv"
+    with report.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=("item_id", "column", "labeller_a", "labeller_b"))
+        writer.writeheader()
+        writer.writerows(disagreements)
+    return {"items_labelled": applied, "disagreements": len(disagreements), "report": str(report)}
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    sub = parser.add_subparsers(dest="command", required=True)
+    b = sub.add_parser("build")
+    b.add_argument("--case", action="append", required=True, help="NAME=FACT_CHECK_JSON[:METHODOLOGY_JSON]")
+    b.add_argument("--out", required=True)
+    m = sub.add_parser("merge")
+    m.add_argument("--fixture", action="append", required=True)
+    m.add_argument("--a", required=True)
+    m.add_argument("--b", required=True)
+    m.add_argument("--adjudicated")
+    args = parser.parse_args(argv)
+    try:
+        if args.command == "build":
+            cases = []
+            for spec in args.case:
+                name, _, paths = spec.partition("=")
+                fact_check, _, methodology = paths.partition(":")
+                cases.append((name, Path(fact_check), Path(methodology) if methodology else None))
+            print(json.dumps(build(cases, Path(args.out)), indent=1))
+        else:
+            fixtures = [outside_checkout(Path(p)) for p in args.fixture]
+            print(json.dumps(merge_labels(fixtures, Path(args.a), Path(args.b),
+                                          Path(args.adjudicated) if args.adjudicated else None), indent=1))
+    except BuildError as exc:
+        print(f"build_claims_fixture: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

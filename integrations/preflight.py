@@ -31,7 +31,7 @@ _CHECKOUT = Path(__file__).resolve().parents[1]
 if str(_CHECKOUT) not in sys.path:
     sys.path.insert(0, str(_CHECKOUT))
 from integrations._cli import run_captured  # noqa: E402
-from integrations._credentials import config_path  # noqa: E402
+from integrations._credentials import config_path, credential  # noqa: E402
 
 # Import the shared helpers from integrations/ — local single source of truth
 _BASE_DIR = Path(__file__).parent
@@ -167,8 +167,23 @@ def load_decisions_key(block: dict) -> None:
             return
 
 
+def anomaly_fields(fields: dict) -> dict:
+    """Anomaly is ready only with the pinned catalogue; otherwise its methods stay hidden."""
+    from integrations.anomaly import adapter
+
+    if not credential(adapter.HOME_ENV):
+        return fields  # unconfigured: the activation variable is missing
+    current = adapter.state()
+    fields["catalogue_release"] = current["release"]
+    if not current["available"]:
+        fields.update(status="yellow", smoke_error=current["reason"])
+    return fields
+
+
 def extra_fields(manifest: dict) -> dict:
     fields = {"type": manifest.get("type", "api"), "opt_in": ""}
+    if manifest.get("id") == "anomaly":
+        return anomaly_fields(fields)
     if manifest.get("id") != "decisions":
         return fields
     if not (os.open in os.supports_dir_fd and getattr(os, "O_NOFOLLOW", 0)):

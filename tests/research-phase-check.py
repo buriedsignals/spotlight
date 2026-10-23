@@ -219,6 +219,8 @@ class ResearchPhase(unittest.TestCase):
     def test_page_nonce_records_the_research_gate(self) -> None:
         self.seam("approve", "methodology", *APPROVER)
         self.write_research_outputs()
+        # Every clue needs a mark before the page can approve.
+        self.seam("review-edit", "research", "--edit", json.dumps({"kind": "mark", "key": "clue:clue-1", "value": "pursue"}))
         view = json.loads(self.seam("review-view", "research").stdout)
         self.assertEqual((view["pending_gate"], view["decisions"]), ("research", ["approved"]))
         nonce = json.loads(self.seam("issue-review-nonce", "research").stdout)["nonce"]

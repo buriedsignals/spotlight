@@ -1,0 +1,29 @@
+{
+  "id": "anomaly",
+  "name": "Anomaly clue methods",
+  "description": "Optional analysis methods from a pinned Anomaly detector catalogue. Approved methods run on tables a research lane collected, through Anomaly's one-shot runner, and their signals become Research clues tagged method:<id>@<version>.",
+  "category": "research-clue-methods",
+  "type": "library",
+  "requires_key": false,
+  "env_vars": [],
+  "activation_env_vars": [
+    "ANOMALY_HOME"
+  ],
+  "catalogue_pin": {
+    "release": "7b4701c902d2eeb69f1bd5f8806e720d8a9cd33d",
+    "schema_version": 1,
+    "catalogue_hash": "sha256:df2a1f85ff8e1786e67bbe67c1bcfb1c169c335006a84ce51f210993d7bdcdbe"
+  },
+  "capabilities": [
+    "research-method-catalogue",
+    "research-method-clues"
+  ],
+  "invocable_by": [
+    "orchestrator"
+  ],
+  "homepage": "https://github.com/buriedsignals/Anomaly",
+  "docs": "https://github.com/buriedsignals/Anomaly/blob/main/docs/catalogue.md",
+  "egress_note": "None. Methods run locally on a read-only copy of a lane table, in a child process with no keys in its environment; Anomaly loads the table into an in-memory DuckDB and disables external access before any method SQL runs.",
+  "risk_note": "A method signal is a clue, never a finding or evidence. The catalogue is read only when its hash equals the pin above; any other catalogue hides the feature.",
+  "network_smoke": false
+}

@@ -14,17 +14,32 @@ other field of a lead never reaches a question.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Iterable, Mapping
 from urllib.parse import urlparse
 
 from research_questions import ON_TRIAL, RESEARCH_BANK_VERSION
 
-# Written by the decision-model acceptance test once it passes: the chosen
-# backend, this bank version, the frozen thresholds (C2, C3) and any questions
-# it cut. None until then, which keeps triage in flag-only mode.
-ACCEPTANCE: Mapping[str, Any] | None = None
+# Written by the decision-model acceptance test (evals/decision-acceptance)
+# once a held-out run passes: the chosen backend, the bank version, the frozen
+# thresholds (C2, C3) and any questions it cut. Absent until then, which keeps
+# triage in flag-only mode; a record for another bank version changes nothing.
+ACCEPTANCE_FILE = Path(__file__).resolve().parent / "research-acceptance.json"
+
+
+def load_acceptance(path: Path = ACCEPTANCE_FILE) -> Mapping[str, Any] | None:
+    """The acceptance record, or None when there is none or it is unreadable."""
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return record if isinstance(record, dict) else None
+
+
+ACCEPTANCE: Mapping[str, Any] | None = load_acceptance()
 
 FLAG_ONLY, FULL = "flag_only", "full"
 FLAG_ONLY_NOTICE = ("Triage only flags until the decision-model acceptance test passes: no lead is set aside "

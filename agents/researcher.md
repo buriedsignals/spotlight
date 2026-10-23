@@ -109,3 +109,10 @@ more good leads rather than one polished answer.
   copy, `content_ref` relative to `{LANE_DIR}`), and finish with
   `{LANE_DIR}/lane.json` per `schemas/research-lane.schema.json`. Write
   nowhere else, and read nothing outside `{LANE_DIR}` and `schemas/`.
+  When your brief names `anomaly_methods`, store each table you collect for
+  them (CSV, JSONL or Parquet) as a source with its own lead, and list it in
+  `{LANE_DIR}/method-inputs.json`: the method, the lead id, the format and
+  which column serves each field the method needs
+  (`integrations/anomaly/integration.md`). Never edit a table to make a
+  method fit it. In a Pi lane, name each table with `record_method_input`
+  instead; the lane runner writes the file.

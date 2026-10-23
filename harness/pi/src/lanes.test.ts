@@ -334,3 +334,39 @@ test('a lane cannot write outside its folder', async (t) => {
 	assert.deepEqual(await readdir(space.outside), []);
 	assert.equal(fakes.swarm.requests.length, 0);
 });
+
+test('a topic with Anomaly methods names its stored tables as method inputs, and the runner keeps only approved methods on its own D3-passed page leads', async (t) => {
+	const space = await setup(t);
+	const ZSCORE = 'method:numeric.zscore_outliers@1.1.0';
+	const input = (method: string, leadId: string) => call('record_method_input', { method, lead_id: leadId, format: 'csv', fields: { id: 'record_id', amount: 'value' } });
+	const fakes = await servers(
+		t,
+		scripted({
+			'a-web': [
+				call('fetch', { url: PAGE_URL }),
+				lead('s1', VERBATIM),
+				call('search', { query: 'Analytical Engines SA' }),
+				lead('s2', SNIPPET),
+				input('method:table.duplicate_rows@1.1.0', 'a-web-l1'),
+				input(ZSCORE, 'a-web-l2'),
+				input(ZSCORE, 'a-web-l9'),
+				input(ZSCORE, 'a-web-l1'),
+			],
+		}),
+	);
+	// An Anomaly install without its catalogue: the merge must see ANOMALY_HOME to say so.
+	const anomalyHome = join(space.root, 'anomaly');
+	await mkdir(anomalyHome);
+	const summary = await round(space, fakes, plan([topic('a-web', 'web', { anomaly_methods: [ZSCORE] })]), { ANOMALY_HOME: anomalyHome });
+
+	const last = fakes.swarm.requests.at(-1)!;
+	assert.ok((last.tools ?? []).some((tool) => tool.function.name === 'record_method_input'));
+	const results = toolResults(last).slice(-4);
+	assert.match(results[0], /refused: .* not one of this topic's approved methods/);
+	assert.match(results[1], /refused: a-web-l2 is not a stored page that passed/, 'a snippet lead is not a table');
+	assert.match(results[2], /refused: a-web-l9 is not a lead this lane recorded/);
+	const written = JSON.parse(await readFile(join(space.caseDir, 'research/swarm/a-web/method-inputs.json'), 'utf8'));
+	assert.deepEqual(written, { schema_version: '1.0', inputs: [{ method: ZSCORE, lead_id: 'a-web-l1', format: 'csv', fields: { id: 'record_id', amount: 'value' } }] });
+	assert.equal(summary.merge?.ok, true, JSON.stringify(summary.merge));
+	assert.ok((summary.merge as { report: string[] }).report.some((line) => /methods not run: detectors\/catalogue\.json is missing/.test(line)), JSON.stringify(summary.merge));
+});

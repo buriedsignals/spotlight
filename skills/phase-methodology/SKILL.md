@@ -197,7 +197,10 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    direction and one lane type (a lane catalogue id, or `ad-hoc` for generic
    search and fetch with no keys), with the questions it answers, seed
    queries, sources to try and, where an Anomaly method catalogue is
-   available, the methods whose input data the lane should collect. Several
+   available, the methods whose input data the lane should collect
+   (`execute-shell("scripts/spotlight-python integrations/anomaly/adapter.py methods")`
+   lists them with the fields each needs; an empty list means the feature is
+   off, so name none). Several
    topics may serve one direction. The member approves, edits, deletes or adds
    topics. Write the result to `methodology.json` as `research_plan`
    (`schemas/methodology.schema.json`): the topics, a round budget in USD
@@ -218,7 +221,8 @@ Correct only methodology.json as required by the validator evidence. On Navigato
      names a direction in `investigation_plan`, has at least one question and
      a lane type that exists in the lane catalogue or is `ad-hoc`.
    - Keys, egress and consent are listed for every topic; at most 10 Anomaly
-     methods across the plan.
+     methods across the plan, each a single-table method of the pinned
+     Anomaly catalogue.
    - No cloud topic (`swarm` or `subscription` route) without the member's
      swarm consent. The swarm needs the member's OpenRouter key and the
      research-swarm switch, or a subscription host's own subagents.

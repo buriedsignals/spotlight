@@ -33,7 +33,7 @@ function toolsFor(role: string): ToolDefinition[] {
 			python,
 			configPath: process.env.SPOTLIGHT_CONFIG || `${CHECKOUT_ROOT}/.spotlight-config.json`,
 			env: process.env,
-			scope: { reads: spec.reads, writes: spec.writes },
+			scope: { reads: spec.reads, writes: spec.writes, denyReads: spec.denyReads },
 		}),
 	];
 	if (role === ORCHESTRATOR) {
