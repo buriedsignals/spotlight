@@ -58,7 +58,7 @@
                 "type": ["boolean", "null"],
                 "description": "true: the lead must not be set aside (a set-aside is a lost lead). false: setting it aside is correct. null: not scored."
               },
-              "label_source": { "enum": ["by_construction", "fact_check_verdict", "two_labellers_adjudicated", "unlabelled"] },
+              "label_source": { "enum": ["by_construction", "fact_check_verdict", "two_labellers_adjudicated", "single_labeller_approved", "unlabelled"] },
               "verdict": { "type": "string" },
               "answers": {
                 "type": "object",

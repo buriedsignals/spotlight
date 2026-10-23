@@ -17,7 +17,7 @@ version changes nothing.
 | `company-a.json` | Synthetic Company A case with planted clues: the only test for C2 and C3 |
 | `targets.json` | Pass targets and trial thresholds. `status: proposed` until the maintainer approves them |
 | `acceptance.py` | The harness |
-| `build_claims_fixture.py` | Builds the private fixture from fact-checked cases, writes the labelling sheet, merges two labellers' sheets |
+| `build_claims_fixture.py` | Builds the private fixture from fact-checked cases, writes the labelling sheet, merges one approved sheet or two labellers' sheets |
 
 ## Fixture format
 
@@ -80,6 +80,9 @@ python3 evals/decision-acceptance/build_claims_fixture.py merge \
 
 Agreed labels go into the fixture; disagreements are listed in
 `disagreements.csv` and stay empty until a row in the adjudicated sheet settles them.
+With one person, pass only `--a`: the approved sheet is applied and each item
+records `label_source: single_labeller_approved`, which a second labeller can
+replace later.
 
 ## Running
 

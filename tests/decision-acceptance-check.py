@@ -191,6 +191,21 @@ def test_labels_merge_only_on_agreement() -> None:
         require(merged["c-2"]["failure"]["class"] == "summary_wider", "the adjudicated label is applied")
 
 
+
+def test_single_labeller_merge_records_one_approver() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp)
+        fixture = {"items": [{"item_id": "c-1", "gold": {"keep": None, "label_source": "fact_check_verdict",
+                                                          "failure": {"class": None, "research_visible": None}}}]}
+        path = folder / "case.json"
+        path.write_text(json.dumps(fixture), encoding="utf-8")
+        (folder / "a.csv").write_text("item_id,failure_class,research_visible\nc-1,allegation,yes\n", encoding="utf-8")
+        report = builder.merge_labels([path], folder / "a.csv", None, None)
+        gold = json.loads(path.read_text())["items"][0]["gold"]
+        require(gold["failure"] == {"class": "allegation", "research_visible": True}, "the approved label is applied")
+        require(gold["label_source"] == "single_labeller_approved" and report["disagreements"] == 0,
+                "one approver is recorded as such, never as two labellers")
+
 def main() -> int:
     tests = [value for name, value in sorted(globals().items()) if name.startswith("test_") and callable(value)]
     for test in tests:
