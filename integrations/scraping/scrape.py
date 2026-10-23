@@ -26,6 +26,7 @@ import os
 import sys
 from pathlib import Path
 
+from .._protected import ProtectedSourceError, check_outgoing
 from .scrape_types import ScrapeError, ScrapeResult
 
 _CHECKOUT = Path(__file__).resolve().parents[2]
@@ -74,6 +75,10 @@ def scrape(url: str, *, provider: str | None = None, timeout_ms: int = 45_000,
     the Crawl4AI fetch through Tor (U7). Raises ScrapeError on an unknown provider,
     an absent backend, or a fetch failure that isn't a recoverable bot-block.
     """
+    try:
+        check_outgoing(url)  # a URL never names a protected source
+    except ProtectedSourceError as exc:
+        raise ScrapeError(str(exc)) from None
     name = _provider_name(provider)
     proxy = _resolve_proxy(anonymize)
     if name == "crawl4ai":

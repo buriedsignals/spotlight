@@ -14,6 +14,12 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   `~/.local/bin` (`integrations/_engine.py`). A redaction that fails, or a
   wiki named without a findable `bsig`, sends nothing. Without Engine there
   is no protected-source register and the text is unchanged.
+- Searches and fetches (`integrations/search`, `integrations/scraping`, which
+  every runtime uses) are refused when the query or URL names a protected
+  source (`integrations/_protected.py`), and when Engine names a wiki but its
+  `bsig` cannot be found. The cloud model still reads the case files in cloud
+  mode, so Engine's doctor advises local mode for cases involving a
+  protected source.
 
 ### Added — Old cases and the 1.0 graph's retirement
 
