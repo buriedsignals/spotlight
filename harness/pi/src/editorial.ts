@@ -160,7 +160,7 @@ export class EditorialClient {
 			return Object.fromEntries(
 				Object.entries(value)
 					.filter(([key]) => options.keepReview || key !== 'review_url')
-					.map(([key, item]) => [this.#clean(key), this.sanitize(item, options)]),
+					.map(([key, item]) => [this.sanitize(key, options) as string, this.sanitize(item, options)]),
 			);
 		}
 		return value;

@@ -168,11 +168,11 @@ test('when the server ends the session under concurrent calls, the client starts
 
 // A case at ingest with ingestion requested and registered, and a client for
 // a fake Editorial MCP answering with `handlers`.
-test('a knowledge answer reaches the model without any review capability, by key or as an address on a newsroom endpoint', async (t) => {
+test('a knowledge answer reaches the model without any review capability: no review_url key, no newsroom-endpoint address as a value or as a key', async (t) => {
 	let reviewPage = '';
 	const newsroom = await startFakeEditorial({
 		handlers: {
-			get_record: () => ({ record: { record_id: 'claim:1', source_url: 'https://registry.example.org/company/42', note: `reviewed at ${reviewPage}`, links: [{ review_url: 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }] } }),
+			get_record: () => ({ record: { record_id: 'claim:1', source_url: 'https://registry.example.org/company/42', note: `reviewed at ${reviewPage}`, links: [{ review_url: 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }], reviews: { [reviewPage]: 'pending' } } }),
 		},
 	});
 	t.after(() => newsroom.close());
