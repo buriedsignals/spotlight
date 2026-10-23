@@ -14,8 +14,9 @@ inserts it as text.
 
 Boundaries:
 - ``--case`` must be the active case: a folder inside the cases root
-  (``$SPOTLIGHT_CASES_ROOT``, else the checkout's ``cases/``), and the one
-  ``$SPOTLIGHT_CASE_DIR`` names when that is set. Symlinks and ``..`` are refused.
+  (``$SPOTLIGHT_CASES_ROOT``, else the install config's), and the one
+  ``$SPOTLIGHT_CASE_DIR`` names when that is set. Symlinks and ``..`` are
+  refused, with exit status 2: a refusal is never an empty answer.
 - Only passages from plain case-relative files under ``research/`` are shown,
   never Spotlight's bookkeeping or a receipt. For the fact-checker (D9), nothing
   the fact-checker's ``denyReads`` hides (harness/composition.json) and no
@@ -41,6 +42,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ._credentials import ConfigPathError, config_path
 from ._engine import bsig_path
 
 CHECKOUT = Path(__file__).resolve().parents[1]
@@ -100,8 +102,20 @@ class CaseRefused(Exception):
 
 
 def cases_root() -> Path:
+    """``$SPOTLIGHT_CASES_ROOT`` (set by the Pi launcher), else the install
+    config's ``case_workspace_root`` (legacy ``cases_root``), else ``cases/``."""
     configured = os.environ.get("SPOTLIGHT_CASES_ROOT", "").strip()
-    root = Path(configured).expanduser() if configured else CHECKOUT / "cases"
+    if not configured:
+        try:
+            path = config_path()
+            config = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+        except (OSError, ValueError, ConfigPathError) as exc:
+            raise CaseRefused("the install config cannot be read") from exc
+        if not isinstance(config, dict):
+            raise CaseRefused("the install config cannot be read")
+        configured = str(config.get("case_workspace_root") or config.get("cases_root") or "cases").strip()
+    root = Path(configured).expanduser()
+    root = root if root.is_absolute() else CHECKOUT / root
     try:
         return root.resolve(strict=True)
     except OSError as exc:
@@ -441,7 +455,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         case = active_case(args.case)
     except CaseRefused as exc:
-        parser.error(str(exc))
+        parser.error(f"case search refused: {exc}")
     if args.findings:
         claims = findings_claims(case)
     else:

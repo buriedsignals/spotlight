@@ -211,7 +211,7 @@ test("the gate page gets case-search passages next to each claim, outside the di
   assert.equal(quiet.body.note, "case search unavailable: Engine's case search is switched off");
 });
 
-test("passages requests share one case search per record, and closing the review stops a running one", async (t) => {
+test("passages requests share one case search per record; a changed record or closing the review stops a running one", async (t) => {
   const root = tempRoot(t);
   const caseDir = buildCase(root, "case", "investigation_gate");
   const argsLog = join(root, "bsig-args.jsonl");
@@ -225,17 +225,16 @@ test("passages requests share one case search per record, and closing the review
 
   const pidLog = join(root, "bsig-pids.jsonl");
   const slow = await authed(t, caseDir, { bridgeEnv: { ...process.env, SPOTLIGHT_BSIG: standInBsig(root, { mode: "slow", slow_s: 60, pid_log: pidLog }) } });
-  const pending = slow.json("/api/passages");
-  let pid;
-  for (let i = 0; i < 200 && !pid; i += 1) {
-    await new Promise((settle) => setTimeout(settle, 50));
-    pid = existsSync(pidLog) ? JSON.parse(readFileSync(pidLog, "utf8").split("\n")[0]).pid : undefined;
-  }
-  assert.ok(pid, "the stand-in Engine started");
-  slow.server.close("closed");
-  assert.equal((await pending).body.available, false);
-  await slow.server.closed;
-  const alive = () => {
+  const started = async (count) => {
+    let pids = [];
+    for (let i = 0; i < 200 && pids.length < count; i += 1) {
+      await new Promise((settle) => setTimeout(settle, 50));
+      pids = existsSync(pidLog) ? readFileSync(pidLog, "utf8").trim().split("\n").map((line) => JSON.parse(line)).filter((row) => row.start).map((row) => row.pid) : [];
+    }
+    assert.ok(pids.length >= count, "the stand-in Engine started");
+    return pids[count - 1];
+  };
+  const alive = (pid) => {
     try {
       process.kill(pid, 0);
       return true;
@@ -243,8 +242,25 @@ test("passages requests share one case search per record, and closing the review
       return false;
     }
   };
-  for (let i = 0; i < 100 && alive(); i += 1) await new Promise((settle) => setTimeout(settle, 50));
-  assert.equal(alive(), false, "the running Engine search was stopped");
+  const stopped = async (pid) => {
+    for (let i = 0; i < 100 && alive(pid); i += 1) await new Promise((settle) => setTimeout(settle, 50));
+    return !alive(pid);
+  };
+  const superseded = slow.json("/api/passages");
+  const firstPid = await started(1);
+  const findingsPath = join(caseDir, "data", "findings.json");
+  const findings = JSON.parse(readFileSync(findingsPath, "utf8"));
+  findings.findings[0].claim = `${findings.findings[0].claim} (revised)`;
+  writeFileSync(findingsPath, JSON.stringify(findings));
+  const pending = slow.json("/api/passages");
+  await started(2);
+  assert.equal(await stopped(firstPid), true, "a changed record stops the superseded search");
+  assert.equal((await superseded).body.available, false);
+  slow.server.close("closed");
+  assert.equal((await pending).body.available, false);
+  await slow.server.closed;
+  const secondPid = await started(2);
+  assert.equal(await stopped(secondPid), true, "the running Engine search was stopped");
 });
 
 test("a page nonce that starts with a dash is redeemed", async (t) => {

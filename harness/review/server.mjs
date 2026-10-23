@@ -163,21 +163,26 @@ export async function startReviewServer({
 
   // Passages most worth reading next to each claim (case search through
   // Engine). Retrieval only: a failure leaves the page as it was, with a quiet note.
-  // One search per gate and record digest (the claims are in the record),
-  // shared by concurrent requests; shutdown stops any still running.
+  // One search per gate, for the record's latest digest (the claims are in
+  // the record), shared by concurrent requests. A new digest replaces the
+  // gate's search and stops the old one if still running; so does shutdown.
   const searches = new Map();
-  const stopSearches = new AbortController();
   async function passages() {
     const unavailable = { gate, available: false, note: "case search unavailable", claims: [] };
     if (typeof bridge.passages !== "function") return unavailable;
     try {
       const shown = gate;
-      const key = `${shown}:${(await bridge.view(shown)).digest}`;
-      if (!searches.has(key)) {
-        searches.set(key, bridge.passages(shown, stopSearches.signal));
-        searches.get(key).catch(() => searches.delete(key));
+      const digest = (await bridge.view(shown)).digest;
+      let search = searches.get(shown);
+      if (search?.digest !== digest) {
+        search?.stop.abort();
+        const stop = new AbortController();
+        search = { digest, stop, result: bridge.passages(shown, stop.signal) };
+        searches.set(shown, search);
+        const current = search;
+        search.result.catch(() => searches.get(shown) === current && searches.delete(shown));
       }
-      return { ...(await searches.get(key)), gate: shown };
+      return { ...(await search.result), gate: shown };
     } catch {
       return unavailable;
     }
@@ -333,7 +338,7 @@ export async function startReviewServer({
   let stopped = false;
   function shutdown(reason = "closed") {
     if (stopped) return;
-    stopSearches.abort();
+    for (const search of searches.values()) search.stop.abort();
     if (inFlight) {
       active = false;
       pendingShutdown = reason;

@@ -91,7 +91,7 @@ Before you write any verdict, read what the case itself already holds for and ag
 scripts/spotlight-python -m integrations.case_search --case {CASE_DIR} --findings --for fact-checker --format prompt
 ```
 
-A runtime without `execute-shell` runs this itself and appends the result to your task as a `CASE PASSAGES` block. Empty output, or no block, means there are no passages to read (no Engine, its switch is off, or nothing matched): continue without it. Claims listed after the block as left out, unmatched or not searched have no passages shown.
+A runtime without `execute-shell` runs this itself and appends the result to your task as a `CASE PASSAGES` block. Empty output, or no block, means there are no passages to read (no Engine, its switch is off, or nothing matched): continue without it. A refusal (`case search refused: …`, exit status 2) is not empty output: `CASE_DIR` is not the active case under the configured cases root, so stop and report it to the orchestrator. Claims listed after the block as left out, unmatched or not searched have no passages shown.
 
 - Read each claim's passages before its verdict, and look hardest at the ones that contradict it: they are the counter-evidence the investigator may have missed.
 - Retrieval only. A passage is not a verdict, not verification and not independent: it comes from the case's own captures, so the confidence gate above still applies. Cite a passage only after reading it in its file.
