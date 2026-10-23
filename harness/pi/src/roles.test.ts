@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
-import { loadComposition } from './roles.ts';
+import { agentSpec, allowedTools, loadComposition } from './roles.ts';
 import type { AgentSpec } from './roles.ts';
 
 async function compositionWith(t: TestContext, spec: AgentSpec): Promise<string> {
@@ -31,4 +31,12 @@ test('a scope entry must be a plain case-relative file path', async (t) => {
 		const path = await compositionWith(t, { ...NARROWED, writes: [entry], tools: ['write_file'] });
 		assert.throws(() => loadComposition(path), /not a case-relative file path/, entry);
 	}
+});
+
+// The Anomaly methods run locally with no network (integrations/anomaly), so
+// listing them is not egress: the orchestrator keeps the tool in sensitive mode.
+test('the orchestrator lists Anomaly methods in sensitive mode too', () => {
+	const orchestrator = agentSpec(loadComposition(), 'orchestrator');
+	assert.ok(allowedTools(orchestrator, true).includes('anomaly_methods'));
+	assert.ok(!allowedTools(orchestrator, true).includes('integration_status'), 'a network-capable tool is still removed');
 });
