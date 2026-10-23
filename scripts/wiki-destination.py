@@ -56,6 +56,9 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import schema_check  # noqa: E402
+
+sys.path.insert(0, str(SCRIPT_DIR.parent))
+from integrations._credentials import config_path  # noqa: E402
 from spotlight_orchestration import review  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
@@ -165,7 +168,7 @@ def wiki_lock(workspace: Path, wait: float = 60.0):
 
 def workspace_from_config() -> Path:
     try:
-        config = json.loads((SCRIPT_DIR.parent / ".spotlight-config.json").read_text(encoding="utf-8"))
+        config = json.loads(config_path().read_text(encoding="utf-8"))
         return Path(config["knowledge_destination"]["workspace_path"]).expanduser().resolve()
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise DestinationError(f"no wiki workspace in .spotlight-config.json (knowledge_destination.workspace_path): {exc}") from exc

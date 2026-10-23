@@ -146,6 +146,24 @@ def valid_evidence_bundle() -> dict:
     }
 
 
+def valid_summary() -> dict:
+    """The data/summary.json shape phase-investigation-gate tells the runtime to write."""
+    return {
+        "schema_version": "1.0",
+        "project": "test-case",
+        "title": "Test case",
+        "generated_at": "2026-06-01T00:00:00Z",
+        "status": "pending_review",
+        "cycles": 1,
+        "verified_findings": 1,
+        "summary": "One finding, verified.",
+        "key_conclusions": ["Acme paid Doe."],
+        "limitations": [],
+        "methodology_summary": "Registry review.",
+        "findings": [{"id": "F1", "claim": "Acme paid Doe.", "confidence": "high", "fact_check_verdict": "verified", "source_count": 1}],
+    }
+
+
 def valid_log() -> dict:
     return {
         "schema_version": "1.0",
@@ -430,6 +448,9 @@ def main() -> int:
     check("evidence: valid baseline", vc.validate_evidence_bundle(valid_evidence_bundle()), False)
     check("evidence: bad schema_version", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d.__setitem__("schema_version", "2.0"))), True)
     check("evidence: bad acquisition_method", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0].__setitem__("acquisition_method", "telepathy"))), True)
+    schema_methods = json.loads((ROOT / "schemas" / "evidence-bundle.schema.json").read_text(encoding="utf-8"))["definitions"]["evidence_item"]["properties"]["acquisition_method"]["enum"]
+    for method in schema_methods:
+        check(f"evidence: schema acquisition_method {method} accepted", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d, m=method: d["items"][0].__setitem__("acquisition_method", m))), False)
     check("evidence: bad extraction_confidence", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0].__setitem__("extraction_confidence", "total"))), True)
     check("evidence: human_verification non-bool", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0].__setitem__("human_verification_required", "no"))), True)
     check("evidence: bad sha256", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0].__setitem__("sha256", "zz"))), True)
@@ -603,6 +624,31 @@ def main() -> int:
         check("e2e: invalid case exits 1", [] if rc == 1 else [f"rc={rc}"], False)
         rc = subprocess.run([sys.executable, str(SCRIPT), str(case / "missing")], capture_output=True).returncode
         check("e2e: missing dir exits 2", [] if rc == 2 else [f"rc={rc}"], False)
+
+        summary_case = Path(tmp) / "summary-case"
+        (summary_case / "data").mkdir(parents=True)
+        (summary_case / "data" / "findings.json").write_text(json.dumps(valid_findings()))
+        (summary_case / "data" / "fact-check.json").write_text(json.dumps(valid_fact_check()))
+        summary_cases = [
+            ("the gate skill's summary.json shape is valid", valid_summary(), 0),
+            ("summary.json without a title is refused", mutate(valid_summary(), lambda d: d.pop("title")), 1),
+            ("summary.json in the old date/overview/conclusions shape is refused",
+             {"schema_version": "1.0", "project": "test-case", "title": "Test case", "date": "2026-06-01",
+              "overview": "x", "conclusions": ["y"], "findings_summary": []}, 1),
+            ("summary.json naming an unknown finding is refused",
+             mutate(valid_summary(), lambda d: d["findings"][0].__setitem__("id", "F9")), 1),
+            ("summary.json verdict outside the case's fact-check vocabulary is refused",
+             mutate(valid_summary(), lambda d: d["findings"][0].__setitem__("fact_check_verdict", "not_checkable")), 1),
+            ("summary.json legacy partially_verified verdict stays valid in a 1.0 case",
+             mutate(valid_summary(), lambda d: d["findings"][0].__setitem__("fact_check_verdict", "partially_verified")), 0),
+        ]
+        for name, summary, expected in summary_cases:
+            (summary_case / "data" / "summary.json").write_text(json.dumps(summary))
+            out = subprocess.run([sys.executable, str(SCRIPT), str(summary_case)], capture_output=True, text=True)
+            check(f"e2e: {name}", [] if out.returncode == expected else [f"rc={out.returncode} {out.stderr.strip()[-200:]}"], False)
+        check("summary schema: the gate skill's shape", schema_errors("summary.schema.json", valid_summary()), False)
+        check("summary schema: the old date/overview/conclusions shape",
+              schema_errors("summary.schema.json", {"schema_version": "1.0", "project": "p", "title": "t", "date": "2026-06-01", "overview": "x", "conclusions": []}), True)
 
         activated = Path(tmp) / "activated"
         write_activated_case(activated)

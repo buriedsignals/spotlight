@@ -46,7 +46,7 @@ VAULT_PATH: {vault_path or 'none'}
 INTEGRATIONS:
   osint_navigator_status={config.integrations.osint_navigator.status}
   osint_navigator_required={config.integrations.osint_navigator.required_in_phase_2}
-SKILLS: integrations, osint, investigate, epistemic-grounding, acquisition-graduation, web-archiving, content-access, shell-safety, social-media-intelligence (social investigations), technical-investigation (technical leads)
+SKILLS: integrations, osint, investigation-methodology, epistemic-grounding, acquisition-graduation, web-archiving, content-access, shell-safety, follow-the-money (financial leads), social-media-intelligence (social investigations), technical-investigation (technical leads)
 
 NAVIGATOR ROUTING (CLI-first — make one independent tool decision per direction):
 
@@ -59,8 +59,8 @@ If osint_navigator_required=true (subscription / entitled deployments), before w
 In sensitive/offline mode make no Navigator request; record OSINT discovery as policy-skipped and use allowed local fallbacks.
 
 If osint_navigator_required=false (local / open-weights deployments — no Navigator entitlement), discover tools from the LOCAL index — no external call, no mandatory reads:
-- execute-shell("python3 scripts/osint-tools.py find \"<lead-derived keywords>\" [--category <cat>] [--limit 8]")
-  Derive keywords from the lead = entity type + geography + task. Scope with --category when the direction is clear (`python3 scripts/osint-tools.py categories` lists them). Examples:
+- execute-shell("scripts/spotlight-python scripts/osint-tools.py find \"<lead-derived keywords>\" [--category <cat>] [--limit 8]")
+  Derive keywords from the lead = entity type + geography + task. Scope with --category when the direction is clear (`scripts/spotlight-python scripts/osint-tools.py categories` lists them). Examples:
     Swiss foundation leadership  ->  find "switzerland swiss zug registry" --category public_records   ;   find "people directory" --category people
     crypto wallet tracing        ->  find "ethereum wallet blockchain" --category cryptocurrency
 - list the tools you chose in methodology.json tools_required[]; set navigator:{required:false, used:false, fallback_reason:"local osint-tools index (no Navigator entitlement)"} — or omit the navigator block entirely.
@@ -85,7 +85,7 @@ When the agent completes:
 2. Run the methodology gate (tier-aware — the validator enforces the Navigator contract ONLY when osint_navigator_required=true; on the open tier it just checks the navigator block is absent or consistent):
 
    ```
-   execute-shell("python3 scripts/validate-methodology-navigator.py {CASE_DIR} --config .spotlight-config.json")
+   execute-shell("scripts/spotlight-python scripts/validate-methodology-navigator.py {CASE_DIR}")
    ```
 
    In a runtime without `execute-shell`, the runtime runs this validator itself when the investigator finishes and returns the outcome with the investigator's answer; act on that outcome.
@@ -162,7 +162,7 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    brief, methodology, and saved source material. Run:
 
    ```
-   execute-shell("python3 integrations/rlm/run_rlm.py {CASE_DIR}/data/rlm-request.json")
+   execute-shell("scripts/spotlight-python integrations/rlm/run_rlm.py {CASE_DIR}/data/rlm-request.json")
    ```
 
    If the user declines, write `rlm.available=true`, `proposed=true`,
@@ -174,7 +174,7 @@ Correct only methodology.json as required by the validator evidence. On Navigato
 
 
    **Decision checks (optional).** If `.spotlight-config.json` has
-   `integrations.decisions.enabled: true`, `python3 scripts/decision-signals.py
+   `integrations.decisions.enabled: true`, `scripts/spotlight-python scripts/decision-signals.py
    {CASE_DIR} --phase investigation-gate --check --case-opt-in` reports `"ready": true`, and the
    case is not sensitive, ask before the approval gate:
 

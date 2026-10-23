@@ -313,7 +313,7 @@ class OrchestrationConformance(unittest.TestCase):
             self.case / "data/summary.json",
             {
                 "schema_version": "1.0",
-                "project": "test-investigation",
+                "project": findings["project"],
                 "title": "Activated fixture",
                 "generated_at": "2026-08-23T11:30:00Z",
                 "status": "pending_review",
@@ -778,12 +778,11 @@ class OrchestrationConformance(unittest.TestCase):
         self.assertNotIn("spotlight-orchestration.py", flue_branch)
 
         documented = re.findall(
-            r"`(python3 scripts/spotlight-orchestration\.py status --json[^`]*)`",
+            r"`(scripts/spotlight-python scripts/spotlight-orchestration\.py status --json[^`]*)`",
             non_flue_branch,
         )
         self.assertEqual(len(documented), 1, non_flue_branch)
         arguments = shlex.split(documented[0])
-        arguments[0] = sys.executable
         arguments = [
             str(self.case) if argument == "{CASE_DIR}" else argument
             for argument in arguments
@@ -794,7 +793,7 @@ class OrchestrationConformance(unittest.TestCase):
             text=True,
             capture_output=True,
             check=False,
-            env={"PATH": "", "PYTHONNOUSERSITE": "1"},
+            env={"PATH": "", "PYTHONNOUSERSITE": "1", "SPOTLIGHT_PYTHON": sys.executable},
         )
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 

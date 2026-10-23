@@ -250,6 +250,30 @@ def test_crawl4ai_delegation_failure_raises_scrape_error():
     raise AssertionError("a failed delegated fetch must raise ScrapeError")
 
 
+def test_cli_json_with_out_saves_markdown_and_prints_the_envelope():
+    """`--json --out page.md` must leave markdown in the file, not the JSON envelope."""
+    import contextlib
+    import io
+    import json
+    import tempfile
+    import integrations.scraping.__main__ as cli
+    page = _mk("# Registry page\n\nAcme Ltd, filed 2021.")
+    old_scrape = cli.scrape
+    cli.scrape = lambda *args, **kwargs: page
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = pathlib.Path(tmp) / "page.md"
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
+                assert cli.main(["https://example.gov/a", "--json", "--out", str(out)]) == 0
+            assert out.read_text(encoding="utf-8") == page.markdown
+            envelope = json.loads(stdout.getvalue())
+            assert envelope["markdown"] == page.markdown
+            assert envelope["content_sha256"] == page.content_sha256
+    finally:
+        cli.scrape = old_scrape
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

@@ -34,7 +34,7 @@ Full-corpus Gemma remains available for benchmarking with:
 ## Request
 
 ```bash
-python3 integrations/rlm/run_rlm.py path/to/request.json
+scripts/spotlight-python integrations/rlm/run_rlm.py path/to/request.json
 ```
 
 Codex adapter note: local Gemma RLM talks to Ollama at
@@ -77,7 +77,7 @@ The shipped benchmark audit lives at `docs/rlm-benchmark-audit.md`.
 Run the end-to-end dummy flow benchmark:
 
 ```bash
-python3 integrations/rlm/benchmark_flow.py \
+scripts/spotlight-python integrations/rlm/benchmark_flow.py \
   --fixture evals/rlm-flow-fixtures/fixture-context-rot-001 \
   --out /private/tmp/spotlight-rlm-flow-hybrid-gemma4-e4b.json \
   --no-rlm-chunk-budget 12
@@ -86,7 +86,7 @@ python3 integrations/rlm/benchmark_flow.py \
 Run the full dummy flow suite:
 
 ```bash
-python3 integrations/rlm/benchmark_flow_suite.py \
+scripts/spotlight-python integrations/rlm/benchmark_flow_suite.py \
   --fixtures evals/rlm-flow-fixtures \
   --out /private/tmp/spotlight-rlm-flow-suite-real-gemma4-e4b.json \
   --no-rlm-chunk-budget 12

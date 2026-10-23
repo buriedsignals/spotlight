@@ -21,7 +21,7 @@ The wrapper does not install Maigret. If the user explicitly enables this option
 Write a request file and run:
 
 ```bash
-python3 integrations/maigret/run_maigret.py path/to/request.json
+scripts/spotlight-python integrations/maigret/run_maigret.py path/to/request.json
 ```
 
 ```json

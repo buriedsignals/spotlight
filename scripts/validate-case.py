@@ -64,7 +64,11 @@ SUPPORT_TYPES = {"direct", "indirect", "inferred", "contradicted", "insufficient
 SOURCE_ROLES = {"primary", "secondary", "contextual"}
 EVIDENCE_SOURCE_TYPES = {"primary", "secondary"}
 ACCESS_METHODS = {"full_text", "open_access", "archive_copy", "abstract_only", "inaccessible"}
-ACQUISITION_METHODS = {"firecrawl", "dev_browser", "browse", "browser_harness", "browser_use", "manual", "api", "other"}
+# The evidence-bundle schema owns the acquisition-method vocabulary.
+ACQUISITION_METHODS = set(
+    json.loads((SCRIPT_DIR.parent / "schemas" / "evidence-bundle.schema.json").read_text(encoding="utf-8"))
+    ["definitions"]["evidence_item"]["properties"]["acquisition_method"]["enum"]
+)
 MISSING_SOURCE_CONFIDENCE_EFFECTS = {"none", "cap_medium", "cap_low", "human_verification_required"}
 HUMAN_REVIEW = {"unreviewed", "approved", "rejected"}
 RLM_MODES = {"lite", "local_gemma4_e4b"}
@@ -1191,6 +1195,59 @@ def validate_investigation_log(data: dict[str, Any]) -> list[str]:
     return errors
 
 
+def validate_summary(data: Any, findings_data: Any, factcheck_data: Any) -> list[str]:
+    """data/summary.json, the Investigation gate's machine contract (schemas/summary.schema.json)."""
+    if not isinstance(data, dict):
+        return [f"summary.json: top-level must be an object, got {type(data).__name__}"]
+    errors: list[str] = []
+    if data.get("schema_version") != "1.0":
+        errors.append("summary.json: schema_version must be 1.0")
+    for key in ("project", "title", "status", "summary"):
+        if not nonempty_string(data.get(key)):
+            errors.append(f"summary.json: missing or empty '{key}'")
+    if parse_datetime(data.get("generated_at")) is None:
+        errors.append("summary.json.generated_at: must be an ISO 8601 timestamp with a timezone")
+    if "cycles" in data and (not isinstance(data["cycles"], int) or isinstance(data["cycles"], bool) or data["cycles"] < 1):
+        errors.append("summary.json.cycles: must be an integer >= 1")
+    if "verified_findings" in data and (not isinstance(data["verified_findings"], int) or isinstance(data["verified_findings"], bool) or data["verified_findings"] < 0):
+        errors.append("summary.json.verified_findings: must be an integer >= 0")
+    for key in ("key_conclusions", "limitations"):
+        if key in data and not string_list(data[key]):
+            errors.append(f"summary.json.{key}: must be a list of strings")
+    if "methodology_summary" in data and not isinstance(data["methodology_summary"], str):
+        errors.append("summary.json.methodology_summary: must be a string")
+    if isinstance(findings_data, dict) and isinstance(data.get("project"), str) and data["project"] != findings_data.get("project"):
+        errors.append("summary.json: project must match findings.json")
+    rows = data.get("findings")
+    if not isinstance(rows, list):
+        errors.append("summary.json: 'findings' must be a list")
+        return errors
+    findings_version = findings_data.get("schema_version", "1.0") if isinstance(findings_data, dict) else "1.0"
+    verdicts = allowed_verdicts(fact_check_version(factcheck_data))
+    known_ids = {
+        finding.get("id")
+        for finding in (findings_data.get("findings") or [] if isinstance(findings_data, dict) else [])
+        if isinstance(finding, dict)
+    }
+    for index, row in enumerate(rows):
+        prefix = f"summary.json.findings[{index}]"
+        if not isinstance(row, dict):
+            errors.append(f"{prefix}: must be an object")
+            continue
+        for key in ("id", "claim"):
+            if not nonempty_string(row.get(key)):
+                errors.append(f"{prefix}: missing or empty '{key}'")
+        if nonempty_string(row.get("id")) and row["id"] not in known_ids:
+            errors.append(f"{prefix}.id: {row['id']} is not a finding in findings.json")
+        if row.get("confidence") not in finding_confidences(findings_version):
+            errors.append(f"{prefix}.confidence: must be one of {sorted(finding_confidences(findings_version))}")
+        if row.get("fact_check_verdict") not in verdicts:
+            errors.append(f"{prefix}.fact_check_verdict: must be one of {sorted(verdicts)}")
+        if "source_count" in row and (not isinstance(row["source_count"], int) or isinstance(row["source_count"], bool) or row["source_count"] < 0):
+            errors.append(f"{prefix}.source_count: must be an integer >= 0")
+    return errors
+
+
 def validate_rlm_analysis(data: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if not isinstance(data, dict):
@@ -1403,6 +1460,13 @@ def main() -> int:
             all_errors.extend(errs)
             if investigation_log_data is not None:
                 all_errors.extend(validate_investigation_log(investigation_log_data))
+
+        summary_path = case_dir / "data" / "summary.json"
+        if summary_path.exists():
+            summary_data, errs = load_json(summary_path)
+            all_errors.extend(errs)
+            if summary_data is not None:
+                all_errors.extend(validate_summary(summary_data, findings_data, factcheck_data))
 
     if args.include_rlm and not args.fact_check_only:
         rlm_path = case_dir / "data" / "rlm-analysis.json"

@@ -6,7 +6,14 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HELPER = ROOT / "scripts" / "spotlight_safe.py"
+# Skills reach the helper by two documented paths: the portable shell-safety
+# skill's bundled script and the checkout's scripts/spotlight_safe.py. Both must
+# accept and refuse the same values.
+HELPERS = [
+    ROOT / "skills" / "shell-safety" / "scripts" / "shell_safe.py",
+    ROOT / "scripts" / "spotlight_safe.py",
+]
+HELPER = HELPERS[0]
 
 
 def run(*args):
@@ -26,7 +33,7 @@ def assert_reject(*args):
         raise AssertionError(f"expected rejection for {args}: {result.stdout}")
 
 
-def main():
+def check_helper():
     assert_ok("validate-url", "https://example.org/path?q=one%20two")
     for hostile in [
         'https://example.org/"; rm -rf / ; echo "',
@@ -52,6 +59,15 @@ def main():
         for hostile in ["../outside", "/etc/passwd", "-rf", "safe/$(bad)", "safe/a\nb"]:
             assert_reject("resolve-path", "--base", str(base), "--path", hostile)
 
+    assert_ok("validate-timestamp", "2026-05-01T12:00:00Z")
+    for hostile in ["2026;rm", "yesterday"]:
+        assert_reject("validate-timestamp", hostile)
+
+
+def main():
+    global HELPER
+    for HELPER in HELPERS:
+        check_helper()
     print("shell-safety checks passed")
 
 

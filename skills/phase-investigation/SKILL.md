@@ -20,14 +20,14 @@ Resolve this once before the first cycle and preserve it on every investigator
 and fact-checker spawn:
 
 1. If `data/case-contract.json` exists, the case is activated: run
-   `python3 scripts/validate-case.py {CASE_DIR}` and set
+   `scripts/spotlight-python scripts/validate-case.py {CASE_DIR}` and set
    `SOURCE_EXPRESSION_MODE: activated`. An activated case never falls back to
    legacy.
 2. Otherwise, if the case has no `data/findings.json` yet, it is a new case
    and starts activated (exact passages are the default for every new case):
 
    ```text
-   python3 scripts/case-contract.py activate-new {CASE_DIR}
+   scripts/spotlight-python scripts/case-contract.py activate-new {CASE_DIR}
    ```
 
    Then set `SOURCE_EXPRESSION_MODE: activated`. Findings use contract `1.1`
@@ -45,10 +45,10 @@ and findings can change freely during the cycles. An old case can be
 activated only through the operator-reviewed dry-run/apply flow:
 
 ```text
-python3 scripts/migrate-source-expressions.py {CASE_DIR}
-python3 scripts/migrate-source-expressions.py {CASE_DIR} --apply
-python3 scripts/validate-case.py {CASE_DIR}
-python3 scripts/validate-fact-check.py {CASE_DIR}
+scripts/spotlight-python scripts/migrate-source-expressions.py {CASE_DIR}
+scripts/spotlight-python scripts/migrate-source-expressions.py {CASE_DIR} --apply
+scripts/spotlight-python scripts/validate-case.py {CASE_DIR}
+scripts/spotlight-python scripts/validate-fact-check.py {CASE_DIR}
 ```
 
 The decision record is `docs/source-expression-pilot-results.json`. Its stop
@@ -89,9 +89,9 @@ INTEGRATIONS:
   rlm_approved={methodology.rlm.approved}
   rlm_analysis_path={methodology.rlm.analysis_path or 'none'}
 CYCLE: {N}
-SKILLS: acquisition-graduation (graduate repeated dev-browser paths only after repeatability is proven), web-archiving (archive all evidence before citing), content-access (paywalled sources — use before marking inaccessible), epistemic-grounding (fill grounding object and cap confidence when support is weak), shell-safety (validate untrusted values before execute-shell), social-media-intelligence (social investigations), technical-investigation (technical leads)
+SKILLS: integrations (integration routing and preflight status), osint (tool routing), investigation-methodology (step-by-step techniques), follow-the-money (financial leads), acquisition-graduation (graduate repeated dev-browser paths only after repeatability is proven), web-archiving (archive all evidence before citing), content-access (paywalled sources — use before marking inaccessible), epistemic-grounding (fill grounding object and cap confidence when support is weak), shell-safety (validate untrusted values before execute-shell), social-media-intelligence (social investigations), technical-investigation (technical leads)
 
-ACQUISITION: Firecrawl first via search/fetch. After every Firecrawl result, run the missing-source gate. Use dev-browser when static acquisition is insufficient for dynamic pages, portals, downloads, screenshots, visual verification, forms, or legally appropriate authenticated/local-browser contexts.
+ACQUISITION: search/fetch first (fetch = Crawl4AI, search = SearXNG; Firecrawl only as an optional fallback when keyed). After every search/fetch result, run the missing-source gate. Use dev-browser when static acquisition is insufficient for dynamic pages, portals, downloads, screenshots, visual verification, forms, or legally appropriate authenticated/local-browser contexts.
 
 {if N > 1: Previous findings gaps:
 {gaps}
@@ -120,7 +120,7 @@ Append to {CASE_DIR}/data/investigation-log.json.",
   2.5. Validate the investigator output before fact-checking:
 
      ```
-     execute-shell("python3 scripts/validate-case.py {CASE_DIR}")
+     execute-shell("scripts/spotlight-python scripts/validate-case.py {CASE_DIR}")
      ```
 
      In a runtime without `execute-shell`, the runtime runs this validator itself when the investigator finishes and returns the outcome with the investigator's answer; act on that outcome.
@@ -175,7 +175,7 @@ CASE_DIR: {CASE_DIR}
 INTEGRATIONS:
   osint_navigator_status={config.integrations.osint_navigator.status}
   osint_navigator_required={config.integrations.osint_navigator.required_in_phase_2}
-SKILLS: web-archiving (archive sources before issuing verdict), content-access (paywalled sources — use before marking inaccessible), epistemic-grounding (judge whether evidence actually grounds each claim), shell-safety (validate untrusted values before execute-shell), technical-investigation (technical claims)
+SKILLS: osint (tool routing for specialized verification tools), web-archiving (archive sources before issuing verdict), content-access (paywalled sources — use before marking inaccessible), epistemic-grounding (judge whether evidence actually grounds each claim), shell-safety (validate untrusted values before execute-shell), technical-investigation (technical claims)
 
 Apply SIFT source credibility check before searching for corroborating evidence.
 Independently assess claim-to-evidence grounding before assigning verdicts or confidence.
@@ -194,8 +194,8 @@ Write to {CASE_DIR}/data/fact-check.json.",
   4.5. Validate the fact-checker output before the editorial check:
 
      ```
-     execute-shell("python3 scripts/validate-case.py {CASE_DIR}")
-     execute-shell("python3 scripts/validate-fact-check.py {CASE_DIR}")
+     execute-shell("scripts/spotlight-python scripts/validate-case.py {CASE_DIR}")
+     execute-shell("scripts/spotlight-python scripts/validate-fact-check.py {CASE_DIR}")
      ```
 
      In a runtime without `execute-shell`, the runtime runs both validators itself when the fact-checker finishes and returns the outcome with the fact-checker's answer; act on that outcome.

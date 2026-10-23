@@ -169,7 +169,7 @@ environment, that file, or the checkout `.env`. Check presence only; never
 print or open a credential file:
 
 ```
-execute-shell('python3 -m integrations.apify status')
+execute-shell('scripts/spotlight-python -m integrations.apify status')
 ```
 
 If it prints `apify:unavailable`, skip to Option B or C and tell the user:
@@ -185,7 +185,7 @@ the dataset items; Apify answers `408` when a run exceeds 300 seconds, so cap
 
 ```
 write-file("{CASE_DIR}/research/apify-x-input.json", <serialized actor input JSON>)
-execute-shell('python3 -m integrations.apify run 61RPP7dywgiy0JPD0 --input {CASE_DIR}/research/apify-x-input.json --output {CASE_DIR}/research/apify-x-<slug>.json')
+execute-shell('scripts/spotlight-python -m integrations.apify run 61RPP7dywgiy0JPD0 --input {CASE_DIR}/research/apify-x-input.json --output {CASE_DIR}/research/apify-x-<slug>.json')
 ```
 
 Actor ids are shared with the Mycroft `apify-social` recipes so both tools

@@ -78,8 +78,8 @@ write-file("{vault}/.ingest-lock", "{project-id} {ISO timestamp}")
 Remove the lock when ingestion completes — whether successful or failed. Always clean up (these commands follow the `shell-safety` skill's probe → resolve → operate pattern via `scripts/spotlight_safe.py`):
 
 ```
-execute-shell("python3 scripts/spotlight_safe.py destructive-probe --base {vault} --path .ingest-lock")
-execute-shell("python3 scripts/spotlight_safe.py resolve-path --base {vault} --path .ingest-lock")
+execute-shell("scripts/spotlight-python scripts/spotlight_safe.py destructive-probe --base {vault} --path .ingest-lock")
+execute-shell("scripts/spotlight-python scripts/spotlight_safe.py resolve-path --base {vault} --path .ingest-lock")
 execute-shell("rm <resolved-lock-path-from-probe>")
 ```
 
@@ -180,12 +180,12 @@ a case-local JSON list (`[{"name", "context", "type"}]`, where `context` is the
 sentence the entity came from) and run:
 
 ```
-execute-shell("python3 scripts/decision-signals.py {CASE_DIR} --phase ingest --entities {CASE_DIR}/data/ingest-entities.json")
+execute-shell("scripts/spotlight-python scripts/decision-signals.py {CASE_DIR} --phase ingest --entities {CASE_DIR}/data/ingest-entities.json")
 ```
 
 Results go to `data/decision-signals-ingest.json` (`phases.ingest.entities`,
 each with its exact `input`). Immediately before writing entity notes, run
-`python3 scripts/ingest-eligibility.py {CASE_DIR} --entities {CASE_DIR}/data/ingest-entities.json`
+`scripts/spotlight-python scripts/ingest-eligibility.py {CASE_DIR} --entities {CASE_DIR}/data/ingest-entities.json`
 with the current list and use only `ingest_checks` entries whose status is
 `judged`; rerun the check for `stale` or `unchecked` entries first. They are
 recommendations, never authority:
@@ -298,7 +298,7 @@ Body: Capabilities, Access Notes, Usage History table (one row), Tips for Future
 Before processing claims, run the deterministic activation gate:
 
 ```
-execute-shell("python3 scripts/validate-install-config.py --config .spotlight-config.json --case-dir {CASE_DIR}")
+execute-shell("scripts/spotlight-python scripts/validate-install-config.py --config .spotlight-config.json --case-dir {CASE_DIR}")
 ```
 
 Parse its JSON even when it exits 2. Missing, malformed, inactive, or incomplete
@@ -318,7 +318,7 @@ checks ran; otherwise their stored results are reported as
 `inputs_not_supplied` and must not be used):
 
 ```
-execute-shell("python3 scripts/ingest-eligibility.py {CASE_DIR}")
+execute-shell("scripts/spotlight-python scripts/ingest-eligibility.py {CASE_DIR}")
 ```
 
 It applies the gate below in code and, when decision checks ran, the stored
@@ -357,9 +357,9 @@ collect existing claim notes that share an entity with this case's findings
 into `{CASE_DIR}/data/ingest-existing-claims.json` (`[{"id", "claim"}]`, at
 most 60 pairs; both input lists must be regular files directly inside
 `{CASE_DIR}/data/`) and run
-`python3 scripts/decision-signals.py {CASE_DIR} --phase ingest --existing-claims {CASE_DIR}/data/ingest-existing-claims.json`.
+`scripts/spotlight-python scripts/decision-signals.py {CASE_DIR} --phase ingest --existing-claims {CASE_DIR}/data/ingest-existing-claims.json`.
 Immediately before writing any re-verification or supersession row, run
-`python3 scripts/ingest-eligibility.py {CASE_DIR} --existing-claims {CASE_DIR}/data/ingest-existing-claims.json`
+`scripts/spotlight-python scripts/ingest-eligibility.py {CASE_DIR} --existing-claims {CASE_DIR}/data/ingest-existing-claims.json`
 with the current list and use only `ingest_checks` entries whose status is
 `judged`; rerun the check for `stale` or `unchecked` entries first. Results are
 candidates for the user, never authority over another claim's history:
@@ -385,7 +385,7 @@ notes and `claims/_registry.json` both exist, then run the deterministic writer
 before Step 8 while the project-owned vault lock is still held:
 
 ```
-execute-shell("python3 scripts/ingest-source-expressions.py --case-dir {CASE_DIR} --vault {vault} --lock-held")
+execute-shell("scripts/spotlight-python scripts/ingest-source-expressions.py --case-dir {CASE_DIR} --vault {vault} --lock-held")
 ```
 
 Never author its managed claim blocks directly. The writer verifies activation
@@ -458,10 +458,10 @@ check that each claim `proposition` still says what its origin finding says
 and that each claim–event relation is plausible:
 
 ```
-execute-shell("python3 scripts/decision-signals.py {CASE_DIR} --phase ingest")
+execute-shell("scripts/spotlight-python scripts/decision-signals.py {CASE_DIR} --phase ingest")
 ```
 
-Then read `ingest_checks` from `python3 scripts/ingest-eligibility.py {CASE_DIR}`
+Then read `ingest_checks` from `scripts/spotlight-python scripts/ingest-eligibility.py {CASE_DIR}`
 (add `--entities` / `--existing-claims` with the same files you passed to
 `decision-signals.py` to include those checks). It lists every current target
 with `judged`, `unavailable`, `stale` (inputs changed since the check) or

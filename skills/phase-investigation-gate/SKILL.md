@@ -78,18 +78,29 @@ review, report drafting, and ingest:
 ```
 
 `summary.md` is the human artifact; `data/summary.json` is the machine
-contract. Generate both.
+contract (`schemas/summary.schema.json`). Generate both, then validate the
+case, which checks `data/summary.json` against that contract and against
+`findings.json` and `fact-check.json`:
+
+```
+execute-shell("scripts/spotlight-python scripts/validate-case.py {CASE_DIR}")
+```
+
+Fix every reported `summary.json` error and re-run before calling
+`spotlight_resolve({})`. A runtime without `execute-shell` has no step for this check yet; write the shape above exactly. Each finding row carries the finding's `id` from
+`findings.json`, its `confidence`, and its verdict from `fact-check.json` as
+`fact_check_verdict`.
 
 ## Decision checks (optional)
 
 Run only when `.spotlight-config.json` has `integrations.decisions.enabled: true`,
 the case is not sensitive, an OpenRouter key is available, and the user agreed
 to decision checks for this case at methodology approval (first run only: add
-`--case-opt-in`). `python3 scripts/decision-signals.py {CASE_DIR} --phase investigation-gate --check`
+`--case-opt-in`). `scripts/spotlight-python scripts/decision-signals.py {CASE_DIR} --phase investigation-gate --check`
 reports readiness without making a request.
 
 ```
-execute-shell("python3 scripts/decision-signals.py {CASE_DIR} --phase investigation-gate")
+execute-shell("scripts/spotlight-python scripts/decision-signals.py {CASE_DIR} --phase investigation-gate")
 ```
 
 It asks the decision model (OpenRouter Decisions API, zero data retention) whether
@@ -178,7 +189,7 @@ do not skip directly to report.
 Invoke `provenance-signing`:
 
 ```text
-execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR}")
+execute-shell("scripts/spotlight-python scripts/build-provenance-manifest.py {CASE_DIR}")
 ```
 
 This creates `{CASE_DIR}/data/provenance-manifest.json` with hashes for the case
@@ -188,7 +199,7 @@ artifacts, claim-to-verdict links, evidence bundle refs, and
 If `NOOSPHERE_C2PA_URL` is configured, signing remains optional:
 
 ```text
-execute-shell("python3 scripts/build-provenance-manifest.py {CASE_DIR} --sign-endpoint \"$NOOSPHERE_C2PA_URL\" --credential-id \"$NOOSPHERE_C2PA_CREDENTIAL_ID\"")
+execute-shell("scripts/spotlight-python scripts/build-provenance-manifest.py {CASE_DIR} --sign-endpoint \"$NOOSPHERE_C2PA_URL\" --credential-id \"$NOOSPHERE_C2PA_CREDENTIAL_ID\"")
 ```
 
 Signing failures do not block review. Preserve the unsigned manifest and report

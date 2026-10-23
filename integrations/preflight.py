@@ -31,6 +31,7 @@ _CHECKOUT = Path(__file__).resolve().parents[1]
 if str(_CHECKOUT) not in sys.path:
     sys.path.insert(0, str(_CHECKOUT))
 from integrations._cli import run_captured  # noqa: E402
+from integrations._credentials import config_path  # noqa: E402
 
 # Import the shared helpers from integrations/ — local single source of truth
 _BASE_DIR = Path(__file__).parent
@@ -134,7 +135,6 @@ def smoke_test(manifest: dict) -> tuple[bool, str | None]:
     return True, None
 
 
-CONFIG_PATH = _BASE_DIR.parent / ".spotlight-config.json"
 DECISIONS_KEY = "OPENROUTER_API_KEY"
 DECISIONS_CHOICE = (
     "Opt-in decision checks: a decision model on OpenRouter (default typesafe/jev-1.13, "
@@ -145,7 +145,7 @@ DECISIONS_CHOICE = (
 
 def decisions_block() -> dict:
     try:
-        config = json.loads(CONFIG_PATH.read_text())
+        config = json.loads(config_path().read_text())
     except (OSError, ValueError):
         return {}
     block = (config.get("integrations") or {}).get("decisions")

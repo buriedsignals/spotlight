@@ -28,7 +28,7 @@ or a command, and never request or log key material.
 Run the integration preflight and require Arbiter to be green:
 
 ```bash
-python3 integrations/preflight.py --json
+scripts/spotlight-python integrations/preflight.py --json
 ```
 
 The Arbiter preflight performs an unauthenticated direct OpenAPI smoke against

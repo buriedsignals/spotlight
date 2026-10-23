@@ -224,6 +224,20 @@ creds.write_output(target, b"[]")
 check("symlink target untouched", decoy.read_text() == "keep")
 check("output written in place", target.read_bytes() == b"[]" and not target.is_symlink())
 
+# 14. SPOTLIGHT_CONFIG (absolute) names the install config instead of the checkout root's.
+root = checkout(None)
+elsewhere = checkout(ENGINE)
+saved = with_env(SPOTLIGHT_CONFIG=str(elsewhere / ".spotlight-config.json"), FIRECRAWL_API_KEY="stale-fc")
+check("SPOTLIGHT_CONFIG decides which env_file is read", creds.credential("FIRECRAWL_API_KEY", root) == "fc-a'b")
+restore(saved)
+saved = with_env(SPOTLIGHT_CONFIG="relative/.spotlight-config.json")
+try:
+    creds.credential("FIRECRAWL_API_KEY", root)
+    check("a relative SPOTLIGHT_CONFIG is refused", False)
+except creds.ConfigPathError:
+    check("a relative SPOTLIGHT_CONFIG is refused", True)
+restore(saved)
+
 if FAILURES:
     for name in FAILURES:
         print("FAIL:", name)

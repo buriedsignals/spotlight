@@ -20,6 +20,10 @@ REQUIRED_PLANNING_SKILLS = {"integrations", "osint", "investigation-methodology"
 # rename still list the old ids in skills_invoked and remain valid.
 LEGACY_SKILL_IDS = {"investigate": "investigation-methodology", "review": "editorial-review"}
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from integrations._credentials import config_path as install_config_path  # noqa: E402
 DEFAULT_CTI_LOCK = ROOT / "upstreams" / "cti-expert" / "source.lock.json"
 DEFAULT_CTI_REVISIONS = ROOT / "upstreams" / "cti-expert" / "reviewed-revisions.json"
 CTI_REFERENCES = {
@@ -226,7 +230,7 @@ def validate_method_provenance(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("case_dir", help="Path to {CASE_DIR}")
-    parser.add_argument("--config", default=".spotlight-config.json", help="Spotlight config path")
+    parser.add_argument("--config", default=None, help="Spotlight config path (default: $SPOTLIGHT_CONFIG, else the checkout root's)")
     parser.add_argument("--cti-lock", type=Path, default=DEFAULT_CTI_LOCK)
     parser.add_argument("--cti-revisions", type=Path, default=DEFAULT_CTI_REVISIONS)
     parser.add_argument(
@@ -237,7 +241,7 @@ def main() -> int:
     args = parser.parse_args()
 
     case_dir = Path(args.case_dir).expanduser().resolve()
-    config_path = Path(args.config).expanduser().resolve()
+    config_path = Path(args.config).expanduser().resolve() if args.config else install_config_path()
     methodology_path = case_dir / "data" / "methodology.json"
 
     errors: list[str] = []

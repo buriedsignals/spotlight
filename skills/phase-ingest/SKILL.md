@@ -26,7 +26,7 @@ decision:
    Without an analyst (an open-source install without Engine), decline:
    "Ingesting into the wiki needs the analyst, which Indicator Lab installs."
 2. **Build.** Run
-   `python3 scripts/build-knowledge-batch.py {CASE_DIR} --review --model investigator=<id> --model fact-checker=<id>`.
+   `scripts/spotlight-python scripts/build-knowledge-batch.py {CASE_DIR} --review --model investigator=<id> --model fact-checker=<id>`.
    The model ids are the exact models the investigator and fact-checker ran
    on, as the harness or the runtime reports them; they are needed only on
    the first build. A refusal names what to fix (for example an attributed
@@ -39,7 +39,7 @@ decision:
    records the decision, bound to the final batch's digest. Then resolve
    again and continue at the returned substep; do not also ask in chat.
    Without the page, make each choice through the same seam the page uses
-   (`python3 scripts/spotlight-orchestration.py review-edit ingest --edit JSON {CASE_DIR}`, one edit per
+   (`scripts/spotlight-python scripts/spotlight-orchestration.py review-edit ingest --edit JSON {CASE_DIR}`, one edit per
    choice, as listed by `review-view ingest`), then ask in chat as below.
    `amend` and `investigate_further` only record the disposition; offer the
    member a follow-up on the case instead of editing it now.
@@ -74,7 +74,7 @@ the command-line adapter (its `direct` channel):
 
 The human decision is already durable. Do not ask again.
 
-- **Activated case, solo mode:** run `python3 scripts/wiki-destination.py {CASE_DIR}`.
+- **Activated case, solo mode:** run `scripts/spotlight-python scripts/wiki-destination.py {CASE_DIR}`.
   It checks the batch against the approved digest, admits it, appends the
   local decision journal, writes the member's wiki under `spotlight/` and the
   completed receipt. Do not invoke `ingest`. A refusal names what to fix; a

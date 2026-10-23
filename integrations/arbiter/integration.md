@@ -33,7 +33,7 @@ any network work in sensitive mode.
 Run the generic preflight before the first call:
 
 ```bash
-python3 integrations/preflight.py --json
+scripts/spotlight-python integrations/preflight.py --json
 ```
 
 The Arbiter manifest's smoke check requests the unauthenticated
@@ -152,7 +152,7 @@ poll `/progress` instead because a successful retry charges another 25 credits.
 
 ### 3. Human review
 
-Run `python3 integrations/arbiter/run_create.py plan-summary --case-dir
+Run `scripts/spotlight-python integrations/arbiter/run_create.py plan-summary --case-dir
 <CASE_DIR> --plan-file <CASE_DIR>/research/search-plan-output` and show
 Arbiter's numbered `search_phrases`. Use `plan-options` for removals/additions
 while keeping original numbering stable.

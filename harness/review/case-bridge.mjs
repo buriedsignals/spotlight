@@ -34,6 +34,28 @@ export function which(command, pathValue = process.env.PATH ?? "") {
   return "";
 }
 
+// The Spotlight interpreter, the rule scripts/spotlight-python applies for the
+// skills: SPOTLIGHT_PYTHON (an absolute path), else the checkout's .venv, else
+// python3 on PATH. A relative SPOTLIGHT_PYTHON is refused, never looked up.
+export function spotlightPython({ env = process.env, root = CHECKOUT_ROOT } = {}) {
+  const configured = (env.SPOTLIGHT_PYTHON ?? "").trim();
+  if (configured) {
+    if (!isAbsolute(configured)) throw new Error("SPOTLIGHT_PYTHON must be an absolute path");
+    return configured;
+  }
+  for (const candidate of [join(root, ".venv", "bin", "python"), join(root, ".venv", "Scripts", "python.exe")]) {
+    try {
+      if (statSync(candidate).isFile()) {
+        accessSync(candidate, constants.X_OK);
+        return candidate;
+      }
+    } catch {
+      // No checkout venv here.
+    }
+  }
+  return which("python3", env.PATH ?? "") || which("python", env.PATH ?? "");
+}
+
 // Keys and loader hooks never reach the review server or its Python calls.
 export function safeChildEnvironment(source = process.env) {
   const blocked = new Set([
@@ -64,8 +86,8 @@ export function safeChildEnvironment(source = process.env) {
 export function createCaseBridge({
   caseDir,
   casesRoot = "",
-  python = which("python3") || which("python"),
   checkoutRoot = CHECKOUT_ROOT,
+  python = spotlightPython({ root: checkoutRoot }),
   env = safeChildEnvironment(),
 } = {}) {
   if (!isAbsolute(caseDir ?? "")) throw new Error("the case directory must be an absolute path");

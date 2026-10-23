@@ -20,7 +20,7 @@ Junkipedia is REST API over HTTPS. Invoke `shell-safety` first. The helper sends
 ### Search for tracked content
 
 ```
-execute-shell('python3 -m integrations.junkipedia get posts --param "q=<query>" --param limit=50 --output {CASE_DIR}/research/junkipedia-<slug>.json')
+execute-shell('scripts/spotlight-python -m integrations.junkipedia get posts --param "q=<query>" --param limit=50 --output {CASE_DIR}/research/junkipedia-<slug>.json')
 ```
 
 ### Search by narrative / issue
@@ -28,14 +28,14 @@ execute-shell('python3 -m integrations.junkipedia get posts --param "q=<query>" 
 Junkipedia tags content under "issues" (narratives). Find posts tagged with a specific narrative:
 
 ```
-execute-shell('python3 scripts/spotlight_safe.py validate-slug "<issue_id>"')
-execute-shell('python3 -m integrations.junkipedia get issues/<issue_id>/posts --param limit=100 --output {CASE_DIR}/research/junkipedia-issue-<id>.json')
+execute-shell('scripts/spotlight-python scripts/spotlight_safe.py validate-slug "<issue_id>"')
+execute-shell('scripts/spotlight-python -m integrations.junkipedia get issues/<issue_id>/posts --param limit=100 --output {CASE_DIR}/research/junkipedia-issue-<id>.json')
 ```
 
 ### List issues the platform tracks
 
 ```
-execute-shell('python3 -m integrations.junkipedia get issues --output {CASE_DIR}/research/junkipedia-issues.json')
+execute-shell('scripts/spotlight-python -m integrations.junkipedia get issues --output {CASE_DIR}/research/junkipedia-issues.json')
 ```
 
 Refer to the official docs for the current endpoint catalog — the exact paths above may change as the platform evolves. Re-verify against https://docs.junkipedia.org/reference-material/api before relying on any specific endpoint.

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -127,6 +128,19 @@ def main() -> int:
         valid = run(case_dir, config)
         if valid.returncode != 0:
             raise AssertionError(f"valid navigator fixture should pass\nSTDOUT:\n{valid.stdout}\nSTDERR:\n{valid.stderr}")
+
+        # Without --config the validator reads the install config the way
+        # every Spotlight script does: SPOTLIGHT_CONFIG, else the checkout's.
+        from_env = subprocess.run(
+            [sys.executable, str(VALIDATOR), str(case_dir)],
+            text=True,
+            capture_output=True,
+            check=False,
+            cwd=case_dir,
+            env={**os.environ, "SPOTLIGHT_CONFIG": str(config)},
+        )
+        if from_env.returncode != 0:
+            raise AssertionError(f"SPOTLIGHT_CONFIG should name the config without --config\nSTDOUT:\n{from_env.stdout}\nSTDERR:\n{from_env.stderr}")
 
         legacy = methodology_with_navigator()
         legacy["skills_invoked"] = ["integrations", "osint", "investigate", "epistemic-grounding"]

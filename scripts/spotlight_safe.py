@@ -1,31 +1,55 @@
 #!/usr/bin/env python3
-"""Small validation helpers for Spotlight shell-safety checks."""
+"""Spotlight's shell-safety helper.
+
+The validation commands live in one place, the portable shell-safety skill's
+`skills/shell-safety/scripts/shell_safe.py`; this checkout entry point runs the
+same code and adds the knowledge-projection helpers Spotlight's ingest uses.
+"""
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import html
 import re
 import sys
 from pathlib import Path
-from urllib.parse import urlparse
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "shell-safety" / "scripts"))
 
-DOI_RE = re.compile(r"^10\.\d{4,9}/[-._;()/:A-Z0-9]+$", re.IGNORECASE)
-TIMESTAMP_RE = re.compile(r"^\d{4}(-\d{2}){0,2}([T ][0-9:.+-]+Z?)?$")
-SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
-UNSAFE_CHARS_RE = re.compile(r"[\x00\r\n`$;&|<>]")
+from shell_safe import (  # noqa: E402
+    SafetyError,
+    main as _main,
+    reject_shell_metacharacters,
+    resolve_path,
+    sha256_file,
+    validate_doi,
+    validate_slug,
+    validate_timestamp,
+    validate_url,
+)
+
+__all__ = [
+    "SafetyError",
+    "bounded_content",
+    "markdown_text",
+    "projection_id",
+    "projection_path",
+    "projection_slug",
+    "reject_shell_metacharacters",
+    "resolve_path",
+    "sha256_file",
+    "validate_doi",
+    "validate_slug",
+    "validate_timestamp",
+    "validate_url",
+]
+
 PROJECTION_ID_RE = re.compile(r"^[a-z][a-z0-9-]*:[a-z0-9][a-z0-9._:-]{0,250}$")
 PROJECTION_PATH_RE = re.compile(r"^(investigations|stories)/[a-z0-9][a-z0-9._/-]*\.md$")
 CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 # Inline values cannot begin a Markdown block because the renderer controls the
 # line prefix. Escape only inline delimiters; preserve ordinary prose punctuation.
 MARKDOWN_META_RE = re.compile(r"([\\`*\[\]<>])")
-
-
-class SafetyError(ValueError):
-    pass
 
 
 def projection_id(value: str, label: str = "identifier") -> str:
@@ -70,129 +94,5 @@ def bounded_content(value: str, maximum: int = 4 * 1024 * 1024) -> str:
     return value
 
 
-def reject_shell_metacharacters(value: str, label: str) -> None:
-    if UNSAFE_CHARS_RE.search(value):
-        raise SafetyError(f"{label} contains shell metacharacters or control characters")
-
-
-def validate_url(value: str) -> str:
-    reject_shell_metacharacters(value, "url")
-    parsed = urlparse(value)
-    if parsed.scheme not in {"http", "https"}:
-        raise SafetyError("url scheme must be http or https")
-    if not parsed.netloc:
-        raise SafetyError("url must include a host")
-    if parsed.username is not None or parsed.password is not None:
-        raise SafetyError("url must not contain credentials")
-    if parsed.fragment:
-        raise SafetyError("url must not contain fragments")
-    return value
-
-
-def validate_doi(value: str) -> str:
-    reject_shell_metacharacters(value, "doi")
-    if not DOI_RE.match(value):
-        raise SafetyError("invalid DOI")
-    return value
-
-
-def validate_timestamp(value: str) -> str:
-    reject_shell_metacharacters(value, "timestamp")
-    if not TIMESTAMP_RE.match(value):
-        raise SafetyError("invalid timestamp")
-    return value
-
-
-def validate_slug(value: str) -> str:
-    reject_shell_metacharacters(value, "slug")
-    if not SLUG_RE.match(value):
-        raise SafetyError("invalid slug")
-    if ".." in value:
-        raise SafetyError("slug cannot contain path traversal")
-    return value
-
-
-def resolve_path(base: str, candidate: str) -> Path:
-    reject_shell_metacharacters(candidate, "path")
-    raw = Path(candidate)
-    for part in raw.parts:
-        if part.startswith("-"):
-            raise SafetyError("path contains a leading-dash segment")
-    base_path = Path(base).expanduser().resolve()
-    target = raw.expanduser()
-    if not target.is_absolute():
-        target = base_path / target
-    resolved = target.resolve(strict=False)
-    if base_path != resolved and base_path not in resolved.parents:
-        raise SafetyError(f"path escapes allowed base: {resolved}")
-    return resolved
-
-
-def sha256_file(path: str) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Spotlight shell-safety validation helper")
-    sub = parser.add_subparsers(dest="cmd", required=True)
-
-    p_url = sub.add_parser("validate-url")
-    p_url.add_argument("url")
-
-    p_doi = sub.add_parser("validate-doi")
-    p_doi.add_argument("doi")
-
-    p_ts = sub.add_parser("validate-timestamp")
-    p_ts.add_argument("timestamp")
-
-    p_slug = sub.add_parser("validate-slug")
-    p_slug.add_argument("slug")
-
-    p_path = sub.add_parser("resolve-path")
-    p_path.add_argument("--base", required=True)
-    p_path.add_argument("--path", required=True)
-
-    p_probe = sub.add_parser("destructive-probe")
-    p_probe.add_argument("--base", required=True)
-    p_probe.add_argument("--path", required=True)
-
-    p_hash = sub.add_parser("sha256")
-    p_hash.add_argument("path")
-
-    args = parser.parse_args(argv)
-    try:
-        if args.cmd == "validate-url":
-            print(validate_url(args.url))
-        elif args.cmd == "validate-doi":
-            print(validate_doi(args.doi))
-        elif args.cmd == "validate-timestamp":
-            print(validate_timestamp(args.timestamp))
-        elif args.cmd == "validate-slug":
-            print(validate_slug(args.slug))
-        elif args.cmd == "resolve-path":
-            print(resolve_path(args.base, args.path))
-        elif args.cmd == "destructive-probe":
-            resolved = resolve_path(args.base, args.path)
-            exists = resolved.exists()
-            kind = "missing"
-            if resolved.is_file():
-                kind = "file"
-            elif resolved.is_dir():
-                kind = "directory"
-            print(f"resolved={resolved}")
-            print(f"exists={str(exists).lower()}")
-            print(f"type={kind}")
-        elif args.cmd == "sha256":
-            print(sha256_file(args.path))
-        return 0
-    except (OSError, SafetyError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
-
-
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    raise SystemExit(_main(sys.argv[1:], "Spotlight shell-safety validation helper"))

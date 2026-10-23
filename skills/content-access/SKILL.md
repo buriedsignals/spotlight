@@ -41,13 +41,13 @@ search: query="{exact title}" site:academia.edu
 Unpaywall is optional. Before using it, confirm the integration is green:
 
 ```
-execute-shell: python3 integrations/preflight.py --json
+execute-shell: scripts/spotlight-python integrations/preflight.py --json
 ```
 
 Use Unpaywall only when `unpaywall` is green. It requires `$UNPAYWALL_EMAIL` in `.env`; the email is a fair-use identifier, not a notification target. If the integration is red or missing, skip to step 3.
 
 ```
-execute-shell: python3 scripts/spotlight_safe.py validate-doi "{DOI}"
+execute-shell: scripts/spotlight-python scripts/spotlight_safe.py validate-doi "{DOI}"
 execute-shell: curl --get "https://api.unpaywall.org/v2/{DOI}" --data-urlencode "email=$UNPAYWALL_EMAIL"
 ```
 
@@ -99,7 +99,7 @@ Check `results[].open_access.oa_url` and `oa_status` (gold/green/hybrid/bronze/c
 Check if an archived version is accessible before the paywall went up:
 
 ```
-execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+execute-shell: scripts/spotlight-python scripts/spotlight_safe.py validate-url "{URL}"
 execute-shell: curl --get "http://web.archive.org/cdx/search/cdx" \
   --data-urlencode "url={URL}" \
   --data-urlencode "output=json" \
@@ -108,7 +108,7 @@ execute-shell: curl --get "http://web.archive.org/cdx/search/cdx" \
 ```
 
 ```
-execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+execute-shell: scripts/spotlight-python scripts/spotlight_safe.py validate-url "{URL}"
 execute-shell: curl -sI "https://archive.ph/newest/{URL}" | grep -i '^location:'
 
 A Location pointing at a snapshot (no `/newest/` in it) is the hit; no Location or a `/newest/` Location means no snapshot or CAPTCHA rate-limiting — do not retry in a loop.
@@ -117,8 +117,8 @@ A Location pointing at a snapshot (no `/newest/` in it) is the hit; no Location 
 Early snapshots often predate paywall implementation. Archive.today caveat (2026): the FBI subpoenaed its registrar in Oct 2025 and Wikipedia stopped accepting it as a citation source in Feb 2026. Prefer Wayback snapshots for anything cited in `findings.json`; use archive.ph only as fallback and record that in `access_notes`. If a pre-paywall snapshot is found, retrieve it:
 
 ```
-execute-shell: python3 scripts/spotlight_safe.py validate-timestamp "{TIMESTAMP}"
-execute-shell: python3 scripts/spotlight_safe.py validate-url "{URL}"
+execute-shell: scripts/spotlight-python scripts/spotlight_safe.py validate-timestamp "{TIMESTAMP}"
+execute-shell: scripts/spotlight-python scripts/spotlight_safe.py validate-url "{URL}"
 fetch: url=https://web.archive.org/web/{TIMESTAMP}/{URL}, output_path={CASE_DIR}/research/archived/{filename}.md
 ```
 

@@ -1,0 +1,31 @@
+#!/bin/sh
+# Run Python with the Spotlight interpreter, the one that has Spotlight's
+# dependencies (Crawl4AI and the rest). Every skill step calls this instead
+# of a bare `python3`, which can be a system Python without them.
+#
+# Resolution, first match wins:
+#   1. $SPOTLIGHT_PYTHON, an absolute path to an executable interpreter;
+#   2. the checkout's own virtual environment, .venv/;
+#   3. python3 on PATH.
+# A set but unusable SPOTLIGHT_PYTHON is an error, never a silent fallback.
+set -eu
+
+if [ -n "${SPOTLIGHT_PYTHON:-}" ]; then
+	case "$SPOTLIGHT_PYTHON" in
+		/*|[A-Za-z]:[\\/]*) ;;
+		*) echo "spotlight-python: SPOTLIGHT_PYTHON must be an absolute path" >&2; exit 127 ;;
+	esac
+	if [ ! -x "$SPOTLIGHT_PYTHON" ]; then
+		echo "spotlight-python: SPOTLIGHT_PYTHON is not an executable file: $SPOTLIGHT_PYTHON" >&2
+		exit 127
+	fi
+	exec "$SPOTLIGHT_PYTHON" "$@"
+fi
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+for candidate in "$root/.venv/bin/python" "$root/.venv/Scripts/python.exe"; do
+	if [ -x "$candidate" ]; then
+		exec "$candidate" "$@"
+	fi
+done
+exec python3 "$@"

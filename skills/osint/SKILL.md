@@ -13,10 +13,10 @@ You are helping a journalist or investigator with Open Source Intelligence (OSIN
 Use the routing table below to match the user's query to the correct investigation type, then recommend tools. For deeper tool discovery, country-specific resources, or niche categories, query the **local tool index** (12,500 tools, offline, no entitlement):
 
 ```
-execute-shell("python3 scripts/osint-tools.py find \"<lead-derived keywords>\" [--category <cat>] [--limit 8]")
+execute-shell("scripts/spotlight-python scripts/osint-tools.py find \"<lead-derived keywords>\" [--category <cat>] [--limit 8]")
 ```
 
-Derive keywords from the lead (entity type + geography + task); `python3 scripts/osint-tools.py categories` lists the category enum. On subscription (entitled) deployments, OSINT Navigator is the first-pass alternative (see `references/cycle-integration.md`); local / open tier uses `osint-tools find` only.
+Derive keywords from the lead (entity type + geography + task); `scripts/spotlight-python scripts/osint-tools.py categories` lists the category enum. On subscription (entitled) deployments, OSINT Navigator is the first-pass alternative (see `references/cycle-integration.md`); local / open tier uses `osint-tools find` only.
 
 ## Routing Table
 
@@ -130,7 +130,7 @@ If the user needs financial investigation methodology, `invoke-skill("follow-the
 
 Say: "For financial investigation methodology, invoke the follow-the-money skill."
 
-## When to Use investigate
+## When to Use investigation-methodology
 
 If the user already knows their target and needs step-by-step technique guidance, `invoke-skill("investigation-methodology")`:
 

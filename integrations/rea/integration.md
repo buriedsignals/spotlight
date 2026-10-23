@@ -53,7 +53,7 @@ recorded URLs, but the capture itself stays case-confidential.
 Copy the artifact into the case directory first, then:
 
 ```bash
-python3 integrations/_runner.py rea path/to/request.json [--dry-run]
+scripts/spotlight-python integrations/_runner.py rea path/to/request.json [--dry-run]
 ```
 
 ```json

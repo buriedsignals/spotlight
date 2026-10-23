@@ -2,32 +2,38 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "schema_version": "1.0",
   "type": "object",
-  "required": ["schema_version", "project", "title", "date", "overview", "conclusions"],
+  "required": ["schema_version", "project", "title", "generated_at", "status", "summary", "findings"],
   "properties": {
     "schema_version": { "const": "1.0" },
-    "project": { "type": "string" },
-    "title": { "type": "string" },
-    "date": { "type": "string", "format": "date" },
+    "project": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "status": { "type": "string", "minLength": 1 },
     "cycles": { "type": "integer", "minimum": 1 },
-    "status": { "type": "string" },
-    "overview": { "type": "string" },
-    "scope": { "type": "string" },
-    "conclusions": { "type": "array", "items": { "type": "string" } },
-    "findings_summary": {
+    "verified_findings": { "type": "integer", "minimum": 0 },
+    "summary": { "type": "string", "minLength": 1 },
+    "key_conclusions": { "type": "array", "items": { "type": "string" } },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "methodology_summary": { "type": "string" },
+    "findings": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "claim", "confidence", "verdict"],
+        "required": ["id", "claim", "confidence", "fact_check_verdict"],
         "properties": {
-          "id": { "type": "string" },
-          "claim": { "type": "string" },
-          "confidence": { "enum": ["high", "medium", "low"] },
-          "verdict": { "enum": ["verified", "unverified", "disputed", "false"] },
-          "source_count": { "type": "integer" }
+          "id": { "type": "string", "minLength": 1 },
+          "claim": { "type": "string", "minLength": 1 },
+          "confidence": {
+            "enum": ["high", "medium", "low", "disputed"],
+            "description": "The finding's confidence; 'disputed' only in legacy findings contract 1.0 cases."
+          },
+          "fact_check_verdict": {
+            "enum": ["verified", "unverified", "disputed", "false", "not_checkable", "partially_verified", "mischaracterized"],
+            "description": "The case's fact-check verdict: not_checkable only under fact-check contract 1.1, partially_verified and mischaracterized only under legacy 1.0."
+          },
+          "source_count": { "type": "integer", "minimum": 0 }
         }
       }
-    },
-    "limitations": { "type": "array", "items": { "type": "string" } },
-    "methodology_summary": { "type": "string" }
+    }
   }
 }
