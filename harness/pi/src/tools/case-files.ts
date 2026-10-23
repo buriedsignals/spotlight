@@ -57,6 +57,27 @@ function inScope(allowed: string[] | undefined, name: string): boolean {
 	return allowed === undefined || allowed.some((entry) => entry.toLowerCase() === name.toLowerCase());
 }
 
+// A role's read denylist (`denyReads` in harness/composition.json) hides case
+// files from every file tool, the rest of the case staying readable. An entry
+// ending in "/" hides that folder and everything under it; "*" matches within
+// one path segment. Names compare case-insensitively.
+function denyPattern(entry: string): RegExp {
+	const folder = entry.endsWith('/');
+	const body = (folder ? entry.slice(0, -1) : entry)
+		.split('*')
+		.map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+		.join('[^/]*');
+	return new RegExp(folder ? `^${body}(?:/.*)?$` : `^${body}$`, 'i');
+}
+
+function readDenied(deny: string[] | undefined, name: string): boolean {
+	return deny !== undefined && deny.some((entry) => denyPattern(entry).test(name));
+}
+
+function mayRead(scope: CaseScope | undefined, name: string): boolean {
+	return inScope(scope?.reads, name) && !readDenied(scope?.denyReads, name);
+}
+
 function lstatOrUndefined(path: string): Stats | undefined {
 	try {
 		return lstatSync(path);
@@ -109,20 +130,20 @@ export function writeConfined(caseDir: string, root: string, path: string, conte
 	return caseRelative(caseDir, target);
 }
 
-// Inside the case and, for a narrowed role, one of its named files; or under
-// the checkout's schemas/.
-function readable(caseDir: string, path: string, reads: string[] | undefined): boolean {
+// Inside the case and, for a narrowed role, one of its named files and none it
+// is denied; or under the checkout's schemas/.
+function readable(caseDir: string, path: string, scope: CaseScope | undefined): boolean {
 	if (inside(SCHEMAS_DIR, path)) return true;
-	return inside(caseDir, path) && inScope(reads, caseRelative(caseDir, path));
+	return inside(caseDir, path) && mayRead(scope, caseRelative(caseDir, path));
 }
 
 // A read target is wherever the path really leads, which must be inside the case
 // (within the role's scope) or the checkout's schemas/.
-export function readTarget(caseDir: string, path: string, reads?: string[]): string {
+export function readTarget(caseDir: string, path: string, scope?: CaseScope): string {
 	const target = requested(caseDir, path);
 	// Refuse before looking: "not found" for an outside path would tell the model
 	// which files exist beyond the case or the scope.
-	if (!readable(caseDir, target, reads)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
+	if (!readable(caseDir, target, scope)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
 	let real: string;
 	try {
 		real = realpathSync(target);
@@ -130,7 +151,7 @@ export function readTarget(caseDir: string, path: string, reads?: string[]): str
 		if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`not found: ${path}`);
 		throw error;
 	}
-	if (!readable(caseDir, real, reads)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
+	if (!readable(caseDir, real, scope)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
 	return real;
 }
 
@@ -216,12 +237,12 @@ const grepParams = Type.Object(
 );
 
 // A folder inside the case, or one of the scope's files.
-function scopedFolderOrFile(caseDir: string, path: string, reads: string[]): string {
+function scopedFolderOrFile(caseDir: string, path: string, scope: CaseScope): string {
 	const target = requested(caseDir, path);
 	if (!inside(caseDir, target)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
 	const stats = lstatOrUndefined(target);
 	if (stats?.isDirectory()) return realpathSync(target);
-	return readTarget(caseDir, path, reads);
+	return readTarget(caseDir, path, scope);
 }
 
 function* caseFiles(caseDir: string, start: string): Generator<string> {
@@ -241,8 +262,9 @@ function* caseFiles(caseDir: string, start: string): Generator<string> {
 
 export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot' | 'scope'>): ToolDefinition[] {
 	const { caseDir, writeRoot } = context;
-	const reads = context.scope?.reads;
-	const writes = context.scope?.writes;
+	const scope = context.scope;
+	const reads = scope?.reads;
+	const writes = scope?.writes;
 	return [
 		{
 			name: 'read_file',
@@ -255,7 +277,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				if (input.json_pointer !== undefined && (input.offset || input.limit)) {
 					throw new ToolArgumentError('read_file: use either json_pointer or offset/limit');
 				}
-				const text = readFileSync(readTarget(caseDir, input.path, reads), 'utf8');
+				const text = readFileSync(readTarget(caseDir, input.path, scope), 'utf8');
 				let selected = text;
 				if (input.json_pointer !== undefined) {
 					selected = selectJsonPointer(text, input.json_pointer, input.path);
@@ -291,6 +313,10 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			async execute(_id, params) {
 				const input = checkedParams<{ path: string; old_text: string; new_text: string }>('edit_file', editParams, params);
 				const target = writeTarget(caseDir, writeRoot, input.path, writes);
+				// Editing reads the file, so a file hidden from this role is refused.
+				if (readDenied(scope?.denyReads, caseRelative(caseDir, target))) {
+					throw new FileRefused(`refused: ${input.path} is outside the case files this agent may read`);
+				}
 				let text: string;
 				try {
 					text = readFileSync(target, 'utf8');
@@ -319,7 +345,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				}
 				const matches = globSync(pattern, { cwd: caseDir })
 					.map((path) => path.split(sep).join('/'))
-					.filter((path) => inside(caseDir, resolve(caseDir, path)) && inScope(reads, path))
+					.filter((path) => inside(caseDir, resolve(caseDir, path)) && mayRead(scope, path))
 					.sort();
 				const shown = matches.slice(0, MAX_LIST);
 				const more = matches.length > MAX_LIST ? `\n[${matches.length - MAX_LIST} more not shown]` : '';
@@ -341,11 +367,11 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 					throw new Error(`grep_files: invalid regular expression: ${(error as Error).message}`);
 				}
 				// A narrowed role may name a folder; only its files in scope are searched.
-				const start = input.path ? (reads ? scopedFolderOrFile(caseDir, input.path, reads) : readTarget(caseDir, input.path)) : caseDir;
+				const start = input.path ? (reads ? scopedFolderOrFile(caseDir, input.path, scope) : readTarget(caseDir, input.path, scope)) : caseDir;
 				if (!inside(caseDir, start)) throw new FileRefused(`refused: ${input.path} is outside the case`);
 				const matches: string[] = [];
 				for (const file of caseFiles(caseDir, start)) {
-					if (!inScope(reads, caseRelative(caseDir, file))) continue;
+					if (!mayRead(scope, caseRelative(caseDir, file))) continue;
 					if (lstatSync(file).size > MAX_GREP_FILE_BYTES) continue;
 					const lines = sourceLines(readFileSync(file, 'utf8'));
 					for (let index = 0; index < lines.length && matches.length < MAX_MATCHES; index += 1) {
@@ -368,7 +394,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				const { paths } = checkedParams<{ paths: string[] }>('hash_files', hashParams, params);
 				return jsonResult(
 					paths.map((path) => {
-						const target = readTarget(caseDir, path, reads);
+						const target = readTarget(caseDir, path, scope);
 						if (!lstatSync(target).isFile()) throw new Error(`hash_files: ${path} is not a regular file`);
 						const bytes = readFileSync(target);
 						return { path: inside(caseDir, target) ? caseRelative(caseDir, target) : path, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };
