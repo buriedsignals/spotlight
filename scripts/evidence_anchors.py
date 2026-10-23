@@ -101,29 +101,65 @@ def json_pointer(document: Any, pointer: str) -> Any:
     return current
 
 
-def selected_source_text(path: Path, source_ref: dict[str, Any]) -> tuple[str | None, str | None]:
+def source_lines(path: Path) -> list[str]:
+    """The file's lines as `grep -n`, `sed -n` and the Pi read_file tool number them.
+
+    Only a line feed ends a line; a carriage return just before it is dropped
+    (CRLF files). Form feeds, vertical tabs, a lone carriage return and the
+    Unicode separators stay inside the line, so pdftotext output (a form feed
+    at every page break) keeps the line numbers an agent sees with grep.
+    """
+    with path.open(encoding="utf-8", errors="replace", newline="") as handle:
+        text = handle.read()
+    if text == "":
+        return []
+    lines = text.split("\n")
+    if lines[-1] == "":
+        lines.pop()
+    return [line[:-1] if line.endswith("\r") else line for line in lines]
+
+
+def legacy_source_lines(path: Path) -> list[str]:
+    """The numbering anchors used before ``source_lines``: Python's universal
+    newlines and ``str.splitlines()``, where a form feed, vertical tab, file or
+    group separator, NEL or Unicode line separator also ends a line."""
+    return path.read_text(errors="replace").splitlines()
+
+
+def selected_source_texts(path: Path, source_ref: dict[str, Any]) -> tuple[list[str], str | None]:
+    """Every text a source_ref may select: the ``source_lines`` selection
+    first, then, for a line range, the selection under the legacy numbering
+    when it differs. An anchor recorded before the numbering changed stays
+    valid as long as its text matches exactly what its own numbering selects;
+    no anchor is ever matched loosely."""
     pointer = source_ref.get("json_pointer")
     if isinstance(pointer, str):
         try:
             document = json.loads(path.read_text())
             value = json_pointer(document, pointer)
         except (json.JSONDecodeError, UnicodeDecodeError, OSError, ValueError) as exc:
-            return None, f"JSON pointer {pointer!r} in {path.name} {exc}"
+            return [], f"JSON pointer {pointer!r} in {path.name} {exc}"
         if isinstance(value, str):
-            return value, None
-        return json.dumps(value, ensure_ascii=False, sort_keys=True), None
+            return [value], None
+        return [json.dumps(value, ensure_ascii=False, sort_keys=True)], None
 
     start = source_ref.get("line_start")
     end = source_ref.get("line_end")
     if not isinstance(start, int) or not isinstance(end, int) or start < 1 or end < start:
-        return None, "source_ref needs a valid line_start/line_end or json_pointer"
+        return [], "source_ref needs a valid line_start/line_end or json_pointer"
     try:
-        lines = path.read_text(errors="replace").splitlines()
+        numberings = (source_lines(path), legacy_source_lines(path))
     except OSError as exc:
-        return None, f"cannot read {path.name}: {exc}"
-    if end > len(lines):
-        return None, f"source_ref lines {start}-{end} exceed {path.name} ({len(lines)} lines)"
-    return "\n".join(lines[start - 1:end]), None
+        return [], f"cannot read {path.name}: {exc}"
+    candidates: list[str] = []
+    for lines in numberings:
+        if end <= len(lines):
+            selected = "\n".join(lines[start - 1:end])
+            if selected not in candidates:
+                candidates.append(selected)
+    if not candidates:
+        return [], f"source_ref lines {start}-{end} exceed {path.name} ({len(numberings[0])} lines)"
+    return candidates, None
 
 
 def validate_source_ref(
@@ -141,10 +177,10 @@ def validate_source_ref(
     lead_failure = rlm_lead_failure(path)
     if lead_failure:
         return {path}, [lead_failure]
-    selected, error = selected_source_text(path, source_ref)
+    candidates, error = selected_source_texts(path, source_ref)
     if error:
         return {path}, [error]
     wanted = normalized(quote)
-    if wanted and wanted not in normalized(selected):
+    if wanted and not any(wanted in normalized(selected) for selected in candidates):
         return {path}, [f"exact quote is not present in the selected source_ref from {path.name}"]
     return {path}, []

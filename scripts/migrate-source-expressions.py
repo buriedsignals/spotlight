@@ -34,7 +34,7 @@ from evidence_anchors import (  # noqa: E402
     case_evidence_path,
     fallback_outstanding,
     rlm_lead_failure,
-    selected_source_text,
+    selected_source_texts,
     sha256_file,
 )
 from source_expression_contract import (  # noqa: E402
@@ -255,10 +255,10 @@ def extract_candidate(
     lead_failure = rlm_lead_failure(anchor_path)
     if lead_failure:
         return None, skip(entry_path, "invalid_source_ref", lead_failure, finding_id)
-    selected, selection_error = selected_source_text(anchor_path, source_ref)
+    candidates, selection_error = selected_source_texts(anchor_path, source_ref)
     if selection_error:
         return None, skip(entry_path, "invalid_source_ref", selection_error, finding_id)
-    if selected != quote:
+    if quote not in candidates:
         return None, skip(
             entry_path,
             "quote_not_exact_selected_text",

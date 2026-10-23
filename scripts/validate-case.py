@@ -41,7 +41,7 @@ from evidence_anchors import (
     fallback_outstanding,
     normalized,
     rlm_lead_failure,
-    selected_source_text,
+    selected_source_texts,
     sha256_file,
 )
 from source_expression_contract import (
@@ -68,6 +68,10 @@ ACCESS_METHODS = {"full_text", "open_access", "archive_copy", "abstract_only", "
 ACQUISITION_METHODS = set(
     json.loads((SCRIPT_DIR.parent / "schemas" / "evidence-bundle.schema.json").read_text(encoding="utf-8"))
     ["definitions"]["evidence_item"]["properties"]["acquisition_method"]["enum"]
+)
+BUNDLE_AUTHORS = set(
+    json.loads((SCRIPT_DIR.parent / "schemas" / "evidence-bundle.schema.json").read_text(encoding="utf-8"))
+    ["definitions"]["evidence_item"]["properties"]["created_by"]["enum"]
 )
 MISSING_SOURCE_CONFIDENCE_EFFECTS = {"none", "cap_medium", "cap_low", "human_verification_required"}
 HUMAN_REVIEW = {"unreviewed", "approved", "rejected"}
@@ -248,18 +252,24 @@ def expression_refs(evidence_rows: list[Any]) -> list[dict[str, Any]]:
 def validate_source_expressions(
     case_dir: Path,
     data: Any,
-    findings_data: dict[str, Any],
+    findings_data: dict[str, Any] | None,
     factcheck_data: dict[str, Any] | None,
     evidence_data: dict[str, Any] | None,
     enforce_positive_verdicts: bool = True,
 ) -> list[str]:
-    """Validate the full activated expression chain; never infer semantic truth."""
+    """Validate the full activated expression chain; never infer semantic truth.
+
+    ``findings_data`` is None before the investigator has written findings;
+    the passages are then checked on their own (there is nothing to link yet).
+    """
     if not isinstance(data, dict):
         return ["source-expressions.json: top-level must be an object"]
     errors: list[str] = []
     if data.get("schema_version") != "1.0":
         errors.append("source-expressions.json: schema_version must be 1.0")
-    if data.get("project") != findings_data.get("project"):
+    if not isinstance(findings_data, dict):
+        findings_data = {}
+    elif data.get("project") != findings_data.get("project"):
         errors.append("source-expressions.json: project must match findings.json")
     raw_findings = findings_data.get("findings", [])
     findings = {
@@ -324,10 +334,10 @@ def validate_source_expressions(
         if anchor_path is None:
             errors.append(f"{prefix}: anchor_ref does not resolve to a case-local file")
         else:
-            selected, selection_error = selected_source_text(anchor_path, anchor_ref)
+            candidates, selection_error = selected_source_texts(anchor_path, anchor_ref)
             if selection_error:
                 errors.append(f"{prefix}: {selection_error}")
-            elif selected != expression.get("text"):
+            elif expression.get("text") not in candidates:
                 errors.append(f"{prefix}: text does not exactly match the selected anchor")
             if sha256_file(anchor_path) != expression.get("anchor_sha256"):
                 errors.append(f"{prefix}: anchor_sha256 does not match anchor artifact")
@@ -1054,6 +1064,8 @@ def validate_evidence_bundle(data: dict[str, Any]) -> list[str]:
             errors.append(f"{prefix}.extraction_confidence: must be one of {sorted(FACT_CHECK_CONFIDENCES)}")
         if not isinstance(item.get("human_verification_required"), bool):
             errors.append(f"{prefix}.human_verification_required: must be boolean")
+        if "created_by" in item and item["created_by"] not in BUNDLE_AUTHORS:
+            errors.append(f"{prefix}.created_by: must be one of {sorted(BUNDLE_AUTHORS)}")
         if "sha256" in item and (not isinstance(item["sha256"], str) or not re.fullmatch(r"[A-Fa-f0-9]{64}", item["sha256"])):
             errors.append(f"{prefix}.sha256: must be 64 hex characters")
         if "claim_links" in item:
@@ -1301,6 +1313,16 @@ def validate_rlm_analysis(data: dict[str, Any]) -> list[str]:
     return errors
 
 
+def owner_tag(error: str) -> str:
+    """Tag the errors only the fact-checker can fix.
+
+    data/fact-check.json is the fact-checker's file, so every error in it
+    (including expression refs a changed claim or passage made stale) goes
+    to the fact-checker. Untagged errors follow the structural-correction path.
+    """
+    return "[fact-checker] " if error.startswith("fact-check.json") else ""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate a Spotlight case directory.")
     parser.add_argument("case_dir", help="Path to {CASE_DIR}/")
@@ -1369,8 +1391,12 @@ def main() -> int:
             contract_errors = validate_case_contract(contract_data)
             all_errors.extend(contract_errors)
     findings_version = findings_data.get("schema_version", "1.0") if isinstance(findings_data, dict) else "1.0"
-    activated = contract_data is not None and not contract_errors and findings_version == "1.1"
-    if contract_data is not None and not contract_errors and findings_version != "1.1":
+    contract_valid = contract_data is not None and not contract_errors
+    # A case activated before its first cycle has a contract and no findings
+    # yet: it is activated, and the only gap is the missing findings file.
+    awaiting_findings = contract_valid and findings_data is None
+    activated = contract_valid and (findings_version == "1.1" or awaiting_findings)
+    if contract_valid and not activated:
         all_errors.append("case-contract.json: valid 1.1 activation requires findings.json schema_version 1.1")
     if findings_version == "1.1" and not activated:
         all_errors.append("findings.json: schema_version 1.1 requires a valid data/case-contract.json")
@@ -1388,7 +1414,7 @@ def main() -> int:
                         f"fact-check.json.{container}[{index}]: activated cases use Batch 1.1 verdicts "
                         "(verified, unverified, disputed, false, not_checkable); a person must re-assess this one"
                     )
-        if contract_data.get("project") != findings_data.get("project"):
+        if not awaiting_findings and contract_data.get("project") != findings_data.get("project"):
             all_errors.append("case-contract.json: project must match findings.json")
         expressions_path = case_dir / "data" / "source-expressions.json"
         expressions_data, errs = load_json(expressions_path)
@@ -1479,7 +1505,15 @@ def main() -> int:
     if all_errors:
         print(f"\n{len(all_errors)} validation error(s) in {case_dir.name}:\n", file=sys.stderr)
         for err in all_errors:
-            print(f"  • {err}", file=sys.stderr)
+            print(f"  • {owner_tag(err)}{err}", file=sys.stderr)
+        if any(owner_tag(err) for err in all_errors):
+            print(
+                "\n[fact-checker] errors are in data/fact-check.json, which only the fact-checker "
+                "writes; a stale expression ref means the claim or passage changed after that "
+                "fact-check, and the next fact-check replaces it. Route them to the fact-checker, "
+                "never to the investigator.",
+                file=sys.stderr,
+            )
         print(file=sys.stderr)
         return 1
 

@@ -263,9 +263,13 @@ def write(case: Path, proposal: dict[str, Any], actor: str, cycle: int) -> dict[
         current = _load(case / TARGET)
         doc = merge(case, current, proposal, actor, cycle)
         findings = _load(case / "data" / "findings.json", {})
-        fact_check = _load(case / "data" / "fact-check.json")
         bundle = _load(case / "data" / "evidence-bundle.json")
-        errors = VALIDATOR.validate_source_expressions(case, doc, findings, fact_check, bundle, enforce_positive_verdicts=False)
+        # The passages are checked, not the fact-check citing them: when a
+        # claim changes between cycles, the previous fact-check's refs go
+        # stale and the next fact-check replaces them, so they must not block
+        # the investigator's passages (validate-case reports them as the
+        # fact-checker's).
+        errors = VALIDATOR.validate_source_expressions(case, doc, findings, None, bundle, enforce_positive_verdicts=False)
         if errors:
             raise WriteError("the merged passages are not valid: " + "; ".join(errors[:8]))
         outputs = {TARGET: canonical_json_bytes(doc) + b"\n"}

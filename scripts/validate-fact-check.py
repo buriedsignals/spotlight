@@ -2,22 +2,31 @@
 """Validate fact-check evidence through language-neutral, case-local anchors.
 
 The validator deliberately does not tokenize, translate, or semantically grade prose.
+For every finding, whatever its verdict, it proves that the evidence records
+behind it hold together: every ``evidence_bundle_refs`` item resolves, links
+back to the finding with the claim copied verbatim and a known support type,
+and points at an intact case-local artifact. An honest record of a failed or
+pending acquisition (a fallback that failed, a human-verification flag, an
+insufficient or contradicting link) passes; lowering a verdict never hides a
+broken record.
+
 For every positive verdict (``verified``; legacy 1.0 files also
-``partially_verified``) it proves that:
+``partially_verified``) it also proves that:
 
 * the fact-check claim exactly matches its linked finding after Unicode/whitespace
   normalization;
 * at least one fact-check evidence item resolves to a file inside the case;
 * declared line ranges, JSON Pointers, exact quotes, and SHA-256 values are valid;
-* every evidence-bundle reference resolves to an intact case-local artifact; and
-* no referenced bundle item is flagged for human verification or has a source
-  fallback that did not succeed.
+* every evidence-bundle item the anchors rely on (cited by id, or owning a
+  cited file) can anchor it: not flagged for human verification, any source
+  fallback succeeded, and, when cited by id, linked to the finding as direct or
+  indirect support. Other items of the finding may stay on record as they are.
 
-Evidence-bundle records belong to the investigator, so each failure names its
-owner: ``investigator`` for the bundle record (claim links, missing-source gate,
-artifact paths and hashes), ``fact-checker`` for the fact-check's own anchors.
-The investigator-owned claim links are also checked by ``validate-case.py``
-whatever the verdict, so downgrading a verdict cannot hide a broken link.
+Each failure names its owner. A bundle item belongs to the agent that acquired
+it (``created_by``; the investigator unless it says ``fact-checker``), so its
+record failures go to that agent. The fact-check's own anchors, and the choice
+to rely on an item that cannot anchor the verdict, are the fact-checker's: it
+cites another anchor or lowers the verdict; the record is never rewritten to fit.
 
 RLM/E4B extraction may supply ``source_ref`` locations, but the underlying stored
 scrape or JSON value is the anchor. RLM prose is never treated as verified evidence.
@@ -52,9 +61,8 @@ from evidence_anchors import (
 
 from verdicts import allowed_verdicts, fact_check_version, positive_verdicts
 ARTIFACT_PATH_KEYS = ("raw_path", "downloaded_document_path", "screenshot_path", "path")
-# Every failure validate_bundle_item reports starts with this; it concerns the
-# investigator's record, not the fact-checker's anchor.
-BUNDLE_RECORD_FAILURE = "evidence bundle "
+SUPPORT_TYPES = {"direct", "indirect", "inferred", "contradicted", "insufficient"}
+
 def load_object(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text())
@@ -133,14 +141,29 @@ def bundle_finding_ids(item: dict[str, Any]) -> set[str]:
     return ids
 
 
-def validate_bundle_item(
+def bundle_owner(item: dict[str, Any]) -> str:
+    """The agent that acquired an evidence-bundle item and alone may correct it."""
+    return "fact-checker" if item.get("created_by") == "fact-checker" else "investigator"
+
+
+def bundle_record_failures(
     case_dir: Path,
     item: dict[str, Any],
     finding_id: str,
     finding_claim: str,
     *,
     canonical: bool,
+    require_link: bool = True,
 ) -> tuple[set[Path], list[str]]:
+    """Integrity of one bundle item as a record of what was acquired for a finding.
+
+    Checked whatever the verdicts are. An honest record of a failed or
+    pending acquisition passes: a failed fallback, a contradicting or
+    insufficient link, or a human-verification flag is accurate history, not
+    a defect. What fails is a record that does not hold together: no link
+    back to the finding, a claim link that does not copy the claim, a
+    malformed gate, or an artifact path or hash that does not resolve.
+    """
     evidence_id = normalized(item.get("id")) or "?"
     failures: list[str] = []
     claim_links = item.get("claim_links")
@@ -151,52 +174,35 @@ def validate_bundle_item(
             for link in claim_links or []
             if isinstance(link, dict) and normalized(link.get("finding_id"))
         } if isinstance(claim_links, list) else set()
-    if not linked:
+    if not require_link:
+        pass
+    elif not linked:
         failures.append(f"evidence bundle {evidence_id} has no explicit finding link")
     elif finding_id not in linked:
         failures.append(f"evidence bundle {evidence_id} is not linked to finding {finding_id}")
     if canonical and not isinstance(claim_links, list):
         failures.append(f"evidence bundle {evidence_id} needs structured claim_links")
-    if isinstance(claim_links, list):
-        matching_links = [
-            link for link in claim_links
-            if isinstance(link, dict) and normalized(link.get("finding_id")) == finding_id
-        ]
-        if canonical and not matching_links:
+    for link in finding_links(item, finding_id):
+        if normalized(link.get("claim_text")) != normalized(finding_claim):
             failures.append(
-                f"evidence bundle {evidence_id} has no structured link to finding {finding_id}"
+                f"evidence bundle {evidence_id} claim link does not exactly match finding {finding_id}"
             )
-        for link in matching_links:
-            if normalized(link.get("claim_text")) != normalized(finding_claim):
-                failures.append(
-                    f"evidence bundle {evidence_id} claim link does not exactly match finding {finding_id}"
-                )
-            if link.get("support_type") not in {"direct", "indirect"}:
-                failures.append(
-                    f"evidence bundle {evidence_id} links finding {finding_id} as "
-                    f"{link.get('support_type')!r}, not positive evidence"
-                )
-    if canonical and item.get("human_verification_required") is not False:
-        failures.append(
-            f"evidence bundle {evidence_id} must set human_verification_required to false"
-        )
-    elif item.get("human_verification_required") is True:
-        failures.append(f"evidence bundle {evidence_id} requires human verification")
+        if link.get("support_type") not in SUPPORT_TYPES:
+            failures.append(
+                f"evidence bundle {evidence_id} links finding {finding_id} with support_type "
+                f"{link.get('support_type')!r}, not one of {sorted(SUPPORT_TYPES)}"
+            )
+    if canonical and not isinstance(item.get("human_verification_required"), bool):
+        failures.append(f"evidence bundle {evidence_id} needs boolean human_verification_required")
     gate = item.get("missing_source_gate")
     if canonical and isinstance(gate, bool):
         failures.append(f"evidence bundle {evidence_id} has malformed missing_source_gate")
     if gate is not None and not isinstance(gate, (dict, bool)):
         failures.append(f"evidence bundle {evidence_id} has malformed missing_source_gate")
-    if isinstance(gate, dict):
-        if not isinstance(gate.get("fallback_required"), bool):
-            failures.append(
-                f"evidence bundle {evidence_id} missing_source_gate needs boolean fallback_required"
-            )
-        elif fallback_outstanding(gate):
-            failures.append(
-                f"evidence bundle {evidence_id} still requires a source fallback "
-                "(set fallback_outcome to succeeded only when the fallback returned the source)"
-            )
+    if isinstance(gate, dict) and not isinstance(gate.get("fallback_required"), bool):
+        failures.append(
+            f"evidence bundle {evidence_id} missing_source_gate needs boolean fallback_required"
+        )
 
     declared = [item.get(key) for key in ARTIFACT_PATH_KEYS if normalized(item.get(key))]
     if not declared:
@@ -225,6 +231,71 @@ def validate_bundle_item(
     return paths, failures
 
 
+def finding_links(item: dict[str, Any], finding_id: str) -> list[dict[str, Any]]:
+    links = item.get("claim_links")
+    return [
+        link for link in links if isinstance(link, dict) and normalized(link.get("finding_id")) == finding_id
+    ] if isinstance(links, list) else []
+
+
+def source_ineligibility(item: dict[str, Any]) -> list[str]:
+    """Why the source behind a bundle item cannot anchor a positive verdict."""
+    reasons: list[str] = []
+    if item.get("human_verification_required") is not False:
+        reasons.append("is flagged for human verification")
+    if fallback_outstanding(item.get("missing_source_gate")):
+        reasons.append("records a source fallback that did not succeed")
+    return reasons
+
+
+def support_failures(item: dict[str, Any], finding_id: str, verdict: str) -> list[str]:
+    """Why a bundle item the fact-check cites by id cannot anchor this verdict.
+
+    These are the fact-checker's to resolve: cite another anchor or lower the
+    verdict. The bundle record itself may be accurate, so the reason never
+    asks for it to be changed.
+    """
+    evidence_id = normalized(item.get("id")) or "?"
+    reasons = source_ineligibility(item)
+    links = finding_links(item, finding_id)
+    if not links:
+        reasons.append(f"is not linked to finding {finding_id}")
+    elif not any(link.get("support_type") in {"direct", "indirect"} for link in links):
+        reasons.append(f"does not link finding {finding_id} as direct or indirect support")
+    return [
+        f"cites evidence bundle {evidence_id}, which {reason}; it cannot anchor a {verdict} "
+        "verdict — cite another anchor or lower the verdict"
+        for reason in reasons
+    ]
+
+
+def items_owning(case_dir: Path, bundles: dict[str, dict[str, Any]], paths: set[Path]) -> list[tuple[dict[str, Any], bool]]:
+    """Bundle items whose artifact (or a derivative of it) is one of ``paths``.
+
+    The flag is True when the path is a text derivative flagged for human
+    verification.
+    """
+    owners: list[tuple[dict[str, Any], bool]] = []
+    for item in bundles.values():
+        owned = {
+            path for key in ARTIFACT_PATH_KEYS
+            if (path := case_evidence_path(case_dir, item.get(key))) is not None
+        }
+        flagged = False
+        derivatives = item.get("text_derivatives")
+        for derivative in derivatives if isinstance(derivatives, list) else []:
+            if not isinstance(derivative, dict):
+                continue
+            path = case_evidence_path(case_dir, derivative.get("path"))
+            if path is not None:
+                owned.add(path)
+                if path in paths and derivative.get("human_verification_required") is True:
+                    flagged = True
+        if owned & paths:
+            owners.append((item, flagged))
+    return owners
+
+
 def validate_evidence_entry(
     case_dir: Path,
     entry: dict[str, Any],
@@ -234,8 +305,14 @@ def validate_evidence_entry(
     *,
     canonical_bundle: bool,
     verdict: str,
-) -> tuple[set[Path], list[str]]:
+) -> tuple[set[Path], list[str], dict[str, list[str]]]:
+    """Check one evidence_for anchor of a positive verdict.
+
+    Returns the anchored paths, the fact-checker's failures, and failures in
+    the bundle records the anchor cites, keyed by the agent that owns them.
+    """
     failures: list[str] = []
+    records: dict[str, list[str]] = {}
     paths: set[Path] = set()
     local: Path | None = None
 
@@ -272,15 +349,30 @@ def validate_evidence_entry(
                 "or cite its case-local artifact with local_file/source_ref"
             )
         else:
-            bundle_paths, bundle_failures = validate_bundle_item(
-                case_dir,
-                bundle,
-                finding_id,
-                finding_claim,
-                canonical=canonical_bundle,
+            # Citing an item that is not linked to this finding is the
+            # fact-checker's choice (support_failures reports it), not a
+            # defect in the item's record.
+            bundle_paths, record = bundle_record_failures(
+                case_dir, bundle, finding_id, finding_claim, canonical=True, require_link=False,
             )
             paths.update(bundle_paths)
-            failures.extend(bundle_failures)
+            records.setdefault(bundle_owner(bundle), []).extend(record)
+            failures.extend(support_failures(bundle, finding_id, verdict))
+
+    # An anchor citing a stored file by path relies on the source the bundle
+    # recorded for that file, so that source must be able to anchor a
+    # positive verdict too.
+    for item, flagged_derivative in items_owning(case_dir, bundles, paths):
+        evidence_id = normalized(item.get("id")) or "?"
+        # An item cited by id already had its source checked above.
+        reasons = [] if evidence_id == bundle_id else source_ineligibility(item)
+        if flagged_derivative:
+            reasons.append("has a text derivative flagged for human verification")
+        failures.extend(
+            f"relies on a file of evidence bundle {evidence_id}, which {reason}; it cannot anchor a "
+            f"{verdict} verdict — cite another anchor or lower the verdict"
+            for reason in reasons
+        )
 
     quote = normalized(entry.get("quote"))
     if quote and "source_ref" not in entry:
@@ -306,7 +398,7 @@ def validate_evidence_entry(
             failures.append(
                 f"access_method must be one of {sorted(allowed)} for a {verdict} anchor"
             )
-    return paths, failures
+    return paths, failures, records
 
 
 def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
@@ -379,6 +471,42 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
     anchored = positive_verdicts(version)
     results: list[dict[str, Any]] = []
     failed = 0
+
+    # The evidence records behind every finding are checked whatever the
+    # verdicts are, so lowering a verdict cannot hide a broken record.
+    if bundle_error and any(f.get("evidence_bundle_refs") for f in findings.values()):
+        bundle_index_failures = [bundle_error, *bundle_index_failures]
+    if bundle_index_failures:
+        failed += 1
+        results.append({"id": "evidence-bundle", "ok": False, "owner": "investigator",
+                        "reason": "; ".join(bundle_index_failures)})
+    for finding_id, finding in findings.items():
+        records: dict[str, list[str]] = {}
+        for source in finding.get("sources", []) if isinstance(finding.get("sources"), list) else []:
+            if not isinstance(source, dict) or not normalized(source.get("local_file")):
+                continue
+            if case_evidence_path(case_dir, source.get("local_file")) is None:
+                records.setdefault("investigator", []).append(
+                    f"finding source {source.get('local_file')!r} does not resolve to a case-local file"
+                )
+        refs = finding.get("evidence_bundle_refs")
+        for evidence_id in refs if isinstance(refs, list) else []:
+            normalized_id = normalized(evidence_id)
+            item = bundles.get(normalized_id)
+            if item is None:
+                records.setdefault("investigator", []).append(
+                    f"evidence bundle ref {normalized_id!r} does not resolve")
+                continue
+            _, item_failures = bundle_record_failures(
+                case_dir, item, finding_id, normalized(finding.get("claim")), canonical=canonical_bundle,
+            )
+            records.setdefault(bundle_owner(item), []).extend(item_failures)
+        for owner, reasons in records.items():
+            if reasons:
+                failed += 1
+                results.append({"id": f"record:{finding_id}", "ok": False, "owner": owner,
+                                "reason": "; ".join(reasons), "claim": finding.get("claim")})
+
     for check in checks:
         check_id = check.get("id", "?")
         finding_id = normalized(check.get("finding_id"))
@@ -405,38 +533,9 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
             continue
 
         assert finding is not None
-        # Failures in the investigator's evidence record, reported apart so
-        # they go to the investigator, the only agent that can correct them.
-        record_failures: list[str] = []
-        if bundle_error and finding.get("evidence_bundle_refs"):
-            record_failures.append(bundle_error)
-        record_failures.extend(bundle_index_failures)
-
-        # All declared finding source paths must be real, but they do not satisfy the
-        # independent fact-check anchor on their own.
-        for source in finding.get("sources", []):
-            if not isinstance(source, dict) or not normalized(source.get("local_file")):
-                continue
-            if case_evidence_path(case_dir, source.get("local_file")) is None:
-                record_failures.append(
-                    f"finding source {source.get('local_file')!r} does not resolve to a case-local file"
-                )
-
-        for evidence_id in finding.get("evidence_bundle_refs", []):
-            normalized_id = normalized(evidence_id)
-            item = bundles.get(normalized_id)
-            if item is None:
-                record_failures.append(f"evidence bundle ref {normalized_id!r} does not resolve")
-                continue
-            _, item_failures = validate_bundle_item(
-                case_dir,
-                item,
-                finding_id,
-                normalized(finding.get("claim")),
-                canonical=canonical_bundle,
-            )
-            record_failures.extend(item_failures)
-
+        # Failures in the bundle records this verdict cites, by the agent
+        # that acquired them: only that agent can correct its record.
+        record_failures: dict[str, list[str]] = {}
         evidence_for = check.get("evidence_for")
         if not isinstance(evidence_for, list):
             evidence_for = []
@@ -445,7 +544,7 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
             if not isinstance(entry, dict):
                 failures.append(f"evidence_for[{index}] must be an object")
                 continue
-            entry_paths, entry_failures = validate_evidence_entry(
+            entry_paths, entry_failures, entry_records = validate_evidence_entry(
                 case_dir,
                 entry,
                 finding_id,
@@ -455,16 +554,20 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
                 verdict=status,
             )
             fact_check_paths.update(entry_paths)
-            for reason in entry_failures:
-                owned = record_failures if reason.startswith(BUNDLE_RECORD_FAILURE) else failures
-                owned.append(f"evidence_for[{index}]: {reason}")
+            failures.extend(f"evidence_for[{index}]: {reason}" for reason in entry_failures)
+            for owner, reasons in entry_records.items():
+                record_failures.setdefault(owner, []).extend(
+                    f"evidence_for[{index}]: {reason}" for reason in reasons)
         if not fact_check_paths:
             failures.append(
                 "verified verdict has no case-local fact-check evidence anchor; add local_file, "
                 "source_ref, or evidence_bundle_id to evidence_for"
             )
-
-        if not failures and not record_failures:
+        by_owner = {
+            "investigator": record_failures.get("investigator", []),
+            "fact-checker": failures + record_failures.get("fact-checker", []),
+        }
+        if not any(by_owner.values()):
             results.append({
                 "id": check_id,
                 "ok": True,
@@ -473,7 +576,7 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
             })
             continue
         failed += 1
-        for owner, reasons in (("investigator", record_failures), ("fact-checker", failures)):
+        for owner, reasons in by_owner.items():
             if reasons:
                 results.append({
                     "id": check_id,

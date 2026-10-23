@@ -27,6 +27,10 @@
       ],
       "properties": {
         "id": { "type": "string" },
+        "created_by": {
+          "enum": ["investigator", "fact-checker"],
+          "description": "The agent that acquired this item and alone may correct it. Absent means investigator. The fact-checker appends its own items for sources it acquires independently and never edits an investigator item."
+        },
         "query_or_task": { "type": "string" },
         "acquisition_method": { "enum": ["dev_browser", "crawl4ai", "scrapling", "firecrawl", "browse", "browser_harness", "browser_use", "manual", "api", "other"] },
         "source_url": { "type": "string" },

@@ -360,11 +360,20 @@ Create or update `{CASE_DIR}/data/evidence-bundle.json` during every investigati
   "succeeded"` lets the item support a positive verdict.
 
 Link each finding to relevant evidence bundle items with `evidence_bundle_refs`.
-The bundle is yours: the fact-checker cannot change it. When a validator names
-an `[investigator]` evidence failure you are re-spawned in `MODE: EVIDENCE
-CORRECTION`; correct only the named bundle records (claim links, missing-source
-gate, artifact paths and hashes) to match what you actually acquired, and do
-not change findings or verdicts.
+Keep failed and pending acquisitions on record as they happened: a positive
+verdict needs only the items its anchors rely on to be usable, so an honest
+failed fallback, human-verification flag or `insufficient` link on another item
+does not block it. Every item a finding references must still link back to that
+finding with its claim copied verbatim and point at an intact artifact,
+whatever the verdicts are.
+
+The items you acquire are yours. The fact-checker appends its own items
+(`created_by: fact-checker`) for sources it acquires independently and never
+edits yours. When a validator names an `[investigator]` evidence failure you are
+re-spawned in `MODE: EVIDENCE CORRECTION`; correct only the named bundle records
+(claim links, missing-source gate, artifact paths and hashes) to match what you
+actually acquired, and do not change findings or verdicts. Never record an
+outcome or flag you did not observe to make a check pass.
 
 ### Source Expressions (opt-in pilot and activated cases)
 

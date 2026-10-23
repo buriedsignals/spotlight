@@ -138,8 +138,15 @@ expressions beside them.
   contradiction evidence on the corresponding `evidence_against` item.
 - Reuse an expression across findings only when the same passage actually bears
   on each finding. A claim depending on several passages keeps several refs.
-- Keep a non-text original and its hash in `evidence-bundle.json`; store its
-  OCR, transcript, caption, or extraction as a separately hashed
+- A passage needs an evidence-bundle item for its stored source. For a source
+  you acquired yourself, append your own item to `evidence-bundle.json` with
+  `created_by: fact-checker` (same fields as the investigator's items: path,
+  `sha256`, `claim_links` with the claim copied verbatim, missing-source gate,
+  `human_verification_required`) and anchor the passage to it. Never edit,
+  remove or re-link an investigator item; its record is the investigator's.
+  Validator failures in your own items come back to you.
+- Keep a non-text original and its hash on that item; store its OCR,
+  transcript, caption, or extraction as a separately hashed
   `text_derivatives[]` item and anchor the expression to that derivative.
 - Keep translations separate from the original-language expression. A
   translation uses `derivative_type: translation`, points to the original with
@@ -366,7 +373,9 @@ Use the same schema as the investigator (see `skills/monitoring/references/recom
 ## File Locations
 
 - Reads from: `{CASE_DIR}/data/findings.json`
-- Reads from: `{CASE_DIR}/data/evidence-bundle.json` when present
+- Reads from: `{CASE_DIR}/data/evidence-bundle.json` when present; appends
+  only its own items (`created_by: fact-checker`) and never edits an
+  investigator item
 - Writes to: `{CASE_DIR}/data/fact-check.json`
 - Reads `{CASE_DIR}/data/source-expressions.json` and adds passages only
   through `scripts/write-source-expressions.py`, in `pilot` or `activated`
