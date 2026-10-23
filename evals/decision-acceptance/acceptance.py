@@ -86,7 +86,7 @@ SWEEP = (0.5, 0.6, 0.7, 0.8, 0.9)
 # both orders agreed on, "N1"/"S1" for the rules, or "clue:<group>" on the page.
 CATCH = {
     "weak_source_chain": {"q3_source=secondary", "q3_source=interested_party", "q3_source=user_generated",
-                          "q3_source=unclear", "q4_assertion=not_found", "q6_fidelity=unsupported", "S1"},
+                          "q3_source=unclear", "q6_fidelity=unsupported", "S1"},
     "summary_wider": {"q6_fidelity=widens", "q6_fidelity=contradicts", "q6_fidelity=unsupported", "N1"},
     "inference_as_fact": {"q4_assertion=interpretation", "q6_fidelity=widens", "q6_fidelity=unsupported"},
     "conflicting_values": {"q6_fidelity=contradicts", "c1_premise=contradicts", "clue:conflict"},
