@@ -105,13 +105,15 @@ class CaseSearchChecks(unittest.TestCase):
         # Harmless-looking aliases of what D9 hides.
         (self.case / "research" / "lead-notes.md").symlink_to(Path("..") / "data" / "leads.json")
         (self.case / "research" / "capture-copy.md").symlink_to(Path("swarm") / "web" / "sources" / "s1.md")
+        (self.case / "data" / "leads.json").write_text("[]")
+        os.link(self.case / "data" / "leads.json", self.case / "research" / "leads-copy.md")
         hostile = [
             "data/leads.json", "data/leads.jsonl", "data/clues.json", "data/research-triage.json", "data/findings.json",
             "data/orchestration.json", "data/review-nonces.json", "data/investigation_gate-review.json",
             "research/gate-receipt.json", "research/swarm/web/sources/s1.md", "/etc/passwd", "../other/research/x.md",
             "research/../../outside.md", "research//x.md", "research/./x.md", "C:/Users/x.md", "research\\..\\x.md",
             "research/escape.md", "research/lead-notes.md", "research/capture-copy.md",
-            "research/missing.md", "research/folder.md",
+            "research/missing.md", "research/folder.md", "research/leads-copy.md",
         ]
         passages = [{"path": path, "chunk": 0, "text": f"Hidden text from {path}", "score": 50} for path in hostile]
         passages.append({"path": "research/notes.md", "chunk": 0, "text": "The full list is in data/clues.json and research/swarm/web.", "score": 40})

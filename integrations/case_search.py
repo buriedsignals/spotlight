@@ -42,6 +42,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ._cli import _kill_tree
 from ._credentials import ConfigPathError, config_path
 from ._engine import bsig_path
 
@@ -183,12 +184,10 @@ _running: subprocess.Popen[bytes] | None = None
 
 
 def _stop(proc: subprocess.Popen[bytes]) -> None:
+    # The whole tree: on Windows a child Engine started would otherwise live on.
     try:
-        if os.name == "posix":
-            os.killpg(proc.pid, signal.SIGKILL)
-        else:
-            proc.kill()
-    except (ProcessLookupError, PermissionError, OSError):
+        _kill_tree(proc)
+    except OSError:
         pass
 
 
@@ -280,15 +279,17 @@ def _research_file(file: str) -> bool:
 def _case_file(case: Path, file: str) -> str | None:
     """The real case-relative path of ``file`` when both it and the file a
     symlink resolves to are plain research files inside the case, and that
-    file exists as a regular file."""
+    file exists as a regular file with no other name: a hard link could alias
+    a file D9 hides, which no path check sees."""
     if not _research_file(file):
         return None
     try:
         target = (case / file).resolve(strict=False)
         real = target.relative_to(case).as_posix()
+        plain = target.is_file() and target.stat().st_nlink == 1
     except (OSError, ValueError):
         return None
-    return real if _research_file(real) and target.is_file() else None
+    return real if plain and _research_file(real) else None
 
 
 def _passages(case: Path, result: dict[str, Any], rules: tuple[list[re.Pattern[str]], list[re.Pattern[str]]] | None) -> list[dict[str, Any]]:
