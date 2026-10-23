@@ -166,11 +166,17 @@ export class EditorialClient {
 		return value;
 	}
 
+	// Every error text the client reports passes the same sanitizer: it ends
+	// up in logs, lane results and case files.
+	#said(text: string): string {
+		return this.sanitize(text) as string;
+	}
+
 	// A failed request or an unreadable answer stops the case; the caller's own
 	// cancellation stays a cancellation and stops only that call.
 	#unreachable(error: unknown, signal?: AbortSignal): unknown {
 		if (signal?.aborted) return error;
-		return new EditorialError(`the Editorial MCP could not be reached: ${this.#clean((error as Error).message)}`);
+		return new EditorialError(`the Editorial MCP could not be reached: ${this.#said((error as Error).message)}`);
 	}
 
 	async #post(message: Record<string, unknown>, signal?: AbortSignal): Promise<{ status: number; body: string; type: string; session?: string; sent?: string }> {
@@ -232,7 +238,7 @@ export class EditorialClient {
 			return this.#request(method, params, signal, true);
 		}
 		if (answer.status < 200 || answer.status >= 300) {
-			throw new EditorialError(`the Editorial MCP answered HTTP ${answer.status}: ${this.#clean(answer.body.slice(0, 500))}`);
+			throw new EditorialError(`the Editorial MCP answered HTTP ${answer.status}: ${this.#said(answer.body.slice(0, 500))}`);
 		}
 		if (method === 'initialize' && answer.session) this.#session = answer.session;
 		let message: JsonRpcResponse | undefined;
@@ -250,7 +256,7 @@ export class EditorialClient {
 		if (!message || (message.result === undefined && message.error === undefined)) {
 			throw new EditorialError(`the Editorial MCP gave no readable answer to ${method}`);
 		}
-		if (message.error) throw new EditorialError(`the Editorial MCP refused ${method}: ${this.#clean(String(message.error.message ?? message.error.code))}`);
+		if (message.error) throw new EditorialError(`the Editorial MCP refused ${method}: ${this.#said(String(message.error.message ?? message.error.code))}`);
 		return message.result;
 	}
 
@@ -294,7 +300,7 @@ export class EditorialClient {
 		// Error text reaches the model: no address in it, since one may be a
 		// review page's capability.
 		if (result?.isError) {
-			throw new EditorialToolError(`${tool}: ${this.#clean(text || 'the Editorial MCP reported an error').replace(/\bhttps?:\/\/\S+/gi, '[address removed]')}`);
+			throw new EditorialToolError(`${tool}: ${this.#said(text || 'the Editorial MCP reported an error').replace(/\bhttps?:\/\/\S+/gi, '[address removed]')}`);
 		}
 		const answer = (value: unknown) => this.sanitize(value, { keepReview: tool === 'submit_case_review' }) as Record<string, unknown>;
 		if (result?.structuredContent && typeof result.structuredContent === 'object' && !Array.isArray(result.structuredContent)) {

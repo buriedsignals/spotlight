@@ -665,6 +665,13 @@ test('newsroom edition: register_case runs once per case, and a resumed chat reu
 	assert.deepEqual(editorial.callsOf('register_case'), [{ title: 'Acme payments', custody_mode: 'hosted', client_case_id: 'case-a' }]);
 	const stored = JSON.parse(await readFile(join(space.casesRoot, 'case-a', 'data', 'editorial-case.json'), 'utf8')) as { case_ref: string };
 	assert.equal(stored.case_ref, 'nr-case-1');
+
+	// The same case started as a solo case would split custody: refused.
+	const solo = launch(t, baseEnv(space, fake.baseURL));
+	solo.process.stdin.end();
+	assert.equal((await solo.exited).code, 2);
+	assert.match(solo.stderr(), /cannot start: this case is registered with a newsroom/);
+	assert.deepEqual(solo.lines, []);
 });
 
 test('newsroom edition: prior knowledge and decision checks go to the Editorial MCP; no query_vault or local decision check runs, and no pi process sees the token', async (t) => {

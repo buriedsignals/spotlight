@@ -5,10 +5,11 @@
 // chat down in order, SIGTERM is the fallback, and no pi child outlives it.
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ConfigError, RouteRefused, checkNewsroomInstall, checkRouteSecrets, childEnv, piSettings, readConfig, routeFor, secretValues } from './config.ts';
 import {
+	CASE_REFERENCE_FILE,
 	EditorialCredentialError,
 	EditorialToolError,
 	KNOWLEDGE_TOOLS,
@@ -460,7 +461,16 @@ function main(): void {
 	const discarded = discardIncompleteLanes(config.caseDir);
 	if (discarded.length > 0) log(`discarded ${discarded.length} unfinished research lane(s); they will rerun`);
 	const harness: Harness = { config, active, composition, lock, log, redact, children: new Set(), editorial: editorialClient(config, process.env, secrets) };
-	if (!harness.editorial) return start(harness);
+	if (!harness.editorial) {
+		// A case the newsroom holds (registered, or a submission recorded) is
+		// never also run as a solo case: that would split its custody.
+		if ([CASE_REFERENCE_FILE, 'data/newsroom-submission.json'].some((path) => existsSync(resolve(config.caseDir, path)))) {
+			lock.release();
+			log('cannot start: this case is registered with a newsroom, so it runs only in the newsroom edition. Start it from the newsroom extension.');
+			process.exit(EXIT.config);
+		}
+		return start(harness);
+	}
 	// Case start, newsroom edition: the sign-in is checked on every start, and
 	// register_case runs once; a resumed case reuses the stored reference. A
 	// submission a crash left pending is resolved before anything else runs.

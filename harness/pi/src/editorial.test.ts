@@ -83,6 +83,20 @@ test('a tool error reaches the caller without any address in it', async (t) => {
 	assert.equal(error.message, 'submit_case_review: already staged, see [address removed]');
 });
 
+test('an HTTP or protocol error from the server reaches no log or case file with a review capability in it', async () => {
+	const url = 'https://editorial.newsroom.example/mcp';
+	const page = 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability';
+	for (const answer of [
+		(id: string) => new Response(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32000, message: `see ${page}` } }), { headers: { 'content-type': 'application/json' } }),
+		() => new Response(`unavailable, see ${page}`, { status: 500 }),
+	]) {
+		const fetchImpl: typeof fetch = async (_url, init) => answer(JSON.parse(String(init?.body)).id);
+		const client = new EditorialClient({ url, token: 'newsroom-editorial-token-123', origins: [origin(url)], fetchImpl });
+		const error = await client.connect().then(() => assert.fail('an error was accepted'), (caught: Error) => caught);
+		assert.ok(stopsTheNewsroomCase(error) && !error.message.includes('secret-capability'), error.message);
+	}
+});
+
 test('when the first caller cancels during a shared session restart, the other callers still get their answers', async (t) => {
 	const newsroom = await startFakeEditorial();
 	t.after(() => newsroom.close());
