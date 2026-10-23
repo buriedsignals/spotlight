@@ -37,7 +37,9 @@ async function viewThrough(url) {
 test("a page reopened after the session expired shows the marks saved before", async (t) => {
   const root = tempRoot(t);
   const caseDir = buildCase(root, "case", "investigation_gate", "--clean");
-  const { sessions, record } = manager(t, root, { idleMs: 1500 });
+  // Long enough that the edits below (each runs the Python seam) finish before
+  // the idle limit ends the session, even on a loaded machine.
+  const { sessions, record } = manager(t, root, { idleMs: 6000 });
   assert.deepEqual(await sessions.start(caseDir), { status: "ready" });
   assert.equal((await sessions.openLocally()).status, "opened");
   const first = await viewThrough(openedUrls(record)[0]);
