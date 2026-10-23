@@ -796,7 +796,7 @@ def _gate_claims(case: Path, gate: str) -> list[dict[str, str]]:
         proposal = _read_case_json(case, INGEST_PROPOSAL)
         raw = proposal.get("claims") if isinstance(proposal, dict) else None
         claims = [
-            {"target": f"claim:{c['key']}", "label": f"Claim {c['key']}", "claim": c["proposition"].strip()[:2000]}
+            {"target": f"claim:{c['key']}", "label": f"Claim {c['key']}", "claim": c["proposition"].strip()}
             for c in (raw if isinstance(raw, list) else [])
             if isinstance(c, dict) and isinstance(c.get("key"), str)
             and isinstance(c.get("proposition"), str) and c["proposition"].strip()

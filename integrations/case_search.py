@@ -385,7 +385,7 @@ def findings_claims(case: Path) -> list[dict[str, str]]:
     claims = []
     for finding in findings if isinstance(findings, list) else []:
         if isinstance(finding, dict) and isinstance(finding.get("id"), str) and isinstance(finding.get("claim"), str) and finding["claim"].strip():
-            claims.append({"target": f"finding:{finding['id']}", "label": f"Finding {finding['id']}", "claim": finding["claim"].strip()[:2000]})
+            claims.append({"target": f"finding:{finding['id']}", "label": f"Finding {finding['id']}", "claim": finding["claim"].strip()})
     return claims
 
 
@@ -485,7 +485,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.findings:
         claims = findings_claims(case)
     else:
-        claims = [{"target": "claim", "label": "Claim", "claim": args.claim.strip()[:2000]}] if args.claim.strip() else []
+        claims = [{"target": "claim", "label": "Claim", "claim": args.claim.strip()}] if args.claim.strip() else []
     answer = search_claims(case, claims, fact_checker=args.role == "fact-checker" or args.format == "prompt")
     if args.format == "prompt":
         sys.stdout.write(prompt_block(answer))

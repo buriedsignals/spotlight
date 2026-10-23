@@ -151,6 +151,13 @@ class CaseSearchChecks(unittest.TestCase):
         self.assertEqual(self.bsig_calls(), [], "Engine is never asked about another folder")
         self.assertTrue(json.loads(self.search("--findings", case="case", SPOTLIGHT_CASE_DIR=str(self.case)))["available"])
 
+    def test_a_long_claim_is_searched_whole(self):
+        claim = "Acme paid Doe " + "and more detail " * 300
+        (self.case / "data" / "findings.json").write_text(json.dumps({"findings": [{"id": "F1", "claim": claim}]}))
+        self.search("--findings")
+        sent = self.bsig_calls()[0]
+        self.assertEqual(sent[sent.index("--claim") + 1], claim.strip())
+
     def test_a_findings_file_that_is_a_symlink_is_not_read(self):
         outside = self.tmp / "outside-findings.json"
         outside.write_text(json.dumps({"findings": [{"id": "X1", "claim": "Private claim from elsewhere"}]}))
