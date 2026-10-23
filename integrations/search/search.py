@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 
+from .._protected import ProtectedSourceError, check_outgoing
 from . import firecrawl_provider, searxng_provider
 from .search_types import SearchError, SearchHit
 
@@ -37,6 +38,10 @@ def search(
     categories: str | None = None,
     time_range: str | None = None,
 ) -> list[SearchHit]:
+    try:
+        check_outgoing(query)  # a query never names a protected source
+    except ProtectedSourceError as exc:
+        raise SearchError(str(exc)) from None
     name = (provider or os.environ.get("SEARCH_PROVIDER") or "searxng").strip().lower()
 
     if name == "firecrawl":
