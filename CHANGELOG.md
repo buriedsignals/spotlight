@@ -12,6 +12,8 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   give `user_generated` only when no model answer counted.
 - The acceptance harness counts a host-set label as a rule catch, never as a
   Q3 gain, and the synthetic fixture has one register and one social case.
+- `RESEARCH_BANK_VERSION` changes (`EFFECTS_REVISION` 4): an acceptance
+  record for bank v3 no longer applies.
 
 ### Changed — Research question bank v3
 
