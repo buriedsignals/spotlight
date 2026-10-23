@@ -124,3 +124,13 @@ test("a second action on a change that is being confirmed answers 409 without re
   assert.equal(results[1].body.code, "in-progress");
   assert.equal(fake.calls().filter(({ argv }) => argv[2] === "staged-discard").length, 0);
 });
+
+test("concurrent page listings share one Engine call", async (t) => {
+  const root = tempRoot(t);
+  let calls = 0;
+  const wiki = { staged: () => { calls += 1; return new Promise((settle) => setTimeout(() => settle([change("c1", "a")]), 300)); } };
+  const { json } = await authed(t, buildCase(root, "case", "methodology"), { wiki });
+  const lists = await Promise.all([1, 2, 3].map(() => json("/api/wiki-changes")));
+  assert.deepEqual(lists.map((r) => r.body.changes.length), [1, 1, 1]);
+  assert.equal(calls, 1);
+});

@@ -108,6 +108,15 @@ export async function startReviewServer({
 
   // Staged wiki changes; none without Engine or with a bsig that lacks the verb,
   // so the page hides the view. Any other failure is reported, not hidden.
+  // The page's listings share one Engine call while it runs.
+  let listing = null;
+  function pageWikiChanges() {
+    listing ??= wikiChanges().finally(() => {
+      listing = null;
+    });
+    return listing;
+  }
+
   async function wikiChanges() {
     if (!wiki) return [];
     try {
@@ -338,7 +347,7 @@ export async function startReviewServer({
         }
         if (url.pathname === "/api/wiki-changes") {
           exactObject(await readJson(request), [], "wiki changes request");
-          return sendJson(response, 200, { changes: await wikiChanges() });
+          return sendJson(response, 200, { changes: await pageWikiChanges() });
         }
         if (url.pathname === "/api/wiki-changes/apply" || url.pathname === "/api/wiki-changes/discard") {
           const [status, body] = await confirmWikiChange(url.pathname.endsWith("apply") ? "apply" : "discard", await readJson(request));

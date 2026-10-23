@@ -83,6 +83,22 @@ export function safeChildEnvironment(source = process.env) {
   return env;
 }
 
+// One bounded child process: its exit code (-1 when it did not exit normally),
+// stdout and stderr. input, if any, is its whole stdin.
+function runBounded(file, args, { cwd, env, input = "" }) {
+  return new Promise((settle) => {
+    const child = execFile(
+      file,
+      args,
+      { cwd, env, timeout: SEAM_TIMEOUT_MS, maxBuffer: MAX_OUTPUT, windowsHide: true },
+      (error, stdout, stderr) =>
+        settle({ code: error ? (typeof error.code === "number" ? error.code : -1) : 0, stdout: String(stdout), stderr: String(stderr) }),
+    );
+    child.stdin.on("error", () => {}); // a child that exits without reading
+    child.stdin.end(input);
+  });
+}
+
 export function createCaseBridge({
   caseDir,
   casesRoot = "",
@@ -96,18 +112,9 @@ export function createCaseBridge({
   const seam = join(checkoutRoot, "scripts", "spotlight-orchestration.py");
   const boundary = casesRoot ? ["--authorized-cases-root", casesRoot] : [];
 
-  function run(args) {
-    return new Promise((settle) => {
-      execFile(
-        python,
-        ["-E", "-s", seam, ...args, ...boundary, caseDir],
-        { cwd: checkoutRoot, env, timeout: SEAM_TIMEOUT_MS, maxBuffer: MAX_OUTPUT, windowsHide: true },
-        (error, stdout, stderr) => {
-          const code = error ? (typeof error.code === "number" ? error.code : -1) : 0;
-          settle({ code, stdout: String(stdout), message: String(stderr).replace(/^FAIL\s+/, "").trim() });
-        },
-      );
-    });
+  async function run(args) {
+    const result = await runBounded(python, ["-E", "-s", seam, ...args, ...boundary, caseDir], { cwd: checkoutRoot, env });
+    return { ...result, message: result.stderr.replace(/^FAIL\s+/, "").trim() };
   }
 
   async function json(args) {
@@ -172,18 +179,7 @@ export function createWikiBridge({
   env = safeChildEnvironment(),
 } = {}) {
   let bsig;
-
-  function exec(file, args, input) {
-    return new Promise((settle) => {
-      const child = execFile(
-        file,
-        args,
-        { cwd: checkoutRoot, env, timeout: SEAM_TIMEOUT_MS, maxBuffer: MAX_OUTPUT, windowsHide: true },
-        (error, stdout) => settle({ code: error ? (typeof error.code === "number" ? error.code : -1) : 0, stdout: String(stdout) }),
-      );
-      child.stdin.end(input);
-    });
-  }
+  const exec = (file, args, input) => runBounded(file, args, { cwd: checkoutRoot, env, input });
 
   async function bsigPath() {
     if (bsig === undefined) {

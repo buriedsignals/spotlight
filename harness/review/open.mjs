@@ -48,8 +48,10 @@ export function createWikiChangesOpener(options = {}) {
       return { status: "wiki-unreadable" };
     }
     if (!Array.isArray(staged) || !staged.length) return { status: "nothing-staged" };
+    // A running page is never closed or reopened from here: that would end
+    // the member's session and lose what they typed.
     const running = sessions.status();
-    if (running.active && running.caseDir === caseDir) return { status: "already-open" };
+    if (running.active) return { status: running.caseDir === caseDir ? "already-open" : "other-review-open" };
     return openPage(sessions, caseDir, "wiki");
   };
 }
@@ -59,6 +61,8 @@ export function describeWikiChangesResult(result) {
     return "The Wiki changes page is open in the member's browser. Ask them to apply or discard each staged change there; nothing reaches the wiki until they do. The page address is private to the member's browser.";
   if (result.status === "already-open")
     return "The review page for this case is already open in the member's browser. Ask them to reload it to see the staged wiki changes, then apply or discard each one.";
+  if (result.status === "other-review-open")
+    return "A Spotlight review page for another case is open in the member's browser. Ask them to finish it first; nothing was opened.";
   if (result.status === "wiki-unreadable")
     return "Could not read the staged wiki changes. Nothing was opened.";
   return describeOpenResult(result);

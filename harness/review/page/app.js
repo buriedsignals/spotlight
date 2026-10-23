@@ -915,8 +915,14 @@ function wikiErrorSection() {
     { id: "wiki-section", "aria-labelledby": "wiki-heading" },
     el("h2", { id: "wiki-heading", text: "Wiki changes" }),
     el("p", { className: "warning", text: wikiError }),
-    el("button", { id: "wiki-retry", type: "button", className: "secondary", text: "Try again", on: { click: () => loadWiki().then(showWiki) } }),
+    el("button", { id: "wiki-retry", type: "button", className: "secondary", text: "Try again", on: { click: retryWiki } }),
   );
+}
+
+// The button stays disabled until the load ends, so clicks do not pile up.
+function retryWiki(event) {
+  event.currentTarget.disabled = true;
+  void loadWiki().then(showWiki);
 }
 
 // Draws only the wiki section beside a gate, so nothing the member is typing

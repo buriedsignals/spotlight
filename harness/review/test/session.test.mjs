@@ -242,6 +242,20 @@ test("open_spotlight_wiki_changes treats another spelling of the open case as th
   assert.equal((await api(origin, cookie)("/api/view")).status, 200);
 });
 
+test("open_spotlight_wiki_changes leaves another case's open review alone", async (t) => {
+  const root = tempRoot(t);
+  const other = buildCase(root, "other", "methodology");
+  const caseDir = buildCase(root, "case", "methodology");
+  const fake = fakeBsig(root, { changes: [change("c1", "a")] });
+  const { sessions, record } = manager(t, root, { env: fake.env });
+  await createReviewOpener({ sessions })({ caseDir: other });
+  const { origin, cookie } = await viewThrough(openedUrls(record).at(-1));
+
+  assert.deepEqual(await createWikiChangesOpener({ sessions, env: fake.env })({ caseDir }), { status: "other-review-open" });
+  assert.equal(openedUrls(record).length, 1);
+  assert.equal((await api(origin, cookie)("/api/view")).status, 200);
+});
+
 test("the stdio MCP server answers initialize and lists its tools", async () => {
   const child = spawn(process.execPath, [fileURLToPath(new URL("../mcp.mjs", import.meta.url))], {
     stdio: ["pipe", "pipe", "ignore"],
