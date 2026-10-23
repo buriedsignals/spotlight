@@ -577,6 +577,36 @@ def report_items(case: Path, signals: dict[str, Any] | None) -> list[dict[str, A
 
 
 # ------------------------------------------------------------------ ingest (knowledge batch)
+def _actors(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def attributed_text(proposition: str, positions: list[dict[str, str]]) -> str:
+    """The proposition with every source position's attribution: who asserts
+    it in front, and who disputes it, so no stance is dropped. Casing is
+    kept: the subject is often a proper name."""
+    asserts = sorted({p["actor"] for p in positions if p["stance"] != "disputes"})
+    disputes = sorted({p["actor"] for p in positions if p["stance"] == "disputes"})
+    if not asserts:
+        return f"{_actors(disputes)} {'disputes' if len(disputes) == 1 else 'dispute'} that {proposition}"
+    text = f"According to {_actors(asserts)}, {proposition}"
+    if disputes:
+        text += f" {_actors(disputes)} {'disputes' if len(disputes) == 1 else 'dispute'} this."
+    return text
+
+
+def question_bank_version() -> str | None:
+    """The current question bank's version: results asked with other wording
+    are stale, whatever their inputs."""
+    path = Path(__file__).resolve().parents[1] / "integrations" / "decisions" / "questions.py"
+    spec = importlib.util.spec_from_file_location("spotlight_decision_questions", path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return getattr(module, "QUESTION_BANK_VERSION", None)
+
+
 def batch_items(case: Path) -> list[dict[str, Any]]:
     """Proposition and claim-event checks for data/knowledge-batch.json, shared by producer and consumers.
 
@@ -600,10 +630,22 @@ def batch_items(case: Path) -> list[dict[str, Any]]:
     # Batch 1.1 keeps attribution in source positions and names references
     # claim_ref/event_ref; 1.0 batches keep claim/event and event labels.
     v11 = batch.get("schema_version") == "1.1"
+    # A position counts for a claim only when it cites a passage that supports
+    # or contradicts that claim: positions are recorded per finding, and a
+    # finding's other claims, or a passage kept only as context, may be ones
+    # the actor never spoke to.
+    passages: dict[tuple[str, str], set[tuple[str, str]]] = {}
+    for link in batch.get("claim_source_expressions", []) if v11 else []:
+        if isinstance(link, dict) and link.get("role") != "context":
+            passages.setdefault(key(link.get("claim_ref")), set()).add(key(link.get("source_expression_ref")))
     positions: dict[tuple[str, str], list[dict[str, str]]] = {}
     for position in batch.get("source_positions", []) if v11 else []:
-        if isinstance(position, dict):
-            positions.setdefault(key(position.get("claim_ref")), []).append({
+        if not isinstance(position, dict):
+            continue
+        claim = key(position.get("claim_ref"))
+        cited = {key(ref) for ref in position.get("source_expression_refs") or []}
+        if cited & passages.get(claim, set()):
+            positions.setdefault(claim, []).append({
                 "actor": text((position.get("actor") or {}).get("label")), "stance": text(position.get("stance")),
                 "attribution_verbatim": text(position.get("attribution_verbatim"))})
 
@@ -613,9 +655,14 @@ def batch_items(case: Path) -> list[dict[str, Any]]:
 
     for (cid, version), claim in claims.items():
         finding = by_id.get(text((claim.get("origin") or {}).get("finding_id")))
-        state = {"finding_claim": text((finding or {}).get("claim")), "proposition": text(claim.get("proposition"))}
+        proposition = text(claim.get("proposition"))
         if v11 and positions.get((cid, version)):
-            state["source_positions"] = sorted(positions[(cid, version)], key=lambda p: json.dumps(p, sort_keys=True))
+            # A normalized claim holds its attribution in a source position.
+            # The decision model compares texts and does not read a separate
+            # positions field (measured: 5/12 correct passes with it, 11/12
+            # with this), so the attribution goes back into the compared text.
+            proposition = attributed_text(proposition, positions[(cid, version)])
+        state = {"finding_claim": text((finding or {}).get("claim")), "proposition": proposition}
         item("propositions", f"claim:{cid}@{version}", state, {"claim_version": version}, unresolved=finding is None)
     for membership in batch.get("claim_event_memberships", []):
         if not isinstance(membership, dict):
@@ -675,6 +722,7 @@ def ingest_status(case: Path, entities: list[Any] | None = None, existing: list[
         current += entity_items(entities)
     if existing is not None:
         current += match_items(case, existing)
+    asked_with_other_wording = bool(phase) and (stored or {}).get("question_bank_version") != question_bank_version()
     results = []
     for group, supplied in (("entities", entities), ("matches", existing)):
         if supplied is None and phase.get(group):
@@ -688,7 +736,7 @@ def ingest_status(case: Path, entities: list[Any] | None = None, existing: list[
             status = "unresolved"
         elif entry is None:
             status = "unchecked"
-        elif entry.get("input_sha256") != item["input_sha256"]:
+        elif entry.get("input_sha256") != item["input_sha256"] or asked_with_other_wording:
             status = "stale"
         else:
             status = entry.get("status")

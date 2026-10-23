@@ -43,14 +43,21 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ### Changed — Ingest decision checks read Batch 1.1
 
-- The proposition check passes each claim's source positions in its state,
-  and its question treats attribution held in a position as no change, so a
-  correctly normalized attributed claim is not flagged as broader or
-  changed. Memberships resolve through `claim_ref`/`event_ref` with a
-  generated event label.
-- The question text changed, so `QUESTION_BANK_VERSION` changed. The ingest
-  thresholds have not been re-measured: the September labelled set is not in
-  this checkout. Until they are, keep ingest decision checks advisory.
+- The proposition check puts a claim's source-position attribution back into
+  the text it compares ("According to X, ..." or "X disputes that ..."), so a
+  correctly normalized attributed claim is not flagged as broader or changed.
+  Every position on the claim is composed, disputes included, and only
+  positions that cite a passage supporting or contradicting that claim count.
+  Stored results asked with another question bank version are stale.
+  The question text is the measured one again (the attribution-aware wording
+  tried before did not help). Memberships resolve through
+  `claim_ref`/`event_ref` with a generated event label.
+- Measured on 72 items built from archived findings (labels by construction,
+  `typesafe/jev-1.13-20260917`): attribution moved into a position passes
+  11/12 (4/12 with the attribution simply dropped from the text, 5/12 with
+  positions passed as a separate field); material changes are caught 24/24;
+  paraphrases and narrower claims pass 24/24. An attribution dropped with no
+  position is caught 8/12, and the batch builder refuses those claims anyway.
 
 ### Added — Solo wiki destination
 
