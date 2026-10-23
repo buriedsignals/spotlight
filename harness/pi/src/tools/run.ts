@@ -50,9 +50,12 @@ export function jsonResult(value: unknown) {
 	return textResult(JSON.stringify(value));
 }
 
-const BASE_ENV = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT'];
+export const BASE_ENV = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT'];
 
 // A backing program sees the system basics plus the named variables, nothing else.
+// What the review page's browser opener also gets: the desktop session.
+export const DESKTOP_ENV = ['DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS'];
+
 export function programEnv(env: Env, names: string[] = [], extra: Record<string, string> = {}): Record<string, string> {
 	const out: Record<string, string> = {};
 	for (const name of [...BASE_ENV, ...names]) {

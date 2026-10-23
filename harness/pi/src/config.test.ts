@@ -183,6 +183,8 @@ test('newsroom: a route token is never the Editorial MCP token or a tool secret,
 	});
 	// Accepted, the Editorial token would reach every pi process as its route key.
 	assert.throws(() => readConfig(env('SPOTLIGHT_EDITORIAL_MCP_TOKEN')), /key_env may not name SPOTLIGHT_EDITORIAL_MCP_TOKEN/);
+	// A variable Spotlight passes on to helper programs (the browser opener, every tool) is never a route token.
+	for (const name of ['DBUS_SESSION_BUS_ADDRESS', 'HOME']) assert.throws(() => readConfig({ ...env(name), [name]: 'route-secret-0123456789' }), new RegExp(`key_env may not name ${name}`));
 	assert.throws(() => checkRouteSecrets(readConfig(env('REGISTRY_API_KEY')), COMPOSITION), /REGISTRY_API_KEY .*tool secret/);
 	const ok = readConfig(env('ROUTE_TOKEN'));
 	assert.doesNotThrow(() => checkRouteSecrets(ok, COMPOSITION));

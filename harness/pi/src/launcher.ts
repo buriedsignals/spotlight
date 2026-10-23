@@ -25,7 +25,7 @@ import {
 import type { CheckKind, EditorialClient, RunPackage } from './editorial.ts';
 import { openInBrowser } from '../../review/session.mjs';
 import { newsroomData } from './tools/editorial.ts';
-import { programEnv, runFixed } from './tools/run.ts';
+import { DESKTOP_ENV, programEnv, runFixed } from './tools/run.ts';
 import type { HarnessConfig } from './config.ts';
 import { CaseHeldError, acquireCaseLock } from './lock.ts';
 import type { CaseLock } from './lock.ts';
@@ -166,7 +166,7 @@ function reviewOpener(harness: Harness): (url: string) => Promise<boolean> {
 		}
 		// The opener sees the system basics and the desktop session, never the
 		// launcher's tokens, whatever their variable names.
-		const env = programEnv(process.env, ['DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS']);
+		const env = programEnv(process.env, DESKTOP_ENV);
 		if (!(await openInBrowser(url, { env })).ok) throw new Error('the newsroom review page could not be opened; the submission stays pending and is resumed at the next start');
 		return true;
 	};

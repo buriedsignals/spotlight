@@ -6,6 +6,7 @@ import { isAbsolute, resolve } from 'node:path';
 import { parseFixedRequestBody } from './provider-policy.ts';
 import { CHECKOUT_ROOT, agentSpec } from './roles.ts';
 import type { Composition } from './roles.ts';
+import { BASE_ENV, DESKTOP_ENV } from './tools/run.ts';
 
 export type Edition = 'solo' | 'newsroom';
 export type ModelTier = '12b' | '26b' | '31b' | 'frontier';
@@ -171,7 +172,8 @@ function parseRoutes(raw: string | undefined): Route[] {
 		// A route's token is handed to every pi process and its model
 		// endpoint, so it may never be one of the harness's own variables (the
 		// Editorial MCP token among them).
-		if (typeof item.key_env === 'string' && item.key_env.startsWith('SPOTLIGHT_')) {
+		// Nor one Spotlight passes on to helper programs (every tool, the browser opener).
+		if (typeof item.key_env === 'string' && (item.key_env.startsWith('SPOTLIGHT_') || [...BASE_ENV, ...DESKTOP_ENV].includes(item.key_env))) {
 			throw new ConfigError(`${label}.key_env may not name ${item.key_env}: a route's token is its own variable, never one of Spotlight's (the Editorial MCP token is never a route token).`);
 		}
 		return {
