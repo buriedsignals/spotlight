@@ -30,6 +30,8 @@ export type HarnessConfig = {
 	pipelineRoute: Route;
 	helperURL?: string;
 	searchURL?: string;
+	// RLM endpoint that distills fetched pages; always one the operator runs.
+	rlmURL?: string;
 	requestBody?: string;
 	contextWindow: number;
 	python: string;
@@ -165,6 +167,23 @@ function sensitiveMode(env: Env): boolean {
 	return /^sensitive:\s*true\s*$/m.test(frontmatter);
 }
 
+// The RLM reads every fetched page of the case, so it may only be an endpoint
+// the operator runs: a loopback address in the solo edition, an `own` route in
+// the newsroom edition. Anything else stops the launcher.
+function rlmEndpoint(env: Env, edition: Edition, routes: Route[]): string | undefined {
+	const url = optionalURL(env, 'SPOTLIGHT_RLM_OPENAI_BASE_URL');
+	if (!url) return undefined;
+	const own = edition === 'solo'
+		? isLoopback(url)
+		: routes.some((route) => route.baseURL === url && route.inference === 'own');
+	if (!own) {
+		throw new ConfigError(
+			'SPOTLIGHT_RLM_OPENAI_BASE_URL reads case material, so it must be an endpoint you run yourself (solo: a loopback address; newsroom: an "own" route in SPOTLIGHT_ROUTES).',
+		);
+	}
+	return url;
+}
+
 export function readConfig(env: Env): HarnessConfig {
 	const editionValue = env.SPOTLIGHT_EDITION?.trim() || 'solo';
 	if (editionValue !== 'solo' && editionValue !== 'newsroom') {
@@ -204,6 +223,7 @@ export function readConfig(env: Env): HarnessConfig {
 		pipelineRoute,
 		helperURL: optionalURL(env, 'SPOTLIGHT_HELPER_URL'),
 		searchURL: optionalURL(env, 'SPOTLIGHT_SEARCH_URL'),
+		rlmURL: rlmEndpoint(env, edition, routes),
 		requestBody: env.SPOTLIGHT_PROVIDER_REQUEST_BODY || undefined,
 		contextWindow,
 		python: env.SPOTLIGHT_PYTHON?.trim() || 'python3',
@@ -246,14 +266,14 @@ export function secretValues(config: HarnessConfig, composition: Composition, en
 
 const PASSTHROUGH = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT'];
 // Non-secret settings of the backings the typed tools wrap (Tor posture for
-// fetch, browse's Chromium, the RLM endpoint), passed to every process unchanged.
+// fetch, browse's Chromium, the RLM model), passed to every process unchanged.
+// The RLM endpoint itself is passed only after readConfig confirmed it is own.
 const BACKING_SETTINGS = [
 	'SPOTLIGHT_ANONYMIZE_FETCH',
 	'TOR_SOCKS',
 	'SPOTLIGHT_BROWSE_CHROMIUM',
 	'PLAYWRIGHT_BROWSERS_PATH',
 	'SPOTLIGHT_RLM_MODE',
-	'SPOTLIGHT_RLM_OPENAI_BASE_URL',
 	'SPOTLIGHT_RLM_OPENAI_MODEL',
 	'SPOTLIGHT_RLM_MODEL',
 ];
@@ -294,6 +314,10 @@ export function childEnv(
 		SPOTLIGHT_SENSITIVE: config.sensitive ? 'true' : 'false',
 	});
 	if (config.searchURL) out.SPOTLIGHT_SEARCH_URL = config.searchURL;
+	if (config.rlmURL) {
+		out.SPOTLIGHT_RLM_OPENAI_BASE_URL = config.rlmURL;
+		out.SPOTLIGHT_RLM_INFERENCE = 'own';
+	}
 	if (config.requestBody) out.SPOTLIGHT_PROVIDER_REQUEST_BODY = config.requestBody;
 	return out;
 }

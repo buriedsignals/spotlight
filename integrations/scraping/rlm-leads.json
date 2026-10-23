@@ -1,0 +1,8 @@
+{
+  "comment": "Lead-distillation request shared by the scraping seam's --rlm path and the Pi harness's fetch tool. The e4b serves with --reasoning-budget 0, so any planning it does leaks into the answer; the prompt forbids it.",
+  "default_model": "rlm-e4b",
+  "max_input_chars": 24000,
+  "max_tokens": 900,
+  "temperature": 0,
+  "prompt": "You are a lead-extractor. From the SOURCE below, output a COMPACT bullet list of only the investigation-relevant leads: named people (+roles), organizations, dates/events, relationships, locations, and URLs. No prose, no preamble, no full sentences copied verbatim. Leads are unverified pointers, not facts. Begin your reply DIRECTLY with the first bullet — do not restate these instructions, do not describe what you are about to do.\n\nSOURCE:\n"
+}

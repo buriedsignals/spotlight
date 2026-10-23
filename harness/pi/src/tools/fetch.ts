@@ -16,8 +16,20 @@
 // seam with --tor; Chromium resolves names through a SOCKS5 proxy, so the name
 // is resolved behind Tor. The URL the seam reports ending on is checked the
 // same way before anything is returned.
+//
+// Local tier (lead distillation): every pi process runs on a route the
+// operator runs (config.ts routeFor), so the local tier is any process the
+// launcher gave an RLM endpoint, which it passes only after confirming it is
+// own (SPOTLIGHT_RLM_INFERENCE=own). There, after the final URL passed the
+// guard, the page goes to the RLM, `save_as` receives the compact leads and
+// `save_as`.raw the page itself; the agent gets the leads, never the page.
+// Without an RLM endpoint fetch returns the page as it always did.
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { basename, resolve } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { CHECKOUT_ROOT } from '../roles.ts';
 import { writeConfined } from './case-files.ts';
 import { anonymizedFetch, assertPublicDestination, checkURL, publicDestination } from './egress.ts';
 import { startEgressProxy } from './proxy.ts';
@@ -32,6 +44,50 @@ export const webURL = Type.String({ minLength: 1, maxLength: 2048, pattern: '^[H
 
 const params = Type.Object({ url: webURL, save_as: Type.Optional(savePath) }, { additionalProperties: false });
 
+// The lead-distillation request the scraping seam's --rlm path also uses.
+type LeadRequest = { default_model: string; max_input_chars: number; max_tokens: number; temperature: number; prompt: string };
+const LEAD_REQUEST = resolve(CHECKOUT_ROOT, 'integrations/scraping/rlm-leads.json');
+// The first line the validators recognise as a lead file (scripts/evidence_anchors.py
+// RLM_LEAD_MARKER): such a file can never anchor evidence; its .raw can.
+const LEAD_MARKER = '# RLM-distilled leads from';
+const RLM_TIMEOUT_MS = 120_000;
+
+// The RLM endpoint for this process, or undefined off the local tier. An
+// endpoint the launcher did not confirm as own is refused, never used.
+function rlmEndpoint(env: ToolContext['env']): string | undefined {
+	const url = env.SPOTLIGHT_RLM_OPENAI_BASE_URL?.trim();
+	if (!url) return undefined;
+	if (env.SPOTLIGHT_RLM_INFERENCE !== 'own') {
+		throw new Error('fetch: SPOTLIGHT_RLM_OPENAI_BASE_URL is not confirmed as an endpoint you run yourself; refusing to send case material to it.');
+	}
+	return url.replace(/\/$/, '');
+}
+
+async function distill(baseURL: string, env: ToolContext['env'], markdown: string, signal?: AbortSignal): Promise<string> {
+	const request = JSON.parse(readFileSync(LEAD_REQUEST, 'utf8')) as LeadRequest;
+	const url = baseURL.endsWith('/v1') ? `${baseURL}/chat/completions` : `${baseURL}/v1/chat/completions`;
+	const timeout = AbortSignal.timeout(RLM_TIMEOUT_MS);
+	const response = await fetch(url, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		redirect: 'error',
+		signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+		body: JSON.stringify({
+			model: env.SPOTLIGHT_RLM_OPENAI_MODEL?.trim() || request.default_model,
+			messages: [{ role: 'user', content: request.prompt + markdown.slice(0, request.max_input_chars) }],
+			max_tokens: request.max_tokens,
+			temperature: request.temperature,
+		}),
+	});
+	if (!response.ok) throw new Error(`RLM answered HTTP ${response.status}`);
+	const body = (await response.json()) as { choices?: Array<{ message?: { content?: string | null } }> };
+	const leads = body.choices?.[0]?.message?.content?.trim();
+	if (!leads) throw new Error('RLM returned no leads');
+	return leads;
+}
+
+const sha256 = (text: string) => createHash('sha256').update(Buffer.from(text, 'utf8')).digest('hex');
+
 type ScrapeResult = { markdown?: string; source_url?: string; provider?: string; status_code?: number | null; title?: string | null; content_sha256?: string };
 
 export function fetchTool(context: ToolContext): ToolDefinition {
@@ -39,10 +95,12 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 		name: 'fetch',
 		label: 'Fetch',
 		description:
-			'Fetch one public web page as Markdown (Crawl4AI). Only public http(s) addresses are allowed. Optional save_as stores the Markdown in the case under research/ or evidence/.',
+			'Fetch one public web page as Markdown (Crawl4AI). Only public http(s) addresses are allowed. Optional save_as stores the Markdown in the case under research/ or evidence/. When the result says distilled: true, save_as holds compact RLM leads (what you get back) and raw_path the page itself, for citations.',
 		parameters: params,
 		async execute(_id, raw, signal) {
 			const input = checkedParams<{ url: string; save_as?: string }>('fetch', params, raw);
+			const rlm = rlmEndpoint(context.env);
+			if (rlm && !input.save_as) throw new Error('fetch: on this tier fetch needs save_as, so the raw page is kept beside its leads.');
 			const viaTor = anonymizedFetch(context.env);
 			const destination = viaTor ? checkURL(input.url).href : await publicDestination(input.url, signal);
 			// Outside Tor mode every connection the seam's browser makes goes through
@@ -69,17 +127,52 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 				else await assertPublicDestination(result.source_url, signal);
 			}
 			const markdown = result.markdown ?? '';
-			const saved = input.save_as ? writeConfined(context.caseDir, context.writeRoot, input.save_as, markdown) : undefined;
-			return jsonResult({
+			const page = {
 				requested_url: input.url,
 				final_url: result.source_url ?? destination,
 				provider: result.provider,
 				status_code: result.status_code ?? null,
 				title: result.title ?? null,
 				content_sha256: result.content_sha256,
+			};
+			if (!rlm) {
+				const saved = input.save_as ? writeConfined(context.caseDir, context.writeRoot, input.save_as, markdown) : undefined;
+				return jsonResult({
+					...page,
+					distilled: false,
+					distillation: 'off: SPOTLIGHT_RLM_OPENAI_BASE_URL is not set, so the page is returned as fetched',
+					saved_to: saved,
+					truncated: markdown.length > MAX_RETURNED_CHARS,
+					markdown: markdown.slice(0, MAX_RETURNED_CHARS),
+				});
+			}
+			const leadPath = input.save_as as string;
+			const rawPath = writeConfined(context.caseDir, context.writeRoot, `${leadPath}.raw`, markdown);
+			let leads: string;
+			try {
+				leads = await distill(rlm, context.env, markdown, signal);
+			} catch (error) {
+				// The page stays on disk; its text still never enters the context.
+				return jsonResult({
+					...page,
+					distilled: false,
+					rlm_error: (error as Error).message,
+					raw_path: rawPath,
+					raw_sha256: sha256(markdown),
+					note: 'The RLM could not distill this page. Do not load the raw page whole: grep raw_path for what you need and read only those lines.',
+				});
+			}
+			const leadFile = `${LEAD_MARKER} ${page.final_url}\n# (compact; raw source: ${basename(rawPath)})\n\n${leads}\n`;
+			const saved = writeConfined(context.caseDir, context.writeRoot, leadPath, leadFile);
+			return jsonResult({
+				...page,
+				distilled: true,
 				saved_to: saved,
-				truncated: markdown.length > MAX_RETURNED_CHARS,
-				markdown: markdown.slice(0, MAX_RETURNED_CHARS),
+				leads_sha256: sha256(leadFile),
+				raw_path: rawPath,
+				raw_sha256: sha256(markdown),
+				truncated: leads.length > MAX_RETURNED_CHARS,
+				leads: leads.slice(0, MAX_RETURNED_CHARS),
 			});
 		},
 	};
