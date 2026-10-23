@@ -338,6 +338,8 @@ const LOCAL_TOOLS = new Set([
 	'edit_file',
 	'list_files',
 	'grep_files',
+	'hash_files',
+	'build_review_html',
 	'query_vault',
 	'osint_tools',
 	'exiftool',

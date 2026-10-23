@@ -62,6 +62,7 @@ There is no shell in this harness. Each tool takes typed arguments, refuses anyt
 |---|---|---|
 | `read_file`, `write_file`, `list_files`, `grep_files` | the case folder | orchestrator, investigator, fact-checker |
 | `edit_file` | the case folder | investigator |
+| `hash_files` | the case folder | investigator, fact-checker |
 | `fetch` | `python -m integrations.scraping` (Crawl4AI; Firecrawl fallback with `FIRECRAWL_API_KEY`) | investigator, fact-checker |
 | `search` | `python -m integrations.search` (SearXNG at `SPOTLIGHT_SEARCH_URL`) | investigator, fact-checker |
 | `http_get` | one GET from the harness itself | investigator, fact-checker |
@@ -72,10 +73,13 @@ There is no shell in this harness. Each tool takes typed arguments, refuses anyt
 | `exiftool` | `exiftool -json` | investigator, fact-checker |
 | `decision_signals` | `scripts/decision-signals.py` | orchestrator |
 | `provenance_manifest` | `scripts/build-provenance-manifest.py` (build, check, sign) | orchestrator |
+| `build_review_html` | `scripts/build-review-html.py --stdout`, written to `review.html` under the case-file rules | orchestrator |
 | `run_rlm` | `integrations/rlm/run_rlm.py` | orchestrator |
 | `integration_status` | `integrations/preflight.py --json` | orchestrator |
 
 `browse` is backed by dev-browser. `integrations/browse` holds only a manifest for the optional browse.sh CLI and backs nothing here. The model gives `browse` a URL, never a script, so the browser opens exactly one guarded page and returns its text, its HTML or a screenshot saved in the case.
+
+**Evidence locators and hashes.** The validators re-select every `source_ref` and recompute every declared SHA-256 (`scripts/evidence_anchors.py`). `hash_files` returns the SHA-256 of a case file's bytes on disk, the digest the validators recompute for `sha256`, `anchor_sha256` and `original_artifact_sha256`, for any artifact an agent wrote or derived itself. `read_file` with `offset`/`limit`, and `grep_files` line numbers, count lines as the validators do (Python's universal newlines and `splitlines()`), so they serve as `line_start`/`line_end`. `read_file` with `json_pointer` returns the text the validators select for a `source_ref` `json_pointer`: a string value as is, anything else as `json.dumps(..., ensure_ascii=False, sort_keys=True)`. Limit: a non-integer number, or an integer beyond 2^53, can print differently from Python's; anchor quotes to string values.
 
 **Case files.** Reads stay inside the case folder (plus the checkout's `schemas/`); a symlink that leads out is refused. Writes stay inside the caller's write folder (the case folder for these roles), never follow a symlink, and never touch `data/orchestration.json`, `data/review-nonces.json`, `data/*-review.json` or any file whose name contains `receipt`. The check ignores letter case.
 
@@ -94,8 +98,13 @@ Every `execute-shell` step in `agents/` and in the skills these roles load, and 
 | Where | Shell step | In this harness |
 |---|---|---|
 | investigator, fact-checker, content-access, web-archiving, integrations | `curl` GET to registries, archives and APIs (WHOIS, Unpaywall, CORE, Semantic Scholar, OpenAlex, Wayback CDX, availability and save, archive.today lookup) | `http_get` |
+| content-access, social-media-intelligence, technical-investigation | `curl --get --data-urlencode` query parameters (Unpaywall, CORE, Semantic Scholar, OpenAlex, Wayback CDX, GitHub API) | `http_get` with `query` (values percent-encoded and appended to the URL) |
 | web-archiving | `curl -X POST` to archive.today's submit form | not available (GET only); the step reports that it needs a POST |
-| content-access, web-archiving, dev-browser capture | `spotlight_safe.py validate-url`, `validate-doi`, `validate-timestamp`, `sha256` | not needed: tool schemas and the egress guard check arguments; `browse`, `fetch` and `http_get` return SHA-256 |
+| content-access, web-archiving, dev-browser capture | `spotlight_safe.py validate-url`, `validate-doi`, `validate-timestamp` | not needed: tool schemas and the egress guard check arguments |
+| web-archiving, dev-browser capture, investigator, fact-checker | `spotlight_safe.py sha256`, or a hash of a derived artifact (extracted text, saved API JSON, transcript) | `hash_files`; `browse`, `fetch` and `http_get` also return the SHA-256 of what they download |
+| investigator, fact-checker | `grep -n`, `sed -n` or Python to find a line range or resolve a JSON Pointer for a `source_ref` | `grep_files` (line numbers), `read_file` with `offset`/`limit` or `json_pointer` |
+| technical-investigation (`references/github-public.md`; no step names a command) | `git clone` and `git merge-base` of a public repository, as an agent with a shell may improvise | not available: no git in this harness; the step reports that it needs a clone. The repository's public web API is reachable through `http_get` |
+| editorial-review | building `review.html` (payload serialization and template injection) | `build_review_html` (`scripts/build-review-html.py`) |
 | web-archiving | `python3 -m integrations.scraping {URL} --out ...` | `fetch` with `save_as` |
 | dev-browser integration, web-archiving dev-browser capture | `dev-browser run <script>`, then `mkdir`, `cp`, `rm` of the capture | `browse` (text, HTML or screenshot saved with `save_as`) |
 | fact-checker, technical-investigation | `exiftool {file}` | `exiftool` |

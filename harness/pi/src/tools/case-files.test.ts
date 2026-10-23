@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
@@ -96,4 +98,57 @@ test('reads through a symlink that leaves the case are refused', async (t) => {
 	await assert.rejects(call('read_file', { path: 'data/secret.txt' }), /outside/);
 	await assert.rejects(call('read_file', { path: '../outside/secret.txt' }), /outside/);
 	assert.doesNotMatch(await call('grep_files', { pattern: 'secret' }), /secret\.txt:/);
+});
+
+// The evidence validators (scripts/evidence_anchors.py) recompute every
+// declared sha256 and re-select every source_ref. A digest, line range or JSON
+// Pointer read through these tools must be the one the validators compute.
+const PYTHON = process.platform === 'win32' ? 'python' : 'python3';
+const SCRIPTS = fileURLToPath(new URL('../../../../scripts', import.meta.url));
+
+function validatorSays(program: string, ...args: string[]): string {
+	return execFileSync(PYTHON, ['-c', `import sys, json\nsys.path.insert(0, sys.argv[1])\nfrom evidence_anchors import *\n${program}`, SCRIPTS, ...args], {
+		encoding: 'utf8',
+	});
+}
+
+test('hash_files returns the digest the evidence validators recompute for an artifact the agent wrote', async (t) => {
+	const { caseDir, call } = await fixture(t);
+	await call('write_file', { path: 'research/extracted.md', content: 'Zürich\r\nline two \n' });
+	await writeFile(join(caseDir, 'research', 'api.json'), Buffer.from([0x7b, 0x7d, 0x0a, 0xff]));
+
+	const hashed = JSON.parse(await call('hash_files', { paths: ['research/extracted.md', '{CASE_DIR}/research/api.json'] }));
+
+	for (const [index, name] of ['extracted.md', 'api.json'].entries()) {
+		const expected = validatorSays('print(sha256_file(__import__("pathlib").Path(sys.argv[2])), end="")', join(caseDir, 'research', name));
+		assert.equal(hashed[index].sha256, expected, name);
+		assert.equal(hashed[index].path, `research/${name}`);
+	}
+	await assert.rejects(call('hash_files', { paths: ['../outside/x'] }), /refused/);
+});
+
+test('read_file line ranges, grep_files line numbers and json_pointer select what the evidence validators select', async (t) => {
+	const { caseDir, call } = await fixture(t);
+	const text = 'alpha\r\nbeta gamma\rdelta\n\nepsilon\n';
+	await mkdir(join(caseDir, 'research'));
+	await writeFile(join(caseDir, 'research', 'page.md'), text);
+	const doc = { items: [{ 'a/b': 'Grüße </script>', n: 3 }, { z: [1, 'x'], a: { é: true, b: null } }] };
+	await writeFile(join(caseDir, 'research', 'api.json'), JSON.stringify(doc));
+	const select = (name: string, ref: object) =>
+		validatorSays(
+			'text, error = selected_source_text(__import__("pathlib").Path(sys.argv[2]), json.loads(sys.argv[3]))\nassert error is None, error\nprint(json.dumps(text))',
+			join(caseDir, 'research', name),
+			JSON.stringify(ref),
+		);
+
+	for (const [start, end] of [[3, 3], [4, 6], [1, 2]]) {
+		const expected = JSON.parse(select('page.md', { line_start: start, line_end: end }));
+		assert.equal(await call('read_file', { path: 'research/page.md', offset: start, limit: end - start + 1 }), expected, `${start}-${end}`);
+	}
+	assert.match(await call('grep_files', { pattern: '^epsilon$' }), /^research\/page\.md:6:epsilon$/m);
+	for (const pointer of ['/items/0/a~1b', '/items/1', '/items/0/n', '']) {
+		const expected = JSON.parse(select('api.json', { json_pointer: pointer }));
+		assert.equal(await call('read_file', { path: 'research/api.json', json_pointer: pointer }), expected, pointer);
+	}
+	await assert.rejects(call('read_file', { path: 'research/api.json', json_pointer: '/items/7' }), /does not resolve/);
 });

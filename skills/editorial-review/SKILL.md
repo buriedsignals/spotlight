@@ -39,26 +39,25 @@ Output:
 
 ## Generate Steps
 
-### 1. Read case files
+### 1. Build the artifact
 
 ```
-read-file("{CASE_DIR}/data/findings.json")
-read-file("{CASE_DIR}/data/fact-check.json")
-read-file("{CASE_DIR}/data/source-expressions.json")  # may not exist for legacy cases
-read-file("{CASE_DIR}/data/summary.json")      # may not exist
-read-file("{CASE_DIR}/data/provenance-manifest.json")  # may not exist
-read-file("{CASE_DIR}/summary.md")              # may not exist
+execute-shell("python3 scripts/build-review-html.py {CASE_DIR}")
 ```
 
-### 2. Read the HTML template
+The script is deterministic and invents nothing. It reads the inputs above
+and `skills/editorial-review/references/template.html`, builds the injection
+payload below, serializes it for the HTML script-data context, and writes
+`{CASE_DIR}/review.html`. It prints the written path, its size and its
+SHA-256. A missing or unreadable `findings.json` or `fact-check.json` stops it
+with a message on stderr and exit code 1: fix the case file and run it again.
+Do not hand-build the payload or edit the template instead.
 
-```
-read-file("skills/editorial-review/references/template.html")
-```
+The Pi harness has no shell: its `build_review_html` tool runs the same script.
 
-### 3. Build the injection payload
+### 2. What the script builds
 
-Assemble a single JSON object with the shape expected by the template (see `references/feedback-schema.md`):
+The payload has the shape expected by the template (see `references/feedback-schema.md`):
 
 ```json
 {
@@ -141,9 +140,21 @@ Assemble a single JSON object with the shape expected by the template (see `refe
 }
 ```
 
-Join each finding with its matching fact-check claim by `finding_id`. Include the complete `expressions` array from `data/source-expressions.json` as `source_expressions`; the template joins every active, superseded, and withdrawn expression to each authoritative `finding_links[].finding_id`. Preserve the investigator's `grounding`, the fact-checker's `grounding_assessment`, source `local_file` fields, and `evidence_bundle_refs`. For legacy cases without the expression artifact, use an empty array and retain the existing finding-level review. If `data/provenance-manifest.json` exists, include it as `provenance_manifest`; if it does not exist, set `provenance_manifest: null` so the template can show that signing has not been generated yet.
-
-### 4. Inject payload into the template
+Each finding is copied whole from `data/findings.json` (a list of evidence
+strings is joined into paragraphs) and joined with its fact-check claim by
+`finding_id` as `verdict`, so the investigator's `grounding`, the
+fact-checker's `grounding_assessment`, source `local_file` fields, and
+`evidence_bundle_refs` are preserved. The complete `expressions` array from
+`data/source-expressions.json` becomes `source_expressions`; the template joins
+every active, superseded, and withdrawn expression to each authoritative
+`finding_links[].finding_id`. A legacy case without the expression artifact
+gets an empty array and keeps the finding-level review. `provenance_manifest` is
+`data/provenance-manifest.json`, or `null` when it does not exist yet, so the
+template shows that signing has not been generated. The summary comes from
+`data/summary.json` (`title` as the headline, `overview` or `summary`,
+`conclusions` or `key_conclusions`, `limitations`, `scope`), falling back to
+`summary.md` for the overview. `fact_check_summary` counts the fact-check
+verdicts, and `cycles` is `summary.json` `cycles` or the latest recorded cycle.
 
 The template contains a single marker:
 
@@ -153,17 +164,13 @@ The template contains a single marker:
 </script>
 ```
 
-Serialize the payload for an HTML script-data context before replacing the marker. After JSON serialization, replace every literal `<` with `\u003c`, U+2028 with `\u2028`, and U+2029 with `\u2029`. This prevents exact source text such as `</script><script>…` from terminating the inert JSON element. Do not build payload JSON by string concatenation.
+The script serializes the payload for an HTML script-data context before
+replacing the marker: after JSON serialization, every literal `<` becomes
+`\u003c`, U+2028 becomes `\u2028`, and U+2029 becomes `\u2029`. This prevents
+exact source text such as `</script><script>…` from terminating the inert JSON
+element.
 
-Replace `/*INVESTIGATION_DATA*/` with that safe JSON payload. Use `edit-file` with `old="/*INVESTIGATION_DATA*/"` and `new=<safe-json-payload>`.
-
-### 5. Write the artifact
-
-```
-write-file("{CASE_DIR}/review.html", <populated template>)
-```
-
-### 6. Report to user
+### 3. Report to user
 
 ```
 "Review artifact written to {CASE_DIR}/review.html.
@@ -210,13 +217,16 @@ The self-contained template lives at `references/template.html`. Characteristics
 - Dark-mode readable, no JavaScript framework dependencies
 - Works offline; works in pi's embedded browser; works in any recent Chrome / Firefox / Safari
 
-The template has exactly one substitution marker: `/*INVESTIGATION_DATA*/` inside a `<script type="application/json">` tag. Skill execution replaces this marker with the payload JSON from generate step 3.
+The template has exactly one substitution marker: `/*INVESTIGATION_DATA*/` inside a `<script type="application/json">` tag. `scripts/build-review-html.py` replaces this marker with the payload JSON described in generate step 2.
 
 ---
 
 ## File Locations
 
 ```
+Runs:
+  scripts/build-review-html.py
+
 Reads from:
   {CASE_DIR}/data/findings.json
   {CASE_DIR}/data/fact-check.json
