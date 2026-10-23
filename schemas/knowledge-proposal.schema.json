@@ -60,6 +60,18 @@
       "properties": {
         "text": {
           "$ref": "#/definitions/text"
+        },
+        "entity_type": {
+          "enum": [
+            "person",
+            "organization",
+            "company",
+            "place",
+            "contact"
+          ]
+        },
+        "identifiers": {
+          "$ref": "#/definitions/identifiers"
         }
       }
     },
@@ -164,6 +176,18 @@
                   "agent",
                   "participant"
                 ]
+              },
+              "entity_type": {
+                "enum": [
+                  "person",
+                  "organization",
+                  "company",
+                  "place",
+                  "contact"
+                ]
+              },
+              "identifiers": {
+                "$ref": "#/definitions/identifiers"
               }
             }
           }
@@ -295,6 +319,60 @@
           "items": {
             "$ref": "#/definitions/key"
           }
+        }
+      }
+    },
+    "identifiers": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Strong identifiers the sources state for this mention, so the wiki can link it to the shared register. Kept on this computer only; never part of the batch.",
+      "properties": {
+        "email": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          }
+        },
+        "phone": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          }
+        },
+        "handle": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/text"
+          }
+        },
+        "company": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "number",
+              "jurisdiction"
+            ],
+            "properties": {
+              "number": {
+                "$ref": "#/definitions/text"
+              },
+              "jurisdiction": {
+                "$ref": "#/definitions/text"
+              }
+            }
+          }
+        },
+        "lei": {
+          "$ref": "#/definitions/text"
+        },
+        "opencorporates": {
+          "$ref": "#/definitions/text"
+        },
+        "wikidata": {
+          "type": "string",
+          "pattern": "^Q[1-9][0-9]*$"
         }
       }
     }

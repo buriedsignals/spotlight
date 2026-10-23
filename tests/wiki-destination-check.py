@@ -32,7 +32,13 @@ class WikiDestination(INGEST.SoloCase):
 
     def write(self, case: Path, wiki: Path, *extra: str, path: str = "/usr/bin:/bin") -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, str(ROOT / "scripts" / "wiki-destination.py"), str(case), "--workspace", str(wiki), *extra],
-                              capture_output=True, text=True, env={"PATH": path})
+                              capture_output=True, text=True, env={"PATH": path, "HOME": self.root_home()})
+
+    def root_home(self) -> str:
+        # Never this computer's own Engine (its ~/.local/bin/spotlight link).
+        home = Path(self.root) / "home"
+        home.mkdir(exist_ok=True)
+        return str(home)
 
     def wiki(self) -> Path:
         wiki = Path(tempfile.mkdtemp(dir=self.root)) / "wiki"
@@ -103,7 +109,7 @@ class WikiDestination(INGEST.SoloCase):
         case, wiki = self.requested("linked"), self.wiki()
         stub = Path(tempfile.mkdtemp(dir=self.root))
         (stub / "bsig").write_text("#!/bin/sh\n"
-                                   "case \"$5\" in *'\"Acme\"'*) echo '{\"event\":\"result\",\"data\":{\"result\":{\"status\":\"linked\",\"entity_id\":\"acme-ltd\"}}}';;\n"
+                                   "case \"$6\" in *'\"Acme\"'*) echo '{\"event\":\"result\",\"data\":{\"result\":{\"status\":\"linked\",\"entity_id\":\"acme-ltd\"}}}';;\n"
                                    "*) echo '{\"event\":\"result\",\"data\":{\"result\":{\"status\":\"candidates\"}}}';; esac\n", encoding="utf-8")
         (stub / "bsig").chmod(0o755)
         done = self.write(case, wiki, path=f"{stub}:/usr/bin:/bin")
@@ -112,6 +118,48 @@ class WikiDestination(INGEST.SoloCase):
         self.assertIn("[[wiki/entities/acme-ltd|Acme]]", note)
         self.assertNotIn("[[wiki/entities/", note.split("Object:")[1].splitlines()[0])  # Doe: candidates only
         self.assertFalse((wiki / "wiki").exists())
+
+    def test_a_mentions_identifiers_reach_the_register_lookup(self) -> None:
+        wiki = self.wiki()
+        stub = Path(tempfile.mkdtemp(dir=self.root))
+        (stub / "bsig").write_text("#!/bin/sh\n"
+                                   "case \"$6\" in *doe@example.org*) echo '{\"event\":\"result\",\"data\":{\"result\":{\"status\":\"linked\",\"entity_id\":\"jane-doe\"}}}';;\n"
+                                   "*) echo '{\"event\":\"result\",\"data\":{\"result\":{\"status\":\"unknown\"}}}';; esac\n", encoding="utf-8")
+        (stub / "bsig").chmod(0o755)
+        mentions = json.dumps({"schema_version": "1.0", "mentions": {
+            "Doe": {"entity_type": "person", "identifiers": {"email": ["doe@example.org"]}}}})
+        # Identifiers changed after the approval are refused: the approval binds them.
+        late = self.requested("late")
+        (late / "data" / "knowledge-mentions.json").write_text(mentions, encoding="utf-8")
+        refused = self.write(late, wiki, path=f"{stub}:/usr/bin:/bin")
+        self.assertNotEqual(refused.returncode, 0)
+        case = self.prepared("identified")
+        (case / "data" / "knowledge-mentions.json").write_text(mentions, encoding="utf-8")
+        self.seam(case, "decide-ingest", "requested", "--nonce", self.nonce(case, "ingest"),
+                  "--digest", self.view(case, "ingest")["digest"], *INGEST.GATES.DECIDER)
+        done = self.write(case, wiki, path=f"{stub}:/usr/bin:/bin")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        first_note = next((wiki / "spotlight" / "claims").glob("*.md"))
+        self.assertIn("[[wiki/entities/jane-doe|Doe]]", first_note.read_text(encoding="utf-8"))
+        # Another batch's write rebuilds every note; this batch's identifier
+        # link survives although its identifiers stay in its own case folder.
+        other = self.requested("other")
+        done = self.write(other, wiki, path=f"{stub}:/usr/bin:/bin")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("[[wiki/entities/jane-doe|Doe]]", first_note.read_text(encoding="utf-8"))
+        links = json.loads((wiki / "spotlight" / "entity-links.json").read_text(encoding="utf-8"))["batches"]
+        self.assertNotIn("doe@example.org", json.dumps(links))
+
+    def test_a_malformed_mentions_file_stops_before_any_write(self) -> None:
+        case = self.prepared("malformed")
+        (case / "data" / "knowledge-mentions.json").write_text("[1, 2]", encoding="utf-8")
+        self.seam(case, "decide-ingest", "requested", "--nonce", self.nonce(case, "ingest"),
+                  "--digest", self.view(case, "ingest")["digest"], *INGEST.GATES.DECIDER)
+        wiki = self.wiki()
+        done = self.write(case, wiki)
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("knowledge-mentions.json", done.stderr)
+        self.assertFalse((wiki / "spotlight").exists())
 
     def test_case_text_cannot_plant_links_or_follow_symlinks(self) -> None:
         case = self.prepared("hostile")

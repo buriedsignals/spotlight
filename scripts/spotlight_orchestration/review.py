@@ -138,12 +138,21 @@ def subject_digest(case: Path, gate: str) -> str:
         return _canonical_sha(current_hashes(case, METHODOLOGY_INPUTS))
     dependency = str(investigation_gate_dependencies(case)["dependency_digest"])
     if gate == "ingest" and activated_case(case):
-        return _canonical_sha({"dependencies": dependency, "batch": _batch_sha256(case)})
+        bound = {"dependencies": dependency, "batch": _batch_sha256(case)}
+        # The mention identifiers decide which register entities the notes
+        # link to, so an approval binds them too (absent for older cases).
+        mentions = case_path(case, INGEST_MENTIONS)
+        if mentions.is_file():
+            bound["mentions"] = hashlib.sha256(mentions.read_bytes()).hexdigest()
+        return _canonical_sha(bound)
     if gate == "report":
         draft = case_path(case, REPORT_DRAFT)
         draft_sha = hashlib.sha256(draft.read_bytes()).hexdigest() if draft.is_file() else None
         return _canonical_sha({"dependencies": dependency, "draft": draft_sha})
     return dependency
+
+
+INGEST_MENTIONS = "data/knowledge-mentions.json"
 
 
 def _batch_sha256(case: Path) -> str | None:

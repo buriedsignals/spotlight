@@ -42,7 +42,6 @@ import importlib.util
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -64,6 +63,9 @@ from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
 from spotlight_orchestration.resolver import load_ingestion_marker, status_for  # noqa: E402
 from spotlight_orchestration.storage import load_state, transaction  # noqa: E402
+
+sys.path.insert(0, str(SCRIPT_DIR.parent / "integrations"))
+from _engine import bsig_path  # noqa: E402
 
 try:
     import fcntl
@@ -176,23 +178,41 @@ def workspace_from_config() -> Path:
 
 class Resolver:
     """Exact register matches through `bsig wiki resolve`; without Engine, no
-    links. The register links on a strong identifier, which Batch 1.1 core
-    mentions do not carry, so today a name alone links only when the
-    register's resolve says "linked"."""
+    links. The register links on a strong identifier: the batch being written
+    sends its analyst's identifiers for a mention, and other batches' notes
+    keep the links their own writes found (spotlight/entity-links.json),
+    because their identifiers stay in their own case folders."""
 
-    def __init__(self, workspace: Path):
-        self.bsig = shutil.which("bsig")
+    def __init__(self, workspace: Path, batch_id: str = "", mentions: dict[str, Any] | None = None,
+                 stored: dict[str, dict[str, str]] | None = None):
+        self.bsig = bsig_path()
         self.workspace = workspace
-        self.cache: dict[str, str | None] = {}
+        self.batch_id = batch_id
+        # Entity types and strong identifiers the analyst found, by mention
+        # text (data/knowledge-mentions.json); an identifier is what links.
+        self.mentions = mentions or {}
+        self.links: dict[str, dict[str, str]] = {b: dict(names) for b, names in (stored or {}).items() if isinstance(names, dict)}
+        self.links.pop(batch_id, None)  # the batch being written is resolved afresh
+        self.cache: dict[tuple[str, str], str | None] = {}
 
-    def entity(self, name: str) -> str | None:
+    def entity(self, name: str, batch_id: str = "") -> str | None:
+        batch_id = batch_id or self.batch_id
+        if batch_id != self.batch_id and name in self.links.get(batch_id, {}):
+            return self.links[batch_id][name]
         if not self.bsig or not name.strip():
             return None
-        if name not in self.cache:
-            self.cache[name] = None
+        key = (batch_id, name)
+        if key not in self.cache:
+            self.cache[key] = None
+            known = (self.mentions.get(name) or {}) if batch_id == self.batch_id else {}
+            query: dict[str, Any] = {"name": name}
+            if known.get("entity_type"):
+                query["type"] = known["entity_type"]
+            if known.get("identifiers"):
+                query["identifiers"] = known["identifiers"]
             try:
-                done = subprocess.run([self.bsig, "wiki", "resolve", "--workspace", str(self.workspace), json.dumps({"name": name})],
-                                      capture_output=True, text=True, timeout=30)
+                done = subprocess.run([self.bsig, "--json", "wiki", "resolve", "--workspace", str(self.workspace), json.dumps(query)],
+                                      capture_output=True, text=True, encoding="utf-8", timeout=30)
             except (OSError, subprocess.TimeoutExpired):
                 return None
             for line in done.stdout.splitlines():
@@ -200,13 +220,16 @@ class Resolver:
                     event = json.loads(line)
                 except ValueError:
                     continue
-                result = (event.get("data") or {}).get("result") if isinstance(event, dict) else None
+                data = event.get("data") if isinstance(event, dict) else None
+                result = data.get("result") if isinstance(data, dict) else None
                 if isinstance(result, dict) and result.get("status") == "linked" and isinstance(result.get("entity_id"), str):
-                    self.cache[name] = result["entity_id"]
-        return self.cache[name]
+                    self.cache[key] = result["entity_id"]
+            if self.cache[key] and batch_id == self.batch_id:
+                self.links.setdefault(batch_id, {})[name] = self.cache[key]
+        return self.cache[key]
 
-    def link(self, name: str) -> str:
-        entity = self.entity(name)
+    def link(self, name: str, batch_id: str = "") -> str:
+        entity = self.entity(name, batch_id)
         if entity and re.fullmatch(r"[a-z0-9][a-z0-9_-]*", entity):
             label = name.replace("|", "/").replace("[", "(").replace("]", ")").replace("\n", " ")
             return f"[[wiki/entities/{entity}|{label}]]"
@@ -278,6 +301,7 @@ def notes_for(batches: list[dict[str, Any]], journal: dict[str, dict[str, Any]],
     for record_id, entry in sorted(records.items()):
         record, record_type, batch = entry["record"], entry["type"], entry["batch"]
         decided = journal.get(batch["batch_id"], {})
+        link = lambda name, source=batch["batch_id"]: resolver.link(name, source)  # noqa: E731
         history = sorted(versions[record_id])
         body: list[str] = []
         fields: dict[str, Any] = {"type": record_type.replace("_", "-"), "record_id": record_id, "version": record["version"],
@@ -287,10 +311,10 @@ def notes_for(batches: list[dict[str, Any]], journal: dict[str, dict[str, Any]],
             fields["title"] = record["proposition"]
             statement = record["statement"]
             body += [f"# {_md(record['proposition'])}", "",
-                     f"- Subject: {resolver.link(statement['subject']['text'])}",
+                     f"- Subject: {link(statement['subject']['text'])}",
                      f"- Predicate: {_md(statement['predicate'])}"]
             if "object" in statement:
-                body.append(f"- Object: {resolver.link(statement['object']['text'])}")
+                body.append(f"- Object: {link(statement['object']['text'])}")
             for assessment in about("assessment", "claim_ref", record_id):
                 fields.update({"verdict": assessment["verdict"], "confidence": assessment["confidence"]})
                 body += ["", "## Assessment", "", f"{assessment['verdict']}, {assessment['confidence']} confidence.", "", _md(assessment["rationale"])]
@@ -310,16 +334,16 @@ def notes_for(batches: list[dict[str, Any]], journal: dict[str, dict[str, Any]],
             positions = about("source_position", "claim_ref", record_id)
             if positions:
                 body += ["", "## Source positions", ""]
-                body += [f"- {resolver.link(p['actor']['label'])} {p['stance']}: \"{_md(p['attribution_verbatim'])}\"" for p in positions]
+                body += [f"- {link(p['actor']['label'])} {p['stance']}: \"{_md(p['attribution_verbatim'])}\"" for p in positions]
             events = about("claim_event_membership", "claim_ref", record_id)
             if events:
                 body += ["", "## Events", ""] + [f"- {note_link(m['event_ref']['id'], m['event_ref']['id'])}" for m in events]
         elif record_type == "event":
-            actors = ", ".join(f"{resolver.link(a['name'])} ({a['role']})" for a in record["actors"])
+            actors = ", ".join(f"{link(a['name'])} ({a['role']})" for a in record["actors"])
             fields["title"] = f"{', '.join(a['name'] for a in record['actors'])} {record['action']}"
             body += [f"# {_md(fields['title'])}", "", f"- Actors: {actors}", f"- Action: {_md(record['action'])}"]
             if "object" in record:
-                body.append(f"- Object: {resolver.link(record['object']['text'])}")
+                body.append(f"- Object: {link(record['object']['text'])}")
             if "time" in record:
                 time = record["time"]
                 if "value" in time:
@@ -330,7 +354,7 @@ def notes_for(batches: list[dict[str, Any]], journal: dict[str, dict[str, Any]],
                     when = f"from {time['start']}" if "start" in time else f"until {time['end']}"
                 body.append(f"- Time: {_md(when)}")
             if "place" in record:
-                body.append(f"- Place: {resolver.link(record['place']['name'])}")
+                body.append(f"- Place: {link(record['place']['name'])}")
             claims = about("claim_event_membership", "event_ref", record_id)
             body += ["", "## Claims", ""] + [f"- {note_link(m['claim_ref']['id'], m['claim_ref']['id'])}" for m in claims]
             arcs = about("event_story_arc_membership", "event_ref", record_id)
@@ -375,6 +399,12 @@ def write(case: Path, workspace: Path, overwrite_hand_edits: bool = False) -> di
         if errors:
             raise DestinationError("the approved batch is not valid: " + "; ".join(errors[:6]))
         batch_ids = {(t, r["id"], r["version"]) for a, t in RULES.ARRAYS.items() for r in batch.get(a, [])}
+        # Read before anything is written: a malformed file stops the run here.
+        mentions_path = case / "data" / "knowledge-mentions.json"
+        mentions_doc = _load(mentions_path) if mentions_path.is_file() else {"mentions": {}}
+        mentions = mentions_doc.get("mentions") if isinstance(mentions_doc, dict) else None
+        if not isinstance(mentions, dict) or not all(isinstance(v, dict) for v in mentions.values()):
+            raise DestinationError("knowledge-mentions.json must map each mention to an object")
 
         # Wiki: the batch whole, then the journal, then the regenerated notes.
         batch_file = _confined(workspace, f"{NAMESPACE}/batches/{_slug(batch['batch_id'])}.json")
@@ -406,7 +436,11 @@ def write(case: Path, workspace: Path, overwrite_hand_edits: bool = False) -> di
         manifest = _load(manifest_path) if manifest_path.is_file() else {"schema_version": "1.0", "notes": {}}
         base = workspace / ".ok" / "schemas" / "base.schema.json"
         base_checker = schema_check.load(base) if base.is_file() else None
-        notes = notes_for(kept, journal, Resolver(workspace))
+        links_path = _confined(workspace, f"{NAMESPACE}/entity-links.json")
+        stored_doc = _load(links_path) if links_path.is_file() else {}
+        stored_links = stored_doc.get("batches", {}) if isinstance(stored_doc, dict) else {}
+        resolver = Resolver(workspace, batch["batch_id"], mentions, stored_links if isinstance(stored_links, dict) else {})
+        notes = notes_for(kept, journal, resolver)
         edited = []
         for rel, text in notes.items():
             target = _confined(workspace, rel)
@@ -429,6 +463,7 @@ def write(case: Path, workspace: Path, overwrite_hand_edits: bool = False) -> di
             _write_atomic(_confined(workspace, rel), data)
             manifest["notes"][rel] = _sha(data)
         _write_atomic(manifest_path, (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8"))
+        _write_atomic(links_path, (json.dumps({"schema_version": "1.0", "batches": resolver.links}, indent=2, sort_keys=True) + "\n").encode("utf-8"))
 
         # Case: admission and the completed receipt, in one write.
         if not done:
