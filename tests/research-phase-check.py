@@ -32,6 +32,8 @@ def _load(name: str, path: Path):
 
 
 CONFORMANCE = _load("spotlight_conformance_fixtures", ROOT / "tests" / "orchestration-conformance-check.py")
+sys.path.insert(0, str(ROOT / "integrations" / "decisions"))
+BANK = _load("spotlight_research_questions", ROOT / "integrations" / "decisions" / "research_questions.py").RESEARCH_BANK_VERSION
 
 
 def write_json(path: Path, value: object) -> None:
@@ -48,7 +50,7 @@ def prepare_research_gate(case: Path, marks: dict[str, str] | None = None) -> No
     after the merge it reads) and the investigator's suggested marks for the
     current leads, clues and triage. ``marks`` overrides the suggestions."""
     leads = json.loads((case / "data/leads.json").read_text(encoding="utf-8"))
-    write_json(case / "data/research-triage.json", {"generated_at": leads["generated_at"], "leads": []})
+    write_json(case / "data/research-triage.json", {"generated_at": leads["generated_at"], "bank_version": BANK, "leads": []})
     clues = json.loads((case / "data/clues.json").read_text(encoding="utf-8"))
     methodology = json.loads((case / "data/methodology.json").read_text(encoding="utf-8"))
     write_json(case / "data/research-suggestions.json", {
@@ -150,7 +152,7 @@ class ResearchPhase(unittest.TestCase):
             current = self.status()
             steps.append((current["phase"], current["research"]["resume_at"], current["missing"]))
             if current["research"]["resume_at"] == "triage":
-                write_json(self.case / "data/research-triage.json", {"generated_at": "2026-10-23T09:30:00Z"})
+                write_json(self.case / "data/research-triage.json", {"generated_at": "2026-10-23T09:30:00Z", "bank_version": BANK})
         self.assertEqual(steps, [
             ("research", "triage", ["data/research-triage.json"]),
             ("research", "suggestions", ["data/research-suggestions.json"]),
@@ -170,6 +172,19 @@ class ResearchPhase(unittest.TestCase):
 
         CONFORMANCE.investigation_outputs(self.case)
         self.assertEqual(self.status()["phase"], "investigation_gate_approval")
+
+    def test_triage_from_another_bank_is_rerun(self) -> None:
+        # A triage written by an older question bank is stale like any other
+        # stale input: Research resumes at triage, whatever its leads say.
+        self.seam("approve", "methodology", *APPROVER)
+        leads = json.loads(LEADS_SAMPLE.read_text(encoding="utf-8"))
+        write_json(self.case / "data/leads.json", leads)
+        write_json(self.case / "data/clues.json", json.loads(CLUES_SAMPLE.read_text(encoding="utf-8")))
+        old = {"generated_at": leads["generated_at"], "bank_version": "0" * 64,
+               "leads": [{"lead_id": "x", "disposition": "set_aside", "set_aside_reasons": ["content_not_found"]}]}
+        write_json(self.case / "data/research-triage.json", old)
+        current = self.status()
+        self.assertEqual((current["research"]["resume_at"], current["missing"]), ("triage", ["data/research-triage.json"]))
 
     def test_changed_leads_reopen_the_research_gate(self) -> None:
         self.through_research()
