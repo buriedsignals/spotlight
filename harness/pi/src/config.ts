@@ -204,6 +204,9 @@ function newsroomRoutes(env: Env): { routes: Route[]; pipelineRoute: Route } {
 		if (route.keyEnv && !env[route.keyEnv]) {
 			throw new ConfigError(`route "${route.name}" needs ${route.keyEnv}, which is not set.`);
 		}
+		if (route.keyEnv && env[route.keyEnv]!.length < MIN_EDITORIAL_TOKEN_LENGTH) {
+			throw new ConfigError(`${route.keyEnv} is shorter than ${MIN_EDITORIAL_TOKEN_LENGTH} characters, so it cannot be redacted reliably.`);
+		}
 	}
 	const requested = optionalURL(env, 'SPOTLIGHT_MODEL_BASE_URL');
 	const pipelineRoute = requested ? routes.find((route) => route.baseURL === requested) : routes[0];

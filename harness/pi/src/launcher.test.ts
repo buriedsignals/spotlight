@@ -225,11 +225,11 @@ test('newsroom edition: no allowed route refuses to start; with a route, request
 	assert.equal((await noRoute.exited).code, 2);
 	assert.match(noRoute.stderr(), /no allowed model route/);
 
-	const offRoute = launch(t, newsroom({ SPOTLIGHT_ROUTES: JSON.stringify(routes), NEWSROOM_ROUTE_TOKEN: 'tok', SPOTLIGHT_MODEL_BASE_URL: elsewhere.baseURL }));
+	const offRoute = launch(t, newsroom({ SPOTLIGHT_ROUTES: JSON.stringify(routes), NEWSROOM_ROUTE_TOKEN: 'route-token-0123456789', SPOTLIGHT_MODEL_BASE_URL: elsewhere.baseURL }));
 	assert.equal((await offRoute.exited).code, 2);
 	assert.match(offRoute.stderr(), /not one of the newsroom's allowed routes/);
 
-	const chat = launch(t, newsroom({ SPOTLIGHT_ROUTES: JSON.stringify(routes), NEWSROOM_ROUTE_TOKEN: 'tok' }));
+	const chat = launch(t, newsroom({ SPOTLIGHT_ROUTES: JSON.stringify(routes), NEWSROOM_ROUTE_TOKEN: 'route-token-0123456789' }));
 	await settledPrompt(chat, 'Start.');
 
 	assert.ok(route.requests.length >= 2);
@@ -726,7 +726,11 @@ test('newsroom Submit: a failed integrity check leaves the case at Ingest with t
 			submit_case_review: () => ({ status: 'rejected', integrity_failures: [{ check: 'file_hash', path: 'research/filing.txt', reason: 'research/filing.txt does not match the manifest hash' }] }),
 		},
 	});
-	const staging = await startFakeEditorial();
+	let stagingOrigin = '';
+	const staging = await startFakeEditorial({
+		handlers: { submit_case_review: () => ({ status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: `${stagingOrigin}/review/rev-1` }) },
+	});
+	stagingOrigin = new URL(staging.url).origin;
 	t.after(() => Promise.all([fake.close(), rejecting.close(), staging.close()]));
 
 	const blocked = await workspace(t);
@@ -747,7 +751,13 @@ test('newsroom Submit: a failed integrity check leaves the case at Ingest with t
 
 	const staged = await workspace(t);
 	const stagedCase = await caseAtIngest(staged);
-	const stagedEnv = newsroomEnv(staged, newsroomRoute(fake.baseURL), staging);
+	// The member's browser opener: it records the environment it was given.
+	const opener = join(staged.root, 'bin');
+	await mkdir(opener);
+	for (const name of ['open', 'xdg-open']) await writeFile(join(opener, name), `#!/bin/sh\nenv > '${join(staged.root, 'opener-env')}'\n`, { mode: 0o755 });
+	const route = [{ ...newsroomRoute(fake.baseURL)[0], key_env: 'ROUTE_AUTH' }];
+	const stagedEnv = newsroomEnv(staged, route, staging, { ROUTE_AUTH: 'route-auth-token-0123456789' });
+	stagedEnv.PATH = `${opener}:${stagedEnv.PATH}`;
 	await requestNewsroomIngest(stagedCase, stagedEnv);
 	const second = launch(t, stagedEnv);
 	await settledPrompt(second, 'Continue.');
@@ -757,6 +767,10 @@ test('newsroom Submit: a failed integrity check leaves the case at Ingest with t
 	assert.deepEqual((await readdir(join(stagedCase, 'receipts'))).sort(), ['review-rev-1.json', 'review-status-rev-1.json', 'submission-sub-1.json']);
 	// The review address is the member's: no model request carries it.
 	assert.ok(!JSON.stringify(fake.requests).includes('/review/rev-1'), 'the review address never reaches a model');
+	if (process.platform !== 'win32') {
+		const openerEnv = await readFile(join(staged.root, 'opener-env'), 'utf8');
+		assert.ok(!openerEnv.includes('route-auth-token') && !openerEnv.includes(staging.token), 'the opener gets no token');
+	}
 	assert.equal((JSON.parse(await readFile(join(stagedCase, 'data', 'newsroom-submission.json'), 'utf8')) as { state: string }).state, 'submitted');
 	assert.deepEqual(staging.callsOf('get_review_status'), [{ review_id: 'rev-1' }]);
 	assert.deepEqual((lastResolution(second) as { ingest?: unknown }).ingest, { state: 'completed', resume_at: 'seal' });

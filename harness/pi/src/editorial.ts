@@ -134,6 +134,13 @@ export class EditorialClient {
 		return value;
 	}
 
+	// A failed request or an unreadable answer stops the case; the caller's own
+	// cancellation stays a cancellation and stops only that call.
+	#unreachable(error: unknown, signal?: AbortSignal): unknown {
+		if (signal?.aborted) return error;
+		return new EditorialError(`the Editorial MCP could not be reached: ${this.#clean((error as Error).message)}`);
+	}
+
 	async #post(message: Record<string, unknown>, signal?: AbortSignal): Promise<{ status: number; body: string; type: string; session?: string; sent?: string }> {
 		const { url, token, origins, timeoutMs, fetchImpl } = this.#options;
 		assertNewsroomDestination(origins, url);
@@ -156,15 +163,21 @@ export class EditorialClient {
 				signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
 			});
 		} catch (error) {
-			throw new EditorialError(`the Editorial MCP could not be reached: ${this.#clean((error as Error).message)}`);
+			throw this.#unreachable(error, signal);
 		}
 		if (response.status >= 300 && response.status < 400) {
 			throw new EditorialRefused('refused: the Editorial MCP answered with a redirect; Spotlight does not follow it with the newsroom token');
 		}
 		if (response.status === 401 || response.status === 403) throw new EditorialCredentialError();
+		let body: string;
+		try {
+			body = await response.text();
+		} catch (error) {
+			throw this.#unreachable(error, signal);
+		}
 		return {
 			status: response.status,
-			body: await response.text(),
+			body,
 			type: response.headers.get('content-type') ?? '',
 			session: response.headers.get('mcp-session-id') ?? undefined,
 			sent,

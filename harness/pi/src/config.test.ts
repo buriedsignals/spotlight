@@ -60,13 +60,13 @@ test('newsroom routes: every process goes only to an own-inference route', () =>
 		SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
 		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token-0123456789',
 		SPOTLIGHT_ROUTES: routes(inference),
-		ROUTE_0_TOKEN: 'tok-0',
-		ROUTE_1_TOKEN: 'tok-1',
+		ROUTE_0_TOKEN: 'tok-0-0123456789abcdef',
+		ROUTE_1_TOKEN: 'tok-1-0123456789abcdef',
 	});
 
 	const mixed = readConfig(env(['third-party', 'own']));
 	assert.equal(routeFor(mixed).name, 'r1');
-	assert.equal(childEnv(mixed, COMPOSITION, 'investigator', env(['third-party', 'own'])).SPOTLIGHT_PROVIDER_API_KEY, 'tok-1');
+	assert.equal(childEnv(mixed, COMPOSITION, 'investigator', env(['third-party', 'own'])).SPOTLIGHT_PROVIDER_API_KEY, 'tok-1-0123456789abcdef');
 
 	const thirdPartyOnly = readConfig(env(['third-party']));
 	assert.throws(() => routeFor(thirdPartyOnly), /route you run yourself/);
@@ -157,7 +157,7 @@ test('the swarm route exists only with the switch and a key, keeps zero data ret
 				{ name: 'model', base_url: 'https://model.newsroom.example/v1', model: 'm', inference: 'own' },
 				{ name: 'cloud', base_url: 'https://cloud.newsroom.example/v1', model: 'c', inference: 'third-party', key_env: 'CLOUD_TOKEN' },
 			]),
-			CLOUD_TOKEN: 'tok',
+			CLOUD_TOKEN: 'cloud-token-0123456789',
 			OPENROUTER_API_KEY: 'k',
 			SPOTLIGHT_RESEARCH_SWARMS: 'on',
 			SPOTLIGHT_SWARM_BASE_URL: swarmURL,
@@ -175,14 +175,15 @@ test('newsroom: a route token is never the Editorial MCP token or a tool secret,
 		SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
 		SPOTLIGHT_EDITORIAL_MCP_TOKEN: token,
 		SPOTLIGHT_ROUTES: JSON.stringify([{ name: 'model', base_url: 'https://model.newsroom.example/v1', model: 'm', inference: 'own', key_env: keyEnv }]),
-		REGISTRY_API_KEY: 'reg-secret',
-		ROUTE_TOKEN: 'route-secret',
+		REGISTRY_API_KEY: 'reg-secret-0123456789',
+		ROUTE_TOKEN: 'route-secret-0123456789',
 	});
 	// Accepted, the Editorial token would reach every pi process as its route key.
 	assert.throws(() => readConfig(env('SPOTLIGHT_EDITORIAL_MCP_TOKEN')), /key_env may not name SPOTLIGHT_EDITORIAL_MCP_TOKEN/);
 	assert.throws(() => checkRouteSecrets(readConfig(env('REGISTRY_API_KEY')), COMPOSITION), /REGISTRY_API_KEY .*tool secret/);
 	const ok = readConfig(env('ROUTE_TOKEN'));
 	assert.doesNotThrow(() => checkRouteSecrets(ok, COMPOSITION));
-	assert.equal(childEnv(ok, COMPOSITION, 'orchestrator', env('ROUTE_TOKEN')).SPOTLIGHT_PROVIDER_API_KEY, 'route-secret');
+	assert.equal(childEnv(ok, COMPOSITION, 'orchestrator', env('ROUTE_TOKEN')).SPOTLIGHT_PROVIDER_API_KEY, 'route-secret-0123456789');
 	assert.throws(() => readConfig(env('ROUTE_TOKEN', 'abc')), /shorter than 16 characters/);
+	assert.throws(() => readConfig({ ...env('ROUTE_TOKEN'), ROUTE_TOKEN: 'tok' }), /ROUTE_TOKEN is shorter than 16 characters/);
 });

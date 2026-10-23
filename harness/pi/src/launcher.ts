@@ -163,7 +163,10 @@ function reviewOpener(harness: Harness): (url: string) => Promise<boolean> {
 			harness.log('the newsroom review address is not on one of the newsroom\'s endpoints; it was not opened');
 			return false;
 		}
-		return (await openInBrowser(url)).ok;
+		// The opener sees the system basics and the desktop session, never the
+		// launcher's tokens, whatever their variable names.
+		const env = programEnv(process.env, ['DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS']);
+		return (await openInBrowser(url, { env })).ok;
 	};
 }
 

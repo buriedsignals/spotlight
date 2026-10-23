@@ -6,13 +6,31 @@ import { execFile } from 'node:child_process';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
-import { EditorialClient, EditorialCredentialError, EditorialRefused, submitCase } from './editorial.ts';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { EditorialClient, EditorialCredentialError, EditorialRefused, stopsTheNewsroomCase, submitCase } from './editorial.ts';
 import type { RunPackage } from './editorial.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import { caseAtIngest, newsroomEnv, requestNewsroomIngest, workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT } from './roles.ts';
 
 const origin = (url: string) => new URL(url).origin;
+
+// An Editorial MCP that sends its headers and part of an answer, then breaks
+// the connection (`cut`), or that never answers.
+async function halfAnswering(t: { after(fn: () => unknown): void }, cut: boolean): Promise<EditorialClient> {
+	const server = createServer((request, response) => {
+		request.resume();
+		if (!cut) return;
+		response.writeHead(200, { 'content-type': 'application/json', 'content-length': '1000' });
+		response.write('{"jsonrpc":');
+		setTimeout(() => response.destroy(), 20);
+	});
+	await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+	t.after(() => new Promise((done) => { server.closeAllConnections(); server.close(done); }));
+	const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`;
+	return new EditorialClient({ url, token: 'newsroom-editorial-token-123', origins: [origin(url)] });
+}
 
 test('a request carrying the newsroom token goes only to an allowed newsroom endpoint: another host and a redirect are refused before the token leaves', async (t) => {
 	const newsroom = await startFakeEditorial({ sse: true });
@@ -115,4 +133,20 @@ test('Submit opens the newsroom review page in the member\'s browser and keeps i
 	}
 	assert.ok(!written.join('\n').includes('secret-capability'), 'the review address is nowhere a model can read');
 	assert.ok(!written.join('\n').includes('review_url'));
+});
+
+test('an answer whose body breaks after its headers stops the newsroom case', async (t) => {
+	const client = await halfAnswering(t, true);
+	const error = await client.connect().then(() => assert.fail('a broken answer was accepted'), (caught: unknown) => caught);
+	assert.ok(stopsTheNewsroomCase(error), String(error));
+});
+
+test('a call the caller cancels is a cancellation, not a newsroom outage', async (t) => {
+	const client = await halfAnswering(t, false);
+	const controller = new AbortController();
+	const call = client.connect(controller.signal).then(() => assert.fail('a cancelled call finished'), (caught: unknown) => caught);
+	setTimeout(() => controller.abort(), 20);
+	const error = await call;
+	assert.equal((error as Error).name, 'AbortError');
+	assert.ok(!stopsTheNewsroomCase(error));
 });
