@@ -902,11 +902,16 @@ function wikiSection() {
   );
 }
 
+// Never rejects: a request that fails outright becomes the shown error.
 async function loadWiki() {
-  const { status, data } = await post("/api/wiki-changes", {});
   wikiError = "";
-  if (status === 200 && Array.isArray(data.changes)) wikiChanges = data.changes;
-  else if (status !== 403) wikiError = data.message || "Could not read staged changes.";
+  try {
+    const { status, data } = await post("/api/wiki-changes", {});
+    if (status === 200 && Array.isArray(data.changes)) wikiChanges = data.changes;
+    else if (status !== 403) wikiError = data.message || "Could not read staged changes.";
+  } catch {
+    wikiError = "Could not reach the review page's local server.";
+  }
 }
 
 function wikiErrorSection() {
@@ -922,7 +927,7 @@ function wikiErrorSection() {
 // The button stays disabled until the load ends, so clicks do not pile up.
 function retryWiki(event) {
   event.currentTarget.disabled = true;
-  void loadWiki().then(showWiki);
+  void loadWiki().finally(showWiki);
 }
 
 // Draws only the wiki section beside a gate, so nothing the member is typing
