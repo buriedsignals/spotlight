@@ -8,7 +8,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { isWorkerRequest, startFakeOpenAI, toolNames, toolResults } from './test-support/fake-openai.ts';
 import type { ChatRequest, Reply } from './test-support/fake-openai.ts';
-import { baseEnv, launch, settledPrompt, waitUntil, workspace } from './test-support/launch.ts';
+import { baseEnv, launch, newsroomEnv, settledPrompt, waitUntil, workspace } from './test-support/launch.ts';
+import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, loadComposition } from './roles.ts';
 
@@ -208,26 +209,27 @@ test('SIGTERM stops the harness, its children and its lock', async (t) => {
 test('newsroom edition: no allowed route refuses to start; with a route, requests go only there', async (t) => {
 	const route = await startFakeOpenAI(resolveThenStop);
 	const elsewhere = await startFakeOpenAI(resolveThenStop);
-	t.after(() => Promise.all([route.close(), elsewhere.close()]));
+	const editorial = await startFakeEditorial();
+	t.after(() => Promise.all([route.close(), elsewhere.close(), editorial.close()]));
 	const space = await workspace(t);
+	const routes = [
+		{ name: 'newsroom-model', base_url: route.baseURL, model: 'stub-model', inference: 'own', key_env: 'NEWSROOM_ROUTE_TOKEN' },
+	];
 	const newsroom = (extra: Record<string, string>) => {
-		const env: Record<string, string> = { ...baseEnv(space, ''), SPOTLIGHT_EDITION: 'newsroom', ...extra };
-		if (!extra.SPOTLIGHT_MODEL_BASE_URL) delete env.SPOTLIGHT_MODEL_BASE_URL;
+		const env = newsroomEnv(space, routes, editorial, extra);
+		if (!extra.SPOTLIGHT_ROUTES) delete env.SPOTLIGHT_ROUTES;
 		return env;
 	};
-	const routes = JSON.stringify([
-		{ name: 'newsroom-model', base_url: route.baseURL, model: 'stub-model', inference: 'own', key_env: 'NEWSROOM_ROUTE_TOKEN' },
-	]);
 
 	const noRoute = launch(t, newsroom({}));
 	assert.equal((await noRoute.exited).code, 2);
 	assert.match(noRoute.stderr(), /no allowed model route/);
 
-	const offRoute = launch(t, newsroom({ SPOTLIGHT_ROUTES: routes, NEWSROOM_ROUTE_TOKEN: 'tok', SPOTLIGHT_MODEL_BASE_URL: elsewhere.baseURL }));
+	const offRoute = launch(t, newsroom({ SPOTLIGHT_ROUTES: JSON.stringify(routes), NEWSROOM_ROUTE_TOKEN: 'tok', SPOTLIGHT_MODEL_BASE_URL: elsewhere.baseURL }));
 	assert.equal((await offRoute.exited).code, 2);
 	assert.match(offRoute.stderr(), /not one of the newsroom's allowed routes/);
 
-	const chat = launch(t, newsroom({ SPOTLIGHT_ROUTES: routes, NEWSROOM_ROUTE_TOKEN: 'tok' }));
+	const chat = launch(t, newsroom({ SPOTLIGHT_ROUTES: JSON.stringify(routes), NEWSROOM_ROUTE_TOKEN: 'tok' }));
 	await settledPrompt(chat, 'Start.');
 
 	assert.ok(route.requests.length >= 2);
@@ -242,19 +244,11 @@ test('case material reaches only a route the operator runs: refused at start wit
 			: { text: 'Done.' };
 	});
 	const thirdParty = await startFakeOpenAI(resolveThenStop);
-	t.after(() => Promise.all([own.close(), thirdParty.close()]));
+	const editorial = await startFakeEditorial();
+	t.after(() => Promise.all([own.close(), thirdParty.close(), editorial.close()]));
 	const space = await workspace(t);
 	const route = (name: string, baseURL: string, inference: string) => ({ name, base_url: baseURL, model: 'stub-model', inference });
-	const newsroom = (routes: object[], extra: Record<string, string> = {}) => {
-		const env: Record<string, string> = {
-			...baseEnv(space, ''),
-			SPOTLIGHT_EDITION: 'newsroom',
-			SPOTLIGHT_ROUTES: JSON.stringify(routes),
-			...extra,
-		};
-		delete env.SPOTLIGHT_MODEL_BASE_URL;
-		return env;
-	};
+	const newsroom = (routes: object[], extra: Record<string, string> = {}) => newsroomEnv(space, routes, editorial, extra);
 
 	const refused = launch(t, newsroom([route('cloud', thirdParty.baseURL, 'third-party')]));
 	refused.send({ id: 'p', type: 'prompt', message: 'Start.' });
@@ -517,7 +511,8 @@ test('at Ingest the analyst reads only its inputs and writes only its proposal, 
 
 test('the analyst is not started before Ingest or in the newsroom edition', async (t) => {
 	const fake = await startFakeOpenAI(delegateToAnalyst(() => ({ text: 'Proposed.' })));
-	t.after(() => fake.close());
+	const editorial = await startFakeEditorial();
+	t.after(() => Promise.all([fake.close(), editorial.close()]));
 	const solo = await workspace(t);
 	await caseAtInvestigation(solo);
 	const early = launch(t, baseEnv(solo, fake.baseURL));
@@ -527,10 +522,7 @@ test('the analyst is not started before Ingest or in the newsroom edition', asyn
 
 	const newsroom = await workspace(t);
 	await caseAtIngest(newsroom);
-	const routes = JSON.stringify([{ name: 'newsroom-model', base_url: fake.baseURL, model: 'stub-model', inference: 'own' }]);
-	const env: Record<string, string> = { ...baseEnv(newsroom, ''), SPOTLIGHT_EDITION: 'newsroom', SPOTLIGHT_ROUTES: routes };
-	delete env.SPOTLIGHT_MODEL_BASE_URL;
-	const routed = launch(t, env);
+	const routed = launch(t, newsroomEnv(newsroom, [{ name: 'newsroom-model', base_url: fake.baseURL, model: 'stub-model', inference: 'own' }], editorial));
 	await settledPrompt(routed, 'Continue.');
 
 	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'analyst')).length, 0);
@@ -654,4 +646,175 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 	const lane = JSON.parse(await readFile(join(caseDir, 'research/swarm/ownership-registries/lane.json'), 'utf8'));
 	assert.equal(lane.status, 'completed');
 	assert.ok(!chat.stderr().includes('sk-or-v1-launcher-secret'));
+});
+
+// ── Newsroom edition (Editorial MCP) ─────────────────────────────────────────
+
+function seamRun(args: string[], env: Record<string, string>): Promise<string> {
+	return new Promise((done, fail) =>
+		execFile(
+			process.env.SPOTLIGHT_PYTHON ?? 'python3',
+			[join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'), ...args],
+			{ env: { ...process.env, ...env } },
+			(error, stdout, stderr) => (error ? fail(new Error(stderr || error.message)) : done(stdout)),
+		),
+	);
+}
+
+// The member requests ingestion on the ingest page (the page's seam), in a
+// newsroom-mode install.
+async function requestNewsroomIngest(caseDir: string, env: Record<string, string>): Promise<void> {
+	const config = { SPOTLIGHT_CONFIG: env.SPOTLIGHT_CONFIG };
+	const view = JSON.parse(await seamRun(['review-view', 'ingest', caseDir], config)) as { digest: string };
+	const nonce = (JSON.parse(await seamRun(['issue-review-nonce', 'ingest', caseDir], config)) as { nonce: string }).nonce;
+	await seamRun(['decide-ingest', 'requested', '--nonce', nonce, '--digest', view.digest, '--decided-by', 'journalist:fixture', '--decided-at', '2026-10-23T12:00:00Z', caseDir], config);
+}
+
+const newsroomRoute = (baseURL: string) => [{ name: 'newsroom-model', base_url: baseURL, model: 'stub-model', inference: 'own' }];
+
+// The orchestrator makes these calls in order, one per turn, then stops.
+function orchestratorScript(calls: Array<{ name: string; arguments: Record<string, unknown> }>, worker?: (request: ChatRequest) => Reply) {
+	return (request: ChatRequest): Reply => {
+		if (worker && isWorkerRequest(request, 'investigator')) return worker(request);
+		const next = calls[toolResults(request).length];
+		return next ? { toolCalls: [next] } : { text: 'Done.' };
+	};
+}
+
+test('newsroom edition: register_case runs once per case, and a resumed chat reuses the stored reference', async (t) => {
+	const fake = await startFakeOpenAI(resolveThenStop);
+	const editorial = await startFakeEditorial();
+	t.after(() => Promise.all([fake.close(), editorial.close()]));
+	const space = await workspace(t);
+	const env = newsroomEnv(space, newsroomRoute(fake.baseURL), editorial, { SPOTLIGHT_CASE_TITLE: 'Acme payments' });
+
+	for (let chat = 0; chat < 2; chat += 1) {
+		const session = launch(t, env);
+		await settledPrompt(session, 'Continue.');
+		session.process.stdin.end();
+		assert.equal((await session.exited).code, 0);
+	}
+
+	assert.deepEqual(editorial.callsOf('register_case'), [{ title: 'Acme payments', custody_mode: 'hosted', client_case_id: 'case-a' }]);
+	const stored = JSON.parse(await readFile(join(space.casesRoot, 'case-a', 'data', 'editorial-case.json'), 'utf8')) as { case_ref: string };
+	assert.equal(stored.case_ref, 'nr-case-1');
+});
+
+test('newsroom edition: prior knowledge and decision checks go to the Editorial MCP; no query_vault or local decision check runs, and no pi process sees the token', async (t) => {
+	const fake = await startFakeOpenAI(
+		orchestratorScript(
+			[
+				{ name: 'decision_signals', arguments: { phase: 'investigation_gate' } },
+				{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Look for prior reporting on Acme.' } },
+				{ name: 'run_checks', arguments: { kind: 'findings' } },
+			],
+			(request) => (toolResults(request).length === 0 ? { toolCalls: [{ name: 'search_knowledge', arguments: { query: 'Acme payments' } }] } : { text: 'Found prior reporting.' }),
+		),
+	);
+	const editorial = await startFakeEditorial();
+	t.after(() => Promise.all([fake.close(), editorial.close()]));
+	const space = await workspace(t);
+	const caseDir = await caseAtIngest(space);
+	const chat = launch(t, newsroomEnv(space, newsroomRoute(fake.baseURL), editorial));
+
+	await settledPrompt(chat, 'Continue.');
+	chat.process.stdin.end();
+	await chat.exited;
+
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+	const investigator = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	assert.ok(toolNames(orchestrator[0]).includes('run_checks') && toolNames(orchestrator[0]).includes('newsroom_submit'));
+	assert.ok(!toolNames(orchestrator[0]).includes('decision_signals'));
+	for (const name of ['search_knowledge', 'get_record', 'traverse', 'coverage']) assert.ok(toolNames(investigator[0]).includes(name), name);
+	assert.ok(!toolNames(investigator[0]).includes('query_vault'));
+	// The model's attempt at the local decision checks found no such tool.
+	assert.match(toolResults(orchestrator[1])[0], /decision_signals/);
+	await assert.rejects(readFile(join(caseDir, 'data', 'decision-signals.json')), { code: 'ENOENT' });
+
+	assert.deepEqual(editorial.callsOf('search_knowledge'), [{ query: 'Acme payments' }]);
+	assert.match(toolResults(investigator[investigator.length - 1]).join('\n'), /Prior reporting on Acme/);
+	const checks = editorial.callsOf('run_checks');
+	assert.equal(checks.length, 2, 'started, then polled until done');
+	assert.equal(checks[0].case_ref, 'nr-case-1');
+	assert.equal(checks[0].kind, 'findings');
+	assert.equal(checks[1].job_id, 'job-1');
+	const recorded = JSON.parse(await readFile(join(caseDir, 'data', 'newsroom-checks.json'), 'utf8')) as { checks: { findings: { state: string; flags: Array<{ reason: string }> } } };
+	assert.equal(recorded.checks.findings.state, 'done');
+	assert.match(recorded.checks.findings.flags[0].reason, /not its date/);
+
+	assert.ok(editorial.requests.every((request) => request.authorization === `Bearer ${editorial.token}`));
+	assert.ok(!JSON.stringify(fake.requests).includes(editorial.token), 'the token never reaches a model request');
+	assert.ok(!chat.stderr().includes(editorial.token));
+});
+
+test('newsroom Submit: a failed integrity check leaves the case at Ingest with the reasons; a staged submission lands its receipts in receipts/ and the phase seals it', async (t) => {
+	const submitThenResolve = orchestratorScript([
+		{ name: 'newsroom_submit', arguments: {} },
+		{ name: 'spotlight_resolve', arguments: {} },
+	]);
+	const fake = await startFakeOpenAI(submitThenResolve);
+	const rejecting = await startFakeEditorial({
+		handlers: {
+			submit_case_review: () => ({ status: 'rejected', integrity_failures: [{ check: 'file_hash', path: 'research/filing.txt', reason: 'research/filing.txt does not match the manifest hash' }] }),
+		},
+	});
+	const staging = await startFakeEditorial();
+	t.after(() => Promise.all([fake.close(), rejecting.close(), staging.close()]));
+
+	const blocked = await workspace(t);
+	const blockedCase = await caseAtIngest(blocked);
+	const blockedEnv = newsroomEnv(blocked, newsroomRoute(fake.baseURL), rejecting);
+	await requestNewsroomIngest(blockedCase, blockedEnv);
+	const first = launch(t, blockedEnv);
+	await settledPrompt(first, 'Continue.');
+	first.process.stdin.end();
+	await first.exited;
+
+	const shown = fake.requests.map((request) => toolResults(request).join('\n')).join('\n');
+	assert.match(shown, /does not match the manifest hash/);
+	assert.deepEqual((lastResolution(first) as { ingest?: unknown }).ingest, { state: 'requested', resume_at: 'ingest' });
+	const submission = JSON.parse(await readFile(join(blockedCase, 'data', 'newsroom-submission.json'), 'utf8')) as { state: string };
+	assert.equal(submission.state, 'blocked');
+	await assert.rejects(readdir(join(blockedCase, 'receipts')), { code: 'ENOENT' });
+
+	const staged = await workspace(t);
+	const stagedCase = await caseAtIngest(staged);
+	const stagedEnv = newsroomEnv(staged, newsroomRoute(fake.baseURL), staging);
+	await requestNewsroomIngest(stagedCase, stagedEnv);
+	const second = launch(t, stagedEnv);
+	await settledPrompt(second, 'Continue.');
+	second.process.stdin.end();
+	await second.exited;
+
+	assert.deepEqual((await readdir(join(stagedCase, 'receipts'))).sort(), ['review-rev-1.json', 'review-status-rev-1.json', 'submission-sub-1.json']);
+	assert.deepEqual(staging.callsOf('get_review_status'), [{ review_id: 'rev-1' }]);
+	assert.deepEqual((lastResolution(second) as { ingest?: unknown }).ingest, { state: 'completed', resume_at: 'seal' });
+	const [sent] = staging.callsOf('submit_case_review') as Array<{ case_ref: string; package: { evidence_manifest: { files: Array<{ path: string; sha256: string }> } }; files: Array<{ path: string; sha256: string; content_base64: string }> }>;
+	assert.equal(sent.case_ref, 'nr-case-1');
+	assert.deepEqual(sent.files.map((file) => [file.path, file.sha256]), sent.package.evidence_manifest.files.map((file) => [file.path, file.sha256]));
+});
+
+test('a revoked newsroom token stops the harness with a plain message and exit code 4, and the token never appears in the logs', async (t) => {
+	const fake = await startFakeOpenAI(orchestratorScript([{ name: 'run_checks', arguments: { kind: 'findings' } }]));
+	const editorial = await startFakeEditorial();
+	t.after(() => Promise.all([fake.close(), editorial.close()]));
+	const space = await workspace(t);
+	await caseAtIngest(space);
+	const env = newsroomEnv(space, newsroomRoute(fake.baseURL), editorial);
+
+	const chat = launch(t, env);
+	await waitUntil(() => editorial.callsOf('register_case').length === 1);
+	editorial.revoke();
+	chat.send({ id: 'p', type: 'prompt', message: 'Continue.' });
+	const { code } = await chat.exited;
+	assert.equal(code, 4);
+	assert.match(chat.stderr(), /stopped: the newsroom sign-in is no longer valid \(revoked or expired\)\. Sign in again/);
+	assert.ok(!chat.stderr().includes(editorial.token));
+	await assert.rejects(lockRecord(space), 'the case lock is released');
+
+	// At case start too: the harness does not start without a valid sign-in.
+	const restart = launch(t, env);
+	assert.equal((await restart.exited).code, 4);
+	assert.match(restart.stderr(), /cannot start: the newsroom sign-in is no longer valid/);
+	assert.deepEqual(restart.lines, []);
 });

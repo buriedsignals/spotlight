@@ -96,7 +96,8 @@ The renderer places this at the top of the page. Do not soften:
    text and attribution, and records its locator, hashes, relation, and lifecycle in
    `evidence-map.json`. Legacy `1.0` reports do not accept expression selections.
 
-3. **Decision check (optional).** If this case ran decision checks at the Investigation gate
+3. **Decision check (optional).** Newsroom edition: call `run_checks` with kind
+   `report` instead; its flags appear on the Report page. Otherwise, if this case ran decision checks at the Investigation gate
    (`data/decision-signals.json` exists), check the prose before finalizing:
 
    ```

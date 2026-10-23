@@ -47,8 +47,9 @@ decision:
 A request is refused until the final `data/knowledge-batch.json` exists. A
 decline needs no batch.
 
-**Activated case, newsroom mode:** nothing is built or written on this
-computer; the newsroom's service drafts the batch from the submitted case.
+**Activated case, newsroom mode:** there is no analyst and no local batch;
+the newsroom's service drafts the batch from the submitted case. Open the
+ingest page so the member can request or decline the submission.
 
 **Legacy case** (findings contract `1.0`): it can no longer be ingested; the
 1.0 graph is retired. Invoke `ingest`, which explains this and offers to
@@ -85,7 +86,12 @@ The human decision is already durable. Do not ask again.
   completed receipt. Do not invoke `ingest`. A refusal names what to fix; a
   re-run after an interruption is safe.
 - **Activated case, newsroom mode:** the case goes to the newsroom; do not
-  invoke `ingest` and write nothing locally.
+  invoke `ingest`. In the Pi harness call `newsroom_submit`: the harness
+  builds the Submit package, sends it to the newsroom's Editorial MCP and
+  copies the receipts to `receipts/` (`docs/newsroom-editorial-mcp.md`). If it
+  reports failed integrity checks, give the member the reasons and stop; the
+  case stays here. A runtime without `newsroom_submit` cannot submit: say so
+  and stop.
 - **Legacy case** (findings contract `1.0`), requested before the 1.0 graph
   was retired: nothing can complete it. Invoke `ingest`, which writes nothing
   and offers to activate the case or continue it as a follow-up 1.1 case.

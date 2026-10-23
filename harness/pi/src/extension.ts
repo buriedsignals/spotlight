@@ -9,7 +9,8 @@ import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, 
 import { typedTools } from './tools/index.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import { bindActiveCase, pythonAdapter, spotlightTools } from './tools/spotlight.ts';
-import { requestResearchRound, spawnAgentTool } from './subagents.ts';
+import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
+import { editorialTools } from './tools/editorial.ts';
 import { openReviewTool } from './tools/review.ts';
 
 const log = (message: string) => process.stderr.write(`spotlight-extension: ${message}\n`);
@@ -36,12 +37,16 @@ function toolsFor(role: string): ToolDefinition[] {
 			scope: { reads: spec.reads, writes: spec.writes, denyReads: spec.denyReads },
 		}),
 	];
+	const edition = process.env.SPOTLIGHT_EDITION === 'newsroom' ? 'newsroom' : 'solo';
+	// Newsroom edition: the Editorial MCP tools, served by the launcher. The
+	// allowlist below keeps only the ones this role's swaps grant.
+	if (edition === 'newsroom') tools.push(...editorialTools(requestEditorial));
 	if (role === ORCHESTRATOR) {
 		tools.push(...spotlightTools(active, pythonAdapter(python), role, requestResearchRound));
 		tools.push(spawnAgentTool(spawnableWorkers(composition)));
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT')));
 	}
-	const allowlist = new Set(allowedTools(spec, process.env.SPOTLIGHT_SENSITIVE === 'true'));
+	const allowlist = new Set(allowedTools(spec, process.env.SPOTLIGHT_SENSITIVE === 'true', edition));
 	return tools.filter((tool) => allowlist.has(tool.name));
 }
 

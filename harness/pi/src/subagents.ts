@@ -4,7 +4,7 @@
 // them itself: it asks the launcher over the IPC channel, so the launcher alone
 // supervises every process and hands each one only its own role's keys.
 import { spawn } from 'node:child_process';
-import type { ChildProcess } from 'node:child_process';
+import type { ChildProcess, ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -18,6 +18,10 @@ export type SpawnResult = { kind: 'spotlight-result'; id: string; ok: boolean; t
 // The orchestrator's resolve asks the launcher to run the approved research
 // topics; the launcher checks the phase and the plan itself.
 export type ResearchRequest = { kind: 'spotlight-research'; id: string; retry: boolean };
+// Newsroom edition: a tool asks the launcher, the only holder of the newsroom
+// token, to call the Editorial MCP (tools/editorial.ts). The launcher checks
+// the operation against the asking process's role.
+export type EditorialRequest = { kind: 'spotlight-editorial'; id: string; op: string; args: Record<string, unknown> };
 
 export const MAX_CONCURRENT_WORKERS = 4;
 
@@ -49,6 +53,24 @@ export async function requestResearchRound(retry: boolean, signal?: AbortSignal)
 		const result = await promise;
 		if (!result.ok) throw new Error(result.error ?? 'the research round failed');
 		return result.round;
+	} finally {
+		signal?.removeEventListener('abort', onAbort);
+	}
+}
+
+export async function requestEditorial(op: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
+	if (typeof process.send !== 'function') throw new Error('the newsroom tools need the Spotlight launcher; this process was started without it');
+	listen();
+	const id = randomUUID();
+	const { promise, resolve } = Promise.withResolvers<SpawnResult>();
+	pending.set(id, resolve);
+	const onAbort = () => process.send?.({ kind: 'spotlight-cancel', id } satisfies CancelRequest);
+	signal?.addEventListener('abort', onAbort, { once: true });
+	process.send({ kind: 'spotlight-editorial', id, op, args } satisfies EditorialRequest);
+	try {
+		const result = await promise;
+		if (!result.ok) throw new Error(result.error ?? `${op} failed`);
+		return result.text ?? '';
 	} finally {
 		signal?.removeEventListener('abort', onAbort);
 	}
@@ -107,8 +129,9 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 	const child = spawn(launch.command, launch.args, {
 		cwd: launch.cwd,
 		env: launch.env,
-		stdio: ['pipe', 'pipe', 'pipe'],
-	});
+		// The IPC channel carries a worker's newsroom tool calls to the launcher.
+		stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+	}) as ChildProcessWithoutNullStreams;
 	launch.onSpawn(child);
 	launch.onStderr(child);
 	const answer = Promise.withResolvers<string>();

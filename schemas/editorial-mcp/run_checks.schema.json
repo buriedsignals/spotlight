@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spotlight.buriedsignals.com/schemas/editorial-mcp/run_checks.schema.json",
+  "title": "Editorial MCP tool run_checks",
+  "description": "Decision checks at the Investigation gate (kind findings) and on the Report (kind report). The first call starts a job; later calls with job_id poll it. Flags never block and never become verdicts.",
+  "$defs": {
+    "input": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "case_ref": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,200}$"
+            },
+            "kind": {
+              "enum": [
+                "findings",
+                "report"
+              ]
+            },
+            "artifact": {
+              "type": "object",
+              "description": "findings: {findings, passages?, fact_check?}; report: {report, findings}. The case files as JSON."
+            },
+            "artifact_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "sha256 of the artifact serialized by JSON.stringify, as the harness sent it."
+            }
+          },
+          "required": [
+            "case_ref",
+            "kind",
+            "artifact",
+            "artifact_sha256"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "case_ref": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,200}$"
+            },
+            "job_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,200}$"
+            }
+          },
+          "required": [
+            "case_ref",
+            "job_id"
+          ]
+        }
+      ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,200}$"
+        },
+        "state": {
+          "enum": [
+            "queued",
+            "running",
+            "done",
+            "failed",
+            "unavailable"
+          ]
+        },
+        "input_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "target": {
+                "type": "string",
+                "minLength": 1
+              },
+              "question": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "target",
+              "reason"
+            ]
+          }
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state"
+      ]
+    }
+  }
+}

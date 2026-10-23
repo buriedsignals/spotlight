@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spotlight.buriedsignals.com/schemas/editorial-mcp/get_review_status.schema.json",
+  "title": "Editorial MCP tool get_review_status",
+  "description": "Pending, approved, rejected or expired, and the receipt.",
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "review_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,200}$"
+        }
+      },
+      "required": [
+        "review_id"
+      ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "review_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,200}$"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "approved",
+            "rejected",
+            "expired"
+          ]
+        },
+        "receipt": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "review_id",
+        "state"
+      ]
+    }
+  }
+}

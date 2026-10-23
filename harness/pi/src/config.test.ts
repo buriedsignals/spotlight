@@ -57,6 +57,8 @@ test('newsroom routes: every process goes only to an own-inference route', () =>
 	const env = (inference: string[]) => ({
 		...BASE,
 		SPOTLIGHT_EDITION: 'newsroom',
+		SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
+		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token',
 		SPOTLIGHT_ROUTES: routes(inference),
 		ROUTE_0_TOKEN: 'tok-0',
 		ROUTE_1_TOKEN: 'tok-1',
@@ -103,6 +105,8 @@ test('the RLM endpoint that distills fetched pages must be one the operator runs
 	const newsroom = (rlm: string) => ({
 		...BASE,
 		SPOTLIGHT_EDITION: 'newsroom',
+		SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
+		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token',
 		SPOTLIGHT_ROUTES: JSON.stringify([
 			{ name: 'model', base_url: 'https://model.newsroom.example/v1', model: 'm', inference: 'own' },
 			{ name: 'rlm', base_url: 'https://rlm.newsroom.example/v1', model: 'e4b', inference: 'own' },
@@ -146,6 +150,10 @@ test('the swarm route exists only with the switch and a key, keeps zero data ret
 		readConfig({
 			...BASE,
 			SPOTLIGHT_EDITION: 'newsroom',
+			SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
+			SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token',
+		SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
+		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token',
 			SPOTLIGHT_SENSITIVE: 'false',
 			SPOTLIGHT_ROUTES: JSON.stringify([
 				{ name: 'model', base_url: 'https://model.newsroom.example/v1', model: 'm', inference: 'own' },

@@ -34,6 +34,7 @@ import { CHECKOUT_ROOT } from './roles.ts';
 import { FileRefused, readTarget, writeConfined } from './tools/case-files.ts';
 import { fetchTool } from './tools/fetch.ts';
 import { httpGetTool } from './tools/http-get.ts';
+import { EditorialCredentialError } from './editorial.ts';
 import { queryVaultTool } from './tools/query-vault.ts';
 import { programEnv, runFixed } from './tools/run.ts';
 import type { Env, ToolContext } from './tools/run.ts';
@@ -453,6 +454,9 @@ const TOOL_SPECS: Record<string, object> = {
 	query_vault: fn('query_vault', 'Search the member wiki of earlier work. Returns a source_id and the results.', {
 		type: 'object', additionalProperties: false, required: ['query'], properties: { query: { type: 'string', minLength: 1, maxLength: 1000 } },
 	}),
+	search_knowledge: fn('search_knowledge', 'Search the newsroom\'s approved knowledge base of earlier reporting. Returns a source_id and the records.', {
+		type: 'object', additionalProperties: false, required: ['query'], properties: { query: { type: 'string', minLength: 1, maxLength: 1000 } },
+	}),
 	record_lead: fn('record_lead', 'Record one lead from a captured source. The excerpt must be copied exactly from that source. To correct a returned lead, give its id as revise.', {
 		type: 'object', additionalProperties: false, required: ['source_id', 'summary', 'subjects', 'excerpt'],
 		properties: {
@@ -515,7 +519,13 @@ type LaneRun = {
 	queries: string[];
 	model: string;
 	signal: AbortSignal;
+	// Newsroom edition, local lanes: the Editorial MCP's search_knowledge,
+	// which stands in for query_vault.
+	knowledge?: KnowledgeSearch;
 };
+
+// The launcher's search_knowledge call (newsroom edition); the answer is text.
+export type KnowledgeSearch = (query: string, signal: AbortSignal) => Promise<string>;
 
 function laneRelative(run: LaneRun, path: string): string {
 	return relative(run.laneDir, resolve(run.caseDir, path)).split(sep).join('/');
@@ -603,6 +613,16 @@ async function runTool(run: LaneRun, name: string, args: Record<string, unknown>
 			writeConfined(run.caseDir, run.laneDir, save, text);
 			run.queries.push(String(args.query ?? ''));
 			const source: Source = { id, kind: 'page', tool: 'query_vault', route: 'api', text, path: laneRelative(run, save), capturedAt: now() };
+			run.sources.set(id, source);
+			return delimited(source, text);
+		}
+		case 'search_knowledge': {
+			if (!run.knowledge) throw new Error('search_knowledge is a newsroom edition tool');
+			const { id, save } = nextSourcePath(run, '.json');
+			const text = await run.knowledge(String(args.query ?? ''), run.signal);
+			writeConfined(run.caseDir, run.laneDir, save, text);
+			run.queries.push(String(args.query ?? ''));
+			const source: Source = { id, kind: 'page', tool: 'search_knowledge', route: 'api', text, path: laneRelative(run, save), capturedAt: now() };
 			run.sources.set(id, source);
 			return delimited(source, text);
 		}
@@ -763,6 +783,7 @@ type LaneJob = {
 	signal: AbortSignal;
 	retryDelayMs: number;
 	onSpend(usd: number): void;
+	knowledge?: KnowledgeSearch;
 };
 
 async function runLane(job: LaneJob): Promise<LaneOutcome> {
@@ -791,6 +812,7 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 		queries: [],
 		model: endpoint.models[0],
 		signal: job.signal,
+		knowledge: job.knowledge,
 	};
 	const tokenBudget = topic.token_budget ?? DEFAULT_TOKEN_BUDGET;
 	const spend: Spend = { usd: 0, tokens: 0 };
@@ -822,7 +844,9 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 	writeLane('running');
 	const brief = briefOf(topic, laneType);
 	const methods = topic.anomaly_methods ?? [];
-	const toolNames = [...laneType.tools, ...LEAD_TOOLS, ...(methods.length > 0 ? [METHOD_TOOL] : [])];
+	// Newsroom edition: prior knowledge comes from the newsroom, not a wiki.
+	const laneTools = run.knowledge ? laneType.tools.map((name) => (name === 'query_vault' ? 'search_knowledge' : name)) : laneType.tools;
+	const toolNames = [...laneTools, ...LEAD_TOOLS, ...(methods.length > 0 ? [METHOD_TOOL] : [])];
 	const tools = toolNames.map((name) => (name === METHOD_TOOL ? methodInputSpec(methods) : TOOL_SPECS[name]));
 	const produced = new WeakSet<Message>();
 	const messages: Message[] = [{ role: 'system', content: job.system }, { role: 'user', content: brief }];
@@ -850,7 +874,7 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 					const args = JSON.parse(call.function.arguments || '{}') as Record<string, unknown>;
 					content = await runTool(run, call.function.name, args);
 				} catch (error) {
-					if (job.signal.aborted) throw error;
+					if (job.signal.aborted || error instanceof EditorialCredentialError) throw error;
 					if (error instanceof FileRefused && /outside the folder|symlink|not a real folder/.test(error.message)) throw error;
 					content = `error: ${(error as Error).message}`;
 				}
@@ -878,7 +902,7 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 		} catch {
 			// The lane folder itself is refused; the round ledger records the failure.
 		}
-		if (error instanceof ProviderStop) throw error;
+		if (error instanceof ProviderStop || error instanceof EditorialCredentialError) throw error;
 		return { status: 'failed', failure, usd: spend.usd };
 	}
 }
@@ -898,6 +922,9 @@ export type RoundOptions = {
 	signal?: AbortSignal;
 	catalogue?: Map<string, LaneType>;
 	retryDelayMs?: number;
+	// Newsroom edition: search_knowledge through the launcher's Editorial MCP
+	// client. Without it the prior-knowledge lane is left out there.
+	knowledge?: KnowledgeSearch;
 };
 
 export type MergeOutcome = { ok: true; report: unknown } | { ok: false; error: string };
@@ -1100,8 +1127,8 @@ export async function runResearchRound(options: RoundOptions): Promise<RoundSumm
 		if (status === 'completed' || status === 'partial') continue; // finished topics keep their leads
 		if (config.sensitive && laneType!.id !== 'local-corpus') {
 			leaveOut(topic, 'sensitive mode runs only the local corpus lane');
-		} else if (laneType!.id === 'prior-knowledge' && config.edition === 'newsroom') {
-			leaveOut(topic, 'in the newsroom edition prior knowledge is read through search_knowledge, which this harness does not have yet');
+		} else if (laneType!.id === 'prior-knowledge' && config.edition === 'newsroom' && !options.knowledge) {
+			leaveOut(topic, 'in the newsroom edition prior knowledge is read through the Editorial MCP\'s search_knowledge, which is not available');
 		} else if (laneType!.route === 'local') {
 			localTopics.push(topic);
 		} else if (plan.mode === 'local_only' || !plan.consent?.swarm) {
@@ -1136,6 +1163,7 @@ export async function runResearchRound(options: RoundOptions): Promise<RoundSumm
 			backing: { ...backing, env: laneEnv(options, topic, laneType) },
 			signal: laneSignal,
 			retryDelayMs: options.retryDelayMs ?? 1000,
+			knowledge: endpoint.route === 'local' && config.edition === 'newsroom' ? options.knowledge : undefined,
 			onSpend: (usd) => {
 				record.spent_usd += usd;
 			},

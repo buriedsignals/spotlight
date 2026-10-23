@@ -1,6 +1,7 @@
 // Starts the real launcher as a chat client would, and speaks RPC to it.
 import { spawn } from 'node:child_process';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -28,6 +29,29 @@ export function baseEnv(space: Workspace, modelBaseURL: string, caseId = 'case-a
 		SPOTLIGHT_HARNESS_DATA: space.dataDir,
 		...(process.env.SPOTLIGHT_PYTHON ? { SPOTLIGHT_PYTHON: process.env.SPOTLIGHT_PYTHON } : {}),
 	};
+}
+
+// The newsroom edition's launch contract: allowed routes, the Editorial MCP
+// and its token, and an install config in newsroom mode.
+export function newsroomEnv(
+	space: Workspace,
+	routes: object[],
+	editorial: { url: string; token: string },
+	extra: Record<string, string> = {},
+): Record<string, string> {
+	const config = join(space.root, 'newsroom-config.json');
+	writeFileSync(config, JSON.stringify({ knowledge_destination: { mode: 'newsroom' } }));
+	const env: Record<string, string> = {
+		...baseEnv(space, ''),
+		SPOTLIGHT_EDITION: 'newsroom',
+		SPOTLIGHT_ROUTES: JSON.stringify(routes),
+		SPOTLIGHT_CONFIG: config,
+		SPOTLIGHT_EDITORIAL_MCP_URL: editorial.url,
+		SPOTLIGHT_EDITORIAL_MCP_TOKEN: editorial.token,
+		...extra,
+	};
+	if (!extra.SPOTLIGHT_MODEL_BASE_URL) delete env.SPOTLIGHT_MODEL_BASE_URL;
+	return env;
 }
 
 export type Chat = {

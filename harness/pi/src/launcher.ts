@@ -7,7 +7,10 @@ import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ConfigError, RouteRefused, childEnv, piSettings, readConfig, routeFor, secretValues } from './config.ts';
+import { ConfigError, RouteRefused, checkNewsroomInstall, childEnv, piSettings, readConfig, routeFor, secretValues } from './config.ts';
+import { EditorialCredentialError, KNOWLEDGE_TOOLS, editorialClient, ensureCaseRegistered, runChecks, submitCase } from './editorial.ts';
+import type { CheckKind, EditorialClient } from './editorial.ts';
+import { programEnv, runFixed } from './tools/run.ts';
 import type { HarnessConfig } from './config.ts';
 import { CaseHeldError, acquireCaseLock } from './lock.ts';
 import type { CaseLock } from './lock.ts';
@@ -16,10 +19,10 @@ import { piArguments, piCliPath, writePiSettings } from './pi-process.ts';
 import { runResearchRound } from './lanes.ts';
 import type { ResearchPlan, RoundSummary } from './lanes.ts';
 import { discardIncompleteLanes } from './resume.ts';
-import { ORCHESTRATOR, agentSpec, allowedTools, isolationRefusal, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, isolationRefusal, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
 import type { Composition } from './roles.ts';
 import { WorkerQueue, runWorker } from './subagents.ts';
-import type { CancelRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
+import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
 import { bindActiveCase, pythonAdapter, runsResearchRound } from './tools/spotlight.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
 import { validateAfterWorker } from './validators.ts';
@@ -27,7 +30,8 @@ import { validateAfterWorker } from './validators.ts';
 const STDIN_CLOSE_GRACE_MS = 15_000;
 const KILL_GRACE_MS = 5_000;
 
-const EXIT = { config: 2, held: 3, failed: 1 } as const;
+// `signIn`: the newsroom token was revoked or expired (newsroom edition).
+const EXIT = { config: 2, held: 3, failed: 1, signIn: 4 } as const;
 
 type Harness = {
 	config: HarnessConfig;
@@ -37,7 +41,87 @@ type Harness = {
 	log: (message: string) => void;
 	redact: (text: string) => string;
 	children: Set<ChildProcess>;
+	// Newsroom edition: the only Editorial MCP client, holding the token.
+	editorial?: EditorialClient;
 };
+
+// A revoked or expired newsroom token stops the whole harness with a plain
+// message; nothing falls back to another route or service.
+let stoppingForSignIn = false;
+function stopForSignIn(harness: Harness): void {
+	if (stoppingForSignIn) return;
+	stoppingForSignIn = true;
+	harness.log(`stopped: ${new EditorialCredentialError().message}`);
+	// Let the refusal reach the process that asked, then stop everything.
+	setTimeout(() => {
+		for (const child of harness.children) child.kill('SIGTERM');
+		process.exit(EXIT.signIn);
+	}, 200);
+}
+
+// Serves one process's newsroom tool calls. The operation must be one of the
+// tools that process's role holds in this edition.
+function serveEditorial(harness: Harness, child: ChildProcess, role: string, running: Map<string, AbortController>): void {
+	child.on('message', (message: unknown) => {
+		const request = message as EditorialRequest | CancelRequest;
+		if (request?.kind === 'spotlight-cancel') {
+			running.get(request.id)?.abort();
+			return;
+		}
+		if (request?.kind !== 'spotlight-editorial') return;
+		const controller = new AbortController();
+		running.set(request.id, controller);
+		const reply = (result: Omit<SpawnResult, 'kind' | 'id'>) => {
+			if (child.connected) child.send({ kind: 'spotlight-result', id: request.id, ...result });
+		};
+		editorialOperation(harness, role, request.op, request.args ?? {}, controller.signal)
+			.then((text) => reply({ ok: true, text }))
+			.catch((error: Error) => {
+				if (error instanceof EditorialCredentialError) {
+					reply({ ok: false, error: error.message });
+					stopForSignIn(harness);
+					return;
+				}
+				reply({ ok: false, error: harness.redact(error.message) });
+			})
+			.finally(() => running.delete(request.id));
+	});
+}
+
+async function editorialOperation(harness: Harness, role: string, op: string, args: Record<string, unknown>, signal: AbortSignal): Promise<string> {
+	const client = harness.editorial;
+	if (!client) throw new Error(`${op} is a newsroom edition tool`);
+	const spec = agentSpec(harness.composition, role);
+	if (!allowedTools(spec, harness.config.sensitive, harness.config.edition).includes(op)) throw new Error(`${op} is not a tool of the ${role}`);
+	if ((KNOWLEDGE_TOOLS as readonly string[]).includes(op)) return JSON.stringify(await client.call(op, args, signal));
+	const { config, active } = harness;
+	if (op === 'run_checks') {
+		const kind = args.kind === 'report' ? 'report' : args.kind === 'findings' ? 'findings' : undefined;
+		if (!kind) throw new Error('run_checks: kind must be "findings" or "report"');
+		return JSON.stringify(await runChecks(client, active.caseDir, kind as CheckKind, { signal }));
+	}
+	if (op === 'newsroom_submit') {
+		const status = await caseStatus(harness);
+		const step = (status.ingest as { resume_at?: string } | undefined)?.resume_at;
+		if (status.phase !== 'ingest' || step !== 'ingest') {
+			return JSON.stringify({ skipped: `the case is at ${String(status.phase ?? '') || 'an unknown phase'}${step ? ` (${step})` : ''}; Submit runs only after the member requested ingestion on the page` });
+		}
+		const outcome = await submitCase({
+			client,
+			caseDir: active.caseDir,
+			signal,
+			runPackage: (packageArgs) =>
+				runFixed(config.python, [resolve(CHECKOUT_ROOT, 'scripts/newsroom-package.py'), ...packageArgs], {
+					env: programEnv(process.env, [], { SPOTLIGHT_CONFIG: config.spotlightConfig }),
+					cwd: CHECKOUT_ROOT,
+					timeoutMs: 300_000,
+				}),
+		});
+		harness.log(outcome.state === 'submitted' ? `submitted the case to the newsroom (${outcome.receipts.length} receipt(s) in receipts/)` : 'the newsroom refused the package: integrity checks failed');
+		return JSON.stringify(outcome);
+	}
+	throw new Error(`unknown newsroom operation ${op}`);
+}
 
 function track(harness: Harness, child: ChildProcess): void {
 	harness.children.add(child);
@@ -69,9 +153,9 @@ function processLaunch(harness: Harness, role: string) {
 	return {
 		command: process.execPath,
 		args: piArguments({
-			systemPrompt: systemPrompt(harness.composition, role, harness.config.modelTier),
+			systemPrompt: systemPrompt(harness.composition, role, harness.config.modelTier, harness.config.edition),
 			skills: skillsFor(harness.composition, role),
-			tools: allowedTools(spec, harness.config.sensitive),
+			tools: allowedTools(spec, harness.config.sensitive, harness.config.edition),
 			model: route.model,
 		}),
 		env,
@@ -83,6 +167,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 	const queue = new WorkerQueue();
 	const running = new Map<string, AbortController>();
 	const workers = spawnableWorkers(harness.composition);
+	serveEditorial(harness, orchestrator, ORCHESTRATOR, running);
 	orchestrator.on('message', (message: unknown) => {
 		const request = message as SpawnRequest | CancelRequest | ResearchRequest;
 		if (request?.kind === 'spotlight-cancel') {
@@ -97,7 +182,10 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 			};
 			researchRound(harness, request.retry, controller.signal)
 				.then((round) => reply({ ok: true, round }))
-				.catch((error: Error) => reply({ ok: false, error: harness.redact(error.message) }))
+				.catch((error: Error) => {
+					reply({ ok: false, error: harness.redact(error.message) });
+					if (error instanceof EditorialCredentialError) stopForSignIn(harness);
+				})
 				.finally(() => running.delete(request.id));
 			return;
 		}
@@ -118,7 +206,10 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 					runWorker(
 						{
 							...processLaunch(harness, request.agent),
-							onSpawn: (child) => track(harness, child),
+							onSpawn: (child) => {
+								track(harness, child);
+								serveEditorial(harness, child, request.agent, running);
+							},
 							onStderr: (child) => forwardStderr(harness, child),
 						},
 						request.task,
@@ -171,6 +262,10 @@ function researchRound(harness: Harness, retry: boolean, signal: AbortSignal): P
 			env: process.env,
 			retry,
 			signal,
+			// Newsroom edition: the prior-knowledge lane reads search_knowledge.
+			knowledge: harness.editorial
+				? async (query, laneSignal) => JSON.stringify(await harness.editorial!.call('search_knowledge', { query, limit: 20 }, laneSignal))
+				: undefined,
 		});
 		harness.log(`research round ${summary.round}: ${summary.ran.length} topic(s) ran, ${summary.left_out.length} left out${summary.stopped ? `, stopped (${summary.stopped.code})` : ''}`);
 		return summary;
@@ -277,6 +372,7 @@ function main(): void {
 		config = readConfig(process.env);
 		composition = loadComposition();
 		routeFor(config);
+		checkNewsroomInstall(config);
 	} catch (error) {
 		if (error instanceof ConfigError || error instanceof RouteRefused) {
 			plain(`cannot start: ${error.message}`);
@@ -299,7 +395,27 @@ function main(): void {
 	}
 	const discarded = discardIncompleteLanes(config.caseDir);
 	if (discarded.length > 0) log(`discarded ${discarded.length} unfinished research lane(s); they will rerun`);
-	start({ config, active, composition, lock, log, redact, children: new Set() });
+	const harness: Harness = { config, active, composition, lock, log, redact, children: new Set(), editorial: editorialClient(config, process.env) };
+	if (!harness.editorial) return start(harness);
+	// Case start, newsroom edition: the sign-in is checked on every start, and
+	// register_case runs once; a resumed case reuses the stored reference.
+	const client = harness.editorial;
+	client
+		.connect()
+		.then(() => ensureCaseRegistered(client, config))
+		.then(({ reference, registered }) => {
+			log(registered ? `registered the case with the newsroom (${reference.case_ref})` : `newsroom case ${reference.case_ref}`);
+			start(harness);
+		})
+		.catch((error: Error) => {
+			lock.release();
+			if (error instanceof EditorialCredentialError) {
+				log(`cannot start: ${error.message}`);
+				process.exit(EXIT.signIn);
+			}
+			log(`cannot start: ${redact(error.message)}`);
+			process.exit(EXIT.failed);
+		});
 }
 
 main();

@@ -561,6 +561,9 @@ def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[
         "summary": _text(summary.get("summary")) if isinstance(summary, dict) else "",
         "findings": findings,
     }
+    checks = _newsroom_checks(case, "findings")
+    if checks is not None:
+        content["newsroom_checks"] = checks
     return content, blocking, items
 
 
@@ -604,6 +607,30 @@ def _report_treatments(case: Path, draft: dict[str, Any]) -> list[dict[str, Any]
     return result
 
 
+NEWSROOM_CHECKS = "data/newsroom-checks.json"
+NEWSROOM_SUBMISSION = "data/newsroom-submission.json"
+
+
+def _newsroom_checks(case: Path, kind: str) -> dict[str, Any] | None:
+    """The newsroom's decision-check flags for this page (newsroom edition):
+    shown, never blocking. "Unavailable" is shown as such, never as no flags."""
+    if ingest_mode() != "newsroom":
+        return None
+    recorded = _read_case_json(case, NEWSROOM_CHECKS)
+    record = (recorded.get("checks") or {}).get(kind) if isinstance(recorded, dict) else None
+    if not isinstance(record, dict):
+        return {"state": "not_run", "flags": []}
+    flags = record.get("flags") if isinstance(record.get("flags"), list) else []
+    return {
+        "state": _text(record.get("state"), 40),
+        "reason": _text(record.get("reason"), 1000),
+        "flags": [
+            {"target": _text(f.get("target"), 200), "question": _text(f.get("question"), 200), "reason": _text(f.get("reason"), 2000)}
+            for f in flags[:200] if isinstance(f, dict)
+        ],
+    }
+
+
 def _report_content(case: Path) -> dict[str, Any]:
     """The draft the member publishes or declines, as text for the page."""
     draft = _read_case_json(case, REPORT_DRAFT)
@@ -625,6 +652,9 @@ def _report_content(case: Path) -> dict[str, Any]:
             "caveats": _items_text(draft.get("caveats")),
             "next_steps": _items_text(draft.get("next_steps")),
         })
+    checks = _newsroom_checks(case, "report")
+    if checks is not None:
+        content["newsroom_checks"] = checks
     return content
 
 
@@ -636,7 +666,16 @@ def _ingest_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[st
         return {"batch": {"state": "empty", "records": []}}, [], []
     if ingest_mode() == "newsroom":
         # Newsroom cases write nothing locally; the package goes to the newsroom.
-        return {"batch": {"state": "newsroom", "records": []}}, [], []
+        content: dict[str, Any] = {"batch": {"state": "newsroom", "records": []}}
+        submission = _read_case_json(case, NEWSROOM_SUBMISSION)
+        if isinstance(submission, dict) and submission.get("state") in ("blocked", "submitted"):
+            failures = submission.get("integrity_failures") if isinstance(submission.get("integrity_failures"), list) else []
+            content["submission"] = {
+                "state": submission["state"],
+                "reasons": [_text(f.get("reason"), 1000) for f in failures[:50] if isinstance(f, dict)],
+                "review_state": _text(submission.get("review_state"), 40),
+            }
+        return content, [], []
     proposal = _read_case_json(case, INGEST_PROPOSAL)
     draft = _read_case_json(case, INGEST_DRAFT)
     final = _read_case_json(case, INGEST_BATCH)

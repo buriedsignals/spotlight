@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { ModelTier } from './config.ts';
+import type { Edition, ModelTier } from './config.ts';
 
 // harness/pi/src -> checkout root.
 export const CHECKOUT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -136,10 +136,23 @@ function workerPersonaPath(spec: AgentSpec): string | undefined {
 // SPOTLIGHT_SENSITIVE and refuse their remote step themselves.
 export const EGRESS_TOOLS = ['fetch', 'search', 'http_get', 'browse', 'navigator_tools', 'run_rlm', 'integration_status'];
 
-// The tools a process declares and registers: its allowlist, minus egress in
-// sensitive mode.
-export function allowedTools(spec: AgentSpec, sensitive: boolean): string[] {
-	return sensitive ? spec.tools.filter((tool) => !EGRESS_TOOLS.includes(tool)) : [...spec.tools];
+// The newsroom edition runs the same roles; only where prior knowledge,
+// decision checks and Ingest go differs. Its Editorial MCP replaces the
+// member wiki (query_vault) and the local decision checks (decision_signals,
+// held only by the orchestrator, which also gets the Submit step). These
+// tools call the newsroom's own service through the launcher; they stay in
+// sensitive mode, which keeps the case away from the public web, not from
+// the newsroom.
+export const NEWSROOM_TOOL_SWAPS: Record<string, string[]> = {
+	query_vault: ['search_knowledge', 'get_record', 'traverse', 'coverage'],
+	decision_signals: ['run_checks', 'newsroom_submit'],
+};
+
+// The tools a process declares and registers: its allowlist, with the
+// newsroom edition's swaps, minus egress in sensitive mode.
+export function allowedTools(spec: AgentSpec, sensitive: boolean, edition: Edition = 'solo'): string[] {
+	const tools = edition === 'newsroom' ? spec.tools.flatMap((tool) => NEWSROOM_TOOL_SWAPS[tool] ?? [tool]) : [...spec.tools];
+	return sensitive ? tools.filter((tool) => !EGRESS_TOOLS.includes(tool)) : tools;
 }
 
 export function skillDirectory(name: string): string {
@@ -190,7 +203,19 @@ The skills use abstract verbs and some shell steps. This harness has no shell: e
 
 Gate approvals, the report decision and the ingest request or decline are recorded by the review page, never by you. At a gate, present the synthesis, call \`open_review\` so the member can decide on the page, and END YOUR TURN. When the member says they are done, call \`spotlight_resolve\` again.`;
 
-export function systemPrompt(composition: Composition, role: string, tier: ModelTier): string {
+// The newsroom edition's differences, appended to every role's adapter.
+const NEWSROOM_ADAPTER = `## Newsroom edition
+This case belongs to a newsroom. Prior reporting comes from the newsroom's knowledge base, not a member wiki: query-vault -> \`search_knowledge\` (then \`get_record\`, \`traverse\`, \`coverage\` on a record id it returns); there is no \`query_vault\`. Approved records are leads to re-check, never confirmed facts.
+- Orchestrator only: the decision checks run in the newsroom's service. Where a skill runs \`scripts/decision-signals.py\` at the Investigation gate or the Report, call \`run_checks\` with kind \`findings\` or \`report\` instead; the flags appear on the review page. A flag never blocks.
+- Orchestrator only, Ingest: there is no analyst and no local batch. Once the member has requested ingestion on the page (\`resume_at\` \`ingest\`), call \`newsroom_submit\`. If it reports failed integrity checks, tell the member the reasons and stop; the case stays at Ingest. If it reports the submission, resolve again and seal the ingest as the skill says.
+- Journalist input never goes to a third-party model; the harness enforces this.`;
+
+export function systemPrompt(composition: Composition, role: string, tier: ModelTier, edition: Edition = 'solo'): string {
+	const prompt = basePrompt(composition, role, tier);
+	return edition === 'newsroom' ? `${prompt}\n${NEWSROOM_ADAPTER}` : prompt;
+}
+
+function basePrompt(composition: Composition, role: string, tier: ModelTier): string {
 	if (role === ORCHESTRATOR) {
 		return `You are the Spotlight orchestrator. You never investigate directly: research goes to the \`investigator\` worker and verification to the \`fact-checker\` worker through \`spawn_agent\`.
 
