@@ -17,7 +17,11 @@ write.
    `scripts/spotlight-orchestration.py review-edit`, under the case lock. The
    file keeps each suggestion and the member's final value separately and counts
    how many suggestions were accepted unchanged.
-4. Every decision needs the member's name, which is recorded with it. Approve
+4. Every decision needs the member's name, which is recorded with it. A name
+   counts only for the decision it was entered for: when a follow-up reopens the
+   gate, the page starts with an empty name and shows the earlier one as
+   history. The Report page shows each finding's fact-check verdict and
+   confidence, and marks the ones the fact-check did not verify. Approve
    stays unavailable while a blocking failure or a required disposition is
    open. The Investigation gate also offers "Request follow-up" with a
    required note: it sends the case back to Investigation, on the same nonce

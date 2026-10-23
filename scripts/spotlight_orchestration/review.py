@@ -461,17 +461,27 @@ def _methodology_content(case: Path) -> tuple[dict[str, Any], list[str]]:
     return content, blocking
 
 
-def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[str, Any]]]:
-    dependencies = investigation_gate_dependencies(case)
-    blocking = [f"missing: {item}" for item in dependencies["investigation_gate_missing"]]
-    blocking += _run_check([str(SCRIPT_DIR / "validate-case.py"), str(case)])
-    findings_doc = _read_case_json(case, "data/findings.json")
+def _fact_check_claims(case: Path) -> dict[str, dict[str, Any]]:
+    """The fact-check's claim record for each finding id."""
     fact_check = _read_case_json(case, "data/fact-check.json")
     verdicts: dict[str, dict[str, Any]] = {}
     claims = fact_check.get("claims") if isinstance(fact_check, dict) else None
     for claim in claims if isinstance(claims, list) else []:
         if isinstance(claim, dict) and isinstance(claim.get("finding_id"), str):
             verdicts[claim["finding_id"]] = claim
+    return verdicts
+
+
+def _verdict(claim: dict[str, Any]) -> str | None:
+    return claim.get("verdict") if isinstance(claim.get("verdict"), str) else None
+
+
+def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[str, Any]]]:
+    dependencies = investigation_gate_dependencies(case)
+    blocking = [f"missing: {item}" for item in dependencies["investigation_gate_missing"]]
+    blocking += _run_check([str(SCRIPT_DIR / "validate-case.py"), str(case)])
+    findings_doc = _read_case_json(case, "data/findings.json")
+    verdicts = _fact_check_claims(case)
     findings = []
     items = []
     raw = findings_doc.get("findings") if isinstance(findings_doc, dict) else None
@@ -480,7 +490,7 @@ def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[
             continue
         finding_id = finding["id"]
         claim = verdicts.get(finding_id, {})
-        verdict = claim.get("verdict") if isinstance(claim.get("verdict"), str) else None
+        verdict = _verdict(claim)
         sources = finding.get("sources") if isinstance(finding.get("sources"), list) else []
         findings.append(
             {
@@ -542,23 +552,38 @@ def _items_text(value: object, limit: int = 30) -> list[str]:
     return [_text(item.get("text") if isinstance(item, dict) else item, 2000) for item in items[:limit]]
 
 
-def _report_treatments(draft: dict[str, Any]) -> list[dict[str, Any]]:
-    """Finding treatments in the draft's finding order, then any it leaves out."""
+def _report_treatments(case: Path, draft: dict[str, Any]) -> list[dict[str, Any]]:
+    """Finding treatments in the draft's finding order, then any it leaves out,
+    each with its finding's fact-check verdict and stated confidence, so the
+    member sees which drafted findings the fact-check did not verify."""
     raw = draft.get("finding_treatments")
     treatments = [t for t in raw if isinstance(t, dict)] if isinstance(raw, list) else []
     order = draft.get("finding_order") if isinstance(draft.get("finding_order"), list) else []
     rank = {finding_id: index for index, finding_id in enumerate(order) if isinstance(finding_id, str)}
     treatments.sort(key=lambda t: rank.get(t.get("finding_id"), len(rank)))
-    return [
-        {
-            "finding_id": _text(t.get("finding_id"), 200),
+    verdicts = _fact_check_claims(case)
+    findings_doc = _read_case_json(case, "data/findings.json")
+    raw_findings = findings_doc.get("findings") if isinstance(findings_doc, dict) else None
+    confidence = {
+        f["id"]: _text(f.get("confidence"), 40)
+        for f in (raw_findings if isinstance(raw_findings, list) else [])
+        if isinstance(f, dict) and isinstance(f.get("id"), str)
+    }
+    result = []
+    for t in treatments[:60]:
+        finding_id = t.get("finding_id")
+        verdict = _verdict(verdicts.get(finding_id, {})) if isinstance(finding_id, str) else None
+        result.append({
+            "finding_id": _text(finding_id, 200),
+            "verdict": _text(verdict, 80) if verdict else "not checked",
+            "verified": verdict == "verified",
+            "confidence": confidence.get(finding_id, "") if isinstance(finding_id, str) else "",
             "headline": _text(t.get("headline"), 1000),
             "summary": _text(t.get("summary")),
             "why_it_matters": _text(t.get("why_it_matters")),
             "quotes": len(t["quote_selections"]) if isinstance(t.get("quote_selections"), list) else 0,
-        }
-        for t in treatments[:60]
-    ]
+        })
+    return result
 
 
 def _report_content(case: Path) -> dict[str, Any]:
@@ -574,7 +599,7 @@ def _report_content(case: Path) -> dict[str, Any]:
         diagrams = draft.get("diagrams") if isinstance(draft.get("diagrams"), list) else []
         content.update({
             "deck": _text(draft.get("deck")),
-            "treatments": _report_treatments(draft),
+            "treatments": _report_treatments(case, draft),
             "diagrams": [
                 {"title": _text(d.get("title"), 500), "caption": _text(d.get("caption"), 2000)}
                 for d in diagrams[:20] if isinstance(d, dict)
@@ -690,6 +715,29 @@ def _gate_parts(case: Path, gate: str) -> tuple[dict[str, Any], list[str], list[
     return _ingest_content(case)
 
 
+def _decisions_recorded(case: Path, gate: str, data_descriptor: int | None) -> int:
+    """How many decisions (page or command line) this gate has recorded."""
+    nonces = load_ledger(case, data_descriptor)["nonces"]
+    return sum(
+        1 for entry in nonces.values()
+        if isinstance(entry, dict) and entry.get("gate") == gate and entry.get("used") is True
+    )
+
+
+def _reviewer_names(case: Path, gate: str, review: dict[str, Any], data_descriptor: int | None) -> tuple[str, str]:
+    """(name for this decision, name saved before an earlier decision).
+
+    A name counts for the decision now open only when it was entered after
+    the gate's last recorded decision. After a follow-up reopens the gate the
+    earlier name is history, so another member cannot decide under it; a name
+    saved without that marker (an older review file) is treated the same way.
+    """
+    name = review.get("reviewer", "") if isinstance(review.get("reviewer"), str) else ""
+    if name and review.get("reviewer_after_decisions") == _decisions_recorded(case, gate, data_descriptor):
+        return name, ""
+    return "", name
+
+
 def build_view(case: Path, gate: str, data_descriptor: int | None = None) -> dict[str, Any]:
     """The page model: content, blocking failures, flags, selection and digest."""
     require_gate(gate)
@@ -697,6 +745,7 @@ def build_view(case: Path, gate: str, data_descriptor: int | None = None) -> dic
     review = load_review(case, gate, data_descriptor)
     items = _merge_items(suggested, review["items"])
     counts = _counts(items)
+    reviewer, previous_reviewer = _reviewer_names(case, gate, review, data_descriptor)
     return {
         "schema_version": "spotlight-review-view/v1",
         "gate": gate,
@@ -706,7 +755,8 @@ def build_view(case: Path, gate: str, data_descriptor: int | None = None) -> dic
         "items": items,
         "counts": counts,
         "open_required": counts["open_required"],
-        "reviewer": review.get("reviewer", "") if isinstance(review.get("reviewer"), str) else "",
+        "reviewer": reviewer,
+        "previous_reviewer": previous_reviewer,
         "digest": review_digest(case, gate, data_descriptor),
     }
 
@@ -749,6 +799,7 @@ def apply_edit(case: Path, data_descriptor: int, gate: str, edit: object) -> Non
     edit = _validated_edit(edit, current)
     if edit["kind"] == "reviewer":
         review["reviewer"] = edit["value"].strip()
+        review["reviewer_after_decisions"] = _decisions_recorded(case, gate, data_descriptor)
     elif edit["kind"] == "note":
         current[edit["key"]]["note"] = edit["value"]
     else:
