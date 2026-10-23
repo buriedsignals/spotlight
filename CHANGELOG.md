@@ -4,6 +4,14 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added — Old cases and the 1.0 graph's retirement
+
+- README and AGENTS describe the forward-only path for old cases and what
+  cannot be migrated mechanically.
+- `scripts/knowledge_destination.py count-rows` counts the 1.0 graph's
+  approved rows, read-only, for Engine's one-time retirement check: an empty
+  graph can be removed, and one holding knowledge stays as read-only legacy.
+
 ### Changed — Ingest decision checks read Batch 1.1
 
 - The proposition check passes each claim's source positions in its state,

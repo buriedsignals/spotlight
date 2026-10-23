@@ -324,6 +324,11 @@ def main() -> int:
 
         policy_db = workspace / "knowledge" / "policy.sqlite"
         PORT.initialize_database(policy_db, "destination:test")
+        # A graph with no approved knowledge counts zero rows: Engine may remove it.
+        before_count = policy_db.read_bytes()
+        empty = json.loads(run_cli("count-rows", "--workspace-root", str(workspace), "--db", "knowledge/policy.sqlite").stdout)
+        assert empty["total"] == 0, empty
+        assert policy_db.read_bytes() == before_count  # the count is read-only
         policy_jobs = []
         for revision, status in ((1, "active"), (2, "active"), (3, "revoked")):
             receipt = policy_receipt(revision, status)
@@ -590,6 +595,19 @@ def main() -> int:
         ).stdout)
         assert health["status"] == "healthy" and health["verified_batches"] == 1
         assert health["projection_heads"] == 1
+        # Engine's retirement check: a graph holding approved knowledge is kept.
+        counted = json.loads(run_cli(
+            "count-rows", "--workspace-root", str(workspace),
+            "--db", "knowledge/spotlight.sqlite",
+        ).stdout)
+        assert counted["schema_version"] == "spotlight-graph-rows/v1" and set(counted["tables"]) == set(PORT.GRAPH_TABLES), counted
+        graph_state = sqlite3.connect(workspace / "knowledge" / "spotlight.sqlite")
+        try:
+            for table, rows in counted["tables"].items():
+                assert rows == graph_state.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0], (table, counted)
+        finally:
+            graph_state.close()
+        assert counted["tables"]["batches"] == 1 and counted["total"] > 0, counted
         claimed_graph = json.loads(run_cli(
             "job-claim", "--workspace-root", str(workspace),
             "--db", "knowledge/spotlight.sqlite", "--unsafe-local-reference-commit",
