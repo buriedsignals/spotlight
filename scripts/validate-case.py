@@ -43,14 +43,18 @@ from evidence_anchors import (
     sha256_file,
 )
 from source_expression_contract import (
-    POSITIVE_VERDICTS,
     canonical_fingerprint,
     passage_core,
 )
+from verdicts import (
+    FLAG_CODES,
+    allowed_verdicts,
+    fact_check_version,
+    finding_confidences,
+    positive_verdicts,
+)
 
 
-VERDICTS = {"verified", "partially_verified", "unverified", "mischaracterized", "disputed", "false"}
-CONFIDENCES = {"high", "medium", "low", "disputed"}
 FACT_CHECK_CONFIDENCES = {"high", "medium", "low"}
 CAPS = {"high", "medium", "low"}
 SUPPORT_TYPES = {"direct", "indirect", "inferred", "contradicted", "insufficient"}
@@ -458,7 +462,7 @@ def validate_source_expressions(
                 errors.append(f"fact-check.json.{container}[{index}]: stale expression ref {expression_id!r}")
                 continue
             valid_ref_ids.add(expression_id)
-        if not enforce_positive_verdicts or verdict not in POSITIVE_VERDICTS:
+        if not enforce_positive_verdicts or verdict not in positive_verdicts(fact_check_version(factcheck_data)):
             continue
         for ref in refs:
             expression_id = ref.get("expression_id")
@@ -534,8 +538,9 @@ def validate_findings(data: dict[str, Any]) -> list[str]:
                 # sources are optional-fielded now (schema reality alignment); only check basic shape
 
         conf = finding.get("confidence")
-        if conf not in CONFIDENCES:
-            errors.append(f"{prefix}: 'confidence' must be one of {sorted(CONFIDENCES)} (got {conf!r})")
+        confidences = finding_confidences(data.get("schema_version", "1.0"))
+        if conf not in confidences:
+            errors.append(f"{prefix}: 'confidence' must be one of {sorted(confidences)} (got {conf!r})")
 
         # Grounding object (optional in schema, but if present must be valid)
         grounding = finding.get("grounding")
@@ -648,7 +653,14 @@ def validate_fact_check(data: dict[str, Any]) -> list[str]:
     if not nonempty_string(data.get("project")):
         errors.append("fact-check.json: missing or empty top-level 'project'")
 
+    version = fact_check_version(data)
+    if "schema_version" in data and data.get("schema_version") not in ("1.0", "1.1"):
+        errors.append("fact-check.json: schema_version must be 1.0 or 1.1")
+    verdicts = allowed_verdicts(version)
+    positive = positive_verdicts(version)
     containers = [key for key in ("claims", "fact_checks", "verdicts") if key in data]
+    if version == "1.1" and containers and containers != ["claims"]:
+        errors.append("fact-check.json: contract 1.1 records verdicts only in claims[]")
     if len(containers) > 1:
         errors.append(
             "fact-check.json: use exactly one verdict container; found "
@@ -671,11 +683,21 @@ def validate_fact_check(data: dict[str, Any]) -> list[str]:
                 claim_text, verdict = fact_check_values(container, claim)
                 if not nonempty_string(claim_text):
                     errors.append(f"{prefix}: missing or empty claim text")
-                if verdict not in VERDICTS:
+                if verdict not in verdicts:
                     errors.append(
-                        f"{prefix}: verdict/status must be one of {sorted(VERDICTS)} "
+                        f"{prefix}: verdict/status must be one of {sorted(verdicts)} for contract {version} "
                         f"(got {verdict!r})"
                     )
+                if verdict == "not_checkable" and version != "1.1":
+                    errors.append(f"{prefix}: not_checkable needs fact-check contract 1.1")
+                if "flags" in claim:
+                    flags = claim["flags"]
+                    if version != "1.1" or not isinstance(flags, list):
+                        errors.append(f"{prefix}: 'flags' must be a list and needs fact-check contract 1.1")
+                    else:
+                        for k, flag in enumerate(flags):
+                            if not isinstance(flag, dict) or flag.get("code") not in FLAG_CODES or not nonempty_string(flag.get("reason")):
+                                errors.append(f"{prefix}.flags[{k}]: needs a known Batch 1.1 code and a non-empty reason")
                 if "confidence" in claim and claim.get("confidence") not in FACT_CHECK_CONFIDENCES:
                     errors.append(f"{prefix}: 'confidence' must be one of {sorted(FACT_CHECK_CONFIDENCES)}")
                 if "finding_id" in claim and not nonempty_string(claim.get("finding_id")):
@@ -700,7 +722,7 @@ def validate_fact_check(data: dict[str, Any]) -> list[str]:
                         continue
                     for j, item in enumerate(claim[key]):
                         errors.extend(validate_fact_evidence_item(item, f"{prefix}.{key}[{j}]"))
-                if verdict in {"verified", "partially_verified"}:
+                if verdict in positive:
                     if not nonempty_string(claim.get("finding_id")):
                         errors.append(f"{prefix}: positive verdict needs a finding_id")
                     evidence_for = claim.get("evidence_for")
@@ -731,7 +753,7 @@ def validate_fact_check(data: dict[str, Any]) -> list[str]:
     if "summary" in data:
         summary = data["summary"]
         if isinstance(summary, dict):
-            for key in ("total_claims", "verified", "unverified", "disputed", "false"):
+            for key in ("total_claims", "verified", "unverified", "disputed", "false", "not_checkable"):
                 if key in summary and not isinstance(summary[key], int):
                     errors.append(f"fact-check.json.summary.{key}: must be an integer")
         elif not isinstance(summary, str):
@@ -1121,6 +1143,18 @@ def main() -> int:
         all_errors.append("findings.json: schema_version 1.1 requires a valid data/case-contract.json")
 
     if activated:
+        # An activated case uses Batch 1.1's vocabulary. Cases activated
+        # before contract 1.1 existed keep their 1.0 file (it is hashed into
+        # the case contract) and stay valid while they use only that
+        # vocabulary; a removed verdict or confidence needs a person.
+        if isinstance(factcheck_data, dict):
+            container, rows = fact_check_rows(factcheck_data)
+            for index, row in enumerate(rows if isinstance(rows, list) else []):
+                if isinstance(row, dict) and fact_check_values(container, row)[1] in ("partially_verified", "mischaracterized"):
+                    all_errors.append(
+                        f"fact-check.json.{container}[{index}]: activated cases use Batch 1.1 verdicts "
+                        "(verified, unverified, disputed, false, not_checkable); a person must re-assess this one"
+                    )
         if contract_data.get("project") != findings_data.get("project"):
             all_errors.append("case-contract.json: project must match findings.json")
         expressions_path = case_dir / "data" / "source-expressions.json"

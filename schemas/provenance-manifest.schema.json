@@ -79,7 +79,7 @@
         "claim_text": { "type": "string" },
         "confidence": { "enum": ["high", "medium", "low", "unknown"] },
         "fact_check_verdict": {
-          "enum": ["verified", "partially_verified", "unverified", "disputed", "false", "mischaracterized", "missing"]
+          "enum": ["verified", "partially_verified", "unverified", "disputed", "false", "mischaracterized", "not_checkable", "missing"]
         },
         "support_type": { "enum": ["direct", "indirect", "inferred", "contradicted", "insufficient", "unknown"] },
         "evidence_refs": { "type": "array", "items": { "type": "string" } },

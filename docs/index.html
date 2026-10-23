@@ -766,7 +766,7 @@ SPOTLIGHT_INT_DEVBROWSER=true   # dev-browser for interactive browser acquisitio
         <details>
           <summary>How is fact-checking different from the main investigation?</summary>
           <div class="answer">
-            <p>The fact-check pass runs as an <em>independent agent spawn</em> — a fresh context, separate from the investigator. It applies SIFT methodology (Stop, Investigate the source, Find better coverage, Trace claims), produces a verdict taxonomy (<code>verified</code> / <code>unverified</code> / <code>disputed</code> / <code>false</code> / <code>partially_verified</code> / <code>mischaracterized</code>), and writes its evidence trail to a separate JSON. The investigator can't see the fact-checker's output until after the Investigation gate. This is deliberately adversarial — same-context fact-checking under-catches errors the investigator already convinced itself of.</p>
+            <p>The fact-check pass runs as an <em>independent agent spawn</em> — a fresh context, separate from the investigator. It applies SIFT methodology (Stop, Investigate the source, Find better coverage, Trace claims), produces one of five verdicts (<code>verified</code> / <code>unverified</code> / <code>disputed</code> / <code>false</code> / <code>not_checkable</code>), with flags for claims that misstate their source, and writes its evidence trail to a separate JSON. The investigator can't see the fact-checker's output until after the Investigation gate. This is deliberately adversarial — same-context fact-checking under-catches errors the investigator already convinced itself of.</p>
           </div>
         </details>
 

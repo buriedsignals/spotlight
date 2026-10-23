@@ -309,6 +309,7 @@ def activated_documents(case: Path) -> tuple[dict, dict, dict, dict]:
         "created_at": "2026-07-16T12:00:00Z", "expressions": [expression],
     }
     fact_check = valid_fact_check()
+    fact_check["schema_version"] = "1.1"  # activated cases use fact-check contract 1.1
     fact_check["claims"][0]["evidence_for"][0]["source_expression_refs"] = [{
         "expression_id": "SX1",
         "expression_fingerprint": expression["expression_fingerprint"],
@@ -318,10 +319,14 @@ def activated_documents(case: Path) -> tuple[dict, dict, dict, dict]:
     return findings, fact_check, bundle, expressions
 
 
-def write_activated_case(case: Path) -> None:
+def write_activated_case(case: Path, fact_check_version: str | None = "1.1", verdict: str | None = None) -> None:
     data = case / "data"
     data.mkdir(parents=True, exist_ok=True)
     findings, fact_check, bundle, expressions = activated_documents(case)
+    if fact_check_version is None:
+        fact_check.pop("schema_version", None)
+    if verdict is not None:
+        fact_check["claims"][0]["verdict"] = verdict
     documents = {
         "findings.json": findings,
         "fact-check.json": fact_check,
@@ -382,6 +387,18 @@ def main() -> int:
     check("fact-check: bad verdict", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0].__setitem__("verdict", "true"))), True)
     check("fact-check: empty claim_text", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0].__setitem__("claim_text", ""))), True)
     check("fact-check: bad confidence", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0].__setitem__("confidence", "disputed"))), True)
+    # Contract 1.1: Batch 1.1's five verdicts; legacy 1.0 stays readable.
+    v11 = lambda d: d.__setitem__("schema_version", "1.1")  # noqa: E731
+    for removed in ("partially_verified", "mischaracterized"):
+        check(f"fact-check 1.1: refuses removed verdict {removed}", vc.validate_fact_check(mutate(mutate(valid_fact_check(), v11), lambda d: d["claims"][0].__setitem__("verdict", removed))), True)
+        check(f"fact-check 1.0: legacy {removed} stays readable", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0].__setitem__("verdict", removed))), False)
+    check("fact-check 1.1: not_checkable accepted", vc.validate_fact_check(mutate(mutate(valid_fact_check(), v11), lambda d: d["claims"][0].update({"verdict": "not_checkable", "evidence_for": []}))), False)
+    check("fact-check 1.0: not_checkable needs 1.1", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0].update({"verdict": "not_checkable", "evidence_for": []}))), True)
+    check("fact-check 1.1: known flag accepted", vc.validate_fact_check(mutate(mutate(valid_fact_check(), v11), lambda d: d["claims"][0].__setitem__("flags", [{"code": "partial_support", "reason": "the date is unsupported"}]))), False)
+    check("fact-check 1.1: unknown flag code refused", vc.validate_fact_check(mutate(mutate(valid_fact_check(), v11), lambda d: d["claims"][0].__setitem__("flags", [{"code": "mostly_true", "reason": "x"}]))), True)
+    check("fact-check 1.1: legacy container refused", vc.validate_fact_check({"schema_version": "1.1", "project": "p", "fact_checks": []}), True)
+    check("findings 1.1: confidence disputed refused", vc.validate_findings(mutate(valid_findings(), lambda d: (d.__setitem__("schema_version", "1.1"), d["findings"][0].__setitem__("confidence", "disputed")))), True)
+    check("findings 1.0: legacy confidence disputed readable", vc.validate_findings(mutate(valid_findings(), lambda d: d["findings"][0].__setitem__("confidence", "disputed"))), False)
     check("fact-check: sources not strings", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0].__setitem__("sources", [1]))), True)
     check("fact-check: bad assessment cap", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["grounding_assessment"].__setitem__("confidence_cap", "none"))), True)
     check("fact-check: evidence item missing source", vc.validate_fact_check(mutate(valid_fact_check(), lambda d: d["claims"][0]["evidence_for"][0].pop("source"))), True)
@@ -573,6 +590,17 @@ def main() -> int:
         write_activated_case(activated)
         rc = subprocess.run([sys.executable, str(SCRIPT), str(activated)], capture_output=True).returncode
         check("e2e: activated case exits 0", [] if rc == 0 else [f"rc={rc}"], False)
+        # A case activated before contract 1.1 keeps its 1.0 fact-check and
+        # stays valid; a removed verdict in an activated case is refused.
+        earlier = Path(tmp) / "activated-before-1.1"
+        write_activated_case(earlier, fact_check_version=None)
+        rc = subprocess.run([sys.executable, str(SCRIPT), str(earlier)], capture_output=True).returncode
+        check("e2e: case activated with a 1.0 fact-check stays valid", [] if rc == 0 else [f"rc={rc}"], False)
+        removed = Path(tmp) / "activated-removed-verdict"
+        write_activated_case(removed, fact_check_version=None, verdict="partially_verified")
+        out = subprocess.run([sys.executable, str(SCRIPT), str(removed)], capture_output=True, text=True)
+        check("e2e: activated case refuses a removed verdict",
+              [] if "a person must re-assess this one" in out.stdout + out.stderr else ["no removed-verdict error"], False)
         (activated / "data" / "source-expressions.json").write_text("{}", encoding="utf-8")
         rc = subprocess.run([sys.executable, str(SCRIPT), str(activated)], capture_output=True).returncode
         check("e2e: activated artifact mutation exits 1", [] if rc == 1 else [f"rc={rc}"], False)

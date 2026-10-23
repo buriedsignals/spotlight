@@ -2,7 +2,8 @@
 """Validate fact-check evidence through language-neutral, case-local anchors.
 
 The validator deliberately does not tokenize, translate, or semantically grade prose.
-For every ``verified`` or ``partially_verified`` verdict it proves that:
+For every positive verdict (``verified``; legacy 1.0 files also
+``partially_verified``) it proves that:
 
 * the fact-check claim exactly matches its linked finding after Unicode/whitespace
   normalization;
@@ -41,15 +42,7 @@ from evidence_anchors import (
 )
 
 
-VERDICTS = {
-    "verified",
-    "partially_verified",
-    "unverified",
-    "disputed",
-    "false",
-    "mischaracterized",
-}
-ANCHORED_VERDICTS = {"verified", "partially_verified"}
+from verdicts import allowed_verdicts, fact_check_version, positive_verdicts
 ARTIFACT_PATH_KEYS = ("raw_path", "downloaded_document_path", "screenshot_path", "path")
 def load_object(path: Path) -> dict[str, Any]:
     try:
@@ -364,6 +357,11 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
         return [{"id": "-", "ok": False,
                  "reason": "fact-check file contains no verdicts — nothing was validated"}], 3
 
+    # Contract 1.1 accepts only Batch 1.1's five verdicts; legacy 1.0 files
+    # keep their recorded vocabulary.
+    version = fact_check_version(fact_check_doc)
+    verdicts = allowed_verdicts(version)
+    anchored = positive_verdicts(version)
     results: list[dict[str, Any]] = []
     failed = 0
     for check in checks:
@@ -372,13 +370,13 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
         status = check.get("status")
         finding = findings.get(finding_id)
         failures: list[str] = []
-        if status not in VERDICTS:
-            failures.append(f"unknown fact-check status {status!r}")
+        if status not in verdicts:
+            failures.append(f"fact-check status {status!r} is not a contract {version} verdict ({', '.join(sorted(verdicts))})")
         if finding is None:
             failures.append(f"finding_id={finding_id!r} does not resolve to a finding")
         if not normalized(check.get("claim")):
             failures.append("fact-check claim text is missing")
-        elif (finding is not None and status in ANCHORED_VERDICTS
+        elif (finding is not None and status in anchored
               and normalized(check.get("claim")) != normalized(finding.get("claim"))):
             failures.append("fact-check claim text does not exactly match the linked finding")
         if failures:
@@ -386,7 +384,7 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
             results.append({"id": check_id, "ok": False, "reason": "; ".join(failures)})
             continue
 
-        if status not in ANCHORED_VERDICTS:
+        if status not in anchored:
             results.append({"id": check_id, "ok": True,
                             "reason": f"status={status} (evidence anchor not required)"})
             continue

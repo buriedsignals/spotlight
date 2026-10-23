@@ -219,6 +219,32 @@ def main() -> int:
         assert snapshot(ambiguous / "data") == before_ambiguous_apply
         assert json.loads((ambiguous / "data/findings.json").read_text())["schema_version"] == "1.0"
 
+        # Batch 1.1 removed partially_verified, mischaracterized and the
+        # finding confidence "disputed"; each needs a person, so it blocks.
+        removed = build_case(root / "removed-verdict")
+        fact_path = removed / "data/fact-check.json"
+        fact = json.loads(fact_path.read_text(encoding="utf-8"))
+        fact["claims"][0]["verdict"] = "mischaracterized"
+        write_json(fact_path, fact)
+        removed_dry = run(removed)
+        assert removed_dry.returncode == 0 and "DRY-RUN BLOCKED" in removed_dry.stdout, removed_dry.stdout
+        removed_audit = json.loads((removed / "data/source-expression-migration.json").read_text(encoding="utf-8"))
+        validate_schema(removed_audit)
+        assert any(item["reason"] == "removed_verdict" for item in removed_audit["blocking_reasons"])
+        before_removed = snapshot(removed / "data")
+        assert run(removed, "--apply").returncode == 3
+        assert snapshot(removed / "data") == before_removed, "a blocked migration changed the case"
+
+        disputed = build_case(root / "removed-confidence")
+        findings_file = disputed / "data/findings.json"
+        rows = json.loads(findings_file.read_text(encoding="utf-8"))
+        rows["findings"][0]["confidence"] = "disputed"
+        write_json(findings_file, rows)
+        assert run(disputed).returncode == 0
+        disputed_audit = json.loads((disputed / "data/source-expression-migration.json").read_text(encoding="utf-8"))
+        validate_schema(disputed_audit)
+        assert any(item["reason"] == "removed_confidence" for item in disputed_audit["blocking_reasons"])
+
         before_apply = snapshot(exact / "data")
         applied = run(exact, "--apply")
         assert applied.returncode == 0 and "case contract written last" in applied.stdout, applied.stderr

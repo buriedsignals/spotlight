@@ -19,7 +19,6 @@ PASSAGE_CORE_FIELDS = (
     "derived_from_expression_id",
     "derivative_type",
 )
-POSITIVE_VERDICTS = frozenset({"verified", "partially_verified"})
 LIFECYCLE_STATES = frozenset({"activated", "superseded", "withdrawn"})
 
 

@@ -123,7 +123,10 @@
       "properties": {
         "schema_version": { "const": "1.1" },
         "findings": {
-          "items": { "required": ["finding_fingerprint"] }
+          "items": {
+            "required": ["finding_fingerprint"],
+            "properties": { "confidence": { "enum": ["high","medium","low"] } }
+          }
         }
       }
     }

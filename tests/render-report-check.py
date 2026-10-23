@@ -232,6 +232,7 @@ def activate_case(case: Path) -> None:
     })
 
     fact_check = json.loads(fact_check_path.read_text())
+    fact_check["schema_version"] = "1.1"  # activated cases use fact-check contract 1.1
     fact_check["claims"][0]["evidence_for"][0]["source_expression_refs"] = [{
         "expression_id": "SX1",
         "expression_fingerprint": expression_fp,
@@ -278,7 +279,24 @@ def refresh_expression_contract_hash(case: Path) -> None:
     write_json(contract_path, contract)
 
 
+def check_not_checkable_aggregation() -> None:
+    """A finding with any not_checkable part is not established; all parts
+    not_checkable reads as not checkable, never as partly verified."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("render_report", ROOT / "scripts" / "render-report.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(ROOT / "scripts"))
+    spec.loader.exec_module(module)
+    finding = {"id": "F1", "confidence": "high"}
+    def checks(*statuses: str) -> list[dict]:
+        return [{"finding_id": "F1", "status": s, "confidence": "high", "assessment": ""} for s in statuses]
+    assert module.aggregate_verdict(finding, checks("verified", "not_checkable"))["status"] == "unverified"
+    assert module.aggregate_verdict(finding, checks("not_checkable", "not_checkable"))["status"] == "not_checkable"
+    assert module.VERDICT_LABEL["not_checkable"] == "Not checkable"
+
+
 def main() -> int:
+    check_not_checkable_aggregation()
     with tempfile.TemporaryDirectory(prefix="render-report-") as tmp:
         case = build_case(Path(tmp))
         result = subprocess.run([sys.executable, str(FINALIZER), str(case)], capture_output=True, text=True)

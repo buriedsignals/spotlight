@@ -11,6 +11,27 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   decisions. Indicator Lab starts it through Osaurus. The runtimes guide, README
   and landing page describe it in place of the Flue harness.
 
+### Changed — Five verdicts and three confidence levels (Batch 1.1)
+
+- New fact-checks use contract `1.1` with Batch 1.1's five verdicts:
+  `verified`, `unverified`, `disputed`, `false`, `not_checkable`. Confidence
+  is `high`, `medium` or `low`; activated findings (`1.1`) can no longer
+  record a finding's confidence as `disputed`.
+- `partially_verified` and `mischaracterized` are gone from new work. A
+  partly supported finding is split, or becomes `unverified` with a
+  `partial_support` flag; a finding that misstates its source keeps the
+  verdict for what it asserts and gets a flag naming the misstatement. Claims
+  carry optional `flags` from Batch 1.1's code registry (§8.4, including the
+  eight codes added on 22 October 2026); a person gives each a disposition.
+- Old cases keep their recorded verdicts: contract `1.0` files stay readable
+  and nothing rewrites them. An activated case may use only Batch 1.1's
+  vocabulary (a case activated before contract `1.1` keeps its `1.0` file),
+  and `migrate-source-expressions.py` now blocks a case whose legacy
+  verdicts or confidences need a person's judgement.
+- The report's verdict chart shows the five verdicts, plus a legacy verdict
+  only when an old case records it. A finding with any `not_checkable` part
+  reads as not established.
+
 ### Changed — Machine identifiers follow the phase names
 
 - Phases are named, not numbered: Preflight, Brief, Methodology,
