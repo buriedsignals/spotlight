@@ -6,9 +6,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-# Skills reach the helper by two documented paths: the portable shell-safety
-# skill's bundled script and the checkout's scripts/spotlight_safe.py. Both must
-# accept and refuse the same values.
+# Skills call scripts/spotlight_safe.py, which runs the shell-safety skill's
+# bundled shell_safe.py. Both must accept and refuse the same values.
 HELPERS = [
     ROOT / "skills" / "shell-safety" / "scripts" / "shell_safe.py",
     ROOT / "scripts" / "spotlight_safe.py",
@@ -35,7 +34,14 @@ def assert_reject(*args):
 
 def check_helper():
     assert_ok("validate-url", "https://example.org/path?q=one%20two")
+    # A query string separates parameters with "&"; the URL is passed double-quoted.
+    assert_ok("validate-url", "https://example.org/search?q=acme&format=json&page=2")
     for hostile in [
+        "https://example.org/a&touch",
+        'https://example.org/?q=x"&touch bad"',
+        "https://example.org/?q=a b",
+        "https://example.org/?q=a\\",
+        "https://example.org/?q='a'",
         'https://example.org/"; rm -rf / ; echo "',
         "javascript:alert(1)",
         "https://example.org/$(touch bad)",

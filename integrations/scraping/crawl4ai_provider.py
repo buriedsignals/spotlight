@@ -10,18 +10,25 @@ a local Python process, KTD7).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib.util
 import json
 import os
 import shutil
 import subprocess
+import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 from .mapping import crawl_failure_detail, map_crawl_result
 from .scrape_types import ScrapeError, ScrapeResult
 
 DEFAULT_TIMEOUT_MS = 45_000
 _BROWSER_PROXY = "SPOTLIGHT_BROWSER_PROXY"
+_PDF_MAX_BYTES = 100 * 1024 * 1024
+_PDF_USER_AGENT = "Mozilla/5.0 (compatible; Spotlight evidence fetch)"
 
 
 async def _afetch(url: str, timeout_ms: int, proxy: str | None = None) -> ScrapeResult:  # pragma: no cover - live path
@@ -102,7 +109,61 @@ def _delegate(python: str, url: str, timeout_ms: int, proxy: str | None) -> Scra
     return ScrapeResult(**payload)
 
 
+def _is_pdf_url(url: str) -> bool:
+    return urlparse(url).path.lower().endswith(".pdf")
+
+
+def _fetch_pdf(url: str, timeout_ms: int, proxy: str | None) -> ScrapeResult:
+    """Download a PDF and extract its text with pdftotext (no OCR).
+
+    A headless browser cannot render a PDF to Markdown, so a .pdf URL is
+    downloaded instead. The download takes the same route as the browser: the
+    harness's egress proxy when one is set. Tor is a SOCKS proxy this download
+    cannot use, so an anonymized PDF fetch is refused rather than sent direct.
+    """
+    if proxy:
+        raise ScrapeError(f"PDF download through Tor is not supported for {url}")
+    browser_proxy = os.environ.get(_BROWSER_PROXY, "").strip()
+    if browser_proxy and urlparse(browser_proxy).scheme != "http":
+        raise ScrapeError(f"{_BROWSER_PROXY} must be an http:// proxy for a PDF download")
+    handler = urllib.request.ProxyHandler({"http": browser_proxy, "https": browser_proxy} if browser_proxy else {})
+    opener = urllib.request.build_opener(handler)
+    request = urllib.request.Request(url, headers={"User-Agent": _PDF_USER_AGENT})
+    try:
+        with opener.open(request, timeout=timeout_ms / 1000) as response:
+            final_url = response.geturl()
+            status = response.status
+            body = response.read(_PDF_MAX_BYTES + 1)
+    except urllib.error.HTTPError as exc:
+        raise ScrapeError(f"PDF download failed for {url}: HTTP {exc.code}", status_code=exc.code) from exc
+    except (urllib.error.URLError, OSError) as exc:
+        raise ScrapeError(f"PDF download failed for {url}: {exc}") from exc
+    if len(body) > _PDF_MAX_BYTES:
+        raise ScrapeError(f"PDF at {url} is larger than {_PDF_MAX_BYTES} bytes")
+    if not body.lstrip().startswith(b"%PDF-"):
+        # A wall or an HTML error page served in place of the document.
+        raise ScrapeError(f"{url} did not return a PDF (HTTP {status}); likely an access wall", status_code=403)
+
+    from .pdfparse import parse_pdf
+
+    with tempfile.TemporaryDirectory(prefix="spotlight-pdf-") as tmp:
+        path = Path(tmp) / "document.pdf"
+        path.write_bytes(body)
+        parsed = parse_pdf(str(path))
+    return ScrapeResult(
+        markdown=parsed.markdown,
+        requested_url=url,
+        source_url=final_url,
+        fetched_at=parsed.fetched_at,
+        provider=parsed.provider,
+        status_code=status,
+        metadata={**parsed.metadata, "pdf_sha256": hashlib.sha256(body).hexdigest(), "pdf_bytes": len(body)},
+    )
+
+
 def fetch(url: str, timeout_ms: int = DEFAULT_TIMEOUT_MS, proxy: str | None = None) -> ScrapeResult:  # pragma: no cover - live path
+    if _is_pdf_url(url):
+        return _fetch_pdf(url, timeout_ms, proxy)
     if not _importable() and not os.environ.get(_DELEGATED):
         python = _tool_python()
         if python:

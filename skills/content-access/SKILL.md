@@ -25,6 +25,14 @@ dumps, unpublished allegations, private source material, credentials, vault
 contents, or unnecessary personal data. In sensitive mode, remote access
 services are disabled unless the user explicitly approves an override.
 
+PDFs: `fetch` on a URL whose path ends in `.pdf` downloads the file and
+returns its embedded text (pdftotext). A wall or error page served in place of
+the PDF is a failure (exit 3), not a result. For a PDF at another URL, download
+it and run `scripts/spotlight-python -m integrations.scraping <file> --pdf`.
+There is no OCR route: a scanned PDF fails with `needs_ocr` (Gemini
+transcription runs only when `GEMINI_API_KEY` is set). Read scans visually and
+record what you read as a transcript with its own hash.
+
 ### 1. Free Version Search
 
 Many paywalled articles have freely distributed copies. Search for them:

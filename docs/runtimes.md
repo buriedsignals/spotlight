@@ -137,6 +137,30 @@ files. Full reference: [`harness/pi/README.md`](../harness/pi/README.md).
 
 ---
 
+## Claude Code
+
+- **Loading:** start Claude Code in the checkout root with
+  `claude --plugin-dir <checkout>`. Skills load as `spotlight:<id>` and the two
+  role files in `agents/` as the sub-agents `spotlight:investigator` and
+  `spotlight:fact-checker` ([`docs/README.md`](README.md#claude-code-note)).
+- **Verbs:** `execute-shell` is Bash, run from the checkout root. `fetch` and
+  `search` are `scripts/spotlight-python -m integrations.scraping "<url>" --out <path>`
+  and `scripts/spotlight-python -m integrations.search "<query>" --out <path>`.
+- **Sub-agents:** each `spawn-agent` in the phase skills is an Agent tool call
+  with `subagent_type` `spotlight:investigator` or `spotlight:fact-checker` and
+  the skill's spawn prompt. `wait-agent` is that call's result. Each sub-agent
+  has its own context; results come back through the case files, not the reply.
+  The fact-checker is always a fresh sub-agent, never the orchestrator itself.
+- **Gates:** register the review server once:
+  `claude mcp add spotlight-review -e SPOTLIGHT_CASES_ROOT=<case root> -- node <checkout>/harness/review/mcp.mjs`.
+  At each gate (Methodology, Investigation gate, Report, Ingest) the agent
+  calls `open_spotlight_review` with the case directory and ends its turn. The
+  member decides on the page and says so in chat; the agent then calls
+  `spotlight_resolve` again, which reads the decision from disk. The agent never
+  records a gate decision itself.
+
+---
+
 ## opencode
 
 **Status: RETIRED as the local Spotlight runtime (2026-07-09)** — the Spotlight harness above

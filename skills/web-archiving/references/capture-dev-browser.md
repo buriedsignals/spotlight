@@ -71,6 +71,9 @@ console.log(JSON.stringify(out));
 execute-shell: dev-browser --headless --timeout 90 run {CASE_DIR}/research/dev-browser-archive.js
 ```
 
+Flags go before `run`. dev-browser's own `--timeout` bounds the run; do not wrap
+it in `timeout`, which macOS does not have.
+
 Parse the single JSON line from stdout. On a Playwright/navigation error, dev-browser exits
 non-zero or the JSON carries no `tmp_mhtml` — record the snapshot with `error` set and proceed
 to Tier 1/2 (do not abort the archive).

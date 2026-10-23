@@ -342,7 +342,7 @@ Create or update `{CASE_DIR}/data/evidence-bundle.json` during every investigati
 
 - `id` (`E1`, `E2`, ...),
 - `query_or_task`,
-- `acquisition_method`: `firecrawl|dev_browser|manual|api|other`,
+- `acquisition_method`: one of `schemas/evidence-bundle.schema.json`'s values: `crawl4ai` (a `fetch`), `dev_browser`, `browse`, `firecrawl` (only when the Firecrawl fallback served it), `api`, `manual`, `other` (and `scrapling`, `browser_harness`, `browser_use` when those tools did the acquisition),
 - `source_url`,
 - `accessed`,
 - `raw_path` where available,
@@ -404,7 +404,7 @@ every hash and fingerprint, validates, and publishes atomically under the case
 lock:
 
 ```text
-python3 scripts/write-source-expressions.py {CASE_DIR} --actor investigator --cycle N < proposal.json
+scripts/spotlight-python scripts/write-source-expressions.py {CASE_DIR} --actor investigator --cycle N < proposal.json
 ```
 
 The proposal lists each passage's `id`, exact `text`, `anchor_ref`,
@@ -428,7 +428,7 @@ file tools.
 
 After writing or merging `findings.json` in `activated` mode, set the finding
 fingerprints with
-`python3 scripts/write-source-expressions.py {CASE_DIR} --fingerprint-findings`
+`scripts/spotlight-python scripts/write-source-expressions.py {CASE_DIR} --fingerprint-findings`
 (never compute them yourself). In `pilot` mode the passages are an
 experimental side artifact and does not activate or upgrade a legacy case. In
 `activated` mode, preserve the existing `1.1` contract; the orchestrator or
@@ -516,6 +516,7 @@ After writing `data/findings.json`, append to `{CASE_DIR}/data/investigation-log
 ```json
 {
   "schema_version": "1.0",
+  "project": "{project}",
   "cycles": [
     {
       "cycle": 1,
