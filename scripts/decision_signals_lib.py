@@ -379,6 +379,9 @@ def validate_signals(doc: Any) -> dict[str, Any]:
         # Investigation gate. The next write stores the new key.
         _require("investigation_gate" not in doc["phases"], "decision signals carry both gate1 and investigation_gate")
         doc["phases"] = {("investigation_gate" if k == "gate1" else k): v for k, v in doc["phases"].items()}
+    # Ingest decision checks are retired; an older file may still carry their
+    # block. Drop it and keep the gate and report data; the next write omits it.
+    doc["phases"].pop("ingest", None)
     required = {"investigation_gate": ("findings",), "report": ("items",)}
     for name, phase in doc["phases"].items():
         _require(name in required and isinstance(phase, dict), f"invalid phase {name!r}")

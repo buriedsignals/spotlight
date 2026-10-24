@@ -284,6 +284,18 @@ def test_no_ingest_phase(tmp: Path) -> None:
     assert set(json.loads(run_script("ingest-eligibility.py", case).stdout)) == {"findings"}
 
 
+def test_retired_ingest_block_is_dropped_on_load(tmp: Path) -> None:
+    # An old main signals file may still carry the retired ingest phase; it is
+    # dropped on load and the gate data stays usable.
+    case = fresh_case(tmp / "old-ingest")
+    run_phase(case, config(tmp, {"investigation_gate": "advisory"}, "old.json"), "investigation-gate", provider_with())
+    doc = signals(case)
+    doc["phases"]["ingest"] = {"mode": "advisory", "entities": []}
+    (case / lib.SIGNALS_PATH).write_text(json.dumps(doc))
+    loaded = lib.load_signals(case)
+    assert "ingest" not in loaded["phases"] and loaded["phases"]["investigation_gate"]["findings"]
+
+
 def test_backwards_compatible_without_signals(tmp: Path) -> None:
     case = fresh_case(tmp / "legacy")
     result = run_script("finalize-report.py", case)
@@ -736,7 +748,7 @@ def main() -> int:
                      test_saved_gate1_keys_still_apply,
                      test_stale_grounding_signal_not_applied, test_report_fidelity_stage,
                      test_invalid_and_unsafe_signal_files, test_symlinked_research_is_not_read,
-                     test_malformed_answer_keeps_other_results, test_no_ingest_phase, test_missing_grounding_cap_warns,
+                     test_malformed_answer_keeps_other_results, test_no_ingest_phase, test_retired_ingest_block_is_dropped_on_load, test_missing_grounding_cap_warns,
                      test_round_two_regressions, test_round_three_regressions, test_input_containment,
                      test_round_five_regressions, test_round_six_regression, test_round_seven_regression,
                      test_protected_sources_are_masked_before_sending):
