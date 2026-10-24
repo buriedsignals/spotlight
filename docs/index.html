@@ -642,7 +642,7 @@
           <div class="skill-card"><div class="sk-name">phase-research</div><div class="sk-desc">Research phase — lanes, merge, triage, the Research gate, the amendment and the stall round.</div></div>
           <div class="skill-card"><div class="sk-name">investigate</div><div class="sk-desc">Investigation-cycle logic. PLANNING/EXECUTION modes, stall protocol.</div></div>
           <div class="skill-card"><div class="sk-name">review</div><div class="sk-desc">Investigation gate readiness checks. Renders human-review HTML.</div></div>
-          <div class="skill-card"><div class="sk-name">ingest</div><div class="sk-desc">Vault archival — entity notes, methodology notes, source notes, registries.</div></div>
+          <div class="skill-card"><div class="sk-name">ingest</div><div class="sk-desc">Writes approved knowledge to your wiki under <code>spotlight/</code> as claim, event and story-arc notes.</div></div>
           <div class="skill-card"><div class="sk-name">epistemic-grounding</div><div class="sk-desc">Claim-to-evidence grounding. Confidence caps by access method.</div></div>
           <div class="skill-card"><div class="sk-name">osint</div><div class="sk-desc">Tool lookup via OSINT Navigator. Country-specific registries.</div></div>
           <div class="skill-card"><div class="sk-name">follow-the-money</div><div class="sk-desc">Corporate filings, beneficial-ownership chains, registry walks.</div></div>
@@ -688,9 +688,9 @@
         <p>The public installer offers a direct local browser sign-in for Navigator or an explicit Skip. A successful Pro or Lab connection stores a revocable credential in the system keychain; no Navigator API key is pasted into Spotlight configuration.</p>
 
         <h3>Required</h3>
-<pre><code>SPOTLIGHT_VAULT_PATH=~/Obsidian/main          # durable knowledge vault for search/ingest
-SPOTLIGHT_CASES_ROOT=~/Documents/Spotlight/cases  # active case workspace
+<pre><code>SPOTLIGHT_CASES_ROOT=~/Documents/Spotlight/cases  # active case workspace
 </code></pre>
+        <p>Your wiki is <code>knowledge_destination.workspace_path</code> in <code>.spotlight-config.json</code>. Ingest writes there and later cases search it.</p>
         <p>Search and scraping need no key: <code>fetch</code> runs on Crawl4AI and <code>search</code> on SearXNG, both open-source and installed locally. <code>FIRECRAWL_API_KEY=fc-...</code> is optional — set it only to enable Firecrawl as an explicit fallback provider.</p>
 
         <h3>Runtime selection</h3>
