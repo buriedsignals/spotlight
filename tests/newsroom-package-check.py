@@ -160,6 +160,16 @@ class NewsroomPackage(GATES.CaseFixture):
             self.assertIsNone(path, rel)
             self.assertEqual(why, "the path passes through a symlink", rel)
 
+    def test_an_rlm_distilled_lead_file_never_travels_as_evidence(self) -> None:
+        spec = importlib.util.spec_from_file_location("newsroom_package_rlm", PACKAGE)
+        mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+        case = self.root / "rlm"
+        (case / "research").mkdir(parents=True)
+        (case / "research" / "leads.md").write_text("# RLM-distilled leads from filing.pdf\n- Acme paid Doe\n", encoding="utf-8")
+        _, path, why = mod._case_file(case, "research/leads.md")
+        self.assertIsNone(path)
+        self.assertIn("RLM-distilled lead file", why)
+
     def test_a_solo_install_builds_nothing(self) -> None:
         case = self.case("solo")
         self.config.write_text(json.dumps({"knowledge_destination": {"mode": "solo"}}), encoding="utf-8")

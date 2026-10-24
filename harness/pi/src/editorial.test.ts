@@ -273,6 +273,10 @@ test('a check the case cannot use stops the newsroom case: a record it cannot wr
 
 	otherJob = true;
 	await assert.rejects(runChecks(client, caseDir, 'findings', runPackage, { pollMs: 1 }), (caught: Error) => stopsTheNewsroomCase(caught) && /another job/.test(caught.message));
+
+	// An optional input that exists but cannot be read is not sent as absent.
+	await writeFile(join(caseDir, 'data', 'fact-check.json'), '{not json');
+	await assert.rejects(runChecks(client, caseDir, 'findings', runPackage, { pollMs: 1 }), (caught: Error) => stopsTheNewsroomCase(caught) && /fact-check\.json/.test(caught.message));
 });
 
 test('a review page that does not open leaves the submission pending, and a retry with the same key opens it and completes', async (t) => {

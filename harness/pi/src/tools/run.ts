@@ -52,6 +52,9 @@ export function jsonResult(value: unknown) {
 
 // The most text one tool result hands a model; the rest is marked truncated.
 export const RETURNED_CHARS = 20_000;
+export function capped(text: string, note = ''): string {
+	return text.length > RETURNED_CHARS ? `${text.slice(0, RETURNED_CHARS)}\n[... truncated at ${RETURNED_CHARS} characters${note}]` : text;
+}
 
 export const BASE_ENV = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT'];
 

@@ -380,15 +380,20 @@ export function editorialClient(config: HarnessConfig, env: Record<string, strin
 // The harness reads them here; scripts/newsroom-package.py alone writes them,
 // under the case lock (case-files.ts keeps every model process off them).
 
+// Only a missing file is absent; one that is a symlink, unreadable or not a
+// JSON object stops the case rather than send or keep less than it holds.
 function readCaseJson(caseDir: string, path: string): Record<string, unknown> | undefined {
+	const target = resolve(caseDir, path);
+	let value: unknown;
 	try {
-		const target = resolve(caseDir, path);
-		if (lstatSync(target).isSymbolicLink()) return undefined;
-		const value = JSON.parse(readFileSync(target, 'utf8')) as unknown;
-		return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
-	} catch {
-		return undefined;
+		if (lstatSync(target).isSymbolicLink()) throw new Error('it is a symlink');
+		value = JSON.parse(readFileSync(target, 'utf8'));
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+		throw new CaseRecordError(`${path} cannot be read: ${(error as Error).message}`);
 	}
+	if (!value || typeof value !== 'object' || Array.isArray(value)) throw new CaseRecordError(`${path} is not a JSON object`);
+	return value as Record<string, unknown>;
 }
 
 const now = () => new Date().toISOString();

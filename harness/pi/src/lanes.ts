@@ -37,7 +37,7 @@ import { httpGetTool } from './tools/http-get.ts';
 import { EditorialToolError, stopsTheNewsroomCase } from './editorial.ts';
 import { newsroomData } from './tools/editorial.ts';
 import { queryVaultTool } from './tools/query-vault.ts';
-import { RETURNED_CHARS, programEnv, runFixed } from './tools/run.ts';
+import { capped, programEnv, runFixed } from './tools/run.ts';
 import type { Env, ToolContext } from './tools/run.ts';
 import { searchTool } from './tools/search.ts';
 
@@ -537,7 +537,7 @@ function nextSourcePath(run: LaneRun, extension: string): { id: string; save: st
 }
 
 function delimited(source: Source, text: string): string {
-	const shown = text.length > RETURNED_CHARS ? `${text.slice(0, RETURNED_CHARS)}\n[... truncated; the full text is stored]` : text;
+	const shown = capped(text, '; the full text is stored');
 	const header = `source_id: ${source.id}${source.url ? `\nurl: ${source.url}` : ''}`;
 	// A newsroom record must not be able to close its block: fresh random tag.
 	if (source.tool === 'search_knowledge') return `${header}\n${newsroomData(shown)}`;
@@ -882,7 +882,7 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 					if (error instanceof FileRefused && /outside the folder|symlink|not a real folder/.test(error.message)) throw error;
 					// A tool's own error text comes from the Editorial MCP: data, as in the launcher.
 					content = error instanceof EditorialToolError
-						? `error: the newsroom answered ${call.function.name} with an error:\n${newsroomData(error.message)}`
+						? `error: the newsroom answered ${call.function.name} with an error:\n${newsroomData(capped(error.message))}`
 						: `error: ${(error as Error).message}`;
 				}
 				const message: Message = { role: 'tool', tool_call_id: call.id, content };

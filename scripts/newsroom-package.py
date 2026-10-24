@@ -62,7 +62,7 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(SCRIPT_DIR.parent))
-from evidence_anchors import case_evidence_path  # noqa: E402
+from evidence_anchors import case_evidence_path, rlm_lead_failure  # noqa: E402
 from source_expression_contract import lifecycle_state  # noqa: E402
 from spotlight_orchestration import review  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
@@ -147,6 +147,9 @@ def _case_file(case: Path, rel: object) -> tuple[str, Path | None, str | None]:
     path = case_evidence_path(case, text)
     if path is None:
         return text, None, "the file is missing or is not in an evidence location"
+    rlm = rlm_lead_failure(path)
+    if rlm:
+        return text, None, rlm
     real = path.relative_to(case.resolve()).as_posix().lower()
     if any(real.startswith(p) or text.lower().startswith(p) for p in STAYS_BEHIND):
         return text, None, "research-phase material stays on this computer"
