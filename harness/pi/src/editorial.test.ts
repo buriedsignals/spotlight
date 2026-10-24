@@ -134,6 +134,7 @@ test('a successful but malformed tool result stops the newsroom case: a run_chec
 		['run_checks', { structuredContent: { job_id: 'job-1', state: 'done', flags: [], input_sha256: 'not-a-digest' } }],
 		['run_checks', { structuredContent: { state: 'running' } }],
 		['run_checks', { structuredContent: { state: 'done', flags: [] } }],
+		['run_checks', { structuredContent: { job_id: 'job 1/../x', state: 'done', flags: [] } }],
 		['get_review_status', { structuredContent: { review_id: 'rev-1', state: 'pending', receipt: 'stored' } }],
 		['submit_case_review', { structuredContent: { status: 'staged', submission_id: 42, review_id: 'rev-1' } }],
 		['submit_case_review', { structuredContent: { status: 'rejected' } }],
