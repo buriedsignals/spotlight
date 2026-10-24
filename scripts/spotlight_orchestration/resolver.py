@@ -163,7 +163,12 @@ def status_for(
     on = research_switch_on()
     plan = research_plan(case)
     stall = research.stall_due(state, plan)
-    if "blocked" in state and stall is None:
+    # Off with research unfinished: paused, even when Research itself is
+    # blocked, so continue-without-research can reach it. No output is read,
+    # so a corrupt one from an interrupted round cannot hide the pause.
+    paused = (stall is None and plan is not None and not on
+              and not research.research_done(case, state, ledger, backed))
+    if "blocked" in state and stall is None and not paused:
         return {**status, "status": "blocked", "next_phase": "blocked", "blocked": state["blocked"]}
     in_research = None
     if stall is not None:
@@ -175,12 +180,9 @@ def status_for(
             "missing": [RESEARCH_ROUND],
             "research": stall,
         }
-    elif plan is not None and not on:
-        # Off: no Research output is read, so a corrupt one from an
-        # interrupted round cannot hide the pause or the way back.
-        if not research.research_done(case, state, ledger, backed):
-            in_research = {**status, "status": "active", "next_phase": "research"}
-    elif plan is not None:
+    elif paused:
+        in_research = {**status, "status": "active", "next_phase": "research"}
+    elif plan is not None and on:
         steps = research.research_steps(case, state, plan, ledger, backed)
         if steps is not None:
             in_research = {**status, **steps}

@@ -364,6 +364,16 @@ class ResearchGate(SeamCase):
         self.research = "off"
         self.assertEqual(self.status(done)["phase"], "investigation")
 
+    def test_research_blocked_by_its_retry_cap_can_continue_without_research_once_off(self) -> None:
+        self.seam("approve", "methodology", *APPROVER)
+        while self.status()["phase"] != "blocked":
+            self.seam("record-attempt", "research-lane", "--gap", "OpenRouter key rejected")
+        self.research = "off"
+        self.assertEqual(self.status()["research"]["resume_at"], "research_off")
+        self.seam("continue-without-research")
+        self.seam("approve", "methodology", *APPROVER)
+        self.assertEqual(self.status()["phase"], "investigation")
+
     def test_continue_without_research_is_only_for_a_case_research_off_paused(self) -> None:
         self.to_research_gate({})
         refused = self.seam("continue-without-research", expect=3)
