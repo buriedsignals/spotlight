@@ -21,7 +21,7 @@ from typing import Any
 
 from .case_writer import atomic_write_files
 from .contract import METHODOLOGY_INPUTS, RESEARCH_OUTPUTS, OrchestrationError, SCRIPT_DIR
-from .dependencies import current_hashes, investigation_gate_dependencies
+from .dependencies import _optional_hash, current_hashes, investigation_gate_dependencies
 from . import research_view
 from .storage import LEGACY_CHANNEL, LEGACY_LEDGER_KEY, case_path, read_data_bytes
 
@@ -628,7 +628,9 @@ def _newsroom_checks(case: Path, kind: str) -> dict[str, Any] | None:
         return None
     recorded = _read_case_json(case, NEWSROOM_CHECKS)
     record = (recorded.get("checks") or {}).get(kind) if isinstance(recorded, dict) else None
-    if not isinstance(record, dict):
+    inputs = record.get("inputs") if isinstance(record, dict) else None
+    # Checks on another version of their inputs are not this version's checks.
+    if not isinstance(inputs, dict) or not inputs or any(_optional_hash(case, path) != digest for path, digest in inputs.items()):
         return {"state": "not_run", "flags": []}
     flags = record.get("flags") if isinstance(record.get("flags"), list) else []
     return {

@@ -26,7 +26,7 @@ import {
 import type { CheckKind, EditorialClient, RunPackage } from './editorial.ts';
 import { openInBrowser } from '../../review/session.mjs';
 import { newsroomData } from './tools/editorial.ts';
-import { DESKTOP_ENV, programEnv, runFixed } from './tools/run.ts';
+import { DESKTOP_ENV, capped, programEnv, runFixed } from './tools/run.ts';
 import type { HarnessConfig } from './config.ts';
 import { CaseHeldError, acquireCaseLock } from './lock.ts';
 import type { CaseLock } from './lock.ts';
@@ -60,6 +60,8 @@ type Harness = {
 	children: Set<ChildProcess>;
 	// Newsroom edition: the only Editorial MCP client, holding the token.
 	editorial?: EditorialClient;
+	// The newsroom case reference, validated at the start.
+	caseRef?: string;
 };
 
 // A revoked or expired newsroom token, or an Editorial MCP that cannot be
@@ -111,7 +113,7 @@ function serveEditorial(harness: Harness, child: ChildProcess, role: string, run
 				}
 				// A tool's own error text comes from the Editorial MCP.
 				if (error instanceof EditorialToolError) {
-					reply({ ok: false, error: `the newsroom answered ${request.op} with an error:\n${newsroomData(harness.redact(error.message))}` });
+					reply({ ok: false, error: `the newsroom answered ${request.op} with an error:\n${newsroomData(capped(harness.redact(error.message)))}` });
 					return;
 				}
 				reply({ ok: false, error: harness.redact(error.message) });
@@ -130,7 +132,7 @@ async function editorialOperation(harness: Harness, role: string, op: string, ar
 	if (op === 'run_checks') {
 		const kind = args.kind === 'report' ? 'report' : args.kind === 'findings' ? 'findings' : undefined;
 		if (!kind) throw new Error('run_checks: kind must be "findings" or "report"');
-		return JSON.stringify(await runChecks(client, active.caseDir, kind as CheckKind, packageRunner(harness), { signal }));
+		return JSON.stringify(await runChecks(client, harness.caseRef!, active.caseDir, kind as CheckKind, packageRunner(harness), { signal }));
 	}
 	if (op === 'newsroom_submit') {
 		const status = await caseStatus(harness, true);
@@ -174,7 +176,7 @@ function reviewOpener(harness: Harness): (url: string) => Promise<boolean> {
 }
 
 async function submit(harness: Harness, client: EditorialClient, signal?: AbortSignal) {
-	const outcome = await submitCase({ client, caseDir: harness.active.caseDir, signal, runPackage: packageRunner(harness), openReview: reviewOpener(harness) });
+	const outcome = await submitCase({ client, caseRef: harness.caseRef!, caseDir: harness.active.caseDir, signal, runPackage: packageRunner(harness), openReview: reviewOpener(harness) });
 	harness.log(outcome.state === 'submitted' ? `submitted the case to the newsroom (${outcome.receipts.length} receipt(s) in receipts/)` : 'the newsroom refused the package: integrity checks failed');
 	if (outcome.state === 'submitted' && outcome.notice) harness.log(outcome.notice);
 	return outcome;
@@ -486,6 +488,7 @@ function main(): void {
 		.connect()
 		.then(() => ensureCaseRegistered(client, config, runPackage))
 		.then(async ({ reference, registered }) => {
+			harness.caseRef = reference.case_ref;
 			log(registered ? `registered the case with the newsroom (${reference.case_ref})` : `newsroom case ${reference.case_ref}`);
 			if (await pendingSubmission(runPackage, config.caseDir)) {
 				log('resuming the submission that was pending when Spotlight last stopped');

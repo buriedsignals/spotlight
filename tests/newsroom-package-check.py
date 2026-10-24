@@ -297,7 +297,9 @@ class NewsroomPackage(GATES.CaseFixture):
         case = self.case("pages")
         seam = ROOT / "scripts" / "spotlight-orchestration.py"
         (case / "data" / "newsroom-checks.json").write_text(json.dumps({"schema_version": "1.0", "checks": {
-            "report": {"kind": "report", "state": "unavailable", "reason": "the decision model is down", "flags": [], "input_sha256": "b" * 64, "checked_at": "x"},
+            "report": {"kind": "report", "state": "unavailable", "reason": "the decision model is down", "flags": [], "input_sha256": "b" * 64, "checked_at": "x",
+                       "inputs": {"data/report-draft.json": None,
+                                  "data/findings.json": hashlib.sha256((case / "data" / "findings.json").read_bytes()).hexdigest()}},
         }}), encoding="utf-8")
         (case / "data" / "newsroom-submission.json").write_text(json.dumps({"schema_version": "1.0", "state": "blocked",
             "integrity_failures": [{"check": "file_hash", "reason": "research/filing.txt does not match the manifest hash"}]}), encoding="utf-8")
@@ -305,6 +307,12 @@ class NewsroomPackage(GATES.CaseFixture):
         self.assertEqual(ingest["content"]["submission"]["reasons"], ["research/filing.txt does not match the manifest hash"])
         report = json.loads(self.run_seam("review-view", "report", str(case), script=seam).stdout)
         self.assertEqual(report["content"]["newsroom_checks"], {"state": "unavailable", "reason": "the decision model is down", "flags": []})
+        # Checks that ran on another version of their inputs are shown as not run on this one.
+        checks = json.loads((case / "data" / "newsroom-checks.json").read_text(encoding="utf-8"))
+        checks["checks"]["report"]["inputs"]["data/findings.json"] = "c" * 64
+        (case / "data" / "newsroom-checks.json").write_text(json.dumps(checks), encoding="utf-8")
+        report = json.loads(self.run_seam("review-view", "report", str(case), script=seam).stdout)
+        self.assertEqual(report["content"]["newsroom_checks"], {"state": "not_run", "flags": []})
 
 
 if __name__ == "__main__":

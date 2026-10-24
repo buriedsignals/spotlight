@@ -239,17 +239,17 @@ async function submittable(t: { after(fn: () => unknown): void }, handlers: Para
 		});
 	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)] });
 	await runPackage(['register', caseDir], { case_ref: 'nr-case-1', title: 'case-a', custody_mode: 'hosted', editorial_origin: origin(newsroom.url), client_case_id: 'case-a' });
-	return { caseDir, runPackage, client, newsroomOrigin: origin(newsroom.url) };
+	return { caseDir, runPackage, client, caseRef: 'nr-case-1', newsroom, newsroomOrigin: origin(newsroom.url) };
 }
 
 test('Submit opens the newsroom review page in the member\'s browser and keeps its address out of the outcome, the receipts and the case', async (t) => {
-	const { caseDir, runPackage, client } = await submittable(t, {
+	const { caseDir, runPackage, client, caseRef } = await submittable(t, {
 		submit_case_review: () => ({ status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }),
 		get_review_status: (args) => ({ review_id: args.review_id, state: 'pending', review_url: 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }),
 	});
 	const opened: string[] = [];
 
-	const outcome = await submitCase({ client, caseDir, runPackage, openReview: async (url) => (opened.push(url), true) });
+	const outcome = await submitCase({ client, caseRef, caseDir, runPackage, openReview: async (url) => (opened.push(url), true) });
 
 	assert.deepEqual(opened, ['https://editorial.newsroom.example/review/rev-1?cap=secret-capability']);
 	assert.equal(outcome.state, 'submitted');
@@ -264,47 +264,53 @@ test('Submit opens the newsroom review page in the member\'s browser and keeps i
 
 test('a package near the size cap reaches the newsroom whole: its base64 is larger than a program\'s output limit', { timeout: 120_000 }, async (t) => {
 	// The cited original, 24.5 MiB: under the 25 MB file cap, over 32 MiB as base64.
-	const { caseDir, runPackage, client } = await submittable(t, {}, { SPOTLIGHT_FIXTURE_ORIGINAL_BYTES: String(24.5 * 1024 * 1024) });
+	const { caseDir, runPackage, client, caseRef } = await submittable(t, {}, { SPOTLIGHT_FIXTURE_ORIGINAL_BYTES: String(24.5 * 1024 * 1024) });
 
-	const outcome = await submitCase({ client, caseDir, runPackage, openReview: async () => false });
+	const outcome = await submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => false });
 
 	assert.equal(outcome.state, 'submitted');
 });
 
 test('a check or submission the case cannot use stops the newsroom case: a record it cannot write, a poll for another job, a package the script cannot build', async (t) => {
 	let otherJob = false;
-	const { caseDir, runPackage, client } = await submittable(t, {
+	const { caseDir, runPackage, client, caseRef, newsroom } = await submittable(t, {
 		run_checks: (args) => (args.job_id ? { job_id: otherJob ? 'job-other' : args.job_id, state: 'done', flags: [] } : { job_id: 'job-1', state: 'running' }),
 	});
 	const failing: RunPackage = (args, input) => (args[0] === 'checks' ? Promise.resolve({ code: 2, stdout: '', stderr: 'disk full' }) : runPackage(args, input));
-	const error = await runChecks(client, caseDir, 'findings', failing, { pollMs: 1 }).then(() => assert.fail('the check was taken as recorded'), (caught: Error) => caught);
+	const error = await runChecks(client, caseRef, caseDir, 'findings', failing, { pollMs: 1 }).then(() => assert.fail('the check was taken as recorded'), (caught: Error) => caught);
 	assert.ok(stopsTheNewsroomCase(error), String(error));
 	assert.match(error.message, /disk full/);
 
 	otherJob = true;
-	await assert.rejects(runChecks(client, caseDir, 'findings', runPackage, { pollMs: 1 }), (caught: Error) => stopsTheNewsroomCase(caught) && /another job/.test(caught.message));
+	await assert.rejects(runChecks(client, caseRef, caseDir, 'findings', runPackage, { pollMs: 1 }), (caught: Error) => stopsTheNewsroomCase(caught) && /another job/.test(caught.message));
 
 	// A Submit package the script cannot build (a refusal, a crash) stops the case too.
 	const refusing: RunPackage = (args, input) => (args[0] === 'build' ? Promise.resolve({ code: 2, stdout: '', stderr: 'newsroom-package: refused: too large' }) : runPackage(args, input));
-	await assert.rejects(submitCase({ client, caseDir, runPackage: refusing, openReview: async () => true }), (caught: Error) => stopsTheNewsroomCase(caught) && /too large/.test(caught.message));
+	await assert.rejects(submitCase({ client, caseRef, caseDir, runPackage: refusing, openReview: async () => true }), (caught: Error) => stopsTheNewsroomCase(caught) && /too large/.test(caught.message));
 	const crashing: RunPackage = (args, input) => (args[0] === 'build' ? Promise.reject(new Error('python3 could not run: timed out')) : runPackage(args, input));
-	await assert.rejects(submitCase({ client, caseDir, runPackage: crashing, openReview: async () => true }), (caught: Error) => stopsTheNewsroomCase(caught) && /timed out/.test(caught.message));
+	await assert.rejects(submitCase({ client, caseRef, caseDir, runPackage: crashing, openReview: async () => true }), (caught: Error) => stopsTheNewsroomCase(caught) && /timed out/.test(caught.message));
+
+	// The case reference is the one validated at the start, not whatever the file now says.
+	await writeFile(join(caseDir, 'data', 'editorial-case.json'), JSON.stringify({ case_ref: 'nr-case-other', title: 'x', custody_mode: 'hosted', editorial_origin: 'http://127.0.0.1:9', client_case_id: 'case-a' }));
+	otherJob = false;
+	await runChecks(client, caseRef, caseDir, 'findings', runPackage, { pollMs: 1 });
+	assert.ok(newsroom.callsOf('run_checks').every((call) => call.case_ref === 'nr-case-1'));
 
 	// An optional input that exists but cannot be read is not sent as absent.
 	await writeFile(join(caseDir, 'data', 'fact-check.json'), '{not json');
-	await assert.rejects(runChecks(client, caseDir, 'findings', runPackage, { pollMs: 1 }), (caught: Error) => stopsTheNewsroomCase(caught) && /fact-check\.json/.test(caught.message));
+	await assert.rejects(runChecks(client, caseRef, caseDir, 'findings', runPackage, { pollMs: 1 }), (caught: Error) => stopsTheNewsroomCase(caught) && /fact-check\.json/.test(caught.message));
 });
 
 test('a review page that does not open leaves the submission pending, and a retry with the same key opens it and completes', async (t) => {
-	const { caseDir, runPackage, client } = await submittable(t, {
+	const { caseDir, runPackage, client, caseRef } = await submittable(t, {
 		submit_case_review: () => ({ status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }),
 		get_review_status: (args) => ({ review_id: args.review_id, state: 'pending' }),
 	});
-	await assert.rejects(submitCase({ client, caseDir, runPackage, openReview: async () => { throw new Error('no browser'); } }), /no browser/);
+	await assert.rejects(submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => { throw new Error('no browser'); } }), /no browser/);
 	assert.equal(await pendingSubmission(runPackage, caseDir), true);
 
 	const opened: string[] = [];
-	const outcome = await submitCase({ client, caseDir, runPackage, openReview: async (url) => (opened.push(url), true) });
+	const outcome = await submitCase({ client, caseRef, caseDir, runPackage, openReview: async (url) => (opened.push(url), true) });
 	assert.equal(outcome.state, 'submitted');
 	assert.deepEqual(opened, ['https://editorial.newsroom.example/review/rev-1?cap=secret-capability']);
 	assert.equal(await pendingSubmission(runPackage, caseDir), false);
@@ -312,14 +318,14 @@ test('a review page that does not open leaves the submission pending, and a retr
 
 test('decision-check flags and integrity failures carry no review capability into the case or the outcome', async (t) => {
 	let page = '';
-	const { caseDir, runPackage, client, newsroomOrigin } = await submittable(t, {
+	const { caseDir, runPackage, client, caseRef, newsroomOrigin } = await submittable(t, {
 		run_checks: () => ({ job_id: 'job-1', state: 'done', flags: [{ target: 'finding:F1', question: 'partial_support', reason: `compare ${page}` }] }),
 		submit_case_review: () => ({ status: 'rejected', integrity_failures: [{ check: 'file_hash', reason: `see ${page}`, review_url: page }] }),
 	});
 	page = `${newsroomOrigin}/review/rev-1?cap=secret-capability`;
 
-	const checks = await runChecks(client, caseDir, 'findings', runPackage, { pollMs: 1 });
-	const outcome = await submitCase({ client, caseDir, runPackage, openReview: async () => true });
+	const checks = await runChecks(client, caseRef, caseDir, 'findings', runPackage, { pollMs: 1 });
+	const outcome = await submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => true });
 
 	const written = [JSON.stringify(checks), JSON.stringify(outcome)];
 	for (const name of ['newsroom-checks.json', 'newsroom-submission.json']) written.push(await readFile(join(caseDir, 'data', name), 'utf8'));
@@ -328,8 +334,8 @@ test('decision-check flags and integrity failures carry no review capability int
 });
 
 test('a review address outside the newsroom\'s endpoints is not opened, and the member and the receipt are told so', async (t) => {
-	const { caseDir, runPackage, client } = await submittable(t, {});
-	const outcome = await submitCase({ client, caseDir, runPackage, openReview: async () => false });
+	const { caseDir, runPackage, client, caseRef } = await submittable(t, {});
+	const outcome = await submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => false });
 	assert.equal(outcome.state, 'submitted');
 	assert.match((outcome as { notice?: string }).notice ?? '', /outside the newsroom's allowed endpoints.*newsroom's own tool/);
 	const receipt = JSON.parse(await readFile(join(caseDir, 'receipts', 'submission-sub-1.json'), 'utf8')) as { review_address?: string };
@@ -355,8 +361,8 @@ test('a call the caller cancels is a cancellation, not a newsroom outage', async
 
 test('a review status for another review, or without a valid state, leaves the submission pending', async (t) => {
 	for (const status of [{ review_id: 'rev-other', state: 'approved' }, { review_id: 'rev-1' }]) {
-		const { caseDir, runPackage, client } = await submittable(t, { get_review_status: () => status });
-		await assert.rejects(submitCase({ client, caseDir, runPackage, openReview: async () => true }), /another review or without a valid state/);
+		const { caseDir, runPackage, client, caseRef } = await submittable(t, { get_review_status: () => status });
+		await assert.rejects(submitCase({ client, caseRef, caseDir, runPackage, openReview: async () => true }), /another review or without a valid state/);
 		assert.equal(await pendingSubmission(runPackage, caseDir), true);
 	}
 });

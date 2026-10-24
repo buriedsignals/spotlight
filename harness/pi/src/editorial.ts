@@ -473,12 +473,6 @@ export async function ensureCaseRegistered(
 	return { reference, registered: true };
 }
 
-export function storedCaseRef(caseDir: string): string {
-	const stored = readCaseJson(caseDir, CASE_REFERENCE_FILE);
-	if (typeof stored?.case_ref !== 'string') throw new Error('the case has no newsroom case reference yet; restart the case so the harness registers it');
-	return stored.case_ref;
-}
-
 // ── Step 3: decision checks at the Investigation gate and the Report ─────────
 
 export type CheckKind = 'findings' | 'report';
@@ -495,22 +489,28 @@ export type CheckRecord = {
 	state: 'done' | 'failed' | 'unavailable';
 	job_id?: string;
 	input_sha256: string;
+	inputs: Record<string, string | null>;
 	flags: Array<{ target: string; question: string; reason: string }>;
 	reason?: string;
 	checked_at: string;
 };
 
-function checkArtifact(caseDir: string, kind: CheckKind): Record<string, unknown> {
+// The artifact sent, and the sha256 of each case file it was read from (null
+// when an optional one is absent): the review pages show the checks only
+// while those files are unchanged.
+function checkArtifact(caseDir: string, kind: CheckKind): { artifact: Record<string, unknown>; inputs: Record<string, string | null> } {
 	const artifact: Record<string, unknown> = {};
+	const inputs: Record<string, string | null> = {};
 	for (const [field, path, required] of CHECK_INPUTS[kind]) {
 		const value = readCaseJson(caseDir, path);
+		inputs[path] = value ? sha256(readFileSync(resolve(caseDir, path))) : null;
 		if (!value) {
 			if (required) throw new Error(`run_checks: ${path} is missing or unreadable, so there is nothing to check`);
 			continue;
 		}
 		artifact[field] = value;
 	}
-	return artifact;
+	return { artifact, inputs };
 }
 
 // The client checked each flag against the contract.
@@ -523,15 +523,16 @@ function flagsOf(value: unknown): CheckRecord['flags'] {
 // run_checks returns a job; the harness polls it with the job id until the
 // flags arrive. A flag never blocks. "Unavailable" is recorded as such and
 // never read as "no flags".
+// `caseRef`: the reference ensureCaseRegistered validated at the start.
 export async function runChecks(
 	client: EditorialClient,
+	caseRef: string,
 	caseDir: string,
 	kind: CheckKind,
 	runPackage: RunPackage,
 	options: { signal?: AbortSignal; pollMs?: number; deadlineMs?: number } = {},
 ): Promise<CheckRecord> {
-	const caseRef = storedCaseRef(caseDir);
-	const artifact = checkArtifact(caseDir, kind);
+	const { artifact, inputs } = checkArtifact(caseDir, kind);
 	const inputSha = sha256(JSON.stringify(artifact));
 	let answer = await client.call('run_checks', { case_ref: caseRef, kind, artifact, artifact_sha256: inputSha }, options.signal);
 	const jobId = typeof answer.job_id === 'string' ? answer.job_id : undefined;
@@ -551,6 +552,7 @@ export async function runChecks(
 		kind,
 		state: state === 'done' ? 'done' : state === 'failed' ? 'failed' : 'unavailable',
 		input_sha256: inputSha,
+		inputs,
 		flags: state === 'done' ? flagsOf(answer.flags) : [],
 		checked_at: now(),
 	};
@@ -576,6 +578,8 @@ export type PackageBuild = {
 
 export type SubmitDeps = {
 	client: EditorialClient;
+	// The reference ensureCaseRegistered validated at the start.
+	caseRef: string;
 	caseDir: string;
 	runPackage: RunPackage;
 	// Opens the newsroom's review page in the member's browser. The address
@@ -612,8 +616,7 @@ export async function pendingSubmission(runPackage: RunPackage, caseDir: string)
 // otherwise the receipts, the submission and the completed ingest marker are
 // recorded together, and the phase seals them.
 export async function submitCase(deps: SubmitDeps): Promise<SubmitOutcome> {
-	const { client, caseDir, runPackage } = deps;
-	const caseRef = storedCaseRef(caseDir);
+	const { client, caseRef, caseDir, runPackage } = deps;
 	const scratch = mkdtempSync(join(tmpdir(), 'spotlight-package-'));
 	let build: PackageBuild;
 	try {
