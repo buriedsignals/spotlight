@@ -120,14 +120,15 @@ def test_bank_is_separate_and_versioned() -> None:
 
 
 def test_both_orders_must_agree() -> None:
-    # Agreement in full mode: the answer acts (content not found -> set aside).
-    provider = client.FakeProvider(answers_from({"q4_assertion": "not_found"}))
-    document = run([lead("agree")], provider, acceptance=ACCEPTED)
-    require(by_id(document, "agree")["disposition"] == "set_aside", "an agreed answer had no effect")
-    # The orders disagree: no effect, the lead stays shown and is flagged "model unsure".
-    provider = client.FakeProvider(answers_from({"q4_assertion": "not_found"}, {"q4_assertion": "asserted"}))
+    # Agreement: the answer acts (an interpretation is flagged and labelled).
+    provider = client.FakeProvider(answers_from({"q4_assertion": "interpretation"}))
+    result = by_id(run([lead("agree")], provider, acceptance=ACCEPTED), "agree")
+    require(result["labels"].get("assertion") == "interpretation" and any(f["reason"] == "interpretation" for f in result["flags"]),
+            "an agreed answer had no effect")
+    # The orders disagree: no effect, the lead is flagged "model unsure" only.
+    provider = client.FakeProvider(answers_from({"q4_assertion": "interpretation"}, {"q4_assertion": "asserted"}))
     result = by_id(run([lead("disagree")], provider, acceptance=ACCEPTED), "disagree")
-    require(result["disposition"] == "flag", "a disagreement set the lead aside")
+    require(not any(f["reason"] == "interpretation" for f in result["flags"]), "a disagreed answer still flagged the lead")
     require(any(f["reason"] == "model_unsure" and "q4_assertion" in f["detail"] for f in result["flags"]), "no model-unsure flag")
     require("assertion" not in result["labels"], "a disagreed answer still labelled the lead")
 
@@ -136,12 +137,10 @@ def test_flag_only_until_acceptance() -> None:
     require(rr.triage_mode() == rr.FLAG_ONLY, "triage left flag-only mode without an acceptance record")
     stale = dict(ACCEPTED, bank_version="0" * 64)
     require(rr.triage_mode(stale) == rr.FLAG_ONLY, "an acceptance for another bank version switched triage on")
-    provider = client.FakeProvider(answers_from({"q4_assertion": "not_found"}))
+    provider = client.FakeProvider(answers_from({}))
     document = run([lead()], provider)
     result = by_id(document, "lead-1")
     require(document["mode"] == "flag_only" and "notice" in document, "the page has no flag-only notice to show")
-    require(result["disposition"] != "set_aside", "a model answer set a lead aside before the acceptance test")
-    require(any(f["reason"] == "model_suggests_set_aside" for f in result["flags"]), "the suggestion was not flagged")
     asked = set(provider.calls[0]["questions"])
     require(not asked & {"c2_new_actor", "c3_change"}, "C2 or C3 was asked before the acceptance test")
     require(all(a["band"] is None for a in result["answers"].values()), "a probability band was set before the acceptance test")
@@ -157,13 +156,13 @@ def test_flag_only_until_acceptance() -> None:
 
 
 def test_always_shown_clues_and_effects() -> None:
-    # K6 watchlist and a contradicted premise are never set aside, even in full mode.
-    provider = client.FakeProvider(answers_from({"q4_assertion": "not_found"}))
+    # K6 watchlist and a contradicted premise are shown as clues.
+    provider = client.FakeProvider(answers_from({}))
     result = by_id(run([lead()], provider, acceptance=ACCEPTED, clues=clues(("K6", ["lead-1"]))), "lead-1")
-    require(result["disposition"] != "set_aside" and "watchlist" in result["clues"], "a watchlist lead was set aside")
-    provider = client.FakeProvider(answers_from({"q4_assertion": "not_found", "c1_premise": "contradicts"}))
+    require(result["disposition"] == "flag" and "watchlist" in result["clues"], "a watchlist lead lost its clue")
+    provider = client.FakeProvider(answers_from({"c1_premise": "contradicts"}))
     result = by_id(run([lead()], provider, acceptance=ACCEPTED), "lead-1")
-    require(result["disposition"] != "set_aside" and "premise_contradicted" in result["clues"], "a premise clue was set aside")
+    require(result["disposition"] == "flag" and "premise_contradicted" in result["clues"], "a contradicted premise raised no clue")
     # A denial of the premise by an actor records the stance "disputes".
     provider = client.FakeProvider(answers_from({"q4_assertion": "reported_claim", "c1_premise": "contradicts"}))
     result = by_id(run([lead()], provider), "lead-1")
@@ -181,15 +180,38 @@ def test_topical_answers_keep_the_lead() -> None:
         result = by_id(run([lead()], provider, acceptance=ACCEPTED), "lead-1")
         require(result["disposition"] == "keep" and result["set_aside_reasons"] == [], f"{identity} lost the lead: {result}")
         require(result["context"] == ["circumstantial"], f"{identity} not labelled circumstantial: {result['context']}")
-        require(not any(f["reason"] == "model_suggests_set_aside" for f in result["flags"]), f"{identity} suggested a set aside")
     provider = client.FakeProvider(answers_from({"q2_direction": "none"}, noul=0.1))
     result = by_id(run([lead()], provider, acceptance=ACCEPTED), "lead-1")
     require(result["disposition"] == "keep" and result["context"] == ["outside_directions"], f"Q2 none lost the lead: {result}")
-    # The dismissing answer still acts on a circumstantial lead: the source does not contain it.
-    provider = client.FakeProvider(answers_from({"q1_identity": "different_subject_or_event", "q4_assertion": "not_found"}))
-    result = by_id(run([lead()], provider, acceptance=ACCEPTED), "lead-1")
-    require(result["disposition"] == "set_aside" and result["set_aside_reasons"] == ["content_not_found"],
-            f"content not found no longer sets aside: {result}")
+
+
+def test_no_answer_sets_a_lead_aside() -> None:
+    # Whether the source holds what a lead says is D3's check, not a question's:
+    # in full mode, no agreed answer to any question, nor a high C2/C3, sets a lead aside.
+    asked = {**rq.QUESTIONS, "q2_direction": rq.direction_question(BRIEF.directions)}
+    for qid, question in asked.items():
+        for option in question["criteria"]:
+            document = run([lead()], client.FakeProvider(answers_from({qid: option}, noul=0.95)), acceptance=ACCEPTED)
+            result = by_id(document, "lead-1")
+            require(result["disposition"] != "set_aside" and result["set_aside_reasons"] == [],
+                    f"{qid}={option} set the lead aside: {result['set_aside_reasons']}")
+            require(rr.triage_violations(document) == [], f"{qid}={option} broke D7: {rr.triage_violations(document)}")
+
+
+def test_host_prior_backs_q3() -> None:
+    # A register host is certain: it overrides a model answer that disagrees and says so.
+    result = by_id(run([lead()], client.FakeProvider(answers_from({"q3_source": "secondary"})), acceptance=ACCEPTED), "lead-1")
+    require(result["labels"]["source"] == "primary_record", f"the register host did not set the source: {result['labels']}")
+    require(any(f["reason"] == "source_rule_override" for f in result["flags"]), "the override was not flagged")
+    # A social host is only a prior: the model's answer stands, and rules alone use the prior.
+    social = lead(capture={"source_url": "https://x.com/someone/status/1"})
+    result = by_id(run([social], client.FakeProvider(answers_from({"q3_source": "interested_party"})), acceptance=ACCEPTED), "lead-1")
+    require(result["labels"]["source"] == "interested_party" and not any(f["reason"] == "source_rule_override" for f in result["flags"]),
+            f"a social host overrode the model: {result}")
+    result = by_id(run([social], None), "lead-1")
+    require(result["labels"].get("source") == "user_generated", f"rules alone ignored the social prior: {result['labels']}")
+    result = by_id(run([lead(capture={"source_url": "https://news.example.org/a"})], None), "lead-1")
+    require("source" not in result["labels"], "an unknown host got a source label")
 
 
 def test_conflict_pairs() -> None:
@@ -217,7 +239,7 @@ def test_d7_invariants() -> None:
     require("always-shown clue" in "".join(rr.triage_violations(full)), "D7 let a watchlist lead be set aside")
     topical = {"mode": "full", "leads": [{"lead_id": "t", "disposition": "set_aside", "clues": [],
                                           "set_aside_reasons": ["content_not_found", "different_subject_or_event"]}]}
-    require(rr.triage_violations(topical) == ["t: set aside for different_subject_or_event, which never sets a lead aside"],
+    require(rr.triage_violations(topical) == ["t: set aside for content_not_found, different_subject_or_event, which never sets a lead aside"],
             f"D7 let a topical answer set a lead aside: {rr.triage_violations(topical)}")
 
 
@@ -410,6 +432,42 @@ def test_cli_rules_only_case() -> None:
         done = subprocess.run([sys.executable, str(ROOT / "scripts" / "research-triage.py"), str(case)], env=env,
                               capture_output=True, text=True, check=False)
         require(done.returncode == 2 and "methodology.json does not validate" in done.stderr, f"invalid methodology accepted: {done.stderr}")
+        # Kev on this computer (Ninja mode) is the local triage model: the decision endpoint on loopback, no llama-server.
+        config.write_text(json.dumps({"integrations": {"decisions": {"research_triage": {"backend": "local"}, "endpoint": {
+            "url": "http://127.0.0.1:8009/v1/systemone", "api": "openrouter-decisions"}}}}))
+        done = subprocess.run([sys.executable, str(ROOT / "scripts" / "research-triage.py"), str(case), "--check"], env=env,
+                              capture_output=True, text=True, check=False)
+        routed = json.loads(done.stdout)
+        require(routed["leads"]["backend"] == "local" and routed["journalist_input_leads"]["backend"] == "local",
+                f"a local decision endpoint was not used as the local triage model: {routed}")
+        # A local endpoint that names a credential gets it.
+        import http.server
+        import threading
+        seen = []
+
+        class Kev(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                seen.append(self.headers.get("Authorization"))
+                self.send_response(200); self.end_headers(); self.wfile.write(b'{"model":"kev","answers":{"q":{"noul":0.2}}}')
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Kev)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        os.environ["KEV_TEST_KEY"] = "kev-secret"
+        try:
+            cfg = triage.triage_settings({"integrations": {"decisions": {"research_triage": {"backend": "local"}, "endpoint": {
+                "url": f"http://127.0.0.1:{server.server_port}/v1/systemone", "api": "openrouter-decisions", "credential_env": "KEV_TEST_KEY"}}}})
+            providers, _newsroom, notes = triage.build_providers(cfg, triage._signals_cli())
+            providers["local"].decide({"s": 1}, {"q": {"type": "noul"}})
+        finally:
+            os.environ.pop("KEV_TEST_KEY")
+            server.shutdown()
+        require(seen == ["Bearer kev-secret"], f"a local endpoint's named credential was not sent: {seen} {notes}")
+        # A named credential that is not set stops the local model; it is never sent keyless.
+        providers, _newsroom, notes = triage.build_providers(cfg, triage._signals_cli())
+        require("local" not in providers and any("KEV_TEST_KEY" in note for note in notes), f"missing credential ignored: {notes}")
 
 
 def main() -> int:

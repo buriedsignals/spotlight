@@ -169,10 +169,12 @@ def merged_topics(leads: object) -> set[str]:
 
 
 def triage_current(case: Path, leads: object) -> bool:
-    """The triage was written after the merge it reads (the merge stamps the
-    newest lane time; the triage its own run time)."""
+    """The triage was written by the current question bank, after the merge it
+    reads (the merge stamps the newest lane time; the triage its own run time)."""
     triage = read_case_json(case, RESEARCH_TRIAGE)
     if not isinstance(triage, dict) or not isinstance(triage.get("generated_at"), str):
+        return False
+    if triage.get("bank_version") != checks().rr.RESEARCH_BANK_VERSION:
         return False
     merged_at = leads.get("generated_at") if isinstance(leads, dict) else None
     return not isinstance(merged_at, str) or triage["generated_at"] >= merged_at

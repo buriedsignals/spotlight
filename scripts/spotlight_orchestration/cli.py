@@ -17,6 +17,7 @@ from . import (
     request_follow_up,
     resolve,
     review_edit,
+    review_passages,
     review_view,
     seal_investigation_gate,
     start_research_round,
@@ -92,6 +93,9 @@ def build_parser() -> argparse.ArgumentParser:
     view = commands.add_parser("review-view")
     view.add_argument("gate", choices=REVIEW_GATES)
     add_case_boundary(view)
+    passages = commands.add_parser("review-passages")
+    passages.add_argument("gate", choices=REVIEW_GATES)
+    add_case_boundary(passages)
     edit = commands.add_parser("review-edit")
     edit.add_argument("gate", choices=REVIEW_GATES)
     edit.add_argument("--edit", required=True, help="one edit as a JSON object")
@@ -105,6 +109,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
         return resolve(args.case_dir, **boundary)
     if args.command == "review-view":
         return review_view(args.case_dir, args.gate, **boundary)
+    if args.command == "review-passages":
+        return review_passages(args.case_dir, args.gate, **boundary)
     if args.command == "issue-review-nonce":
         return {"nonce": issue_review_nonce(args.case_dir, args.gate, **boundary)}
     if args.command == "review-edit":

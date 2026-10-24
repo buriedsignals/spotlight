@@ -28,6 +28,7 @@ from .storage import LEGACY_CHANNEL, LEGACY_LEDGER_KEY, case_path, read_data_byt
 if str(SCRIPT_DIR.parent) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR.parent))
 from integrations.anomaly import adapter as anomaly_methods  # noqa: E402
+from integrations import case_search  # noqa: E402
 
 REVIEW_VERSION = "spotlight-review/v1"
 LEDGER_VERSION = "spotlight-review-nonces/v1"
@@ -157,6 +158,10 @@ def subject_digest(case: Path, gate: str) -> str:
         mentions = case_path(case, INGEST_MENTIONS)
         if mentions.is_file():
             bound["mentions"] = hashlib.sha256(mentions.read_bytes()).hexdigest()
+        # The page shows (and searches passages for) the proposal's claims.
+        proposal = case_path(case, INGEST_PROPOSAL)
+        if proposal.is_file():
+            bound["proposal"] = hashlib.sha256(proposal.read_bytes()).hexdigest()
         return _canonical_sha(bound)
     if gate == "report":
         draft = case_path(case, REPORT_DRAFT)
@@ -781,6 +786,33 @@ def build_view(case: Path, gate: str, data_descriptor: int | None = None) -> dic
         "previous_reviewer": previous_reviewer,
         "digest": review_digest(case, gate, data_descriptor),
     }
+
+
+def _gate_claims(case: Path, gate: str) -> list[dict[str, str]]:
+    """The claims a gate page shows: the proposed claims at Ingest, otherwise
+    the findings' claims (none before Investigation, so Methodology is
+    usually empty)."""
+    if gate == "ingest":
+        proposal = _read_case_json(case, INGEST_PROPOSAL)
+        raw = proposal.get("claims") if isinstance(proposal, dict) else None
+        claims = [
+            {"target": f"claim:{c['key']}", "label": f"Claim {c['key']}", "claim": c["proposition"].strip()}
+            for c in (raw if isinstance(raw, list) else [])
+            if isinstance(c, dict) and isinstance(c.get("key"), str)
+            and isinstance(c.get("proposition"), str) and c["proposition"].strip()
+        ]
+        if claims:
+            return claims
+    return case_search.findings_claims(case)
+
+
+def case_passages(case: Path, gate: str) -> dict[str, Any]:
+    """Case search for every claim the gate shows: the passages most worth
+    reading next to each claim. Retrieval only; it is not part of the page's
+    digest and never sets a mark. Without Engine, or with Engine's switch off,
+    ``available`` is false with a short note."""
+    require_gate(gate)
+    return case_search.search_claims(case, _gate_claims(case, gate))
 
 
 def _validated_edit(edit: object, items: dict[str, dict[str, Any]]) -> dict[str, Any]:
