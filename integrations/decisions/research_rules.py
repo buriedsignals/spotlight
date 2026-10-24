@@ -4,15 +4,16 @@ effects of the research questions, and the triage invariants (D7).
 A lead is never set aside for being about another subject, event or
 direction than the brief's: leads about other people, companies or events can
 be circumstantial, and that is what makes them clues. Such answers label the
-lead (``CIRCUMSTANTIAL``, ``OUTSIDE_DIRECTIONS``); only answers that dismiss
-the material itself (``SET_ASIDE_REASONS``) can set a lead aside.
+lead (``CIRCUMSTANTIAL``, ``OUTSIDE_DIRECTIONS``). No answer sets a lead
+aside: whether the source holds what the lead says is D3's job (the excerpt
+must be verbatim in a stored source, or the lead is marked unverifiable), not
+a question's.
 
 Nothing here calls a model. A model answer has an effect only when both
 option orders agree; disagreement flags the lead "model unsure" and changes
 nothing else. Until the decision-model acceptance test has passed for this
-bank version (``ACCEPTANCE``), triage only flags: no answer sets a lead
-aside, the on-trial questions C2 and C3 are not asked, and no probability
-band is assigned.
+bank version (``ACCEPTANCE``), triage only flags: the on-trial questions C2
+and C3 are not asked and no probability band is assigned.
 
 Triage reads only the lead fields ``parse_lead`` accepts and type-checks; any
 other field of a lead never reaches a question.
@@ -48,13 +49,13 @@ def load_acceptance(path: Path = ACCEPTANCE_FILE) -> Mapping[str, Any] | None:
 ACCEPTANCE: Mapping[str, Any] | None = load_acceptance()
 
 FLAG_ONLY, FULL = "flag_only", "full"
-FLAG_ONLY_NOTICE = ("Triage only flags until the decision-model acceptance test passes: no lead is set aside "
-                    "by a model answer, and the new-actor and change-or-absence questions are not asked.")
+FLAG_ONLY_NOTICE = ("Triage only flags until the decision-model acceptance test passes: the new-actor and "
+                    "change-or-absence questions are not asked.")
 DISPOSITIONS = ("keep", "flag", "set_aside")
 ALWAYS_SHOWN_CLUES = {"watchlist", "premise_complicated", "premise_contradicted"}
-# The only reasons a lead may be set aside: the source does not contain what
-# the lead says. Topical answers (another subject, no direction) never are.
-SET_ASIDE_REASONS = frozenset({"content_not_found"})
+# Reasons triage may set a lead aside: none. D3 checks that the source holds
+# the excerpt; topical answers (another subject, no direction) only label.
+SET_ASIDE_REASONS: frozenset[str] = frozenset()
 # Context labels: kept leads, ranked after same-subject leads.
 CIRCUMSTANTIAL, OUTSIDE_DIRECTIONS = "circumstantial", "outside_directions"
 CIRCUMSTANTIAL_IDENTITIES = frozenset({"different_subject_or_event", "none_of_the_brief"})
@@ -208,6 +209,37 @@ def missing_figures(lead: TriageLead) -> list[str]:
     return sorted(_figures(lead.summary) - _figures(lead.excerpt))
 
 
+# Q3's backstop: hosts whose pages are primary records (registers, gazettes,
+# courts, procurement portals) are certain; social hosts are only a prior,
+# since an official account posting there is an interested party.
+PRIMARY_RECORD_HOSTS = ("zefix.ch", "handelsregister.de", "find-and-update.company-information.service.gov.uk",
+                        "thegazette.co.uk", "ted.europa.eu", "simap.ch", "sam.gov", "curia.europa.eu", "bger.ch")
+SOCIAL_HOSTS = ("x.com", "twitter.com", "facebook.com", "instagram.com", "tiktok.com", "reddit.com",
+                "youtube.com", "t.me", "threads.net", "bsky.app")
+
+
+def host_source(lead: TriageLead) -> tuple[str | None, bool]:
+    """(Q3 source the host implies, whether that is certain)."""
+    host = (urlparse(lead.source_url).hostname or "").lower()
+
+    def on(domains: tuple[str, ...]) -> bool:
+        return any(host == d or host.endswith("." + d) for d in domains)
+    if on(PRIMARY_RECORD_HOSTS):
+        return "primary_record", True
+    if on(SOCIAL_HOSTS):
+        return "user_generated", False
+    return None, False
+
+
+def source_label(lead: TriageLead, answer: str | None) -> tuple[str | None, bool]:
+    """Q3's label and whether the host rule set it: a certain host always, a
+    prior only when no answer counted; otherwise the model's answer stands."""
+    prior, certain = host_source(lead)
+    if prior and (certain or not answer):
+        return prior, True
+    return answer, False
+
+
 # ------------------------------------------------------------- answers
 def agreed_choice(answers: Mapping[str, Any], qid: str) -> str | None:
     """The option both orders chose, or None when they disagree or either is missing."""
@@ -237,7 +269,7 @@ def record_answers(answers: Mapping[str, Any], choice_ids: Iterable[str], noul_i
     return out
 
 
-def lead_outcome(lead: TriageLead, recorded: Mapping[str, Mapping[str, Any]], mode: str,
+def lead_outcome(lead: TriageLead, recorded: Mapping[str, Mapping[str, Any]],
                  rule_clues: Iterable[str] = ()) -> dict[str, Any]:
     """Apply Appendix B's effects to one lead. Only counted answers act."""
     value = {qid: r["value"] for qid, r in recorded.items() if r.get("counted")}
@@ -245,7 +277,6 @@ def lead_outcome(lead: TriageLead, recorded: Mapping[str, Mapping[str, Any]], mo
     labels: dict[str, str] = {}
     clues: list[str] = []
     context: list[str] = []
-    set_aside: list[str] = []
     rule_clues = set(rule_clues)
 
     def flag(reason: str, detail: str = "") -> None:
@@ -265,8 +296,12 @@ def lead_outcome(lead: TriageLead, recorded: Mapping[str, Mapping[str, Any]], mo
         context.append(CIRCUMSTANTIAL)
     if value.get("q2_direction") == "none":
         context.append(OUTSIDE_DIRECTIONS)
-    if value.get("q3_source"):
-        labels["source"] = value["q3_source"]
+    answer = value.get("q3_source")
+    source, by_rule = source_label(lead, answer)
+    if by_rule and answer and answer != source:
+        flag("source_rule_override", f"the model said {answer}; the host publishes {source}")
+    if source:
+        labels["source"] = source
     assertion = value.get("q4_assertion")
     if assertion:
         labels["assertion"] = assertion
@@ -274,8 +309,6 @@ def lead_outcome(lead: TriageLead, recorded: Mapping[str, Mapping[str, Any]], mo
         flag("allegation")
     elif assertion == "interpretation":
         flag("interpretation", "never a factual lead")
-    elif assertion == "not_found":
-        set_aside.append("content_not_found")
     status = value.get("q5_status")
     if status:
         labels["status"] = status
@@ -301,15 +334,11 @@ def lead_outcome(lead: TriageLead, recorded: Mapping[str, Mapping[str, Any]], mo
     if missing:
         flag("summary_refused", "figures not in the excerpt: " + ", ".join(missing))
 
-    protected = bool(ALWAYS_SHOWN_CLUES & set(clues))
-    if set_aside and (mode != FULL or protected):
-        flag("model_suggests_set_aside", ", ".join(set_aside))
-        set_aside = []
-    disposition = "set_aside" if set_aside else ("flag" if flags or clues else "keep")
+    disposition = "flag" if flags or clues else "keep"
     position = None
     if premise == "contradicts" and assertion == "reported_claim":
         position = {"stance": "disputes"}  # an actor's denial of the premise
-    return {"lead_id": lead.lead_id, "disposition": disposition, "set_aside_reasons": set_aside,
+    return {"lead_id": lead.lead_id, "disposition": disposition, "set_aside_reasons": [],
             "flags": flags, "labels": labels, "clues": clues, "context": context, "summary_refused": bool(missing),
             "source_position": position}
 
@@ -323,8 +352,8 @@ def conflict_outcome(recorded: Mapping[str, Any]) -> str | None:
 def triage_violations(document: Mapping[str, Any]) -> list[str]:
     """D7: the model can only keep, flag or set aside; always-shown clues are
     never set aside; nothing is set aside before the acceptance test, nor for
-    a reason that only narrows to the brief's subjects or directions; a set
-    aside rests only on answers both orders agreed on; no band before U15."""
+    any reason outside ``SET_ASIDE_REASONS`` (none: a model answer never sets a
+    lead aside); a counted answer rests on both orders agreeing; no band before U15."""
     problems: list[str] = []
     mode = document.get("mode")
     for result in document.get("leads", []):

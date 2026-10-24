@@ -18,6 +18,13 @@ let reviewerTimer = 0;
 let reviewerSaving = null;
 // The follow-up note is sent with the request, not saved as a review edit.
 let followUpNote = "";
+// Engine's staged wiki writes, loaded after the gate (null until then); empty
+// without Engine, which hides the view.
+let wikiChanges = null;
+// Why the last wiki request failed; shown with a retry, apart from "none".
+let wikiError = "";
+// Case-search passages for the gate and record digest on show, fetched once each after the view.
+let passages = { gate: "", digest: "", data: null };
 
 const DECISION_LABELS = {
   methodology: { approved: "Approve the methodology" },
@@ -442,6 +449,7 @@ const LEAD_FLAG_LABELS = {
   absence_is_not_clearance: "Absence is not clearance",
   snippet_only: "Snippet only: cannot support a finding",
   summary_refused: "Summary refused: a figure is not in the excerpt",
+  source_rule_override: "Source set by its host (a register, gazette, court or procurement portal), not by the model",
   model_suggests_set_aside: "The model would set this aside; while triage only flags, that has no effect",
 };
 const LABEL_NAMES = { identity: "Identity", source: "Source", assertion: "Assertion", status: "Status" };
@@ -892,12 +900,169 @@ function receiptSection() {
   );
 }
 
+// ---------------------------------------------------------------- wiki changes
+
+// Diffs are untrusted: each line goes in as text, never as HTML.
+function diffBlock(diff) {
+  return el(
+    "pre",
+    { className: "diff" },
+    String(diff ?? "").split("\n").map((line) =>
+      el("span", { className: line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "", text: `${line}\n` }),
+    ),
+  );
+}
+
+function wikiChangeCard(change) {
+  const unavailable = busy || ended ? "true" : "false";
+  const heading = domId("wiki", change.id, "heading");
+  return el(
+    "article",
+    { className: "card", "aria-labelledby": heading },
+    el("h3", { id: heading, text: change.summary || change.op }),
+    el("p", { className: "muted", text: `${change.op} · staged ${change.created}` }),
+    list(change.paths ?? [], "No files."),
+    change.stale ? el("p", { className: "warning", text: "A file changed since this was staged, so it can no longer be applied. Discard it, or ask the agent to stage it again." }) : null,
+    diffBlock(change.diff),
+    change.stale ? null : el("button", { id: domId("wiki", change.id, "apply"), type: "button", "aria-disabled": unavailable, text: "Apply", on: { click: () => confirmWiki("apply", change) } }),
+    el("button", { id: domId("wiki", change.id, "discard"), type: "button", className: "secondary", "aria-disabled": unavailable, text: "Discard", on: { click: () => confirmWiki("discard", change) } }),
+  );
+}
+
+function wikiSection() {
+  return el(
+    "section",
+    { id: "wiki-section", "aria-labelledby": "wiki-heading" },
+    el("h2", { id: "wiki-heading", text: `Wiki changes (${wikiChanges.length})` }),
+    el("p", { text: "The agent staged these writes to your wiki. Nothing is written until you apply it." }),
+    wikiChanges.map(wikiChangeCard),
+  );
+}
+
+// Never rejects: a request that fails outright becomes the shown error.
+async function loadWiki() {
+  wikiError = "";
+  try {
+    const { status, data } = await post("/api/wiki-changes", {});
+    if (status === 200 && Array.isArray(data.changes)) wikiChanges = data.changes;
+    else if (status !== 403) wikiError = data.message || "Could not read staged changes.";
+  } catch {
+    wikiError = "Could not reach the review page's local server.";
+  }
+}
+
+function wikiErrorSection() {
+  return el(
+    "section",
+    { id: "wiki-section", "aria-labelledby": "wiki-heading" },
+    el("h2", { id: "wiki-heading", text: "Wiki changes" }),
+    el("p", { className: "warning", text: wikiError }),
+    el("button", { id: "wiki-retry", type: "button", className: "secondary", text: "Try again", on: { click: retryWiki } }),
+  );
+}
+
+// The button stays disabled until the load ends, so clicks do not pile up.
+function retryWiki(event) {
+  event.currentTarget.disabled = true;
+  void loadWiki().finally(showWiki);
+}
+
+// Draws only the wiki section beside a gate, so nothing the member is typing
+// is replaced; with no gate the page is the wiki section.
+function showWiki() {
+  if (!view.gate) return render(view);
+  const section = wikiError ? wikiErrorSection() : wikiChanges?.length ? wikiSection() : null;
+  const current = document.getElementById("wiki-section");
+  if (current) current.replaceWith(...(section ? [section] : []));
+  else if (section) app.append(section);
+}
+
+async function confirmWiki(action, change) {
+  if (busy || ended) return;
+  warn("");
+  setBusy(true);
+  say(action === "apply" ? "Applying the wiki change…" : "Discarding the wiki change…");
+  try {
+    const { status, data } = await post(`/api/wiki-changes/${action}`, { id: change.id, digest: change.digest });
+    if (Array.isArray(data.changes)) wikiChanges = data.changes;
+    const done = action === "apply" ? "Wiki change applied." : "Wiki change discarded.";
+    if (status === 200) say(Array.isArray(data.changes) ? done : `${done} Reload the page to refresh the list.`);
+    else if (status !== 403) {
+      warn(data.message || "The wiki change was refused.");
+      say(data.code === "digest-changed" ? "Reloaded." : data.code === "refused" ? "Nothing changed." : "Reload the page.");
+    }
+  } finally {
+    setBusy(false);
+  }
+}
+
+// ---------------------------------------------------------------- passages
+
+// Every gate: next to each claim the page shows, the case's own research
+// passages most worth reading (case search). Retrieval only, never a mark.
+function passageCard(claim) {
+  return el(
+    "div",
+    { className: "card" },
+    el("h3", { text: claim.label }),
+    el("p", { className: "quote", text: claim.claim }),
+    claim.passages.length
+      ? el(
+          "ol",
+          { "aria-label": `Passages for ${claim.label}` },
+          claim.passages.map((passage) =>
+            el("li", {}, el("span", { className: "tag", text: passage.path }), el("p", { className: "quote muted", text: passage.text })),
+          ),
+        )
+      : el("p", { className: "muted", text: claim.searched === false ? "Not searched: case search stopped before this claim." : "No passage in the case's research matched this claim." }),
+  );
+}
+
+function passagesSection() {
+  const data = passages.gate === view.gate && passages.digest === view.digest ? passages.data : null;
+  if (!data) return null;
+  if (!data.available) return el("p", { className: "muted", text: data.failed ? "Case search failed." : "Case search unavailable." });
+  if (!data.claims.length) return null;
+  return el(
+    "section",
+    { "aria-labelledby": "passages-heading" },
+    el("h2", { id: "passages-heading", text: "Passages worth reading" }),
+    el("p", { className: "muted", text: "Retrieval only: passages from this case's research that may support or contradict each claim. They are not verdicts." }),
+    data.note ? el("p", { className: "muted", text: data.note }) : null,
+    data.claims.map(passageCard),
+  );
+}
+
+// Passages count only for the record digest they were searched for.
+async function loadPassages(gate, digest) {
+  passages = { gate, digest, data: null };
+  const { status, data } = await post("/api/passages", {});
+  if (status !== 200 || data.gate !== gate || (data.available && data.digest !== digest)) return;
+  if (passages.gate !== gate || passages.digest !== digest) return;
+  passages = { gate, digest, data };
+  if (view?.gate === gate && view.digest === digest) render(view);
+}
+
 // ---------------------------------------------------------------- render
 
 function render(next) {
   view = next;
+  if (view.gate && (passages.gate !== view.gate || passages.digest !== view.digest)) loadPassages(view.gate, view.digest).catch(() => {});
   title.textContent = `Spotlight review: ${view.gate_label || boot.gates?.[view.gate] || view.gate}`;
   keepFocus(() => {
+    // No gate pending: the page shows only the staged wiki changes.
+    if (!view.gate) {
+      app.replaceChildren(
+        wikiError
+          ? wikiErrorSection()
+          : wikiChanges === null
+            ? el("p", { text: "Loading the wiki changes…" })
+            : wikiChanges.length
+              ? wikiSection()
+              : el("p", { text: "No wiki changes are waiting. You can close this page." }),
+      );
+      return;
+    }
     const parts = [];
     if (readOnly()) parts.push(receiptSection());
     if (view.blocking.length) {
@@ -916,8 +1081,11 @@ function render(next) {
     if (view.gate === "investigation_gate") parts.push(...investigationContent(view.content, view.items));
     if (view.gate === "report") parts.push(...reportContent(view.content));
     if (view.gate === "ingest") parts.push(...ingestContent(view.content, view.items));
+    parts.push(passagesSection());
     if (!readOnly()) parts.push(decisionSection());
-    app.replaceChildren(...parts);
+    if (wikiError) parts.push(wikiErrorSection());
+    else if (wikiChanges?.length) parts.push(wikiSection());
+    app.replaceChildren(...parts.filter(Boolean));
   });
   app.setAttribute("aria-busy", busy ? "true" : "false");
 }
@@ -930,7 +1098,11 @@ async function load() {
     return;
   }
   render(data);
-  say(readOnly() ? "This gate is decided." : "Review loaded. Your edits are saved as you make them.");
+  if (view.gate) say(readOnly() ? "This gate is decided." : "Review loaded. Your edits are saved as you make them.");
+  // The gate shows at once; the staged wiki changes follow when Engine answers.
+  await loadWiki();
+  showWiki();
+  if (!view.gate && !wikiError) say("Wiki changes loaded.");
 }
 
 function typeReviewer(value) {
@@ -1045,10 +1217,13 @@ async function requestFollowUp() {
 
 async function start() {
   const capability = location.hash.slice(1);
+  const showWiki = new URLSearchParams(location.search).get("view") === "wiki";
   history.replaceState(null, "", location.pathname);
   const { status } = await post("/session", { capability });
   if (status !== 200) return;
   await load();
+  // Opened after an agent staged a wiki write: go straight to the changes.
+  if (showWiki) document.getElementById("wiki-heading")?.scrollIntoView();
 }
 
 start().catch(() => warn("The review page could not reach its local server. Ask the agent to reopen the review."));

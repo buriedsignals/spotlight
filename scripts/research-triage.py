@@ -13,6 +13,8 @@ to ask about; they are listed, not triaged.
 The backend comes from the install config only:
 ``integrations.decisions.research_triage`` = {"backend": "jev" | "clef" |
 "clef-flash" | "local" | "rules", "local_url": "http://127.0.0.1:PORT"}.
+Without a ``local_url``, a decision endpoint on loopback (Kev in Ninja mode,
+``integrations.decisions.endpoint``) is the local model.
 Cloud backends also need ``integrations.decisions.enabled``. Journalist-input
 leads and sensitive cases are triaged only by the local tune or by rules; in
 newsroom mode cloud backends are off unless the decision endpoint is the
@@ -47,7 +49,7 @@ import decision_signals_lib as lib  # noqa: E402
 import research_backends as backends  # noqa: E402
 import research_questions as rq  # noqa: E402
 import research_rules as rr  # noqa: E402
-from client import DecisionUnavailable, JevOpenRouterProvider, is_openrouter  # noqa: E402
+from client import DecisionUnavailable, JevOpenRouterProvider, endpoint_from_config, is_local, is_openrouter  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
 from spotlight_orchestration.storage import transaction  # noqa: E402
@@ -170,7 +172,7 @@ def run_triage(raw_leads: list[Any], brief: rr.TriageBrief, clues_doc: Mapping[s
     for lead in leads.values():
         answers, used, reason = ask(lead.journalist_input, {**rr.lead_state(lead), **brief_state(brief)}, questions)
         recorded = rr.record_answers(answers, choice_ids, noul_ids, mode, acceptance)
-        outcome = rr.lead_outcome(lead, recorded, mode, per_lead.get(lead.lead_id, ()))
+        outcome = rr.lead_outcome(lead, recorded, per_lead.get(lead.lead_id, ()))
         results.append({**outcome, "backend": used, **({"backend_reason": reason} if reason else {}),
                         "answers": recorded if answers else {}})
 
@@ -210,7 +212,13 @@ def triage_settings(config: Mapping[str, Any]) -> dict[str, Any]:
     backend = triage.get("backend", "rules")
     if backend not in backends.BACKENDS:
         raise SystemExit(f"integrations.decisions.research_triage.backend must be one of {', '.join(backends.BACKENDS)}")
-    return {"backend": backend, "local_url": triage.get("local_url") or "", "cloud_enabled": block.get("enabled") is True,
+    try:
+        endpoint = endpoint_from_config(block.get("endpoint"))
+    except DecisionUnavailable:
+        endpoint = ("", "")
+    return {"backend": backend, "local_url": triage.get("local_url") or "",
+            # A decision endpoint on this computer (Kev in Ninja mode) is the local triage model.
+            "local_endpoint": endpoint if is_local(endpoint[0]) else None, "cloud_enabled": block.get("enabled") is True,
             "model": block.get("model") or "typesafe/jev-1.13", "env_file": block.get("env_file")}
 
 
@@ -224,12 +232,19 @@ def build_providers(cfg: Mapping[str, Any], signals: Any) -> tuple[dict[str, Any
             providers["local"] = backends.LlamaServerProvider(cfg["local_url"])
         except DecisionUnavailable as exc:
             notes.append(f"local: {exc}")
+    elif cfg["local_endpoint"]:
+        url, key_env = cfg["local_endpoint"]
+        try:
+            providers["local"] = JevOpenRouterProvider(signals.require_key({"env_file": cfg["env_file"]}, None, key_env),
+                                                       model=cfg["model"], url=url)
+        except DecisionUnavailable as exc:
+            notes.append(f"local: {exc}")
     if cfg["backend"] == "jev":
         try:
             url, key_env = signals.install_endpoint()
             newsroom_endpoint = not is_openrouter((urlparse(url).hostname or "").lower())
-            key, _where = signals.resolve_key({"env_file": cfg["env_file"]}, None, key_env)
-            providers["jev"] = JevOpenRouterProvider(key, model=cfg["model"], url=url)
+            providers["jev"] = JevOpenRouterProvider(signals.require_key({"env_file": cfg["env_file"]}, None, key_env),
+                                                     model=cfg["model"], url=url)
         except DecisionUnavailable as exc:
             notes.append(f"jev: {exc}")
     if cfg["backend"] in ("clef", "clef-flash"):
@@ -275,7 +290,7 @@ def main(argv: list[str] | None = None) -> int:
 
     def routing(journalist_input: bool) -> tuple[str, str]:
         return backends.route(cfg["backend"], newsroom=newsroom, sensitive=sensitive, journalist_input=journalist_input,
-                              local_available="local" in providers or (args.check and bool(cfg["local_url"])),
+                              local_available="local" in providers or (args.check and bool(cfg["local_url"] or cfg["local_endpoint"])),
                               cloud_enabled=cfg["cloud_enabled"], newsroom_endpoint=newsroom_endpoint)
 
     if args.check:

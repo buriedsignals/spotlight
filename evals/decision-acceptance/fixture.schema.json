@@ -68,7 +68,7 @@
                   "q1_identity": { "enum": ["same_identifier", "consistent_details", "name_only", "different_subject_or_event", "none_of_the_brief"] },
                   "q2_direction": { "type": "string" },
                   "q3_source": { "enum": ["primary_record", "original_reporting", "secondary", "interested_party", "user_generated", "unclear"] },
-                  "q4_assertion": { "enum": ["asserted", "reported_claim", "interpretation", "not_found"] },
+                  "q4_assertion": { "enum": ["asserted", "reported_claim", "interpretation"] },
                   "q5_status": { "enum": ["done", "decided_not_done", "proposed_or_offered", "not_established", "no_event"] },
                   "q6_fidelity": { "enum": ["faithful", "widens", "contradicts", "unsupported"] },
                   "c1_premise": { "enum": ["supports", "complicates", "contradicts", "unrelated"] },

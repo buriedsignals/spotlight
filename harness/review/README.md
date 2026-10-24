@@ -45,6 +45,23 @@ default `orchestrator`) and the time, and it refuses a member name. The page
 shows "Recorded through: the agent (orchestrator)"; a follow-up recorded before
 follow-ups said who asked shows as not recorded.
 
+## Case passages
+
+Every gate page shows, after the gate's content, the passages most worth
+reading next to each claim it shows: the findings' claims (none before
+Investigation, so the Methodology page is usually empty) or, at Ingest, the
+analyst's proposed claims. The page asks for them once per gate
+(`/api/passages`, `spotlight-orchestration.py review-passages <gate>`), after
+the view, so a slow search never delays the page or a decision. Case search
+(`integrations/case_search.py` over Engine's `bsig wiki case-search`) ranks
+the case's own `research/` captures for each claim and leaves out Spotlight's
+bookkeeping files and link-list chunks. It is retrieval only: it is not part of
+the digest and never sets a mark, a disposition or a link. Passage text is
+inserted as text. Without Engine, or with Engine's case-search switch off,
+the page shows only "Case search unavailable." When the search stops early
+(Engine fails or the overall deadline passes), the claims already searched keep
+their passages and the rest show "Not searched".
+
 ## The Research page
 
 The Research gate page (`scripts/spotlight_orchestration/research_view.py`)
@@ -75,6 +92,25 @@ beside the member's final mark, under the `clue:<id>` and `direction:<id>`
 targets the amendment check (D8) reads. The page digest also covers the
 triage, suggestions and round ledger the page shows, so an approval binds what
 the member saw; the receipt binds the leads, the clues and the saved review.
+
+## Wiki changes
+
+When Engine is installed, the page also lists the wiki writes an agent staged
+(`bsig wiki staged`): each change's summary, files and diff, shown as text.
+The member applies or discards each one. Agents stage wiki writes; they never
+apply them. The server takes a one-time nonce per change from
+`bsig wiki staged-nonce`, keeps it in-process and hands it to
+`staged-apply`/`staged-discard` on stdin with the digest the page showed. A
+change edited since the page loaded is refused and the list reloads; a stale
+change offers only Discard. Without Engine, or with a bsig that lacks these
+verbs, the view does not appear; any other Engine failure shows as a warning
+and the gate stays usable. With no gate pending, the page shows only
+this view; it is opened on demand by `open_spotlight_wiki_changes` (below).
+
+The limit depends on the runtime. In Pi mode agents cannot run `bsig`, so
+confirming on this page is a real boundary. In subscription mode an agent with
+a shell could call `staged-nonce` and `staged-apply` itself: there the page is
+a speed bump, not a boundary.
 
 ## Security model
 
@@ -117,9 +153,14 @@ args:    ["<checkout>/harness/review/mcp.mjs"]
 env:     SPOTLIGHT_CASES_ROOT=<case workspace root>   (optional; refuses cases outside it)
 ```
 
-It exposes one tool, `open_spotlight_review({case_dir})`, which returns "page
-opened" text and no URL. The member says in chat when they are done, and the
-agent resolves the case, which reads the decision from disk.
+It exposes two tools that return "page opened" text and no URL.
+`open_spotlight_review({case_dir})` opens the pending gate. The member says in
+chat when they are done, and the agent resolves the case, which reads the
+decision from disk. `open_spotlight_wiki_changes({case_dir})`, called after the
+agent stages a wiki write, opens the same page on its Wiki changes view,
+starting the server if none runs; with nothing staged it opens nothing. A
+page already open for the case is left alone, so the member's session and
+unsaved input survive; the agent asks them to reload it.
 
 ## Tests
 

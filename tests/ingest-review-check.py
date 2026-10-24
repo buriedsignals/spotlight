@@ -93,6 +93,16 @@ class SoloIngest(SoloCase):
         self.assertNotIn("story_arcs", batch)
         self.assertNotEqual(self.view(case, "ingest")["digest"], before)
 
+    def test_a_changed_proposal_changes_the_digest(self) -> None:
+        # The page shows the proposal's claims and their case passages.
+        case = self.prepared("proposal")
+        before = self.view(case, "ingest")["digest"]
+        path = case / "data" / "knowledge-proposal.json"
+        proposal = json.loads(path.read_text(encoding="utf-8"))
+        proposal["claims"][0]["proposition"] += " Twice."
+        path.write_text(json.dumps(proposal), encoding="utf-8")
+        self.assertNotEqual(self.view(case, "ingest")["digest"], before)
+
     def test_an_edit_withdraws_the_batch_until_its_rebuild(self) -> None:
         # The race: a page loaded between an edit and its rebuild would see
         # the new review beside the old batch. The edit itself removes the
