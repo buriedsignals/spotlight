@@ -799,7 +799,8 @@ test('newsroom Submit: a case phase the resolver cannot read is an error, never 
 	await requestNewsroomIngest(caseDir, env);
 	// The resolver (the adapter's `status`) fails; everything else runs on the real interpreter.
 	const python = join(space.root, 'python-broken-status');
-	await writeFile(python, `#!/bin/sh\nfor a in "$@"; do [ "$a" = status ] && { echo 'the resolver broke' >&2; exit 3; }; done\nexec '${process.env.SPOTLIGHT_PYTHON ?? 'python3'}' "$@"\n`, { mode: 0o755 });
+	const seen = join(space.root, 'resolver-env');
+	await writeFile(python, `#!/bin/sh\nfor a in "$@"; do [ "$a" = status ] && { env > '${seen}'; echo 'the resolver broke' >&2; exit 3; }; done\nexec '${process.env.SPOTLIGHT_PYTHON ?? 'python3'}' "$@"\n`, { mode: 0o755 });
 
 	const chat = launch(t, { ...env, SPOTLIGHT_PYTHON: python });
 	await settledPrompt(chat, 'Continue.');
@@ -810,6 +811,8 @@ test('newsroom Submit: a case phase the resolver cannot read is an error, never 
 	assert.match(shown, /could not resolve the case phase/);
 	assert.doesNotMatch(shown, /skipped/);
 	assert.deepEqual(editorial.callsOf('submit_case_review'), []);
+	// The resolver the launcher runs never gets the Editorial token.
+	assert.ok(!(await readFile(seen, 'utf8')).includes(editorial.token), 'the resolver saw the Editorial token');
 });
 
 test('a revoked newsroom token stops the harness with a plain message and exit code 4, and the token never appears in the logs', async (t) => {

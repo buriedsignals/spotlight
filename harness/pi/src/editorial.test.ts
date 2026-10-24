@@ -89,6 +89,7 @@ test('an HTTP or protocol error from the server reaches no log or case file with
 	for (const answer of [
 		(id: string) => new Response(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32000, message: `see ${page}` } }), { headers: { 'content-type': 'application/json' } }),
 		() => new Response(`unavailable, see ${page}`, { status: 500 }),
+		(id: string) => Response.json({ jsonrpc: '1.0', id, result: {} }),
 	]) {
 		const fetchImpl: typeof fetch = async (_url, init) => answer(JSON.parse(String(init?.body)).id);
 		const client = new EditorialClient({ url, token: 'newsroom-editorial-token-123', origins: [origin(url)], fetchImpl });
@@ -103,6 +104,7 @@ test('a successful but malformed tool result stops the newsroom case: a run_chec
 		['get_record', { content: 'not a list' }],
 		['get_record', { content: [null] }],
 		['get_record', { isError: 'yes', content: [{ type: 'text', text: '{}' }] }],
+		['get_record', `{"structuredContent":${'{"a":'.repeat(100_000)}1${'}'.repeat(100_000)}}`],
 		['run_checks', { structuredContent: { job_id: 'job-1', state: 'finished' } }],
 		['run_checks', { structuredContent: { job_id: 'job-1', state: 'done', flags: [{ target: 'finding:F1', reason: 'ok' }, { target: 'finding:F2' }] } }],
 		['run_checks', { structuredContent: { job_id: 'job-1', state: 'done', flags: 'none' } }],
@@ -113,11 +115,14 @@ test('a successful but malformed tool result stops the newsroom case: a run_chec
 		const fetchImpl: typeof fetch = async (_url, init) => {
 			const message = JSON.parse(String(init?.body)) as { id?: string; method: string };
 			if (message.id === undefined) return new Response(null, { status: 202 });
-			return Response.json({ jsonrpc: '2.0', id: message.id, result: message.method === 'initialize' ? {} : result });
+			if (message.method === 'initialize') return Response.json({ jsonrpc: '2.0', id: message.id, result: {} });
+			// A string is the raw JSON of the result.
+			return typeof result === 'string' ? new Response(`{"jsonrpc":"2.0","id":"${message.id}","result":${result}}`) : Response.json({ jsonrpc: '2.0', id: message.id, result });
 		};
 		const client = new EditorialClient({ url, token: 'newsroom-editorial-token-123', origins: [origin(url)], fetchImpl });
-		const error = await client.call(tool, {}).then(() => assert.fail(`${tool} accepted ${JSON.stringify(result)}`), (caught: Error) => caught);
-		assert.ok(stopsTheNewsroomCase(error), `${JSON.stringify(result)}: ${String(error)}`);
+		const shown = JSON.stringify(result).slice(0, 200);
+		const error = await client.call(tool, {}).then(() => assert.fail(`${tool} accepted ${shown}`), (caught: Error) => caught);
+		assert.ok(stopsTheNewsroomCase(error), `${shown}: ${String(error)}`);
 	}
 });
 

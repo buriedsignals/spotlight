@@ -3,7 +3,7 @@ import test from 'node:test';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checkNewsroomInstall, checkRouteSecrets, childEnv, readConfig, routeFor } from './config.ts';
+import { checkNewsroomInstall, checkRouteSecrets, childEnv, readConfig, routeFor, secretValues } from './config.ts';
 import type { Composition } from './roles.ts';
 
 const COMPOSITION: Composition = {
@@ -188,6 +188,8 @@ test('newsroom: a route token is never the Editorial MCP token or a tool secret,
 	assert.throws(() => checkRouteSecrets(readConfig(env('REGISTRY_API_KEY')), COMPOSITION, env('REGISTRY_API_KEY')), /REGISTRY_API_KEY .*tool secret/);
 	const ok = readConfig(env('ROUTE_TOKEN'));
 	assert.doesNotThrow(() => checkRouteSecrets(ok, COMPOSITION, env('ROUTE_TOKEN')));
+	// The client sends the Editorial token trimmed, so the trimmed value is redacted too.
+	assert.ok(secretValues(ok, COMPOSITION, { ...env('ROUTE_TOKEN'), SPOTLIGHT_EDITORIAL_MCP_TOKEN: ' editorial-token-0123456789\n' }).includes('editorial-token-0123456789'));
 	// A tool secret too short for the redactor to catch is refused, not left unredacted.
 	assert.throws(() => checkRouteSecrets(ok, COMPOSITION, { ...env('ROUTE_TOKEN'), REGISTRY_API_KEY: 'abc' }), /REGISTRY_API_KEY is shorter than 4 characters/);
 	assert.equal(childEnv(ok, COMPOSITION, 'orchestrator', env('ROUTE_TOKEN')).SPOTLIGHT_PROVIDER_API_KEY, 'route-secret-0123456789');

@@ -259,12 +259,8 @@ def build(case: Path) -> dict[str, Any]:
         "journalist_input_units": journalist_input_units(case),
     }
     files = []
-    total = 0
     for entry in manifest:
-        data = contents[entry["path"]]
-        total += len(data)
-        if total > MAX_PACKAGE_BYTES:
-            raise Refused(f"the cited evidence is larger than {MAX_PACKAGE_BYTES} bytes")
+        data = contents[entry["path"]]  # within MAX_PACKAGE_BYTES: cite() checks before each read
         files.append({"path": entry["path"], "sha256": entry["sha256"], "media_type": entry["media_type"],
                       "content_base64": base64.b64encode(data).decode("ascii")})
     return {"package": package, "files": files,

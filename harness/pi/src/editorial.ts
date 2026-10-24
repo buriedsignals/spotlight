@@ -154,19 +154,20 @@ export class EditorialClient {
 	// (where review pages live), nor `address` itself. Other addresses, such
 	// as a record's sources, stay. `keepReview` is only for the submit answer,
 	// whose review address the harness itself opens.
-	sanitize(value: unknown, options: { address?: string; keepReview?: boolean } = {}): unknown {
+	sanitize(value: unknown, options: { address?: string; keepReview?: boolean } = {}, depth = 0): unknown {
+		if (depth > 64) throw new EditorialError('the Editorial MCP answered with a value nested more than 64 levels deep');
 		if (typeof value === 'string') {
 			const text = this.#clean(value);
 			if (options.keepReview) return text;
 			return (options.address ? text.split(options.address).join('[review page]') : text)
 				.replace(/\bhttps?:\/\/[^\s"'<>]+/gi, (found) => (isAllowedOrigin(this.#options.origins, found) ? '[address removed]' : found));
 		}
-		if (Array.isArray(value)) return value.map((item) => this.sanitize(item, options));
+		if (Array.isArray(value)) return value.map((item) => this.sanitize(item, options, depth + 1));
 		if (value && typeof value === 'object') {
 			return Object.fromEntries(
 				Object.entries(value)
 					.filter(([key]) => options.keepReview || key !== 'review_url')
-					.map(([key, item]) => [this.sanitize(key, options) as string, this.sanitize(item, options)]),
+					.map(([key, item]) => [this.sanitize(key, options) as string, this.sanitize(item, options, depth + 1)]),
 			);
 		}
 		return value;
@@ -259,7 +260,7 @@ export class EditorialClient {
 				message = undefined;
 			}
 		}
-		if (!message || (message.result === undefined && message.error === undefined)) {
+		if (!message || message.jsonrpc !== '2.0' || (message.result === undefined && message.error === undefined)) {
 			throw new EditorialError(`the Editorial MCP gave no readable answer to ${method}`);
 		}
 		if (message.error) throw new EditorialError(`the Editorial MCP refused ${method}: ${this.#said(String(message.error.message ?? message.error.code))}`);

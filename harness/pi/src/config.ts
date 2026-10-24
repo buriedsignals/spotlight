@@ -476,7 +476,16 @@ export function secretValues(config: HarnessConfig, composition: Composition, en
 	for (const spec of Object.values(composition)) for (const key of spec.keys ?? []) names.add(key);
 	if (config.swarm.available) names.add(config.swarm.route.keyEnv);
 	if (config.editorial) names.add(config.editorial.tokenEnv);
-	return [...names].map((name) => env[name]).filter((value): value is string => !!value);
+	// Clients send tokens trimmed: both spellings are redacted.
+	return [...names].flatMap((name) => (env[name] ? [env[name] as string, (env[name] as string).trim()] : [])).filter(Boolean);
+}
+
+// The launcher's own environment for a program that inherits it (the
+// resolver): without the tokens only the launcher holds.
+export function withoutLauncherTokens(config: HarnessConfig, env: Env): Env {
+	const out = { ...env };
+	for (const name of [EDITORIAL_TOKEN_ENV, ...config.routes.map((route) => route.keyEnv)]) if (name) delete out[name];
+	return out;
 }
 
 // Non-secret settings of the backings the typed tools wrap (Tor posture for
