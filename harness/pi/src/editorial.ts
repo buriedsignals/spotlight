@@ -118,6 +118,24 @@ function parseEventStream(text: string, id: string): JsonRpcResponse | undefined
 	return undefined;
 }
 
+// The largest answer read, JSON or SSE; past it the read is cancelled.
+const MAX_ANSWER_BYTES = 16 * 1024 * 1024;
+
+async function readCapped(response: Response): Promise<string> {
+	const reader = response.body?.getReader();
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	for (let part = await reader?.read(); part && !part.done; part = await reader!.read()) {
+		size += part.value.byteLength;
+		if (size > MAX_ANSWER_BYTES) {
+			await reader!.cancel();
+			throw new EditorialError(`the Editorial MCP's answer is larger than ${MAX_ANSWER_BYTES} bytes`);
+		}
+		chunks.push(part.value);
+	}
+	return Buffer.concat(chunks).toString('utf8');
+}
+
 function untilAborted<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
 	if (!signal) return promise;
 	return new Promise((done, fail) => {
@@ -216,8 +234,9 @@ export class EditorialClient {
 		if (response.status === 401 || response.status === 403) throw new EditorialCredentialError();
 		let body: string;
 		try {
-			body = await response.text();
+			body = await readCapped(response);
 		} catch (error) {
+			if (error instanceof EditorialError) throw error;
 			throw this.#unreachable(error, signal);
 		}
 		return {

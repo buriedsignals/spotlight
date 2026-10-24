@@ -98,6 +98,17 @@ test('an HTTP or protocol error from the server reaches no log or case file with
 	}
 });
 
+test('an answer larger than the cap is not read to its end: the read stops and the newsroom case stops', async () => {
+	const url = 'https://editorial.newsroom.example/mcp';
+	let pulled = 0;
+	const fetchImpl: typeof fetch = async () =>
+		new Response(new ReadableStream({ pull: (stream) => (pulled++ < 64 ? stream.enqueue(new Uint8Array(1024 * 1024).fill(32)) : stream.close()) }), { headers: { 'content-type': 'application/json' } });
+	const client = new EditorialClient({ url, token: 'newsroom-editorial-token-123', origins: [origin(url)], fetchImpl });
+	const error = await client.connect().then(() => assert.fail('an oversized answer was accepted'), (caught: Error) => caught);
+	assert.ok(stopsTheNewsroomCase(error) && /larger than/.test(error.message), String(error));
+	assert.ok(pulled <= 20, `read ${pulled} MiB`);
+});
+
 test('a successful but malformed tool result stops the newsroom case: a run_checks state or flag outside the contract, a review address that is not a string', async () => {
 	const url = 'https://editorial.newsroom.example/mcp';
 	for (const [tool, result] of [
