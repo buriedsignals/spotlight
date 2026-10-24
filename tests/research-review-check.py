@@ -5,6 +5,7 @@ and triage (tests/fixtures/review_case.py research)."""
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -12,6 +13,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# A researched case has Engine's Research switch on (inherited by every subprocess).
+os.environ["SPOTLIGHT_RESEARCH_SWARMS"] = "on"
 SEAM = ROOT / "scripts" / "spotlight-orchestration.py"
 BUILDER = ROOT / "tests" / "fixtures" / "review_case.py"
 APPROVER = ("--approved-by", "A. Reviewer", "--approved-at", "2026-10-23T12:00:00Z")

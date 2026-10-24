@@ -13,6 +13,7 @@ from . import review, transitions
 __all__ = [
     "OrchestrationError",
     "approve",
+    "continue_without_research",
     "decide_ingest",
     "decide_report",
     "issue_review_nonce",
@@ -94,6 +95,16 @@ def start_research_round(
     to the research plan after D1; the Research page approves it with its leads."""
     _transition(
         case_dir, transitions.start_research_round, authorized_cases_root=authorized_cases_root
+    )
+
+
+def continue_without_research(
+    case_dir: str | Path, *, authorized_cases_root: str | Path | None = None
+) -> None:
+    """While Research is off, drop the research plan at the member's request;
+    the Methodology gate reopens for the plan without research."""
+    _transition(
+        case_dir, transitions.continue_without_research, authorized_cases_root=authorized_cases_root
     )
 
 

@@ -189,10 +189,46 @@ def _manifest_sensitive() -> bool:
     return bool(module.manifest_sensitive())
 
 
+RESEARCH_OFF = "Research is off; turn on Research in the app to add a research plan"
+# The harness's reader (harness/pi/src/config.ts researchSwitch) accepts the same values.
+SWITCH_ON = {"on", "true", "1", "yes"}
+SWITCH_OFF = {"", "off", "false", "0", "no"}
+
+
+def research_on(config: Mapping[str, Any]) -> bool:
+    """Engine's one Research switch. The Pi harness passes it to every Python
+    check as SPOTLIGHT_RESEARCH_SWARMS (present, even blank, it decides);
+    subscription runtimes have no launcher, so when it is absent the install
+    config's ``integrations.research_swarms.enabled`` decides."""
+    value = os.environ.get("SPOTLIGHT_RESEARCH_SWARMS")
+    if value is not None:
+        value = value.strip().lower()
+        if value not in SWITCH_ON | SWITCH_OFF:
+            raise ValueError('SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off".')
+        return value in SWITCH_ON
+    integrations = config.get("integrations", {})
+    if not isinstance(integrations, Mapping):
+        raise ValueError("the install config's integrations must be an object")
+    switch = integrations.get("research_swarms", {})
+    if not isinstance(switch, Mapping):
+        raise ValueError("integrations.research_swarms must be an object")
+    enabled = switch.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("integrations.research_swarms.enabled must be true or false")
+    return enabled
+
+
 def d1_from_config(methodology: Mapping[str, Any], config: Mapping[str, Any],
                    local_model: bool | None = None) -> list[str]:
-    """D1 with the install's posture: sensitive mode, newsroom mode and
-    whether a local model endpoint is configured (``local_model`` overrides)."""
+    """D1 with the install's posture: the Research switch, sensitive mode,
+    newsroom mode and whether a local model endpoint is configured
+    (``local_model`` overrides). With Research off there is no research plan."""
+    try:
+        research = research_on(config)
+    except ValueError as exc:
+        return [str(exc)]
+    if methodology.get("research_plan") is not None and not research:
+        return [RESEARCH_OFF]
     sensitive = (os.environ.get("SPOTLIGHT_SENSITIVE", "").lower() == "true" or config.get("sensitive") is True
                  or _manifest_sensitive())
     newsroom = (config.get("knowledge_destination") or {}).get("mode") == "newsroom"

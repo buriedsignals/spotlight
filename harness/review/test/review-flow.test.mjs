@@ -325,6 +325,9 @@ test("a page nonce that starts with a dash is redeemed", async (t) => {
 });
 
 test("the Research gate page opens, saves clue marks and approves with the member's name", async (t) => {
+  // A researched case has Engine's Research switch on; the page and the seam inherit it.
+  process.env.SPOTLIGHT_RESEARCH_SWARMS = "on";
+  t.after(() => delete process.env.SPOTLIGHT_RESEARCH_SWARMS);
   const root = tempRoot(t);
   const caseDir = buildCase(root, "case", "research");
   const { json } = await authed(t, caseDir);

@@ -176,6 +176,14 @@ test('the swarm route exists only with the switch and a key, keeps zero data ret
 	assert.equal(allowed.route.keyEnv, 'CLOUD_TOKEN');
 });
 
+test('the Research switch reaches every pi process as on or off, so a stall round meets D1 with it', () => {
+	const env = (extra: Record<string, string>) => ({ ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', ...extra });
+	for (const [value, passed] of [['', 'off'], ['off', 'off'], ['on', 'on']]) {
+		const e = env({ SPOTLIGHT_RESEARCH_SWARMS: value });
+		assert.equal(childEnv(readConfig(e), COMPOSITION, 'orchestrator', e).SPOTLIGHT_RESEARCH_SWARMS, passed, value);
+	}
+});
+
 test('newsroom: a route token is never the Editorial MCP token or a tool secret, and a token too short to redact is refused', () => {
 	const env = (keyEnv: string, token = 'editorial-token-0123456789') => ({
 		...BASE,

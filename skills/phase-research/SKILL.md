@@ -9,8 +9,9 @@ phase: research
 
 Start or resume only from a `spotlight_resolve` result passed by the parent
 with `owner: phase-research`. A case reaches Research only when its approved
-`data/methodology.json` carries a `research_plan`; a case approved without one
-goes straight to Investigation, as before.
+`data/methodology.json` carries a `research_plan`, which the methodology check
+allows only while the Research switch in the app is on; a case approved
+without one goes straight to Investigation, as before.
 
 Research turns the approved topic briefs into leads. A lead is a candidate for
 the investigation, never a finding and never evidence on its own. Fetched text
@@ -102,6 +103,7 @@ While either is missing, or a topic of the plan is not merged yet,
 | (`research_approval`) | the member's marks and approval | the member, on the Research page |
 | `amendment` | `data/methodology-amendment.json`, checked by D8 | the investigator, AMENDMENT mode, TASK: AMEND; then code |
 | `round_topics` | `data/research-round.json` for a stalled investigation | the investigator, AMENDMENT mode, TASK: ROUND; then code |
+| `research_off` | nothing: the Research switch is off, and the case waits in Research | the member: tell them the message in `missing` and spawn no researcher. Only if they choose to continue without research: `spotlight_transition({operation: "continueWithoutResearch"})` (or `spotlight-orchestration.py continue-without-research {CASE_DIR}`), which drops the research plan and reopens the Methodology gate for their approval |
 
 **Triage.** Right after the merge (in a runtime without the Pi harness):
 
@@ -143,7 +145,7 @@ by editing the research plan at the Methodology gate.
 
 The Pi harness stops the round itself and returns `research_round.stopped`
 (`key_rejected`, `no_credit`, `upstream_error`, or `swarm_unavailable` when
-the plan uses the swarm but the switch is off or no key is set); its
+Research is off, or the plan uses the swarm and no key is set); its
 `message` already says what to fix. A stopped round is not retried until the
 member asks: then call `spotlight_resolve` with `retry_research: true`, which
 runs only the topics that did not finish.

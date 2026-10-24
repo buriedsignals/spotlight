@@ -383,7 +383,8 @@
   }
   .spec-flow-frame {
     width: 100%;
-    aspect-ratio: 1180 / 2024;
+    max-width: 600px;
+    aspect-ratio: 600 / 2270;
     height: auto;
     border: 1px solid var(--muted-faint-dark);
     border-radius: 4px;
@@ -574,7 +575,7 @@
       <!-- ── 02 Pipeline ─────────────────────────────── -->
       <section id="pipeline">
         <h2><span class="num">02 — The pipeline</span>Seven named phases, six gates.</h2>
-        <p>Every investigation runs through the same named phases: Preflight, Brief, Methodology, Research, Investigation, Report, Ingest. The agent moves between them under explicit gates — no silent transitions, no half-finished cases. Research runs only when the approved methodology has a research plan; without one, the case goes straight to Investigation.</p>
+        <p>Every investigation runs through the same named phases: Preflight, Brief, Methodology, Research, Investigation, Report, Ingest. The agent moves between them under explicit gates — no silent transitions, no half-finished cases. Research runs only when you switch it on in the app. With it off, the case goes from Methodology straight to Investigation.</p>
         <p>The cases root is trusted journalist-owned local storage. Active case directories must not be moved or replaced during an operation.</p>
 
         <iframe
@@ -601,11 +602,13 @@
         <p>The agent restates the lead in its own words, names the affected parties, sets a scope, and writes a hypothesis. You read it back. If the agent has misunderstood the lead, you correct it here — it's faster to redirect in two sentences of prose than three investigation cycles later.</p>
 
         <h3>Methodology</h3>
-        <p>The agent writes a methodology JSON: which entities to investigate, which sources to consult (corporate registries, social media, archived web, OSINT Navigator tool lookups), which fact-check threshold applies. The file is editable. The investigation cycles will follow this plan; if you don't like the plan, change it before the agent starts. The methodology can also propose research topics: short briefs, each on a lane type (web, registries, archives, social, technical, news-courts, local corpus, prior knowledge, or ad hoc), with a round budget. You approve, edit, delete or add topics at the Methodology gate.</p>
+        <p>The agent writes a methodology JSON: which entities to investigate, which sources to consult (corporate registries, social media, archived web, OSINT Navigator tool lookups), which fact-check threshold applies. The file is editable. The investigation cycles will follow this plan; if you don't like the plan, change it before the agent starts. When Research is switched on, the methodology also proposes research topics. Each topic is a short brief on one lane type (web, registries, archives, social, technical, news-courts, local corpus, prior knowledge, or ad hoc) with a round budget. You approve, edit, delete or add topics at the Methodology gate.</p>
 
         <h3>Research</h3>
-        <p>Code, never the model, runs each approved topic as its own research lane. Lanes return leads: a summary, an exact quote and the source they saved. Code checks every quote against the saved source, merges copies of the same source, and applies fixed clue rules (convergence, conflicts, timing, shared identifiers, expected absence, watchlist). The Research page shows the clues first, with the investigator's suggested marks. You mark each clue pursue or dismiss and each direction keep, drop or add, and approve in one stop. The investigator then turns your marks into the methodology change, and code checks that it matches them.</p>
-        <p>Local lanes (your case files and your wiki) run on the local model. Cloud lanes are opt-in: OpenRouter with your own key, switched on in Engine, or your frontier host's subagents. A cloud lane gets only its topic brief — never case files, findings, evidence or journalist input — and a budget of $1 a round by default, at most $5 per case, bounds it.</p>
+        <p>Research is one opt-in package. A single Research switch in the app turns on the whole phase, which runs research lanes and then has a decision model triage their leads. With the switch off there is no Research phase.</p>
+        <p>Code, never the model, runs each approved topic as its own research lane. Web lanes run on the OpenRouter swarm with your own key, or on your frontier host's subagents. Local lanes search your case files and your wiki on the local model. A web lane gets only its topic brief and never sees case files, findings, evidence or journalist input. A budget of $1 a round by default, and at most $5 per case, bounds the web lanes.</p>
+        <p>Each lane returns leads with a summary, an exact quote and the source it saved. Code checks every quote against the saved source, merges copies of the same source, and applies fixed clue rules for convergence, conflicts, timing, shared identifiers, expected absence and the watchlist. A decision model then triages the leads. In Frontier mode Jev triages them on OpenRouter. In Ninja mode a decision model on your own Mac will triage them, and until it is released fixed rules do the triage. For now triage only flags leads and never sets one aside on a model answer.</p>
+        <p>The Research page shows the clues first, with the investigator's suggested marks. You mark each clue pursue or dismiss and each direction keep, drop or add, and approve in one stop. The investigator then turns your marks into the methodology change, and code checks that it matches them.</p>
 
         <h3>Investigation cycles</h3>
         <p>Up to three investigation cycles. The investigator follows the approved methodology in <strong>EXECUTION</strong> mode (after planning it in <strong>PLANNING</strong> mode). The investigator agent runs the cycles; every source is archived locally before it can be cited; every claim gets an evidence trail with grounding rationale.</p>
@@ -620,13 +623,13 @@
           <li>Document trail intact — every source has an <code>access_method</code> and a local file.</li>
           <li>Gap assessment — what we don't know is named, not hidden.</li>
         </ol>
-        <p>If a criterion fails, the agent loops back. After three cycles, a case with a research plan goes back to Research for one targeted round; your approval of that round grants one more cycle. If the case still isn't ready, or has no research plan, it stops with a gaps report.</p>
+        <p>If a criterion fails, the agent loops back. After three cycles, a case with Research switched on goes back to Research for one targeted round; your approval of that round grants one more cycle. If the case still isn't ready, or Research is off, it stops with a gaps report.</p>
 
         <h3>Report</h3>
         <p>After the Investigation gate, the journalist completes or declines the resolver-owned report phase. A completed report publishes the canonical <code>report.html</code>, <code>findings-report.md</code>, and <code>evidence-map.json</code> artifacts as one validated package before the case can proceed to ingestion.</p>
 
         <h3>Ingest</h3>
-        <p>During a case, source archives and working JSON stay in the active case workspace. After explicit approval, verified or clearly caveated findings, fact-check verdicts, methodology lessons, and entity notes can be ingested into your knowledge vault as structured markdown with wikilinks. Future investigations search the vault through OpenKnowledge's MCP interface and build on prior work without rediscovering the same entities from scratch.</p>
+        <p>During a case, source archives and working JSON stay in the active case workspace. After you approve, Spotlight writes the approved knowledge to your wiki under <code>spotlight/</code>, as claim, event and story-arc notes. Future investigations search your wiki for prior work and build on it without rediscovering the same entities from scratch.</p>
       </section>
 
       <!-- ── 03 Skills ───────────────────────────────── -->
@@ -639,7 +642,7 @@
           <div class="skill-card"><div class="sk-name">phase-research</div><div class="sk-desc">Research phase — lanes, merge, triage, the Research gate, the amendment and the stall round.</div></div>
           <div class="skill-card"><div class="sk-name">investigate</div><div class="sk-desc">Investigation-cycle logic. PLANNING/EXECUTION modes, stall protocol.</div></div>
           <div class="skill-card"><div class="sk-name">review</div><div class="sk-desc">Investigation gate readiness checks. Renders human-review HTML.</div></div>
-          <div class="skill-card"><div class="sk-name">ingest</div><div class="sk-desc">Vault archival — entity notes, methodology notes, source notes, registries.</div></div>
+          <div class="skill-card"><div class="sk-name">phase-ingest</div><div class="sk-desc">Writes approved knowledge to your wiki under <code>spotlight/</code> as claim, event and story-arc notes.</div></div>
           <div class="skill-card"><div class="sk-name">epistemic-grounding</div><div class="sk-desc">Claim-to-evidence grounding. Confidence caps by access method.</div></div>
           <div class="skill-card"><div class="sk-name">osint</div><div class="sk-desc">Tool lookup via OSINT Navigator. Country-specific registries.</div></div>
           <div class="skill-card"><div class="sk-name">follow-the-money</div><div class="sk-desc">Corporate filings, beneficial-ownership chains, registry walks.</div></div>
@@ -685,9 +688,9 @@
         <p>The public installer offers a direct local browser sign-in for Navigator or an explicit Skip. A successful Pro or Lab connection stores a revocable credential in the system keychain; no Navigator API key is pasted into Spotlight configuration.</p>
 
         <h3>Required</h3>
-<pre><code>SPOTLIGHT_VAULT_PATH=~/Obsidian/main          # durable knowledge vault for search/ingest
-SPOTLIGHT_CASES_ROOT=~/Documents/Spotlight/cases  # active case workspace
+<pre><code>SPOTLIGHT_CASES_ROOT=~/Documents/Spotlight/cases  # active case workspace
 </code></pre>
+        <p>Your wiki is <code>knowledge_destination.workspace_path</code> in <code>.spotlight-config.json</code>. Ingest writes there and later cases search it.</p>
         <p>Search and scraping need no key: <code>fetch</code> runs on Crawl4AI and <code>search</code> on SearXNG, both open-source and installed locally. <code>FIRECRAWL_API_KEY=fc-...</code> is optional — set it only to enable Firecrawl as an explicit fallback provider.</p>
 
         <h3>Runtime selection</h3>

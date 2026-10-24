@@ -63,7 +63,7 @@ Configuration comes only from the environment. A missing or invalid required var
 | `SPOTLIGHT_RLM_OPENAI_BASE_URL` | no | OpenAI-compatible base URL of the RLM, the small resident model that distills every `fetch` (see **Lead distillation** under [Tools](#tools)) and that `run_rlm` uses. It reads case material, so it must be an endpoint you run yourself: a loopback address in the solo edition, an `own` route in the newsroom edition. Anything else stops the launcher (exit code 2). |
 | `SPOTLIGHT_RLM_OPENAI_MODEL`, `SPOTLIGHT_RLM_MODE`, `SPOTLIGHT_RLM_MODEL` | no | RLM model and `run_rlm` settings. |
 | `ANOMALY_HOME` | no | Absolute path of an Anomaly checkout ([Anomaly clue methods](../../integrations/anomaly/integration.md)). Read by `anomaly_methods` and by the research merge, which runs approved methods on lane tables. |
-| `SPOTLIGHT_RESEARCH_SWARMS` | no | `on` turns on the research swarm (Engine's "Research swarms" switch). Default `off`. |
+| `SPOTLIGHT_RESEARCH_SWARMS` | no | Engine's Research switch: `on` turns on the whole Research phase (the swarm still needs a key). Off, D1 refuses any research plan; the harness passes the value to its Python checks. Default `off`. |
 | `OPENROUTER_API_KEY` | swarm | The member's key for the swarm route (solo). Never logged. |
 | `SPOTLIGHT_SWARM_BASE_URL` | no | Swarm endpoint (default `https://openrouter.ai/api/v1`). In the newsroom edition it must be one of `SPOTLIGHT_ROUTES`, whose `key_env` is then the key. |
 | `SPOTLIGHT_SWARM_MODEL`, `SPOTLIGHT_SWARM_FALLBACK_MODEL` | no | Swarm model (default `deepseek/deepseek-v4-flash`) and fallback (default `z-ai/glm-5.3`; empty for none). |
