@@ -338,6 +338,12 @@ class ResearchGate(SeamCase):
         self.seam("approve", "methodology", *APPROVER)
         self.assertEqual(self.status()["phase"], "investigation")
 
+    def test_a_methodology_with_a_research_plan_is_not_approved_while_research_is_off(self) -> None:
+        self.research = "off"
+        refused = self.seam("approve", "methodology", *APPROVER, expect=3)
+        self.assertIn("Research is off; turn on Research in the app to add a research plan", refused.stderr)
+        self.assertEqual(self.status()["phase"], "methodology_approval")
+
     def test_continue_without_research_is_only_for_a_case_research_off_paused(self) -> None:
         self.to_research_gate({})
         refused = self.seam("continue-without-research", expect=3)

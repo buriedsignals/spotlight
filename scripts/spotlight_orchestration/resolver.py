@@ -119,6 +119,14 @@ RESEARCH_PAUSED = ("Research is off. Turn Research on in the app to continue thi
 RESEARCH_PAUSED_STEP = "research_off"
 
 
+def research_switch_on() -> bool:
+    """Engine's Research switch, read as D1 reads it (research_checks.research_on)."""
+    try:
+        return research.checks().research_on(install_config())
+    except ValueError as exc:
+        raise OrchestrationError(str(exc)) from exc
+
+
 def _research_paused(status: dict[str, Any]) -> dict[str, Any]:
     """Research switched off mid-case: the case stays in Research at the step
     it reached (``paused_at``), and nothing in Research runs or advances."""
@@ -172,11 +180,7 @@ def status_for(
         if steps is not None:
             in_research = {**status, **steps}
     if in_research is not None:
-        try:
-            on = research.checks().research_on(install_config())
-        except ValueError as exc:
-            raise OrchestrationError(str(exc)) from exc
-        return in_research if on else _research_paused(in_research)
+        return in_research if research_switch_on() else _research_paused(in_research)
 
     dependencies = investigation_gate_dependencies(case)
     dependency_digest = str(dependencies["dependency_digest"])

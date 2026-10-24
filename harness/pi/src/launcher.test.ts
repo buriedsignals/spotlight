@@ -777,6 +777,8 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 		execFile(
 			process.env.SPOTLIGHT_PYTHON ?? 'python3',
 			[join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'), 'approve', 'methodology', '--approved-by', 'journalist:fixture', '--approved-at', '2026-10-23T12:00:00Z', '--authorized-cases-root', space.casesRoot, caseDir],
+			// A researched methodology is approved with Engine's Research switch on.
+			{ env: { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' } },
 			(error, _stdout, stderr) => (error ? fail(new Error(stderr || error.message)) : done()),
 		),
 	);
@@ -827,6 +829,8 @@ test('with the Research switch off, an approved researched case resumes no lane:
 		execFile(
 			process.env.SPOTLIGHT_PYTHON ?? 'python3',
 			[join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'), 'approve', 'methodology', '--approved-by', 'journalist:fixture', '--approved-at', '2026-10-23T12:00:00Z', '--authorized-cases-root', space.casesRoot, caseDir],
+			// A researched methodology is approved with Engine's Research switch on.
+			{ env: { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' } },
 			(error, _stdout, stderr) => (error ? fail(new Error(stderr || error.message)) : done()),
 		),
 	);

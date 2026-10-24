@@ -31,7 +31,7 @@ from .dependencies import (
     sha256,
     validate_approval,
 )
-from .resolver import RESEARCH_PAUSED_STEP, load_ingestion_marker, research_plan, status_for
+from .resolver import RESEARCH_PAUSED_STEP, load_ingestion_marker, research_plan, research_switch_on, status_for
 from . import research as research_rules
 from .research import AMENDMENT_CORRECTION, CYCLE, ROUND_CYCLE
 from .case_contract import bind as bind_case_contract
@@ -92,6 +92,8 @@ def approve(
     _refuse_while_research_off(status)
     if status["next_phase"] != expected_phase:
         raise OrchestrationError(f"case is not awaiting {gate} approval")
+    if gate == "methodology" and research_plan(case) is not None and not research_switch_on():
+        raise OrchestrationError(research_rules.checks().RESEARCH_OFF)
     if gate == "investigation_gate" and status.get("missing"):
         raise OrchestrationError(
             f"the Investigation gate still needs: {', '.join(status['missing'])}"
