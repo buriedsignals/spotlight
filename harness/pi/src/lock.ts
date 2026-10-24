@@ -3,6 +3,7 @@
 // held case is refused; a lock left by a dead harness is taken over after its
 // leftover pi processes are stopped, so none of them keeps writing.
 import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { linkSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -109,15 +110,26 @@ function lockWithRecord(path: string, temporary: string, record: LockRecord, cas
 		for (const pid of holder?.children ?? []) {
 			if (isAlive(pid) && isOurPi(pid, piCli)) process.kill(pid, 'SIGKILL');
 		}
-		// Move the stale lock aside atomically; if another launcher got there
-		// first the rename fails and the next attempt sees its fresh lock.
-		const stale = `${path}.stale-${process.pid}`;
+		// Move the stale lock aside atomically, then check that what moved is
+		// the record judged stale. If a faster launcher took the lock over in
+		// between, its fresh lock moved instead: put it back (link, never
+		// replacing) and try again, which then sees it held.
+		const sideline = `${path}.stale-${process.pid}-${randomBytes(4).toString('hex')}`;
 		try {
-			renameSync(path, stale);
-			rmSync(stale, { force: true });
+			renameSync(path, sideline);
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+			continue;
 		}
+		const moved = readRecord(sideline);
+		if (moved?.pid !== holder?.pid || moved?.started_at !== holder?.started_at) {
+			try {
+				linkSync(sideline, path);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+			}
+		}
+		rmSync(sideline, { force: true });
 	}
 	throw new CaseHeldError(`case "${caseId}" could not be locked; another Spotlight chat may be opening it.`);
 }
