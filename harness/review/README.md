@@ -102,9 +102,9 @@ candidate's id, label and type as text. The member picks one or "None of
 these" (stored as `false`, never an id); the server accepts only an id it
 offered for the digest the page shows, and asks for a reload otherwise. The
 pick is an `entity:<mention>` item in `data/ingest-review.json`, so the
-approval digest binds it, and the wiki write links the mention to it; when
-Engine then answers without that entity among the candidates, the write
-stops and asks for a fresh Ingest review. Without Engine, with a bsig that lacks `resolve`,
+approval digest binds it, and the wiki write links the mention to it as
+approved (an exact register link found then still wins). The page shows up
+to 50 mentions and 10 candidates each and says how many more it left out. Without Engine, with a bsig that lacks `resolve`,
 with no candidates or in newsroom mode the section does not appear; any other
 Engine failure shows a short note and the gate stays usable.
 

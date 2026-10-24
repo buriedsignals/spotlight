@@ -1088,6 +1088,7 @@ function entityCard(mention, item, current) {
         );
       }),
     ),
+    mention.more ? el("p", { className: "muted", text: `${mention.more} more candidates not shown; link them in the wiki.` }) : null,
   );
 }
 
@@ -1095,7 +1096,7 @@ function entitySection() {
   const data = entityKey() ? entities.data : null;
   if (!data) return null;
   if (data.failed) return el("p", { className: "muted", text: data.note });
-  if (!data.mentions.length) return null;
+  if (!data.mentions.length && !data.omitted_mentions) return null;
   const items = new Map(view.items.map((item) => [item.key, item]));
   return el(
     "section",
@@ -1103,6 +1104,7 @@ function entitySection() {
     el("h2", { id: "entities-heading", text: "Link mentions to the entity register" }),
     el("p", { className: "muted", text: "These mentions have no strong identifier, so they are not linked automatically. The register lists entities with similar names; pick one only if you know it is the same, otherwise none." }),
     data.mentions.map((mention) => entityCard(mention, items.get(mention.key), data.digest === view.digest)),
+    data.omitted_mentions ? el("p", { className: "muted", text: `${data.omitted_mentions} more mentions not shown; link them in the wiki.` }) : null,
   );
 }
 

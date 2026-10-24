@@ -83,3 +83,13 @@ test("without Engine, with an old bsig, with no candidates or in newsroom mode n
   assert.deepEqual(failed.body, { available: false, failed: true, note: "Could not read the entity register.", mentions: [] });
   assert.equal((await json("/api/view")).status, 200);
 });
+
+test("candidates beyond the page's limit are counted, not dropped silently", async (t) => {
+  const root = tempRoot(t);
+  const many = Array.from({ length: 12 }, (_, i) => ({ id: `acme-${i}`, type: "company", label: `Acme ${i}`, score: 0.5, evidence: [] }));
+  const fake = fakeBsig(root, { changes: [], resolve: { Acme: { status: "candidates", candidates: many } } });
+  const { json } = await authed(t, ingestCase(root), { wiki: fake.wiki });
+  const [acme] = (await json("/api/entity-candidates")).body.mentions;
+  assert.equal(acme.candidates.length, 10);
+  assert.equal(acme.more, 2);
+});
