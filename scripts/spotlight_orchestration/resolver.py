@@ -172,7 +172,11 @@ def status_for(
         if steps is not None:
             in_research = {**status, **steps}
     if in_research is not None:
-        return in_research if research.checks().research_on(install_config()) else _research_paused(in_research)
+        try:
+            on = research.checks().research_on(install_config())
+        except ValueError as exc:
+            raise OrchestrationError(str(exc)) from exc
+        return in_research if on else _research_paused(in_research)
 
     dependencies = investigation_gate_dependencies(case)
     dependency_digest = str(dependencies["dependency_digest"])

@@ -361,6 +361,19 @@ def record_amendment(case: Path, data_descriptor: int) -> None:
     _publish(case, data_descriptor, state, ledger, {"data/methodology.json": amendment_bytes})
 
 
+def continue_without_research(case: Path, data_descriptor: int) -> None:
+    """The member's choice while Research is off: drop the research plan.
+    The methodology changes, so the Methodology gate reopens and the member
+    approves the plan without research there; nothing else advances."""
+    state = load_state(case, data_descriptor)
+    if status_for(case, state, data_descriptor).get("research", {}).get("resume_at") != RESEARCH_PAUSED_STEP:
+        raise OrchestrationError("continue without research is only for a case paused because Research is off")
+    methodology = research_rules.read_case_json(case, "data/methodology.json")
+    methodology.pop("research_plan", None)
+    updated = (json.dumps(methodology, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    _publish(case, data_descriptor, state, extra={"data/methodology.json": updated})
+
+
 def _schema_problems(methodology: dict) -> list[str]:
     checker = research_rules.checks().schema_check.load(SCRIPT_DIR.parent / "schemas" / "methodology.schema.json")
     return [f"schema: {error}" for error in checker.errors(methodology)][:10]

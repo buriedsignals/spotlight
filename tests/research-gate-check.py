@@ -320,13 +320,21 @@ class ResearchGate(SeamCase):
         held = self.status()
         self.assertEqual((held["phase"], held["research"]["paused_at"]), ("research", "approval"))
         self.assertIn(RESEARCH_PAUSED, self.seam("approve", "research", *APPROVER, expect=3).stderr)
-        # The way back: the methodology without research, approved at the Methodology gate.
-        methodology = read_json(self.case / "data/methodology.json")
-        del methodology["research_plan"]
-        write_json(self.case / "data/methodology.json", methodology)
+        self.research = "maybe"
+        self.assertIn('SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off"', self.seam("status", "--json", expect=3).stderr)
+        # The way back: continue without research, then the member approves that plan at the Methodology gate.
+        self.research = "off"
+        self.seam("continue-without-research")
+        self.assertNotIn("research_plan", read_json(self.case / "data/methodology.json"))
         self.assertEqual(self.status()["phase"], "methodology_approval")
         self.seam("approve", "methodology", *APPROVER)
         self.assertEqual(self.status()["phase"], "investigation")
+
+    def test_continue_without_research_is_only_for_a_case_research_off_paused(self) -> None:
+        self.to_research_gate({})
+        refused = self.seam("continue-without-research", expect=3)
+        self.assertIn("only for a case paused because Research is off", refused.stderr)
+        self.assertIn("research_plan", read_json(self.case / "data/methodology.json"))
 
     def test_a_stored_case_with_four_or_five_cycles_enters_the_stall_flow(self) -> None:
         for cycles, blocked in ((5, True), (4, False)):

@@ -190,11 +190,12 @@ test('resolve runs the research round only while lanes or their triage are owed,
 	}
 });
 
-test('a stall round and an amendment are model operations that reach their checked transitions', async (t) => {
+test('a stall round, an amendment and continuing without research are model operations that reach their checked transitions', async (t) => {
 	const { caseDir, root } = await caseAwaitingInvestigation(t);
 	const { transition } = tools(caseDir, root);
 	// The case is not stalled and has no Research approval: both are refused
 	// by the product module, which owns D1 and D8, not by the tool.
 	await assert.rejects(transition({ operation: 'startResearchRound' }), /no stalled investigation/);
 	await assert.rejects(transition({ operation: 'recordAmendment' }), /not waiting for a methodology amendment/);
+	await assert.rejects(transition({ operation: 'continueWithoutResearch' }), /only for a case paused because Research is off/);
 });

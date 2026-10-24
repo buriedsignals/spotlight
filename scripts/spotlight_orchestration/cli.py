@@ -9,6 +9,7 @@ import sys
 from . import (
     OrchestrationError,
     approve,
+    continue_without_research,
     decide_ingest,
     decide_report,
     issue_review_nonce,
@@ -67,6 +68,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_case_boundary(research_round)
     amendment = commands.add_parser("record-amendment")
     add_case_boundary(amendment)
+    without_research = commands.add_parser("continue-without-research")
+    add_case_boundary(without_research)
     follow_up = commands.add_parser("request-follow-up")
     follow_up.add_argument("--instructions", required=True)
     add_review_receipt(follow_up)
@@ -143,6 +146,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
         start_research_round(args.case_dir, **boundary)
     elif args.command == "record-amendment":
         record_amendment(args.case_dir, **boundary)
+    elif args.command == "continue-without-research":
+        continue_without_research(args.case_dir, **boundary)
     elif args.command == "request-follow-up":
         request_follow_up(
             args.case_dir,

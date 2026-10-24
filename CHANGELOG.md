@@ -14,8 +14,10 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   install config only when that variable is absent.
 - A case already in Research when the switch goes off stays at its step
   (`research.resume_at: "research_off"`, `paused_at`): no lane, round, gate
-  approval or amendment runs until Research is back on, or the plan without
-  research is approved at the Methodology gate.
+  approval or amendment runs until Research is back on, or the member chooses
+  to continue without research (`continue-without-research` drops the plan)
+  and approves the plan without it at the Methodology gate. A switch value
+  other than on/off is a configuration error.
 
 ### Changed — Research triage by mode; no decision checks at Ingest
 

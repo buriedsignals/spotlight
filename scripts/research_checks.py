@@ -190,7 +190,9 @@ def _manifest_sensitive() -> bool:
 
 
 RESEARCH_OFF = "Research is off; turn on Research in the app to add a research plan"
+# The harness's reader (harness/pi/src/config.ts researchSwitch) accepts the same values.
 SWITCH_ON = {"on", "true", "1", "yes"}
+SWITCH_OFF = {"", "off", "false", "0", "no"}
 
 
 def research_on(config: Mapping[str, Any]) -> bool:
@@ -200,7 +202,10 @@ def research_on(config: Mapping[str, Any]) -> bool:
     config's ``integrations.research_swarms.enabled`` decides."""
     value = os.environ.get("SPOTLIGHT_RESEARCH_SWARMS")
     if value is not None:
-        return value.strip().lower() in SWITCH_ON
+        value = value.strip().lower()
+        if value not in SWITCH_ON | SWITCH_OFF:
+            raise ValueError('SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off".')
+        return value in SWITCH_ON
     return ((config.get("integrations") or {}).get("research_swarms") or {}).get("enabled") is True
 
 
@@ -209,8 +214,12 @@ def d1_from_config(methodology: Mapping[str, Any], config: Mapping[str, Any],
     """D1 with the install's posture: the Research switch, sensitive mode,
     newsroom mode and whether a local model endpoint is configured
     (``local_model`` overrides). With Research off there is no research plan."""
-    if methodology.get("research_plan") is not None and not research_on(config):
-        return [RESEARCH_OFF]
+    if methodology.get("research_plan") is not None:
+        try:
+            if not research_on(config):
+                return [RESEARCH_OFF]
+        except ValueError as exc:
+            return [str(exc)]
     sensitive = (os.environ.get("SPOTLIGHT_SENSITIVE", "").lower() == "true" or config.get("sensitive") is True
                  or _manifest_sensitive())
     newsroom = (config.get("knowledge_destination") or {}).get("mode") == "newsroom"

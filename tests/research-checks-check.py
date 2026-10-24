@@ -170,6 +170,9 @@ class D1LanePlan(unittest.TestCase):
             self.assertIn(RESEARCH_OFF, validate(SPOTLIGHT_RESEARCH_SWARMS="off").stderr)
             # Present but blank is off too, as the harness reads it; only an absent variable defers to the config.
             self.assertIn(RESEARCH_OFF, validate(SPOTLIGHT_RESEARCH_SWARMS="").stderr)
+            # Any other present value is a configuration error, never a silent off.
+            self.assertIn('SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off"', validate(SPOTLIGHT_RESEARCH_SWARMS="maybe").stderr)
+            self.assertEqual(validate(SPOTLIGHT_RESEARCH_SWARMS="yes").returncode, 0)
             method["research_plan"]["consent"]["swarm"] = False
             Case.write_json(case / "data" / "methodology.json", method)
             result = validate()
