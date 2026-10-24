@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { Type } from 'typebox';
 import type { TSchema } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
-import { checkedParams, textResult } from './run.ts';
+import { RETURNED_CHARS, checkedParams, textResult } from './run.ts';
 
 export type EditorialAsk = (op: string, args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>;
 
@@ -30,7 +30,8 @@ function tool(ask: EditorialAsk, name: string, label: string, description: strin
 		parameters: params,
 		async execute(_id, raw, signal) {
 			const input = checkedParams<Record<string, unknown>>(name, params, raw);
-			return textResult(newsroomData(await ask(name, input, signal)));
+			const text = await ask(name, input, signal);
+			return textResult(newsroomData(text.length > RETURNED_CHARS ? `${text.slice(0, RETURNED_CHARS)}\n[... truncated at ${RETURNED_CHARS} characters]` : text));
 		},
 	};
 }

@@ -50,6 +50,9 @@ export function jsonResult(value: unknown) {
 	return textResult(JSON.stringify(value));
 }
 
+// The most text one tool result hands a model; the rest is marked truncated.
+export const RETURNED_CHARS = 20_000;
+
 export const BASE_ENV = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT'];
 
 // A backing program sees the system basics plus the named variables, nothing else.

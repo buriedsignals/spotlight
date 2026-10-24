@@ -10,6 +10,7 @@ import type { AddressInfo } from 'node:net';
 import { EditorialClient, EditorialCredentialError, EditorialRefused, editorialClient, ensureCaseRegistered, pendingSubmission, runChecks, stopsTheNewsroomCase, submitCase } from './editorial.ts';
 import type { RunPackage } from './editorial.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
+import { editorialTools } from './tools/editorial.ts';
 import { caseAtIngest, newsroomEnv, requestNewsroomIngest, workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT } from './roles.ts';
 import { runFixed } from './tools/run.ts';
@@ -109,12 +110,22 @@ test('an answer larger than the cap is not read to its end: the read stops and t
 	assert.ok(pulled <= 20, `read ${pulled} MiB`);
 });
 
+test('newsroom data handed to a model is capped, with a marker saying so', async () => {
+	const search = editorialTools(async () => JSON.stringify({ records: [{ record_id: 'claim:1', summary: 'x'.repeat(100_000) }] })).find((tool) => tool.name === 'search_knowledge')!;
+	const text = ((await search.execute('id', { query: 'Acme' }, undefined, undefined, undefined as never)).content[0] as { text: string }).text;
+	assert.ok(text.length < 25_000, `${text.length} characters`);
+	assert.match(text, /\[\.\.\. truncated at 20000 characters\]\nNEWSROOM_DATA \S+>>>$/);
+});
+
 test('a successful but malformed tool result stops the newsroom case: a run_checks state or flag outside the contract, a review address that is not a string', async () => {
 	const url = 'https://editorial.newsroom.example/mcp';
 	for (const [tool, result] of [
 		['get_record', { content: 'not a list' }],
 		['get_record', { content: [null] }],
 		['get_record', { isError: 'yes', content: [{ type: 'text', text: '{}' }] }],
+		['search_knowledge', { structuredContent: { records: 'not-an-array' } }],
+		['get_record', { structuredContent: { record: [] } }],
+		['traverse', { structuredContent: { root: 'claim:1', nodes: [] } }],
 		['get_record', `{"structuredContent":${'{"a":'.repeat(100_000)}1${'}'.repeat(100_000)}}`],
 		['run_checks', { structuredContent: { job_id: 'job-1', state: 'finished' } }],
 		['run_checks', { structuredContent: { job_id: 'job-1', state: 'done', flags: [{ target: 'finding:F1', reason: 'ok' }, { target: 'finding:F2' }] } }],

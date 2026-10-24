@@ -343,7 +343,12 @@ export class EditorialClient {
 						(value.input_sha256 !== undefined && !(typeof value.input_sha256 === 'string' && /^[a-f0-9]{64}$/.test(value.input_sha256))) ||
 						(value.flags !== undefined &&
 							!(Array.isArray(value.flags) && value.flags.every((flag) => isObject(flag) && nonEmpty(flag.target) && nonEmpty(flag.reason) && ['string', 'undefined'].includes(typeof flag.question)))))) ||
-				(tool === 'submit_case_review' && value.review_url !== undefined && typeof value.review_url !== 'string');
+				(tool === 'submit_case_review' && value.review_url !== undefined && typeof value.review_url !== 'string') ||
+				// Knowledge answers: the top-level shapes of schemas/editorial-mcp.
+				(tool === 'search_knowledge' && !(Array.isArray(value.records) && value.records.every(isObject))) ||
+				(tool === 'get_record' && !isObject(value.record)) ||
+				(tool === 'traverse' && !(typeof value.root === 'string' && Array.isArray(value.nodes) && Array.isArray(value.edges))) ||
+				(tool === 'coverage' && !(typeof value.record_id === 'string' && isObject(value.coverage)));
 			if (malformed) throw new EditorialError(`${tool}: the Editorial MCP answered outside the contract`);
 			return this.sanitize(value, { keepReview: tool === 'submit_case_review' }) as Record<string, unknown>;
 		};

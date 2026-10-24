@@ -37,7 +37,7 @@ import { httpGetTool } from './tools/http-get.ts';
 import { EditorialToolError, stopsTheNewsroomCase } from './editorial.ts';
 import { newsroomData } from './tools/editorial.ts';
 import { queryVaultTool } from './tools/query-vault.ts';
-import { programEnv, runFixed } from './tools/run.ts';
+import { RETURNED_CHARS, programEnv, runFixed } from './tools/run.ts';
 import type { Env, ToolContext } from './tools/run.ts';
 import { searchTool } from './tools/search.ts';
 
@@ -50,7 +50,6 @@ const MAX_TOOL_CALLS = 60;
 const MAX_TOKENS_PER_ANSWER = 4096;
 const RETRIES = 3;
 const REQUEST_TIMEOUT_MS = 180_000;
-const RETURNED_CHARS = 20_000;
 // Only when an endpoint reports no cost: a deliberately high price per token,
 // so an unpriced answer can only make the round stop early, never overspend.
 const UNPRICED_USD_PER_TOKEN = 2 / 1_000_000;
