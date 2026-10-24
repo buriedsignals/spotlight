@@ -172,7 +172,7 @@ def run_triage(raw_leads: list[Any], brief: rr.TriageBrief, clues_doc: Mapping[s
     for lead in leads.values():
         answers, used, reason = ask(lead.journalist_input, {**rr.lead_state(lead), **brief_state(brief)}, questions)
         recorded = rr.record_answers(answers, choice_ids, noul_ids, mode, acceptance)
-        outcome = rr.lead_outcome(lead, recorded, mode, per_lead.get(lead.lead_id, ()))
+        outcome = rr.lead_outcome(lead, recorded, per_lead.get(lead.lead_id, ()))
         results.append({**outcome, "backend": used, **({"backend_reason": reason} if reason else {}),
                         "answers": recorded if answers else {}})
 

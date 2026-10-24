@@ -98,8 +98,8 @@ zero data retention), `clef` and `clef-flash` (Workers AI;
 `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_AUTH_TOKEN`), `local` (the local tune
 behind llama-server, `--local-url`). Each runs the shipped path:
 `research-merge.py`'s clue rules and ranking and `research-triage.py`'s
-`run_triage`, in full mode with the trial thresholds, so the run shows what
-each model would set aside once allowed to.
+`run_triage`, in full mode with the trial thresholds. No answer sets a lead
+aside, so lost leads stay 0 unless a change reintroduces a set-aside effect.
 
 Reported per contender: lost leads (by fixture), research-visible failures
 caught (by class; before labelling, an unlabelled proxy: the share of failed

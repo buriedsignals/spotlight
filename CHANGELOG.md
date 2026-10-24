@@ -4,6 +4,15 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed — Research question bank v3
+
+- The research questions use plainer wording that names the fields a
+  question compares (the excerpt, the summary, the premise). Every option and
+  effect is kept, except Q4 `not_found`: whether the source holds a lead's
+  excerpt is D3's check, so no triage answer sets a lead aside any more.
+- `RESEARCH_BANK_VERSION` changes (`EFFECTS_REVISION` 3); acceptance targets
+  and records for the previous bank no longer apply.
+
 ### Changed — Research triage keeps circumstantial leads
 
 - A lead is never set aside for being about another subject, event or
@@ -11,7 +20,8 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   `none_of_the_brief` keep the lead and label it circumstantial (ranked after
   same-subject leads, still eligible for every clue); Q2 `none` keeps it,
   labelled outside the directions. Only Q4 `not_found` (the source does not
-  contain the content) sets a lead aside; D7 refuses any other reason.
+  contain the content) sets a lead aside; D7 refuses any other reason
+  (superseded by bank v3: no answer sets a lead aside).
 - `RESEARCH_BANK_VERSION` changes (the effects are part of it); the
   acceptance harness reports circumstantial keeps apart from lost leads, and
   the Research page lists them in a Circumstantial section.

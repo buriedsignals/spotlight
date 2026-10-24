@@ -63,6 +63,9 @@ invalidates a finalized report). Deterministic code turns the answers into signa
 (`research_questions.py`, versioned on its own, outside `questions.ALL`) about
 each merged lead in `data/leads.json` and writes `data/research-triage.json`.
 Rules S1, S2 and N1 and the questions' effects are in `research_rules.py`.
+No answer sets a lead aside: answers label, flag or raise clues. Whether the
+stored source holds a lead's excerpt is D3's check (`research_checks.py`),
+which marks a failing lead unverifiable.
 
 - **Backend** (install config only): `integrations.decisions.research_triage`
   = `{"backend": "jev" | "clef" | "clef-flash" | "local" | "rules",
@@ -73,7 +76,7 @@ Rules S1, S2 and N1 and the questions' effects are in `research_rules.py`.
   the local tune or by rules. In newsroom mode cloud backends are off unless
   the decision endpoint is the newsroom's own. An unavailable backend falls
   back to rules, and the output says why.
-- **Flag-only until the acceptance test passes:** no model answer sets a lead
-  aside, C2 and C3 are not asked and no probability band is set. The output
+- **Flag-only until the acceptance test passes:** C2 and C3 are not asked and
+  no probability band is set. The output
   carries a notice the Research page shows.
 - A result that breaks the triage invariants (D7) is never written.
