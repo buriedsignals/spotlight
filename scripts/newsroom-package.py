@@ -221,8 +221,10 @@ def build(case: Path) -> dict[str, Any]:
         for link in expression.get("finding_links", []) or []:
             role = ROLES.get(link.get("relation"), "contextual")
             finding_id = str(link.get("finding_id"))
-            anchored = cite(anchor, role, expression_id, finding_id,
-                            item.get("id") if item else None, "anchor", expression.get("anchor_sha256")) or anchored
+            if not cite(anchor, role, expression_id, finding_id,
+                        item.get("id") if item else None, "anchor", expression.get("anchor_sha256")):
+                continue  # without its anchor, the passage's evidence stays behind with it
+            anchored = True
             if item is None:
                 omissions.append({"path": None, "expression_id": expression_id,
                                   "reason": "its evidence item is not in the evidence bundle"})
@@ -245,7 +247,7 @@ def build(case: Path) -> dict[str, Any]:
             shipped.append(expression)
         else:
             omissions.append({"path": anchor if isinstance(anchor, str) else None, "expression_id": expression_id,
-                              "reason": "the passage stays behind: its anchor file did not travel"})
+                              "reason": "the passage and its evidence stay behind: its anchor file did not travel"})
     if problems:
         raise Refused("; ".join(sorted(set(problems))[:10]))
 

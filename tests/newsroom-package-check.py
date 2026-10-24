@@ -89,7 +89,8 @@ class NewsroomPackage(GATES.CaseFixture):
             self.assertEqual(file["sha256"], entry["sha256"])
             self.assertEqual(data, (case / file["path"]).read_bytes())
         filing = next(entry for entry in manifest["files"] if entry["path"] == "research/filing.txt")
-        self.assertEqual(sorted(filing["roles"]), ["contextual", "supporting"])
+        # SX2's contextual link stays behind with SX2 (its anchor is lane material).
+        self.assertEqual(filing["roles"], ["supporting"])
         # Raw research stays behind: uncited files, the lane folder, the leads.
         text = json.dumps(built)
         for stays in ("primary-record.txt", "corroboration.txt", "L1", '"leads": []'):
@@ -99,7 +100,7 @@ class NewsroomPackage(GATES.CaseFixture):
         # A passage whose anchor stays behind stays behind too, recorded by id.
         self.assertEqual([e["id"] for e in package["passages"]["expressions"]], ["SX1"])
         self.assertEqual([(o["expression_id"], o["reason"]) for o in manifest["omissions"] if o["reason"].startswith("the passage")],
-                         [(sx, "the passage stays behind: its anchor file did not travel") for sx in ("SX2", "SX3", "SX4")])
+                         [(sx, "the passage and its evidence stay behind: its anchor file did not travel") for sx in ("SX2", "SX3", "SX4")])
         self.assertEqual(sorted({o["path"] for o in manifest["omissions"][1:]}),
                          ["data/orchestration.json", "research/Swarm/ownership-web/leads.jsonl", "research/swarm/ownership-web/leads.jsonl"])
         self.assertEqual(package["journalist_input_units"], [])
@@ -107,6 +108,21 @@ class NewsroomPackage(GATES.CaseFixture):
         self.assertEqual(schema_check.load(ROOT / "schemas" / "editorial-mcp" / "package.schema.json").errors(package), [])
         # Same case, same key: the idempotency key is stable.
         self.assertEqual(self.build_package(case)["package_sha256"], built["package_sha256"])
+
+    def test_evidence_cited_only_by_a_passage_that_stays_behind_stays_behind_too(self) -> None:
+        case = self.case("anchorless")
+        primary = case / "research" / "primary-record.txt"
+        bundle_path = case / "data" / "evidence-bundle.json"
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        bundle["items"].append({**bundle["items"][0], "id": "E2", "raw_path": "research/primary-record.txt", "text_derivatives": []})
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        passages_path = case / "data" / "source-expressions.json"
+        passages = json.loads(passages_path.read_text(encoding="utf-8"))
+        sx2 = next(e for e in passages["expressions"] if e["id"] == "SX2")  # anchored in the lane folder, which stays behind
+        sx2.update({"original_evidence_bundle_id": "E2", "original_artifact_sha256": hashlib.sha256(primary.read_bytes()).hexdigest()})
+        passages_path.write_text(json.dumps(passages), encoding="utf-8")
+        built = self.build_package(case)
+        self.assertNotIn("research/primary-record.txt", [f["path"] for f in built["files"]])
 
     def test_a_cited_file_changed_after_it_was_declared_stops_the_build(self) -> None:
         case = self.case("changed")
