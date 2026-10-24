@@ -7,8 +7,8 @@ import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ConfigError, RouteRefused, childEnv, piSettings, readConfig, routeFor, secretValues } from './config.ts';
-import type { HarnessConfig } from './config.ts';
+import { ConfigError, RouteRefused, childEnv, parseLaunchArgs, piSettings, readConfig, recordChatCase, routeFor, secretValues } from './config.ts';
+import type { HarnessConfig, LaunchArgs } from './config.ts';
 import { CaseHeldError, acquireCaseLock } from './lock.ts';
 import type { CaseLock } from './lock.ts';
 import { redactingLines, redactor, stderrLogger } from './log.ts';
@@ -31,6 +31,7 @@ const EXIT = { config: 2, held: 3, failed: 1 } as const;
 
 type Harness = {
 	config: HarnessConfig;
+	args: LaunchArgs;
 	active: ActiveCase;
 	composition: Composition;
 	lock: CaseLock;
@@ -73,6 +74,8 @@ function processLaunch(harness: Harness, role: string) {
 			skills: skillsFor(harness.composition, role),
 			tools: allowedTools(spec, harness.config.sensitive),
 			model: route.model,
+			// The chat client's system prompt is for the orchestrator only.
+			appendSystemPrompt: role === ORCHESTRATOR ? harness.args.appendSystemPrompt : undefined,
 		}),
 		env,
 		cwd: resolve(harness.config.dataDir, 'work', role),
@@ -271,10 +274,12 @@ function start(harness: Harness): void {
 
 function main(): void {
 	const plain = stderrLogger('spotlight');
+	let args: LaunchArgs;
 	let config: HarnessConfig;
 	let composition: Composition;
 	try {
-		config = readConfig(process.env);
+		args = parseLaunchArgs(process.argv.slice(2));
+		config = readConfig(process.env, args.sessionId);
 		composition = loadComposition();
 		routeFor(config);
 	} catch (error) {
@@ -293,13 +298,14 @@ function main(): void {
 		mkdirSync(config.casesRoot, { recursive: true, mode: 0o700 });
 		active = bindActiveCase(config.casesRoot, config.caseDir);
 		lock = acquireCaseLock(config.dataDir, config.caseId, piCliPath());
+		if (config.boundChat) recordChatCase(config.dataDir, config.boundChat, config.caseId);
 	} catch (error) {
 		log(`cannot start: ${(error as Error).message}`);
 		process.exit(error instanceof CaseHeldError ? EXIT.held : EXIT.config);
 	}
 	const discarded = discardIncompleteLanes(config.caseDir);
 	if (discarded.length > 0) log(`discarded ${discarded.length} unfinished research lane(s); they will rerun`);
-	start({ config, active, composition, lock, log, redact, children: new Set() });
+	start({ config, args, active, composition, lock, log, redact, children: new Set() });
 }
 
 main();

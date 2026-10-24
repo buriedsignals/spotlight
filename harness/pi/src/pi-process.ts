@@ -23,6 +23,7 @@ export type PiProcessSpec = {
 	skills: string[];
 	tools: string[];
 	model: string;
+	appendSystemPrompt?: string;
 };
 
 export function piArguments(spec: PiProcessSpec): string[] {
@@ -43,6 +44,7 @@ export function piArguments(spec: PiProcessSpec): string[] {
 		'--model', `${PROVIDER_ID}/${spec.model}`,
 		'--system-prompt', spec.systemPrompt,
 	];
+	if (spec.appendSystemPrompt) args.push('--append-system-prompt', spec.appendSystemPrompt);
 	for (const skill of spec.skills) args.push('--skill', skillDirectory(skill));
 	if (spec.tools.length === 0) args.push('--no-tools');
 	else args.push('--tools', spec.tools.join(','));

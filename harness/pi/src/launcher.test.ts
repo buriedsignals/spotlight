@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
-import { isWorkerRequest, startFakeOpenAI, toolNames, toolResults } from './test-support/fake-openai.ts';
+import { isWorkerRequest, startFakeOpenAI, systemText, toolNames, toolResults } from './test-support/fake-openai.ts';
 import type { ChatRequest, Reply } from './test-support/fake-openai.ts';
 import { baseEnv, launch, settledPrompt, waitUntil, workspace } from './test-support/launch.ts';
 import type { Chat, Workspace } from './test-support/launch.ts';
@@ -654,4 +654,96 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 	const lane = JSON.parse(await readFile(join(caseDir, 'research/swarm/ownership-registries/lane.json'), 'utf8'));
 	assert.equal(lane.status, 'completed');
 	assert.ok(!chat.stderr().includes('sk-or-v1-launcher-secret'));
+});
+
+// Osaurus `pi_rpc` runtime: argv, chat-to-case binding, the appended system
+// prompt and Stop.
+
+test('an argument outside the Osaurus contract stops the launcher with exit code 2 and no protocol output', async (t) => {
+	const space = await workspace(t);
+	for (const args of [['--bogus'], ['--mode', 'json'], ['--session-id', 'chat-1'], ['--mode', 'rpc', '--session-id'], ['--mode', 'rpc', '--append-system-prompt', join(space.root, 'missing.md')]]) {
+		const chat = launch(t, baseEnv(space, 'http://127.0.0.1:9/v1'), args);
+		assert.equal((await chat.exited).code, 2, args.join(' '));
+		assert.match(chat.stderr(), /cannot start: /, args.join(' '));
+		assert.deepEqual(chat.lines, []);
+	}
+});
+
+test('a new chat gets its own case folder, recorded under its chat id, and the same chat id resumes it', async (t) => {
+	const fake = await startFakeOpenAI(resolveThenStop);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const env = baseEnv(space, fake.baseURL);
+	delete (env as Record<string, string | undefined>).SPOTLIGHT_CASE_ID;
+	const chatId = 'chat/../ABC 123';
+	const open = async (id: string) => {
+		const chat = launch(t, env, ['--mode', 'rpc', '--session-id', id]);
+		await settledPrompt(chat, 'Start.');
+		const [lock] = await readdir(join(space.dataDir, 'locks'));
+		chat.process.stdin.end();
+		assert.equal((await chat.exited).code, 0);
+		return lock.replace(/\.lock$/, '');
+	};
+
+	const first = await open(chatId);
+	assert.match(first, /^\d{4}-\d{2}-\d{2}-[0-9a-f]{8}$/);
+	assert.deepEqual(await readdir(space.casesRoot), [first]);
+	assert.deepEqual(JSON.parse(await readFile(join(space.dataDir, 'chats.json'), 'utf8')), { [chatId]: first });
+
+	assert.equal(await open(chatId), first);
+	const other = await open('chat-2');
+	assert.notEqual(other, first);
+	assert.deepEqual((await readdir(space.casesRoot)).sort(), [first, other].sort());
+});
+
+test('SPOTLIGHT_CASE_ID wins over the chat binding', async (t) => {
+	const fake = await startFakeOpenAI(resolveThenStop);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, baseEnv(space, fake.baseURL), ['--mode', 'rpc', '--session-id', 'chat-1']);
+	await settledPrompt(chat, 'Start.');
+	assert.equal((await lockRecord(space)).pid, chat.process.pid);
+	chat.process.stdin.end();
+	assert.equal((await chat.exited).code, 0);
+
+	assert.deepEqual(await readdir(space.casesRoot), ['case-a']);
+	await assert.rejects(readFile(join(space.dataDir, 'chats.json')));
+});
+
+test('the appended system prompt reaches the orchestrator and no worker', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { text: 'Investigator finished.' };
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Plan the case.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await mkdir(space.root, { recursive: true });
+	const promptFile = join(space.root, 'system-prompt.md');
+	await writeFile(promptFile, 'OSAURUS-AGENT-MARKER: answer in French.\n', { mode: 0o600 });
+
+	const chat = launch(t, baseEnv(space, fake.baseURL), ['--mode', 'rpc', '--append-system-prompt', promptFile]);
+	await settledPrompt(chat, 'Start.');
+
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+	assert.equal(worker.length, 1);
+	assert.ok(orchestrator.length >= 2);
+	for (const request of orchestrator) assert.match(systemText(request), /OSAURUS-AGENT-MARKER: answer in French\./);
+	assert.doesNotMatch(systemText(worker[0]), /OSAURUS-AGENT-MARKER/);
+});
+
+test('Stop: {"type":"abort"} on stdin reaches the orchestrator and ends the turn', async (t) => {
+	const fake = await startFakeOpenAI(() => 'hang');
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, baseEnv(space, fake.baseURL), ['--mode', 'rpc']);
+	chat.send({ id: 'p', type: 'prompt', message: 'Start.' });
+	await fake.waitForRequests(1);
+
+	const before = chat.lines.length;
+	chat.send({ type: 'abort' });
+	assert.equal((await chat.waitFor((record) => record.type === 'response' && record.command === 'abort', before)).success, true);
+	await chat.waitFor((record) => record.type === 'agent_settled', before);
 });
