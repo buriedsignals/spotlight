@@ -1,7 +1,7 @@
 {
- "status": "proposed",
- "approved_by": null,
- "approved_at": null,
+ "status": "approved",
+ "approved_by": "Tom Vaillant",
+ "approved_at": "2026-10-24T20:55:00Z",
  "bank_version": "6e154ae0bfb5164afe953ad128419e45f6d449a2cec18539ac9b4cba27be8532",
  "note": "Proposed pass targets. They are the maintainer's decision: approve or change them here, set status to approved with approved_by, and only then run the held-out half. Thresholds are the trial P(yes) cut-offs for the on-trial questions; a passing run freezes them into the acceptance record.",
  "thresholds": {
