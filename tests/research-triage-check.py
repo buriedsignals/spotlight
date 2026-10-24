@@ -448,7 +448,9 @@ def test_cli_rules_only_case() -> None:
         class Kev(http.server.BaseHTTPRequestHandler):
             def do_POST(self):
                 seen.append(self.headers.get("Authorization"))
-                self.send_response(200); self.end_headers(); self.wfile.write(b'{"model":"kev","answers":{"q":{"noul":0.2}}}')
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))  # unread bodies reset the connection
+                body = b'{"model":"kev","answers":{"q":{"noul":0.2}}}'
+                self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
             def log_message(self, *args):
                 pass
