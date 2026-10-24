@@ -165,7 +165,7 @@ def test_no_case_in_both_halves() -> None:
     claims = [{"id": n, "finding_id": f"F{n % 3}", "claim_text": f"Claim {n}.", "verdict": "verified" if n % 2 else "false",
                "evidence_for": [], "sources": []} for n in range(12)]
     for name in ("alpha", "beta", "gamma"):
-        case = builder.build_case(name, {"project": name, "claims": claims}, None)
+        case = builder.build_case(name, {"project": name, "claims": claims}, None, name)
         halves.setdefault(case["alias"], set()).update(i["split"] for i in case["items"])
     split = {case for case, seen in halves.items() if len(seen) > 1}
     require(not split, f"no case may appear in both halves: {sorted(split)}")
@@ -203,7 +203,7 @@ def test_claim_becomes_lead() -> None:
          "evidence_for": [{"description": "A blog post says so without a source.", "source": "N/A"}],
          "sources": ["https://blog.example.test/post"]},
     ]}
-    case = builder.build_case("case", fact_check, {"lead": "Who funds Firm Y?"})
+    case = builder.build_case("case", fact_check, {"lead": "Who funds Firm Y?"}, "case")
     first, second = case["items"]
     lead = first["lead"]
     require(lead["excerpt"] == {"text": "Firm X transferred 3 million to Firm Y in 2024", "language": "en", "direct_quote": True},
@@ -220,24 +220,51 @@ def test_claim_becomes_lead() -> None:
            "the private fixture must never be written inside the checkout")
 
 
+def test_renamed_case_keeps_its_half() -> None:
+    # The half follows the source case folder, not the display name the case was built under.
+    with tempfile.TemporaryDirectory() as tmp:
+        source = Path(tmp) / "my-case" / "data" / "fact-check.json"
+        source.parent.mkdir(parents=True)
+        source.write_text(json.dumps({"project": "p", "claims": [{"id": 1, "claim_text": "A claim.", "verdict": "verified"}]}))
+        built = []
+        for name in ("first-name", "second-name"):  # these two aliases hash to different halves
+            report = builder.build([(name, source, None)], Path(tmp) / name)
+            built.append(json.loads(Path(report["fixtures"][0]).read_text())["case"])
+        require([c["case_key"] for c in built] == ["my-case", "my-case"], f"the case key is the case folder: {built}")
+        fixture = json.loads(Path(report["fixtures"][0]).read_text())
+        require({i["split"] for i in fixture["items"]} == {builder.case_split("my-case")}, "the half is the case key's")
+        del fixture["case"]["case_key"]
+        path = Path(tmp) / "no-key.json"
+        path.write_text(json.dumps(fixture))
+        raises(lambda: acc.load_fixture(path), acc.AcceptanceError, "a fixture without a case key must be refused")
+
+
 def test_resplit_keeps_every_input() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         folder = Path(tmp)
+        source = folder / "src" / "case-c" / "fact-check.json"
+        source.parent.mkdir(parents=True)
+        source.write_text("{}")
         paths = []
-        for n, case_id in enumerate(("case-aaaaaa", "case-bbbbbb", "case-cccccc")):
+        for n, key in enumerate(("case-a", "case-b", None)):
             path = folder / f"in{n % 2}" / f"case-{n}.json"
             path.parent.mkdir(exist_ok=True)
-            path.write_text(json.dumps({"case": {"case_id": case_id}, "items": [{"item_id": case_id, "split": "dev"}]}))
+            case = {"case_id": f"alias-{n}"} | ({"case_key": key} if key else {})
+            path.write_text(json.dumps({"case": case, "items": [{"item_id": f"i{n}", "split": "dev"}]}))
             paths.append(path)
-        out = folder / "out"
-        halves = builder.resplit(paths, out)
-        written = {json.loads(p.read_text())["case"]["case_id"] for p in out.iterdir()}
-        require(written == set(halves) == {"case-aaaaaa", "case-bbbbbb", "case-cccccc"}, f"every input is written: {written}")
+        raises(lambda: builder.resplit([(p, None) for p in paths], folder / "out0"), builder.BuildError,
+               "a fixture without a case key needs its source")
+        require(not (folder / "out0").exists(), "a refused resplit writes nothing")
+        halves = builder.resplit([(paths[0], None), (paths[1], None), (paths[2], source)], folder / "out")
+        written = {json.loads(p.read_text())["case"]["case_key"] for p in (folder / "out").iterdir()}
+        require(written == set(halves) == {"case-a", "case-b", "case-c"}, f"every input is written, keyed: {written}")
         clash = folder / "in1" / "case-0.json"
-        clash.write_text((folder / "in0" / "case-0.json").read_text().replace("case-aaaaaa", "case-dddddd"))
-        raises(lambda: builder.resplit([paths[0], clash], folder / "out2"), builder.BuildError,
+        clash.write_text(paths[0].read_text().replace("case-a", "case-d"))
+        raises(lambda: builder.resplit([(paths[0], None), (clash, None)], folder / "out2"), builder.BuildError,
                "two inputs with one output name must be refused, not overwritten")
         require(not (folder / "out2").exists(), "a refused resplit writes nothing")
+        raises(lambda: builder.resplit([(paths[0], None)], folder / "out"), builder.BuildError,
+               "an existing output file must be refused, not overwritten")
 
 
 def test_labels_merge_only_on_agreement() -> None:

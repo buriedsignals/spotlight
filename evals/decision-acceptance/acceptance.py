@@ -25,7 +25,7 @@ until ``integrations/decisions/research-acceptance.json`` exists for the bank
 version, and only ``--write-acceptance`` after a passing held-out run writes it.
 
 A whole case is in one half: every item's split must be its case's
-``case_split`` (build_claims_fixture.py), a salted hash of the case id.
+``case_split`` (build_claims_fixture.py), a salted hash of the case key.
 
 Fixtures: ``company-a.json`` (dev) and ``company-b.json`` (held-out), both
 synthetic and in the repo, and every path in
@@ -119,10 +119,10 @@ def load_fixture(path: Path) -> dict[str, Any]:
     fixture = json.loads(path.read_text(encoding="utf-8"))
     problems = schema_check.load(FIXTURE_SCHEMA).errors(fixture)
     ids: dict[str, str] = {}
-    half = builder.case_split(fixture["case"]["case_id"]) if not problems else None
+    half = builder.case_split(fixture["case"]["case_key"]) if not problems else None
     for item in fixture.get("items", []) if not problems else []:
         if item["split"] != half:
-            problems.append(f"{item['item_id']}: the whole case is {half}, by its case id")
+            problems.append(f"{item['item_id']}: the whole case is {half}, by its case key")
         problems += [f"{item['item_id']}: {e}" for e in triage.schema_errors(triage.LEAD_SCHEMA, item["lead"])[:2]]
         if item["lead"].get("lead_id") != item["item_id"]:
             problems.append(f"{item['item_id']}: item_id must equal the lead's lead_id")

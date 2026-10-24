@@ -5,6 +5,7 @@
  "description": "Synthetic Company B case with planted clues: the held-out counterpart of company-a.json, the same clue groups on a different invented firm, so no case is in both halves. All names, registers and domains are invented (.test). Gold answers are set by construction; null means the item is not scored on that question.",
  "case": {
   "case_id": "company-b",
+  "case_key": "company-b",
   "premise": "Company B, a Basel waste-transport firm, won municipal contracts after its ownership passed to an undisclosed holder in 2025.",
   "directions": {
    "ownership": "Who owns Company B",

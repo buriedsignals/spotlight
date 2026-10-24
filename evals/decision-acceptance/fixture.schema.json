@@ -14,9 +14,10 @@
     "case": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["case_id", "premise", "directions", "topics"],
+      "required": ["case_id", "case_key", "premise", "directions", "topics"],
       "properties": {
         "case_id": { "$ref": "#/definitions/slug" },
+        "case_key": { "type": "string", "minLength": 1, "description": "The source case's immutable identity (its folder); its salted hash puts the whole case in one half." },
         "premise": { "type": "string", "minLength": 1 },
         "directions": { "type": "object", "description": "Approved direction id -> label (Q2's options)." },
         "direction_questions": { "type": "object" },

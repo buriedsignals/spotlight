@@ -26,8 +26,10 @@ One fixture is one case: the brief (`case`: premise, approved directions, topic
 briefs, timing window), its `items` and its `planted_clues`. Each item holds a
 research lead (`schemas/research-lead.schema.json`, checked when loaded), a
 `split` (`dev` or `heldout`) and `gold`. A whole case is in one half: every
-item's `split` must be its case's, a salted hash of the `case_id`
-(`case_split` in `build_claims_fixture.py`), or the fixture is refused. A case
+item's `split` must be its case's, a salted hash of the case's `case_key`
+(`case_split` in `build_claims_fixture.py`), or the fixture is refused. The
+key is the source case's folder, written once at build time, so renaming a
+case does not move it; a fixture without one is refused. A case
 tuned on is never tested on. Company A hashes to dev and Company B to held-out,
 so clue recall, C2 and C3 are measured in both halves on different cases.
 A run is refused when the two halves share a stable identifier: an entity
@@ -64,8 +66,9 @@ find it.
 | brief premise | the case methodology's `lead`, else the fact-check's project |
 | `gold.keep` | `true` for `verified`; otherwise not scored, and the item gets a `failure` left for the labellers |
 
-Case names are replaced by a hash alias, and the alias's hash puts the whole
-case in one half. The halves are not balanced by construction: count the
+Case names are replaced by a hash alias; the `case_key` (the folder holding
+`data/fact-check.json`, or the fact-check's own folder) puts the whole case in
+one half. The halves are not balanced by construction: count the
 cases, items and failures in each before trusting a result.
 
 ## Private fixture
@@ -97,12 +100,14 @@ records `label_source: single_labeller_approved`, which a second labeller can
 replace later.
 
 A fixture built before the whole-case split (items of one case in both halves)
-is refused. `resplit` copies it with every item in its case's half, labels
-untouched (inputs must have distinct file names):
+is refused, as is one without a `case_key`. `resplit` copies it with every
+item in its case's half, labels untouched, taking the key from the source
+fact-check when the fixture has none. Inputs need distinct file names, and
+existing output files are refused, so write to a new directory:
 
 ```bash
 python3 evals/decision-acceptance/build_claims_fixture.py resplit \
-  --fixture /private/dir/case-xxxxxx.json ... --out /private/resplit
+  --fixture /private/dir/case-xxxxxx.json=path/to/case/data/fact-check.json ... --out /private/resplit
 ```
 
 ## Running

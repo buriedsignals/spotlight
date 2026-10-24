@@ -3,7 +3,7 @@
 
     build_claims_fixture.py build --case NAME=FACT_CHECK_JSON[:METHODOLOGY_JSON] ... --out DIR
     build_claims_fixture.py merge --fixture DIR/claims-fixture.json --a A.csv [--b B.csv] [--adjudicated ADJ.csv]
-    build_claims_fixture.py resplit --fixture FIXTURE.json ... --out DIR
+    build_claims_fixture.py resplit --fixture FIXTURE.json[=FACT_CHECK_JSON] ... --out DIR
 
 Case material is private, so everything this writes goes to a directory
 outside the public checkout (refused otherwise). ``build`` writes
@@ -32,10 +32,13 @@ How a fact-checked claim becomes a lead (the fixture's ``lead``):
   turned out true); any other verdict -> a failure whose class and research
   visibility come only from the labelling sheet; keep is then not scored.
 
-A whole case goes to one half, dev or held-out, by a salted hash of its case
-id (``case_split``), so no case is tuned on and tested on. ``resplit`` applies
-that rule to fixtures built before it, writing copies to a directory outside
-the checkout.
+A whole case goes to one half, dev or held-out, by a salted hash of its
+``case_key`` (``case_split``), so no case is tuned on and tested on. The key is
+the source case's folder (the one holding ``data/fact-check.json``, or the
+fact-check's own folder), written once at build time: renaming the case does
+not move it. ``resplit`` applies that rule to fixtures built before it, taking
+the key from the source fact-check when the fixture has none, and writes
+copies to a new directory outside the checkout.
 """
 
 from __future__ import annotations
@@ -46,6 +49,7 @@ import hashlib
 import json
 import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -111,13 +115,20 @@ def direction_of(claim: Mapping[str, Any]) -> str:
     return f"f{match.group(1)}" if match else "f0"
 
 
-def case_split(case_id: str) -> str:
+def case_key_of(fact_check: Path) -> str:
+    """The source case's identity: its folder, never the name the case is built under."""
+    fact_check = fact_check.resolve()
+    return (fact_check.parent.parent if fact_check.parent.name == "data" else fact_check.parent).name
+
+
+def case_split(case_key: str) -> str:
     """The half a whole case belongs to: stable per case, whatever else is built with it."""
-    digest = hashlib.sha256(f"{SPLIT_SALT}:{case_id}".encode()).hexdigest()
+    digest = hashlib.sha256(f"{SPLIT_SALT}:{case_key}".encode()).hexdigest()
     return "dev" if int(digest, 16) % 2 == 0 else "heldout"
 
 
-def build_case(name: str, fact_check: Mapping[str, Any], methodology: Mapping[str, Any] | None) -> dict[str, Any]:
+def build_case(name: str, fact_check: Mapping[str, Any], methodology: Mapping[str, Any] | None,
+               case_key: str) -> dict[str, Any]:
     alias = "case-" + hashlib.sha256(name.encode()).hexdigest()[:6]
     claims = [c for c in fact_check.get("claims") or [] if isinstance(c, Mapping) and c.get("claim_text")]
     directions: dict[str, str] = {}
@@ -132,16 +143,17 @@ def build_case(name: str, fact_check: Mapping[str, Any], methodology: Mapping[st
                                 "label_source": "fact_check_verdict", "answers": {}}
         if verdict != "verified":
             gold["failure"] = {"class": None, "research_visible": None}
-        items.append({"item_id": lead["lead_id"], "split": case_split(alias), "origin": "fact_check_claim", "lead": lead, "gold": gold,
+        items.append({"item_id": lead["lead_id"], "split": case_split(case_key), "origin": "fact_check_claim", "lead": lead, "gold": gold,
                       "_notes": str(claim.get("notes") or "")})
     premise = str((methodology or {}).get("lead") or fact_check.get("project") or name)
-    return {"alias": alias, "premise": premise, "directions": directions, "items": items}
+    return {"alias": alias, "case_key": case_key, "premise": premise, "directions": directions, "items": items}
 
 
 def build(cases: list[tuple[str, Path, Path | None]], out: Path) -> dict[str, Any]:
     out = outside_checkout(out)
     built = [build_case(name, json.loads(fc.read_text(encoding="utf-8")),
-                        json.loads(m.read_text(encoding="utf-8")) if m else None) for name, fc, m in cases]
+                        json.loads(m.read_text(encoding="utf-8")) if m else None, case_key_of(fc))
+             for name, fc, m in cases]
     # One fixture per case keeps each case's brief; all go in one file list.
     out.mkdir(parents=True, exist_ok=True)
     rows, written = [], []
@@ -149,7 +161,7 @@ def build(cases: list[tuple[str, Path, Path | None]], out: Path) -> dict[str, An
         fixture = {
             "fixture_version": "1.0", "name": case["alias"], "synthetic": False,
             "description": "Fact-checked claims as leads (private; built by build_claims_fixture.py).",
-            "case": {"case_id": case["alias"], "premise": case["premise"], "directions": case["directions"],
+            "case": {"case_id": case["alias"], "case_key": case["case_key"], "premise": case["premise"], "directions": case["directions"],
                      "topics": [{"topic_id": f"{d}-web", "direction_id": d, "lane_type": "web"} for d in case["directions"]]},
             "items": [{k: v for k, v in item.items() if k != "_notes"} for item in case["items"]],
             "planted_clues": [],
@@ -173,23 +185,38 @@ def build(cases: list[tuple[str, Path, Path | None]], out: Path) -> dict[str, An
             "dev": sum(1 for r in rows if r["split"] == "dev"), "sheet": str(out / "labelling-sheet.csv")}
 
 
-def resplit(fixture_paths: list[Path], out: Path) -> dict[str, str]:
-    """Copy fixtures to ``out`` with every item in its case's half (fixtures built before case_split)."""
+def resplit(inputs: list[tuple[Path, Path | None]], out: Path) -> dict[str, str]:
+    """Copy fixtures to ``out`` with every item in its case's half (fixtures built before case_split).
+
+    Each input is a fixture and, for a fixture without a ``case_key``, its source fact-check. Every
+    input is checked and no output file may exist before anything is written; the copies are written
+    to a temporary directory and renamed into ``out``.
+    """
     out = outside_checkout(out)
-    names = [path.name for path in fixture_paths]
+    names = [path.name for path, _source in inputs]
     if len(set(names)) != len(names):
         raise BuildError(f"two inputs would be written to one output name: {sorted({n for n in names if names.count(n) > 1})}")
-    out.mkdir(parents=True, exist_ok=True)
-    halves = {}
-    for path in fixture_paths:
+    existing = [name for name in names if (out / name).exists()]
+    if existing:
+        raise BuildError(f"output files already exist in {out}: {existing}")
+    fixtures = []
+    for path, source in inputs:
         fixture = json.loads(path.read_text(encoding="utf-8"))
-        half = halves[fixture["case"]["case_id"]] = case_split(fixture["case"]["case_id"])
-        for item in fixture["items"]:
-            item["split"] = half
-        for clue in fixture.get("planted_clues", []):
-            clue["split"] = half
-        (out / path.name).write_text(json.dumps(fixture, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-    return halves
+        if not fixture["case"].get("case_key"):
+            if source is None:
+                raise BuildError(f"{path.name} has no case_key: pass its source as --fixture {path}=FACT_CHECK_JSON")
+            fixture["case"]["case_key"] = case_key_of(source)
+        half = case_split(fixture["case"]["case_key"])
+        for entry in [*fixture["items"], *fixture.get("planted_clues", [])]:
+            entry["split"] = half
+        fixtures.append((path.name, fixture))
+    out.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=out, prefix=".resplit-") as tmp:
+        for name, fixture in fixtures:
+            (Path(tmp) / name).write_text(json.dumps(fixture, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+        for name, _fixture in fixtures:
+            (Path(tmp) / name).rename(out / name)
+    return {f["case"]["case_key"]: f["items"][0]["split"] for _name, f in fixtures}
 
 
 # ------------------------------------------------------------------ merge
@@ -261,7 +288,7 @@ def main(argv: list[str] | None = None) -> int:
     m.add_argument("--b")
     m.add_argument("--adjudicated")
     r = sub.add_parser("resplit")
-    r.add_argument("--fixture", action="append", required=True)
+    r.add_argument("--fixture", action="append", required=True, help="FIXTURE_JSON[=FACT_CHECK_JSON]")
     r.add_argument("--out", required=True)
     args = parser.parse_args(argv)
     try:
@@ -273,7 +300,8 @@ def main(argv: list[str] | None = None) -> int:
                 cases.append((name, Path(fact_check), Path(methodology) if methodology else None))
             print(json.dumps(build(cases, Path(args.out)), indent=1))
         elif args.command == "resplit":
-            print(json.dumps(resplit([Path(p) for p in args.fixture], Path(args.out)), indent=1))
+            inputs = [(Path(f), Path(src) if src else None) for f, _, src in (spec.partition("=") for spec in args.fixture)]
+            print(json.dumps(resplit(inputs, Path(args.out)), indent=1))
         else:
             fixtures = [outside_checkout(Path(p)) for p in args.fixture]
             print(json.dumps(merge_labels(fixtures, Path(args.a), Path(args.b) if args.b else None,

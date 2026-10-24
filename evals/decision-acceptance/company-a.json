@@ -5,6 +5,7 @@
  "description": "Synthetic Company A case with planted clues (dev; company-b.json is its held-out counterpart). All names, registers and domains are invented (.test). Gold answers are set by construction; null means the item is not scored on that question.",
  "case": {
   "case_id": "company-a",
+  "case_key": "company-a",
   "premise": "Company A, a Zurich waste-transport firm, won municipal contracts after its ownership passed to an undisclosed holder in 2025.",
   "directions": {
    "ownership": "Who owns Company A",
