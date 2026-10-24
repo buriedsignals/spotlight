@@ -313,6 +313,9 @@ class ResearchGate(SeamCase):
         self.assertEqual((lanes["phase"], lanes["research"]["resume_at"], lanes["research"]["paused_at"]),
                          ("research", "research_off", "lanes"))
         self.assertEqual(lanes["missing"], [RESEARCH_PAUSED])
+        refused = self.seam("record-attempt", "research-lane", "--gap", "lane stopped", expect=3)
+        self.assertIn(RESEARCH_PAUSED, refused.stderr)
+        self.assertEqual(self.state()["attempts"], {})
         self.research = "on"
         self.research_outputs(self.case)
         write_json(self.case / "data/research-review.json", marks_review({}))

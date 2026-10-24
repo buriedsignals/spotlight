@@ -212,7 +212,9 @@ def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> Non
     state = load_state(case, data_descriptor)
     research = kind == "research-lane"
     allowed = _RESEARCH_ATTEMPT_PHASES if research else _INVESTIGATION_ATTEMPT_PHASES
-    if status_for(case, state, data_descriptor)["next_phase"] not in allowed:
+    status = status_for(case, state, data_descriptor)
+    _refuse_while_research_off(status)
+    if status["next_phase"] not in allowed:
         where = "research" if research else "investigation"
         raise OrchestrationError(f"{kind} attempts can only be recorded during {where}")
     attempts = state["attempts"]
