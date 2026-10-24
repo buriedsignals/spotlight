@@ -480,11 +480,13 @@ export function secretValues(config: HarnessConfig, composition: Composition, en
 	return [...names].flatMap((name) => (env[name] ? [env[name] as string, (env[name] as string).trim()] : [])).filter(Boolean);
 }
 
-// The launcher's own environment for a program that inherits it (the
-// resolver): without the tokens only the launcher holds.
-export function withoutLauncherTokens(config: HarnessConfig, env: Env): Env {
+// The resolver's environment (scripts/spotlight-orchestration.py, run by the
+// launcher and by the orchestrator's tools): the inherited one without any
+// token or tool key.
+export function resolverEnv(env: Env, composition: Composition, routes: Route[] = []): Env {
 	const out = { ...env };
-	for (const name of [EDITORIAL_TOKEN_ENV, ...config.routes.map((route) => route.keyEnv)]) if (name) delete out[name];
+	const keys = Object.values(composition).flatMap((spec) => spec.keys ?? []);
+	for (const name of [EDITORIAL_TOKEN_ENV, PROVIDER_KEY, ...keys, ...routes.map((route) => route.keyEnv)]) if (name) delete out[name];
 	return out;
 }
 
@@ -567,14 +569,15 @@ export function checkRouteSecrets(config: HarnessConfig, composition: Compositio
 			throw new ConfigError(`route "${route.name}" may not use ${route.keyEnv} as its token: that variable is a tool secret, never a route token.`);
 		}
 	}
-	// Every key that goes into Pi (route tokens, tool secrets): never the
-	// Editorial token under another name, and never too short to redact.
+	// Every key that goes into Pi (route tokens, the solo provider key, tool
+	// secrets): never the Editorial token under another name, and never too
+	// short to redact. An unset key (a keyless local model) is fine.
 	const editorialToken = config.editorial ? env[config.editorial.tokenEnv]?.trim() : undefined;
 	for (const name of new Set([...config.routes.flatMap((route) => (route.keyEnv ? [route.keyEnv] : [])), ...declared])) {
 		const value = env[name];
 		if (!value || name === EDITORIAL_TOKEN_ENV) continue;
 		if (editorialToken && value.trim() === editorialToken) throw new ConfigError(`${name} holds the Editorial MCP token; it needs its own value.`);
-		if (declared.has(name) && value.length < MIN_REDACTED_LENGTH) {
+		if (value.length < MIN_REDACTED_LENGTH) {
 			throw new ConfigError(`${name} is shorter than ${MIN_REDACTED_LENGTH} characters, so it cannot be redacted reliably; set its full value or unset it.`);
 		}
 	}

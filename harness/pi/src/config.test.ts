@@ -3,7 +3,7 @@ import test from 'node:test';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checkNewsroomInstall, checkRouteSecrets, childEnv, readConfig, routeFor, secretValues } from './config.ts';
+import { checkNewsroomInstall, checkRouteSecrets, childEnv, readConfig, resolverEnv, routeFor, secretValues } from './config.ts';
 import type { Composition } from './roles.ts';
 
 const COMPOSITION: Composition = {
@@ -188,6 +188,10 @@ test('newsroom: a route token is never the Editorial MCP token or a tool secret,
 	assert.throws(() => checkRouteSecrets(readConfig(env('REGISTRY_API_KEY')), COMPOSITION, env('REGISTRY_API_KEY')), /REGISTRY_API_KEY .*tool secret/);
 	const ok = readConfig(env('ROUTE_TOKEN'));
 	assert.doesNotThrow(() => checkRouteSecrets(ok, COMPOSITION, env('ROUTE_TOKEN')));
+	// The resolver (launcher or model tool) runs without any token or tool key.
+	const forResolver = resolverEnv({ ...env('ROUTE_TOKEN'), SPOTLIGHT_PROVIDER_API_KEY: 'route-secret-0123456789' }, COMPOSITION, ok.routes);
+	for (const name of ['SPOTLIGHT_EDITORIAL_MCP_TOKEN', 'ROUTE_TOKEN', 'SPOTLIGHT_PROVIDER_API_KEY', 'REGISTRY_API_KEY']) assert.equal(forResolver[name], undefined, name);
+	assert.equal(forResolver.SPOTLIGHT_EDITION, 'newsroom');
 	// The client sends the Editorial token trimmed, so the trimmed value is redacted too.
 	assert.ok(secretValues(ok, COMPOSITION, { ...env('ROUTE_TOKEN'), SPOTLIGHT_EDITORIAL_MCP_TOKEN: ' editorial-token-0123456789\n' }).includes('editorial-token-0123456789'));
 	// A tool secret too short for the redactor to catch is refused, not left unredacted.
@@ -212,6 +216,12 @@ test('a newsroom install starts only as the newsroom edition: omitted or solo SP
 	}
 	writeFileSync(install, JSON.stringify({ knowledge_destination: { mode: 'solo' } }));
 	assert.doesNotThrow(() => checkNewsroomInstall(readConfig(env)));
+});
+
+test('a solo provider key too short to redact is refused; a keyless local model is not', () => {
+	const env = { ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm' };
+	assert.throws(() => checkRouteSecrets(readConfig({ ...env, SPOTLIGHT_PROVIDER_API_KEY: 'abc' }), COMPOSITION, { ...env, SPOTLIGHT_PROVIDER_API_KEY: 'abc' }), /SPOTLIGHT_PROVIDER_API_KEY is shorter than 4 characters/);
+	assert.doesNotThrow(() => checkRouteSecrets(readConfig(env), COMPOSITION, env));
 });
 
 test('an install config that exists but cannot be read, or names no valid mode, stops the start; a missing one is solo', () => {

@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ConfigError, RouteRefused, checkNewsroomInstall, checkRouteSecrets, childEnv, piSettings, readConfig, routeFor, secretValues, withoutLauncherTokens } from './config.ts';
+import { ConfigError, RouteRefused, checkNewsroomInstall, checkRouteSecrets, childEnv, piSettings, readConfig, routeFor, resolverEnv, secretValues } from './config.ts';
 import {
 	CASE_REFERENCE_FILE,
 	CaseRecordError,
@@ -285,7 +285,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 async function caseStatus(harness: Harness, strict = false): Promise<Record<string, unknown>> {
 	const { config, active } = harness;
 	try {
-		const status = await pythonAdapter(config.python, withoutLauncherTokens(config, process.env))(['status', '--json', '--authorized-cases-root', active.casesRoot, active.caseDir]);
+		const status = await pythonAdapter(config.python, resolverEnv(process.env, harness.composition, config.routes))(['status', '--json', '--authorized-cases-root', active.casesRoot, active.caseDir]);
 		return JSON.parse(status) as Record<string, unknown>;
 	} catch (error) {
 		const message = `could not resolve the case phase: ${harness.redact((error as Error).message)}`;

@@ -3,6 +3,7 @@
 // provider request-body policy, and registers exactly the role's tools.
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { registerCompaction } from './checkpoint.ts';
+import { resolverEnv } from './config.ts';
 import { applyFixedRequestBody, parseFixedRequestBody } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillsFor, spawnableWorkers } from './roles.ts';
@@ -42,7 +43,7 @@ function toolsFor(role: string): ToolDefinition[] {
 	// allowlist below keeps only the ones this role's swaps grant.
 	if (edition === 'newsroom') tools.push(...editorialTools(requestEditorial));
 	if (role === ORCHESTRATOR) {
-		tools.push(...spotlightTools(active, pythonAdapter(python), role, requestResearchRound));
+		tools.push(...spotlightTools(active, pythonAdapter(python, resolverEnv(process.env, composition)), role, requestResearchRound));
 		tools.push(spawnAgentTool(spawnableWorkers(composition)));
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT')));
 	}

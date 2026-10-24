@@ -432,6 +432,9 @@ def complete(case: Path, package_sha256: str, submission_id: str, review_id: str
             raise Refused("a different submission is already recorded for this case")
         _require_requested(case, descriptor)
         _require_intent(case, descriptor, package_sha256)
+        # Receipts first, then the data state (two folders, two atomic writes):
+        # a crash between them leaves the intent pending, and the resume
+        # resubmits the same key and rewrites the same receipts.
         _ensure_receipts_folder(case)
         atomic_write_files(case, {f"{RECEIPTS}/{name}": _json_bytes(value) for name, value in receipts.items()})
         marker.update({"status": "completed", "destination": "newsroom", "package_sha256": package_sha256,
