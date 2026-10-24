@@ -5,7 +5,7 @@ import { spawn as nodeSpawn } from "node:child_process";
 import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
-import { safeChildEnvironment, which as findExecutable } from "./case-bridge.mjs";
+import { createCaseBridge, safeChildEnvironment, which as findExecutable } from "./case-bridge.mjs";
 
 const MAX_CONTROL_BYTES = 64 << 10;
 const START_TIMEOUT_MS = 60_000;
@@ -85,7 +85,7 @@ export function createReviewSessionManager({
     });
   }
 
-  async function startChild(caseDir) {
+  async function startChild(caseDir, view) {
     const [node, child] = await Promise.all([
       realFile(nodeExecutable, "Node executable"),
       realFile(childPath, "review child"),
@@ -94,6 +94,7 @@ export function createReviewSessionManager({
     if (casesRoot) args.push("--cases-root", casesRoot);
     if (idleMs) args.push("--idle-ms", String(idleMs));
     if (overallMs) args.push("--overall-ms", String(overallMs));
+    if (view) args.push("--view", view);
     const process_ = spawn(node, args, {
       env: safeChildEnvironment(env),
       stdio: ["pipe", "pipe", "pipe"],
@@ -166,8 +167,12 @@ export function createReviewSessionManager({
   }
 
   // Start the server for a case, or give a running one a fresh capability.
-  async function start(caseDir) {
-    if (!isAbsolute(caseDir ?? "")) throw new Error("the case directory must be absolute");
+  // view "wiki" lets it start with no gate pending, for the Wiki changes view.
+  async function start(rawCaseDir, view = "") {
+    if (!isAbsolute(rawCaseDir ?? "")) throw new Error("the case directory must be absolute");
+    // One spelling per case, so an alias of the open case is not a new one; a
+    // missing case is left to the child to refuse.
+    const caseDir = await realpath(rawCaseDir).catch(() => rawCaseDir);
     if (active && active.caseDir !== caseDir) {
       close();
       await active?.exited;
@@ -179,17 +184,20 @@ export function createReviewSessionManager({
       await withTimeout(ready, current);
       return { status: "reopened" };
     }
-    const current = await startChild(caseDir);
+    const current = await startChild(caseDir, view);
     await withTimeout(nextReady(current), current);
     return { status: "ready" };
   }
 
-  async function openLocally() {
+  // view "wiki" opens the page on its Wiki changes view.
+  async function openLocally(view = "") {
     if (!active?.url) return { ok: false, status: "session-expired" };
+    const url = new URL(active.url);
+    if (view) url.searchParams.set("view", view);
     const discovered =
       platform === "darwin" ? which("open") : platform === "win32" ? which("rundll32.exe") : which("xdg-open");
     if (!discovered) return { ok: false, status: "opener-unavailable" };
-    const args = platform === "win32" ? ["url.dll,FileProtocolHandler", active.url] : [active.url];
+    const args = platform === "win32" ? ["url.dll,FileProtocolHandler", url.href] : [url.href];
     try {
       const opener = spawn(discovered, args, {
         stdio: "ignore",
@@ -213,11 +221,32 @@ export function createReviewSessionManager({
     }
   }
 
+  // The case-root check the review server makes when it starts (the seam's
+  // status under the same boundary), for callers that act before starting it.
+  // Returns the case's real path, the spelling start() keeps.
+  async function authorize(rawCaseDir) {
+    if (!isAbsolute(rawCaseDir ?? "")) throw new Error("the case directory must be absolute");
+    const caseDir = await realpath(rawCaseDir);
+    await createCaseBridge({ caseDir, casesRoot, env: safeChildEnvironment(env) }).status();
+    return caseDir;
+  }
+
+  // Runs opens one after another, so a check of the running page and the
+  // start that follows it cannot interleave with another open.
+  let queue = Promise.resolve();
+  function exclusive(task) {
+    const run = queue.then(task);
+    queue = run.catch(() => {});
+    return run;
+  }
+
   return Object.freeze({
+    authorize,
+    exclusive,
     start,
     openLocally,
     close,
     wait: () => active?.exited ?? Promise.resolve(),
-    status: () => (active ? { active: true, events: [...active.events] } : { active: false, events: [] }),
+    status: () => (active ? { active: true, caseDir: active.caseDir, events: [...active.events] } : { active: false, events: [] }),
   });
 }

@@ -83,6 +83,22 @@ export function safeChildEnvironment(source = process.env) {
   return env;
 }
 
+// One bounded child process: its exit code (-1 when it did not exit normally),
+// stdout and stderr. input, if any, is its whole stdin.
+function runBounded(file, args, { cwd, env, input = "", signal }) {
+  return new Promise((settle) => {
+    const child = execFile(
+      file,
+      args,
+      { cwd, env, timeout: SEAM_TIMEOUT_MS, maxBuffer: MAX_OUTPUT, windowsHide: true, signal },
+      (error, stdout, stderr) =>
+        settle({ code: error ? (typeof error.code === "number" ? error.code : -1) : 0, stdout: String(stdout), stderr: String(stderr) }),
+    );
+    child.stdin.on("error", () => {}); // a child that exits without reading
+    child.stdin.end(input);
+  });
+}
+
 export function createCaseBridge({
   caseDir,
   casesRoot = "",
@@ -96,18 +112,9 @@ export function createCaseBridge({
   const seam = join(checkoutRoot, "scripts", "spotlight-orchestration.py");
   const boundary = casesRoot ? ["--authorized-cases-root", casesRoot] : [];
 
-  function run(args, signal) {
-    return new Promise((settle) => {
-      execFile(
-        python,
-        ["-E", "-s", seam, ...args, ...boundary, caseDir],
-        { cwd: checkoutRoot, env, timeout: SEAM_TIMEOUT_MS, maxBuffer: MAX_OUTPUT, windowsHide: true, signal },
-        (error, stdout, stderr) => {
-          const code = error ? (typeof error.code === "number" ? error.code : -1) : 0;
-          settle({ code, stdout: String(stdout), message: String(stderr).replace(/^FAIL\s+/, "").trim() });
-        },
-      );
-    });
+  async function run(args, signal) {
+    const result = await runBounded(python, ["-E", "-s", seam, ...args, ...boundary, caseDir], { cwd: checkoutRoot, env, signal });
+    return { ...result, message: result.stderr.replace(/^FAIL\s+/, "").trim() };
   }
 
   async function json(args, signal) {
@@ -163,6 +170,54 @@ function seamError(result) {
         ? "refused"
         : "seam-failed";
   return error;
+}
+
+// Engine's staged wiki changes, through `bsig wiki staged*`. bsig is found the
+// way the rest of Spotlight finds it (integrations/_engine.py bsig_path). The
+// confirmation nonce goes to bsig on stdin only, never on argv.
+export function createWikiBridge({
+  checkoutRoot = CHECKOUT_ROOT,
+  python = spotlightPython({ root: checkoutRoot }),
+  env = safeChildEnvironment(),
+} = {}) {
+  let bsig = "";
+  const exec = (file, args, input) => runBounded(file, args, { cwd: checkoutRoot, env, input });
+
+  // Only a found bsig is kept; a miss or a failed lookup is tried again next
+  // time, and a failed lookup is an error, not "no Engine".
+  async function bsigPath() {
+    if (bsig || !python) return bsig;
+    const found = await exec(python, ["-E", "-s", "-c", "import sys; sys.path.insert(0, sys.argv[1]); from integrations._engine import bsig_path; print(bsig_path() or '')", checkoutRoot]);
+    if (found.code !== 0) throw Object.assign(new Error("could not look up bsig"), { code: "failed", exitCode: found.code });
+    bsig = found.stdout.trim();
+    return bsig;
+  }
+
+  // The last JSON event bsig printed: its result, or an error with the refusal.
+  async function run(args, input = "") {
+    const file = await bsigPath();
+    if (!file) throw Object.assign(new Error("Engine is not installed"), { code: "unsupported" });
+    const result = await exec(file, ["--json", "wiki", ...args], input);
+    let event = {};
+    try {
+      event = JSON.parse(result.stdout.trim().split("\n").pop());
+    } catch {
+      // No event: reported below as a failure.
+    }
+    if (result.code === 0 && event.event === "result") return event.data?.result;
+    const error = new Error(String(event.message ?? "Engine refused the request").replace(/^wiki: /, "").slice(0, 2048));
+    // Exit 4 is bsig's usage error: a bsig older than these verbs.
+    error.code = event.data?.refusal ?? (result.code === 4 ? "unsupported" : "failed");
+    error.exitCode = result.code;
+    throw error;
+  }
+
+  return Object.freeze({
+    staged: () => run(["staged"]),
+    nonce: async (id) => (await run(["staged-nonce", id])).nonce,
+    apply: (id, digest, nonce) => run(["staged-apply", id, `--digest=${digest}`], JSON.stringify({ nonce })),
+    discard: (id, digest, nonce) => run(["staged-discard", id, `--digest=${digest}`], JSON.stringify({ nonce })),
+  });
 }
 
 // Decision gates the resolver can report as pending, mapped from its status.

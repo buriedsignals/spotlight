@@ -1,15 +1,15 @@
 // Opening, reopening and the MCP tool, through the real child process.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { CHECKOUT_ROOT, which } from "../case-bridge.mjs";
 import { createMcpHandler } from "../mcp.mjs";
-import { createReviewOpener } from "../open.mjs";
+import { createReviewOpener, createWikiChangesOpener } from "../open.mjs";
 import { createReviewSessionManager } from "../session.mjs";
-import { api, buildCase, openSession, recordingOpener, tempRoot } from "./helpers.mjs";
+import { api, approveMethodology, buildCase, change, fakeBsig, openSession, recordingOpener, tempRoot } from "./helpers.mjs";
 
 function openedUrls(record) {
   return existsSync(record) ? readFileSync(record, "utf8").trim().split("\n").filter(Boolean) : [];
@@ -17,7 +17,9 @@ function openedUrls(record) {
 
 function manager(t, root, options = {}) {
   const opener = recordingOpener(root);
-  const sessions = createReviewSessionManager({ which: () => opener.script, ...options });
+  // No Engine unless a test supplies a fake bsig.
+  const env = { ...process.env, SPOTLIGHT_BSIG: join(root, "no-bsig") };
+  const sessions = createReviewSessionManager({ which: () => opener.script, env, ...options });
   t.after(async () => {
     sessions.close();
     await sessions.wait();
@@ -114,10 +116,10 @@ test("open_spotlight_review opens the page and its result carries no URL", async
   const root = tempRoot(t);
   const caseDir = buildCase(root, "case", "methodology");
   const { sessions, record } = manager(t, root);
-  const handle = createMcpHandler({ open: createReviewOpener({ sessions }) });
+  const handle = createMcpHandler({ open: createReviewOpener({ sessions }), openWiki: createWikiChangesOpener({ sessions }) });
 
   const listed = await handle({ jsonrpc: "2.0", id: 1, method: "tools/list" });
-  assert.deepEqual(listed.result.tools.map((tool) => tool.name), ["open_spotlight_review"]);
+  assert.deepEqual(listed.result.tools.map((tool) => tool.name), ["open_spotlight_review", "open_spotlight_wiki_changes"]);
 
   for (const id of [2, 3]) {
     const result = await handle({
@@ -139,7 +141,162 @@ test("open_spotlight_review opens the page and its result carries no URL", async
   assert.equal(openedUrls(record).length, 2);
 });
 
-test("the stdio MCP server answers initialize and lists one tool", async () => {
+test("open_spotlight_wiki_changes opens the Wiki changes view with no gate pending, and returns no URL or nonce", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  approveMethodology(caseDir);
+  const fake = fakeBsig(root, { changes: [change("c1", "a")] });
+  const { sessions, record } = manager(t, root, { env: fake.env });
+  const handle = createMcpHandler({ open: createReviewOpener({ sessions }), openWiki: createWikiChangesOpener({ sessions, env: fake.env }) });
+  const call = (id) => handle({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "open_spotlight_wiki_changes", arguments: { case_dir: caseDir } } });
+
+  const result = await call(1);
+  assert.equal(result.result.structuredContent.review, "opened");
+  const url = openedUrls(record).at(-1);
+  assert.equal(new URL(url).searchParams.get("view"), "wiki");
+  const { view, origin, cookie } = await viewThrough(url);
+  assert.equal(view.gate, "");
+  const applied = await api(origin, cookie)("/api/wiki-changes/apply", { id: "c1", digest: "a".repeat(64) });
+  assert.equal(applied.status, 200);
+
+  const text = JSON.stringify(result) + JSON.stringify(await call(2));
+  const nonces = fake.issued();
+  assert.equal(nonces.length, 1);
+  for (const secret of [url, new URL(url).port, new URL(url).hash.slice(1), "127.0.0.1", "http", ...nonces])
+    assert.ok(!text.includes(secret), `tool result leaks ${secret}`);
+  // The second call found nothing staged after the apply.
+  assert.match(text, /No wiki changes are staged/);
+  assert.equal(openedUrls(record).length, 1);
+});
+
+test("open_spotlight_wiki_changes opens no browser when nothing is staged, even with a gate pending", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  const fake = fakeBsig(root, { changes: [] });
+  const { sessions, record } = manager(t, root, { env: fake.env });
+  mkdirSync(join(root, "old"));
+  const old = fakeBsig(join(root, "old"), { old: true, changes: [change("c1", "a")] });
+  for (const env of [fake.env, old.env, { ...process.env, SPOTLIGHT_BSIG: join(root, "no-bsig") }]) {
+    const open = createWikiChangesOpener({ sessions, env });
+    assert.deepEqual(await open({ caseDir }), { status: "nothing-staged" });
+  }
+  assert.equal(sessions.status().active, false);
+  assert.deepEqual(openedUrls(record), []);
+});
+
+test("open_spotlight_wiki_changes leaves a gate page that is already open alone", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  const fake = fakeBsig(root, { changes: [change("c1", "a")] });
+  const { sessions, record } = manager(t, root, { env: fake.env });
+  assert.equal((await createReviewOpener({ sessions })({ caseDir })).status, "opened");
+  const { origin, cookie } = await viewThrough(openedUrls(record).at(-1));
+
+  assert.deepEqual(await createWikiChangesOpener({ sessions, env: fake.env })({ caseDir }), { status: "already-open" });
+  assert.equal(openedUrls(record).length, 1);
+  // The member's session survives, so nothing typed on the gate page is lost.
+  assert.equal((await api(origin, cookie)("/api/view")).status, 200);
+});
+
+test("an Engine failure is reported, not taken for nothing staged, and the gate page still works", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  const fake = fakeBsig(root, { fail: "wiki: permission denied", changes: [] });
+  const { sessions, record } = manager(t, root, { env: fake.env });
+  const handle = createMcpHandler({ open: createReviewOpener({ sessions }), openWiki: createWikiChangesOpener({ sessions, env: fake.env }) });
+  const result = await handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "open_spotlight_wiki_changes", arguments: { case_dir: caseDir } } });
+  assert.equal(result.result.structuredContent.review, "wiki-unreadable");
+  // Engine's own text never reaches the model.
+  assert.ok(!JSON.stringify(result).includes("permission denied"));
+  assert.deepEqual(openedUrls(record), []);
+
+  await createReviewOpener({ sessions })({ caseDir });
+  const { origin, cookie } = await viewThrough(openedUrls(record).at(-1));
+  const listed = await api(origin, cookie)("/api/wiki-changes");
+  assert.equal(listed.status, 502);
+  assert.match(JSON.parse(listed.text).message, /Could not read staged changes: permission denied/);
+});
+
+test("open_spotlight_wiki_changes refuses a case outside the authorized root before asking Engine", async (t) => {
+  const root = tempRoot(t);
+  mkdirSync(join(root, "cases"));
+  const outside = buildCase(root, "outside", "methodology");
+  const { sessions, record } = manager(t, root, { casesRoot: join(root, "cases") });
+  let asked = false;
+  const wiki = { staged: async () => { asked = true; return [change("c1", "a")]; } };
+  assert.deepEqual(await createWikiChangesOpener({ sessions, wiki })({ caseDir: outside }), { status: "start-failed" });
+  assert.equal(asked, false);
+  assert.deepEqual(openedUrls(record), []);
+});
+
+test("open_spotlight_wiki_changes treats another spelling of the open case as the same case", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  symlinkSync(caseDir, join(root, "alias"));
+  const fake = fakeBsig(root, { changes: [change("c1", "a")] });
+  const { sessions, record } = manager(t, root, { env: fake.env });
+  assert.equal((await createReviewOpener({ sessions })({ caseDir: join(root, "alias") })).status, "opened");
+  const { origin, cookie } = await viewThrough(openedUrls(record).at(-1));
+
+  assert.deepEqual(await createWikiChangesOpener({ sessions, env: fake.env })({ caseDir }), { status: "already-open" });
+  assert.equal((await api(origin, cookie)("/api/view")).status, 200);
+});
+
+test("open_spotlight_wiki_changes leaves another case's open review alone", async (t) => {
+  const root = tempRoot(t);
+  const other = buildCase(root, "other", "methodology");
+  const caseDir = buildCase(root, "case", "methodology");
+  const fake = fakeBsig(root, { changes: [change("c1", "a")] });
+  const { sessions, record } = manager(t, root, { env: fake.env });
+  await createReviewOpener({ sessions })({ caseDir: other });
+  const { origin, cookie } = await viewThrough(openedUrls(record).at(-1));
+
+  assert.deepEqual(await createWikiChangesOpener({ sessions, env: fake.env })({ caseDir }), { status: "other-review-open" });
+  assert.equal(openedUrls(record).length, 1);
+  assert.equal((await api(origin, cookie)("/api/view")).status, 200);
+});
+
+test("open_spotlight_review leaves a Wiki-changes-only page alone when no gate is pending", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  approveMethodology(caseDir);
+  const fake = fakeBsig(root, { changes: [change("c1", "a")] });
+  const { sessions, record } = manager(t, root, { env: fake.env });
+  assert.equal((await createWikiChangesOpener({ sessions, env: fake.env })({ caseDir })).status, "opened");
+  const { origin, cookie } = await viewThrough(openedUrls(record).at(-1));
+
+  assert.deepEqual(await createReviewOpener({ sessions })({ caseDir }), { status: "no-pending-gate" });
+  assert.equal(openedUrls(record).length, 1);
+  assert.equal((await api(origin, cookie)("/api/view")).status, 200);
+});
+
+test("a page the browser could not open is closed, not left to read as already open", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "methodology");
+  const failing = join(root, "failing-open.sh");
+  writeFileSync(failing, "#!/bin/sh\nexit 1\n");
+  chmodSync(failing, 0o755);
+  const fake = fakeBsig(root, { changes: [change("c1", "a")] });
+  const { sessions } = manager(t, root, { env: fake.env, which: () => failing });
+  assert.equal((await createReviewOpener({ sessions })({ caseDir })).status, "opener-failed");
+  assert.equal(sessions.status().active, false);
+  assert.equal((await createWikiChangesOpener({ sessions, env: fake.env })({ caseDir })).status, "opener-failed");
+});
+
+test("two concurrent Wiki changes opens start one page and leave it alone", async (t) => {
+  const root = tempRoot(t);
+  const first = buildCase(root, "first", "methodology");
+  const second = buildCase(root, "second", "methodology");
+  const fake = fakeBsig(root, { changes: [change("c1", "a")] });
+  const { sessions, record } = manager(t, root, { env: fake.env });
+  const open = createWikiChangesOpener({ sessions, env: fake.env });
+  const results = await Promise.all([open({ caseDir: first }), open({ caseDir: second })]);
+  assert.deepEqual(results.map((r) => r.status).sort(), ["opened", "other-review-open"]);
+  assert.equal(openedUrls(record).length, 1);
+  assert.equal((await viewThrough(openedUrls(record)[0])).view.gate, "methodology");
+});
+
+test("the stdio MCP server answers initialize and lists its tools", async () => {
   const child = spawn(process.execPath, [fileURLToPath(new URL("../mcp.mjs", import.meta.url))], {
     stdio: ["pipe", "pipe", "ignore"],
   });
@@ -161,5 +318,5 @@ test("the stdio MCP server answers initialize and lists one tool", async () => {
   await new Promise((settle) => child.on("exit", settle));
   assert.equal(lines.length, 2);
   assert.equal(lines[0].result.serverInfo.name, "spotlight-review");
-  assert.deepEqual(lines[1].result.tools.map((tool) => tool.name), ["open_spotlight_review"]);
+  assert.deepEqual(lines[1].result.tools.map((tool) => tool.name), ["open_spotlight_review", "open_spotlight_wiki_changes"]);
 });

@@ -94,6 +94,8 @@ async function readJson(request) {
 
 export async function startReviewServer({
   bridge,
+  wiki = null,
+  view = "",
   host = "127.0.0.1",
   idleMs = DEFAULT_IDLE_MS,
   overallMs = DEFAULT_OVERALL_MS,
@@ -104,10 +106,34 @@ export async function startReviewServer({
     throw new Error("the review server requires a case bridge");
   if (host !== "127.0.0.1") throw new Error("the review server binds only 127.0.0.1");
 
+  // Staged wiki changes; none without Engine or with a bsig that lacks the verb,
+  // so the page hides the view. Any other failure is reported, not hidden.
+  // The page's listings share one Engine call while it runs.
+  let listing = null;
+  function pageWikiChanges() {
+    listing ??= wikiChanges().finally(() => {
+      listing = null;
+    });
+    return listing;
+  }
+
+  async function wikiChanges() {
+    if (!wiki) return [];
+    try {
+      const changes = await wiki.staged();
+      return Array.isArray(changes) ? changes : [];
+    } catch (error) {
+      if (error.code === "unsupported") return [];
+      throw Object.assign(new Error(`Could not read staged changes: ${error.message}`), { status: 502, code: "wiki-unreadable" });
+    }
+  }
+
   // The gate this session shows. It stays after a decision so the page can
-  // show the receipt read-only.
+  // show the receipt read-only. With no gate pending ("" here), the server
+  // starts only for the Wiki changes view, which its opener found non-empty.
   let gate = pendingGate(await bridge.status());
-  if (!gate) throw Object.assign(new Error("no review is pending for this case"), { code: "no-pending-gate" });
+  if (!gate && view !== "wiki")
+    throw Object.assign(new Error("no review is pending for this case"), { code: "no-pending-gate" });
 
   let capability = randomToken();
   let session = "";
@@ -143,6 +169,42 @@ export async function startReviewServer({
     return active && Boolean(session) && cookie(request, cookieName) === session;
   }
 
+  // Wiki changes being confirmed, by id: one action at a time per change, from
+  // its nonce to Engine's answer, so two tabs cannot race Apply and Discard.
+  const wikiBusy = new Set();
+  const WIKI_REFUSALS = new Set(["nonce_unknown", "nonce_used", "nonce_other_change"]);
+
+  // Each confirmation takes a fresh Engine nonce, kept only in this call; the
+  // page never receives it.
+  async function confirmWikiChange(action, body) {
+    const { id, digest } = exactObject(body, ["id", "digest"], "wiki change");
+    if (!wiki || typeof id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(id) || typeof digest !== "string" || !/^[0-9a-f]{64}$/.test(digest))
+      return [400, { code: "invalid-change", message: "That wiki change is not recognised." }];
+    if (wikiBusy.has(id))
+      return [409, { code: "in-progress", message: "This wiki change is already being applied or discarded. Reload the page to see the outcome." }];
+    wikiBusy.add(id);
+    try {
+      let nonce;
+      try {
+        nonce = await wiki.nonce(id);
+      } catch (error) {
+        return [422, { code: "refused", message: `Could not confirm the change: ${error.message}` }];
+      }
+      try {
+        await wiki[action](id, digest, nonce);
+      } catch (error) {
+        if (error.code === "digest_changed")
+          return [409, { code: "digest-changed", message: "This wiki change was edited since you loaded it. The list has been reloaded: check it and decide again.", changes: await wikiChanges().catch(() => undefined) }];
+        if (WIKI_REFUSALS.has(error.code)) return [422, { code: "refused", message: error.message }];
+        return [502, { code: "outcome-unknown", message: "Engine did not confirm the outcome. Reload the page to see whether the change was made." }];
+      }
+      // Done: a failed refresh of the list does not turn it into a failure.
+      return [200, { changes: await wikiChanges().catch(() => undefined) }];
+    } finally {
+      wikiBusy.delete(id);
+    }
+  }
+
   // The decision nonce lives only in this process and in the case ledger's
   // hash; the page never receives it.
   async function decisionNonce() {
@@ -156,6 +218,7 @@ export async function startReviewServer({
       gate = pending;
       pageNonce = "";
     }
+    if (!gate) return { gate: "", pending_gate: "", gate_label: "Wiki changes" };
     const view = await bridge.view(gate);
     if (view.pending_gate === gate) await decisionNonce();
     return { ...view, gate_label: GATE_LABELS[gate] };
@@ -298,6 +361,8 @@ export async function startReviewServer({
           exactObject(await readJson(request), [], "view request");
           return sendJson(response, 200, await currentView());
         }
+        if (!gate && ["/api/edit", "/api/decide", "/api/follow-up", "/api/passages"].includes(url.pathname))
+          return sendJson(response, 409, { code: "not-pending", message: "No gate is waiting for a decision." });
         if (url.pathname === "/api/passages") {
           exactObject(await readJson(request), [], "passages request");
           return sendJson(response, 200, await passages());
@@ -315,6 +380,14 @@ export async function startReviewServer({
         }
         if (url.pathname === "/api/follow-up") {
           const [status, body] = await requestFollowUp(await readJson(request));
+          return sendJson(response, status, body);
+        }
+        if (url.pathname === "/api/wiki-changes") {
+          exactObject(await readJson(request), [], "wiki changes request");
+          return sendJson(response, 200, { changes: await pageWikiChanges() });
+        }
+        if (url.pathname === "/api/wiki-changes/apply" || url.pathname === "/api/wiki-changes/discard") {
+          const [status, body] = await confirmWikiChange(url.pathname.endsWith("apply") ? "apply" : "discard", await readJson(request));
           return sendJson(response, status, body);
         }
         if (url.pathname === "/api/close") {
@@ -371,6 +444,7 @@ export async function startReviewServer({
   async function reopen() {
     if (!active) throw Object.assign(new Error("the review server has closed"), { code: "closed" });
     const pending = pendingGate(await bridge.status());
+    // Only a gate is reopened: the Wiki changes opener never reopens a page.
     if (!pending) throw Object.assign(new Error("no review is pending for this case"), { code: "no-pending-gate" });
     if (pending !== gate) {
       gate = pending;
