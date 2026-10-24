@@ -117,7 +117,7 @@ test('newsroom data handed to a model is capped, with a marker saying so', async
 	assert.match(text, /\[\.\.\. truncated at 20000 characters\]\nNEWSROOM_DATA \S+>>>$/);
 });
 
-test('a successful but malformed tool result stops the newsroom case: a run_checks state or flag outside the contract, a review address that is not a string', async () => {
+test('a successful but malformed tool result stops the newsroom case: a run_checks state or flag outside the contract, a review address that is not an http(s) URL', async () => {
 	const url = 'https://editorial.newsroom.example/mcp';
 	for (const [tool, result] of [
 		['get_record', { content: 'not a list' }],
@@ -137,6 +137,7 @@ test('a successful but malformed tool result stops the newsroom case: a run_chec
 		['submit_case_review', { structuredContent: { status: 'rejected' } }],
 		['submit_case_review', { structuredContent: { status: 'rejected', integrity_failures: [{ check: 'file_hash' }] } }],
 		['submit_case_review', { structuredContent: { status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: 42 } }],
+		['submit_case_review', { structuredContent: { status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: 'not-a-url' } }],
 	] as const) {
 		const fetchImpl: typeof fetch = async (_url, init) => {
 			const message = JSON.parse(String(init?.body)) as { id?: string; method: string };

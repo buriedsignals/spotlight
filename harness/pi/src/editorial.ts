@@ -346,7 +346,7 @@ export class EditorialClient {
 				(tool === 'submit_case_review' &&
 					(value.status === 'staged'
 						? !(typeof value.submission_id === 'string' && SAFE_ID.test(value.submission_id) && typeof value.review_id === 'string' && SAFE_ID.test(value.review_id)) ||
-							(value.review_url !== undefined && typeof value.review_url !== 'string')
+							(value.review_url !== undefined && !(typeof value.review_url === 'string' && /^https?:$/.test(URL.parse(value.review_url)?.protocol ?? '')))
 						: value.status !== 'rejected' ||
 							!(Array.isArray(value.integrity_failures) && value.integrity_failures.length > 0 && value.integrity_failures.every((failure) => isObject(failure) && typeof failure.check === 'string' && nonEmpty(failure.reason))))) ||
 				// Knowledge answers: the top-level shapes of schemas/editorial-mcp.
