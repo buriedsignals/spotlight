@@ -133,6 +133,7 @@ test('a successful but malformed tool result stops the newsroom case: a run_chec
 		['run_checks', { structuredContent: { job_id: 'job-1', state: 'done', flags: [], input_sha256: 'not-a-digest' } }],
 		['run_checks', { structuredContent: { state: 'running' } }],
 		['run_checks', { structuredContent: { state: 'done', flags: [] } }],
+		['get_review_status', { structuredContent: { review_id: 'rev-1', state: 'pending', receipt: 'stored' } }],
 		['submit_case_review', { structuredContent: { status: 'staged', submission_id: 42, review_id: 'rev-1' } }],
 		['submit_case_review', { structuredContent: { status: 'rejected' } }],
 		['submit_case_review', { structuredContent: { status: 'rejected', integrity_failures: [{ check: 'file_hash' }] } }],
@@ -375,6 +376,11 @@ test('a case folder holding another case\'s or another endpoint\'s newsroom refe
 	// A reference from another Editorial endpoint is not replaced by a new registration.
 	await writeFile(join(config.caseDir, 'data', 'editorial-case.json'), JSON.stringify({ case_ref: 'nr-case-b', title: 'case-b', custody_mode: 'hosted', editorial_origin: 'https://old.newsroom.example', client_case_id: 'case-b' }));
 	await assert.rejects(ensureCaseRegistered(client, config, async () => ({ code: 0, stdout: '{}', stderr: '' })), /registered with another newsroom endpoint \(https:\/\/old\.newsroom\.example\)/);
+	// An incomplete stored reference stops the case before any call.
+	for (const stored of [{ case_ref: 'nr case b', editorial_origin: origin(newsroom.url), client_case_id: 'case-b' }, { case_ref: 'nr-case-b', client_case_id: 'case-b' }]) {
+		await writeFile(join(config.caseDir, 'data', 'editorial-case.json'), JSON.stringify(stored));
+		await assert.rejects(ensureCaseRegistered(client, config, async () => ({ code: 0, stdout: '{}', stderr: '' })), (caught: Error) => stopsTheNewsroomCase(caught) && /not a complete case reference/.test(caught.message));
+	}
 	assert.deepEqual(newsroom.callsOf('register_case'), []);
 });
 

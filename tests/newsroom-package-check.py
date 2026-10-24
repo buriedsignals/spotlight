@@ -175,6 +175,8 @@ class NewsroomPackage(GATES.CaseFixture):
         submission = case / "data" / "newsroom-submission.json"
         submission.write_text("[]", encoding="utf-8")
         self.assertIn("newsroom-submission.json is not a readable JSON object", self.run_seam("pending", str(case), expect=2).stderr)
+        submission.write_text('{"state": "pending"}', encoding="utf-8")
+        self.assertIn("pending submission without a valid key", self.run_seam("pending", str(case), expect=2).stderr)
         submission.unlink()
         passages = case / "data" / "source-expressions.json"
         passages.write_text('"not an object"', encoding="utf-8")

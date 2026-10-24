@@ -385,9 +385,12 @@ def pending(case: Path) -> dict[str, Any]:
     """The pending submission intent, if a crash left one."""
     with transaction(case) as descriptor:
         current = _read_data(case, descriptor, SUBMISSION) or {}
-    if current.get("state") == "pending" and isinstance(current.get("idempotency_key"), str):
-        return {"pending": True, "idempotency_key": current["idempotency_key"]}
-    return {"pending": False}
+    if current.get("state") != "pending":
+        return {"pending": False}
+    key = current.get("idempotency_key")
+    if not (isinstance(key, str) and SHA256.match(key) and current.get("package_sha256") == key):
+        raise Refused(f"{SUBMISSION} records a pending submission without a valid key")
+    return {"pending": True, "idempotency_key": key}
 
 
 def _require_intent(case: Path, descriptor: int, package_sha256: str) -> None:

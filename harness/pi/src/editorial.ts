@@ -353,7 +353,8 @@ export class EditorialClient {
 				(tool === 'search_knowledge' && !(Array.isArray(value.records) && value.records.every(isObject))) ||
 				(tool === 'get_record' && !isObject(value.record)) ||
 				(tool === 'traverse' && !(typeof value.root === 'string' && Array.isArray(value.nodes) && Array.isArray(value.edges))) ||
-				(tool === 'coverage' && !(typeof value.record_id === 'string' && isObject(value.coverage)));
+				(tool === 'coverage' && !(typeof value.record_id === 'string' && isObject(value.coverage))) ||
+				(tool === 'get_review_status' && value.receipt !== undefined && !isObject(value.receipt));
 			if (malformed) throw new EditorialError(`${tool}: the Editorial MCP answered outside the contract`);
 			return this.sanitize(value, { keepReview: tool === 'submit_case_review' }) as Record<string, unknown>;
 		};
@@ -440,7 +441,10 @@ export async function ensureCaseRegistered(
 	const editorial = config.editorial!;
 	const origin = new URL(editorial.url).origin;
 	const stored = readCaseJson(config.caseDir, CASE_REFERENCE_FILE);
-	if (stored && typeof stored.case_ref === 'string' && stored.case_ref) {
+	if (stored) {
+		const complete = typeof stored.case_ref === 'string' && SAFE_ID.test(stored.case_ref) && typeof stored.client_case_id === 'string' && stored.client_case_id
+			&& typeof stored.editorial_origin === 'string' && URL.parse(stored.editorial_origin)?.origin === stored.editorial_origin;
+		if (!complete) throw new CaseRecordError(`${CASE_REFERENCE_FILE} is not a complete case reference (case_ref, editorial_origin, client_case_id)`);
 		// The reference belongs to the endpoint that issued it: another endpoint
 		// would register the case again and lose it.
 		if (stored.editorial_origin !== origin) {
