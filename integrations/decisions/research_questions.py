@@ -94,7 +94,9 @@ CONFLICT_TEXT = "Compare item A and item B about the same subject. How do their 
 # directions never sets a lead aside; it labels it circumstantial or outside
 # the directions. 3 (bank v3): Q4 has no not_found answer (D3 checks the
 # excerpt against the stored source), so no model answer sets a lead aside.
-EFFECTS_REVISION = 3
+# 4: a primary-record host sets Q3's source over a disagreeing answer, and a
+# social host labels it when no answer counted (research_rules.source_label).
+EFFECTS_REVISION = 4
 
 # Every choice question is asked in both option orders.
 PERMUTED = ("q1_identity", "q2_direction", "q3_source", "q4_assertion", "q5_status", "q6_fidelity", "c1_premise", "c4_conflict")

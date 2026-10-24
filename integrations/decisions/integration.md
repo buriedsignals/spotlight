@@ -67,6 +67,12 @@ No answer sets a lead aside: answers label, flag or raise clues. Whether the
 stored source holds a lead's excerpt is D3's check (`research_checks.py`),
 which marks a failing lead unverifiable.
 
+A host rule backs Q3 without replacing it: a register, gazette, court or
+procurement host sets the source to `primary_record` (overriding a
+disagreeing answer, flagged), and a social host is the prior when no answer
+counted. The host list is `research_rules.PRIMARY_RECORD_HOSTS` and
+`SOCIAL_HOSTS`.
+
 - **Backend** (install config only): `integrations.decisions.research_triage`
   = `{"backend": "jev" | "clef" | "clef-flash" | "local" | "rules",
   "local_url": "http://127.0.0.1:PORT"}`. Clef reads `CLOUDFLARE_ACCOUNT_ID`

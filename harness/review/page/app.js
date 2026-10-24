@@ -410,6 +410,7 @@ const LEAD_FLAG_LABELS = {
   absence_is_not_clearance: "Absence is not clearance",
   snippet_only: "Snippet only: cannot support a finding",
   summary_refused: "Summary refused: a figure is not in the excerpt",
+  source_rule_override: "Source set by its host (a register, gazette, court or procurement portal), not by the model",
   model_suggests_set_aside: "The model would set this aside; while triage only flags, that has no effect",
 };
 const LABEL_NAMES = { identity: "Identity", source: "Source", assertion: "Assertion", status: "Status" };

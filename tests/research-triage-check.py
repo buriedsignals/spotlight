@@ -198,6 +198,22 @@ def test_no_answer_sets_a_lead_aside() -> None:
             require(rr.triage_violations(document) == [], f"{qid}={option} broke D7: {rr.triage_violations(document)}")
 
 
+def test_host_prior_backs_q3() -> None:
+    # A register host is certain: it overrides a model answer that disagrees and says so.
+    result = by_id(run([lead()], client.FakeProvider(answers_from({"q3_source": "secondary"})), acceptance=ACCEPTED), "lead-1")
+    require(result["labels"]["source"] == "primary_record", f"the register host did not set the source: {result['labels']}")
+    require(any(f["reason"] == "source_rule_override" for f in result["flags"]), "the override was not flagged")
+    # A social host is only a prior: the model's answer stands, and rules alone use the prior.
+    social = lead(capture={"source_url": "https://x.com/someone/status/1"})
+    result = by_id(run([social], client.FakeProvider(answers_from({"q3_source": "interested_party"})), acceptance=ACCEPTED), "lead-1")
+    require(result["labels"]["source"] == "interested_party" and not any(f["reason"] == "source_rule_override" for f in result["flags"]),
+            f"a social host overrode the model: {result}")
+    result = by_id(run([social], None), "lead-1")
+    require(result["labels"].get("source") == "user_generated", f"rules alone ignored the social prior: {result['labels']}")
+    result = by_id(run([lead(capture={"source_url": "https://news.example.org/a"})], None), "lead-1")
+    require("source" not in result["labels"], "an unknown host got a source label")
+
+
 def test_conflict_pairs() -> None:
     provider = client.FakeProvider(answers_from({"c4_conflict": "conflict"}))
     pair = clues(("K2", ["a", "b"], "sole shareholder"))

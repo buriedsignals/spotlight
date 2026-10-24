@@ -209,6 +209,37 @@ def missing_figures(lead: TriageLead) -> list[str]:
     return sorted(_figures(lead.summary) - _figures(lead.excerpt))
 
 
+# Q3's backstop: hosts whose pages are primary records (registers, gazettes,
+# courts, procurement portals) are certain; social hosts are only a prior,
+# since an official account posting there is an interested party.
+PRIMARY_RECORD_HOSTS = ("zefix.ch", "handelsregister.de", "find-and-update.company-information.service.gov.uk",
+                        "thegazette.co.uk", "ted.europa.eu", "simap.ch", "sam.gov", "curia.europa.eu", "bger.ch")
+SOCIAL_HOSTS = ("x.com", "twitter.com", "facebook.com", "instagram.com", "tiktok.com", "reddit.com",
+                "youtube.com", "t.me", "threads.net", "bsky.app")
+
+
+def host_source(lead: TriageLead) -> tuple[str | None, bool]:
+    """(Q3 source the host implies, whether that is certain)."""
+    host = (urlparse(lead.source_url).hostname or "").lower()
+
+    def on(domains: tuple[str, ...]) -> bool:
+        return any(host == d or host.endswith("." + d) for d in domains)
+    if on(PRIMARY_RECORD_HOSTS):
+        return "primary_record", True
+    if on(SOCIAL_HOSTS):
+        return "user_generated", False
+    return None, False
+
+
+def source_label(lead: TriageLead, answer: str | None) -> tuple[str | None, bool]:
+    """Q3's label and whether the host rule set it: a certain host always, a
+    prior only when no answer counted; otherwise the model's answer stands."""
+    prior, certain = host_source(lead)
+    if prior and (certain or not answer):
+        return prior, True
+    return answer, False
+
+
 # ------------------------------------------------------------- answers
 def agreed_choice(answers: Mapping[str, Any], qid: str) -> str | None:
     """The option both orders chose, or None when they disagree or either is missing."""
@@ -265,8 +296,12 @@ def lead_outcome(lead: TriageLead, recorded: Mapping[str, Mapping[str, Any]],
         context.append(CIRCUMSTANTIAL)
     if value.get("q2_direction") == "none":
         context.append(OUTSIDE_DIRECTIONS)
-    if value.get("q3_source"):
-        labels["source"] = value["q3_source"]
+    answer = value.get("q3_source")
+    source, by_rule = source_label(lead, answer)
+    if by_rule and answer and answer != source:
+        flag("source_rule_override", f"the model said {answer}; the host publishes {source}")
+    if source:
+        labels["source"] = source
     assertion = value.get("q4_assertion")
     if assertion:
         labels["assertion"] = assertion
