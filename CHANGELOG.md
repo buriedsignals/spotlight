@@ -4,6 +4,16 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added — Entity picks on the solo Ingest page
+
+- For each mention with no strong identifier, the Ingest page lists the
+  register's candidates (`bsig wiki resolve`, as text) and the member picks
+  one or no link. The pick is saved in `data/ingest-review.json`, bound by the
+  Ingest approval digest, and the wiki write links the mention to it
+  (`spotlight/entity-links.json`). No Batch 1.1 change; nothing is matched
+  automatically. Without Engine, an older bsig, no candidates or in newsroom
+  mode the page shows nothing new.
+
 ### Changed — Research triage by mode; no decision checks at Ingest
 
 - Research triage has no Q2 (direction) for any backend: no direction gold,

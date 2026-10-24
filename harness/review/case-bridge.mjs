@@ -172,6 +172,14 @@ function seamError(result) {
   return error;
 }
 
+const WORKSPACE_LOOKUP = `import json, os, sys
+sys.path.insert(0, sys.argv[1])
+from integrations._credentials import config_path
+try:
+    print(os.path.expanduser(json.loads(config_path().read_text(encoding="utf-8"))["knowledge_destination"]["workspace_path"]))
+except (OSError, ValueError, KeyError, TypeError):
+    pass`;
+
 // Engine's staged wiki changes, through `bsig wiki staged*`. bsig is found the
 // way the rest of Spotlight finds it (integrations/_engine.py bsig_path). The
 // confirmation nonce goes to bsig on stdin only, never on argv.
@@ -191,6 +199,17 @@ export function createWikiBridge({
     if (found.code !== 0) throw Object.assign(new Error("could not look up bsig"), { code: "failed", exitCode: found.code });
     bsig = found.stdout.trim();
     return bsig;
+  }
+
+  // The wiki the solo Ingest write uses (knowledge_destination.workspace_path),
+  // so the register lookup reads the same register; Engine's default without it.
+  let workspace = null;
+  async function workspaceArgs() {
+    if (workspace === null) {
+      const found = await exec(python, ["-E", "-s", "-c", WORKSPACE_LOOKUP, checkoutRoot]);
+      workspace = found.code === 0 ? found.stdout.trim() : "";
+    }
+    return workspace ? [`--workspace=${workspace}`] : [];
   }
 
   // The last JSON event bsig printed: its result, or an error with the refusal.
@@ -217,6 +236,8 @@ export function createWikiBridge({
     nonce: async (id) => (await run(["staged-nonce", id])).nonce,
     apply: (id, digest, nonce) => run(["staged-apply", id, `--digest=${digest}`], JSON.stringify({ nonce })),
     discard: (id, digest, nonce) => run(["staged-discard", id, `--digest=${digest}`], JSON.stringify({ nonce })),
+    // The register's answer for one mention ({name, type}), its arguments on stdin.
+    resolve: async (mention) => run(["resolve", ...(await workspaceArgs())], JSON.stringify(mention)),
   });
 }
 

@@ -93,6 +93,21 @@ targets the amendment check (D8) reads. The page digest also covers the
 triage, suggestions and round ledger the page shows, so an approval binds what
 the member saw; the receipt binds the leads, the clues and the saved review.
 
+## Entity picks (solo Ingest)
+
+For each entity mention in the batch with no strong identifier, the Ingest
+page asks Engine's register for candidates (`bsig wiki resolve`, the mention's
+name and type on stdin, against the solo wiki workspace) and lists each
+candidate's id, label and type as text. The member picks one or "None of
+these" (stored as `false`, never an id); the server accepts only an id it
+offered for the digest the page shows, and asks for a reload otherwise. The
+pick is an `entity:<mention>` item in `data/ingest-review.json`, so the
+approval digest binds it, and the wiki write links the mention to it as
+approved (an exact register link found then still wins). The page shows up
+to 50 mentions and 10 candidates each and says how many more it left out. Without Engine, with a bsig that lacks `resolve`,
+with no candidates or in newsroom mode the section does not appear; a failed
+lookup marks only that mention ("Could not look up") and the gate stays usable.
+
 ## Wiki changes
 
 When Engine is installed, the page also lists the wiki writes an agent staged
