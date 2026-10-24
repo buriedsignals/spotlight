@@ -178,7 +178,9 @@ export class EditorialClient {
 			const text = this.#clean(value);
 			if (options.keepReview) return text;
 			return (options.address ? text.split(options.address).join('[review page]') : text)
-				.replace(/\bhttps?:\/\/[^\s"'<>]+/gi, (found) => (isAllowedOrigin(this.#options.origins, found) ? '[address removed]' : found));
+				// Absolute or protocol-relative (//host/...) addresses.
+				.replace(/(?:\bhttps?:)?\/\/[^\s"'<>]+/gi, (found) =>
+					(found.startsWith('//') ? [`https:${found}`, `http:${found}`] : [found]).some((address) => isAllowedOrigin(this.#options.origins, address)) ? '[address removed]' : found);
 		}
 		if (Array.isArray(value)) return value.map((item) => this.sanitize(item, options, depth + 1));
 		if (value && typeof value === 'object') {
@@ -332,7 +334,7 @@ export class EditorialClient {
 		// Error text reaches the model: no address in it, since one may be a
 		// review page's capability.
 		if (result.isError) {
-			throw new EditorialToolError(`${tool}: ${this.#said(text || 'the Editorial MCP reported an error').replace(/\bhttps?:\/\/\S+/gi, '[address removed]')}`);
+			throw new EditorialToolError(`${tool}: ${this.#said(text || 'the Editorial MCP reported an error').replace(/(?:\bhttps?:)?\/\/\S+/gi, '[address removed]')}`);
 		}
 		const answer = (value: Record<string, unknown>) => {
 			const nonEmpty = (field: unknown) => typeof field === 'string' && field.length > 0;

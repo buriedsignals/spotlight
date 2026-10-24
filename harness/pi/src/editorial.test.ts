@@ -90,6 +90,7 @@ test('an HTTP or protocol error from the server reaches no log or case file with
 	for (const answer of [
 		(id: string) => new Response(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32000, message: `see ${page}` } }), { headers: { 'content-type': 'application/json' } }),
 		() => new Response(`unavailable, see ${page}`, { status: 500 }),
+		() => new Response(`unavailable, see ${page.replace('https:', '')}`, { status: 500 }),
 		(id: string) => Response.json({ jsonrpc: '1.0', id, result: {} }),
 	]) {
 		const fetchImpl: typeof fetch = async (_url, init) => answer(JSON.parse(String(init?.body)).id);
@@ -204,15 +205,17 @@ test('when the server ends the session under concurrent calls, the client starts
 
 // A case at ingest with ingestion requested and registered, and a client for
 // a fake Editorial MCP answering with `handlers`.
-test('a knowledge answer reaches the model without any review capability: no review_url key, no newsroom-endpoint address as a value or as a key', async (t) => {
+test('a knowledge answer reaches the model without any review capability: no review_url key, no newsroom-endpoint address (absolute or protocol-relative) as a value or as a key', async (t) => {
 	let reviewPage = '';
+	let hostRelative = '';
 	const newsroom = await startFakeEditorial({
 		handlers: {
-			get_record: () => ({ record: { record_id: 'claim:1', source_url: 'https://registry.example.org/company/42', note: `reviewed at ${reviewPage}`, links: [{ review_url: 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }], reviews: { [reviewPage]: 'pending' } } }),
+			get_record: () => ({ record: { record_id: 'claim:1', source_url: 'https://registry.example.org/company/42', note: `reviewed at ${reviewPage}, also ${hostRelative}`, links: [{ review_url: 'https://editorial.newsroom.example/review/rev-1?cap=secret-capability' }], reviews: { [reviewPage]: 'pending', [hostRelative]: 'pending' } } }),
 		},
 	});
 	t.after(() => newsroom.close());
 	reviewPage = `${origin(newsroom.url)}/review/rev-1?cap=secret-capability`;
+	hostRelative = `//${new URL(newsroom.url).host}/review/rev-2?cap=secret-capability`;
 	const client = new EditorialClient({ url: newsroom.url, token: newsroom.token, origins: [origin(newsroom.url)] });
 	const answer = JSON.stringify(await client.call('get_record', { record_id: 'claim:1' }));
 	assert.ok(!answer.includes('secret-capability') && !answer.includes('review_url'), answer);
