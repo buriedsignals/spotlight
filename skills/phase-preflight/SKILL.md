@@ -350,10 +350,10 @@ never recorded), and `model_tier` is not `12b` and sensitive mode is off, ask
 the user once, using the entry's `choice` text:
 
 > "Spotlight can add opt-in decision checks. A decision model on OpenRouter
-> (default `typesafe/jev-1.13`, zero data retention, US-hosted) flags findings
-> whose stored source does not support them and report prose that overstates
-> them; ingest uses it to catch changed knowledge-base propositions. Flags can
-> only lower confidence, never raise it. It needs your OpenRouter key, cost
+> (default `typesafe/jev-1.13`, served by TypeSafe in the US, which says it
+> does not train on inputs but keeps them as long as reasonably necessary)
+> flags findings whose stored source does not support them and report prose
+> that overstates them. Flags can only lower confidence, never raise it. It needs your OpenRouter key, cost
 > well under a cent per investigation in testing, and every investigation still
 > asks before anything is sent. Enable decision checks?"
 
@@ -367,7 +367,7 @@ Record the answer, preserving every other key:
       "decided_at": "<ISO timestamp>",
       "decided_by": "user",
       "env_file": "<optional absolute path to a private file holding OPENROUTER_API_KEY>",
-      "modes": {"investigation_gate": "advisory", "report": "advisory", "ingest": "advisory"}
+      "modes": {"investigation_gate": "advisory", "report": "advisory"}
     }
   }
 }

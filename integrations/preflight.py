@@ -138,8 +138,8 @@ def smoke_test(manifest: dict) -> tuple[bool, str | None]:
 DECISIONS_KEY = "OPENROUTER_API_KEY"
 DECISIONS_CHOICE = (
     "Opt-in decision checks: a decision model on OpenRouter (default typesafe/jev-1.13, "
-    "zero data retention) flags weak grounding and overstated report prose. Flags only lower "
-    "confidence. Needs an OpenRouter key; each case still asks before anything is sent."
+    "served by TypeSafe in the US) flags weak grounding and overstated report prose. Flags only "
+    "lower confidence. Needs an OpenRouter key; each case still asks before anything is sent."
 )
 
 
