@@ -86,7 +86,7 @@ SWEEP = (0.5, 0.6, 0.7, 0.8, 0.9)
 # both orders agreed on, "N1"/"S1" for the rules, or "clue:<group>" on the page.
 CATCH = {
     "weak_source_chain": {"q3_source=secondary", "q3_source=interested_party", "q3_source=user_generated",
-                          "q3_source=unclear", "q4_assertion=not_found", "q6_fidelity=unsupported", "S1"},
+                          "q3_source=unclear", "q6_fidelity=unsupported", "S1"},
     "summary_wider": {"q6_fidelity=widens", "q6_fidelity=contradicts", "q6_fidelity=unsupported", "N1"},
     "inference_as_fact": {"q4_assertion=interpretation", "q6_fidelity=widens", "q6_fidelity=unsupported"},
     "conflicting_values": {"q6_fidelity=contradicts", "c1_premise=contradicts", "clue:conflict"},
@@ -256,9 +256,11 @@ def run_case(fixture: Mapping[str, Any], split: str, contender: str, provider: A
         answers = {}
         if result is not None:
             answers = raw.get(_state_key(rr.lead_state(rr.parse_lead(lead))), {})
+        model_source = ((result or {}).get("answers") or {}).get("q3_source", {})
+        by_rule = result is not None and rr.source_label(rr.parse_lead(lead), model_source.get("value"))[1]
         detail.append({"item_id": item["item_id"], "gold": item["gold"], "absence": lead.get("absence", False),
                        "result": result, "raw": answers, "page_clues": sorted(ranked.get(item["item_id"], {}).get("clues", [])),
-                       "rule_clues": sorted(rule_groups.get(item["item_id"], set()))})
+                       "rule_clues": sorted(rule_groups.get(item["item_id"], set())), "source_by_rule": by_rule})
     return {"fixture": fixture["name"], "synthetic": fixture["synthetic"], "items": detail,
             "planted": [c for c in fixture["planted_clues"] if c["split"] == split], "conflicts": conflicts,
             "violations": violations, "invalid_leads": document["invalid_leads"]}
@@ -270,6 +272,11 @@ def signals(entry: Mapping[str, Any]) -> set[str]:
     out = {f"{qid}={a['value']}" for qid, a in (result.get("answers") or {}).items()
            if a.get("counted") and isinstance(a.get("value"), str)}
     reasons = {f["reason"] for f in result.get("flags", [])}
+    # What the page shows: Q3's label after the host rule (a rule catch when
+    # the host set it; see adds_over_rules).
+    source = (result.get("labels") or {}).get("source")
+    if source:
+        out = {s for s in out if not s.startswith("q3_source=")} | {f"q3_source={source}"}
     if "summary_refused" in reasons:
         out.add("N1")
     if "snippet_only" in reasons:
@@ -442,7 +449,8 @@ def adds_over_rules(runs: list[Mapping[str, Any]]) -> dict[str, int]:
             failure = entry["gold"].get("failure") or {}
             if failure.get("research_visible") and failure.get("class"):
                 found = signals(entry) & CATCH[failure["class"]]
-                rule_found = {s for s in found if s in RULE_SIGNALS or s[5:] in entry["rule_clues"]}
+                rule_found = {s for s in found if s in RULE_SIGNALS or s[5:] in entry["rule_clues"]
+                              or (entry.get("source_by_rule") and s.startswith("q3_source="))}
                 if found and not rule_found:
                     for qid in {s.split("=")[0] for s in found if "=" in s}:
                         gain[qid] += 1

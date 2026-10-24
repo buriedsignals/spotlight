@@ -23,6 +23,8 @@ let followUpNote = "";
 let wikiChanges = null;
 // Why the last wiki request failed; shown with a retry, apart from "none".
 let wikiError = "";
+// Case-search passages for the gate and record digest on show, fetched once each after the view.
+let passages = { gate: "", digest: "", data: null };
 
 const DECISION_LABELS = {
   methodology: { approved: "Approve the methodology" },
@@ -413,6 +415,7 @@ const LEAD_FLAG_LABELS = {
   absence_is_not_clearance: "Absence is not clearance",
   snippet_only: "Snippet only: cannot support a finding",
   summary_refused: "Summary refused: a figure is not in the excerpt",
+  source_rule_override: "Source set by its host (a register, gazette, court or procurement portal), not by the model",
   model_suggests_set_aside: "The model would set this aside; while triage only flags, that has no effect",
 };
 const LABEL_NAMES = { identity: "Identity", source: "Source", assertion: "Assertion", status: "Status" };
@@ -959,10 +962,58 @@ async function confirmWiki(action, change) {
   }
 }
 
+// ---------------------------------------------------------------- passages
+
+// Every gate: next to each claim the page shows, the case's own research
+// passages most worth reading (case search). Retrieval only, never a mark.
+function passageCard(claim) {
+  return el(
+    "div",
+    { className: "card" },
+    el("h3", { text: claim.label }),
+    el("p", { className: "quote", text: claim.claim }),
+    claim.passages.length
+      ? el(
+          "ol",
+          { "aria-label": `Passages for ${claim.label}` },
+          claim.passages.map((passage) =>
+            el("li", {}, el("span", { className: "tag", text: passage.path }), el("p", { className: "quote muted", text: passage.text })),
+          ),
+        )
+      : el("p", { className: "muted", text: claim.searched === false ? "Not searched: case search stopped before this claim." : "No passage in the case's research matched this claim." }),
+  );
+}
+
+function passagesSection() {
+  const data = passages.gate === view.gate && passages.digest === view.digest ? passages.data : null;
+  if (!data) return null;
+  if (!data.available) return el("p", { className: "muted", text: data.failed ? "Case search failed." : "Case search unavailable." });
+  if (!data.claims.length) return null;
+  return el(
+    "section",
+    { "aria-labelledby": "passages-heading" },
+    el("h2", { id: "passages-heading", text: "Passages worth reading" }),
+    el("p", { className: "muted", text: "Retrieval only: passages from this case's research that may support or contradict each claim. They are not verdicts." }),
+    data.note ? el("p", { className: "muted", text: data.note }) : null,
+    data.claims.map(passageCard),
+  );
+}
+
+// Passages count only for the record digest they were searched for.
+async function loadPassages(gate, digest) {
+  passages = { gate, digest, data: null };
+  const { status, data } = await post("/api/passages", {});
+  if (status !== 200 || data.gate !== gate || (data.available && data.digest !== digest)) return;
+  if (passages.gate !== gate || passages.digest !== digest) return;
+  passages = { gate, digest, data };
+  if (view?.gate === gate && view.digest === digest) render(view);
+}
+
 // ---------------------------------------------------------------- render
 
 function render(next) {
   view = next;
+  if (view.gate && (passages.gate !== view.gate || passages.digest !== view.digest)) loadPassages(view.gate, view.digest).catch(() => {});
   title.textContent = `Spotlight review: ${view.gate_label || boot.gates?.[view.gate] || view.gate}`;
   keepFocus(() => {
     // No gate pending: the page shows only the staged wiki changes.
@@ -996,10 +1047,11 @@ function render(next) {
     if (view.gate === "investigation_gate") parts.push(...investigationContent(view.content, view.items));
     if (view.gate === "report") parts.push(reportContent(view.content));
     if (view.gate === "ingest") parts.push(...ingestContent(view.content, view.items));
+    parts.push(passagesSection());
     if (!readOnly()) parts.push(decisionSection());
     if (wikiError) parts.push(wikiErrorSection());
     else if (wikiChanges?.length) parts.push(wikiSection());
-    app.replaceChildren(...parts);
+    app.replaceChildren(...parts.filter(Boolean));
   });
   app.setAttribute("aria-busy", busy ? "true" : "false");
 }

@@ -85,12 +85,12 @@ export function safeChildEnvironment(source = process.env) {
 
 // One bounded child process: its exit code (-1 when it did not exit normally),
 // stdout and stderr. input, if any, is its whole stdin.
-function runBounded(file, args, { cwd, env, input = "" }) {
+function runBounded(file, args, { cwd, env, input = "", signal }) {
   return new Promise((settle) => {
     const child = execFile(
       file,
       args,
-      { cwd, env, timeout: SEAM_TIMEOUT_MS, maxBuffer: MAX_OUTPUT, windowsHide: true },
+      { cwd, env, timeout: SEAM_TIMEOUT_MS, maxBuffer: MAX_OUTPUT, windowsHide: true, signal },
       (error, stdout, stderr) =>
         settle({ code: error ? (typeof error.code === "number" ? error.code : -1) : 0, stdout: String(stdout), stderr: String(stderr) }),
     );
@@ -112,13 +112,13 @@ export function createCaseBridge({
   const seam = join(checkoutRoot, "scripts", "spotlight-orchestration.py");
   const boundary = casesRoot ? ["--authorized-cases-root", casesRoot] : [];
 
-  async function run(args) {
-    const result = await runBounded(python, ["-E", "-s", seam, ...args, ...boundary, caseDir], { cwd: checkoutRoot, env });
+  async function run(args, signal) {
+    const result = await runBounded(python, ["-E", "-s", seam, ...args, ...boundary, caseDir], { cwd: checkoutRoot, env, signal });
     return { ...result, message: result.stderr.replace(/^FAIL\s+/, "").trim() };
   }
 
-  async function json(args) {
-    const result = await run(args);
+  async function json(args, signal) {
+    const result = await run(args, signal);
     if (result.code !== 0) throw seamError(result);
     return JSON.parse(result.stdout);
   }
@@ -126,6 +126,8 @@ export function createCaseBridge({
   return Object.freeze({
     status: () => json(["status", "--json"]),
     view: (gate) => json(["review-view", gate]),
+    // Case search for the claims the gate shows; retrieval only, outside the digest.
+    passages: (gate, signal) => json(["review-passages", gate], signal),
     edit: (gate, edit) => json(["review-edit", gate, "--edit", JSON.stringify(edit)]),
     issueNonce: async (gate) => (await json(["issue-review-nonce", gate])).nonce,
     async decide({ gate, decision, nonce, digest, approvedBy, approvedAt }) {

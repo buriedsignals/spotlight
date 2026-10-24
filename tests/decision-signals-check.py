@@ -247,6 +247,23 @@ def test_key_resolution_and_check(tmp: Path) -> None:
     assert "sk-or" not in out.getvalue(), "the key must never be printed"
     assert not (case / lib.SIGNALS_PATH).exists(), "--check makes no request and writes nothing"
 
+    # Kev on this computer (Ninja mode): no key, and a sensitive case may use it.
+    local = tmp / "local-config.json"
+    local.write_text(json.dumps({"integrations": {"decisions": {"enabled": True, "endpoint": {
+        "url": "http://127.0.0.1:8009/v1/systemone", "api": "openrouter-decisions"}}}}))
+    saved_config = os.environ.get("SPOTLIGHT_CONFIG")
+    os.environ["SPOTLIGHT_CONFIG"] = str(local)
+    out = io.StringIO(); stdout, sys.stdout = sys.stdout, out
+    try:
+        signals_cli.main([str(case), "--phase", "investigation-gate", "--config", str(local), "--check", "--case-opt-in", "--sensitive"])
+    finally:
+        sys.stdout = stdout
+        os.environ.pop("SPOTLIGHT_CONFIG")
+        if saved_config is not None:
+            os.environ["SPOTLIGHT_CONFIG"] = saved_config
+    local_check = json.loads(out.getvalue())
+    assert local_check["ready"] and not local_check["blockers"], local_check
+
 
 def test_refusals(tmp: Path) -> None:
     case = fresh_case(tmp / "refuse")

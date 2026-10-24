@@ -27,11 +27,11 @@ from typing import Mapping
 from questions import choice, noul, rev
 
 Q1_IDENTITY = {
-    "same_identifier": "The item shares a registry number, LEI, tax id, date of birth or exact address with a subject or event in the brief.",
-    "consistent_details": "The name and other details match a subject or event in the brief, but no identifier is shared.",
-    "name_only": "Only the name matches a subject or event in the brief; nothing else in the item confirms it is the same one.",
-    "different_subject_or_event": "The item is about a different subject or event that shares a name or topic with one in the brief.",
-    "none_of_the_brief": "The item is about none of the subjects or events in the brief.",
+    "same_identifier": "Yes: it shares a registry number, LEI, tax id, date of birth or exact address with one named in the premise.",
+    "consistent_details": "Yes: the name matches and the other details fit, but no identifier is shared.",
+    "name_only": "Only the name matches; nothing else shows it is the same one.",
+    "different_subject_or_event": "No: it is about a different person, company or event that shares a name or topic with one in the premise.",
+    "none_of_the_brief": "No: it is about none of the people, companies or events in the premise.",
 }
 Q3_SOURCE = {
     "primary_record": "A register, filing, court record, procurement notice or dataset entry.",
@@ -42,29 +42,28 @@ Q3_SOURCE = {
     "unclear": "The item does not show who is speaking.",
 }
 Q4_ASSERTION = {
-    "asserted": "The source states the content in its own voice, as a fact, record or decision.",
-    "reported_claim": "The source reports that someone alleges, claims or reports it.",
-    "interpretation": "The content is the source's own inference, analysis or opinion.",
-    "not_found": "The source does not contain the content of the item.",
+    "asserted": "As a fact, record or decision, in its own voice.",
+    "reported_claim": "As something someone claims, alleges or reports.",
+    "interpretation": "As its own analysis, estimate or opinion.",
 }
 Q5_STATUS = {
-    "done": "The item establishes that it happened or was carried out.",
-    "decided_not_done": "Approved, awarded or signed, but not shown to be carried out.",
-    "proposed_or_offered": "Planned, announced, advertised, recruited for or applied for.",
-    "not_established": "The item does not show whether it happened.",
-    "no_event": "The item describes no event or action.",
+    "done": "Yes: the excerpt says it happened or was carried out.",
+    "decided_not_done": "It was approved, awarded or signed, but the excerpt does not say it was carried out.",
+    "proposed_or_offered": "No: it was only planned, announced, advertised, recruited for or applied for.",
+    "not_established": "The excerpt does not say whether it happened.",
+    "no_event": "The summary describes a fact or a state, not an action or event.",
 }
 Q6_FIDELITY = {
-    "faithful": "The summary says no more than the excerpt: same actors, scope, status, relationships and figures. Translation and paraphrase are faithful.",
-    "widens": "The summary describes a larger group or scope, a firmer status, a stronger relationship, or a different actor or figure than the excerpt.",
-    "contradicts": "The summary states something the excerpt contradicts.",
-    "unsupported": "The excerpt does not contain what the summary says.",
+    "faithful": "Yes: the excerpt says everything the summary says. Translation and paraphrase are fine.",
+    "widens": "No: the summary says more than the excerpt: a bigger amount or group, a firmer status, a stronger link, or another actor or figure.",
+    "contradicts": "No: the excerpt says the opposite of the summary or gives a different value.",
+    "unsupported": "No: the summary says something the excerpt does not mention at all.",
 }
 C1_PREMISE = {
-    "supports": "The item is consistent with the premise and adds to it.",
-    "complicates": "The item adds a condition, an alternative explanation, a missing piece or a different actor to the premise.",
-    "contradicts": "The item states something incompatible with the premise, including a denial by an actor.",
-    "unrelated": "The item does not bear on the premise.",
+    "supports": "Backs it up, or adds detail that fits it.",
+    "complicates": "Adds a condition, another explanation, a missing piece or another actor.",
+    "contradicts": "Says something that cannot be true if the premise is true, or someone denies it.",
+    "unrelated": "Says nothing about the premise.",
 }
 C4_CONFLICT = {
     "agree": "Both items give the same value.",
@@ -75,12 +74,12 @@ C4_CONFLICT = {
 DIRECTION_NONE = "The item informs none of the approved research directions."
 
 QUESTIONS = {
-    "q1_identity": choice("Compare the item with the subjects and events in the brief. Which describes what the item is about?", Q1_IDENTITY),
+    "q1_identity": choice("Is the excerpt about a person, company or event named in the premise?", Q1_IDENTITY),
     "q3_source": choice("Who is speaking in this item's source?", Q3_SOURCE),
-    "q4_assertion": choice("How does the source present the content of this item?", Q4_ASSERTION),
-    "q5_status": choice("What does the item establish actually happened?", Q5_STATUS),
-    "q6_fidelity": choice("Compare the lane's summary with its verbatim excerpt. Which describes the summary?", Q6_FIDELITY),
-    "c1_premise": choice("Read the brief's premise and the item. How does the item relate to the premise?", C1_PREMISE),
+    "q4_assertion": choice("How does the excerpt state what the summary says?", Q4_ASSERTION),
+    "q5_status": choice("Does the excerpt show that the action or event in the summary actually happened?", Q5_STATUS),
+    "q6_fidelity": choice("Compare the summary with the excerpt. Does the excerpt back up the summary?", Q6_FIDELITY),
+    "c1_premise": choice("Read the premise, then the excerpt. What does the excerpt do to the premise?", C1_PREMISE),
 }
 ON_TRIAL = {
     "c2_new_actor": noul("Does the item connect a brief subject to a person or organisation the brief does not name, as owner, director, shareholder, payer, recipient or relative, or through a shared address, phone or email?"),
@@ -93,8 +92,11 @@ CONFLICT_TEXT = "Compare item A and item B about the same subject. How do their 
 # effect changes, so an acceptance measured under the old effects stops
 # counting. 2: an answer that only narrows to the brief's subjects or
 # directions never sets a lead aside; it labels it circumstantial or outside
-# the directions.
-EFFECTS_REVISION = 2
+# the directions. 3 (bank v3): Q4 has no not_found answer (D3 checks the
+# excerpt against the stored source), so no model answer sets a lead aside.
+# 4: a primary-record host sets Q3's source over a disagreeing answer, and a
+# social host labels it when no answer counted (research_rules.source_label).
+EFFECTS_REVISION = 4
 
 # Every choice question is asked in both option orders.
 PERMUTED = ("q1_identity", "q2_direction", "q3_source", "q4_assertion", "q5_status", "q6_fidelity", "c1_premise", "c4_conflict")

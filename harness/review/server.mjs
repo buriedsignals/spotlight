@@ -224,6 +224,39 @@ export async function startReviewServer({
     return { ...view, gate_label: GATE_LABELS[gate] };
   }
 
+  // Passages most worth reading next to each claim (case search through
+  // Engine). Retrieval only: Engine absent or off, or a search stopped, leaves
+  // a quiet "unavailable" note; any other failure a distinct "failed" one,
+  // never its text. The answer names the record digest it was searched for.
+  // One search per gate, for the record's latest digest (the claims are in
+  // the record), shared by concurrent requests. A new digest replaces the
+  // gate's search and stops the old one if still running; so does shutdown.
+  const searches = new Map();
+  async function passages() {
+    const unavailable = { gate, available: false, note: "case search unavailable", claims: [] };
+    if (typeof bridge.passages !== "function") return unavailable;
+    let search;
+    try {
+      const shown = gate;
+      const digest = (await bridge.view(shown)).digest;
+      search = searches.get(shown);
+      if (search?.digest !== digest) {
+        search?.stop.abort();
+        const stop = new AbortController();
+        search = { digest, stop, result: bridge.passages(shown, stop.signal) };
+        searches.set(shown, search);
+        const current = search;
+        search.result.catch(() => searches.get(shown) === current && searches.delete(shown));
+      }
+      const result = await search.result;
+      // The claims changed while Engine searched: these passages are not the record's.
+      if ((await bridge.view(shown)).digest !== search.digest) return unavailable;
+      return { ...result, gate: shown, digest: search.digest };
+    } catch {
+      return search?.stop.signal.aborted ? unavailable : { ...unavailable, failed: true, note: "case search failed" };
+    }
+  }
+
   // Checks shared by every decision: the gate still waits, the page saw the
   // current record, and the member's name is recorded.
   async function decisionPreconditions(digest) {
@@ -328,8 +361,12 @@ export async function startReviewServer({
           exactObject(await readJson(request), [], "view request");
           return sendJson(response, 200, await currentView());
         }
-        if (!gate && ["/api/edit", "/api/decide", "/api/follow-up"].includes(url.pathname))
+        if (!gate && ["/api/edit", "/api/decide", "/api/follow-up", "/api/passages"].includes(url.pathname))
           return sendJson(response, 409, { code: "not-pending", message: "No gate is waiting for a decision." });
+        if (url.pathname === "/api/passages") {
+          exactObject(await readJson(request), [], "passages request");
+          return sendJson(response, 200, await passages());
+        }
         if (url.pathname === "/api/edit") {
           const { edit } = exactObject(await readJson(request), ["edit"], "edit request");
           const view = await bridge.view(gate);
@@ -380,6 +417,7 @@ export async function startReviewServer({
   let stopped = false;
   function shutdown(reason = "closed") {
     if (stopped) return;
+    for (const search of searches.values()) search.stop.abort();
     if (inFlight) {
       active = false;
       pendingShutdown = reason;

@@ -19,6 +19,13 @@ and the zero-retention provider body is sent only to openrouter.ai. `api`
 must be `openrouter-decisions`; a server with another API needs an adapter in
 `client.py`.
 
+In Ninja mode the decision model is Kev 4B on this computer, served by its own
+`kev serve` on a literal loopback address (`127.0.0.1` or `::1`, never the
+name `localhost`). Its endpoint names no `credential_env`: such an endpoint
+takes no key, never goes through a proxy, sensitive mode allows it (nothing leaves
+the computer), and research triage uses it as the local model. Frontier mode
+leaves the endpoint out and uses Jev on OpenRouter.
+
 ## What it does
 
 `scripts/decision-signals.py` asks the decision model narrow, typed questions and
@@ -56,6 +63,15 @@ invalidates a finalized report). Deterministic code turns the answers into signa
 (`research_questions.py`, versioned on its own, outside `questions.ALL`) about
 each merged lead in `data/leads.json` and writes `data/research-triage.json`.
 Rules S1, S2 and N1 and the questions' effects are in `research_rules.py`.
+No answer sets a lead aside: answers label, flag or raise clues. Whether the
+stored source holds a lead's excerpt is D3's check (`research_checks.py`),
+which marks a failing lead unverifiable.
+
+A host rule backs Q3 without replacing it: a register, gazette, court or
+procurement host sets the source to `primary_record` (overriding a
+disagreeing answer, flagged), and a social host is the prior when no answer
+counted. The host list is `research_rules.PRIMARY_RECORD_HOSTS` and
+`SOCIAL_HOSTS`.
 
 - **Backend** (install config only): `integrations.decisions.research_triage`
   = `{"backend": "jev" | "clef" | "clef-flash" | "local" | "rules",
@@ -66,7 +82,7 @@ Rules S1, S2 and N1 and the questions' effects are in `research_rules.py`.
   the local tune or by rules. In newsroom mode cloud backends are off unless
   the decision endpoint is the newsroom's own. An unavailable backend falls
   back to rules, and the output says why.
-- **Flag-only until the acceptance test passes:** no model answer sets a lead
-  aside, C2 and C3 are not asked and no probability band is set. The output
+- **Flag-only until the acceptance test passes:** C2 and C3 are not asked and
+  no probability band is set. The output
   carries a notice the Research page shows.
 - A result that breaks the triage invariants (D7) is never written.

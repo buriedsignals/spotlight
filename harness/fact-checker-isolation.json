@@ -1,0 +1,10 @@
+{
+  "description": "D9: the fact-checker verifies findings independently of the research phase. A fact-checker task, or a case passage appended to it, that names any of these is refused (the Pi launcher, harness/pi/src/roles.ts) or left out (case search, integrations/case_search.py). Patterns are case-insensitive regular expressions valid in both JavaScript and Python (compiled ASCII-only there, as JavaScript's \\b and \\w are); matched against text with backslashes turned into forward slashes. The fact-checker's file tools hide the same material through denyReads in harness/composition.json.",
+  "taskNaming": [
+    { "pattern": "\\bresearch/swarm\\b", "label": "research/swarm/" },
+    { "pattern": "\\bleads\\.jsonl?\\b", "label": "the research leads" },
+    { "pattern": "\\bclues\\.json\\b", "label": "the research clues" },
+    { "pattern": "\\bresearch-(?:triage|review|suggestions)\\.json\\b", "label": "the research triage or review" },
+    { "pattern": "(?<![\\w.-])(?:https?://)?(?:localhost|127(?:\\.\\d{1,3}){3}|\\[::1\\])(?::\\d+)?(?![\\w.-])", "label": "a review page" }
+  ]
+}

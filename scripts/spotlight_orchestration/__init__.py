@@ -21,6 +21,7 @@ __all__ = [
     "request_follow_up",
     "resolve",
     "review_edit",
+    "review_passages",
     "review_view",
     "seal_investigation_gate",
     "start_research_round",
@@ -214,6 +215,13 @@ def review_edit(
     )
     if gate == "ingest":
         review.rebuild_ingest_batch(resolve_case(case_dir, authorized_cases_root))
+
+
+def review_passages(
+    case_dir: str | Path, gate: str, *, authorized_cases_root: str | Path | None = None
+) -> dict[str, Any]:
+    """Read-only case-search passages for the claims ``gate``'s page shows."""
+    return review.case_passages(resolve_case(case_dir, authorized_cases_root), gate)
 
 
 def review_view(
