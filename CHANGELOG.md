@@ -12,8 +12,8 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   research plan"). The Pi harness reads `SPOTLIGHT_RESEARCH_SWARMS`;
   subscription runtimes read `integrations.research_swarms.enabled` in the
   install config only when that variable is absent.
-- A case already in Research when the switch goes off stays at its step
-  (`research.resume_at: "research_off"`, `paused_at`): no lane, round, gate
+- A case already in Research when the switch goes off stays in Research
+  (`research.resume_at: "research_off"`): no lane, round, gate
   approval or amendment runs until Research is back on, or the member chooses
   to continue without research (`continue-without-research` drops the plan)
   and approves the plan without it at the Methodology gate. A switch value

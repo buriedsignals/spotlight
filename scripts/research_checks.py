@@ -206,7 +206,16 @@ def research_on(config: Mapping[str, Any]) -> bool:
         if value not in SWITCH_ON | SWITCH_OFF:
             raise ValueError('SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off".')
         return value in SWITCH_ON
-    return ((config.get("integrations") or {}).get("research_swarms") or {}).get("enabled") is True
+    integrations = config.get("integrations", {})
+    if not isinstance(integrations, Mapping):
+        raise ValueError("the install config's integrations must be an object")
+    switch = integrations.get("research_swarms", {})
+    if not isinstance(switch, Mapping):
+        raise ValueError("integrations.research_swarms must be an object")
+    enabled = switch.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("integrations.research_swarms.enabled must be true or false")
+    return enabled
 
 
 def d1_from_config(methodology: Mapping[str, Any], config: Mapping[str, Any],

@@ -103,7 +103,7 @@ While either is missing, or a topic of the plan is not merged yet,
 | (`research_approval`) | the member's marks and approval | the member, on the Research page |
 | `amendment` | `data/methodology-amendment.json`, checked by D8 | the investigator, AMENDMENT mode, TASK: AMEND; then code |
 | `round_topics` | `data/research-round.json` for a stalled investigation | the investigator, AMENDMENT mode, TASK: ROUND; then code |
-| `research_off` | nothing: the Research switch is off, and the case waits at `research.paused_at` | the member: tell them the message in `missing` and spawn no researcher. Only if they choose to continue without research: `spotlight_transition({operation: "continueWithoutResearch"})` (or `spotlight-orchestration.py continue-without-research {CASE_DIR}`), which drops the research plan and reopens the Methodology gate for their approval |
+| `research_off` | nothing: the Research switch is off, and the case waits in Research | the member: tell them the message in `missing` and spawn no researcher. Only if they choose to continue without research: `spotlight_transition({operation: "continueWithoutResearch"})` (or `spotlight-orchestration.py continue-without-research {CASE_DIR}`), which drops the research plan and reopens the Methodology gate for their approval |
 
 **Triage.** Right after the merge (in a runtime without the Pi harness):
 

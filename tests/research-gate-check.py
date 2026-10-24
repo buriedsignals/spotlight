@@ -304,14 +304,13 @@ class ResearchGate(SeamCase):
         self.research = "off"
         refused = self.seam("start-research-round", expect=3)
         self.assertIn(RESEARCH_PAUSED, refused.stderr)
-        self.assertEqual(self.status()["research"]["paused_at"], "round_topics")
+        self.assertEqual(self.status()["research"]["resume_at"], "research_off")
 
     def test_research_off_holds_a_researched_case_at_its_step_until_the_plan_drops_research(self) -> None:
         self.seam("approve", "methodology", *APPROVER)
         self.research = "off"
         lanes = self.status()
-        self.assertEqual((lanes["phase"], lanes["research"]["resume_at"], lanes["research"]["paused_at"]),
-                         ("research", "research_off", "lanes"))
+        self.assertEqual((lanes["phase"], lanes["research"]["resume_at"]), ("research", "research_off"))
         self.assertEqual(lanes["missing"], [RESEARCH_PAUSED])
         refused = self.seam("record-attempt", "research-lane", "--gap", "lane stopped", expect=3)
         self.assertIn(RESEARCH_PAUSED, refused.stderr)
@@ -322,7 +321,7 @@ class ResearchGate(SeamCase):
         self.assertEqual(self.status()["phase"], "research_approval")
         self.research = "off"
         held = self.status()
-        self.assertEqual((held["phase"], held["research"]["paused_at"]), ("research", "approval"))
+        self.assertEqual((held["phase"], held["research"]["resume_at"]), ("research", "research_off"))
         self.assertIn(RESEARCH_PAUSED, self.seam("approve", "research", *APPROVER, expect=3).stderr)
         self.research = "maybe"
         self.assertIn('SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off"', self.seam("status", "--json", expect=3).stderr)
@@ -343,6 +342,24 @@ class ResearchGate(SeamCase):
         refused = self.seam("approve", "methodology", *APPROVER, expect=3)
         self.assertIn("Research is off; turn on Research in the app to add a research plan", refused.stderr)
         self.assertEqual(self.status()["phase"], "methodology_approval")
+
+    def test_research_off_reads_no_research_output_and_a_finished_research_continues(self) -> None:
+        # An interrupted round left a corrupt output: the pause and the way back still work.
+        self.seam("approve", "methodology", *APPROVER)
+        write_json(self.case / "data/clues.json", read_json(PHASE.CLUES_SAMPLE))
+        (self.case / "data/leads.json").write_text("{", encoding="utf-8")
+        self.research = "off"
+        self.assertEqual(self.status()["research"]["resume_at"], "research_off")
+        self.seam("continue-without-research")
+        self.assertEqual(self.status()["phase"], "methodology_approval")
+        # Research approved and its amendment bound: the switch going off does not hold the investigation.
+        done = self.new_case("done")
+        self.research = "on"
+        self.to_research_gate({"clue:clue-1": "dismiss"}, case=done)
+        self.seam("approve", "research", *APPROVER, case=done)
+        self.unchanged_amendment(done)
+        self.research = "off"
+        self.assertEqual(self.status(done)["phase"], "investigation")
 
     def test_continue_without_research_is_only_for_a_case_research_off_paused(self) -> None:
         self.to_research_gate({})

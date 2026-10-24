@@ -842,8 +842,8 @@ test('with the Research switch off, an approved researched case resumes no lane:
 	await settledPrompt(chat, 'Continue.');
 
 	assert.equal(swarm.requests.length, 0);
-	const resolution = lastResolution(chat) as { phase: string; missing: string[]; research: { resume_at: string; paused_at: string }; research_round?: unknown };
-	assert.deepEqual([resolution.phase, resolution.research.resume_at, resolution.research.paused_at], ['research', 'research_off', 'lanes']);
+	const resolution = lastResolution(chat) as { phase: string; missing: string[]; research: { resume_at: string }; research_round?: unknown };
+	assert.deepEqual([resolution.phase, resolution.research.resume_at], ['research', 'research_off']);
 	assert.match(resolution.missing[0], /^Research is off\. Turn Research on in the app to continue this case/);
 	assert.equal(resolution.research_round, undefined);
 });

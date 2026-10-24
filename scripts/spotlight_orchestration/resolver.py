@@ -128,15 +128,13 @@ def research_switch_on() -> bool:
 
 
 def _research_paused(status: dict[str, Any]) -> dict[str, Any]:
-    """Research switched off mid-case: the case stays in Research at the step
-    it reached (``paused_at``), and nothing in Research runs or advances."""
-    research_state = status.get("research", {})
+    """Research switched off mid-case: the case stays in Research, and
+    nothing in Research runs or advances."""
     return {
         **status,
         "next_phase": "research",
         "missing": [RESEARCH_PAUSED],
-        "research": {**research_state, "resume_at": RESEARCH_PAUSED_STEP,
-                     "paused_at": research_state.get("resume_at", "approval")},
+        "research": {**status.get("research", {}), "resume_at": RESEARCH_PAUSED_STEP},
     }
 
 
@@ -165,6 +163,7 @@ def status_for(
     stall = research.stall_due(state, plan)
     if "blocked" in state and stall is None:
         return {**status, "status": "blocked", "next_phase": "blocked", "blocked": state["blocked"]}
+    on = research_switch_on() if stall is not None or plan is not None else True
     in_research = None
     if stall is not None:
         # The cycle cap is spent: a targeted research round, not a stop.
@@ -175,12 +174,17 @@ def status_for(
             "missing": [RESEARCH_ROUND],
             "research": stall,
         }
+    elif plan is not None and not on:
+        # Off: no Research output is read, so a corrupt one from an
+        # interrupted round cannot hide the pause or the way back.
+        if not research.research_done(case, state, ledger, backed):
+            in_research = {**status, "status": "active", "next_phase": "research"}
     elif plan is not None:
         steps = research.research_steps(case, state, plan, ledger, backed)
         if steps is not None:
             in_research = {**status, **steps}
     if in_research is not None:
-        return in_research if research_switch_on() else _research_paused(in_research)
+        return in_research if on else _research_paused(in_research)
 
     dependencies = investigation_gate_dependencies(case)
     dependency_digest = str(dependencies["dependency_digest"])
