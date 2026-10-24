@@ -220,8 +220,11 @@ export async function startReviewServer({
   // Lookups run a few at a time, each with its own deadline, all within one
   // page budget. Nothing without Engine, with an old bsig or with no
   // candidates; a failed or late lookup marks only that mention.
-  const registerAnswers = new Map();
+  // Engine's answers hold for one record digest, by the query sent (name and
+  // type); a pick carries them and the offer to the digest it produced.
+  let answers = { digest: "", byQuery: new Map() };
   let offer = { digest: "", ids: new Map() };
+  const entityQuery = (item) => ({ name: item.label, ...(item.entity_type ? { type: item.entity_type } : {}) });
   async function entityCandidates() {
     const none = { available: false, mentions: [] };
     if (gate !== "ingest" || typeof wiki?.resolve !== "function") return none;
@@ -230,7 +233,10 @@ export async function startReviewServer({
     const ids = new Map();
     const unresolved = view.items.filter((entry) => entry.kind === "entity_link");
     const shown = unresolved.slice(0, MAX_ENTITY_MENTIONS);
-    const queue = shown.filter((item) => !registerAnswers.has(item.key));
+    if (answers.digest !== view.digest) answers = { digest: view.digest, byQuery: new Map() };
+    const cache = answers.byQuery;
+    const cacheKey = (item) => JSON.stringify(entityQuery(item));
+    const queue = shown.filter((item) => !cache.has(cacheKey(item)));
     const failed = new Set();
     let unsupported = false;
     const budget = new AbortController();
@@ -242,11 +248,11 @@ export async function startReviewServer({
       budget.signal.addEventListener("abort", stop);
       try {
         if (budget.signal.aborted) throw new Error("the page budget ran out");
-        const result = await wiki.resolve({ name: item.label, ...(item.entity_type ? { type: item.entity_type } : {}) }, deadline.signal);
+        const result = await wiki.resolve(entityQuery(item), deadline.signal);
         if (deadline.signal.aborted) throw new Error("the lookup ran out of time");
         const valid = (Array.isArray(result?.candidates) ? result.candidates : [])
           .filter((candidate) => typeof candidate?.id === "string" && ENTITY_ID.test(candidate.id));
-        registerAnswers.set(item.key, {
+        cache.set(cacheKey(item), {
           more: Math.max(0, valid.length - MAX_CANDIDATES),
           candidates: valid
             .slice(0, MAX_CANDIDATES)
@@ -272,13 +278,14 @@ export async function startReviewServer({
         mentions.push({ key: item.key, name: item.label, candidates: [], failed: true });
         continue;
       }
-      const { candidates, more } = registerAnswers.get(item.key);
+      const { candidates, more } = cache.get(cacheKey(item));
       ids.set(item.key, new Set(candidates.map((candidate) => candidate.id)));
       if (candidates.length) mentions.push({ key: item.key, name: item.label, candidates, ...(more ? { more } : {}) });
     }
     const omitted = Math.max(0, unresolved.length - MAX_ENTITY_MENTIONS);
     if (!mentions.length && !omitted) return none;
-    offer = { digest: view.digest, ids };
+    // The record changed while Engine answered: a newer offer stands.
+    if ((await bridge.view(gate)).digest === view.digest) offer = { digest: view.digest, ids };
     return { available: true, digest: view.digest, mentions, ...(omitted ? { omitted_mentions: omitted } : {}) };
   }
 
@@ -464,7 +471,13 @@ export async function startReviewServer({
             if (edit.value !== false && !offer.ids.get(pick.key)?.has(edit.value))
               return sendJson(response, 422, { code: "refused", message: "Pick one of the register entities shown, or none." });
           }
-          return sendJson(response, 200, { ...(await bridge.edit(gate, edit)), gate_label: GATE_LABELS[gate] });
+          const saved = await bridge.edit(gate, edit);
+          // A pick changes only the review: the same offer holds for the digest it produced.
+          if (pick && edit.kind === "mark") {
+            offer = { ...offer, digest: saved.digest };
+            if (answers.digest === digest) answers = { ...answers, digest: saved.digest };
+          }
+          return sendJson(response, 200, { ...saved, gate_label: GATE_LABELS[gate] });
         }
         if (url.pathname === "/api/decide") {
           const [status, body] = await decide(await readJson(request));

@@ -44,13 +44,11 @@ test("unresolved mentions show the register's candidates as inert text, and only
   assert.equal(saved.status, 200);
   assert.equal(saved.body.items.find((item) => item.key === "entity:Acme").final, "acme-ltd");
   assert.notEqual(saved.body.digest, before.digest);
-  // An offer made for another digest (a stale tab, a changed review) is refused with the fresh view.
-  for (const digest of [before.digest, saved.body.digest]) {
-    const stale = await pick(false, digest);
-    assert.equal(stale.status, 409);
-    assert.equal(stale.body.code, "digest-changed");
-    assert.equal(stale.body.view.digest, saved.body.digest);
-  }
+  // A pick naming a digest the record has left (a stale tab) is refused with the fresh view.
+  const stale = await pick(false, before.digest);
+  assert.equal(stale.status, 409);
+  assert.equal(stale.body.code, "digest-changed");
+  assert.equal(stale.body.view.digest, saved.body.digest);
   const reoffered = (await json("/api/entity-candidates")).body;
   assert.equal(reoffered.digest, saved.body.digest);
   assert.equal(fake.calls().filter(({ argv }) => argv[2] === "resolve").length, 2, "the register's answers are kept for the page; only the offer is renewed");
@@ -106,4 +104,44 @@ test("a slow lookup is cut at its deadline and marked, without holding up the ot
   const { mentions } = (await json("/api/entity-candidates")).body;
   assert.ok(Date.now() - started < 3500, "the page waited for the slow lookup");
   assert.deepEqual(mentions.map(({ name, failed }) => [name, Boolean(failed)]), [["Acme", true], ["Doe", false]]);
+});
+
+test("two picks in a row are both saved without asking Engine again", async (t) => {
+  const root = tempRoot(t);
+  const fake = fakeBsig(root, { changes: [], resolve: { Acme: ACME, Doe: { status: "candidates", candidates: [{ id: "jane-doe", type: "person", label: "Jane Doe" }] } } });
+  const { json } = await authed(t, ingestCase(root), { wiki: fake.wiki });
+  const offer = (await json("/api/entity-candidates")).body;
+  const first = await json("/api/edit", { edit: { kind: "mark", key: "entity:Acme", value: "acme-ltd" }, digest: offer.digest });
+  assert.equal(first.status, 200);
+  // The page sends the digest its view now shows; the offer followed the pick.
+  const second = await json("/api/edit", { edit: { kind: "mark", key: "entity:Doe", value: "jane-doe" }, digest: first.body.digest });
+  assert.equal(second.status, 200, second.body.message);
+  assert.deepEqual(["entity:Acme", "entity:Doe"].map((key) => second.body.items.find((item) => item.key === key).final), ["acme-ltd", "jane-doe"]);
+  assert.equal(fake.calls().filter(({ argv }) => argv[2] === "resolve").length, 2);
+});
+
+test("an offer that finishes after a newer one does not replace it", async (t) => {
+  const root = tempRoot(t);
+  const fake = fakeBsig(root, { changes: [], slowOnce: { Acme: 2500 }, resolve: { Acme: ACME } });
+  const { json } = await authed(t, ingestCase(root), { wiki: fake.wiki });
+  const late = json("/api/entity-candidates");
+  await new Promise((settle) => setTimeout(settle, 300));
+  const renamed = await json("/api/edit", { edit: { kind: "reviewer", value: "Jane" } });
+  const fresh = (await json("/api/entity-candidates")).body;
+  assert.equal(fresh.digest, renamed.body.digest);
+  await late;
+  const pick = await json("/api/edit", { edit: { kind: "mark", key: "entity:Acme", value: "acme-ltd" }, digest: fresh.digest });
+  assert.equal(pick.status, 200, pick.body.message);
+});
+
+test("a changed mention type asks the register again", async (t) => {
+  const root = tempRoot(t);
+  const fake = fakeBsig(root, { changes: [], resolve: { Acme: ACME } });
+  const caseDir = ingestCase(root);
+  const { json } = await authed(t, caseDir, { wiki: fake.wiki });
+  await json("/api/entity-candidates");
+  writeFileSync(join(caseDir, "data", "knowledge-mentions.json"), JSON.stringify({ schema_version: "1.0", mentions: { Acme: { entity_type: "company" } } }));
+  await json("/api/entity-candidates");
+  const acme = fake.calls().filter(({ argv, stdin }) => argv[2] === "resolve" && JSON.parse(stdin).name === "Acme");
+  assert.deepEqual(acme.map(({ stdin }) => JSON.parse(stdin).type), [undefined, "company"]);
 });

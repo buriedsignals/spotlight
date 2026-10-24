@@ -1224,6 +1224,8 @@ async function edit(change, digest) {
   try {
     const { status, data } = await post("/api/edit", digest === undefined ? { edit: change } : { edit: change, digest });
     if (status === 200) {
+      // A saved pick carries the server's offer to the new digest.
+      if (digest !== undefined && entities.data?.digest === digest) entities = { digest: data.digest, data: { ...entities.data, digest: data.digest } };
       view = data;
       say("Saved.");
     } else if (data.view) {

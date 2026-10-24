@@ -105,6 +105,13 @@ const [, , verb, id] = argv;
 if (state.old || !(verb.startsWith("staged") || verb === "resolve")) out({ event: "error", message: "usage: bsig wiki <search|read>" }, 4);
 if (state.fail) out({ event: "error", message: state.fail }, 1);
 // The register's answer for one mention, its arguments read from stdin.
+// slowOnce: only the first lookup of that name is slow.
+if (verb === "resolve" && state.slowOnce?.[JSON.parse(stdin).name]) {
+  const ms = state.slowOnce[JSON.parse(stdin).name];
+  delete state.slowOnce[JSON.parse(stdin).name];
+  writeFileSync(statePath, JSON.stringify(state));
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
 if (verb === "resolve" && state.slowFor?.[JSON.parse(stdin).name]) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, state.slowFor[JSON.parse(stdin).name]);
 if (verb === "resolve" && (state.failFor ?? []).includes(JSON.parse(stdin).name)) out({ event: "error", message: "wiki: lookup failed" }, 1);
 if (verb === "resolve") out({ event: "result", data: { tool: verb, result: (state.resolve ?? {})[JSON.parse(stdin).name] ?? { status: "unknown" } } });
