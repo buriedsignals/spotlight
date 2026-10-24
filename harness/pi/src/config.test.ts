@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import type { TestContext } from 'node:test';
 import { createHash } from 'node:crypto';
-import { ConfigError, childEnv, readConfig, routeFor } from './config.ts';
+import { ConfigError, checkNewsroomInstall, checkRouteSecrets, childEnv, readConfig, resolverEnv, routeFor, secretValues } from './config.ts';
 import type { Composition } from './roles.ts';
 
 const COMPOSITION: Composition = {
@@ -64,14 +65,16 @@ test('newsroom routes: every process goes only to an own-inference route', () =>
 	const env = (inference: string[]) => ({
 		...BASE,
 		SPOTLIGHT_EDITION: 'newsroom',
+		SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
+		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token-0123456789',
 		SPOTLIGHT_ROUTES: routes(inference),
-		ROUTE_0_TOKEN: 'tok-0',
-		ROUTE_1_TOKEN: 'tok-1',
+		ROUTE_0_TOKEN: 'tok-0-0123456789abcdef',
+		ROUTE_1_TOKEN: 'tok-1-0123456789abcdef',
 	});
 
 	const mixed = readConfig(env(['third-party', 'own']));
 	assert.equal(routeFor(mixed).name, 'r1');
-	assert.equal(childEnv(mixed, COMPOSITION, 'investigator', env(['third-party', 'own'])).SPOTLIGHT_PROVIDER_API_KEY, 'tok-1');
+	assert.equal(childEnv(mixed, COMPOSITION, 'investigator', env(['third-party', 'own'])).SPOTLIGHT_PROVIDER_API_KEY, 'tok-1-0123456789abcdef');
 
 	const thirdPartyOnly = readConfig(env(['third-party']));
 	assert.throws(() => routeFor(thirdPartyOnly), /route you run yourself/);
@@ -110,6 +113,8 @@ test('the RLM endpoint that distills fetched pages must be one the operator runs
 	const newsroom = (rlm: string) => ({
 		...BASE,
 		SPOTLIGHT_EDITION: 'newsroom',
+		SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
+		SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token-0123456789',
 		SPOTLIGHT_ROUTES: JSON.stringify([
 			{ name: 'model', base_url: 'https://model.newsroom.example/v1', model: 'm', inference: 'own' },
 			{ name: 'rlm', base_url: 'https://rlm.newsroom.example/v1', model: 'e4b', inference: 'own' },
@@ -153,12 +158,14 @@ test('the swarm route exists only with the switch and a key, keeps zero data ret
 		readConfig({
 			...BASE,
 			SPOTLIGHT_EDITION: 'newsroom',
+			SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
+			SPOTLIGHT_EDITORIAL_MCP_TOKEN: 'editorial-token-0123456789',
 			SPOTLIGHT_SENSITIVE: 'false',
 			SPOTLIGHT_ROUTES: JSON.stringify([
 				{ name: 'model', base_url: 'https://model.newsroom.example/v1', model: 'm', inference: 'own' },
 				{ name: 'cloud', base_url: 'https://cloud.newsroom.example/v1', model: 'c', inference: 'third-party', key_env: 'CLOUD_TOKEN' },
 			]),
-			CLOUD_TOKEN: 'tok',
+			CLOUD_TOKEN: 'cloud-token-0123456789',
 			OPENROUTER_API_KEY: 'k',
 			SPOTLIGHT_RESEARCH_SWARMS: 'on',
 			SPOTLIGHT_SWARM_BASE_URL: swarmURL,
@@ -167,6 +174,79 @@ test('the swarm route exists only with the switch and a key, keeps zero data ret
 	const allowed = newsroom('https://cloud.newsroom.example/v1');
 	assert.ok(allowed.available);
 	assert.equal(allowed.route.keyEnv, 'CLOUD_TOKEN');
+});
+
+test('newsroom: a route token is never the Editorial MCP token or a tool secret, and a token too short to redact is refused', () => {
+	const env = (keyEnv: string, token = 'editorial-token-0123456789') => ({
+		...BASE,
+		SPOTLIGHT_EDITION: 'newsroom',
+		SPOTLIGHT_EDITORIAL_MCP_URL: 'https://editorial.newsroom.example/mcp',
+		SPOTLIGHT_EDITORIAL_MCP_TOKEN: token,
+		SPOTLIGHT_ROUTES: JSON.stringify([{ name: 'model', base_url: 'https://model.newsroom.example/v1', model: 'm', inference: 'own', key_env: keyEnv }]),
+		REGISTRY_API_KEY: 'reg-secret-0123456789',
+		ROUTE_TOKEN: 'route-secret-0123456789',
+	});
+	// Accepted, the Editorial token would reach every pi process as its route key.
+	assert.throws(() => readConfig(env('SPOTLIGHT_EDITORIAL_MCP_TOKEN')), /key_env may not name SPOTLIGHT_EDITORIAL_MCP_TOKEN/);
+	// A variable Spotlight passes on to helper programs (the browser opener, every tool) is never a route token.
+	for (const name of ['DBUS_SESSION_BUS_ADDRESS', 'HOME', 'TOR_SOCKS', 'ANOMALY_HOME', 'SCRAPE_PROVIDER']) assert.throws(() => readConfig({ ...env(name), [name]: 'route-secret-0123456789' }), new RegExp(`key_env may not name ${name}`));
+	assert.throws(() => checkRouteSecrets(readConfig(env('REGISTRY_API_KEY')), COMPOSITION, env('REGISTRY_API_KEY')), /REGISTRY_API_KEY .*tool secret/);
+	const ok = readConfig(env('ROUTE_TOKEN'));
+	assert.doesNotThrow(() => checkRouteSecrets(ok, COMPOSITION, env('ROUTE_TOKEN')));
+	// The resolver (launcher or model tool) runs without any token or tool key.
+	const forResolver = resolverEnv({ ...env('ROUTE_TOKEN'), SPOTLIGHT_PROVIDER_API_KEY: 'route-secret-0123456789' }, COMPOSITION, ok.routes);
+	for (const name of ['SPOTLIGHT_EDITORIAL_MCP_TOKEN', 'ROUTE_TOKEN', 'SPOTLIGHT_PROVIDER_API_KEY', 'REGISTRY_API_KEY']) assert.equal(forResolver[name], undefined, name);
+	assert.equal(forResolver.SPOTLIGHT_EDITION, 'newsroom');
+	// The client sends the Editorial token trimmed, so the trimmed value is redacted too.
+	assert.ok(secretValues(ok, COMPOSITION, { ...env('ROUTE_TOKEN'), SPOTLIGHT_EDITORIAL_MCP_TOKEN: ' editorial-token-0123456789\n' }).includes('editorial-token-0123456789'));
+	// A tool secret too short for the redactor to catch is refused, not left unredacted.
+	assert.throws(() => checkRouteSecrets(ok, COMPOSITION, { ...env('ROUTE_TOKEN'), REGISTRY_API_KEY: 'abc' }), /REGISTRY_API_KEY is shorter than 4 characters/);
+	assert.equal(childEnv(ok, COMPOSITION, 'orchestrator', env('ROUTE_TOKEN')).SPOTLIGHT_PROVIDER_API_KEY, 'route-secret-0123456789');
+	assert.throws(() => readConfig(env('ROUTE_TOKEN', 'abc')), /shorter than 16 characters/);
+	assert.throws(() => readConfig({ ...env('ROUTE_TOKEN'), ROUTE_TOKEN: 'tok' }), /ROUTE_TOKEN is shorter than 16 characters/);
+	// The same value under a route's name would carry the Editorial token into Pi.
+	assert.throws(() => checkRouteSecrets(readConfig(env('ROUTE_TOKEN', 'route-secret-0123456789')), COMPOSITION, env('ROUTE_TOKEN', 'route-secret-0123456789')), /ROUTE_TOKEN holds the Editorial MCP token/);
+	assert.throws(() => checkRouteSecrets(ok, COMPOSITION, { ...env('ROUTE_TOKEN'), REGISTRY_API_KEY: 'editorial-token-0123456789' }), /REGISTRY_API_KEY holds the Editorial MCP token/);
+	// A role that declares the Editorial token as one of its keys still never receives it.
+	const leaky: Composition = { ...COMPOSITION, orchestrator: { ...COMPOSITION.orchestrator, keys: ['SPOTLIGHT_EDITORIAL_MCP_TOKEN'] } };
+	assert.equal(childEnv(ok, leaky, 'orchestrator', env('ROUTE_TOKEN')).SPOTLIGHT_EDITORIAL_MCP_TOKEN, undefined);
+});
+
+test('a newsroom install starts only as the newsroom edition: omitted or solo SPOTLIGHT_EDITION is refused', () => {
+	const install = join(mkdtempSync(join(tmpdir(), 'spotlight-install-')), 'config.json');
+	writeFileSync(install, JSON.stringify({ knowledge_destination: { mode: 'newsroom' } }));
+	const env = { ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', SPOTLIGHT_CONFIG: install };
+	for (const edition of [{}, { SPOTLIGHT_EDITION: 'solo' }]) {
+		assert.throws(() => checkNewsroomInstall(readConfig({ ...env, ...edition })), /is in newsroom mode, so SPOTLIGHT_EDITION must be "newsroom"/);
+	}
+	writeFileSync(install, JSON.stringify({ knowledge_destination: { mode: 'solo' } }));
+	assert.doesNotThrow(() => checkNewsroomInstall(readConfig(env)));
+});
+
+test('a solo provider key too short to redact is refused; a keyless local model is not', () => {
+	const env = { ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm' };
+	assert.throws(() => checkRouteSecrets(readConfig({ ...env, SPOTLIGHT_PROVIDER_API_KEY: 'abc' }), COMPOSITION, { ...env, SPOTLIGHT_PROVIDER_API_KEY: 'abc' }), /SPOTLIGHT_PROVIDER_API_KEY is shorter than 4 characters/);
+	assert.doesNotThrow(() => checkRouteSecrets(readConfig(env), COMPOSITION, env));
+});
+
+test('an install config that exists but cannot be read, or names no valid mode, stops the start; a missing one is solo', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'spotlight-install-'));
+	const install = join(dir, 'config.json');
+	const env = { ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', SPOTLIGHT_CONFIG: install };
+	assert.doesNotThrow(() => checkNewsroomInstall(readConfig(env)), 'no install config: the documented solo default');
+	for (const [content, error] of [['{"knowledge_destination": {"mode": "newsroom"', /cannot be read/], [JSON.stringify({ knowledge_destination: { mode: 'team' } }), /mode must be "solo" or "newsroom"/]] as const) {
+		writeFileSync(install, content);
+		assert.throws(() => checkNewsroomInstall(readConfig(env)), error);
+	}
+	assert.throws(() => checkNewsroomInstall(readConfig({ ...env, SPOTLIGHT_CONFIG: dir })), /cannot be read/);
+	for (const content of ['null', '[]', '"newsroom"', '3']) {
+		writeFileSync(install, content);
+		assert.throws(() => checkNewsroomInstall(readConfig(env)), /is not a JSON object/, content);
+	}
+	for (const [content, error] of [[{ knowledge_destination: 'newsroom' }, /knowledge_destination must be an object/], [{ knowledge_destination: { mode: null } }, /mode must be "solo" or "newsroom"/]] as const) {
+		writeFileSync(install, JSON.stringify(content));
+		assert.throws(() => checkNewsroomInstall(readConfig(env)), error, JSON.stringify(content));
+	}
 });
 
 async function chatSpace(t: TestContext) {

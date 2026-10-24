@@ -56,6 +56,39 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   acceptance harness reports circumstantial keeps apart from lost leads, and
   the Research page lists them in a Circumstantial section.
 
+### Added — Newsroom edition, harness side
+
+- The Pi harness's newsroom edition calls the newsroom's Editorial MCP
+  (MCP Streamable HTTP), defined for the server side in
+  `docs/newsroom-editorial-mcp.md` with a JSON Schema per tool in
+  `schemas/editorial-mcp/`. Only the launcher holds the route-scoped token;
+  pi processes reach the Editorial MCP through it.
+- Case start: `register_case` once per case (`data/editorial-case.json`); a
+  resumed case reuses the reference. The sign-in is checked at every start.
+- Prior knowledge: `search_knowledge`, `get_record`, `traverse` and
+  `coverage` replace `query_vault` for every role, and the prior-knowledge
+  research lane runs on `search_knowledge` instead of being left out.
+- Decision checks: `run_checks` replaces `decision_signals` at the
+  Investigation gate and the Report; the flags land in
+  `data/newsroom-checks.json` and the review pages show them.
+- Ingest: `newsroom_submit` builds the Submit package
+  (`scripts/newsroom-package.py`: cited evidence only, hashed manifest,
+  declared omissions), calls `submit_case_review` and `get_review_status`,
+  and records the receipts in `{case}/receipts/` under the case lock, after
+  a recorded intent that a restart resumes with the same idempotency key.
+  The review page opens in the member's browser only. A failed integrity
+  check leaves the case at Ingest with the reasons on the ingest page.
+- Credentials: `SPOTLIGHT_EDITORIAL_MCP_URL` and `SPOTLIGHT_EDITORIAL_MCP_TOKEN`
+  are required in the newsroom edition, with an install config in newsroom
+  mode. A token goes only to the newsroom's routes and Editorial MCP;
+  redirects are not followed; a revoked or expired token stops the harness
+  with a plain message (exit code 4), and so does an Editorial MCP that
+  cannot be used (exit code 5); the token never appears in logs or answers,
+  and no route may use it as its key.
+- Journalist-input intake stays in the newsroom edition;
+  `journalist_input_units()` in `scripts/newsroom-package.py` is the
+  extension point and contributes nothing here.
+
 ### Removed — Flue harness
 
 - `harness/flue/` and `tests/flue-build-check.sh` are gone; the Pi harness

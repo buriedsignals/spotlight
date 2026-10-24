@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spotlight.buriedsignals.com/schemas/editorial-mcp/coverage.schema.json",
+  "title": "Editorial MCP tool coverage",
+  "description": "The coverage report for an approved record.",
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "record_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9._:/-]+$"
+        }
+      },
+      "required": [
+        "record_id"
+      ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "record_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9._:/-]+$"
+        },
+        "coverage": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "record_id",
+        "coverage"
+      ]
+    }
+  }
+}

@@ -128,7 +128,7 @@ type GuardedChromium = { endpoint: string; close: () => Promise<void> };
 // Starts a headless Chromium whose every connection, loopback included, goes
 // through `proxyURL`, with a fresh profile and DevTools on an ephemeral
 // loopback port. Resolves with the DevTools WebSocket endpoint.
-async function startGuardedChromium(executable: string, proxyURL: string, signal?: AbortSignal): Promise<GuardedChromium> {
+async function startGuardedChromium(executable: string, proxyURL: string, env: Env, signal?: AbortSignal): Promise<GuardedChromium> {
 	const profile = mkdtempSync(join(tmpdir(), 'spotlight-browse-profile-'));
 	const child = spawn(
 		executable,
@@ -147,7 +147,7 @@ async function startGuardedChromium(executable: string, proxyURL: string, signal
 			'--password-store=basic',
 			'about:blank',
 		],
-		{ stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true },
+		{ stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true, env: programEnv(env) },
 	);
 	const exited = new Promise<void>((done) => child.once('exit', () => done()));
 	const close = async () => {
@@ -198,7 +198,7 @@ export async function runGuardedBrowse(
 	let chromium: GuardedChromium | undefined;
 	try {
 		writeFileSync(scriptPath, script, { mode: 0o600 });
-		chromium = await startGuardedChromium(executable, proxy.url, options.signal);
+		chromium = await startGuardedChromium(executable, proxy.url, options.env, options.signal);
 		return programOutput(
 			'browse',
 			await runFixed('dev-browser', ['--browser', 'spotlight-browse', '--connect', chromium.endpoint, '--timeout', '90', 'run', scriptPath], {
