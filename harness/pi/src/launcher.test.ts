@@ -405,6 +405,39 @@ test('after a planning task the harness runs the methodology check, not the find
 	assert.doesNotMatch(delegated, /validate-case\.py/);
 });
 
+test('with the Research switch off, the methodology check refuses a research plan; with it on, the plan is checked as usual', async (t) => {
+	const methodology = await readFile(join(CHECKOUT_ROOT, 'tests/fixtures/research/methodology-research.sample.json'), 'utf8');
+	for (const research of ['off', 'on']) {
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'investigator')) {
+				return toolResults(request).length === 0
+					? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: methodology } }] }
+					: { text: 'Plan written.' };
+			}
+			return toolResults(request).length === 0
+				? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: PLANNING' } }] }
+				: { text: 'Done.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = join(space.casesRoot, 'case-a');
+		await mkdir(join(caseDir, 'data'), { recursive: true });
+		await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
+		// The install config says the opposite, so only the harness's switch can decide.
+		const config = join(space.root, 'spotlight-config.json');
+		await writeFile(config, JSON.stringify({ model_tier: '12b', integrations: { research_swarms: { enabled: research === 'off' } } }));
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: config, SPOTLIGHT_RESEARCH_SWARMS: research });
+
+		await settledPrompt(chat, 'Continue.');
+
+		const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+		const delegated = toolResults(orchestrator[orchestrator.length - 1]).join('\n');
+		assert.match(delegated, /validate-methodology-navigator\.py/, research);
+		if (research === 'off') assert.match(delegated, /Research is off; turn on Research in the app to add a research plan/);
+		else assert.doesNotMatch(delegated, /Research is off/);
+	}
+});
+
 // An activated case paused at the Ingest decision, built by the review-page
 // fixture (tests/fixtures/review_case.py) through the resolver's own seam.
 async function caseDigests(caseDir: string): Promise<Map<string, string>> {

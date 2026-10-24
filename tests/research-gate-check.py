@@ -82,10 +82,14 @@ ROUND = {
 class SeamCase(unittest.TestCase):
     case: Path
 
+    # The Pi harness passes Engine's Research switch to the seam; a researched case has it on.
+    research = "on"
+
     def seam(self, *args: str, expect: int = 0, case: Path | None = None) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
             [sys.executable, str(SEAM), *args, str(case or self.case)],
-            capture_output=True, text=True, check=False, env={"PATH": "", "PYTHONNOUSERSITE": "1"},
+            capture_output=True, text=True, check=False,
+            env={"PATH": "", "PYTHONNOUSERSITE": "1", "SPOTLIGHT_RESEARCH_SWARMS": self.research},
         )
         self.assertEqual(result.returncode, expect, result.stderr or result.stdout)
         return result
@@ -287,6 +291,16 @@ class ResearchGate(SeamCase):
         write_json(self.case / "data/research-round.json", bad)
         refused = self.seam("start-research-round", expect=3)
         self.assertIn("not a direction_id of investigation_plan", refused.stderr)
+        self.assertEqual(self.status()["research"]["resume_at"], "round_topics")
+
+    def test_a_stall_round_is_refused_when_research_is_off(self) -> None:
+        self.through_amendment()
+        for cycle in (1, 2, 3):
+            self.fail_cycle(cycle)
+        write_json(self.case / "data/research-round.json", ROUND)
+        self.research = "off"
+        refused = self.seam("start-research-round", expect=3)
+        self.assertIn("Research is off; turn on Research in the app", refused.stderr)
         self.assertEqual(self.status()["research"]["resume_at"], "round_topics")
 
     def test_a_stored_case_with_four_or_five_cycles_enters_the_stall_flow(self) -> None:

@@ -9,8 +9,9 @@ phase: research
 
 Start or resume only from a `spotlight_resolve` result passed by the parent
 with `owner: phase-research`. A case reaches Research only when its approved
-`data/methodology.json` carries a `research_plan`; a case approved without one
-goes straight to Investigation, as before.
+`data/methodology.json` carries a `research_plan`, which the methodology check
+allows only while the Research switch in the app is on; a case approved
+without one goes straight to Investigation, as before.
 
 Research turns the approved topic briefs into leads. A lead is a candidate for
 the investigation, never a finding and never evidence on its own. Fetched text
@@ -143,7 +144,8 @@ by editing the research plan at the Methodology gate.
 
 The Pi harness stops the round itself and returns `research_round.stopped`
 (`key_rejected`, `no_credit`, `upstream_error`, or `swarm_unavailable` when
-the plan uses the swarm but the switch is off or no key is set); its
+the plan uses the swarm but the Research switch was turned off after approval
+or no key is set); its
 `message` already says what to fix. A stopped round is not retried until the
 member asks: then call `spotlight_resolve` with `retry_research: true`, which
 runs only the topics that did not finish.
@@ -246,7 +248,9 @@ spotlight_transition({operation: "startResearchRound"})
 (Or `execute-shell("scripts/spotlight-python scripts/spotlight-orchestration.py start-research-round {CASE_DIR}")`.)
 
 Code checks the round's topics with D1 and appends them to `research_plan`; a
-refusal names what to fix. The round then runs like any other (lanes, merge,
+refusal names what to fix. With the Research switch off, D1 refuses the round
+("Research is off"): tell the member, and do not retry unless they turn
+Research back on. The round then runs like any other (lanes, merge,
 triage, suggestions) under the plan's consent and budget, and the member
 approves it with its leads on the Research page. That approval grants one
 more investigation cycle. If that cycle also fails, the case stops with a

@@ -4,6 +4,15 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed — Research is one opt-in package
+
+- With the Research switch off there is no Research phase: D1 refuses any
+  `research_plan` (local-only lanes included) and a stalled investigation's
+  research round ("Research is off; turn on Research in the app to add a
+  research plan"). The Pi harness reads `SPOTLIGHT_RESEARCH_SWARMS`;
+  subscription runtimes read `integrations.research_swarms.enabled` in the
+  install config.
+
 ### Changed — Research triage by mode; no decision checks at Ingest
 
 - Research triage has no Q2 (direction) for any backend: no direction gold,

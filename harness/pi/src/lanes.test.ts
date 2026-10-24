@@ -225,7 +225,7 @@ test('no swarm request without the opt-in: switch off, no consent, or a local-on
 	assert.deepEqual(noConsent.left_out.map((item) => item.topic_id), ['ownership-web']);
 	const switchOff = await round(space, fakes, plan([topic('ownership-web')]), { SPOTLIGHT_RESEARCH_SWARMS: 'off' });
 	assert.equal(switchOff.stopped?.code, 'swarm_unavailable');
-	assert.match(switchOff.stopped!.message, /Research swarms/);
+	assert.match(switchOff.stopped!.message, /the Research switch is off\. Turn on Research/);
 	const noKey = await round(space, fakes, plan([topic('ownership-web-2')]), { OPENROUTER_API_KEY: '' });
 	assert.equal(noKey.stopped?.code, 'swarm_unavailable');
 

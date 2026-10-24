@@ -141,20 +141,24 @@ and role files. Full reference: [`harness/pi/README.md`](../harness/pi/README.md
 ## Research mode per runtime
 
 Research runs only when the approved methodology has a `research_plan`
-([investigating.md](investigating.md#research)). The plan's mode decides who
-runs the lanes, and the Research page and report state which mode ran, the
-spend and the topics left out.
+([investigating.md](investigating.md#research)), and a methodology may carry
+one only while the Research switch in the app is on: the Pi harness reads
+`SPOTLIGHT_RESEARCH_SWARMS`, subscription runtimes the install config's
+`integrations.research_swarms.enabled`. Off, there is no Research phase, local
+lanes included; the case goes from Methodology to Investigation. The plan's
+mode decides who runs the lanes, and the Research page and report state which
+mode ran, the spend and the topics left out.
 
 | Mode | Where | Who runs the lanes | Spend |
 |---|---|---|---|
-| Local lanes only (`local_only`) | any runtime; what runs without the swarm opt-in | the local-corpus and prior-knowledge lanes, on the local model. Web research stays in Investigation | none |
+| Local lanes only (`local_only`) | any runtime, with Research on and no swarm opt-in | the local-corpus and prior-knowledge lanes, on the local model. Web research stays in Investigation | none |
 | OpenRouter swarm (`openrouter_swarm`) | Spotlight Pi harness | one cloud agent per approved topic, on OpenRouter with the member's key | $1 a round by default, at most $5 per case |
 | Subscription subagents (`subscription_subagents`) | Claude Code, Codex and other frontier hosts | the host's own subagents, one `researcher` per approved topic | not reported |
 | Newsroom (`newsroom`) | newsroom edition | only endpoints the newsroom allows | as the newsroom sets it |
 
 - **The swarm is opt-in and never local.** In the Pi harness it runs only when
-  Engine's "Research swarms" switch is on (it is off by default) and an
-  OpenRouter key is set; the harness reads `SPOTLIGHT_RESEARCH_SWARMS=on`.
+  the Research switch is on (it is off by default) and an OpenRouter key is
+  set.
   It never runs in sensitive mode. Requests ask for zero data retention. The
   default model is DeepSeek V4 Flash, with GLM 5.3 as fallback.
 - **What it receives.** Each swarm agent gets only its approved topic brief and

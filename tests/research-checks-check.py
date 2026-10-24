@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -21,6 +22,7 @@ from research_lane_fixture import ROOT, Case, checks, clone, methodology, topic 
 CATALOGUE = {"web", "registries", "archives", "social", "technical", "news-courts", "local-corpus",
              "prior-knowledge", "ad-hoc"}
 VALIDATOR = ROOT / "scripts" / "validate-methodology-navigator.py"
+RESEARCH_OFF = "Research is off; turn on Research in the app to add a research plan"
 
 
 def d1(method: dict, *, sensitive: bool = False, newsroom: bool = False, local_model: bool = True) -> list[str]:
@@ -124,6 +126,17 @@ class D1LanePlan(unittest.TestCase):
         brief["route"] = "local"
         self.assertIn("needs a local model endpoint", " ".join(d1(method, local_model=False)))
 
+    def test_research_off_refuses_any_research_plan_and_on_keeps_a_local_only_plan(self) -> None:
+        local_only = methodology(topic("ownership-local-corpus", "ownership", "local-corpus", route="local"))
+        plan_of(local_only)["egress"] = [{"topic_id": "ownership-local-corpus", "destination": "local_model"}]
+        no_plan = methodology()
+        del no_plan["research_plan"]
+        with unittest.mock.patch.dict(os.environ, {"SPOTLIGHT_RESEARCH_SWARMS": "off"}):
+            self.assertEqual(checks.d1_from_config(local_only, {}, local_model=True), [RESEARCH_OFF])
+            self.assertEqual(checks.d1_from_config(no_plan, {}, local_model=True), [])
+        with unittest.mock.patch.dict(os.environ, {"SPOTLIGHT_RESEARCH_SWARMS": "on", "SPOTLIGHT_SENSITIVE": ""}):
+            self.assertEqual(checks.d1_from_config(local_only, {}, local_model=True), [])
+
     def test_newsroom_mode_sends_nothing_to_openrouter(self) -> None:
         method = methodology()
         problems = d1(method, newsroom=True)
@@ -142,12 +155,19 @@ class D1LanePlan(unittest.TestCase):
             config = Path(tmp) / "config.json"
             config.write_text(json.dumps({"model_tier": "frontier", "integrations": {}}), encoding="utf-8")
 
-            def validate() -> subprocess.CompletedProcess[str]:
-                env = {k: v for k, v in os.environ.items() if k not in ("SPOTLIGHT_SENSITIVE", "SPOTLIGHT_MODEL_BASE_URL")}
+            def validate(**extra: str) -> subprocess.CompletedProcess[str]:
+                env = {k: v for k, v in os.environ.items()
+                       if k not in ("SPOTLIGHT_SENSITIVE", "SPOTLIGHT_MODEL_BASE_URL", "SPOTLIGHT_RESEARCH_SWARMS")}
                 return subprocess.run([sys.executable, str(VALIDATOR), str(case), "--config", str(config)],
-                                      text=True, capture_output=True, check=False, env=env)
+                                      text=True, capture_output=True, check=False, env={**env, **extra})
 
+            # Subscription path: no launcher, the install config's switch is off.
+            self.assertIn(RESEARCH_OFF, validate().stderr)
+            config.write_text(json.dumps({"model_tier": "frontier", "integrations": {"research_swarms": {"enabled": True}}}),
+                              encoding="utf-8")
             self.assertEqual(validate().returncode, 0, validate().stderr)
+            # Pi path: the harness passes its switch, which wins over the config.
+            self.assertIn(RESEARCH_OFF, validate(SPOTLIGHT_RESEARCH_SWARMS="off").stderr)
             method["research_plan"]["consent"]["swarm"] = False
             Case.write_json(case / "data" / "methodology.json", method)
             result = validate()

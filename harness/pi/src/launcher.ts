@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ConfigError, RouteRefused, checkNewsroomInstall, checkRouteSecrets, childEnv, parseLaunchArgs, piSettings, readConfig, routeFor, resolverEnv, secretValues } from './config.ts';
+import { ConfigError, RouteRefused, checkNewsroomInstall, checkRouteSecrets, childEnv, parseLaunchArgs, piSettings, readConfig, researchEnv, routeFor, resolverEnv, secretValues } from './config.ts';
 import {
 	CASE_REFERENCE_FILE,
 	CaseRecordError,
@@ -393,7 +393,7 @@ async function withValidation(harness: Harness, role: string, text: string): Pro
 		writeRoot: active.caseDir,
 		python: config.python,
 		configPath: config.spotlightConfig,
-		env: process.env,
+		env: { ...process.env, ...researchEnv(config) },
 	});
 	if (outcome.ran.length === 0) return text;
 	const verdict = outcome.passed ? 'all passed' : 'FAILED: send the worker the correction the phase skill describes';
