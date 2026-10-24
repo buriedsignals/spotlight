@@ -688,10 +688,13 @@ test('a new chat gets its own case folder, recorded under its chat id, and the s
 	const first = await open(chatId);
 	assert.match(first, /^\d{4}-\d{2}-\d{2}-[0-9a-f]{8}$/);
 	assert.deepEqual(await readdir(space.casesRoot), [first]);
-	assert.deepEqual(JSON.parse(await readFile(join(space.dataDir, 'chats.json'), 'utf8')), { [chatId]: first });
+	const map = await readFile(join(space.dataDir, 'chats.json'), 'utf8');
+	assert.deepEqual(JSON.parse(map), { [createHash('sha256').update(chatId).digest('hex')]: first });
+	assert.ok(!map.includes('ABC 123'), 'the map never holds the raw chat id');
 
 	assert.equal(await open(chatId), first);
-	const other = await open('chat-2');
+	// A chat id that names an Object.prototype member is just another chat.
+	const other = await open('__proto__');
 	assert.notEqual(other, first);
 	assert.deepEqual((await readdir(space.casesRoot)).sort(), [first, other].sort());
 });

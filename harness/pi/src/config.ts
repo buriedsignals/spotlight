@@ -4,6 +4,9 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { isIP } from 'node:net';
 import { isAbsolute, resolve } from 'node:path';
+import { CaseHeldError, acquireCaseLock } from './lock.ts';
+import type { CaseLock } from './lock.ts';
+import { piCliPath } from './pi-process.ts';
 import { parseFixedRequestBody } from './provider-policy.ts';
 import { CHECKOUT_ROOT, agentSpec } from './roles.ts';
 import type { Composition } from './roles.ts';
@@ -503,11 +506,17 @@ export function parseLaunchArgs(argv: string[]): LaunchArgs {
 
 const MAP_FILE = 'chats.json';
 
+// Keyed by the SHA-256 of the chat id, so the file holds no raw chat ids and
+// no id can name an Object.prototype member.
+function chatKey(chatId: string): string {
+	return createHash('sha256').update(chatId).digest('hex');
+}
+
 function readChatMap(dataDir: string): Record<string, string> {
 	const path = resolve(dataDir, MAP_FILE);
 	if (!existsSync(path)) return {};
 	try {
-		return JSON.parse(readFileSync(path, 'utf8')) as Record<string, string>;
+		return Object.assign(Object.create(null), JSON.parse(readFileSync(path, 'utf8'))) as Record<string, string>;
 	} catch {
 		throw new ConfigError(`${path} is not valid JSON; fix or remove it.`);
 	}
@@ -518,22 +527,43 @@ function readChatMap(dataDir: string): Record<string, string> {
 // folders on disk and the cases other chats hold.
 export function caseForChat(casesRoot: string, dataDir: string, chatId: string): string {
 	const chats = readChatMap(dataDir);
-	if (chats[chatId]) return chats[chatId];
+	const key = chatKey(chatId);
+	if (Object.hasOwn(chats, key)) return chats[key];
 	const taken = new Set(Object.values(chats));
-	const base = `${new Date().toISOString().slice(0, 10)}-${createHash('sha256').update(chatId).digest('hex').slice(0, 8)}`;
+	const base = `${new Date().toISOString().slice(0, 10)}-${key.slice(0, 8)}`;
 	let caseId = base;
 	for (let suffix = 2; taken.has(caseId) || existsSync(resolve(casesRoot, caseId)); suffix += 1) caseId = `${base}-${suffix}`;
 	return caseId;
 }
 
-// Re-read just before writing so another chat's new entry is kept; the
-// rename makes the write atomic.
+const CHAT_MAP_LOCK = '.chats'; // not a valid case id, so never a case's lock
+const CHAT_MAP_LOCK_WAIT_MS = 5_000;
+
+// Two new chats may start at once: the read-modify-write runs under the case
+// lock's mechanism (exclusive create, stale takeover), held only for the
+// write, and re-reads the map under it. The rename makes the write atomic.
 export function recordChatCase(dataDir: string, chatId: string, caseId: string): void {
-	const chats = readChatMap(dataDir);
-	if (chats[chatId] === caseId) return;
-	chats[chatId] = caseId;
-	const target = resolve(dataDir, MAP_FILE);
-	const temporary = `${target}.${process.pid}.tmp`;
-	writeFileSync(temporary, `${JSON.stringify(chats, null, 2)}\n`, { mode: 0o600 });
-	renameSync(temporary, target);
+	const deadline = Date.now() + CHAT_MAP_LOCK_WAIT_MS;
+	let lock: CaseLock | undefined;
+	while (!lock) {
+		try {
+			lock = acquireCaseLock(dataDir, CHAT_MAP_LOCK, piCliPath());
+		} catch (error) {
+			if (!(error instanceof CaseHeldError)) throw error;
+			if (Date.now() > deadline) throw new ConfigError('the chat map stayed locked by another Spotlight chat; try again.');
+			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+		}
+	}
+	try {
+		const chats = readChatMap(dataDir);
+		const key = chatKey(chatId);
+		if (chats[key] === caseId) return;
+		chats[key] = caseId;
+		const target = resolve(dataDir, MAP_FILE);
+		const temporary = `${target}.${process.pid}.tmp`;
+		writeFileSync(temporary, `${JSON.stringify(chats, null, 2)}\n`, { mode: 0o600 });
+		renameSync(temporary, target);
+	} finally {
+		lock.release();
+	}
 }

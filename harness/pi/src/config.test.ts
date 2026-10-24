@@ -1,4 +1,9 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { childEnv, readConfig, routeFor } from './config.ts';
 import type { Composition } from './roles.ts';
@@ -160,4 +165,27 @@ test('the swarm route exists only with the switch and a key, keeps zero data ret
 	const allowed = newsroom('https://cloud.newsroom.example/v1');
 	assert.ok(allowed.available);
 	assert.equal(allowed.route.keyEnv, 'CLOUD_TOKEN');
+});
+
+test('recording a chat waits for the chat map lock and keeps the entry written by its holder', async (t) => {
+	const dataDir = await mkdtemp(join(tmpdir(), 'spotlight-chats-'));
+	t.after(() => rm(dataDir, { recursive: true, force: true }));
+	// Another launcher (this test process, alive) holds the map lock.
+	await mkdir(join(dataDir, 'locks'), { recursive: true });
+	const lock = join(dataDir, 'locks', '.chats.lock');
+	await writeFile(lock, JSON.stringify({ case_id: '.chats', pid: process.pid, children: [], started_at: new Date().toISOString() }));
+
+	const config = fileURLToPath(new URL('./config.ts', import.meta.url));
+	const child = spawn(process.execPath, ['--input-type=module', '-e', `import { recordChatCase } from ${JSON.stringify(config)}; recordChatCase(${JSON.stringify(dataDir)}, 'chat-b', 'case-b');`], { stdio: 'inherit' });
+	const exited = new Promise<number | null>((done) => child.once('exit', done));
+	await Promise.race([exited, new Promise((done) => setTimeout(done, 1500))]);
+
+	// The holder writes the map it read before the other launcher started, then releases.
+	await writeFile(join(dataDir, 'chats.json'), JSON.stringify({ a: 'case-a' }));
+	await rm(lock);
+	assert.equal(await exited, 0);
+
+	const map = JSON.parse(await readFile(join(dataDir, 'chats.json'), 'utf8')) as Record<string, string>;
+	assert.equal(map.a, 'case-a');
+	assert.deepEqual(Object.values(map).sort(), ['case-a', 'case-b']);
 });
