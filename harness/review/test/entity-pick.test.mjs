@@ -76,11 +76,15 @@ test("without Engine, with an old bsig, with no candidates or in newsroom mode n
   const shown = await authed(t, caseDir, { wiki: newsroom.wiki, bridgeEnv: env });
   assert.deepEqual(await shown.json("/api/entity-candidates"), empty);
 
-  const failing = fakeBsig(own(root, "failing"), { changes: [], fail: "wiki: register unreadable" });
+  // One mention's failed lookup marks that mention only; the others are still looked up.
+  const failing = fakeBsig(own(root, "failing"), { changes: [], failFor: ["Acme"], resolve: { Doe: ACME } });
   const { json } = await authed(t, caseDir, { wiki: failing.wiki });
   const failed = await json("/api/entity-candidates");
   assert.equal(failed.status, 200);
-  assert.deepEqual(failed.body, { available: false, failed: true, note: "Could not read the entity register.", mentions: [] });
+  assert.deepEqual(failed.body.mentions, [
+    { key: "entity:Acme", name: "Acme", candidates: [], failed: true },
+    { key: "entity:Doe", name: "Doe", candidates: ACME.candidates.map(({ id, label, type }) => ({ id, label, type })) },
+  ]);
   assert.equal((await json("/api/view")).status, 200);
 });
 

@@ -215,7 +215,7 @@ export async function startReviewServer({
   // kept for this page; each call renews the offer for the current digest.
   // Past the limits, what is left out is counted ("more", "omitted_mentions").
   // Nothing without Engine, with an old bsig or with no candidates; any other
-  // failure is a short note and the page stays usable.
+  // failure marks only that mention, and the others are still looked up.
   const registerAnswers = new Map();
   let offer = { digest: "", ids: new Map() };
   async function entityCandidates() {
@@ -225,25 +225,28 @@ export async function startReviewServer({
     const mentions = [];
     const ids = new Map();
     const unresolved = view.items.filter((entry) => entry.kind === "entity_link");
-    try {
-      for (const item of unresolved.slice(0, MAX_ENTITY_MENTIONS)) {
-        if (!registerAnswers.has(item.key)) {
-          const result = await wiki.resolve({ name: item.label, ...(item.entity_type ? { type: item.entity_type } : {}) });
-          const valid = (Array.isArray(result?.candidates) ? result.candidates : [])
-            .filter((candidate) => typeof candidate?.id === "string" && ENTITY_ID.test(candidate.id));
-          registerAnswers.set(item.key, {
-            more: Math.max(0, valid.length - MAX_CANDIDATES),
-            candidates: valid
-              .slice(0, MAX_CANDIDATES)
-              .map((candidate) => ({ id: candidate.id, label: String(candidate.label ?? "").slice(0, 300), type: String(candidate.type ?? "").slice(0, 40) })),
-          });
+    for (const item of unresolved.slice(0, MAX_ENTITY_MENTIONS)) {
+      if (!registerAnswers.has(item.key)) {
+        let result;
+        try {
+          result = await wiki.resolve({ name: item.label, ...(item.entity_type ? { type: item.entity_type } : {}) });
+        } catch (error) {
+          if (error.code === "unsupported") return none;
+          mentions.push({ key: item.key, name: item.label, candidates: [], failed: true });
+          continue;
         }
-        const { candidates, more } = registerAnswers.get(item.key);
-        ids.set(item.key, new Set(candidates.map((candidate) => candidate.id)));
-        if (candidates.length) mentions.push({ key: item.key, name: item.label, candidates, ...(more ? { more } : {}) });
+        const valid = (Array.isArray(result?.candidates) ? result.candidates : [])
+          .filter((candidate) => typeof candidate?.id === "string" && ENTITY_ID.test(candidate.id));
+        registerAnswers.set(item.key, {
+          more: Math.max(0, valid.length - MAX_CANDIDATES),
+          candidates: valid
+            .slice(0, MAX_CANDIDATES)
+            .map((candidate) => ({ id: candidate.id, label: String(candidate.label ?? "").slice(0, 300), type: String(candidate.type ?? "").slice(0, 40) })),
+        });
       }
-    } catch (error) {
-      return error.code === "unsupported" ? none : { ...none, failed: true, note: "Could not read the entity register." };
+      const { candidates, more } = registerAnswers.get(item.key);
+      ids.set(item.key, new Set(candidates.map((candidate) => candidate.id)));
+      if (candidates.length) mentions.push({ key: item.key, name: item.label, candidates, ...(more ? { more } : {}) });
     }
     const omitted = Math.max(0, unresolved.length - MAX_ENTITY_MENTIONS);
     if (!mentions.length && !omitted) return none;

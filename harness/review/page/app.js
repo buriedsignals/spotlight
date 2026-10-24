@@ -1088,6 +1088,7 @@ function entityCard(mention, item, current) {
         );
       }),
     ),
+    mention.failed ? el("p", { className: "muted", text: "Could not look up this mention in the register." }) : null,
     mention.more ? el("p", { className: "muted", text: `${mention.more} more candidates not shown; link them in the wiki.` }) : null,
   );
 }
@@ -1095,7 +1096,6 @@ function entityCard(mention, item, current) {
 function entitySection() {
   const data = entityKey() ? entities.data : null;
   if (!data) return null;
-  if (data.failed) return el("p", { className: "muted", text: data.note });
   if (!data.mentions.length && !data.omitted_mentions) return null;
   const items = new Map(view.items.map((item) => [item.key, item]));
   return el(
