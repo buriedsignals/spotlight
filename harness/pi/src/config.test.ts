@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { childEnv, readConfig, routeFor } from './config.ts';
+import type { TestContext } from 'node:test';
+import { createHash } from 'node:crypto';
+import { ConfigError, childEnv, readConfig, routeFor } from './config.ts';
 import type { Composition } from './roles.ts';
 
 const COMPOSITION: Composition = {
@@ -167,25 +169,44 @@ test('the swarm route exists only with the switch and a key, keeps zero data ret
 	assert.equal(allowed.route.keyEnv, 'CLOUD_TOKEN');
 });
 
-test('recording a chat waits for the chat map lock and keeps the entry written by its holder', async (t) => {
-	const dataDir = await mkdtemp(join(tmpdir(), 'spotlight-chats-'));
-	t.after(() => rm(dataDir, { recursive: true, force: true }));
-	// Another launcher (this test process, alive) holds the map lock.
-	await mkdir(join(dataDir, 'locks'), { recursive: true });
-	const lock = join(dataDir, 'locks', '.chats.lock');
-	await writeFile(lock, JSON.stringify({ case_id: '.chats', pid: process.pid, children: [], started_at: new Date().toISOString() }));
+async function chatSpace(t: TestContext) {
+	const root = await mkdtemp(join(tmpdir(), 'spotlight-chats-'));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const env = { SPOTLIGHT_CASES_ROOT: join(root, 'cases'), SPOTLIGHT_HARNESS_DATA: join(root, 'data'), SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm' };
+	await mkdir(join(env.SPOTLIGHT_HARNESS_DATA, 'locks'), { recursive: true });
+	return { env, map: join(env.SPOTLIGHT_HARNESS_DATA, 'chats.json'), lock: join(env.SPOTLIGHT_HARNESS_DATA, 'locks', '.chats.lock') };
+}
+
+const key = (chatId: string) => createHash('sha256').update(chatId).digest('hex');
+
+test('overlapping starts of one chat bind one case: the binding is chosen under the chat map lock and never overwritten', async (t) => {
+	const space = await chatSpace(t);
+	// Another start of the same chat (this test process, alive) holds the map lock.
+	await writeFile(space.lock, JSON.stringify({ case_id: '.chats', pid: process.pid, children: [], started_at: new Date().toISOString() }));
 
 	const config = fileURLToPath(new URL('./config.ts', import.meta.url));
-	const child = spawn(process.execPath, ['--input-type=module', '-e', `import { recordChatCase } from ${JSON.stringify(config)}; recordChatCase(${JSON.stringify(dataDir)}, 'chat-b', 'case-b');`], { stdio: 'inherit' });
+	const child = spawn(process.execPath, ['--input-type=module', '-e', `import { readConfig } from ${JSON.stringify(config)}; process.stdout.write(readConfig(process.env, 'chat-x').caseId);`], { env: { ...process.env, ...space.env } });
+	let out = '';
+	child.stdout.on('data', (chunk) => (out += chunk));
 	const exited = new Promise<number | null>((done) => child.once('exit', done));
 	await Promise.race([exited, new Promise((done) => setTimeout(done, 1500))]);
 
-	// The holder writes the map it read before the other launcher started, then releases.
-	await writeFile(join(dataDir, 'chats.json'), JSON.stringify({ a: 'case-a' }));
-	await rm(lock);
+	// The holder binds the chat, then releases.
+	await writeFile(space.map, JSON.stringify({ [key('chat-x')]: 'case-held' }));
+	await rm(space.lock);
 	assert.equal(await exited, 0);
 
-	const map = JSON.parse(await readFile(join(dataDir, 'chats.json'), 'utf8')) as Record<string, string>;
-	assert.equal(map.a, 'case-a');
-	assert.deepEqual(Object.values(map).sort(), ['case-a', 'case-b']);
+	assert.equal(out, 'case-held');
+	assert.deepEqual(JSON.parse(await readFile(space.map, 'utf8')), { [key('chat-x')]: 'case-held' });
+});
+
+test('a malformed chat binding counts as absent; a chat map that is not an object stops the launcher', async (t) => {
+	const space = await chatSpace(t);
+	await writeFile(space.map, JSON.stringify({ [key('chat-x')]: null, [key('chat-y')]: 5 }));
+	const caseId = readConfig(space.env, 'chat-x').caseId;
+	assert.match(caseId, /^\d{4}-\d{2}-\d{2}-[0-9a-f]{8}$/);
+	assert.equal(JSON.parse(await readFile(space.map, 'utf8'))[key('chat-x')], caseId);
+
+	await writeFile(space.map, '[]');
+	assert.throws(() => readConfig(space.env, 'chat-x'), (error: Error) => error instanceof ConfigError && /chats\.json/.test(error.message));
 });

@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ConfigError, RouteRefused, childEnv, parseLaunchArgs, piSettings, readConfig, recordChatCase, routeFor, secretValues } from './config.ts';
+import { ConfigError, RouteRefused, childEnv, parseLaunchArgs, piSettings, readConfig, routeFor, secretValues } from './config.ts';
 import type { HarnessConfig, LaunchArgs } from './config.ts';
 import { CaseHeldError, acquireCaseLock } from './lock.ts';
 import type { CaseLock } from './lock.ts';
@@ -298,7 +298,6 @@ function main(): void {
 		mkdirSync(config.casesRoot, { recursive: true, mode: 0o700 });
 		active = bindActiveCase(config.casesRoot, config.caseDir);
 		lock = acquireCaseLock(config.dataDir, config.caseId, piCliPath());
-		if (config.boundChat) recordChatCase(config.dataDir, config.boundChat, config.caseId);
 	} catch (error) {
 		log(`cannot start: ${(error as Error).message}`);
 		process.exit(error instanceof CaseHeldError ? EXIT.held : EXIT.config);

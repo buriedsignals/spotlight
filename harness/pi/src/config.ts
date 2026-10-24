@@ -41,8 +41,6 @@ export type HarnessConfig = {
 	casesRoot: string;
 	caseId: string;
 	caseDir: string;
-	// The chat id the case was bound from, when SPOTLIGHT_CASE_ID was unset.
-	boundChat?: string;
 	dataDir: string;
 	routes: Route[];
 	pipelineRoute: Route;
@@ -242,9 +240,8 @@ export function readConfig(env: Env, chatId?: string): HarnessConfig {
 	const dataDir = required(env, 'SPOTLIGHT_HARNESS_DATA');
 	if (!isAbsolute(casesRoot)) throw new ConfigError('SPOTLIGHT_CASES_ROOT must be an absolute path.');
 	if (!isAbsolute(dataDir)) throw new ConfigError('SPOTLIGHT_HARNESS_DATA must be an absolute path.');
-	// SPOTLIGHT_CASE_ID wins; otherwise a chat id picks the case (caseForChat).
-	const boundChat = env.SPOTLIGHT_CASE_ID?.trim() ? undefined : chatId;
-	const caseId = boundChat ? caseForChat(resolve(casesRoot), resolve(dataDir), boundChat) : required(env, 'SPOTLIGHT_CASE_ID');
+	// SPOTLIGHT_CASE_ID wins; otherwise the chat id binds the case.
+	const caseId = chatId && !env.SPOTLIGHT_CASE_ID?.trim() ? bindChatCase(resolve(casesRoot), resolve(dataDir), chatId) : required(env, 'SPOTLIGHT_CASE_ID');
 	if (!CASE_ID.test(caseId) || caseId === '.' || caseId === '..') {
 		throw new ConfigError('SPOTLIGHT_CASE_ID must be a plain case folder name (letters, digits, ".", "_", "-").');
 	}
@@ -270,7 +267,6 @@ export function readConfig(env: Env, chatId?: string): HarnessConfig {
 		casesRoot: resolve(casesRoot),
 		caseId,
 		caseDir: resolve(casesRoot, caseId),
-		boundChat,
 		dataDir: resolve(dataDir),
 		routes,
 		pipelineRoute,
@@ -512,57 +508,70 @@ function chatKey(chatId: string): string {
 	return createHash('sha256').update(chatId).digest('hex');
 }
 
+function validCaseId(value: unknown): value is string {
+	return typeof value === 'string' && CASE_ID.test(value) && value !== '.' && value !== '..';
+}
+
+// A value that is not a case folder name counts as absent for its chat.
 function readChatMap(dataDir: string): Record<string, string> {
 	const path = resolve(dataDir, MAP_FILE);
-	if (!existsSync(path)) return {};
+	const chats: Record<string, string> = Object.create(null);
+	if (!existsSync(path)) return chats;
+	let parsed: unknown;
 	try {
-		return Object.assign(Object.create(null), JSON.parse(readFileSync(path, 'utf8'))) as Record<string, string>;
+		parsed = JSON.parse(readFileSync(path, 'utf8'));
 	} catch {
 		throw new ConfigError(`${path} is not valid JSON; fix or remove it.`);
 	}
-}
-
-// A known chat resumes its case. A new chat gets a folder named from today's
-// date and a short hash of its id (never the id itself), unique among the
-// folders on disk and the cases other chats hold.
-export function caseForChat(casesRoot: string, dataDir: string, chatId: string): string {
-	const chats = readChatMap(dataDir);
-	const key = chatKey(chatId);
-	if (Object.hasOwn(chats, key)) return chats[key];
-	const taken = new Set(Object.values(chats));
-	const base = `${new Date().toISOString().slice(0, 10)}-${key.slice(0, 8)}`;
-	let caseId = base;
-	for (let suffix = 2; taken.has(caseId) || existsSync(resolve(casesRoot, caseId)); suffix += 1) caseId = `${base}-${suffix}`;
-	return caseId;
+	if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+		throw new ConfigError(`${path} must be a JSON object mapping chats to cases; fix or remove it.`);
+	}
+	let malformed = 0;
+	for (const [key, value] of Object.entries(parsed)) {
+		if (validCaseId(value)) chats[key] = value;
+		else malformed += 1;
+	}
+	if (malformed > 0) process.stderr.write(`spotlight: ignored ${malformed} malformed binding(s) in ${path}\n`);
+	return chats;
 }
 
 const CHAT_MAP_LOCK = '.chats'; // not a valid case id, so never a case's lock
 const CHAT_MAP_LOCK_WAIT_MS = 5_000;
 
-// Two new chats may start at once: the read-modify-write runs under the case
-// lock's mechanism (exclusive create, stale takeover), held only for the
-// write, and re-reads the map under it. The rename makes the write atomic.
-export function recordChatCase(dataDir: string, chatId: string, caseId: string): void {
+function acquireChatMapLock(dataDir: string): CaseLock {
 	const deadline = Date.now() + CHAT_MAP_LOCK_WAIT_MS;
-	let lock: CaseLock | undefined;
-	while (!lock) {
+	for (;;) {
 		try {
-			lock = acquireCaseLock(dataDir, CHAT_MAP_LOCK, piCliPath());
+			return acquireCaseLock(dataDir, CHAT_MAP_LOCK, piCliPath());
 		} catch (error) {
 			if (!(error instanceof CaseHeldError)) throw error;
 			if (Date.now() > deadline) throw new ConfigError('the chat map stayed locked by another Spotlight chat; try again.');
 			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
 		}
 	}
+}
+
+// One critical section under the chat map lock (the case lock's mechanism:
+// exclusive create, stale takeover), released before the case lock is taken.
+// A bound chat resumes its case and its binding is never overwritten. A new
+// chat gets a folder named from today's date and a short hash of its id
+// (never the id itself), with a suffix when another chat or folder has it.
+export function bindChatCase(casesRoot: string, dataDir: string, chatId: string): string {
+	const lock = acquireChatMapLock(dataDir);
 	try {
 		const chats = readChatMap(dataDir);
 		const key = chatKey(chatId);
-		if (chats[key] === caseId) return;
+		if (Object.hasOwn(chats, key)) return chats[key];
+		const taken = new Set(Object.values(chats));
+		const base = `${new Date().toISOString().slice(0, 10)}-${key.slice(0, 8)}`;
+		let caseId = base;
+		for (let suffix = 2; taken.has(caseId) || existsSync(resolve(casesRoot, caseId)); suffix += 1) caseId = `${base}-${suffix}`;
 		chats[key] = caseId;
 		const target = resolve(dataDir, MAP_FILE);
 		const temporary = `${target}.${process.pid}.tmp`;
 		writeFileSync(temporary, `${JSON.stringify(chats, null, 2)}\n`, { mode: 0o600 });
 		renameSync(temporary, target);
+		return caseId;
 	} finally {
 		lock.release();
 	}
