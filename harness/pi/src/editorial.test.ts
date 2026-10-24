@@ -239,12 +239,18 @@ test('a package near the size cap reaches the newsroom whole: its base64 is larg
 	assert.equal(outcome.state, 'submitted');
 });
 
-test('a case file the harness cannot write after a newsroom answer stops the newsroom case', async (t) => {
-	const { caseDir, runPackage, client } = await submittable(t, {});
+test('a check the case cannot use stops the newsroom case: a record it cannot write, a poll answered for another job', async (t) => {
+	let otherJob = false;
+	const { caseDir, runPackage, client } = await submittable(t, {
+		run_checks: (args) => (args.job_id ? { job_id: otherJob ? 'job-other' : args.job_id, state: 'done', flags: [] } : { job_id: 'job-1', state: 'running' }),
+	});
 	const failing: RunPackage = (args, input) => (args[0] === 'checks' ? Promise.resolve({ code: 2, stdout: '', stderr: 'disk full' }) : runPackage(args, input));
 	const error = await runChecks(client, caseDir, 'findings', failing, { pollMs: 1 }).then(() => assert.fail('the check was taken as recorded'), (caught: Error) => caught);
 	assert.ok(stopsTheNewsroomCase(error), String(error));
 	assert.match(error.message, /disk full/);
+
+	otherJob = true;
+	await assert.rejects(runChecks(client, caseDir, 'findings', runPackage, { pollMs: 1 }), (caught: Error) => stopsTheNewsroomCase(caught) && /another job/.test(caught.message));
 });
 
 test('a review page that does not open leaves the submission pending, and a retry with the same key opens it and completes', async (t) => {

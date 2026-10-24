@@ -494,6 +494,7 @@ export async function runChecks(
 		await new Promise((done) => setTimeout(done, options.pollMs ?? 1000));
 		options.signal?.throwIfAborted();
 		answer = await client.call('run_checks', { case_ref: caseRef, job_id: jobId }, options.signal);
+		if (answer.job_id !== jobId) throw new EditorialError('run_checks answered a poll with another job\'s result');
 	}
 	const state = String(answer.state);
 	const record: CheckRecord = {
