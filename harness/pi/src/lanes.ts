@@ -1068,6 +1068,9 @@ async function pool<T>(items: T[], limit: number, worker: (item: T) => Promise<v
 	await Promise.all(runners);
 }
 
+// The resolver's Research-off message (scripts/spotlight_orchestration/resolver.py).
+const RESEARCH_OFF = 'Research is off. Turn Research on in the app to continue this case, or go back to the Methodology gate and approve the plan without research.';
+
 export async function runResearchRound(options: RoundOptions): Promise<RoundSummary> {
 	const { caseDir, plan, config } = options;
 	const catalogue = options.catalogue ?? loadLaneCatalogue();
@@ -1098,6 +1101,9 @@ export async function runResearchRound(options: RoundOptions): Promise<RoundSumm
 		nothing_to_run: false,
 		...extra,
 	});
+	// Research off: no lane runs, local ones included, and nothing is written,
+	// whatever led here (a stale resolve, a retry, a direct call).
+	if (!config.research) return summary({ stopped: { code: 'swarm_unavailable', message: RESEARCH_OFF }, nothing_to_run: true });
 	// A stopped round waits for the member: it is retried only when they ask.
 	if (record.stopped && !options.retry) return summary({ nothing_to_run: true });
 	delete record.stopped;

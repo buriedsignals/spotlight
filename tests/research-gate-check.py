@@ -336,6 +336,9 @@ class ResearchGate(SeamCase):
         self.assertEqual(self.status()["phase"], "methodology_approval")
         self.seam("approve", "methodology", *APPROVER)
         self.assertEqual(self.status()["phase"], "investigation")
+        # A case with no research plan still refuses an invalid switch value.
+        self.research = "maybe"
+        self.assertIn('SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off"', self.seam("status", "--json", expect=3).stderr)
 
     def test_a_methodology_with_a_research_plan_is_not_approved_while_research_is_off(self) -> None:
         self.research = "off"

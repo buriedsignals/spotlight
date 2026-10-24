@@ -145,8 +145,7 @@ by editing the research plan at the Methodology gate.
 
 The Pi harness stops the round itself and returns `research_round.stopped`
 (`key_rejected`, `no_credit`, `upstream_error`, or `swarm_unavailable` when
-the plan uses the swarm but the Research switch was turned off after approval
-or no key is set); its
+Research is off, or the plan uses the swarm and no key is set); its
 `message` already says what to fix. A stopped round is not retried until the
 member asks: then call `spotlight_resolve` with `retry_research: true`, which
 runs only the topics that did not finish.

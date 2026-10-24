@@ -159,11 +159,12 @@ def status_for(
     # clears them).
     if not research.methodology_accepted(state, methodology_hashes, ledger, backed):
         return {**status, "next_phase": "methodology_approval"}
+    # Parsed for every case past Methodology, so an invalid value is never ignored.
+    on = research_switch_on()
     plan = research_plan(case)
     stall = research.stall_due(state, plan)
     if "blocked" in state and stall is None:
         return {**status, "status": "blocked", "next_phase": "blocked", "blocked": state["blocked"]}
-    on = research_switch_on() if stall is not None or plan is not None else True
     in_research = None
     if stall is not None:
         # The cycle cap is spent: a targeted research round, not a stop.

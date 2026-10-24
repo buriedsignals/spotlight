@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -223,9 +224,11 @@ test('no swarm request without the opt-in: switch off, no consent, or a local-on
 	assert.deepEqual(localOnly.left_out.map((item) => item.topic_id), ['ownership-web']);
 	const noConsent = await round(space, fakes, plan([topic('ownership-web')], { consent: { swarm: false, decided_by: 'j', decided_at: '2026-10-23T09:00:00Z' } }));
 	assert.deepEqual(noConsent.left_out.map((item) => item.topic_id), ['ownership-web']);
-	const switchOff = await round(space, fakes, plan([topic('ownership-web')]), { SPOTLIGHT_RESEARCH_SWARMS: 'off' });
+	// Research off stops a stale or retried round before any lane, local ones included.
+	const switchOff = await round(space, fakes, plan([topic('off-local-corpus', 'local-corpus')]), { SPOTLIGHT_RESEARCH_SWARMS: 'off' }, true);
 	assert.equal(switchOff.stopped?.code, 'swarm_unavailable');
-	assert.match(switchOff.stopped!.message, /the Research switch is off\. Turn on Research/);
+	assert.match(switchOff.stopped!.message, /^Research is off\. Turn Research on in the app/);
+	assert.equal(existsSync(join(space.caseDir, 'research/swarm/off-local-corpus')), false);
 	const noKey = await round(space, fakes, plan([topic('ownership-web-2')]), { OPENROUTER_API_KEY: '' });
 	assert.equal(noKey.stopped?.code, 'swarm_unavailable');
 
@@ -472,6 +475,7 @@ test('newsroom sensitive mode runs the approved prior-knowledge lane through the
 	const env = {
 		...space.env,
 		SPOTLIGHT_SENSITIVE: 'true',
+		SPOTLIGHT_RESEARCH_SWARMS: 'on',
 		SPOTLIGHT_EDITION: 'newsroom',
 		SPOTLIGHT_ROUTES: JSON.stringify([{ name: 'own', base_url: fakes.local.baseURL, model: 'local-model', inference: 'own' }]),
 		SPOTLIGHT_MODEL_BASE_URL: fakes.local.baseURL,
@@ -501,6 +505,7 @@ test('newsroom edition: an Editorial MCP that cannot be used stops the round; th
 	const fakes = await servers(t, () => done, scripted({ 'ownership-prior': [call('search_knowledge', { query: 'Acme' }), { text: 'Done: nothing found.' }] }));
 	const env = {
 		...space.env,
+		SPOTLIGHT_RESEARCH_SWARMS: 'on',
 		SPOTLIGHT_EDITION: 'newsroom',
 		SPOTLIGHT_ROUTES: JSON.stringify([{ name: 'own', base_url: fakes.local.baseURL, model: 'local-model', inference: 'own' }]),
 		SPOTLIGHT_MODEL_BASE_URL: fakes.local.baseURL,
