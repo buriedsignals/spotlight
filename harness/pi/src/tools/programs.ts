@@ -66,8 +66,7 @@ function navigatorTool(context: ToolContext): ToolDefinition {
 function decisionSignalsTool(context: ToolContext): ToolDefinition {
 	const params = Type.Object(
 		{
-			phase: Type.Union([Type.Literal('investigation_gate'), Type.Literal('report'), Type.Literal('ingest')]),
-			entities: Type.Optional(caseDataFile),
+			phase: Type.Union([Type.Literal('investigation_gate'), Type.Literal('report')]),
 			check: Type.Optional(Type.Boolean()),
 			case_opt_in: Type.Optional(Type.Boolean()),
 		},
@@ -77,12 +76,11 @@ function decisionSignalsTool(context: ToolContext): ToolDefinition {
 		name: 'decision_signals',
 		label: 'Decision signals',
 		description:
-			'Run the optional decision checks (scripts/decision-signals.py) for the active case at a phase: investigation_gate, report or ingest. Optional entities: a JSON file directly under data/. check: true reports readiness without any request; case_opt_in: true records the user\'s agreement on the first run. Refuses itself when not enabled or in sensitive mode.',
+			'Run the optional decision checks (scripts/decision-signals.py) for the active case at a phase: investigation_gate or report. check: true reports readiness without any request; case_opt_in: true records the user\'s agreement on the first run. Refuses itself when not enabled or in sensitive mode.',
 		parameters: params,
 		async execute(_id, raw, signal) {
-			const input = checkedParams<{ phase: string; entities?: string; check?: boolean; case_opt_in?: boolean }>('decision_signals', params, raw);
+			const input = checkedParams<{ phase: string; check?: boolean; case_opt_in?: boolean }>('decision_signals', params, raw);
 			const args = [script('scripts/decision-signals.py'), context.caseDir, '--phase', input.phase, '--config', context.configPath];
-			if (input.entities) args.push('--entities', `${context.caseDir}/${input.entities}`);
 			if (input.check) args.push('--check');
 			if (input.case_opt_in) args.push('--case-opt-in');
 			const result = await runPython(context, args, { keys: ['OPENROUTER_API_KEY', 'SPOTLIGHT_SENSITIVE'], signal, timeoutMs: 600_000 });

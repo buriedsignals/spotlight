@@ -6,22 +6,21 @@ findings, and carry their own version. Changing any text here changes
 apply to another. So does a change to what an answer does
 (``EFFECTS_REVISION``, applied in ``research_rules.lead_outcome``).
 
-Q1-Q6 and C1, C4 are ``choice`` questions, asked in both option orders (the
-``_rev`` twin). C2 and C3 are ``noul`` questions on trial: they are asked only
-once the acceptance test has passed for this bank version (see
-``research_rules.triage_mode``).
+Q1 and Q3-Q6 and C1, C4 are ``choice`` questions, asked in both option orders
+(the ``_rev`` twin). C2 and C3 are ``noul`` questions on trial: they are asked
+only once the acceptance test has passed for this bank version (see
+``research_rules.triage_mode``). Q1 is asked only of Jev (``FRONTIER_ONLY``):
+the local model and the rules get no identity question. There is no Q2.
 
-Q2's options are the case's approved research directions, so they change per
-case; ``direction_question`` builds it. C4 is asked only on rule K2's pairs
-and names the compared attribute; ``conflict_question`` builds it. The bank
-version hashes the templates, not the per-case options.
+C4 is asked only on rule K2's pairs and names the compared attribute;
+``conflict_question`` builds it. The bank version hashes the template, not
+the attribute.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import re
 from typing import Mapping
 
 from questions import choice, noul, rev
@@ -71,8 +70,6 @@ C4_CONFLICT = {
     "conflict": "Both values cannot be true for the same subject, time and scope.",
     "not_comparable": "The items do not give comparable values for this attribute.",
 }
-DIRECTION_NONE = "The item informs none of the approved research directions."
-
 QUESTIONS = {
     "q1_identity": choice("Is the excerpt about a person, company or event named in the premise?", Q1_IDENTITY),
     "q3_source": choice("Who is speaking in this item's source?", Q3_SOURCE),
@@ -85,7 +82,6 @@ ON_TRIAL = {
     "c2_new_actor": noul("Does the item connect a brief subject to a person or organisation the brief does not name, as owner, director, shareholder, payer, recipient or relative, or through a shared address, phone or email?"),
     "c3_change": noul("Does the item show a subject changing its name, owner, address, legal form or registration, or a record being edited, backdated, removed, withdrawn or not found?"),
 }
-DIRECTION_TEXT = "Which approved research direction does this item inform?"
 CONFLICT_TEXT = "Compare item A and item B about the same subject. How do their values for {attribute} compare?"
 
 # What the answers do (research_rules.lead_outcome). Raise it whenever an
@@ -96,27 +92,19 @@ CONFLICT_TEXT = "Compare item A and item B about the same subject. How do their 
 # excerpt against the stored source), so no model answer sets a lead aside.
 # 4: a primary-record host sets Q3's source over a disagreeing answer, and a
 # social host labels it when no answer counted (research_rules.source_label).
-EFFECTS_REVISION = 4
+# 5: no Q2 (direction), so no "outside the directions" label; Q1 only for Jev.
+EFFECTS_REVISION = 5
+
+# Asked only when the triage backend is Jev (Frontier mode).
+FRONTIER_ONLY = frozenset({"q1_identity"})
 
 # Every choice question is asked in both option orders.
-PERMUTED = ("q1_identity", "q2_direction", "q3_source", "q4_assertion", "q5_status", "q6_fidelity", "c1_premise", "c4_conflict")
+PERMUTED = ("q1_identity", "q3_source", "q4_assertion", "q5_status", "q6_fidelity", "c1_premise", "c4_conflict")
 
 RESEARCH_BANK_VERSION = hashlib.sha256(json.dumps(
-    {"questions": QUESTIONS, "on_trial": ON_TRIAL, "direction": [DIRECTION_TEXT, DIRECTION_NONE],
-     "conflict": [CONFLICT_TEXT, C4_CONFLICT], "permuted": PERMUTED, "effects": EFFECTS_REVISION},
+    {"questions": QUESTIONS, "on_trial": ON_TRIAL, "conflict": [CONFLICT_TEXT, C4_CONFLICT], "permuted": PERMUTED,
+     "frontier_only": sorted(FRONTIER_ONLY), "effects": EFFECTS_REVISION},
     sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
-
-DIRECTION_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
-
-
-def direction_question(directions: Mapping[str, str]) -> dict:
-    """Q2 with one option per approved direction (id -> label) plus ``none``."""
-    if not directions or any(not DIRECTION_ID.match(d) or d == "none" for d in directions):
-        raise ValueError("Q2 needs approved direction ids (lowercase slugs, not 'none')")
-    criteria = {d: f"The item informs this direction: {label}" for d, label in directions.items()}
-    criteria["none"] = DIRECTION_NONE
-    return choice(DIRECTION_TEXT, criteria)
-
 
 def conflict_question(attribute: str) -> dict:
     attribute = " ".join(str(attribute).split())[:120]

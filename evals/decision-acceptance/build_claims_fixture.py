@@ -125,7 +125,7 @@ def build_case(name: str, fact_check: Mapping[str, Any], methodology: Mapping[st
         lead = claim_lead(alias, claim, direction)
         verdict = str(claim.get("verdict") or "")
         gold: dict[str, Any] = {"keep": True if verdict == "verified" else None, "verdict": verdict,
-                                "label_source": "fact_check_verdict", "answers": {"q2_direction": direction}}
+                                "label_source": "fact_check_verdict", "answers": {}}
         if verdict != "verified":
             gold["failure"] = {"class": None, "research_visible": None}
         items.append({"item_id": lead["lead_id"], "split": "dev", "origin": "fact_check_claim", "lead": lead, "gold": gold,

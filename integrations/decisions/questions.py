@@ -157,43 +157,6 @@ CONTRADICTION = {
 CONTRA = {"k_category": choice("Compare passage_a and passage_b with respect to the claim. Which describes how they relate?", CONTRADICTION)}
 CONTRA_PERMUTE = ["k_category"]
 
-# ------------------------------------------------------------- ingest
-PROPOSITION = {
-    "equivalent": "The proposition means the same as the finding claim, including a faithful translation or paraphrase.",
-    "narrower": "The proposition says strictly less than the finding claim, for example by dropping a date or secondary detail, and asserts nothing beyond it.",
-    "broader_or_changed": "The proposition asserts more than the finding claim, or changes its certainty, scope, status, attribution, amount, date, direction, entity or polarity.",
-    "different": "The proposition is a different statement altogether.",
-}
-MEMBERSHIP = {
-    "supports": "The claim is evidence that the event happened as described.",
-    "contradicts": "The claim is incompatible with the event as described.",
-    "contextualizes": "The claim gives relevant background such as causes, prior relationships or setting, without establishing the event.",
-    "mentions": "The claim only refers to an actor or object of the event without bearing on whether it happened.",
-}
-ENTITY = {
-    "person": "A human being.",
-    "company": "A commercial business entity, such as an AG, SA, GmbH, Sàrl, Ltd, Inc, S.p.A., S.L., holding company or fund manager.",
-    "organization": "A non-commercial organisation, such as a government body, ministry, court, police force, NGO, foundation, association, political party, international body or university.",
-    "place": "A geographic or administrative location or an address, such as a country, canton, city, region, river or street address.",
-    "unclear": "The sentence does not allow a decision.",
-}
-MATCHING = {
-    "same_claim": "Both state the same proposition, possibly in different words or languages.",
-    "updates": "Same subject and attribute, but the new claim describes a later state or newer value; both can be true at their own times.",
-    "contradicts": "Both cannot be true for the same time and scope.",
-    "related": "Same entities or topic, but a different proposition.",
-    "unrelated": "No meaningful connection.",
-}
-INGEST = {
-    "proposition": {"i_prop": choice("Compare the proposition with the finding claim it was derived from. Which describes the proposition?", PROPOSITION)},
-    "membership": {"i_member": choice("How does the claim relate to the event?", MEMBERSHIP)},
-    "entities": {"i_entity": choice("What kind of entity is entity_name, as used in context_sentence?", ENTITY),
-                 "i_entity_ambiguous": noul("Could entity_name, as used in context_sentence, plausibly be more than one kind of entity, for example a person, a company or a place with the same name, because the sentence gives no title, legal form, role or other clue?")},
-    "matching": {"i_match": choice("Compare new_claim with existing_claim from the knowledge base. Which describes their relationship?", MATCHING)},
-}
-INGEST_PERMUTE = {"proposition": ["i_prop"], "membership": ["i_member"], "entities": [], "matching": ["i_match"]}
-
-
 def with_permutations(questions, permute):
     out = dict(questions)
     for q in permute:
@@ -205,10 +168,6 @@ ALL = {
     "grounding": with_permutations({**GROUNDING, **CATEGORIES}, GROUNDING_PERMUTE),
     "report": with_permutations(REPORT, REPORT_PERMUTE),
     "contradiction": with_permutations(CONTRA, CONTRA_PERMUTE),
-    "proposition": with_permutations(INGEST["proposition"], INGEST_PERMUTE["proposition"]),
-    "membership": with_permutations(INGEST["membership"], INGEST_PERMUTE["membership"]),
-    "entities": with_permutations(INGEST["entities"], INGEST_PERMUTE["entities"]),
-    "matching": with_permutations(INGEST["matching"], INGEST_PERMUTE["matching"]),
 }
 QUESTION_BANK_VERSION = hashlib.sha256(
     json.dumps(ALL, sort_keys=True, ensure_ascii=False).encode("utf-8")

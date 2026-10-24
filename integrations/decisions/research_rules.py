@@ -1,11 +1,10 @@
 """Deterministic rules for research triage: the lead seam, S1/S2/N1, the
 effects of the research questions, and the triage invariants (D7).
 
-A lead is never set aside for being about another subject, event or
-direction than the brief's: leads about other people, companies or events can
-be circumstantial, and that is what makes them clues. Such answers label the
-lead (``CIRCUMSTANTIAL``, ``OUTSIDE_DIRECTIONS``). No answer sets a lead
-aside: whether the source holds what the lead says is D3's job (the excerpt
+A lead is never set aside for being about another subject or event than the
+brief's: leads about other people, companies or events can be circumstantial,
+and that is what makes them clues. Q1 (asked only of Jev) labels such a lead
+``CIRCUMSTANTIAL``. No answer sets a lead aside: whether the source holds what the lead says is D3's job (the excerpt
 must be verbatim in a stored source, or the lead is marked unverifiable), not
 a question's.
 
@@ -56,8 +55,8 @@ ALWAYS_SHOWN_CLUES = {"watchlist", "premise_complicated", "premise_contradicted"
 # Reasons triage may set a lead aside: none. D3 checks that the source holds
 # the excerpt; topical answers (another subject, no direction) only label.
 SET_ASIDE_REASONS: frozenset[str] = frozenset()
-# Context labels: kept leads, ranked after same-subject leads.
-CIRCUMSTANTIAL, OUTSIDE_DIRECTIONS = "circumstantial", "outside_directions"
+# Context label: a kept lead, ranked after same-subject leads.
+CIRCUMSTANTIAL = "circumstantial"
 CIRCUMSTANTIAL_IDENTITIES = frozenset({"different_subject_or_event", "none_of_the_brief"})
 LEAD_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
@@ -89,7 +88,6 @@ class TriageLead:
 class TriageBrief:
     premise: str
     subjects: tuple[str, ...]
-    directions: Mapping[str, str]  # approved direction id -> label
 
 
 def _text(raw: Mapping[str, Any], key: str, *, required: bool = True, limit: int = MAX_TEXT) -> str:
@@ -294,8 +292,6 @@ def lead_outcome(lead: TriageLead, recorded: Mapping[str, Mapping[str, Any]],
         flag("identity_unconfirmed")
     elif identity in CIRCUMSTANTIAL_IDENTITIES:
         context.append(CIRCUMSTANTIAL)
-    if value.get("q2_direction") == "none":
-        context.append(OUTSIDE_DIRECTIONS)
     answer = value.get("q3_source")
     source, by_rule = source_label(lead, answer)
     if by_rule and answer and answer != source:

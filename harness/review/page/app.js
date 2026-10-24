@@ -453,7 +453,7 @@ const LEAD_FLAG_LABELS = {
   model_suggests_set_aside: "The model would set this aside; while triage only flags, that has no effect",
 };
 const LABEL_NAMES = { identity: "Identity", source: "Source", assertion: "Assertion", status: "Status" };
-const CONTEXT_LABELS = { circumstantial: "Circumstantial", outside_directions: "Outside the directions" };
+const CONTEXT_LABELS = { circumstantial: "Circumstantial" };
 const SECTIONS = [
   ["circumstantial", "Circumstantial", "Leads about another person, company or event than the brief's. They are kept, never set aside for it: circumstantial material is what clues are made of."],
   ["flagged", "Flagged by triage", "Leads triage flagged for a closer look. A flag never removes a lead."],

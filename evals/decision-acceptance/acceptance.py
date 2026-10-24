@@ -79,7 +79,7 @@ COMPANY_A = HERE / "company-a.json"
 TARGETS = HERE / "targets.json"
 FIXTURES_ENV = "SPOTLIGHT_ACCEPTANCE_FIXTURES"
 CONTENDERS = ("rules", "jev", "clef", "clef-flash", "local")
-CHOICE_QS = ("q1_identity", "q2_direction", "q3_source", "q4_assertion", "q5_status", "q6_fidelity", "c1_premise")
+CHOICE_QS = ("q1_identity", "q3_source", "q4_assertion", "q5_status", "q6_fidelity", "c1_premise")
 NOUL_QS = ("c2_new_actor", "c3_change")
 SWEEP = (0.5, 0.6, 0.7, 0.8, 0.9)
 # Which signals catch each failure class. A signal is "qid=value" for an answer
@@ -91,7 +91,7 @@ CATCH = {
     "inference_as_fact": {"q4_assertion=interpretation", "q6_fidelity=widens", "q6_fidelity=unsupported"},
     "conflicting_values": {"q6_fidelity=contradicts", "c1_premise=contradicts", "clue:conflict"},
     "wrong_subject": {"q1_identity=name_only", "q1_identity=different_subject_or_event", "q1_identity=none_of_the_brief"},
-    "weak_relevance": {"q2_direction=none", "q1_identity=none_of_the_brief", "c1_premise=unrelated"},
+    "weak_relevance": {"q1_identity=none_of_the_brief", "c1_premise=unrelated"},
     "allegation": {"q4_assertion=reported_claim"},
 }
 RULE_SIGNALS = {"N1", "S1"}
@@ -510,11 +510,10 @@ def check_targets(metrics: Mapping[str, Any], targets: Mapping[str, Any]) -> dic
         "latency_ms_p95_max": (metrics["cost"]["latency_ms_p95"] if metrics["cost"]["requests"] else 0, t["latency_ms_p95_max"], "max"),
     }
     for qid in CHOICE_QS:
-        if qid in q:
+        if q.get(qid, {}).get("asked"):  # Q1 is asked only of Jev
             checks[f"{qid}_both_order_min"] = (q[qid]["both_order_agreement"], t["both_order_agreement_min"], "min")
-            if qid != "q2_direction":
-                checks[f"{qid}_gold_agreement_min"] = (q[qid]["agreement_with_gold"], t["question_agreement_min"], "min")
-                checks[f"{qid}_ece_max"] = (q[qid]["ece"], t["ece_max"], "max")
+            checks[f"{qid}_gold_agreement_min"] = (q[qid]["agreement_with_gold"], t["question_agreement_min"], "min")
+            checks[f"{qid}_ece_max"] = (q[qid]["ece"], t["ece_max"], "max")
     out = {}
     for name, (value, limit, kind) in checks.items():
         status = "unmeasured" if value is None else ("pass" if (value <= limit if kind == "max" else value >= limit) else "fail")

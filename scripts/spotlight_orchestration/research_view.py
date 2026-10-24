@@ -51,9 +51,9 @@ MODE_LABELS = {
 CLUE_MARKS = ("pursue", "dismiss")
 # Where a lead is listed below the clues (``_section``).
 SECTIONS = ("direction", "circumstantial", "flagged", "set_aside", "unverifiable", "snippet")
-# Triage context labels (research_rules): kept leads, never set aside for them.
+# The triage context label (research_rules): a kept lead, never set aside for it.
 CIRCUMSTANTIAL = "circumstantial"
-CONTEXT_LABELS = (CIRCUMSTANTIAL, "outside_directions")
+CONTEXT_LABELS = (CIRCUMSTANTIAL,)
 PLANNED_MARKS = ("keep", "drop")
 NEW_MARK = "add"
 # K6 watchlist and C1 premise clues are always shown and never dismissed (D7).

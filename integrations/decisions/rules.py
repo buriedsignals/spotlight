@@ -16,8 +16,6 @@ GROUNDING_THRESHOLDS = {
     "amounts": 0.6, "dates": 0.6, "scope": 0.5, "causation": 0.6, "arithmetic": 0.7,
     "claim_beneficial": 0.9,
 }
-ENTITY_AMBIGUITY = 0.6
-PROPOSITION_PASS = {"equivalent", "narrower"}
 LEGAL_WORDS = re.compile(
     r"legal|domicil|incorporat|registered (?:in|office|as|with)|\bseat\b|"
     r"siège|siege|domicili|immatricul|inscrit|constitu|"
@@ -141,37 +139,3 @@ def report_signal(verdict: str, answers: Mapping[str, Any]) -> dict[str, Any]:
     kind = type_answer["choice"] if flags and type_answer["choice"] != "none" else ("unspecified" if flags else "none")
     return {"status": "judged", "flags": flags, "overstatement_type": kind}
 
-
-def proposition_signal(answers: Mapping[str, Any]) -> dict[str, Any]:
-    result = _agree(answers, "i_prop")
-    if result is None:
-        return {"status": "judged", "result": "inconclusive", "flags": [{"reason": "proposition_inconclusive", "detail": "the two option orders disagree"}]}
-    flags = [] if result in PROPOSITION_PASS else [{"reason": f"proposition_{result}"}]
-    return {"status": "judged", "result": result, "flags": flags}
-
-
-def membership_signal(declared: str, answers: Mapping[str, Any]) -> dict[str, Any]:
-    result = _agree(answers, "i_member")
-    if result is None:
-        return {"status": "judged", "result": "inconclusive", "declared": declared,
-                "flags": [{"reason": "relation_inconclusive", "detail": "the two option orders disagree"}]}
-    flags = [] if result == declared else [{"reason": "relation_disagrees", "detail": f"declared {declared}, model {result}"}]
-    return {"status": "judged", "result": result, "declared": declared, "flags": flags}
-
-
-def entity_signal(answers: Mapping[str, Any], declared: str = "") -> dict[str, Any]:
-    result = "unclear" if float(answers["i_entity_ambiguous"]["noul"]) >= ENTITY_AMBIGUITY else answers["i_entity"]["choice"]
-    flags = []
-    if result == "unclear":
-        flags.append({"reason": "entity_type_unclear"})
-    elif declared and declared != result:
-        flags.append({"reason": "entity_type_disagrees", "detail": f"declared {declared}, model {result}"})
-    return {"status": "judged", "result": result, "declared": declared, "flags": flags}
-
-
-def match_signal(answers: Mapping[str, Any]) -> dict[str, Any]:
-    result = _agree(answers, "i_match")
-    if result is None:
-        return {"status": "judged", "result": "inconclusive", "flags": [{"reason": "match_inconclusive", "detail": "the two option orders disagree"}]}
-    flags = [{"reason": f"existing_claim_{result}"}] if result in ("same_claim", "updates", "contradicts") else []
-    return {"status": "judged", "result": result, "flags": flags}

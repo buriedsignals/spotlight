@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://spotlight.buriedsignals.com/schemas/decision-signals.schema.json",
   "title": "Spotlight decision-model review signals",
-  "description": "Typed decision-model answers and the deterministic signals derived from them. data/decision-signals.json holds investigation_gate and report phases (files written before the rename carry gate1, read as investigation_gate); data/decision-signals-ingest.json holds the ingest phase. Signals are classifications, never evidence: they can only lower confidence, add review flags or route records to a lead layer.",
+  "description": "Typed decision-model answers and the deterministic signals derived from them. data/decision-signals.json holds investigation_gate and report phases (files written before the rename carry gate1, read as investigation_gate). Signals are classifications, never evidence: they can only lower confidence, add review flags or route records to a lead layer.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -88,9 +88,6 @@
         },
         "report": {
           "$ref": "#/$defs/report"
-        },
-        "ingest": {
-          "$ref": "#/$defs/ingest"
         }
       }
     },
@@ -363,94 +360,6 @@
         }
       },
       "additionalProperties": false
-    },
-    "ingest": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/phaseHeader"
-        }
-      ],
-      "type": "object",
-      "properties": {
-        "generated_at": true,
-        "mode": true,
-        "status": true,
-        "reason": true,
-        "propositions": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ingestItem"
-          }
-        },
-        "memberships": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ingestItem"
-          }
-        },
-        "entities": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ingestItem"
-          }
-        },
-        "matches": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ingestItem"
-          }
-        },
-        "groups_generated_at": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "ingestItem": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "target",
-        "input_sha256",
-        "status",
-        "result",
-        "flags"
-      ],
-      "properties": {
-        "target": {
-          "type": "string",
-          "minLength": 1
-        },
-        "input_sha256": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
-        },
-        "status": {
-          "$ref": "#/$defs/status"
-        },
-        "result": {
-          "type": "string"
-        },
-        "declared": {
-          "type": "string"
-        },
-        "flags": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/flag"
-          }
-        },
-        "answers": {
-          "$ref": "#/$defs/answers"
-        },
-        "input": {
-          "type": "object",
-          "description": "Every input that can change the derived result."
-        }
-      }
     }
   }
 }

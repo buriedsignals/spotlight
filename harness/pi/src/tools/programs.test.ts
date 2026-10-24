@@ -77,7 +77,6 @@ test('every program-backed tool and harness validator runs without a shell', asy
 	const { root, caseDir, context, call, recorded } = await fixture(t);
 	await writeFile(join(caseDir, HOSTILE_FILE), 'pdf');
 	await writeFile(join(caseDir, 'data', 'rlm-request.json'), '{"project":"case"}');
-	await writeFile(join(caseDir, 'data', 'entities.json'), '[]');
 
 	const calls: Array<[string, Record<string, unknown>]> = [
 		['search', { query: HOSTILE }],
@@ -88,7 +87,7 @@ test('every program-backed tool and harness validator runs without a shell', asy
 		['osint_tools', { action: 'categories' }],
 		['exiftool', { path: HOSTILE_FILE }],
 		['navigator_tools', { action: 'find', value: HOSTILE }],
-		['decision_signals', { phase: 'ingest', entities: 'data/entities.json' }],
+		['decision_signals', { phase: 'report' }],
 		['provenance_manifest', { action: 'check_current' }],
 		['run_rlm', { request: 'data/rlm-request.json' }],
 		['integration_status', {}],

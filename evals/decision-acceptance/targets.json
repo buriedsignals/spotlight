@@ -2,7 +2,7 @@
  "status": "proposed",
  "approved_by": null,
  "approved_at": null,
- "bank_version": "63ed20e12ab21d7583d5bc883ef2390977fa7a7829d90fbcbbcb4262b256ea07",
+ "bank_version": "6e154ae0bfb5164afe953ad128419e45f6d449a2cec18539ac9b4cba27be8532",
  "note": "Proposed pass targets. They are the maintainer's decision: approve or change them here, set status to approved with approved_by, and only then run the held-out half. Thresholds are the trial P(yes) cut-offs for the on-trial questions; a passing run freezes them into the acceptance record.",
  "thresholds": {
   "c2_new_actor": 0.5,

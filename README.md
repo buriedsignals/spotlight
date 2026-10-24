@@ -274,10 +274,8 @@ never writes text and never decides a verdict:
 - **Report:** does any deck, headline, summary, "why it matters" or caveat say
   more than its findings and verdicts allow? The finalizer's `report_fidelity`
   stage reads the stored answers.
-- **Ingest:** eligibility runs in code (`scripts/ingest-eligibility.py`). Checks
-  cover a knowledge-base proposition that changed its finding's meaning, the
-  claim-to-event relation, entity types (ambiguous bare names become
-  `unclear`), and matching against existing claims.
+- **Ingest:** no decision checks. Eligibility runs in code
+  (`scripts/ingest-eligibility.py`) and reads the Investigation-gate signals.
 
 It is off unless you choose it. Preflight asks once per install
 (`python3 integrations/preflight.py --json` shows `decisions` with `opt_in:

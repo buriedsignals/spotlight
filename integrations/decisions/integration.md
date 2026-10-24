@@ -29,15 +29,14 @@ leaves the endpoint out and uses Jev on OpenRouter.
 ## What it does
 
 `scripts/decision-signals.py` asks the decision model narrow, typed questions and
-writes `data/decision-signals.json` (Investigation gate and report) or
-`data/decision-signals-ingest.json` (ingest, kept separate so ingest never
-invalidates a finalized report). Deterministic code turns the answers into signals:
+writes `data/decision-signals.json` (Investigation gate and report). Ingest has no
+decision checks: newsroom decisions are made server-side, and an individual
+member's ingest gets none. Deterministic code turns the answers into signals:
 
 | Phase | Check | Effect |
 |---|---|---|
 | Investigation gate prep (`--phase investigation-gate`) | Grounding of each finding against its located source excerpt | Flags with reasons (partial support, contradiction, announced-not-current, incomplete list, address used as legal domicile, allegation stated as fact, reversed payer or owner, role presented as ownership, proposed or approved presented as paid, amount or date mismatch, scope or causation added); a confidence cap; claim facets |
 | Report (`--phase report`) | Fidelity of each deck, headline, summary, why-it-matters and caveat against its findings and verdicts | Flags overstated prose with a type (certainty, causation, scope, actor, amount, allegation as fact, …) |
-| Ingest (`--phase ingest`) | Proposition vs finding claim; claim-to-event relation; entity type; matching against existing claims | Blocks broadened propositions, flags relation disagreements, types entities or marks them `unclear` |
 
 ## Boundaries
 
@@ -63,6 +62,11 @@ invalidates a finalized report). Deterministic code turns the answers into signa
 (`research_questions.py`, versioned on its own, outside `questions.ALL`) about
 each merged lead in `data/leads.json` and writes `data/research-triage.json`.
 Rules S1, S2 and N1 and the questions' effects are in `research_rules.py`.
+There is no direction question. Q1 (identity) is asked only of Jev (Frontier
+mode); with the local model (Kev in Ninja mode) or the rules there is no
+identity label, no circumstantial label, and the page ranking has no identity
+tier: clue type, then source, then assertion, then source families, then
+stored pages before snippets.
 No answer sets a lead aside: answers label, flag or raise clues. Whether the
 stored source holds a lead's excerpt is D3's check (`research_checks.py`),
 which marks a failing lead unverifiable.
