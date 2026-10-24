@@ -14,6 +14,7 @@ const REQUEST_TIMEOUT_MS = 150_000;
 const ENTITY_ID = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 const MAX_ENTITY_MENTIONS = 50;
 const MAX_CANDIDATES = 10;
+const ENTITY_LOOKUPS_AT_ONCE = 4;
 // A gate review can take a while; the idle limit resets on every page request.
 export const DEFAULT_IDLE_MS = 45 * 60_000;
 export const DEFAULT_OVERALL_MS = 8 * 60 * 60_000;
@@ -102,6 +103,8 @@ export async function startReviewServer({
   host = "127.0.0.1",
   idleMs = DEFAULT_IDLE_MS,
   overallMs = DEFAULT_OVERALL_MS,
+  entityLookupMs = 10_000,
+  entityBudgetMs = 30_000,
   now = () => new Date(),
   onLifecycle = () => {},
 } = {}) {
@@ -214,8 +217,9 @@ export async function startReviewServer({
   // picked, with the review digest it was offered for. Engine's answers are
   // kept for this page; each call renews the offer for the current digest.
   // Past the limits, what is left out is counted ("more", "omitted_mentions").
-  // Nothing without Engine, with an old bsig or with no candidates; any other
-  // failure marks only that mention, and the others are still looked up.
+  // Lookups run a few at a time, each with its own deadline, all within one
+  // page budget. Nothing without Engine, with an old bsig or with no
+  // candidates; a failed or late lookup marks only that mention.
   const registerAnswers = new Map();
   let offer = { digest: "", ids: new Map() };
   async function entityCandidates() {
@@ -225,16 +229,21 @@ export async function startReviewServer({
     const mentions = [];
     const ids = new Map();
     const unresolved = view.items.filter((entry) => entry.kind === "entity_link");
-    for (const item of unresolved.slice(0, MAX_ENTITY_MENTIONS)) {
-      if (!registerAnswers.has(item.key)) {
-        let result;
-        try {
-          result = await wiki.resolve({ name: item.label, ...(item.entity_type ? { type: item.entity_type } : {}) });
-        } catch (error) {
-          if (error.code === "unsupported") return none;
-          mentions.push({ key: item.key, name: item.label, candidates: [], failed: true });
-          continue;
-        }
+    const shown = unresolved.slice(0, MAX_ENTITY_MENTIONS);
+    const queue = shown.filter((item) => !registerAnswers.has(item.key));
+    const failed = new Set();
+    let unsupported = false;
+    const budget = new AbortController();
+    const budgetTimer = setTimeout(() => budget.abort(), entityBudgetMs);
+    async function lookUp(item) {
+      const deadline = new AbortController();
+      const stop = () => deadline.abort();
+      const timer = setTimeout(stop, entityLookupMs);
+      budget.signal.addEventListener("abort", stop);
+      try {
+        if (budget.signal.aborted) throw new Error("the page budget ran out");
+        const result = await wiki.resolve({ name: item.label, ...(item.entity_type ? { type: item.entity_type } : {}) }, deadline.signal);
+        if (deadline.signal.aborted) throw new Error("the lookup ran out of time");
         const valid = (Array.isArray(result?.candidates) ? result.candidates : [])
           .filter((candidate) => typeof candidate?.id === "string" && ENTITY_ID.test(candidate.id));
         registerAnswers.set(item.key, {
@@ -243,6 +252,25 @@ export async function startReviewServer({
             .slice(0, MAX_CANDIDATES)
             .map((candidate) => ({ id: candidate.id, label: String(candidate.label ?? "").slice(0, 300), type: String(candidate.type ?? "").slice(0, 40) })),
         });
+      } catch (error) {
+        if (error.code === "unsupported") unsupported = true;
+        failed.add(item.key);
+      } finally {
+        clearTimeout(timer);
+        budget.signal.removeEventListener("abort", stop);
+      }
+    }
+    await Promise.allSettled(
+      Array.from({ length: ENTITY_LOOKUPS_AT_ONCE }, async () => {
+        while (queue.length) await lookUp(queue.shift());
+      }),
+    );
+    clearTimeout(budgetTimer);
+    if (unsupported) return none;
+    for (const item of shown) {
+      if (failed.has(item.key)) {
+        mentions.push({ key: item.key, name: item.label, candidates: [], failed: true });
+        continue;
       }
       const { candidates, more } = registerAnswers.get(item.key);
       ids.set(item.key, new Set(candidates.map((candidate) => candidate.id)));

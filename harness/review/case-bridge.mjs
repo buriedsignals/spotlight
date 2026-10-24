@@ -189,7 +189,7 @@ export function createWikiBridge({
   env = safeChildEnvironment(),
 } = {}) {
   let bsig = "";
-  const exec = (file, args, input) => runBounded(file, args, { cwd: checkoutRoot, env, input });
+  const exec = (file, args, input, signal) => runBounded(file, args, { cwd: checkoutRoot, env, input, signal });
 
   // Only a found bsig is kept; a miss or a failed lookup is tried again next
   // time, and a failed lookup is an error, not "no Engine".
@@ -213,10 +213,10 @@ export function createWikiBridge({
   }
 
   // The last JSON event bsig printed: its result, or an error with the refusal.
-  async function run(args, input = "") {
+  async function run(args, input = "", signal) {
     const file = await bsigPath();
     if (!file) throw Object.assign(new Error("Engine is not installed"), { code: "unsupported" });
-    const result = await exec(file, ["--json", "wiki", ...args], input);
+    const result = await exec(file, ["--json", "wiki", ...args], input, signal);
     let event = {};
     try {
       event = JSON.parse(result.stdout.trim().split("\n").pop());
@@ -236,8 +236,9 @@ export function createWikiBridge({
     nonce: async (id) => (await run(["staged-nonce", id])).nonce,
     apply: (id, digest, nonce) => run(["staged-apply", id, `--digest=${digest}`], JSON.stringify({ nonce })),
     discard: (id, digest, nonce) => run(["staged-discard", id, `--digest=${digest}`], JSON.stringify({ nonce })),
-    // The register's answer for one mention ({name, type}), its arguments on stdin.
-    resolve: async (mention) => run(["resolve", ...(await workspaceArgs())], JSON.stringify(mention)),
+    // The register's answer for one mention ({name, type}), its arguments on
+    // stdin; an abort stops bsig.
+    resolve: async (mention, signal) => run(["resolve", ...(await workspaceArgs())], JSON.stringify(mention), signal),
   });
 }
 

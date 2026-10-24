@@ -105,7 +105,8 @@ pick is an `entity:<mention>` item in `data/ingest-review.json`, so the
 approval digest binds it, and the wiki write links the mention to it as
 approved (an exact register link found then still wins). The page shows up
 to 50 mentions and 10 candidates each and says how many more it left out. Without Engine, with a bsig that lacks `resolve`,
-with no candidates or in newsroom mode the section does not appear; a failed
+with no candidates or in newsroom mode the section does not appear. Lookups
+run four at a time, each within 10 s and all within 30 s; a failed or late
 lookup marks only that mention ("Could not look up") and the gate stays usable.
 
 ## Wiki changes

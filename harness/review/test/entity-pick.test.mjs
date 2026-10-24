@@ -97,3 +97,13 @@ test("candidates beyond the page's limit are counted, not dropped silently", asy
   assert.equal(acme.candidates.length, 10);
   assert.equal(acme.more, 2);
 });
+
+test("a slow lookup is cut at its deadline and marked, without holding up the other mentions", async (t) => {
+  const root = tempRoot(t);
+  const fake = fakeBsig(root, { changes: [], slowFor: { Acme: 4000 }, resolve: { Doe: ACME } });
+  const { json } = await authed(t, ingestCase(root), { wiki: fake.wiki, entityLookupMs: 1000, entityBudgetMs: 2000 });
+  const started = Date.now();
+  const { mentions } = (await json("/api/entity-candidates")).body;
+  assert.ok(Date.now() - started < 3500, "the page waited for the slow lookup");
+  assert.deepEqual(mentions.map(({ name, failed }) => [name, Boolean(failed)]), [["Acme", true], ["Doe", false]]);
+});
