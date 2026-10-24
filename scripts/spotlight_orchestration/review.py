@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -47,6 +48,8 @@ FLAG_ACTIONS = ("amend", "exclude", "investigate_further", "accept_with_reason")
 INGEST_BATCH = "data/knowledge-batch.json"
 INGEST_DRAFT = "data/knowledge-batch-draft.json"
 INGEST_PROPOSAL = "data/knowledge-proposal.json"
+# A register entity id the member picks for a mention; false means no link.
+ENTITY_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,127}")
 REPORT_DRAFT = "data/report-draft.json"
 MAX_NOTE = 2000
 MAX_REVIEWER = 200
@@ -171,6 +174,48 @@ def subject_digest(case: Path, gate: str) -> str:
 
 
 INGEST_MENTIONS = "data/knowledge-mentions.json"
+
+
+def member_linkable(known: object) -> bool:
+    """A mention the register cannot link at the write: the analyst found no
+    strong identifier (and none that conflicts), so only the member's pick on
+    the ingest page can link it."""
+    return isinstance(known, dict) and not known.get("identifiers") and not known.get("ambiguous")
+
+
+def entity_picks(items: dict[str, Any], mentions: dict[str, Any]) -> dict[str, str | bool]:
+    """The member's register picks from the saved ingest review, by mention
+    text: an entity id, or false for no link. Only member-linkable mentions count."""
+    return {item["target"][len("mention:"):]: item["final"] for item in items.values()
+            if isinstance(item, dict) and item.get("kind") == "entity_link" and isinstance(item.get("target"), str)
+            and (item.get("final") is False or (isinstance(item.get("final"), str) and ENTITY_ID.fullmatch(item["final"])))
+            and member_linkable(mentions.get(item["target"][len("mention:"):], {}))}
+
+
+def _unresolved_mentions(case: Path, batch: object) -> list[dict[str, Any]]:
+    """One pick per entity mention in the batch that is member-linkable. The
+    page offers the register's candidates; nothing is suggested."""
+    if not isinstance(batch, dict):
+        return []
+    names: list[str] = []
+    for claim in batch.get("claims", []):
+        statement = claim.get("statement") or {}
+        names += [(statement.get(part) or {}).get("text") for part in ("subject", "object")]
+    for event in batch.get("events", []):
+        names += [a.get("name") for a in event.get("actors", []) if isinstance(a, dict)]
+        names += [(event.get("object") or {}).get("text"), (event.get("place") or {}).get("name")]
+    names += [(p.get("actor") or {}).get("label") for p in batch.get("source_positions", [])]
+    doc = _read_case_json(case, INGEST_MENTIONS)
+    known = doc.get("mentions") if isinstance(doc, dict) and isinstance(doc.get("mentions"), dict) else {}
+    items = []
+    for name in dict.fromkeys(n for n in names if isinstance(n, str) and n.strip()):
+        if member_linkable(known.get(name, {})):
+            items.append({"key": f"entity:{name}", "kind": "entity_link", "target": f"mention:{name}", "label": name,
+                          "entity_type": (known.get(name) or {}).get("entity_type"), "suggested": None,
+                          "suggestion_source": "entity register",
+                          "suggestion_reason": "Not linked automatically: the analyst found no strong identifier.",
+                          "required": False})
+    return items
 
 
 def _batch_sha256(case: Path) -> str | None:
@@ -749,6 +794,7 @@ def _ingest_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[st
                           "suggested": None, "suggestion_source": "fact-check flag",
                           "suggestion_reason": f"Claim: {claim}. Flag {_text(flag.get('code'), 80)}: {_text(flag.get('reason'), 1000)}",
                           "required": True})
+    items += _unresolved_mentions(case, batch)
     state = "final" if isinstance(final, dict) else "draft" if isinstance(batch, dict) else "empty"
     content = {"batch": {"state": state, "records": records,
                          "batch_sha256": _batch_sha256(case) if state == "final" else None}}
@@ -904,6 +950,9 @@ def _validated_edit(edit: object, items: dict[str, dict[str, Any]]) -> dict[str,
             raise OrchestrationError("a selection mark is true or false")
     elif item["kind"] in ("clue", "direction"):
         research_view.validate_mark(item, value)
+    elif item["kind"] == "entity_link":
+        if value is not False and not (isinstance(value, str) and ENTITY_ID.fullmatch(value)):
+            raise OrchestrationError("an entity pick is a register entity id, or false for no link")
     elif item["kind"] == "flag":
         if value not in FLAG_ACTIONS:
             raise OrchestrationError(f"a flag disposition is one of: {', '.join(FLAG_ACTIONS)}")

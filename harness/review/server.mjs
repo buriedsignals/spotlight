@@ -11,6 +11,10 @@ import { inlineJson, renderShell } from "./shell.mjs";
 const BODY_LIMIT = 64 << 10;
 const MAX_FOLLOW_UP = 4000;
 const REQUEST_TIMEOUT_MS = 150_000;
+const ENTITY_ID = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+const MAX_ENTITY_MENTIONS = 50;
+const MAX_CANDIDATES = 10;
+const ENTITY_LOOKUPS_AT_ONCE = 4;
 // A gate review can take a while; the idle limit resets on every page request.
 export const DEFAULT_IDLE_MS = 45 * 60_000;
 export const DEFAULT_OVERALL_MS = 8 * 60 * 60_000;
@@ -99,6 +103,8 @@ export async function startReviewServer({
   host = "127.0.0.1",
   idleMs = DEFAULT_IDLE_MS,
   overallMs = DEFAULT_OVERALL_MS,
+  entityLookupMs = 10_000,
+  entityBudgetMs = 30_000,
   now = () => new Date(),
   onLifecycle = () => {},
 } = {}) {
@@ -203,6 +209,84 @@ export async function startReviewServer({
     } finally {
       wikiBusy.delete(id);
     }
+  }
+
+  // Register candidates for the solo Ingest page's mentions that have no
+  // strong identifier (bsig wiki resolve). They are untrusted: only id, label
+  // and type go to the page, as JSON text, and only an id offered here can be
+  // picked, with the review digest it was offered for. Engine's answers are
+  // kept for this page; each call renews the offer for the current digest.
+  // Past the limits, what is left out is counted ("more", "omitted_mentions").
+  // Lookups run a few at a time, each with its own deadline, all within one
+  // page budget. Nothing without Engine, with an old bsig or with no
+  // candidates; a failed or late lookup marks only that mention.
+  // Engine's answers hold for one record digest, by the query sent (name and
+  // type); a pick carries them and the offer to the digest it produced.
+  let answers = { digest: "", byQuery: new Map() };
+  let offer = { digest: "", ids: new Map() };
+  const entityQuery = (item) => ({ name: item.label, ...(item.entity_type ? { type: item.entity_type } : {}) });
+  async function entityCandidates() {
+    const none = { available: false, mentions: [] };
+    if (gate !== "ingest" || typeof wiki?.resolve !== "function") return none;
+    const view = await bridge.view(gate);
+    const mentions = [];
+    const ids = new Map();
+    const unresolved = view.items.filter((entry) => entry.kind === "entity_link");
+    const shown = unresolved.slice(0, MAX_ENTITY_MENTIONS);
+    if (answers.digest !== view.digest) answers = { digest: view.digest, byQuery: new Map() };
+    const cache = answers.byQuery;
+    const cacheKey = (item) => JSON.stringify(entityQuery(item));
+    const queue = shown.filter((item) => !cache.has(cacheKey(item)));
+    const failed = new Set();
+    let unsupported = false;
+    const budget = new AbortController();
+    const budgetTimer = setTimeout(() => budget.abort(), entityBudgetMs);
+    async function lookUp(item) {
+      const deadline = new AbortController();
+      const stop = () => deadline.abort();
+      const timer = setTimeout(stop, entityLookupMs);
+      budget.signal.addEventListener("abort", stop);
+      try {
+        if (budget.signal.aborted) throw new Error("the page budget ran out");
+        const result = await wiki.resolve(entityQuery(item), deadline.signal);
+        if (deadline.signal.aborted) throw new Error("the lookup ran out of time");
+        const valid = (Array.isArray(result?.candidates) ? result.candidates : [])
+          .filter((candidate) => typeof candidate?.id === "string" && ENTITY_ID.test(candidate.id));
+        cache.set(cacheKey(item), {
+          more: Math.max(0, valid.length - MAX_CANDIDATES),
+          candidates: valid
+            .slice(0, MAX_CANDIDATES)
+            .map((candidate) => ({ id: candidate.id, label: String(candidate.label ?? "").slice(0, 300), type: String(candidate.type ?? "").slice(0, 40) })),
+        });
+      } catch (error) {
+        if (error.code === "unsupported") unsupported = true;
+        failed.add(item.key);
+      } finally {
+        clearTimeout(timer);
+        budget.signal.removeEventListener("abort", stop);
+      }
+    }
+    await Promise.allSettled(
+      Array.from({ length: ENTITY_LOOKUPS_AT_ONCE }, async () => {
+        while (queue.length) await lookUp(queue.shift());
+      }),
+    );
+    clearTimeout(budgetTimer);
+    if (unsupported) return none;
+    for (const item of shown) {
+      if (failed.has(item.key)) {
+        mentions.push({ key: item.key, name: item.label, candidates: [], failed: true });
+        continue;
+      }
+      const { candidates, more } = cache.get(cacheKey(item));
+      ids.set(item.key, new Set(candidates.map((candidate) => candidate.id)));
+      if (candidates.length) mentions.push({ key: item.key, name: item.label, candidates, ...(more ? { more } : {}) });
+    }
+    const omitted = Math.max(0, unresolved.length - MAX_ENTITY_MENTIONS);
+    if (!mentions.length && !omitted) return none;
+    // The record changed while Engine answered: a newer offer stands.
+    if ((await bridge.view(gate)).digest === view.digest) offer = { digest: view.digest, ids };
+    return { available: true, digest: view.digest, mentions, ...(omitted ? { omitted_mentions: omitted } : {}) };
   }
 
   // The decision nonce lives only in this process and in the case ledger's
@@ -361,18 +445,39 @@ export async function startReviewServer({
           exactObject(await readJson(request), [], "view request");
           return sendJson(response, 200, await currentView());
         }
-        if (!gate && ["/api/edit", "/api/decide", "/api/follow-up", "/api/passages"].includes(url.pathname))
+        if (!gate && ["/api/edit", "/api/decide", "/api/follow-up", "/api/passages", "/api/entity-candidates"].includes(url.pathname))
           return sendJson(response, 409, { code: "not-pending", message: "No gate is waiting for a decision." });
         if (url.pathname === "/api/passages") {
           exactObject(await readJson(request), [], "passages request");
           return sendJson(response, 200, await passages());
         }
+        if (url.pathname === "/api/entity-candidates") {
+          exactObject(await readJson(request), [], "entity candidates request");
+          return sendJson(response, 200, await entityCandidates());
+        }
         if (url.pathname === "/api/edit") {
-          const { edit } = exactObject(await readJson(request), ["edit"], "edit request");
+          const body = await readJson(request);
+          // An entity pick also names the digest its candidates were offered for.
+          const { edit, digest } = exactObject(body, body && typeof body === "object" && "digest" in body ? ["edit", "digest"] : ["edit"], "edit request");
           const view = await bridge.view(gate);
           if (view.pending_gate !== gate)
             return sendJson(response, 409, { code: "not-pending", message: "This gate is decided; the review is read-only.", view: { ...view, gate_label: GATE_LABELS[gate] } });
-          return sendJson(response, 200, { ...(await bridge.edit(gate, edit)), gate_label: GATE_LABELS[gate] });
+          // An entity pick is one of the candidates offered for the record the
+          // page shows, or false for no link.
+          const pick = view.items.find((item) => item.key === edit?.key && item.kind === "entity_link");
+          if (pick && edit.kind === "mark") {
+            if (digest !== view.digest || offer.digest !== digest)
+              return sendJson(response, 409, { code: "digest-changed", message: "The record changed since the register's entities were shown. It has been reloaded: pick again.", view: { ...view, gate_label: GATE_LABELS[gate] } });
+            if (edit.value !== false && !offer.ids.get(pick.key)?.has(edit.value))
+              return sendJson(response, 422, { code: "refused", message: "Pick one of the register entities shown, or none." });
+          }
+          const saved = await bridge.edit(gate, edit);
+          // A pick changes only the review: the same offer holds for the digest it produced.
+          if (pick && edit.kind === "mark") {
+            offer = { ...offer, digest: saved.digest };
+            if (answers.digest === digest) answers = { ...answers, digest: saved.digest };
+          }
+          return sendJson(response, 200, { ...saved, gate_label: GATE_LABELS[gate] });
         }
         if (url.pathname === "/api/decide") {
           const [status, body] = await decide(await readJson(request));
