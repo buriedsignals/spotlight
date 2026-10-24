@@ -89,7 +89,8 @@ export function recordingOpener(root) {
 }
 
 // Engine's verbs as the fake implements them: a nonce binds one id and the
-// digest at issue time, travels on stdin, and a refusal leaves it unspent.
+// digest at issue time, travels on stdin, and a refusal leaves it unspent;
+// resolve answers state.resolve[name].
 const FAKE_BSIG = `#!/usr/bin/env node
 const { appendFileSync, readFileSync, writeFileSync } = require("node:fs");
 const { randomBytes } = require("node:crypto");
@@ -101,8 +102,10 @@ try { stdin = readFileSync(0, "utf8"); } catch {}
 appendFileSync(statePath + ".log", JSON.stringify({ argv, stdin }) + "\\n");
 const out = (event, code = 0) => { process.stdout.write(JSON.stringify(event) + "\\n"); writeFileSync(statePath, JSON.stringify(state)); process.exit(code); };
 const [, , verb, id] = argv;
-if (state.old || !verb.startsWith("staged")) out({ event: "error", message: "usage: bsig wiki <search|read>" }, 4);
+if (state.old || !(verb.startsWith("staged") || verb === "resolve")) out({ event: "error", message: "usage: bsig wiki <search|read>" }, 4);
 if (state.fail) out({ event: "error", message: state.fail }, 1);
+// The register's answer for one mention, its arguments read from stdin.
+if (verb === "resolve") out({ event: "result", data: { tool: verb, result: (state.resolve ?? {})[JSON.parse(stdin).name] ?? { status: "unknown" } } });
 if (argv.some((arg) => arg.startsWith("--nonce"))) out({ event: "error", message: "usage" }, 4);
 if (verb === "staged") out({ event: "result", data: { tool: verb, result: state.changes } });
 const change = state.changes.find((item) => item.id === id);

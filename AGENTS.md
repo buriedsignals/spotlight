@@ -357,7 +357,10 @@ Entity mentions link to `wiki/entities/` only on an exact register match from
 `bsig wiki resolve`; the register links on a strong identifier, so the
 lookup sends the analyst's identifiers for that mention
 (`data/knowledge-mentions.json`, bound by the ingest approval), which never
-enter a batch. Each batch's links are kept in `spotlight/entity-links.json`, so
+enter a batch. A mention with no strong identifier links only to the entity
+the member picked on the ingest page among the register's candidates (an item
+`entity:<mention>` in `data/ingest-review.json`, bound by the approval digest;
+the model never sets it). Each batch's links are kept in `spotlight/entity-links.json`, so
 rebuilding the notes for a later batch keeps them. Spotlight
 never writes the register. Without Engine there are no links. The write holds
 the wiki's `.wiki-lock` and the case lock throughout. Newsroom-mode cases

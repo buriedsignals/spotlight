@@ -25,6 +25,9 @@ let wikiChanges = null;
 let wikiError = "";
 // Case-search passages for the gate and record digest on show, fetched once each after the view.
 let passages = { gate: "", digest: "", data: null };
+// Register candidates for the Ingest page's unlinked mentions, for the mention
+// list on show (entityKey); fetched once per list, null until Engine answers.
+let entities = { key: "", data: null };
 
 const DECISION_LABELS = {
   methodology: { approved: "Approve the methodology" },
@@ -1043,11 +1046,74 @@ async function loadPassages(gate, digest) {
   if (view?.gate === gate && view.digest === digest) render(view);
 }
 
+// ---------------------------------------------------------------- entities
+
+// Solo Ingest: a mention with no strong identifier links to the entity
+// register only through the member's pick among the register's candidates.
+function entityKey() {
+  return view.gate === "ingest" ? view.items.filter((item) => item.kind === "entity_link").map((item) => item.key).join("\n") : "";
+}
+
+function entityCard(mention, item) {
+  const name = domId("entity", mention.key);
+  const options = [...mention.candidates.map((c) => [c.id, `${c.label} (${c.type}, ${c.id})`]), ["none", "None of these"]];
+  return el(
+    "fieldset",
+    { className: "card" },
+    el("legend", { text: `Mention: ${mention.name}` }),
+    el(
+      "div",
+      { className: "choices", role: "radiogroup", "aria-label": `Register entity for ${mention.name}` },
+      options.map(([value, label]) => {
+        const id = `${name}-${value}`;
+        return el(
+          "span",
+          { className: "choice" },
+          el("input", {
+            type: "radio",
+            id,
+            name,
+            value,
+            checked: item?.final === value,
+            disabled: readOnly() || busy || !item,
+            on: { change: () => edit({ kind: "mark", key: mention.key, value }) },
+          }),
+          el("label", { for: id, text: label }),
+        );
+      }),
+    ),
+  );
+}
+
+function entitySection() {
+  const data = entities.key && entities.key === entityKey() ? entities.data : null;
+  if (!data) return null;
+  if (data.failed) return el("p", { className: "muted", text: data.note });
+  if (!data.mentions.length) return null;
+  const items = new Map(view.items.map((item) => [item.key, item]));
+  return el(
+    "section",
+    { "aria-labelledby": "entities-heading" },
+    el("h2", { id: "entities-heading", text: "Link mentions to the entity register" }),
+    el("p", { className: "muted", text: "These mentions have no strong identifier, so they are not linked automatically. The register lists entities with similar names; pick one only if you know it is the same, otherwise none." }),
+    data.mentions.map((mention) => entityCard(mention, items.get(mention.key))),
+  );
+}
+
+async function loadEntities(key) {
+  entities = { key, data: null };
+  const { status, data } = await post("/api/entity-candidates", {});
+  if (status !== 200 || entities.key !== key) return;
+  entities = { key, data };
+  if (view && entityKey() === key) render(view);
+}
+
 // ---------------------------------------------------------------- render
 
 function render(next) {
   view = next;
   if (view.gate && (passages.gate !== view.gate || passages.digest !== view.digest)) loadPassages(view.gate, view.digest).catch(() => {});
+  if (view.gate && entityKey() && entities.key !== entityKey()) loadEntities(entityKey()).catch(() => {});
   title.textContent = `Spotlight review: ${view.gate_label || boot.gates?.[view.gate] || view.gate}`;
   keepFocus(() => {
     // No gate pending: the page shows only the staged wiki changes.
@@ -1080,7 +1146,7 @@ function render(next) {
     if (view.gate === "research") parts.push(...researchContent(view.content, view.items));
     if (view.gate === "investigation_gate") parts.push(...investigationContent(view.content, view.items));
     if (view.gate === "report") parts.push(...reportContent(view.content));
-    if (view.gate === "ingest") parts.push(...ingestContent(view.content, view.items));
+    if (view.gate === "ingest") parts.push(...ingestContent(view.content, view.items), entitySection());
     parts.push(passagesSection());
     if (!readOnly()) parts.push(decisionSection());
     if (wikiError) parts.push(wikiErrorSection());

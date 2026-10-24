@@ -150,6 +150,46 @@ class WikiDestination(INGEST.SoloCase):
         links = json.loads((wiki / "spotlight" / "entity-links.json").read_text(encoding="utf-8"))["batches"]
         self.assertNotIn("doe@example.org", json.dumps(links))
 
+    def candidates_only(self) -> str:
+        """A bsig whose register never links on its own: names give candidates."""
+        stub = Path(tempfile.mkdtemp(dir=self.root))
+        (stub / "bsig").write_text("#!/bin/sh\necho '{\"event\":\"result\",\"data\":{\"result\":{\"status\":\"candidates\"}}}'\n", encoding="utf-8")
+        (stub / "bsig").chmod(0o755)
+        return f"{stub}:/usr/bin:/bin"
+
+    def test_a_members_pick_links_the_mention_and_none_leaves_it_plain(self) -> None:
+        path, wiki = self.candidates_only(), self.wiki()
+        case = self.prepared("picked")
+        self.edit(case, "ingest", {"kind": "mark", "key": "entity:Doe", "value": "jane-doe"})
+        self.edit(case, "ingest", {"kind": "mark", "key": "entity:Acme", "value": "none"})
+        self.seam(case, "decide-ingest", "requested", "--nonce", self.nonce(case, "ingest"),
+                  "--digest", self.view(case, "ingest")["digest"], *INGEST.GATES.DECIDER)
+        done = self.write(case, wiki, path=path)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        note = next((wiki / "spotlight" / "claims").glob("*.md"))
+        self.assertIn("- Object: [[wiki/entities/jane-doe|Doe]]", note.read_text(encoding="utf-8"))
+        self.assertIn("- Subject: Acme\n", note.read_text(encoding="utf-8"))
+        # Another batch's write regenerates every note; the pick is kept.
+        self.assertEqual(self.write(self.requested("later"), wiki, path=path).returncode, 0)
+        self.assertIn("[[wiki/entities/jane-doe|Doe]]", note.read_text(encoding="utf-8"))
+        batch_id = json.loads((case / "data" / "knowledge-batch.json").read_text(encoding="utf-8"))["batch_id"]
+        links = json.loads((wiki / "spotlight" / "entity-links.json").read_text(encoding="utf-8"))["batches"]
+        self.assertEqual(links[batch_id], {"Doe": "jane-doe"})
+
+    def test_a_pick_changed_after_the_request_is_refused(self) -> None:
+        case = self.prepared("repicked")
+        self.edit(case, "ingest", {"kind": "mark", "key": "entity:Doe", "value": "jane-doe"})
+        self.seam(case, "decide-ingest", "requested", "--nonce", self.nonce(case, "ingest"),
+                  "--digest", self.view(case, "ingest")["digest"], *INGEST.GATES.DECIDER)
+        record = case / "data" / "ingest-review.json"
+        record.write_bytes(record.read_bytes().replace(b'"final": "jane-doe"', b'"final": "john-doe"'))
+        wiki = self.wiki()
+        refused = self.write(case, wiki, path=self.candidates_only())
+        # The request binds the review digest, so it no longer counts.
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("not been requested", refused.stderr)
+        self.assertFalse((wiki / "spotlight").exists())
+
     def test_a_malformed_mentions_file_stops_before_any_write(self) -> None:
         case = self.prepared("malformed")
         (case / "data" / "knowledge-mentions.json").write_text("[1, 2]", encoding="utf-8")

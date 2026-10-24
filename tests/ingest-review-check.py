@@ -93,6 +93,21 @@ class SoloIngest(SoloCase):
         self.assertNotIn("story_arcs", batch)
         self.assertNotEqual(self.view(case, "ingest")["digest"], before)
 
+    def test_only_mentions_without_a_strong_identifier_are_offered_for_a_pick(self) -> None:
+        case = self.prepared("entities")
+        (case / "data" / "knowledge-mentions.json").write_text(json.dumps({"schema_version": "1.0", "mentions": {
+            "Acme": {"entity_type": "company", "identifiers": {"lei": "5493001KJTIIGC8Y1R12"}}}}), encoding="utf-8")
+        view = self.view(case, "ingest")
+        offered = [i for i in view["items"] if i["kind"] == "entity_link"]
+        self.assertEqual([(i["key"], i["label"], i["suggested"], i["required"]) for i in offered], [("entity:Doe", "Doe", None, False)])
+        self.edit(case, "ingest", {"kind": "mark", "key": "entity:Doe", "value": "Jane Doe"}, expect=3)  # not an entity id
+        self.edit(case, "ingest", {"kind": "mark", "key": "entity:Acme", "value": "acme-ltd"}, expect=3)  # linked by its identifier
+        self.edit(case, "ingest", {"kind": "mark", "key": "entity:Doe", "value": "jane-doe"})
+        after = self.view(case, "ingest")
+        self.assertEqual(next(i["final"] for i in after["items"] if i["key"] == "entity:Doe"), "jane-doe")
+        self.assertNotEqual(after["digest"], view["digest"])
+        self.assertEqual(after["content"]["batch"]["state"], "final")
+
     def test_a_changed_proposal_changes_the_digest(self) -> None:
         # The page shows the proposal's claims and their case passages.
         case = self.prepared("proposal")

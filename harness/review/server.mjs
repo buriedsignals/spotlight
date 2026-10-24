@@ -11,6 +11,9 @@ import { inlineJson, renderShell } from "./shell.mjs";
 const BODY_LIMIT = 64 << 10;
 const MAX_FOLLOW_UP = 4000;
 const REQUEST_TIMEOUT_MS = 150_000;
+const ENTITY_ID = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+const MAX_ENTITY_MENTIONS = 50;
+const MAX_CANDIDATES = 10;
 // A gate review can take a while; the idle limit resets on every page request.
 export const DEFAULT_IDLE_MS = 45 * 60_000;
 export const DEFAULT_OVERALL_MS = 8 * 60 * 60_000;
@@ -205,6 +208,33 @@ export async function startReviewServer({
     }
   }
 
+  // Register candidates for the solo Ingest page's mentions that have no
+  // strong identifier (bsig wiki resolve). They are untrusted: only id, label
+  // and type go to the page, as JSON text, and only an id offered here can be
+  // picked. Nothing without Engine, with an old bsig or with no candidates;
+  // any other failure is a short note and the page stays usable.
+  const offered = new Map();
+  async function entityCandidates() {
+    const none = { available: false, mentions: [] };
+    if (gate !== "ingest" || typeof wiki?.resolve !== "function") return none;
+    const unresolved = (await bridge.view(gate)).items.filter((item) => item.kind === "entity_link");
+    const mentions = [];
+    try {
+      for (const item of unresolved.slice(0, MAX_ENTITY_MENTIONS)) {
+        const result = await wiki.resolve({ name: item.label, ...(item.entity_type ? { type: item.entity_type } : {}) });
+        const candidates = (Array.isArray(result?.candidates) ? result.candidates : [])
+          .filter((candidate) => typeof candidate?.id === "string" && ENTITY_ID.test(candidate.id))
+          .slice(0, MAX_CANDIDATES)
+          .map((candidate) => ({ id: candidate.id, label: String(candidate.label ?? "").slice(0, 300), type: String(candidate.type ?? "").slice(0, 40) }));
+        offered.set(item.key, new Set(candidates.map((candidate) => candidate.id)));
+        if (candidates.length) mentions.push({ key: item.key, name: item.label, candidates });
+      }
+    } catch (error) {
+      return error.code === "unsupported" ? none : { ...none, failed: true, note: "Could not read the entity register." };
+    }
+    return { available: mentions.length > 0, mentions };
+  }
+
   // The decision nonce lives only in this process and in the case ledger's
   // hash; the page never receives it.
   async function decisionNonce() {
@@ -361,17 +391,25 @@ export async function startReviewServer({
           exactObject(await readJson(request), [], "view request");
           return sendJson(response, 200, await currentView());
         }
-        if (!gate && ["/api/edit", "/api/decide", "/api/follow-up", "/api/passages"].includes(url.pathname))
+        if (!gate && ["/api/edit", "/api/decide", "/api/follow-up", "/api/passages", "/api/entity-candidates"].includes(url.pathname))
           return sendJson(response, 409, { code: "not-pending", message: "No gate is waiting for a decision." });
         if (url.pathname === "/api/passages") {
           exactObject(await readJson(request), [], "passages request");
           return sendJson(response, 200, await passages());
+        }
+        if (url.pathname === "/api/entity-candidates") {
+          exactObject(await readJson(request), [], "entity candidates request");
+          return sendJson(response, 200, await entityCandidates());
         }
         if (url.pathname === "/api/edit") {
           const { edit } = exactObject(await readJson(request), ["edit"], "edit request");
           const view = await bridge.view(gate);
           if (view.pending_gate !== gate)
             return sendJson(response, 409, { code: "not-pending", message: "This gate is decided; the review is read-only.", view: { ...view, gate_label: GATE_LABELS[gate] } });
+          // An entity pick is one of the candidates this page was shown, or "none".
+          const pick = view.items.find((item) => item.key === edit?.key && item.kind === "entity_link");
+          if (pick && edit.kind === "mark" && edit.value !== "none" && !offered.get(pick.key)?.has(edit.value))
+            return sendJson(response, 422, { code: "refused", message: "Pick one of the register entities shown, or none." });
           return sendJson(response, 200, { ...(await bridge.edit(gate, edit)), gate_label: GATE_LABELS[gate] });
         }
         if (url.pathname === "/api/decide") {

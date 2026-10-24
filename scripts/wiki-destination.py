@@ -20,8 +20,9 @@ activated case in solo mode. In order:
      bytes no longer match was edited by hand: the write stops rather than
      overwrite it (--overwrite-hand-edits to replace it).
    Entity mentions link to the shared register (wiki/entities/) only when
-   `bsig wiki resolve` finds an exact match; this script never writes the
-   register.
+   `bsig wiki resolve` finds an exact match, or, for a mention with no strong
+   identifier, to the entity the member picked on the ingest page (bound by
+   the request); this script never writes the register.
 4. data/ingestion.json records the completed receipt, which the phase seals.
 
 The wiki lock (the wiki service's .wiki-lock) and the case lock are held for
@@ -181,10 +182,11 @@ class Resolver:
     links. The register links on a strong identifier: the batch being written
     sends its analyst's identifiers for a mention, and other batches' notes
     keep the links their own writes found (spotlight/entity-links.json),
-    because their identifiers stay in their own case folders."""
+    because their identifiers stay in their own case folders. A mention the
+    register does not link takes the member's pick for this batch, if any."""
 
     def __init__(self, workspace: Path, batch_id: str = "", mentions: dict[str, Any] | None = None,
-                 stored: dict[str, dict[str, str]] | None = None):
+                 stored: dict[str, dict[str, str]] | None = None, picks: dict[str, str] | None = None):
         self.bsig = bsig_path()
         self.workspace = workspace
         self.batch_id = batch_id
@@ -194,13 +196,21 @@ class Resolver:
         self.links: dict[str, dict[str, str]] = {b: dict(names) for b, names in (stored or {}).items() if isinstance(names, dict)}
         self.links.pop(batch_id, None)  # the batch being written is resolved afresh
         self.cache: dict[tuple[str, str], str | None] = {}
+        self.picks = picks or {}  # mention text -> entity id or "none" (review.entity_picks)
+
+    def _picked(self, name: str, batch_id: str) -> str | None:
+        pick = self.picks.get(name) if batch_id == self.batch_id else None
+        if pick in (None, "none"):
+            return None
+        self.links.setdefault(batch_id, {})[name] = pick
+        return pick
 
     def entity(self, name: str, batch_id: str = "") -> str | None:
         batch_id = batch_id or self.batch_id
         if batch_id != self.batch_id and name in self.links.get(batch_id, {}):
             return self.links[batch_id][name]
         if not self.bsig or not name.strip():
-            return None
+            return self._picked(name, batch_id)
         key = (batch_id, name)
         if key not in self.cache:
             self.cache[key] = None
@@ -226,7 +236,7 @@ class Resolver:
                     self.cache[key] = result["entity_id"]
             if self.cache[key] and batch_id == self.batch_id:
                 self.links.setdefault(batch_id, {})[name] = self.cache[key]
-        return self.cache[key]
+        return self.cache[key] or self._picked(name, batch_id)
 
     def link(self, name: str, batch_id: str = "") -> str:
         entity = self.entity(name, batch_id)
@@ -405,6 +415,8 @@ def write(case: Path, workspace: Path, overwrite_hand_edits: bool = False) -> di
         mentions = mentions_doc.get("mentions") if isinstance(mentions_doc, dict) else None
         if not isinstance(mentions, dict) or not all(isinstance(v, dict) for v in mentions.values()):
             raise DestinationError("knowledge-mentions.json must map each mention to an object")
+        # The member's register picks, from the review the request bound.
+        picks = review.entity_picks(review.load_review(case, "ingest", descriptor)["items"], mentions)
 
         # Wiki: the batch whole, then the journal, then the regenerated notes.
         batch_file = _confined(workspace, f"{NAMESPACE}/batches/{_slug(batch['batch_id'])}.json")
@@ -439,7 +451,7 @@ def write(case: Path, workspace: Path, overwrite_hand_edits: bool = False) -> di
         links_path = _confined(workspace, f"{NAMESPACE}/entity-links.json")
         stored_doc = _load(links_path) if links_path.is_file() else {}
         stored_links = stored_doc.get("batches", {}) if isinstance(stored_doc, dict) else {}
-        resolver = Resolver(workspace, batch["batch_id"], mentions, stored_links if isinstance(stored_links, dict) else {})
+        resolver = Resolver(workspace, batch["batch_id"], mentions, stored_links if isinstance(stored_links, dict) else {}, picks)
         notes = notes_for(kept, journal, resolver)
         edited = []
         for rel, text in notes.items():
