@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ConfigError, RouteRefused, checkNewsroomInstall, checkRouteSecrets, childEnv, piSettings, readConfig, routeFor, resolverEnv, secretValues } from './config.ts';
+import { ConfigError, RouteRefused, checkNewsroomInstall, checkRouteSecrets, childEnv, parseLaunchArgs, piSettings, readConfig, routeFor, resolverEnv, secretValues } from './config.ts';
 import {
 	CASE_REFERENCE_FILE,
 	CaseRecordError,
@@ -27,7 +27,7 @@ import type { CheckKind, EditorialClient, RunPackage } from './editorial.ts';
 import { openInBrowser } from '../../review/session.mjs';
 import { newsroomData } from './tools/editorial.ts';
 import { DESKTOP_ENV, capped, programEnv, runFixed } from './tools/run.ts';
-import type { HarnessConfig } from './config.ts';
+import type { HarnessConfig, LaunchArgs } from './config.ts';
 import { CaseHeldError, acquireCaseLock } from './lock.ts';
 import type { CaseLock } from './lock.ts';
 import { redactingLines, redactor, stderrLogger } from './log.ts';
@@ -53,6 +53,7 @@ const EXIT = { config: 2, held: 3, failed: 1, signIn: 4, newsroom: 5 } as const;
 
 type Harness = {
 	config: HarnessConfig;
+	args: LaunchArgs;
 	active: ActiveCase;
 	composition: Composition;
 	lock: CaseLock;
@@ -217,6 +218,8 @@ function processLaunch(harness: Harness, role: string) {
 			skills: skillsFor(harness.composition, role),
 			tools: allowedTools(spec, harness.config.sensitive, harness.config.edition),
 			model: route.model,
+			// The chat client's system prompt is for the orchestrator only.
+			appendSystemPrompt: role === ORCHESTRATOR ? harness.args.appendSystemPrompt : undefined,
 		}),
 		env,
 		cwd: resolve(harness.config.dataDir, 'work', role),
@@ -462,10 +465,12 @@ function start(harness: Harness): void {
 
 function main(): void {
 	const plain = stderrLogger('spotlight');
+	let args: LaunchArgs;
 	let config: HarnessConfig;
 	let composition: Composition;
 	try {
-		config = readConfig(process.env);
+		args = parseLaunchArgs(process.argv.slice(2));
+		config = readConfig(process.env, args.sessionId);
 		composition = loadComposition();
 		routeFor(config);
 		checkRouteSecrets(config, composition, process.env);
@@ -491,7 +496,7 @@ function main(): void {
 		log(`cannot start: ${(error as Error).message}`);
 		process.exit(error instanceof CaseHeldError ? EXIT.held : EXIT.config);
 	}
-	const harness: Harness = { config, active, composition, lock, log, redact, children: new Set(), editorial: editorialClient(config, process.env, secrets) };
+	const harness: Harness = { config, args, active, composition, lock, log, redact, children: new Set(), editorial: editorialClient(config, process.env, secrets) };
 	if (!harness.editorial) {
 		// A case the newsroom holds (registered, or a submission recorded) is
 		// never also run as a solo case: that would split its custody.

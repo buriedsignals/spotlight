@@ -64,8 +64,8 @@ export type Chat = {
 	exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
 };
 
-export function launch(t: TestContext, env: Record<string, string>): Chat {
-	const child = spawn(process.execPath, [LAUNCHER], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+export function launch(t: TestContext, env: Record<string, string>, args: string[] = []): Chat {
+	const child = spawn(process.execPath, [LAUNCHER, ...args], { env, stdio: ['pipe', 'pipe', 'pipe'] });
 	const lines: string[] = [];
 	let partial = '';
 	let stderr = '';

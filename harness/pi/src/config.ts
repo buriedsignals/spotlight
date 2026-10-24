@@ -1,8 +1,12 @@
 // Launch configuration. The harness reads its configuration only from the
 // environment the caller sets; nothing comes from the member's own Pi config.
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { isIP } from 'node:net';
 import { isAbsolute, resolve } from 'node:path';
+import { CaseHeldError, acquireCaseLock } from './lock.ts';
+import type { CaseLock } from './lock.ts';
+import { piCliPath } from './pi-process.ts';
 import { parseFixedRequestBody } from './provider-policy.ts';
 import { CHECKOUT_ROOT, agentSpec } from './roles.ts';
 import type { Composition } from './roles.ts';
@@ -259,17 +263,18 @@ function rlmEndpoint(env: Env, edition: Edition, routes: Route[]): string | unde
 	return url;
 }
 
-export function readConfig(env: Env): HarnessConfig {
+export function readConfig(env: Env, chatId?: string): HarnessConfig {
 	const editionValue = env.SPOTLIGHT_EDITION?.trim() || 'solo';
 	if (editionValue !== 'solo' && editionValue !== 'newsroom') {
 		throw new ConfigError('SPOTLIGHT_EDITION must be "solo" or "newsroom".');
 	}
 	const edition: Edition = editionValue;
 	const casesRoot = required(env, 'SPOTLIGHT_CASES_ROOT');
-	const caseId = required(env, 'SPOTLIGHT_CASE_ID');
 	const dataDir = required(env, 'SPOTLIGHT_HARNESS_DATA');
 	if (!isAbsolute(casesRoot)) throw new ConfigError('SPOTLIGHT_CASES_ROOT must be an absolute path.');
 	if (!isAbsolute(dataDir)) throw new ConfigError('SPOTLIGHT_HARNESS_DATA must be an absolute path.');
+	// SPOTLIGHT_CASE_ID wins; otherwise the chat id binds the case.
+	const caseId = chatId && !env.SPOTLIGHT_CASE_ID?.trim() ? bindChatCase(resolve(casesRoot), resolve(dataDir), chatId) : required(env, 'SPOTLIGHT_CASE_ID');
 	if (!CASE_ID.test(caseId) || caseId === '.' || caseId === '..') {
 		throw new ConfigError('SPOTLIGHT_CASE_ID must be a plain case folder name (letters, digits, ".", "_", "-").');
 	}
@@ -619,5 +624,110 @@ export function checkNewsroomInstall(config: HarnessConfig): void {
 	}
 	if (mode !== 'newsroom' && config.edition === 'newsroom') {
 		throw new ConfigError(`the newsroom edition needs knowledge_destination.mode "newsroom" in the install config (${config.spotlightConfig}).`);
+	}
+}
+
+// The launcher's arguments when a chat client such as Osaurus (a `pi_rpc`
+// harness runtime) starts it, and the binding from that client's chat id to a
+// case folder. Without arguments the launcher takes everything from the
+// environment, as before.
+
+export type LaunchArgs = { sessionId?: string; appendSystemPrompt?: string };
+
+const VALUE_FLAGS = { '--mode': 'mode', '--session-id': 'sessionId', '--append-system-prompt': 'appendSystemPrompt' } as const;
+
+// Anything outside this contract stops the launcher, so a runtime
+// misconfigured in the chat client fails loudly instead of being ignored.
+export function parseLaunchArgs(argv: string[]): LaunchArgs {
+	const values: Partial<Record<'mode' | 'sessionId' | 'appendSystemPrompt', string>> = {};
+	for (let index = 0; index < argv.length; index += 2) {
+		const key = VALUE_FLAGS[argv[index] as keyof typeof VALUE_FLAGS];
+		if (!key) throw new ConfigError(`unknown argument "${argv[index]}". Accepted: --mode rpc, --session-id <id>, --append-system-prompt <file>.`);
+		const value = argv[index + 1];
+		if (!value?.trim()) throw new ConfigError(`${argv[index]} needs a value.`);
+		values[key] = value;
+	}
+	if (argv.length > 0 && values.mode !== 'rpc') throw new ConfigError('--mode rpc is required; it is the only mode.');
+	if (values.appendSystemPrompt) {
+		values.appendSystemPrompt = resolve(values.appendSystemPrompt);
+		if (!existsSync(values.appendSystemPrompt)) throw new ConfigError('--append-system-prompt names a file that does not exist.');
+	}
+	return { sessionId: values.sessionId, appendSystemPrompt: values.appendSystemPrompt };
+}
+
+const MAP_FILE = 'chats.json';
+
+// Keyed by the SHA-256 of the chat id, so the file holds no raw chat ids and
+// no id can name an Object.prototype member.
+function chatKey(chatId: string): string {
+	return createHash('sha256').update(chatId).digest('hex');
+}
+
+function validCaseId(value: unknown): value is string {
+	return typeof value === 'string' && CASE_ID.test(value) && value !== '.' && value !== '..';
+}
+
+// A value that is not a case folder name counts as absent for its chat.
+function readChatMap(dataDir: string): Record<string, string> {
+	const path = resolve(dataDir, MAP_FILE);
+	const chats: Record<string, string> = Object.create(null);
+	if (!existsSync(path)) return chats;
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(readFileSync(path, 'utf8'));
+	} catch {
+		throw new ConfigError(`${path} is not valid JSON; fix or remove it.`);
+	}
+	if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+		throw new ConfigError(`${path} must be a JSON object mapping chats to cases; fix or remove it.`);
+	}
+	let malformed = 0;
+	for (const [key, value] of Object.entries(parsed)) {
+		if (validCaseId(value)) chats[key] = value;
+		else malformed += 1;
+	}
+	if (malformed > 0) process.stderr.write(`spotlight: ignored ${malformed} malformed binding(s) in ${path}\n`);
+	return chats;
+}
+
+const CHAT_MAP_LOCK = '.chats'; // not a valid case id, so never a case's lock
+const CHAT_MAP_LOCK_WAIT_MS = 5_000;
+
+function acquireChatMapLock(dataDir: string): CaseLock {
+	const deadline = Date.now() + CHAT_MAP_LOCK_WAIT_MS;
+	for (;;) {
+		try {
+			return acquireCaseLock(dataDir, CHAT_MAP_LOCK, piCliPath());
+		} catch (error) {
+			if (!(error instanceof CaseHeldError)) throw error;
+			if (Date.now() > deadline) throw new ConfigError('the chat map stayed locked by another Spotlight chat; try again.');
+			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+		}
+	}
+}
+
+// One critical section under the chat map lock (the case lock's mechanism:
+// exclusive create, stale takeover), released before the case lock is taken.
+// A bound chat resumes its case and its binding is never overwritten. A new
+// chat gets a folder named from today's date and a short hash of its id
+// (never the id itself), with a suffix when another chat or folder has it.
+export function bindChatCase(casesRoot: string, dataDir: string, chatId: string): string {
+	const lock = acquireChatMapLock(dataDir);
+	try {
+		const chats = readChatMap(dataDir);
+		const key = chatKey(chatId);
+		if (Object.hasOwn(chats, key)) return chats[key];
+		const taken = new Set(Object.values(chats));
+		const base = `${new Date().toISOString().slice(0, 10)}-${key.slice(0, 8)}`;
+		let caseId = base;
+		for (let suffix = 2; taken.has(caseId) || existsSync(resolve(casesRoot, caseId)); suffix += 1) caseId = `${base}-${suffix}`;
+		chats[key] = caseId;
+		const target = resolve(dataDir, MAP_FILE);
+		const temporary = `${target}.${process.pid}.tmp`;
+		writeFileSync(temporary, `${JSON.stringify(chats, null, 2)}\n`, { mode: 0o600 });
+		renameSync(temporary, target);
+		return caseId;
+	} finally {
+		lock.release();
 	}
 }
