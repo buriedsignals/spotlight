@@ -18,6 +18,20 @@ The launcher runs `pi --mode rpc` for the orchestrator and passes stdin and stdo
 - **Provider privacy policy.** Fixed request-body fields are merged into every model request by a `before_provider_request` handler inside each pi process.
 - **No shell.** Every step a skill would run through `execute-shell` is a typed tool or a check the harness runs itself (see [Tools](#tools)).
 
+## Arguments
+
+With no arguments the launcher takes everything from the environment. A chat client that starts it as a runtime, such as an Osaurus `pi_rpc` harness runtime, may pass:
+
+```bash
+node harness/pi/src/launcher.ts --mode rpc --session-id {chat_id} --append-system-prompt {system_prompt_file}
+```
+
+- `--mode rpc` is required once any argument is given. Any other mode, an unknown argument, a missing value or a missing prompt file stops the launcher with exit code 2.
+- `--session-id <id>` binds the chat to a case when `SPOTLIGHT_CASE_ID` is unset. `chats.json` in the harness data folder maps the SHA-256 of each chat id to its case folder. The lookup and any new binding happen under a short lock on the map, before the case lock is taken: a bound chat resumes its case, and a binding is never overwritten; a new chat gets a new folder under `SPOTLIGHT_CASES_ROOT` named from the UTC date and the first 8 hex digits of the chat id's SHA-256 (for example `2026-10-24-1a2b3c4d`, with `-2`, `-3` and so on if taken). A malformed binding counts as absent (one line on stderr); a map that is not a JSON object exits 2. The one-writer case lock applies as usual.
+- `--append-system-prompt <file>` appends the file's text to the orchestrator's system prompt, through Pi's own `--append-system-prompt`. Workers never get it.
+
+Stop needs nothing extra: stdin passes through, so `{"type":"abort"}` reaches the orchestrator's Pi as is.
+
 ## Environment
 
 Configuration comes only from the environment. A missing or invalid required variable stops the launcher with a plain message on stderr and exit code 2. A case held by another chat gives exit code 3.
@@ -34,7 +48,7 @@ Configuration comes only from the environment. A missing or invalid required var
 | `SPOTLIGHT_HELPER_URL` | no | Base URL of the helper model. |
 | `SPOTLIGHT_SEARCH_URL` | no | Base URL of the search service. There is no default. |
 | `SPOTLIGHT_CASES_ROOT` | yes | Absolute path of the cases folder. |
-| `SPOTLIGHT_CASE_ID` | yes | Folder name of the case this chat works on. |
+| `SPOTLIGHT_CASE_ID` | yes, unless `--session-id` is given | Folder name of the case this chat works on. When set, it wins over `--session-id`. |
 | `SPOTLIGHT_HARNESS_DATA` | yes | Absolute path of the harness data folder (locks, per-process Pi configuration). |
 | `SPOTLIGHT_EDITION` | no | `solo` (default) or `newsroom`. |
 | `SPOTLIGHT_ROUTES` | newsroom | JSON array of allowed model routes (see [Routes](#routes)). |

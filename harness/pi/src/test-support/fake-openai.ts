@@ -26,7 +26,7 @@ export type FakeOpenAI = {
 	close(): Promise<void>;
 };
 
-function systemText(request: ChatRequest): string {
+export function systemText(request: ChatRequest): string {
 	return request.messages
 		.filter((message) => message.role === 'system' || message.role === 'developer')
 		.map((message) => (typeof message.content === 'string' ? message.content : JSON.stringify(message.content)))
