@@ -134,6 +134,9 @@ class D1LanePlan(unittest.TestCase):
         with unittest.mock.patch.dict(os.environ, {"SPOTLIGHT_RESEARCH_SWARMS": "off"}):
             self.assertEqual(checks.d1_from_config(local_only, {}, local_model=True), [RESEARCH_OFF])
             self.assertEqual(checks.d1_from_config(no_plan, {}, local_model=True), [])
+        with unittest.mock.patch.dict(os.environ, {"SPOTLIGHT_RESEARCH_SWARMS": "maybe"}):
+            self.assertEqual(checks.d1_from_config(no_plan, {}, local_model=True),
+                             ['SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off".'])
         with unittest.mock.patch.dict(os.environ, {"SPOTLIGHT_RESEARCH_SWARMS": "on", "SPOTLIGHT_SENSITIVE": ""}):
             self.assertEqual(checks.d1_from_config(local_only, {}, local_model=True), [])
 

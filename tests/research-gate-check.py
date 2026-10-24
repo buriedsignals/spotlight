@@ -87,11 +87,12 @@ class SeamCase(unittest.TestCase):
     # The Pi harness passes Engine's Research switch to the seam; a researched case has it on.
     research = "on"
 
-    def seam(self, *args: str, expect: int = 0, case: Path | None = None) -> subprocess.CompletedProcess[str]:
+    def seam(self, *args: str, expect: int = 0, case: Path | None = None,
+             env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
             [sys.executable, str(SEAM), *args, str(case or self.case)],
             capture_output=True, text=True, check=False,
-            env={"PATH": "", "PYTHONNOUSERSITE": "1", "SPOTLIGHT_RESEARCH_SWARMS": self.research},
+            env={"PATH": "", "PYTHONNOUSERSITE": "1", "SPOTLIGHT_RESEARCH_SWARMS": self.research, **(env or {})},
         )
         self.assertEqual(result.returncode, expect, result.stderr or result.stdout)
         return result
@@ -322,6 +323,10 @@ class ResearchGate(SeamCase):
         self.assertIn(RESEARCH_PAUSED, self.seam("approve", "research", *APPROVER, expect=3).stderr)
         self.research = "maybe"
         self.assertIn('SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off"', self.seam("status", "--json", expect=3).stderr)
+        not_an_object = Path(self.temp.name) / "config.json"
+        not_an_object.write_text("[]", encoding="utf-8")
+        self.assertIn("the install config is not a JSON object",
+                      self.seam("status", "--json", expect=3, env={"SPOTLIGHT_CONFIG": str(not_an_object)}).stderr)
         # The way back: continue without research, then the member approves that plan at the Methodology gate.
         self.research = "off"
         self.seam("continue-without-research")

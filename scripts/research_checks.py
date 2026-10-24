@@ -214,12 +214,12 @@ def d1_from_config(methodology: Mapping[str, Any], config: Mapping[str, Any],
     """D1 with the install's posture: the Research switch, sensitive mode,
     newsroom mode and whether a local model endpoint is configured
     (``local_model`` overrides). With Research off there is no research plan."""
-    if methodology.get("research_plan") is not None:
-        try:
-            if not research_on(config):
-                return [RESEARCH_OFF]
-        except ValueError as exc:
-            return [str(exc)]
+    try:
+        research = research_on(config)
+    except ValueError as exc:
+        return [str(exc)]
+    if methodology.get("research_plan") is not None and not research:
+        return [RESEARCH_OFF]
     sensitive = (os.environ.get("SPOTLIGHT_SENSITIVE", "").lower() == "true" or config.get("sensitive") is True
                  or _manifest_sensitive())
     newsroom = (config.get("knowledge_destination") or {}).get("mode") == "newsroom"

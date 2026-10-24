@@ -196,30 +196,25 @@ def spotlight_config_path() -> Path:
 
 
 def install_config() -> dict[str, Any]:
-    """The install config as an object; {} when there is none."""
-    path = spotlight_config_path()
-    if not path.is_file():
-        return {}
+    """The install config Engine writes, as an object. Only a missing file
+    reads as {}; one present but unreadable or not an object refuses."""
+    path = spotlight_config_path()  # a misconfigured path refuses; it is not a missing config
     try:
-        loaded = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise OrchestrationError(f"cannot read the install config: {exc}") from exc
-    return loaded if isinstance(loaded, dict) else {}
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        raise OrchestrationError(f"the install config cannot be read: {exc}") from exc
+    if not isinstance(config, dict):
+        raise OrchestrationError("the install config is not a JSON object")
+    return config
 
 
 def ingest_mode() -> str:
     """knowledge_destination.mode from the install config Engine writes:
     "solo" or "newsroom". Only a missing config, destination or mode means
     solo; one present but malformed refuses."""
-    path = spotlight_config_path()  # a misconfigured path refuses; it is not a missing config
-    try:
-        config = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return "solo"
-    except (OSError, ValueError) as exc:
-        raise OrchestrationError(f"the install config cannot be read: {exc}") from exc
-    if not isinstance(config, dict):
-        raise OrchestrationError("the install config is not a JSON object")
+    config = install_config()
     destination = config.get("knowledge_destination", {})
     if not isinstance(destination, dict):
         raise OrchestrationError("the install config's knowledge_destination must be an object")
