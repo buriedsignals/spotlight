@@ -403,10 +403,20 @@ export const sha256 = (bytes: string | Buffer) => createHash('sha256').update(by
 // its stdin as JSON.
 export type RunPackage = (args: string[], input?: unknown) => Promise<{ code: number; stdout: string; stderr: string }>;
 
-async function recordInCase(runPackage: RunPackage, args: string[], input?: unknown): Promise<Record<string, unknown>> {
-	const result = await runPackage(args, input);
-	if (result.code !== 0) throw new CaseRecordError(`the case could not record the newsroom's answer: ${(result.stderr || result.stdout).trim().slice(-1500)}`);
-	return JSON.parse(result.stdout) as Record<string, unknown>;
+// One run of the package script. Every failure (a refusal, a crash, a
+// timeout, an unreadable output) stops the case.
+async function packageScript<T>(runPackage: RunPackage, args: string[], input: unknown, read: (stdout: string) => T, what: string): Promise<T> {
+	try {
+		const result = await runPackage(args, input);
+		if (result.code !== 0) throw new Error((result.stderr || result.stdout).trim().slice(-1500));
+		return read(result.stdout);
+	} catch (error) {
+		throw new CaseRecordError(`${what}: ${(error as Error).message}`);
+	}
+}
+
+function recordInCase(runPackage: RunPackage, args: string[], input?: unknown): Promise<Record<string, unknown>> {
+	return packageScript(runPackage, args, input, (stdout) => JSON.parse(stdout) as Record<string, unknown>, 'the case could not record the newsroom\'s answer');
 }
 
 // ── Step 1: case start ───────────────────────────────────────────────────────
@@ -597,9 +607,7 @@ export async function submitCase(deps: SubmitDeps): Promise<SubmitOutcome> {
 	let build: PackageBuild;
 	try {
 		const out = join(scratch, 'package.json');
-		const built = await runPackage(['build', caseDir, '--out', out]);
-		if (built.code !== 0) throw new Error(`the Submit package could not be built: ${(built.stderr || built.stdout).trim().slice(-1500)}`);
-		build = JSON.parse(readFileSync(out, 'utf8')) as PackageBuild;
+		build = await packageScript(runPackage, ['build', caseDir, '--out', out], undefined, () => JSON.parse(readFileSync(out, 'utf8')) as PackageBuild, 'the Submit package could not be built');
 	} finally {
 		rmSync(scratch, { recursive: true, force: true });
 	}

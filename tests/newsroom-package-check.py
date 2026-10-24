@@ -170,6 +170,18 @@ class NewsroomPackage(GATES.CaseFixture):
         self.assertIsNone(path)
         self.assertIn("RLM-distilled lead file", why)
 
+    def test_case_state_present_but_unreadable_refuses_instead_of_meaning_absent(self) -> None:
+        case = self.case("unreadable-state")
+        submission = case / "data" / "newsroom-submission.json"
+        submission.write_text("[]", encoding="utf-8")
+        self.assertIn("newsroom-submission.json is not a readable JSON object", self.run_seam("pending", str(case), expect=2).stderr)
+        submission.unlink()
+        passages = case / "data" / "source-expressions.json"
+        passages.write_text('"not an object"', encoding="utf-8")
+        self.assertIn("source-expressions.json is not a JSON object", self.build_package(case, expect=2).stderr)
+        passages.unlink()
+        self.assertIn("source-expressions.json is missing", self.build_package(case, expect=2).stderr)
+
     def test_a_solo_install_builds_nothing(self) -> None:
         case = self.case("solo")
         self.config.write_text(json.dumps({"knowledge_destination": {"mode": "solo"}}), encoding="utf-8")

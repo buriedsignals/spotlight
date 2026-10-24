@@ -261,7 +261,7 @@ test('a package near the size cap reaches the newsroom whole: its base64 is larg
 	assert.equal(outcome.state, 'submitted');
 });
 
-test('a check the case cannot use stops the newsroom case: a record it cannot write, a poll answered for another job', async (t) => {
+test('a check or submission the case cannot use stops the newsroom case: a record it cannot write, a poll for another job, a package the script cannot build', async (t) => {
 	let otherJob = false;
 	const { caseDir, runPackage, client } = await submittable(t, {
 		run_checks: (args) => (args.job_id ? { job_id: otherJob ? 'job-other' : args.job_id, state: 'done', flags: [] } : { job_id: 'job-1', state: 'running' }),
@@ -273,6 +273,12 @@ test('a check the case cannot use stops the newsroom case: a record it cannot wr
 
 	otherJob = true;
 	await assert.rejects(runChecks(client, caseDir, 'findings', runPackage, { pollMs: 1 }), (caught: Error) => stopsTheNewsroomCase(caught) && /another job/.test(caught.message));
+
+	// A Submit package the script cannot build (a refusal, a crash) stops the case too.
+	const refusing: RunPackage = (args, input) => (args[0] === 'build' ? Promise.resolve({ code: 2, stdout: '', stderr: 'newsroom-package: refused: too large' }) : runPackage(args, input));
+	await assert.rejects(submitCase({ client, caseDir, runPackage: refusing, openReview: async () => true }), (caught: Error) => stopsTheNewsroomCase(caught) && /too large/.test(caught.message));
+	const crashing: RunPackage = (args, input) => (args[0] === 'build' ? Promise.reject(new Error('python3 could not run: timed out')) : runPackage(args, input));
+	await assert.rejects(submitCase({ client, caseDir, runPackage: crashing, openReview: async () => true }), (caught: Error) => stopsTheNewsroomCase(caught) && /timed out/.test(caught.message));
 
 	// An optional input that exists but cannot be read is not sent as absent.
 	await writeFile(join(caseDir, 'data', 'fact-check.json'), '{not json');

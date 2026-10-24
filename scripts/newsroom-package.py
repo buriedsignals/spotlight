@@ -104,15 +104,21 @@ def _canonical(value: Any) -> bytes:
 
 
 def _load(case: Path, rel: str, required: bool = True) -> Any:
+    """A case file as a JSON object; None only when an optional one is missing."""
     path = case / rel
-    if path.is_symlink() or not path.is_file():
+    if path.is_symlink():
+        raise Refused(f"{rel} is a symlink")
+    if not path.exists():
         if required:
             raise Refused(f"{rel} is missing")
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise Refused(f"{rel} is unreadable: {exc}") from None
+    if not isinstance(value, dict):
+        raise Refused(f"{rel} is not a JSON object")
+    return value
 
 
 def journalist_input_units(case: Path) -> list[dict[str, Any]]:
@@ -166,7 +172,7 @@ def build(case: Path) -> dict[str, Any]:
     findings = _load(case, "data/findings.json")
     fact_check = _load(case, "data/fact-check.json")
     bundle = _load(case, "data/evidence-bundle.json")
-    passages = _load(case, "data/source-expressions.json", required=False) or {"expressions": []}
+    passages = _load(case, "data/source-expressions.json")  # an activated case has its passages
     positions = _load(case, "data/source-positions.json", required=False)
     checks = _load(case, CHECKS, required=False)
     items = {str(item.get("id")): item for item in bundle.get("items", []) if isinstance(item, dict)}
@@ -284,14 +290,17 @@ def _json_bytes(value: Any) -> bytes:
 
 
 def _read_data(case: Path, descriptor: int, rel: str) -> dict[str, Any] | None:
+    """Case state: None only when the file is missing."""
     content = read_data_bytes(case, rel.removeprefix("data/"), descriptor)
     if content is None:
         return None
     try:
         value = json.loads(content.decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
-        return None
-    return value if isinstance(value, dict) else None
+        value = None
+    if not isinstance(value, dict):
+        raise Refused(f"{rel} is not a readable JSON object")
+    return value
 
 
 def _require_newsroom() -> None:
