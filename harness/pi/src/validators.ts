@@ -3,6 +3,7 @@
 // what that worker just wrote run against the active case, and their outcome
 // is attached to the worker's answer for the orchestrator. After the analyst,
 // the fixed point is the batch build from its proposal.
+import { RESEARCH_SWITCH } from './config.ts';
 import { CHECKOUT_ROOT } from './roles.ts';
 import { runPython } from './tools/run.ts';
 import type { ToolContext } from './tools/run.ts';
@@ -64,7 +65,7 @@ export async function validateAfterWorker(role: string, phase: string, producerM
 		let text: string;
 		let ok: boolean;
 		try {
-			const result = await runPython(context, check.args, { timeoutMs: 300_000 });
+			const result = await runPython(context, check.args, { keys: [RESEARCH_SWITCH], timeoutMs: 300_000 });
 			ok = result.code === 0;
 			text = `${result.stdout}\n${result.stderr}`.trim();
 		} catch (error) {

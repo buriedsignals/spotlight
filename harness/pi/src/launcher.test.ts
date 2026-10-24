@@ -405,6 +405,39 @@ test('after a planning task the harness runs the methodology check, not the find
 	assert.doesNotMatch(delegated, /validate-case\.py/);
 });
 
+test('with the Research switch off, the methodology check refuses a research plan; with it on, the plan is checked as usual', async (t) => {
+	const methodology = await readFile(join(CHECKOUT_ROOT, 'tests/fixtures/research/methodology-research.sample.json'), 'utf8');
+	for (const research of ['off', 'on']) {
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'investigator')) {
+				return toolResults(request).length === 0
+					? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: methodology } }] }
+					: { text: 'Plan written.' };
+			}
+			return toolResults(request).length === 0
+				? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: PLANNING' } }] }
+				: { text: 'Done.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = join(space.casesRoot, 'case-a');
+		await mkdir(join(caseDir, 'data'), { recursive: true });
+		await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
+		// The install config says the opposite, so only the harness's switch can decide.
+		const config = join(space.root, 'spotlight-config.json');
+		await writeFile(config, JSON.stringify({ model_tier: '12b', integrations: { research_swarms: { enabled: research === 'off' } } }));
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: config, SPOTLIGHT_RESEARCH_SWARMS: research });
+
+		await settledPrompt(chat, 'Continue.');
+
+		const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+		const delegated = toolResults(orchestrator[orchestrator.length - 1]).join('\n');
+		assert.match(delegated, /validate-methodology-navigator\.py/, research);
+		if (research === 'off') assert.match(delegated, /Research is off; turn on Research in the app to add a research plan/);
+		else assert.doesNotMatch(delegated, /Research is off/);
+	}
+});
+
 // An activated case paused at the Ingest decision, built by the review-page
 // fixture (tests/fixtures/review_case.py) through the resolver's own seam.
 async function caseDigests(caseDir: string): Promise<Map<string, string>> {
@@ -744,6 +777,8 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 		execFile(
 			process.env.SPOTLIGHT_PYTHON ?? 'python3',
 			[join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'), 'approve', 'methodology', '--approved-by', 'journalist:fixture', '--approved-at', '2026-10-23T12:00:00Z', '--authorized-cases-root', space.casesRoot, caseDir],
+			// A researched methodology is approved with Engine's Research switch on.
+			{ env: { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' } },
 			(error, _stdout, stderr) => (error ? fail(new Error(stderr || error.message)) : done()),
 		),
 	);
@@ -779,6 +814,38 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 	const lane = JSON.parse(await readFile(join(caseDir, 'research/swarm/ownership-registries/lane.json'), 'utf8'));
 	assert.equal(lane.status, 'completed');
 	assert.ok(!chat.stderr().includes('sk-or-v1-launcher-secret'));
+});
+
+test('with the Research switch off, an approved researched case resumes no lane: the resolve holds it at Research with the Research-off message', async (t) => {
+	const orchestratorModel = await startFakeOpenAI(resolveThenStop);
+	const swarm = await startFakeOpenAI(() => ({ text: 'No leads.', usage: { total_tokens: 10, cost: 0.0001 } }));
+	t.after(() => Promise.all([orchestratorModel.close(), swarm.close()]));
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
+	await writeFile(join(caseDir, 'data', 'methodology.json'), await readFile(join(CHECKOUT_ROOT, 'tests/fixtures/research/methodology-research.sample.json'), 'utf8'));
+	await new Promise<void>((done, fail) =>
+		execFile(
+			process.env.SPOTLIGHT_PYTHON ?? 'python3',
+			[join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'), 'approve', 'methodology', '--approved-by', 'journalist:fixture', '--approved-at', '2026-10-23T12:00:00Z', '--authorized-cases-root', space.casesRoot, caseDir],
+			// A researched methodology is approved with Engine's Research switch on.
+			{ env: { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' } },
+			(error, _stdout, stderr) => (error ? fail(new Error(stderr || error.message)) : done()),
+		),
+	);
+	// The install config says on; the harness's switch (absent, so off) decides.
+	const config = join(space.root, 'spotlight-config.json');
+	await writeFile(config, JSON.stringify({ model_tier: '12b', integrations: { research_swarms: { enabled: true } } }));
+	const chat = launch(t, { ...baseEnv(space, orchestratorModel.baseURL), SPOTLIGHT_CONFIG: config, OPENROUTER_API_KEY: 'sk-or-v1-launcher-secret', SPOTLIGHT_SWARM_BASE_URL: swarm.baseURL });
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(swarm.requests.length, 0);
+	const resolution = lastResolution(chat) as { phase: string; missing: string[]; research: { resume_at: string }; research_round?: unknown };
+	assert.deepEqual([resolution.phase, resolution.research.resume_at], ['research', 'research_off']);
+	assert.match(resolution.missing[0], /^Research is off\. Turn Research on in the app to continue this case/);
+	assert.equal(resolution.research_round, undefined);
 });
 
 // ── Newsroom edition (Editorial MCP) ─────────────────────────────────────────

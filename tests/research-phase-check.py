@@ -108,7 +108,8 @@ class ResearchPhase(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, str(SEAM), *args, str(case or self.case)],
             capture_output=True, text=True, check=False,
-            env={"PATH": "", "PYTHONNOUSERSITE": "1"},
+            # A researched case has Engine's Research switch on.
+            env={"PATH": "", "PYTHONNOUSERSITE": "1", "SPOTLIGHT_RESEARCH_SWARMS": "on"},
         )
         self.assertEqual(result.returncode, expect, result.stderr or result.stdout)
         return result

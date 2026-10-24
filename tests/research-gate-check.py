@@ -26,6 +26,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SEAM = ROOT / "scripts" / "spotlight-orchestration.py"
 APPROVER = ("--approved-by", "journalist:fixture", "--approved-at", "2026-10-23T12:00:00Z")
+RESEARCH_PAUSED = ("Research is off. Turn Research on in the app to continue this case, or go back to the "
+                   "Methodology gate and approve the plan without research.")
 
 
 def _load(name: str, path: Path):
@@ -82,10 +84,15 @@ ROUND = {
 class SeamCase(unittest.TestCase):
     case: Path
 
-    def seam(self, *args: str, expect: int = 0, case: Path | None = None) -> subprocess.CompletedProcess[str]:
+    # The Pi harness passes Engine's Research switch to the seam; a researched case has it on.
+    research = "on"
+
+    def seam(self, *args: str, expect: int = 0, case: Path | None = None,
+             env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
             [sys.executable, str(SEAM), *args, str(case or self.case)],
-            capture_output=True, text=True, check=False, env={"PATH": "", "PYTHONNOUSERSITE": "1"},
+            capture_output=True, text=True, check=False,
+            env={"PATH": "", "PYTHONNOUSERSITE": "1", "SPOTLIGHT_RESEARCH_SWARMS": self.research, **(env or {})},
         )
         self.assertEqual(result.returncode, expect, result.stderr or result.stdout)
         return result
@@ -288,6 +295,80 @@ class ResearchGate(SeamCase):
         refused = self.seam("start-research-round", expect=3)
         self.assertIn("not a direction_id of investigation_plan", refused.stderr)
         self.assertEqual(self.status()["research"]["resume_at"], "round_topics")
+
+    def test_a_stall_round_is_refused_when_research_is_off(self) -> None:
+        self.through_amendment()
+        for cycle in (1, 2, 3):
+            self.fail_cycle(cycle)
+        write_json(self.case / "data/research-round.json", ROUND)
+        self.research = "off"
+        refused = self.seam("start-research-round", expect=3)
+        self.assertIn(RESEARCH_PAUSED, refused.stderr)
+        self.assertEqual(self.status()["research"]["resume_at"], "research_off")
+
+    def test_research_off_holds_a_researched_case_at_its_step_until_the_plan_drops_research(self) -> None:
+        self.seam("approve", "methodology", *APPROVER)
+        self.research = "off"
+        lanes = self.status()
+        self.assertEqual((lanes["phase"], lanes["research"]["resume_at"]), ("research", "research_off"))
+        self.assertEqual(lanes["missing"], [RESEARCH_PAUSED])
+        refused = self.seam("record-attempt", "research-lane", "--gap", "lane stopped", expect=3)
+        self.assertIn(RESEARCH_PAUSED, refused.stderr)
+        self.assertEqual(self.state()["attempts"], {})
+        self.research = "on"
+        self.research_outputs(self.case)
+        write_json(self.case / "data/research-review.json", marks_review({}))
+        self.assertEqual(self.status()["phase"], "research_approval")
+        self.research = "off"
+        held = self.status()
+        self.assertEqual((held["phase"], held["research"]["resume_at"]), ("research", "research_off"))
+        self.assertIn(RESEARCH_PAUSED, self.seam("approve", "research", *APPROVER, expect=3).stderr)
+        self.research = "maybe"
+        self.assertIn('SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off"', self.seam("status", "--json", expect=3).stderr)
+        not_an_object = Path(self.temp.name) / "config.json"
+        not_an_object.write_text("[]", encoding="utf-8")
+        self.assertIn("the install config is not a JSON object",
+                      self.seam("status", "--json", expect=3, env={"SPOTLIGHT_CONFIG": str(not_an_object)}).stderr)
+        # The way back: continue without research, then the member approves that plan at the Methodology gate.
+        self.research = "off"
+        self.seam("continue-without-research")
+        self.assertNotIn("research_plan", read_json(self.case / "data/methodology.json"))
+        self.assertEqual(self.status()["phase"], "methodology_approval")
+        self.seam("approve", "methodology", *APPROVER)
+        self.assertEqual(self.status()["phase"], "investigation")
+        # A case with no research plan still refuses an invalid switch value.
+        self.research = "maybe"
+        self.assertIn('SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off"', self.seam("status", "--json", expect=3).stderr)
+
+    def test_a_methodology_with_a_research_plan_is_not_approved_while_research_is_off(self) -> None:
+        self.research = "off"
+        refused = self.seam("approve", "methodology", *APPROVER, expect=3)
+        self.assertIn("Research is off; turn on Research in the app to add a research plan", refused.stderr)
+        self.assertEqual(self.status()["phase"], "methodology_approval")
+
+    def test_research_off_reads_no_research_output_and_a_finished_research_continues(self) -> None:
+        # An interrupted round left a corrupt output: the pause and the way back still work.
+        self.seam("approve", "methodology", *APPROVER)
+        write_json(self.case / "data/clues.json", read_json(PHASE.CLUES_SAMPLE))
+        (self.case / "data/leads.json").write_text("{", encoding="utf-8")
+        self.research = "off"
+        self.assertEqual(self.status()["research"]["resume_at"], "research_off")
+        self.seam("continue-without-research")
+        self.assertEqual(self.status()["phase"], "methodology_approval")
+        # Research approved and its amendment bound: the switch going off does not hold the investigation.
+        done = self.new_case("done")
+        self.research = "on"
+        self.to_research_gate({"clue:clue-1": "dismiss"}, case=done)
+        self.seam("approve", "research", *APPROVER, case=done)
+        self.unchanged_amendment(done)
+        self.research = "off"
+        self.assertEqual(self.status(done)["phase"], "investigation")
+
+    def test_continue_without_research_is_only_for_a_case_research_off_paused(self) -> None:
+        self.to_research_gate({})
+        refused = self.seam("continue-without-research", expect=3)
+        self.assertIn("only for a case paused because Research is off", refused.stderr)
+        self.assertIn("research_plan", read_json(self.case / "data/methodology.json"))
 
     def test_a_stored_case_with_four_or_five_cycles_enters_the_stall_flow(self) -> None:
         for cycles, blocked in ((5, True), (4, False)):

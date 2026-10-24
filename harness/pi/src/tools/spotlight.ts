@@ -11,7 +11,7 @@ const ADAPTER = resolve(CHECKOUT_ROOT, 'scripts/spotlight-orchestration.py');
 
 // The only transitions a model may request. Gate approvals, the report
 // decision and the ingest request or decline come from the review page.
-export const MODEL_OPERATIONS = ['recordAttempt', 'requestFollowUp', 'sealInvestigationGate', 'decideIngest', 'startResearchRound', 'recordAmendment'] as const;
+export const MODEL_OPERATIONS = ['recordAttempt', 'requestFollowUp', 'sealInvestigationGate', 'decideIngest', 'startResearchRound', 'recordAmendment', 'continueWithoutResearch'] as const;
 type ModelOperation = (typeof MODEL_OPERATIONS)[number];
 type Payload = Record<string, unknown>;
 
@@ -118,6 +118,10 @@ export function transitionArguments(operation: unknown, payload: Payload, active
 			return ['start-research-round', ...boundary];
 		case 'recordAmendment':
 			return ['record-amendment', ...boundary];
+		// Only while Research is off has paused the case, and only at the
+		// member's request; the member then approves the plan at the Methodology gate.
+		case 'continueWithoutResearch':
+			return ['continue-without-research', ...boundary];
 		case 'decideIngest': {
 			const decision = stringField(payload, 'decision');
 			if (decision !== 'completed') {
@@ -179,7 +183,7 @@ export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, ro
 		name: 'spotlight_transition',
 		label: 'Spotlight transition',
 		description:
-			'Apply one validated transition to the harness-bound active Spotlight case, then return its newly resolved state. Allowed: recordAttempt {kind, gap}, requestFollowUp {instructions}, sealInvestigationGate {}, decideIngest {decision: "completed"}, startResearchRound {} (after writing data/research-round.json), recordAmendment {} (after writing data/methodology-amendment.json).',
+			'Apply one validated transition to the harness-bound active Spotlight case, then return its newly resolved state. Allowed: recordAttempt {kind, gap}, requestFollowUp {instructions}, sealInvestigationGate {}, decideIngest {decision: "completed"}, startResearchRound {} (after writing data/research-round.json), recordAmendment {} (after writing data/methodology-amendment.json), continueWithoutResearch {} (only when the member asks, while Research is off).',
 		parameters: Type.Object({
 			operation: Type.Union(MODEL_OPERATIONS.map((name) => Type.Literal(name))),
 			payload: Type.Optional(Type.Record(Type.String(), Type.Unknown())),

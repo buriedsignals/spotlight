@@ -67,9 +67,12 @@ Investigation gate review, the report decision, or vault ingestion.
 
 ### Research
 
-Research runs only when the approved methodology has a research plan: short
-topic briefs, each on a lane type (web, registries, archives, social,
-technical, news-courts, local corpus, prior knowledge, or ad hoc). Code, never
+Research is one opt-in package: with the Research switch in the app off,
+there is no Research phase and the case goes from Methodology straight to
+Investigation. With it on, Research runs when the approved methodology has a
+research plan: short topic briefs, each on a lane type (web, registries,
+archives, social, technical, news-courts, local corpus, prior knowledge, or ad
+hoc). Code, never
 the model, runs each approved topic as a lane. Lanes save their sources; code
 checks every excerpt against the saved source, merges copies, and applies
 fixed clue rules. The Research page shows the clues first; you mark them and
@@ -78,7 +81,7 @@ methodology change, which code checks against them.
 
 - **Local lanes** (your case files and your wiki) run on the local model.
 - **Cloud lanes are opt-in and never local:** OpenRouter with your own key and
-  the "Research swarms" switch on in Engine, or your frontier host's own
+  the Research switch on in the app, or your frontier host's own
   subagents. A cloud lane receives only its approved topic brief; case files,
   findings, evidence and journalist input never reach it.
 - **Budget, not a count:** $1 a research round by default, at most $5 per case.
