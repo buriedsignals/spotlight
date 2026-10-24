@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deterministic Ingest claim eligibility (offline).
 
-    python3 scripts/ingest-eligibility.py CASE_DIR [--entities FILE] [--existing-claims FILE]
+    python3 scripts/ingest-eligibility.py CASE_DIR
 
 Implements the ingest eligibility gate from skills/ingest/references/entity-model.md
 in code, then layers stored decision-model signals on top:
@@ -19,12 +19,7 @@ medium cap moves it to the lead layer with needs_verification. In advisory and
 shadow modes the same outcome is only a recommendation. A reviewer override
 counts only for the exact reviewed fingerprint. Claim facets (claim type,
 temporal status, source assertion) are attached from fresh judged signals.
-
-Ingest decision signals (data/decision-signals-ingest.json) are reported as
-`ingest_checks`: every current knowledge-batch target, plus entity and matching
-targets when the same input files are passed, with status judged, unavailable,
-stale (inputs changed since the check) or unchecked (never checked). In enforce
-mode, stale or unchecked targets must be checked before staging.
+Ingest itself has no decision checks.
 """
 from __future__ import annotations
 
@@ -61,7 +56,7 @@ def grounding_cap(finding: dict[str, Any], checks: list[dict[str, Any]]) -> str 
     return min(caps, key=RANK.get) if caps else None
 
 
-def evaluate(case: Path, entities: list[Any] | None = None, existing: list[Any] | None = None) -> dict[str, Any]:
+def evaluate(case: Path) -> dict[str, Any]:
     render = lib.render_module()
     findings = lib.case_findings(case)
     checks = render.canonical_checks(lib.read_case_json(case, "fact-check.json") or {})
@@ -111,19 +106,16 @@ def evaluate(case: Path, entities: list[Any] | None = None, existing: list[Any] 
                             record["confidence"] = decision_cap
             record["decision_check"] = decision
         out.append(record)
-    return {"findings": out, "ingest_checks": lib.ingest_status(case, entities, existing)}
+    return {"findings": out}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Deterministic Ingest claim eligibility (offline).")
     parser.add_argument("case_dir")
-    parser.add_argument("--entities", type=Path, help="the same entity list passed to decision-signals.py --entities (inside CASE_DIR/data/)")
-    parser.add_argument("--existing-claims", type=Path, help="the same list passed to decision-signals.py --existing-claims (inside CASE_DIR/data/)")
     args = parser.parse_args()
     case = Path(args.case_dir)
     try:
-        load = lambda path: lib.read_case_json(case, lib.case_input_name(case, path), expect=list, required=True) if path else None  # noqa: E731
-        report = evaluate(case, load(args.entities), load(args.existing_claims))
+        report = evaluate(case)
     except lib.SignalsError as exc:
         print(json.dumps({"error": f"decision signals are invalid: {exc}"}))
         return 1

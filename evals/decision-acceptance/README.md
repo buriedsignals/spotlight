@@ -29,9 +29,11 @@ research lead (`schemas/research-lead.schema.json`, checked when loaded), a
 - `keep`: `true` means setting the lead aside loses it (a **lost lead**, the
   costliest error; a lead kept as circumstantial is not lost and is counted
   apart); `false` means setting it aside is right; `null` is not scored.
-- `answers`: the gold option per question (`q1_identity` ... `c1_premise`;
-  `c2_new_actor` and `c3_change` as true/false). A question left out is not
-  scored on that item, and a clue from it there is not counted as false.
+- `answers`: the gold option per question (`q1_identity`, `q3_source` ...
+  `c1_premise`; `c2_new_actor` and `c3_change` as true/false). A question left
+  out is not scored on that item, and a clue from it there is not counted as
+  false. There is no direction question, so no direction gold; Q1 is asked
+  and scored only for the `jev` contender.
 - `failure` (fact-checked claims that were not verified): `class`, one of
   `weak_source_chain`, `summary_wider`, `inference_as_fact`,
   `conflicting_values`, `wrong_subject`, `weak_relevance`, `allegation`, and

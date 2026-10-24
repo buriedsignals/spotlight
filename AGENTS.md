@@ -306,7 +306,7 @@ activation documents use their own schema versions as declared below.
 | Source-Expression Migration | `schemas/source-expression-migration.schema.json` | Dry-run/apply audit record; informative only and never an activation signal |
 | Evidence Bundle | `schemas/evidence-bundle.schema.json` | Acquisition artifacts with method, missing-source gate, hashes, and claim links |
 | Provenance Manifest | `schemas/provenance-manifest.schema.json` | Case artifact hashes, claim/verdict links, evidence refs, and optional Noosphere C2PA signing metadata |
-| Decision Signals | `schemas/decision-signals.schema.json` | Opt-in Jev decision-model answers and derived review signals for grounding, report prose and ingest; can only lower confidence or add flags |
+| Decision Signals | `schemas/decision-signals.schema.json` | Opt-in Jev decision-model answers and derived review signals for grounding and report prose; can only lower confidence or add flags |
 | Knowledge Batch 1.1 (core) | `schemas/knowledge-batch-1.1.schema.json` | Open-source core of Batch 1.1: evidence, passages, claims, claim–passage links, source positions, assessments, events, story arcs and memberships, with continuous versions and exact refs. Cross-record rules C1–C10 and C13 are checked by `scripts/validate-knowledge-batch.py` |
 | Knowledge Proposal | `schemas/knowledge-proposal.schema.json` | Analyst interface 1: normalized claims per finding (with `attributed`), events, story arcs and memberships; `scripts/build-knowledge-batch.py` adds the rest |
 | Methodology | `schemas/methodology.schema.json` | Investigation plan with directions, steps, tools_required, opsec_considerations, and the optional `research_plan` (topic briefs, round budget, keys, egress, consent) |

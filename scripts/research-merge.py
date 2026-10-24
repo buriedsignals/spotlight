@@ -412,9 +412,11 @@ def _identity_position(value: Any) -> int:
 def rank(leads_doc: Mapping[str, Any], clues_doc: Mapping[str, Any] | None,
          triage_doc: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
     """The Research page's lead order. No question asks how important a lead
-    is: clue type, then identity (circumstantial leads after the rest), then source, then assertion (triage labels,
-    counted only when both orders agreed), then more independent source
-    families (S2), then stored pages before snippets (S1)."""
+    is: clue type, then identity (circumstantial leads after the rest; only
+    Jev answers Q1, so with the local model or the rules this tier is empty),
+    then source, then assertion (triage labels, counted only when both orders
+    agreed), then more independent source families (S2), then stored pages
+    before snippets (S1)."""
     entries = {entry["lead"]["lead_id"]: entry["lead"] for entry in leads_doc.get("leads") or []}
     triage = {r["lead_id"]: r for r in (triage_doc or {}).get("leads") or [] if isinstance(r, Mapping)}
     declined = {tuple(sorted(c.get("lead_ids") or [])) for c in (triage_doc or {}).get("conflicts") or []

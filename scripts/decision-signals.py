@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Compute decision-model review signals for a case (the only networked step).
 
-    python3 scripts/decision-signals.py CASE_DIR --phase investigation-gate|report|ingest \
-        [--config .spotlight-config.json] [--case-opt-in] [--check] [--dry-run] \
-        [--env-file FILE] [--entities FILE] [--existing-claims FILE]
+    python3 scripts/decision-signals.py CASE_DIR --phase investigation-gate|report \
+        [--config .spotlight-config.json] [--case-opt-in] [--check] [--dry-run] [--env-file FILE]
 
 Asks the decision model (OpenRouter Decisions API, default typesafe/jev-1.13,
 zero data retention) typed questions. Investigation-gate and report results go to
-data/decision-signals.json; ingest results go to data/decision-signals-ingest.json.
+data/decision-signals.json. Ingest has no decision checks.
 Signals are review aids: they can lower confidence, add flags or route records
 to a lead layer, and never raise confidence or set a verdict. See
 integrations/decisions/.
@@ -44,12 +43,10 @@ import questions  # noqa: E402
 import rules  # noqa: E402
 from client import KEY_ENV, DecisionUnavailable, JevOpenRouterProvider, is_local, RedactingProvider, answer_problem, endpoint_from_config, wiki_redactor  # noqa: E402
 
-PHASES = ("investigation_gate", "report", "ingest")
+PHASES = ("investigation_gate", "report")
 # Before the phases were named, the Investigation gate was "gate1"; saved
 # configs may still use that key.
 LEGACY_MODE_KEYS = {"investigation_gate": "gate1"}
-INGEST_GROUPS = ("propositions", "memberships", "entities", "matches")
-MAX_MATCH_PAIRS = 60
 
 
 def now() -> str:
@@ -241,48 +238,6 @@ def report(case: Path, asker: Asker, mode: str, stored: dict[str, Any] | None) -
     return phase_header(mode, out) | {"items": out}
 
 
-# ------------------------------------------------------------------ ingest
-def ingest(case: Path, asker: Asker, entities_file: Path | None, existing_file: Path | None) -> dict[str, list[dict[str, Any]]]:
-    """Return only the groups computed in this run; the caller merges them with earlier groups."""
-    entries = lib.batch_items(case)
-    computed: set[str] = {"propositions", "memberships"} if lib.read_case_json(case, "knowledge-batch.json") is not None else set()
-    if entities_file:
-        computed.add("entities")
-        entries += lib.entity_items(lib.read_case_json(case, lib.case_input_name(case, entities_file), expect=list, required=True))
-    if existing_file:
-        computed.add("matches")
-        entries += lib.match_items(case, lib.read_case_json(case, lib.case_input_name(case, existing_file), expect=list, required=True), MAX_MATCH_PAIRS)
-    jobs, derive = [], {}
-    for index, entry in enumerate(entries):
-        group, inputs = entry["group"], entry["rule_inputs"]
-        if entry.get("unresolved"):
-            continue  # never sent: the record's finding or endpoints are missing from the batch
-        if group == "propositions":
-            derive[index], qs = rules.proposition_signal, questions.ALL["proposition"]
-        elif group == "memberships":
-            derive[index], qs = (lambda a, d=inputs["declared_relation"]: rules.membership_signal(d, a)), questions.ALL["membership"]
-        elif group == "entities":
-            derive[index], qs = (lambda a, d=inputs["declared_type"]: rules.entity_signal(a, d)), questions.ALL["entities"]
-        else:
-            derive[index], qs = rules.match_signal, questions.ALL["matching"]
-        jobs.append((str(index), entry["state"], qs))
-    responses = asker.ask_many(jobs)
-    groups: dict[str, list[dict[str, Any]]] = {group: [] for group in computed}
-    for index, entry in enumerate(entries):
-        # Every input that can change the derived result is recorded and fingerprinted.
-        item = {"target": entry["target"], "input": {**entry["state"], **entry["rule_inputs"]}, "input_sha256": entry["input_sha256"]}
-        response = responses.get(str(index))
-        if entry.get("unresolved"):
-            item.update({"status": "routed", "result": "unresolved", "flags": [{"reason": "unresolved_reference",
-                         "detail": "the batch record's finding, claim or event version could not be resolved"}]})
-        elif response is None:
-            item.update({"status": "unavailable", "result": "", "flags": []})
-        else:
-            item.update({**derive[index](response["answers"]), "answers": response["answers"]})
-        groups[entry["group"]].append(item)
-    return groups
-
-
 def phase_header(mode: str, items: list[dict[str, Any]]) -> dict[str, Any]:
     unavailable = sum(1 for i in items if i.get("status") == "unavailable")
     status = "complete" if not unavailable else ("unavailable" if unavailable == len(items) else "partial")
@@ -315,8 +270,6 @@ def main(argv: list[str] | None = None, provider: Any = None) -> int:
     parser.add_argument("--check", action="store_true", help="report whether a run would make requests, without any request")
     parser.add_argument("--env-file", type=Path, help=f"file holding {KEY_ENV} (overrides integrations.decisions.env_file)")
     parser.add_argument("--sensitive", action="store_true")
-    parser.add_argument("--entities", type=Path, help="entity list [{name, context, type}]; must be a file directly inside CASE_DIR/data/")
-    parser.add_argument("--existing-claims", type=Path, help="existing claims [{id, claim}]; must be a file directly inside CASE_DIR/data/")
     args = parser.parse_args(argv)
 
     case = Path(args.case_dir).resolve()
@@ -347,11 +300,10 @@ def run(args: argparse.Namespace, case: Path, cfg: dict[str, Any], sensitive: bo
     """Everything that reads the case, asks the provider or writes signals, under one pinned case root."""
     try:
         main_doc = lib.load_signals(case)
-        ingest_doc = lib.load_signals(case, lib.INGEST_SIGNALS_NAME)
     except lib.SignalsError as exc:
         print(json.dumps({"ran": False, "phase": args.phase, "error": str(exc)}))
         return 2
-    recorded_opt_in = next((d["opt_in"] for d in (main_doc, ingest_doc) if d and lib.valid_opt_in(d.get("opt_in"))), None)
+    recorded_opt_in = main_doc["opt_in"] if main_doc and lib.valid_opt_in(main_doc.get("opt_in")) else None
     opted_in = recorded_opt_in is not None
 
     try:
@@ -404,10 +356,8 @@ def run(args: argparse.Namespace, case: Path, cfg: dict[str, Any], sensitive: bo
     try:
         if args.phase == "investigation_gate":
             result = investigation_gate(case, asker, mode)
-        elif args.phase == "report":
-            result = report(case, asker, mode, main_doc)
         else:
-            groups = ingest(case, asker, args.entities, args.existing_claims)
+            result = report(case, asker, mode, main_doc)
     except lib.SignalsError as exc:  # unsafe or unreadable case input: nothing is sent or written
         print(json.dumps({"ran": False, "phase": args.phase, "error": str(exc)}))
         return 2
@@ -423,35 +373,18 @@ def run(args: argparse.Namespace, case: Path, cfg: dict[str, Any], sensitive: bo
         merge_usage(doc, asker)
         return doc
 
+    def mutate(current):
+        doc = base(current)
+        doc["phases"][args.phase] = result
+        return doc
+
     try:
-        if args.phase in ("investigation_gate", "report"):
-            def mutate(current):
-                doc = base(current)
-                doc["phases"][args.phase] = result
-                return doc
-            lib.update_signals(case, lib.SIGNALS_NAME, mutate)
-            items = result.get("findings") or result.get("items") or []
-            status = result["status"]
-        else:
-            # The ingest file carries its own opt-in record; the main file (a hashed
-            # report input) is never created or touched by an ingest run.
-            def mutate_ingest(current):
-                doc = base(current)
-                previous = doc["phases"].get("ingest") or {}
-                phase = {group: previous[group] for group in INGEST_GROUPS if group in previous}
-                phase["groups_generated_at"] = dict(previous.get("groups_generated_at") or {})
-                for group, entries in groups.items():
-                    phase[group] = entries
-                    phase["groups_generated_at"][group] = now()
-                every = [i for g in INGEST_GROUPS for i in phase.get(g, [])]
-                doc["phases"]["ingest"] = phase_header(mode, every) | phase
-                return doc
-            lib.update_signals(case, lib.INGEST_SIGNALS_NAME, mutate_ingest)
-            items = [i for entries in groups.values() for i in entries]
-            status = phase_header(mode, items)["status"]
+        lib.update_signals(case, lib.SIGNALS_NAME, mutate)
     except lib.SignalsError as exc:
         print(json.dumps({"ran": False, "phase": args.phase, "error": str(exc)}))
         return 2
+    items = result.get("findings") or result.get("items") or []
+    status = result["status"]
     print(json.dumps({
         "ran": True, "phase": args.phase, "mode": mode, "status": status,
         "items": len(items), "flagged": sum(1 for i in items if i.get("flags") and i.get("status") == "judged"),

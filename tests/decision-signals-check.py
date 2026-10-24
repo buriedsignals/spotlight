@@ -172,12 +172,6 @@ def test_rules() -> None:
     assert rules.report_signal("verified", debunk)["flags"], "the debunk exemption applies only to false verdicts"
     disagree = dict(clean_r, r_fidelity_rev=overstated)
     assert [f["reason"] for f in rules.report_signal("verified", disagree)["flags"]] == ["fidelity_inconclusive"]
-    prop = {qid: clean_answer(q) for qid, q in questions.ALL["proposition"].items()}
-    broader = {"type": "choice", "choice": "broader_or_changed", "probabilities": {"equivalent": 0.1, "narrower": 0.0, "broader_or_changed": 0.9, "different": 0.0}}
-    split = rules.proposition_signal(dict(prop, i_prop_rev=broader))
-    assert split["result"] == "inconclusive" and split["flags"], "order disagreement is never a clean pass"
-    member = {qid: clean_answer(q) for qid, q in questions.ALL["membership"].items()}
-    assert rules.membership_signal("mentions", member)["flags"][0]["reason"] == "relation_disagrees"
 
 
 # ------------------------------------------------------------------ boundary tests
@@ -278,6 +272,16 @@ def test_refusals(tmp: Path) -> None:
     assert not lines[0]["ran"] and "opted in" in lines[0]["reason"]
     assert not lines[1]["ran"] and "sensitive" in lines[1]["reason"]
     assert not (case / lib.SIGNALS_PATH).exists()
+
+
+def test_no_ingest_phase(tmp: Path) -> None:
+    # Ingest has no decision checks: the phase is refused before any request,
+    # and eligibility reports findings only.
+    case = fresh_case(tmp / "no-ingest")
+    done = subprocess.run([sys.executable, str(ROOT / "scripts" / "decision-signals.py"), str(case), "--phase", "ingest"],
+                          capture_output=True, text=True)
+    assert done.returncode == 2 and "invalid choice" in done.stderr, done.stdout + done.stderr
+    assert set(json.loads(run_script("ingest-eligibility.py", case).stdout)) == {"findings"}
 
 
 def test_backwards_compatible_without_signals(tmp: Path) -> None:
@@ -464,53 +468,6 @@ def test_malformed_answer_keeps_other_results(tmp: Path) -> None:
     assert stage.returncode == 0 and "unavailable (not judged)" in stage.stdout, "outages are visible, not a clean pass"
 
 
-def test_ingest_phase(tmp: Path) -> None:
-    case = fresh_case(tmp / "ingest")
-    shutil.copy(ROOT / "tests" / "fixtures" / "knowledge-batch.sample.json", case / "data" / "knowledge-batch.json")
-    batch = json.loads((case / "data" / "knowledge-batch.json").read_text())
-    for claim in batch["claims"]:
-        claim["origin"]["finding_id"] = "F1"
-    (case / "data" / "knowledge-batch.json").write_text(json.dumps(batch))
-    cfg = config(tmp, {"investigation_gate": "advisory", "report": "advisory", "ingest": "advisory"})
-    assert run_script("finalize-report.py", case).returncode == 0
-    run_phase(case, cfg, "investigation-gate", provider_with())
-    assert run_script("finalize-report.py", case).returncode == 0
-    report_inputs = json.loads((case / "evidence-map.json").read_text())["input_sha256"]
-    entities = case / "data" / "ingest-entities.json"
-    entities.write_text(json.dumps([{"name": "Morgan", "context": "Morgan approved the payment.", "type": "person"}]))
-    existing = case / "data" / "ingest-existing-claims.json"
-    existing.write_text(json.dumps([{"id": "old-1", "claim": "Ada Lovelace is President of Northwind Research Cooperative."}]))
-    provider = provider_with({"i_prop": "broader_or_changed", "i_member": "mentions", "i_entity_ambiguous": 0.8})
-    run_phase(case, cfg, "ingest", provider, ["--entities", str(entities)])
-    run_phase(case, cfg, "ingest", provider, ["--existing-claims", str(existing)])
-    phase = signals(case, lib.INGEST_SIGNALS_NAME)["phases"]["ingest"]
-    assert phase["propositions"][0]["flags"][0]["reason"] == "proposition_broader_or_changed"
-    assert phase["memberships"][0]["declared"] == "supports" and phase["memberships"][0]["flags"]
-    assert phase["entities"][0]["result"] == "unclear", "an earlier entity run survives a later matching run"
-    assert phase["matches"][0]["result"] == "same_claim"
-    assert set(phase["groups_generated_at"]) == {"propositions", "memberships", "entities", "matches"}
-    validate = run_script("validate-report.py", case)
-    assert validate.returncode == 0, "ingest checks must not invalidate the finalized report: " + validate.stdout
-    assert json.loads((case / "evidence-map.json").read_text())["input_sha256"] == report_inputs
-    checks = json.loads(run_script("ingest-eligibility.py", case).stdout)["ingest_checks"]
-    assert {c["status"] for c in checks if c["group"] in ("propositions", "memberships")} == {"judged"}
-    assert {c["group"] for c in checks if c["status"] == "inputs_not_supplied"} == {"entities", "matches"}, \
-        "stored entity/match results are never presented as current without their inputs"
-    # Results asked with other question wording are stale, inputs unchanged.
-    stored_path = case / "data" / lib.INGEST_SIGNALS_NAME
-    stored = json.loads(stored_path.read_text())
-    current_version, stored["question_bank_version"] = stored["question_bank_version"], "older-wording"
-    stored_path.write_text(json.dumps(stored))
-    checks = json.loads(run_script("ingest-eligibility.py", case).stdout)["ingest_checks"]
-    assert {c["status"] for c in checks if c["group"] in ("propositions", "memberships")} == {"stale"}, checks
-    stored["question_bank_version"] = current_version
-    stored_path.write_text(json.dumps(stored))
-    batch["claims"][0]["proposition"] = "Acme paid Doe twice."
-    (case / "data" / "knowledge-batch.json").write_text(json.dumps(batch))
-    checks = json.loads(run_script("ingest-eligibility.py", case).stdout)["ingest_checks"]
-    assert any(c["group"] == "propositions" and c["status"] == "stale" for c in checks), "batch edits make ingest checks stale"
-
-
 def test_missing_grounding_cap_warns(tmp: Path) -> None:
     case = fresh_case(tmp / "nocap")
     records = json.loads(run_script("ingest-eligibility.py", case).stdout)["findings"]
@@ -533,26 +490,8 @@ def test_round_two_regressions(tmp: Path) -> None:
     check = run_script("check-report-fidelity.py", case)
     assert check.returncode == 1 and "deck" in check.stdout, "every cited finding's confidence is fingerprinted"
 
-    # Ingest-only run never creates the main signals file; a finalized report stays valid.
-    case = fresh_case(tmp / "ingest-only")
-    assert run_script("finalize-report.py", case).returncode == 0
-    entities = case / "data" / "ingest-entities.json"
-    entities.write_text(json.dumps([{"name": "Acme AG", "context": "Acme AG paid the fee.", "type": "company"}]))
-    run_phase(case, config(tmp, {"ingest": "advisory"}, "r2i.json"), "ingest", provider_with(), ["--entities", str(entities)])
-    assert not (case / lib.SIGNALS_PATH).exists() and (case / lib.INGEST_SIGNALS_PATH).exists()
-    assert run_script("validate-report.py", case).returncode == 0
-    ok = json.loads(subprocess.run([sys.executable, str(ROOT / "scripts" / "ingest-eligibility.py"), str(case),
-                                     "--entities", str(entities)], capture_output=True, text=True).stdout)["ingest_checks"]
-    assert [c["status"] for c in ok] == ["judged"]
-    entities.write_text(json.dumps([{"name": "Acme AG", "context": "Acme AG, a foundation, paid the fee.", "type": "company"},
-                                    {"name": "Doe", "context": "Doe signed.", "type": "person"}]))
-    statuses = [c["status"] for c in json.loads(subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "ingest-eligibility.py"), str(case), "--entities", str(entities)],
-        capture_output=True, text=True).stdout)["ingest_checks"]]
-    assert statuses == ["stale", "unchecked"], statuses
-
     # Structural validation of caps; malformed choices never crash; order disagreement is flagged.
-    doc = json.loads((case / lib.INGEST_SIGNALS_PATH).read_text())
+    doc = signals_cli.empty_document("m")
     doc["phases"]["investigation_gate"] = {"mode": "enforce", "findings": [{"finding_id": "F1", "input_sha256": "0" * 64, "status": "judged", "flags": [], "cap": []}]}
     try:
         lib.validate_signals(doc)
@@ -581,77 +520,25 @@ def test_round_two_regressions(tmp: Path) -> None:
     validate = run_script("validate-report.py", case)
     assert validate.returncode != 0 and "changed since rendering" in validate.stdout, validate.stdout
 
-    # Ingest results left in the main file by an earlier layout are reported, not silently dropped.
-    main = json.loads((case / lib.SIGNALS_PATH).read_text())
-    main["phases"]["ingest"] = {"mode": "advisory", "entities": []}
-    (case / lib.SIGNALS_PATH).write_text(json.dumps(main))
-    assert any(c["status"] == "legacy_location" for c in lib.ingest_status(case))
 
 
 def test_round_three_regressions(tmp: Path) -> None:
     # A malformed consent record is not consent.
     assert not lib.valid_opt_in({}) and not lib.valid_opt_in({"by": "", "at": "t"}) and lib.valid_opt_in({"by": "user", "at": "t"})
     case = fresh_case(tmp / "consent")
-    (case / lib.INGEST_SIGNALS_PATH).write_text(json.dumps({**signals_cli.empty_document("m"), "opt_in": {}}))
+    (case / lib.SIGNALS_PATH).write_text(json.dumps({**signals_cli.empty_document("m"), "opt_in": {}}))
     provider = provider_with()
     out = io.StringIO(); stdout, sys.stdout = sys.stdout, out
     try:
-        code = signals_cli.main([str(case), "--phase", "ingest", "--config", str(config(tmp, {}, "r3c.json"))], provider=provider)
+        code = signals_cli.main([str(case), "--phase", "investigation-gate", "--config", str(config(tmp, {}, "r3c.json"))], provider=provider)
     finally:
         sys.stdout = stdout
     assert code == 2 and not provider.calls, "a malformed consent record never authorizes a request"
 
-    # A symlinked knowledge batch is never read or sent.
-    case = fresh_case(tmp / "batch-link")
-    other = tmp / "other-case-batch.json"
-    other.write_text(json.dumps({"claims": [{"id": "c", "version": 1, "proposition": "Secret proposition.", "origin": {"finding_id": "F1"}}]}))
-    (case / "data" / "knowledge-batch.json").symlink_to(other)
-    provider = provider_with()
-    out = io.StringIO(); stdout, sys.stdout = sys.stdout, out
-    try:
-        code = signals_cli.main([str(case), "--phase", "ingest", "--config", str(config(tmp, {}, "r3b.json")), "--case-opt-in"], provider=provider)
-    finally:
-        sys.stdout = stdout
-    assert code == 2 and not provider.calls, "symlinked case inputs are refused before any request"
-
-    # Versioned batch records resolve exactly; unresolved endpoints are routed, never judged.
-    case = fresh_case(tmp / "versions")
-    batch = json.loads((ROOT / "tests" / "fixtures" / "knowledge-batch.sample.json").read_text())
-    claim_v1 = batch["claims"][0]
-    claim_v1["origin"]["finding_id"] = "F1"
-    claim_v2 = {**claim_v1, "version": 2, "proposition": "Acme paid Doe twice."}
-    batch["claims"].append(claim_v2)
-    dangling = {**batch["claim_event_memberships"][0], "id": "relation:dangling", "claim": {"id": claim_v1["id"], "version": 9}}
-    batch["claim_event_memberships"].append(dangling)
-    (case / "data" / "knowledge-batch.json").write_text(json.dumps(batch))
-    targets = {i["target"]: i for i in lib.batch_items(case)}
-    assert f"claim:{claim_v1['id']}@1" in targets and f"claim:{claim_v1['id']}@2" in targets
-    member = next(i for t, i in targets.items() if t.startswith("membership:relation:claim-event"))
-    assert member["state"]["claim"] == claim_v1["proposition"], "a membership is judged against its exact claim version"
-    assert next(i for t, i in targets.items() if t.startswith("membership:relation:dangling"))["unresolved"]
-    run_phase(case, config(tmp, {"ingest": "advisory"}, "r3v.json"), "ingest", provider_with())
-    phase = signals(case, lib.INGEST_SIGNALS_NAME)["phases"]["ingest"]
-    routed = [m for m in phase["memberships"] if m["target"].startswith("membership:relation:dangling")]
-    assert routed and routed[0]["status"] == "routed" and routed[0]["result"] == "unresolved"
-    statuses = {c["target"]: c["status"] for c in lib.ingest_status(case)}
-    assert statuses[routed[0]["target"]] == "unresolved"
 
 
 def test_input_containment(tmp: Path) -> None:
     case = fresh_case(tmp / "inputs")
-    outside = tmp / "other-case-entities.json"
-    outside.write_text(json.dumps([{"name": "Secret Person", "context": "Secret Person met the minister.", "type": "person"}]))
-    cfg = config(tmp, {"ingest": "advisory"}, "contain.json")
-    link = case / "data" / "ingest-entities.json"
-    link.symlink_to(outside)
-    for value in (outside, link):
-        provider = provider_with()
-        out = io.StringIO(); stdout, sys.stdout = sys.stdout, out
-        try:
-            code = signals_cli.main([str(case), "--phase", "ingest", "--config", str(cfg), "--case-opt-in", "--entities", str(value)], provider=provider)
-        finally:
-            sys.stdout = stdout
-        assert code == 2 and not provider.calls, f"{value} must be refused before any request"
     for bad in ("../findings.json", "data/../x.json"):
         try:
             lib.read_case_file(case, bad)
@@ -689,21 +576,7 @@ def test_round_five_regressions(tmp: Path) -> None:
         pass
     assert run_script("check-report-fidelity.py", case).returncode != 0
 
-    # A missing explicit input stops the run before any request and keeps earlier results.
-    case = fresh_case(tmp / "missing-input")
-    entities = case / "data" / "ingest-entities.json"
-    entities.write_text(json.dumps([{"name": "Acme AG", "context": "Acme AG paid.", "type": "company"}]))
-    cfg = config(tmp, {"ingest": "advisory"}, "r5.json")
-    provider = provider_with()
-    out = io.StringIO(); stdout, sys.stdout = sys.stdout, out
-    try:
-        code = signals_cli.main([str(case), "--phase", "ingest", "--config", str(cfg), "--case-opt-in", "--entities", str(entities),
-                                 "--existing-claims", str(case / "data" / "ingest-existing-claims.json")], provider=provider)
-    finally:
-        sys.stdout = stdout
-    assert code == 2 and not provider.calls and not (case / lib.INGEST_SIGNALS_PATH).exists(), \
-        "a missing explicit input is an error, never an empty list"
-
+    cfg = config(tmp, {"investigation_gate": "advisory"}, "r5.json")
     # Without descriptor-anchored reads the networked step refuses and preflight says why.
     saved = lib.ANCHORED_READS
     lib.ANCHORED_READS = False
@@ -863,7 +736,7 @@ def main() -> int:
                      test_saved_gate1_keys_still_apply,
                      test_stale_grounding_signal_not_applied, test_report_fidelity_stage,
                      test_invalid_and_unsafe_signal_files, test_symlinked_research_is_not_read,
-                     test_malformed_answer_keeps_other_results, test_ingest_phase, test_missing_grounding_cap_warns,
+                     test_malformed_answer_keeps_other_results, test_no_ingest_phase, test_missing_grounding_cap_warns,
                      test_round_two_regressions, test_round_three_regressions, test_input_containment,
                      test_round_five_regressions, test_round_six_regression, test_round_seven_regression,
                      test_protected_sources_are_masked_before_sending):

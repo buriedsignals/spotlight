@@ -34,8 +34,7 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
-BRIEF = rr.TriageBrief(premise="Company A hid its owner behind a Swiss foundation.", subjects=("Company A",),
-                       directions={"ownership": "Who owns Company A"})
+BRIEF = rr.TriageBrief(premise="Company A hid its owner behind a Swiss foundation.", subjects=("Company A",))
 ACCEPTED = {"passed": True, "bank_version": rq.RESEARCH_BANK_VERSION, "thresholds": {"c2_new_actor": 0.8, "c3_change": 0.8}}
 
 
@@ -113,10 +112,25 @@ def test_bank_is_separate_and_versioned() -> None:
     names = {qid for group in questions.ALL.values() for qid in group}
     require(not names & set(rq.QUESTIONS) and not names & set(rq.ON_TRIAL), "research questions leaked into questions.ALL")
     require(rq.RESEARCH_BANK_VERSION != questions.QUESTION_BANK_VERSION, "research bank shares the decision bank's version")
-    q2 = rq.direction_question({"ownership": "Who owns it", "money": "Payments"})
-    require(list(q2["criteria"]) == ["ownership", "money", "none"], "Q2 options are the approved directions plus none")
-    both = rq.with_reversed({"q2_direction": q2})
-    require(list(both["q2_direction_rev"]["criteria"]) == ["none", "money", "ownership"], "Q2 is asked in reversed order too")
+
+
+def test_q2_is_never_asked_and_q1_only_of_jev() -> None:
+    # Q2 (direction) is gone for every backend; Q1 (identity) is asked only of
+    # Jev (Frontier). The local model and the rules give no identity label and
+    # no circumstantial context.
+    cloud = client.FakeProvider(answers_from({"q1_identity": "none_of_the_brief"}))
+    local = client.FakeProvider(answers_from({"q1_identity": "none_of_the_brief"}), model="kev")
+    document = run([lead("public"), lead("ji", journalist_input=True)], cloud, local=local, acceptance=ACCEPTED)
+    asked_cloud, asked_local = set(cloud.calls[0]["questions"]), set(local.calls[0]["questions"])
+    require(not any(q.startswith("q2_direction") for q in asked_cloud | asked_local), "Q2 was asked")
+    require("q1_identity" in asked_cloud and not any(q.startswith("q1_identity") for q in asked_local),
+            f"Q1 must be asked of Jev only: jev {sorted(asked_cloud)}, local {sorted(asked_local)}")
+    public, ji = by_id(document, "public"), by_id(document, "ji")
+    require(public["context"] == ["circumstantial"], f"Jev's identity answer had no effect: {public}")
+    require("identity" not in ji["labels"] and ji["context"] == [] and "q1_identity" not in ji["answers"],
+            f"the local model's lead carries identity: {ji}")
+    rules_only = by_id(run([lead()], None), "lead-1")
+    require("identity" not in rules_only["labels"] and rules_only["context"] == [], f"rules gave identity: {rules_only}")
 
 
 def test_both_orders_must_agree() -> None:
@@ -172,24 +186,18 @@ def test_always_shown_clues_and_effects() -> None:
 
 def test_topical_answers_keep_the_lead() -> None:
     # Even in full mode, a lead about another subject or event, or about none
-    # of the brief's, is kept and labelled circumstantial; one that informs no
-    # direction is kept and labelled outside the directions. Nothing suggests
-    # setting them aside.
+    # of the brief's, is kept and labelled circumstantial, never set aside.
     for identity in ("different_subject_or_event", "none_of_the_brief"):
-        provider = client.FakeProvider(answers_from({"q1_identity": identity, "q2_direction": "ownership"}, noul=0.1))
+        provider = client.FakeProvider(answers_from({"q1_identity": identity}, noul=0.1))
         result = by_id(run([lead()], provider, acceptance=ACCEPTED), "lead-1")
         require(result["disposition"] == "keep" and result["set_aside_reasons"] == [], f"{identity} lost the lead: {result}")
         require(result["context"] == ["circumstantial"], f"{identity} not labelled circumstantial: {result['context']}")
-    provider = client.FakeProvider(answers_from({"q2_direction": "none"}, noul=0.1))
-    result = by_id(run([lead()], provider, acceptance=ACCEPTED), "lead-1")
-    require(result["disposition"] == "keep" and result["context"] == ["outside_directions"], f"Q2 none lost the lead: {result}")
 
 
 def test_no_answer_sets_a_lead_aside() -> None:
     # Whether the source holds what a lead says is D3's check, not a question's:
     # in full mode, no agreed answer to any question, nor a high C2/C3, sets a lead aside.
-    asked = {**rq.QUESTIONS, "q2_direction": rq.direction_question(BRIEF.directions)}
-    for qid, question in asked.items():
+    for qid, question in rq.QUESTIONS.items():
         for option in question["criteria"]:
             document = run([lead()], client.FakeProvider(answers_from({qid: option}, noul=0.95)), acceptance=ACCEPTED)
             result = by_id(document, "lead-1")

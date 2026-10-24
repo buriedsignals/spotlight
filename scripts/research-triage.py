@@ -73,22 +73,11 @@ def _signals_cli():
 
 # ------------------------------------------------------------------ case inputs
 def brief_from_methodology(methodology: Mapping[str, Any]) -> rr.TriageBrief:
-    """The brief context Q1, Q2 and C1 need, from the approved methodology.
-
-    The premise is the methodology's ``lead``; the directions are the
-    investigation plan's ``direction_id``s (labelled with their ``direction``)
-    plus any research-plan topic's ``direction_id``. The methodology schema has
-    no subjects list, so Q1 compares against the premise alone."""
+    """The brief context Q1 and C1 need, from the approved methodology: its
+    ``lead`` is the premise. The methodology schema has no subjects list, so Q1
+    compares against the premise alone."""
     premise = methodology.get("lead") if isinstance(methodology.get("lead"), str) else ""
-    directions: dict[str, str] = {}
-    for item in methodology.get("investigation_plan", []) or []:
-        if isinstance(item, Mapping) and isinstance(item.get("direction_id"), str):
-            directions[item["direction_id"]] = str(item.get("direction") or item["direction_id"])
-    plan = methodology.get("research_plan") if isinstance(methodology.get("research_plan"), Mapping) else {}
-    for topic in plan.get("topics", []) or []:
-        if isinstance(topic, Mapping) and isinstance(topic.get("direction_id"), str):
-            directions.setdefault(topic["direction_id"], topic["direction_id"])
-    return rr.TriageBrief(premise=premise, subjects=(), directions=directions)
+    return rr.TriageBrief(premise=premise, subjects=())
 
 
 def rule_clues(clues_doc: Mapping[str, Any] | None) -> tuple[dict[str, set[str]], list[dict[str, Any]]]:
@@ -114,10 +103,9 @@ def schema_errors(schema: Path, document: Any) -> list[str]:
 
 
 # ------------------------------------------------------------------ triage
-def questions_for(brief: rr.TriageBrief, mode: str, acceptance: Mapping[str, Any] | None) -> tuple[dict[str, Any], list[str], list[str]]:
-    base = dict(rq.QUESTIONS)
-    if brief.directions:
-        base["q2_direction"] = rq.direction_question(brief.directions)
+def questions_for(backend: str, mode: str, acceptance: Mapping[str, Any] | None) -> tuple[dict[str, Any], list[str], list[str]]:
+    """The questions one backend is asked: Q1 only of Jev (Frontier)."""
+    base = {qid: q for qid, q in rq.QUESTIONS.items() if backend == "jev" or qid not in rq.FRONTIER_ONLY}
     noul_ids = rr.on_trial_asked(mode, acceptance)
     for qid in noul_ids:
         base[qid] = rq.ON_TRIAL[qid]
@@ -135,7 +123,6 @@ def run_triage(raw_leads: list[Any], brief: rr.TriageBrief, clues_doc: Mapping[s
     """Triage every valid lead. ``routing(journalist_input)`` gives (backend,
     reason); ``provider_for(backend)`` gives a provider or None (rules)."""
     mode = rr.triage_mode(acceptance)
-    questions, choice_ids, noul_ids = questions_for(brief, mode, acceptance)
     per_lead, pairs = rule_clues(clues_doc)
     leads: dict[str, rr.TriageLead] = {}
     invalid = []
@@ -158,19 +145,25 @@ def run_triage(raw_leads: list[Any], brief: rr.TriageBrief, clues_doc: Mapping[s
             continue
         leads[lead.lead_id] = lead
 
-    def ask(journalist_input: bool, state: dict[str, Any], qs: Mapping[str, Any]) -> tuple[dict[str, Any], str, str]:
+    def ask(journalist_input: bool, state: dict[str, Any],
+            qs_for: Callable[[str], Mapping[str, Any]]) -> tuple[dict[str, Any], str, str]:
         backend, reason = routing(journalist_input)
         provider = provider_for(backend) if backend != "rules" else None
         if provider is None:
             return {}, "rules", reason or ("" if backend == "rules" else f"{backend} is not configured")
         try:
-            return provider.decide(state, qs)["answers"], backend, reason
+            return provider.decide(state, qs_for(backend))["answers"], backend, reason
         except DecisionUnavailable as exc:
             return {}, "rules", f"{backend} unavailable: {exc}"
 
     results = []
+    asked: set[str] = set()
     for lead in leads.values():
-        answers, used, reason = ask(lead.journalist_input, {**rr.lead_state(lead), **brief_state(brief)}, questions)
+        answers, used, reason = ask(lead.journalist_input, {**rr.lead_state(lead), **brief_state(brief)},
+                                    lambda backend: questions_for(backend, mode, acceptance)[0])
+        questions, choice_ids, noul_ids = questions_for(used, mode, acceptance)
+        if answers:
+            asked |= {q for q in questions if not q.endswith("_rev")}
         recorded = rr.record_answers(answers, choice_ids, noul_ids, mode, acceptance)
         outcome = rr.lead_outcome(lead, recorded, per_lead.get(lead.lead_id, ()))
         results.append({**outcome, "backend": used, **({"backend_reason": reason} if reason else {}),
@@ -184,7 +177,7 @@ def run_triage(raw_leads: list[Any], brief: rr.TriageBrief, clues_doc: Mapping[s
             continue
         qs = rq.with_reversed({"c4_conflict": rq.conflict_question(pair["attribute"])})
         state = {"item_a": rr.lead_state(a)["item"], "item_b": rr.lead_state(b)["item"], "attribute": pair["attribute"]}
-        answers, used, reason = ask(a.journalist_input or b.journalist_input, state, qs)
+        answers, used, reason = ask(a.journalist_input or b.journalist_input, state, lambda _backend: qs)
         recorded = rr.record_answers(answers, ["c4_conflict"], [], mode, acceptance)["c4_conflict"]
         clue = rr.conflict_outcome(recorded)
         conflicts.append({"lead_ids": pair["lead_ids"], "attribute": pair["attribute"], "backend": used,
@@ -199,7 +192,7 @@ def run_triage(raw_leads: list[Any], brief: rr.TriageBrief, clues_doc: Mapping[s
         "schema_version": SCHEMA_VERSION, "generator": "scripts/research-triage.py",
         "bank_version": rq.RESEARCH_BANK_VERSION, "mode": mode,
         **({"notice": rr.FLAG_ONLY_NOTICE} if mode == rr.FLAG_ONLY else {}),
-        "questions_asked": sorted(q for q in questions if not q.endswith("_rev")),
+        "questions_asked": sorted(asked),
         "leads": results, "conflicts": conflicts, "invalid_leads": invalid, "absence_leads": absence,
     }
     return document

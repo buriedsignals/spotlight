@@ -4,6 +4,25 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed — Research triage by mode; no decision checks at Ingest
+
+- Research triage has no Q2 (direction) for any backend: no direction gold,
+  no "outside the directions" label.
+- Q1 (identity) is asked only of Jev (Frontier mode). With the local model
+  (Kev in Ninja mode) or the rules there is no identity label, no
+  circumstantial label, and the ranking has no identity tier: clue type, then
+  source, then assertion, then source families, then stored pages before
+  snippets.
+- `RESEARCH_BANK_VERSION` changes (`EFFECTS_REVISION` 5). Fixtures built with
+  direction gold must be rebuilt (`build_claims_fixture.py`).
+- The decision model no longer runs at Ingest: `decision-signals.py` has no
+  `ingest` phase, `data/decision-signals-ingest.json` and its schema are
+  gone, and `ingest-eligibility.py` reports findings only. Newsroom decisions
+  are made server-side; an individual member's ingest gets none. The
+  Investigation-gate and report checks are unchanged, but
+  `QUESTION_BANK_VERSION` changes with the ingest questions removed, so stored
+  gate and report signals are re-checked once.
+
 ### Added — Host rule for Q3 (source)
 
 - A small host list in `research_rules.py`. Registers, gazettes, courts and

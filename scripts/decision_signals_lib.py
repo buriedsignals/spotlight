@@ -4,12 +4,9 @@ Used by scripts/decision-signals.py (the only networked step), the report
 renderer, the report finalizer and the ingest eligibility helper. Everything
 here is deterministic and makes no network request.
 
-Two case files:
-
-* ``data/decision-signals.json`` — Investigation-gate grounding and report-prose signals.
-  The report renderer hashes it as an input.
-* ``data/decision-signals-ingest.json`` — ingest signals. It is kept separate so
-  that ingest checks after report finalization do not invalidate the report.
+``data/decision-signals.json`` holds the Investigation-gate grounding and
+report-prose signals; the report renderer hashes it as an input. Ingest has
+no decision checks.
 
 A signal applies only while its input fingerprint still matches the current
 case files; otherwise it is stale and ignored. A reviewer override applies only
@@ -101,9 +98,7 @@ def _open_parent(case: Path, parts: tuple[str, ...]) -> int:
     return descriptor
 
 SIGNALS_NAME = "decision-signals.json"
-INGEST_SIGNALS_NAME = "decision-signals-ingest.json"
 SIGNALS_PATH = f"data/{SIGNALS_NAME}"
-INGEST_SIGNALS_PATH = f"data/{INGEST_SIGNALS_NAME}"
 SCHEMA_VERSION = "1.0"
 MODES = ("shadow", "advisory", "enforce")
 CAP_ORDER = {"low": 1, "medium": 2, "high": 3}
@@ -300,18 +295,6 @@ def _safe_text(case: Path, path: Path) -> str | None:
     return None if content is None else content.decode("utf-8", errors="ignore")
 
 
-def case_input_name(case: Path, value: Any) -> str:
-    """A CLI-supplied ingest input must be a plain file directly inside {CASE_DIR}/data/."""
-    raw = Path(str(value))
-    candidate = raw if raw.is_absolute() else Path.cwd() / raw
-    data_dir = case.resolve() / "data"
-    # The parent directory must be the case's data directory; the file itself is then
-    # opened by name through the anchored reader, which refuses a symlinked file.
-    if os.path.realpath(candidate.parent) != os.path.realpath(data_dir) or candidate.name in ("", ".", ".."):
-        raise SignalsError(f"{value} must be a file directly inside {data_dir}")
-    return candidate.name
-
-
 def grounding_sources(case: Path, finding: dict[str, Any]) -> tuple[list[dict[str, str]], str]:
     """Locate the finding's quoted evidence in stored sources inside the case.
 
@@ -396,15 +379,12 @@ def validate_signals(doc: Any) -> dict[str, Any]:
         # Investigation gate. The next write stores the new key.
         _require("investigation_gate" not in doc["phases"], "decision signals carry both gate1 and investigation_gate")
         doc["phases"] = {("investigation_gate" if k == "gate1" else k): v for k, v in doc["phases"].items()}
-    required = {"investigation_gate": ("findings",), "report": ("items",), "ingest": ()}
-    optional = {"investigation_gate": (), "report": (), "ingest": ("propositions", "memberships", "entities", "matches")}
+    required = {"investigation_gate": ("findings",), "report": ("items",)}
     for name, phase in doc["phases"].items():
         _require(name in required and isinstance(phase, dict), f"invalid phase {name!r}")
         _require(phase.get("mode") in MODES, f"phase {name} has an invalid mode")
-        for group in required[name] + optional[name]:
-            if group not in phase:
-                _require(group not in required[name], f"{name}.{group} is missing")
-                continue
+        for group in required[name]:
+            _require(group in phase, f"{name}.{group} is missing")
             entries = phase[group]
             _require(isinstance(entries, list), f"{name}.{group} must be a list")
             for entry in entries:
@@ -420,8 +400,6 @@ def validate_signals(doc: Any) -> dict[str, Any]:
                 if name == "report":
                     _require(isinstance(entry.get("target"), str) and isinstance(entry.get("finding_ids"), list),
                              "report entries need a target and finding_ids")
-                if name == "ingest":
-                    _require(isinstance(entry.get("target"), str), "ingest entries need a target")
     return doc
 
 
@@ -575,177 +553,3 @@ def report_items(case: Path, signals: dict[str, Any] | None) -> list[dict[str, A
                       "input_sha256": canonical_sha256({"state": state, "findings": detail})})
     return items
 
-
-# ------------------------------------------------------------------ ingest (knowledge batch)
-def _actors(names: list[str]) -> str:
-    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
-
-
-def attributed_text(proposition: str, positions: list[dict[str, str]]) -> str:
-    """The proposition with every source position's attribution: who asserts
-    it in front, and who disputes it, so no stance is dropped. Casing is
-    kept: the subject is often a proper name."""
-    asserts = sorted({p["actor"] for p in positions if p["stance"] != "disputes"})
-    disputes = sorted({p["actor"] for p in positions if p["stance"] == "disputes"})
-    if not asserts:
-        return f"{_actors(disputes)} {'disputes' if len(disputes) == 1 else 'dispute'} that {proposition}"
-    text = f"According to {_actors(asserts)}, {proposition}"
-    if disputes:
-        text += f" {_actors(disputes)} {'disputes' if len(disputes) == 1 else 'dispute'} this."
-    return text
-
-
-def question_bank_version() -> str | None:
-    """The current question bank's version: results asked with other wording
-    are stale, whatever their inputs."""
-    path = Path(__file__).resolve().parents[1] / "integrations" / "decisions" / "questions.py"
-    spec = importlib.util.spec_from_file_location("spotlight_decision_questions", path)
-    if spec is None or spec.loader is None:
-        return None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return getattr(module, "QUESTION_BANK_VERSION", None)
-
-
-def batch_items(case: Path) -> list[dict[str, Any]]:
-    """Proposition and claim-event checks for data/knowledge-batch.json, shared by producer and consumers.
-
-    Records are resolved by exact (id, version). Every input that can change the
-    derived result, including endpoint identities and versions, is part of
-    ``state`` or ``rule_inputs`` and therefore of the fingerprint. A membership
-    whose endpoints cannot be resolved is returned with ``unresolved: True``.
-    """
-    batch = read_case_json(case, "knowledge-batch.json")
-    if not isinstance(batch, dict):
-        return []
-    by_id = {text(f.get("id")): f for f in case_findings(case)}
-
-    def key(ref: Any) -> tuple[str, str]:
-        ref = ref if isinstance(ref, dict) else {}
-        return text(ref.get("id")), text(ref.get("version"))
-
-    claims = {key(c): c for c in batch.get("claims", []) if isinstance(c, dict)}
-    events = {key(e): e for e in batch.get("events", []) if isinstance(e, dict)}
-    items: list[dict[str, Any]] = []
-    # Batch 1.1 keeps attribution in source positions and names references
-    # claim_ref/event_ref; 1.0 batches keep claim/event and event labels.
-    v11 = batch.get("schema_version") == "1.1"
-    # A position counts for a claim only when it cites a passage that supports
-    # or contradicts that claim: positions are recorded per finding, and a
-    # finding's other claims, or a passage kept only as context, may be ones
-    # the actor never spoke to.
-    passages: dict[tuple[str, str], set[tuple[str, str]]] = {}
-    for link in batch.get("claim_source_expressions", []) if v11 else []:
-        if isinstance(link, dict) and link.get("role") != "context":
-            passages.setdefault(key(link.get("claim_ref")), set()).add(key(link.get("source_expression_ref")))
-    positions: dict[tuple[str, str], list[dict[str, str]]] = {}
-    for position in batch.get("source_positions", []) if v11 else []:
-        if not isinstance(position, dict):
-            continue
-        claim = key(position.get("claim_ref"))
-        cited = {key(ref) for ref in position.get("source_expression_refs") or []}
-        if cited & passages.get(claim, set()):
-            positions.setdefault(claim, []).append({
-                "actor": text((position.get("actor") or {}).get("label")), "stance": text(position.get("stance")),
-                "attribution_verbatim": text(position.get("attribution_verbatim"))})
-
-    def item(group: str, target: str, state: dict[str, Any], rule_inputs: dict[str, Any], unresolved: bool = False) -> None:
-        items.append({"group": group, "target": target, "state": state, "rule_inputs": rule_inputs, "unresolved": unresolved,
-                      "input_sha256": canonical_sha256({"state": state, "rule_inputs": rule_inputs})})
-
-    for (cid, version), claim in claims.items():
-        finding = by_id.get(text((claim.get("origin") or {}).get("finding_id")))
-        proposition = text(claim.get("proposition"))
-        if v11 and positions.get((cid, version)):
-            # A normalized claim holds its attribution in a source position.
-            # The decision model compares texts and does not read a separate
-            # positions field (measured: 5/12 correct passes with it, 11/12
-            # with this), so the attribution goes back into the compared text.
-            proposition = attributed_text(proposition, positions[(cid, version)])
-        state = {"finding_claim": text((finding or {}).get("claim")), "proposition": proposition}
-        item("propositions", f"claim:{cid}@{version}", state, {"claim_version": version}, unresolved=finding is None)
-    for membership in batch.get("claim_event_memberships", []):
-        if not isinstance(membership, dict):
-            continue
-        claim_ref = key(membership.get("claim_ref" if v11 else "claim"))
-        event_ref = key(membership.get("event_ref" if v11 else "event"))
-        claim, event = claims.get(claim_ref), events.get(event_ref)
-        target = f"membership:{text(membership.get('id'))}@{text(membership.get('version'))}"
-        if v11:
-            # Batch 1.1 stores no event label; the display text is generated.
-            core = {k: (event or {}).get(k) for k in ("actors", "action", "object", "time", "place") if k in (event or {})}
-            label = " ".join([", ".join(text(a.get("name")) for a in (event or {}).get("actors", []) if isinstance(a, dict)),
-                              text((event or {}).get("action")), text(((event or {}).get("object") or {}).get("text"))]).strip()
-        else:
-            core, label = (event or {}).get("core") or {}, text((event or {}).get("label"))
-        state = {"claim": text((claim or {}).get("proposition")), "event_label": label, "event_core": core}
-        rule_inputs = {"declared_relation": text(membership.get("relation")),
-                       "claim_ref": list(claim_ref), "event_ref": list(event_ref)}
-        item("memberships", target, state, rule_inputs, unresolved=claim is None or event is None)
-    return items
-
-
-def entity_items(entities: list[Any]) -> list[dict[str, Any]]:
-    """Entity-type checks for an agent-provided list [{name, context, type}]."""
-    items = []
-    for entity in entities:
-        if isinstance(entity, dict):
-            state = {"entity_name": text(entity.get("name")), "context_sentence": text(entity.get("context"))}
-            rule_inputs = {"declared_type": text(entity.get("type"))}
-            items.append({"group": "entities", "target": f"entity:{state['entity_name']}", "state": state, "rule_inputs": rule_inputs,
-                          "input_sha256": canonical_sha256({"state": state, "rule_inputs": rule_inputs})})
-    return items
-
-
-def match_items(case: Path, existing: list[Any], limit: int = 60) -> list[dict[str, Any]]:
-    """New-finding vs existing-claim pairs for an agent-provided list [{id, claim}]."""
-    pairs = [(f, e) for f in case_findings(case) for e in existing if isinstance(e, dict)][:limit]
-    items = []
-    for finding, candidate in pairs:
-        state = {"new_claim": text(finding.get("claim")), "existing_claim": text(candidate.get("claim"))}
-        items.append({"group": "matches", "target": f"finding:{text(finding.get('id'))}|existing:{text(candidate.get('id'))}",
-                      "state": state, "rule_inputs": {}, "input_sha256": canonical_sha256({"state": state, "rule_inputs": {}})})
-    return items
-
-
-def ingest_status(case: Path, entities: list[Any] | None = None, existing: list[Any] | None = None) -> list[dict[str, Any]]:
-    """Every current ingest target with its stored result: judged, unavailable, stale or unchecked.
-
-    Knowledge-batch targets are always evaluated; entity and matching targets
-    only when the same input lists are supplied. Results stored in the main
-    signals file by an earlier layout are reported as legacy and must be rerun.
-    """
-    stored = load_signals(case, INGEST_SIGNALS_NAME)
-    phase = ((stored or {}).get("phases") or {}).get("ingest") or {}
-    current = batch_items(case)
-    if entities is not None:
-        current += entity_items(entities)
-    if existing is not None:
-        current += match_items(case, existing)
-    asked_with_other_wording = bool(phase) and (stored or {}).get("question_bank_version") != question_bank_version()
-    results = []
-    for group, supplied in (("entities", entities), ("matches", existing)):
-        if supplied is None and phase.get(group):
-            results.append({"group": group, "target": None, "status": "inputs_not_supplied", "mode": phase.get("mode"),
-                            "result": None, "flags": [{"reason": "freshness_unknown",
-                                                       "detail": f"pass the current {group} input list to check these stored results"}]})
-    for item in current:
-        by_target = {entry.get("target"): entry for entry in phase.get(item["group"], [])}
-        entry = by_target.get(item["target"])
-        if item.get("unresolved"):
-            status = "unresolved"
-        elif entry is None:
-            status = "unchecked"
-        elif entry.get("input_sha256") != item["input_sha256"] or asked_with_other_wording:
-            status = "stale"
-        else:
-            status = entry.get("status")
-        results.append({"group": item["group"], "target": item["target"], "status": status, "mode": phase.get("mode"),
-                        "result": (entry or {}).get("result") if status in ("judged", "unavailable") else None,
-                        "flags": (entry or {}).get("flags", []) if status == "judged" else []})
-    main = load_signals(case)
-    if ((main or {}).get("phases") or {}).get("ingest"):
-        results.append({"group": "legacy", "target": SIGNALS_PATH, "status": "legacy_location", "mode": None, "result": None,
-                        "flags": [{"reason": "ingest_results_in_legacy_location",
-                                   "detail": f"rerun ingest checks; results now live in {INGEST_SIGNALS_PATH}"}]})
-    return results

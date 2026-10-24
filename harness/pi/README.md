@@ -177,7 +177,7 @@ Every `execute-shell` step in `agents/` and in the skills these roles load, and 
 | phase-investigation | `scripts/validate-case.py` after the investigator | harness check |
 | phase-investigation | `scripts/validate-case.py` and `scripts/validate-fact-check.py` after the fact-checker | harness check |
 | phase-investigation | `scripts/migrate-source-expressions.py` (dry run and apply) | not available: an operator-reviewed flow outside the model |
-| phase-investigation-gate, report-drafting, ingest | `scripts/decision-signals.py` (including `--check` and `--case-opt-in`) | `decision_signals` |
+| phase-investigation-gate, report-drafting | `scripts/decision-signals.py` (including `--check` and `--case-opt-in`) | `decision_signals` |
 | phase-investigation-gate, provenance-signing | `scripts/build-provenance-manifest.py` (build, `--check-current`, `--sign-endpoint`) | `provenance_manifest` |
 | phase-preflight | step 0: `test -f skills/... && test -f scripts/...` | skipped: `spotlight_resolve` answering confirms the checkout |
 | phase-preflight | `scripts/spotlight-orchestration.py status` | `spotlight_resolve` |
