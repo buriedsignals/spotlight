@@ -168,6 +168,8 @@ class D1LanePlan(unittest.TestCase):
             self.assertEqual(validate().returncode, 0, validate().stderr)
             # Pi path: the harness passes its switch, which wins over the config.
             self.assertIn(RESEARCH_OFF, validate(SPOTLIGHT_RESEARCH_SWARMS="off").stderr)
+            # Present but blank is off too, as the harness reads it; only an absent variable defers to the config.
+            self.assertIn(RESEARCH_OFF, validate(SPOTLIGHT_RESEARCH_SWARMS="").stderr)
             method["research_plan"]["consent"]["swarm"] = False
             Case.write_json(case / "data" / "methodology.json", method)
             result = validate()

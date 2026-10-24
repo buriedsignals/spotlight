@@ -103,6 +103,7 @@ While either is missing, or a topic of the plan is not merged yet,
 | (`research_approval`) | the member's marks and approval | the member, on the Research page |
 | `amendment` | `data/methodology-amendment.json`, checked by D8 | the investigator, AMENDMENT mode, TASK: AMEND; then code |
 | `round_topics` | `data/research-round.json` for a stalled investigation | the investigator, AMENDMENT mode, TASK: ROUND; then code |
+| `research_off` | nothing: the Research switch is off, and the case waits at `research.paused_at` | the member: tell them the message in `missing`, spawn no researcher, and end the turn |
 
 **Triage.** Right after the merge (in a runtime without the Pi harness):
 
@@ -248,9 +249,7 @@ spotlight_transition({operation: "startResearchRound"})
 (Or `execute-shell("scripts/spotlight-python scripts/spotlight-orchestration.py start-research-round {CASE_DIR}")`.)
 
 Code checks the round's topics with D1 and appends them to `research_plan`; a
-refusal names what to fix. With the Research switch off, D1 refuses the round
-("Research is off"): tell the member, and do not retry unless they turn
-Research back on. The round then runs like any other (lanes, merge,
+refusal names what to fix. The round then runs like any other (lanes, merge,
 triage, suggestions) under the plan's consent and budget, and the member
 approves it with its leads on the Research page. That approval grants one
 more investigation cycle. If that cycle also fails, the case stops with a

@@ -26,6 +26,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SEAM = ROOT / "scripts" / "spotlight-orchestration.py"
 APPROVER = ("--approved-by", "journalist:fixture", "--approved-at", "2026-10-23T12:00:00Z")
+RESEARCH_PAUSED = ("Research is off. Turn Research on in the app to continue this case, or go back to the "
+                   "Methodology gate and approve the plan without research.")
 
 
 def _load(name: str, path: Path):
@@ -300,8 +302,31 @@ class ResearchGate(SeamCase):
         write_json(self.case / "data/research-round.json", ROUND)
         self.research = "off"
         refused = self.seam("start-research-round", expect=3)
-        self.assertIn("Research is off; turn on Research in the app", refused.stderr)
-        self.assertEqual(self.status()["research"]["resume_at"], "round_topics")
+        self.assertIn(RESEARCH_PAUSED, refused.stderr)
+        self.assertEqual(self.status()["research"]["paused_at"], "round_topics")
+
+    def test_research_off_holds_a_researched_case_at_its_step_until_the_plan_drops_research(self) -> None:
+        self.seam("approve", "methodology", *APPROVER)
+        self.research = "off"
+        lanes = self.status()
+        self.assertEqual((lanes["phase"], lanes["research"]["resume_at"], lanes["research"]["paused_at"]),
+                         ("research", "research_off", "lanes"))
+        self.assertEqual(lanes["missing"], [RESEARCH_PAUSED])
+        self.research = "on"
+        self.research_outputs(self.case)
+        write_json(self.case / "data/research-review.json", marks_review({}))
+        self.assertEqual(self.status()["phase"], "research_approval")
+        self.research = "off"
+        held = self.status()
+        self.assertEqual((held["phase"], held["research"]["paused_at"]), ("research", "approval"))
+        self.assertIn(RESEARCH_PAUSED, self.seam("approve", "research", *APPROVER, expect=3).stderr)
+        # The way back: the methodology without research, approved at the Methodology gate.
+        methodology = read_json(self.case / "data/methodology.json")
+        del methodology["research_plan"]
+        write_json(self.case / "data/methodology.json", methodology)
+        self.assertEqual(self.status()["phase"], "methodology_approval")
+        self.seam("approve", "methodology", *APPROVER)
+        self.assertEqual(self.status()["phase"], "investigation")
 
     def test_a_stored_case_with_four_or_five_cycles_enters_the_stall_flow(self) -> None:
         for cycles, blocked in ((5, True), (4, False)):

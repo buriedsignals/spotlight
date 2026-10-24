@@ -294,7 +294,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 async function caseStatus(harness: Harness, strict = false): Promise<Record<string, unknown>> {
 	const { config, active } = harness;
 	try {
-		const status = await pythonAdapter(config.python, resolverEnv(process.env, harness.composition, config.routes))(['status', '--json', '--authorized-cases-root', active.casesRoot, active.caseDir]);
+		const status = await pythonAdapter(config.python, resolverEnv({ ...process.env, ...researchEnv(config) }, harness.composition, config.routes))(['status', '--json', '--authorized-cases-root', active.casesRoot, active.caseDir]);
 		return JSON.parse(status) as Record<string, unknown>;
 	} catch (error) {
 		const message = `could not resolve the case phase: ${harness.redact((error as Error).message)}`;

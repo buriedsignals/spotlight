@@ -31,7 +31,7 @@ from .dependencies import (
     sha256,
     validate_approval,
 )
-from .resolver import load_ingestion_marker, research_plan, status_for
+from .resolver import RESEARCH_PAUSED_STEP, load_ingestion_marker, research_plan, status_for
 from . import research as research_rules
 from .research import AMENDMENT_CORRECTION, CYCLE, ROUND_CYCLE
 from .case_contract import bind as bind_case_contract
@@ -89,6 +89,7 @@ def approve(
     validate_approval(approved_by, approved_at)
     state = load_state(case, data_descriptor)
     status = status_for(case, state, data_descriptor)
+    _refuse_while_research_off(status)
     if status["next_phase"] != expected_phase:
         raise OrchestrationError(f"case is not awaiting {gate} approval")
     if gate == "investigation_gate" and status.get("missing"):
@@ -253,6 +254,7 @@ def start_research_round(case: Path, data_descriptor: int) -> None:
     """
     state = load_state(case, data_descriptor)
     status = status_for(case, state, data_descriptor)
+    _refuse_while_research_off(status)
     if status.get("research", {}).get("resume_at") != "round_topics":
         raise OrchestrationError("no stalled investigation is waiting for a research round")
     proposal = research_rules.read_case_json(case, RESEARCH_ROUND)
@@ -311,6 +313,7 @@ def record_amendment(case: Path, data_descriptor: int) -> None:
     """
     state = load_state(case, data_descriptor)
     status = status_for(case, state, data_descriptor)
+    _refuse_while_research_off(status)
     if status.get("research", {}).get("resume_at") != "amendment":
         raise OrchestrationError("the case is not waiting for a methodology amendment")
     approved = research_rules.read_case_json(case, "data/methodology.json")
@@ -364,15 +367,13 @@ def _schema_problems(methodology: dict) -> list[str]:
 
 
 def _d1_problems(methodology: dict) -> list[str]:
-    config: dict = {}
-    path = review.spotlight_config_path()
-    if path.is_file():
-        try:
-            loaded = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise OrchestrationError(f"cannot read the install config: {exc}") from exc
-        config = loaded if isinstance(loaded, dict) else {}
-    return research_rules.checks().d1_from_config(methodology, config)
+    return research_rules.checks().d1_from_config(methodology, review.install_config())
+
+
+def _refuse_while_research_off(status: dict) -> None:
+    """A Research transition with the switch off names the resolver's reason."""
+    if status.get("research", {}).get("resume_at") == RESEARCH_PAUSED_STEP:
+        raise OrchestrationError(status["missing"][0])
 
 
 # A follow-up without a page nonce comes from the agent: the harness names the

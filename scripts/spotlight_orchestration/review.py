@@ -195,6 +195,18 @@ def spotlight_config_path() -> Path:
     return path
 
 
+def install_config() -> dict[str, Any]:
+    """The install config as an object; {} when there is none."""
+    path = spotlight_config_path()
+    if not path.is_file():
+        return {}
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise OrchestrationError(f"cannot read the install config: {exc}") from exc
+    return loaded if isinstance(loaded, dict) else {}
+
+
 def ingest_mode() -> str:
     """knowledge_destination.mode from the install config Engine writes:
     "solo" or "newsroom". Only a missing config, destination or mode means

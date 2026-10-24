@@ -11,7 +11,11 @@ All notable changes to Spotlight. Format follows [Keep a Changelog](https://keep
   research round ("Research is off; turn on Research in the app to add a
   research plan"). The Pi harness reads `SPOTLIGHT_RESEARCH_SWARMS`;
   subscription runtimes read `integrations.research_swarms.enabled` in the
-  install config.
+  install config only when that variable is absent.
+- A case already in Research when the switch goes off stays at its step
+  (`research.resume_at: "research_off"`, `paused_at`): no lane, round, gate
+  approval or amendment runs until Research is back on, or the plan without
+  research is approved at the Methodology gate.
 
 ### Changed — Research triage by mode; no decision checks at Ingest
 

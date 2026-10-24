@@ -814,6 +814,36 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 	assert.ok(!chat.stderr().includes('sk-or-v1-launcher-secret'));
 });
 
+test('with the Research switch off, an approved researched case resumes no lane: the resolve holds it at Research with the Research-off message', async (t) => {
+	const orchestratorModel = await startFakeOpenAI(resolveThenStop);
+	const swarm = await startFakeOpenAI(() => ({ text: 'No leads.', usage: { total_tokens: 10, cost: 0.0001 } }));
+	t.after(() => Promise.all([orchestratorModel.close(), swarm.close()]));
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
+	await writeFile(join(caseDir, 'data', 'methodology.json'), await readFile(join(CHECKOUT_ROOT, 'tests/fixtures/research/methodology-research.sample.json'), 'utf8'));
+	await new Promise<void>((done, fail) =>
+		execFile(
+			process.env.SPOTLIGHT_PYTHON ?? 'python3',
+			[join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'), 'approve', 'methodology', '--approved-by', 'journalist:fixture', '--approved-at', '2026-10-23T12:00:00Z', '--authorized-cases-root', space.casesRoot, caseDir],
+			(error, _stdout, stderr) => (error ? fail(new Error(stderr || error.message)) : done()),
+		),
+	);
+	// The install config says on; the harness's switch (absent, so off) decides.
+	const config = join(space.root, 'spotlight-config.json');
+	await writeFile(config, JSON.stringify({ model_tier: '12b', integrations: { research_swarms: { enabled: true } } }));
+	const chat = launch(t, { ...baseEnv(space, orchestratorModel.baseURL), SPOTLIGHT_CONFIG: config, OPENROUTER_API_KEY: 'sk-or-v1-launcher-secret', SPOTLIGHT_SWARM_BASE_URL: swarm.baseURL });
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(swarm.requests.length, 0);
+	const resolution = lastResolution(chat) as { phase: string; missing: string[]; research: { resume_at: string; paused_at: string }; research_round?: unknown };
+	assert.deepEqual([resolution.phase, resolution.research.resume_at, resolution.research.paused_at], ['research', 'research_off', 'lanes']);
+	assert.match(resolution.missing[0], /^Research is off\. Turn Research on in the app to continue this case/);
+	assert.equal(resolution.research_round, undefined);
+});
+
 // ── Newsroom edition (Editorial MCP) ─────────────────────────────────────────
 
 const newsroomRoute = (baseURL: string) => [{ name: 'newsroom-model', base_url: baseURL, model: 'stub-model', inference: 'own' }];

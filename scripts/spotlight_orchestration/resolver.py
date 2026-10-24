@@ -19,7 +19,7 @@ from .dependencies import (
     rework_pending,
     sha256,
 )
-from .review import decision_backed, effective_ledger
+from .review import decision_backed, effective_ledger, install_config
 from .storage import case_path, read_data_bytes
 
 _PHASE_OWNERS = {
@@ -114,6 +114,24 @@ def stale_summaries(case: Path, *records: object) -> list[str]:
     return stale
 
 
+RESEARCH_PAUSED = ("Research is off. Turn Research on in the app to continue this case, or go back to the "
+                   "Methodology gate and approve the plan without research.")
+RESEARCH_PAUSED_STEP = "research_off"
+
+
+def _research_paused(status: dict[str, Any]) -> dict[str, Any]:
+    """Research switched off mid-case: the case stays in Research at the step
+    it reached (``paused_at``), and nothing in Research runs or advances."""
+    research_state = status.get("research", {})
+    return {
+        **status,
+        "next_phase": "research",
+        "missing": [RESEARCH_PAUSED],
+        "research": {**research_state, "resume_at": RESEARCH_PAUSED_STEP,
+                     "paused_at": research_state.get("resume_at", "approval")},
+    }
+
+
 def status_for(
     case: Path, state: dict[str, Any], data_descriptor: int | None = None
 ) -> dict[str, Any]:
@@ -139,19 +157,22 @@ def status_for(
     stall = research.stall_due(state, plan)
     if "blocked" in state and stall is None:
         return {**status, "status": "blocked", "next_phase": "blocked", "blocked": state["blocked"]}
+    in_research = None
     if stall is not None:
         # The cycle cap is spent: a targeted research round, not a stop.
-        return {
+        in_research = {
             **status,
             "status": "active",
             "next_phase": "research",
             "missing": [RESEARCH_ROUND],
             "research": stall,
         }
-    if plan is not None:
+    elif plan is not None:
         steps = research.research_steps(case, state, plan, ledger, backed)
         if steps is not None:
-            return {**status, **steps}
+            in_research = {**status, **steps}
+    if in_research is not None:
+        return in_research if research.checks().research_on(install_config()) else _research_paused(in_research)
 
     dependencies = investigation_gate_dependencies(case)
     dependency_digest = str(dependencies["dependency_digest"])

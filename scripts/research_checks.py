@@ -195,11 +195,12 @@ SWITCH_ON = {"on", "true", "1", "yes"}
 
 def research_on(config: Mapping[str, Any]) -> bool:
     """Engine's one Research switch. The Pi harness passes it to every Python
-    check as SPOTLIGHT_RESEARCH_SWARMS; subscription runtimes have no launcher,
-    so the install config's ``integrations.research_swarms.enabled`` decides."""
-    value = os.environ.get("SPOTLIGHT_RESEARCH_SWARMS", "").strip().lower()
-    if value:
-        return value in SWITCH_ON
+    check as SPOTLIGHT_RESEARCH_SWARMS (present, even blank, it decides);
+    subscription runtimes have no launcher, so when it is absent the install
+    config's ``integrations.research_swarms.enabled`` decides."""
+    value = os.environ.get("SPOTLIGHT_RESEARCH_SWARMS")
+    if value is not None:
+        return value.strip().lower() in SWITCH_ON
     return ((config.get("integrations") or {}).get("research_swarms") or {}).get("enabled") is True
 
 
