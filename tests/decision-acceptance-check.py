@@ -147,11 +147,34 @@ def test_heldout_needs_approved_targets_for_this_bank() -> None:
 def test_fixture_refuses_planted_clue_across_halves() -> None:
     fixture = json.loads(acc.COMPANY_A.read_text(encoding="utf-8"))
     broken = copy.deepcopy(fixture)
-    broken["planted_clues"][0]["lead_ids"].append("ca-h01")
+    broken["planted_clues"][0]["split"] = "heldout"  # a held-out clue on dev leads
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "broken.json"
         path.write_text(json.dumps(broken), encoding="utf-8")
         raises(lambda: acc.load_fixture(path), acc.AcceptanceError, "a planted clue must stay inside one half")
+
+
+def test_no_case_in_both_halves() -> None:
+    # A case split across dev and held-out leaks it from tuning into testing.
+    halves: dict[str, set[str]] = {}
+    for path in acc.fixture_paths([]):
+        fixture = json.loads(path.read_text(encoding="utf-8"))
+        halves.setdefault(fixture["case"]["case_id"], set()).update(i["split"] for i in fixture["items"])
+    claims = [{"id": n, "finding_id": f"F{n % 3}", "claim_text": f"Claim {n}.", "verdict": "verified" if n % 2 else "false",
+               "evidence_for": [], "sources": []} for n in range(12)]
+    for name in ("alpha", "beta", "gamma"):
+        case = builder.build_case(name, {"project": name, "claims": claims}, None)
+        halves.setdefault(case["alias"], set()).update(i["split"] for i in case["items"])
+    split = {case for case, seen in halves.items() if len(seen) > 1}
+    require(not split, f"no case may appear in both halves: {sorted(split)}")
+    require({"dev", "heldout"} <= set().union(*halves.values()), "the shipped and built cases must fill both halves")
+    mixed = json.loads(acc.COMPANY_A.read_text(encoding="utf-8"))
+    mixed["items"][0]["split"] = "heldout"
+    mixed["planted_clues"] = [c for c in mixed["planted_clues"] if mixed["items"][0]["item_id"] not in c["lead_ids"]]
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "mixed.json"
+        path.write_text(json.dumps(mixed), encoding="utf-8")
+        raises(lambda: acc.load_fixture(path), acc.AcceptanceError, "a fixture whose items span both halves must be refused")
 
 
 def test_claim_becomes_lead() -> None:

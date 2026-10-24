@@ -3,6 +3,7 @@
 
     build_claims_fixture.py build --case NAME=FACT_CHECK_JSON[:METHODOLOGY_JSON] ... --out DIR
     build_claims_fixture.py merge --fixture DIR/claims-fixture.json --a A.csv [--b B.csv] [--adjudicated ADJ.csv]
+    build_claims_fixture.py resplit --fixture FIXTURE.json ... --out DIR
 
 Case material is private, so everything this writes goes to a directory
 outside the public checkout (refused otherwise). ``build`` writes
@@ -31,9 +32,10 @@ How a fact-checked claim becomes a lead (the fixture's ``lead``):
   turned out true); any other verdict -> a failure whose class and research
   visibility come only from the labelling sheet; keep is then not scored.
 
-Items are split into dev and held-out halves by a salted hash of the item id,
-alternating within verified and not-verified claims so both halves carry
-failures.
+A whole case goes to one half, dev or held-out, by a salted hash of its case
+id (``case_split``), so no case is tuned on and tested on. ``resplit`` applies
+that rule to fixtures built before it, writing copies to a directory outside
+the checkout.
 """
 
 from __future__ import annotations
@@ -109,8 +111,10 @@ def direction_of(claim: Mapping[str, Any]) -> str:
     return f"f{match.group(1)}" if match else "f0"
 
 
-def split_of(item_id: str) -> str:
-    return hashlib.sha256(f"{SPLIT_SALT}:{item_id}".encode()).hexdigest()
+def case_split(case_id: str) -> str:
+    """The half a whole case belongs to: stable per case, whatever else is built with it."""
+    digest = hashlib.sha256(f"{SPLIT_SALT}:{case_id}".encode()).hexdigest()
+    return "dev" if int(digest, 16) % 2 == 0 else "heldout"
 
 
 def build_case(name: str, fact_check: Mapping[str, Any], methodology: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -128,11 +132,8 @@ def build_case(name: str, fact_check: Mapping[str, Any], methodology: Mapping[st
                                 "label_source": "fact_check_verdict", "answers": {}}
         if verdict != "verified":
             gold["failure"] = {"class": None, "research_visible": None}
-        items.append({"item_id": lead["lead_id"], "split": "dev", "origin": "fact_check_claim", "lead": lead, "gold": gold,
+        items.append({"item_id": lead["lead_id"], "split": case_split(alias), "origin": "fact_check_claim", "lead": lead, "gold": gold,
                       "_notes": str(claim.get("notes") or "")})
-    for group in ([i for i in items if i["gold"]["verdict"] == "verified"], [i for i in items if i["gold"]["verdict"] != "verified"]):
-        for n, item in enumerate(sorted(group, key=lambda i: split_of(i["item_id"]))):
-            item["split"] = "dev" if n % 2 == 0 else "heldout"
     premise = str((methodology or {}).get("lead") or fact_check.get("project") or name)
     return {"alias": alias, "premise": premise, "directions": directions, "items": items}
 
@@ -170,6 +171,22 @@ def build(cases: list[tuple[str, Path, Path | None]], out: Path) -> dict[str, An
     return {"fixtures": [str(p) for p in written], "items": len(rows),
             "not_verified": sum(1 for r in rows if r["verdict"] != "verified"),
             "dev": sum(1 for r in rows if r["split"] == "dev"), "sheet": str(out / "labelling-sheet.csv")}
+
+
+def resplit(fixture_paths: list[Path], out: Path) -> dict[str, str]:
+    """Copy fixtures to ``out`` with every item in its case's half (fixtures built before case_split)."""
+    out = outside_checkout(out)
+    out.mkdir(parents=True, exist_ok=True)
+    halves = {}
+    for path in fixture_paths:
+        fixture = json.loads(path.read_text(encoding="utf-8"))
+        half = halves[fixture["case"]["case_id"]] = case_split(fixture["case"]["case_id"])
+        for item in fixture["items"]:
+            item["split"] = half
+        for clue in fixture.get("planted_clues", []):
+            clue["split"] = half
+        (out / path.name).write_text(json.dumps(fixture, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    return halves
 
 
 # ------------------------------------------------------------------ merge
@@ -240,6 +257,9 @@ def main(argv: list[str] | None = None) -> int:
     m.add_argument("--a", required=True)
     m.add_argument("--b")
     m.add_argument("--adjudicated")
+    r = sub.add_parser("resplit")
+    r.add_argument("--fixture", action="append", required=True)
+    r.add_argument("--out", required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "build":
@@ -249,6 +269,8 @@ def main(argv: list[str] | None = None) -> int:
                 fact_check, _, methodology = paths.partition(":")
                 cases.append((name, Path(fact_check), Path(methodology) if methodology else None))
             print(json.dumps(build(cases, Path(args.out)), indent=1))
+        elif args.command == "resplit":
+            print(json.dumps(resplit([Path(p) for p in args.fixture], Path(args.out)), indent=1))
         else:
             fixtures = [outside_checkout(Path(p)) for p in args.fixture]
             print(json.dumps(merge_labels(fixtures, Path(args.a), Path(args.b) if args.b else None,

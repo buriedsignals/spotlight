@@ -14,7 +14,8 @@ version changes nothing.
 | File | What it is |
 |---|---|
 | `fixture.schema.json` | The fixture format (below) |
-| `company-a.json` | Synthetic Company A case with planted clues: the only test for C2 and C3 |
+| `company-a.json` | Synthetic Company A case with planted clues (dev) |
+| `company-b.json` | Synthetic Company B case, the same clue groups on another invented firm (held-out). With Company A, the only test for C2 and C3 |
 | `targets.json` | Pass targets and trial thresholds. `status: proposed` until the maintainer approves them |
 | `acceptance.py` | The harness |
 | `build_claims_fixture.py` | Builds the private fixture from fact-checked cases, writes the labelling sheet, merges one approved sheet or two labellers' sheets |
@@ -24,7 +25,11 @@ version changes nothing.
 One fixture is one case: the brief (`case`: premise, approved directions, topic
 briefs, timing window), its `items` and its `planted_clues`. Each item holds a
 research lead (`schemas/research-lead.schema.json`, checked when loaded), a
-`split` (`dev` or `heldout`) and `gold`:
+`split` (`dev` or `heldout`) and `gold`. A whole case is in one half: every
+item's `split` must be its case's, a salted hash of the `case_id`
+(`case_split` in `build_claims_fixture.py`), or the fixture is refused. A case
+tuned on is never tested on. Company A hashes to dev and Company B to held-out,
+so clue recall, C2 and C3 are measured in both halves on different cases.
 
 - `keep`: `true` means setting the lead aside loses it (a **lost lead**, the
   costliest error; a lead kept as circumstantial is not lost and is counted
@@ -56,8 +61,9 @@ find it.
 | brief premise | the case methodology's `lead`, else the fact-check's project |
 | `gold.keep` | `true` for `verified`; otherwise not scored, and the item gets a `failure` left for the labellers |
 
-Items alternate between halves by a salted hash, separately for verified and
-not-verified claims. Case names are replaced by a hash alias.
+Case names are replaced by a hash alias, and the alias's hash puts the whole
+case in one half. The halves are not balanced by construction: count the
+cases, items and failures in each before trusting a result.
 
 ## Private fixture
 
@@ -86,6 +92,15 @@ Agreed labels go into the fixture; disagreements are listed in
 With one person, pass only `--a`: the approved sheet is applied and each item
 records `label_source: single_labeller_approved`, which a second labeller can
 replace later.
+
+A fixture built before the whole-case split (items of one case in both halves)
+is refused. `resplit` copies it with every item in its case's half, labels
+untouched:
+
+```bash
+python3 evals/decision-acceptance/build_claims_fixture.py resplit \
+  --fixture /private/dir/case-xxxxxx.json ... --out /private/resplit
+```
 
 ## Running
 

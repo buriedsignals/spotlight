@@ -24,7 +24,11 @@ what the model would set aside once allowed to. Production stays flag-only
 until ``integrations/decisions/research-acceptance.json`` exists for the bank
 version, and only ``--write-acceptance`` after a passing held-out run writes it.
 
-Fixtures: ``company-a.json`` (synthetic, in the repo) and every path in
+A whole case is in one half: every item's split must be its case's
+``case_split`` (build_claims_fixture.py), a salted hash of the case id.
+
+Fixtures: ``company-a.json`` (dev) and ``company-b.json`` (held-out), both
+synthetic and in the repo, and every path in
 ``--fixture`` or ``$SPOTLIGHT_ACCEPTANCE_FIXTURES`` (os.pathsep-separated),
 which is where the private fixture built from fact-checked claims lives. Item
 detail of a non-synthetic fixture is written only with ``--private-detail``,
@@ -73,9 +77,11 @@ def _load(name: str, path: Path):
 
 triage = _load("spotlight_research_triage", ROOT / "scripts" / "research-triage.py")
 merge = _load("spotlight_research_merge", ROOT / "scripts" / "research-merge.py")
+builder = _load("spotlight_build_claims_fixture", HERE / "build_claims_fixture.py")
 
 FIXTURE_SCHEMA = HERE / "fixture.schema.json"
 COMPANY_A = HERE / "company-a.json"
+COMPANY_B = HERE / "company-b.json"
 TARGETS = HERE / "targets.json"
 FIXTURES_ENV = "SPOTLIGHT_ACCEPTANCE_FIXTURES"
 CONTENDERS = ("rules", "jev", "clef", "clef-flash", "local")
@@ -112,7 +118,10 @@ def load_fixture(path: Path) -> dict[str, Any]:
     fixture = json.loads(path.read_text(encoding="utf-8"))
     problems = schema_check.load(FIXTURE_SCHEMA).errors(fixture)
     ids: dict[str, str] = {}
+    half = builder.case_split(fixture["case"]["case_id"]) if not problems else None
     for item in fixture.get("items", []) if not problems else []:
+        if item["split"] != half:
+            problems.append(f"{item['item_id']}: the whole case is {half}, by its case id")
         problems += [f"{item['item_id']}: {e}" for e in triage.schema_errors(triage.LEAD_SCHEMA, item["lead"])[:2]]
         if item["lead"].get("lead_id") != item["item_id"]:
             problems.append(f"{item['item_id']}: item_id must equal the lead's lead_id")
@@ -129,7 +138,7 @@ def load_fixture(path: Path) -> dict[str, Any]:
 
 
 def fixture_paths(extra: Iterable[str]) -> list[Path]:
-    paths = [COMPANY_A]
+    paths = [COMPANY_A, COMPANY_B]
     env = os.environ.get(FIXTURES_ENV, "")
     for raw in [*extra, *[p for p in env.split(os.pathsep) if p]]:
         path = Path(raw).expanduser().resolve()
@@ -570,7 +579,9 @@ def run(args: argparse.Namespace, provider_factory: Callable[[str], tuple[Any | 
     targets = load_targets(targets_path)
     if args.split == "heldout":
         require_heldout_allowed(targets)
-    fixtures = [load_fixture(p) for p in fixture_paths(args.fixture or [])]
+    # A whole case is in one half, so only the cases in this half run.
+    fixtures = [f for f in (load_fixture(p) for p in fixture_paths(args.fixture or []))
+                if f["items"][0]["split"] == args.split]
     acceptance = trial_acceptance(targets)
     results = []
     for contender in args.contender:

@@ -1,0 +1,1290 @@
+{
+ "fixture_version": "1.0",
+ "name": "company-b",
+ "synthetic": true,
+ "description": "Synthetic Company B case with planted clues: the held-out counterpart of company-a.json, the same clue groups on a different invented firm, so no case is in both halves. All names, registers and domains are invented (.test). Gold answers are set by construction; null means the item is not scored on that question.",
+ "case": {
+  "case_id": "company-b",
+  "premise": "Company B, a Basel waste-transport firm, won municipal contracts after its ownership passed to an undisclosed holder in 2025.",
+  "directions": {
+   "ownership": "Who owns Company B",
+   "contracts": "Which municipal contracts Company B won",
+   "people": "Who runs Company B"
+  },
+  "direction_questions": {
+   "ownership": [
+    "Who has held Company B's shares since 2025?"
+   ],
+   "contracts": [
+    "Which contracts did Company B win in 2025?"
+   ],
+   "people": [
+    "Who are Company B's directors?"
+   ]
+  },
+  "topics": [
+   {
+    "topic_id": "ownership-registries",
+    "direction_id": "ownership",
+    "lane_type": "registries"
+   },
+   {
+    "topic_id": "ownership-archives",
+    "direction_id": "ownership",
+    "lane_type": "archives"
+   },
+   {
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "lane_type": "news-courts"
+   },
+   {
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "lane_type": "web"
+   },
+   {
+    "topic_id": "people-social",
+    "direction_id": "people",
+    "lane_type": "social"
+   }
+  ],
+  "timing_window_days": 30
+ },
+ "items": [
+  {
+   "item_id": "cb-h01",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h01",
+    "topic_id": "ownership-archives",
+    "direction_id": "ownership",
+    "summary": "The gazette records Orsana Holding as Company B's majority shareholder.",
+    "subjects": [
+     "Company B",
+     "Orsana Holding"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://archive-ch.test/gazette/2025-06-02",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "Company B AG: majority shareholder Orsana Holding SA, Geneva (entered 2025-06-02).",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/e99f1daadb05d051846dc8bc2f513b369f9bdbf282cb918da58f83cd5e4ef295.md",
+    "content_sha256": "e99f1daadb05d051846dc8bc2f513b369f9bdbf282cb918da58f83cd5e4ef295"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "supports",
+     "c2_new_actor": true
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h02",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h02",
+    "topic_id": "people-social",
+    "direction_id": "people",
+    "summary": "A report says Orsana Holding took control of Company B through a Geneva lawyer.",
+    "subjects": [
+     "Company B",
+     "Orsana Holding"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-two.test/2025/orsana",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "Orsana Holding, which took control of Company B, is represented by a Geneva lawyer who declined to name its owners.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/32dcb8e5463fa27217e8250d398a4e67f5e922cac28b59094495918bbfeea6a2.md",
+    "content_sha256": "32dcb8e5463fa27217e8250d398a4e67f5e922cac28b59094495918bbfeea6a2"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q3_source": "original_reporting",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "supports",
+     "c2_new_actor": true
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h03",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h03",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "Petra Valsky is Company B's managing director.",
+    "subjects": [
+     "Company B",
+     "Petra Valsky"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://register-ch.test/entity/che-100.200.300/management",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "Company B AG. Managing director: Petra Valsky, joint signature.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/bfd3b93d9cab2de69b17684fbf59c29f5500e0af1762d43bc1aa22d269ac6a1a.md",
+    "content_sha256": "bfd3b93d9cab2de69b17684fbf59c29f5500e0af1762d43bc1aa22d269ac6a1a"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": true
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h04",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h04",
+    "topic_id": "ownership-registries",
+    "direction_id": "ownership",
+    "summary": "Company B moved its registered office from Basel to Zug in April 2025.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://register-ch.test/entity/che-100.200.300/seat",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "Company B AG moves its registered office from Basel to Zug (entry of 2025-04-11).",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/c3b842f322d1460e4761fab94f0f01ca6b2fb78169400b17204fdca352dd64d0.md",
+    "content_sha256": "c3b842f322d1460e4761fab94f0f01ca6b2fb78169400b17204fdca352dd64d0"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": true
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h05",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h05",
+    "topic_id": "ownership-archives",
+    "direction_id": "ownership",
+    "summary": "A correction backdates Company B's board change to the end of 2024.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://archive-ch.test/gazette/2025-07-02",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "Correction of 2025-07-02: the board change of Company B AG is entered with effect from 2024-12-31.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/48f592ef1690ded6c56a88a53377e7192091cd5322c44bfce981f8d8f0398f86.md",
+    "content_sha256": "48f592ef1690ded6c56a88a53377e7192091cd5322c44bfce981f8d8f0398f86"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": true
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h06",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h06",
+    "topic_id": "ownership-archives",
+    "direction_id": "ownership",
+    "summary": "No record found: Company B procurement appeal court docket.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": true,
+    "queries_tried": [
+     "Company B procurement appeal court docket"
+    ],
+    "status": "candidate"
+   },
+   "gold": {
+    "keep": true,
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h07",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h07",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "Company B employs 85 drivers.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-one.test/2025/drivers",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "Company B AG employs 85 drivers on its municipal routes.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/3f51996f0c3827b32ef44b0fd98028469c5d0e7b9952f29d6a60b7b465643d6f.md",
+    "content_sha256": "3f51996f0c3827b32ef44b0fd98028469c5d0e7b9952f29d6a60b7b465643d6f",
+    "facts": [
+     {
+      "subject": "Company B",
+      "attribute": "drivers",
+      "value": "85"
+     }
+    ]
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q3_source": "original_reporting",
+     "q4_assertion": "asserted",
+     "q5_status": "no_event",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h08",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h08",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "A union report says Company B has 140 drivers.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-two.test/2025/union",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "According to the drivers' union, Company B has 140 drivers.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/2c93267e09e88089829b26f65d8c4dac0f76bd199649c72979f4046c32cc3312.md",
+    "content_sha256": "2c93267e09e88089829b26f65d8c4dac0f76bd199649c72979f4046c32cc3312",
+    "facts": [
+     {
+      "subject": "Company B",
+      "attribute": "drivers",
+      "value": "140"
+     }
+    ],
+    "attribution": {
+     "actor": {
+      "label": "drivers' union"
+     },
+     "stance": "asserts",
+     "attribution_verbatim": "According to the drivers' union"
+    }
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q3_source": "interested_party",
+     "q4_assertion": "reported_claim",
+     "q5_status": "no_event",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h09",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h09",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "The city says the 2025 contracts went to Company B under the same open procedure it had already won in 2021.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://procure-zh.test/statements/2025-award",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "The city said the 2025 contracts were awarded to Company B under the same open procedure the firm had already won in 2021.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/a4eebdb2d02b90e51c3a4394685e80fb99cd4177f21d575ffad64f80fa8735e5.md",
+    "content_sha256": "a4eebdb2d02b90e51c3a4394685e80fb99cd4177f21d575ffad64f80fa8735e5",
+    "attribution": {
+     "actor": {
+      "label": "the city"
+     },
+     "stance": "asserts",
+     "attribution_verbatim": "The city said"
+    }
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q3_source": "interested_party",
+     "q4_assertion": "reported_claim",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "complicates",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h10",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h10",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "The cantonal register lists Company B's chair as a politically exposed person.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://pep-register.test/entries/zh-2291",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "Entry 2291: chair of Company B AG, listed as a politically exposed person (domestic).",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/8f2b7117476d1e6849619088d804e1dca76b559acf87146a459652861a992d9d.md",
+    "content_sha256": "8f2b7117476d1e6849619088d804e1dca76b559acf87146a459652861a992d9d"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "no_event",
+     "q6_fidelity": "faithful",
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h11",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h11",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "Company B registered a new board chair in May 2025.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://register-ch.test/entity/che-100.200.300/changes",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "Board change registered 2025-05-02: new chair at Company B AG.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/e55f80e87fc6dea8b553ae529cc91776fd2dd4a8d3a235a8e1190e80a5c20a68.md",
+    "content_sha256": "e55f80e87fc6dea8b553ae529cc91776fd2dd4a8d3a235a8e1190e80a5c20a68",
+    "facts": [
+     {
+      "subject": "Company B",
+      "attribute": "board change",
+      "value": "2025-05-02"
+     }
+    ]
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false
+    },
+    "acceptable_clues": [
+     "change_or_absence"
+    ],
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h12",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h12",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "The city signed a contract extension with Company B in May 2025.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://procure-zh.test/notices/131",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "Contract extension signed 2025-05-19 with Company B AG for waste transport.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/07338d64627688797bea8ade88ddbd1038a8ff55bd6054bc982ab3979657869d.md",
+    "content_sha256": "07338d64627688797bea8ade88ddbd1038a8ff55bd6054bc982ab3979657869d",
+    "facts": [
+     {
+      "subject": "Company B",
+      "attribute": "contract extension",
+      "value": "2025-05-19"
+     }
+    ]
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "supports",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h13",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h13",
+    "topic_id": "ownership-registries",
+    "direction_id": "ownership",
+    "summary": "Company B's listed phone number is +41 44 000 12 34.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://register-ch.test/entity/che-100.200.300/contact",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "Company B AG. Phone: +41 44 000 12 34.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/b83c6b8921bce358d0320a478c75e6dfe8d1356048092ee008957153117db3ca.md",
+    "content_sha256": "b83c6b8921bce358d0320a478c75e6dfe8d1356048092ee008957153117db3ca",
+    "facts": [
+     {
+      "subject": "Company B",
+      "attribute": "phone",
+      "value": "+41 44 000 12 34"
+     }
+    ]
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "no_event",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h14",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h14",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "Merlin Haulage GmbH's listed phone number is +41 44 000 12 34.",
+    "subjects": [
+     "Merlin Haulage GmbH"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://register-ch.test/entity/che-700.800.900/contact",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "Merlin Haulage GmbH. Phone: +41 44 000 12 34.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/c0c9d1fa833c1061c9477dae5d390676736c9243cc86a81180109743cb99923e.md",
+    "content_sha256": "c0c9d1fa833c1061c9477dae5d390676736c9243cc86a81180109743cb99923e",
+    "facts": [
+     {
+      "subject": "Merlin Haulage GmbH",
+      "attribute": "phone",
+      "value": "+41 44 000 12 34"
+     }
+    ]
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "no_event",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h15",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h15",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "Company B raised a seed round in Toronto.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-ca.test/tech/seed-round",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "Company B Inc., a Toronto software start-up, has raised a seed round.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/ff5d89ec0f6607d70ab257e8243eae9c59980f51d740b6e4eb441ec6ec957c30.md",
+    "content_sha256": "ff5d89ec0f6607d70ab257e8243eae9c59980f51d740b6e4eb441ec6ec957c30"
+   },
+   "gold": {
+    "keep": false,
+    "answers": {
+     "q1_identity": "different_subject_or_event",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "unrelated",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h16",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h16",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "The lake reached a record water temperature.",
+    "subjects": [
+     "the lake"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-two.test/weather/lake",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "The lake reached a record water temperature on Sunday afternoon.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/7ecbdb7a06f12bd9cebe8bd6b350e470070e3b735011b687452226217000b805.md",
+    "content_sha256": "7ecbdb7a06f12bd9cebe8bd6b350e470070e3b735011b687452226217000b805"
+   },
+   "gold": {
+    "keep": false,
+    "answers": {
+     "q1_identity": "none_of_the_brief",
+     "q3_source": "original_reporting",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c1_premise": "unrelated",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h17",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h17",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "A union representative says drivers' pay has not risen.",
+    "subjects": [
+     "Lukas Imhof"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-one.test/2025/union-view",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "\"Pay for drivers has not risen in years,\" said Lukas Imhof, a union representative.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/bda3f76da53776675ad691e5c60ba6bf217464ae85331a6f76587dd0891e6f1d.md",
+    "content_sha256": "bda3f76da53776675ad691e5c60ba6bf217464ae85331a6f76587dd0891e6f1d"
+   },
+   "gold": {
+    "keep": null,
+    "answers": {
+     "q3_source": "interested_party",
+     "q4_assertion": "reported_claim",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h18",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h18",
+    "topic_id": "ownership-registries",
+    "direction_id": "ownership",
+    "summary": "Company B's auditor approved its accounts without qualification.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://audit-news.test/2025/company-b-accounts",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "Company B AG's auditor approved the accounts without qualification.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/f2a8a90d5cc2529f3ced4fdd20545be9e8d006536ee101ccb882cde2fcb93069.md",
+    "content_sha256": "f2a8a90d5cc2529f3ced4fdd20545be9e8d006536ee101ccb882cde2fcb93069"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q3_source": "original_reporting",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h19",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h19",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "Company B's trucks failed emissions tests.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-one.test/2025/emissions",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "One of Company B's trucks failed an emissions test during a roadside check.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/be3c7db555cde23abf8c8409886eff171d99c95ffd321adec63693844d03039d.md",
+    "content_sha256": "be3c7db555cde23abf8c8409886eff171d99c95ffd321adec63693844d03039d"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q3_source": "original_reporting",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "widens",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h20",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h20",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "The tender Company B won drew 5 bids.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://procure-zh.test/notices/131/bids",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "The tender won by Company B AG drew three bids.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/85b4cb88bd9284f9e17df6828dafcf787687c647d5b5db926fb7c2d777eb4df8.md",
+    "content_sha256": "85b4cb88bd9284f9e17df6828dafcf787687c647d5b5db926fb7c2d777eb4df8"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q3_source": "primary_record",
+     "q4_assertion": "asserted",
+     "q5_status": "done",
+     "q6_fidelity": "contradicts",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h21",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h21",
+    "topic_id": "contracts-news-courts",
+    "direction_id": "contracts",
+    "summary": "A columnist thinks the city designed the tender for Company B.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://opinion-zh.test/columns/one-bidder",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "It is hard not to conclude that the tender was written with Company B in mind.",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/fe3a1dab8a92cd84f2798cfcdfbfc2c45acca784bdebd3e82c4c94c2c48d27e0.md",
+    "content_sha256": "fe3a1dab8a92cd84f2798cfcdfbfc2c45acca784bdebd3e82c4c94c2c48d27e0"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q4_assertion": "interpretation",
+     "q6_fidelity": "faithful",
+     "c1_premise": "supports",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h22",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h22",
+    "topic_id": "people-web",
+    "direction_id": "people",
+    "summary": "A search result mentions Company B's board in connection with a hearing.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "snippet",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://news-two.test/search?q=company-b-board",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "Company B AG ... board ... hearing ...",
+     "language": "en",
+     "direct_quote": true
+    }
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "consistent_details",
+     "q5_status": "not_established",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  },
+  {
+   "item_id": "cb-h23",
+   "split": "heldout",
+   "origin": "synthetic",
+   "lead": {
+    "schema_version": "1.0",
+    "lead_id": "cb-h23",
+    "topic_id": "people-social",
+    "direction_id": "people",
+    "summary": "A social media user says she thanked her team at Company B.",
+    "subjects": [
+     "Company B"
+    ],
+    "absence": false,
+    "status": "candidate",
+    "stored": "page",
+    "capture": {
+     "route": "api",
+     "tool": "firecrawl",
+     "source_url": "https://social.test/p.valsky/posts/9",
+     "captured_at": "2026-10-23T09:00:00Z"
+    },
+    "provenance": {
+     "method": "agent_candidate",
+     "model": "synthetic/company-b"
+    },
+    "excerpt": {
+     "text": "Thank you to the whole team at Company B for a great year!",
+     "language": "en",
+     "direct_quote": true
+    },
+    "content_ref": "sources/13455f89933f26acdacfdb33c5f536d23a4a2f37da8f4841fbf6d42ace62c6aa.md",
+    "content_sha256": "13455f89933f26acdacfdb33c5f536d23a4a2f37da8f4841fbf6d42ace62c6aa"
+   },
+   "gold": {
+    "keep": true,
+    "answers": {
+     "q1_identity": "name_only",
+     "q3_source": "user_generated",
+     "q4_assertion": "asserted",
+     "q6_fidelity": "faithful",
+     "c2_new_actor": false,
+     "c3_change": false
+    },
+    "label_source": "by_construction"
+   }
+  }
+ ],
+ "planted_clues": [
+  {
+   "clue_id": "cb-h-k1",
+   "split": "heldout",
+   "group": "new_actor",
+   "lead_ids": [
+    "cb-h01",
+    "cb-h02"
+   ],
+   "via": "K1+C2"
+  },
+  {
+   "clue_id": "cb-h-c2",
+   "split": "heldout",
+   "group": "new_actor",
+   "lead_ids": [
+    "cb-h03"
+   ],
+   "via": "C2",
+   "question": "c2_new_actor"
+  },
+  {
+   "clue_id": "cb-h-c3a",
+   "split": "heldout",
+   "group": "change_or_absence",
+   "lead_ids": [
+    "cb-h04"
+   ],
+   "via": "C3",
+   "question": "c3_change"
+  },
+  {
+   "clue_id": "cb-h-c3b",
+   "split": "heldout",
+   "group": "change_or_absence",
+   "lead_ids": [
+    "cb-h05"
+   ],
+   "via": "C3",
+   "question": "c3_change"
+  },
+  {
+   "clue_id": "cb-h-k5",
+   "split": "heldout",
+   "group": "change_or_absence",
+   "lead_ids": [
+    "cb-h06"
+   ],
+   "via": "K5"
+  },
+  {
+   "clue_id": "cb-h-k2",
+   "split": "heldout",
+   "group": "conflict",
+   "lead_ids": [
+    "cb-h07",
+    "cb-h08"
+   ],
+   "via": "K2+C4",
+   "c4": "conflict"
+  },
+  {
+   "clue_id": "cb-h-c1",
+   "split": "heldout",
+   "group": "premise",
+   "lead_ids": [
+    "cb-h09"
+   ],
+   "via": "C1",
+   "question": "c1_premise"
+  },
+  {
+   "clue_id": "cb-h-k6",
+   "split": "heldout",
+   "group": "watchlist",
+   "lead_ids": [
+    "cb-h10"
+   ],
+   "via": "K6"
+  },
+  {
+   "clue_id": "cb-h-k3",
+   "split": "heldout",
+   "group": "timing",
+   "lead_ids": [
+    "cb-h11",
+    "cb-h12"
+   ],
+   "via": "K3"
+  },
+  {
+   "clue_id": "cb-h-k4",
+   "split": "heldout",
+   "group": "shared_identifier",
+   "lead_ids": [
+    "cb-h13",
+    "cb-h14"
+   ],
+   "via": "K4"
+  }
+ ]
+}
