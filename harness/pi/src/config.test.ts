@@ -194,7 +194,9 @@ test('newsroom: a route token is never the Editorial MCP token or a tool secret,
 	assert.throws(() => readConfig(env('ROUTE_TOKEN', 'abc')), /shorter than 16 characters/);
 	assert.throws(() => readConfig({ ...env('ROUTE_TOKEN'), ROUTE_TOKEN: 'tok' }), /ROUTE_TOKEN is shorter than 16 characters/);
 	// The same value under a route's name would carry the Editorial token into Pi.
-	assert.throws(() => readConfig(env('ROUTE_TOKEN', 'route-secret-0123456789')), /ROUTE_TOKEN holds the Editorial MCP token/);	// A role that declares the Editorial token as one of its keys still never receives it.
+	assert.throws(() => checkRouteSecrets(readConfig(env('ROUTE_TOKEN', 'route-secret-0123456789')), COMPOSITION, env('ROUTE_TOKEN', 'route-secret-0123456789')), /ROUTE_TOKEN holds the Editorial MCP token/);
+	assert.throws(() => checkRouteSecrets(ok, COMPOSITION, { ...env('ROUTE_TOKEN'), REGISTRY_API_KEY: 'editorial-token-0123456789' }), /REGISTRY_API_KEY holds the Editorial MCP token/);
+	// A role that declares the Editorial token as one of its keys still never receives it.
 	const leaky: Composition = { ...COMPOSITION, orchestrator: { ...COMPOSITION.orchestrator, keys: ['SPOTLIGHT_EDITORIAL_MCP_TOKEN'] } };
 	assert.equal(childEnv(ok, leaky, 'orchestrator', env('ROUTE_TOKEN')).SPOTLIGHT_EDITORIAL_MCP_TOKEN, undefined);
 });

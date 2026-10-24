@@ -291,9 +291,6 @@ export function readConfig(env: Env): HarnessConfig {
 	const modelTier = readModelTier(env);
 	const sensitive = sensitiveMode(env);
 	const editorial = edition === 'newsroom' ? editorialSetting(env, caseId, sensitive) : refuseEditorialInSolo(env);
-	// A route token goes into Pi; the Editorial token never does, under any name.
-	const twin = editorial && routes.find((route) => route.keyEnv && env[route.keyEnv]?.trim() === env[EDITORIAL_TOKEN_ENV]?.trim());
-	if (twin) throw new ConfigError(`${twin.keyEnv} holds the Editorial MCP token; a route needs its own token.`);
 	return {
 		edition,
 		casesRoot: resolve(casesRoot),
@@ -561,9 +558,14 @@ export function checkRouteSecrets(config: HarnessConfig, composition: Compositio
 			throw new ConfigError(`route "${route.name}" may not use ${route.keyEnv} as its token: that variable is a tool secret, never a route token.`);
 		}
 	}
-	for (const name of declared) {
+	// Every key that goes into Pi (route tokens, tool secrets): never the
+	// Editorial token under another name, and never too short to redact.
+	const editorialToken = config.editorial ? env[config.editorial.tokenEnv]?.trim() : undefined;
+	for (const name of new Set([...config.routes.flatMap((route) => (route.keyEnv ? [route.keyEnv] : [])), ...declared])) {
 		const value = env[name];
-		if (value && value.length < MIN_REDACTED_LENGTH) {
+		if (!value || name === EDITORIAL_TOKEN_ENV) continue;
+		if (editorialToken && value.trim() === editorialToken) throw new ConfigError(`${name} holds the Editorial MCP token; it needs its own value.`);
+		if (declared.has(name) && value.length < MIN_REDACTED_LENGTH) {
 			throw new ConfigError(`${name} is shorter than ${MIN_REDACTED_LENGTH} characters, so it cannot be redacted reliably; set its full value or unset it.`);
 		}
 	}
