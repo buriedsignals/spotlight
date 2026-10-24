@@ -132,6 +132,10 @@ test('a successful but malformed tool result stops the newsroom case: a run_chec
 		['run_checks', { structuredContent: { job_id: 'job-1', state: 'done', flags: 'none' } }],
 		['run_checks', { structuredContent: { job_id: 'job-1', state: 'done', flags: [], input_sha256: 'not-a-digest' } }],
 		['run_checks', { structuredContent: { state: 'running' } }],
+		['run_checks', { structuredContent: { state: 'done', flags: [] } }],
+		['submit_case_review', { structuredContent: { status: 'staged', submission_id: 42, review_id: 'rev-1' } }],
+		['submit_case_review', { structuredContent: { status: 'rejected' } }],
+		['submit_case_review', { structuredContent: { status: 'rejected', integrity_failures: [{ check: 'file_hash' }] } }],
 		['submit_case_review', { structuredContent: { status: 'staged', submission_id: 'sub-1', revision: 1, review_id: 'rev-1', review_url: 42 } }],
 	] as const) {
 		const fetchImpl: typeof fetch = async (_url, init) => {

@@ -101,7 +101,8 @@ Start: `{case_ref, kind, artifact, artifact_sha256}`, where `kind` is
 `findings` (artifact `{findings, passages?, fact_check?}`) or `report`
 (artifact `{report, findings}`), the case files as JSON, and
 `artifact_sha256` is the sha256 of the artifact as sent. Poll: `{case_ref,
-job_id}`. Both return `{job_id, state, input_sha256?, flags?, reason?}` with
+job_id}`. Both return `{job_id, state, input_sha256?, flags?, reason?}`
+(`job_id` in every answer, the started job's on a poll) with
 `state` one of `queued`, `running`, `done`, `failed`, `unavailable`. The
 harness polls while the job is queued or running (up to 10 minutes).
 

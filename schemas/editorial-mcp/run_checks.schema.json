@@ -107,6 +107,7 @@
         }
       },
       "required": [
+        "job_id",
         "state"
       ]
     }

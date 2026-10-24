@@ -339,11 +339,16 @@ export class EditorialClient {
 			const malformed =
 				(tool === 'run_checks' &&
 					(!JOB_STATES.has(String(value.state)) ||
-						((value.state === 'queued' || value.state === 'running') && !nonEmpty(value.job_id)) ||
+						!nonEmpty(value.job_id) ||
 						(value.input_sha256 !== undefined && !(typeof value.input_sha256 === 'string' && /^[a-f0-9]{64}$/.test(value.input_sha256))) ||
 						(value.flags !== undefined &&
 							!(Array.isArray(value.flags) && value.flags.every((flag) => isObject(flag) && nonEmpty(flag.target) && nonEmpty(flag.reason) && ['string', 'undefined'].includes(typeof flag.question)))))) ||
-				(tool === 'submit_case_review' && value.review_url !== undefined && typeof value.review_url !== 'string') ||
+				(tool === 'submit_case_review' &&
+					(value.status === 'staged'
+						? !(typeof value.submission_id === 'string' && SAFE_ID.test(value.submission_id) && typeof value.review_id === 'string' && SAFE_ID.test(value.review_id)) ||
+							(value.review_url !== undefined && typeof value.review_url !== 'string')
+						: value.status !== 'rejected' ||
+							!(Array.isArray(value.integrity_failures) && value.integrity_failures.length > 0 && value.integrity_failures.every((failure) => isObject(failure) && typeof failure.check === 'string' && nonEmpty(failure.reason))))) ||
 				// Knowledge answers: the top-level shapes of schemas/editorial-mcp.
 				(tool === 'search_knowledge' && !(Array.isArray(value.records) && value.records.every(isObject))) ||
 				(tool === 'get_record' && !isObject(value.record)) ||
@@ -615,16 +620,13 @@ export async function submitCase(deps: SubmitDeps): Promise<SubmitOutcome> {
 	await recordInCase(runPackage, ['begin', caseDir, '--package-sha256', key]);
 	const answer = await client.call('submit_case_review', { case_ref: caseRef, idempotency_key: key, package: build.package, files: build.files }, deps.signal);
 	if (answer.status === 'rejected') {
-		const failures = Array.isArray(answer.integrity_failures) ? (client.sanitize(answer.integrity_failures.slice(0, 200)) as Array<Record<string, unknown>>) : [];
-		const reasons = failures.length > 0 ? failures : [{ check: 'unknown', reason: 'the service rejected the package without a reason' }];
+		const reasons = client.sanitize((answer.integrity_failures as unknown[]).slice(0, 200)) as Array<Record<string, unknown>>;
 		await recordInCase(runPackage, ['blocked', caseDir, '--package-sha256', key], { integrity_failures: reasons });
 		return { state: 'blocked', integrity_failures: reasons };
 	}
-	const submissionId = String(answer.submission_id ?? '');
-	const reviewId = String(answer.review_id ?? '');
-	if (answer.status !== 'staged' || !SAFE_ID.test(submissionId) || !SAFE_ID.test(reviewId)) {
-		throw new EditorialError('submit_case_review returned neither a rejection nor a staged submission with its ids');
-	}
+	// call() checked the staged answer's ids against the contract.
+	const submissionId = answer.submission_id as string;
+	const reviewId = answer.review_id as string;
 	const address = typeof answer.review_url === 'string' ? answer.review_url : undefined;
 	const status = await client.call('get_review_status', { review_id: reviewId }, deps.signal);
 	// The status must be this review's, in a state the contract names, before
