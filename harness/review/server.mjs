@@ -211,28 +211,37 @@ export async function startReviewServer({
   // Register candidates for the solo Ingest page's mentions that have no
   // strong identifier (bsig wiki resolve). They are untrusted: only id, label
   // and type go to the page, as JSON text, and only an id offered here can be
-  // picked. Nothing without Engine, with an old bsig or with no candidates;
-  // any other failure is a short note and the page stays usable.
-  const offered = new Map();
+  // picked, with the review digest it was offered for. Engine's answers are
+  // kept for this page; each call renews the offer for the current digest.
+  // Nothing without Engine, with an old bsig or with no candidates; any other
+  // failure is a short note and the page stays usable.
+  const registerAnswers = new Map();
+  let offer = { digest: "", ids: new Map() };
   async function entityCandidates() {
     const none = { available: false, mentions: [] };
     if (gate !== "ingest" || typeof wiki?.resolve !== "function") return none;
-    const unresolved = (await bridge.view(gate)).items.filter((item) => item.kind === "entity_link");
+    const view = await bridge.view(gate);
     const mentions = [];
+    const ids = new Map();
     try {
-      for (const item of unresolved.slice(0, MAX_ENTITY_MENTIONS)) {
-        const result = await wiki.resolve({ name: item.label, ...(item.entity_type ? { type: item.entity_type } : {}) });
-        const candidates = (Array.isArray(result?.candidates) ? result.candidates : [])
-          .filter((candidate) => typeof candidate?.id === "string" && ENTITY_ID.test(candidate.id))
-          .slice(0, MAX_CANDIDATES)
-          .map((candidate) => ({ id: candidate.id, label: String(candidate.label ?? "").slice(0, 300), type: String(candidate.type ?? "").slice(0, 40) }));
-        offered.set(item.key, new Set(candidates.map((candidate) => candidate.id)));
+      for (const item of view.items.filter((entry) => entry.kind === "entity_link").slice(0, MAX_ENTITY_MENTIONS)) {
+        if (!registerAnswers.has(item.key)) {
+          const result = await wiki.resolve({ name: item.label, ...(item.entity_type ? { type: item.entity_type } : {}) });
+          registerAnswers.set(item.key, (Array.isArray(result?.candidates) ? result.candidates : [])
+            .filter((candidate) => typeof candidate?.id === "string" && ENTITY_ID.test(candidate.id))
+            .slice(0, MAX_CANDIDATES)
+            .map((candidate) => ({ id: candidate.id, label: String(candidate.label ?? "").slice(0, 300), type: String(candidate.type ?? "").slice(0, 40) })));
+        }
+        const candidates = registerAnswers.get(item.key);
+        ids.set(item.key, new Set(candidates.map((candidate) => candidate.id)));
         if (candidates.length) mentions.push({ key: item.key, name: item.label, candidates });
       }
     } catch (error) {
       return error.code === "unsupported" ? none : { ...none, failed: true, note: "Could not read the entity register." };
     }
-    return { available: mentions.length > 0, mentions };
+    if (!mentions.length) return none;
+    offer = { digest: view.digest, ids };
+    return { available: true, digest: view.digest, mentions };
   }
 
   // The decision nonce lives only in this process and in the case ledger's
@@ -402,14 +411,21 @@ export async function startReviewServer({
           return sendJson(response, 200, await entityCandidates());
         }
         if (url.pathname === "/api/edit") {
-          const { edit } = exactObject(await readJson(request), ["edit"], "edit request");
+          const body = await readJson(request);
+          // An entity pick also names the digest its candidates were offered for.
+          const { edit, digest } = exactObject(body, body && typeof body === "object" && "digest" in body ? ["edit", "digest"] : ["edit"], "edit request");
           const view = await bridge.view(gate);
           if (view.pending_gate !== gate)
             return sendJson(response, 409, { code: "not-pending", message: "This gate is decided; the review is read-only.", view: { ...view, gate_label: GATE_LABELS[gate] } });
-          // An entity pick is one of the candidates this page was shown, or "none".
+          // An entity pick is one of the candidates offered for the record the
+          // page shows, or false for no link.
           const pick = view.items.find((item) => item.key === edit?.key && item.kind === "entity_link");
-          if (pick && edit.kind === "mark" && edit.value !== "none" && !offered.get(pick.key)?.has(edit.value))
-            return sendJson(response, 422, { code: "refused", message: "Pick one of the register entities shown, or none." });
+          if (pick && edit.kind === "mark") {
+            if (digest !== view.digest || offer.digest !== digest)
+              return sendJson(response, 409, { code: "digest-changed", message: "The record changed since the register's entities were shown. It has been reloaded: pick again.", view: { ...view, gate_label: GATE_LABELS[gate] } });
+            if (edit.value !== false && !offer.ids.get(pick.key)?.has(edit.value))
+              return sendJson(response, 422, { code: "refused", message: "Pick one of the register entities shown, or none." });
+          }
           return sendJson(response, 200, { ...(await bridge.edit(gate, edit)), gate_label: GATE_LABELS[gate] });
         }
         if (url.pathname === "/api/decide") {

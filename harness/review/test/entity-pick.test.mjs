@@ -23,27 +23,40 @@ test("unresolved mentions show the register's candidates as inert text, and only
   const root = tempRoot(t);
   const fake = fakeBsig(root, { changes: [], resolve: { Acme: ACME } });
   const { call, json } = await authed(t, ingestCase(root), { wiki: fake.wiki });
+  const before = (await json("/api/view")).body;
   const { status, text } = await call("/api/entity-candidates");
   assert.equal(status, 200);
   assert.ok(!/[<>]/.test(text), "raw markup in the JSON response");
-  // Doe has no candidates, so it is not shown.
+  // Doe has no candidates, so it is not shown. The offer is for the digest shown.
   assert.deepEqual(JSON.parse(text), {
     available: true,
+    digest: before.digest,
     mentions: [{ key: "entity:Acme", name: "Acme", candidates: [{ id: "acme-ltd", label: HOSTILE, type: "company" }] }],
   });
   const lookups = fake.calls().filter(({ argv }) => argv[2] === "resolve");
   assert.deepEqual(lookups.map(({ stdin }) => JSON.parse(stdin).name).sort(), ["Acme", "Doe"]);
   assert.ok(lookups.every(({ argv }) => !argv.some((arg) => arg.includes("Acme") || arg.includes("Doe"))), "a mention reached argv");
 
-  const before = (await json("/api/view")).body;
-  const refused = await json("/api/edit", { edit: { kind: "mark", key: "entity:Acme", value: "someone-else" } });
-  assert.equal(refused.status, 422);
-  const saved = await json("/api/edit", { edit: { kind: "mark", key: "entity:Acme", value: "acme-ltd" } });
+  const pick = (value, digest) => json("/api/edit", { edit: { kind: "mark", key: "entity:Acme", value }, digest });
+  // "none" is an entity id like any other; only false means "no link".
+  for (const value of ["someone-else", "none"]) assert.equal((await pick(value, before.digest)).status, 422);
+  const saved = await pick("acme-ltd", before.digest);
   assert.equal(saved.status, 200);
   assert.equal(saved.body.items.find((item) => item.key === "entity:Acme").final, "acme-ltd");
   assert.notEqual(saved.body.digest, before.digest);
-  const none = await json("/api/edit", { edit: { kind: "mark", key: "entity:Acme", value: "none" } });
-  assert.equal(none.body.items.find((item) => item.key === "entity:Acme").final, "none");
+  // An offer made for another digest (a stale tab, a changed review) is refused with the fresh view.
+  for (const digest of [before.digest, saved.body.digest]) {
+    const stale = await pick(false, digest);
+    assert.equal(stale.status, 409);
+    assert.equal(stale.body.code, "digest-changed");
+    assert.equal(stale.body.view.digest, saved.body.digest);
+  }
+  const reoffered = (await json("/api/entity-candidates")).body;
+  assert.equal(reoffered.digest, saved.body.digest);
+  assert.equal(fake.calls().filter(({ argv }) => argv[2] === "resolve").length, 2, "the register's answers are kept for the page; only the offer is renewed");
+  const none = await pick(false, reoffered.digest);
+  assert.equal(none.status, 200);
+  assert.equal(none.body.items.find((item) => item.key === "entity:Acme").final, false);
 });
 
 test("without Engine, with an old bsig, with no candidates or in newsroom mode nothing is shown; a failure is a short note", async (t) => {

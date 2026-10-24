@@ -48,7 +48,7 @@ FLAG_ACTIONS = ("amend", "exclude", "investigate_further", "accept_with_reason")
 INGEST_BATCH = "data/knowledge-batch.json"
 INGEST_DRAFT = "data/knowledge-batch-draft.json"
 INGEST_PROPOSAL = "data/knowledge-proposal.json"
-# A register entity id the member picks for a mention, or "none".
+# A register entity id the member picks for a mention; false means no link.
 ENTITY_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,127}")
 REPORT_DRAFT = "data/report-draft.json"
 MAX_NOTE = 2000
@@ -183,12 +183,12 @@ def member_linkable(known: object) -> bool:
     return isinstance(known, dict) and not known.get("identifiers") and not known.get("ambiguous")
 
 
-def entity_picks(items: dict[str, Any], mentions: dict[str, Any]) -> dict[str, str]:
+def entity_picks(items: dict[str, Any], mentions: dict[str, Any]) -> dict[str, str | bool]:
     """The member's register picks from the saved ingest review, by mention
-    text: an entity id or "none". Only member-linkable mentions count."""
+    text: an entity id, or false for no link. Only member-linkable mentions count."""
     return {item["target"][len("mention:"):]: item["final"] for item in items.values()
             if isinstance(item, dict) and item.get("kind") == "entity_link" and isinstance(item.get("target"), str)
-            and isinstance(item.get("final"), str) and (item["final"] == "none" or ENTITY_ID.fullmatch(item["final"]))
+            and (item.get("final") is False or (isinstance(item.get("final"), str) and ENTITY_ID.fullmatch(item["final"])))
             and member_linkable(mentions.get(item["target"][len("mention:"):], {}))}
 
 
@@ -944,8 +944,8 @@ def _validated_edit(edit: object, items: dict[str, dict[str, Any]]) -> dict[str,
     elif item["kind"] in ("clue", "direction"):
         research_view.validate_mark(item, value)
     elif item["kind"] == "entity_link":
-        if not isinstance(value, str) or not (value == "none" or ENTITY_ID.fullmatch(value)):
-            raise OrchestrationError('an entity pick is a register entity id or "none"')
+        if value is not False and not (isinstance(value, str) and ENTITY_ID.fullmatch(value)):
+            raise OrchestrationError("an entity pick is a register entity id, or false for no link")
     elif item["kind"] == "flag":
         if value not in FLAG_ACTIONS:
             raise OrchestrationError(f"a flag disposition is one of: {', '.join(FLAG_ACTIONS)}")

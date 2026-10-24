@@ -25,9 +25,10 @@ let wikiChanges = null;
 let wikiError = "";
 // Case-search passages for the gate and record digest on show, fetched once each after the view.
 let passages = { gate: "", digest: "", data: null };
-// Register candidates for the Ingest page's unlinked mentions, for the mention
-// list on show (entityKey); fetched once per list, null until Engine answers.
-let entities = { key: "", data: null };
+// Register candidates for the Ingest page's unlinked mentions, asked for each
+// record digest shown; the last answer stays on screen, its picks disabled
+// until the answer for the current digest arrives.
+let entities = { digest: "", data: null };
 
 const DECISION_LABELS = {
   methodology: { approved: "Approve the methodology" },
@@ -1054,9 +1055,15 @@ function entityKey() {
   return view.gate === "ingest" ? view.items.filter((item) => item.kind === "entity_link").map((item) => item.key).join("\n") : "";
 }
 
-function entityCard(mention, item) {
-  const name = domId("entity", mention.key);
-  const options = [...mention.candidates.map((c) => [c.id, `${c.label} (${c.type}, ${c.id})`]), ["none", "None of these"]];
+// Names and ids from the whole key, hex-encoded, so no two mentions share one.
+function entityName(key) {
+  return `entity-${Array.from(new TextEncoder().encode(key), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function entityCard(mention, item, current) {
+  const name = entityName(mention.key);
+  // false is "no link": an entity id can never be false.
+  const options = [...mention.candidates.map((c) => [c.id, `${c.label} (${c.type}, ${c.id})`]), [false, "None of these"]];
   return el(
     "fieldset",
     { className: "card" },
@@ -1065,7 +1072,7 @@ function entityCard(mention, item) {
       "div",
       { className: "choices", role: "radiogroup", "aria-label": `Register entity for ${mention.name}` },
       options.map(([value, label]) => {
-        const id = `${name}-${value}`;
+        const id = `${name}-${value === false ? "no-link" : `id-${value}`}`;
         return el(
           "span",
           { className: "choice" },
@@ -1073,10 +1080,9 @@ function entityCard(mention, item) {
             type: "radio",
             id,
             name,
-            value,
             checked: item?.final === value,
-            disabled: readOnly() || busy || !item,
-            on: { change: () => edit({ kind: "mark", key: mention.key, value }) },
+            disabled: readOnly() || busy || !item || !current,
+            on: { change: () => edit({ kind: "mark", key: mention.key, value }, entities.data.digest) },
           }),
           el("label", { for: id, text: label }),
         );
@@ -1086,7 +1092,7 @@ function entityCard(mention, item) {
 }
 
 function entitySection() {
-  const data = entities.key && entities.key === entityKey() ? entities.data : null;
+  const data = entityKey() ? entities.data : null;
   if (!data) return null;
   if (data.failed) return el("p", { className: "muted", text: data.note });
   if (!data.mentions.length) return null;
@@ -1096,16 +1102,16 @@ function entitySection() {
     { "aria-labelledby": "entities-heading" },
     el("h2", { id: "entities-heading", text: "Link mentions to the entity register" }),
     el("p", { className: "muted", text: "These mentions have no strong identifier, so they are not linked automatically. The register lists entities with similar names; pick one only if you know it is the same, otherwise none." }),
-    data.mentions.map((mention) => entityCard(mention, items.get(mention.key))),
+    data.mentions.map((mention) => entityCard(mention, items.get(mention.key), data.digest === view.digest)),
   );
 }
 
-async function loadEntities(key) {
-  entities = { key, data: null };
+async function loadEntities(digest) {
+  entities = { digest, data: entities.data };
   const { status, data } = await post("/api/entity-candidates", {});
-  if (status !== 200 || entities.key !== key) return;
-  entities = { key, data };
-  if (view && entityKey() === key) render(view);
+  if (status !== 200 || entities.digest !== digest) return;
+  entities = { digest, data };
+  if (view?.digest === digest) render(view);
 }
 
 // ---------------------------------------------------------------- render
@@ -1113,7 +1119,7 @@ async function loadEntities(key) {
 function render(next) {
   view = next;
   if (view.gate && (passages.gate !== view.gate || passages.digest !== view.digest)) loadPassages(view.gate, view.digest).catch(() => {});
-  if (view.gate && entityKey() && entities.key !== entityKey()) loadEntities(entityKey()).catch(() => {});
+  if (view.gate && entityKey() && entities.digest !== view.digest) loadEntities(view.digest).catch(() => {});
   title.textContent = `Spotlight review: ${view.gate_label || boot.gates?.[view.gate] || view.gate}`;
   keepFocus(() => {
     // No gate pending: the page shows only the staged wiki changes.
@@ -1206,7 +1212,7 @@ async function flushReviewer() {
   else refreshControls();
 }
 
-async function edit(change) {
+async function edit(change, digest) {
   if (busy || readOnly()) return;
   await flushReviewer();
   if (busy || readOnly()) return;
@@ -1214,7 +1220,7 @@ async function edit(change) {
   setBusy(true);
   say("Saving…");
   try {
-    const { status, data } = await post("/api/edit", { edit: change });
+    const { status, data } = await post("/api/edit", digest === undefined ? { edit: change } : { edit: change, digest });
     if (status === 200) {
       view = data;
       say("Saved.");

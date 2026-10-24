@@ -196,11 +196,29 @@ class Resolver:
         self.links: dict[str, dict[str, str]] = {b: dict(names) for b, names in (stored or {}).items() if isinstance(names, dict)}
         self.links.pop(batch_id, None)  # the batch being written is resolved afresh
         self.cache: dict[tuple[str, str], str | None] = {}
-        self.picks = picks or {}  # mention text -> entity id or "none" (review.entity_picks)
+        self.picks = picks or {}  # mention text -> entity id, or False for no link (review.entity_picks)
+        # The register's candidate ids per lookup that Engine answered.
+        self.offered: dict[tuple[str, str], set[str]] = {}
+
+    def verify_picks(self) -> None:
+        """An approved pick stands only while the register still offers it:
+        when Engine answers without linking the mention and without that
+        entity among the candidates, the write stops. Without an answer
+        (no Engine, an old bsig, a failure) the member's approval stands."""
+        for name, pick in self.picks.items():
+            if pick is False:
+                continue
+            self.entity(name)  # the lookup; an exact link wins over the pick
+            if self.cache.get((self.batch_id, name)):
+                continue
+            offered = self.offered.get((self.batch_id, name))
+            if offered is not None and pick not in offered:
+                raise DestinationError(f"the entity register no longer offers the entity picked for {name!r}; "
+                                       "review the Ingest page again and request ingestion again")
 
     def _picked(self, name: str, batch_id: str) -> str | None:
         pick = self.picks.get(name) if batch_id == self.batch_id else None
-        if pick in (None, "none"):
+        if not isinstance(pick, str):
             return None
         self.links.setdefault(batch_id, {})[name] = pick
         return pick
@@ -234,6 +252,9 @@ class Resolver:
                 result = data.get("result") if isinstance(data, dict) else None
                 if isinstance(result, dict) and result.get("status") == "linked" and isinstance(result.get("entity_id"), str):
                     self.cache[key] = result["entity_id"]
+                elif isinstance(result, dict) and isinstance(result.get("status"), str):
+                    candidates = result.get("candidates") if isinstance(result.get("candidates"), list) else []
+                    self.offered[key] = {c["id"] for c in candidates if isinstance(c, dict) and isinstance(c.get("id"), str)}
             if self.cache[key] and batch_id == self.batch_id:
                 self.links.setdefault(batch_id, {})[name] = self.cache[key]
         return self.cache[key] or self._picked(name, batch_id)
@@ -415,8 +436,14 @@ def write(case: Path, workspace: Path, overwrite_hand_edits: bool = False) -> di
         mentions = mentions_doc.get("mentions") if isinstance(mentions_doc, dict) else None
         if not isinstance(mentions, dict) or not all(isinstance(v, dict) for v in mentions.values()):
             raise DestinationError("knowledge-mentions.json must map each mention to an object")
-        # The member's register picks, from the review the request bound.
+        # The member's register picks, from the review the request bound,
+        # checked against the register before anything is written.
         picks = review.entity_picks(review.load_review(case, "ingest", descriptor)["items"], mentions)
+        links_path = _confined(workspace, f"{NAMESPACE}/entity-links.json")
+        stored_doc = _load(links_path) if links_path.is_file() else {}
+        stored_links = stored_doc.get("batches", {}) if isinstance(stored_doc, dict) else {}
+        resolver = Resolver(workspace, batch["batch_id"], mentions, stored_links if isinstance(stored_links, dict) else {}, picks)
+        resolver.verify_picks()
 
         # Wiki: the batch whole, then the journal, then the regenerated notes.
         batch_file = _confined(workspace, f"{NAMESPACE}/batches/{_slug(batch['batch_id'])}.json")
@@ -448,10 +475,6 @@ def write(case: Path, workspace: Path, overwrite_hand_edits: bool = False) -> di
         manifest = _load(manifest_path) if manifest_path.is_file() else {"schema_version": "1.0", "notes": {}}
         base = workspace / ".ok" / "schemas" / "base.schema.json"
         base_checker = schema_check.load(base) if base.is_file() else None
-        links_path = _confined(workspace, f"{NAMESPACE}/entity-links.json")
-        stored_doc = _load(links_path) if links_path.is_file() else {}
-        stored_links = stored_doc.get("batches", {}) if isinstance(stored_doc, dict) else {}
-        resolver = Resolver(workspace, batch["batch_id"], mentions, stored_links if isinstance(stored_links, dict) else {}, picks)
         notes = notes_for(kept, journal, resolver)
         edited = []
         for rel, text in notes.items():

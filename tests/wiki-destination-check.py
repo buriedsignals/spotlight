@@ -150,20 +150,26 @@ class WikiDestination(INGEST.SoloCase):
         links = json.loads((wiki / "spotlight" / "entity-links.json").read_text(encoding="utf-8"))["batches"]
         self.assertNotIn("doe@example.org", json.dumps(links))
 
-    def candidates_only(self) -> str:
-        """A bsig whose register never links on its own: names give candidates."""
+    def candidates_only(self, *ids: str) -> str:
+        """A bsig whose register never links on its own: names give these candidates."""
         stub = Path(tempfile.mkdtemp(dir=self.root))
-        (stub / "bsig").write_text("#!/bin/sh\necho '{\"event\":\"result\",\"data\":{\"result\":{\"status\":\"candidates\"}}}'\n", encoding="utf-8")
+        result = json.dumps({"event": "result", "data": {"result": {"status": "candidates", "candidates": [
+            {"id": i, "type": "person", "label": i, "score": 0.7, "evidence": []} for i in ids]}}})
+        (stub / "bsig").write_text(f"#!/bin/sh\necho '{result}'\n", encoding="utf-8")
         (stub / "bsig").chmod(0o755)
         return f"{stub}:/usr/bin:/bin"
 
-    def test_a_members_pick_links_the_mention_and_none_leaves_it_plain(self) -> None:
-        path, wiki = self.candidates_only(), self.wiki()
-        case = self.prepared("picked")
+    def picked(self, name: str) -> Path:
+        case = self.prepared(name)
         self.edit(case, "ingest", {"kind": "mark", "key": "entity:Doe", "value": "jane-doe"})
-        self.edit(case, "ingest", {"kind": "mark", "key": "entity:Acme", "value": "none"})
+        self.edit(case, "ingest", {"kind": "mark", "key": "entity:Acme", "value": False})
         self.seam(case, "decide-ingest", "requested", "--nonce", self.nonce(case, "ingest"),
                   "--digest", self.view(case, "ingest")["digest"], *INGEST.GATES.DECIDER)
+        return case
+
+    def test_a_members_pick_links_the_mention_and_no_link_leaves_it_plain(self) -> None:
+        path, wiki = self.candidates_only("jane-doe"), self.wiki()
+        case = self.picked("picked")
         done = self.write(case, wiki, path=path)
         self.assertEqual(done.returncode, 0, done.stderr)
         note = next((wiki / "spotlight" / "claims").glob("*.md"))
@@ -176,6 +182,17 @@ class WikiDestination(INGEST.SoloCase):
         links = json.loads((wiki / "spotlight" / "entity-links.json").read_text(encoding="utf-8"))["batches"]
         self.assertEqual(links[batch_id], {"Doe": "jane-doe"})
 
+    def test_a_pick_the_register_no_longer_offers_refuses_the_write(self) -> None:
+        wiki = self.wiki()
+        refused = self.write(self.picked("drifted"), wiki, path=self.candidates_only("john-doe"))
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("review the Ingest page again", refused.stderr)
+        self.assertFalse((wiki / "spotlight").exists())
+        # Without Engine the approved pick stands.
+        done = self.write(self.picked("offline"), wiki)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("[[wiki/entities/jane-doe|Doe]]", next((wiki / "spotlight" / "claims").glob("*.md")).read_text(encoding="utf-8"))
+
     def test_a_pick_changed_after_the_request_is_refused(self) -> None:
         case = self.prepared("repicked")
         self.edit(case, "ingest", {"kind": "mark", "key": "entity:Doe", "value": "jane-doe"})
@@ -184,7 +201,7 @@ class WikiDestination(INGEST.SoloCase):
         record = case / "data" / "ingest-review.json"
         record.write_bytes(record.read_bytes().replace(b'"final": "jane-doe"', b'"final": "john-doe"'))
         wiki = self.wiki()
-        refused = self.write(case, wiki, path=self.candidates_only())
+        refused = self.write(case, wiki, path=self.candidates_only("jane-doe", "john-doe"))
         # The request binds the review digest, so it no longer counts.
         self.assertEqual(refused.returncode, 2)
         self.assertIn("not been requested", refused.stderr)
