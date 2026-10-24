@@ -102,6 +102,7 @@ test('a successful but malformed tool result stops the newsroom case: a run_chec
 	for (const [tool, result] of [
 		['get_record', { content: 'not a list' }],
 		['get_record', { content: [null] }],
+		['get_record', { isError: 'yes', content: [{ type: 'text', text: '{}' }] }],
 		['run_checks', { structuredContent: { job_id: 'job-1', state: 'finished' } }],
 		['run_checks', { structuredContent: { job_id: 'job-1', state: 'done', flags: [{ target: 'finding:F1', reason: 'ok' }, { target: 'finding:F2' }] } }],
 		['run_checks', { structuredContent: { job_id: 'job-1', state: 'done', flags: 'none' } }],

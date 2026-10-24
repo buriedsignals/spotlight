@@ -305,7 +305,7 @@ export class EditorialClient {
 		// The envelope is checked here, once: a malformed answer is the service
 		// failing, which stops the case like any other.
 		const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
-		if (!isObject(result) || (result.content !== undefined && !(Array.isArray(result.content) && result.content.every(isObject)))) {
+		if (!isObject(result) || (result.isError !== undefined && typeof result.isError !== 'boolean') || (result.content !== undefined && !(Array.isArray(result.content) && result.content.every(isObject)))) {
 			throw new EditorialError(`${tool}: the Editorial MCP returned a malformed result`);
 		}
 		const text = (result.content ?? []).filter((part) => part.type === 'text').map((part) => String(part.text ?? '')).join('\n');
