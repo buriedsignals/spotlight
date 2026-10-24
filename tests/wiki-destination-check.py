@@ -182,6 +182,15 @@ class WikiDestination(INGEST.SoloCase):
         links = json.loads((wiki / "spotlight" / "entity-links.json").read_text(encoding="utf-8"))["batches"]
         self.assertEqual(links[batch_id], {"Doe": "jane-doe"})
 
+    def test_a_resolver_that_cannot_start_keeps_the_approved_pick(self) -> None:
+        stub = Path(tempfile.mkdtemp(dir=self.root))
+        (stub / "bsig").write_text("#!/nonexistent/interpreter\n", encoding="utf-8")
+        (stub / "bsig").chmod(0o755)
+        wiki = self.wiki()
+        done = self.write(self.picked("unstarted"), wiki, path=f"{stub}:/usr/bin:/bin")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("[[wiki/entities/jane-doe|Doe]]", next((wiki / "spotlight" / "claims").glob("*.md")).read_text(encoding="utf-8"))
+
     def test_a_pick_changed_after_the_request_is_refused(self) -> None:
         case = self.prepared("repicked")
         self.edit(case, "ingest", {"kind": "mark", "key": "entity:Doe", "value": "jane-doe"})

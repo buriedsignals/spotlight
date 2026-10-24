@@ -224,7 +224,7 @@ class Resolver:
                 done = subprocess.run([self.bsig, "--json", "wiki", "resolve", "--workspace", str(self.workspace), json.dumps(query)],
                                       capture_output=True, text=True, encoding="utf-8", timeout=30)
             except (OSError, subprocess.TimeoutExpired):
-                return None
+                return self._picked(name, batch_id)  # no answer: the member's approved pick stands
             for line in done.stdout.splitlines():
                 try:
                     event = json.loads(line)
