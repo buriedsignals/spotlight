@@ -129,10 +129,12 @@ def test_order_disagreement_has_no_effect() -> None:
 
 
 def test_heldout_needs_approved_targets_for_this_bank() -> None:
-    raises(lambda: acc.run(args("heldout", ["rules"])), acc.AcceptanceError, "proposed targets must not unlock the held-out half")
     targets = json.loads(acc.TARGETS.read_text(encoding="utf-8"))
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "targets.json"
+        path.write_text(json.dumps({**targets, "status": "proposed", "approved_by": None, "approved_at": None}))
+        raises(lambda: acc.run(args("heldout", ["rules"], path)), acc.AcceptanceError,
+               "proposed targets must not unlock the held-out half")
         path.write_text(json.dumps({**targets, "status": "approved", "approved_by": "maintainer", "bank_version": "0" * 64}))
         raises(lambda: acc.run(args("heldout", ["rules"], path)), acc.AcceptanceError,
                "targets approved for another bank version must not unlock the held-out half")
