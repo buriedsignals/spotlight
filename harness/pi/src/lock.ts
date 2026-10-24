@@ -3,7 +3,7 @@
 // held case is refused; a lock left by a dead harness is taken over after its
 // leftover pi processes are stopped, so none of them keeps writing.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, closeSync } from 'node:fs';
+import { linkSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export type LockRecord = { case_id: string; pid: number; children: number[]; started_at: string };
@@ -65,22 +65,45 @@ export class CaseLock {
 	}
 }
 
+// A lock file without a readable record is still being written by a launcher
+// from before the atomic publish below, or was left by a crash mid-write:
+// held while this young, stale after.
+const UNREADABLE_GRACE_MS = 2_000;
+
+function isYoung(path: string): boolean {
+	try {
+		return Date.now() - statSync(path).mtimeMs < UNREADABLE_GRACE_MS;
+	} catch {
+		return false;
+	}
+}
+
 export function acquireCaseLock(dataDir: string, caseId: string, piCli: string): CaseLock {
 	const directory = resolve(dataDir, 'locks');
 	mkdirSync(directory, { recursive: true, mode: 0o700 });
 	const path = resolve(directory, `${caseId}.lock`);
 	const record: LockRecord = { case_id: caseId, pid: process.pid, children: [], started_at: new Date().toISOString() };
+	// Publish the record atomically: the link fails if a lock exists, and the
+	// lock file never exists without its record.
+	const temporary = `${path}.${process.pid}.new`;
+	writeFileSync(temporary, JSON.stringify(record), { mode: 0o600 });
+	try {
+		return lockWithRecord(path, temporary, record, caseId, piCli);
+	} finally {
+		rmSync(temporary, { force: true });
+	}
+}
+
+function lockWithRecord(path: string, temporary: string, record: LockRecord, caseId: string, piCli: string): CaseLock {
 	for (let attempt = 0; attempt < 3; attempt += 1) {
 		try {
-			const descriptor = openSync(path, 'wx', 0o600);
-			writeFileSync(descriptor, JSON.stringify(record));
-			closeSync(descriptor);
+			linkSync(temporary, path);
 			return new CaseLock(path, record);
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
 		}
 		const holder = readRecord(path);
-		if (holder && isAlive(holder.pid)) {
+		if (holder ? isAlive(holder.pid) : isYoung(path)) {
 			throw new CaseHeldError(`case "${caseId}" is already open in another Spotlight chat. Close that chat first.`);
 		}
 		for (const pid of holder?.children ?? []) {
