@@ -5,9 +5,28 @@
 // chat down in order, SIGTERM is the fallback, and no pi child outlives it.
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ConfigError, RouteRefused, childEnv, parseLaunchArgs, piSettings, readConfig, routeFor, secretValues } from './config.ts';
+import { ConfigError, RouteRefused, checkNewsroomInstall, checkRouteSecrets, childEnv, parseLaunchArgs, piSettings, readConfig, routeFor, resolverEnv, secretValues } from './config.ts';
+import {
+	CASE_REFERENCE_FILE,
+	CaseRecordError,
+	EditorialCredentialError,
+	EditorialToolError,
+	KNOWLEDGE_TOOLS,
+	NEWSROOM_UNAVAILABLE,
+	editorialClient,
+	ensureCaseRegistered,
+	isAllowedOrigin,
+	pendingSubmission,
+	runChecks,
+	stopsTheNewsroomCase,
+	submitCase,
+} from './editorial.ts';
+import type { CheckKind, EditorialClient, RunPackage } from './editorial.ts';
+import { openInBrowser } from '../../review/session.mjs';
+import { newsroomData } from './tools/editorial.ts';
+import { DESKTOP_ENV, capped, programEnv, runFixed } from './tools/run.ts';
 import type { HarnessConfig, LaunchArgs } from './config.ts';
 import { CaseHeldError, acquireCaseLock } from './lock.ts';
 import type { CaseLock } from './lock.ts';
@@ -16,11 +35,11 @@ import { piArguments, piCliPath, writePiSettings } from './pi-process.ts';
 import { runResearchRound } from './lanes.ts';
 import type { ResearchPlan, RoundSummary } from './lanes.ts';
 import { discardIncompleteLanes } from './resume.ts';
-import { ORCHESTRATOR, agentSpec, allowedTools, isolationRefusal, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, isolationRefusal, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
 import type { Composition } from './roles.ts';
 import { WorkerQueue, runWorker } from './subagents.ts';
 import { withCasePassages } from './case-search.ts';
-import type { CancelRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
+import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
 import { bindActiveCase, pythonAdapter, runsResearchRound } from './tools/spotlight.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
 import { validateAfterWorker } from './validators.ts';
@@ -28,7 +47,9 @@ import { validateAfterWorker } from './validators.ts';
 const STDIN_CLOSE_GRACE_MS = 15_000;
 const KILL_GRACE_MS = 5_000;
 
-const EXIT = { config: 2, held: 3, failed: 1 } as const;
+// Newsroom edition: `signIn`, the newsroom token was revoked or expired;
+// `newsroom`, the Editorial MCP could not be used.
+const EXIT = { config: 2, held: 3, failed: 1, signIn: 4, newsroom: 5 } as const;
 
 type Harness = {
 	config: HarnessConfig;
@@ -39,7 +60,129 @@ type Harness = {
 	log: (message: string) => void;
 	redact: (text: string) => string;
 	children: Set<ChildProcess>;
+	// Newsroom edition: the only Editorial MCP client, holding the token.
+	editorial?: EditorialClient;
+	// The newsroom case reference, validated at the start.
+	caseRef?: string;
 };
+
+// A revoked or expired newsroom token, or an Editorial MCP that cannot be
+// used, stops the whole harness with a plain message: a newsroom case does
+// not go on without the newsroom's knowledge and checks, and nothing falls
+// back to another route or service.
+function newsroomStop(error: unknown): { code: number; message: string } {
+	if (error instanceof EditorialCredentialError) return { code: EXIT.signIn, message: error.message };
+	if (error instanceof CaseRecordError) return { code: EXIT.newsroom, message: `${error.message}. Spotlight stopped; resume the case to finish.` };
+	return { code: EXIT.newsroom, message: NEWSROOM_UNAVAILABLE };
+}
+
+let stoppingForNewsroom = false;
+function stopForNewsroom(harness: Harness, error: unknown): void {
+	if (stoppingForNewsroom) return;
+	stoppingForNewsroom = true;
+	const { code, message } = newsroomStop(error);
+	harness.log(`stopped: ${message}`);
+	if (!(error instanceof EditorialCredentialError)) harness.log(`the Editorial MCP: ${harness.redact((error as Error).message)}`);
+	// Let the refusal reach the process that asked, then stop everything.
+	setTimeout(() => {
+		for (const child of harness.children) child.kill('SIGTERM');
+		process.exit(code);
+	}, 200);
+}
+
+// Serves one process's newsroom tool calls. The operation must be one of the
+// tools that process's role holds in this edition.
+function serveEditorial(harness: Harness, child: ChildProcess, role: string, running: Map<string, AbortController>): void {
+	child.on('message', (message: unknown) => {
+		const request = message as EditorialRequest | CancelRequest;
+		if (request?.kind === 'spotlight-cancel') {
+			running.get(request.id)?.abort();
+			return;
+		}
+		if (request?.kind !== 'spotlight-editorial') return;
+		const controller = new AbortController();
+		running.set(request.id, controller);
+		const reply = (result: Omit<SpawnResult, 'kind' | 'id'>) => {
+			if (child.connected) child.send({ kind: 'spotlight-result', id: request.id, ...result });
+		};
+		editorialOperation(harness, role, request.op, request.args ?? {}, controller.signal)
+			.then((text) => reply({ ok: true, text }))
+			.catch((error: Error) => {
+				if (stopsTheNewsroomCase(error)) {
+					reply({ ok: false, error: `stopped: ${newsroomStop(error).message}` });
+					stopForNewsroom(harness, error);
+					return;
+				}
+				// A tool's own error text comes from the Editorial MCP.
+				if (error instanceof EditorialToolError) {
+					reply({ ok: false, error: `the newsroom answered ${request.op} with an error:\n${newsroomData(capped(harness.redact(error.message)))}` });
+					return;
+				}
+				reply({ ok: false, error: harness.redact(error.message) });
+			})
+			.finally(() => running.delete(request.id));
+	});
+}
+
+async function editorialOperation(harness: Harness, role: string, op: string, args: Record<string, unknown>, signal: AbortSignal): Promise<string> {
+	const client = harness.editorial;
+	if (!client) throw new Error(`${op} is a newsroom edition tool`);
+	const spec = agentSpec(harness.composition, role);
+	if (!allowedTools(spec, harness.config.sensitive, harness.config.edition).includes(op)) throw new Error(`${op} is not a tool of the ${role}`);
+	if ((KNOWLEDGE_TOOLS as readonly string[]).includes(op)) return JSON.stringify(await client.call(op, args, signal));
+	const { config, active } = harness;
+	if (op === 'run_checks') {
+		const kind = args.kind === 'report' ? 'report' : args.kind === 'findings' ? 'findings' : undefined;
+		if (!kind) throw new Error('run_checks: kind must be "findings" or "report"');
+		return JSON.stringify(await runChecks(client, harness.caseRef!, active.caseDir, kind as CheckKind, packageRunner(harness), { signal }));
+	}
+	if (op === 'newsroom_submit') {
+		const status = await caseStatus(harness, true);
+		const step = (status.ingest as { resume_at?: string } | undefined)?.resume_at;
+		if (status.phase !== 'ingest' || step !== 'ingest') {
+			return JSON.stringify({ skipped: `the case is at ${String(status.phase ?? '') || 'an unknown phase'}${step ? ` (${step})` : ''}; Submit runs only after the member requested ingestion on the page` });
+		}
+		return JSON.stringify(await submit(harness, client, signal));
+	}
+	throw new Error(`unknown newsroom operation ${op}`);
+}
+
+// scripts/newsroom-package.py: builds the Submit package and is the only
+// writer of the newsroom case files, under the case lock.
+function packageRunner(harness: Harness): RunPackage {
+	const { config } = harness;
+	return (args, input) =>
+		runFixed(config.python, [resolve(CHECKOUT_ROOT, 'scripts/newsroom-package.py'), ...args], {
+			env: programEnv(process.env, [], { SPOTLIGHT_CONFIG: config.spotlightConfig }),
+			cwd: CHECKOUT_ROOT,
+			timeoutMs: 300_000,
+			input: input === undefined ? undefined : JSON.stringify(input),
+		});
+}
+
+// The newsroom's review page opens in the member's browser, as open_review
+// opens the local one; its address goes nowhere else, and only an address on
+// one of the newsroom's own endpoints is opened.
+function reviewOpener(harness: Harness): (url: string) => Promise<boolean> {
+	return async (url) => {
+		if (!isAllowedOrigin(harness.config.newsroomOrigins, url)) {
+			harness.log('the newsroom review address is not on one of the newsroom\'s endpoints; it was not opened');
+			return false;
+		}
+		// The opener sees the system basics and the desktop session, never the
+		// launcher's tokens, whatever their variable names.
+		const env = programEnv(process.env, DESKTOP_ENV);
+		if (!(await openInBrowser(url, { env })).ok) throw new Error('the newsroom review page could not be opened; the submission stays pending and is resumed at the next start');
+		return true;
+	};
+}
+
+async function submit(harness: Harness, client: EditorialClient, signal?: AbortSignal) {
+	const outcome = await submitCase({ client, caseRef: harness.caseRef!, caseDir: harness.active.caseDir, signal, runPackage: packageRunner(harness), openReview: reviewOpener(harness) });
+	harness.log(outcome.state === 'submitted' ? `submitted the case to the newsroom (${outcome.receipts.length} receipt(s) in receipts/)` : 'the newsroom refused the package: integrity checks failed');
+	if (outcome.state === 'submitted' && outcome.notice) harness.log(outcome.notice);
+	return outcome;
+}
 
 function track(harness: Harness, child: ChildProcess): void {
 	harness.children.add(child);
@@ -71,9 +214,9 @@ function processLaunch(harness: Harness, role: string) {
 	return {
 		command: process.execPath,
 		args: piArguments({
-			systemPrompt: systemPrompt(harness.composition, role, harness.config.modelTier),
+			systemPrompt: systemPrompt(harness.composition, role, harness.config.modelTier, harness.config.edition),
 			skills: skillsFor(harness.composition, role),
-			tools: allowedTools(spec, harness.config.sensitive),
+			tools: allowedTools(spec, harness.config.sensitive, harness.config.edition),
 			model: route.model,
 			// The chat client's system prompt is for the orchestrator only.
 			appendSystemPrompt: role === ORCHESTRATOR ? harness.args.appendSystemPrompt : undefined,
@@ -87,6 +230,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 	const queue = new WorkerQueue();
 	const running = new Map<string, AbortController>();
 	const workers = spawnableWorkers(harness.composition);
+	serveEditorial(harness, orchestrator, ORCHESTRATOR, running);
 	orchestrator.on('message', (message: unknown) => {
 		const request = message as SpawnRequest | CancelRequest | ResearchRequest;
 		if (request?.kind === 'spotlight-cancel') {
@@ -101,7 +245,10 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 			};
 			researchRound(harness, request.retry, controller.signal)
 				.then((round) => reply({ ok: true, round }))
-				.catch((error: Error) => reply({ ok: false, error: harness.redact(error.message) }))
+				.catch((error: Error) => {
+					reply({ ok: false, error: stopsTheNewsroomCase(error) ? `stopped: ${newsroomStop(error).message}` : harness.redact(error.message) });
+					if (stopsTheNewsroomCase(error)) stopForNewsroom(harness, error);
+				})
 				.finally(() => running.delete(request.id));
 			return;
 		}
@@ -125,7 +272,10 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 					return runWorker(
 						{
 							...processLaunch(harness, request.agent),
-							onSpawn: (child) => track(harness, child),
+							onSpawn: (child) => {
+								track(harness, child);
+								serveEditorial(harness, child, request.agent, running);
+							},
 							onStderr: (child) => forwardStderr(harness, child),
 						},
 						task,
@@ -140,13 +290,16 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 	});
 }
 
-async function caseStatus(harness: Harness): Promise<Record<string, unknown>> {
+// `strict`: a resolver failure is an error, never an unknown phase.
+async function caseStatus(harness: Harness, strict = false): Promise<Record<string, unknown>> {
 	const { config, active } = harness;
 	try {
-		const status = await pythonAdapter(config.python)(['status', '--json', '--authorized-cases-root', active.casesRoot, active.caseDir]);
+		const status = await pythonAdapter(config.python, resolverEnv(process.env, harness.composition, config.routes))(['status', '--json', '--authorized-cases-root', active.casesRoot, active.caseDir]);
 		return JSON.parse(status) as Record<string, unknown>;
 	} catch (error) {
-		harness.log(`could not resolve the case phase: ${harness.redact((error as Error).message)}`);
+		const message = `could not resolve the case phase: ${harness.redact((error as Error).message)}`;
+		if (strict) throw new Error(message);
+		harness.log(message);
 		return {};
 	}
 }
@@ -178,6 +331,17 @@ function researchRound(harness: Harness, retry: boolean, signal: AbortSignal): P
 			env: process.env,
 			retry,
 			signal,
+			// Newsroom edition: the prior-knowledge lane reads search_knowledge.
+			knowledge: harness.editorial
+				? async (query, laneSignal) => {
+					try {
+						return JSON.stringify(await harness.editorial!.call('search_knowledge', { query, limit: 20 }, laneSignal));
+					} catch (error) {
+						if (stopsTheNewsroomCase(error)) stopForNewsroom(harness, error);
+						throw error;
+					}
+				}
+				: undefined,
 		});
 		harness.log(`research round ${summary.round}: ${summary.ran.length} topic(s) ran, ${summary.left_out.length} left out${summary.stopped ? `, stopped (${summary.stopped.code})` : ''}`);
 		return summary;
@@ -243,7 +407,11 @@ function terminate(harness: Harness): void {
 	}, KILL_GRACE_MS).unref();
 }
 
+// Runs once the case may start (in the newsroom edition: signed in,
+// registered, any pending submission resolved).
 function start(harness: Harness): void {
+	const discarded = discardIncompleteLanes(harness.config.caseDir);
+	if (discarded.length > 0) harness.log(`discarded ${discarded.length} unfinished research lane(s); they will rerun`);
 	const launch = processLaunch(harness, ORCHESTRATOR);
 	mkdirSync(launch.cwd, { recursive: true, mode: 0o700 });
 	const orchestrator = spawn(launch.command, launch.args, {
@@ -305,6 +473,8 @@ function main(): void {
 		config = readConfig(process.env, args.sessionId);
 		composition = loadComposition();
 		routeFor(config);
+		checkRouteSecrets(config, composition, process.env);
+		checkNewsroomInstall(config);
 	} catch (error) {
 		if (error instanceof ConfigError || error instanceof RouteRefused) {
 			plain(`cannot start: ${error.message}`);
@@ -312,7 +482,8 @@ function main(): void {
 		}
 		throw error;
 	}
-	const redact = redactor(secretValues(config, composition, process.env));
+	const secrets = secretValues(config, composition, process.env);
+	const redact = redactor(secrets);
 	const log = stderrLogger('spotlight', redact);
 	let lock: CaseLock;
 	let active: ActiveCase;
@@ -325,9 +496,49 @@ function main(): void {
 		log(`cannot start: ${(error as Error).message}`);
 		process.exit(error instanceof CaseHeldError ? EXIT.held : EXIT.config);
 	}
-	const discarded = discardIncompleteLanes(config.caseDir);
-	if (discarded.length > 0) log(`discarded ${discarded.length} unfinished research lane(s); they will rerun`);
-	start({ config, args, active, composition, lock, log, redact, children: new Set() });
+	const harness: Harness = { config, args, active, composition, lock, log, redact, children: new Set(), editorial: editorialClient(config, process.env, secrets) };
+	if (!harness.editorial) {
+		// A case the newsroom holds (registered, or a submission recorded) is
+		// never also run as a solo case: that would split its custody.
+		if ([CASE_REFERENCE_FILE, 'data/newsroom-submission.json'].some((path) => existsSync(resolve(config.caseDir, path)))) {
+			lock.release();
+			log('cannot start: this case is registered with a newsroom, so it runs only in the newsroom edition. Start it from the newsroom extension.');
+			process.exit(EXIT.config);
+		}
+		return start(harness);
+	}
+	// Case start, newsroom edition: the sign-in is checked on every start, and
+	// register_case runs once; a resumed case reuses the stored reference. A
+	// submission a crash left pending is resolved before anything else runs.
+	const client = harness.editorial;
+	const runPackage = packageRunner(harness);
+	client
+		.connect()
+		.then(() => ensureCaseRegistered(client, config, runPackage))
+		.then(async ({ reference, registered }) => {
+			harness.caseRef = reference.case_ref;
+			log(registered ? `registered the case with the newsroom (${reference.case_ref})` : `newsroom case ${reference.case_ref}`);
+			if (await pendingSubmission(runPackage, config.caseDir)) {
+				log('resuming the submission that was pending when Spotlight last stopped');
+				// Nothing runs while a submission is unresolved.
+				await submit(harness, client).catch((error: Error) => {
+					if (stopsTheNewsroomCase(error)) throw error;
+					throw new Error(`the submission that was pending could not be resumed, so the case did not start: ${error.message}`);
+				});
+			}
+			start(harness);
+		})
+		.catch((error: Error) => {
+			lock.release();
+			if (stopsTheNewsroomCase(error)) {
+				const { code, message } = newsroomStop(error);
+				log(`cannot start: ${message}`);
+				if (!(error instanceof EditorialCredentialError)) log(`the Editorial MCP: ${redact(error.message)}`);
+				process.exit(code);
+			}
+			log(`cannot start: ${redact(error.message)}`);
+			process.exit(EXIT.failed);
+		});
 }
 
 main();

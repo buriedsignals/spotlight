@@ -170,8 +170,9 @@ spend and the topics left out.
   back to the local model, and only the topics that did not finish run again
   on retry.
 - **Newsroom.** No OpenRouter swarm or cloud triage unless the newsroom allows
-  the endpoint. The prior-knowledge lane is left out in the harness until the
-  newsroom knowledge search is available there.
+  the endpoint. The prior-knowledge lane reads the newsroom's approved
+  knowledge through its Editorial MCP (`search_knowledge`,
+  [contract](newsroom-editorial-mcp.md)) on the newsroom's own model.
 
 Lane details, environment variables and the budget mechanics are in
 [`harness/pi/README.md`](../harness/pi/README.md#research-lanes).

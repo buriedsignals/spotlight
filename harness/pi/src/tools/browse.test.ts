@@ -12,7 +12,9 @@ import { createServer } from 'node:http';
 import type { Server } from 'node:http';
 import { syncBuiltinESMExports } from 'node:module';
 import type { AddressInfo } from 'node:net';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { browseScript, chromiumExecutable, runGuardedBrowse } from './browse.ts';
@@ -163,4 +165,19 @@ try { new WebSocket('ws://rebind.example.com:${s}/rebind-ws'); } catch (e) {}
 	assert.match(output, /Public page body/);
 	assert.ok(page.hits.includes('/'), 'the page loaded');
 	assert.deepEqual(secret.hits, []);
+});
+
+test('the browser browse starts gets only the program environment, never a key of the process that runs it', { skip: process.platform === 'win32' ? 'a shell stand-in for Chromium' : false }, async () => {
+	const dir = mkdtempSync(join(tmpdir(), 'spotlight-browse-env-'));
+	const seen = join(dir, 'env');
+	const chromium = join(dir, 'chromium');
+	writeFileSync(chromium, `#!/bin/sh\nenv > '${seen}'\necho 'DevTools listening on ws://127.0.0.1:9/devtools/browser/x' >&2\nexec sleep 30\n`, { mode: 0o755 });
+	process.env.SPOTLIGHT_PROVIDER_API_KEY = 'provider-key-0123456789';
+	try {
+		// dev-browser cannot drive the stand-in; only what the browser was started with matters here.
+		await runGuardedBrowse('', { env: { PATH: process.env.PATH ?? '', SPOTLIGHT_BROWSE_CHROMIUM: chromium }, cwd: dir }).catch(() => undefined);
+	} finally {
+		delete process.env.SPOTLIGHT_PROVIDER_API_KEY;
+	}
+	assert.ok(!readFileSync(seen, 'utf8').includes('provider-key-0123456789'), 'the browser saw the provider key');
 });

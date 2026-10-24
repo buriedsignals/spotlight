@@ -95,6 +95,10 @@ Fix every reported `summary.json` error and re-run before calling
 
 ## Decision checks (optional)
 
+**Newsroom edition:** the decision checks run in the newsroom's service, not
+here. Call `run_checks` with kind `findings` instead of the steps below; its
+flags appear on the Investigation page and never block.
+
 Run only when `.spotlight-config.json` has `integrations.decisions.enabled: true`,
 the case is not sensitive, an OpenRouter key is available, and the user agreed
 to decision checks for this case at methodology approval (first run only: add

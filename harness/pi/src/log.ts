@@ -5,9 +5,13 @@ import type { TransformCallback } from 'node:stream';
 
 const REDACTED = '[redacted]';
 
+// Shorter values are not redacted (they would mangle ordinary text);
+// config.ts refuses secrets that short.
+export const MIN_REDACTED_LENGTH = 4;
+
 export function redactor(secrets: Iterable<string | undefined>): (text: string) => string {
 	// Longest first, so a secret that contains another is replaced whole.
-	const values = [...new Set([...secrets].filter((value): value is string => !!value && value.length >= 4))]
+	const values = [...new Set([...secrets].filter((value): value is string => !!value && value.length >= MIN_REDACTED_LENGTH))]
 		.sort((a, b) => b.length - a.length);
 	return (text) => values.reduce((current, value) => current.split(value).join(REDACTED), text);
 }

@@ -10,6 +10,9 @@ import { piCliPath } from './pi-process.ts';
 import { parseFixedRequestBody } from './provider-policy.ts';
 import { CHECKOUT_ROOT, agentSpec } from './roles.ts';
 import type { Composition } from './roles.ts';
+import { MIN_REDACTED_LENGTH } from './log.ts';
+import { SEAM_ENV } from './tools/fetch.ts';
+import { BASE_ENV, DESKTOP_ENV } from './tools/run.ts';
 
 export type Edition = 'solo' | 'newsroom';
 export type ModelTier = '12b' | '26b' | '31b' | 'frontier';
@@ -64,6 +67,26 @@ export type HarnessConfig = {
 	// topic briefs, so it may be a third-party endpoint. Off unless the member
 	// opted in (the "Research swarms" switch plus a key).
 	swarm: SwarmSetting;
+	// Newsroom edition only: the newsroom's Editorial MCP, reached with a
+	// route-scoped token the launcher alone holds (never a pi process).
+	editorial?: EditorialSetting;
+	// Newsroom edition only: every origin a request carrying a newsroom token
+	// may go to (the model routes and the Editorial MCP). Empty in solo.
+	newsroomOrigins: string[];
+};
+
+export type CustodyMode = 'hosted' | 'local_until_share';
+export const EDITORIAL_TOKEN_ENV = 'SPOTLIGHT_EDITORIAL_MCP_TOKEN';
+export const MIN_EDITORIAL_TOKEN_LENGTH = 16;
+
+// The Editorial MCP endpoint and what register_case sends at case start.
+// The token is named, never held here: editorial.ts reads it from the
+// launcher's environment per request.
+export type EditorialSetting = {
+	url: string;
+	tokenEnv: string;
+	caseTitle: string;
+	custodyMode: CustodyMode;
 };
 
 // The swarm route when the member opted in, or why there is none. The key is
@@ -152,6 +175,13 @@ function parseRoutes(raw: string | undefined): Route[] {
 		if (item.key_env !== undefined && (typeof item.key_env !== 'string' || !/^[A-Z][A-Z0-9_]*$/.test(item.key_env))) {
 			throw new ConfigError(`${label}.key_env must name an environment variable.`);
 		}
+		// A route's token is handed to every pi process and its model
+		// endpoint, so it may never be one of the harness's own variables (the
+		// Editorial MCP token among them).
+		// Nor one Spotlight passes on to helper programs (HELPER_ENV).
+		if (typeof item.key_env === 'string' && (item.key_env.startsWith('SPOTLIGHT_') || HELPER_ENV.has(item.key_env))) {
+			throw new ConfigError(`${label}.key_env may not name ${item.key_env}: a route's token is its own variable, never one of Spotlight's (the Editorial MCP token is never a route token).`);
+		}
 		return {
 			name: item.name as string,
 			baseURL: httpURL(`${label}.base_url`, item.base_url as string),
@@ -181,6 +211,9 @@ function newsroomRoutes(env: Env): { routes: Route[]; pipelineRoute: Route } {
 	for (const route of routes) {
 		if (route.keyEnv && !env[route.keyEnv]) {
 			throw new ConfigError(`route "${route.name}" needs ${route.keyEnv}, which is not set.`);
+		}
+		if (route.keyEnv && env[route.keyEnv]!.length < MIN_EDITORIAL_TOKEN_LENGTH) {
+			throw new ConfigError(`${route.keyEnv} is shorter than ${MIN_EDITORIAL_TOKEN_LENGTH} characters, so it cannot be redacted reliably.`);
 		}
 	}
 	const requested = optionalURL(env, 'SPOTLIGHT_MODEL_BASE_URL');
@@ -262,6 +295,7 @@ export function readConfig(env: Env, chatId?: string): HarnessConfig {
 	}
 	const modelTier = readModelTier(env);
 	const sensitive = sensitiveMode(env);
+	const editorial = edition === 'newsroom' ? editorialSetting(env, caseId, sensitive) : refuseEditorialInSolo(env);
 	return {
 		edition,
 		casesRoot: resolve(casesRoot),
@@ -281,7 +315,45 @@ export function readConfig(env: Env, chatId?: string): HarnessConfig {
 		spotlightConfig: spotlightConfigPath(env),
 		sensitive,
 		swarm: swarmSetting(env, edition, routes, sensitive),
+		editorial,
+		newsroomOrigins: edition === 'newsroom' ? [...new Set([...routes.map((route) => originOf(route.baseURL)), originOf(editorial!.url)])] : [],
 	};
+}
+
+export function originOf(url: string): string {
+	return new URL(url).origin;
+}
+
+function refuseEditorialInSolo(env: Env): undefined {
+	if (env.SPOTLIGHT_EDITORIAL_MCP_URL?.trim()) {
+		throw new ConfigError('SPOTLIGHT_EDITORIAL_MCP_URL is for the newsroom edition only (set SPOTLIGHT_EDITION=newsroom).');
+	}
+	return undefined;
+}
+
+// The newsroom edition reads prior knowledge, runs its decision checks and
+// submits the case through the Editorial MCP; without it there is no newsroom
+// path and nothing to fall back to, so the launcher stops. The token travels
+// over the network, so the endpoint is https (plain http only on loopback).
+function editorialSetting(env: Env, caseId: string, sensitive: boolean): EditorialSetting {
+	const raw = env.SPOTLIGHT_EDITORIAL_MCP_URL?.trim();
+	if (!raw) throw new ConfigError('the newsroom edition needs the Editorial MCP (SPOTLIGHT_EDITORIAL_MCP_URL is not set), so Spotlight will not start.');
+	const url = httpURL('SPOTLIGHT_EDITORIAL_MCP_URL', raw);
+	const parsed = new URL(url);
+	if (parsed.username || parsed.password) throw new ConfigError('SPOTLIGHT_EDITORIAL_MCP_URL must not carry credentials; the token comes from SPOTLIGHT_EDITORIAL_MCP_TOKEN.');
+	if (parsed.protocol !== 'https:' && !isLoopback(url)) throw new ConfigError('SPOTLIGHT_EDITORIAL_MCP_URL must be https (plain http only on a loopback address).');
+	const token = env[EDITORIAL_TOKEN_ENV]?.trim();
+	if (!token) throw new ConfigError(`the newsroom edition needs the newsroom sign-in token (${EDITORIAL_TOKEN_ENV} is not set); sign in through the newsroom extension.`);
+	// A short token could not be told apart from ordinary text when it is
+	// redacted from logs and answers.
+	if (token.length < MIN_EDITORIAL_TOKEN_LENGTH) {
+		throw new ConfigError(`${EDITORIAL_TOKEN_ENV} is shorter than ${MIN_EDITORIAL_TOKEN_LENGTH} characters, so it cannot be redacted reliably; sign in again through the newsroom extension.`);
+	}
+	const custody = env.SPOTLIGHT_CUSTODY_MODE?.trim() || (sensitive ? 'local_until_share' : 'hosted');
+	if (custody !== 'hosted' && custody !== 'local_until_share') throw new ConfigError('SPOTLIGHT_CUSTODY_MODE must be "hosted" or "local_until_share".');
+	const title = env.SPOTLIGHT_CASE_TITLE?.trim() || caseId;
+	if (title.length > 300) throw new ConfigError('SPOTLIGHT_CASE_TITLE must be at most 300 characters.');
+	return { url, tokenEnv: EDITORIAL_TOKEN_ENV, caseTitle: title, custodyMode: custody };
 }
 
 const SWITCH_ON = new Set(['on', 'true', '1', 'yes']);
@@ -408,10 +480,21 @@ export function secretValues(config: HarnessConfig, composition: Composition, en
 	for (const route of config.routes) if (route.keyEnv) names.add(route.keyEnv);
 	for (const spec of Object.values(composition)) for (const key of spec.keys ?? []) names.add(key);
 	if (config.swarm.available) names.add(config.swarm.route.keyEnv);
-	return [...names].map((name) => env[name]).filter((value): value is string => !!value);
+	if (config.editorial) names.add(config.editorial.tokenEnv);
+	// Clients send tokens trimmed: both spellings are redacted.
+	return [...names].flatMap((name) => (env[name] ? [env[name] as string, (env[name] as string).trim()] : [])).filter(Boolean);
 }
 
-const PASSTHROUGH = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT'];
+// The resolver's environment (scripts/spotlight-orchestration.py, run by the
+// launcher and by the orchestrator's tools): the inherited one without any
+// token or tool key.
+export function resolverEnv(env: Env, composition: Composition, routes: Route[] = []): Env {
+	const out = { ...env };
+	const keys = Object.values(composition).flatMap((spec) => spec.keys ?? []);
+	for (const name of [EDITORIAL_TOKEN_ENV, PROVIDER_KEY, ...keys, ...routes.map((route) => route.keyEnv)]) if (name) delete out[name];
+	return out;
+}
+
 // Non-secret settings of the backings the typed tools wrap (Tor posture for
 // fetch, browse's Chromium, the RLM model), passed to every process unchanged.
 // The RLM endpoint itself is passed only after readConfig confirmed it is own.
@@ -427,6 +510,11 @@ const BACKING_SETTINGS = [
 	'SPOTLIGHT_RLM_MODEL',
 ];
 
+// Every variable Spotlight hands unchanged to a helper program: pi processes,
+// lane and fetch tools, the Navigator and Anomaly programs, the browser
+// opener. None of them may hold a route token.
+const HELPER_ENV = new Set([...BASE_ENV, ...BACKING_SETTINGS, ...SEAM_ENV, ...DESKTOP_ENV, 'XDG_CONFIG_HOME']);
+
 // The complete environment of one pi process: system basics, the harness's own
 // settings, the selected route's token under a fixed name, and only the keys
 // the role declares. Everything else in the launcher's environment is dropped.
@@ -439,8 +527,9 @@ export function childEnv(
 	const route = routeFor(config);
 	const spec = agentSpec(composition, role);
 	const out: Record<string, string> = {};
-	for (const name of [...PASSTHROUGH, ...BACKING_SETTINGS]) if (env[name]) out[name] = env[name] as string;
-	for (const key of spec.keys ?? []) if (env[key]) out[key] = env[key] as string;
+	for (const name of [...BASE_ENV, ...BACKING_SETTINGS]) if (env[name]) out[name] = env[name] as string;
+	// The Editorial token stays in the harness even if a composition names it.
+	for (const key of spec.keys ?? []) if (env[key] && key !== EDITORIAL_TOKEN_ENV) out[key] = env[key] as string;
 	const token = route.keyEnv ? env[route.keyEnv] : undefined;
 	if (token) out[PROVIDER_KEY] = token;
 	else delete out[PROVIDER_KEY];
@@ -462,6 +551,9 @@ export function childEnv(
 		SPOTLIGHT_PYTHON: config.python,
 		SPOTLIGHT_CONFIG: config.spotlightConfig,
 		SPOTLIGHT_SENSITIVE: config.sensitive ? 'true' : 'false',
+		// Which tools the role gets (roles.ts allowedTools). The Editorial MCP
+		// token is not here: only the launcher calls the Editorial MCP.
+		SPOTLIGHT_EDITION: config.edition,
 	});
 	if (config.searchURL) out.SPOTLIGHT_SEARCH_URL = config.searchURL;
 	if (config.rlmURL) {
@@ -470,6 +562,69 @@ export function childEnv(
 	}
 	if (config.requestBody) out.SPOTLIGHT_PROVIDER_REQUEST_BODY = config.requestBody;
 	return out;
+}
+
+// A route's token goes to every pi process (childEnv), so it may not be a
+// secret an agent declares for its own tools (harness/composition.json keys).
+// A tool secret too short to redact (log.ts) is refused rather than leaked.
+export function checkRouteSecrets(config: HarnessConfig, composition: Composition, env: Env): void {
+	const declared = new Set(Object.values(composition).flatMap((spec) => spec.keys ?? []));
+	for (const route of config.routes) {
+		if (route.keyEnv && declared.has(route.keyEnv)) {
+			throw new ConfigError(`route "${route.name}" may not use ${route.keyEnv} as its token: that variable is a tool secret, never a route token.`);
+		}
+	}
+	// Every key that goes into Pi (route tokens, the solo provider key, tool
+	// secrets): never the Editorial token under another name, and never too
+	// short to redact. An unset key (a keyless local model) is fine.
+	const editorialToken = config.editorial ? env[config.editorial.tokenEnv]?.trim() : undefined;
+	for (const name of new Set([...config.routes.flatMap((route) => (route.keyEnv ? [route.keyEnv] : [])), ...declared])) {
+		const value = env[name];
+		if (!value || name === EDITORIAL_TOKEN_ENV) continue;
+		if (editorialToken && value.trim() === editorialToken) throw new ConfigError(`${name} holds the Editorial MCP token; it needs its own value.`);
+		if (value.length < MIN_REDACTED_LENGTH) {
+			throw new ConfigError(`${name} is shorter than ${MIN_REDACTED_LENGTH} characters, so it cannot be redacted reliably; set its full value or unset it.`);
+		}
+	}
+}
+
+// The newsroom edition and the install's knowledge destination must agree:
+// the case scripts (the ingest page, the Submit package) read the mode from
+// the install config, and a solo-mode install would ask for a local batch
+// that the newsroom edition never builds; a newsroom install launched as
+// solo would split custody between local and newsroom paths.
+// No install config, or no mode in it, is solo (validate-install-config.py);
+// a config that exists but cannot be read, or names another mode, stops.
+export function checkNewsroomInstall(config: HarnessConfig): void {
+	let mode: unknown = 'solo';
+	let text: string | undefined;
+	try {
+		text = readFileSync(config.spotlightConfig, 'utf8');
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new ConfigError(`the install config (${config.spotlightConfig}) cannot be read: ${(error as Error).message}`);
+	}
+	if (text !== undefined) {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(text);
+		} catch (error) {
+			throw new ConfigError(`the install config (${config.spotlightConfig}) cannot be read: ${(error as Error).message}`);
+		}
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new ConfigError(`the install config (${config.spotlightConfig}) is not a JSON object.`);
+		// Only a missing destination or mode means solo.
+		const destination = (parsed as { knowledge_destination?: unknown }).knowledge_destination;
+		if (destination !== undefined && (!destination || typeof destination !== 'object' || Array.isArray(destination))) {
+			throw new ConfigError(`the install config (${config.spotlightConfig}): knowledge_destination must be an object.`);
+		}
+		if (destination && 'mode' in destination) mode = destination.mode;
+		if (mode !== 'solo' && mode !== 'newsroom') throw new ConfigError(`the install config (${config.spotlightConfig}): knowledge_destination.mode must be "solo" or "newsroom".`);
+	}
+	if (mode === 'newsroom' && config.edition !== 'newsroom') {
+		throw new ConfigError(`the install config (${config.spotlightConfig}) is in newsroom mode, so SPOTLIGHT_EDITION must be "newsroom".`);
+	}
+	if (mode !== 'newsroom' && config.edition === 'newsroom') {
+		throw new ConfigError(`the newsroom edition needs knowledge_destination.mode "newsroom" in the install config (${config.spotlightConfig}).`);
+	}
 }
 
 // The launcher's arguments when a chat client such as Osaurus (a `pi_rpc`

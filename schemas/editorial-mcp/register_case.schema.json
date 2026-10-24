@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spotlight.buriedsignals.com/schemas/editorial-mcp/register_case.schema.json",
+  "title": "Editorial MCP tool register_case",
+  "description": "Case start. Called by the harness (never a model) once per case; owner and organization come from the sign-in.",
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "custody_mode": {
+          "enum": [
+            "hosted",
+            "local_until_share"
+          ]
+        },
+        "client_case_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "The local case folder name. The same signed-in owner and client_case_id must return the same case_ref, so a retry after a lost answer registers nothing twice."
+        }
+      },
+      "required": [
+        "title",
+        "custody_mode",
+        "client_case_id"
+      ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "case_ref": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,200}$"
+        }
+      },
+      "required": [
+        "case_ref"
+      ]
+    }
+  }
+}

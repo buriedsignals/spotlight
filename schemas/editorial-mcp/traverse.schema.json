@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spotlight.buriedsignals.com/schemas/editorial-mcp/traverse.schema.json",
+  "title": "Editorial MCP tool traverse",
+  "description": "An approved record's chain: passages, evidence, claims, events, story arcs.",
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "record_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9._:/-]+$"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        }
+      },
+      "required": [
+        "record_id"
+      ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9._:/-]+$"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "record_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^[A-Za-z0-9._:/-]+$"
+              },
+              "kind": {
+                "enum": [
+                  "claim",
+                  "event",
+                  "story_arc",
+                  "evidence",
+                  "entity"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "organization": {
+                "type": "string"
+              },
+              "updated_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "record_id",
+              "kind"
+            ]
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^[A-Za-z0-9._:/-]+$"
+              },
+              "to": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^[A-Za-z0-9._:/-]+$"
+              },
+              "relation": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "from",
+              "to",
+              "relation"
+            ]
+          }
+        }
+      },
+      "required": [
+        "root",
+        "nodes",
+        "edges"
+      ]
+    }
+  }
+}

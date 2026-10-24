@@ -30,6 +30,9 @@ const PROTECTED = [
 	/^data\/ingestion\.json$/, // ingest decision marker (resolver)
 	/^data\/report-declined\.json$/, // report decline marker (resolver)
 	/(^|\/)[^/]*receipt[^/]*$/, // signing, gate and ingest receipts
+	/^receipts\//, // newsroom receipts (the launcher copies them)
+	/^data\/editorial-case\.json$/, // newsroom case reference (the launcher)
+	/^data\/newsroom-(checks|submission)\.json$/, // newsroom check flags and submission (the launcher)
 ];
 
 function inside(root: string, path: string): boolean {

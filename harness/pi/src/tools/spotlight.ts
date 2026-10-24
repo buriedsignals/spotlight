@@ -19,10 +19,11 @@ export type AdapterRunner = (arguments_: string[], signal?: AbortSignal) => Prom
 
 export class TransitionRefused extends Error {}
 
-export function pythonAdapter(python: string): AdapterRunner {
+// `env`: the program's environment (default: this process's).
+export function pythonAdapter(python: string, env?: Record<string, string | undefined>): AdapterRunner {
 	return (arguments_, signal) => {
 		const { promise, resolve: done, reject } = Promise.withResolvers<string>();
-		execFile(python, [ADAPTER, ...arguments_], { encoding: 'utf8', signal }, (error, stdout, stderr) => {
+		execFile(python, [ADAPTER, ...arguments_], { encoding: 'utf8', signal, env }, (error, stdout, stderr) => {
 			if (error) {
 				reject(new Error(stderr.trim() || stdout.trim() || error.message));
 				return;

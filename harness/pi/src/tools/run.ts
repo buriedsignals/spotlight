@@ -50,9 +50,18 @@ export function jsonResult(value: unknown) {
 	return textResult(JSON.stringify(value));
 }
 
-const BASE_ENV = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT'];
+// The most text one tool result hands a model; the rest is marked truncated.
+export const RETURNED_CHARS = 20_000;
+export function capped(text: string, note = ''): string {
+	return text.length > RETURNED_CHARS ? `${text.slice(0, RETURNED_CHARS)}\n[... truncated at ${RETURNED_CHARS} characters${note}]` : text;
+}
+
+export const BASE_ENV = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT'];
 
 // A backing program sees the system basics plus the named variables, nothing else.
+// What the review page's browser opener also gets: the desktop session.
+export const DESKTOP_ENV = ['DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS'];
+
 export function programEnv(env: Env, names: string[] = [], extra: Record<string, string> = {}): Record<string, string> {
 	const out: Record<string, string> = {};
 	for (const name of [...BASE_ENV, ...names]) {
@@ -68,6 +77,8 @@ export type RunOptions = {
 	cwd: string;
 	timeoutMs?: number;
 	signal?: AbortSignal;
+	// Written to the program's stdin, which is then closed.
+	input?: string;
 };
 
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
@@ -78,7 +89,7 @@ const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 // aborted rejects.
 export function runFixed(command: string, args: readonly string[], options: RunOptions): Promise<RunResult> {
 	const { promise, resolve, reject } = Promise.withResolvers<RunResult>();
-	execFile(
+	const child = execFile(
 		command,
 		[...args],
 		{
@@ -98,6 +109,10 @@ export function runFixed(command: string, args: readonly string[], options: RunO
 			reject(new Error(`${command} could not run: ${reason}`));
 		},
 	);
+	if (options.input !== undefined) {
+		child.stdin?.on('error', () => {}); // a program that exits early fails through its exit code
+		child.stdin?.end(options.input);
+	}
 	return promise;
 }
 
