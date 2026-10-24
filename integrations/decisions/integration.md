@@ -19,6 +19,13 @@ and the zero-retention provider body is sent only to openrouter.ai. `api`
 must be `openrouter-decisions`; a server with another API needs an adapter in
 `client.py`.
 
+In Ninja mode the decision model is Kev 4B on this computer, served by its own
+`kev serve` on a literal loopback address (`127.0.0.1` or `::1`, never the
+name `localhost`). Its endpoint names no `credential_env`: such an endpoint
+takes no key, never goes through a proxy, sensitive mode allows it (nothing leaves
+the computer), and research triage uses it as the local model. Frontier mode
+leaves the endpoint out and uses Jev on OpenRouter.
+
 ## What it does
 
 `scripts/decision-signals.py` asks the decision model narrow, typed questions and

@@ -410,6 +410,42 @@ def test_cli_rules_only_case() -> None:
         done = subprocess.run([sys.executable, str(ROOT / "scripts" / "research-triage.py"), str(case)], env=env,
                               capture_output=True, text=True, check=False)
         require(done.returncode == 2 and "methodology.json does not validate" in done.stderr, f"invalid methodology accepted: {done.stderr}")
+        # Kev on this computer (Ninja mode) is the local triage model: the decision endpoint on loopback, no llama-server.
+        config.write_text(json.dumps({"integrations": {"decisions": {"research_triage": {"backend": "local"}, "endpoint": {
+            "url": "http://127.0.0.1:8009/v1/systemone", "api": "openrouter-decisions"}}}}))
+        done = subprocess.run([sys.executable, str(ROOT / "scripts" / "research-triage.py"), str(case), "--check"], env=env,
+                              capture_output=True, text=True, check=False)
+        routed = json.loads(done.stdout)
+        require(routed["leads"]["backend"] == "local" and routed["journalist_input_leads"]["backend"] == "local",
+                f"a local decision endpoint was not used as the local triage model: {routed}")
+        # A local endpoint that names a credential gets it.
+        import http.server
+        import threading
+        seen = []
+
+        class Kev(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                seen.append(self.headers.get("Authorization"))
+                self.send_response(200); self.end_headers(); self.wfile.write(b'{"model":"kev","answers":{"q":{"noul":0.2}}}')
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Kev)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        os.environ["KEV_TEST_KEY"] = "kev-secret"
+        try:
+            cfg = triage.triage_settings({"integrations": {"decisions": {"research_triage": {"backend": "local"}, "endpoint": {
+                "url": f"http://127.0.0.1:{server.server_port}/v1/systemone", "api": "openrouter-decisions", "credential_env": "KEV_TEST_KEY"}}}})
+            providers, _newsroom, notes = triage.build_providers(cfg, triage._signals_cli())
+            providers["local"].decide({"s": 1}, {"q": {"type": "noul"}})
+        finally:
+            os.environ.pop("KEV_TEST_KEY")
+            server.shutdown()
+        require(seen == ["Bearer kev-secret"], f"a local endpoint's named credential was not sent: {seen} {notes}")
+        # A named credential that is not set stops the local model; it is never sent keyless.
+        providers, _newsroom, notes = triage.build_providers(cfg, triage._signals_cli())
+        require("local" not in providers and any("KEV_TEST_KEY" in note for note in notes), f"missing credential ignored: {notes}")
 
 
 def main() -> int:
