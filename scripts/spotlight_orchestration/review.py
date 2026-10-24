@@ -621,6 +621,16 @@ NEWSROOM_CHECKS = "data/newsroom-checks.json"
 NEWSROOM_SUBMISSION = "data/newsroom-submission.json"
 
 
+NOT_RUN = {"state": "not_run", "flags": []}
+
+
+def check_is_current(case: Path, record: object) -> bool:
+    """A check record counts only for the exact case files it ran on (the
+    sha256 the harness kept for each, null for an absent one)."""
+    inputs = record.get("inputs") if isinstance(record, dict) else None
+    return isinstance(inputs, dict) and bool(inputs) and all(_optional_hash(case, path) == digest for path, digest in inputs.items())
+
+
 def _newsroom_checks(case: Path, kind: str) -> dict[str, Any] | None:
     """The newsroom's decision-check flags for this page (newsroom edition):
     shown, never blocking. "Unavailable" is shown as such, never as no flags."""
@@ -628,10 +638,8 @@ def _newsroom_checks(case: Path, kind: str) -> dict[str, Any] | None:
         return None
     recorded = _read_case_json(case, NEWSROOM_CHECKS)
     record = (recorded.get("checks") or {}).get(kind) if isinstance(recorded, dict) else None
-    inputs = record.get("inputs") if isinstance(record, dict) else None
-    # Checks on another version of their inputs are not this version's checks.
-    if not isinstance(inputs, dict) or not inputs or any(_optional_hash(case, path) != digest for path, digest in inputs.items()):
-        return {"state": "not_run", "flags": []}
+    if not check_is_current(case, record):
+        return NOT_RUN
     flags = record.get("flags") if isinstance(record.get("flags"), list) else []
     return {
         "state": _text(record.get("state"), 40),

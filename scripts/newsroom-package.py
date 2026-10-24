@@ -265,7 +265,9 @@ def build(case: Path) -> dict[str, Any]:
         "passages": {**passages, "expressions": shipped},
         "source_positions": positions,
         "evidence_manifest": {"files": manifest, "omissions": omissions},
-        "decision_flags": (checks or {}).get("checks", {}),
+        # Checks on another version of their inputs travel as not run.
+        "decision_flags": {kind: record if review.check_is_current(case, record) else review.NOT_RUN
+                           for kind, record in ((checks or {}).get("checks") or {}).items()},
         "dispositions": reviews,
         "journalist_input_units": journalist_input_units(case),
     }

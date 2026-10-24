@@ -124,6 +124,20 @@ class NewsroomPackage(GATES.CaseFixture):
         built = self.build_package(case)
         self.assertNotIn("research/primary-record.txt", [f["path"] for f in built["files"]])
 
+    def test_a_check_on_an_older_version_of_its_inputs_travels_as_not_run(self) -> None:
+        case = self.case("stale-checks")
+        current = {path: hashlib.sha256((case / path).read_bytes()).hexdigest()
+                   for path in ("data/findings.json", "data/source-expressions.json", "data/fact-check.json")}
+        record = {"kind": "findings", "state": "done", "flags": [{"target": "finding:F1", "question": "q", "reason": "old"}],
+                  "input_sha256": "b" * 64, "checked_at": "x", "job_id": "job-1", "inputs": current}
+        checks = case / "data" / "newsroom-checks.json"
+        checks.write_text(json.dumps({"schema_version": "1.0", "checks": {"findings": record}}), encoding="utf-8")
+        self.assertEqual(self.build_package(case)["package"]["decision_flags"]["findings"], record)
+        # The findings were edited after the check ran.
+        record["inputs"] = {**current, "data/findings.json": "c" * 64}
+        checks.write_text(json.dumps({"schema_version": "1.0", "checks": {"findings": record}}), encoding="utf-8")
+        self.assertEqual(self.build_package(case)["package"]["decision_flags"]["findings"], {"state": "not_run", "flags": []})
+
     def test_a_cited_file_changed_after_it_was_declared_stops_the_build(self) -> None:
         case = self.case("changed")
         (case / "research" / "filing.txt").write_text("Someone edited the filing.\n", encoding="utf-8")
