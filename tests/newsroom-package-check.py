@@ -217,6 +217,25 @@ class NewsroomPackage(GATES.CaseFixture):
         refused = self.build_package(case, expect=2)
         self.assertIn("research/filing.bin no longer matches its declared sha256 (screenshot_path)", refused.stderr)
 
+    def test_a_recorded_original_that_is_missing_hands_the_hash_check_to_the_next_one(self) -> None:
+        case = self.case("missing-download")
+        bundle_path = case / "data" / "evidence-bundle.json"
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        bundle["items"][0]["downloaded_document_path"] = "research/never-downloaded.pdf"
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        self.build_package(case)
+        (case / "research" / "filing.bin").write_bytes(b"a different capture\n")
+        refused = self.build_package(case, expect=2)
+        self.assertIn("research/filing.bin no longer matches its declared sha256 (raw_path)", refused.stderr)
+
+    def test_an_install_config_present_but_malformed_refuses_instead_of_meaning_solo(self) -> None:
+        case = self.case("malformed-config")
+        for content, reason in (({"knowledge_destination": "newsroom"}, "knowledge_destination must be an object"),
+                                ({"knowledge_destination": {"mode": None}}, 'knowledge_destination.mode must be "solo" or "newsroom"'),
+                                ("{not json", "the install config cannot be read")):
+            self.config.write_text(content if isinstance(content, str) else json.dumps(content), encoding="utf-8")
+            self.assertIn(reason, self.build_package(case, expect=2).stderr, content)
+
     def test_a_screenshot_beside_a_raw_capture_is_checked_against_its_anchor_hash(self) -> None:
         case = self.case("anchored-screenshot")
         bundle_path = case / "data" / "evidence-bundle.json"

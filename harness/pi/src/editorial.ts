@@ -319,6 +319,7 @@ export class EditorialClient {
 			const malformed =
 				(tool === 'run_checks' &&
 					(!JOB_STATES.has(String(value.state)) ||
+						(value.input_sha256 !== undefined && !(typeof value.input_sha256 === 'string' && /^[a-f0-9]{64}$/.test(value.input_sha256))) ||
 						(value.flags !== undefined &&
 							!(Array.isArray(value.flags) && value.flags.every((flag) => isObject(flag) && nonEmpty(flag.target) && nonEmpty(flag.reason) && ['string', 'undefined'].includes(typeof flag.question)))))) ||
 				(tool === 'submit_case_review' && value.review_url !== undefined && typeof value.review_url !== 'string');

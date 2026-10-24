@@ -192,14 +192,24 @@ def spotlight_config_path() -> Path:
 
 def ingest_mode() -> str:
     """knowledge_destination.mode from the install config Engine writes:
-    "solo" (the default) or "newsroom"."""
+    "solo" or "newsroom". Only a missing config, destination or mode means
+    solo; one present but malformed refuses."""
     path = spotlight_config_path()  # a misconfigured path refuses; it is not a missing config
     try:
         config = json.loads(path.read_text(encoding="utf-8"))
-        mode = config.get("knowledge_destination", {}).get("mode", "solo")
-    except (OSError, ValueError, AttributeError):
+    except FileNotFoundError:
         return "solo"
-    return mode if mode in ("solo", "newsroom") else "solo"
+    except (OSError, ValueError) as exc:
+        raise OrchestrationError(f"the install config cannot be read: {exc}") from exc
+    if not isinstance(config, dict):
+        raise OrchestrationError("the install config is not a JSON object")
+    destination = config.get("knowledge_destination", {})
+    if not isinstance(destination, dict):
+        raise OrchestrationError("the install config's knowledge_destination must be an object")
+    mode = destination.get("mode", "solo")
+    if mode not in ("solo", "newsroom"):
+        raise OrchestrationError('knowledge_destination.mode must be "solo" or "newsroom"')
+    return mode
 
 
 def rebuild_ingest_batch(case: Path) -> None:

@@ -830,11 +830,15 @@ test('a revoked newsroom token stops the harness with a plain message and exit c
 	assert.ok(!chat.stderr().includes(editorial.token));
 	await assert.rejects(lockRecord(space), 'the case lock is released');
 
-	// At case start too: the harness does not start without a valid sign-in.
+	// At case start too: the harness does not start without a valid sign-in,
+	// and a start that does not happen discards nothing.
+	const unfinished = join(space.casesRoot, 'case-a', 'research', 'swarm', 'ownership-web');
+	await mkdir(unfinished, { recursive: true });
 	const restart = launch(t, env);
 	assert.equal((await restart.exited).code, 4);
 	assert.match(restart.stderr(), /cannot start: the newsroom sign-in is no longer valid/);
 	assert.deepEqual(restart.lines, []);
+	assert.deepEqual(await readdir(unfinished), [], 'the unfinished lane is still there');
 });
 
 test('an Editorial MCP that cannot be used stops the newsroom case with a plain message instead of letting the agents go on without it', { timeout: 90_000 }, async (t) => {

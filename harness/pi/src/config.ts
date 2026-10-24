@@ -291,6 +291,9 @@ export function readConfig(env: Env): HarnessConfig {
 	const modelTier = readModelTier(env);
 	const sensitive = sensitiveMode(env);
 	const editorial = edition === 'newsroom' ? editorialSetting(env, caseId, sensitive) : refuseEditorialInSolo(env);
+	// A route token goes into Pi; the Editorial token never does, under any name.
+	const twin = editorial && routes.find((route) => route.keyEnv && env[route.keyEnv]?.trim() === env[EDITORIAL_TOKEN_ENV]?.trim());
+	if (twin) throw new ConfigError(`${twin.keyEnv} holds the Editorial MCP token; a route needs its own token.`);
 	return {
 		edition,
 		casesRoot: resolve(casesRoot),
@@ -589,7 +592,12 @@ export function checkNewsroomInstall(config: HarnessConfig): void {
 			throw new ConfigError(`the install config (${config.spotlightConfig}) cannot be read: ${(error as Error).message}`);
 		}
 		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new ConfigError(`the install config (${config.spotlightConfig}) is not a JSON object.`);
-		mode = (parsed as { knowledge_destination?: { mode?: unknown } }).knowledge_destination?.mode ?? 'solo';
+		// Only a missing destination or mode means solo.
+		const destination = (parsed as { knowledge_destination?: unknown }).knowledge_destination;
+		if (destination !== undefined && (!destination || typeof destination !== 'object' || Array.isArray(destination))) {
+			throw new ConfigError(`the install config (${config.spotlightConfig}): knowledge_destination must be an object.`);
+		}
+		if (destination && 'mode' in destination) mode = destination.mode;
 		if (mode !== 'solo' && mode !== 'newsroom') throw new ConfigError(`the install config (${config.spotlightConfig}): knowledge_destination.mode must be "solo" or "newsroom".`);
 	}
 	if (mode === 'newsroom' && config.edition !== 'newsroom') {

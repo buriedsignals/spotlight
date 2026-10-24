@@ -379,7 +379,11 @@ function terminate(harness: Harness): void {
 	}, KILL_GRACE_MS).unref();
 }
 
+// Runs once the case may start (in the newsroom edition: signed in,
+// registered, any pending submission resolved).
 function start(harness: Harness): void {
+	const discarded = discardIncompleteLanes(harness.config.caseDir);
+	if (discarded.length > 0) harness.log(`discarded ${discarded.length} unfinished research lane(s); they will rerun`);
 	const launch = processLaunch(harness, ORCHESTRATOR);
 	mkdirSync(launch.cwd, { recursive: true, mode: 0o700 });
 	const orchestrator = spawn(launch.command, launch.args, {
@@ -462,8 +466,6 @@ function main(): void {
 		log(`cannot start: ${(error as Error).message}`);
 		process.exit(error instanceof CaseHeldError ? EXIT.held : EXIT.config);
 	}
-	const discarded = discardIncompleteLanes(config.caseDir);
-	if (discarded.length > 0) log(`discarded ${discarded.length} unfinished research lane(s); they will rerun`);
 	const harness: Harness = { config, active, composition, lock, log, redact, children: new Set(), editorial: editorialClient(config, process.env, secrets) };
 	if (!harness.editorial) {
 		// A case the newsroom holds (registered, or a submission recorded) is

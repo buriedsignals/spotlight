@@ -225,7 +225,7 @@ def build(case: Path) -> dict[str, Any]:
                     # downloaded document, else the raw capture, else (when it
                     # is the only artifact) the screenshot. A screenshot beside
                     # another original is a capture and is hashed as found.
-                    declared = original if _first_original(item) == key else None
+                    declared = original if _first_original(case, item) == key else None
                     cite(item[key], role, expression_id, finding_id, item.get("id"), key, declared)
             for derivative in item.get("text_derivatives", []) or []:
                 if isinstance(derivative, dict) and derivative.get("path"):
@@ -271,9 +271,11 @@ def build(case: Path) -> dict[str, Any]:
             "package_sha256": _sha(_canonical({"package": package, "file_sha256": [f["sha256"] for f in files]}))}
 
 
-def _first_original(item: dict[str, Any]) -> str | None:
+def _first_original(case: Path, item: dict[str, Any]) -> str | None:
+    """The first recorded original that resolves: one recorded but missing
+    hands the declared hash on to the next."""
     for key in DIRECT_PATHS_BY_PRECEDENCE:
-        if item.get(key):
+        if item.get(key) and _case_file(case, item[key])[1] is not None:
             return key
     return None
 
