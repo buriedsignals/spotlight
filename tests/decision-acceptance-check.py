@@ -129,10 +129,12 @@ def test_order_disagreement_has_no_effect() -> None:
 
 
 def test_heldout_needs_approved_targets_for_this_bank() -> None:
-    raises(lambda: acc.run(args("heldout", ["rules"])), acc.AcceptanceError, "proposed targets must not unlock the held-out half")
     targets = json.loads(acc.TARGETS.read_text(encoding="utf-8"))
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "targets.json"
+        path.write_text(json.dumps({**targets, "status": "proposed", "approved_by": None, "approved_at": None}))
+        raises(lambda: acc.run(args("heldout", ["rules"], path)), acc.AcceptanceError,
+               "proposed targets must not unlock the held-out half")
         path.write_text(json.dumps({**targets, "status": "approved", "approved_by": "maintainer", "bank_version": "0" * 64}))
         raises(lambda: acc.run(args("heldout", ["rules"], path)), acc.AcceptanceError,
                "targets approved for another bank version must not unlock the held-out half")
@@ -147,11 +149,48 @@ def test_heldout_needs_approved_targets_for_this_bank() -> None:
 def test_fixture_refuses_planted_clue_across_halves() -> None:
     fixture = json.loads(acc.COMPANY_A.read_text(encoding="utf-8"))
     broken = copy.deepcopy(fixture)
-    broken["planted_clues"][0]["lead_ids"].append("ca-h01")
+    broken["planted_clues"][0]["split"] = "heldout"  # a held-out clue on dev leads
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "broken.json"
         path.write_text(json.dumps(broken), encoding="utf-8")
         raises(lambda: acc.load_fixture(path), acc.AcceptanceError, "a planted clue must stay inside one half")
+
+
+def test_no_case_in_both_halves() -> None:
+    # A case split across dev and held-out leaks it from tuning into testing.
+    halves: dict[str, set[str]] = {}
+    for path in acc.fixture_paths([]):
+        fixture = json.loads(path.read_text(encoding="utf-8"))
+        halves.setdefault(fixture["case"]["case_id"], set()).update(i["split"] for i in fixture["items"])
+    claims = [{"id": n, "finding_id": f"F{n % 3}", "claim_text": f"Claim {n}.", "verdict": "verified" if n % 2 else "false",
+               "evidence_for": [], "sources": []} for n in range(12)]
+    for name in ("alpha", "beta", "gamma"):
+        case = builder.build_case(name, {"project": name, "claims": claims}, None, name)
+        halves.setdefault(case["alias"], set()).update(i["split"] for i in case["items"])
+    split = {case for case, seen in halves.items() if len(seen) > 1}
+    require(not split, f"no case may appear in both halves: {sorted(split)}")
+    require({"dev", "heldout"} <= set().union(*halves.values()), "the shipped and built cases must fill both halves")
+    mixed = json.loads(acc.COMPANY_A.read_text(encoding="utf-8"))
+    mixed["items"][0]["split"] = "heldout"
+    mixed["planted_clues"] = [c for c in mixed["planted_clues"] if mixed["items"][0]["item_id"] not in c["lead_ids"]]
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "mixed.json"
+        path.write_text(json.dumps(mixed), encoding="utf-8")
+        raises(lambda: acc.load_fixture(path), acc.AcceptanceError, "a fixture whose items span both halves must be refused")
+
+
+def test_no_identifier_in_both_halves() -> None:
+    # An entity, registry id, phone or source seen while tuning must not reappear in the held-out half.
+    fixtures = [acc.load_fixture(p) for p in acc.fixture_paths([])]
+    require(acc.shared_identifiers(fixtures) == [], f"shipped halves share identifiers: {acc.shared_identifiers(fixtures)}")
+    leaky = copy.deepcopy(fixtures)
+    dev = next(f for f in leaky if f["items"][0]["split"] == "dev")
+    held = next(f for f in leaky if f["items"][0]["split"] == "heldout")
+    held["items"][0]["lead"]["capture"]["source_url"] = dev["items"][0]["lead"]["capture"]["source_url"]
+    held["items"][1]["lead"]["excerpt"]["text"] += " Register no. CHE-123.456.789."
+    dev["items"][1]["lead"]["excerpt"]["text"] += " (che-123.456.789)"
+    found = {kind for kind, _value in acc.shared_identifiers(leaky)}
+    require(found == {"source", "registry"}, f"a shared source and registry id must be caught: {found}")
 
 
 def test_claim_becomes_lead() -> None:
@@ -164,7 +203,7 @@ def test_claim_becomes_lead() -> None:
          "evidence_for": [{"description": "A blog post says so without a source.", "source": "N/A"}],
          "sources": ["https://blog.example.test/post"]},
     ]}
-    case = builder.build_case("case", fact_check, {"lead": "Who funds Firm Y?"})
+    case = builder.build_case("case", fact_check, {"lead": "Who funds Firm Y?"}, "case")
     first, second = case["items"]
     lead = first["lead"]
     require(lead["excerpt"] == {"text": "Firm X transferred 3 million to Firm Y in 2024", "language": "en", "direct_quote": True},
@@ -179,6 +218,53 @@ def test_claim_becomes_lead() -> None:
     require(case["premise"] == "Who funds Firm Y?", "the methodology lead is the premise")
     raises(lambda: builder.build([], ROOT / "evals" / "private"), builder.BuildError,
            "the private fixture must never be written inside the checkout")
+
+
+def test_renamed_case_keeps_its_half() -> None:
+    # The half follows the source case folder, not the display name the case was built under.
+    with tempfile.TemporaryDirectory() as tmp:
+        source = Path(tmp) / "my-case" / "data" / "fact-check.json"
+        source.parent.mkdir(parents=True)
+        source.write_text(json.dumps({"project": "p", "claims": [{"id": 1, "claim_text": "A claim.", "verdict": "verified"}]}))
+        built = []
+        for name in ("first-name", "second-name"):  # these two aliases hash to different halves
+            report = builder.build([(name, source, None)], Path(tmp) / name)
+            built.append(json.loads(Path(report["fixtures"][0]).read_text())["case"])
+        require([c["case_key"] for c in built] == ["my-case", "my-case"], f"the case key is the case folder: {built}")
+        fixture = json.loads(Path(report["fixtures"][0]).read_text())
+        require({i["split"] for i in fixture["items"]} == {builder.case_split("my-case")}, "the half is the case key's")
+        del fixture["case"]["case_key"]
+        path = Path(tmp) / "no-key.json"
+        path.write_text(json.dumps(fixture))
+        raises(lambda: acc.load_fixture(path), acc.AcceptanceError, "a fixture without a case key must be refused")
+
+
+def test_resplit_keeps_every_input() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp)
+        source = folder / "src" / "case-c" / "fact-check.json"
+        source.parent.mkdir(parents=True)
+        source.write_text("{}")
+        paths = []
+        for n, key in enumerate(("case-a", "case-b", None)):
+            path = folder / f"in{n % 2}" / f"case-{n}.json"
+            path.parent.mkdir(exist_ok=True)
+            case = {"case_id": f"alias-{n}"} | ({"case_key": key} if key else {})
+            path.write_text(json.dumps({"case": case, "items": [{"item_id": f"i{n}", "split": "dev"}]}))
+            paths.append(path)
+        raises(lambda: builder.resplit([(p, None) for p in paths], folder / "out0"), builder.BuildError,
+               "a fixture without a case key needs its source")
+        require(not (folder / "out0").exists(), "a refused resplit writes nothing")
+        halves = builder.resplit([(paths[0], None), (paths[1], None), (paths[2], source)], folder / "out")
+        written = {json.loads(p.read_text())["case"]["case_key"] for p in (folder / "out").iterdir()}
+        require(written == set(halves) == {"case-a", "case-b", "case-c"}, f"every input is written, keyed: {written}")
+        clash = folder / "in1" / "case-0.json"
+        clash.write_text(paths[0].read_text().replace("case-a", "case-d"))
+        raises(lambda: builder.resplit([(paths[0], None), (clash, None)], folder / "out2"), builder.BuildError,
+               "two inputs with one output name must be refused, not overwritten")
+        require(not (folder / "out2").exists(), "a refused resplit writes nothing")
+        raises(lambda: builder.resplit([(paths[0], None)], folder / "out"), builder.BuildError,
+               "an existing output file must be refused, not overwritten")
 
 
 def test_labels_merge_only_on_agreement() -> None:

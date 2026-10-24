@@ -24,7 +24,11 @@ what the model would set aside once allowed to. Production stays flag-only
 until ``integrations/decisions/research-acceptance.json`` exists for the bank
 version, and only ``--write-acceptance`` after a passing held-out run writes it.
 
-Fixtures: ``company-a.json`` (synthetic, in the repo) and every path in
+A whole case is in one half: every item's split must be its case's
+``case_split`` (build_claims_fixture.py), a salted hash of the case key.
+
+Fixtures: ``company-a.json`` (dev) and ``company-b.json`` (held-out), both
+synthetic and in the repo, and every path in
 ``--fixture`` or ``$SPOTLIGHT_ACCEPTANCE_FIXTURES`` (os.pathsep-separated),
 which is where the private fixture built from fact-checked claims lives. Item
 detail of a non-synthetic fixture is written only with ``--private-detail``,
@@ -44,6 +48,7 @@ import importlib.util
 import json
 import math
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -73,9 +78,11 @@ def _load(name: str, path: Path):
 
 triage = _load("spotlight_research_triage", ROOT / "scripts" / "research-triage.py")
 merge = _load("spotlight_research_merge", ROOT / "scripts" / "research-merge.py")
+builder = _load("spotlight_build_claims_fixture", HERE / "build_claims_fixture.py")
 
 FIXTURE_SCHEMA = HERE / "fixture.schema.json"
 COMPANY_A = HERE / "company-a.json"
+COMPANY_B = HERE / "company-b.json"
 TARGETS = HERE / "targets.json"
 FIXTURES_ENV = "SPOTLIGHT_ACCEPTANCE_FIXTURES"
 CONTENDERS = ("rules", "jev", "clef", "clef-flash", "local")
@@ -112,7 +119,10 @@ def load_fixture(path: Path) -> dict[str, Any]:
     fixture = json.loads(path.read_text(encoding="utf-8"))
     problems = schema_check.load(FIXTURE_SCHEMA).errors(fixture)
     ids: dict[str, str] = {}
+    half = builder.case_split(fixture["case"]["case_key"]) if not problems else None
     for item in fixture.get("items", []) if not problems else []:
+        if item["split"] != half:
+            problems.append(f"{item['item_id']}: the whole case is {half}, by its case key")
         problems += [f"{item['item_id']}: {e}" for e in triage.schema_errors(triage.LEAD_SCHEMA, item["lead"])[:2]]
         if item["lead"].get("lead_id") != item["item_id"]:
             problems.append(f"{item['item_id']}: item_id must equal the lead's lead_id")
@@ -128,8 +138,38 @@ def load_fixture(path: Path) -> dict[str, Any]:
     return fixture
 
 
+REGISTRY_ID = re.compile(r"\b[a-z]{3}-\d{3}\.\d{3}\.\d{3}\b", re.IGNORECASE)
+PHONE = re.compile(r"\+\d[\d ]{6,}\d")
+EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
+
+
+def _identifiers(fixture: Mapping[str, Any]) -> set[tuple[str, str]]:
+    """Stable entity and source identifiers in a fixture's leads: what a tuned model could memorise."""
+    found: set[tuple[str, str]] = set()
+    for item in fixture["items"]:
+        lead = item["lead"]
+        if lead.get("capture", {}).get("source_url"):
+            found.add(("source", lead["capture"]["source_url"].rstrip("/").lower()))
+        found |= {("entity", " ".join(str(s).lower().split())) for s in lead.get("subjects") or []}
+        found |= {(merge.IDENTIFIER_KINDS[f["attribute"]], " ".join(str(f["value"]).lower().split()))
+                  for f in lead.get("facts") or [] if f.get("attribute") in merge.IDENTIFIER_KINDS}
+        text = json.dumps(lead, ensure_ascii=False)
+        found |= {("registry", m.upper()) for m in REGISTRY_ID.findall(text)}
+        found |= {("phone", re.sub(r"\D", "", m)) for m in PHONE.findall(text)}
+        found |= {("email", m.lower()) for m in EMAIL.findall(text)}
+    return found
+
+
+def shared_identifiers(fixtures: Iterable[Mapping[str, Any]]) -> list[tuple[str, str]]:
+    """Identifiers that appear in both halves; any one leaks a tuned-on case into the held-out test."""
+    halves: dict[str, set[tuple[str, str]]] = {"dev": set(), "heldout": set()}
+    for fixture in fixtures:
+        halves[fixture["items"][0]["split"]] |= _identifiers(fixture)
+    return sorted(halves["dev"] & halves["heldout"])
+
+
 def fixture_paths(extra: Iterable[str]) -> list[Path]:
-    paths = [COMPANY_A]
+    paths = [COMPANY_A, COMPANY_B]
     env = os.environ.get(FIXTURES_ENV, "")
     for raw in [*extra, *[p for p in env.split(os.pathsep) if p]]:
         path = Path(raw).expanduser().resolve()
@@ -570,7 +610,12 @@ def run(args: argparse.Namespace, provider_factory: Callable[[str], tuple[Any | 
     targets = load_targets(targets_path)
     if args.split == "heldout":
         require_heldout_allowed(targets)
-    fixtures = [load_fixture(p) for p in fixture_paths(args.fixture or [])]
+    loaded = [load_fixture(p) for p in fixture_paths(args.fixture or [])]
+    shared = shared_identifiers(loaded)
+    if shared:
+        raise AcceptanceError(f"dev and held-out share identifiers, so a case leaks across halves: {shared[:5]}")
+    # A whole case is in one half, so only the cases in this half run.
+    fixtures = [f for f in loaded if f["items"][0]["split"] == args.split]
     acceptance = trial_acceptance(targets)
     results = []
     for contender in args.contender:
