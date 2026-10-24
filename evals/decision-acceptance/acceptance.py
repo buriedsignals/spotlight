@@ -48,6 +48,7 @@ import importlib.util
 import json
 import math
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -135,6 +136,36 @@ def load_fixture(path: Path) -> dict[str, Any]:
     if problems:
         raise AcceptanceError(f"{path.name} is not an acceptance fixture: {problems[:5]}")
     return fixture
+
+
+REGISTRY_ID = re.compile(r"\b[a-z]{3}-\d{3}\.\d{3}\.\d{3}\b", re.IGNORECASE)
+PHONE = re.compile(r"\+\d[\d ]{6,}\d")
+EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
+
+
+def _identifiers(fixture: Mapping[str, Any]) -> set[tuple[str, str]]:
+    """Stable entity and source identifiers in a fixture's leads: what a tuned model could memorise."""
+    found: set[tuple[str, str]] = set()
+    for item in fixture["items"]:
+        lead = item["lead"]
+        if lead.get("capture", {}).get("source_url"):
+            found.add(("source", lead["capture"]["source_url"].rstrip("/").lower()))
+        found |= {("entity", " ".join(str(s).lower().split())) for s in lead.get("subjects") or []}
+        found |= {(merge.IDENTIFIER_KINDS[f["attribute"]], " ".join(str(f["value"]).lower().split()))
+                  for f in lead.get("facts") or [] if f.get("attribute") in merge.IDENTIFIER_KINDS}
+        text = json.dumps(lead, ensure_ascii=False)
+        found |= {("registry", m.upper()) for m in REGISTRY_ID.findall(text)}
+        found |= {("phone", re.sub(r"\D", "", m)) for m in PHONE.findall(text)}
+        found |= {("email", m.lower()) for m in EMAIL.findall(text)}
+    return found
+
+
+def shared_identifiers(fixtures: Iterable[Mapping[str, Any]]) -> list[tuple[str, str]]:
+    """Identifiers that appear in both halves; any one leaks a tuned-on case into the held-out test."""
+    halves: dict[str, set[tuple[str, str]]] = {"dev": set(), "heldout": set()}
+    for fixture in fixtures:
+        halves[fixture["items"][0]["split"]] |= _identifiers(fixture)
+    return sorted(halves["dev"] & halves["heldout"])
 
 
 def fixture_paths(extra: Iterable[str]) -> list[Path]:
@@ -579,9 +610,12 @@ def run(args: argparse.Namespace, provider_factory: Callable[[str], tuple[Any | 
     targets = load_targets(targets_path)
     if args.split == "heldout":
         require_heldout_allowed(targets)
+    loaded = [load_fixture(p) for p in fixture_paths(args.fixture or [])]
+    shared = shared_identifiers(loaded)
+    if shared:
+        raise AcceptanceError(f"dev and held-out share identifiers, so a case leaks across halves: {shared[:5]}")
     # A whole case is in one half, so only the cases in this half run.
-    fixtures = [f for f in (load_fixture(p) for p in fixture_paths(args.fixture or []))
-                if f["items"][0]["split"] == args.split]
+    fixtures = [f for f in loaded if f["items"][0]["split"] == args.split]
     acceptance = trial_acceptance(targets)
     results = []
     for contender in args.contender:

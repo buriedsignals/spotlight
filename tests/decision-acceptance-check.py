@@ -179,6 +179,20 @@ def test_no_case_in_both_halves() -> None:
         raises(lambda: acc.load_fixture(path), acc.AcceptanceError, "a fixture whose items span both halves must be refused")
 
 
+def test_no_identifier_in_both_halves() -> None:
+    # An entity, registry id, phone or source seen while tuning must not reappear in the held-out half.
+    fixtures = [acc.load_fixture(p) for p in acc.fixture_paths([])]
+    require(acc.shared_identifiers(fixtures) == [], f"shipped halves share identifiers: {acc.shared_identifiers(fixtures)}")
+    leaky = copy.deepcopy(fixtures)
+    dev = next(f for f in leaky if f["items"][0]["split"] == "dev")
+    held = next(f for f in leaky if f["items"][0]["split"] == "heldout")
+    held["items"][0]["lead"]["capture"]["source_url"] = dev["items"][0]["lead"]["capture"]["source_url"]
+    held["items"][1]["lead"]["excerpt"]["text"] += " Register no. CHE-123.456.789."
+    dev["items"][1]["lead"]["excerpt"]["text"] += " (che-123.456.789)"
+    found = {kind for kind, _value in acc.shared_identifiers(leaky)}
+    require(found == {"source", "registry"}, f"a shared source and registry id must be caught: {found}")
+
+
 def test_claim_becomes_lead() -> None:
     fact_check = {"project": "case", "claims": [
         {"id": 1, "finding_id": "F2-C1", "claim_text": "Firm X paid 3 million to Firm Y.", "verdict": "verified",
@@ -204,6 +218,26 @@ def test_claim_becomes_lead() -> None:
     require(case["premise"] == "Who funds Firm Y?", "the methodology lead is the premise")
     raises(lambda: builder.build([], ROOT / "evals" / "private"), builder.BuildError,
            "the private fixture must never be written inside the checkout")
+
+
+def test_resplit_keeps_every_input() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp)
+        paths = []
+        for n, case_id in enumerate(("case-aaaaaa", "case-bbbbbb", "case-cccccc")):
+            path = folder / f"in{n % 2}" / f"case-{n}.json"
+            path.parent.mkdir(exist_ok=True)
+            path.write_text(json.dumps({"case": {"case_id": case_id}, "items": [{"item_id": case_id, "split": "dev"}]}))
+            paths.append(path)
+        out = folder / "out"
+        halves = builder.resplit(paths, out)
+        written = {json.loads(p.read_text())["case"]["case_id"] for p in out.iterdir()}
+        require(written == set(halves) == {"case-aaaaaa", "case-bbbbbb", "case-cccccc"}, f"every input is written: {written}")
+        clash = folder / "in1" / "case-0.json"
+        clash.write_text((folder / "in0" / "case-0.json").read_text().replace("case-aaaaaa", "case-dddddd"))
+        raises(lambda: builder.resplit([paths[0], clash], folder / "out2"), builder.BuildError,
+               "two inputs with one output name must be refused, not overwritten")
+        require(not (folder / "out2").exists(), "a refused resplit writes nothing")
 
 
 def test_labels_merge_only_on_agreement() -> None:

@@ -30,6 +30,9 @@ item's `split` must be its case's, a salted hash of the `case_id`
 (`case_split` in `build_claims_fixture.py`), or the fixture is refused. A case
 tuned on is never tested on. Company A hashes to dev and Company B to held-out,
 so clue recall, C2 and C3 are measured in both halves on different cases.
+A run is refused when the two halves share a stable identifier: an entity
+(lead subject), a source URL, a registry id, phone, email, address, director or
+agent.
 
 - `keep`: `true` means setting the lead aside loses it (a **lost lead**, the
   costliest error; a lead kept as circumstantial is not lost and is counted
@@ -95,7 +98,7 @@ replace later.
 
 A fixture built before the whole-case split (items of one case in both halves)
 is refused. `resplit` copies it with every item in its case's half, labels
-untouched:
+untouched (inputs must have distinct file names):
 
 ```bash
 python3 evals/decision-acceptance/build_claims_fixture.py resplit \

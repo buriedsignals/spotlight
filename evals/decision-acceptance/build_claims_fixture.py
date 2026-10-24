@@ -176,6 +176,9 @@ def build(cases: list[tuple[str, Path, Path | None]], out: Path) -> dict[str, An
 def resplit(fixture_paths: list[Path], out: Path) -> dict[str, str]:
     """Copy fixtures to ``out`` with every item in its case's half (fixtures built before case_split)."""
     out = outside_checkout(out)
+    names = [path.name for path in fixture_paths]
+    if len(set(names)) != len(names):
+        raise BuildError(f"two inputs would be written to one output name: {sorted({n for n in names if names.count(n) > 1})}")
     out.mkdir(parents=True, exist_ok=True)
     halves = {}
     for path in fixture_paths:
