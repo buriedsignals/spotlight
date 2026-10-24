@@ -89,14 +89,14 @@ export function spawnRefusal(spec: AgentSpec, role: string, phase: string, editi
 
 // D9: the fact-checker verifies findings independently of the research that
 // led to them. A task that points it at the research leads, the clues, the
-// lane folders or a review page is refused before any process starts.
-const FACT_CHECKER_FORBIDDEN: Array<[RegExp, string]> = [
-	[/\bresearch\/swarm\b/i, 'research/swarm/'],
-	[/\bleads\.jsonl?\b/i, 'the research leads'],
-	[/\bclues\.json\b/i, 'the research clues'],
-	[/\bresearch-(?:triage|review|suggestions)\.json\b/i, 'the research triage or review'],
-	[/(?<![\w.-])(?:https?:\/\/)?(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?(?![\w.-])/i, 'a review page'],
-];
+// lane folders or a review page is refused before any process starts. The
+// patterns live in harness/fact-checker-isolation.json, which case search
+// (integrations/case_search.py) reads too, so a passage cannot name them either.
+const FACT_CHECKER_FORBIDDEN: Array<[RegExp, string]> = (
+	JSON.parse(readFileSync(resolve(CHECKOUT_ROOT, 'harness/fact-checker-isolation.json'), 'utf8')) as {
+		taskNaming: Array<{ pattern: string; label: string }>;
+	}
+).taskNaming.map(({ pattern, label }) => [new RegExp(pattern, 'i'), label]);
 
 export function isolationRefusal(role: string, task: string): string | undefined {
 	if (role !== 'fact-checker') return undefined;

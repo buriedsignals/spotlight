@@ -1,7 +1,7 @@
 // Shared fixtures: real offline cases built by the Python fixture builder and a
 // real review server talking to the real orchestration seam.
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CHECKOUT_ROOT, createCaseBridge, which } from "../case-bridge.mjs";
@@ -31,8 +31,9 @@ export function seamStatus(caseDir) {
   return JSON.parse(out);
 }
 
-export async function startFor(t, caseDir, options = {}) {
-  const server = await startReviewServer({ bridge: createCaseBridge({ caseDir }), ...options });
+export async function startFor(t, caseDir, { bridgeEnv, ...options } = {}) {
+  const bridge = createCaseBridge(bridgeEnv ? { caseDir, env: bridgeEnv } : { caseDir });
+  const server = await startReviewServer({ bridge, ...options });
   t.after(async () => {
     server.close("closed");
     await server.closed;
@@ -78,4 +79,20 @@ export function recordingOpener(root) {
   writeFileSync(script, `#!/bin/sh\nprintf '%s\\n' "$1" >> '${record}'\n`);
   chmodSync(script, 0o755);
   return { script, record };
+}
+
+// The shared stand-in Engine `bsig` for case search
+// (tests/fixtures/case_search_bsig.py): it answers `wiki case-search` with the
+// NDJSON result contract, or refuses as Engine does while its switch is off.
+// Other scenario keys (args_log, mode, slow_s, pid_log) pass through.
+export function standInBsig(root, { off = false, ...scenario } = {}) {
+  const script = join(root, off ? "bsig-off" : "bsig");
+  copyFileSync(join(CHECKOUT_ROOT, "tests", "fixtures", "case_search_bsig.py"), script);
+  chmodSync(script, 0o755);
+  writeFileSync(`${script}.json`, JSON.stringify({
+    mode: off ? "off" : "ok",
+    passages: [{ path: "research/registry.md", chunk: 0, text: "<img src=x onerror=alert(1)> Registry entry on {claim}", score: 12.5 }],
+    ...scenario,
+  }));
+  return script;
 }

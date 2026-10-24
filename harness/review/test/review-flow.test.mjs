@@ -1,11 +1,11 @@
 // Page edits and decisions through the real server and orchestration seam.
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createCaseBridge } from "../case-bridge.mjs";
-import { authed, buildCase, seamStatus, tempRoot } from "./helpers.mjs";
+import { authed, buildCase, seamStatus, standInBsig, tempRoot } from "./helpers.mjs";
 
 const HOSTILE = '</script><script type="module">fetch("/api/decide",{method:"POST"})</script>';
 
@@ -188,6 +188,114 @@ test("the Report page shows each finding's fact-check verdict and confidence", a
     { id: unknown.finding_id, verdict: unknown.verdict, confidence: unknown.confidence, verified: unknown.verified },
     { id: "F9", verdict: "not checked", confidence: "", verified: false },
   );
+});
+
+test("the gate page gets case-search passages next to each claim, outside the digest; with Engine's switch off only a quiet note", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "investigation_gate");
+  mkdirSync(join(caseDir, "research"), { recursive: true });
+  writeFileSync(join(caseDir, "research", "registry.md"), "Registry entry");
+  const { json } = await authed(t, caseDir, { bridgeEnv: { ...process.env, SPOTLIGHT_BSIG: standInBsig(root) } });
+  const before = (await json("/api/view")).body;
+  const { status, body } = await json("/api/passages");
+  assert.equal(status, 200);
+  assert.equal(body.available, true);
+  assert.deepEqual(body.claims.map((claim) => claim.target), before.content.findings.map((finding) => `finding:${finding.id}`));
+  assert.deepEqual(body.claims[0].passages, [
+    { path: "research/registry.md", text: `<img src=x onerror=alert(1)> Registry entry on ${before.content.findings[0].claim}`, score: 12.5 },
+  ]);
+  assert.equal(body.digest, before.digest, "the passages name the record they were searched for");
+  assert.equal((await json("/api/view")).body.digest, before.digest);
+
+  const off = await authed(t, caseDir, { bridgeEnv: { ...process.env, SPOTLIGHT_BSIG: standInBsig(root, { off: true }) } });
+  const quiet = await off.json("/api/passages");
+  assert.equal(quiet.status, 200);
+  assert.deepEqual([quiet.body.available, quiet.body.claims], [false, []]);
+  assert.equal(quiet.body.note, "case search unavailable: Engine's case search is switched off");
+});
+
+test("passages searched for claims that changed during the search are not shown as the new record's", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "investigation_gate");
+  const real = createCaseBridge({ caseDir, env: { ...process.env, SPOTLIGHT_BSIG: standInBsig(root) } });
+  const findingsPath = join(caseDir, "data", "findings.json");
+  const bridge = {
+    ...real,
+    async passages(gate, signal) {
+      const result = await real.passages(gate, signal);
+      const findings = JSON.parse(readFileSync(findingsPath, "utf8"));
+      findings.findings[0].claim = `${findings.findings[0].claim} (revised)`;
+      writeFileSync(findingsPath, JSON.stringify(findings));
+      return result;
+    },
+  };
+  const { json } = await authed(t, caseDir, { bridge });
+  const { body } = await json("/api/passages");
+  assert.deepEqual([body.available, body.claims], [false, []]);
+});
+
+test("a failing case search shows a distinct failure, not \"unavailable\", and never its error text", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "investigation_gate");
+  const real = createCaseBridge({ caseDir });
+  const bridge = { ...real, passages: async () => { throw new Error("seam crashed at /private/secret"); } };
+  const { json } = await authed(t, caseDir, { bridge });
+  const { status, body } = await json("/api/passages");
+  assert.equal(status, 200);
+  assert.deepEqual([body.available, body.failed, body.note, body.claims], [false, true, "case search failed", []]);
+  assert.doesNotMatch(JSON.stringify(body), /seam crashed|secret/);
+});
+
+test("passages requests share one case search per record; a changed record or closing the review stops a running one", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "investigation_gate");
+  const argsLog = join(root, "bsig-args.jsonl");
+  const { json } = await authed(t, caseDir, { bridgeEnv: { ...process.env, SPOTLIGHT_BSIG: standInBsig(root, { args_log: argsLog }) } });
+  const claims = (await json("/api/view")).body.content.findings.length;
+  const [first, second] = await Promise.all([json("/api/passages"), json("/api/passages")]);
+  const third = await json("/api/passages");
+  assert.equal(first.body.available, true);
+  assert.deepEqual([second.body, third.body], [first.body, first.body]);
+  assert.equal(readFileSync(argsLog, "utf8").trim().split("\n").length, claims, "one Engine call per claim, once");
+
+  const pidLog = join(root, "bsig-pids.jsonl");
+  const slow = await authed(t, caseDir, { bridgeEnv: { ...process.env, SPOTLIGHT_BSIG: standInBsig(root, { mode: "slow", slow_s: 60, pid_log: pidLog }) } });
+  const started = async (count) => {
+    let pids = [];
+    for (let i = 0; i < 200 && pids.length < count; i += 1) {
+      await new Promise((settle) => setTimeout(settle, 50));
+      pids = existsSync(pidLog) ? readFileSync(pidLog, "utf8").trim().split("\n").map((line) => JSON.parse(line)).filter((row) => row.start).map((row) => row.pid) : [];
+    }
+    assert.ok(pids.length >= count, "the stand-in Engine started");
+    return pids[count - 1];
+  };
+  const alive = (pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const stopped = async (pid) => {
+    for (let i = 0; i < 100 && alive(pid); i += 1) await new Promise((settle) => setTimeout(settle, 50));
+    return !alive(pid);
+  };
+  const superseded = slow.json("/api/passages");
+  const firstPid = await started(1);
+  const findingsPath = join(caseDir, "data", "findings.json");
+  const findings = JSON.parse(readFileSync(findingsPath, "utf8"));
+  findings.findings[0].claim = `${findings.findings[0].claim} (revised)`;
+  writeFileSync(findingsPath, JSON.stringify(findings));
+  const pending = slow.json("/api/passages");
+  await started(2);
+  assert.equal(await stopped(firstPid), true, "a changed record stops the superseded search");
+  assert.equal((await superseded).body.available, false);
+  slow.server.close("closed");
+  assert.equal((await pending).body.available, false);
+  await slow.server.closed;
+  const secondPid = await started(2);
+  assert.equal(await stopped(secondPid), true, "the running Engine search was stopped");
 });
 
 test("a page nonce that starts with a dash is redeemed", async (t) => {
