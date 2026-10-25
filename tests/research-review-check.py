@@ -23,6 +23,34 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import research_checks  # noqa: E402
 
+sys.path.insert(0, str(ROOT / "tests"))
+from research_lane_fixture import Case, methodology, topic  # noqa: E402
+from spotlight_orchestration import review  # noqa: E402
+
+
+class MethodologyPage(unittest.TestCase):
+    """Approving the methodology approves its research plan, so the page shows it."""
+
+    def test_the_methodology_page_shows_topics_budgets_egress_and_consent(self) -> None:
+        method = methodology(topic("ownership-registries", "ownership", "registries", token_budget=150000))
+        plan = method["research_plan"]
+        plan["egress"][0]["hosts"] = ["find-and-update.company-information.service.gov.uk"]
+        plan["keys"] = [{"name": "FIRECRAWL_API_KEY", "topics": ["ownership-registries"]}]
+        with tempfile.TemporaryDirectory() as tmp:
+            case = Case(Path(tmp).resolve() / "case", method)
+            (case.root / "brief-directions.txt").write_text("Who owns Northwind Holdings?\n", encoding="utf-8")
+            shown = review.build_view(case.root, "methodology")["content"]["research_plan"]
+        self.assertEqual((shown["mode"], shown["round_budget_usd"], shown["case_budget_usd"]), ("openrouter_swarm", 1, 5))
+        self.assertEqual(shown["consent"], {"swarm": True, "journalist_input": False,
+                                            "decided_by": "journalist:fixture", "decided_at": "2026-10-23T09:00:00Z"})
+        [brief] = shown["topics"]
+        self.assertEqual(brief["topic_id"], "ownership-registries")
+        self.assertEqual(brief["token_budget"], 150000)
+        self.assertEqual(brief["questions"], ["What do registries show about ownership?"])
+        self.assertEqual(brief["egress"], [{"destination": "openrouter",
+                                            "hosts": ["find-and-update.company-information.service.gov.uk"]}])
+        self.assertEqual(brief["keys"], ["FIRECRAWL_API_KEY"])
+
 
 class ResearchPage(unittest.TestCase):
     def setUp(self) -> None:

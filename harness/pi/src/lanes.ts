@@ -48,6 +48,11 @@ const DEFAULT_TOKEN_BUDGET = 200_000;
 const MAX_TURNS = 40;
 const MAX_TOOL_CALLS = 60;
 const MAX_TOKENS_PER_ANSWER = 4096;
+// The lane's last turn offers only the lead tools, so what it found is
+// recorded before the budget stops it. It starts when another full turn
+// would leave no room for it, or this many tool calls before the cap.
+const FINAL_TURN_CALLS = 10;
+const FINAL_TURN_NOTE = 'Your budget is almost spent and this is your last turn. Record every lead you have now with record_lead or record_absence; search and fetch are no longer available.';
 const RETRIES = 3;
 const REQUEST_TIMEOUT_MS = 180_000;
 // Only when an endpoint reports no cost: a deliberately high price per token,
@@ -369,8 +374,9 @@ async function chat(
 }
 
 // The last check before a request leaves for the swarm: the system prompt and
-// the approved brief, then only the lane's own turns and what its web tools
-// returned. Anything else is refused and nothing is sent.
+// the approved brief, then only the lane's own turns, what its web tools
+// returned and the harness's fixed last-turn note. Anything else is refused
+// and nothing is sent.
 function assertSwarmPayload(messages: Message[], system: string, brief: string, produced: WeakSet<Message>, tools: string[]): void {
 	const ok =
 		messages[0]?.role === 'system' && messages[0].content === system &&
@@ -851,29 +857,49 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 	const laneTools = run.knowledge ? laneType.tools.map((name) => (name === 'query_vault' ? 'search_knowledge' : name)) : laneType.tools;
 	const toolNames = [...laneTools, ...LEAD_TOOLS, ...(methods.length > 0 ? [METHOD_TOOL] : [])];
 	const tools = toolNames.map((name) => (name === METHOD_TOOL ? methodInputSpec(methods) : TOOL_SPECS[name]));
+	const finalToolNames = toolNames.filter((name) => LEAD_TOOLS.includes(name));
+	const finalTools = finalToolNames.map((name) => TOOL_SPECS[name]);
 	const produced = new WeakSet<Message>();
 	const messages: Message[] = [{ role: 'system', content: job.system }, { role: 'user', content: brief }];
+	const stopSpent = (): LaneOutcome => {
+		writeLane('partial', { code: 'budget_spent', message: 'the lane reached its token, turn or tool-call budget; what it recorded is kept' });
+		return { status: 'partial', usd: spend.usd };
+	};
+	let finalTurn = false;
+	// Each request re-sends the whole conversation, so the next turn costs at
+	// least what the last one did.
+	let lastTurnTokens = 0;
 	try {
 		for (let turn = 0; ; turn += 1) {
-			if (spend.tokens >= tokenBudget || turn >= MAX_TURNS || toolCalls >= MAX_TOOL_CALLS) {
-				writeLane('partial', { code: 'budget_spent', message: 'the lane reached its token, turn or tool-call budget; what it recorded is kept' });
-				return { status: 'partial', usd: spend.usd };
+			if (finalTurn || spend.tokens >= tokenBudget || turn >= MAX_TURNS || toolCalls >= MAX_TOOL_CALLS) return stopSpent();
+			finalTurn = spend.tokens + 2 * lastTurnTokens >= tokenBudget || turn + 1 >= MAX_TURNS || toolCalls + FINAL_TURN_CALLS >= MAX_TOOL_CALLS;
+			if (finalTurn) {
+				// A fixed harness note, not case data: the swarm guard admits it as the harness's own.
+				const note: Message = { role: 'user', content: FINAL_TURN_NOTE };
+				produced.add(note);
+				messages.push(note);
 			}
-			if (endpoint.route === 'swarm') assertSwarmPayload(messages, job.system, brief, produced, toolNames);
-			const answer = await chat(endpoint, messages, tools, job.signal, job.retryDelayMs);
+			const offered = finalTurn ? finalToolNames : toolNames;
+			if (endpoint.route === 'swarm') assertSwarmPayload(messages, job.system, brief, produced, offered);
+			const answer = await chat(endpoint, messages, finalTurn ? finalTools : tools, job.signal, job.retryDelayMs);
 			spend.usd += answer.usd;
 			spend.tokens += answer.tokens;
+			lastTurnTokens = answer.tokens;
 			run.model = answer.model;
 			job.onSpend(answer.usd);
 			produced.add(answer.message);
 			messages.push(answer.message);
 			const calls = answer.message.tool_calls ?? [];
-			if (calls.length === 0) break;
+			if (calls.length === 0) {
+				if (finalTurn) return stopSpent();
+				break;
+			}
 			for (const call of calls) {
+				if (finalTurn && toolCalls >= MAX_TOOL_CALLS) break;
 				toolCalls += 1;
 				let content: string;
 				try {
-					if (!toolNames.includes(call.function.name)) throw new Error(`${call.function.name} is not a tool of this lane`);
+					if (!offered.includes(call.function.name)) throw new Error(`${call.function.name} is not a tool of this lane`);
 					const args = JSON.parse(call.function.arguments || '{}') as Record<string, unknown>;
 					content = await runTool(run, call.function.name, args);
 				} catch (error) {

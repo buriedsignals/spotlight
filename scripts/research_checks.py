@@ -42,6 +42,7 @@ import schema_check  # noqa: E402
 SWARM = Path("research") / "swarm"
 LANE_FILE, LEADS_FILE, SOURCES = "lane.json", "leads.jsonl", "sources"
 LEAD_SCHEMA = ROOT / "schemas" / "research-lead.schema.json"
+METHODOLOGY_SCHEMA = ROOT / "schemas" / "methodology.schema.json"
 LANE_SCHEMA = ROOT / "schemas" / "research-lane.schema.json"
 LANE_CATALOGUE = ROOT / "lanes"
 AD_HOC, LOCAL_CORPUS = "ad-hoc", "local-corpus"
@@ -93,8 +94,11 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
     plan = research_plan(methodology)
     if plan is None:
         return []
-    problems: list[str] = []
     p = "research_plan"
+    # The schema first: the lane runner refuses what it does not allow
+    # (an unknown egress destination, consent without swarm, an extra topic field).
+    checker = schema_check.load(METHODOLOGY_SCHEMA)
+    problems = checker.errors(plan, checker.root["properties"][p], p)
     round_budget, case_budget = plan.get("round_budget_usd"), plan.get("case_budget_usd")
     for name, value in (("round_budget_usd", round_budget), ("case_budget_usd", case_budget)):
         if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
@@ -144,7 +148,8 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
         methods += len(topic.get("anomaly_methods") or [])
         own_egress = [e for e in egress if e.get("topic_id") == topic_id]
         if not own_egress:
-            problems.append(f"{where}: egress is not listed")
+            problems.append(f"{where}: egress is not listed; add a {p}.egress entry "
+                            f"{{\"topic_id\": \"{topic_id}\", \"destination\": ...}}")
         own_keys = [k.get("name") for k in keys if topic_id in (k.get("topics") or [])]
         if lane_type == AD_HOC and own_keys:
             problems.append(f"{where}: an ad-hoc topic gets no keys")

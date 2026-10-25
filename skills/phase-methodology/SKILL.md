@@ -223,6 +223,9 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    correct the plan with the investigator's METHODOLOGY CORRECTION re-spawn
    above, with the failed checks as its validator errors:
 
+   - The plan matches `schemas/methodology.schema.json`: only the listed
+     fields, egress destinations from its list, and a consent record with
+     `swarm`, `decided_by` and `decided_at`.
    - The round budget is set, no higher than the case budget, and the case
      budget is at most $5; every topic has its own token budget, so one topic
      cannot take the round.

@@ -73,6 +73,10 @@ class D1LanePlan(unittest.TestCase):
             p["topics"][0]["anomaly_methods"] = [f"method:m{i}@1.0" for i in range(6)]
             p["topics"][1]["anomaly_methods"] = [f"method:n{i}@1.0" for i in range(5)]
         def unknown_egress_topic(p): p["egress"].append({"topic_id": "ghost-web", "destination": "public_web"})
+        # Plans the lane runner refuses or leaves out must fail here, against the schema.
+        def unknown_destination(p): p["egress"][0]["destination"] = "openrouter_swarm"
+        def consent_without_swarm(p): p["consent"].pop("swarm")
+        def extra_topic_field(p): p["topics"][0]["direction_ids"] = ["ownership"]
 
         cases = {
             "round_budget_usd must be set": no_budget,
@@ -84,13 +88,16 @@ class D1LanePlan(unittest.TestCase):
             "is not in the lane catalogue": unknown_lane,
             "is not a direction_id of investigation_plan": unknown_direction,
             "needs a token budget": no_token_budget,
-            "egress is not listed": no_egress,
+            'add a research_plan.egress entry {"topic_id": "ownership-registries"': no_egress,
             "consent must record who decided": no_consent,
             "needs the member's swarm opt-in": no_opt_in,
             "local_only mode runs no cloud topic": local_only_cloud,
             "an ad-hoc topic gets no keys": key_on_ad_hoc,
             "at most 10 across the plan": too_many_methods,
             "egress names an unknown topic": unknown_egress_topic,
+            "research_plan.egress[0].destination: must be one of": unknown_destination,
+            "research_plan.consent: missing swarm": consent_without_swarm,
+            "research_plan.topics[0]: unknown field direction_ids": extra_topic_field,
         }
         for expected, breaker in cases.items():
             with self.subTest(expected):

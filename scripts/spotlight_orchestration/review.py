@@ -486,6 +486,62 @@ def _text(value: object, limit: int = 4000) -> str:
     return str(value)[:limit] if value is not None else ""
 
 
+def _number(value: object) -> int | float | None:
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def _research_plan_content(plan: object) -> dict[str, Any] | None:
+    """What the member approves with a research plan: each topic with its
+    budget, where its requests go and the keys it uses; the round and case
+    budgets; the mode and the consent record. Shown as written, so a plan
+    the validator refuses is still visible."""
+    if not isinstance(plan, dict):
+        return None
+    def entries(name: str) -> list[dict[str, Any]]:
+        value = plan.get(name)
+        return [e for e in value if isinstance(e, dict)] if isinstance(value, list) else []
+
+    egress, keys = entries("egress"), entries("keys")
+    consent = plan.get("consent") if isinstance(plan.get("consent"), dict) else {}
+    topics = []
+    for topic in entries("topics")[:50]:
+        topic_id = topic.get("topic_id")
+        questions = topic.get("questions") if isinstance(topic.get("questions"), list) else []
+        topics.append(
+            {
+                "topic_id": _text(topic_id, 200),
+                "direction_id": _text(topic.get("direction_id"), 200),
+                "lane_type": _text(topic.get("lane_type"), 200),
+                "route": _text(topic.get("route"), 50),
+                "questions": [_text(q, 1000) for q in questions][:30],
+                "token_budget": _number(topic.get("token_budget")),
+                "journalist_input": topic.get("journalist_input") is True,
+                "egress": [
+                    {
+                        "destination": _text(e.get("destination"), 100),
+                        "hosts": [_text(h, 200) for h in e.get("hosts", [])][:20] if isinstance(e.get("hosts"), list) else [],
+                    }
+                    for e in egress
+                    if e.get("topic_id") == topic_id
+                ][:10],
+                "keys": [_text(k.get("name"), 100) for k in keys
+                         if isinstance(k.get("topics"), list) and topic_id in k["topics"]][:20],
+            }
+        )
+    return {
+        "mode": _text(plan.get("mode"), 50),
+        "round_budget_usd": _number(plan.get("round_budget_usd")),
+        "case_budget_usd": _number(plan.get("case_budget_usd")),
+        "consent": {
+            "swarm": consent.get("swarm") is True,
+            "journalist_input": consent.get("journalist_input") is True,
+            "decided_by": _text(consent.get("decided_by"), 200),
+            "decided_at": _text(consent.get("decided_at"), 100),
+        },
+        "topics": topics,
+    }
+
+
 def _methodology_content(case: Path) -> tuple[dict[str, Any], list[str]]:
     methodology = _read_case_json(case, "data/methodology.json")
     blocking: list[str] = []
@@ -538,6 +594,9 @@ def _methodology_content(case: Path) -> tuple[dict[str, Any], list[str]]:
         if isinstance(methodology.get("limitations"), list)
         else [],
     }
+    research = _research_plan_content(methodology.get("research_plan"))
+    if research is not None:
+        content["research_plan"] = research
     # Anomaly methods that fit a lane, and each topic's attached ones; absent
     # when the pinned catalogue is not installed and no topic names a method.
     methods = anomaly_methods.view(methodology)

@@ -90,7 +90,9 @@ more good leads rather than one polished answer.
 - Stay on your brief. A striking find outside it is one lead, not a new
   investigation.
 - Spend carefully: your topic has a token budget, and the round has a money
-  budget. When the harness stops you, what you recorded is kept.
+  budget. Record leads as you find them: near the budget the harness gives
+  you one last turn with only the lead tools, then stops you, and what you
+  recorded is kept.
 - Never invent a source, a quotation, a URL or a date. A lead you cannot
   ground in a captured source is not a lead.
 
