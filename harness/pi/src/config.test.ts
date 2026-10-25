@@ -8,7 +8,7 @@ import test from 'node:test';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import type { TestContext } from 'node:test';
 import { createHash } from 'node:crypto';
-import { ConfigError, checkNewsroomInstall, checkRouteSecrets, childEnv, readConfig, resolverEnv, routeFor, secretValues } from './config.ts';
+import { ConfigError, checkNewsroomInstall, checkRouteSecrets, childEnv, maxOutputTokens, piSettings, readConfig, resolverEnv, routeFor, secretValues } from './config.ts';
 import type { Composition } from './roles.ts';
 
 const COMPOSITION: Composition = {
@@ -22,6 +22,17 @@ const BASE = {
 	SPOTLIGHT_HARNESS_DATA: '/data',
 	PATH: '/usr/bin',
 };
+
+// A frontier request near Pi's compaction point must still fit the window:
+// Pi compacts at contextWindow - reserveTokens (default 16384), so the reserve
+// must cover the output cap.
+test('the frontier compaction reserve covers the output cap', () => {
+	for (const window of ['32768', '131072', '1000000']) {
+		const config = readConfig({ ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', SPOTLIGHT_MODEL_TIER: 'frontier', SPOTLIGHT_MODEL_CONTEXT_WINDOW: window });
+		const reserve = (piSettings(config).compaction as { reserveTokens?: number } | undefined)?.reserveTokens ?? 16384;
+		assert.ok(reserve >= maxOutputTokens(config.contextWindow), window);
+	}
+});
 
 test('the Anomaly install path reaches the processes, so anomaly_methods can read its catalogue', () => {
 	const env = { ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', ANOMALY_HOME: '/opt/anomaly' };

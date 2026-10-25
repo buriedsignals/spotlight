@@ -147,3 +147,25 @@ test('without an RLM endpoint fetch returns the page as before and says it was n
 	assert.equal(await readFile(join(caseDir, 'research/company-42.md'), 'utf8'), RAW_PAGE);
 	assert.equal(existsSync(join(caseDir, 'research/company-42.md.raw')), false);
 });
+
+// E2E D1: a provider that compiles `pattern` as a whole-value grammar let the
+// model emit only the prefix the pattern named: url "https://", save_as "research/".
+test('the url and save_as patterns still admit a real URL and file when applied as full matches', () => {
+	const properties = (fetchTool({ caseDir: '/', writeRoot: '/', python: 'python3', configPath: '/', env: {} }).parameters as unknown as {
+		properties: Record<string, { pattern: string }>;
+	}).properties;
+	const fullMatch = (name: string, value: string) => new RegExp(`^(?:${properties[name].pattern})$`).test(value);
+
+	assert.equal(fullMatch('url', PAGE_URL), true);
+	assert.equal(fullMatch('url', 'https://'), false);
+	assert.equal(fullMatch('save_as', 'research/company-42.md'), true);
+	assert.equal(fullMatch('save_as', 'research/'), false);
+});
+
+// E2E D12: save_as *.json held fenced Markdown, so JSON-pointer anchors failed.
+test('fetch refuses a .json save_as and writes nothing', async (t) => {
+	const { caseDir, call } = await fixture(t, {});
+
+	await assert.rejects(call({ url: PAGE_URL, save_as: 'research/company-42.JSON' }), /http_get/);
+	assert.equal(existsSync(join(caseDir, 'research/company-42.JSON')), false);
+});

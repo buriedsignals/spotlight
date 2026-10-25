@@ -94,6 +94,9 @@ function lstatOrUndefined(path: string): Stats | undefined {
 // existing parent must be a real directory, missing ones are created owner-only,
 // and an existing target must be a regular file.
 export function writeTarget(caseDir: string, root: string, path: string, writes?: string[]): string {
+	// resolve() drops a trailing slash, so "research/" would become a file named
+	// like the folder and block everything later written inside it.
+	if (/[\\/]$/.test(path)) throw new FileRefused(`refused: ${path} names a folder; give a file name inside it (for example ${path}page.md)`);
 	const target = requested(caseDir, path);
 	if (!inside(root, target) || target === root) throw new FileRefused(`refused: ${path} is outside the folder this agent may write`);
 	// Checked before any parent folder is created.
@@ -111,6 +114,7 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 	}
 	const stats = lstatOrUndefined(target);
 	if (stats?.isSymbolicLink()) throw new FileRefused(`refused: ${path} is a symlink`);
+	if (stats?.isDirectory()) throw new FileRefused(`refused: ${path} is a folder; give a file name inside it`);
 	if (stats && !stats.isFile()) throw new FileRefused(`refused: ${path} is not a regular file`);
 	const name = caseRelative(caseDir, target).toLowerCase();
 	if (PROTECTED.some((pattern) => pattern.test(name))) {
@@ -143,7 +147,8 @@ function readable(caseDir: string, path: string, scope: CaseScope | undefined): 
 // A read target is wherever the path really leads, which must be inside the case
 // (within the role's scope) or the checkout's schemas/.
 export function readTarget(caseDir: string, path: string, scope?: CaseScope): string {
-	const target = requested(caseDir, path);
+	// A relative schemas/ path names the checkout's schemas, as the tool text says.
+	const target = /^schemas[\\/]/.test(path) ? requested(CHECKOUT_ROOT, path) : requested(caseDir, path);
 	// Refuse before looking: "not found" for an outside path would tell the model
 	// which files exist beyond the case or the scope.
 	if (!readable(caseDir, target, scope)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
@@ -299,11 +304,19 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			name: 'write_file',
 			label: 'Write file',
 			description:
-				'Create or overwrite a file in the active case (path relative to the case folder). Parent folders are created. Refused outside your folder, through symlinks, and for resolver, review and receipt files.',
+				'Create or overwrite a file in the active case (path relative to the case folder). Parent folders are created. Refused outside your folder, through symlinks, for a folder path, for resolver, review and receipt files, and for empty content over an existing non-empty file.',
 			parameters: writeParams,
 			executionMode: 'sequential',
 			async execute(_id, params) {
 				const input = checkedParams<{ path: string; content: string }>('write_file', writeParams, params);
+				// An output-capped call arrives with empty content; overwriting would erase
+				// the case file it was meant to rewrite.
+				if (input.content.trim() === '') {
+					const existing = lstatOrUndefined(writeTarget(caseDir, writeRoot, input.path, writes));
+					if (existing && existing.size > 0) {
+						throw new FileRefused(`refused: empty content would erase ${input.path}. If your output was cut off, write the file again in full.`);
+					}
+				}
 				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, input.content, writes)}`);
 			},
 		},
