@@ -58,9 +58,8 @@
     position: fixed; top: 0; left: 0; right: 0; z-index: 50;
     display: flex; justify-content: space-between; align-items: center;
     padding: 20px 28px;
-    background: transparent;
+    background: rgba(7, 7, 10, 0.9);
     color: var(--paper);
-    mix-blend-mode: difference;
   }
   nav.topnav .brand {
     display: flex; align-items: center; gap: 10px;
@@ -89,20 +88,30 @@
   }
   nav.topnav .links a { transition: color 0.2s ease; opacity: 0.85; }
   nav.topnav .links a:hover { color: var(--accent-warm); opacity: 1; }
+  nav.topnav .links a.nav-button {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 12px; border: 1px solid currentColor; opacity: 1; font-weight: 500;
+  }
+  nav.topnav .links a.nav-button:hover { background: var(--accent-warm-14); border-color: var(--accent-warm); color: var(--accent-warm); }
+  nav.topnav .links a.new-pill { color: var(--accent-warm); border-color: var(--accent-warm); }
+  nav.topnav .links a.new-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-warm); }
+  nav.topnav .links a { white-space: nowrap; }
+  @media (max-width: 980px) { nav.topnav .links a.nav-button:not(.new-pill) { display: none; } }
+  @media (max-width: 640px) { nav.topnav .links a.nav-button { display: none; } }
   nav.topnav .links a.cta-install {
     border: 1px solid var(--paper);
-    padding: 8px 14px;
-    border-radius: 999px;
+    padding: 9px 14px;
+    border-radius: 0;
     opacity: 1;
   }
   nav.topnav .links a.cta-install:hover {
-    background: var(--paper);
-    color: var(--ink);
-    border-color: var(--paper);
+    background: var(--accent-warm-14);
+    color: var(--accent-warm);
+    border-color: var(--accent-warm);
   }
 
   /* ── PAGE LAYOUT ───────────────────────────────────── */
-  .page { max-width: 1200px; margin: 0 auto; padding: 120px 32px 96px; }
+  .page { max-width: 1520px; margin: 0 auto; padding: 120px 28px 96px; }
 
   .doc-hero {
     border-bottom: 1px solid var(--muted-faint-dark);
@@ -124,6 +133,7 @@
     margin: 0 0 24px 0;
   }
   .doc-hero h1 .accent { color: var(--accent-warm); }
+  .doc-hero .chap .v2 { font-weight: 500; color: var(--paper); border: 1px solid var(--accent-warm); border-radius: 0; padding: 3px 10px; margin-left: 6px; letter-spacing: 0.14em; }
   .doc-hero .lede {
     max-width: 620px;
     color: var(--muted-dark);
@@ -135,8 +145,8 @@
     display: grid;
     /* minmax(0, …): a bare 1fr cannot shrink below its widest code block,
        which made the whole page scroll sideways on a phone. */
-    grid-template-columns: 220px minmax(0, 1fr);
-    gap: 64px;
+    grid-template-columns: 216px minmax(0, 1fr);
+    gap: 72px;
     align-items: start;
   }
   @media (max-width: 900px) {
@@ -188,9 +198,8 @@
   }
 
   /* CONTENT */
-  main.doc-body {
-    max-width: 760px;
-  }
+  main.doc-body { max-width: none; }
+  main.doc-body > section > p, main.doc-body > section > ol, main.doc-body > section > ul { max-width: 980px; }
   main.doc-body section + section {
     margin-top: 64px;
   }
@@ -236,12 +245,11 @@
     padding: 1px 6px;
     font-family: "Geist Mono", monospace;
     font-size: 0.92em;
-    border-radius: 3px;
+    border-radius: 0;
   }
   main.doc-body pre {
     background: var(--ink-2);
     border: 1px solid var(--muted-faint-dark);
-    border-left: 2px solid var(--accent-warm);
     padding: 16px 18px;
     overflow-x: auto;
     font-family: "Geist Mono", monospace;
@@ -263,135 +271,335 @@
   }
   main.doc-body a:not(.btn):hover { opacity: 0.7; }
 
-  /* Pipeline diagram */
-  .pipeline {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
-    margin: 28px 0 12px 0;
-  }
-  @media (max-width: 700px) {
-    .pipeline { grid-template-columns: repeat(2, 1fr); }
-  }
-  .pipeline-step {
-    background: rgba(237, 232, 220, 0.04);
+  /* ── PIPELINE EXPLORER ─────────────────────────────── */
+  main.doc-body section#pipeline { max-width: none; }
+  main.doc-body .narrow { max-width: 760px; }
+  .fx {
+    --gate: var(--accent-warm);
+    --check: #5b8fc4;
+    --line: rgba(237, 232, 220, 0.22);
+    --hot: var(--paper);
+    margin-top: 36px;
     border: 1px solid var(--muted-faint-dark);
-    padding: 14px;
-    border-radius: 4px;
-    position: relative;
+    background:
+      radial-gradient(circle at 1px 1px, rgba(237, 232, 220, 0.07) 1px, transparent 0) 0 0 / 22px 22px,
+      var(--ink-2);
   }
-  .pipeline-step .step-n {
-    font-size: 10px;
-    letter-spacing: 0.18em;
-    color: var(--accent-warm);
-    text-transform: uppercase;
-    margin-bottom: 6px;
+  .fx-bar {
+    display: flex; flex-wrap: wrap; gap: 14px 24px;
+    justify-content: space-between; align-items: center;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--muted-faint-dark);
   }
-  .pipeline-step .step-name {
-    font-family: "Fraunces", serif;
-    font-size: 15px;
-    line-height: 1.2;
+  .fx-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+  .lg {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted-dark);
   }
-  .pipeline-flow {
-    margin: 28px 0 30px;
-    border: 1px solid var(--muted-faint-dark);
-    border-left: 2px solid var(--accent-warm);
+  .lg::before {
+    content: ""; width: 10px; height: 10px; border-radius: 0;
+    border: 1px solid var(--paper); flex: none;
+  }
+  .lg-gate::before { background: var(--gate); border-color: var(--gate); }
+  .lg-check::before { background: var(--check); border-color: var(--check); }
+  .lg-swarm::before { border-style: dashed; border-color: var(--gate); }
+  .nd:focus-visible, .fx-swarm:focus-visible {
+    outline: 2px solid var(--gate); outline-offset: 3px;
+  }
+
+  .fx-bar { justify-content: center; }
+  .fx-grid { display: flex; justify-content: center; padding: 48px 20px 64px; }
+  .fx-flow { width: min(100%, 540px); display: flex; flex-direction: column; align-items: stretch; }
+
+  /* Stops and the spine between them */
+  .fx-stop { display: flex; flex-direction: column; align-items: center; }
+  .fx-stop > * + *, .fx-flow > * + *, .fx-frame > .fx-stop + .fx-stop { margin-top: 26px; position: relative; }
+  .fx-stop > .nd + .nd::before,
+  .fx-stop > .with-lab + .nd::before,
+  .fx-flow > * + *::before,
+  .fx-frame > .fx-stop + .fx-stop::before {
+    content: ""; position: absolute; left: 50%; top: -26px; height: 26px;
+    border-left: 1px solid var(--line);
+  }
+  .fx-stop > .nd + .nd::after,
+  .fx-stop > .with-lab + .nd::after,
+  .fx-flow > * + *::after,
+  .fx-frame > .fx-stop + .fx-stop::after {
+    content: ""; position: absolute; left: calc(50% - 4px); top: -7px;
+    border: 4px solid transparent; border-top: 5px solid var(--line); border-bottom: 0;
+  }
+  .fx-flow > .fx-frame::before { top: -27px; }
+
+  /* Nodes */
+  .nd {
+    font: inherit; color: var(--paper); text-align: left; cursor: pointer;
+    position: relative; width: min(100%, 340px);
+    display: grid; grid-template-columns: auto 1fr; column-gap: 12px; align-items: baseline;
+    padding: 12px 16px; border-radius: 0;
     background: rgba(237, 232, 220, 0.035);
-    border-radius: 4px;
-    padding: 18px;
+    border: 1px solid rgba(237, 232, 220, 0.2);
+    transition: transform .35s cubic-bezier(.2,.7,.2,1), border-color .25s ease, background .25s ease, opacity .35s ease;
   }
-  .flow-label {
-    font-size: 10px;
-    letter-spacing: 0.18em;
-    color: var(--accent-warm);
-    text-transform: uppercase;
-    margin-bottom: 16px;
+  .nd b { grid-column: 2; font-weight: 600; font-size: 14px; letter-spacing: 0.01em; }
+  .nd i { grid-column: 2; font-style: normal; font-size: 11.5px; color: var(--muted-dark); }
+  .nd em {
+    grid-row: span 2; font-style: normal; font-size: 11px; letter-spacing: 0.14em;
+    color: var(--muted-dark); align-self: center;
   }
-  .flow-stack {
-    display: grid;
-    gap: 10px;
+  .nd:not(:has(em)) b, .nd:not(:has(em)) i { grid-column: 1 / -1; }
+  .nd:hover { border-color: rgba(237, 232, 220, 0.5); }
+  .nd-io { width: auto; min-width: 200px; text-align: center; border-radius: 0; background: var(--paper); color: var(--paper-fg); border-color: var(--paper); padding: 10px 22px; }
+  .nd-io i { color: var(--muted-light); }
+  .nd-out { background: transparent; color: var(--paper); border-style: double; border-width: 3px; }
+  .nd-out i { color: var(--muted-dark); }
+  .nd-gate {
+    width: min(100%, 280px);
+    background: var(--gate); border-color: var(--gate); color: var(--ink);
+  }
+  .nd-gate i { color: rgba(7, 7, 10, 0.86); }
+  .nd-check { background: rgba(91, 143, 196, 0.16); border-color: var(--check); }
+  .nd-model { border-style: dashed; }
+  .nd-agent { background: rgba(193, 106, 52, 0.07); border-color: rgba(193, 106, 52, 0.55); }
+
+  /* Frames */
+  .fx-frame {
     position: relative;
+    border: 1px dashed rgba(237, 232, 220, 0.24);
+    border-radius: 0;
+    padding: 40px 18px 22px;
   }
-  .flow-stack::before {
-    content: "";
-    position: absolute;
-    left: 18px;
-    top: 18px;
-    bottom: 18px;
-    width: 1px;
-    background: var(--muted-faint-dark);
+  .fx-frame-tag {
+    position: absolute; top: 12px; left: 16px;
+    font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gate);
   }
-  .flow-item {
-    display: grid;
-    grid-template-columns: 38px 1fr;
-    gap: 12px;
-    position: relative;
+  .fx-frame-tag small { font-size: inherit; color: var(--muted-dark); margin-left: 8px; letter-spacing: 0.1em; }
+
+  /* Swarm lanes */
+  .fx-swarm {
+    font: inherit; color: inherit; background: transparent; border: 0; padding: 0; cursor: pointer;
+    width: 100%; display: flex; flex-direction: column; align-items: stretch; border-radius: 0;
   }
-  .flow-num {
-    width: 36px;
-    height: 36px;
-    display: grid;
-    place-items: center;
-    border: 1px solid var(--muted-faint-dark);
-    background: var(--ink);
-    color: var(--accent-warm);
-    border-radius: 50%;
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    z-index: 1;
+  .fan { width: 100%; height: 34px; display: block; overflow: visible; }
+  .fan path { fill: none; stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; transition: stroke .3s ease; }
+  .lanes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; }
+  .lane { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .lane-n, .lane-k { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-dark); white-space: nowrap; }
+  .lane-k { color: var(--gate); opacity: 0; transition: opacity .4s ease; }
+  .trk {
+    position: relative; width: 14px; height: 150px; border-radius: 0;
+    border: 1px dashed rgba(193, 106, 52, 0.6);
+    overflow: hidden;
   }
-  .flow-card {
-    border: 1px solid var(--muted-faint-dark);
-    background: rgba(7, 7, 10, 0.35);
-    border-radius: 4px;
-    padding: 12px 14px;
+  .lane-local .trk { border-color: rgba(237, 232, 220, 0.4); }
+  .fill {
+    position: absolute; inset: 0; transform-origin: top; transform: scaleY(0.18);
+    background: linear-gradient(to bottom, rgba(193, 106, 52, 0.25), var(--gate));
+    transition: transform .6s ease;
   }
-  .flow-card strong {
-    display: block;
-    font-family: "Fraunces", serif;
-    font-size: 16px;
-    font-weight: 500;
-    line-height: 1.25;
+  .lane-local .fill { background: linear-gradient(to bottom, rgba(237, 232, 220, 0.15), rgba(237, 232, 220, 0.75)); }
+  .fx-swarm-cap {
+    text-align: center; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-dark);
+    margin-top: 2px;
+  }
+  .fx-swarm:hover .trk { border-style: solid; }
+
+  /* Investigation loop */
+  .cyc { position: relative; display: flex; flex-direction: column; align-items: center; padding-right: 0; }
+  .cyc > .nd + .nd { margin-top: 26px; }
+  .cyc > .nd + .nd::before { content: ""; position: absolute; left: 50%; top: -26px; height: 26px; border-left: 1px solid var(--line); }
+  .cyc > .nd + .nd::after { content: ""; position: absolute; left: calc(50% - 4px); top: -7px; border: 4px solid transparent; border-top: 5px solid var(--line); border-bottom: 0; }
+  .loop {
+    position: absolute; top: 18px; bottom: 18px; height: auto;
+    left: calc(50% + min(50%, 170px) + 4px); width: 34px; overflow: visible;
+  }
+  .loop path { fill: none; stroke: var(--gate); stroke-width: 1.2; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; opacity: .7; }
+  .loop path.hd { stroke-dasharray: none; }
+  .cyc-dots {
+    position: absolute; right: calc(50% + min(50%, 170px) + 14px); top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .cyc-dots span {
+    width: 22px; height: 22px; border-radius: 0; display: grid; place-items: center;
+    font-size: 10px; color: var(--muted-dark); border: 1px solid var(--muted-faint-dark);
+    transition: background .3s ease, color .3s ease, border-color .3s ease;
+  }
+  .cyc-dots span.on { background: var(--gate); color: var(--ink); border-color: var(--gate); }
+
+  /* Focus states: the selected stop lights up, the rest recede */
+  .fx.js .fx-flow .nd, .fx.js .fx-swarm { opacity: .55; }
+  .fx.js .fx-stop.on .nd, .fx.js .fx-stop.on .fx-swarm { opacity: 1; }
+  .fx.js .fx-stop.on .nd { transform: translateX(4px); }
+  .fx.js .fx-stop.on .nd-gate { }
+  .fx.js .fx-stop.on .fan path { stroke: rgba(193, 106, 52, 0.75); }
+  .fx.js .fx-stop.done .nd, .fx.js .fx-stop.done .fx-swarm { opacity: 1; }
+  .fx-stop.on .lane .fill { animation: lane-run var(--d) cubic-bezier(.3,.6,.3,1) var(--o) forwards; }
+  .fx-stop.on .lane .lane-k { opacity: 1; transition-delay: calc(var(--d) + var(--o)); }
+  .fx-stop.done .lane .fill { transform: scaleY(1); }
+  .fx-stop.done .lane .lane-k { opacity: 1; }
+  @keyframes lane-run {
+    0% { transform: scaleY(0.18); }
+    35% { transform: scaleY(0.45); }
+    60% { transform: scaleY(0.62); }
+    100% { transform: scaleY(1); }
+  }
+
+  .lg-lab::before { background: linear-gradient(135deg, #e7c76a, var(--accent-warm)); border: 0; }
+  .fx-flow { width: min(100%, 760px); }
+  .orch {
+    position: relative; display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: stretch;
     margin-bottom: 4px;
   }
-  .flow-card span {
-    display: block;
-    color: var(--muted-dark);
-    font-size: 12px;
-    line-height: 1.5;
+  .orch-card {
+    font: inherit; color: var(--paper); text-align: left; cursor: pointer;
+    display: grid; grid-template-columns: auto 1fr; column-gap: 12px; row-gap: 4px; align-items: center;
+    padding: 16px 18px; border-radius: 0;
+    border: 1px solid rgba(237, 232, 220, 0.24); background: rgba(237, 232, 220, 0.04);
+    transition: border-color .2s ease, transform .2s ease;
   }
-  .flow-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 8px;
+  .orch-card:hover { border-color: var(--paper); transform: translateY(-2px); }
+  .orch-card:focus-visible, .lab:focus-visible { outline: 2px solid var(--gate); outline-offset: 3px; }
+  .orch-emo { font-size: 24px; grid-row: span 2; }
+  .orch-card b { font-family: "Fraunces", serif; font-weight: 500; font-size: 20px; }
+  .orch-card i { font-style: normal; font-size: 11.5px; line-height: 1.5; color: var(--muted-dark); }
+  .orch-or { align-self: center; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted-dark); }
+  .orch-fan { grid-column: 1 / -1; width: 100%; height: 34px; display: block; }
+  .orch-fan path { fill: none; stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .orch-cap { grid-column: 1 / -1; justify-self: center; margin-top: -6px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-dark); }
+  .with-lab { position: relative; width: 100%; display: flex; justify-content: center; }
+  .lab {
+    font: inherit; color: var(--paper); text-align: left; cursor: pointer;
+    position: absolute; left: calc(50% + min(50%, 170px) + 24px); top: 50%; transform: translateY(-50%);
+    width: 180px; display: grid; grid-template-columns: auto 1fr; column-gap: 9px; row-gap: 2px; align-items: center;
+    padding: 10px 12px; border-radius: 0;
+    border: 1px solid rgba(231, 199, 106, 0.6);
+    background: linear-gradient(135deg, rgba(231, 199, 106, 0.12), rgba(193, 106, 52, 0.08));
+    transition: border-color .2s ease;
   }
-  .flow-tag {
+  .lab::before {
+    content: ""; position: absolute; right: 100%; top: 50%; width: 24px; border-top: 1px dashed rgba(231, 199, 106, 0.6);
+  }
+  .with-lab .nd-gate + .lab { left: calc(50% + 140px + 24px); }
+  .lab:hover { border-color: #e7c76a; }
+  .lab > span { grid-row: span 3; font-size: 20px; }
+  .lab b { font-size: 12.5px; font-weight: 600; }
+  .lab i { font-style: normal; font-size: 11.5px; color: var(--muted-dark); line-height: 1.35; }
+  .lab u { text-decoration: none; justify-self: start; margin-top: 4px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #e7c76a; }
+  .fx.js .fx-flow .lab { opacity: .55; transition: opacity .35s ease, border-color .2s ease; }
+  .fx.js .fx-stop.on .lab, .fx.js .fx-stop.done .lab { opacity: 1; }
+  .labbox {
+    margin-top: 26px; padding: 18px 20px; border-radius: 0;
+    border: 1px solid rgba(231, 199, 106, 0.45);
+    background: linear-gradient(135deg, rgba(231, 199, 106, 0.08), rgba(193, 106, 52, 0.05));
+  }
+  .labbox .eb { color: #e7c76a !important; }
+  main.doc-body .labbox p { margin: 8px 0 0; }
+  main.doc-body a.cta-lab { color: #e7c76a; border-bottom: 1px dotted #e7c76a; text-transform: none; letter-spacing: 0; font-size: 13px; }
+  @media (max-width: 1180px) {
+    .with-lab { flex-direction: column; align-items: center; }
+    .lab, .with-lab .nd-gate + .lab { position: relative; left: auto; top: auto; transform: none; margin-top: 14px; width: min(100%, 300px); }
+    .lab::before { right: auto; left: 50%; top: -14px; width: 0; height: 14px; border-top: 0; border-left: 1px dashed rgba(231, 199, 106, 0.6); }
+  }
+  @media (max-width: 640px) {
+    .orch { grid-template-columns: 1fr; }
+    .orch-or { justify-self: center; }
+    .orch-fan { display: none; }
+    .orch-cap { margin-top: 4px; }
+  }
+  .nd b::after { content: "↗"; margin-left: 8px; font-size: 11px; opacity: 0; transition: opacity .2s ease; }
+  .nd:hover b::after, .nd:focus-visible b::after { opacity: .75; }
+
+  /* Drawer */
+  .fx-scrim {
+    position: fixed; inset: 0; z-index: 80; background: rgba(7, 7, 10, 0.55);
+    backdrop-filter: blur(2px); opacity: 0; transition: opacity .3s ease;
+  }
+  .fx-scrim.open { opacity: 1; }
+  .fx-drawer {
+    position: fixed; z-index: 90; top: 0; right: 0; bottom: 0;
+    width: min(560px, 100vw); overflow-y: auto;
+    background: var(--ink-2); border-left: 1px solid var(--muted-faint-dark);
+    padding: 72px 44px 48px;
+    transform: translateX(100%); transition: transform .4s cubic-bezier(.2,.7,.2,1);
+  }
+  .fx-drawer.open { transform: none; }
+  .fx-x {
+    position: absolute; top: 20px; right: 20px; width: 36px; height: 36px; border-radius: 0;
+    font: inherit; font-size: 13px; color: var(--paper); background: transparent; cursor: pointer;
     border: 1px solid var(--muted-faint-dark);
-    border-radius: 999px;
-    padding: 2px 7px;
-    color: var(--muted-dark);
-    font-size: 10px;
-    line-height: 1.4;
   }
-  .flow-tag.review { color: #d58a7f; }
-  .flow-tag.rlm { color: #d9a65f; }
-  .flow-tag.ingest { color: #8fbf86; }
-  @media (max-width: 700px) {
-    .pipeline-flow { padding: 14px; }
-    .flow-card { padding: 11px 12px; }
+  .fx-x:hover { border-color: var(--paper); }
+  .fx-x:focus-visible { outline: 2px solid var(--gate); outline-offset: 3px; }
+  .fx-art .eb {
+    display: block; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gate);
+    margin-bottom: 12px;
   }
-  .spec-flow-frame {
-    width: 100%;
-    max-width: 600px;
-    aspect-ratio: 600 / 2270;
-    height: auto;
-    border: 1px solid var(--muted-faint-dark);
-    border-radius: 4px;
-    background: var(--ink-2);
-    margin: 24px 0;
-    display: block;
+  main.doc-body .fx-art h3 { font-size: 34px; letter-spacing: -0.02em; line-height: 1.1; margin: 0 0 20px 0; }
+  .fx-art .emo { display: block; font-size: 34px; margin-bottom: 14px; }
+  main.doc-body .fx-art p, main.doc-body .fx-art ol { font-size: 14px; line-height: 1.75; }
+  main.doc-body .fx-art p.who { opacity: 1; display: flex; flex-wrap: wrap; gap: 10px 20px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--muted-faint-dark); }
+  main.doc-body .fx-art p.who .lg { color: var(--paper); }
+  .fx.js .fx-art { display: none; }
+  .fx.js .fx-art.on { display: block; }
+  /* Without script the drawer is a plain list under the flow. */
+  .fx:not(.js) .fx-drawer { position: static; transform: none; width: auto; border-left: 0; border-top: 1px solid var(--muted-faint-dark); }
+  .fx:not(.js) .fx-drawer[hidden] { display: block; }
+  .fx:not(.js) .fx-x { display: none; }
+  .fx:not(.js) .fx-art + .fx-art { margin-top: 40px; }
+
+  @media (max-width: 640px) {
+    .fx-grid { padding: 32px 10px 44px; }
+    .fx-drawer {
+      top: auto; left: 0; width: 100vw; max-height: 86vh; border-left: 0;
+      border-top: 1px solid var(--muted-faint-dark); border-radius: 0;
+      padding: 60px 22px 36px; transform: translateY(100%);
+    }
+    main.doc-body .fx-art h3 { font-size: 27px; }
   }
+  @media (max-width: 520px) {
+    .fx-frame { padding: 40px 8px 18px; }
+    .loop { display: none; }
+    .cyc-dots { position: static; transform: none; flex-direction: row; margin-top: 14px; }
+    .trk { height: 110px; }
+    .lane-n, .lane-k { font-size: 11px; letter-spacing: 0; }
+    .fx-legend { gap: 6px 12px; justify-content: center; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .nd, .fill, .fx-drawer, .fx-scrim { transition: none !important; animation: none !important; }
+    .fx-stop.on .lane .fill, .fx-stop.done .lane .fill { transform: scaleY(1); }
+    .fx-stop.on .lane .lane-k { opacity: 1; transition-delay: 0s; }
+    .fx.js .fx-stop.on .nd { transform: none; }
+  }
+
+  ::selection { background: var(--accent-warm); color: var(--ink); }
+
+  /* Expandable cards */
+  .acc-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr));
+    gap: 14px; align-items: start; margin-top: 26px;
+  }
+  details.acc {
+    border: 1px solid var(--muted-faint-dark); border-radius: 0;
+    background: rgba(237, 232, 220, 0.025);
+    transition: border-color .2s ease, background .2s ease;
+  }
+  details.acc:hover { border-color: rgba(237, 232, 220, 0.35); }
+  details.acc[open] { background: var(--ink-2); border-color: rgba(193, 106, 52, 0.55); grid-column: 1 / -1; }
+  details.acc > summary {
+    list-style: none; cursor: pointer; display: flex; align-items: center; gap: 14px;
+    padding: 18px 20px; font-family: "Fraunces", serif; font-size: 19px; font-weight: 500; letter-spacing: -0.01em;
+  }
+  details.acc > summary::-webkit-details-marker { display: none; }
+  details.acc > summary::after {
+    content: "+"; margin-left: auto; font-family: "Geist Mono", monospace; font-size: 18px;
+    color: var(--accent-warm); transition: transform .25s ease;
+  }
+  details.acc[open] > summary::after { transform: rotate(45deg); }
+  details.acc > summary:focus-visible { outline: 2px solid var(--accent-warm); outline-offset: -2px; border-radius: 0; }
+  details.acc .emo { font-size: 20px; line-height: 1; }
+  details.acc .acc-body, details.acc .answer { padding: 0 20px 20px 54px; max-width: 1060px; }
+  details.acc .acc-body > :first-child, details.acc .answer > :first-child { margin-top: 0; }
+  @media (max-width: 640px) { details.acc .acc-body, details.acc .answer { padding-left: 20px; } }
 
   /* Skill cards */
   .skill-grid {
@@ -404,7 +612,7 @@
     background: rgba(237, 232, 220, 0.04);
     border: 1px solid var(--muted-faint-dark);
     padding: 14px 16px;
-    border-radius: 4px;
+    border-radius: 0;
   }
   .skill-card .sk-name {
     font-family: "Fraunces", serif;
@@ -422,10 +630,9 @@
   .callout {
     background: rgba(193, 106, 52, 0.05);
     border: 1px solid var(--muted-faint-dark);
-    border-left: 2px solid var(--accent-warm);
     padding: 18px 20px;
     margin: 24px 0;
-    border-radius: 3px;
+    border-radius: 0;
   }
   .callout .callout-tag {
     font-size: 10px;
@@ -434,38 +641,6 @@
     text-transform: uppercase;
     margin-bottom: 6px;
   }
-
-  /* FAQ */
-  .faq details {
-    border-top: 1px solid var(--muted-faint-dark);
-    padding: 18px 0;
-  }
-  .faq details[open] { padding-bottom: 24px; }
-  .faq details:last-of-type {
-    border-bottom: 1px solid var(--muted-faint-dark);
-  }
-  .faq summary {
-    cursor: pointer;
-    list-style: none;
-    font-family: "Fraunces", serif;
-    font-size: 18px;
-    color: var(--paper);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 16px;
-  }
-  .faq summary::-webkit-details-marker { display: none; }
-  .faq summary::after {
-    content: "+";
-    font-family: "Geist Mono", monospace;
-    color: var(--accent-warm);
-    font-size: 20px;
-    line-height: 1;
-    transition: transform 0.2s ease;
-  }
-  .faq details[open] summary::after { content: "−"; }
-  .faq .answer { margin-top: 14px; }
 
   /* CTA strip — reuses the same .cta / .secondary patterns as index.html. */
   .cta-strip {
@@ -483,7 +658,6 @@
     border: 1px solid rgba(255,245,217,0.75);
     background: var(--paper);
     color: var(--ink);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
     font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
     white-space: nowrap;
     transition: background 0.3s, border-color 0.3s, color 0.3s, transform 0.2s;
@@ -491,7 +665,7 @@
   .cta-strip .cta:hover {
     background: var(--accent-warm);
     border-color: var(--accent-warm);
-    color: var(--paper);
+    color: var(--ink);
     transform: translateY(-1px);
   }
   .cta-strip .secondary {
@@ -531,8 +705,9 @@
     <a class="byline" href="https://buriedsignals.com" target="_blank" rel="noopener">by Buried Signals</a>
   </div>
   <div class="links">
-    <a href="index.html">Docs</a>
-    <a href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a>
+    <a class="nav-button" href="index.html">Docs</a>
+    <a class="nav-button" href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a>
+    <a class="nav-button new-pill" href="../going-sovereign/"><span class="dot" aria-hidden="true"></span>Going Sovereign</a>
     <a class="cta-install" href="https://buriedsignals.com/join">Install</a>
   </div>
 </nav>
@@ -540,9 +715,9 @@
 <div class="page">
 
   <header class="doc-hero">
-    <span class="chap">Documentation</span>
+    <span class="chap">Documentation · <b class="v2">Spotlight v2</b></span>
     <h1 class="serif">How <span class="accent">Spotlight</span> works.</h1>
-    <p class="lede">A versioned skill bundle that turns any AI agent runtime into an OSINT investigation pipeline. Brief → methodology → research → investigation cycles → investigation gate → report → vault. Open by default; opt-in sensitive track for local-model sessions.</p>
+    <p class="lede">A versioned skill bundle that turns any AI agent runtime into an OSINT investigation pipeline. Brief → methodology → research → investigation cycles → investigation gate → report → intelligence base. Open by default; opt-in sensitive track for local-model sessions.</p>
   </header>
 
   <div class="doc-grid">
@@ -552,7 +727,7 @@
       <ol>
         <li><a href="#what">What it is</a></li>
         <li><a href="#pipeline">The pipeline</a></li>
-        <li><a href="#skills">Skills inside Spotlight</a></li>
+        <li><a href="#skills">Skills</a></li>
         <li><a href="#runtimes">Runtimes</a></li>
         <li><a href="#config">Configuration</a></li>
         <li><a href="#sensitive">Sensitive vault</a></li>
@@ -567,7 +742,7 @@
       <!-- ── 01 What ─────────────────────────────────── -->
       <section id="what">
         <h2><span class="num">01 — What it is</span>An OSINT pipeline you check into your repo.</h2>
-        <p>Spotlight is a set of <strong>skills, agent prompts, schemas, and verification rules</strong> stored as version-controlled markdown. You point your AI agent runtime at the bundle, give it a lead, and it walks the investigation end-to-end: planning the methodology, running search and scrape cycles, archiving evidence locally before citing it, fact-checking with an independent pass, and writing the result into a knowledge vault you own.</p>
+        <p>Spotlight is a set of <strong>skills, agent prompts, schemas, and verification rules</strong> stored as version-controlled markdown. You point your AI agent runtime at the bundle, give it a lead, and it walks the investigation end-to-end: planning the methodology, running search and scrape cycles, archiving evidence locally before citing it, fact-checking with an independent pass, and writing the result into an intelligence base you own.</p>
         <p>The point isn't to replace the journalist. The point is to remove rote work — link-walking, archive-before-cite, schema compliance, citation hygiene, fact-check provenance — so editorial time goes to judgement and source work, not to babysitting the agent.</p>
         <p>Everything in the bundle is editable. If your newsroom needs a different verdict taxonomy or a custom integration, you fork the repo, edit the markdown, and your agent picks up the change next session.</p>
       </section>
@@ -575,67 +750,230 @@
       <!-- ── 02 Pipeline ─────────────────────────────── -->
       <section id="pipeline">
         <h2><span class="num">02 — The pipeline</span>Seven named phases, six gates.</h2>
-        <p>Every investigation runs through the same named phases: Preflight, Brief, Methodology, Research, Investigation, Report, Ingest. The agent moves between them under explicit gates — no silent transitions, no half-finished cases. Research runs only when you switch it on in the app. With it off, the case goes from Methodology straight to Investigation.</p>
-        <p>The cases root is trusted journalist-owned local storage. Active case directories must not be moved or replaced during an operation.</p>
+        <p class="narrow">Every investigation runs through the same named phases. The agent moves between them under explicit gates, so nothing advances without you. Research runs only when you switch it on in the app. With it off, the case goes from Methodology straight to Investigation.</p>
+        <p class="narrow">Scroll to walk a case from lead to wiki. Click any step to open what happens there. 👇</p>
 
-        <iframe
-          class="spec-flow-frame"
-          src="spotlight-flow-vertical-visual.html"
-          title="Spotlight vertical investigation flow diagram"
-          loading="lazy"
-        ></iframe>
+        <div class="fx" id="fx">
+          <div class="fx-bar">
+            <div class="fx-legend" aria-label="Legend">
+              <span class="lg lg-phase">Phase</span>
+              <span class="lg lg-gate">Gate, you decide</span>
+              <span class="lg lg-check">Check, code that always runs</span>
+              <span class="lg lg-swarm">Swarm lane</span>
+              <span class="lg lg-lab">Member feature</span>
+            </div>
+          </div>
 
-        <div class="pipeline">
-          <div class="pipeline-step"><div class="step-n">01</div><div class="step-name">Preflight</div></div>
-          <div class="pipeline-step"><div class="step-n">02</div><div class="step-name">Brief</div></div>
-          <div class="pipeline-step"><div class="step-n">03</div><div class="step-name">Methodology</div></div>
-          <div class="pipeline-step"><div class="step-n">04</div><div class="step-name">Research + gate</div></div>
-          <div class="pipeline-step"><div class="step-n">05</div><div class="step-name">Investigation × 3 + gate</div></div>
-          <div class="pipeline-step"><div class="step-n">06</div><div class="step-name">Report</div></div>
-          <div class="pipeline-step"><div class="step-n">07</div><div class="step-name">Ingest</div></div>
+          <div class="fx-grid">
+            <div class="fx-flow" id="fx-flow">
+              <div class="orch" aria-label="Two ways to run Spotlight">
+                <button type="button" class="orch-card" data-go="orch-local">
+                  <span class="orch-emo" aria-hidden="true">💻</span>
+                  <b>Local</b>
+                  <i>The Pi harness. Code runs every role as its own process on your machine.</i>
+                </button>
+                <span class="orch-or" aria-hidden="true">or</span>
+                <button type="button" class="orch-card" data-go="orch-sub">
+                  <span class="orch-emo" aria-hidden="true">☁️</span>
+                  <b>Subscription</b>
+                  <i>Your Claude Code or Codex follows the Spotlight skills and spawns subagents.</i>
+                </button>
+                <svg class="orch-fan" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path d="M25 0 C25 18 50 12 50 30"/><path d="M75 0 C75 18 50 12 50 30"/></svg>
+                <span class="orch-cap">Same phases, same gates, same case files</span>
+              </div>
+              <div class="fx-stop" data-stop="lead">
+                <button type="button" class="nd nd-io" data-go="lead"><b>Lead</b><i>URL, document or name</i></button>
+              </div>
+              <div class="fx-stop" data-stop="preflight">
+                <button type="button" class="nd nd-phase" data-go="preflight"><em>01</em><b>Preflight</b><i>checks tools, loads skills</i></button>
+              </div>
+              <div class="fx-stop" data-stop="brief">
+                <button type="button" class="nd nd-phase" data-go="brief"><em>02</em><b>Brief</b><i>scoped with you</i></button>
+                <button type="button" class="nd nd-gate" data-go="brief"><b>Brief gate</b><i>approve the direction</i></button>
+              </div>
+              <div class="fx-stop" data-stop="methodology">
+                <div class="with-lab">
+                  <button type="button" class="nd nd-phase" data-go="methodology"><em>03</em><b>Methodology</b><i>methodology.json</i></button>
+                  <button type="button" class="lab" data-go="navigator"><span aria-hidden="true">🧭</span><b>OSINT Navigator</b><i>the right tool for each direction</i><u>Members</u></button>
+                </div>
+                <button type="button" class="nd nd-gate" data-go="methodology"><b>Methodology gate</b><i>approve the plan and topics</i></button>
+              </div>
+
+              <div class="fx-frame fx-frame-research">
+                <span class="fx-frame-tag">04 · Research <small>only when switched on</small></span>
+                <div class="fx-stop" data-stop="lanes">
+                  <button type="button" class="fx-swarm" data-go="lanes" aria-label="Research lanes, one per approved topic">
+                    <svg class="fan fan-in" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
+                      <path d="M50 0 C50 22 10 18 10 40"/><path d="M50 0 C50 22 30 18 30 40"/><path d="M50 0 V40"/><path d="M50 0 C50 22 70 18 70 40"/><path d="M50 0 C50 22 90 18 90 40"/>
+                    </svg>
+                    <span class="lanes">
+                      <span class="lane" style="--d:3.1s;--o:.05s"><span class="lane-n">Web</span><span class="trk"><span class="fill"></span></span><span class="lane-k">5 leads</span></span>
+                      <span class="lane" style="--d:2.4s;--o:.3s"><span class="lane-n">Registry</span><span class="trk"><span class="fill"></span></span><span class="lane-k">3 leads</span></span>
+                      <span class="lane" style="--d:3.6s;--o:.15s"><span class="lane-n">Archive</span><span class="trk"><span class="fill"></span></span><span class="lane-k">4 leads</span></span>
+                      <span class="lane" style="--d:2.8s;--o:.45s"><span class="lane-n">Social</span><span class="trk"><span class="fill"></span></span><span class="lane-k">2 leads</span></span>
+                      <span class="lane lane-local" style="--d:2.2s;--o:.2s"><span class="lane-n">Local</span><span class="trk"><span class="fill"></span></span><span class="lane-k">6 leads</span></span>
+                    </span>
+                    <svg class="fan fan-out" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
+                      <path d="M10 0 C10 22 50 18 50 40"/><path d="M30 0 C30 22 50 18 50 40"/><path d="M50 0 V40"/><path d="M70 0 C70 22 50 18 50 40"/><path d="M90 0 C90 22 50 18 50 40"/>
+                    </svg>
+                    <span class="fx-swarm-cap">One lane per approved topic, run by code</span>
+                  </button>
+                </div>
+                <div class="fx-stop" data-stop="triage">
+                  <button type="button" class="nd nd-check" data-go="triage"><b>Quote check, merge, clue rules</b><i>every quote matched to its saved source</i></button>
+                  <button type="button" class="nd nd-model" data-go="triage"><b>Triage</b><i>decision model flags leads</i></button>
+                  <button type="button" class="nd nd-gate" data-go="triage"><b>Research gate</b><i>mark clues and directions</i></button>
+                </div>
+              </div>
+
+              <div class="fx-frame fx-frame-cycle">
+                <span class="fx-frame-tag">05 · Investigation <small>up to three cycles</small></span>
+                <div class="fx-stop" data-stop="cycles">
+                  <div class="cyc">
+                    <button type="button" class="nd nd-agent" data-go="cycles"><b>Investigator</b><i>collects and archives evidence</i></button>
+                    <button type="button" class="nd nd-agent" data-go="cycles"><b>Fact-checker</b><i>verifies every claim, separately</i></button>
+                    <button type="button" class="nd nd-check" data-go="cycles"><b>Readiness check</b><i>ready, or loop on the gaps</i></button>
+                    <svg class="loop" viewBox="0 0 40 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 86 C34 86 34 14 4 14"/><path class="hd" d="M8 10 L2 14 L8 18"/></svg>
+                    <span class="cyc-dots" aria-hidden="true"><span>1</span><span>2</span><span>3</span></span>
+                  </div>
+                </div>
+                <div class="fx-stop" data-stop="gate">
+                  <div class="with-lab">
+                    <button type="button" class="nd nd-gate" data-go="gate"><b>Investigation gate</b><i>six checks, then your review</i></button>
+                    <button type="button" class="lab" data-go="framework"><span aria-hidden="true">🧩</span><b>Indicator Framework</b><i>ratings, flags and tasks</i><u>Members</u></button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="fx-stop" data-stop="report">
+                <button type="button" class="nd nd-phase" data-go="report"><em>06</em><b>Report</b><i>draft package</i></button>
+                <button type="button" class="nd nd-gate" data-go="report"><b>Report gate</b><i>complete or decline</i></button>
+              </div>
+              <div class="fx-stop" data-stop="ingest">
+                <button type="button" class="nd nd-phase" data-go="ingest"><em>07</em><b>Ingest</b><i>approved knowledge only</i></button>
+                <button type="button" class="nd nd-gate" data-go="ingest"><b>Ingest gate</b><i>approve what enters the wiki</i></button>
+                <button type="button" class="nd nd-io nd-out" data-go="ingest"><b>Your wiki</b><i>claims, events, story arcs</i></button>
+              </div>
+            </div>
+
+          </div>
+          <div class="fx-scrim" id="fx-scrim" hidden></div>
+          <aside class="fx-drawer" id="fx-drawer" role="dialog" aria-modal="true" aria-labelledby="fx-title" hidden>
+            <button type="button" class="fx-x" id="fx-x" aria-label="Close">✕</button>
+            <div class="fx-arts" id="fx-arts">
+              <article class="fx-art" data-art="orch-local">
+                <span class="eb">Orchestration · local</span>
+                <h3 class="fx-h"><span class="emo" aria-hidden="true">💻</span>The Pi harness</h3>
+                <p>A launcher starts the orchestrator, the investigator, the fact-checker and the analyst as separate Pi processes. Workers start only when the orchestrator asks, one per task, and cannot delegate.</p>
+                <p>There is no shell. Every step a skill would run in a shell is a typed tool, or a check the harness runs itself when a worker finishes. The model never records a gate decision, and case state lives on disk, so a closed chat loses nothing.</p>
+                <p class="who"><span class="lg lg-check">Checks run at fixed points</span></p>
+              </article>
+              <article class="fx-art" data-art="orch-sub">
+                <span class="eb">Orchestration · subscription</span>
+                <h3 class="fx-h"><span class="emo" aria-hidden="true">☁️</span>Skill-based orchestration</h3>
+                <p>Your agent app (Claude Code or Codex, on your own subscription) loads the Spotlight orchestration skill and walks the same phases. It spawns the investigator, fact-checker and researchers as its own subagents and runs Spotlight's scripts to check each step.</p>
+                <p>The gates, schemas and case folder are the same as in the local harness, so a case reads the same whichever way it ran.</p>
+                <p class="who"><span class="lg lg-gate">The gates still wait for you</span></p>
+              </article>
+              <article class="fx-art" data-art="navigator">
+                <span class="eb">✦ Members</span>
+                <h3 class="fx-h"><span class="emo" aria-hidden="true">🧭</span>OSINT Navigator</h3>
+                <p>While it writes the methodology, the investigator asks Navigator for the right OSINT tool for each direction (registries, domains, usernames, images, archives and more) and records why it chose each one. A check confirms the plan followed those lookups before you see it.</p>
+                <p>Without a membership, the investigator picks from a local tool index instead, with no outside call. Sensitive mode makes no Navigator request at all.</p>
+                <p class="who"><a class="cta-lab" href="https://buriedsignals.com/join">Become a member ↗</a></p>
+              </article>
+              <article class="fx-art" data-art="framework">
+                <span class="eb">✦ Members</span>
+                <h3 class="fx-h"><span class="emo" aria-hidden="true">🧩</span>Indicator Framework</h3>
+                <p>For questions about whether sites, accounts or domains are linked, and who runs them, the methodology can turn on the Indicator Framework. The investigator and the fact-checker rate the indicators, and the case gets a ratings sheet with flags and tasks.</p>
+                <p>At the Investigation gate you review those flags and tasks and can assign them to a follow-up cycle. The framework never changes a finding's confidence or grounding.</p>
+                <p class="who"><a class="cta-lab" href="https://buriedsignals.com/join">Become a member ↗</a></p>
+              </article>
+              <article class="fx-art" data-art="lead">
+                <span class="eb">Start</span>
+                <h3 class="fx-h"><span class="emo" aria-hidden="true">🎯</span>A lead</h3>
+                <p>A URL, a document or a name. The cases root is trusted, journalist-owned local storage, and every case lives in its own folder there. Active case directories must not be moved or replaced during an operation.</p>
+              </article>
+              <article class="fx-art" data-art="preflight">
+                <span class="eb">Phase 01</span>
+                <h3 class="fx-h"><span class="emo" aria-hidden="true">🧰</span>Preflight</h3>
+                <p>Runtime check, intelligence base check, integrations check. Spotlight refuses to start if the intelligence base is unreadable, the bundled scraping and search stack isn't responding, or a required external tool is missing. Failures are explained in plain English, and no work happens until the environment is sound.</p>
+              </article>
+              <article class="fx-art" data-art="brief">
+                <span class="eb">Phase 02 · gate</span>
+                <h3 class="fx-h"><span class="emo" aria-hidden="true">📝</span>Brief</h3>
+                <p>The agent restates the lead in its own words, names the affected parties, sets a scope and writes a hypothesis. You read it back. If the agent has misunderstood the lead, you correct it here. Redirecting in two sentences now is faster than three investigation cycles later.</p>
+                <p class="who"><span class="lg lg-gate">You approve the brief</span></p>
+              </article>
+              <article class="fx-art" data-art="methodology">
+                <span class="eb">Phase 03 · gate</span>
+                <h3 class="fx-h"><span class="emo" aria-hidden="true">🗺️</span>Methodology</h3>
+                <p>The agent writes a methodology JSON. It names the entities to investigate, the sources to consult (corporate registries, social media, archived web, OSINT Navigator tool lookups) and the fact-check threshold. The file is editable, and the investigation follows it.</p>
+                <p>When Research is switched on, the methodology also proposes research topics. Each topic is a short brief on one lane type (web, registries, archives, social, technical, news and courts, local corpus, prior knowledge or ad hoc) with a round budget.</p>
+                <p class="who"><span class="lg lg-gate">You approve, edit, delete or add topics</span></p>
+              </article>
+              <article class="fx-art" data-art="lanes">
+                <span class="eb">Phase 04 · research lanes</span>
+                <h3 class="fx-h"><span class="emo" aria-hidden="true">🐝</span>The swarm collects</h3>
+                <p>Code, never the model, runs each approved topic as its own research lane. Web lanes run on the OpenRouter swarm with your own key, or on your frontier host's subagents. Local lanes search your case files and your wiki on the local model.</p>
+                <p>A web lane gets only its topic brief. It never sees case files, findings, evidence or journalist input. A budget of $1 a round by default, and at most $5 per case, bounds the web lanes.</p>
+                <p class="who"><span class="lg lg-swarm">Lanes run in parallel</span></p>
+              </article>
+              <article class="fx-art" data-art="triage">
+                <span class="eb">Phase 04 · checks and gate</span>
+                <h3 class="fx-h"><span class="emo" aria-hidden="true">🔎</span>Checks, triage, your marks</h3>
+                <p>Each lane returns leads with a summary, an exact quote and the source it saved. Code checks every quote against the saved source, merges copies of the same source, and applies fixed clue rules for convergence, conflicts, timing, shared identifiers, expected absence and the watchlist.</p>
+                <p>A decision model then triages the leads. Triage only flags leads and never sets one aside on a model answer.</p>
+                <p>The Research page shows the clues first. You mark each clue pursue or dismiss and each direction keep, drop or add, then approve in one stop. Code checks that the methodology change matches your marks.</p>
+                <p class="who"><span class="lg lg-check">Code checks quotes</span> <span class="lg lg-gate">You mark the clues</span></p>
+                <div class="labbox">
+                  <span class="eb">✦ For members</span>
+                  <p><strong>Ninja mode</strong> runs triage on your own Mac. Fixed rules do it until the local decision model ships.</p>
+                  <p><strong>Subscription mode</strong> sends the triage questions to the Jev decision model on OpenRouter.</p>
+                </div>
+              </article>
+              <article class="fx-art" data-art="cycles">
+                <span class="eb">Phase 05 · cycles</span>
+                <h3 class="fx-h"><span class="emo" aria-hidden="true">🔁</span>Investigation cycles</h3>
+                <p>Up to three cycles. The investigator follows the approved methodology in EXECUTION mode. Every source is archived locally before it can be cited, and every claim gets an evidence trail with a grounding rationale. A separate fact-checker agent then verifies the claims.</p>
+                <p>If the readiness check fails, the case loops. After three cycles, a case with Research on goes back for one targeted research round, and your approval grants one more cycle. If it still isn't ready, it stops with a gaps report.</p>
+                <p class="who"><span class="lg lg-check">Readiness is checked by code</span></p>
+              </article>
+              <article class="fx-art" data-art="gate">
+                <span class="eb">Phase 05 · gate</span>
+                <h3 class="fx-h"><span class="emo" aria-hidden="true">🚦</span>Six checks before the gate</h3>
+                <ol>
+                  <li>Findings are non-empty and schema-valid.</li>
+                  <li>The fact-checker ran as a separate agent, outside the investigator's context.</li>
+                  <li>Contradictions in the evidence are recorded.</li>
+                  <li>The affected party's perspective was sought where the lead names one.</li>
+                  <li>Every source has an <code>access_method</code> and a local file.</li>
+                  <li>What we don't know is named in a gap assessment.</li>
+                </ol>
+                <p class="who"><span class="lg lg-gate">You review the findings</span></p>
+              </article>
+              <article class="fx-art" data-art="report">
+                <span class="eb">Phase 06 · gate</span>
+                <h3 class="fx-h"><span class="emo" aria-hidden="true">📄</span>Report</h3>
+                <p>After the Investigation gate you complete or decline the report. A completed report publishes <code>report.html</code>, <code>findings-report.md</code> and <code>evidence-map.json</code> as one validated package before the case can move on to ingest.</p>
+                <p class="who"><span class="lg lg-gate">You decide on the report</span></p>
+              </article>
+              <article class="fx-art" data-art="ingest">
+                <span class="eb">Phase 07 · gate</span>
+                <h3 class="fx-h"><span class="emo" aria-hidden="true">🗄️</span>Ingest</h3>
+                <p>During a case, source archives and working JSON stay in the case folder. After you approve, Spotlight writes the approved knowledge to your wiki under <code>spotlight/</code> as claim, event and story-arc notes. Later investigations search the wiki for prior work and build on it.</p>
+                <p class="who"><span class="lg lg-gate">You approve what enters the wiki</span></p>
+              </article>
+            </div>
+          </aside>
         </div>
-
-        <h3>Preflight</h3>
-        <p>Runtime check, vault check, integrations check. Spotlight refuses to start if the vault is unreadable, the bundled scraping/search stack (Crawl4AI + SearXNG) isn't responding, or a required external tool is missing. Failures here are surfaced in plain English; no work happens until the environment is sound.</p>
-
-        <h3>Brief</h3>
-        <p>The agent restates the lead in its own words, names the affected parties, sets a scope, and writes a hypothesis. You read it back. If the agent has misunderstood the lead, you correct it here — it's faster to redirect in two sentences of prose than three investigation cycles later.</p>
-
-        <h3>Methodology</h3>
-        <p>The agent writes a methodology JSON: which entities to investigate, which sources to consult (corporate registries, social media, archived web, OSINT Navigator tool lookups), which fact-check threshold applies. The file is editable. The investigation cycles will follow this plan; if you don't like the plan, change it before the agent starts. When Research is switched on, the methodology also proposes research topics. Each topic is a short brief on one lane type (web, registries, archives, social, technical, news-courts, local corpus, prior knowledge, or ad hoc) with a round budget. You approve, edit, delete or add topics at the Methodology gate.</p>
-
-        <h3>Research</h3>
-        <p>Research is one opt-in package. A single Research switch in the app turns on the whole phase, which runs research lanes and then has a decision model triage their leads. With the switch off there is no Research phase.</p>
-        <p>Code, never the model, runs each approved topic as its own research lane. Web lanes run on the OpenRouter swarm with your own key, or on your frontier host's subagents. Local lanes search your case files and your wiki on the local model. A web lane gets only its topic brief and never sees case files, findings, evidence or journalist input. A budget of $1 a round by default, and at most $5 per case, bounds the web lanes.</p>
-        <p>Each lane returns leads with a summary, an exact quote and the source it saved. Code checks every quote against the saved source, merges copies of the same source, and applies fixed clue rules for convergence, conflicts, timing, shared identifiers, expected absence and the watchlist. A decision model then triages the leads. In Frontier mode Jev triages them on OpenRouter. In Ninja mode a decision model on your own Mac will triage them, and until it is released fixed rules do the triage. For now triage only flags leads and never sets one aside on a model answer.</p>
-        <p>The Research page shows the clues first, with the investigator's suggested marks. You mark each clue pursue or dismiss and each direction keep, drop or add, and approve in one stop. The investigator then turns your marks into the methodology change, and code checks that it matches them.</p>
-
-        <h3>Investigation cycles</h3>
-        <p>Up to three investigation cycles. The investigator follows the approved methodology in <strong>EXECUTION</strong> mode (after planning it in <strong>PLANNING</strong> mode). The investigator agent runs the cycles; every source is archived locally before it can be cited; every claim gets an evidence trail with grounding rationale.</p>
-
-        <h3>Investigation gate — six readiness criteria</h3>
-        <p>Before the report decision, the case has to pass six checks:</p>
-        <ol>
-          <li>Findings are non-empty and schema-valid.</li>
-          <li>Independence — fact-checker spawned as a separate agent, not the investigator's same context.</li>
-          <li>Disputes recorded — contradictions in the evidence are surfaced, not papered over.</li>
-          <li>Affected perspective consulted (where the lead concerns a named entity).</li>
-          <li>Document trail intact — every source has an <code>access_method</code> and a local file.</li>
-          <li>Gap assessment — what we don't know is named, not hidden.</li>
-        </ol>
-        <p>If a criterion fails, the agent loops back. After three cycles, a case with Research switched on goes back to Research for one targeted round; your approval of that round grants one more cycle. If the case still isn't ready, or Research is off, it stops with a gaps report.</p>
-
-        <h3>Report</h3>
-        <p>After the Investigation gate, the journalist completes or declines the resolver-owned report phase. A completed report publishes the canonical <code>report.html</code>, <code>findings-report.md</code>, and <code>evidence-map.json</code> artifacts as one validated package before the case can proceed to ingestion.</p>
-
-        <h3>Ingest</h3>
-        <p>During a case, source archives and working JSON stay in the active case workspace. After you approve, Spotlight writes the approved knowledge to your wiki under <code>spotlight/</code>, as claim, event and story-arc notes. Future investigations search your wiki for prior work and build on it without rediscovering the same entities from scratch.</p>
       </section>
 
       <!-- ── 03 Skills ───────────────────────────────── -->
       <section id="skills">
-        <h2><span class="num">03 — Skills inside Spotlight</span>The skills that compose the pipeline.</h2>
+        <h2><span class="num">03 — Skills</span>The skills that compose the pipeline.</h2>
         <p>Each skill is a markdown file with a frontmatter contract (name, description, allowed verbs). The agent loads them at runtime. You can edit any of them.</p>
+        <p>The one under every finding is <strong>epistemic grounding</strong>. Spotlight treats a source as an anchor that still has to justify the claim, so each finding records the exact quote, the source's role, the kind of support it gives and a confidence cap. The fact-checker then writes its own grounding assessment, and only directly grounded or independently verified claims can become high-confidence findings. <a href="https://github.com/buriedsignals/spotlight/blob/main/docs/epistemic-grounding.md">How grounding works ↗</a></p>
 
         <div class="skill-grid">
           <div class="skill-card"><div class="sk-name">spotlight</div><div class="sk-desc">Orchestrator — walks the pipeline, manages state, calls other skills.</div></div>
@@ -665,95 +1003,132 @@
       <section id="runtimes">
         <h2><span class="num">04 — Runtimes</span>Use the agent you already have.</h2>
         <p>Spotlight is runtime-agnostic. The same skill bundle drives any agent that can read markdown skills and call shell tools.</p>
-
-        <h3>Cloud runtimes</h3>
+        <div class="acc-grid">
+          <details class="acc">
+            <summary><span class="emo" aria-hidden="true">☁️</span>Cloud runtimes</summary>
+            <div class="acc-body">
         <p>Claude Code, Codex CLI, Pi, and OpenCode (routed to OpenRouter / Fireworks / Together) all work natively. Authentication is via each runtime's own login — no API key needed for the subscription-backed ones (Claude, Codex, Pi), and a provider key for OpenCode pay-per-token.</p>
         <p>Cloud runtimes are the right choice for open material — public-record research, archived web, corporate filings. They're faster and more capable than what fits on a laptop, and the trade-off is that the agent's context goes to the third-party provider.</p>
-
-        <h3>Local runtimes</h3>
+            </div>
+          </details>
+          <details class="acc">
+            <summary><span class="emo" aria-hidden="true">💻</span>Local runtimes</summary>
+            <div class="acc-body">
         <p>OpenCode pointed at a local Ollama endpoint keeps everything on the journalist's machine. The installer ships two abliterated journalism models:</p>
         <ul>
           <li><strong>Default — Qwen 3.5 9B Journalist</strong> (<code>tomvaillant/qwen3.5-9b-abliterated-journalist-GGUF:Q4_K_M</code>). 9B dense, ~6 GB on disk, fits 16 GB Macs comfortably. Bench-tested at 100% refusal-resistance on OSINT-grade prompts.</li>
           <li><strong>Heavy tier — Qwen 3.6 27B Journalist</strong> (<code>tomvaillant/qwen3.6-27b-abliterated-journalist-GGUF:Q4_K_M</code>). 27B dense, fine-tuned on the same investigative-journalism corpus as the 9B, on Huihui's abliterated Qwen 3.6 base. ~15 GB on disk, ~22 GB resident at runtime. Runs in thinking mode (the abliterated <code>/no_think</code> path produces token soup). <strong>Needs 32 GB unified memory minimum</strong> — the setup form's fit-check enforces this before the option commits.</li>
         </ul>
         <p>Local runtimes are slower than cloud runtimes — the 9B does an investigation in ~15 min vs ~5 min on cloud; the 27B takes 45–90 min. They're the right choice when material can't leave the machine.</p>
-
-        <h3>Hardware fit-check</h3>
+            </div>
+          </details>
+          <details class="acc">
+            <summary><span class="emo" aria-hidden="true">🧮</span>Hardware fit-check</summary>
+            <div class="acc-body">
         <p>The local configurator the installer opens probes your hardware via <code>navigator.deviceMemory</code> + WebGPU and recommends a model: 9B Journalist for any 16 GB+ Mac (default), the 27B if RAM reports ≥ 32 GB. Below 16 GB it pushes users to Frontier mode.</p>
+            </div>
+          </details>
+        </div>
       </section>
 
       <!-- ── 05 Config ──────────────────────────────── -->
       <section id="config">
         <h2><span class="num">05 — Configuration</span>One install, browser-connected research.</h2>
         <p>The public installer offers a direct local browser sign-in for Navigator or an explicit Skip. A successful Pro or Lab connection stores a revocable credential in the system keychain; no Navigator API key is pasted into Spotlight configuration.</p>
-
-        <h3>Required</h3>
+        <div class="acc-grid">
+          <details class="acc">
+            <summary><span class="emo" aria-hidden="true">🔑</span>Required</summary>
+            <div class="acc-body">
 <pre><code>SPOTLIGHT_CASES_ROOT=~/Documents/Spotlight/cases  # active case workspace
 </code></pre>
         <p>Your wiki is <code>knowledge_destination.workspace_path</code> in <code>.spotlight-config.json</code>. Ingest writes there and later cases search it.</p>
         <p>Search and scraping need no key: <code>fetch</code> runs on Crawl4AI and <code>search</code> on SearXNG, both open-source and installed locally. <code>FIRECRAWL_API_KEY=fc-...</code> is optional — set it only to enable Firecrawl as an explicit fallback provider.</p>
-
-        <h3>Runtime selection</h3>
+            </div>
+          </details>
+          <details class="acc">
+            <summary><span class="emo" aria-hidden="true">🧭</span>Runtime selection</summary>
+            <div class="acc-body">
 <pre><code>SPOTLIGHT_RUNTIME=local                       # or claude / codex / pi / opencode
 SPOTLIGHT_MODEL_TIER=12b                      # 12b / 26b / 31b — sets reasoning budget + compaction profile
 SPOTLIGHT_LOCAL_SERVER=llamacpp               # llamacpp (:8080) / ollama (:11434)</code></pre>
-
-        <h3>Optional — sensitive mode</h3>
+            </div>
+          </details>
+          <details class="acc">
+            <summary><span class="emo" aria-hidden="true">🔒</span>Sensitive mode (optional)</summary>
+            <div class="acc-body">
 <pre><code># Runtime-level sensitive mode is controlled by AGENTS.md.
 # A separate sensitive-vault install path is documented as a design target,
 # but it is not enabled by the current installer.</code></pre>
-
-        <h3>Optional — integrations</h3>
+            </div>
+          </details>
+          <details class="acc">
+            <summary><span class="emo" aria-hidden="true">🔌</span>Integrations (optional)</summary>
+            <div class="acc-body">
 <pre><code>JUNKIPEDIA_API_KEY=...     # disinformation monitoring (optional)
 APIFY_API_TOKEN=...        # hosted social-media collection via Apify (optional; X collection violates X ToS)
 UNPAYWALL_EMAIL=...        # OA paper access (optional)
 SPOTLIGHT_INT_DEVBROWSER=true   # dev-browser for interactive browser acquisition</code></pre>
+            </div>
+          </details>
+        </div>
       </section>
 
       <!-- ── 06 Sensitive ──────────────────────────── -->
       <section id="sensitive">
         <h2><span class="num">06 — Sensitive mode</span>Local-only investigations first.</h2>
-        <p>Spotlight investigations default to open material. For source-protected documents, off-record interview notes, unpublished tip identities, or other sensitive material, use runtime-level sensitive mode so agents work from local case files and vault context instead of live network acquisition.</p>
+        <p>Spotlight investigations default to open material. For source-protected documents, off-record interview notes, unpublished tip identities, or other sensitive material, use runtime-level sensitive mode so agents work from local case files and intelligence base context instead of live network acquisition.</p>
 
         <div class="callout">
           <div class="callout-tag">Current support</div>
           <p>The current installer initializes one OpenKnowledge project and does not create a second sensitive project or route. The implemented control is the runtime contract's sensitive mode: when enabled, adapters strip live <code>fetch</code> and <code>search</code> access and the case must be worked from local material.</p>
         </div>
-
-        <h3>How it works</h3>
+        <div class="acc-grid">
+          <details class="acc">
+            <summary><span class="emo" aria-hidden="true">⚙️</span>How it works</summary>
+            <div class="acc-body">
         <ul>
           <li>Set <code>sensitive: true</code> in <code>AGENTS.md</code> or use the equivalent runtime command when your adapter supports it.</li>
-          <li>Preload material into the resolved <code>{CASE_DIR}/research/</code> workspace and the local vault before starting the sensitive investigation.</li>
+          <li>Preload material into the resolved <code>{CASE_DIR}/research/</code> workspace and the local intelligence base before starting the sensitive investigation.</li>
           <li>Do not rely on sensitive-vault commands from the design spec until they are implemented in setup, ingest, and doctor checks.</li>
         </ul>
-
-        <h3>What this is — and what it isn't</h3>
+            </div>
+          </details>
+          <details class="acc">
+            <summary><span class="emo" aria-hidden="true">🧭</span>What this is and what it isn't</summary>
+            <div class="acc-body">
         <p>This is <strong>plumbing</strong>, not enforcement. Sensitive mode reduces accidental network use by the Spotlight adapter, but it is not a host security boundary. It does not stop a sufficiently privileged local agent from using unrelated shell or search tools outside the Spotlight contract.</p>
 
         <p>If your threat model requires that level of guarantee, run sensitive work on a separate machine and treat the sensitive vault on the laptop as a <em>summary archive</em> of work done elsewhere — not as the workspace for the sensitive investigation itself. The <a href="https://github.com/buriedsignals/spotlight/blob/main/docs/sensitivity.md">design spec on GitHub</a> walks through why earlier drafts proposed UID separation and air-gap phases, why those were cut, and what's left.</p>
-
-        <h3>Suggested workflow</h3>
+            </div>
+          </details>
+          <details class="acc">
+            <summary><span class="emo" aria-hidden="true">🗺️</span>Suggested workflow</summary>
+            <div class="acc-body">
         <ol>
-          <li>Open research happens via the normal Spotlight pipeline against the default vault, under whichever runtime is best for the material (usually cloud).</li>
+          <li>Open research happens via the normal Spotlight pipeline against your default intelligence base, under whichever runtime is best for the material (usually cloud).</li>
           <li>If a sensitive piece arrives, work on it in your own environment — local model on an isolated machine, encrypted disk, paper, whatever matches your operational layer.</li>
           <li>When you're ready, write sanitized outputs into the normal case files or keep them in a separately managed local vault until the sensitive-vault workflow is implemented.</li>
           <li>Declassification (moving a finding from sensitive to open) is a manual file copy + re-ingest — no special command, by design.</li>
         </ol>
+            </div>
+          </details>
+        </div>
       </section>
 
       <!-- ── 07 FAQ ─────────────────────────────────── -->
       <section id="faq" class="faq">
         <h2><span class="num">07 — FAQ</span>Common questions.</h2>
 
-        <details>
-          <summary>Is Spotlight a SaaS?</summary>
+        <div class="acc-grid">
+        <details class="acc">
+          <summary><span class="emo" aria-hidden="true">☁️</span>Is Spotlight a SaaS?</summary>
           <div class="answer">
             <p>No. Spotlight is a markdown skill bundle you check out from GitHub and point your existing agent at. There's no Spotlight server or Spotlight account. Search and scraping run on bundled open-source tools (SearXNG, Crawl4AI) with no account; Navigator is an optional member integration.</p>
           </div>
         </details>
 
-        <details>
-          <summary>What does it cost?</summary>
+        <details class="acc">
+          <summary><span class="emo" aria-hidden="true">💸</span>What does it cost?</summary>
           <div class="answer">
             <p>The Spotlight bundle itself is free and open-source (MIT). Costs come from whatever runtime you choose:</p>
             <ul>
@@ -765,54 +1140,55 @@ SPOTLIGHT_INT_DEVBROWSER=true   # dev-browser for interactive browser acquisitio
           </div>
         </details>
 
-        <details>
-          <summary>Why does the runtime matter?</summary>
+        <details class="acc">
+          <summary><span class="emo" aria-hidden="true">🤖</span>Why does the runtime matter?</summary>
           <div class="answer">
             <p>Different runtimes have different trust properties. Cloud runtimes send the agent's context to a third-party provider — fine for open material, not fine for sensitive material. Local runtimes keep the context on the journalist's machine. The journalist picks the runtime per session; there's no automatic switching.</p>
           </div>
         </details>
 
-        <details>
-          <summary>How is fact-checking different from the main investigation?</summary>
+        <details class="acc">
+          <summary><span class="emo" aria-hidden="true">✅</span>How is fact-checking different from the main investigation?</summary>
           <div class="answer">
             <p>The fact-check pass runs as an <em>independent agent spawn</em> — a fresh context, separate from the investigator. It applies SIFT methodology (Stop, Investigate the source, Find better coverage, Trace claims), produces one of five verdicts (<code>verified</code> / <code>unverified</code> / <code>disputed</code> / <code>false</code> / <code>not_checkable</code>), with flags for claims that misstate their source, and writes its evidence trail to a separate JSON. The investigator can't see the fact-checker's output until after the Investigation gate. This is deliberately adversarial — same-context fact-checking under-catches errors the investigator already convinced itself of.</p>
           </div>
         </details>
 
-        <details>
-          <summary>What's the sensitive vault flag for?</summary>
+        <details class="acc">
+          <summary><span class="emo" aria-hidden="true">🔒</span>What's the sensitive vault flag for?</summary>
           <div class="answer">
             <p>It is a proposed second OpenKnowledge project for deliberately classified material. It is not implemented, and a separate project alone would be a convenience boundary rather than a confidentiality guarantee. Use an appropriate operational boundary — such as a separate machine or OS account — for material whose threat model requires isolation.</p>
           </div>
         </details>
 
-        <details>
-          <summary>Can I bring my own skills / custom integrations?</summary>
+        <details class="acc">
+          <summary><span class="emo" aria-hidden="true">🧩</span>Can I bring my own skills / custom integrations?</summary>
           <div class="answer">
             <p>Yes. Fork the repo, add a skill folder under <code>skills/</code> with a <code>SKILL.md</code> matching the frontmatter contract, register it in <code>AGENTS.md</code>. Your runtime picks it up next session. The 13-verb runtime contract is the only thing that has to stay stable; everything else is editable.</p>
           </div>
         </details>
 
-        <details>
-          <summary>What happens if the agent gets stuck?</summary>
+        <details class="acc">
+          <summary><span class="emo" aria-hidden="true">🧱</span>What happens if the agent gets stuck?</summary>
           <div class="answer">
             <p>After three investigation cycles without passing the Investigation gate's readiness criteria, a case with a research plan goes back to Research for one targeted round, which you approve on the Research page; that grants one more cycle. If that cycle fails too, or the case has no research plan, the case stops with a gaps report: every gap the cycles recorded. Continuing takes a revised methodology and a new approval. No investigation silently abandons.</p>
           </div>
         </details>
 
-        <details>
-          <summary>Where does provenance live?</summary>
+        <details class="acc">
+          <summary><span class="emo" aria-hidden="true">🔏</span>Where does provenance live?</summary>
           <div class="answer">
             <p>Each case produces a <code>provenance-manifest.json</code> built against the Noosphere C2PA contract. By default it's unsigned (the signing block exists but credential / endpoint are <code>null</code>); newsrooms that have a Noosphere signing setup can wire it in via the <code>provenance-signing</code> skill. The manifest tracks ingestion events, fact-check verdicts, and (when enabled) tier transitions.</p>
           </div>
         </details>
 
-        <details>
-          <summary>Where do I file bugs or contribute?</summary>
+        <details class="acc">
+          <summary><span class="emo" aria-hidden="true">🐛</span>Where do I file bugs or contribute?</summary>
           <div class="answer">
             <p>Issues, PRs, and discussions on GitHub: <a href="https://github.com/buriedsignals/spotlight">github.com/buriedsignals/spotlight</a>. The contribution guide is at <code>CONTRIBUTING.md</code> in the repo root.</p>
           </div>
         </details>
+        </div>
       </section>
 
       <!-- ── 08 Read more ───────────────────────────── -->
@@ -853,7 +1229,7 @@ SPOTLIGHT_INT_DEVBROWSER=true   # dev-browser for interactive browser acquisitio
       <div class="cta-strip">
         <a class="cta" href="https://buriedsignals.com/join">Install Spotlight <span aria-hidden="true">→</span></a>
         <a class="secondary" href="https://github.com/buriedsignals/spotlight" target="_blank" rel="noopener">GitHub ↗</a>
-        <span class="ghost">MIT licensed · v2 in development</span>
+        <span class="ghost">MIT licensed · v2</span>
       </div>
 
     </main>
@@ -861,6 +1237,79 @@ SPOTLIGHT_INT_DEVBROWSER=true   # dev-browser for interactive browser acquisitio
 </div>
 
 <script>
+  // Pipeline explorer: scrolling lights the case up stop by stop; a click opens the step in a drawer.
+  (function () {
+    var fx = document.getElementById('fx');
+    if (!fx) return;
+    fx.classList.add('js');
+    var stops = Array.prototype.slice.call(fx.querySelectorAll('.fx-stop'));
+    var arts = fx.querySelectorAll('.fx-art');
+    var dots = fx.querySelectorAll('.cyc-dots span');
+    var drawer = document.getElementById('fx-drawer');
+    var scrim = document.getElementById('fx-scrim');
+    var closeBtn = document.getElementById('fx-x');
+    var still = window.matchMedia('(prefers-reduced-motion: reduce)');
+    var current = -1, cycleTimers = [], opener = null, ticking = false;
+
+    function lightCycles(on) {
+      cycleTimers.forEach(clearTimeout); cycleTimers = [];
+      if (!on) { dots.forEach(function (d) { d.classList.remove('on'); }); return; }
+      dots.forEach(function (d, i) {
+        if (still.matches) { d.classList.add('on'); return; }
+        cycleTimers.push(setTimeout(function () { d.classList.add('on'); }, 250 + i * 700));
+      });
+    }
+
+    // The stop whose top has passed 62% of the viewport is the current one.
+    function progress() {
+      ticking = false;
+      var line = window.innerHeight * 0.62, next = -1;
+      stops.forEach(function (s, i) { if (s.getBoundingClientRect().top < line) next = i; });
+      if (next === current) return;
+      var cyc = stops.findIndex(function (s) { return s.dataset.stop === 'cycles'; });
+      var wasPast = current >= cyc, isPast = next >= cyc;
+      current = next;
+      stops.forEach(function (s, i) {
+        s.classList.toggle('on', i === current);
+        s.classList.toggle('done', i < current);
+      });
+      if (wasPast !== isPast) lightCycles(isPast);
+    }
+    window.addEventListener('scroll', function () {
+      if (!ticking) { ticking = true; window.requestAnimationFrame(progress); }
+    }, { passive: true });
+    window.addEventListener('resize', progress);
+    progress();
+
+    function open(key, from) {
+      arts.forEach(function (a) { a.classList.toggle('on', a.dataset.art === key); });
+      var h = drawer.querySelector('.fx-art.on h3');
+      drawer.setAttribute('aria-label', h ? h.textContent : 'Step');
+      drawer.removeAttribute('aria-labelledby');
+      opener = from;
+      drawer.hidden = false; scrim.hidden = false;
+      drawer.scrollTop = 0;
+      window.requestAnimationFrame(function () {
+        drawer.classList.add('open'); scrim.classList.add('open');
+        closeBtn.focus({ preventScroll: true });
+      });
+    }
+    function close() {
+      drawer.classList.remove('open'); scrim.classList.remove('open');
+      setTimeout(function () { drawer.hidden = true; scrim.hidden = true; }, still.matches ? 0 : 400);
+      if (opener) opener.focus({ preventScroll: true });
+    }
+    fx.addEventListener('click', function (e) {
+      var go = e.target.closest('[data-go]');
+      if (go) open(go.dataset.go, go);
+    });
+    closeBtn.addEventListener('click', close);
+    scrim.addEventListener('click', close);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !drawer.hidden) close();
+    });
+  })();
+
   // Active-section highlighting in the TOC as the reader scrolls.
   (function () {
     var toc = document.getElementById('toc');

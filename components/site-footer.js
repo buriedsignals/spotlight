@@ -51,7 +51,7 @@ class SiteFooter extends HTMLElement {
         .footer-meta {
           display: flex; justify-content: space-between; align-items: baseline;
           font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
-          opacity: 0.5; margin-top: 30px;
+          opacity: 0.5; margin-top: 30px; padding-right: 72px;
         }
         .brand-mini { display: flex; align-items: center; gap: 10px; }
         .brand-mini svg { width: 14px; height: 14px; opacity: 0.7; }
@@ -75,7 +75,7 @@ class SiteFooter extends HTMLElement {
       <div class="footer-meta">
         <div class="brand-mini">
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${BRAND_MARK}</svg>
-          <span>Spotlight · v1.0</span>
+          <span>Spotlight · v2</span>
         </div>
         <span>© 2026 Buried Signals — MIT licensed</span>
       </div>`;

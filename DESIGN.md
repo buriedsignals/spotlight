@@ -1,14 +1,14 @@
 ---
 status: active
-date: 2026-04-22
-role: Canonical design system for Spotlight marketing + installer. Source of truth for typography, palette, components, layout, motion. Follow this when adding UI or modifying existing sections.
+date: 2026-10-25
+role: Canonical design system for the Spotlight landing page and docs. Source of truth for typography, palette, components, layout, motion. Follow this when adding UI or modifying existing sections.
 ---
 
 # Spotlight — design system
 
 This document is **the** reference. If the code deviates from what's written here, fix the code. If a new pattern emerges, add it here first, then use it.
 
-Scope: `index.html` (landing). Journalist Install goes to `https://buriedsignals.com/join`. The retired `setup.html` curl landing and `install/configure.html` localhost configurator are gone.
+Scope: `index.html` (landing) and `docs/index.html` (docs). Journalist Install goes to `https://buriedsignals.com/join`. The retired `setup.html` curl landing and `install/configure.html` localhost configurator are gone.
 
 ---
 
@@ -90,7 +90,7 @@ Two families. No third font.
 
 | Tier | Role | Size | Weight | `opsz` | Letter-spacing | Line-height |
 |---|---|---|---|---|---|---|
-| **D1** | Hero title | `clamp(44px, 6.5vw, 96px)` | 500 | 144 | `-0.025em` | `0.98` |
+| **D1** | Hero title | `clamp(44px, 5.3vw, 80px)` | 500 | 144 | `-0.022em` | `1.02` |
 | **D2** | Footer huge | `clamp(80px, 18vw, 280px)` | 500 | 144 | `-0.04em` | `0.82` |
 | **D3** | Stat mega (first cell) | `clamp(100px, 15vw, 220px)` | 500 | 144 | `-0.04em` | `0.82` |
 | **D4** | Stat standard | `clamp(72px, 11vw, 160px)` | 500 | 144 | `-0.04em` | `0.82` |
@@ -107,7 +107,7 @@ font-style: italic;
 font-variation-settings: "opsz" <same>, "wght" 400;
 color: var(--accent-warm);
 ```
-Reserved slots: `.hero-title .accent`, `.attr-lede em`, `.chapter-break .pull em`, `.footer-huge em`. Nothing else gets italic terracotta.
+The hero's second sentence (`.hero-title .accent`) is terracotta in **roman** 500, not italic. Reserved italic slots: `.attr-lede em`, `.chapter-break .pull em`, `.footer-huge em`. Nothing else gets italic terracotta.
 
 ### UI tiers (Geist Mono)
 
@@ -184,6 +184,12 @@ nav.topnav .links a.cta-install:hover {
 }
 ```
 `border-color: currentColor` makes the pill auto-follow nav state. On mobile (≤760px): all text links `display:none`, only Install pill survives.
+
+**Nav buttons** (`a.nav-button`, Docs and GitHub): squared, `padding: 9px 12px`, `border: 1px solid currentColor`, same hover as Install. Links never wrap (`white-space: nowrap`).
+
+**Going Sovereign** (`a.new-pill`): outlined in `--accent-warm` with terracotta text and a static 7px terracotta dot. No fill, no pulse. It stays visible down to tablet; on phones only Install remains.
+
+The docs nav uses the same buttons on a solid `rgba(7,7,10,0.9)` bar (no blend mode), and hides Docs and GitHub below 980px.
 
 ### 3.2 Chapter-break (landing only)
 
@@ -304,23 +310,13 @@ Three tiers. Shape = no border-radius (flat/bordered). The nav Install CTA uses 
 }
 ```
 
-**Hero body copy**:
-```css
-.hero-description {
-  margin: 0;
-  color: rgba(237, 232, 220, 0.92);
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1.6;
-}
-.hero-helper {
-  color: rgba(237, 232, 220, 0.72);
-}
-/* If the hero side uses a backdrop panel over the scene, keep it square. */
-.hero-side::before {
-  border-radius: 0;
-}
-```
+**Hero layout** (`#hero`): one text column bottom left (title D1, mono deck, actions), no backdrop panel or box; a soft radial shade (max 0.42 ink) sits behind the text only. The cube scene is shifted right with `camera.setViewOffset` (0.11 of the width at ≥1400px, 0.15 below, none ≤1100px) and eases back to centre in other sections.
+
+**Hero deck**: Geist Mono 15px / 1.7, 400, 72% cream, max 52ch (14px on phones), the body voice of the rest of the page. Secondary action "Star on GitHub" is a plain M-btn text link beside the CTA.
+
+**Hero crew labels** (`.hero-crew`, ≥1100px, hero only): four Geist Mono 11px uppercase tags (Research lanes, Investigator, Fact-checker, Your call) each on a hairline to a cube, re-anchored every frame to the projected cube positions and clamped clear of the text column. Tag = 1px cream top rule, ink plate behind, terracotta-light second line (`#e08a52`). Fades in 1.6s after load.
+
+**Scroll cue**: "See how a case moves ↓", links to `#what`.
 
 **Primary button (solid ink on paper)**:
 ```css
@@ -525,6 +521,16 @@ One fixed `<div id="global-canvas">` at `z-index: 5, pointer-events: none`. Thre
 ```
 Setup does not use this system — no 3D on form pages.
 
+### 3.10a Flow rail (landing `#what`)
+
+Left column (`minmax(380px, 42vw)`) holds a simplified pipeline diagram that pans with the scroll so the active step's group sits level with its text. Nodes are squared: phase (ink, cream hairline), gate (terracotta fill, ink text), check (blue tint, `#5b8fc4` border), agent (terracotta hairline), Members chip (gold `#e7c76a` hairline with a squared "Members" tag). Inactive groups 0.42 opacity, done 0.7. The cubes render behind the text column in step-specific formations (`STEP_LAYOUTS`). Each step shows a small "01 Lead" meta line; there is no progress bar.
+
+### 3.10b Docs pipeline explorer (`docs/index.html#pipeline`)
+
+Full-width vertical flow centred on a dotted ink canvas, using the same node vocabulary as the flow rail, plus Local / Subscription orchestration cards above it and gold Members chips beside Methodology (OSINT Navigator) and the Investigation gate (Indicator Framework). Scrolling lights each stop; a click opens a right-hand drawer (bottom sheet on phones). Everything squared, no shadows. Docs subsections are expandable cards (`details.acc`), full content width.
+
+**Emoji exception:** the docs drawers, expandable cards and FAQ carry one emoji per heading at Tom's request (2026-10-25). Emoji stay banned everywhere else.
+
 ### 3.11 Spotlight mark (brand)
 
 SVG 24×24. Two arcs + central filled circle. Stroke = `currentColor` so it follows nav state.
@@ -657,13 +663,13 @@ Stay in this range. Don't introduce arbitrary z-indexes. If you need a new layer
 ## 8. Anti-patterns (do not do)
 
 - **Border-radius** > 2px on anything. The DA is flat & squared. Inputs: 0. Cards: 0. CTAs: 0. No exceptions.
-- **Pill shapes** (`border-radius: 999px`). Never.
+- **Pill shapes** (`border-radius: 999px`). Never. Tags such as Public and Members are squared. Status dots (7px) are the only circles.
 - **`box-shadow`**. One exception only: the input `focus` underline trick `box-shadow: inset 0 -2px 0 0 var(--accent-warm)`. Nothing else.
 - **Cool palette** (`#0f1115`, blue `#7cb7ff`, indigo) or any colour outside the 12 tokens above.
 - **Fraunces weight 600+**. 400 italic (accent) or 500 (all display). Nothing else.
 - **Geist Mono as display**. Display is Fraunces, full stop.
 - **Letter-spacing outside the uppercase mono scale** (`{0, 0.15em, 0.18em, 0.2em, 0.22em, 0.25em}` — the `0.25em` is reserved for **M-cue only**; dev-panel uses `0.14em`, which is acceptable because it's behind `display: none` in production).
-- **Emoji in content** (✓ ⚠ 🚀). Use text ("OK", "Warning") or rely on terracotta/amber/red colour tokens.
+- **Emoji in content** (✓ ⚠ 🚀), except the docs headings noted in §3.10b. Use text ("OK", "Warning") or rely on terracotta/amber/red colour tokens.
 - **Inline `style=""` for visual properties**. Acceptable for per-element reveal delays (`style="--rd: 400ms"`) and `data-count="N"`, not for margins, opacities, fonts.
 - **`--warm` as editorial accent**. Cream is neutral surface. Terracotta (`--accent-warm`) is the accent.
 - **`--accent-warm` for warnings**. Use `--amber` for warnings, `--red` for errors, `--green` for positive states.
