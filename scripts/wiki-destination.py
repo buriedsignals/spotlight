@@ -335,12 +335,12 @@ def notes_for(batches: list[dict[str, Any]], journal: dict[str, dict[str, Any]],
             passages = about("claim_source_expression", "claim_ref", record_id)
             if passages:
                 body += ["", "## Passages", ""]
-                for link in sorted(passages, key=lambda r: r["id"]):
-                    passage = latest("source_expression", link["source_expression_ref"]["id"]) or {}
+                for membership in sorted(passages, key=lambda r: r["id"]):
+                    passage = latest("source_expression", membership["source_expression_ref"]["id"]) or {}
                     evidence = latest("evidence", ((passage.get("origin_ref") or {}).get("id")) or "") or {}
                     source = (evidence.get("capture") or {}).get("source_url", "")
                     speaker = f" ({_md(passage['speaker'])})" if passage.get("speaker") else ""
-                    body.append(f"- {link['role']}: \"{_md(passage.get('text', ''))}\"{speaker} <{_md(source)}>".rstrip(" <>"))
+                    body.append(f"- {membership['role']}: \"{_md(passage.get('text', ''))}\"{speaker} <{_md(source)}>".rstrip(" <>"))
             positions = about("source_position", "claim_ref", record_id)
             if positions:
                 body += ["", "## Source positions", ""]

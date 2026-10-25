@@ -23,6 +23,31 @@ assert _SPEC.loader is not None
 _SPEC.loader.exec_module(INGEST)
 
 
+_WSPEC = importlib.util.spec_from_file_location("wiki_destination", ROOT / "scripts" / "wiki-destination.py")
+WIKI = importlib.util.module_from_spec(_WSPEC)
+assert _WSPEC.loader is not None
+_WSPEC.loader.exec_module(WIKI)
+
+
+class ClaimNotes(unittest.TestCase):
+    # E2E D16: a claim with both passages and source positions crashed the note
+    # writer (a loop variable shadowed the link helper).
+    def test_a_claim_with_passages_and_positions_gets_a_note(self) -> None:
+        claim = {"id": "C1", "version": 1, "proposition": "X is licensed under AGPL",
+                 "statement": {"subject": {"text": "X"}, "predicate": "is licensed under"}}
+        batch = {"batch_id": "b1", "case_id": "case-a", "claims": [claim],
+                 "source_expressions": [{"id": "SX1", "version": 1, "text": "Licensed under AGPL."}],
+                 "claim_source_expressions": [{"id": "L1", "version": 1, "claim_ref": {"id": "C1"},
+                                               "source_expression_ref": {"id": "SX1"}, "role": "supports"}],
+                 "source_positions": [{"id": "P1", "version": 1, "claim_ref": {"id": "C1"}, "actor": {"label": "X project"},
+                                       "stance": "asserts", "attribution_verbatim": "Licensed under AGPL."}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            notes = WIKI.notes_for([batch], {}, WIKI.Resolver(Path(tmp)))
+        note = next(text for path, text in notes.items() if path.startswith("spotlight/claims/"))
+        self.assertIn("## Passages", note)
+        self.assertIn("## Source positions", note)
+
+
 class WikiDestination(INGEST.SoloCase):
     def requested(self, name: str) -> Path:
         case = self.prepared(name)
