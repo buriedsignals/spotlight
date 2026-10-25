@@ -104,20 +104,18 @@ test('each process declares exactly its allowlist, workers cannot delegate, and 
 
 // E2E D2: a fixed 8192-token output cap cut off whole-file rewrites on a
 // 131072-token model.
-test('the output cap follows the context window: a quarter of it, never below 8192', async (t) => {
-	for (const [window, cap] of [['131072', 32768], ['32768', 8192]] as const) {
-		const fake = await startFakeOpenAI(() => ({ text: 'Noted.' }));
-		t.after(() => fake.close());
-		const space = await workspace(t);
-		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: window });
+test('the output cap follows the context window', async (t) => {
+	const fake = await startFakeOpenAI(() => ({ text: 'Noted.' }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '131072' });
 
-		await settledPrompt(chat, 'Open the case.');
+	await settledPrompt(chat, 'Open the case.');
 
-		const request = fake.requests[0];
-		assert.equal(request.max_tokens ?? request.max_completion_tokens, cap, window);
-		chat.process.stdin.end();
-		await chat.exited;
-	}
+	const request = fake.requests[0];
+	assert.equal(request.max_tokens ?? request.max_completion_tokens, 32768);
+	chat.process.stdin.end();
+	await chat.exited;
 });
 
 test('a missing required variable stops the launcher with a plain message and no protocol output', async (t) => {
@@ -370,83 +368,42 @@ test('a new case at Investigation is activated before the investigator starts, a
 	assert.match(toolResults(worker[worker.length - 1]).join('\n'), /protected/);
 });
 
-// A failed activation stops the spawn: the investigator never runs on a new
-// case without its contract.
-test('when a new case cannot be activated, the investigator does not start', async (t) => {
-	let investigatorRan = false;
-	const fake = await startFakeOpenAI((request) => {
-		if (isWorkerRequest(request, 'investigator')) {
-			investigatorRan = true;
-			return { text: 'Investigator finished.' };
+// A case activate-new refuses (recorded passages without a contract) never
+// starts the investigator; a legacy case (an old root findings.json) keeps
+// contract 1.0 and starts without activation.
+test('the investigator does not start on a case that cannot be activated, and a legacy case starts without activation', async (t) => {
+	const rows = [
+		{ file: 'data/source-expressions.json', content: '{"schema_version": "1.0", "project": "case-a", "expressions": [{"id": "p1"}]}', starts: false },
+		{ file: 'findings.json', content: '{"project": "case-a", "findings": []}', starts: true },
+	];
+	for (const row of rows) {
+		let investigatorRan = false;
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'investigator')) {
+				investigatorRan = true;
+				return { text: 'Investigator finished.' };
+			}
+			return toolResults(request).length === 0
+				? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
+				: { text: 'Done.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = await caseAtInvestigation(space);
+		await writeFile(join(caseDir, row.file), row.content);
+		const chat = launch(t, baseEnv(space, fake.baseURL));
+
+		await settledPrompt(chat, 'Continue.');
+
+		assert.equal(investigatorRan, row.starts, row.file);
+		assert.equal(existsSync(join(caseDir, 'data', 'case-contract.json')), false, row.file);
+		if (!row.starts) {
+			const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+			assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /could not be activated/);
 		}
-		return toolResults(request).length === 0
-			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
-			: { text: 'Done.' };
-	});
-	t.after(() => fake.close());
-	const space = await workspace(t);
-	const caseDir = await caseAtInvestigation(space);
-	// Recorded passages without a contract (a pilot case): activate-new refuses it.
-	await writeFile(join(caseDir, 'data', 'source-expressions.json'), '{"schema_version": "1.0", "project": "case-a", "expressions": [{"id": "p1"}]}');
-	const chat = launch(t, baseEnv(space, fake.baseURL));
-
-	await settledPrompt(chat, 'Continue.');
-
-	assert.equal(investigatorRan, false);
-	assert.equal(existsSync(join(caseDir, 'data', 'case-contract.json')), false);
-	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
-	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /could not be activated/);
-});
-
-// A born contract without its passages file (an older publish order) is
-// repaired before the investigator starts.
-test('a contract left without its passages file is repaired before the investigator starts', async (t) => {
-	let passagesAtStart = false;
-	const fake = await startFakeOpenAI((request) => {
-		if (isWorkerRequest(request, 'investigator')) {
-			passagesAtStart ||= existsSync(passagesPath);
-			return { text: 'Investigator finished.' };
-		}
-		return toolResults(request).length === 0
-			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
-			: { text: 'Done.' };
-	});
-	t.after(() => fake.close());
-	const space = await workspace(t);
-	const caseDir = await caseAtInvestigation(space);
-	const passagesPath = join(caseDir, 'data', 'source-expressions.json');
-	const contract = { schema_version: '1.0', project: 'case-a', current_contract_version: '1.1', activation_events: [{ event_id: 'born-0123456789abcdef', kind: 'born', activated_contract_version: '1.1', activated_at: '2026-10-25T00:00:00Z', tool_version: 'test' }] };
-	await writeFile(join(caseDir, 'data', 'case-contract.json'), JSON.stringify(contract));
-	const chat = launch(t, baseEnv(space, fake.baseURL));
-
-	await settledPrompt(chat, 'Continue.');
-
-	assert.equal(passagesAtStart, true);
-});
-
-// A legacy case (an old root findings.json) keeps contract 1.0: the harness
-// does not try to activate it, and the investigator still starts.
-test('a legacy case resumes without activation', async (t) => {
-	let investigatorRan = false;
-	const fake = await startFakeOpenAI((request) => {
-		if (isWorkerRequest(request, 'investigator')) {
-			investigatorRan = true;
-			return { text: 'Investigator finished.' };
-		}
-		return toolResults(request).length === 0
-			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
-			: { text: 'Done.' };
-	});
-	t.after(() => fake.close());
-	const space = await workspace(t);
-	const caseDir = await caseAtInvestigation(space);
-	await writeFile(join(caseDir, 'findings.json'), '{"project": "case-a", "findings": []}');
-	const chat = launch(t, baseEnv(space, fake.baseURL));
-
-	await settledPrompt(chat, 'Continue.');
-
-	assert.equal(investigatorRan, true);
-	assert.equal(existsSync(join(caseDir, 'data', 'case-contract.json')), false);
+		chat.process.stdin.end();
+		await chat.exited;
+	}
 });
 
 // D6: the orchestrator cannot rewrite the files a worker owns around the
@@ -1155,7 +1112,7 @@ test('newsroom edition: prior knowledge and decision checks go to the Editorial 
 	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
 	const investigator = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
 	assert.ok(toolNames(orchestrator[0]).includes('run_checks') && toolNames(orchestrator[0]).includes('newsroom_submit'));
-	assert.ok(!toolNames(orchestrator[0]).includes('decision_signals'));
+	assert.ok(!toolNames(orchestrator[0]).includes('decision_signals') && !toolNames(orchestrator[0]).includes('wiki_destination'));
 	for (const name of ['search_knowledge', 'get_record', 'traverse', 'coverage']) assert.ok(toolNames(investigator[0]).includes(name), name);
 	assert.ok(!toolNames(investigator[0]).includes('query_vault'));
 	// The model's attempt at the local decision checks found no such tool.

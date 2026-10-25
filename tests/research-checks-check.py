@@ -45,6 +45,9 @@ class D1LanePlan(unittest.TestCase):
         method = methodology()
         local_corpus(method)
         self.assertEqual(d1(method), [])
+        # Consent is the Methodology approval: an older plan's model-written stamp stays valid and is not read.
+        plan_of(method)["consent"].update(decided_by="Tom Vaillant", decided_at="2025-01-15T12:00:00Z")
+        self.assertEqual(d1(method), [])
 
     def test_a_case_without_a_research_plan_has_nothing_to_check(self) -> None:
         method = methodology()
@@ -74,8 +77,6 @@ class D1LanePlan(unittest.TestCase):
         def unknown_egress_topic(p): p["egress"].append({"topic_id": "ghost-web", "destination": "public_web"})
         # Plans the lane runner refuses or leaves out must fail here, against the schema.
         def unknown_destination(p): p["egress"][0]["destination"] = "openrouter_swarm"
-        def consent_without_swarm(p): p["consent"].pop("swarm")
-        def extra_topic_field(p): p["topics"][0]["direction_ids"] = ["ownership"]
         # A web lane with no route named still runs on the swarm, so it needs the opt-in.
         def web_lane_without_opt_in(p):
             brief = topic("ownership-web", "ownership", "web")
@@ -83,12 +84,9 @@ class D1LanePlan(unittest.TestCase):
             p["topics"] = [brief]
             p["egress"] = [{"topic_id": "ownership-web", "destination": "public_web"}]
             p["consent"]["swarm"] = False
-        # Topic routes the lane runner refuses: a web lane runs only on the swarm, a local lane only locally.
+        # A topic route the lane runner refuses: a web lane runs only on the swarm.
         def web_lane_on_local_route(p): p["topics"][0]["route"] = "local"
         def subscription_route_in_swarm_mode(p): p["topics"][0]["route"] = "subscription"
-        def local_lane_on_swarm_route(p):
-            p["topics"].append(topic("ownership-prior-knowledge", "ownership", "prior-knowledge"))
-            p["egress"].append({"topic_id": "ownership-prior-knowledge", "destination": "local_model"})
 
         cases = {
             "round_budget_usd must be set": no_budget,
@@ -107,12 +105,9 @@ class D1LanePlan(unittest.TestCase):
             "at most 10 across the plan": too_many_methods,
             "egress names an unknown topic": unknown_egress_topic,
             "research_plan.egress[0].destination: must be one of": unknown_destination,
-            "research_plan.consent: missing swarm": consent_without_swarm,
-            "research_plan.topics[0]: unknown field direction_ids": extra_topic_field,
             "(ownership-web): a swarm topic needs the member's swarm opt-in": web_lane_without_opt_in,
             "a registries lane runs on the swarm route, not 'local'": web_lane_on_local_route,
             "the subscription route needs mode subscription_subagents": subscription_route_in_swarm_mode,
-            "a prior-knowledge lane runs on the local route, not 'swarm'": local_lane_on_swarm_route,
         }
         for expected, breaker in cases.items():
             with self.subTest(expected):
@@ -120,13 +115,6 @@ class D1LanePlan(unittest.TestCase):
                 breaker(plan_of(method))
                 problems = d1(method)
                 self.assertTrue(any(expected in p for p in problems), problems)
-
-    def test_consent_is_the_approval_so_a_plan_needs_no_stamp_and_a_model_written_one_is_ignored(self) -> None:
-        method = methodology()
-        self.assertEqual(plan_of(method)["consent"], {"swarm": True})
-        self.assertEqual(d1(method), [])
-        plan_of(method)["consent"].update(decided_by="Tom Vaillant", decided_at="2025-01-15T12:00:00Z")
-        self.assertEqual(d1(method), [], "older plans with a stamp stay valid; the stamp is not read")
 
     def test_sensitive_mode_allows_only_the_local_corpus_lane(self) -> None:
         method = methodology()

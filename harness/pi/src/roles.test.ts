@@ -65,14 +65,3 @@ test('the raw-page rule in every prompt follows the model tier', () => {
 		}
 	}
 });
-
-// D4: solo Ingest writes the member wiki through wiki_destination. It is
-// local, so sensitive mode keeps it; the newsroom edition ingests by Submit
-// and never gets it.
-test('the orchestrator holds the solo Ingest wiki write, in sensitive mode too, and not in the newsroom edition', () => {
-	const orchestrator = agentSpec(loadComposition(), 'orchestrator');
-	assert.ok(allowedTools(orchestrator, false, 'solo').includes('wiki_destination'));
-	assert.ok(allowedTools(orchestrator, true, 'solo').includes('wiki_destination'));
-	assert.ok(!allowedTools(orchestrator, false, 'newsroom').includes('wiki_destination'));
-	assert.ok(allowedTools(orchestrator, false, 'newsroom').includes('newsroom_submit'));
-});

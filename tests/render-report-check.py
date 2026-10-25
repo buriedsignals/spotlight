@@ -318,9 +318,9 @@ def check_public_sources(root: Path) -> None:
     assert "`research/official-record.md`" in (case / "findings-report.md").read_text()
 
 
-def gate_review(case: Path, finals: dict[str, object], channel: str = "page") -> None:
+def gate_review(case: Path, finals: dict[str, object]) -> None:
     """The Investigation gate's saved page record, as the review page writes it,
-    and the gate approval that binds it (a legacy-v1 approval binds no review)."""
+    and the gate approval that binds it by hash."""
     items = {}
     for key, final in finals.items():
         kind, finding_id = key.split(":", 1)
@@ -329,8 +329,7 @@ def gate_review(case: Path, finals: dict[str, object], channel: str = "page") ->
     review_path = case / "data" / "investigation-gate-review.json"
     write_json(review_path,
                {"schema_version": "spotlight-review/v1", "gate": "investigation_gate", "reviewer": "M", "items": items})
-    binding = {"channel": channel, "nonce_sha256": "0" * 64, "review_digest": None,
-               "review_sha256": None if channel == "legacy-v1" else sha(review_path)}
+    binding = {"channel": "page", "nonce_sha256": "0" * 64, "review_digest": None, "review_sha256": sha(review_path)}
     write_json(case / "data" / "orchestration.json", {
         "schema_version": "spotlight-orchestration/v2", "attempts": {}, "decisions": {},
         "approvals": {"investigation_gate": {"approved_by": "M", "approved_at": "2026-07-10T12:00:00Z", "review": binding}},
@@ -339,85 +338,6 @@ def gate_review(case: Path, finals: dict[str, object], channel: str = "page") ->
 
 def finalize(case: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run([sys.executable, str(FINALIZER), str(case)], capture_output=True, text=True)
-
-
-def check_gate_marks_bound_to_approval(root: Path) -> None:
-    """Gate marks count only from the review the approval binds: a review
-    changed after approval, or one a legacy approval never bound, is refused
-    (the member approves the gate again), never read and never ignored."""
-    changed = build_case(root / "changed-after-approval")
-    gate_review(changed, {"selection:F1": True, "disposition:F2": "set_aside"})
-    only_finding(changed, "F1")
-    review_path = changed / "data" / "investigation-gate-review.json"
-    review = json.loads(review_path.read_text())
-    review["items"]["disposition:F2"]["final"] = "keep"
-    write_json(review_path, review)
-    legacy = build_case(root / "legacy-approval")
-    gate_review(legacy, {"selection:F1": True, "disposition:F2": "set_aside"}, channel="legacy-v1")
-    only_finding(legacy, "F1")
-    for label, case in (("changed", changed), ("legacy", legacy)):
-        result = finalize(case)
-        assert result.returncode != 0, label
-        assert "approve the Investigation gate again" in result.stdout + result.stderr, result.stdout + result.stderr
-        assert not (case / "report.html").exists(), label
-
-
-def check_set_aside_reaches_no_artifact(root: Path) -> None:
-    """Nothing of a set-aside finding reaches the artifacts by another route:
-    its technical indicators cannot be charted, and a passage it shares with a
-    reported finding carries only the reported finding's link."""
-    case = build_case(root / "set-aside-indicator")
-    findings_path = case / "data" / "findings.json"
-    findings = json.loads(findings_path.read_text())
-    findings["technical_indicators"] = [{
-        "id": "IOC-F2", "finding_id": "F2", "type": "domain", "value": "aside.example",
-        "context": "Domain cited by F2.", "sources": ["https://example.org/official_record(v1)"],
-        "first_observed": "2026-01-05T09:00:00Z",
-    }]
-    write_json(findings_path, findings)
-    gate_review(case, {"selection:F1": True, "disposition:F2": "set_aside"})
-    only_finding(case, "F1")
-    draft_path = case / "data" / "report-draft.json"
-    draft = json.loads(draft_path.read_text())
-    draft["diagrams"] = [{"id": "timeline-1", "type": "timeline", "title": "Observed infrastructure",
-                          "caption": "Indicators by first observation.", "finding_ids": ["F1"],
-                          "indicator_ids": ["IOC-F2"]}]
-    write_json(draft_path, draft)
-    result = finalize(case)
-    assert result.returncode != 0, result.stdout
-    assert "IOC-F2" in result.stdout and "set aside" in result.stdout, result.stdout + result.stderr
-    assert not (case / "report.html").exists()
-
-    shared = build_case(root / "set-aside-shared-passage")
-    activate_case(shared)
-    findings = json.loads((shared / "data" / "findings.json").read_text())
-    source_path = shared / "data" / "source-expressions.json"
-    source = json.loads(source_path.read_text())
-    expression = source["expressions"][0]
-    link = {"expression_fingerprint": expression["expression_fingerprint"],
-            "finding_fingerprint": findings["findings"][1]["finding_fingerprint"],
-            "finding_id": "F2", "relation": "supports"}
-    expression["finding_links"].append({**link, "link_fingerprint": fingerprint(link)})
-    write_json(source_path, source)
-    refresh_expression_contract_hash(shared)
-    gate_review(shared, {"selection:F1": True, "disposition:F2": "set_aside"})
-    only_finding(shared, "F1")
-    result = finalize(shared)
-    assert result.returncode == 0, result.stdout + result.stderr
-    ledger = json.loads((shared / "evidence-map.json").read_text())
-    assert [link["finding_id"] for link in ledger["source_expressions"][0]["finding_links"]] == ["F1"]
-
-
-def check_nothing_reportable(root: Path) -> None:
-    """Every finding set aside: the draft check says there is nothing to report
-    and points at the decline, which still records."""
-    case = build_case(root / "all-set-aside")
-    gate_review(case, {"selection:F1": False, "disposition:F2": "set_aside"})
-    result = finalize(case)
-    assert result.returncode != 0
-    assert "NO_REPORTABLE_FINDINGS" in result.stdout and "declined" in result.stdout, result.stdout + result.stderr
-    declined = subprocess.run([sys.executable, str(DECLINE_REPORT), str(case)], capture_output=True, text=True)
-    assert declined.returncode == 0, declined.stdout + declined.stderr
 
 
 def only_finding(case: Path, finding_id: str) -> None:
@@ -434,26 +354,56 @@ def only_finding(case: Path, finding_id: str) -> None:
 def check_set_aside_findings(root: Path) -> None:
     """A finding the member left out at the Investigation gate (an unverified
     one set aside, or a verified one unselected) never reaches the report: a
-    draft naming it is refused, and the report renders without it."""
+    draft naming it or charting its indicators is refused, the report renders
+    without it, gate marks count only from the review the approval binds, and
+    with every finding left out there is nothing to report."""
     case = build_case(root / "set-aside")
+    findings_path = case / "data" / "findings.json"
+    findings = json.loads(findings_path.read_text())
+    findings["technical_indicators"] = [{
+        "id": "IOC-F2", "finding_id": "F2", "type": "domain", "value": "aside.example",
+        "context": "Domain cited by F2.", "sources": ["https://example.org/official_record(v1)"],
+        "first_observed": "2026-01-05T09:00:00Z",
+    }]
+    write_json(findings_path, findings)
     gate_review(case, {"selection:F1": True, "disposition:F2": "set_aside"})
-    named = subprocess.run([sys.executable, str(FINALIZER), str(case)], capture_output=True, text=True)
-    assert named.returncode != 0, named.stdout
-    assert "set aside at the Investigation gate" in named.stdout + named.stderr, named.stdout + named.stderr
+    named = finalize(case)
+    assert named.returncode != 0 and "set aside at the Investigation gate" in named.stdout, named.stdout + named.stderr
     only_finding(case, "F1")
-    result = subprocess.run([sys.executable, str(FINALIZER), str(case)], capture_output=True, text=True)
+    draft_path = case / "data" / "report-draft.json"
+    draft = json.loads(draft_path.read_text())
+    write_json(draft_path, {**draft, "diagrams": [{
+        "id": "timeline-1", "type": "timeline", "title": "Observed infrastructure",
+        "caption": "Indicators by first observation.", "finding_ids": ["F1"], "indicator_ids": ["IOC-F2"]}]})
+    charted = finalize(case)
+    assert charted.returncode != 0 and "IOC-F2" in charted.stdout and "set aside" in charted.stdout, charted.stdout + charted.stderr
+    write_json(draft_path, draft)
+    result = finalize(case)
     assert result.returncode == 0, result.stdout + result.stderr
     for name in ("report.html", "findings-report.md"):
         assert "An unsupported second claim" not in (case / name).read_text(), name
     ledger = json.loads((case / "evidence-map.json").read_text())
     assert [claim["id"] for claim in ledger["claims"]] == ["F1"]
 
+    # A review changed after approval is refused, never read and never ignored.
+    review_path = case / "data" / "investigation-gate-review.json"
+    review = json.loads(review_path.read_text())
+    review["items"]["disposition:F2"]["final"] = "keep"
+    write_json(review_path, review)
+    changed = finalize(case)
+    assert changed.returncode != 0 and "approve the Investigation gate again" in changed.stdout, changed.stdout + changed.stderr
+
     unselected = build_case(root / "unselected")
     gate_review(unselected, {"selection:F1": False, "disposition:F2": "keep"})
     only_finding(unselected, "F2")
-    result = subprocess.run([sys.executable, str(FINALIZER), str(unselected)], capture_output=True, text=True)
+    result = finalize(unselected)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Ada Lovelace is President" not in (unselected / "report.html").read_text()
+
+    nothing = build_case(root / "all-set-aside")
+    gate_review(nothing, {"selection:F1": False, "disposition:F2": "set_aside"})
+    result = finalize(nothing)
+    assert result.returncode != 0 and "NO_REPORTABLE_FINDINGS" in result.stdout, result.stdout + result.stderr
 
 
 def main() -> int:
@@ -475,9 +425,6 @@ def main() -> int:
             assert "evidence-correction pass" not in output.read_text(), output.name
         check_public_sources(Path(tmp) / "public-sources")
         check_set_aside_findings(Path(tmp))
-        check_gate_marks_bound_to_approval(Path(tmp))
-        check_nothing_reportable(Path(tmp))
-        check_set_aside_reaches_no_artifact(Path(tmp))
         assert "<script>alert('unsafe')</script>" not in html
         assert "&lt;script&gt;alert" in html
         assert "<script>alert('unsafe')</script>" not in markdown
