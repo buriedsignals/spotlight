@@ -101,6 +101,24 @@ test('each process declares exactly its allowlist, workers cannot delegate, and 
 	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /Investigator finished\./);
 });
 
+// E2E D2: a fixed 8192-token output cap cut off whole-file rewrites on a
+// 131072-token model.
+test('the output cap follows the context window: a quarter of it, never below 8192', async (t) => {
+	for (const [window, cap] of [['131072', 32768], ['32768', 8192]] as const) {
+		const fake = await startFakeOpenAI(() => ({ text: 'Noted.' }));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: window });
+
+		await settledPrompt(chat, 'Open the case.');
+
+		const request = fake.requests[0];
+		assert.equal(request.max_tokens ?? request.max_completion_tokens, cap, window);
+		chat.process.stdin.end();
+		await chat.exited;
+	}
+});
+
 test('a missing required variable stops the launcher with a plain message and no protocol output', async (t) => {
 	const space = await workspace(t);
 	const env = baseEnv(space, 'http://127.0.0.1:9/v1');

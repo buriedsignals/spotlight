@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { CHECKOUT_ROOT } from '../roles.ts';
 import { caseFileTools } from './case-files.ts';
 import type { CaseScope } from './run.ts';
 
@@ -214,4 +215,42 @@ test('read_file line ranges, grep_files line numbers and json_pointer select wha
 		assert.equal(await call('read_file', { path: 'research/api.json', json_pointer: pointer }), expected, pointer);
 	}
 	await assert.rejects(call('read_file', { path: 'research/api.json', json_pointer: '/items/7' }), /does not resolve/);
+});
+
+// E2E D3: save_as "research/" became a file named research, and every later
+// write under research/ failed with ENOTDIR.
+test('a path ending in a slash or naming a folder is refused and leaves no file named like the folder', async (t) => {
+	const { caseDir, call } = await fixture(t);
+
+	await assert.rejects(call('write_file', { path: 'research/', content: 'page' }), /names a folder/);
+	assert.equal(existsSync(join(caseDir, 'research')), false);
+	await assert.rejects(call('write_file', { path: 'data', content: 'page' }), /is a folder/);
+
+	await call('write_file', { path: 'research/rounds.json', content: '[]' });
+	assert.equal(await readFile(join(caseDir, 'research/rounds.json'), 'utf8'), '[]');
+});
+
+// E2E D2: a rewrite cut off at the output cap arrived as content "" and wiped
+// data/fact-check.json.
+test('empty or whitespace content over an existing non-empty file is refused and the file is kept', async (t) => {
+	const { caseDir, call } = await fixture(t);
+	await writeFile(join(caseDir, 'data', 'fact-check.json'), '{"claims":[]}');
+
+	for (const content of ['', '  \n']) {
+		await assert.rejects(call('write_file', { path: 'data/fact-check.json', content }), /would erase/);
+	}
+	assert.equal(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8'), '{"claims":[]}');
+
+	await call('write_file', { path: 'research/empty.md', content: '' });
+	assert.equal(await readFile(join(caseDir, 'research/empty.md'), 'utf8'), '');
+});
+
+// E2E D11: the tool text promises the checkout's schemas/, but a relative
+// schemas/ path resolved inside the case and came back "not found".
+test('a relative schemas/ path reads the checkout schema', async (t) => {
+	const { call } = await fixture(t);
+
+	const text = await call('read_file', { path: 'schemas/methodology.schema.json' });
+
+	assert.equal(text, await readFile(join(CHECKOUT_ROOT, 'schemas', 'methodology.schema.json'), 'utf8'));
 });

@@ -437,6 +437,13 @@ function positiveInteger(env: Env, name: string, fallback: number): number {
 // The tier's fold point, with SPOTLIGHT_COMPACT_AT / SPOTLIGHT_COMPACT_KEEP
 // overriding it. A fold point at or past the context window would never fire
 // before the model overflows, so it is refused rather than silently moved.
+// The output cap per request: a quarter of the context window, never below
+// 8192. A fixed 8192 cut off whole-file rewrites on large-window models, and
+// the cut-off call reached write_file with empty content.
+export function maxOutputTokens(contextWindow: number): number {
+	return Math.max(8192, Math.floor(contextWindow / 4));
+}
+
 function readFold(env: Env, tier: ModelTier, contextWindow: number): Fold | undefined {
 	if (tier === 'frontier') return undefined;
 	const at = positiveInteger(env, 'SPOTLIGHT_COMPACT_AT', LOCAL_TIER_FOLD[tier].at);

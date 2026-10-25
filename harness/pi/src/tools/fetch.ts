@@ -33,14 +33,17 @@ import { CHECKOUT_ROOT } from '../roles.ts';
 import { writeConfined } from './case-files.ts';
 import { anonymizedFetch, assertPublicDestination, checkURL, publicDestination } from './egress.ts';
 import { startEgressProxy } from './proxy.ts';
-import { checkedParams, jsonResult, programOutput, runPython, savePath } from './run.ts';
+import { ToolArgumentError, checkedParams, jsonResult, programOutput, runPython, savePath } from './run.ts';
 import type { ToolContext } from './run.ts';
 
 const MAX_RETURNED_CHARS = 30_000;
 // Variables the seam reads: the optional fallback key and the Tor posture.
 export const SEAM_ENV = ['FIRECRAWL_API_KEY', 'SPOTLIGHT_ANONYMIZE_FETCH', 'TOR_SOCKS', 'SCRAPE_PROVIDER'];
 
-export const webURL = Type.String({ minLength: 1, maxLength: 2048, pattern: '^[Hh][Tt][Tt][Pp][Ss]?://' });
+// Patterns are written to hold as full matches too: some providers compile
+// `pattern` into a whole-value grammar, and a bare prefix then lets the model
+// emit only "https://". The egress guard still checks the URL itself.
+export const webURL = Type.String({ minLength: 1, maxLength: 2048, pattern: '^[Hh][Tt][Tt][Pp][Ss]?://.+$' });
 
 const params = Type.Object({ url: webURL, save_as: Type.Optional(savePath) }, { additionalProperties: false });
 
@@ -95,10 +98,15 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 		name: 'fetch',
 		label: 'Fetch',
 		description:
-			'Fetch one public web page as Markdown (Crawl4AI). Only public http(s) addresses are allowed. Optional save_as stores the Markdown in the case under research/ or evidence/. When the result says distilled: true, save_as holds compact RLM leads (what you get back) and raw_path the page itself, for citations.',
+			'Fetch one public web page as Markdown (Crawl4AI). Only public http(s) addresses are allowed. Optional save_as stores the Markdown in the case under research/ or evidence/ (a file name, not .json: use http_get to keep a JSON body). When the result says distilled: true, save_as holds compact RLM leads (what you get back) and raw_path the page itself, for citations.',
 		parameters: params,
 		async execute(_id, raw, signal) {
 			const input = checkedParams<{ url: string; save_as?: string }>('fetch', params, raw);
+			// fetch stores Markdown (or RLM leads), never the response body, so a .json
+			// name would hold text no JSON reader or json_pointer anchor can parse.
+			if (input.save_as && /\.json$/i.test(input.save_as)) {
+				throw new ToolArgumentError('fetch: save_as ends in .json, but fetch saves Markdown. Use http_get to save a JSON response as is, or give save_as a .md name.');
+			}
 			const rlm = rlmEndpoint(context.env);
 			if (rlm && !input.save_as) throw new Error('fetch: on this tier fetch needs save_as, so the raw page is kept beside its leads.');
 			const viaTor = anonymizedFetch(context.env);
