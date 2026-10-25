@@ -90,10 +90,12 @@
         "osint_tools",
         "navigator_tools",
         "exiftool",
+        "extract_document",
         "source_expressions"
       ],
       "keys": [
-        "FIRECRAWL_API_KEY"
+        "FIRECRAWL_API_KEY",
+        "SPOTLIGHT_EXTRACT_API_KEY"
       ]
     },
     "fact-checker": {
@@ -123,6 +125,7 @@
         "osint_tools",
         "navigator_tools",
         "exiftool",
+        "extract_document",
         "source_expressions"
       ],
       "denyReads": [
@@ -133,7 +136,8 @@
         "data/research-*.json"
       ],
       "keys": [
-        "FIRECRAWL_API_KEY"
+        "FIRECRAWL_API_KEY",
+        "SPOTLIGHT_EXTRACT_API_KEY"
       ],
       "phases": [
         "investigation"

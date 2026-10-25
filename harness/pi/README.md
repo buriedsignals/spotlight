@@ -62,6 +62,8 @@ Configuration comes only from the environment. A missing or invalid required var
 | `SPOTLIGHT_BROWSE_CHROMIUM`, `PLAYWRIGHT_BROWSERS_PATH` | no | The Chromium `browse` starts: an explicit executable, or where Playwright (and so `dev-browser install`) keeps its browsers. Default: the Chromium `dev-browser install` downloads. |
 | `SPOTLIGHT_RLM_OPENAI_BASE_URL` | no | OpenAI-compatible base URL of the RLM, the small resident model that distills every `fetch` (see **Lead distillation** under [Tools](#tools)) and that `run_rlm` uses. It reads case material, so it must be an endpoint you run yourself: a loopback address in the solo edition, an `own` route in the newsroom edition. Anything else stops the launcher (exit code 2). |
 | `SPOTLIGHT_RLM_OPENAI_MODEL`, `SPOTLIGHT_RLM_MODE`, `SPOTLIGHT_RLM_MODEL` | no | RLM model and `run_rlm` settings. |
+| `SPOTLIGHT_EXTRACT_OPENAI_BASE_URL` | no | OpenAI-compatible base URL of the document-extraction model (NuExtract3 on Osaurus) behind `extract_document`. It reads case material, so the same rule as the RLM applies: loopback in the solo edition, an `own` route in the newsroom edition, otherwise the launcher stops. Without it, `extract_document` says no extraction model is configured. |
+| `SPOTLIGHT_EXTRACT_OPENAI_MODEL`, `SPOTLIGHT_EXTRACT_API_KEY` | no | Extraction model id (default `nuextract3-mlx-nvfp4`) and the endpoint's token, given only to the investigator and the fact-checker. |
 | `ANOMALY_HOME` | no | Absolute path of an Anomaly checkout ([Anomaly clue methods](../../integrations/anomaly/integration.md)). Read by `anomaly_methods` and by the research merge, which runs approved methods on lane tables. |
 | `SPOTLIGHT_RESEARCH_SWARMS` | no | Engine's Research switch: `on` turns on the whole Research phase (the swarm still needs a key). Off, D1 refuses any research plan; the harness passes the value to its Python checks. Default `off`. |
 | `OPENROUTER_API_KEY` | swarm | The member's key for the swarm route (solo). Never logged. |
@@ -142,6 +144,7 @@ There is no shell in this harness. Each tool takes typed arguments, refuses anyt
 | `osint_tools` | `scripts/osint-tools.py find` and `categories` | orchestrator, investigator, fact-checker |
 | `navigator_tools` | `navigator tools find` and `show` | investigator, fact-checker |
 | `exiftool` | `exiftool -json` | investigator, fact-checker |
+| `extract_document` | the operator's NuExtract3 endpoint (`SPOTLIGHT_EXTRACT_OPENAI_BASE_URL`): fills a JSON template from one case file (text, or a scan or page image), the template at the start of the message; capped at 2,500 tokens, where a looping run stops and nothing is kept; values are leads tied to the file's SHA-256, never evidence; printed and typed documents only | investigator, fact-checker |
 | `source_expressions` | `scripts/write-source-expressions.py {CASE_DIR}`: `write` (`--actor <calling role> --cycle N`, the proposal on stdin) or `fingerprint_findings` (`--fingerprint-findings`); the only writer of `data/source-expressions.json` and `data/source-positions.json` | investigator, fact-checker |
 | `decision_signals` | `scripts/decision-signals.py` | orchestrator |
 | `wiki_destination` | `scripts/wiki-destination.py {CASE_DIR}`, with the install config; writes only under `spotlight/` in the configured wiki, and the completed receipt (solo edition only) | orchestrator |

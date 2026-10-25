@@ -558,6 +558,8 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 // that refuse their remote step themselves when SPOTLIGHT_SENSITIVE is set.
 // Any other tool a sensitive process declares is a possible way out.
 const LOCAL_TOOLS = new Set([
+	// Its endpoint is confirmed loopback (solo) or own (newsroom) at launch.
+	'extract_document',
 	'spotlight_resolve',
 	'spotlight_transition',
 	'spawn_agent',

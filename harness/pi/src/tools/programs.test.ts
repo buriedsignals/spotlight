@@ -199,6 +199,7 @@ test('each tool rejects arguments outside its schema without starting anything',
 		build_review_html: { case: 'other' },
 		wiki_destination: { case: 'other' },
 		source_expressions: { action: 'delete' },
+		extract_document: { path: 'evidence/a.png', template: {} },
 	};
 	assert.deepEqual([...tools.keys()].sort(), Object.keys(wrongType).sort());
 	for (const [name, params] of Object.entries(wrongType)) {
