@@ -455,8 +455,12 @@ def request_follow_up(
     )
     dependency_digest = require_investigation_gate_digest(case)
     record_decision(ledger, binding, "follow_up", dependency_digest)
+    # Indicator Framework items the member sent to the next cycle, from the
+    # review record this decision binds (binding["review_sha256"]).
+    tasks = review.indicator_framework_next_cycle(case, data_descriptor)
     state["follow_up"] = {
         "instructions": instructions,
+        **({"indicator_framework_tasks": tasks} if tasks else {}),
         "dependency_digest": dependency_digest,
         **rework_snapshot(case),
         **requester,

@@ -17,6 +17,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SEAM = ROOT / "scripts" / "spotlight-orchestration.py"
 BUILDER = ROOT / "tests" / "fixtures" / "review_case.py"
+sys.path.insert(0, str(ROOT / "tests" / "fixtures"))
+from indicator_framework import document as indicator_document  # noqa: E402
 APPROVER = ("--approved-by", "journalist:fixture", "--approved-at", "2026-08-23T12:00:00Z")
 DECIDER = ("--decided-by", "journalist:fixture", "--decided-at", "2026-08-23T12:00:00Z")
 
@@ -260,6 +262,33 @@ class ReviewGate(CaseFixture):
         # The spent nonce cannot record anything further.
         self.seam(case, *request, "--nonce", nonce, "--digest", view["digest"], expect=3)
         self.assertEqual(self.phase(case), "investigation")
+
+    def test_indicator_framework_section_and_next_cycle_assignment(self) -> None:
+        case = self.build("indicators", "investigation_gate", "--clean")
+        # No file, no section and nothing to assign.
+        self.assertNotIn("indicator_framework", self.view(case, "investigation_gate")["content"])
+        (case / "data" / "indicator-framework.json").write_text(json.dumps(indicator_document("F1")), encoding="utf-8")
+        view = self.view(case, "investigation_gate")
+        section = view["content"]["indicator_framework"]
+        self.assertEqual([(row["id"], row["quadrant"]) for row in section["indicators"]], [("ind-1", "Solid"), ("ind-2", "Shared")])
+        self.assertEqual([(b["branch_id"], b["strongest"]) for b in section["branches"]], [("br-1", ["ind-1"]), ("br-2", ["ind-2"])])
+        self.assertIn("2026-03-02", section["temporal_summary"])
+        assignments = [item for item in view["items"] if item["kind"] == "assignment"]
+        self.assertEqual([(i["key"], i["final"]) for i in assignments], [("indicator:t-1", None), ("indicator:t-2", None)])
+        self.assertEqual(view["blocking"], [])
+        # Only the page's choices are accepted.
+        self.edit(case, "investigation_gate", {"kind": "mark", "key": "indicator:t-1", "value": "investigator"}, expect=3)
+        self.edit(case, "investigation_gate", {"kind": "mark", "key": "indicator:t-1", "value": "report"})
+        view = self.edit(case, "investigation_gate", {"kind": "mark", "key": "indicator:t-2", "value": "next_cycle"})
+        nonce = self.nonce(case, "investigation_gate")
+        self.seam(case, "request-follow-up", "--instructions", "Check the archive.", "--decided-by", "A. Member",
+                  "--decided-at", "2026-08-23T12:00:00Z", "--nonce", nonce, "--digest", view["digest"])
+        status = json.loads(self.seam(case, "status", "--json").stdout)
+        self.assertEqual(status["phase"], "investigation")
+        self.assertEqual(status["resume"]["instructions"], (
+            "Check the archive.\n\nIndicator Framework items the member assigned to this cycle:\n"
+            "- The tag was collected after b.example changed owner. Suggested step: Pull an archived copy from before the change."
+        ))
 
     def test_agent_follow_up_records_the_requesting_role_not_a_member(self) -> None:
         case = self.build("agentfollowup", "investigation_gate")

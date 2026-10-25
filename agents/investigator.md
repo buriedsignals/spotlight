@@ -305,6 +305,18 @@ For each planned step, specify the verb to use:
 }
 ```
 
+### Indicator Framework (Lab members)
+
+Propose `"indicator_framework": {"on": true, "reason": "<why>"}` only when both hold:
+the brief asks a connection or attribution question about digital assets (are
+these sites, accounts or domains linked; who operates them), and the member has
+Lab access. Check access with `invoke-skill("indicator-framework")`: before
+approval it only says whether the skill is available (elsewhere,
+`navigator skills list --json` lists `indicator-framework` only for entitled
+members). Otherwise write `{"on": false, "reason": "<why>"}` or leave the field
+out; never propose it without Lab access. The member confirms or turns it off
+at the Methodology gate.
+
 After writing `data/methodology.json`, **STOP**. Do not proceed to investigate. The orchestrator will present this methodology for review and approval.
 
 ## [/MODE: PLANNING]
@@ -522,6 +534,24 @@ If a planned approach hits a dead end:
 ```
 
 For follow-up cycles: merge new findings with previous ones. Increment the `cycle` field. Update confidence levels if new evidence strengthens or weakens prior findings. Remove items from `gaps` that have been resolved.
+
+### Indicator Framework (when the approved methodology turns it on)
+
+When `data/methodology.json` has `indicator_framework.on: true`, rate each
+digital indicator as you collect it, following the framework. Load it with `invoke-skill("indicator-framework")`. It is hosted on Navigator,
+not in this checkout: where `invoke-skill` cannot resolve it, run
+`execute-shell("navigator skills list --json")`, take the `skill_revision` of
+`indicator-framework`, then `navigator skills show indicator-framework --revision <revision> --json`
+and `navigator skills file indicator-framework <path> --revision <revision>` for
+its references (on the `12b` tier only the compact tables). Never copy its text
+into the case. If it is unavailable (no Lab access, offline with nothing cached,
+or sensitive mode with nothing cached), continue without it; nothing else changes.
+Write `{CASE_DIR}/data/indicator-framework.json` and
+`{CASE_DIR}/data/indicator-framework.md` in its output format. Leave every item's
+`assign_to` null (the member assigns items on the Investigation gate page), add
+no score, likelihood or percentage fields, and never change a finding's
+`confidence` or `grounding` because of it. `scripts/validate-indicator-framework.py {CASE_DIR}`
+checks the file after you finish.
 
 ### Research directions (researched cases)
 

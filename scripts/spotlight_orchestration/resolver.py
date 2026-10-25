@@ -89,7 +89,13 @@ def investigation_status(
         # fact-check validator and, for a researched case, D10.
         value["checks"] = checks
     if isinstance(follow_up, dict):
-        value["follow_up"] = {"instructions": follow_up["instructions"]}
+        instructions = follow_up["instructions"]
+        tasks = follow_up.get("indicator_framework_tasks")
+        if isinstance(tasks, list) and tasks:
+            # The member's assignments reach the investigator with the follow-up.
+            listed = "\n".join(f"- {task}" for task in tasks if isinstance(task, str))
+            instructions = f"{instructions}\n\nIndicator Framework items the member assigned to this cycle:\n{listed}"
+        value["follow_up"] = {"instructions": instructions}
     if isinstance(open_cycle, dict):
         value["open_cycle"] = {"kind": open_cycle.get("kind"), "gap": open_cycle.get("gap")}
     return value

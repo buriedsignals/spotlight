@@ -169,6 +169,9 @@ function methodologyContent(content) {
         )
       : el("p", { className: "muted", text: "The methodology lists no directions." }),
     content.limitations.length ? [el("h3", { text: "Limitations" }), list(content.limitations, "")] : null,
+    content.indicator_framework
+      ? el("p", { className: "card", text: `Indicator Framework: ${content.indicator_framework.on ? "on" : "off"}${content.indicator_framework.reason ? ` — ${content.indicator_framework.reason}` : ""}` })
+      : null,
     content.research_plan ? researchPlanContent(content.research_plan) : null,
   );
 }
@@ -367,8 +370,84 @@ function investigationContent(content, items) {
       el("h2", { id: "selection-heading", text: "Selection" }),
       selection.length ? selection.map((item) => selectionCard(item, findings.get(item.target))) : el("p", { className: "muted", text: "No verified findings to select." }),
     ),
+    indicatorFrameworkSection(content.indicator_framework, items),
     newsroomChecks(content.newsroom_checks),
   ];
+}
+
+const ASSIGNMENT_LABELS = [
+  ["next_cycle", "Next cycle"],
+  ["report", "Report"],
+  ["ingest", "Ingest"],
+];
+
+function table(caption, headers, rows) {
+  return el(
+    "div",
+    { className: "table-scroll" },
+    el(
+      "table",
+      {},
+      el("caption", { text: caption }),
+      el("thead", {}, el("tr", {}, headers.map((header) => el("th", { scope: "col", text: header })))),
+      el("tbody", {}, rows.map((row) => el("tr", {}, row.map((cell) => el("td", { text: cell || "—" }))))),
+    ),
+  );
+}
+
+// The Indicator Framework informs; it grades nothing and changes no finding's
+// confidence. Shown only when the case has the file.
+function indicatorFrameworkSection(framework, items) {
+  if (!framework) return null;
+  const byItem = new Map(items.filter((item) => item.kind === "assignment").map((item) => [item.target, item]));
+  return el(
+    "section",
+    { "aria-labelledby": "indicator-framework-heading" },
+    el("h2", { id: "indicator-framework-heading", text: "Indicator Framework" }),
+    el("p", { className: "muted", text: "What each digital indicator behind the findings is worth. It does not change the findings' confidence." }),
+    framework.indicators.length
+      ? table(
+          "Quadrants",
+          ["Indicator", "Value", "Fidelity", "Specificity", "Quadrant", "Branch", "Pairing"],
+          framework.indicators.map((row) => [row.id, row.value, row.fidelity, row.specificity, row.quadrant, row.branch_id, words(row.pairing_status)]),
+        )
+      : el("p", { className: "muted", text: "No indicators rated." }),
+    el("h3", { text: "Branch map" }),
+    framework.branches.length
+      ? el(
+          "ul",
+          {},
+          framework.branches.map((branch) =>
+            el(
+              "li",
+              {},
+              el("strong", { text: `${branch.branch_id}: ${branch.root_decision}` }),
+              branch.description ? el("span", { text: ` — ${branch.description}` }) : null,
+              el("div", { className: "muted", text: `Indicators: ${branch.indicator_ids.join(", ") || "none"}. Strongest: ${branch.strongest.join(", ") || "none"}.` }),
+            ),
+          ),
+        )
+      : el("p", { className: "muted", text: "No branches recorded." }),
+    el("h3", { text: "Temporal summary" }),
+    el("p", { text: framework.temporal_summary || "No dates recorded." }),
+    el("h3", { text: `Flags & Tasks (${framework.tasks.length})` }),
+    framework.tasks.length
+      ? framework.tasks.map((task) => taskCard(task, byItem.get(`indicator-item:${task.item_id}`)))
+      : el("p", { className: "muted", text: "Nothing open." }),
+  );
+}
+
+function taskCard(task, item) {
+  return el(
+    "fieldset",
+    { className: "card" },
+    el("legend", { text: `${task.item_id}: ${words(task.kind)}` }),
+    el("p", { text: task.open }),
+    task.suggested_step ? el("p", { className: "muted", text: `Suggested step: ${task.suggested_step}` }) : null,
+    task.indicator_ids.length ? el("p", { className: "muted", text: `Indicators: ${task.indicator_ids.join(", ")}` }) : null,
+    task.explanations.length ? list(task.explanations.map((e) => `${e.explanation} (requires: ${e.requires})`), "") : null,
+    item ? [el("p", { className: "muted", text: "Assign to" }), markGroup(item, ASSIGNMENT_LABELS, `Assign ${task.item_id} to`), el("p", {}, changeTag(item))] : null,
+  );
 }
 
 // A finding the fact-check did not verify says so in words, not only in the

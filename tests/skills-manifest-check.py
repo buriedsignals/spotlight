@@ -58,6 +58,11 @@ def spawn_skill_lists() -> list[tuple[str, str, list[str]]]:
     return spawns
 
 
+# The Indicator Framework is hosted on Navigator for Lab members
+# (harness/pi/src/tools/hosted-skill.ts); it is not a checkout skill.
+HOSTED_SKILLS = {"indicator-framework"}
+
+
 def skill_reference_errors(dirs: set[str]) -> list[str]:
     """A spawned worker is told to load only skills that exist, and every skill its prompt requires."""
     errors: list[str] = []
@@ -67,6 +72,8 @@ def skill_reference_errors(dirs: set[str]) -> list[str]:
             errors.append(f"agents/{agent_path.name}: skills references unknown skills {sorted(unknown)}")
     for path in sorted([*(ROOT / "agents").glob("*.md"), *(ROOT / "skills").rglob("*.md")]):
         named = set(re.findall(r'invoke-skill\(\\?"([a-z0-9-]+)\\?"\)', path.read_text(encoding="utf-8")))
+        # Navigator-hosted skills load by name but never live in this checkout.
+        named -= HOSTED_SKILLS
         if named - dirs:
             errors.append(f"{path.relative_to(ROOT)}: invoke-skill names unknown skills {sorted(named - dirs)}")
     for location, agent, ids in spawn_skill_lists():

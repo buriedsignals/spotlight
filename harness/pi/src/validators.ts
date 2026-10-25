@@ -3,6 +3,8 @@
 // what that worker just wrote run against the active case, and their outcome
 // is attached to the worker's answer for the orchestrator. After the analyst,
 // the fixed point is the batch build from its proposal.
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { RESEARCH_SWITCH } from './config.ts';
 import { CHECKOUT_ROOT } from './roles.ts';
 import { runPython } from './tools/run.ts';
@@ -31,9 +33,14 @@ function checksAfter(role: string, phase: string, producerModel: string, context
 		];
 	}
 	if (role === 'investigator' && RESEARCH_PHASES.has(phase)) return [];
-	if (role === 'investigator') return [caseCheck];
+	// The Indicator Framework file, when a worker wrote one: ids, references
+	// and the no-score rule.
+	const indicatorCheck = existsSync(join(context.caseDir, 'data/indicator-framework.json'))
+		? [{ name: 'validate-indicator-framework.py', args: [script('validate-indicator-framework.py'), context.caseDir] }]
+		: [];
+	if (role === 'investigator') return [caseCheck, ...indicatorCheck];
 	if (role === 'fact-checker') {
-		return [caseCheck, { name: 'validate-fact-check.py', args: [script('validate-fact-check.py'), context.caseDir] }];
+		return [caseCheck, { name: 'validate-fact-check.py', args: [script('validate-fact-check.py'), context.caseDir] }, ...indicatorCheck];
 	}
 	if (role === 'analyst' && phase === 'ingest') {
 		// --review writes the draft for the ingest page, and the final batch when

@@ -570,6 +570,8 @@ export function childEnv(
 		SPOTLIGHT_ROLE: role,
 		SPOTLIGHT_CASES_ROOT: config.casesRoot,
 		SPOTLIGHT_CASE_DIR: config.caseDir,
+		// Where invoke_skill caches the Navigator-hosted skill per revision.
+		SPOTLIGHT_HARNESS_DATA: config.dataDir,
 		SPOTLIGHT_MODEL_BASE_URL: route.baseURL,
 		SPOTLIGHT_MODEL_ID: route.model,
 		SPOTLIGHT_ROUTE_INFERENCE: route.inference,

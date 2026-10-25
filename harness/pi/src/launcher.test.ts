@@ -415,6 +415,7 @@ test('the orchestrator cannot write the files the workers write, and writes its 
 					toolCalls: [
 						{ name: 'write_file', arguments: { path: 'data/methodology.json', content: '{"rewritten": true}' } },
 						{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: '{"status": "false"}' } },
+						{ name: 'write_file', arguments: { path: 'data/indicator-framework.json', content: '{"indicators": []}' } },
 						{ name: 'write_file', arguments: { path: 'summary.md', content: 'Gate summary.' } },
 					],
 				}
@@ -432,7 +433,8 @@ test('the orchestrator cannot write the files the workers write, and writes its 
 	assert.equal(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8'), '{"status": "verified"}');
 	assert.equal(await readFile(join(caseDir, 'summary.md'), 'utf8'), 'Gate summary.');
 	const results = toolResults(fake.requests[fake.requests.length - 1]).join('\n');
-	assert.equal(results.match(/another role writes/g)?.length, 2);
+	assert.equal(existsSync(join(caseDir, 'data', 'indicator-framework.json')), false);
+	assert.equal(results.match(/another role writes/g)?.length, 3);
 });
 
 // D13: in an activated case the producers record passages only through

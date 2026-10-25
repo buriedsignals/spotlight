@@ -99,3 +99,8 @@ dd { margin: 0; overflow-wrap: anywhere; }
 pre.diff { overflow-x: auto; font-size: 0.85rem; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem; margin: 0.6rem 0; }
 pre.diff .add { font-weight: 700; }
 pre.diff .del { color: var(--muted); }
+
+.table-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+caption { text-align: left; font-weight: 700; padding-bottom: 0.25rem; }
+th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid currentColor; vertical-align: top; }
