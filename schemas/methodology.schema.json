@@ -86,6 +86,16 @@
         "fallback_reason": { "type": "string" }
       }
     },
+    "indicator_framework": {
+      "type": "object",
+      "description": "Whether the investigator and fact-checker use the Indicator Framework (a Navigator-hosted skill for Lab members) on this case. Proposed on only for a connection or attribution question about digital assets when the member has Lab access; the member's methodology approval confirms it.",
+      "required": ["on", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "on": {"type": "boolean"},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
     "rlm": {
       "type": "object",
       "description": "Per-case RLM decision made during methodology approval. RLM output is lead-only and never publishable evidence.",

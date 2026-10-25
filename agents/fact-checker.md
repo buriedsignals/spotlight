@@ -384,6 +384,25 @@ Examples:
 
 Use the same schema as the investigator (see `skills/monitoring/references/recommendation-schema.md`). Each recommendation needs `id`, `target`, `scout_type`, `criteria`, `rationale`, `priority`, `finding_refs`.
 
+## Indicator Framework
+
+When `data/methodology.json` has `indicator_framework.on: true` and
+`data/indicator-framework.json` exists, check the investigator's ratings against
+your own verification, group indicators into branches, and write Flags & Tasks,
+following the framework. Load it with `invoke-skill("indicator-framework")`. It is hosted on Navigator,
+not in this checkout: where `invoke-skill` cannot resolve it, run
+`execute-shell("navigator skills list --json")`, take the `skill_revision` of
+`indicator-framework`, then `navigator skills show indicator-framework --revision <revision> --json`
+and `navigator skills file indicator-framework <path> --revision <revision>` for
+its references (on the `12b` tier only the compact tables). Never copy its text
+into the case. If it is unavailable (no Lab access, offline with nothing cached,
+or sensitive mode with nothing cached), continue without it; nothing else changes.
+Update `{CASE_DIR}/data/indicator-framework.json` and
+`{CASE_DIR}/data/indicator-framework.md`: leave every item's `assign_to` null,
+add no score, likelihood or percentage fields, and keep it apart from your
+verdicts and confidence. `scripts/validate-indicator-framework.py {CASE_DIR}`
+checks the file after you finish.
+
 ## File Locations
 
 - Reads from: `{CASE_DIR}/data/findings.json`
@@ -391,6 +410,8 @@ Use the same schema as the investigator (see `skills/monitoring/references/recom
   only its own items (`created_by: fact-checker`) and never edits an
   investigator item
 - Writes to: `{CASE_DIR}/data/fact-check.json`
+- Writes to: `{CASE_DIR}/data/indicator-framework.json` and `.md` when the
+  approved methodology turns the Indicator Framework on
 - Reads `{CASE_DIR}/data/source-expressions.json` and adds passages only
   through `scripts/write-source-expressions.py`, in `pilot` or `activated`
   mode

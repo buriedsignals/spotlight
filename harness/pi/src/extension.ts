@@ -9,6 +9,8 @@ import { PROVIDER_ID } from './pi-process.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillsFor, spawnableWorkers } from './roles.ts';
 import { typedTools } from './tools/index.ts';
 import { invokeSkillTool } from './tools/skills.ts';
+import { INDICATOR_FRAMEWORK_ROLES } from './tools/hosted-skill.ts';
+import type { ModelTier } from './config.ts';
 import { bindActiveCase, pythonAdapter, spotlightTools } from './tools/spotlight.ts';
 import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
@@ -27,8 +29,14 @@ function toolsFor(role: string): ToolDefinition[] {
 	const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
 	const python = process.env.SPOTLIGHT_PYTHON || 'python3';
 	const spec = agentSpec(composition, role);
+	const sensitive = process.env.SPOTLIGHT_SENSITIVE === 'true';
+	// The Navigator-hosted Indicator Framework, cached per revision in the
+	// harness data folder.
+	const hosted = INDICATOR_FRAMEWORK_ROLES.includes(role)
+		? { caseDir: active.caseDir, dataDir: required('SPOTLIGHT_HARNESS_DATA'), env: process.env, tier: (process.env.SPOTLIGHT_MODEL_TIER || '12b') as ModelTier, sensitive }
+		: undefined;
 	const tools: ToolDefinition[] = [
-		invokeSkillTool(skillsFor(composition, role)),
+		invokeSkillTool(skillsFor(composition, role), hosted),
 		...typedTools({
 			caseDir: active.caseDir,
 			writeRoot: active.caseDir,
@@ -47,7 +55,7 @@ function toolsFor(role: string): ToolDefinition[] {
 		tools.push(spawnAgentTool(spawnableWorkers(composition)));
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT')));
 	}
-	const allowlist = new Set(allowedTools(spec, process.env.SPOTLIGHT_SENSITIVE === 'true', edition));
+	const allowlist = new Set(allowedTools(spec, sensitive, edition));
 	return tools.filter((tool) => allowlist.has(tool.name));
 }
 

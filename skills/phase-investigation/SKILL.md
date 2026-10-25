@@ -103,6 +103,9 @@ Fact-check gaps:
 {if monitoring_units: Monitoring results since last cycle:
 {monitoring_summary}}
 
+{if resume.instructions: Follow-up requested at the Investigation gate, with any Indicator Framework items the member assigned to this cycle:
+{resume.instructions}}
+
 When you identify targets worth persistent monitoring, add them to monitoring_recommendations[] in data/findings.json.
 
 Read methodology from {CASE_DIR}/data/methodology.json.
@@ -123,6 +126,12 @@ Append to {CASE_DIR}/data/investigation-log.json.",
      ```
      execute-shell("scripts/spotlight-python scripts/validate-case.py {CASE_DIR}")
      ```
+
+     When `data/indicator-framework.json` exists (the approved methodology
+     turned the Indicator Framework on), also run
+     `execute-shell("scripts/spotlight-python scripts/validate-indicator-framework.py {CASE_DIR}")`
+     here and after the fact-checker (4.5); a failure goes back to the worker
+     that wrote the file.
 
      In a runtime without `execute-shell`, the runtime runs this validator itself when the investigator finishes and returns the outcome with the investigator's answer; act on that outcome.
 

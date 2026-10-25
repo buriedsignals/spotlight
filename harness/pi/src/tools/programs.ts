@@ -13,6 +13,7 @@ import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { engineEnv } from '../case-search.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { FileRefused, readTarget, writeConfined } from './case-files.ts';
+import { NAVIGATOR_ENV } from './hosted-skill.ts';
 import { ToolArgumentError, checkedParams, jsonResult, programEnv, programOutput, runFixed, runPython, textResult } from './run.ts';
 import type { ToolContext } from './run.ts';
 
@@ -56,7 +57,7 @@ function navigatorTool(context: ToolContext): ToolDefinition {
 		async execute(_id, raw, signal) {
 			const input = checkedParams<{ action: 'find' | 'show'; value: string }>('navigator_tools', params, raw);
 			const result = await runFixed('navigator', ['tools', input.action, '--json', '--', input.value], {
-				env: programEnv(context.env, ['NAVIGATOR_API_URL', 'NAVIGATOR_TOKEN', 'XDG_CONFIG_HOME']),
+				env: programEnv(context.env, NAVIGATOR_ENV),
 				cwd: context.caseDir,
 				signal,
 			});

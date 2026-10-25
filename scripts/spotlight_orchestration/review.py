@@ -43,6 +43,10 @@ DECISIONS = {
     "ingest": ("requested", "declined"),
 }
 DISPOSITIONS = ("keep", "set_aside")
+# Where the member sends an Indicator Framework item: the investigator's next
+# cycle, or a later gate.
+ASSIGNMENTS = ("next_cycle", "report", "ingest")
+INDICATOR_FRAMEWORK = "data/indicator-framework.json"
 # Batch 1.1 flag dispositions, decided on the ingest page.
 FLAG_ACTIONS = ("amend", "exclude", "investigate_further", "accept_with_reason")
 INGEST_BATCH = "data/knowledge-batch.json"
@@ -166,6 +170,14 @@ def subject_digest(case: Path, gate: str) -> str:
         if proposal.is_file():
             bound["proposal"] = hashlib.sha256(proposal.read_bytes()).hexdigest()
         return _canonical_sha(bound)
+    if gate == "investigation_gate":
+        # The page shows the Indicator Framework file, so a decision binds it
+        # too; without the file the digest is the dependency digest as before.
+        framework = case_path(case, INDICATOR_FRAMEWORK)
+        if framework.is_file():
+            return _canonical_sha({"dependencies": dependency,
+                                   "indicator_framework": hashlib.sha256(framework.read_bytes()).hexdigest()})
+        return dependency
     if gate == "report":
         draft = case_path(case, REPORT_DRAFT)
         draft_sha = hashlib.sha256(draft.read_bytes()).hexdigest() if draft.is_file() else None
@@ -630,6 +642,9 @@ def _methodology_content(case: Path) -> tuple[dict[str, Any], list[str]]:
     methods = anomaly_methods.view(methodology)
     if methods is not None:
         content["anomaly_methods"] = methods
+    framework = methodology.get("indicator_framework")
+    if isinstance(framework, dict):
+        content["indicator_framework"] = {"on": framework.get("on") is True, "reason": _text(framework.get("reason"), 1000)}
     return content, blocking
 
 
@@ -759,7 +774,99 @@ def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[
     checks = _newsroom_checks(case, "findings")
     if checks is not None:
         content["newsroom_checks"] = checks
+    framework, framework_items = _indicator_framework_content(case)
+    if framework is not None:
+        blocking += _run_check([str(SCRIPT_DIR / "validate-indicator-framework.py"), str(case)])
+        content["indicator_framework"] = framework
+        items += framework_items
     return content, blocking, items
+
+
+def _indicator_framework_content(case: Path) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    """The Indicator Framework section, shown only when the file exists: the
+    quadrant table, the branch map, the temporal summary, and one "Assign to"
+    item per Flags & Tasks entry, which only the member sets."""
+    if not case_path(case, INDICATOR_FRAMEWORK).is_file():
+        return None, []
+    document = _read_case_json(case, INDICATOR_FRAMEWORK)
+    document = document if isinstance(document, dict) else {}
+
+    def rows(key: str, limit: int) -> list[dict[str, Any]]:
+        value = document.get(key)
+        return [row for row in value[:limit] if isinstance(row, dict)] if isinstance(value, list) else []
+
+    def strings(value: object, limit: int = 50) -> list[str]:
+        return [_text(item, 200) for item in value[:limit]] if isinstance(value, list) else []
+
+    indicators = []
+    for row in rows("indicators", 300):
+        rating = row.get("current_rating") if isinstance(row.get("current_rating"), dict) else {}
+        indicators.append({
+            "id": _text(row.get("id"), 200),
+            "value": _text(row.get("value"), 500),
+            "fidelity": _text(rating.get("fidelity"), 40),
+            "specificity": _text(rating.get("specificity"), 40),
+            "quadrant": _text(rating.get("quadrant"), 40),
+            "branch_id": _text(row.get("branch_id"), 200),
+            "pairing_status": _text(row.get("pairing_status"), 40),
+        })
+    branches = [
+        {
+            "branch_id": _text(row.get("branch_id"), 200),
+            "root_decision": _text(row.get("root_decision"), 500),
+            "description": _text(row.get("description"), 2000),
+            "indicator_ids": strings(row.get("indicator_ids")),
+            "strongest": strings(row.get("strongest")),
+        }
+        for row in rows("branches", 100)
+    ]
+    tasks, items = [], []
+    for row in rows("indicator_gaps", 200):
+        item_id = row.get("item_id")
+        if not isinstance(item_id, str) or not item_id:
+            continue
+        task = {
+            "item_id": _text(item_id, 200),
+            "kind": _text(row.get("kind"), 80),
+            "open": _text(row.get("open"), 2000),
+            "suggested_step": _text(row.get("suggested_step"), 2000),
+            "indicator_ids": strings(row.get("indicator_ids")),
+            "explanations": [
+                {"explanation": _text(e.get("explanation"), 1000), "requires": _text(e.get("requires"), 1000)}
+                for e in (row.get("explanations") if isinstance(row.get("explanations"), list) else [])[:20]
+                if isinstance(e, dict)
+            ],
+        }
+        tasks.append(task)
+        items.append({
+            "key": f"indicator:{item_id}",
+            "kind": "assignment",
+            "target": f"indicator-item:{item_id}",
+            "suggested": None,
+            "suggestion_source": "Indicator Framework",
+            "suggestion_reason": f"{task['kind']}: {task['open']}",
+            # What the investigator is told when the member sends it to the next cycle.
+            "label": f"{task['open']} Suggested step: {task['suggested_step']}".strip(),
+            "required": False,
+        })
+    content = {
+        "indicators": indicators,
+        "branches": branches,
+        "temporal_summary": _text(document.get("temporal_summary")),
+        "tasks": tasks,
+    }
+    return content, items
+
+
+def indicator_framework_next_cycle(case: Path, data_descriptor: int | None = None) -> list[str]:
+    """The Indicator Framework items the member assigned to the next cycle on
+    the Investigation gate page, as the review record holds them."""
+    review = load_review(case, "investigation_gate", data_descriptor)
+    return [
+        _text(item.get("label") or item.get("suggestion_reason"), 4000)
+        for _, item in sorted(review["items"].items())
+        if isinstance(item, dict) and item.get("kind") == "assignment" and item.get("final") == "next_cycle"
+    ]
 
 
 def _items_text(value: object, limit: int = 30) -> list[str]:
@@ -1081,6 +1188,9 @@ def _validated_edit(edit: object, items: dict[str, dict[str, Any]]) -> dict[str,
     elif item["kind"] == "entity_link":
         if value is not False and not (isinstance(value, str) and ENTITY_ID.fullmatch(value)):
             raise OrchestrationError("an entity pick is a register entity id, or false for no link")
+    elif item["kind"] == "assignment":
+        if value not in ASSIGNMENTS:
+            raise OrchestrationError(f"an assignment is one of: {', '.join(ASSIGNMENTS)}")
     elif item["kind"] == "flag":
         if value not in FLAG_ACTIONS:
             raise OrchestrationError(f"a flag disposition is one of: {', '.join(FLAG_ACTIONS)}")

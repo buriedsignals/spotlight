@@ -47,7 +47,9 @@
         "data/evidence-bundle.json",
         "data/investigation-log.json",
         "data/source-expressions.json",
-        "data/source-positions.json"
+        "data/source-positions.json",
+        "data/indicator-framework.json",
+        "data/indicator-framework.md"
       ],
       "keys": [
         "NOOSPHERE_C2PA_URL",

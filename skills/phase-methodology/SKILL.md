@@ -65,6 +65,8 @@ If osint_navigator_required=false (local / open-weights deployments — no Navig
     crypto wallet tracing        ->  find "ethereum wallet blockchain" --category cryptocurrency
 - list the tools you chose in methodology.json tools_required[]; set navigator:{required:false, used:false, fallback_reason:"local osint-tools index (no Navigator entitlement)"} — or omit the navigator block entirely.
 
+INDICATOR FRAMEWORK (Lab members): propose indicator_framework {"on": true, "reason": "..."} in methodology.json only for a connection or attribution question about digital assets (are these sites, accounts or domains linked; who operates them) and only when the member has Lab access; invoke-skill("indicator-framework") says whether it is available without loading it. Otherwise {"on": false, "reason": "..."} or no field.
+
 Approved brief directions:
 {directions}
 
@@ -253,6 +255,10 @@ Correct only methodology.json as required by the validator evidence. On Navigato
      newsroom allows the endpoint.
 
 5. **Gate: user approves the methodology.** Iterate if the user has changes.
+   When the methodology has `indicator_framework`, the synthesis says
+   "Indicator Framework: on — <reason>" (or off), as the Methodology page
+   does; approving the methodology confirms it, and the member turns it off
+   by asking for that change before approving.
    Re-run the methodology validator after the final change. Present the
    synthesis, then open the review page: `open_review` in the Pi harness, or
    the `open_spotlight_review` tool where the review server is registered

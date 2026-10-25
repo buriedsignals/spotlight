@@ -279,6 +279,8 @@ absolute path and the result in `.spotlight-config.json` under `storage`.
 │   ├── knowledge-batch-draft.json # Builder draft for review, with flags awaiting a disposition
 │   ├── ingest-review.json        # Ingest page choices: record selection and flag dispositions
 │   ├── decision-signals.json     # Optional decision-model review signals (opt-in; never evidence)
+│   ├── indicator-framework.json  # Indicator Framework ratings, branches and Flags & Tasks (Lab members, when the approved methodology turns it on); checked by scripts/validate-indicator-framework.py
+│   ├── indicator-framework.md    # The same, for reading; never changes findings' confidence or grounding
 │   └── monitoring.json          # (optional) External monitor registry for the case
 └── research/
     ├── *.md                     # Scraped web content
