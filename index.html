@@ -155,27 +155,22 @@
   nav.topnav .links a.new-pill {
     display: inline-flex; align-items: center; gap: 8px;
     padding: 9px 14px;
-    background: var(--accent-warm);
+    background: transparent;
     border: 1px solid var(--accent-warm);
-    color: var(--ink);
+    color: var(--accent-warm);
     opacity: 1;
     letter-spacing: 0.22em;
-    font-weight: 600;
+    font-weight: 500;
     transition: background 0.2s ease, border-color 0.2s ease;
   }
   nav.topnav .links a.new-pill:hover {
-    background: #d87f45;
-    border-color: #d87f45;
-    color: var(--ink);
+    background: var(--accent-warm-14);
+    border-color: var(--accent-warm);
+    color: var(--accent-warm);
   }
   nav.topnav .links a.new-pill .dot {
     width: 7px; height: 7px; border-radius: 999px;
-    background: var(--ink);
-    animation: newPillPulse 2.2s ease-in-out infinite;
-  }
-  @keyframes newPillPulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.35; transform: scale(0.8); }
+    background: var(--accent-warm);
   }
   /* The filled pill would be colour-inverted by the nav's mix-blend-mode: difference,
      and a child cannot opt out of its parent's blend group. So the blended nav keeps an
@@ -343,11 +338,6 @@
     font-weight: 550;
     line-height: 1.5;
   }
-  .hero-helper {
-    margin-top: 14px;
-    max-width: 40ch;
-    color: rgba(237, 232, 220, 0.82);
-  }
   .hero-actions {
     display: flex;
     align-items: center;
@@ -373,7 +363,7 @@
   .install-reminder .cta:hover {
     background: var(--accent-warm);
     border-color: var(--accent-warm);
-    color: var(--paper);
+    color: var(--ink);
     transform: translateY(-1px);
   }
   .hero-side .secondary {
@@ -483,9 +473,9 @@
   .split-scroll {
     display: grid;
     /* Counter | step text */
-    grid-template-columns: 200px 1fr;
-    gap: 60px;
-    padding: 0 48px;
+    grid-template-columns: minmax(380px, 42vw) 1fr;
+    gap: 0;
+    padding: 0 0 0 48px;
   }
   /* Sentinel — only used on mobile to detect when .split-left becomes sticky. */
   .split-left-sentinel { display: none; }
@@ -515,20 +505,83 @@
     min-height: 16px;
     transition: opacity 0.4s;
   }
-  .split-left .progress {
-    margin-top: 40px;
-    height: 1px;
-    background: var(--muted-faint-dark);
-    position: relative;
-  }
-  .split-left .progress .fill {
-    position: absolute; top: 0; left: 0; height: 100%;
-    background: var(--accent-warm);
-    transition: width 0.3s;
+  .split-right {
+    padding: 60px 48px 80px 24px;
   }
 
-  .split-right {
-    padding: 60px 0 80px;
+  /* Rail: the pipeline, simplified, panning with the steps */
+  .split-left { overflow: hidden; border-right: 0; padding-right: 0; }
+  .split-scroll .step .step-title, .split-scroll .step .step-body { text-shadow: 0 2px 18px rgba(7, 7, 10, 0.9); }
+  .rail { position: relative; flex: 1; min-height: 0; overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18%, #000 82%, transparent 100%);
+            mask-image: linear-gradient(to bottom, transparent 0, #000 18%, #000 82%, transparent 100%); }
+  .rail-track {
+    position: absolute; left: 0; right: 150px; top: 0;
+    display: flex; flex-direction: column; align-items: center;
+    transition: transform 0.9s cubic-bezier(.2,.7,.2,1);
+  }
+  .rg { display: flex; flex-direction: column; align-items: center; gap: 26px; padding: 26px 0; position: relative;
+    opacity: 0.42; transition: opacity 0.6s ease; }
+  .rg.done { opacity: 0.7; }
+  .rg.on { opacity: 1; }
+  .rg + .rg::before, .rg > * + *::before {
+    content: ""; position: absolute; left: 50%; top: -26px; height: 26px; border-left: 1px solid rgba(237, 232, 220, 0.25);
+  }
+  .rg > * { position: relative; }
+  .rg + .rg::before { top: -26px; }
+  .rn {
+    display: block; width: 240px; padding: 13px 16px; border-radius: 0; text-align: center;
+    font-size: 13px; letter-spacing: 0.04em; color: var(--paper);
+    border: 1px solid rgba(237, 232, 220, 0.28); background: rgba(12, 12, 16, 0.9);
+  }
+  .rn em { display: block; font-style: normal; }
+  .rsub { font-size: 11px; color: var(--muted-dark); margin-top: 2px; }
+  .rn-io { width: auto; min-width: 130px; border-radius: 0; background: var(--paper); color: var(--ink); border-color: var(--paper); }
+  .rn-out { background: transparent; color: var(--paper); border: 3px double var(--paper); }
+  .rn-gate { background: var(--accent-warm); border-color: var(--accent-warm); color: var(--ink); width: 220px; }
+  .rn-check { background: rgba(91, 143, 196, 0.16); border-color: #5b8fc4; }
+  .rn-agent { background: rgba(193, 106, 52, 0.08); border-color: rgba(193, 106, 52, 0.6); width: 210px; }
+  .rlab {
+    position: absolute; left: calc(100% + 14px); top: 50%; transform: translateY(-50%);
+    width: 132px; text-align: left; line-height: 1.4; font-size: 11px; letter-spacing: 0.02em; color: #e7c76a;
+    padding: 6px 9px; border-radius: 0; border: 1px solid rgba(231, 199, 106, 0.55);
+    background: rgba(12, 12, 16, 0.9);
+  }
+  .rpill { display: block; width: max-content; margin-top: 5px; padding: 2px 8px; border-radius: 0; border: 1px solid rgba(231, 199, 106, 0.6); font-weight: 400; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .rg.on .rlab { border-color: #e7c76a; }
+  .rlanes { display: grid; grid-template-columns: repeat(5, 14px); gap: 26px; height: 160px; }
+  .rlanes i { display: block; border-radius: 0; border: 1px dashed rgba(193, 106, 52, 0.6); position: relative; overflow: hidden; }
+  .rlanes i.loc { border-color: rgba(237, 232, 220, 0.45); }
+  .rlanes i::after { content: ""; position: absolute; inset: 0; transform-origin: top; transform: scaleY(0.15);
+    background: linear-gradient(to bottom, rgba(193, 106, 52, 0.2), var(--accent-warm)); transition: transform 0.6s ease; }
+  .rlanes i.loc::after { background: linear-gradient(to bottom, rgba(237, 232, 220, 0.12), rgba(237, 232, 220, 0.8)); }
+  .rg.on .rlanes i::after { animation: rail-lane var(--d) cubic-bezier(.3,.6,.3,1) forwards; }
+  .rg.done .rlanes i::after { transform: scaleY(1); }
+  @keyframes rail-lane { 0% { transform: scaleY(0.15); } 50% { transform: scaleY(0.6); } 100% { transform: scaleY(1); } }
+  .rg > .rcap::before { display: none; }
+  .rcap { margin-top: -12px; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-dark); }
+  .rcyc { display: flex; flex-direction: column; align-items: center; gap: 26px; position: relative; padding-right: 0; }
+  .rcyc > .rn + .rn::before { content: ""; position: absolute; left: 50%; top: -26px; height: 26px; border-left: 1px solid rgba(237, 232, 220, 0.25); }
+  .rcyc::after {
+    content: ""; position: absolute; right: -26px; top: 18px; bottom: 18px; width: 22px;
+    border: 1px dashed rgba(193, 106, 52, 0.7); border-left: 0; border-radius: 0;
+  }
+  .rdots { position: absolute; left: -40px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 6px; }
+  .rdots b { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 9.5px; font-weight: 400;
+    color: var(--muted-dark); border: 1px solid rgba(237, 232, 220, 0.2); transition: background 0.3s, color 0.3s, border-color 0.3s; }
+  .rg.on .rdots b { animation: rail-dot 0.4s ease forwards; }
+  .rg.on .rdots b:nth-child(1) { animation-delay: 0.3s; }
+  .rg.on .rdots b:nth-child(2) { animation-delay: 1.1s; }
+  .rg.on .rdots b:nth-child(3) { animation-delay: 1.9s; }
+  .rg.done .rdots b { background: var(--accent-warm); color: var(--ink); border-color: var(--accent-warm); }
+  @keyframes rail-dot { to { background: var(--accent-warm); color: var(--ink); border-color: var(--accent-warm); } }
+  .rail-count { display: none; align-items: baseline; gap: 12px; }
+  .split-left .rail-count .counter { font-size: 44px; line-height: 1; }
+  .split-left .rail-count .counter-label { margin-top: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    .rail-track, .rg, .rlanes i::after { transition: none; }
+    .rg.on .rlanes i::after { animation: none; transform: scaleY(1); }
+    .rg.on .rdots b { animation: none; background: var(--accent-warm); color: var(--ink); }
   }
   .step {
     min-height: 85vh;
@@ -554,19 +607,19 @@
     opacity: 0.75;
   }
   .step-meta {
-    display: none;
+    display: flex; align-items: baseline; gap: 12px;
     margin-bottom: 20px;
   }
   .step-meta .step-num {
     font-family: "Fraunces", serif;
     font-variation-settings: "opsz" 72, "wght" 500;
-    font-size: 34px;
+    font-size: 26px;
     line-height: 0.9;
     color: var(--accent-warm);
   }
   .step-meta .step-label {
-    margin-top: 10px;
-    font-size: 10px;
+    margin-top: 0;
+    font-size: 11px;
     letter-spacing: 0.2em;
     text-transform: uppercase;
     opacity: 0.62;
@@ -610,11 +663,11 @@
     margin-top: 12px;
     padding: 5px 10px;
     border: 1px solid color-mix(in srgb, var(--accent-warm) 62%, transparent);
-    border-radius: 999px;
+    border-radius: 0;
     color: var(--paper);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.2em;
     line-height: 1;
     text-transform: uppercase;
   }
@@ -887,7 +940,7 @@
     cursor: pointer;
     transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
   }
-  .offer .btn:hover { background: var(--accent-warm); color: var(--paper); }
+  .offer .btn:hover { background: var(--accent-warm); color: var(--ink); }
   .offer .btn.ghost {
     background: transparent;
     color: var(--paper);
@@ -1118,12 +1171,9 @@
      Shrinks the Five-things grid so the scene slot narrows gracefully
      without cropping the cubes (camera fit is aspect-aware). */
   @media (max-width: 1100px) {
-    .split-scroll {
-      grid-template-columns: 160px 1fr;
-      gap: 36px;
-      padding: 0 32px;
-    }
-    .split-left .counter { font-size: 110px; }
+    .split-scroll { grid-template-columns: 340px 1fr; padding-left: 24px; }
+    .split-right { padding-left: 40px; padding-right: 32px; }
+    .rlab { display: none; }
   }
 
   @media (min-width: 1500px) {
@@ -1170,10 +1220,6 @@
       z-index: -1;
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
-    }
-    .hero-helper {
-      max-width: 44ch;
-      color: rgba(237, 232, 220, 0.78);
     }
     .hero-actions {
       flex-wrap: wrap;
@@ -1239,7 +1285,6 @@
       background: linear-gradient(180deg, rgba(7, 7, 10, 0.84) 0%, rgba(7, 7, 10, 0.66) 58%, rgba(7, 7, 10, 0.24) 100%);
       border-radius: 0;
     }
-    .hero-helper { color: rgba(237, 232, 220, 0.72); }
     .hero-actions {
       display: flex; flex-direction: column; align-items: stretch;
       gap: 14px;
@@ -1304,6 +1349,11 @@
        This way the ticker's paper background covers the full strip behind
        the topnav (which uses mix-blend-mode) so no step text bleeds through. */
     .split-scroll { grid-template-columns: 1fr; gap: 0; padding: 0; }
+    .rail { display: none; }
+    .step-meta { display: none; }
+    .split-left { overflow: visible; }
+    .rail-count { display: flex; padding-top: 0; flex: 1; align-items: center; }
+    .split-left .rail-count .counter { font-size: 34px; }
     .split-left-sentinel { display: block; height: 1px; }
     .split-left {
       position: sticky; top: 0;
@@ -1327,7 +1377,6 @@
     }
     .split-left .counter { font-size: 34px; line-height: 1; margin: 0; }
     .split-left .counter-label { margin-top: 0; font-size: 10px; min-height: 0; opacity: 0.75; }
-    .split-left .progress { flex: 1; margin-top: 0; }
 
     .split-right {
       padding: 16px 20px 64px;
@@ -1621,6 +1670,72 @@
     background: rgba(7, 7, 10, 0);
   }
 
+  ::selection { background: var(--accent-warm); color: var(--ink); }
+
+  /* ── HERO: editorial lockup. Kicker, headline, serif deck, hairline rules. ── */
+  #hero .hero-grid { grid-template-columns: minmax(0, 680px); position: relative; gap: 0; }
+  #hero .hero-grid::before {
+    content: ""; position: absolute; z-index: -1; pointer-events: none;
+    left: -48px; right: -200px; top: -120px; bottom: -120px;
+    background: radial-gradient(ellipse at 24% 58%, rgba(7, 7, 10, 0.42) 0%, rgba(7, 7, 10, 0.18) 45%, rgba(7, 7, 10, 0) 70%);
+  }
+  #hero .hero-title {
+    font-size: clamp(44px, 5.3vw, 80px); line-height: 1.02; letter-spacing: -0.022em;
+    max-width: none; hanging-punctuation: first last; text-wrap: balance;
+  }
+  #hero .hero-title .accent { font-style: normal; font-variation-settings: "opsz" 144, "wght" 500; }
+  .hero-crew { position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: 0; transition: opacity 0.8s ease; }
+  .hero-crew.on { opacity: 1; transition-delay: 1.6s; }
+  .hero-crew-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .hero-crew-lines line { stroke: rgba(237, 232, 220, 0.45); stroke-width: 1; }
+  .hero-tag {
+    position: absolute; left: 0; top: 0; padding: 7px 10px 8px 0; border-top: 1px solid rgba(237, 232, 220, 0.55);
+    background: linear-gradient(90deg, rgba(7, 7, 10, 0.88), rgba(7, 7, 10, 0.72));
+    font-size: 11px; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase; line-height: 1.5;
+    color: var(--paper); white-space: nowrap; will-change: transform;
+  }
+  .hero-tag em { display: block; font-style: normal; color: #e08a52; }
+  #hero .hero-title .ln { display: block; overflow: hidden; padding: 0.04em 0 0.1em; margin-bottom: -0.1em; }
+  #hero .hero-title .ln > span { display: inline-block; transform: translateY(105%); transition: transform 1.1s cubic-bezier(0.2, 0.75, 0.2, 1) 0.65s; }
+  #hero .hero-title .ln.accent > span { transition-delay: 1.05s; padding-right: 0.06em; }
+  #hero .hero-title.in .ln > span { transform: none; }
+  #hero .hero-side, #hero .hero-side::before {
+    background: none; border: 0; padding: 0; backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  #hero .hero-side::before { display: none; }
+  #hero .hero-side { justify-self: start; max-width: 520px; margin-top: 28px; text-shadow: 0 2px 20px rgba(7, 7, 10, 0.85); }
+  #hero .hero-description {
+    font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 400;
+    font-size: 15px; line-height: 1.7; letter-spacing: 0; color: rgba(237, 232, 220, 0.72); max-width: 52ch; text-wrap: pretty;
+  }
+  #hero .hero-actions {
+    margin-top: 32px; padding-top: 0; border-top: 0;
+    gap: 28px; flex-direction: row; align-items: center; flex-wrap: wrap;
+  }
+  /* DESIGN.md 3.5 hero CTA: squared, cream hairline border, terracotta on hover. */
+  #hero .hero-side .cta {
+    background: transparent; color: var(--warm); border: 1px solid rgba(255, 245, 217, 0.35); box-shadow: none;
+    padding: 14px 18px 14px 20px; font-size: 11px; font-weight: 500; letter-spacing: 0.2em; width: auto;
+  }
+  #hero .hero-side .cta:hover { background: var(--accent-warm-14); border-color: var(--accent-warm); color: var(--accent-warm); transform: none; }
+  #hero .hero-side .secondary {
+    background: none; border: 0; box-shadow: none; padding: 14px 0; width: auto;
+    font-size: 11px; font-weight: 500; letter-spacing: 0.18em; color: rgba(237, 232, 220, 0.7);
+  }
+  #hero .hero-side .secondary:hover { color: var(--accent-warm); transform: none; }
+  #hero .scroll-cue { pointer-events: auto; text-decoration: none; color: inherit; opacity: 0.6; transition: opacity 0.2s, color 0.2s; }
+  #hero .scroll-cue:hover { opacity: 1; color: var(--accent-warm); }
+  @media (max-width: 760px) {
+    #hero .hero-grid::before { left: -20px; right: -20px; top: -40px; bottom: -40px;
+      background: linear-gradient(180deg, rgba(7, 7, 10, 0) 0%, rgba(7, 7, 10, 0.72) 26%, rgba(7, 7, 10, 0.88) 100%); }
+    #hero .hero-title { font-size: clamp(36px, 10vw, 52px); }
+    #hero .hero-description { font-size: 14px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hero-crew.on { transition: none; }
+    #hero .hero-title .ln > span { transform: none; transition: none; }
+  }
+
   /* ── FEEDBACK WIDGET ───────────────────────────────────────
      Feedback-only support channel. Uses Spotlight's squared controls,
      Geist Mono UI tiers, paper/ink surfaces, and terracotta focus states. */
@@ -1783,18 +1898,22 @@
 <!-- ── HERO ─────────────────────────────────────────────── -->
 <section id="hero" data-screen-label="01 Hero" data-nav-theme="hero" data-scene-mood="chaos">
   <div id="hero-canvas" aria-hidden="true"></div>
+  <div class="hero-crew" id="hero-crew" aria-hidden="true">
+    <svg class="hero-crew-lines"><line/><line/><line/><line/></svg>
+    <span class="hero-tag" data-pick="top">Research lanes<em>run in parallel</em></span>
+    <span class="hero-tag" data-pick="left">Investigator<em>follows the plan</em></span>
+    <span class="hero-tag" data-pick="right">Fact-checker<em>checks separately</em></span>
+    <span class="hero-tag" data-pick="bottom">Your call<em>at every gate</em></span>
+  </div>
   <div class="hero-gradient"></div>
   <div class="hero-content">
     <div class="hero-grid">
-      <h1 class="hero-title" data-reveal="title" style="--rd: 600ms">
-        You lead the investigation.
-        <span class="accent">Spotlight does the research</span>
+      <h1 class="hero-title" data-reveal="title" style="--rd: 500ms">
+        <span class="ln"><span>You lead the investigation.</span></span>
+        <span class="ln accent"><span>Spotlight does the research.</span></span>
       </h1>
       <div class="hero-side" data-reveal="body" style="--rd: 1200ms">
-        <p class="hero-description">Turn your agent into an investigative system.</p>
-        <div class="hero-helper">
-          A portable skill file that gives your runtime a reporting methodology, an investigator and fact-checker loop, human review gates, and a case archive you can reuse.
-        </div>
+        <p class="hero-description">Spotlight packs a research swarm, an investigator, an independent fact-checker and 26 investigation skills, with scraping and browser automation built in. It runs on your own machine if you want it to.</p>
         <div class="hero-actions">
           <a href="https://buriedsignals.com/join" class="cta">Install Spotlight <span aria-hidden="true">→</span></a>
           <a href="https://github.com/buriedsignals/spotlight" class="secondary" target="_blank" rel="noopener" aria-label="Star Spotlight on GitHub">
@@ -1805,10 +1924,10 @@
       </div>
     </div>
   </div>
-  <div class="scroll-cue" data-reveal="scroll-cue">
+  <a class="scroll-cue" href="#what" data-reveal="scroll-cue">
     <span class="tick"></span>
-    Scroll
-  </div>
+    See how a case moves <span aria-hidden="true">↓</span>
+  </a>
 </section>
 
 <!-- ── WHAT IT DOES ─────────────────────────────────────── -->
@@ -1820,11 +1939,43 @@
   <div class="split-scroll">
     <div class="split-left-sentinel" aria-hidden="true"></div>
     <div class="split-left">
-      <div>
+      <div class="rail" aria-hidden="true">
+        <div class="rail-track" id="rail-track">
+          <div class="rg" data-g="0">
+            <span class="rn rn-io">Lead</span>
+            <span class="rn">Methodology<em class="rlab">🧭 OSINT Navigator<b class="rpill">Members</b></em></span>
+            <span class="rn rn-gate">You approve the plan</span>
+          </div>
+          <div class="rg" data-g="1">
+            <span class="rlanes"><i style="--d:2.6s"></i><i style="--d:1.9s"></i><i style="--d:3s"></i><i style="--d:2.2s"></i><i class="loc" style="--d:1.7s"></i></span>
+            <span class="rcap">Research lanes</span>
+            <span class="rn rn-check">Quotes checked</span>
+            <span class="rn rn-gate">You mark the clues</span>
+          </div>
+          <div class="rg" data-g="2">
+            <span class="rcyc">
+              <span class="rn rn-agent">Investigator</span>
+              <span class="rn rn-agent">Fact-checker</span>
+              <span class="rdots"><b>1</b><b>2</b><b>3</b></span>
+            </span>
+          </div>
+          <div class="rg" data-g="3">
+            <span class="rn rn-check">Six readiness checks</span>
+            <span class="rn">Findings<em class="rsub">evidence attached</em></span>
+          </div>
+          <div class="rg" data-g="4">
+            <span class="rn rn-gate">Investigation gate<em class="rlab">🧩 Indicator Framework<b class="rpill">Members</b></em></span>
+            <span class="rn rn-gate">Report and ingest</span>
+          </div>
+          <div class="rg" data-g="5">
+            <span class="rn rn-io rn-out">Intelligence base</span>
+          </div>
+        </div>
+      </div>
+      <div class="rail-count">
         <div class="counter" id="counter">01</div>
         <div class="counter-label" id="counter-label">Lead</div>
       </div>
-      <div class="progress"><div class="fill" id="progress-fill" style="width: 16.6667%"></div></div>
     </div>
     <div class="split-right" id="steps">
       <article class="step active" data-label="Lead" data-num="01">
@@ -1833,7 +1984,7 @@
           <div class="step-label">Lead</div>
         </div>
         <h3 class="step-title">Start with a lead. Spotlight proposes the methodology before the research starts</h3>
-        <p class="step-body">You approve the plan first, including the research topics. Indicator members can connect <a href="https://navigator.indicator.media/" target="_blank" rel="noreferrer">Navigator</a> to add current OSINT tool discovery to the research plan.</p>
+        <p class="step-body">You approve the plan first, including the research topics. Members can connect <a href="https://navigator.indicator.media/" target="_blank" rel="noreferrer">OSINT Navigator</a> to add current OSINT tool discovery to the research plan.</p>
       </article>
       <article class="step" data-label="Research" data-num="02">
         <div class="step-meta">
@@ -1867,13 +2018,13 @@
         <h3 class="step-title">You stay the editor at every gate</h3>
         <p class="step-body">You approve the methodology, mark the research clues, review the findings, challenge weak points, and decide what deserves another cycle. Nothing clears a gate without a human decision.</p>
       </article>
-      <article class="step" data-label="Vault" data-num="06">
+      <article class="step" data-label="Intelligence base" data-num="06">
         <div class="step-meta">
           <div class="step-num">06</div>
-          <div class="step-label">Vault</div>
+          <div class="step-label">Intelligence base</div>
         </div>
         <h3 class="step-title">When the case is solid, it becomes infrastructure for the next one</h3>
-        <p class="step-body">Evidence stays archived, the case goes into your vault, and ongoing monitoring can feed new leads back into the workflow.</p>
+        <p class="step-body">Evidence stays archived, the case goes into your intelligence base, and ongoing monitoring can feed new leads back into the workflow.</p>
       </article>
     </div>
   </div>
@@ -1900,9 +2051,9 @@
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="2">
       <div class="idx">03 / 06</div>
-      <div class="access-pill">Indicator members</div>
+      <div class="access-pill">Members</div>
       <div class="name">OSINT Navigator</div>
-      <div class="desc">Indicator Pro and Lab members can authenticate locally to surface current OSINT tools and methods for the task in front of them.</div>
+      <div class="desc">Members can authenticate locally to surface current OSINT tools and methods for the task in front of them.</div>
     </div>
     <div class="int-card" data-reveal="card" data-stagger-idx="3">
       <div class="idx">04 / 06</div>
@@ -1919,7 +2070,7 @@
     <div class="int-card" data-reveal="card" data-stagger-idx="5">
       <div class="idx">06 / 06</div>
       <div class="access-pill">Public</div>
-      <div class="name">Knowledge vault</div>
+      <div class="name">Intelligence base</div>
       <div class="desc">Investigations are archived in an OpenKnowledge case workspace you can search, reuse, and build on, while active case files remain separate until approved for ingestion.</div>
     </div>
   </div>
@@ -2168,9 +2319,7 @@
         // split used by 'aligned' mood would crop the scene behind the text.
         // Force full-viewport there.
         const isNarrow = vw <= 760;
-        const target = (mood === 'aligned' && !isNarrow)
-          ? { left: vw * 0.5, top: 0, width: vw * 0.5, height: vh }
-          : { left: 0,        top: 0, width: vw,       height: vh };
+        const target = { left: 0, top: 0, width: vw, height: vh };
         let cur = _slotRect.hero;
         if (!cur) cur = _slotRect.hero = { ...target };
         cur.left   += (target.left   - cur.left)   * RECT_EASE;
@@ -2190,6 +2339,14 @@
       renderer.setScissorTest(true);
       const aspect = (w > 0 && h > 0) ? (w / h) : 1;
       slot.camera.aspect = aspect;
+      // In the hero the text holds the left column, so the cubes' projection
+      // slides right; it eases back to centre in every other section.
+      if (slot.name === 'hero') {
+        const heroShift = ((window.__sceneMood || 'chaos') === 'chaos' && vw > 1100) ? (vw >= 1400 ? 0.11 : 0.15) : 0;
+        _slotRect.shift = (_slotRect.shift ?? heroShift) + (heroShift - (_slotRect.shift ?? heroShift)) * RECT_EASE;
+        if (Math.abs(_slotRect.shift) > 0.001) slot.camera.setViewOffset(w, h, -_slotRect.shift * w, -_slotRect.shift * 0.45 * h, w, h);
+        else slot.camera.clearViewOffset();
+      }
 
       // Aspect-aware camera fit — the camera pulls back when the slot
       // narrows so the fitRadius sphere always stays inside the frustum
@@ -2445,77 +2602,35 @@
       }
       return out;
     }
-    // Step shapes — each form illustrates the step's action verb, sized up
-    // so the silhouette is unmistakable even viewed from the iso camera.
-    //   Lead      → arrow    → (shaft + big fletched tip)
-    //   Research → fan      (one cube, three lanes spreading out)
-    //   Cycles   → loop     (10-cube ring, clearer circumference)
-    //   Findings → pyramid  (3D stepped pyramid: 5 base + 3 mid + 1 apex)
-    //   Review   → check    (thick checkmark diagonal)
-    //   Vault    → grid     (full hero cluster)
-    // Minimal shapes — fewer cubes, each one clearly read.
-    //   Arrow : 2-cube shaft + 3-cube V tip (tip is the triangle)
-    //   Loop  : 8-cube ring, widely spaced
-    //   Pyramid : classic tetrahedron — 3 base + apex
-    //   Check : 5 cubes, diagonal down-then-up
-    //   Star  : 1 centre + 8 points (4 axes + 4 diagonals), flat 2D
-    const SHAPE_ARROW = [
-      new THREE.Vector3(-1.2, 0, 0),
-      new THREE.Vector3(-0.4, 0, 0),
-      new THREE.Vector3( 0.4, 0, 0),
-      new THREE.Vector3( 1.2, 0, 0),  // tip
-      new THREE.Vector3( 0.6, 0.6, 0),
-      new THREE.Vector3( 0.6,-0.6, 0),
-    ];
-    const SHAPE_FAN = [
-      new THREE.Vector3(-1.4, 0, 0),                                   // origin
-      new THREE.Vector3(-0.1, 0.8, 0), new THREE.Vector3(1.2, 1.5, 0),  // upper lane
-      new THREE.Vector3(-0.1, 0, 0),   new THREE.Vector3(1.2, 0, 0),    // middle lane
-      new THREE.Vector3(-0.1,-0.8, 0), new THREE.Vector3(1.2,-1.5, 0),  // lower lane
-    ];
-    const SHAPE_LOOP = (() => {
-      const out = [];
-      const N = 8, R = 1.2;
-      for (let i = 0; i < N; i++) {
-        const a = (i / N) * Math.PI * 2;
-        out.push(new THREE.Vector3(Math.cos(a) * R, Math.sin(a) * R, 0));
-      }
-      return out;
-    })();
-    const SHAPE_PYRAMID = [
-      // Bottom layer — 3×3 square base at y=-0.7 (9 cubes)
-      new THREE.Vector3(-0.55, -0.7, -0.55), new THREE.Vector3(0, -0.7, -0.55), new THREE.Vector3(0.55, -0.7, -0.55),
-      new THREE.Vector3(-0.55, -0.7,  0.0 ), new THREE.Vector3(0, -0.7,  0.0 ), new THREE.Vector3(0.55, -0.7,  0.0 ),
-      new THREE.Vector3(-0.55, -0.7,  0.55), new THREE.Vector3(0, -0.7,  0.55), new THREE.Vector3(0.55, -0.7,  0.55),
-      // Middle layer — 2×2 at y=-0.05 (4 cubes)
-      new THREE.Vector3(-0.28, -0.05, -0.28), new THREE.Vector3(0.28, -0.05, -0.28),
-      new THREE.Vector3(-0.28, -0.05,  0.28), new THREE.Vector3(0.28, -0.05,  0.28),
-      // Apex — single cube at top
-      new THREE.Vector3(0, 0.65, 0),
-    ];
-    const SHAPE_CHECK = [
-      new THREE.Vector3(-1.0,  0.3, 0),
-      new THREE.Vector3(-0.5, -0.2, 0),
-      new THREE.Vector3( 0.0, -0.1, 0),
-      new THREE.Vector3( 0.55, 0.45, 0),
-      new THREE.Vector3( 1.1,  0.95, 0),
-    ];
-    // Vault → 2D 8-pointed star, everything radiating from the centre.
-    const SHAPE_STAR = [
-      new THREE.Vector3(0, 0, 0),                   // centre
-      new THREE.Vector3( 1.2, 0, 0), new THREE.Vector3(-1.2, 0, 0),
-      new THREE.Vector3(0,  1.2, 0), new THREE.Vector3(0, -1.2, 0),
-      new THREE.Vector3( 0.85,  0.85, 0), new THREE.Vector3(-0.85,  0.85, 0),
-      new THREE.Vector3( 0.85, -0.85, 0), new THREE.Vector3(-0.85, -0.85, 0),
-    ];
+    // Each step acts out what the pipeline does at that point; fn(i, t)
+    // returns cube i's resting place at time t (seconds).
     const STEP_LAYOUTS = [
-      { count: SHAPE_ARROW.length,   positions: SHAPE_ARROW   }, // Lead
-      { count: SHAPE_FAN.length,     positions: SHAPE_FAN     }, // Research
-      { count: SHAPE_LOOP.length,    positions: SHAPE_LOOP    }, // Cycles
-      { count: SHAPE_PYRAMID.length, positions: SHAPE_PYRAMID }, // Findings
-      { count: SHAPE_CHECK.length,   positions: SHAPE_CHECK   }, // Review
-      { count: SHAPE_STAR.length,    positions: SHAPE_STAR    }, // Vault
+      // Lead: one lead cube, the approved plan's three directions beside it.
+      { count: 4, fn: (i, t) => i === 0
+          ? { x: -1.1, y: 0.12 * Math.sin(t * 1.6), z: 0 }
+          : { x: 0.55, y: (1 - (i - 1)) * 0.95, z: 0 } },
+      // Research: the swarm, five lanes working in parallel under one plan.
+      { count: 6, fn: (i, t) => i === 0
+          ? { x: 0, y: 1.45, z: 0 }
+          : { x: (i - 3) * 1.0, y: -0.35 + 0.55 * Math.sin(t * (0.9 + i * 0.23) + i * 1.7), z: 0 } },
+      // Cycles: investigator and fact-checker orbit the case.
+      { count: 3, fn: (i, t) => {
+          if (i === 0) return { x: 0, y: 0, z: 0 };
+          const a = t * 0.8 + (i - 1) * Math.PI;
+          return { x: Math.cos(a) * 1.35, y: Math.sin(a) * 0.75, z: Math.sin(a) * 0.6 };
+        } },
+      // Findings: evidence locks into one compact block.
+      { count: 8, fn: (i) => ({ x: ((i & 1) - 0.5) * 0.98, y: (((i >> 1) & 1) - 0.5) * 0.98, z: ((i >> 2) - 0.5) * 0.98 }) },
+      // Review: you go through the findings one at a time.
+      { count: 5, fn: (i, t) => {
+          const at = (t * 0.7) % 5, d = Math.min(Math.abs(i - at), 5 - Math.abs(i - at));
+          return { x: (i - 2) * 0.95, y: 0.7 * Math.exp(-d * d * 3), z: 0 };
+        } },
+      // Intelligence base: the case is filed as one ordered wall the next case builds on.
+      { count: 9, fn: (i) => ({ x: ((i % 3) - 1) * 0.98, y: (1 - Math.floor(i / 3)) * 0.98, z: 0 }) },
     ];
+    // In #what the diagram holds the left column, so the cubes sit right of centre.
+    const ALIGNED_SHIFT_X = 1.8, ALIGNED_SHIFT_Y = 0.45;
 
     const cellCentersTex = new THREE.DataTexture(
       cellCentersData, N_CELLS, 1, THREE.RGBAFormat, THREE.FloatType
@@ -3906,6 +4021,65 @@
 
     const _identityQuat = new THREE.Quaternion();
 
+    // Hero crew labels: each tag hangs off the cube that is currently furthest
+    // in its direction (top/left/right/bottom of the cluster on screen), on a
+    // hairline that re-anchors every frame so the labels ride the physics.
+    const heroCrew = document.getElementById('hero-crew');
+    const crewTags = heroCrew ? Array.from(heroCrew.querySelectorAll('.hero-tag')) : [];
+    const crewLines = heroCrew ? heroCrew.querySelectorAll('line') : [];
+    const crewEase = crewTags.map(() => null);
+    const _proj = new THREE.Vector3();
+    function updateHeroCrew() {
+      if (!heroCrew) return;
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const on = (window.__sceneMood || 'chaos') === 'chaos' && vw > 1100;
+      heroCrew.classList.toggle('on', on);
+      if (!on) return;
+      const top = heroCrew.getBoundingClientRect().top;
+      const pts = [];
+      let cx = 0, cy = 0;
+      for (let i = 0; i < N_CELLS; i++) {
+        if (activity[i] < 0.5) continue;
+        _proj.copy(cubeState[i].pos).project(camera);
+        const p = { x: (_proj.x + 1) / 2 * vw, y: (1 - _proj.y) / 2 * vh };
+        pts.push(p); cx += p.x; cy += p.y;
+      }
+      if (pts.length < 4) return;
+      cx /= pts.length; cy /= pts.length;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      pts.forEach((q) => { minX = Math.min(minX, q.x); maxX = Math.max(maxX, q.x); minY = Math.min(minY, q.y); maxY = Math.max(maxY, q.y); });
+      // Projected centres sit inside each cube; pad to the cube faces.
+      minX -= 70; maxX += 70; minY -= 70; maxY += 70;
+      const pickers = {
+        top:    (a, b) => a.y < b.y, bottom: (a, b) => a.y > b.y,
+        left:   (a, b) => a.x < b.x, right:  (a, b) => a.x > b.x,
+      };
+      crewTags.forEach((tag, k) => {
+        const better = pickers[tag.dataset.pick];
+        const p = pts.reduce((m, q) => (better(q, m) ? q : m));
+        // Tags sit just outside the cluster's screen bounds on their side,
+        // clamped inside the viewport, with the hairline running to the cube.
+        const w = tag.offsetWidth || 160, m = 24;
+        const side = tag.dataset.pick;
+        let tx = p.x, ty = p.y;
+        if (side === 'top')    { ty = minY - 34; tx = p.x + 30; }
+        if (side === 'bottom') { ty = maxY + 26; tx = p.x - w - 30; }
+        if (side === 'left')   { tx = minX - 40 - w; ty = p.y + 30; }
+        if (side === 'right')  { tx = maxX + 30; ty = p.y + 40; }
+        tx = Math.min(Math.max(tx, Math.max(vw * 0.44, 600)), vw - w - m);
+        ty = Math.min(Math.max(ty, 96), vh - 96);
+        const target = { x: tx, y: ty, ax: p.x, ay: p.y };
+        const e = crewEase[k] || (crewEase[k] = { ...target });
+        for (const key in target) e[key] += (target[key] - e[key]) * 0.08;
+        tag.style.transform = `translate(${Math.round(e.x)}px, ${Math.round(e.y - top)}px)`;
+        // Hairline meets the tag's top rule at its nearer end.
+        const lx = e.ax < e.x + w / 2 ? e.x : e.x + w;
+        const ln = crewLines[k];
+        ln.setAttribute('x1', e.ax); ln.setAttribute('y1', e.ay - top);
+        ln.setAttribute('x2', lx);   ln.setAttribute('y2', e.y - top);
+      });
+    }
+
     function physicsStep(dt) {
       const dtClamped = Math.min(dt, 0.033);
       const aligned   = params.alignedMode;
@@ -3954,8 +4128,9 @@
           let customPos = false;
           let ringPos = false;
           if (layout && !layout.useGrid && i < layout.count) {
-            const p = layout.positions[i];
-            restX = p.x; restY = p.y; restZ = p.z;
+            const p = layout.fn(i, tSec);
+            const wide = window.innerWidth > 760;
+            restX = p.x + (wide ? ALIGNED_SHIFT_X : 0); restY = p.y + (wide ? ALIGNED_SHIFT_Y : 0); restZ = p.z;
             customPos = true;
           } else if (mood === 'sparse' && i < RING_N) {
             const angle = (i / RING_N) * Math.PI * 2 + tSec * RING_ANGV;
@@ -4319,6 +4494,7 @@
       camera.position.y = Math.sin(polar) * radius;
       camera.lookAt(0, 0.1, 0);
       updateCubeCursor();
+      updateHeroCrew();
 
       // —— Per-slot render ————————————————————————————————————————————
       // Every slot renders the SAME main scene. Card slots override the
@@ -4463,11 +4639,27 @@
 </script>
 <script>
   // ── Split-scroll: track which step is centered ───────────────────────────
+  // The rail is a simplified pipeline diagram; it pans so the active step's
+  // group sits at the middle of the viewport, beside that step's text.
+  const railTrack = document.getElementById('rail-track');
+  const railGroups = railTrack ? railTrack.querySelectorAll('.rg') : [];
+  let railActive = -1;
+  function moveRail(active) {
+    if (!railTrack || active === railActive) return;
+    railActive = active;
+    railGroups.forEach((g, i) => {
+      g.classList.toggle('on', i === active);
+      g.classList.toggle('done', i < active);
+    });
+    const g = railGroups[active];
+    const box = railTrack.parentElement.clientHeight;
+    railTrack.style.transform = 'translateY(' + Math.round(box / 2 - (g.offsetTop + g.offsetHeight / 2)) + 'px)';
+  }
+  window.addEventListener('resize', () => { const a = railActive; railActive = -1; if (a >= 0) moveRail(a); });
   (function() {
     const steps = document.querySelectorAll('#steps .step');
     const counterEl = document.getElementById('counter');
     const labelEl = document.getElementById('counter-label');
-    const fillEl = document.getElementById('progress-fill');
     const total = steps.length;
     function update() {
       const isMobile = window.innerWidth <= 760;
@@ -4484,7 +4676,7 @@
       const step = steps[active];
       counterEl.textContent = step.dataset.num;
       labelEl.textContent = step.dataset.label;
-      fillEl.style.width = ((active + 1) / total * 100) + '%';
+      moveRail(active);
 
       // Expose the active step (0..5) to the global canvas — the Five-things
       // slot reads it to drive progressive cube reveal across scroll steps.
