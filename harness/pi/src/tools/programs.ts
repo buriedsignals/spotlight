@@ -1,7 +1,8 @@
 // Typed tools for the remaining fixed programs the skills used to start through
 // a shell: exiftool, the Navigator CLI, decision checks, the provenance
 // manifest and signing, the editorial review artifact, RLM analysis, the
-// integration status check and the solo Ingest wiki write. Each
+// integration status check, the solo Ingest wiki write and the passage
+// writer. Each
 // is bound to the active case; the model picks only the documented options.
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -12,7 +13,7 @@ import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { engineEnv } from '../case-search.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { FileRefused, readTarget, writeConfined } from './case-files.ts';
-import { checkedParams, jsonResult, programEnv, programOutput, runFixed, runPython, textResult } from './run.ts';
+import { ToolArgumentError, checkedParams, jsonResult, programEnv, programOutput, runFixed, runPython, textResult } from './run.ts';
 import type { ToolContext } from './run.ts';
 
 const script = (path: string) => `${CHECKOUT_ROOT}/${path}`;
@@ -272,6 +273,56 @@ function wikiDestinationTool(context: ToolContext): ToolDefinition {
 	};
 }
 
+// The one writer of data/source-expressions.json and data/source-positions.json
+// (agents/investigator.md and agents/fact-checker.md): the producers propose
+// passages and positions, the script computes every hash and fingerprint,
+// validates and publishes under the case lock. No file tool writes either file
+// (case-files.ts). The actor is the calling role, never a model argument.
+const PROPOSAL_LIST = Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }), { maxItems: 500 }));
+const WRITER_ACTORS = ['investigator', 'fact-checker'];
+
+function sourceExpressionsTool(context: ToolContext): ToolDefinition {
+	const params = Type.Object(
+		{
+			action: Type.Union([Type.Literal('write'), Type.Literal('fingerprint_findings')]),
+			cycle: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
+			proposal: Type.Optional(
+				Type.Object(
+					{ expressions: PROPOSAL_LIST, lifecycle: PROPOSAL_LIST, positions: PROPOSAL_LIST, withdraw_positions: PROPOSAL_LIST },
+					{ additionalProperties: false },
+				),
+			),
+		},
+		{ additionalProperties: false },
+	);
+	return {
+		name: 'source_expressions',
+		label: 'Source expressions',
+		description:
+			'The only way to record passages and source positions in an activated case (scripts/write-source-expressions.py). {action: "write", cycle: N, proposal: {expressions, lifecycle, positions, withdraw_positions}} merges your proposal into data/source-expressions.json and data/source-positions.json as your role; give each passage\'s id, exact text, anchor_ref, original_evidence_bundle_id and finding_links, never hashes or fingerprints. {action: "fingerprint_findings"} sets every finding_fingerprint in data/findings.json from its claim and refreshes stale passage links; run it after writing or merging findings. A refusal changes nothing and says why.',
+		parameters: params,
+		executionMode: 'sequential',
+		async execute(_id, raw, signal) {
+			const input = checkedParams<{ action: string; cycle?: number; proposal?: Record<string, unknown> }>('source_expressions', params, raw);
+			const actor = context.env.SPOTLIGHT_ROLE ?? '';
+			if (!WRITER_ACTORS.includes(actor)) throw new FileRefused(`refused: source_expressions is for the investigator and the fact-checker, not ${actor || 'this process'}`);
+			const writer = script('scripts/write-source-expressions.py');
+			if (input.action === 'fingerprint_findings') {
+				const result = await runPython(context, [writer, context.caseDir, '--fingerprint-findings'], { signal });
+				return textResult(programOutput('source_expressions', result));
+			}
+			if (input.cycle === undefined || input.proposal === undefined) {
+				throw new ToolArgumentError('source_expressions: action "write" needs cycle and proposal');
+			}
+			const result = await runPython(context, [writer, context.caseDir, '--actor', actor, '--cycle', String(input.cycle)], {
+				input: JSON.stringify(input.proposal),
+				signal,
+			});
+			return textResult(programOutput('source_expressions', result));
+		},
+	};
+}
+
 export function programTools(context: ToolContext): ToolDefinition[] {
 	return [
 		exiftoolTool(context),
@@ -283,5 +334,6 @@ export function programTools(context: ToolContext): ToolDefinition[] {
 		integrationStatusTool(context),
 		anomalyMethodsTool(context),
 		wikiDestinationTool(context),
+		sourceExpressionsTool(context),
 	];
 }
