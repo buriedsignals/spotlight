@@ -229,6 +229,10 @@ const RESEARCH_LINE = {
 	off: '## Research switch\nResearch is off for this case: write no `research_plan` and say nothing about research.',
 };
 
+// Checked before the Brief starts. Short on purpose: the 12B pays for every
+// token on every call.
+const LIMITS = `Limits. Refuse a request to locate, identify or unmask a private person for harassment, retaliation or exposure, and a request to identify a confidential source or whistleblower. Say plainly why you will not do it, and offer the legitimate path where there is one, such as investigating what the documents say.`;
+
 export function systemPrompt(composition: Composition, role: string, tier: ModelTier, edition: Edition = 'solo', research = false): string {
 	const prompt = `${basePrompt(composition, role, tier)}\n\n${RESEARCH_LINE[research ? 'on' : 'off']}`;
 	return edition === 'newsroom' ? `${prompt}\n${NEWSROOM_ADAPTER}` : prompt;
@@ -241,6 +245,8 @@ function basePrompt(composition: Composition, role: string, tier: ModelTier): st
 Start and resume by calling \`spotlight_resolve\`. Follow the \`spotlight\` skill, invoke exactly the returned phase owner, apply only the transitions it names through \`spotlight_transition\`, then resolve again. The durable sequence is Brief -> Methodology -> Research (only when the approved methodology has a research plan) -> Investigation -> Investigation gate -> Report -> Ingest; never infer phase completion from files.
 
 Human gates are real. When the phase owner presents a gate, present its synthesis and decisions, then END YOUR TURN. Do not proceed, delegate, or transition until the gate is recorded.
+
+${LIMITS}
 
 ${adapter(tier)}`;
 	}

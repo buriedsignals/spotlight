@@ -122,6 +122,8 @@ export type WorkerLaunch = {
 
 // Runs one task on a fresh worker: send the prompt, wait for `agent_settled`,
 // read the last assistant text, then close stdin so Pi shuts down in order.
+const CONTROL_TOKENS = /<\|[^<>]*>|<[^<>]*\|>/g;
+
 export async function runWorker(launch: WorkerLaunch, task: string, signal: AbortSignal): Promise<string> {
 	// A task cancelled while it waited in the queue never starts a worker.
 	signal.throwIfAborted();
@@ -161,7 +163,11 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 			started = false;
 			send({ id: 'last', type: 'get_last_assistant_text' });
 		} else if (record.type === 'response' && record.id === 'last') {
-			answer.resolve(String((record.data as { text?: string | null } | undefined)?.text ?? ''));
+			const text = String((record.data as { text?: string | null } | undefined)?.text ?? '');
+			// A worker that ended with nothing, or only a chat-template control
+			// token such as <|tool_response>, failed; it did not answer.
+			if (text.replace(CONTROL_TOKENS, '').trim() === '') answer.reject(new Error('worker ended without an answer'));
+			else answer.resolve(text);
 		}
 	});
 	exited.then((code) => answer.reject(new Error(`worker exited before answering (code ${code})`)));

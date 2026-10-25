@@ -496,6 +496,15 @@ def validate_source_expressions(
             evidence_against = []
         refs = expression_refs(evidence_for)
         all_refs = refs + expression_refs(evidence_against)
+        for evidence in evidence_for + evidence_against:
+            listed = evidence.get("source_expression_refs", []) if isinstance(evidence, dict) else []
+            for ref in listed if isinstance(listed, list) else []:
+                if not isinstance(ref, dict):
+                    errors.append(
+                        f"fact-check.json.{container}[{index}]: source_expression_refs items must be objects "
+                        f"{{expression_id, expression_fingerprint, finding_fingerprint, link_fingerprint}}, "
+                        f"as the source_expressions write returns them; got {json.dumps(ref)}"
+                    )
         eligible = False
         valid_ref_ids: set[str] = set()
         for ref in all_refs:

@@ -76,6 +76,14 @@ test('a non-JSON stdout line is skipped and the transcript folder is created', a
 	assert.equal((await readdir(transcripts)).length, 1);
 });
 
+// Gold run 1 on 99c6567e: a worker's whole answer was "<|tool_response>", and the orchestrator took it as the result.
+test('a worker that ends empty or with only a control token is a failed task', async (t) => {
+	const root = await scratch(t);
+	const tokenOnly = NOISY_WORKER.replace("'worker answer'", "'<|tool_response>'");
+
+	await assert.rejects(runWorker(worker(root, process.execPath, ['-e', tokenOnly]), 'task', new AbortController().signal), /worker ended without an answer/);
+});
+
 test('a task cancelled while queued never starts its worker', async (t) => {
 	const root = await scratch(t);
 	const queue = new WorkerQueue();

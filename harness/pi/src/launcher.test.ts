@@ -68,6 +68,21 @@ test('the third identical tool call in a row is blocked with the loop reason', a
 	assert.match(results[2], /This is the same call as the last two\. Act on what you already have or take the next phase step\./);
 });
 
+// Gold run 1 on 99c6567e: the orchestrator called source_expressions and got only "Tool source_expressions not found".
+test('a call to a tool another role owns names the owner and the next step', async (t) => {
+	const fake = await startFakeOpenAI((request) =>
+		toolResults(request).length === 0 ? { toolCalls: [{ name: 'source_expressions', arguments: { action: 'fingerprint_findings' } }] } : { text: 'Stopped.' },
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Open the case.');
+
+	const [result] = toolResults(fake.requests[fake.requests.length - 1]);
+	assert.match(result, /source_expressions is not one of your tools; it belongs to the investigator and the fact-checker\. Delegate that step with spawn_agent\./);
+});
+
 // A member's gate decision arrives as a new prompt; the resolve after it must run.
 test('a new prompt resets the loop guard', async (t) => {
 	let limit = 2;

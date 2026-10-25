@@ -109,6 +109,14 @@ def main() -> int:
                     "finding_fingerprint": link["finding_fingerprint"], "link_fingerprint": link["link_fingerprint"]}
         require(json.loads(result.stdout)["source_expression_refs"] == {link["finding_id"]: {link["relation"]: [expected]}},
                 "the writer did not return the fact-check refs for its passages")
+        # Gold run 1 on 99c6567e: the fact-checker cited passages by bare id and the case blocked.
+        fact_check = case / "data" / "fact-check.json"
+        original = fact_check.read_bytes()
+        fact_check.write_text(json.dumps({"claims": [{"finding_id": link["finding_id"], "evidence_for": [{"source_expression_refs": ["SXW0", "SX-UNKNOWN"]}]}]}))
+        subprocess.run([sys.executable, str(SCRIPTS / "write-source-expressions.py"), str(case), "--resolve-fact-check-refs"], check=True, capture_output=True)
+        require(json.loads(fact_check.read_text())["claims"][0]["evidence_for"][0]["source_expression_refs"] == [expected, "SX-UNKNOWN"],
+                "a bare expression id was not resolved to its full ref (or an unknown id was changed)")
+        fact_check.write_bytes(original)
         again = run_writer(case, proposal(0, relation="context"), actor="fact-checker")
         require(again.returncode == 0 and next(e for e in expressions(case)["expressions"] if e["id"] == "SXW0")["created_by"] == "investigator",
                 "re-proposing an expression changed its author")

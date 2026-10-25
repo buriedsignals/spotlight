@@ -688,6 +688,17 @@ def main() -> int:
         check("e2e: a list-shaped evidence bundle is refused without a traceback",
               [] if out.returncode == 1 and "Traceback" not in out.stderr and "top-level must be an object" in out.stdout + out.stderr
               else [f"rc={out.returncode} {out.stderr.strip()[-300:]}"], False)
+        # Gold run 1 on 99c6567e: bare-id refs were dropped silently, leaving only "no active supporting source expression".
+        bare = Path(tmp) / "activated-bare-id-ref"
+        write_activated_case(bare)
+        fc_path = bare / "data" / "fact-check.json"
+        fc = json.loads(fc_path.read_text(encoding="utf-8"))
+        fc["claims"][0]["evidence_for"][0]["source_expression_refs"] = ["SX1"]
+        fc_path.write_text(json.dumps(fc), encoding="utf-8")
+        out = subprocess.run([sys.executable, str(SCRIPT), str(bare)], capture_output=True, text=True)
+        check("e2e: a bare-id expression ref is named, with the object shape",
+              [] if out.returncode == 1 and "source_expression_refs items must be objects" in out.stdout + out.stderr
+              else [f"rc={out.returncode} {(out.stdout + out.stderr).strip()[-300:]}"], False)
         (activated / "data" / "source-expressions.json").write_text("{}", encoding="utf-8")
         rc = subprocess.run([sys.executable, str(SCRIPT), str(activated)], capture_output=True).returncode
         check("e2e: activated artifact mutation exits 1", [] if rc == 1 else [f"rc={rc}"], False)
