@@ -29,7 +29,7 @@ The renderer places this at the top of the page. Do not soften:
 ## Workflow
 
 1. Read `{CASE_DIR}/data/findings.json` and `{CASE_DIR}/data/fact-check.json`.
-2. Author `{CASE_DIR}/data/report-draft.json` in the report's natural language. Choose the title, deck, finding order, headlines, concise summaries, why each finding matters, caveats, and next steps. Cover every finding exactly once. Every prose block must reference the fact-checked finding IDs it interprets; do not author verdicts or confidence.
+2. Author `{CASE_DIR}/data/report-draft.json` in the report's natural language. Choose the title, deck, finding order, headlines, concise summaries, why each finding matters, caveats, and next steps. Cover every finding exactly once, except the findings the member left out at the Investigation gate (unselected, or set aside, in `data/investigation-gate-review.json`): they stay in the case and never appear in the report, and the validator refuses a draft that names them. Every prose block must reference the fact-checked finding IDs it interprets; do not author verdicts or confidence.
 
    When an existing structure would clarify the report, add an optional
    `diagrams` item. For relationship structures, select one of `flow`,

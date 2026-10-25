@@ -148,10 +148,12 @@ export const EGRESS_TOOLS = ['fetch', 'search', 'http_get', 'browse', 'navigator
 // held only by the orchestrator, which also gets the Submit step). These
 // tools call the newsroom's own service through the launcher; they stay in
 // sensitive mode, which keeps the case away from the public web, not from
-// the newsroom.
+// the newsroom. Solo Ingest's local wiki write (wiki_destination) has no
+// newsroom counterpart: there, Ingest is the Submit step.
 export const NEWSROOM_TOOL_SWAPS: Record<string, string[]> = {
 	query_vault: ['search_knowledge', 'get_record', 'traverse', 'coverage'],
 	decision_signals: ['run_checks', 'newsroom_submit'],
+	wiki_destination: [],
 };
 
 // The tools a process declares and registers: its allowlist, with the
@@ -207,7 +209,8 @@ The skills use abstract verbs and some shell steps. This harness has no shell: e
 - Research (orchestrator only): at the Research phase \`spotlight_resolve\` runs the approved research topics itself and returns the round as \`research_round\` (what ran, the spend, the topics left out, and \`stopped\` with the fix when the provider failed). You never start, widen or choose topics. Pass \`retry_research: true\` only when the member asks to retry a stopped round.
 - Preflight step 0 (the shell check): skipped. A \`spotlight_resolve\` that answers confirms the checkout.
 - Ingest, the analyst proposal (orchestrator only): \`spawn_agent\` with agent \`analyst\`, at Ingest in the solo edition. It reads the approved case files and writes only \`data/knowledge-proposal.json\`. When it finishes, the harness runs \`scripts/build-knowledge-batch.py --review\` itself with the producers' model ids and appends the outcome to the result; do not try to run it. A refusal names what to fix.
-- Anything else (a POST request, git clone, Apify, vault-write, the other ingest scripts, a tool not in your list): do not improvise around it. Say which step needs it and stop that step.
+- Ingest, the wiki write (orchestrator only, solo edition): \`scripts/wiki-destination.py {CASE_DIR}\` -> \`wiki_destination\`, only once the member has requested ingestion on the page (\`resume_at\` \`ingest\`). It writes the member's wiki and the completed receipt; then resolve again and seal.
+- Anything else (a POST request, git clone, Apify, the retired \`ingest\` skill's scripts, a tool not in your list): do not improvise around it. Say which step needs it and stop that step.
 
 Gate approvals, the report decision and the ingest request or decline are recorded by the review page, never by you. At a gate, present the synthesis, call \`open_review\` so the member can decide on the page, and END YOUR TURN. When the member says they are done, call \`spotlight_resolve\` again.`;
 

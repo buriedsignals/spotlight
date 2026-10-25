@@ -31,6 +31,7 @@
         "list_files",
         "grep_files",
         "decision_signals",
+        "wiki_destination",
         "provenance_manifest",
         "build_review_html",
         "run_rlm",

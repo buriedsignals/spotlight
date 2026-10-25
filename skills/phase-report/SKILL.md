@@ -18,6 +18,10 @@ Enter this phase only from a `spotlight_resolve` result with `phase: report` and
 > (a) Yes — invoke report-drafting to produce report.html + findings-report.md + evidence-map.json.
 > (b) No — record a deterministic decline, then skip to ingestion. (`review.html` already covers editorial review.)"
 
+If every finding was set aside at the Investigation gate, there is nothing to
+report: say so and offer only (b). A draft cannot validate (the report check
+answers `NO_REPORTABLE_FINDINGS`).
+
 If (a): invoke `report-drafting`. The orchestrator authors
 `data/report-draft.json` to choose localized title, deck, finding order,
 editorial summaries, emphasis, caveats, and next steps. The `decideReport`

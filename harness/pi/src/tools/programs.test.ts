@@ -91,6 +91,7 @@ test('every program-backed tool and harness validator runs without a shell', asy
 		['provenance_manifest', { action: 'check_current' }],
 		['run_rlm', { request: 'data/rlm-request.json' }],
 		['integration_status', {}],
+		['wiki_destination', {}],
 	];
 	for (const [name, params] of calls) await call(name, params);
 	for (const role of ['investigator', 'fact-checker']) await validateAfterWorker(role, 'investigation', 'stub-model', context);
@@ -145,6 +146,34 @@ test('run_rlm refuses a request naming another case and leaves that case untouch
 	assert.equal(existsSync(join(caseDir, 'data', 'rlm-analysis.json')), true);
 });
 
+// D4: solo Ingest's write runs the real scripts/wiki-destination.py on the
+// active case with the harness's install config. The script refuses here (the
+// configured folder is not a member wiki); the refusal naming that folder
+// proves the tool reached the script with this config and wrote nothing.
+test('wiki_destination runs the wiki write on the active case with the install config', async (t) => {
+	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-wiki-')));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const caseDir = join(root, 'cases', 'active');
+	const wiki = join(root, 'not-a-wiki');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	await mkdir(wiki);
+	await writeFile(join(root, 'config.json'), JSON.stringify({ knowledge_destination: { mode: 'solo', workspace_path: wiki } }));
+	const context: ToolContext = {
+		caseDir,
+		writeRoot: caseDir,
+		python: PYTHON,
+		configPath: join(root, 'config.json'),
+		env: { PATH: process.env.PATH, HOME: root },
+	};
+	const tool = typedTools(context).find((each) => each.name === 'wiki_destination') as ToolDefinition;
+	assert.ok(tool, 'the harness offers the solo Ingest write');
+	await assert.rejects(
+		tool.execute('call', {}, undefined, undefined, undefined as never),
+		(error: Error) => /wiki_destination failed \(exit 2\)/.test(error.message) && error.message.includes(`${wiki} is not a member wiki`),
+	);
+	assert.equal(existsSync(join(wiki, 'spotlight')), false);
+});
+
 test('each tool rejects arguments outside its schema without starting anything', async (t) => {
 	const { tools, call, recorded } = await fixture(t);
 	const wrongType: Record<string, Record<string, unknown>> = {
@@ -168,6 +197,7 @@ test('each tool rejects arguments outside its schema without starting anything',
 		grep_files: { pattern: 1 },
 		hash_files: { paths: [] },
 		build_review_html: { case: 'other' },
+		wiki_destination: { case: 'other' },
 	};
 	assert.deepEqual([...tools.keys()].sort(), Object.keys(wrongType).sort());
 	for (const [name, params] of Object.entries(wrongType)) {

@@ -73,6 +73,23 @@ class D1LanePlan(unittest.TestCase):
             p["topics"][0]["anomaly_methods"] = [f"method:m{i}@1.0" for i in range(6)]
             p["topics"][1]["anomaly_methods"] = [f"method:n{i}@1.0" for i in range(5)]
         def unknown_egress_topic(p): p["egress"].append({"topic_id": "ghost-web", "destination": "public_web"})
+        # Plans the lane runner refuses or leaves out must fail here, against the schema.
+        def unknown_destination(p): p["egress"][0]["destination"] = "openrouter_swarm"
+        def consent_without_swarm(p): p["consent"].pop("swarm")
+        def extra_topic_field(p): p["topics"][0]["direction_ids"] = ["ownership"]
+        # A web lane with no route named still runs on the swarm, so it needs the opt-in.
+        def web_lane_without_opt_in(p):
+            brief = topic("ownership-web", "ownership", "web")
+            brief.pop("route")
+            p["topics"] = [brief]
+            p["egress"] = [{"topic_id": "ownership-web", "destination": "public_web"}]
+            p["consent"]["swarm"] = False
+        # Topic routes the lane runner refuses: a web lane runs only on the swarm, a local lane only locally.
+        def web_lane_on_local_route(p): p["topics"][0]["route"] = "local"
+        def subscription_route_in_swarm_mode(p): p["topics"][0]["route"] = "subscription"
+        def local_lane_on_swarm_route(p):
+            p["topics"].append(topic("ownership-prior-knowledge", "ownership", "prior-knowledge"))
+            p["egress"].append({"topic_id": "ownership-prior-knowledge", "destination": "local_model"})
 
         cases = {
             "round_budget_usd must be set": no_budget,
@@ -84,13 +101,20 @@ class D1LanePlan(unittest.TestCase):
             "is not in the lane catalogue": unknown_lane,
             "is not a direction_id of investigation_plan": unknown_direction,
             "needs a token budget": no_token_budget,
-            "egress is not listed": no_egress,
+            'add a research_plan.egress entry {"topic_id": "ownership-registries"': no_egress,
             "consent must record who decided": no_consent,
             "needs the member's swarm opt-in": no_opt_in,
             "local_only mode runs no cloud topic": local_only_cloud,
             "an ad-hoc topic gets no keys": key_on_ad_hoc,
             "at most 10 across the plan": too_many_methods,
             "egress names an unknown topic": unknown_egress_topic,
+            "research_plan.egress[0].destination: must be one of": unknown_destination,
+            "research_plan.consent: missing swarm": consent_without_swarm,
+            "research_plan.topics[0]: unknown field direction_ids": extra_topic_field,
+            "(ownership-web): a swarm topic needs the member's swarm opt-in": web_lane_without_opt_in,
+            "a registries lane runs on the swarm route, not 'local'": web_lane_on_local_route,
+            "the subscription route needs mode subscription_subagents": subscription_route_in_swarm_mode,
+            "a prior-knowledge lane runs on the local route, not 'swarm'": local_lane_on_swarm_route,
         }
         for expected, breaker in cases.items():
             with self.subTest(expected):
@@ -152,7 +176,10 @@ class D1LanePlan(unittest.TestCase):
         problems = d1(method, newsroom=True)
         self.assertTrue(any("newsroom mode allows no OpenRouter swarm" in p for p in problems))
         self.assertTrue(any("newsroom mode sends nothing to OpenRouter" in p for p in problems))
-        newsroom = methodology(topic("ownership-web", "ownership", "web", route="local"), mode="newsroom")
+        # A web lane takes its catalogue route, the swarm, which the newsroom edition points at its own endpoint.
+        brief = topic("ownership-web", "ownership", "web")
+        brief.pop("route")
+        newsroom = methodology(brief, mode="newsroom")
         plan_of(newsroom)["egress"] = [{"topic_id": "ownership-web", "destination": "newsroom"}]
         self.assertEqual(d1(newsroom, newsroom=True), [])
 

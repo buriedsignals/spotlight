@@ -478,8 +478,8 @@ test('the orchestrator cannot write the files the workers write, and writes its 
 	assert.equal(results.match(/another role writes/g)?.length, 2);
 });
 
-// Tools whose effects stay on this machine (case files, the local vault and
-// tool index, the Anomaly catalogue, the resolver, the loopback review page), plus the two checks
+// Tools whose effects stay on this machine (case files, the local vault, its
+// wiki write and the tool index, the Anomaly catalogue, the resolver, the loopback review page), plus the two checks
 // that refuse their remote step themselves when SPOTLIGHT_SENSITIVE is set.
 // Any other tool a sensitive process declares is a possible way out.
 const LOCAL_TOOLS = new Set([
@@ -501,6 +501,7 @@ const LOCAL_TOOLS = new Set([
 	'decision_signals',
 	'provenance_manifest',
 	'anomaly_methods',
+	'wiki_destination',
 ]);
 
 test('sensitive mode leaves every process only local tools, and a tool that can send case text out does not run', async (t) => {
