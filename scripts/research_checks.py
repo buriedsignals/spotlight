@@ -49,6 +49,10 @@ AD_HOC, LOCAL_CORPUS = "ad-hoc", "local-corpus"
 CLOUD_ROUTES = {"swarm", "subscription"}
 CLOUD_DESTINATIONS = {"openrouter", "subscription_host"}
 CASE_BUDGET_CEILING_USD = 5
+# A lane's first turn needs its opening conversation (persona, brief, tools:
+# about 5,000 tokens) sent twice and three 4,096-token answers
+# (harness/pi/src/lanes.ts); below this it ends before its first call.
+MIN_TOKEN_BUDGET = 20_000
 MAX_ANOMALY_METHODS = 10
 CLUE_MARKS = {"pursue", "dismiss"}
 DIRECTION_MARKS = {"keep", "drop", "add"}
@@ -161,6 +165,9 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
             problems.append(f"{where}: needs at least one question")
         if not isinstance(topic.get("token_budget"), int) or topic["token_budget"] < 1:
             problems.append(f"{where}: needs a token budget")
+        elif topic["token_budget"] < MIN_TOKEN_BUDGET:
+            problems.append(f"{where}: token_budget {topic['token_budget']} is below one lane call; "
+                            f"set at least {MIN_TOKEN_BUDGET}")
         methods += len(topic.get("anomaly_methods") or [])
         own_egress = [e for e in egress if e.get("topic_id") == topic_id]
         if not own_egress:

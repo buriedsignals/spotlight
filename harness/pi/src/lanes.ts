@@ -927,6 +927,12 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 			const finalFitsAfterTurn = spend.tokens + 2 * (conversation + MAX_TOKENS_PER_ANSWER) + MAX_TOKENS_PER_ANSWER <= tokenBudget;
 			finalReason ??= !finalFitsAfterTurn ? 'token_budget' : turn + 1 >= MAX_TURNS ? 'turn_limit' : toolCalls >= MAX_TOOL_CALLS ? 'tool_call_limit' : undefined;
 			const finalTurn = finalReason !== undefined;
+			// A budget that cannot fit one ordinary turn ends the lane before any call: failed, not partial.
+			if (turn === 0 && finalReason === 'token_budget') {
+				const failure: Refusal = { code: 'budget_spent', message: `could not start: the token budget ${tokenBudget} is below one call (this lane needs at least ${2 * (conversation + MAX_TOKENS_PER_ANSWER) + MAX_TOKENS_PER_ANSWER})` };
+				writeLane('failed', failure);
+				return { status: 'failed', failure, usd: 0 };
+			}
 			// Nothing captured, nothing to record.
 			if (finalTurn && run.sources.size === 0) return stopSpent();
 			// A fixed harness note, not case data: the swarm guard admits it as the harness's own.

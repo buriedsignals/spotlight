@@ -312,6 +312,18 @@ test('a lane that captured no source stops at its budget without the lead-only t
 	assert.deepEqual(lane.final_turn, { ran: false, reason: 'token_budget' });
 });
 
+// gold-mozilla s0 on 4a2e429e: a 5,000-token topic ended budget_spent with no call, and the round reported it as having run.
+test('a lane whose budget cannot fit one call makes no request and is reported failed', async (t) => {
+	const space = await setup(t);
+	const fakes = await servers(t, () => done);
+	const summary = await round(space, fakes, plan([topic('a-web', 'web', { token_budget: 5000 })]));
+
+	assert.equal(fakes.swarm.requests.length, 0);
+	assert.equal((await laneOf(space, 'a-web')).status, 'failed');
+	assert.deepEqual(summary.failed.map((item) => item.topic_id), ['a-web']);
+	assert.match(summary.failed[0].reason, /could not start: the token budget 5000 is below one call \(this lane needs at least \d+\)/);
+});
+
 // 73308129 shakedown: a lane sent fetch {"url": "https://"} 29 times, each refused the same way.
 test('a lane call that failed twice in a row the same way is not run a third time', async (t) => {
 	const space = await setup(t);
