@@ -69,6 +69,7 @@ test('writes outside the case, through a symlink, or to a protected file are ref
 		'data/methodology-review.json',
 		'data/ingestion.json',
 		'data/report-declined.json',
+		'data/case-contract.json',
 		'data/provenance-signing-receipt.json',
 		'evidence/capture-receipt.json',
 	]) {
@@ -228,6 +229,17 @@ test('a path ending in a slash or naming a folder is refused and leaves no file 
 
 	await call('write_file', { path: 'research/rounds.json', content: '[]' });
 	assert.equal(await readFile(join(caseDir, 'research/rounds.json'), 'utf8'), '[]');
+});
+
+// Windows drops a trailing dot or space, so such a name would reach a
+// protected or denied file under another spelling.
+test('a name ending in a dot or a space is refused', async (t) => {
+	const { call } = await fixture(t);
+
+	for (const path of ['data/case-contract.json.', 'data/case-contract.json ', 'data./notes.md']) {
+		await assert.rejects(call('write_file', { path, content: '{}' }), /ending in a dot or a space/, path);
+	}
+	await call('write_file', { path: 'research/./notes.md', content: 'ok' });
 });
 
 // E2E D2: a rewrite cut off at the output cap arrived as content "" and wiped

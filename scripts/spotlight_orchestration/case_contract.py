@@ -50,6 +50,14 @@ def _project(case: Path) -> str:
     return case.name
 
 
+def _empty_passages(path: Path) -> bool:
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(doc, dict) and doc.get("expressions") == []
+
+
 def activate_new(case: Path, data_descriptor: int) -> dict[str, Any]:
     contract_path = case / CONTRACT
     expressions_path = case / "data" / "source-expressions.json"
@@ -67,9 +75,11 @@ def activate_new(case: Path, data_descriptor: int) -> dict[str, Any]:
             raise ContractError("the case already has a case contract")
         # An earlier run stopped between its two writes: finish it.
         doc = existing
-    elif expressions_path.exists():
+    elif expressions_path.exists() and not _empty_passages(expressions_path):
         raise ContractError("the case already has passages (data/source-expressions.json); a pilot case is migrated, not re-born")
     else:
+        # No contract yet. An empty passages file is what an interrupted earlier
+        # run leaves (it writes the passages first): it is kept and finished.
         doc = {
             "schema_version": "1.0",
             "project": _project(case),

@@ -35,7 +35,7 @@ function toolsFor(role: string): ToolDefinition[] {
 			python,
 			configPath: process.env.SPOTLIGHT_CONFIG || `${CHECKOUT_ROOT}/.spotlight-config.json`,
 			env: process.env,
-			scope: { reads: spec.reads, writes: spec.writes, denyReads: spec.denyReads },
+			scope: { reads: spec.reads, writes: spec.writes, denyReads: spec.denyReads, denyWrites: spec.denyWrites },
 		}),
 	];
 	const edition = process.env.SPOTLIGHT_EDITION === 'newsroom' ? 'newsroom' : 'solo';

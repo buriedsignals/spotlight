@@ -26,7 +26,7 @@ import {
 import type { CheckKind, EditorialClient, RunPackage } from './editorial.ts';
 import { openInBrowser } from '../../review/session.mjs';
 import { newsroomData } from './tools/editorial.ts';
-import { DESKTOP_ENV, capped, programEnv, runFixed } from './tools/run.ts';
+import { DESKTOP_ENV, capped, programEnv, runFixed, runPython } from './tools/run.ts';
 import type { HarnessConfig, LaunchArgs } from './config.ts';
 import { CaseHeldError, acquireCaseLock } from './lock.ts';
 import type { CaseLock } from './lock.ts';
@@ -268,6 +268,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 				// Case search runs inside the queue's admission, so it counts
 				// against the worker limit, and a cancel stops it.
 				return queue.run(async () => {
+					await activateNewCase(harness, request.agent, controller.signal);
 					const task = await finalTask(harness, request.agent, request.task, controller.signal);
 					return runWorker(
 						{
@@ -368,6 +369,44 @@ async function finalTask(harness: Harness, role: string, task: string, signal: A
 		return task;
 	}
 	return withPassages;
+}
+
+// A new case starts activated (phase-investigation, "Source-expression release
+// mode", step 2): before the first investigator task at Investigation, with no
+// contract and no findings yet, the harness runs case-contract.py activate-new
+// itself. No role may write data/case-contract.json (tools/case-files.ts). The
+// script refuses a case that already has investigation files; that case stays
+// legacy, as the skill's step 3 says, and the investigator still starts.
+// Legacy markers activate-new refuses: such a case keeps contract 1.0.
+const LEGACY_MARKERS = ['data/findings.json', 'findings.json', 'data/fact-check.json', 'data/investigation-log.json'];
+
+// One activation at a time, so two investigators starting together on a new
+// case do not race the one-shot script.
+let activationInFlight: Promise<void> | undefined;
+function activateNewCase(harness: Harness, role: string, signal: AbortSignal): Promise<void> {
+	if (role !== 'investigator') return Promise.resolve();
+	const run = (activationInFlight ?? Promise.resolve()).catch(() => {}).then(() => activateOnce(harness, signal));
+	activationInFlight = run;
+	return run;
+}
+
+async function activateOnce(harness: Harness, signal: AbortSignal): Promise<void> {
+	const { config, active } = harness;
+	const exists = (path: string) => existsSync(resolve(active.caseDir, path));
+	// Activated only when both artifacts exist; a contract without its passages
+	// file (an older publish order) is repaired by activate-new, and a malformed
+	// one is refused by it.
+	if ((exists('data/case-contract.json') && exists('data/source-expressions.json')) || LEGACY_MARKERS.some(exists)) return;
+	// Strict: a resolver failure must not let a new case start unactivated.
+	if (String((await caseStatus(harness, true)).phase ?? '') !== 'investigation') return;
+	const result = await runPython(
+		{ caseDir: active.caseDir, writeRoot: active.caseDir, python: config.python, configPath: config.spotlightConfig, env: process.env },
+		[resolve(CHECKOUT_ROOT, 'scripts/case-contract.py'), 'activate-new', active.caseDir],
+		{ signal, timeoutMs: 60_000 },
+	);
+	// A new case never runs unactivated: the investigator would write contract
+	// 1.1 artifacts that no validator accepts without the contract.
+	if (result.code !== 0) throw new Error(`the case could not be activated, so the investigator did not start: ${`${result.stderr}${result.stdout}`.trim()}`);
 }
 
 // A worker with spawn conditions in harness/composition.json (the analyst:

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmod, copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
@@ -336,6 +337,145 @@ test('a worker writes through its typed tools and the harness validates its outp
 	assert.match(delegated, /Investigator finished\./);
 	assert.match(delegated, /validate-case\.py: FAILED/);
 	assert.match(delegated, /no_qualifying_findings/);
+});
+
+// D5: a new case is activated by the harness, not by a model writing the
+// receipt. The contract must exist before the investigator's first turn, and
+// no role can write it.
+test('a new case at Investigation is activated before the investigator starts, and no worker can write the activation receipt', async (t) => {
+	let contractAtStart: string | undefined;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			if (toolResults(request).length > 0) return { text: 'Investigator finished.' };
+			contractAtStart = existsSync(contractPath) ? readFileSync(contractPath, 'utf8') : undefined;
+			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/case-contract.json', content: '{"forged": true}' } }] };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	const contractPath = join(caseDir, 'data', 'case-contract.json');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.ok(contractAtStart, 'the contract existed when the investigator started');
+	const events = (JSON.parse(contractAtStart) as { activation_events: Array<{ kind: string }> }).activation_events;
+	assert.deepEqual(events.map((event) => event.kind), ['born']);
+	assert.equal(readFileSync(contractPath, 'utf8'), contractAtStart, 'the investigator could not overwrite it');
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	assert.match(toolResults(worker[worker.length - 1]).join('\n'), /protected/);
+});
+
+// A failed activation stops the spawn: the investigator never runs on a new
+// case without its contract.
+test('when a new case cannot be activated, the investigator does not start', async (t) => {
+	let investigatorRan = false;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			investigatorRan = true;
+			return { text: 'Investigator finished.' };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	// Recorded passages without a contract (a pilot case): activate-new refuses it.
+	await writeFile(join(caseDir, 'data', 'source-expressions.json'), '{"schema_version": "1.0", "project": "case-a", "expressions": [{"id": "p1"}]}');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(investigatorRan, false);
+	assert.equal(existsSync(join(caseDir, 'data', 'case-contract.json')), false);
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /could not be activated/);
+});
+
+// A born contract without its passages file (an older publish order) is
+// repaired before the investigator starts.
+test('a contract left without its passages file is repaired before the investigator starts', async (t) => {
+	let passagesAtStart = false;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			passagesAtStart ||= existsSync(passagesPath);
+			return { text: 'Investigator finished.' };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	const passagesPath = join(caseDir, 'data', 'source-expressions.json');
+	const contract = { schema_version: '1.0', project: 'case-a', current_contract_version: '1.1', activation_events: [{ event_id: 'born-0123456789abcdef', kind: 'born', activated_contract_version: '1.1', activated_at: '2026-10-25T00:00:00Z', tool_version: 'test' }] };
+	await writeFile(join(caseDir, 'data', 'case-contract.json'), JSON.stringify(contract));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(passagesAtStart, true);
+});
+
+// A legacy case (an old root findings.json) keeps contract 1.0: the harness
+// does not try to activate it, and the investigator still starts.
+test('a legacy case resumes without activation', async (t) => {
+	let investigatorRan = false;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			investigatorRan = true;
+			return { text: 'Investigator finished.' };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	await writeFile(join(caseDir, 'findings.json'), '{"project": "case-a", "findings": []}');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(investigatorRan, true);
+	assert.equal(existsSync(join(caseDir, 'data', 'case-contract.json')), false);
+});
+
+// D6: the orchestrator cannot rewrite the files a worker owns around the
+// checks the harness runs after that worker; its own files stay writable.
+test('the orchestrator cannot write the files the workers write, and writes its own', async (t) => {
+	const fake = await startFakeOpenAI((request) =>
+		toolResults(request).length === 0
+			? {
+					toolCalls: [
+						{ name: 'write_file', arguments: { path: 'data/methodology.json', content: '{"rewritten": true}' } },
+						{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: '{"status": "false"}' } },
+						{ name: 'write_file', arguments: { path: 'summary.md', content: 'Gate summary.' } },
+					],
+				}
+			: { text: 'Done.' },
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	await writeFile(join(caseDir, 'data', 'fact-check.json'), '{"status": "verified"}');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8'), '{}\n');
+	assert.equal(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8'), '{"status": "verified"}');
+	assert.equal(await readFile(join(caseDir, 'summary.md'), 'utf8'), 'Gate summary.');
+	const results = toolResults(fake.requests[fake.requests.length - 1]).join('\n');
+	assert.equal(results.match(/another role writes/g)?.length, 2);
 });
 
 // Tools whose effects stay on this machine (case files, the local vault, its

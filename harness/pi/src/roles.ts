@@ -27,6 +27,10 @@ export type AgentSpec = {
 	// "*" matches within one path segment. Unlike `reads`, it leaves the role's
 	// other tools as they are.
 	denyReads?: string[];
+	// Optional case files the role's write_file and edit_file refuse, same
+	// syntax: the files a worker owns and the harness validates after that
+	// worker (the orchestrator may not rewrite them around the checks).
+	denyWrites?: string[];
 	// Optional spawn conditions: the resolver phases and the editions in which
 	// the launcher starts this worker. Absent means any.
 	phases?: string[];
@@ -50,9 +54,11 @@ function plainSegments(path: string): boolean {
 }
 
 function checkScope(name: string, spec: AgentSpec): void {
-	for (const entry of spec.denyReads ?? []) {
-		if (!DENY_ENTRY.test(entry) || !plainSegments(entry)) {
-			throw new Error(`harness/composition.json: ${name} denyReads entry ${JSON.stringify(entry)} is not a case-relative file, pattern or folder/`);
+	for (const field of ['denyReads', 'denyWrites'] as const) {
+		for (const entry of spec[field] ?? []) {
+			if (!DENY_ENTRY.test(entry) || !plainSegments(entry)) {
+				throw new Error(`harness/composition.json: ${name} ${field} entry ${JSON.stringify(entry)} is not a case-relative file, pattern or folder/`);
+			}
 		}
 	}
 	if (spec.reads === undefined && spec.writes === undefined) return;
@@ -198,6 +204,8 @@ The skills use abstract verbs and some shell steps. This harness has no shell: e
 - Context hygiene: when the harness has a local RLM, \`fetch\` distills every page itself. You do not run the RLM. The result says \`distilled: true\` and gives you compact leads; save_as holds those leads and \`raw_path\` (save_as + \`.raw\`) the page as fetched, for citations and provenance. ${RAW_PAGE_RULE[tier === '12b' ? '12b' : 'default']} Leads are unverified pointers, never facts, and never evidence: a \`source_ref\` must point at the \`.raw\` file, not the lead file (the validators refuse lead files). If the result says the RLM failed, the page is only at \`raw_path\`; treat it the same way.
 - Shell steps in the skills map to typed tools: a \`curl\` GET to a registry, archive or API -> \`http_get\` (\`--data-urlencode\` values go in its \`query\` object, unencoded); a dev-browser script -> \`browse\` (one page: rendered text, HTML or a screenshot); \`scripts/osint-tools.py find|categories\` -> \`osint_tools\`; \`navigator tools find|show\` -> \`navigator_tools\`; \`exiftool {file}\` -> \`exiftool\`; \`scripts/decision-signals.py\` -> \`decision_signals\`; \`scripts/build-provenance-manifest.py\` -> \`provenance_manifest\`; \`integrations/rlm/run_rlm.py\` -> \`run_rlm\`; \`integrations/preflight.py\` -> \`integration_status\`; \`integrations/anomaly/adapter.py methods\` -> \`anomaly_methods\`; \`scripts/build-review-html.py\` -> \`build_review_html\`; \`spotlight_safe.py sha256\` or any SHA-256 of a case file -> \`hash_files\`; \`grep -n\`, \`sed -n\` or Python to find a source_ref line range or JSON Pointer -> \`grep_files\` and \`read_file\` (offset/limit or json_pointer), which count and select exactly as the validators do. \`scripts/spotlight_safe.py validate-*\` checks are not needed: each tool checks its own arguments, and the web tools reach only public http(s) addresses.
 - \`scripts/validate-case.py\`, \`scripts/validate-fact-check.py\` and \`scripts/validate-methodology-navigator.py\` are run by the harness itself when a worker finishes; their outcome is appended to the \`spawn_agent\` result. Act on that outcome; do not try to run them.
+- \`scripts/case-contract.py activate-new\` (orchestrator only) is run by the harness itself right before the first investigator task of a new case at Investigation; \`data/case-contract.json\` is the harness's and no tool writes it. Resolve the source-expression mode as the skill says, reading that file: a new case with no findings is activated.
+- Worker files (orchestrator only): the files the workers write and the harness checks after them (\`data/methodology.json\`, the findings, the fact-check, the evidence bundle, the investigation log, the passages) refuse your writes. Where a skill has you change one (a research plan, an RLM block), send the change to the investigator as a METHODOLOGY CORRECTION, or to the worker that wrote the file.
 - Research (orchestrator only): at the Research phase \`spotlight_resolve\` runs the approved research topics itself and returns the round as \`research_round\` (what ran, the spend, the topics left out, and \`stopped\` with the fix when the provider failed). You never start, widen or choose topics. Pass \`retry_research: true\` only when the member asks to retry a stopped round.
 - Preflight step 0 (the shell check): skipped. A \`spotlight_resolve\` that answers confirms the checkout.
 - Ingest, the analyst proposal (orchestrator only): \`spawn_agent\` with agent \`analyst\`, at Ingest in the solo edition. It reads the approved case files and writes only \`data/knowledge-proposal.json\`. When it finishes, the harness runs \`scripts/build-knowledge-batch.py --review\` itself with the producers' model ids and appends the outcome to the result; do not try to run it. A refusal names what to fix.
