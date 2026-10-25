@@ -368,8 +368,8 @@ test('when a new case cannot be activated, the investigator does not start', asy
 	t.after(() => fake.close());
 	const space = await workspace(t);
 	const caseDir = await caseAtInvestigation(space);
-	// Passages without a contract: activate-new refuses this case.
-	await writeFile(join(caseDir, 'data', 'source-expressions.json'), '{"schema_version": "1.0", "project": "case-a", "expressions": []}');
+	// Recorded passages without a contract (a pilot case): activate-new refuses it.
+	await writeFile(join(caseDir, 'data', 'source-expressions.json'), '{"schema_version": "1.0", "project": "case-a", "expressions": [{"id": "p1"}]}');
 	const chat = launch(t, baseEnv(space, fake.baseURL));
 
 	await settledPrompt(chat, 'Continue.');
@@ -378,6 +378,31 @@ test('when a new case cannot be activated, the investigator does not start', asy
 	assert.equal(existsSync(join(caseDir, 'data', 'case-contract.json')), false);
 	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
 	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /could not be activated/);
+});
+
+// A legacy case (an old root findings.json) keeps contract 1.0: the harness
+// does not try to activate it, and the investigator still starts.
+test('a legacy case resumes without activation', async (t) => {
+	let investigatorRan = false;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			investigatorRan = true;
+			return { text: 'Investigator finished.' };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	await writeFile(join(caseDir, 'findings.json'), '{"project": "case-a", "findings": []}');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(investigatorRan, true);
+	assert.equal(existsSync(join(caseDir, 'data', 'case-contract.json')), false);
 });
 
 // D6: the orchestrator cannot rewrite the files a worker owns around the

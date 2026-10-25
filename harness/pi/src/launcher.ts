@@ -377,11 +377,25 @@ async function finalTask(harness: Harness, role: string, task: string, signal: A
 // itself. No role may write data/case-contract.json (tools/case-files.ts). The
 // script refuses a case that already has investigation files; that case stays
 // legacy, as the skill's step 3 says, and the investigator still starts.
-async function activateNewCase(harness: Harness, role: string, signal: AbortSignal): Promise<void> {
+// Legacy markers activate-new refuses: such a case keeps contract 1.0.
+const LEGACY_MARKERS = ['data/findings.json', 'findings.json', 'data/fact-check.json', 'data/investigation-log.json'];
+
+// One activation at a time, so two investigators starting together on a new
+// case do not race the one-shot script.
+let activationInFlight: Promise<void> | undefined;
+function activateNewCase(harness: Harness, role: string, signal: AbortSignal): Promise<void> {
+	if (role !== 'investigator') return Promise.resolve();
+	const run = (activationInFlight ?? Promise.resolve()).catch(() => {}).then(() => activateOnce(harness, signal));
+	activationInFlight = run;
+	return run;
+}
+
+async function activateOnce(harness: Harness, signal: AbortSignal): Promise<void> {
 	const { config, active } = harness;
-	if (role !== 'investigator') return;
-	if (['case-contract.json', 'findings.json'].some((name) => existsSync(resolve(active.caseDir, 'data', name)))) return;
-	if ((await casePhase(harness)) !== 'investigation') return;
+	const exists = (path: string) => existsSync(resolve(active.caseDir, path));
+	if (exists('data/case-contract.json') || LEGACY_MARKERS.some(exists)) return;
+	// Strict: a resolver failure must not let a new case start unactivated.
+	if (String((await caseStatus(harness, true)).phase ?? '') !== 'investigation') return;
 	const result = await runPython(
 		{ caseDir: active.caseDir, writeRoot: active.caseDir, python: config.python, configPath: config.spotlightConfig, env: process.env },
 		[resolve(CHECKOUT_ROOT, 'scripts/case-contract.py'), 'activate-new', active.caseDir],

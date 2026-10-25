@@ -327,6 +327,11 @@ def main() -> int:
         (born / "data" / "source-expressions.json").unlink()
         resumed = subprocess.run([sys.executable, str(SCRIPTS / "case-contract.py"), "activate-new", str(born)], capture_output=True, text=True)
         require(resumed.returncode == 0 and (born / "data" / "source-expressions.json").is_file(), resumed.stderr)
+        # A run that stopped after the empty passages file but before the
+        # contract (the current publish order) is finished too, not wedged.
+        (born / "data" / "case-contract.json").unlink()
+        finished = subprocess.run([sys.executable, str(SCRIPTS / "case-contract.py"), "activate-new", str(born)], capture_output=True, text=True)
+        require(finished.returncode == 0 and (born / "data" / "case-contract.json").is_file(), finished.stderr)
         pilot = root / "pilot"
         (pilot / "data").mkdir(parents=True)
         (pilot / "data" / "source-expressions.json").write_text("{}", encoding="utf-8")
