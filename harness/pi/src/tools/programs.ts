@@ -319,6 +319,13 @@ function sourceExpressionsTool(context: ToolContext): ToolDefinition {
 			if (input.cycle === undefined || input.proposal === undefined) {
 				throw new ToolArgumentError('source_expressions: action "write" needs cycle and proposal');
 			}
+			// The writer reads each anchor's file, so an anchor must be a file this
+			// role may read: the fact-checker cannot cite the research it is kept from.
+			const expressions = (input.proposal as { expressions?: unknown }).expressions;
+			for (const expression of Array.isArray(expressions) ? expressions : []) {
+				const path = (expression as { anchor_ref?: { path?: unknown } } | null)?.anchor_ref?.path;
+				if (typeof path === 'string') readTarget(context.caseDir, path, context.scope);
+			}
 			const result = await runPython(context, [writer, context.caseDir, '--actor', actor, '--cycle', String(input.cycle)], {
 				input: JSON.stringify(input.proposal),
 				signal,

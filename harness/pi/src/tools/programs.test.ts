@@ -219,6 +219,20 @@ test('source_expressions refuses a case that is not activated and runs the write
 	assert.ok((await recorded()).some((run) => run.args.includes('--fingerprint-findings')));
 });
 
+// The fact-checker is kept from the research swarm's files; the writer reads an
+// anchor's file for it, so a passage anchored there is refused before it runs.
+test('source_expressions refuses an anchor in a file the role may not read', async (t) => {
+	const { call, recorded, caseDir, context } = await fixture(t, { SPOTLIGHT_ROLE: 'fact-checker' });
+	context.scope = { denyReads: ['research/swarm/'] };
+	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
+	await mkdir(join(caseDir, 'research', 'swarm', 'web'), { recursive: true });
+	await writeFile(join(caseDir, 'research', 'swarm', 'web', 'page.md'), 'swarm text');
+
+	const proposal = { expressions: [{ id: 'p1', text: 'swarm text', anchor_ref: { path: 'research/swarm/web/page.md', line_start: 1, line_end: 1 } }] };
+	await assert.rejects(call('source_expressions', { action: 'write', cycle: 1, proposal }), /outside the case files/);
+	assert.deepEqual(await recorded(), []);
+});
+
 test('fetch, browse and http_get refuse loopback, private and metadata targets before starting anything', async (t) => {
 	const { call, recorded } = await fixture(t);
 
