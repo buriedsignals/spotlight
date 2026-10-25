@@ -83,6 +83,14 @@ class Merge(MergeTestCase):
         self.assertEqual(before["leads"], after["leads"])
         self.assertEqual(json.loads(first[1])["clues"], self.case.data("clues.json")["clues"])
 
+    def test_lanes_without_times_rerun_to_the_same_bytes(self) -> None:
+        for brief in self.case.methodology["research_plan"]["topics"]:
+            self.case.finish(brief["topic_id"], "not_started")
+        self.assertEqual(run_merge(self.case).returncode, 0)
+        first = (self.case.root / "data" / "leads.json").read_bytes()
+        self.assertEqual(run_merge(self.case).returncode, 0)
+        self.assertEqual(first, (self.case.root / "data" / "leads.json").read_bytes())
+
     def test_d3_a_paraphrased_excerpt_is_kept_as_unverifiable(self) -> None:
         self.case.page_lead("ownership-registries", "lead-1", page_text="Shareholder: Example Trust", excerpt="Example Trust owns it all")
         leads, _ = self.merged()

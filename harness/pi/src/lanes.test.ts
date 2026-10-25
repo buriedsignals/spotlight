@@ -86,7 +86,7 @@ function plan(topics: TopicBrief[], extra: Partial<ResearchPlan> = {}): Research
 		round_budget_usd: 1,
 		case_budget_usd: 5,
 		mode: 'openrouter_swarm',
-		consent: { swarm: true, decided_by: 'journalist:test', decided_at: '2026-10-23T09:00:00Z' },
+		consent: { swarm: true },
 		keys: [],
 		egress: [],
 		topics,
@@ -94,7 +94,7 @@ function plan(topics: TopicBrief[], extra: Partial<ResearchPlan> = {}): Research
 	};
 }
 
-const call = (name: string, args: Record<string, unknown>): Reply => ({ toolCalls: [{ name, arguments: args } as ToolCall] });
+const call = (name: string, args: Record<string, unknown>) => ({ toolCalls: [{ name, arguments: args } as ToolCall] });
 const done: Reply = { text: 'Done: one lead.' };
 const lead = (source: string, text: string, extra: Record<string, unknown> = {}) =>
 	call('record_lead', { source_id: source, summary: 'Ada Lovelace is President of Analytical Engines SA.', subjects: ['Ada Lovelace', 'Analytical Engines SA'], excerpt: { text, language: 'en', direct_quote: false }, ...extra });
@@ -173,7 +173,7 @@ test('a swarm request carries only its approved brief and its own web results; c
 				smuggled,
 				topic('ownership-local-corpus-2', 'local-corpus', { route: 'swarm' }),
 			],
-			{ consent: { swarm: true, journalist_input: true, decided_by: 'journalist:test', decided_at: '2026-10-23T09:00:00Z' } },
+			{ consent: { swarm: true, journalist_input: true } },
 		),
 	);
 
@@ -224,7 +224,8 @@ test('no swarm request without the opt-in: switch off, no consent, or a local-on
 
 	const localOnly = await round(space, fakes, plan([topic('ownership-web')], { mode: 'local_only' }));
 	assert.deepEqual(localOnly.left_out.map((item) => item.topic_id), ['ownership-web']);
-	const noConsent = await round(space, fakes, plan([topic('ownership-web')], { consent: { swarm: false, decided_by: 'j', decided_at: '2026-10-23T09:00:00Z' } }));
+	// An older plan still carries a model-written stamp; it is not read.
+	const noConsent = await round(space, fakes, plan([topic('ownership-web')], { consent: { swarm: false, decided_by: 'j', decided_at: '2026-10-23T09:00:00Z' } as ResearchPlan['consent'] }));
 	assert.deepEqual(noConsent.left_out.map((item) => item.topic_id), ['ownership-web']);
 	// Research off stops a stale or retried round before any lane, local ones included.
 	const switchOff = await round(space, fakes, plan([topic('off-local-corpus', 'local-corpus')]), { SPOTLIGHT_RESEARCH_SWARMS: 'off' }, true);
@@ -240,8 +241,8 @@ test('no swarm request without the opt-in: switch off, no consent, or a local-on
 
 test('the round budget holds: no topic starts once it is spent, running ones finish, and the left-out topics are recorded', async (t) => {
 	const space = await setup(t);
-	// Each answer costs $0.006; the first topic takes two answers.
-	const fakes = await servers(t, scripted({ 'a-web': [call('search', { query: 'q' })] }, { total_tokens: 500, cost: 0.006 }));
+	// Each answer costs $0.004; the first topic takes three: a search, a prose answer and its lead-only turn.
+	const fakes = await servers(t, scripted({ 'a-web': [call('search', { query: 'q' })] }, { total_tokens: 500, cost: 0.004 }));
 	const summary = await round(space, fakes, plan([topic('a-web'), topic('b-web'), topic('c-web')], { round_budget_usd: 0.01 }));
 
 	assert.deepEqual(summary.ran, ['a-web']);
@@ -291,6 +292,33 @@ test('a token budget too small for one turn and the last turn sends nothing', as
 	const lane = await laneOf(space, 'a-web');
 	assert.equal(lane.status, 'partial');
 	assert.deepEqual(lane.final_turn, { ran: false, reason: 'token_budget' });
+});
+
+test('a lane that answers in prose after reading a source, with no lead recorded, gets the lead-only turn once and completes', async (t) => {
+	const space = await setup(t);
+	const fakes = await servers(t, (request) => {
+		const offered = (request.tools ?? []).map((tool) => tool.function.name);
+		const reply = !offered.includes('fetch') ? lead('s1', VERBATIM) : turnOf(request) === 0 ? call('fetch', { url: PAGE_URL }) : { text: 'Ada Lovelace runs it.' };
+		return { ...reply, usage: { total_tokens: 1000, cost: 0.001 } };
+	});
+	await round(space, fakes, plan([topic('a-web')]));
+
+	assert.equal((await leadsOf(space, 'a-web')).length, 1, 'the lead is recorded');
+	const lane = await laneOf(space, 'a-web');
+	assert.equal(lane.status, 'completed');
+	assert.deepEqual(lane.final_turn, { ran: true, reason: 'answered' });
+});
+
+// The token reserve assumes every result is capped; a long case-file listing is too.
+test('a local corpus listing is capped like every other tool result', async (t) => {
+	const space = await setup(t);
+	for (let n = 0; n < 400; n += 1) await writeFile(join(space.caseDir, 'research', `${String(n).padStart(3, '0')}-${'x'.repeat(200)}.md`), 'note');
+	const fakes = await servers(t, () => done, scripted({ 'ownership-local-corpus': [call('list_case_files', {})] }));
+	await round(space, fakes, plan([topic('ownership-local-corpus', 'local-corpus', { route: 'local' })]));
+
+	const listing = fakes.local.requests.flatMap(toolResults).find((text) => text.includes('-xxxx')) ?? '';
+	assert.ok(listing.length > 0 && listing.length < 21_000, `${listing.length} characters`);
+	assert.match(listing, /truncated at 20000 characters/);
 });
 
 test('the last tool calls are kept for the lead-only turn, even when one answer asks for more', async (t) => {
@@ -478,7 +506,7 @@ test('newsroom edition: the prior-knowledge lane reads search_knowledge, never q
 	const config = readConfig(env);
 	const researchPlan = plan(
 		[topic('ownership-web'), topic('ownership-local-corpus', 'local-corpus', { journalist_input: true }), topic('ownership-prior', 'prior-knowledge')],
-		{ mode: 'newsroom', consent: { swarm: true, journalist_input: true, decided_by: 'journalist:test', decided_at: '2026-10-23T09:00:00Z' } },
+		{ mode: 'newsroom', consent: { swarm: true, journalist_input: true } },
 	);
 	await writeFile(join(space.caseDir, 'data/methodology.json'), JSON.stringify({ schema_version: '1.0', investigation_plan: [], research_plan: researchPlan }));
 	const summary = await runResearchRound({

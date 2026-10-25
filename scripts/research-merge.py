@@ -265,7 +265,15 @@ def build_leads(case: Path, methodology: Mapping[str, Any], round_number: int | 
                               (entry["lead"] for entry in merged), lanes_by_topic, plan)
     report += [f"D6 {gap['direction_id']}: no qualifying lead" for gap in gaps]
     stamps = [str(lane.get(k)) for lane in lanes_by_topic.values() for k in ("finished_at", "started_at") if lane.get(k)]
-    generated_at = max(stamps) if stamps else dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+    # Lanes with no time of their own keep the stamp of the merge already
+    # written, so a rerun on the same inputs writes the same bytes.
+    try:
+        previous = read_json(case / "data" / "leads.json", False)
+    except MergeRefused:
+        previous = None  # an unreadable earlier merge is replaced, not reused
+    kept = previous.get("generated_at") if isinstance(previous, dict) else None
+    generated_at = (max(stamps) if stamps else kept if isinstance(kept, str) and kept
+                    else dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"))
     document: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "generated_at": generated_at}
     if round_number is not None:
         document["round"] = round_number

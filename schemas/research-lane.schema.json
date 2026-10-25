@@ -55,10 +55,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["ran", "reason"],
-      "description": "The lead-only last turn: whether it ran, and which budget started it (null when the lane finished on its own).",
+      "description": "The lead-only last turn: whether it ran, and what started it: a budget, or answered (the model finished in prose after reading sources; the lane then completes). Null when it did not run.",
       "properties": {
         "ran": { "type": "boolean" },
-        "reason": { "enum": ["token_budget", "turn_limit", "tool_call_limit", null] }
+        "reason": { "enum": ["token_budget", "turn_limit", "tool_call_limit", "answered", null] }
       }
     },
     "failure": {
