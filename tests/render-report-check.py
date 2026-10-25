@@ -362,6 +362,52 @@ def check_gate_marks_bound_to_approval(root: Path) -> None:
         assert not (case / "report.html").exists(), label
 
 
+def check_set_aside_reaches_no_artifact(root: Path) -> None:
+    """Nothing of a set-aside finding reaches the artifacts by another route:
+    its technical indicators cannot be charted, and a passage it shares with a
+    reported finding carries only the reported finding's link."""
+    case = build_case(root / "set-aside-indicator")
+    findings_path = case / "data" / "findings.json"
+    findings = json.loads(findings_path.read_text())
+    findings["technical_indicators"] = [{
+        "id": "IOC-F2", "finding_id": "F2", "type": "domain", "value": "aside.example",
+        "context": "Domain cited by F2.", "sources": ["https://example.org/official_record(v1)"],
+        "first_observed": "2026-01-05T09:00:00Z",
+    }]
+    write_json(findings_path, findings)
+    gate_review(case, {"selection:F1": True, "disposition:F2": "set_aside"})
+    only_finding(case, "F1")
+    draft_path = case / "data" / "report-draft.json"
+    draft = json.loads(draft_path.read_text())
+    draft["diagrams"] = [{"id": "timeline-1", "type": "timeline", "title": "Observed infrastructure",
+                          "caption": "Indicators by first observation.", "finding_ids": ["F1"],
+                          "indicator_ids": ["IOC-F2"]}]
+    write_json(draft_path, draft)
+    result = finalize(case)
+    assert result.returncode != 0, result.stdout
+    assert "IOC-F2" in result.stdout and "set aside" in result.stdout, result.stdout + result.stderr
+    assert not (case / "report.html").exists()
+
+    shared = build_case(root / "set-aside-shared-passage")
+    activate_case(shared)
+    findings = json.loads((shared / "data" / "findings.json").read_text())
+    source_path = shared / "data" / "source-expressions.json"
+    source = json.loads(source_path.read_text())
+    expression = source["expressions"][0]
+    link = {"expression_fingerprint": expression["expression_fingerprint"],
+            "finding_fingerprint": findings["findings"][1]["finding_fingerprint"],
+            "finding_id": "F2", "relation": "supports"}
+    expression["finding_links"].append({**link, "link_fingerprint": fingerprint(link)})
+    write_json(source_path, source)
+    refresh_expression_contract_hash(shared)
+    gate_review(shared, {"selection:F1": True, "disposition:F2": "set_aside"})
+    only_finding(shared, "F1")
+    result = finalize(shared)
+    assert result.returncode == 0, result.stdout + result.stderr
+    ledger = json.loads((shared / "evidence-map.json").read_text())
+    assert [link["finding_id"] for link in ledger["source_expressions"][0]["finding_links"]] == ["F1"]
+
+
 def check_nothing_reportable(root: Path) -> None:
     """Every finding set aside: the draft check says there is nothing to report
     and points at the decline, which still records."""
@@ -431,6 +477,7 @@ def main() -> int:
         check_set_aside_findings(Path(tmp))
         check_gate_marks_bound_to_approval(Path(tmp))
         check_nothing_reportable(Path(tmp))
+        check_set_aside_reaches_no_artifact(Path(tmp))
         assert "<script>alert('unsafe')</script>" not in html
         assert "&lt;script&gt;alert" in html
         assert "<script>alert('unsafe')</script>" not in markdown

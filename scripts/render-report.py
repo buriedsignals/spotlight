@@ -1302,6 +1302,7 @@ def evidence_map(
         },
         "claims": claims,
     }
+    rendered_ids = {record["id"] for record in rendered}
     expressions_by_id = {
         text(expression.get("id")): expression
         for record in rendered
@@ -1320,7 +1321,11 @@ def evidence_map(
                 "original_evidence_bundle_id": expression.get("original_evidence_bundle_id"),
                 "original_artifact_sha256": expression.get("original_artifact_sha256"),
                 "expression_fingerprint": expression.get("expression_fingerprint"),
-                "finding_links": expression.get("finding_links", []),
+                # Only links to reported findings: a set-aside finding's id stays out.
+                "finding_links": [
+                    link for link in expression.get("finding_links", [])
+                    if isinstance(link, dict) and text(link.get("finding_id")) in rendered_ids
+                ],
                 "lifecycle": expression.get("lifecycle_events", []),
                 "lifecycle_state": expression_state(expression),
             }
@@ -1367,7 +1372,12 @@ def render(case: Path) -> dict[str, Any]:
     set_aside = set_aside_findings(case) & seen_ids
     if set_aside:
         findings = [finding for finding in findings if text(finding.get("id")) not in set_aside]
-        findings_doc = {**findings_doc, "findings": findings}
+        # Indicators recorded for a set-aside finding are left out with it.
+        indicators = [
+            item for item in (findings_doc.get("technical_indicators") or [])
+            if not (isinstance(item, dict) and text(item.get("finding_id")) in set_aside)
+        ]
+        findings_doc = {**findings_doc, "findings": findings, "technical_indicators": indicators}
         seen_ids -= set_aside
     gate_review_path = case / "data" / review_file("investigation_gate")
 

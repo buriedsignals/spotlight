@@ -503,6 +503,22 @@ def check(case: Path) -> list[str]:
             "STRUCTURE: findings set aside at the Investigation gate must not appear in the report: "
             f"{sorted(referenced & set_aside)}"
         )
+    aside_indicators = {
+        clean(item.get("id"))
+        for item in (findings_doc.get("technical_indicators") or [])
+        if isinstance(item, dict) and clean(item.get("finding_id")) in set_aside
+    }
+    selected_indicators = {
+        clean(ref)
+        for diagram in (draft.get("diagrams") if isinstance(draft.get("diagrams"), list) else [])
+        if isinstance(diagram, dict) and isinstance(diagram.get("indicator_ids"), list)
+        for ref in diagram["indicator_ids"]
+    }
+    if selected_indicators & aside_indicators:
+        failures.append(
+            "STRUCTURE: timeline indicators of findings set aside at the Investigation gate must not "
+            f"appear in the report: {sorted(selected_indicators & aside_indicators)}"
+        )
     activated = findings_doc.get("schema_version") == "1.1" and (
         case / "data" / "case-contract.json"
     ).is_file()

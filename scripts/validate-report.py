@@ -170,10 +170,15 @@ def check(case: Path) -> list[str]:
             except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
                 fails.append(f"GENERATED: source-expressions.json is unreadable ({exc})")
             else:
+                def set_aside_only(item: dict) -> bool:
+                    links = {str(link.get("finding_id", "")).strip() for link in item.get("finding_links") or []
+                             if isinstance(link, dict)}
+                    return bool(links) and links <= set_aside
+                # A passage only a set-aside finding cites is left out with it.
                 expected_expression_ids = [
                     str(item.get("id", "")).strip()
                     for item in source_doc.get("expressions", [])
-                    if isinstance(item, dict) and str(item.get("id", "")).strip()
+                    if isinstance(item, dict) and str(item.get("id", "")).strip() and not set_aside_only(item)
                 ]
                 ledger_expressions = evidence_map_doc.get("source_expressions")
                 actual_expression_ids = [
