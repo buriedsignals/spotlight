@@ -169,7 +169,44 @@ function methodologyContent(content) {
         )
       : el("p", { className: "muted", text: "The methodology lists no directions." }),
     content.limitations.length ? [el("h3", { text: "Limitations" }), list(content.limitations, "")] : null,
+    content.research_plan ? researchPlanContent(content.research_plan) : null,
   );
+}
+
+// What approving the plan also approves: the research topics, their budgets,
+// where each topic's requests go and the member's consent record.
+function researchPlanContent(plan) {
+  const usd = (value) => (typeof value === "number" ? `$${value}` : "not set");
+  const consent = plan.consent;
+  return [
+    el("h3", { text: "Research plan" }),
+    el(
+      "div",
+      { className: "card" },
+      el("p", { text: `Mode: ${plan.mode || "not set"}. Round budget: ${usd(plan.round_budget_usd)}. Case budget: ${usd(plan.case_budget_usd)}.` }),
+      el("p", {
+        text: `Cloud research (topic briefs sent to a cloud model): ${consent.swarm ? "yes" : "no"}. Journalist input to the local corpus lane: ${consent.journalist_input ? "yes" : "no"}. Recorded by ${consent.decided_by || "nobody"} at ${consent.decided_at || "no time"}.`,
+      }),
+    ),
+    plan.topics.length
+      ? plan.topics.map((topic) =>
+          el(
+            "div",
+            { className: "card" },
+            el("h4", { text: `Topic ${topic.topic_id}` }),
+            el("p", {
+              className: "muted",
+              text: `Direction ${topic.direction_id}, ${topic.lane_type} lane${topic.route ? `, ${topic.route} route` : ""}. Token budget: ${topic.token_budget ?? "not set"}.${topic.journalist_input ? " Reads journalist input." : ""}`,
+            }),
+            list(topic.questions, "No questions listed."),
+            el("p", {
+              className: "muted",
+              text: `Requests go to: ${topic.egress.length ? topic.egress.map((e) => (e.hosts.length ? `${e.destination} (${e.hosts.join(", ")})` : e.destination)).join(", ") : "not listed"}. Keys: ${topic.keys.length ? topic.keys.join(", ") : "none"}.`,
+            }),
+          ),
+        )
+      : el("p", { className: "muted", text: "The research plan lists no topics." }),
+  ];
 }
 
 function findingDetails(finding) {

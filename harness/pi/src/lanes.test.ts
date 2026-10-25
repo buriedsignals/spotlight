@@ -254,6 +254,55 @@ test('the round budget holds: no topic starts once it is spent, running ones fin
 	assert.deepEqual(JSON.parse(await readFile(join(space.caseDir, 'data/leads.json'), 'utf8')).left_out, ['b-web', 'c-web']);
 });
 
+test('a lane near its token budget gets a last turn with only the lead tools, so what it found is recorded', async (t) => {
+	const space = await setup(t);
+	// Every answer costs 1000 tokens; the model keeps searching and never records a lead unless search is gone.
+	const fakes = await servers(t, (request) => {
+		const offered = (request.tools ?? []).map((tool) => tool.function.name);
+		const reply = turnOf(request) === 0 ? call('fetch', { url: PAGE_URL }) : offered.includes('search') ? call('search', { query: `q${turnOf(request)}` }) : lead('s1', VERBATIM);
+		return { ...reply, usage: { total_tokens: 1000, cost: 0.001 } };
+	});
+	await round(space, fakes, plan([topic('a-web', 'web', { token_budget: 5000 })]));
+
+	const lane = await laneOf(space, 'a-web');
+	assert.equal(lane.status, 'partial');
+	assert.equal(lane.failure.code, 'budget_spent');
+	assert.ok(lane.spend.tokens <= 5000, `the last turn fits the budget (${lane.spend.tokens})`);
+	const last = fakes.swarm.requests.at(-1)!;
+	assert.deepEqual((last.tools ?? []).map((tool) => tool.function.name).sort(), ['record_absence', 'record_lead']);
+	assert.match(String(last.messages.at(-1)?.content), /last turn/);
+	// 3,000 spent and the conversation re-sent (about 1,000): the answer may use only what is left.
+	assert.equal((last as ChatRequest & { max_tokens?: number }).max_tokens, 1000);
+	assert.deepEqual((await leadsOf(space, 'a-web')).map((recorded) => recorded.excerpt.text), [VERBATIM]);
+});
+
+test('with no room left for a bounded answer the lane stops without a last turn', async (t) => {
+	const space = await setup(t);
+	// One 2,400-token turn leaves 200 of 5,000 after re-sending the conversation.
+	const fakes = await servers(t, (request) => ({ ...call('search', { query: `q${turnOf(request)}` }), usage: { total_tokens: 2400, cost: 0.001 } }));
+	await round(space, fakes, plan([topic('a-web', 'web', { token_budget: 5000 })]));
+
+	assert.equal(fakes.swarm.requests.length, 1);
+	const lane = await laneOf(space, 'a-web');
+	assert.equal(lane.status, 'partial');
+	assert.ok(lane.spend.tokens <= 5000, `no turn past the budget (${lane.spend.tokens})`);
+});
+
+test('the last tool calls are kept for the lead-only turn, even when one answer asks for more', async (t) => {
+	const space = await setup(t);
+	const batch = (count: number, turn: number): Reply => ({ toolCalls: Array.from({ length: count }, (_, i) => ({ name: 'search', arguments: { query: `q${turn}-${i}` } }) as ToolCall) });
+	// 49 calls, then 11 more in one answer: past the share kept for the last turn.
+	const fakes = await servers(t, scripted({ 'a-web': [call('fetch', { url: PAGE_URL }), batch(48, 1), batch(11, 2), lead('s1', VERBATIM)] }));
+	await round(space, fakes, plan([topic('a-web')]));
+
+	const last = fakes.swarm.requests.at(-1)!;
+	assert.deepEqual((last.tools ?? []).map((tool) => tool.function.name).sort(), ['record_absence', 'record_lead']);
+	assert.equal(toolResults(last).filter((result) => result.startsWith('not run:')).length, 10);
+	const lane = await laneOf(space, 'a-web');
+	assert.equal(lane.spend.tool_calls, 51, '50 before the last turn, one lead in it');
+	assert.deepEqual((await leadsOf(space, 'a-web')).map((recorded) => recorded.excerpt.text), [VERBATIM]);
+});
+
 test('a rejected key stops Research with a fix-the-key message, no local fallback, and a retry runs only the unfinished topics', async (t) => {
 	const space = await setup(t);
 	let rejecting = false;
