@@ -276,6 +276,8 @@ test('a 60,000-token lane reading long pages records its lead in a lead-only las
 	const lane = await laneOf(space, 'a-web');
 	assert.equal(lane.status, 'partial');
 	assert.deepEqual(lane.final_turn, { ran: true, reason: 'token_budget' });
+	// lane.json tallies each tool's calls, so a lane that read no page shows why.
+	assert.ok(lane.calls.fetch.run > 0 && lane.calls.fetch.not_run > 0, JSON.stringify(lane.calls));
 	assert.ok(lane.spend.tokens <= 60_000 + 4096, `within the budget plus one answer (${lane.spend.tokens})`);
 	const last = fakes.swarm.requests.at(-1)!;
 	assert.deepEqual((last.tools ?? []).map((tool) => tool.function.name).sort(), ['record_absence', 'record_lead']);

@@ -217,8 +217,12 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    (`schemas/methodology.schema.json`): the topics, a round budget in USD
    (default 1), the case budget (at most 5), the research mode, the names of
    the keys each topic uses (never their values), where each topic's requests
-   go (egress), and what the member consents to. Without a `research_plan` the
-   case goes straight to Investigation.
+   go (egress), and what the member consents to. The mode follows the runtime:
+   `openrouter_swarm` when the Research switch is on with the member's key (the
+   Pi harness), `subscription_subagents` on a subscription host, `newsroom` in the
+   newsroom edition, and `local_only` only when every topic is a local lane. When
+   the research checks refuse the plan, correct it; never drop `research_plan` to
+   get past them. Without a `research_plan` the case goes straight to Investigation.
 
    The methodology validator above also checks the research plan (D1,
    `scripts/research_checks.py`). If any check fails,

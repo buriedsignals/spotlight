@@ -61,6 +61,21 @@
         "reason": { "enum": ["token_budget", "turn_limit", "tool_call_limit", "answered", null] }
       }
     },
+    "calls": {
+      "type": "object",
+      "description": "Per tool name: calls that ran, failed (an error answer) or were not run, and the last error text.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["run", "failed", "not_run"],
+        "properties": {
+          "run": { "type": "integer", "minimum": 0 },
+          "failed": { "type": "integer", "minimum": 0 },
+          "not_run": { "type": "integer", "minimum": 0 },
+          "last_error": { "type": "string" }
+        }
+      }
+    },
     "failure": {
       "type": "object",
       "additionalProperties": false,

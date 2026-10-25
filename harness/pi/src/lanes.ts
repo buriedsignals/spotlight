@@ -856,6 +856,7 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 			lead_count: run.leads.length,
 		};
 		if (status !== 'running') lane.final_turn = { ran: finalRan, reason: finalReason ?? null };
+		if (status !== 'running' && Object.keys(callTally).length > 0) lane.calls = callTally;
 		if (failure) lane.failure = failure;
 		if (status !== 'running') writeConfined(caseDir, laneDir, `${LANES_DIRECTORY}/${topic.topic_id}/leads.jsonl`, run.leads.map((lead) => `${JSON.stringify(lead)}\n`).join(''));
 		if (status !== 'running' && run.methodInputs.length > 0) {
@@ -878,6 +879,17 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 	const stopSpent = (): LaneOutcome => {
 		writeLane('partial', { code: 'budget_spent', message: `the lane reached its ${BUDGET_NAME[finalReason === undefined || finalReason === 'answered' ? 'token_budget' : finalReason]} budget; what it recorded is kept` });
 		return { status: 'partial', usd: spend.usd };
+	};
+	// Per tool: how many calls ran, failed or were not run, and the last error,
+	// so a lane that read no page shows why.
+	const callTally: Record<string, { run: number; failed: number; not_run: number; last_error?: string }> = {};
+	const tally = (name: string, content: string, ran: boolean) => {
+		const entry = (callTally[name] ??= { run: 0, failed: 0, not_run: 0 });
+		if (!ran) entry.not_run += 1;
+		else if (content.startsWith('error:')) {
+			entry.failed += 1;
+			entry.last_error = content.slice(0, 300);
+		} else entry.run += 1;
 	};
 	const runCall = async (call: ToolCall, offered: string[]): Promise<string> => {
 		try {
@@ -949,6 +961,7 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 					toolCalls += 1;
 					content = await runCall(call, offered);
 				}
+				tally(call.function.name, content, !content.startsWith('not run:'));
 				append({ role: 'tool', tool_call_id: call.id, content });
 			}
 		}
