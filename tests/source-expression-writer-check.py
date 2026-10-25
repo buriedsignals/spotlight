@@ -134,6 +134,16 @@ def main() -> int:
         refused = run_writer(case, string_anchor)
         require(refused.returncode == 2 and "must be an object" in refused.stderr and target.read_bytes() == before,
                 "a string anchor_ref was not refused with its expected shape")
+        # 73308129 shakedown: a teacher sent line numbers as strings and lifecycle entries with other keys.
+        string_lines = proposal(2)
+        string_lines["expressions"][0]["anchor_ref"] = {"path": "research/passages.txt", "line_start": "3", "line_end": "3"}
+        written = run_writer(case, string_lines)
+        require(written.returncode == 0, f"line numbers sent as digit strings were refused: {written.stderr}")
+        before = target.read_bytes()
+        wrong_keys = {"lifecycle": [{"action": "supersede", "id": "SXW0", "successor_id": "SXW9"}]}
+        refused = run_writer(case, wrong_keys)
+        require(refused.returncode == 2 and '"expression_id": "P1"' in refused.stderr and '"action": "supersede"' in refused.stderr
+                and target.read_bytes() == before, "a lifecycle entry with the wrong keys was not refused with the expected shape")
         wrong_text = proposal(1)
         wrong_text["expressions"][0]["text"] = "Not what line 2 says."
         require(run_writer(case, wrong_text).returncode == 2 and target.read_bytes() == before,
