@@ -132,8 +132,17 @@ def check(case: Path) -> list[str]:
     # heuristics. This works identically for every writing system.
     if evidence_map_doc is not None:
         findings = _load_findings(case)
+        from spotlight_orchestration.contract import OrchestrationError
+        from spotlight_orchestration.review import set_aside_findings
+        # Findings left out at the Investigation gate are never in the report.
+        try:
+            set_aside = set_aside_findings(case)
+        except OrchestrationError as exc:
+            fails.append(f"GENERATED: {exc}")
+            set_aside = set()
         expected_ids = [str(item.get("id", "")).strip() for item in findings
-                        if isinstance(item, dict) and str(item.get("id", "")).strip()]
+                        if isinstance(item, dict) and str(item.get("id", "")).strip()
+                        and str(item.get("id", "")).strip() not in set_aside]
         claims = evidence_map_doc.get("claims")
         actual_ids = ([str(item.get("id", "")).strip() for item in claims
                        if isinstance(item, dict)] if isinstance(claims, list) else [])
@@ -144,7 +153,7 @@ def check(case: Path) -> list[str]:
 
         expected_inputs: dict[str, str] = {}
         input_names = ["findings.json", "fact-check.json", "report-draft.json", "methodology.json",
-                       "decision-signals.json"]
+                       "investigation-gate-review.json", "decision-signals.json"]
         if (case / "data" / "case-contract.json").is_file():
             input_names.append("source-expressions.json")
         for name in input_names:
@@ -161,10 +170,15 @@ def check(case: Path) -> list[str]:
             except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
                 fails.append(f"GENERATED: source-expressions.json is unreadable ({exc})")
             else:
+                def set_aside_only(item: dict) -> bool:
+                    links = {str(link.get("finding_id", "")).strip() for link in item.get("finding_links") or []
+                             if isinstance(link, dict)}
+                    return bool(links) and links <= set_aside
+                # A passage only a set-aside finding cites is left out with it.
                 expected_expression_ids = [
                     str(item.get("id", "")).strip()
                     for item in source_doc.get("expressions", [])
-                    if isinstance(item, dict) and str(item.get("id", "")).strip()
+                    if isinstance(item, dict) and str(item.get("id", "")).strip() and not set_aside_only(item)
                 ]
                 ledger_expressions = evidence_map_doc.get("source_expressions")
                 actual_expression_ids = [

@@ -61,11 +61,13 @@ export type HarnessConfig = {
 	spotlightConfig: string;
 	// Sensitive mode: no egress tools in any process.
 	sensitive: boolean;
+	// Engine's Research switch: the whole Research phase, or none.
+	research: boolean;
 	// The third route, beside the pipeline route (`general`, the process
 	// route) and the own-inference route every case-reading process is held to
 	// (`restricted`, routeFor): the research swarm. It carries only approved
 	// topic briefs, so it may be a third-party endpoint. Off unless the member
-	// opted in (the "Research swarms" switch plus a key).
+	// opted in (the Research switch plus a key).
 	swarm: SwarmSetting;
 	// Newsroom edition only: the newsroom's Editorial MCP, reached with a
 	// route-scoped token the launcher alone holds (never a pi process).
@@ -295,6 +297,7 @@ export function readConfig(env: Env, chatId?: string): HarnessConfig {
 	}
 	const modelTier = readModelTier(env);
 	const sensitive = sensitiveMode(env);
+	const research = researchSwitch(env);
 	const editorial = edition === 'newsroom' ? editorialSetting(env, caseId, sensitive) : refuseEditorialInSolo(env);
 	return {
 		edition,
@@ -314,7 +317,8 @@ export function readConfig(env: Env, chatId?: string): HarnessConfig {
 		python: env.SPOTLIGHT_PYTHON?.trim() || 'python3',
 		spotlightConfig: spotlightConfigPath(env),
 		sensitive,
-		swarm: swarmSetting(env, edition, routes, sensitive),
+		research,
+		swarm: swarmSetting(env, edition, routes, sensitive, research),
 		editorial,
 		newsroomOrigins: edition === 'newsroom' ? [...new Set([...routes.map((route) => originOf(route.baseURL)), originOf(editorial!.url)])] : [],
 	};
@@ -358,17 +362,26 @@ function editorialSetting(env: Env, caseId: string, sensitive: boolean): Editori
 
 const SWITCH_ON = new Set(['on', 'true', '1', 'yes']);
 const SWITCH_OFF = new Set(['', 'off', 'false', '0', 'no']);
+export const RESEARCH_SWITCH = 'SPOTLIGHT_RESEARCH_SWARMS';
 
-// The swarm route. Opt-in only: the "Research swarms" switch
-// (SPOTLIGHT_RESEARCH_SWARMS, set by Engine) and the member's key. Sensitive
-// mode has none. In the newsroom edition the endpoint must be one of the
-// newsroom's allowed routes, and that route's token is the key.
-function swarmSetting(env: Env, edition: Edition, routes: Route[], sensitive: boolean): SwarmSetting {
-	const switchValue = env.SPOTLIGHT_RESEARCH_SWARMS?.trim().toLowerCase() ?? '';
-	if (!SWITCH_ON.has(switchValue) && !SWITCH_OFF.has(switchValue)) {
-		throw new ConfigError('SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off".');
-	}
-	if (!SWITCH_ON.has(switchValue)) return { available: false, reason: 'the Research swarms switch is off' };
+// Engine's one "Research" switch (SPOTLIGHT_RESEARCH_SWARMS). It turns on the
+// whole Research phase: off, D1 refuses any research plan. The harness passes
+// it on to the Python checks as "on" or "off" (researchEnv).
+function researchSwitch(env: Env): boolean {
+	const value = env[RESEARCH_SWITCH]?.trim().toLowerCase() ?? '';
+	if (!SWITCH_ON.has(value) && !SWITCH_OFF.has(value)) throw new ConfigError(`${RESEARCH_SWITCH} must be "on" or "off".`);
+	return SWITCH_ON.has(value);
+}
+
+export function researchEnv(config: HarnessConfig): Record<string, string> {
+	return { [RESEARCH_SWITCH]: config.research ? 'on' : 'off' };
+}
+
+// The swarm route. Opt-in only: the Research switch and the member's key.
+// Sensitive mode has none. In the newsroom edition the endpoint must be one of
+// the newsroom's allowed routes, and that route's token is the key.
+function swarmSetting(env: Env, edition: Edition, routes: Route[], sensitive: boolean, research: boolean): SwarmSetting {
+	if (!research) return { available: false, reason: 'the Research switch is off' };
 	if (sensitive) return { available: false, reason: 'sensitive mode sends nothing to a cloud model' };
 	const baseURL = optionalURL(env, 'SPOTLIGHT_SWARM_BASE_URL') ?? SWARM_DEFAULTS.baseURL;
 	let keyEnv: string = SWARM_DEFAULTS.keyEnv;
@@ -421,6 +434,16 @@ function positiveInteger(env: Env, name: string, fallback: number): number {
 	return value;
 }
 
+// Pi's own compaction reserve (settings-defaults.js); Pi deep-merges ours over it.
+const PI_DEFAULT_RESERVE = 16384;
+
+// The output cap per request: a quarter of the context window, never below
+// 8192. A fixed 8192 cut off whole-file rewrites on large-window models, and
+// the cut-off call reached write_file with empty content.
+export function maxOutputTokens(contextWindow: number): number {
+	return Math.max(8192, Math.floor(contextWindow / 4));
+}
+
 // The tier's fold point, with SPOTLIGHT_COMPACT_AT / SPOTLIGHT_COMPACT_KEEP
 // overriding it. A fold point at or past the context window would never fire
 // before the model overflows, so it is refused rather than silently moved.
@@ -437,10 +460,14 @@ function readFold(env: Env, tier: ModelTier, contextWindow: number): Fold | unde
 
 // Pi reads compaction settings from settings.json in its configuration
 // folder. The local tier compacts when the context passes `fold.at`
-// (Pi triggers at contextWindow - reserveTokens). The frontier tier writes no
-// compaction settings, so Pi's defaults apply.
+// (Pi triggers at contextWindow - reserveTokens). The frontier tier keeps
+// Pi's defaults, except that its reserve grows with the output cap, so a
+// request near the compaction point still fits the context window.
 export function piSettings(config: HarnessConfig): Record<string, unknown> {
-	if (!config.fold) return {};
+	if (!config.fold) {
+		const cap = maxOutputTokens(config.contextWindow);
+		return cap > PI_DEFAULT_RESERVE ? { compaction: { reserveTokens: cap } } : {};
+	}
 	return {
 		compaction: {
 			enabled: true,
@@ -551,6 +578,8 @@ export function childEnv(
 		SPOTLIGHT_PYTHON: config.python,
 		SPOTLIGHT_CONFIG: config.spotlightConfig,
 		SPOTLIGHT_SENSITIVE: config.sensitive ? 'true' : 'false',
+		// The orchestrator's stall round reaches D1 through the resolver.
+		...researchEnv(config),
 		// Which tools the role gets (roles.ts allowedTools). The Editorial MCP
 		// token is not here: only the launcher calls the Editorial MCP.
 		SPOTLIGHT_EDITION: config.edition,

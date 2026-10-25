@@ -260,6 +260,11 @@ def test_split_file_assigns_a_case_against_its_hash() -> None:
             path.write_text(json.dumps(fixture), encoding="utf-8")
             require(acc.load_fixture(path)["items"][0]["split"] == other, "a fixture in its assigned half loads")
             require(acc.split_file_sha256() == acc.sha256_file(split_file), "results name the split file in use")
+            passing = {"split": "heldout", "targets_status": "approved", "chosen_backend": "jev", "bank_version": "b",
+                       "trial_thresholds": {}, "targets_sha256": "t", "ran_at": "now", "split_file_sha256": acc.split_file_sha256(),
+                       "results": [{"metrics": {"contender": "jev"}, "cut": {"cut": []}}]}
+            require(acc.acceptance_record(passing, "r")["split_file_sha256"] == acc.sha256_file(split_file),
+                    "the written acceptance record names the split file too")
         finally:
             del os.environ[builder.SPLIT_ENV]
     require(builder.case_split(key) == hashed, "without the file the hash decides")

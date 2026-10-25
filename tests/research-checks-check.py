@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -21,6 +22,7 @@ from research_lane_fixture import ROOT, Case, checks, clone, methodology, topic 
 CATALOGUE = {"web", "registries", "archives", "social", "technical", "news-courts", "local-corpus",
              "prior-knowledge", "ad-hoc"}
 VALIDATOR = ROOT / "scripts" / "validate-methodology-navigator.py"
+RESEARCH_OFF = "Research is off; turn on Research in the app to add a research plan"
 
 
 def d1(method: dict, *, sensitive: bool = False, newsroom: bool = False, local_model: bool = True) -> list[str]:
@@ -71,6 +73,23 @@ class D1LanePlan(unittest.TestCase):
             p["topics"][0]["anomaly_methods"] = [f"method:m{i}@1.0" for i in range(6)]
             p["topics"][1]["anomaly_methods"] = [f"method:n{i}@1.0" for i in range(5)]
         def unknown_egress_topic(p): p["egress"].append({"topic_id": "ghost-web", "destination": "public_web"})
+        # Plans the lane runner refuses or leaves out must fail here, against the schema.
+        def unknown_destination(p): p["egress"][0]["destination"] = "openrouter_swarm"
+        def consent_without_swarm(p): p["consent"].pop("swarm")
+        def extra_topic_field(p): p["topics"][0]["direction_ids"] = ["ownership"]
+        # A web lane with no route named still runs on the swarm, so it needs the opt-in.
+        def web_lane_without_opt_in(p):
+            brief = topic("ownership-web", "ownership", "web")
+            brief.pop("route")
+            p["topics"] = [brief]
+            p["egress"] = [{"topic_id": "ownership-web", "destination": "public_web"}]
+            p["consent"]["swarm"] = False
+        # Topic routes the lane runner refuses: a web lane runs only on the swarm, a local lane only locally.
+        def web_lane_on_local_route(p): p["topics"][0]["route"] = "local"
+        def subscription_route_in_swarm_mode(p): p["topics"][0]["route"] = "subscription"
+        def local_lane_on_swarm_route(p):
+            p["topics"].append(topic("ownership-prior-knowledge", "ownership", "prior-knowledge"))
+            p["egress"].append({"topic_id": "ownership-prior-knowledge", "destination": "local_model"})
 
         cases = {
             "round_budget_usd must be set": no_budget,
@@ -82,13 +101,20 @@ class D1LanePlan(unittest.TestCase):
             "is not in the lane catalogue": unknown_lane,
             "is not a direction_id of investigation_plan": unknown_direction,
             "needs a token budget": no_token_budget,
-            "egress is not listed": no_egress,
+            'add a research_plan.egress entry {"topic_id": "ownership-registries"': no_egress,
             "consent must record who decided": no_consent,
             "needs the member's swarm opt-in": no_opt_in,
             "local_only mode runs no cloud topic": local_only_cloud,
             "an ad-hoc topic gets no keys": key_on_ad_hoc,
             "at most 10 across the plan": too_many_methods,
             "egress names an unknown topic": unknown_egress_topic,
+            "research_plan.egress[0].destination: must be one of": unknown_destination,
+            "research_plan.consent: missing swarm": consent_without_swarm,
+            "research_plan.topics[0]: unknown field direction_ids": extra_topic_field,
+            "(ownership-web): a swarm topic needs the member's swarm opt-in": web_lane_without_opt_in,
+            "a registries lane runs on the swarm route, not 'local'": web_lane_on_local_route,
+            "the subscription route needs mode subscription_subagents": subscription_route_in_swarm_mode,
+            "a prior-knowledge lane runs on the local route, not 'swarm'": local_lane_on_swarm_route,
         }
         for expected, breaker in cases.items():
             with self.subTest(expected):
@@ -124,12 +150,36 @@ class D1LanePlan(unittest.TestCase):
         brief["route"] = "local"
         self.assertIn("needs a local model endpoint", " ".join(d1(method, local_model=False)))
 
+    def test_research_off_refuses_any_research_plan_and_on_keeps_a_local_only_plan(self) -> None:
+        local_only = methodology(topic("ownership-local-corpus", "ownership", "local-corpus", route="local"))
+        plan_of(local_only)["egress"] = [{"topic_id": "ownership-local-corpus", "destination": "local_model"}]
+        no_plan = methodology()
+        del no_plan["research_plan"]
+        with unittest.mock.patch.dict(os.environ, {"SPOTLIGHT_RESEARCH_SWARMS": "off"}):
+            self.assertEqual(checks.d1_from_config(local_only, {}, local_model=True), [RESEARCH_OFF])
+            self.assertEqual(checks.d1_from_config(no_plan, {}, local_model=True), [])
+        with unittest.mock.patch.dict(os.environ):
+            os.environ.pop("SPOTLIGHT_RESEARCH_SWARMS", None)
+            for config in ({"integrations": []}, {"integrations": {"research_swarms": True}},
+                           {"integrations": {"research_swarms": {"enabled": "true"}}}):
+                problems = checks.d1_from_config(no_plan, config, local_model=True)
+                self.assertEqual(len(problems), 1, config)
+                self.assertIn("must be", problems[0])
+        with unittest.mock.patch.dict(os.environ, {"SPOTLIGHT_RESEARCH_SWARMS": "maybe"}):
+            self.assertEqual(checks.d1_from_config(no_plan, {}, local_model=True),
+                             ['SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off".'])
+        with unittest.mock.patch.dict(os.environ, {"SPOTLIGHT_RESEARCH_SWARMS": "on", "SPOTLIGHT_SENSITIVE": ""}):
+            self.assertEqual(checks.d1_from_config(local_only, {}, local_model=True), [])
+
     def test_newsroom_mode_sends_nothing_to_openrouter(self) -> None:
         method = methodology()
         problems = d1(method, newsroom=True)
         self.assertTrue(any("newsroom mode allows no OpenRouter swarm" in p for p in problems))
         self.assertTrue(any("newsroom mode sends nothing to OpenRouter" in p for p in problems))
-        newsroom = methodology(topic("ownership-web", "ownership", "web", route="local"), mode="newsroom")
+        # A web lane takes its catalogue route, the swarm, which the newsroom edition points at its own endpoint.
+        brief = topic("ownership-web", "ownership", "web")
+        brief.pop("route")
+        newsroom = methodology(brief, mode="newsroom")
         plan_of(newsroom)["egress"] = [{"topic_id": "ownership-web", "destination": "newsroom"}]
         self.assertEqual(d1(newsroom, newsroom=True), [])
 
@@ -142,12 +192,24 @@ class D1LanePlan(unittest.TestCase):
             config = Path(tmp) / "config.json"
             config.write_text(json.dumps({"model_tier": "frontier", "integrations": {}}), encoding="utf-8")
 
-            def validate() -> subprocess.CompletedProcess[str]:
-                env = {k: v for k, v in os.environ.items() if k not in ("SPOTLIGHT_SENSITIVE", "SPOTLIGHT_MODEL_BASE_URL")}
+            def validate(**extra: str) -> subprocess.CompletedProcess[str]:
+                env = {k: v for k, v in os.environ.items()
+                       if k not in ("SPOTLIGHT_SENSITIVE", "SPOTLIGHT_MODEL_BASE_URL", "SPOTLIGHT_RESEARCH_SWARMS")}
                 return subprocess.run([sys.executable, str(VALIDATOR), str(case), "--config", str(config)],
-                                      text=True, capture_output=True, check=False, env=env)
+                                      text=True, capture_output=True, check=False, env={**env, **extra})
 
+            # Subscription path: no launcher, the install config's switch is off.
+            self.assertIn(RESEARCH_OFF, validate().stderr)
+            config.write_text(json.dumps({"model_tier": "frontier", "integrations": {"research_swarms": {"enabled": True}}}),
+                              encoding="utf-8")
             self.assertEqual(validate().returncode, 0, validate().stderr)
+            # Pi path: the harness passes its switch, which wins over the config.
+            self.assertIn(RESEARCH_OFF, validate(SPOTLIGHT_RESEARCH_SWARMS="off").stderr)
+            # Present but blank is off too, as the harness reads it; only an absent variable defers to the config.
+            self.assertIn(RESEARCH_OFF, validate(SPOTLIGHT_RESEARCH_SWARMS="").stderr)
+            # Any other present value is a configuration error, never a silent off.
+            self.assertIn('SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off"', validate(SPOTLIGHT_RESEARCH_SWARMS="maybe").stderr)
+            self.assertEqual(validate(SPOTLIGHT_RESEARCH_SWARMS="yes").returncode, 0)
             method["research_plan"]["consent"]["swarm"] = False
             Case.write_json(case / "data" / "methodology.json", method)
             result = validate()

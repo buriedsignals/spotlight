@@ -1,7 +1,7 @@
 // Typed tools for the remaining fixed programs the skills used to start through
 // a shell: exiftool, the Navigator CLI, decision checks, the provenance
-// manifest and signing, the editorial review artifact, RLM analysis and the
-// integration status check. Each
+// manifest and signing, the editorial review artifact, RLM analysis, the
+// integration status check and the solo Ingest wiki write. Each
 // is bound to the active case; the model picks only the documented options.
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { engineEnv } from '../case-search.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { FileRefused, readTarget, writeConfined } from './case-files.ts';
 import { checkedParams, jsonResult, programEnv, programOutput, runFixed, runPython, textResult } from './run.ts';
@@ -241,6 +242,36 @@ function anomalyMethodsTool(context: ToolContext): ToolDefinition {
 	};
 }
 
+// Solo Ingest's write (skills/phase-ingest, `requested` / `ingest`). The script
+// does every check itself: an activated case in solo mode, a request recorded
+// by the ingest page and bound to this batch, then the write under spotlight/
+// of the configured wiki only (no symlink on the way, the wiki and case locks
+// held) and the completed receipt the phase seals. It calls no web tool (its
+// only other program is Engine's `bsig wiki resolve` on that wiki), so it
+// stays in sensitive mode; the newsroom edition does not get it
+// (roles.ts, NEWSROOM_TOOL_SWAPS).
+function wikiDestinationTool(context: ToolContext): ToolDefinition {
+	const params = Type.Object({}, { additionalProperties: false });
+	return {
+		name: 'wiki_destination',
+		label: 'Write the wiki',
+		description:
+			'Solo Ingest, once the member has requested ingestion on the ingest page (resume_at "ingest"): write the approved batch into the member\'s wiki under spotlight/ and record the completed receipt (scripts/wiki-destination.py). A refusal names what to fix; a re-run after an interruption is safe. Then resolve again and seal.',
+		parameters: params,
+		executionMode: 'sequential',
+		async execute(_id, raw, signal) {
+			checkedParams('wiki_destination', params, raw);
+			const result = await runPython(context, [script('scripts/wiki-destination.py'), context.caseDir], {
+				keys: engineEnv(context.env),
+				extra: { SPOTLIGHT_CONFIG: context.configPath },
+				signal,
+				timeoutMs: 300_000,
+			});
+			return textResult(programOutput('wiki_destination', result));
+		},
+	};
+}
+
 export function programTools(context: ToolContext): ToolDefinition[] {
 	return [
 		exiftoolTool(context),
@@ -251,5 +282,6 @@ export function programTools(context: ToolContext): ToolDefinition[] {
 		rlmTool(context),
 		integrationStatusTool(context),
 		anomalyMethodsTool(context),
+		wikiDestinationTool(context),
 	];
 }

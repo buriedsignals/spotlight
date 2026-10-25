@@ -42,6 +42,7 @@ import schema_check  # noqa: E402
 SWARM = Path("research") / "swarm"
 LANE_FILE, LEADS_FILE, SOURCES = "lane.json", "leads.jsonl", "sources"
 LEAD_SCHEMA = ROOT / "schemas" / "research-lead.schema.json"
+METHODOLOGY_SCHEMA = ROOT / "schemas" / "methodology.schema.json"
 LANE_SCHEMA = ROOT / "schemas" / "research-lane.schema.json"
 LANE_CATALOGUE = ROOT / "lanes"
 AD_HOC, LOCAL_CORPUS = "ad-hoc", "local-corpus"
@@ -77,8 +78,24 @@ def lane_catalogue(root: Path = LANE_CATALOGUE) -> set[str]:
     return {path.stem for path in root.glob("*.yaml")} | {AD_HOC} if root.is_dir() else {AD_HOC}
 
 
-def _is_cloud(topic: Mapping[str, Any], egress: Iterable[Mapping[str, Any]]) -> bool:
-    if topic.get("route") in CLOUD_ROUTES:
+def lane_routes(root: Path = LANE_CATALOGUE) -> dict[str, str]:
+    """Each catalogue lane type's route (``swarm`` or ``local``), from its ``route:`` line."""
+    routes = {}
+    for path in root.glob("*.yaml"):
+        found = re.search(r"^route:\s*(\w+)\s*$", path.read_text(encoding="utf-8"), re.MULTILINE)
+        if found:
+            routes[path.stem] = found.group(1)
+    return routes
+
+
+# The topic routes each catalogue route allows: web lanes run only on the
+# opt-in research swarm (the subscription host's subagents in that mode),
+# local lanes only on the local model. An unset topic route takes the lane's.
+ALLOWED_ROUTES = {"swarm": {"swarm", "subscription"}, "local": {"local"}}
+
+
+def _is_cloud(topic: Mapping[str, Any], egress: Iterable[Mapping[str, Any]], lane_route: str | None) -> bool:
+    if topic.get("route") in CLOUD_ROUTES or lane_route == "swarm":
         return True
     return any(e.get("destination") in CLOUD_DESTINATIONS for e in egress)
 
@@ -93,8 +110,11 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
     plan = research_plan(methodology)
     if plan is None:
         return []
-    problems: list[str] = []
     p = "research_plan"
+    # The schema first: the lane runner refuses what it does not allow
+    # (an unknown egress destination, consent without swarm, an extra topic field).
+    checker = schema_check.load(METHODOLOGY_SCHEMA)
+    problems = checker.errors(plan, checker.root["properties"][p], p)
     round_budget, case_budget = plan.get("round_budget_usd"), plan.get("case_budget_usd")
     for name, value in (("round_budget_usd", round_budget), ("case_budget_usd", case_budget)):
         if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
@@ -120,6 +140,7 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
         problems.append(f"{p}.topics must list at least one topic brief")
     seen: set[str] = set()
     methods = 0
+    routes = lane_routes()
     for index, topic in enumerate(entries):
         topic_id = str(topic.get("topic_id") or "")
         where = f"{p}.topics[{index}] ({topic_id or 'no id'})"
@@ -144,11 +165,17 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
         methods += len(topic.get("anomaly_methods") or [])
         own_egress = [e for e in egress if e.get("topic_id") == topic_id]
         if not own_egress:
-            problems.append(f"{where}: egress is not listed")
+            problems.append(f"{where}: egress is not listed; add a {p}.egress entry "
+                            f"{{\"topic_id\": \"{topic_id}\", \"destination\": ...}}")
         own_keys = [k.get("name") for k in keys if topic_id in (k.get("topics") or [])]
         if lane_type == AD_HOC and own_keys:
             problems.append(f"{where}: an ad-hoc topic gets no keys")
-        cloud = _is_cloud(topic, own_egress)
+        lane_route, route = routes.get(lane_type), topic.get("route")
+        if lane_route in ALLOWED_ROUTES and route is not None and route not in ALLOWED_ROUTES[lane_route]:
+            problems.append(f"{where}: a {lane_type} lane runs on the {lane_route} route, not {route!r}")
+        if route == "subscription" and mode != "subscription_subagents":
+            problems.append(f"{where}: the subscription route needs mode subscription_subagents")
+        cloud = _is_cloud(topic, own_egress, lane_route)
         if cloud and consent.get("swarm") is not True:
             problems.append(f"{where}: a swarm topic needs the member's swarm opt-in")
         if cloud and mode == "local_only":
@@ -189,10 +216,46 @@ def _manifest_sensitive() -> bool:
     return bool(module.manifest_sensitive())
 
 
+RESEARCH_OFF = "Research is off; turn on Research in the app to add a research plan"
+# The harness's reader (harness/pi/src/config.ts researchSwitch) accepts the same values.
+SWITCH_ON = {"on", "true", "1", "yes"}
+SWITCH_OFF = {"", "off", "false", "0", "no"}
+
+
+def research_on(config: Mapping[str, Any]) -> bool:
+    """Engine's one Research switch. The Pi harness passes it to every Python
+    check as SPOTLIGHT_RESEARCH_SWARMS (present, even blank, it decides);
+    subscription runtimes have no launcher, so when it is absent the install
+    config's ``integrations.research_swarms.enabled`` decides."""
+    value = os.environ.get("SPOTLIGHT_RESEARCH_SWARMS")
+    if value is not None:
+        value = value.strip().lower()
+        if value not in SWITCH_ON | SWITCH_OFF:
+            raise ValueError('SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off".')
+        return value in SWITCH_ON
+    integrations = config.get("integrations", {})
+    if not isinstance(integrations, Mapping):
+        raise ValueError("the install config's integrations must be an object")
+    switch = integrations.get("research_swarms", {})
+    if not isinstance(switch, Mapping):
+        raise ValueError("integrations.research_swarms must be an object")
+    enabled = switch.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("integrations.research_swarms.enabled must be true or false")
+    return enabled
+
+
 def d1_from_config(methodology: Mapping[str, Any], config: Mapping[str, Any],
                    local_model: bool | None = None) -> list[str]:
-    """D1 with the install's posture: sensitive mode, newsroom mode and
-    whether a local model endpoint is configured (``local_model`` overrides)."""
+    """D1 with the install's posture: the Research switch, sensitive mode,
+    newsroom mode and whether a local model endpoint is configured
+    (``local_model`` overrides). With Research off there is no research plan."""
+    try:
+        research = research_on(config)
+    except ValueError as exc:
+        return [str(exc)]
+    if methodology.get("research_plan") is not None and not research:
+        return [RESEARCH_OFF]
     sensitive = (os.environ.get("SPOTLIGHT_SENSITIVE", "").lower() == "true" or config.get("sensitive") is True
                  or _manifest_sensitive())
     newsroom = (config.get("knowledge_destination") or {}).get("mode") == "newsroom"

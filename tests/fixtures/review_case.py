@@ -12,7 +12,8 @@ case validator rejects (a blocking failure). ``--clean`` marks the finding
 verified and writes a valid log, so nothing blocks approval. ``--activated``
 replaces the investigation artifacts with an activated (findings 1.1) case,
 born and bound at the Investigation-gate approval like a new case;
-``--flagged`` gives its fact-check one flag for the ingest page to decide.
+``--flagged`` gives its fact-check one flag for the ingest page to decide;
+``--proposal`` gives it the analyst's proposal and a built knowledge batch.
 ``research`` builds a case with a research plan paused at the Research gate
 (see ``build_research``); there ``--excerpt`` is the first lead's excerpt.
 """
@@ -160,7 +161,7 @@ def build_research(case: Path, excerpt: str | None, suggestions: bool) -> None:
 
 
 def build(case: Path, stage: str, excerpt: str | None, clean: bool, activated: bool = False, flagged: bool = False,
-          suggestions: bool = True) -> None:
+          suggestions: bool = True, proposal: bool = False) -> None:
     if stage == "research":
         build_research(case, excerpt, suggestions)
         return
@@ -225,6 +226,11 @@ def build(case: Path, stage: str, excerpt: str | None, clean: bool, activated: b
     if stage == "report":
         return
     run(str(SEAM), "decide-report", "declined", str(case))
+    if proposal:
+        ingest = load_module("ingest_review_check", ROOT / "tests" / "ingest-review-check.py")
+        write_json(case / "data/knowledge-proposal.json", ingest.PROPOSAL)
+        run(str(ROOT / "scripts" / "build-knowledge-batch.py"), str(case), "--review",
+            "--model", "investigator=inv-1", "--model", "fact-checker=fc-1")
 
 
 def main() -> int:
@@ -235,10 +241,11 @@ def main() -> int:
     parser.add_argument("--clean", action="store_true")
     parser.add_argument("--activated", action="store_true")
     parser.add_argument("--flagged", action="store_true", help="with --activated: the fact-check carries one flag")
+    parser.add_argument("--proposal", action="store_true", help="ingest with --activated: a proposal and a built batch")
     parser.add_argument("--no-suggestions", dest="suggestions", action="store_false",
                         help="research: no data/research-suggestions.json")
     args = parser.parse_args()
-    build(Path(args.case_dir), args.stage, args.excerpt, args.clean, args.activated, args.flagged, args.suggestions)
+    build(Path(args.case_dir), args.stage, args.excerpt, args.clean, args.activated, args.flagged, args.suggestions, args.proposal)
     return 0
 
 

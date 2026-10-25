@@ -184,7 +184,7 @@
         },
         "mode": {
           "enum": ["local_only", "openrouter_swarm", "subscription_subagents", "newsroom"],
-          "description": "local_only: only the local lanes run. openrouter_swarm: the member's key with the swarm switch on. subscription_subagents: the host's own subagents. newsroom: the newsroom's allowed endpoints only."
+          "description": "local_only: only the local lanes run. openrouter_swarm: the member's key with the Research switch on. subscription_subagents: the host's own subagents. newsroom: the newsroom's allowed endpoints only."
         },
         "consent": {
           "type": "object",

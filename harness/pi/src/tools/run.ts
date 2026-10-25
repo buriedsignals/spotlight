@@ -9,7 +9,7 @@ import { CHECKOUT_ROOT } from '../roles.ts';
 
 export type Env = Record<string, string | undefined>;
 
-export type CaseScope = { reads?: string[]; writes?: string[]; denyReads?: string[] };
+export type CaseScope = { reads?: string[]; writes?: string[]; denyReads?: string[]; denyWrites?: string[] };
 
 // What every typed tool is bound to at launch. The model never names these.
 export type ToolContext = {
@@ -19,8 +19,8 @@ export type ToolContext = {
 	// a narrower folder for a role that must stay inside one subfolder.
 	writeRoot: string;
 	// The role's case-file scope from harness/composition.json (reads, writes,
-	// denyReads): the file tools reach only the named case-relative files, and
-	// never the denied ones.
+	// denyReads, denyWrites): the file tools reach only the named case-relative
+	// files, never read the read-denied ones and never write the write-denied ones.
 	scope?: CaseScope;
 	// Pinned interpreter for every Python seam (SPOTLIGHT_PYTHON).
 	python: string;
@@ -139,5 +139,7 @@ export function runPython(
 	});
 }
 
-// Case-relative save paths for tools that store what they fetched.
-export const savePath = Type.String({ minLength: 1, maxLength: 512, pattern: '^(research|evidence)/' });
+// Case-relative save paths for tools that store what they fetched: a file
+// under research/ or evidence/, never the folder itself (no trailing slash).
+// Written to hold as a full match too (see webURL in fetch.ts).
+export const savePath = Type.String({ minLength: 1, maxLength: 512, pattern: '^(research|evidence)/.*[^/\\\\]$' });

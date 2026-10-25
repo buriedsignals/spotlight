@@ -662,7 +662,8 @@ def acceptance_record(record: Mapping[str, Any], results_sha256: str) -> dict[st
     chosen = next(r for r in record["results"] if r["metrics"]["contender"] == record["chosen_backend"])
     return {"passed": True, "bank_version": record["bank_version"], "backend": record["chosen_backend"],
             "thresholds": record["trial_thresholds"], "cut": chosen["cut"]["cut"], "targets_sha256": record["targets_sha256"],
-            "results_sha256": results_sha256, "decided_at": record["ran_at"]}
+            "split_file_sha256": record.get("split_file_sha256"), "results_sha256": results_sha256,
+            "decided_at": record["ran_at"]}
 
 
 def main(argv: list[str] | None = None) -> int:

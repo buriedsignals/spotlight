@@ -208,6 +208,16 @@ def suggestions_problems(case: Path) -> list[str]:
     return problems
 
 
+def research_done(case: Path, state: dict[str, Any], ledger: dict[str, Any], backed: Backed) -> bool:
+    """Research's approval covers the current leads and clues and its
+    amendment is bound. Reads only file hashes, never an output's content."""
+    if any(not case_path(case, relative).is_file() for relative in RESEARCH_OUTPUTS):
+        return False
+    approval = state["approvals"].get("research")
+    return (approval_matches(approval, current_hashes(case, RESEARCH_OUTPUTS)) and backed("research", approval)
+            and amendment_bound(approval, ledger) is not None)
+
+
 def research_steps(
     case: Path,
     state: dict[str, Any],

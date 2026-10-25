@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmod, copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
@@ -99,6 +100,24 @@ test('each process declares exactly its allowlist, workers cannot delegate, and 
 		assert.deepEqual(request.provider, { zdr: true });
 	}
 	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /Investigator finished\./);
+});
+
+// E2E D2: a fixed 8192-token output cap cut off whole-file rewrites on a
+// 131072-token model.
+test('the output cap follows the context window: a quarter of it, never below 8192', async (t) => {
+	for (const [window, cap] of [['131072', 32768], ['32768', 8192]] as const) {
+		const fake = await startFakeOpenAI(() => ({ text: 'Noted.' }));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: window });
+
+		await settledPrompt(chat, 'Open the case.');
+
+		const request = fake.requests[0];
+		assert.equal(request.max_tokens ?? request.max_completion_tokens, cap, window);
+		chat.process.stdin.end();
+		await chat.exited;
+	}
 });
 
 test('a missing required variable stops the launcher with a plain message and no protocol output', async (t) => {
@@ -320,8 +339,147 @@ test('a worker writes through its typed tools and the harness validates its outp
 	assert.match(delegated, /no_qualifying_findings/);
 });
 
-// Tools whose effects stay on this machine (case files, the local vault and
-// tool index, the Anomaly catalogue, the resolver, the loopback review page), plus the two checks
+// D5: a new case is activated by the harness, not by a model writing the
+// receipt. The contract must exist before the investigator's first turn, and
+// no role can write it.
+test('a new case at Investigation is activated before the investigator starts, and no worker can write the activation receipt', async (t) => {
+	let contractAtStart: string | undefined;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			if (toolResults(request).length > 0) return { text: 'Investigator finished.' };
+			contractAtStart = existsSync(contractPath) ? readFileSync(contractPath, 'utf8') : undefined;
+			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/case-contract.json', content: '{"forged": true}' } }] };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	const contractPath = join(caseDir, 'data', 'case-contract.json');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.ok(contractAtStart, 'the contract existed when the investigator started');
+	const events = (JSON.parse(contractAtStart) as { activation_events: Array<{ kind: string }> }).activation_events;
+	assert.deepEqual(events.map((event) => event.kind), ['born']);
+	assert.equal(readFileSync(contractPath, 'utf8'), contractAtStart, 'the investigator could not overwrite it');
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	assert.match(toolResults(worker[worker.length - 1]).join('\n'), /protected/);
+});
+
+// A failed activation stops the spawn: the investigator never runs on a new
+// case without its contract.
+test('when a new case cannot be activated, the investigator does not start', async (t) => {
+	let investigatorRan = false;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			investigatorRan = true;
+			return { text: 'Investigator finished.' };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	// Recorded passages without a contract (a pilot case): activate-new refuses it.
+	await writeFile(join(caseDir, 'data', 'source-expressions.json'), '{"schema_version": "1.0", "project": "case-a", "expressions": [{"id": "p1"}]}');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(investigatorRan, false);
+	assert.equal(existsSync(join(caseDir, 'data', 'case-contract.json')), false);
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /could not be activated/);
+});
+
+// A born contract without its passages file (an older publish order) is
+// repaired before the investigator starts.
+test('a contract left without its passages file is repaired before the investigator starts', async (t) => {
+	let passagesAtStart = false;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			passagesAtStart ||= existsSync(passagesPath);
+			return { text: 'Investigator finished.' };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	const passagesPath = join(caseDir, 'data', 'source-expressions.json');
+	const contract = { schema_version: '1.0', project: 'case-a', current_contract_version: '1.1', activation_events: [{ event_id: 'born-0123456789abcdef', kind: 'born', activated_contract_version: '1.1', activated_at: '2026-10-25T00:00:00Z', tool_version: 'test' }] };
+	await writeFile(join(caseDir, 'data', 'case-contract.json'), JSON.stringify(contract));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(passagesAtStart, true);
+});
+
+// A legacy case (an old root findings.json) keeps contract 1.0: the harness
+// does not try to activate it, and the investigator still starts.
+test('a legacy case resumes without activation', async (t) => {
+	let investigatorRan = false;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			investigatorRan = true;
+			return { text: 'Investigator finished.' };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	await writeFile(join(caseDir, 'findings.json'), '{"project": "case-a", "findings": []}');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(investigatorRan, true);
+	assert.equal(existsSync(join(caseDir, 'data', 'case-contract.json')), false);
+});
+
+// D6: the orchestrator cannot rewrite the files a worker owns around the
+// checks the harness runs after that worker; its own files stay writable.
+test('the orchestrator cannot write the files the workers write, and writes its own', async (t) => {
+	const fake = await startFakeOpenAI((request) =>
+		toolResults(request).length === 0
+			? {
+					toolCalls: [
+						{ name: 'write_file', arguments: { path: 'data/methodology.json', content: '{"rewritten": true}' } },
+						{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: '{"status": "false"}' } },
+						{ name: 'write_file', arguments: { path: 'summary.md', content: 'Gate summary.' } },
+					],
+				}
+			: { text: 'Done.' },
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	await writeFile(join(caseDir, 'data', 'fact-check.json'), '{"status": "verified"}');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8'), '{}\n');
+	assert.equal(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8'), '{"status": "verified"}');
+	assert.equal(await readFile(join(caseDir, 'summary.md'), 'utf8'), 'Gate summary.');
+	const results = toolResults(fake.requests[fake.requests.length - 1]).join('\n');
+	assert.equal(results.match(/another role writes/g)?.length, 2);
+});
+
+// Tools whose effects stay on this machine (case files, the local vault, its
+// wiki write and the tool index, the Anomaly catalogue, the resolver, the loopback review page), plus the two checks
 // that refuse their remote step themselves when SPOTLIGHT_SENSITIVE is set.
 // Any other tool a sensitive process declares is a possible way out.
 const LOCAL_TOOLS = new Set([
@@ -343,6 +501,7 @@ const LOCAL_TOOLS = new Set([
 	'decision_signals',
 	'provenance_manifest',
 	'anomaly_methods',
+	'wiki_destination',
 ]);
 
 test('sensitive mode leaves every process only local tools, and a tool that can send case text out does not run', async (t) => {
@@ -403,6 +562,39 @@ test('after a planning task the harness runs the methodology check, not the find
 	const delegated = toolResults(orchestrator[orchestrator.length - 1]).join('\n');
 	assert.match(delegated, /validate-methodology-navigator\.py: FAILED/);
 	assert.doesNotMatch(delegated, /validate-case\.py/);
+});
+
+test('with the Research switch off, the methodology check refuses a research plan; with it on, the plan is checked as usual', async (t) => {
+	const methodology = await readFile(join(CHECKOUT_ROOT, 'tests/fixtures/research/methodology-research.sample.json'), 'utf8');
+	for (const research of ['off', 'on']) {
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'investigator')) {
+				return toolResults(request).length === 0
+					? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: methodology } }] }
+					: { text: 'Plan written.' };
+			}
+			return toolResults(request).length === 0
+				? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: PLANNING' } }] }
+				: { text: 'Done.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = join(space.casesRoot, 'case-a');
+		await mkdir(join(caseDir, 'data'), { recursive: true });
+		await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
+		// The install config says the opposite, so only the harness's switch can decide.
+		const config = join(space.root, 'spotlight-config.json');
+		await writeFile(config, JSON.stringify({ model_tier: '12b', integrations: { research_swarms: { enabled: research === 'off' } } }));
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: config, SPOTLIGHT_RESEARCH_SWARMS: research });
+
+		await settledPrompt(chat, 'Continue.');
+
+		const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+		const delegated = toolResults(orchestrator[orchestrator.length - 1]).join('\n');
+		assert.match(delegated, /validate-methodology-navigator\.py/, research);
+		if (research === 'off') assert.match(delegated, /Research is off; turn on Research in the app to add a research plan/);
+		else assert.doesNotMatch(delegated, /Research is off/);
+	}
 });
 
 // An activated case paused at the Ingest decision, built by the review-page
@@ -744,6 +936,8 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 		execFile(
 			process.env.SPOTLIGHT_PYTHON ?? 'python3',
 			[join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'), 'approve', 'methodology', '--approved-by', 'journalist:fixture', '--approved-at', '2026-10-23T12:00:00Z', '--authorized-cases-root', space.casesRoot, caseDir],
+			// A researched methodology is approved with Engine's Research switch on.
+			{ env: { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' } },
 			(error, _stdout, stderr) => (error ? fail(new Error(stderr || error.message)) : done()),
 		),
 	);
@@ -779,6 +973,38 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 	const lane = JSON.parse(await readFile(join(caseDir, 'research/swarm/ownership-registries/lane.json'), 'utf8'));
 	assert.equal(lane.status, 'completed');
 	assert.ok(!chat.stderr().includes('sk-or-v1-launcher-secret'));
+});
+
+test('with the Research switch off, an approved researched case resumes no lane: the resolve holds it at Research with the Research-off message', async (t) => {
+	const orchestratorModel = await startFakeOpenAI(resolveThenStop);
+	const swarm = await startFakeOpenAI(() => ({ text: 'No leads.', usage: { total_tokens: 10, cost: 0.0001 } }));
+	t.after(() => Promise.all([orchestratorModel.close(), swarm.close()]));
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
+	await writeFile(join(caseDir, 'data', 'methodology.json'), await readFile(join(CHECKOUT_ROOT, 'tests/fixtures/research/methodology-research.sample.json'), 'utf8'));
+	await new Promise<void>((done, fail) =>
+		execFile(
+			process.env.SPOTLIGHT_PYTHON ?? 'python3',
+			[join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'), 'approve', 'methodology', '--approved-by', 'journalist:fixture', '--approved-at', '2026-10-23T12:00:00Z', '--authorized-cases-root', space.casesRoot, caseDir],
+			// A researched methodology is approved with Engine's Research switch on.
+			{ env: { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' } },
+			(error, _stdout, stderr) => (error ? fail(new Error(stderr || error.message)) : done()),
+		),
+	);
+	// The install config says on; the harness's switch (absent, so off) decides.
+	const config = join(space.root, 'spotlight-config.json');
+	await writeFile(config, JSON.stringify({ model_tier: '12b', integrations: { research_swarms: { enabled: true } } }));
+	const chat = launch(t, { ...baseEnv(space, orchestratorModel.baseURL), SPOTLIGHT_CONFIG: config, OPENROUTER_API_KEY: 'sk-or-v1-launcher-secret', SPOTLIGHT_SWARM_BASE_URL: swarm.baseURL });
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(swarm.requests.length, 0);
+	const resolution = lastResolution(chat) as { phase: string; missing: string[]; research: { resume_at: string }; research_round?: unknown };
+	assert.deepEqual([resolution.phase, resolution.research.resume_at], ['research', 'research_off']);
+	assert.match(resolution.missing[0], /^Research is off\. Turn Research on in the app to continue this case/);
+	assert.equal(resolution.research_round, undefined);
 });
 
 // ── Newsroom edition (Editorial MCP) ─────────────────────────────────────────

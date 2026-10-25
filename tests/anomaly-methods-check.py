@@ -215,6 +215,7 @@ class PlanValidation(AnomalyTestCase):
         config.write_text(json.dumps({"model_tier": "frontier", "integrations": {}}), encoding="utf-8")
         env = {k: v for k, v in os.environ.items()
                if k not in ("ANOMALY_HOME", "SPOTLIGHT_SENSITIVE", "SPOTLIGHT_MODEL_BASE_URL")}
+        env["SPOTLIGHT_RESEARCH_SWARMS"] = "on"
 
         def validate() -> subprocess.CompletedProcess[str]:
             return subprocess.run([sys.executable, str(ROOT / "scripts" / "validate-methodology-navigator.py"),

@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ConfigError, RouteRefused, checkNewsroomInstall, checkRouteSecrets, childEnv, parseLaunchArgs, piSettings, readConfig, routeFor, resolverEnv, secretValues } from './config.ts';
+import { ConfigError, RouteRefused, checkNewsroomInstall, checkRouteSecrets, childEnv, parseLaunchArgs, piSettings, readConfig, researchEnv, routeFor, resolverEnv, secretValues } from './config.ts';
 import {
 	CASE_REFERENCE_FILE,
 	CaseRecordError,
@@ -26,7 +26,7 @@ import {
 import type { CheckKind, EditorialClient, RunPackage } from './editorial.ts';
 import { openInBrowser } from '../../review/session.mjs';
 import { newsroomData } from './tools/editorial.ts';
-import { DESKTOP_ENV, capped, programEnv, runFixed } from './tools/run.ts';
+import { DESKTOP_ENV, capped, programEnv, runFixed, runPython } from './tools/run.ts';
 import type { HarnessConfig, LaunchArgs } from './config.ts';
 import { CaseHeldError, acquireCaseLock } from './lock.ts';
 import type { CaseLock } from './lock.ts';
@@ -268,6 +268,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 				// Case search runs inside the queue's admission, so it counts
 				// against the worker limit, and a cancel stops it.
 				return queue.run(async () => {
+					await activateNewCase(harness, request.agent, controller.signal);
 					const task = await finalTask(harness, request.agent, request.task, controller.signal);
 					return runWorker(
 						{
@@ -294,7 +295,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 async function caseStatus(harness: Harness, strict = false): Promise<Record<string, unknown>> {
 	const { config, active } = harness;
 	try {
-		const status = await pythonAdapter(config.python, resolverEnv(process.env, harness.composition, config.routes))(['status', '--json', '--authorized-cases-root', active.casesRoot, active.caseDir]);
+		const status = await pythonAdapter(config.python, resolverEnv({ ...process.env, ...researchEnv(config) }, harness.composition, config.routes))(['status', '--json', '--authorized-cases-root', active.casesRoot, active.caseDir]);
 		return JSON.parse(status) as Record<string, unknown>;
 	} catch (error) {
 		const message = `could not resolve the case phase: ${harness.redact((error as Error).message)}`;
@@ -370,6 +371,44 @@ async function finalTask(harness: Harness, role: string, task: string, signal: A
 	return withPassages;
 }
 
+// A new case starts activated (phase-investigation, "Source-expression release
+// mode", step 2): before the first investigator task at Investigation, with no
+// contract and no findings yet, the harness runs case-contract.py activate-new
+// itself. No role may write data/case-contract.json (tools/case-files.ts). The
+// script refuses a case that already has investigation files; that case stays
+// legacy, as the skill's step 3 says, and the investigator still starts.
+// Legacy markers activate-new refuses: such a case keeps contract 1.0.
+const LEGACY_MARKERS = ['data/findings.json', 'findings.json', 'data/fact-check.json', 'data/investigation-log.json'];
+
+// One activation at a time, so two investigators starting together on a new
+// case do not race the one-shot script.
+let activationInFlight: Promise<void> | undefined;
+function activateNewCase(harness: Harness, role: string, signal: AbortSignal): Promise<void> {
+	if (role !== 'investigator') return Promise.resolve();
+	const run = (activationInFlight ?? Promise.resolve()).catch(() => {}).then(() => activateOnce(harness, signal));
+	activationInFlight = run;
+	return run;
+}
+
+async function activateOnce(harness: Harness, signal: AbortSignal): Promise<void> {
+	const { config, active } = harness;
+	const exists = (path: string) => existsSync(resolve(active.caseDir, path));
+	// Activated only when both artifacts exist; a contract without its passages
+	// file (an older publish order) is repaired by activate-new, and a malformed
+	// one is refused by it.
+	if ((exists('data/case-contract.json') && exists('data/source-expressions.json')) || LEGACY_MARKERS.some(exists)) return;
+	// Strict: a resolver failure must not let a new case start unactivated.
+	if (String((await caseStatus(harness, true)).phase ?? '') !== 'investigation') return;
+	const result = await runPython(
+		{ caseDir: active.caseDir, writeRoot: active.caseDir, python: config.python, configPath: config.spotlightConfig, env: process.env },
+		[resolve(CHECKOUT_ROOT, 'scripts/case-contract.py'), 'activate-new', active.caseDir],
+		{ signal, timeoutMs: 60_000 },
+	);
+	// A new case never runs unactivated: the investigator would write contract
+	// 1.1 artifacts that no validator accepts without the contract.
+	if (result.code !== 0) throw new Error(`the case could not be activated, so the investigator did not start: ${`${result.stderr}${result.stdout}`.trim()}`);
+}
+
 // A worker with spawn conditions in harness/composition.json (the analyst:
 // Ingest, solo edition) starts only when the case meets them.
 async function refusalFor(harness: Harness, role: string, task: string): Promise<string | undefined> {
@@ -393,7 +432,7 @@ async function withValidation(harness: Harness, role: string, text: string): Pro
 		writeRoot: active.caseDir,
 		python: config.python,
 		configPath: config.spotlightConfig,
-		env: process.env,
+		env: { ...process.env, ...researchEnv(config) },
 	});
 	if (outcome.ran.length === 0) return text;
 	const verdict = outcome.passed ? 'all passed' : 'FAILED: send the worker the correction the phase skill describes';

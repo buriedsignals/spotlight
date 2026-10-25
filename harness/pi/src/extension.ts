@@ -3,7 +3,7 @@
 // provider request-body policy, and registers exactly the role's tools.
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { registerCompaction } from './checkpoint.ts';
-import { resolverEnv } from './config.ts';
+import { maxOutputTokens, resolverEnv } from './config.ts';
 import { applyFixedRequestBody, parseFixedRequestBody } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillsFor, spawnableWorkers } from './roles.ts';
@@ -35,7 +35,7 @@ function toolsFor(role: string): ToolDefinition[] {
 			python,
 			configPath: process.env.SPOTLIGHT_CONFIG || `${CHECKOUT_ROOT}/.spotlight-config.json`,
 			env: process.env,
-			scope: { reads: spec.reads, writes: spec.writes, denyReads: spec.denyReads },
+			scope: { reads: spec.reads, writes: spec.writes, denyReads: spec.denyReads, denyWrites: spec.denyWrites },
 		}),
 	];
 	const edition = process.env.SPOTLIGHT_EDITION === 'newsroom' ? 'newsroom' : 'solo';
@@ -59,6 +59,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		process.exit(78);
 	}
 	const fixedBody = parseFixedRequestBody(process.env.SPOTLIGHT_PROVIDER_REQUEST_BODY);
+	const contextWindow = Number(process.env.SPOTLIGHT_MODEL_CONTEXT_WINDOW || 32768);
 	pi.registerProvider(PROVIDER_ID, {
 		name: 'Spotlight',
 		baseUrl: required('SPOTLIGHT_MODEL_BASE_URL'),
@@ -72,8 +73,8 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 				reasoning: false,
 				input: ['text'],
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: Number(process.env.SPOTLIGHT_MODEL_CONTEXT_WINDOW || 32768),
-				maxTokens: 8192,
+				contextWindow,
+				maxTokens: maxOutputTokens(contextWindow),
 			},
 		],
 	});

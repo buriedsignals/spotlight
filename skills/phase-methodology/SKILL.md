@@ -189,7 +189,16 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    `--case-opt-in`, which records the consent in `data/decision-signals.json`;
    otherwise never run it for this case.
 
-   **Research plan (optional).** A Research phase can run between Methodology
+   **Research plan (only when Research is on).** Research is one opt-in
+   package, turned on by the Research switch in the app: the install config
+   (`.spotlight-config.json`, read at Preflight) has
+   `integrations.research_swarms.enabled: true`, or, in the Pi harness, the
+   harness's switch is on. When Research is off, say nothing about research,
+   write no `research_plan`, and go straight to Investigation; if the
+   methodology validator reports "Research is off", remove the
+   `research_plan` and continue without it.
+
+   When Research is on, a Research phase can run between Methodology
    and Investigation: one research lane per approved topic brief, started by
    code once the methodology is approved. Propose it from the methodology;
    never from journalist-input content. Give each `investigation_plan`
@@ -214,6 +223,13 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    correct the plan with the investigator's METHODOLOGY CORRECTION re-spawn
    above, with the failed checks as its validator errors:
 
+   - The plan matches `schemas/methodology.schema.json`: only the listed
+     fields, egress destinations from its list, and a consent record with
+     `swarm`, `decided_by` and `decided_at`.
+   - A topic's route matches its lane type: web lanes (catalogue route
+     `swarm`) take `swarm`, or `subscription` in `subscription_subagents`
+     mode, and need the swarm consent; local lanes take `local`. Leave the
+     route unset to use the lane's own.
    - The round budget is set, no higher than the case budget, and the case
      budget is at most $5; every topic has its own token budget, so one topic
      cannot take the round.
@@ -223,9 +239,11 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    - Keys, egress and consent are listed for every topic; at most 10 Anomaly
      methods across the plan, each a single-table method of the pinned
      Anomaly catalogue.
+   - No research plan at all while the Research switch is off, not even
+     local lanes.
    - No cloud topic (`swarm` or `subscription` route) without the member's
-     swarm consent. The swarm needs the member's OpenRouter key and the
-     research-swarm switch, or a subscription host's own subagents.
+     swarm consent. The swarm needs the member's OpenRouter key, or a
+     subscription host's own subagents.
    - Sensitive mode: only the local corpus lane.
    - Journalist input: only the local corpus lane, only when the consent
      record grants it, only on the local model, with no search or fetch.
