@@ -448,6 +448,7 @@ test('a worker records a passage through the writer script, and a hand write of 
 		text: claim,
 		anchor_ref: { path: 'research/licence.txt', line_start: 1, line_end: 1 },
 		original_evidence_bundle_id: 'E1',
+		language: 'en',
 		finding_links: [{ finding_id: 'F1', relation: 'supports' }],
 	};
 	const steps = [
@@ -750,6 +751,25 @@ test('the analyst is not started before Ingest or in the newsroom edition', asyn
 	assert.match(refusals[0], /the analyst runs only at ingest; the case is at investigation/);
 	assert.match(refusals[1], /the analyst does not run in the newsroom edition/);
 	await assert.rejects(readFile(join(newsroom.casesRoot, 'case-a', 'data', 'knowledge-proposal.json')), { code: 'ENOENT' });
+});
+
+// E2E D15: a fact-checker respawned at Ingest rewrote files the Investigation
+// gate had bound, and the case fell back to Investigation for good.
+test('the fact-checker is not started after the Investigation gate', async (t) => {
+	const fake = await startFakeOpenAI((request) =>
+		toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Recheck F1.' } }] }
+			: { text: 'Done.' });
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtIngest(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker')).length, 0);
+	const refusal = fake.requests.map((request) => toolResults(request).join('\n')).find(Boolean) ?? '';
+	assert.match(refusal, /the fact-checker runs only at investigation; the case is at ingest/);
 });
 
 test('D9: a fact-checker task that points at the research leads, clues, lane folders or a review page is refused before any worker starts', async (t) => {

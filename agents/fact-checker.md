@@ -182,7 +182,7 @@ scripts/spotlight-python scripts/write-source-expressions.py {CASE_DIR} --actor 
 ```
 
 The proposal lists each passage's `id`, exact `text`, `anchor_ref`,
-`original_evidence_bundle_id`, optional `language`, `direct_quote`,
+`original_evidence_bundle_id`, `language` (required: the passage's BCP 47 tag), `direct_quote`,
 `attribution`, `derived_from_expression_id` and `derivative_type`, and its
 `finding_links` (`finding_id` and `relation`). Supersede or withdraw a passage
 with a `lifecycle` entry. Do not supply hashes or fingerprints; a refused

@@ -17,7 +17,8 @@ Proposal (JSON on stdin, or --file):
       "text": "exact passage as stored",
       "anchor_ref": {"path": "research/x.md", "line_start": 4, "line_end": 4},
       "original_evidence_bundle_id": "E2",
-      "language": "fr", "direct_quote": true, "attribution": "...",      (optional)
+      "language": "fr",                                                     (required, BCP 47)
+      "direct_quote": true, "attribution": "...",                           (optional)
       "derived_from_expression_id": "SX1", "derivative_type": "translation",  (optional)
       "finding_links": [{"finding_id": "F1", "relation": "supports"}]
    }],
@@ -55,6 +56,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -78,6 +80,8 @@ TARGET = "data/source-expressions.json"
 POSITIONS = "data/source-positions.json"
 POSITION_CORE = ("finding_id", "actor", "stance", "attribution_verbatim")
 ACTORS = ("investigator", "fact-checker", "human")
+# Same rule as build-knowledge-batch.py, which refuses a passage without one at Ingest.
+LANGUAGE = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
 PROPOSED_CORE = ("text", "anchor_ref", "original_evidence_bundle_id", "language",
                  "attribution", "direct_quote", "derived_from_expression_id", "derivative_type")
 
@@ -123,6 +127,9 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
     anchor = proposal.get("anchor_ref")
     if not isinstance(anchor, dict) or not isinstance(anchor.get("path"), str):
         raise WriteError(f"expression {proposal.get('id')!r}: anchor_ref with a case-local path is required")
+    # Ingest builds claims only from passages with a language, so it is asked for here.
+    if not isinstance(proposal.get("language"), str) or not LANGUAGE.match(proposal["language"]):
+        raise WriteError(f"expression {proposal.get('id')!r}: language is required, a BCP 47 tag of the passage's original language (for example \"en\" or \"fr-CH\")")
     expression = {"id": proposal["id"]}
     expression.update({key: copy.deepcopy(proposal[key]) for key in PROPOSED_CORE if key in proposal})
     expression["anchor_sha256"] = _sha256_case_file(case, anchor["path"])
