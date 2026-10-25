@@ -680,6 +680,14 @@ def main() -> int:
         out = subprocess.run([sys.executable, str(SCRIPT), str(removed)], capture_output=True, text=True)
         check("e2e: activated case refuses a removed verdict",
               [] if "a person must re-assess this one" in out.stdout + out.stderr else ["no removed-verdict error"], False)
+        # Shakedown on 26683b3c: a list-shaped evidence bundle crashed the check with a traceback.
+        listed = Path(tmp) / "activated-list-bundle"
+        write_activated_case(listed)
+        (listed / "data" / "evidence-bundle.json").write_text(json.dumps([{"id": "E1"}]), encoding="utf-8")
+        out = subprocess.run([sys.executable, str(SCRIPT), str(listed)], capture_output=True, text=True)
+        check("e2e: a list-shaped evidence bundle is refused without a traceback",
+              [] if out.returncode == 1 and "Traceback" not in out.stderr and "top-level must be an object" in out.stdout + out.stderr
+              else [f"rc={out.returncode} {out.stderr.strip()[-300:]}"], False)
         (activated / "data" / "source-expressions.json").write_text("{}", encoding="utf-8")
         rc = subprocess.run([sys.executable, str(SCRIPT), str(activated)], capture_output=True).returncode
         check("e2e: activated artifact mutation exits 1", [] if rc == 1 else [f"rc={rc}"], False)

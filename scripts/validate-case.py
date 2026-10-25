@@ -276,7 +276,7 @@ def validate_source_expressions(
         item.get("id"): item for item in raw_findings
         if isinstance(item, dict) and nonempty_string(item.get("id"))
     }
-    raw_bundles = (evidence_data or {}).get("items", [])
+    raw_bundles = evidence_data.get("items", []) if isinstance(evidence_data, dict) else []
     if not isinstance(raw_bundles, list):
         raw_bundles = []
     bundles = {

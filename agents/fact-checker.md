@@ -359,7 +359,9 @@ Confidence is a function of all four combined.
   modes, add immutable `source_expression_refs` to the relevant
   `evidence_for` and `evidence_against` items. An activated positive verdict
   requires at least one active `supports` expression; contradiction or context
-  alone is not positive support.
+  alone is not positive support. A successful passage write returns these
+  refs per finding and relation (`source_expression_refs`); copy them, never
+  compute them.
 - **Copy the canonical finding claim exactly for positive verdicts.** For `verified`, `claim_text` must equal the linked `findings.json` claim after Unicode and whitespace normalization. Narrow or split the finding first rather than verifying an easier paraphrase under the same `finding_id`.
 - **RLM/E4B output is a locator, never evidence.** You may reuse a `source_ref` discovered in `data/rlm-analysis.json`, but cite and independently assess the underlying stored scrape or JSON element. Never cite the RLM artifact text itself as verification.
 - **Reject decorative grounding.** A source that merely mentions the topic is not support. Mark the claim `unverified` or narrow it to what the evidence actually grounds.

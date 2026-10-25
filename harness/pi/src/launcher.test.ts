@@ -633,6 +633,9 @@ test('with the Research switch off, the methodology check refuses a research pla
 		assert.match(delegated, /validate-methodology-navigator\.py/, research);
 		if (research === 'off') assert.match(delegated, /Research is off; turn on Research in the app to add a research plan/);
 		else assert.doesNotMatch(delegated, /Research is off/);
+		// Shakedown on 26683b3c: no prompt said the switch was on, so no plan was written.
+		const planner = fake.requests.find((request) => isWorkerRequest(request, 'investigator'));
+		assert.match(systemText(planner!), new RegExp(`Research is ${research} for this case`), research);
 	}
 });
 

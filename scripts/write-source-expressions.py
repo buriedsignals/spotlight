@@ -300,6 +300,24 @@ def write(case: Path, proposal: dict[str, Any], actor: str, cycle: int) -> dict[
     return doc
 
 
+def proposal_refs(doc: dict[str, Any], proposal: dict[str, Any]) -> dict[str, dict[str, list[dict[str, str]]]]:
+    """The fact-check ref objects for the proposed passages, by finding and
+    relation: the fingerprints a producer must copy and never computes."""
+    proposed = {item.get("id") for item in proposal.get("expressions", []) if isinstance(item, dict)}
+    refs: dict[str, dict[str, list[dict[str, str]]]] = {}
+    for expression in doc["expressions"]:
+        if expression.get("id") not in proposed:
+            continue
+        for link in expression.get("finding_links", []):
+            refs.setdefault(link["finding_id"], {}).setdefault(link["relation"], []).append({
+                "expression_id": expression["id"],
+                "expression_fingerprint": expression["expression_fingerprint"],
+                "finding_fingerprint": link["finding_fingerprint"],
+                "link_fingerprint": link["link_fingerprint"],
+            })
+    return refs
+
+
 def fingerprint_findings(case: Path) -> int:
     """Set every finding's finding_fingerprint from its claim, and refresh the
     passage links of any finding whose claim changed, in one locked write."""
@@ -369,7 +387,14 @@ def main(argv: list[str] | None = None) -> int:
     except (WriteError, OrchestrationError, json.JSONDecodeError, OSError) as exc:
         print(f"source-expressions: refused: {exc}", file=sys.stderr)
         return 2
-    print(json.dumps({"ok": True, "expressions": len(doc["expressions"])}))
+    print(json.dumps({
+        "ok": True,
+        "expressions": len(doc["expressions"]),
+        "source_expression_refs": proposal_refs(doc, proposal),
+        "next": "These are the refs per finding and relation for the passages just written. In data/fact-check.json, "
+                "copy them into source_expression_refs of the claim's evidence_for item (supports) or evidence_against "
+                "item (contradicts); a verified claim needs at least one supports ref.",
+    }))
     return 0
 
 
