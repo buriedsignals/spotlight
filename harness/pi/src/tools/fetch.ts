@@ -33,7 +33,7 @@ import { CHECKOUT_ROOT } from '../roles.ts';
 import { writeConfined } from './case-files.ts';
 import { anonymizedFetch, assertPublicDestination, checkURL, publicDestination } from './egress.ts';
 import { startEgressProxy } from './proxy.ts';
-import { ToolArgumentError, checkedParams, jsonResult, programOutput, runPython, savePath } from './run.ts';
+import { ToolArgumentError, checkedParams, jsonResult, programOutput, runPython, savePath, saveTarget } from './run.ts';
 import type { ToolContext } from './run.ts';
 
 const MAX_RETURNED_CHARS = 30_000;
@@ -98,7 +98,7 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 		name: 'fetch',
 		label: 'Fetch',
 		description:
-			'Fetch one public web page as Markdown (Crawl4AI). Only public http(s) addresses are allowed. Optional save_as stores the Markdown in the case under research/ or evidence/ (a file name, not .json: use http_get to keep a JSON body). When the result says distilled: true, save_as holds compact RLM leads (what you get back) and raw_path the page itself, for citations.',
+			'Fetch one public web page as Markdown (Crawl4AI). Only public http(s) addresses are allowed. Optional save_as stores the Markdown in the case (a bare file name goes under research/; or give research/... or evidence/...; not .json: use http_get to keep a JSON body). When the result says distilled: true, save_as holds compact RLM leads (what you get back) and raw_path the page itself, for citations.',
 		parameters: params,
 		async execute(_id, raw, signal) {
 			const input = checkedParams<{ url: string; save_as?: string }>('fetch', params, raw);
@@ -144,7 +144,7 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 				content_sha256: result.content_sha256,
 			};
 			if (!rlm) {
-				const saved = input.save_as ? writeConfined(context.caseDir, context.writeRoot, input.save_as, markdown) : undefined;
+				const saved = input.save_as ? writeConfined(context.caseDir, context.writeRoot, saveTarget(context, input.save_as), markdown) : undefined;
 				return jsonResult({
 					...page,
 					distilled: false,
@@ -154,7 +154,7 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 					markdown: markdown.slice(0, MAX_RETURNED_CHARS),
 				});
 			}
-			const leadPath = input.save_as as string;
+			const leadPath = saveTarget(context, input.save_as as string);
 			const rawPath = writeConfined(context.caseDir, context.writeRoot, `${leadPath}.raw`, markdown);
 			let leads: string;
 			try {

@@ -6,7 +6,7 @@
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { writeConfined } from './case-files.ts';
-import { checkedParams, jsonResult, programOutput, runPython, savePath } from './run.ts';
+import { checkedParams, jsonResult, programOutput, runPython, savePath, saveTarget } from './run.ts';
 import type { ToolContext } from './run.ts';
 
 const params = Type.Object(
@@ -46,7 +46,7 @@ export function searchTool(context: ToolContext): ToolDefinition {
 			);
 			const hits = JSON.parse(output || '[]') as unknown;
 			const saved = input.save_as
-				? writeConfined(context.caseDir, context.writeRoot, input.save_as, JSON.stringify(hits, null, 2))
+				? writeConfined(context.caseDir, context.writeRoot, saveTarget(context, input.save_as), JSON.stringify(hits, null, 2))
 				: undefined;
 			return jsonResult({ query: input.query, saved_to: saved, results: hits });
 		},

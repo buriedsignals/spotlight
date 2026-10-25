@@ -116,7 +116,7 @@ A small local model degrades as its context grows: the conversation alone (reaso
 
 | Tier | Fold point (tokens) | Kept verbatim (tokens) |
 |---|---|---|
-| `12b` | 16384 | 4000 |
+| `12b` | 24576 | 4000 |
 | `26b` | 24576 | 6000 |
 | `31b` | 28672 | 7000 |
 | `frontier` | Pi's default (context window - 16384) | Pi's default (20000) |

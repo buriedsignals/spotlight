@@ -9,7 +9,7 @@ import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { writeConfined } from './case-files.ts';
 import { egressGet, refuseDirectWhenAnonymized } from './egress.ts';
 import { webURL } from './fetch.ts';
-import { checkedParams, jsonResult, savePath } from './run.ts';
+import { checkedParams, jsonResult, savePath, saveTarget } from './run.ts';
 import type { ToolContext } from './run.ts';
 
 const MAX_RETURNED_CHARS = 60_000;
@@ -70,7 +70,7 @@ export function httpGetTool(context: ToolContext): ToolDefinition {
 				headers: { accept: ACCEPT[input.accept ?? 'any'] },
 			});
 			const body = response.body ?? Buffer.alloc(0);
-			const saved = input.save_as ? writeConfined(context.caseDir, context.writeRoot, input.save_as, body) : undefined;
+			const saved = input.save_as ? writeConfined(context.caseDir, context.writeRoot, saveTarget(context, input.save_as), body) : undefined;
 			const text = body.toString('utf8');
 			return jsonResult({
 				final_url: response.finalURL,

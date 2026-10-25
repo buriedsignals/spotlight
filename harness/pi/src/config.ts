@@ -22,7 +22,7 @@ export type ModelTier = '12b' | '26b' | '31b' | 'frontier';
 // verbatim. Bigger models hold discipline deeper, so they fold later. The
 // frontier tier has no entry and keeps Pi's default compaction.
 export const LOCAL_TIER_FOLD: Record<Exclude<ModelTier, 'frontier'>, { at: number; keep: number }> = {
-	'12b': { at: 16384, keep: 4000 },
+	'12b': { at: 24576, keep: 4000 },
 	'26b': { at: 24576, keep: 6000 },
 	'31b': { at: 28672, keep: 7000 },
 };

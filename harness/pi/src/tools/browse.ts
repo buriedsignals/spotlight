@@ -39,7 +39,7 @@ import { LOCAL_NAME_SUFFIXES, NOT_PUBLIC_V4, assertPublicDestination, isPublicAd
 import type { AddressPolicy } from './egress.ts';
 import { webURL } from './fetch.ts';
 import { startEgressProxy } from './proxy.ts';
-import { checkedParams, jsonResult, programEnv, programOutput, runFixed, savePath } from './run.ts';
+import { checkedParams, jsonResult, programEnv, programOutput, runFixed, savePath, saveTarget } from './run.ts';
 import type { Env, ToolContext } from './run.ts';
 
 const MAX_RETURNED_CHARS = 30_000;
@@ -251,7 +251,7 @@ export function browseTool(context: ToolContext): ToolDefinition {
 			} else if (input.save_as) {
 				bytes = Buffer.from(result.content ?? '', 'utf8');
 			}
-			const saved = bytes && input.save_as ? writeConfined(context.caseDir, context.writeRoot, input.save_as, bytes) : undefined;
+			const saved = bytes && input.save_as ? writeConfined(context.caseDir, context.writeRoot, saveTarget(context, input.save_as), bytes) : undefined;
 			const content = result.content ?? '';
 			return jsonResult({
 				requested_url: input.url,
