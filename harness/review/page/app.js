@@ -185,7 +185,7 @@ function researchPlanContent(plan) {
       { className: "card" },
       el("p", { text: `Mode: ${plan.mode || "not set"}. Round budget: ${usd(plan.round_budget_usd)}. Case budget: ${usd(plan.case_budget_usd)}.` }),
       el("p", {
-        text: `Cloud research (topic briefs sent to a cloud model): ${consent.swarm ? "yes" : "no"}. Journalist input to the local corpus lane: ${consent.journalist_input ? "yes" : "no"}. Recorded by ${consent.decided_by || "nobody"} at ${consent.decided_at || "no time"}.`,
+        text: `Cloud research (topic briefs sent to a cloud model): ${consent.swarm ? "yes" : "no"}. Journalist input to the local corpus lane: ${consent.journalist_input ? "yes" : "no"}. Approving this plan records this consent under your name and the time you approve.`,
       }),
     ),
     plan.topics.length

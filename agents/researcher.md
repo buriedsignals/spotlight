@@ -51,7 +51,9 @@ more good leads rather than one polished answer.
    coverage of them.
 4. Record a lead for each thing a source says that bears on a question,
    including what it says about other people, companies or events: a
-   circumstantial lead can be the clue.
+   circumstantial lead can be the clue. Record it as soon as you have read
+   the source, before you search or fetch anything else; never save leads
+   for the end.
 5. When you looked and found nothing for a question, record an absence lead
    with the queries you tried. An honest absence is a result.
 6. Finish with a short plain answer: which questions have leads, which have

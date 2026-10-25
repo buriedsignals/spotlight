@@ -189,12 +189,13 @@
         "consent": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["swarm", "decided_by", "decided_at"],
+          "required": ["swarm"],
+          "description": "What the member consents to. Who consented and when is their Methodology approval (the approval receipt), never a field of the plan.",
           "properties": {
             "swarm": { "type": "boolean", "description": "The member opted in to sending the approved topic briefs to a cloud model." },
             "journalist_input": { "type": "boolean", "description": "The member granted the local corpus lane access to journalist input (local model only)." },
-            "decided_by": { "type": "string", "minLength": 1 },
-            "decided_at": { "type": "string", "format": "date-time" }
+            "decided_by": { "type": "string", "minLength": 1, "description": "Ignored, never shown: older plans carry a model-written stamp here." },
+            "decided_at": { "type": "string", "format": "date-time", "description": "Ignored, never shown, as decided_by." }
           }
         },
         "keys": {
