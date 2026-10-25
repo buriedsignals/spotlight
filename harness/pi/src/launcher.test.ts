@@ -380,6 +380,32 @@ test('when a new case cannot be activated, the investigator does not start', asy
 	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /could not be activated/);
 });
 
+// A born contract without its passages file (an older publish order) is
+// repaired before the investigator starts.
+test('a contract left without its passages file is repaired before the investigator starts', async (t) => {
+	let passagesAtStart = false;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			passagesAtStart ||= existsSync(passagesPath);
+			return { text: 'Investigator finished.' };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	const passagesPath = join(caseDir, 'data', 'source-expressions.json');
+	const contract = { schema_version: '1.0', project: 'case-a', current_contract_version: '1.1', activation_events: [{ event_id: 'born-0123456789abcdef', kind: 'born', activated_contract_version: '1.1', activated_at: '2026-10-25T00:00:00Z', tool_version: 'test' }] };
+	await writeFile(join(caseDir, 'data', 'case-contract.json'), JSON.stringify(contract));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(passagesAtStart, true);
+});
+
 // A legacy case (an old root findings.json) keeps contract 1.0: the harness
 // does not try to activate it, and the investigator still starts.
 test('a legacy case resumes without activation', async (t) => {

@@ -393,7 +393,10 @@ function activateNewCase(harness: Harness, role: string, signal: AbortSignal): P
 async function activateOnce(harness: Harness, signal: AbortSignal): Promise<void> {
 	const { config, active } = harness;
 	const exists = (path: string) => existsSync(resolve(active.caseDir, path));
-	if (exists('data/case-contract.json') || LEGACY_MARKERS.some(exists)) return;
+	// Activated only when both artifacts exist; a contract without its passages
+	// file (an older publish order) is repaired by activate-new, and a malformed
+	// one is refused by it.
+	if ((exists('data/case-contract.json') && exists('data/source-expressions.json')) || LEGACY_MARKERS.some(exists)) return;
 	// Strict: a resolver failure must not let a new case start unactivated.
 	if (String((await caseStatus(harness, true)).phase ?? '') !== 'investigation') return;
 	const result = await runPython(
