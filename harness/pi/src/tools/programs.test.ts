@@ -208,6 +208,17 @@ test('each tool rejects arguments outside its schema without starting anything',
 	assert.deepEqual(await recorded(), []);
 });
 
+// A legacy case (no contract) keeps contract 1.0 and gets no passage files.
+test('source_expressions refuses a case that is not activated and runs the writer once it is', async (t) => {
+	const { call, recorded, caseDir } = await fixture(t, { SPOTLIGHT_ROLE: 'investigator' });
+
+	await assert.rejects(call('source_expressions', { action: 'fingerprint_findings' }), /not activated/);
+	assert.deepEqual(await recorded(), []);
+	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
+	await call('source_expressions', { action: 'fingerprint_findings' });
+	assert.ok((await recorded()).some((run) => run.args.includes('--fingerprint-findings')));
+});
+
 test('fetch, browse and http_get refuse loopback, private and metadata targets before starting anything', async (t) => {
 	const { call, recorded } = await fixture(t);
 

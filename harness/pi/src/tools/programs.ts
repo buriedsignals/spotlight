@@ -5,7 +5,7 @@
 // writer. Each
 // is bound to the active case; the model picks only the documented options.
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { Type } from 'typebox';
@@ -306,6 +306,11 @@ function sourceExpressionsTool(context: ToolContext): ToolDefinition {
 			const input = checkedParams<{ action: string; cycle?: number; proposal?: Record<string, unknown> }>('source_expressions', params, raw);
 			const actor = context.env.SPOTLIGHT_ROLE ?? '';
 			if (!WRITER_ACTORS.includes(actor)) throw new FileRefused(`refused: source_expressions is for the investigator and the fact-checker, not ${actor || 'this process'}`);
+			// A legacy case keeps contract 1.0 and gets no passage files; only an
+			// activated case (its contract exists) records passages.
+			if (!existsSync(join(context.caseDir, 'data', 'case-contract.json'))) {
+				throw new FileRefused('refused: this case is not activated (no data/case-contract.json), so it records no passages; write findings and the fact-check without them');
+			}
 			const writer = script('scripts/write-source-expressions.py');
 			if (input.action === 'fingerprint_findings') {
 				const result = await runPython(context, [writer, context.caseDir, '--fingerprint-findings'], { signal });
