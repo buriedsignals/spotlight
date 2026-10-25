@@ -78,8 +78,15 @@ def lane_catalogue(root: Path = LANE_CATALOGUE) -> set[str]:
     return {path.stem for path in root.glob("*.yaml")} | {AD_HOC} if root.is_dir() else {AD_HOC}
 
 
+def web_lanes(root: Path = LANE_CATALOGUE) -> set[str]:
+    """Lane types whose catalogue route is ``swarm``: web lanes run only on the
+    opt-in research swarm, whatever route a topic names."""
+    return {path.stem for path in root.glob("*.yaml")
+            if re.search(r"^route:\s*swarm\s*$", path.read_text(encoding="utf-8"), re.MULTILINE)}
+
+
 def _is_cloud(topic: Mapping[str, Any], egress: Iterable[Mapping[str, Any]]) -> bool:
-    if topic.get("route") in CLOUD_ROUTES:
+    if topic.get("route") in CLOUD_ROUTES or topic.get("lane_type") in web_lanes():
         return True
     return any(e.get("destination") in CLOUD_DESTINATIONS for e in egress)
 

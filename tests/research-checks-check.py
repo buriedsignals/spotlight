@@ -77,6 +77,13 @@ class D1LanePlan(unittest.TestCase):
         def unknown_destination(p): p["egress"][0]["destination"] = "openrouter_swarm"
         def consent_without_swarm(p): p["consent"].pop("swarm")
         def extra_topic_field(p): p["topics"][0]["direction_ids"] = ["ownership"]
+        # A web lane with no route named still runs on the swarm, so it needs the opt-in.
+        def web_lane_without_opt_in(p):
+            brief = topic("ownership-web", "ownership", "web")
+            brief.pop("route")
+            p["topics"] = [brief]
+            p["egress"] = [{"topic_id": "ownership-web", "destination": "public_web"}]
+            p["consent"]["swarm"] = False
 
         cases = {
             "round_budget_usd must be set": no_budget,
@@ -98,6 +105,7 @@ class D1LanePlan(unittest.TestCase):
             "research_plan.egress[0].destination: must be one of": unknown_destination,
             "research_plan.consent: missing swarm": consent_without_swarm,
             "research_plan.topics[0]: unknown field direction_ids": extra_topic_field,
+            "(ownership-web): a swarm topic needs the member's swarm opt-in": web_lane_without_opt_in,
         }
         for expected, breaker in cases.items():
             with self.subTest(expected):
