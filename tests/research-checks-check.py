@@ -64,6 +64,8 @@ class D1LanePlan(unittest.TestCase):
         def unknown_lane(p): p["topics"][0].update(lane_type="darkweb", topic_id="ownership-darkweb"); p["egress"][0]["topic_id"] = "ownership-darkweb"
         def unknown_direction(p): p["topics"][0].update(direction_id="family", topic_id="family-registries"); p["egress"][0]["topic_id"] = "family-registries"
         def no_token_budget(p): p["topics"][0].pop("token_budget")
+        # gold-mozilla s0: 5,000 tokens let neither lane make a call.
+        def token_budget_below_one_call(p): p["topics"][0]["token_budget"] = 5000
         def no_egress(p): p["egress"] = p["egress"][1:]
         def no_opt_in(p): p["consent"]["swarm"] = False
         def local_only_cloud(p): p["mode"] = "local_only"
@@ -98,6 +100,7 @@ class D1LanePlan(unittest.TestCase):
             "is not in the lane catalogue": unknown_lane,
             "is not a direction_id of investigation_plan": unknown_direction,
             "needs a token budget": no_token_budget,
+            "token_budget 5000 is below one lane call; set at least 20000": token_budget_below_one_call,
             'add a research_plan.egress entry {"topic_id": "ownership-registries"': no_egress,
             "needs the member's swarm opt-in": no_opt_in,
             "local_only mode runs no cloud topic": local_only_cloud,
