@@ -121,6 +121,12 @@ def main() -> int:
         refused = run_writer(case, no_language)
         require(refused.returncode == 2 and "language is required" in refused.stderr and target.read_bytes() == before,
                 "a passage without a language was written")
+        # Gold run: a 12B teacher sent anchor_ref as "path:81-81" and the refusal never named the shape.
+        string_anchor = proposal(1)
+        string_anchor["expressions"][0]["anchor_ref"] = "research/passages.txt:2-2"
+        refused = run_writer(case, string_anchor)
+        require(refused.returncode == 2 and "must be an object" in refused.stderr and target.read_bytes() == before,
+                "a string anchor_ref was not refused with its expected shape")
         wrong_text = proposal(1)
         wrong_text["expressions"][0]["text"] = "Not what line 2 says."
         require(run_writer(case, wrong_text).returncode == 2 and target.read_bytes() == before,

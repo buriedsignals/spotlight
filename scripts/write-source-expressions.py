@@ -126,7 +126,11 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
         raise WriteError(f"expression {proposal.get('id')!r}: unknown or computed fields {sorted(unknown)}; the writer computes hashes and fingerprints")
     anchor = proposal.get("anchor_ref")
     if not isinstance(anchor, dict) or not isinstance(anchor.get("path"), str):
-        raise WriteError(f"expression {proposal.get('id')!r}: anchor_ref with a case-local path is required")
+        raise WriteError(
+            f"expression {proposal.get('id')!r}: anchor_ref must be an object with a case-local path, "
+            'for example {"path": "research/page.md.raw", "line_start": 81, "line_end": 81}, '
+            f"not {json.dumps(anchor)}"
+        )
     # Ingest builds claims only from passages with a language, so it is asked for here.
     if not isinstance(proposal.get("language"), str) or not LANGUAGE.match(proposal["language"]):
         raise WriteError(f"expression {proposal.get('id')!r}: language is required, a BCP 47 tag of the passage's original language (for example \"en\" or \"fr-CH\")")
