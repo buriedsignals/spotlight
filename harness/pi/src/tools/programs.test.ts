@@ -198,12 +198,38 @@ test('each tool rejects arguments outside its schema without starting anything',
 		hash_files: { paths: [] },
 		build_review_html: { case: 'other' },
 		wiki_destination: { case: 'other' },
+		source_expressions: { action: 'delete' },
 	};
 	assert.deepEqual([...tools.keys()].sort(), Object.keys(wrongType).sort());
 	for (const [name, params] of Object.entries(wrongType)) {
 		await assert.rejects(call(name, params), /outside the schema/, `${name} wrong type`);
 		await assert.rejects(call(name, { ...params, unexpected: true }), /outside the schema/, `${name} extra key`);
 	}
+	assert.deepEqual(await recorded(), []);
+});
+
+// A legacy case (no contract) keeps contract 1.0 and gets no passage files.
+test('source_expressions refuses a case that is not activated and runs the writer once it is', async (t) => {
+	const { call, recorded, caseDir } = await fixture(t, { SPOTLIGHT_ROLE: 'investigator' });
+
+	await assert.rejects(call('source_expressions', { action: 'fingerprint_findings' }), /not activated/);
+	assert.deepEqual(await recorded(), []);
+	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
+	await call('source_expressions', { action: 'fingerprint_findings' });
+	assert.ok((await recorded()).some((run) => run.args.includes('--fingerprint-findings')));
+});
+
+// The fact-checker is kept from the research swarm's files; the writer reads an
+// anchor's file for it, so a passage anchored there is refused before it runs.
+test('source_expressions refuses an anchor in a file the role may not read', async (t) => {
+	const { call, recorded, caseDir, context } = await fixture(t, { SPOTLIGHT_ROLE: 'fact-checker' });
+	context.scope = { denyReads: ['research/swarm/'] };
+	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
+	await mkdir(join(caseDir, 'research', 'swarm', 'web'), { recursive: true });
+	await writeFile(join(caseDir, 'research', 'swarm', 'web', 'page.md'), 'swarm text');
+
+	const proposal = { expressions: [{ id: 'p1', text: 'swarm text', anchor_ref: { path: 'research/swarm/web/page.md', line_start: 1, line_end: 1 } }] };
+	await assert.rejects(call('source_expressions', { action: 'write', cycle: 1, proposal }), /outside the case files/);
 	assert.deepEqual(await recorded(), []);
 });
 

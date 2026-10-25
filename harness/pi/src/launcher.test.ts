@@ -478,8 +478,86 @@ test('the orchestrator cannot write the files the workers write, and writes its 
 	assert.equal(results.match(/another role writes/g)?.length, 2);
 });
 
+// D13: in an activated case the producers record passages only through
+// scripts/write-source-expressions.py, which computes every hash and
+// fingerprint. The investigator reaches it through source_expressions; a
+// hand-written passages file is refused.
+test('a worker records a passage through the writer script, and a hand write of the passages file is refused', async (t) => {
+	const source = 'SearXNG is released under the AGPL-3.0 licence.\n';
+	const claim = 'SearXNG is released under the AGPL-3.0 licence.';
+	const finding = { project: 'case-a', schema_version: '1.1', findings: [{ id: 'F1', claim }] };
+	const passage = {
+		id: 'SX1',
+		text: claim,
+		anchor_ref: { path: 'research/licence.txt', line_start: 1, line_end: 1 },
+		original_evidence_bundle_id: 'E1',
+		finding_links: [{ finding_id: 'F1', relation: 'supports' }],
+	};
+	const steps = [
+		{ name: 'write_file', arguments: { path: 'data/findings.json', content: JSON.stringify(finding) } },
+		{ name: 'source_expressions', arguments: { action: 'fingerprint_findings' } },
+		{ name: 'source_expressions', arguments: { action: 'write', cycle: 1, proposal: { expressions: [passage] } } },
+		{ name: 'write_file', arguments: { path: 'data/source-expressions.json', content: '{"schema_version": "1.0", "expressions": []}' } },
+		{ name: 'write_file', arguments: { path: 'data/source-positions.json', content: '{"positions": []}' } },
+	];
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			const step = steps[toolResults(request).length];
+			return step ? { toolCalls: [step] } : { text: 'Investigator finished.' };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	await mkdir(join(caseDir, 'research'));
+	await writeFile(join(caseDir, 'research', 'licence.txt'), source);
+	const sha256 = createHash('sha256').update(source).digest('hex');
+	await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), JSON.stringify({ items: [{ id: 'E1', raw_path: 'research/licence.txt', sha256 }] }));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	const results = toolResults(worker[worker.length - 1]);
+	assert.equal(results.length, steps.length, results.join('\n'));
+	assert.match(results[3], /written only through the source_expressions tool/);
+	assert.match(results[4], /written only through the source_expressions tool/);
+	const expressions = JSON.parse(await readFile(join(caseDir, 'data', 'source-expressions.json'), 'utf8')) as {
+		expressions: Array<{ id: string; created_by: string; expression_fingerprint: string; finding_links: Array<Record<string, string>> }>;
+	};
+	const [recorded] = expressions.expressions;
+	assert.equal(recorded.id, 'SX1');
+	assert.equal(recorded.created_by, 'investigator');
+	assert.equal(existsSync(join(caseDir, 'data', 'source-positions.json')), false);
+	// The case validator's own check: a verified verdict citing the passage
+	// has its active supporting source expression, and every fingerprint holds.
+	const link = recorded.finding_links[0];
+	const factCheck = {
+		schema_version: '1.1',
+		claims: [{ finding_id: 'F1', claim_text: claim, verdict: 'verified', evidence_for: [{ source_expression_refs: [{ expression_id: 'SX1', expression_fingerprint: recorded.expression_fingerprint, finding_fingerprint: link.finding_fingerprint, link_fingerprint: link.link_fingerprint }] }] }],
+	};
+	const check = `
+import importlib.util, json, sys
+from pathlib import Path
+spec = importlib.util.spec_from_file_location("validate_case", sys.argv[1])
+module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+case = Path(sys.argv[2])
+load = lambda name: json.loads((case / "data" / name).read_text(encoding="utf-8"))
+print(json.dumps(module.validate_source_expressions(case, load("source-expressions.json"), load("findings.json"), json.loads(sys.argv[3]), load("evidence-bundle.json"))))
+`;
+	const errors = await new Promise<string>((done, fail) =>
+		execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', ['-c', check, join(CHECKOUT_ROOT, 'scripts', 'validate-case.py'), caseDir, JSON.stringify(factCheck)], (error, stdout) =>
+			error ? fail(error) : done(stdout),
+		),
+	);
+	assert.deepEqual(JSON.parse(errors), []);
+});
+
 // Tools whose effects stay on this machine (case files, the local vault, its
-// wiki write and the tool index, the Anomaly catalogue, the resolver, the loopback review page), plus the two checks
+// wiki write and the tool index, the Anomaly catalogue, the passage writer, the resolver, the loopback review page), plus the two checks
 // that refuse their remote step themselves when SPOTLIGHT_SENSITIVE is set.
 // Any other tool a sensitive process declares is a possible way out.
 const LOCAL_TOOLS = new Set([
@@ -502,6 +580,7 @@ const LOCAL_TOOLS = new Set([
 	'provenance_manifest',
 	'anomaly_methods',
 	'wiki_destination',
+	'source_expressions',
 ]);
 
 test('sensitive mode leaves every process only local tools, and a tool that can send case text out does not run', async (t) => {

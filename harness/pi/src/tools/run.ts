@@ -129,13 +129,14 @@ export function programOutput(name: string, result: RunResult): string {
 export function runPython(
 	context: ToolContext,
 	args: readonly string[],
-	options: { keys?: string[]; extra?: Record<string, string>; signal?: AbortSignal; timeoutMs?: number } = {},
+	options: { keys?: string[]; extra?: Record<string, string>; signal?: AbortSignal; timeoutMs?: number; input?: string } = {},
 ): Promise<RunResult> {
 	return runFixed(context.python, args, {
 		env: programEnv(context.env, options.keys, options.extra),
 		cwd: CHECKOUT_ROOT,
 		signal: options.signal,
 		timeoutMs: options.timeoutMs,
+		input: options.input,
 	});
 }
 

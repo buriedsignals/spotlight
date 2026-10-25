@@ -36,6 +36,10 @@ const PROTECTED = [
 	/^data\/case-contract\.json$/, // activation receipt (the launcher runs case-contract.py activate-new; the gate approval binds it)
 ];
 
+// Written only by scripts/write-source-expressions.py, which computes every
+// hash and fingerprint; the producers reach it through the source_expressions tool.
+const SCRIPT_WRITTEN = [/^data\/source-expressions\.json$/, /^data\/source-positions\.json$/];
+
 function inside(root: string, path: string): boolean {
 	const child = relative(root, path);
 	return child === '' || (child !== '..' && !child.startsWith(`..${sep}`) && !isAbsolute(child));
@@ -130,6 +134,9 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 	const name = caseRelative(caseDir, target).toLowerCase();
 	if (PROTECTED.some((pattern) => pattern.test(name))) {
 		throw new FileRefused(`refused: ${name} is protected; only the resolver or the review page writes it`);
+	}
+	if (SCRIPT_WRITTEN.some((pattern) => pattern.test(name))) {
+		throw new FileRefused(`refused: ${name} is written only through the source_expressions tool, which computes its hashes and fingerprints`);
 	}
 	return target;
 }
