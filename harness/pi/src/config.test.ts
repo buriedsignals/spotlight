@@ -148,7 +148,7 @@ test('model tier: an unknown tier or a fold point the window cannot reach stops 
 	});
 	assert.throws(() => readConfig(env({ SPOTLIGHT_MODEL_TIER: '70b' })), /SPOTLIGHT_MODEL_TIER must be/);
 	assert.throws(() => readConfig(env({ SPOTLIGHT_MODEL_TIER: '31b', SPOTLIGHT_MODEL_CONTEXT_WINDOW: '16384' })), /fold point/);
-	assert.throws(() => readConfig(env({ SPOTLIGHT_COMPACT_KEEP: '20000' })), /SPOTLIGHT_COMPACT_KEEP/);
+	assert.throws(() => readConfig(env({ SPOTLIGHT_COMPACT_KEEP: '30000' })), /SPOTLIGHT_COMPACT_KEEP/);
 	assert.doesNotThrow(() => readConfig(env({ SPOTLIGHT_MODEL_TIER: 'frontier', SPOTLIGHT_MODEL_CONTEXT_WINDOW: '16384' })));
 });
 

@@ -160,6 +160,17 @@ test('the url and save_as patterns still admit a real URL and file when applied 
 	assert.equal(fullMatch('url', 'https://'), false);
 	assert.equal(fullMatch('save_as', 'research/company-42.md'), true);
 	assert.equal(fullMatch('save_as', 'research/'), false);
+	assert.equal(fullMatch('save_as', 'company-42.md'), true);
+});
+
+// Gold run 1: the teacher sent save_as "executive-team.md" and was refused 14 times.
+test('fetch saves a bare save_as file name under research/', async (t) => {
+	const { caseDir, call } = await fixture(t, {});
+
+	const result = await call({ url: PAGE_URL, save_as: 'company-42.md' });
+
+	assert.equal(result.saved_to, 'research/company-42.md');
+	assert.equal(await readFile(join(caseDir, 'research/company-42.md'), 'utf8'), RAW_PAGE);
 });
 
 // E2E D12: save_as *.json held fenced Markdown, so JSON-pointer anchors failed.

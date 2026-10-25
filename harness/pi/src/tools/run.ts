@@ -2,6 +2,7 @@
 // tool starts a backing program (an argv array, never a shell), and the small
 // environment each backing program receives.
 import { execFile } from 'node:child_process';
+import { relative, sep } from 'node:path';
 import { Type } from 'typebox';
 import type { TSchema } from 'typebox';
 import Value from 'typebox/value';
@@ -141,6 +142,15 @@ export function runPython(
 }
 
 // Case-relative save paths for tools that store what they fetched: a file
-// under research/ or evidence/, never the folder itself (no trailing slash).
-// Written to hold as a full match too (see webURL in fetch.ts).
-export const savePath = Type.String({ minLength: 1, maxLength: 512, pattern: '^(research|evidence)/.*[^/\\\\]$' });
+// under research/ or evidence/, never the folder itself (no trailing slash),
+// or a bare file name (see saveTarget). Written to hold as a full match too
+// (see webURL in fetch.ts).
+export const savePath = Type.String({ minLength: 1, maxLength: 512, pattern: '^(?:(?:research|evidence)/.*[^/\\\\]|[^/\\\\]+)$' });
+
+// A bare save_as file name goes to the agent's own folder: research/ for a
+// case role, the lane folder for a research lane.
+export function saveTarget(context: Pick<ToolContext, 'caseDir' | 'writeRoot'>, path: string): string {
+	if (/[\\/]/.test(path)) return path;
+	const folder = relative(context.caseDir, context.writeRoot).split(sep).join('/');
+	return `${folder || 'research'}/${path}`;
+}

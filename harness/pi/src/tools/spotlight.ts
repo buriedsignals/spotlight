@@ -183,7 +183,7 @@ export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, ro
 		name: 'spotlight_transition',
 		label: 'Spotlight transition',
 		description:
-			'Apply one validated transition to the harness-bound active Spotlight case, then return its newly resolved state. Allowed: recordAttempt {kind, gap}, requestFollowUp {instructions}, sealInvestigationGate {}, decideIngest {decision: "completed"}, startResearchRound {} (after writing data/research-round.json), recordAmendment {} (after writing data/methodology-amendment.json), continueWithoutResearch {} (only when the member asks, while Research is off).',
+			'Apply one validated transition to the harness-bound active Spotlight case, then return its newly resolved state. Allowed: recordAttempt {kind, gap}, requestFollowUp {instructions}, sealInvestigationGate {}, decideIngest {decision: "completed"}, startResearchRound {} (after writing data/research-round.json), recordAmendment {} (after writing data/methodology-amendment.json), continueWithoutResearch {} (only when the member asks, while Research is off). Gate approvals and the report decision are recorded by the review page, never through this tool.',
 		parameters: Type.Object({
 			operation: Type.Union(MODEL_OPERATIONS.map((name) => Type.Literal(name))),
 			payload: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
