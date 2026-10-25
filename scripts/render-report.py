@@ -30,6 +30,7 @@ import decision_signals_lib as decision_signals
 from source_expression_contract import lifecycle_state
 from spotlight_orchestration.case_writer import atomic_write_files
 from spotlight_orchestration.contract import OrchestrationError
+from spotlight_orchestration.review import review_file, set_aside_findings
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -1361,9 +1362,19 @@ def render(case: Path) -> dict[str, Any]:
         if fid in seen_ids:
             raise RenderError(f"duplicate finding id: {fid}")
         seen_ids.add(fid)
+    # Findings left out at the Investigation gate stay in the case and never
+    # reach the report, its charts or its evidence map.
+    set_aside = set_aside_findings(case) & seen_ids
+    if set_aside:
+        findings = [finding for finding in findings if text(finding.get("id")) not in set_aside]
+        findings_doc = {**findings_doc, "findings": findings}
+        seen_ids -= set_aside
+    gate_review_path = case / "data" / review_file("investigation_gate")
 
     checks = canonical_checks(fact_check)
     inputs = [findings_path, fact_check_path, draft_path] + ([methodology_path] if methodology_path.is_file() else [])
+    if gate_review_path.is_file():
+        inputs.append(gate_review_path)
     if activated:
         inputs.append(expressions_path)
     signals_path = case / decision_signals.SIGNALS_PATH

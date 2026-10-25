@@ -318,6 +318,53 @@ def check_public_sources(root: Path) -> None:
     assert "`research/official-record.md`" in (case / "findings-report.md").read_text()
 
 
+def gate_review(case: Path, finals: dict[str, object]) -> None:
+    """The Investigation gate's saved page record, as the review page writes it."""
+    items = {}
+    for key, final in finals.items():
+        kind, finding_id = key.split(":", 1)
+        items[key] = {"kind": kind, "target": f"finding:{finding_id}", "suggested": kind == "selection" or None,
+                      "suggestion_source": "fact-check verdict", "suggestion_reason": "", "final": final, "note": ""}
+    write_json(case / "data" / "investigation-gate-review.json",
+               {"schema_version": "spotlight-review/v1", "gate": "investigation_gate", "reviewer": "M", "items": items})
+
+
+def only_finding(case: Path, finding_id: str) -> None:
+    draft_path = case / "data" / "report-draft.json"
+    draft = json.loads(draft_path.read_text())
+    draft["deck"] = "One finding of this case is presented."
+    draft["framing_finding_ids"] = draft["finding_order"] = [finding_id]
+    draft["finding_treatments"] = [t for t in draft["finding_treatments"] if t["finding_id"] == finding_id]
+    for field in ("caveats", "next_steps"):
+        draft[field] = [{"text": "Keep checking the record.", "finding_ids": [finding_id]}]
+    write_json(draft_path, draft)
+
+
+def check_set_aside_findings(root: Path) -> None:
+    """A finding the member left out at the Investigation gate (an unverified
+    one set aside, or a verified one unselected) never reaches the report: a
+    draft naming it is refused, and the report renders without it."""
+    case = build_case(root / "set-aside")
+    gate_review(case, {"selection:F1": True, "disposition:F2": "set_aside"})
+    named = subprocess.run([sys.executable, str(FINALIZER), str(case)], capture_output=True, text=True)
+    assert named.returncode != 0, named.stdout
+    assert "set aside at the Investigation gate" in named.stdout + named.stderr, named.stdout + named.stderr
+    only_finding(case, "F1")
+    result = subprocess.run([sys.executable, str(FINALIZER), str(case)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    for name in ("report.html", "findings-report.md"):
+        assert "An unsupported second claim" not in (case / name).read_text(), name
+    ledger = json.loads((case / "evidence-map.json").read_text())
+    assert [claim["id"] for claim in ledger["claims"]] == ["F1"]
+
+    unselected = build_case(root / "unselected")
+    gate_review(unselected, {"selection:F1": False, "disposition:F2": "keep"})
+    only_finding(unselected, "F2")
+    result = subprocess.run([sys.executable, str(FINALIZER), str(unselected)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Ada Lovelace is President" not in (unselected / "report.html").read_text()
+
+
 def main() -> int:
     check_not_checkable_aggregation()
     with tempfile.TemporaryDirectory(prefix="render-report-") as tmp:
@@ -336,6 +383,7 @@ def main() -> int:
         for output in outputs:
             assert "evidence-correction pass" not in output.read_text(), output.name
         check_public_sources(Path(tmp) / "public-sources")
+        check_set_aside_findings(Path(tmp))
         assert "<script>alert('unsafe')</script>" not in html
         assert "&lt;script&gt;alert" in html
         assert "<script>alert('unsafe')</script>" not in markdown

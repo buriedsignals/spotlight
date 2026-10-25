@@ -561,6 +561,33 @@ def _verdict(claim: dict[str, Any]) -> str | None:
     return claim.get("verdict") if isinstance(claim.get("verdict"), str) else None
 
 
+def set_aside_findings(case: Path) -> set[str]:
+    """Finding ids the member left out of the record at the Investigation
+    gate: a verified finding unselected, or an unverified one set aside. They
+    stay in the case but never reach the report. Only the item the gate shows
+    for the finding's current verdict counts (see _investigation_content), so a
+    decision saved under an earlier verdict does not."""
+    case = case.resolve()  # report scripts take the case path as given
+    saved = load_review(case, "investigation_gate")["items"]
+    verdicts = _fact_check_claims(case)
+    findings_doc = _read_case_json(case, "data/findings.json")
+    raw = findings_doc.get("findings") if isinstance(findings_doc, dict) else None
+    left_out: set[str] = set()
+    for finding in raw if isinstance(raw, list) else []:
+        finding_id = finding.get("id") if isinstance(finding, dict) else None
+        if not isinstance(finding_id, str):
+            continue
+        if _verdict(verdicts.get(finding_id, {})) == "verified":
+            item = saved.get(f"selection:{finding_id}")
+            excluded = isinstance(item, dict) and item.get("final") is False
+        else:
+            item = saved.get(f"disposition:{finding_id}")
+            excluded = isinstance(item, dict) and item.get("final") == "set_aside"
+        if excluded:
+            left_out.add(finding_id)
+    return left_out
+
+
 def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[str, Any]]]:
     dependencies = investigation_gate_dependencies(case)
     blocking = [f"missing: {item}" for item in dependencies["investigation_gate_missing"]]
