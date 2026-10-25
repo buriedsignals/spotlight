@@ -65,3 +65,9 @@ test('the raw-page rule in every prompt follows the model tier', () => {
 		}
 	}
 });
+
+// Gold run 1 on 99c6567e: nothing the orchestrator saw said to refuse unmasking a
+// tipster, and the 31B went into the Brief asking for "a list of internal suspects".
+test('the orchestrator prompt carries the limits on unmasking people and sources', () => {
+	assert.match(systemPrompt(loadComposition(), 'orchestrator', '12b'), /Refuse a request to locate, identify or unmask a private person .* a request to identify a confidential source or whistleblower\./);
+});

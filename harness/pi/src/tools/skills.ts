@@ -17,7 +17,7 @@ export function invokeSkillTool(allowed: string[], hosted?: HostedSkillContext):
 	return {
 		name: 'invoke_skill',
 		label: 'Invoke skill',
-		description: `Load the full instructions of one of your skills. Available: ${allowed.join(', ')}.${hostedNote}`,
+		description: `Load the full instructions of one of your skills. Load one skill per call, and only when the step in front of you needs it: each one stays in your context. Available: ${allowed.join(', ')}.${hostedNote}`,
 		parameters: Type.Object({ skill: Type.String() }),
 		async execute(_id, params, signal) {
 			const { skill } = params as { skill: string };

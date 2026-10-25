@@ -99,6 +99,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	// frontier tier keeps Pi's default threshold and summary.
 	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier');
 	registerLoopGuard(pi);
+	registerToolOwners(pi, role);
 	const tools = toolsFor(role);
 	for (const tool of tools) pi.registerTool(tool);
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
@@ -133,5 +134,24 @@ function registerLoopGuard(pi: ExtensionAPI): void {
 		if (key(event.toolName, event.input) !== lastCall || result.includes(REPEAT_REASON)) return;
 		repeats = result === lastResult ? repeats + 1 : 1;
 		lastResult = result;
+	});
+}
+
+// Pi answers a call to a tool the role does not have with "Tool X not found".
+// When another Spotlight role owns X, say which, so the model takes the next
+// step instead of retrying (gold run 1: the orchestrator called
+// source_expressions twice).
+function registerToolOwners(pi: ExtensionAPI, role: string): void {
+	const composition = loadComposition();
+	pi.on('message_end', (event) => {
+		const message = event.message as { role?: string; isError?: boolean; content?: Array<{ type: string; text?: string }> };
+		if (message.role !== 'toolResult' || !message.isError) return undefined;
+		const name = /^Tool (\S+) not found$/.exec(message.content?.[0]?.text ?? '')?.[1];
+		const owners = Object.entries(composition)
+			.filter(([, spec]) => spec.tools.includes(name ?? ''))
+			.map(([owner]) => owner);
+		if (!name || owners.length === 0) return undefined;
+		const next = role === ORCHESTRATOR ? 'Delegate that step with spawn_agent.' : 'Leave that step to them and say so in your answer.';
+		return { message: { ...event.message, content: [{ type: 'text', text: `${name} is not one of your tools; it belongs to the ${owners.join(' and the ')}. ${next}` }] } as typeof event.message };
 	});
 }

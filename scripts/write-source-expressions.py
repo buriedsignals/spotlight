@@ -10,6 +10,7 @@ never supplies them.
 Usage:
   python3 scripts/write-source-expressions.py {CASE_DIR} --actor investigator --cycle 2 < proposal.json
   python3 scripts/write-source-expressions.py {CASE_DIR} --fingerprint-findings
+  python3 scripts/write-source-expressions.py {CASE_DIR} --resolve-fact-check-refs
 
 Proposal (JSON on stdin, or --file):
   {"expressions": [{
@@ -320,13 +321,51 @@ def proposal_refs(doc: dict[str, Any], proposal: dict[str, Any]) -> dict[str, di
         if expression.get("id") not in proposed:
             continue
         for link in expression.get("finding_links", []):
-            refs.setdefault(link["finding_id"], {}).setdefault(link["relation"], []).append({
-                "expression_id": expression["id"],
-                "expression_fingerprint": expression["expression_fingerprint"],
-                "finding_fingerprint": link["finding_fingerprint"],
-                "link_fingerprint": link["link_fingerprint"],
-            })
+            refs.setdefault(link["finding_id"], {}).setdefault(link["relation"], []).append(_ref(expression, link))
     return refs
+
+
+def _ref(expression: dict[str, Any], link: dict[str, Any]) -> dict[str, str]:
+    return {
+        "expression_id": expression["id"],
+        "expression_fingerprint": expression["expression_fingerprint"],
+        "finding_fingerprint": link["finding_fingerprint"],
+        "link_fingerprint": link["link_fingerprint"],
+    }
+
+
+def resolve_fact_check_refs(case: Path) -> int:
+    """Replace each bare expression id in data/fact-check.json's
+    source_expression_refs with the full ref for that claim's finding, exactly
+    what a write returns, in one locked write. The stored refs still pin the
+    fingerprints of that moment; an id with no link to the finding is left for
+    validate-case to report."""
+    with transaction(case) as descriptor:
+        fact_check = _load(case / "data" / "fact-check.json")
+        expressions = _load(case / TARGET)
+        if not isinstance(fact_check, dict) or not isinstance(expressions, dict):
+            return 0
+        by_id = {item.get("id"): item for item in expressions.get("expressions", []) if isinstance(item, dict)}
+        resolved = 0
+        claims = fact_check.get("claims")
+        for claim in claims if isinstance(claims, list) else []:
+            if not isinstance(claim, dict):
+                continue
+            for field in ("evidence_for", "evidence_against"):
+                items = claim.get(field)
+                for item in items if isinstance(items, list) else []:
+                    refs = item.get("source_expression_refs") if isinstance(item, dict) else None
+                    for index, ref in enumerate(refs if isinstance(refs, list) else []):
+                        expression = by_id.get(ref) if isinstance(ref, str) else None
+                        link = next((l for l in (expression or {}).get("finding_links", [])
+                                     if isinstance(l, dict) and l.get("finding_id") == claim.get("finding_id")), None)
+                        if link is not None:
+                            refs[index] = _ref(expression, link)
+                            resolved += 1
+        if resolved:
+            atomic_write_files(case, {"data/fact-check.json": (json.dumps(fact_check, indent=2, ensure_ascii=False) + "\n").encode("utf-8")},
+                               data_descriptor=descriptor)
+    return resolved
 
 
 def fingerprint_findings(case: Path) -> int:
@@ -378,7 +417,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--file", help="proposal JSON; default stdin")
     parser.add_argument("--fingerprint-findings", action="store_true",
                         help="set finding_fingerprint on every finding (run after writing findings.json)")
+    parser.add_argument("--resolve-fact-check-refs", action="store_true",
+                        help="replace bare expression ids in fact-check.json refs with full refs (the harness runs it after the fact-checker)")
     args = parser.parse_args(argv)
+    if args.resolve_fact_check_refs:
+        try:
+            count = resolve_fact_check_refs(Path(args.case_dir))
+        except (WriteError, OrchestrationError, OSError) as exc:
+            print(f"source-expressions: refused: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps({"ok": True, "refs_resolved": count}))
+        return 0
     if args.fingerprint_findings:
         try:
             count = fingerprint_findings(Path(args.case_dir))
