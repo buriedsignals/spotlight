@@ -102,6 +102,13 @@ def main() -> int:
         added = next(e for e in expressions(case)["expressions"] if e["id"] == "SXW0")
         require(len(added["expression_fingerprint"]) == 64 and added["created_by"] == "investigator", "writer did not build the record")
         require(added["anchor_sha256"] == hashlib.sha256((case / "research/passages.txt").read_bytes()).hexdigest(), "anchor hash not computed")
+        # Shakedown on 26683b3c: the fact-checker could not cite passages it had written,
+        # because the result carried no ref objects; it now returns the stored fingerprints.
+        link = added["finding_links"][0]
+        expected = {"expression_id": "SXW0", "expression_fingerprint": added["expression_fingerprint"],
+                    "finding_fingerprint": link["finding_fingerprint"], "link_fingerprint": link["link_fingerprint"]}
+        require(json.loads(result.stdout)["source_expression_refs"] == {link["finding_id"]: {link["relation"]: [expected]}},
+                "the writer did not return the fact-check refs for its passages")
         again = run_writer(case, proposal(0, relation="context"), actor="fact-checker")
         require(again.returncode == 0 and next(e for e in expressions(case)["expressions"] if e["id"] == "SXW0")["created_by"] == "investigator",
                 "re-proposing an expression changed its author")

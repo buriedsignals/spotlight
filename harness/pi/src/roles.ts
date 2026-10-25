@@ -221,8 +221,16 @@ This case belongs to a newsroom. Prior reporting comes from the newsroom's knowl
 - Orchestrator only, Ingest: there is no analyst and no local batch. Once the member has requested ingestion on the page (\`resume_at\` \`ingest\`), call \`newsroom_submit\`. If it reports failed integrity checks, tell the member the reasons and stop; the case stays at Ingest. If it reports the submission, resolve again and seal the ingest as the skill says.
 - Journalist input never goes to a third-party model; the harness enforces this.`;
 
-export function systemPrompt(composition: Composition, role: string, tier: ModelTier, edition: Edition = 'solo'): string {
-	const prompt = basePrompt(composition, role, tier);
+// The Research switch (HarnessConfig.research). Preflight, where the skills
+// read it from the install config, does not run in the harness, so the
+// prompt says it.
+const RESEARCH_LINE = {
+	on: '## Research switch\nResearch is on for this case: the methodology proposes a `research_plan` as phase-methodology describes.',
+	off: '## Research switch\nResearch is off for this case: write no `research_plan` and say nothing about research.',
+};
+
+export function systemPrompt(composition: Composition, role: string, tier: ModelTier, edition: Edition = 'solo', research = false): string {
+	const prompt = `${basePrompt(composition, role, tier)}\n\n${RESEARCH_LINE[research ? 'on' : 'off']}`;
 	return edition === 'newsroom' ? `${prompt}\n${NEWSROOM_ADAPTER}` : prompt;
 }
 
