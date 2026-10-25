@@ -352,6 +352,34 @@ test('a new case at Investigation is activated before the investigator starts, a
 	assert.match(toolResults(worker[worker.length - 1]).join('\n'), /protected/);
 });
 
+// A failed activation stops the spawn: the investigator never runs on a new
+// case without its contract.
+test('when a new case cannot be activated, the investigator does not start', async (t) => {
+	let investigatorRan = false;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			investigatorRan = true;
+			return { text: 'Investigator finished.' };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	// Passages without a contract: activate-new refuses this case.
+	await writeFile(join(caseDir, 'data', 'source-expressions.json'), '{"schema_version": "1.0", "project": "case-a", "expressions": []}');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(investigatorRan, false);
+	assert.equal(existsSync(join(caseDir, 'data', 'case-contract.json')), false);
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /could not be activated/);
+});
+
 // D6: the orchestrator cannot rewrite the files a worker owns around the
 // checks the harness runs after that worker; its own files stay writable.
 test('the orchestrator cannot write the files the workers write, and writes its own', async (t) => {

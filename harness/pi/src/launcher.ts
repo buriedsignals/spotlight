@@ -387,7 +387,9 @@ async function activateNewCase(harness: Harness, role: string, signal: AbortSign
 		[resolve(CHECKOUT_ROOT, 'scripts/case-contract.py'), 'activate-new', active.caseDir],
 		{ signal, timeoutMs: 60_000 },
 	);
-	if (result.code !== 0) harness.log(`case not activated: ${harness.redact(`${result.stderr}${result.stdout}`.trim())}`);
+	// A new case never runs unactivated: the investigator would write contract
+	// 1.1 artifacts that no validator accepts without the contract.
+	if (result.code !== 0) throw new Error(`the case could not be activated, so the investigator did not start: ${`${result.stderr}${result.stdout}`.trim()}`);
 }
 
 // A worker with spawn conditions in harness/composition.json (the analyst:
