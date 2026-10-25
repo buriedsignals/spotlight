@@ -2,7 +2,8 @@
 """Validate the language-neutral model-authored editorial plan.
 
 This gate proves structural claims only: every prose block is attached to known,
-fact-checked finding IDs; every finding is covered exactly once; and generated-file
+fact-checked finding IDs; every finding is covered exactly once, except the ones
+the member left out at the Investigation gate, which never appear; and generated-file
 fields stay bounded. Semantic support remains an independent editorial/fact-check
 judgment. The renderer always places canonical verdicts beside model prose.
 """
@@ -16,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 from source_expression_contract import lifecycle_state
+from spotlight_orchestration.contract import OrchestrationError
+from spotlight_orchestration.review import set_aside_findings
 
 
 MAX_TEXT = {
@@ -474,6 +477,48 @@ def check(case: Path) -> list[str]:
     known_ids = {clean(row.get("id")) for row in findings if clean(row.get("id"))}
     if not known_ids:
         return ["STRUCTURE: findings.json has no findings to present"]
+    # Findings left out at the Investigation gate stay in the case, never in
+    # the report: the draft covers the others and references none of these.
+    try:
+        set_aside = set_aside_findings(case) & known_ids
+    except OrchestrationError as exc:
+        return [f"STRUCTURE: {exc}"]
+    known_ids -= set_aside
+    if not known_ids:
+        return [
+            "NO_REPORTABLE_FINDINGS: every finding was set aside at the Investigation gate, so there is "
+            "nothing to report; decline the report (decision \"declined\") and continue to Ingest"
+        ]
+    referenced = {
+        clean(ref)
+        for field in ("framing_finding_ids", "finding_order")
+        for ref in (draft.get(field) if isinstance(draft.get(field), list) else [])
+    } | {
+        clean(item.get("finding_id"))
+        for item in (draft.get("finding_treatments") if isinstance(draft.get("finding_treatments"), list) else [])
+        if isinstance(item, dict)
+    }
+    if referenced & set_aside:
+        failures.append(
+            "STRUCTURE: findings set aside at the Investigation gate must not appear in the report: "
+            f"{sorted(referenced & set_aside)}"
+        )
+    aside_indicators = {
+        clean(item.get("id"))
+        for item in (findings_doc.get("technical_indicators") or [])
+        if isinstance(item, dict) and clean(item.get("finding_id")) in set_aside
+    }
+    selected_indicators = {
+        clean(ref)
+        for diagram in (draft.get("diagrams") if isinstance(draft.get("diagrams"), list) else [])
+        if isinstance(diagram, dict) and isinstance(diagram.get("indicator_ids"), list)
+        for ref in diagram["indicator_ids"]
+    }
+    if selected_indicators & aside_indicators:
+        failures.append(
+            "STRUCTURE: timeline indicators of findings set aside at the Investigation gate must not "
+            f"appear in the report: {sorted(selected_indicators & aside_indicators)}"
+        )
     activated = findings_doc.get("schema_version") == "1.1" and (
         case / "data" / "case-contract.json"
     ).is_file()

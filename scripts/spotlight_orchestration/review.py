@@ -24,7 +24,7 @@ from .case_writer import atomic_write_files
 from .contract import METHODOLOGY_INPUTS, RESEARCH_OUTPUTS, OrchestrationError, SCRIPT_DIR
 from .dependencies import _optional_hash, current_hashes, investigation_gate_dependencies
 from . import research_view
-from .storage import LEGACY_CHANNEL, LEGACY_LEDGER_KEY, case_path, read_data_bytes
+from .storage import LEGACY_CHANNEL, LEGACY_LEDGER_KEY, case_path, load_state, read_data_bytes
 
 if str(SCRIPT_DIR.parent) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR.parent))
@@ -559,6 +559,47 @@ def _fact_check_claims(case: Path) -> dict[str, dict[str, Any]]:
 
 def _verdict(claim: dict[str, Any]) -> str | None:
     return claim.get("verdict") if isinstance(claim.get("verdict"), str) else None
+
+
+def set_aside_findings(case: Path) -> set[str]:
+    """Finding ids the member left out of the record at the Investigation
+    gate: a verified finding unselected, or an unverified one set aside. They
+    stay in the case but never reach the report. Only the item the gate shows
+    for the finding's current verdict counts (see _investigation_content), so a
+    decision saved under an earlier verdict does not.
+
+    The marks count only from the review file the gate approval binds by
+    hash. A review the approval does not bind (changed after approval, an
+    approval from before the review page, or no approval) is refused rather
+    than read or ignored: the gate must be approved again."""
+    case = case.resolve()  # report scripts take the case path as given
+    current = review_sha256(case, "investigation_gate")
+    approval = load_state(case)["approvals"].get("investigation_gate")
+    binding = approval.get("review") if isinstance(approval, dict) else None
+    bound = binding.get("review_sha256") if isinstance(binding, dict) and binding.get("channel") != LEGACY_CHANNEL else None
+    if bound != current:  # also a bound review since deleted
+        raise OrchestrationError(
+            "data/investigation-gate-review.json is not the review the Investigation gate approval binds; "
+            "approve the Investigation gate again on the review page"
+        )
+    saved = load_review(case, "investigation_gate")["items"]
+    verdicts = _fact_check_claims(case)
+    findings_doc = _read_case_json(case, "data/findings.json")
+    raw = findings_doc.get("findings") if isinstance(findings_doc, dict) else None
+    left_out: set[str] = set()
+    for finding in raw if isinstance(raw, list) else []:
+        finding_id = finding.get("id") if isinstance(finding, dict) else None
+        if not isinstance(finding_id, str):
+            continue
+        if _verdict(verdicts.get(finding_id, {})) == "verified":
+            item = saved.get(f"selection:{finding_id}")
+            excluded = isinstance(item, dict) and item.get("final") is False
+        else:
+            item = saved.get(f"disposition:{finding_id}")
+            excluded = isinstance(item, dict) and item.get("final") == "set_aside"
+        if excluded:
+            left_out.add(finding_id)
+    return left_out
 
 
 def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[dict[str, Any]]]:
