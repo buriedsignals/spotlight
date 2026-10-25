@@ -27,7 +27,7 @@ def load_script(name: str, path: Path):
 
 merge = load_script("spotlight_research_merge", ROOT / "scripts" / "research-merge.py")
 
-CONSENT = {"swarm": True, "decided_by": "journalist:fixture", "decided_at": "2026-10-23T09:00:00Z"}
+CONSENT = {"swarm": True}
 
 
 def topic(topic_id: str, direction: str, lane_type: str, **extra: Any) -> dict[str, Any]:

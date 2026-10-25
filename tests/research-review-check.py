@@ -34,15 +34,20 @@ class MethodologyPage(unittest.TestCase):
     def test_the_methodology_page_shows_topics_budgets_egress_and_consent(self) -> None:
         method = methodology(topic("ownership-registries", "ownership", "registries", token_budget=150000))
         plan = method["research_plan"]
+        # A stamp the model wrote into the plan is not the member's decision.
+        plan["consent"].update(decided_by="Tom Vaillant", decided_at="2025-01-15T12:00:00Z")
         plan["egress"][0]["hosts"] = ["find-and-update.company-information.service.gov.uk"]
         plan["keys"] = [{"name": "FIRECRAWL_API_KEY", "topics": ["ownership-registries"]}]
         with tempfile.TemporaryDirectory() as tmp:
             case = Case(Path(tmp).resolve() / "case", method)
             (case.root / "brief-directions.txt").write_text("Who owns Northwind Holdings?\n", encoding="utf-8")
-            shown = review.build_view(case.root, "methodology")["content"]["research_plan"]
+            view = review.build_view(case.root, "methodology")
+        shown = view["content"]["research_plan"]
         self.assertEqual((shown["mode"], shown["round_budget_usd"], shown["case_budget_usd"]), ("openrouter_swarm", 1, 5))
-        self.assertEqual(shown["consent"], {"swarm": True, "journalist_input": False,
-                                            "decided_by": "journalist:fixture", "decided_at": "2026-10-23T09:00:00Z"})
+        # Who consented and when is the approval's own stamp, never the plan's.
+        self.assertEqual(shown["consent"], {"swarm": True, "journalist_input": False})
+        self.assertNotIn("Tom Vaillant", json.dumps(view))
+        self.assertNotIn("2025-01-15", json.dumps(view))
         [brief] = shown["topics"]
         self.assertEqual(brief["topic_id"], "ownership-registries")
         self.assertEqual(brief["token_budget"], 150000)

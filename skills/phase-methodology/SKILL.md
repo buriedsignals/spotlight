@@ -215,7 +215,7 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    (`schemas/methodology.schema.json`): the topics, a round budget in USD
    (default 1), the case budget (at most 5), the research mode, the names of
    the keys each topic uses (never their values), where each topic's requests
-   go (egress), and the member's consent record. Without a `research_plan` the
+   go (egress), and what the member consents to. Without a `research_plan` the
    case goes straight to Investigation.
 
    The methodology validator above also checks the research plan (D1,
@@ -225,7 +225,8 @@ Correct only methodology.json as required by the validator evidence. On Navigato
 
    - The plan matches `schemas/methodology.schema.json`: only the listed
      fields, egress destinations from its list, and a consent record with
-     `swarm`, `decided_by` and `decided_at`.
+     `swarm` (and `journalist_input` when granted). Who consented and when is
+     the member's approval on the Methodology page; never write it in the plan.
    - A topic's route matches its lane type: web lanes (catalogue route
      `swarm`) take `swarm`, or `subscription` in `subscription_subagents`
      mode, and need the swarm consent; local lanes take `local`. Leave the

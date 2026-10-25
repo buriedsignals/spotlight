@@ -557,11 +557,12 @@ def _research_plan_content(plan: object) -> tuple[dict[str, Any] | None, list[st
         "mode": _text(plan.get("mode"), 50),
         "round_budget_usd": _number(plan.get("round_budget_usd")),
         "case_budget_usd": _number(plan.get("case_budget_usd")),
+        # The consent the approval records. A decided_by/decided_at in the
+        # plan was written by the model, so the page never shows it as the
+        # member's: the approval itself stamps who and when.
         "consent": {
             "swarm": consent.get("swarm") is True,
             "journalist_input": consent.get("journalist_input") is True,
-            "decided_by": _text(consent.get("decided_by"), 200),
-            "decided_at": _text(consent.get("decided_at"), 100),
         },
         "topics": topics,
     }

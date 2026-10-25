@@ -62,7 +62,6 @@ class D1LanePlan(unittest.TestCase):
         def unknown_direction(p): p["topics"][0].update(direction_id="family", topic_id="family-registries"); p["egress"][0]["topic_id"] = "family-registries"
         def no_token_budget(p): p["topics"][0].pop("token_budget")
         def no_egress(p): p["egress"] = p["egress"][1:]
-        def no_consent(p): p["consent"].pop("decided_by")
         def no_opt_in(p): p["consent"]["swarm"] = False
         def local_only_cloud(p): p["mode"] = "local_only"
         def key_on_ad_hoc(p):
@@ -102,7 +101,6 @@ class D1LanePlan(unittest.TestCase):
             "is not a direction_id of investigation_plan": unknown_direction,
             "needs a token budget": no_token_budget,
             'add a research_plan.egress entry {"topic_id": "ownership-registries"': no_egress,
-            "consent must record who decided": no_consent,
             "needs the member's swarm opt-in": no_opt_in,
             "local_only mode runs no cloud topic": local_only_cloud,
             "an ad-hoc topic gets no keys": key_on_ad_hoc,
@@ -122,6 +120,13 @@ class D1LanePlan(unittest.TestCase):
                 breaker(plan_of(method))
                 problems = d1(method)
                 self.assertTrue(any(expected in p for p in problems), problems)
+
+    def test_consent_is_the_approval_so_a_plan_needs_no_stamp_and_a_model_written_one_is_ignored(self) -> None:
+        method = methodology()
+        self.assertEqual(plan_of(method)["consent"], {"swarm": True})
+        self.assertEqual(d1(method), [])
+        plan_of(method)["consent"].update(decided_by="Tom Vaillant", decided_at="2025-01-15T12:00:00Z")
+        self.assertEqual(d1(method), [], "older plans with a stamp stay valid; the stamp is not read")
 
     def test_sensitive_mode_allows_only_the_local_corpus_lane(self) -> None:
         method = methodology()

@@ -124,10 +124,9 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
     if (isinstance(round_budget, (int, float)) and isinstance(case_budget, (int, float))
             and round_budget > case_budget):
         problems.append(f"{p}.round_budget_usd is above the case budget")
-    consent = plan.get("consent") if isinstance(plan.get("consent"), Mapping) else None
-    if consent is None or not consent.get("decided_by") or not consent.get("decided_at"):
-        problems.append(f"{p}.consent must record who decided and when")
-        consent = consent or {}
+    # Who consented and when is the member's Methodology approval, not the plan:
+    # a decided_by/decided_at the model wrote is never read.
+    consent = plan.get("consent") if isinstance(plan.get("consent"), Mapping) else {}
     mode = plan.get("mode")
     if newsroom and mode == "openrouter_swarm":
         problems.append(f"{p}.mode: newsroom mode allows no OpenRouter swarm")
