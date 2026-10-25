@@ -37,7 +37,7 @@ import { httpGetTool } from './tools/http-get.ts';
 import { EditorialToolError, stopsTheNewsroomCase } from './editorial.ts';
 import { newsroomData } from './tools/editorial.ts';
 import { queryVaultTool } from './tools/query-vault.ts';
-import { capped, programEnv, RETURNED_CHARS, runFixed } from './tools/run.ts';
+import { capped, programEnv, REPEAT_REASON, RETURNED_CHARS, runFixed } from './tools/run.ts';
 import type { Env, ToolContext } from './tools/run.ts';
 import { searchTool } from './tools/search.ts';
 
@@ -837,6 +837,11 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 	const tokenBudget = topic.token_budget ?? DEFAULT_TOKEN_BUDGET;
 	const spend: Spend = { usd: 0, tokens: 0 };
 	let toolCalls = 0;
+	// The extension's loop guard, for calls the lane loop runs itself: a call
+	// that ran twice in a row with the same result is not run a third time.
+	let lastCall = '';
+	let lastResult = '';
+	let repeats = 0;
 	let finalReason: FinalReason | undefined;
 	let finalRan = false;
 	const writeLane = (status: LaneStatus, failure?: Refusal) => {
@@ -950,7 +955,15 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 			for (const call of calls) {
 				// The last turn offers only the lead tools, and its calls always run.
 				let content: string;
-				if (!finalTurn && toolCalls >= MAX_TOOL_CALLS) {
+				const key = `${call.function.name}\n${call.function.arguments}`;
+				if (key !== lastCall) {
+					lastCall = key;
+					lastResult = '';
+					repeats = 0;
+				}
+				if (!finalTurn && repeats >= 2) {
+					content = `not run: ${REPEAT_REASON}`;
+				} else if (!finalTurn && toolCalls >= MAX_TOOL_CALLS) {
 					content = 'not run: the tool-call budget is spent; record your leads';
 					finalReason ??= 'tool_call_limit';
 				} else if (!finalTurn && ![...LEAD_TOOLS, METHOD_TOOL].includes(call.function.name) && spend.tokens + conversation + RESULT_TOKENS + MAX_TOKENS_PER_ANSWER > tokenBudget) {
@@ -960,6 +973,10 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 				} else {
 					toolCalls += 1;
 					content = await runCall(call, offered);
+				}
+				if (!content.startsWith('not run:')) {
+					repeats = content === lastResult ? repeats + 1 : 1;
+					lastResult = content;
 				}
 				tally(call.function.name, content, !content.startsWith('not run:'));
 				append({ role: 'tool', tool_call_id: call.id, content });

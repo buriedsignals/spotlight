@@ -312,6 +312,21 @@ test('a lane that captured no source stops at its budget without the lead-only t
 	assert.deepEqual(lane.final_turn, { ran: false, reason: 'token_budget' });
 });
 
+// 73308129 shakedown: a lane sent fetch {"url": "https://"} 29 times, each refused the same way.
+test('a lane call that failed twice in a row the same way is not run a third time', async (t) => {
+	const space = await setup(t);
+	const fakes = await servers(t, (request) => ({
+		...((request.tools ?? []).some((tool) => tool.function.name === 'fetch') ? call('fetch', { url: 'https://' }) : done),
+		usage: { total_tokens: 1000, cost: 0.001 },
+	}));
+	await round(space, fakes, plan([topic('a-web', 'web', { token_budget: 40_000 })]));
+
+	const results = toolResults(fakes.swarm.requests[fakes.swarm.requests.length - 1]);
+	assert.ok(results.length >= 3);
+	assert.doesNotMatch(results[1], /same call as the last two/);
+	assert.match(results[2], /not run: This is the same call as the last two/);
+});
+
 test('a rejected key stops Research with a fix-the-key message, no local fallback, and a retry runs only the unfinished topics', async (t) => {
 	const space = await setup(t);
 	let rejecting = false;

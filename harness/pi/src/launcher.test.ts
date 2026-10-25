@@ -50,6 +50,43 @@ function lastResolution(chat: Chat): Record<string, unknown> {
 	return JSON.parse(ends[ends.length - 1].result!.content[0].text) as Record<string, unknown>;
 }
 
+// 12B retune: a small model repeated one call (the same list four times, the
+// same read forty). The third identical call in a row is refused, not run.
+test('the third identical tool call in a row is blocked with the loop reason', async (t) => {
+	const fake = await startFakeOpenAI((request) =>
+		toolResults(request).length < 3 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Stopped.' },
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Open the case.');
+
+	const results = toolResults(fake.requests[fake.requests.length - 1]);
+	assert.equal(results.length, 3);
+	assert.doesNotMatch(results[1], /same call as the last two/);
+	assert.match(results[2], /This is the same call as the last two\. Act on what you already have or take the next phase step\./);
+});
+
+// A member's gate decision arrives as a new prompt; the resolve after it must run.
+test('a new prompt resets the loop guard', async (t) => {
+	let limit = 2;
+	const fake = await startFakeOpenAI((request) =>
+		toolResults(request).length < limit ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Waiting.' },
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Open the case.');
+	limit = 3;
+	await settledPrompt(chat, 'Approved.');
+
+	const results = toolResults(fake.requests[fake.requests.length - 1]);
+	assert.equal(results.length, 3);
+	assert.doesNotMatch(results[2], /same call as the last two/);
+});
+
 test('stdout carries only RPC records for a scripted prompt', async (t) => {
 	const fake = await startFakeOpenAI(resolveThenStop);
 	t.after(() => fake.close());
