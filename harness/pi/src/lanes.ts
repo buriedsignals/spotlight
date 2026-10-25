@@ -37,7 +37,7 @@ import { httpGetTool } from './tools/http-get.ts';
 import { EditorialToolError, stopsTheNewsroomCase } from './editorial.ts';
 import { newsroomData } from './tools/editorial.ts';
 import { queryVaultTool } from './tools/query-vault.ts';
-import { capped, programEnv, runFixed } from './tools/run.ts';
+import { capped, programEnv, RETURNED_CHARS, runFixed } from './tools/run.ts';
 import type { Env, ToolContext } from './tools/run.ts';
 import { searchTool } from './tools/search.ts';
 
@@ -49,11 +49,19 @@ const MAX_TURNS = 40;
 const MAX_TOOL_CALLS = 60;
 const MAX_TOKENS_PER_ANSWER = 4096;
 // The lane's last turn offers only the lead tools, so what it found is
-// recorded before the budget stops it. It starts when another full turn
-// would leave no room for it, or this many tool calls before the cap.
+// recorded before the budget stops it. The token budget always keeps room for
+// it: the whole conversation re-sent plus one full answer. It starts when
+// another turn would eat into that room, or this many tool calls before the cap.
 const FINAL_TURN_CALLS = 10;
-// The smallest answer worth a last turn; with less room left the lane stops.
-const MIN_FINAL_ANSWER_TOKENS = 512;
+// The smallest answer worth an ordinary turn; with less room the last turn starts.
+const MIN_ANSWER_TOKENS = 512;
+// Tokens of text the provider has not counted yet (tool results, the last-turn
+// note). Three characters a token overestimates English and JSON, so the lane
+// turns to its last turn early rather than late.
+const CHARS_PER_TOKEN = 3;
+const estimateTokens = (text: string) => Math.ceil(text.length / CHARS_PER_TOKEN);
+// The most one search or fetch result can add: its capped text and header.
+const MAX_RESULT_TOKENS = Math.ceil((RETURNED_CHARS + 500) / CHARS_PER_TOKEN);
 const FINAL_TURN_NOTE = 'Your budget is almost spent and this is your last turn. Record every lead you have now with record_lead or record_absence; search and fetch are no longer available.';
 const RETRIES = 3;
 const REQUEST_TIMEOUT_MS = 180_000;
@@ -144,7 +152,7 @@ export type ResearchPlan = {
 	round_budget_usd: number;
 	case_budget_usd: number;
 	mode: 'local_only' | 'openrouter_swarm' | 'subscription_subagents' | 'newsroom';
-	consent: { swarm: boolean; journalist_input?: boolean; decided_by: string; decided_at: string };
+	consent: { swarm: boolean; journalist_input?: boolean };
 	keys: Array<{ name: string; topics: string[] }>;
 	egress: Array<{ topic_id: string; destination: string; hosts?: string[] }>;
 	topics: TopicBrief[];
@@ -785,6 +793,10 @@ type Spend = { usd: number; tokens: number };
 
 export type LaneOutcome = { status: LaneStatus; failure?: Refusal; usd: number };
 
+// Why the lead-only last turn started; lane.json records it.
+type FinalReason = 'token_budget' | 'turn_limit' | 'tool_call_limit';
+const FINAL_REASON_TEXT: Record<FinalReason, string> = { token_budget: 'token', turn_limit: 'turn', tool_call_limit: 'tool-call' };
+
 type LaneJob = {
 	caseDir: string;
 	topic: TopicBrief;
@@ -829,6 +841,8 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 	const tokenBudget = topic.token_budget ?? DEFAULT_TOKEN_BUDGET;
 	const spend: Spend = { usd: 0, tokens: 0 };
 	let toolCalls = 0;
+	let finalReason: FinalReason | undefined;
+	let finalRan = false;
 	const writeLane = (status: LaneStatus, failure?: Refusal) => {
 		const lane: Record<string, unknown> = {
 			schema_version: '1.0',
@@ -845,6 +859,7 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 			queries_tried: run.queries.filter(Boolean),
 			lead_count: run.leads.length,
 		};
+		if (status !== 'running') lane.final_turn = { ran: finalRan, reason: finalReason ?? null };
 		if (failure) lane.failure = failure;
 		if (status !== 'running') writeConfined(caseDir, laneDir, `${LANES_DIRECTORY}/${topic.topic_id}/leads.jsonl`, run.leads.map((lead) => `${JSON.stringify(lead)}\n`).join(''));
 		if (status !== 'running' && run.methodInputs.length > 0) {
@@ -865,7 +880,7 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 	const produced = new WeakSet<Message>();
 	const messages: Message[] = [{ role: 'system', content: job.system }, { role: 'user', content: brief }];
 	const stopSpent = (): LaneOutcome => {
-		writeLane('partial', { code: 'budget_spent', message: 'the lane reached its token, turn or tool-call budget; what it recorded is kept' });
+		writeLane('partial', { code: 'budget_spent', message: `the lane reached its ${FINAL_REASON_TEXT[finalReason ?? 'token_budget']} budget; what it recorded is kept` });
 		return { status: 'partial', usd: spend.usd };
 	};
 	const runCall = async (call: ToolCall, offered: string[]): Promise<string> => {
@@ -883,33 +898,38 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 				: `error: ${(error as Error).message}`;
 		}
 	};
-	let finalTurn = false;
-	// Each request re-sends the whole conversation, so the next turn costs at
-	// least what the last one did.
-	let lastTurnTokens = 0;
+	// Tokens the next request will carry: exact after each answer (the
+	// provider's count of the conversation so far), estimated for what was
+	// added since.
+	let conversation = estimateTokens(JSON.stringify(messages) + JSON.stringify(tools));
+	const append = (message: Message) => {
+		produced.add(message);
+		messages.push(message);
+		conversation += estimateTokens(message.content ?? '');
+	};
 	try {
 		for (let turn = 0; ; turn += 1) {
-			if (finalTurn || spend.tokens >= tokenBudget || turn >= MAX_TURNS || toolCalls >= MAX_TOOL_CALLS) return stopSpent();
-			finalTurn = spend.tokens + 2 * lastTurnTokens >= tokenBudget || turn + 1 >= MAX_TURNS || toolCalls + FINAL_TURN_CALLS >= MAX_TOOL_CALLS;
-			// The answer may use what the budget has left after re-sending the conversation.
-			const room = tokenBudget - spend.tokens - lastTurnTokens;
-			if (finalTurn && room < MIN_FINAL_ANSWER_TOKENS) return stopSpent();
-			if (finalTurn) {
-				// A fixed harness note, not case data: the swarm guard admits it as the harness's own.
-				const note: Message = { role: 'user', content: FINAL_TURN_NOTE };
-				produced.add(note);
-				messages.push(note);
-			}
+			if (finalRan) return stopSpent();
+			// An ordinary turn may answer only with what leaves the last turn its room afterwards.
+			const answerRoom = Math.floor((tokenBudget - spend.tokens - 2 * conversation - MAX_TOKENS_PER_ANSWER) / 2);
+			finalReason ??= answerRoom < MIN_ANSWER_TOKENS ? 'token_budget' : turn + 1 >= MAX_TURNS ? 'turn_limit' : toolCalls + FINAL_TURN_CALLS >= MAX_TOOL_CALLS ? 'tool_call_limit' : undefined;
+			const finalTurn = finalReason !== undefined;
+			// Nothing captured, nothing to record: the budget is too small for a lane.
+			if (finalTurn && run.sources.size === 0) return stopSpent();
+			// A fixed harness note, not case data: the swarm guard admits it as the harness's own.
+			if (finalTurn) append({ role: 'user', content: FINAL_TURN_NOTE });
 			const offered = finalTurn ? finalToolNames : toolNames;
 			if (endpoint.route === 'swarm') assertSwarmPayload(messages, job.system, brief, produced, offered);
-			const answer = await chat(endpoint, messages, finalTurn ? finalTools : tools, job.signal, job.retryDelayMs, Math.min(MAX_TOKENS_PER_ANSWER, room));
+			const maxTokens = finalTurn ? MAX_TOKENS_PER_ANSWER : Math.min(MAX_TOKENS_PER_ANSWER, answerRoom);
+			const answer = await chat(endpoint, messages, finalTurn ? finalTools : tools, job.signal, job.retryDelayMs, maxTokens);
+			finalRan = finalTurn;
 			spend.usd += answer.usd;
 			spend.tokens += answer.tokens;
-			lastTurnTokens = answer.tokens;
 			run.model = answer.model;
 			job.onSpend(answer.usd);
 			produced.add(answer.message);
 			messages.push(answer.message);
+			conversation = answer.tokens > 0 ? answer.tokens : conversation + estimateTokens(JSON.stringify(answer.message));
 			const calls = answer.message.tool_calls ?? [];
 			if (calls.length === 0) {
 				if (finalTurn) return stopSpent();
@@ -919,14 +939,17 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 			const callCap = finalTurn ? MAX_TOOL_CALLS : MAX_TOOL_CALLS - FINAL_TURN_CALLS;
 			for (const call of calls) {
 				if (finalTurn && toolCalls >= callCap) break;
+				// A web or case result runs only while the last turn still fits after it; lead answers are short.
+				const fits = [...LEAD_TOOLS, METHOD_TOOL].includes(call.function.name) || spend.tokens + conversation + MAX_RESULT_TOKENS + MAX_TOKENS_PER_ANSWER <= tokenBudget;
 				let content = 'not run: the remaining tool calls are kept for recording leads';
-				if (toolCalls < callCap) {
+				if (toolCalls < callCap && !fits) {
+					content = 'not run: the rest of the token budget is kept for recording leads';
+					finalReason ??= 'token_budget';
+				} else if (toolCalls < callCap) {
 					toolCalls += 1;
 					content = await runCall(call, offered);
 				}
-				const message: Message = { role: 'tool', tool_call_id: call.id, content };
-				produced.add(message);
-				messages.push(message);
+				append({ role: 'tool', tool_call_id: call.id, content });
 			}
 		}
 		writeLane('completed');
