@@ -16,7 +16,8 @@ const CASE_SEARCH_TIMEOUT_MS = 300_000;
 // Where Engine finds its base folder on Windows and Linux; never provider keys.
 const ENGINE_BASE_VARS = ['USERPROFILE', 'APPDATA', 'LOCALAPPDATA'];
 
-function engineEnv(env: Env): string[] {
+// The variables a seam over Engine's `bsig` needs to find it and its base folder.
+export function engineEnv(env: Env): string[] {
 	return ['SPOTLIGHT_BSIG', ...ENGINE_BASE_VARS, ...Object.keys(env).filter((name) => name.startsWith('XDG_'))];
 }
 
