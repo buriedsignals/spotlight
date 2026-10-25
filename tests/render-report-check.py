@@ -318,15 +318,60 @@ def check_public_sources(root: Path) -> None:
     assert "`research/official-record.md`" in (case / "findings-report.md").read_text()
 
 
-def gate_review(case: Path, finals: dict[str, object]) -> None:
-    """The Investigation gate's saved page record, as the review page writes it."""
+def gate_review(case: Path, finals: dict[str, object], channel: str = "page") -> None:
+    """The Investigation gate's saved page record, as the review page writes it,
+    and the gate approval that binds it (a legacy-v1 approval binds no review)."""
     items = {}
     for key, final in finals.items():
         kind, finding_id = key.split(":", 1)
         items[key] = {"kind": kind, "target": f"finding:{finding_id}", "suggested": kind == "selection" or None,
                       "suggestion_source": "fact-check verdict", "suggestion_reason": "", "final": final, "note": ""}
-    write_json(case / "data" / "investigation-gate-review.json",
+    review_path = case / "data" / "investigation-gate-review.json"
+    write_json(review_path,
                {"schema_version": "spotlight-review/v1", "gate": "investigation_gate", "reviewer": "M", "items": items})
+    binding = {"channel": channel, "nonce_sha256": "0" * 64, "review_digest": None,
+               "review_sha256": None if channel == "legacy-v1" else sha(review_path)}
+    write_json(case / "data" / "orchestration.json", {
+        "schema_version": "spotlight-orchestration/v2", "attempts": {}, "decisions": {},
+        "approvals": {"investigation_gate": {"approved_by": "M", "approved_at": "2026-07-10T12:00:00Z", "review": binding}},
+    })
+
+
+def finalize(case: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run([sys.executable, str(FINALIZER), str(case)], capture_output=True, text=True)
+
+
+def check_gate_marks_bound_to_approval(root: Path) -> None:
+    """Gate marks count only from the review the approval binds: a review
+    changed after approval, or one a legacy approval never bound, is refused
+    (the member approves the gate again), never read and never ignored."""
+    changed = build_case(root / "changed-after-approval")
+    gate_review(changed, {"selection:F1": True, "disposition:F2": "set_aside"})
+    only_finding(changed, "F1")
+    review_path = changed / "data" / "investigation-gate-review.json"
+    review = json.loads(review_path.read_text())
+    review["items"]["disposition:F2"]["final"] = "keep"
+    write_json(review_path, review)
+    legacy = build_case(root / "legacy-approval")
+    gate_review(legacy, {"selection:F1": True, "disposition:F2": "set_aside"}, channel="legacy-v1")
+    only_finding(legacy, "F1")
+    for label, case in (("changed", changed), ("legacy", legacy)):
+        result = finalize(case)
+        assert result.returncode != 0, label
+        assert "approve the Investigation gate again" in result.stdout + result.stderr, result.stdout + result.stderr
+        assert not (case / "report.html").exists(), label
+
+
+def check_nothing_reportable(root: Path) -> None:
+    """Every finding set aside: the draft check says there is nothing to report
+    and points at the decline, which still records."""
+    case = build_case(root / "all-set-aside")
+    gate_review(case, {"selection:F1": False, "disposition:F2": "set_aside"})
+    result = finalize(case)
+    assert result.returncode != 0
+    assert "NO_REPORTABLE_FINDINGS" in result.stdout and "declined" in result.stdout, result.stdout + result.stderr
+    declined = subprocess.run([sys.executable, str(DECLINE_REPORT), str(case)], capture_output=True, text=True)
+    assert declined.returncode == 0, declined.stdout + declined.stderr
 
 
 def only_finding(case: Path, finding_id: str) -> None:
@@ -384,6 +429,8 @@ def main() -> int:
             assert "evidence-correction pass" not in output.read_text(), output.name
         check_public_sources(Path(tmp) / "public-sources")
         check_set_aside_findings(Path(tmp))
+        check_gate_marks_bound_to_approval(Path(tmp))
+        check_nothing_reportable(Path(tmp))
         assert "<script>alert('unsafe')</script>" not in html
         assert "&lt;script&gt;alert" in html
         assert "<script>alert('unsafe')</script>" not in markdown

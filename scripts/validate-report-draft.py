@@ -485,7 +485,10 @@ def check(case: Path) -> list[str]:
         return [f"STRUCTURE: {exc}"]
     known_ids -= set_aside
     if not known_ids:
-        return ["STRUCTURE: every finding was set aside at the Investigation gate; there is nothing to report"]
+        return [
+            "NO_REPORTABLE_FINDINGS: every finding was set aside at the Investigation gate, so there is "
+            "nothing to report; decline the report (decision \"declined\") and continue to Ingest"
+        ]
     referenced = {
         clean(ref)
         for field in ("framing_finding_ids", "finding_order")
