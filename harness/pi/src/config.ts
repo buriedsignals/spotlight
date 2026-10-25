@@ -434,6 +434,16 @@ function positiveInteger(env: Env, name: string, fallback: number): number {
 	return value;
 }
 
+// Pi's own compaction reserve (settings-defaults.js); Pi deep-merges ours over it.
+const PI_DEFAULT_RESERVE = 16384;
+
+// The output cap per request: a quarter of the context window, never below
+// 8192. A fixed 8192 cut off whole-file rewrites on large-window models, and
+// the cut-off call reached write_file with empty content.
+export function maxOutputTokens(contextWindow: number): number {
+	return Math.max(8192, Math.floor(contextWindow / 4));
+}
+
 // The tier's fold point, with SPOTLIGHT_COMPACT_AT / SPOTLIGHT_COMPACT_KEEP
 // overriding it. A fold point at or past the context window would never fire
 // before the model overflows, so it is refused rather than silently moved.
@@ -450,10 +460,14 @@ function readFold(env: Env, tier: ModelTier, contextWindow: number): Fold | unde
 
 // Pi reads compaction settings from settings.json in its configuration
 // folder. The local tier compacts when the context passes `fold.at`
-// (Pi triggers at contextWindow - reserveTokens). The frontier tier writes no
-// compaction settings, so Pi's defaults apply.
+// (Pi triggers at contextWindow - reserveTokens). The frontier tier keeps
+// Pi's defaults, except that its reserve grows with the output cap, so a
+// request near the compaction point still fits the context window.
 export function piSettings(config: HarnessConfig): Record<string, unknown> {
-	if (!config.fold) return {};
+	if (!config.fold) {
+		const cap = maxOutputTokens(config.contextWindow);
+		return cap > PI_DEFAULT_RESERVE ? { compaction: { reserveTokens: cap } } : {};
+	}
 	return {
 		compaction: {
 			enabled: true,

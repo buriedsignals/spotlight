@@ -139,5 +139,7 @@ export function runPython(
 	});
 }
 
-// Case-relative save paths for tools that store what they fetched.
-export const savePath = Type.String({ minLength: 1, maxLength: 512, pattern: '^(research|evidence)/' });
+// Case-relative save paths for tools that store what they fetched: a file
+// under research/ or evidence/, never the folder itself (no trailing slash).
+// Written to hold as a full match too (see webURL in fetch.ts).
+export const savePath = Type.String({ minLength: 1, maxLength: 512, pattern: '^(research|evidence)/.*[^/\\\\]$' });
