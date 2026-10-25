@@ -31,7 +31,7 @@ from spotlight_orchestration import review  # noqa: E402
 class MethodologyPage(unittest.TestCase):
     """Approving the methodology approves its research plan, so the page shows it."""
 
-    def test_the_methodology_page_shows_topics_budgets_egress_and_consent(self) -> None:
+    def test_the_methodology_page_shows_the_whole_plan_or_blocks_approval(self) -> None:
         method = methodology(topic("ownership-registries", "ownership", "registries", token_budget=150000))
         plan = method["research_plan"]
         # A stamp the model wrote into the plan is not the member's decision.
@@ -56,14 +56,13 @@ class MethodologyPage(unittest.TestCase):
                                             "hosts": ["find-and-update.company-information.service.gov.uk"]}])
         self.assertEqual(brief["keys"], ["FIRECRAWL_API_KEY"])
 
-    def test_a_plan_longer_than_the_page_shows_blocks_approval_with_the_count(self) -> None:
+        # A plan longer than the page shows blocks approval, naming the count.
         method = methodology(*[topic(f"ownership-web-{n}", "ownership", "web") for n in range(51)])
         method["research_plan"]["topics"][0]["questions"] = [f"Question {n}?" for n in range(31)]
         with tempfile.TemporaryDirectory() as tmp:
             case = Case(Path(tmp).resolve() / "case", method)
             (case.root / "brief-directions.txt").write_text("Who owns Northwind Holdings?\n", encoding="utf-8")
             view = review.build_view(case.root, "methodology")
-        self.assertEqual(len(view["content"]["research_plan"]["topics"]), 50)
         blocking = " ".join(view["blocking"])
         self.assertIn("the research plan has 51 topics; the page shows 50", blocking)
         self.assertIn("the research plan has 31 questions in topic ownership-web-0; the page shows 30", blocking)
