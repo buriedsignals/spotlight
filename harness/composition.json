@@ -132,6 +132,9 @@
       ],
       "keys": [
         "FIRECRAWL_API_KEY"
+      ],
+      "phases": [
+        "investigation"
       ]
     },
     "researcher": {

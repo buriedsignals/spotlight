@@ -115,6 +115,12 @@ def main() -> int:
         forged = proposal(1)
         forged["expressions"][0]["expression_fingerprint"] = "0" * 64
         require(run_writer(case, forged).returncode == 2, "a caller-supplied fingerprint was accepted")
+        # Ingest refuses a passage without a language, so the writer does too (E2E D14).
+        no_language = proposal(1)
+        no_language["expressions"][0].pop("language", None)
+        refused = run_writer(case, no_language)
+        require(refused.returncode == 2 and "language is required" in refused.stderr and target.read_bytes() == before,
+                "a passage without a language was written")
         wrong_text = proposal(1)
         wrong_text["expressions"][0]["text"] = "Not what line 2 says."
         require(run_writer(case, wrong_text).returncode == 2 and target.read_bytes() == before,
