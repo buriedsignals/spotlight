@@ -52,6 +52,8 @@ const MAX_TOKENS_PER_ANSWER = 4096;
 // recorded before the budget stops it. It starts when another full turn
 // would leave no room for it, or this many tool calls before the cap.
 const FINAL_TURN_CALLS = 10;
+// The smallest answer worth a last turn; with less room left the lane stops.
+const MIN_FINAL_ANSWER_TOKENS = 512;
 const FINAL_TURN_NOTE = 'Your budget is almost spent and this is your last turn. Record every lead you have now with record_lead or record_absence; search and fetch are no longer available.';
 const RETRIES = 3;
 const REQUEST_TIMEOUT_MS = 180_000;
@@ -311,12 +313,13 @@ async function chat(
 	tools: object[],
 	signal: AbortSignal,
 	retryDelayMs: number,
+	maxTokens = MAX_TOKENS_PER_ANSWER,
 ): Promise<Answer> {
 	const body: Record<string, unknown> = {
 		messages,
 		tools,
 		tool_choice: 'auto',
-		max_tokens: MAX_TOKENS_PER_ANSWER,
+		max_tokens: maxTokens,
 		stream: false,
 		...(endpoint.modelList ? { models: endpoint.models } : { model: endpoint.models[0] }),
 	};
@@ -865,6 +868,21 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 		writeLane('partial', { code: 'budget_spent', message: 'the lane reached its token, turn or tool-call budget; what it recorded is kept' });
 		return { status: 'partial', usd: spend.usd };
 	};
+	const runCall = async (call: ToolCall, offered: string[]): Promise<string> => {
+		try {
+			if (!offered.includes(call.function.name)) throw new Error(`${call.function.name} is not a tool of this lane`);
+			const args = JSON.parse(call.function.arguments || '{}') as Record<string, unknown>;
+			return await runTool(run, call.function.name, args);
+		} catch (error) {
+			// The newsroom being unusable stops the round; only a tool's own error is data.
+			if (job.signal.aborted || stopsTheNewsroomCase(error)) throw error;
+			if (error instanceof FileRefused && /outside the folder|symlink|not a real folder/.test(error.message)) throw error;
+			// A tool's own error text comes from the Editorial MCP: data, as in the launcher.
+			return error instanceof EditorialToolError
+				? `error: the newsroom answered ${call.function.name} with an error:\n${newsroomData(capped(error.message))}`
+				: `error: ${(error as Error).message}`;
+		}
+	};
 	let finalTurn = false;
 	// Each request re-sends the whole conversation, so the next turn costs at
 	// least what the last one did.
@@ -873,6 +891,9 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 		for (let turn = 0; ; turn += 1) {
 			if (finalTurn || spend.tokens >= tokenBudget || turn >= MAX_TURNS || toolCalls >= MAX_TOOL_CALLS) return stopSpent();
 			finalTurn = spend.tokens + 2 * lastTurnTokens >= tokenBudget || turn + 1 >= MAX_TURNS || toolCalls + FINAL_TURN_CALLS >= MAX_TOOL_CALLS;
+			// The answer may use what the budget has left after re-sending the conversation.
+			const room = tokenBudget - spend.tokens - lastTurnTokens;
+			if (finalTurn && room < MIN_FINAL_ANSWER_TOKENS) return stopSpent();
 			if (finalTurn) {
 				// A fixed harness note, not case data: the swarm guard admits it as the harness's own.
 				const note: Message = { role: 'user', content: FINAL_TURN_NOTE };
@@ -881,7 +902,7 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 			}
 			const offered = finalTurn ? finalToolNames : toolNames;
 			if (endpoint.route === 'swarm') assertSwarmPayload(messages, job.system, brief, produced, offered);
-			const answer = await chat(endpoint, messages, finalTurn ? finalTools : tools, job.signal, job.retryDelayMs);
+			const answer = await chat(endpoint, messages, finalTurn ? finalTools : tools, job.signal, job.retryDelayMs, Math.min(MAX_TOKENS_PER_ANSWER, room));
 			spend.usd += answer.usd;
 			spend.tokens += answer.tokens;
 			lastTurnTokens = answer.tokens;
@@ -894,22 +915,14 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 				if (finalTurn) return stopSpent();
 				break;
 			}
+			// Before the last turn, the last FINAL_TURN_CALLS tool calls are kept for it.
+			const callCap = finalTurn ? MAX_TOOL_CALLS : MAX_TOOL_CALLS - FINAL_TURN_CALLS;
 			for (const call of calls) {
-				if (finalTurn && toolCalls >= MAX_TOOL_CALLS) break;
-				toolCalls += 1;
-				let content: string;
-				try {
-					if (!offered.includes(call.function.name)) throw new Error(`${call.function.name} is not a tool of this lane`);
-					const args = JSON.parse(call.function.arguments || '{}') as Record<string, unknown>;
-					content = await runTool(run, call.function.name, args);
-				} catch (error) {
-					// The newsroom being unusable stops the round; only a tool's own error is data.
-					if (job.signal.aborted || stopsTheNewsroomCase(error)) throw error;
-					if (error instanceof FileRefused && /outside the folder|symlink|not a real folder/.test(error.message)) throw error;
-					// A tool's own error text comes from the Editorial MCP: data, as in the launcher.
-					content = error instanceof EditorialToolError
-						? `error: the newsroom answered ${call.function.name} with an error:\n${newsroomData(capped(error.message))}`
-						: `error: ${(error as Error).message}`;
+				if (finalTurn && toolCalls >= callCap) break;
+				let content = 'not run: the remaining tool calls are kept for recording leads';
+				if (toolCalls < callCap) {
+					toolCalls += 1;
+					content = await runCall(call, offered);
 				}
 				const message: Message = { role: 'tool', tool_call_id: call.id, content };
 				produced.add(message);

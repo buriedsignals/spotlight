@@ -226,6 +226,10 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    - The plan matches `schemas/methodology.schema.json`: only the listed
      fields, egress destinations from its list, and a consent record with
      `swarm`, `decided_by` and `decided_at`.
+   - A topic's route matches its lane type: web lanes (catalogue route
+     `swarm`) take `swarm`, or `subscription` in `subscription_subagents`
+     mode, and need the swarm consent; local lanes take `local`. Leave the
+     route unset to use the lane's own.
    - The round budget is set, no higher than the case budget, and the case
      budget is at most $5; every topic has its own token budget, so one topic
      cannot take the round.

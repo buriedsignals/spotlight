@@ -78,15 +78,24 @@ def lane_catalogue(root: Path = LANE_CATALOGUE) -> set[str]:
     return {path.stem for path in root.glob("*.yaml")} | {AD_HOC} if root.is_dir() else {AD_HOC}
 
 
-def web_lanes(root: Path = LANE_CATALOGUE) -> set[str]:
-    """Lane types whose catalogue route is ``swarm``: web lanes run only on the
-    opt-in research swarm, whatever route a topic names."""
-    return {path.stem for path in root.glob("*.yaml")
-            if re.search(r"^route:\s*swarm\s*$", path.read_text(encoding="utf-8"), re.MULTILINE)}
+def lane_routes(root: Path = LANE_CATALOGUE) -> dict[str, str]:
+    """Each catalogue lane type's route (``swarm`` or ``local``), from its ``route:`` line."""
+    routes = {}
+    for path in root.glob("*.yaml"):
+        found = re.search(r"^route:\s*(\w+)\s*$", path.read_text(encoding="utf-8"), re.MULTILINE)
+        if found:
+            routes[path.stem] = found.group(1)
+    return routes
 
 
-def _is_cloud(topic: Mapping[str, Any], egress: Iterable[Mapping[str, Any]]) -> bool:
-    if topic.get("route") in CLOUD_ROUTES or topic.get("lane_type") in web_lanes():
+# The topic routes each catalogue route allows: web lanes run only on the
+# opt-in research swarm (the subscription host's subagents in that mode),
+# local lanes only on the local model. An unset topic route takes the lane's.
+ALLOWED_ROUTES = {"swarm": {"swarm", "subscription"}, "local": {"local"}}
+
+
+def _is_cloud(topic: Mapping[str, Any], egress: Iterable[Mapping[str, Any]], lane_route: str | None) -> bool:
+    if topic.get("route") in CLOUD_ROUTES or lane_route == "swarm":
         return True
     return any(e.get("destination") in CLOUD_DESTINATIONS for e in egress)
 
@@ -131,6 +140,7 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
         problems.append(f"{p}.topics must list at least one topic brief")
     seen: set[str] = set()
     methods = 0
+    routes = lane_routes()
     for index, topic in enumerate(entries):
         topic_id = str(topic.get("topic_id") or "")
         where = f"{p}.topics[{index}] ({topic_id or 'no id'})"
@@ -160,7 +170,12 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
         own_keys = [k.get("name") for k in keys if topic_id in (k.get("topics") or [])]
         if lane_type == AD_HOC and own_keys:
             problems.append(f"{where}: an ad-hoc topic gets no keys")
-        cloud = _is_cloud(topic, own_egress)
+        lane_route, route = routes.get(lane_type), topic.get("route")
+        if lane_route in ALLOWED_ROUTES and route is not None and route not in ALLOWED_ROUTES[lane_route]:
+            problems.append(f"{where}: a {lane_type} lane runs on the {lane_route} route, not {route!r}")
+        if route == "subscription" and mode != "subscription_subagents":
+            problems.append(f"{where}: the subscription route needs mode subscription_subagents")
+        cloud = _is_cloud(topic, own_egress, lane_route)
         if cloud and consent.get("swarm") is not True:
             problems.append(f"{where}: a swarm topic needs the member's swarm opt-in")
         if cloud and mode == "local_only":
