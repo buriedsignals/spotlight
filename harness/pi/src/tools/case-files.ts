@@ -33,6 +33,7 @@ const PROTECTED = [
 	/^receipts\//, // newsroom receipts (the launcher copies them)
 	/^data\/editorial-case\.json$/, // newsroom case reference (the launcher)
 	/^data\/newsroom-(checks|submission)\.json$/, // newsroom check flags and submission (the launcher)
+	/^data\/case-contract\.json$/, // activation receipt (the launcher runs case-contract.py activate-new; the gate approval binds it)
 ];
 
 function inside(root: string, path: string): boolean {
@@ -61,7 +62,9 @@ function inScope(allowed: string[] | undefined, name: string): boolean {
 }
 
 // A role's read denylist (`denyReads` in harness/composition.json) hides case
-// files from every file tool, the rest of the case staying readable. An entry
+// files from every file tool, the rest of the case staying readable; its write
+// denylist (`denyWrites`) refuses write_file and edit_file on case files another
+// role owns, the rest of its write folder staying writable. An entry
 // ending in "/" hides that folder and everything under it; "*" matches within
 // one path segment. Names compare case-insensitively.
 function denyPattern(entry: string): RegExp {
@@ -73,12 +76,12 @@ function denyPattern(entry: string): RegExp {
 	return new RegExp(folder ? `^${body}(?:/.*)?$` : `^${body}$`, 'i');
 }
 
-function readDenied(deny: string[] | undefined, name: string): boolean {
+function denied(deny: string[] | undefined, name: string): boolean {
 	return deny !== undefined && deny.some((entry) => denyPattern(entry).test(name));
 }
 
 function mayRead(scope: CaseScope | undefined, name: string): boolean {
-	return inScope(scope?.reads, name) && !readDenied(scope?.denyReads, name);
+	return inScope(scope?.reads, name) && !denied(scope?.denyReads, name);
 }
 
 function lstatOrUndefined(path: string): Stats | undefined {
@@ -93,12 +96,15 @@ function lstatOrUndefined(path: string): Stats | undefined {
 // Resolves a write target under `root` without following any symlink: every
 // existing parent must be a real directory, missing ones are created owner-only,
 // and an existing target must be a regular file.
-export function writeTarget(caseDir: string, root: string, path: string, writes?: string[]): string {
+export function writeTarget(caseDir: string, root: string, path: string, writes?: string[], denyWrites?: string[]): string {
 	const target = requested(caseDir, path);
 	if (!inside(root, target) || target === root) throw new FileRefused(`refused: ${path} is outside the folder this agent may write`);
 	// Checked before any parent folder is created.
 	if (!inScope(writes, caseRelative(caseDir, target))) {
 		throw new FileRefused(`refused: ${path} is not a file this agent may write (${(writes ?? []).join(', ') || 'none'})`);
+	}
+	if (denied(denyWrites, caseRelative(caseDir, target))) {
+		throw new FileRefused(`refused: ${path} is a case file another role writes; this agent may not write it`);
 	}
 	const parts = relative(root, target).split(sep);
 	let current = root;
@@ -120,8 +126,8 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 }
 
 // Writes without following a symlink at the last step either.
-export function writeConfined(caseDir: string, root: string, path: string, content: string | Buffer, writes?: string[]): string {
-	const target = writeTarget(caseDir, root, path, writes);
+export function writeConfined(caseDir: string, root: string, path: string, content: string | Buffer, writes?: string[], denyWrites?: string[]): string {
+	const target = writeTarget(caseDir, root, path, writes, denyWrites);
 	const bytes = typeof content === 'string' ? Buffer.from(content, 'utf8') : content;
 	if (bytes.length > MAX_WRITE_BYTES) throw new FileRefused(`refused: content is larger than ${MAX_WRITE_BYTES} bytes`);
 	const fd = openSync(target, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600);
@@ -268,6 +274,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 	const scope = context.scope;
 	const reads = scope?.reads;
 	const writes = scope?.writes;
+	const denyWrites = scope?.denyWrites;
 	return [
 		{
 			name: 'read_file',
@@ -304,7 +311,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			executionMode: 'sequential',
 			async execute(_id, params) {
 				const input = checkedParams<{ path: string; content: string }>('write_file', writeParams, params);
-				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, input.content, writes)}`);
+				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, input.content, writes, denyWrites)}`);
 			},
 		},
 		{
@@ -315,9 +322,9 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			executionMode: 'sequential',
 			async execute(_id, params) {
 				const input = checkedParams<{ path: string; old_text: string; new_text: string }>('edit_file', editParams, params);
-				const target = writeTarget(caseDir, writeRoot, input.path, writes);
+				const target = writeTarget(caseDir, writeRoot, input.path, writes, denyWrites);
 				// Editing reads the file, so a file hidden from this role is refused.
-				if (readDenied(scope?.denyReads, caseRelative(caseDir, target))) {
+				if (denied(scope?.denyReads, caseRelative(caseDir, target))) {
 					throw new FileRefused(`refused: ${input.path} is outside the case files this agent may read`);
 				}
 				let text: string;
@@ -333,7 +340,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 					throw new Error(`edit_file: old_text occurs more than once in ${input.path}; include more context`);
 				}
 				const updated = text.slice(0, first) + input.new_text + text.slice(first + input.old_text.length);
-				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes)}`);
+				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes, denyWrites)}`);
 			},
 		},
 		{

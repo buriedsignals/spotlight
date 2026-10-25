@@ -26,7 +26,7 @@ import {
 import type { CheckKind, EditorialClient, RunPackage } from './editorial.ts';
 import { openInBrowser } from '../../review/session.mjs';
 import { newsroomData } from './tools/editorial.ts';
-import { DESKTOP_ENV, capped, programEnv, runFixed } from './tools/run.ts';
+import { DESKTOP_ENV, capped, programEnv, runFixed, runPython } from './tools/run.ts';
 import type { HarnessConfig, LaunchArgs } from './config.ts';
 import { CaseHeldError, acquireCaseLock } from './lock.ts';
 import type { CaseLock } from './lock.ts';
@@ -268,6 +268,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 				// Case search runs inside the queue's admission, so it counts
 				// against the worker limit, and a cancel stops it.
 				return queue.run(async () => {
+					await activateNewCase(harness, request.agent, controller.signal);
 					const task = await finalTask(harness, request.agent, request.task, controller.signal);
 					return runWorker(
 						{
@@ -368,6 +369,25 @@ async function finalTask(harness: Harness, role: string, task: string, signal: A
 		return task;
 	}
 	return withPassages;
+}
+
+// A new case starts activated (phase-investigation, "Source-expression release
+// mode", step 2): before the first investigator task at Investigation, with no
+// contract and no findings yet, the harness runs case-contract.py activate-new
+// itself. No role may write data/case-contract.json (tools/case-files.ts). The
+// script refuses a case that already has investigation files; that case stays
+// legacy, as the skill's step 3 says, and the investigator still starts.
+async function activateNewCase(harness: Harness, role: string, signal: AbortSignal): Promise<void> {
+	const { config, active } = harness;
+	if (role !== 'investigator') return;
+	if (['case-contract.json', 'findings.json'].some((name) => existsSync(resolve(active.caseDir, 'data', name)))) return;
+	if ((await casePhase(harness)) !== 'investigation') return;
+	const result = await runPython(
+		{ caseDir: active.caseDir, writeRoot: active.caseDir, python: config.python, configPath: config.spotlightConfig, env: process.env },
+		[resolve(CHECKOUT_ROOT, 'scripts/case-contract.py'), 'activate-new', active.caseDir],
+		{ signal, timeoutMs: 60_000 },
+	);
+	if (result.code !== 0) harness.log(`case not activated: ${harness.redact(`${result.stderr}${result.stdout}`.trim())}`);
 }
 
 // A worker with spawn conditions in harness/composition.json (the analyst:
