@@ -25,7 +25,8 @@ until ``integrations/decisions/research-acceptance.json`` exists for the bank
 version, and only ``--write-acceptance`` after a passing held-out run writes it.
 
 A whole case is in one half: every item's split must be its case's
-``case_split`` (build_claims_fixture.py), a salted hash of the case key.
+``case_split`` (build_claims_fixture.py): its hand assignment in the split file, else a salted
+hash of the case key. Results record the split file's sha256.
 
 Fixtures: ``company-a.json`` (dev) and ``company-b.json`` (held-out), both
 synthetic and in the repo, and every path in
@@ -113,6 +114,12 @@ class AcceptanceError(Exception):
 # ------------------------------------------------------------------ inputs
 def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def split_file_sha256() -> str | None:
+    """The hand split in use, so a result shows which assignment it was run against."""
+    raw = os.environ.get(builder.SPLIT_ENV, "").strip()
+    return sha256_file(Path(raw).expanduser()) if raw else None
 
 
 def load_fixture(path: Path) -> dict[str, Any]:
@@ -637,6 +644,7 @@ def run(args: argparse.Namespace, provider_factory: Callable[[str], tuple[Any | 
     record = {
         "record_version": "1.0", "split": args.split, "bank_version": rq.RESEARCH_BANK_VERSION,
         "targets_sha256": sha256_file(targets_path), "targets_status": targets.get("status"),
+        "split_file_sha256": split_file_sha256(),
         "trial_thresholds": targets["thresholds"],
         "fixtures": [{"name": f["name"], "synthetic": f["synthetic"], "items": sum(1 for i in f["items"] if i["split"] == args.split)}
                      for f in fixtures],

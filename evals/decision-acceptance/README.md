@@ -68,8 +68,19 @@ find it.
 
 Case names are replaced by a hash alias; the `case_key` (the folder holding
 `data/fact-check.json`, or the fact-check's own folder) puts the whole case in
-one half. The halves are not balanced by construction: count the
-cases, items and failures in each before trusting a result.
+one half. By default the half is a salted hash of the key, which is not
+balanced: with few real cases one half can end up with nothing to learn from.
+So the halves are assigned by hand in a split file kept with the private
+fixtures and named by `SPOTLIGHT_ACCEPTANCE_SPLIT`:
+
+```json
+{"assignments": {"<case_key>": "dev", "<other case_key>": "heldout"}}
+```
+
+A case the file does not list keeps its hashed half. Assign before building
+or resplitting, balance real cases and failures across the halves, and freeze
+the held-out assignments before tuning starts: every result records the split
+file's sha256.
 
 ## Private fixture
 

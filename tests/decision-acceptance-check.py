@@ -239,6 +239,32 @@ def test_renamed_case_keeps_its_half() -> None:
         raises(lambda: acc.load_fixture(path), acc.AcceptanceError, "a fixture without a case key must be refused")
 
 
+def test_split_file_assigns_a_case_against_its_hash() -> None:
+    # A few real cases split by hash can leave dev with nothing to learn from;
+    # the hand split file moves a whole case, and a fixture must follow it.
+    fixture = json.loads(acc.COMPANY_A.read_text(encoding="utf-8"))
+    key = fixture["case"]["case_key"]
+    hashed = builder.case_split(key)
+    other = "heldout" if hashed == "dev" else "dev"
+    with tempfile.TemporaryDirectory() as tmp:
+        split_file = Path(tmp) / "split.json"
+        split_file.write_text(json.dumps({"assignments": {key: other}}), encoding="utf-8")
+        path = Path(tmp) / "company-a.json"
+        path.write_text(json.dumps(fixture), encoding="utf-8")
+        os.environ[builder.SPLIT_ENV] = str(split_file)
+        try:
+            require(builder.case_split(key) == other, "the split file decides the case's half")
+            raises(lambda: acc.load_fixture(path), acc.AcceptanceError, "a fixture still in its hashed half must be refused")
+            for entry in [*fixture["items"], *fixture.get("planted_clues", [])]:
+                entry["split"] = other
+            path.write_text(json.dumps(fixture), encoding="utf-8")
+            require(acc.load_fixture(path)["items"][0]["split"] == other, "a fixture in its assigned half loads")
+            require(acc.split_file_sha256() == acc.sha256_file(split_file), "results name the split file in use")
+        finally:
+            del os.environ[builder.SPLIT_ENV]
+    require(builder.case_split(key) == hashed, "without the file the hash decides")
+
+
 def test_resplit_keeps_every_input() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         folder = Path(tmp)

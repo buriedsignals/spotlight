@@ -32,8 +32,9 @@ How a fact-checked claim becomes a lead (the fixture's ``lead``):
   turned out true); any other verdict -> a failure whose class and research
   visibility come only from the labelling sheet; keep is then not scored.
 
-A whole case goes to one half, dev or held-out, by a salted hash of its
-``case_key`` (``case_split``), so no case is tuned on and tested on. The key is
+A whole case goes to one half, dev or held-out: the half the split file
+(``SPOTLIGHT_ACCEPTANCE_SPLIT``) assigns its ``case_key``, else a salted hash of
+the key (``case_split``), so no case is tuned on and tested on. The key is
 the source case's folder (the one holding ``data/fact-check.json``, or the
 fact-check's own folder), written once at build time: renaming the case does
 not move it. ``resplit`` applies that rule to fixtures built before it, taking
@@ -47,6 +48,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import re
 import sys
 import tempfile
@@ -56,6 +58,7 @@ from typing import Any, Mapping
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 SPLIT_SALT = "spotlight-acceptance-split-1"
+SPLIT_ENV = "SPOTLIGHT_ACCEPTANCE_SPLIT"
 FAILURE_CLASSES = ("weak_source_chain", "summary_wider", "inference_as_fact", "conflicting_values", "wrong_subject",
                    "weak_relevance", "allegation")
 QUESTION_COLUMNS = ("q1_identity", "q3_source", "q4_assertion", "q5_status", "q6_fidelity", "c1_premise")
@@ -121,8 +124,27 @@ def case_key_of(fact_check: Path) -> str:
     return (fact_check.parent.parent if fact_check.parent.name == "data" else fact_check.parent).name
 
 
+def split_assignments() -> dict[str, str]:
+    """Hand-assigned halves from the file SPOTLIGHT_ACCEPTANCE_SPLIT names: {"assignments": {case_key: half}}.
+
+    Kept with the private fixtures. A few real cases split by hash can leave one half with nothing to
+    learn from, so the cases are balanced by hand and the file is committed where the fixtures live.
+    """
+    raw = os.environ.get(SPLIT_ENV, "").strip()
+    if not raw:
+        return {}
+    doc = json.loads(Path(raw).expanduser().read_text(encoding="utf-8"))
+    assignments = doc.get("assignments") if isinstance(doc, dict) else None
+    if not isinstance(assignments, dict) or any(v not in ("dev", "heldout") for v in assignments.values()):
+        raise BuildError(f"{raw}: expected {{\"assignments\": {{case_key: \"dev\" | \"heldout\"}}}}")
+    return assignments
+
+
 def case_split(case_key: str) -> str:
-    """The half a whole case belongs to: stable per case, whatever else is built with it."""
+    """The half a whole case belongs to: its hand assignment, else a salted hash of its key."""
+    assigned = split_assignments().get(case_key)
+    if assigned:
+        return assigned
     digest = hashlib.sha256(f"{SPLIT_SALT}:{case_key}".encode()).hexdigest()
     return "dev" if int(digest, 16) % 2 == 0 else "heldout"
 
