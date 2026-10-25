@@ -15,6 +15,7 @@ import { bindActiveCase, pythonAdapter, spotlightTools } from './tools/spotlight
 import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
 import { openReviewTool } from './tools/review.ts';
+import { REPEAT_REASON } from './tools/run.ts';
 
 const log = (message: string) => process.stderr.write(`spotlight-extension: ${message}\n`);
 
@@ -97,7 +98,40 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	// The launcher sets the local tier's fold point in Pi's settings; the
 	// frontier tier keeps Pi's default threshold and summary.
 	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier');
+	registerLoopGuard(pi);
 	const tools = toolsFor(role);
 	for (const tool of tools) pi.registerTool(tool);
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
+}
+
+// A small model can repeat one call over and over (12B retune: the same
+// list four times, the same read forty). A call that already ran twice in a
+// row and got the same result both times is refused instead of run. Keying
+// on the result keeps status calls such as spotlight_resolve free to repeat
+// while the state they read changes, and each new prompt starts afresh, so a
+// member's gate decision between two resolves never trips it.
+function registerLoopGuard(pi: ExtensionAPI): void {
+	let lastCall = '';
+	let lastResult = '';
+	let repeats = 0;
+	const key = (toolName: string, input: unknown) => JSON.stringify([toolName, input]);
+	pi.on('agent_start', () => {
+		lastCall = '';
+		repeats = 0;
+	});
+	pi.on('tool_call', (event) => {
+		const call = key(event.toolName, event.input);
+		if (call !== lastCall) {
+			lastCall = call;
+			lastResult = '';
+			repeats = 0;
+		}
+		return repeats >= 2 ? { block: true, reason: REPEAT_REASON } : undefined;
+	});
+	pi.on('tool_result', (event) => {
+		const result = JSON.stringify(event.content);
+		if (key(event.toolName, event.input) !== lastCall || result.includes(REPEAT_REASON)) return;
+		repeats = result === lastResult ? repeats + 1 : 1;
+		lastResult = result;
+	});
 }

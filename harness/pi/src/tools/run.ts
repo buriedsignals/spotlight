@@ -33,6 +33,10 @@ export type ToolContext = {
 
 export class ToolArgumentError extends Error {}
 
+// What a model is told when it repeats a call that already ran twice in a row
+// with the same result (the extension's loop guard and the lane loop).
+export const REPEAT_REASON = 'This is the same call as the last two. Act on what you already have or take the next phase step.';
+
 // Pi validates arguments before it calls a tool; this repeats the check at the
 // tool boundary so a tool never acts on input outside its schema, whoever calls it.
 export function checkedParams<T>(tool: string, schema: TSchema, params: unknown): T {

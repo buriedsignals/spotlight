@@ -125,6 +125,11 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
     if unknown:
         raise WriteError(f"expression {proposal.get('id')!r}: unknown or computed fields {sorted(unknown)}; the writer computes hashes and fingerprints")
     anchor = proposal.get("anchor_ref")
+    # A line number sent as a string of digits ("65") is that number.
+    if isinstance(anchor, dict):
+        for field in ("line_start", "line_end"):
+            if isinstance(anchor.get(field), str) and anchor[field].isdigit():
+                anchor[field] = int(anchor[field])
     if not isinstance(anchor, dict) or not isinstance(anchor.get("path"), str):
         raise WriteError(
             f"expression {proposal.get('id')!r}: anchor_ref must be an object with a case-local path, "
@@ -156,6 +161,10 @@ def _link(expression: dict[str, Any], finding: dict[str, Any], finding_id: str, 
     return link
 
 
+LIFECYCLE_EXAMPLE = ('{"expression_id": "P1", "event": "superseded", '
+                     '"successor_expression_id": "P1b", "reason": "..."}')
+
+
 def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], actor: str, cycle: int) -> dict[str, Any]:
     """Return the merged document; raise WriteError and change nothing on any problem."""
     findings_doc = _load(case / "data" / "findings.json", {})
@@ -183,7 +192,8 @@ def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], 
         else:
             if existing.get("expression_fingerprint") != built["expression_fingerprint"]:
                 raise WriteError(f"expression {raw['id']!r} already exists with a different passage; "
-                                 "a changed passage is a new expression that supersedes it")
+                                 "propose the changed passage under a new id and supersede the old one with "
+                                 f"{LIFECYCLE_EXAMPLE}")
             target = existing
         links = raw.get("finding_links", [])
         if not isinstance(links, list) or not all(isinstance(link, dict) for link in links):
@@ -208,7 +218,8 @@ def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], 
     for event in lifecycle:
         expression = by_id.get(event.get("expression_id"))
         if expression is None:
-            raise WriteError(f"lifecycle event for unknown expression {event.get('expression_id')!r}")
+            raise WriteError(f"a lifecycle event needs the expression_id of an existing expression, for example "
+                             f"{LIFECYCLE_EXAMPLE}; got {json.dumps(event)}")
         entry = {"event": event.get("event"), "timestamp": _now(), "actor": actor, "reason": event.get("reason")}
         if event.get("successor_expression_id"):
             entry["successor_expression_id"] = event["successor_expression_id"]
