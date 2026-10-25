@@ -5,6 +5,7 @@
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { browseTool } from './browse.ts';
 import { caseFileTools } from './case-files.ts';
+import { extractDocumentTool } from './extract.ts';
 import { fetchTool } from './fetch.ts';
 import { httpGetTool } from './http-get.ts';
 import { osintToolsTool } from './osint-tools.ts';
@@ -22,6 +23,7 @@ export function typedTools(context: ToolContext): ToolDefinition[] {
 		browseTool(context),
 		queryVaultTool(context),
 		osintToolsTool(context),
+		extractDocumentTool(context),
 		...programTools(context),
 	];
 }
