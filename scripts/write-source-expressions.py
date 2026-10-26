@@ -335,8 +335,8 @@ def _ref(expression: dict[str, Any], link: dict[str, Any]) -> dict[str, str]:
 
 
 def resolve_fact_check_refs(case: Path) -> int:
-    """Replace each bare expression id in data/fact-check.json's
-    source_expression_refs with the full ref for that claim's finding, exactly
+    """Replace each bare expression id (or id-only ref object) in
+    data/fact-check.json's source_expression_refs with the full ref for that claim's finding, exactly
     what a write returns, in one locked write. The stored refs still pin the
     fingerprints of that moment; an id with no link to the finding is left for
     validate-case to report."""
@@ -356,6 +356,10 @@ def resolve_fact_check_refs(case: Path) -> int:
                 for item in items if isinstance(items, list) else []:
                     refs = item.get("source_expression_refs") if isinstance(item, dict) else None
                     for index, ref in enumerate(refs if isinstance(refs, list) else []):
+                        # A bare id, or an object naming only expression_id
+                        # (and perhaps relation) with none of the fingerprints.
+                        if isinstance(ref, dict) and not {"expression_fingerprint", "finding_fingerprint", "link_fingerprint"} & ref.keys():
+                            ref = ref.get("expression_id")
                         expression = by_id.get(ref) if isinstance(ref, str) else None
                         link = next((l for l in (expression or {}).get("finding_links", [])
                                      if isinstance(l, dict) and l.get("finding_id") == claim.get("finding_id")), None)
