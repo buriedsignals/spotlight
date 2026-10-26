@@ -295,6 +295,24 @@ test('a verified claim citing no passage is refused, naming the refs on record, 
 	await call('write_file', { path: 'data/fact-check.json', content: claim({}, 'unverified') });
 });
 
+// 12B r2 cc on ef4e6ab0: with no passage recorded yet, the fact-checker verified F1 and F2
+// citing nothing, the write went through, and the validator blocked the case afterwards.
+test('in an activated case a verified claim is refused while no passage is on record; a 1.0 fact-check is not', async (t) => {
+	const { caseDir, call } = await fixture(t);
+	const claim = (verdict: string, schema_version = '1.1') => JSON.stringify({ schema_version, claims: [{ finding_id: 'F1', verdict, evidence_for: [{}] }] });
+	const none = 'no passage on record supports F1; record the passage you checked with source_expressions, then cite its ref here, or change the verdict.';
+
+	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
+	for (const expressions of [undefined, '{"expressions": []}']) {
+		if (expressions) await writeFile(join(caseDir, 'data', 'source-expressions.json'), expressions);
+		await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: claim('verified') }),
+			(error: Error) => error.message === `refused: data/fact-check.json gives a verified verdict whose evidence_for has no source_expression_refs; the file is unchanged.\n${none}`);
+	}
+	await call('write_file', { path: 'data/fact-check.json', content: claim('unverified') });
+	await assert.rejects(call('edit_file', { path: 'data/fact-check.json', old_text: '"unverified"', new_text: '"verified"' }), /no passage on record supports F1/);
+	await call('write_file', { path: 'data/fact-check.json', content: claim('verified', '1.0') });
+});
+
 // gold osmf s1 on a2ab7e20: the investigator wrote 1.0 findings in the methodology phase, the
 // case was never activated, and verified claims reached the report with no grounded passage.
 test('a new case gets no investigation file before the harness activates it; activated and legacy cases do', async (t) => {
