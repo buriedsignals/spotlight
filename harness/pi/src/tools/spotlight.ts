@@ -134,7 +134,7 @@ export function transitionArguments(operation: unknown, payload: Payload, active
 	}
 }
 
-async function resolveCase(active: ActiveCase, runAdapter: AdapterRunner, signal?: AbortSignal) {
+export async function resolveCase(active: ActiveCase, runAdapter: AdapterRunner, signal?: AbortSignal) {
 	const output = await runAdapter(
 		['status', '--json', '--authorized-cases-root', active.casesRoot, active.caseDir],
 		signal,
