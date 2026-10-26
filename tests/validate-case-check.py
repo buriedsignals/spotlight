@@ -461,6 +461,11 @@ def main() -> int:
     check("evidence: claim_link missing text", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0]["claim_links"][0].pop("claim_text"))), True)
     check("evidence: claim_link bad support_type", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0]["claim_links"][0].__setitem__("support_type", "loose"))), True)
     check("evidence: gate bad confidence_effect", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0]["missing_source_gate"].__setitem__("confidence_effect", "cap_zero"))), True)
+    returned = vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0].__setitem__("missing_source_gate", {"requested_source": "https://example.org/a", "returned_artifact": "research/a.md.raw", "missing": False})))
+    check("evidence: a partial gate for a returned source says to omit it and gives the shape",
+          [] if any("is only for a requested source that was not returned; omit it when the source came back" in e
+                    and "'missing' is not text" in e and "'fallback_required' is not true or false" in e for e in returned)
+          else ["partial gate not explained"] + returned, False)
     check("evidence: gate fallback non-bool", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0]["missing_source_gate"].__setitem__("fallback_required", "yes"))), True)
     check("evidence: gate fallback_outcome outside its enum", vc.validate_evidence_bundle(mutate(valid_evidence_bundle(), lambda d: d["items"][0]["missing_source_gate"].update(fallback_required=True, fallback_outcome="done"))), True)
 
