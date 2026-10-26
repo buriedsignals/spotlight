@@ -25,6 +25,7 @@ import {
 } from './editorial.ts';
 import type { CheckKind, EditorialClient, RunPackage } from './editorial.ts';
 import { openInBrowser } from '../../review/session.mjs';
+import { LEGACY_MARKERS } from './tools/case-files.ts';
 import { newsroomData } from './tools/editorial.ts';
 import { DESKTOP_ENV, capped, programEnv, runFixed, runPython } from './tools/run.ts';
 import type { HarnessConfig, LaunchArgs } from './config.ts';
@@ -377,8 +378,6 @@ async function finalTask(harness: Harness, role: string, task: string, signal: A
 // itself. No role may write data/case-contract.json (tools/case-files.ts). The
 // script refuses a case that already has investigation files; that case stays
 // legacy, as the skill's step 3 says, and the investigator still starts.
-// Legacy markers activate-new refuses: such a case keeps contract 1.0.
-const LEGACY_MARKERS = ['data/findings.json', 'findings.json', 'data/fact-check.json', 'data/investigation-log.json'];
 
 // One activation at a time, so two investigators starting together on a new
 // case do not race the one-shot script.
