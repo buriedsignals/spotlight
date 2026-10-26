@@ -157,6 +157,41 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 	return target;
 }
 
+type Passage = { id?: unknown; expression_fingerprint?: unknown; lifecycle_events?: { event?: unknown }[]; finding_links?: { finding_id?: unknown; relation?: unknown; finding_fingerprint?: unknown; link_fingerprint?: unknown }[] };
+
+// A verified claim whose evidence_for cites no passage blocks the case at the
+// validator, and the one correction it gets is easily spent re-dropping the refs
+// (gold mozilla s0 a2). Refused at write time instead, naming the refs on record
+// for active passages that support the finding; nothing is added for the writer.
+function refuseUncitedVerdicts(caseDir: string, target: string, content: string): void {
+	if (caseRelative(caseDir, target) !== 'data/fact-check.json') return;
+	let claims: unknown;
+	let passages: Passage[];
+	try {
+		const factCheck = JSON.parse(content) as { schema_version?: unknown; claims?: unknown };
+		claims = factCheck.claims;
+		const positive = factCheck.schema_version === '1.1' ? ['verified'] : ['verified', 'partially_verified'];
+		claims = Array.isArray(claims) ? claims.filter((claim) => positive.includes(claim?.verdict)) : [];
+		passages = (JSON.parse(readFileSync(join(caseDir, 'data', 'source-expressions.json'), 'utf8')) as { expressions?: Passage[] }).expressions ?? [];
+	} catch {
+		return;
+	}
+	const missing: string[] = [];
+	for (const claim of claims as { finding_id?: unknown; evidence_for?: unknown }[]) {
+		const items = Array.isArray(claim.evidence_for) ? claim.evidence_for : [];
+		if (items.some((item) => Array.isArray(item?.source_expression_refs) && item.source_expression_refs.length > 0)) continue;
+		const refs = passages.flatMap((passage) => {
+			if (passage?.lifecycle_events?.at(-1)?.event !== 'activated') return [];
+			const link = passage.finding_links?.find((l) => l?.finding_id === claim.finding_id && l?.relation === 'supports');
+			return link ? [{ expression_id: passage.id, expression_fingerprint: passage.expression_fingerprint, finding_fingerprint: link.finding_fingerprint, link_fingerprint: link.link_fingerprint }] : [];
+		});
+		const misspelt = items.some((item) => item?.source_expression_ref !== undefined) ? ' (the key is source_expression_refs, a list, not source_expression_ref)' : '';
+		if (refs.length > 0) missing.push(`${String(claim.finding_id)}${misspelt}: ${JSON.stringify(refs)}`);
+	}
+	if (missing.length === 0) return;
+	throw new FileRefused(`refused: data/fact-check.json gives a verified verdict whose evidence_for has no source_expression_refs; the file is unchanged. In "source_expression_refs": [<ref>, ...] cite only the passages you checked against their source; if none of them supports the verdict, change the verdict. Refs on record for active passages supporting the finding:\n${missing.join('\n')}`);
+}
+
 // Writes without following a symlink at the last step either.
 export function writeConfined(caseDir: string, root: string, path: string, content: string | Buffer, writes?: string[], denyWrites?: string[]): string {
 	const target = writeTarget(caseDir, root, path, writes, denyWrites);
@@ -353,6 +388,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 					}
 				}
 				refuseNonObjectData(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
+				refuseUncitedVerdicts(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, input.content, writes, denyWrites)}`);
 			},
 		},
@@ -383,6 +419,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				}
 				const updated = text.slice(0, first) + input.new_text + text.slice(first + input.old_text.length);
 				refuseNonObjectData(caseDir, target, updated);
+				refuseUncitedVerdicts(caseDir, target, updated);
 				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes, denyWrites)}`);
 			},
 		},

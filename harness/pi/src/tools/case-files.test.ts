@@ -272,6 +272,27 @@ test('a case data file written or edited into anything but one JSON object is re
 	await call('write_file', { path: 'research/list.json', content: '[]' });
 });
 
+// gold mozilla s0 a2 on a2ab7e20: the fact-checker wrote a verified claim with its ref under
+// a misspelt key, the validator blocked the case, and the one correction was spent.
+test('a verified claim citing no passage is refused, naming the refs on record, and kept', async (t) => {
+	const { caseDir, call } = await fixture(t);
+	const link = { finding_id: 'F1', relation: 'supports', finding_fingerprint: 'f'.repeat(64), link_fingerprint: 'l'.repeat(64) };
+	await writeFile(join(caseDir, 'data', 'source-expressions.json'), JSON.stringify({ expressions: [
+		{ id: 'P2', expression_fingerprint: 'e'.repeat(64), lifecycle_events: [{ event: 'activated' }], finding_links: [link] },
+		{ id: 'P9', expression_fingerprint: '9'.repeat(64), lifecycle_events: [{ event: 'activated' }, { event: 'superseded' }], finding_links: [link] },
+	] }));
+	const ref = { expression_id: 'P2', expression_fingerprint: 'e'.repeat(64), finding_fingerprint: 'f'.repeat(64), link_fingerprint: 'l'.repeat(64) };
+	const claim = (item: object, verdict = 'verified') => JSON.stringify({ schema_version: '1.1', claims: [{ finding_id: 'F1', verdict, evidence_for: [item] }] });
+
+	await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: claim({ source_expression_ref: ref }) }),
+		(error: Error) => error.message.includes('has no source_expression_refs; the file is unchanged') && error.message.includes(`F1 (the key is source_expression_refs, a list, not source_expression_ref): ${JSON.stringify([ref])}`));
+	assert.equal(existsSync(join(caseDir, 'data', 'fact-check.json')), false);
+
+	await call('write_file', { path: 'data/fact-check.json', content: claim({ source_expression_refs: [ref] }) });
+	await assert.rejects(call('edit_file', { path: 'data/fact-check.json', old_text: '"source_expression_refs"', new_text: '"source_expression_ref"' }), /has no source_expression_refs/);
+	await call('write_file', { path: 'data/fact-check.json', content: claim({}, 'unverified') });
+});
+
 // E2E D11: the tool text promises the checkout's schemas/, but a relative
 // schemas/ path resolved inside the case and came back "not found".
 test('a relative schemas/ path reads the checkout schema', async (t) => {
