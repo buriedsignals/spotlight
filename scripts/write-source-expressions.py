@@ -140,20 +140,35 @@ def _item_files(item: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(path for path in paths if isinstance(path, str)))
 
 
-def _occurrences(lines: list[str], needle: str, normalize: bool) -> list[tuple[int, int]]:
-    """The (line_start, line_end) of every place `needle` occurs in the lines,
-    exactly or, with `normalize`, on validate-case's NFKC and whitespace rule."""
-    pieces = [(number, normalized(line) if normalize else line) for number, line in enumerate(lines, 1)]
-    if normalize:
+# The honest exit when no acquired source holds a supporting passage
+# (12B r1: it recorded its own conclusions and placeholders as passages).
+ESCAPE = ("If no source you acquired contains a passage that supports the finding, do not record one: "
+          "set the verdict to unverified (or use missing_source_gate for a source that was requested and not returned).")
+
+# How a quote may differ from the file and still be the file's own words:
+# exactly; on validate-case's NFKC whitespace rule; and with markdown markers
+# (**, __, backticks, a leading "> ") and wrapping quotes also ignored.
+def _markdown_free(text: str) -> str:
+    return normalized(re.sub(r"\*\*|__|`", "", re.sub(r"(?m)^\s*>\s?", "", text)))
+
+
+MATCH_RULES = (("exact", lambda text: text), ("spacing", normalized), ("markdown", _markdown_free))
+
+
+def _occurrences(lines: list[str], needle: str, rule: str) -> list[tuple[int, int]]:
+    """The (line_start, line_end) of every place `needle` occurs in the lines under one of MATCH_RULES."""
+    transform = dict(MATCH_RULES)[rule]
+    pieces = [(number, transform(line)) for number, line in enumerate(lines, 1)]
+    if rule != "exact":
         pieces = [(number, line) for number, line in pieces if line]
-        needle = normalized(needle)
+        needle = transform(needle.strip().strip("\"'\u201c\u201d\u2018\u2019") if rule == "markdown" else needle)
     if not needle:
         return []
     starts, offset = [], 0
     for _number, line in pieces:
         starts.append(offset)
         offset += len(line) + 1
-    full = (" " if normalize else "\n").join(line for _number, line in pieces)
+    full = ("\n" if rule == "exact" else " ").join(line for _number, line in pieces)
     found, at = [], full.find(needle)
     while at >= 0:
         first = max(i for i, start in enumerate(starts) if start <= at)
@@ -163,27 +178,31 @@ def _occurrences(lines: list[str], needle: str, normalize: bool) -> list[tuple[i
     return sorted(set(found))
 
 
-def _locate(case: Path, label: str, text: str, paths: list[str]) -> tuple[str, int, int]:
-    """The one place `text` occurs in the named files: an exact match first,
-    then a whitespace-normalised one. Anything else is refused."""
-    if not paths:
-        raise WriteError(f"expression {label}: name the file the passage is in, as anchor_ref {{\"path\": \"research/page.md.raw\"}}")
-    for normalize in (False, True):
-        matches = []
-        for relative in paths:
-            target = (case / relative).resolve()
-            if case.resolve() not in target.parents or not target.is_file():
-                raise WriteError(f"expression {label}: not found: {relative} is not a case-local file")
-            matches += [(relative, start, end) for start, end in _occurrences(source_lines(target), text, normalize)]
-        if len(matches) == 1:
-            return matches[0]
-        if matches:
-            ranges = ", ".join(f"{path} lines {start}-{end}" for path, start, end in matches[:8])
-            raise WriteError(f"expression {label}: the text occurs {len(matches)} times ({ranges}); give anchor_ref with the line_start and line_end you mean")
-    raise WriteError(f"expression {label}: the text is not found in {', '.join(paths)}; quote it exactly as the file has it")
+def _matches(case: Path, text: str, paths: list[str]) -> list[tuple[str, int, int]]:
+    """Every place `text` occurs in the case-local files among `paths`, under
+    the first rule that finds it anywhere."""
+    files = [(relative, (case / relative).resolve()) for relative in paths]
+    files = [(relative, target) for relative, target in files if case.resolve() in target.parents and target.is_file()]
+    for rule, _transform in MATCH_RULES:
+        found = [(relative, start, end) for relative, target in files for start, end in _occurrences(source_lines(target), text, rule)]
+        if found:
+            return found
+    return []
 
 
-def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, Any], notes: list[str]) -> dict[str, Any]:
+def _owned_files(bundle: dict[str, Any], readable: set[str] | None) -> dict[str, list[str]]:
+    """Each bundle-owned text file (that this role may read) and the items owning it."""
+    owners: dict[str, list[str]] = {}
+    for item in bundle.get("items", []) if isinstance(bundle, dict) else []:
+        if isinstance(item, dict) and isinstance(item.get("id"), str):
+            for path in _item_files(item):
+                if readable is None or path in readable:
+                    owners.setdefault(path, []).append(item["id"])
+    return owners
+
+
+def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, Any], notes: list[str],
+                      readable: set[str] | None = None) -> dict[str, Any]:
     label = repr(proposal.get("id"))
     proposal = dict(proposal)
     dropped = sorted(COMPUTED & set(proposal))
@@ -222,16 +241,51 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
     target = (case / anchor["path"]).resolve() if anchor else None
     reproduces = (anchor is not None and target is not None and case.resolve() in target.parents and target.is_file()
                   and proposal["text"] in selected_source_texts(target, anchor)[0])
-    if not reproduces:
-        # Without an anchor that selects the text, the writer finds it: in the
-        # named file, or else in the evidence item's own files.
-        item = _bundle_item(bundle, proposal.get("original_evidence_bundle_id")) or {}
-        paths = [anchor["path"]] if anchor else _item_files(item)
-        path, start, end = _locate(case, label, proposal["text"], paths)
+    item = _bundle_item(bundle, proposal.get("original_evidence_bundle_id")) or {}
+    owners = _owned_files(bundle, None)
+
+    def cite(path: str) -> bool:
+        """Cite the evidence item that owns `path`: the named one, else its one
+        owner. False when no single item owns it."""
+        if path in _item_files(item):
+            return True
+        if len(owners.get(path, [])) != 1:
+            return False
+        proposal["original_evidence_bundle_id"] = owners[path][0]
+        notes.append(f"expression {label}: the text is in {path}, so it cites evidence item {owners[path][0]}")
+        return True
+
+    if reproduces and cite(anchor["path"]):
+        found = None
+    else:
+        # The writer finds the text: in the named file (or the evidence item's
+        # own files), else in the one evidence file that holds it.
+        named = [anchor["path"]] if anchor else [path for path in _item_files(item) if readable is None or path in readable]
+        found = _matches(case, proposal["text"], named)
+        if len(found) == 1 and not cite(found[0][0]):
+            found = []
+        if not found:
+            searchable = [path for path in owners if readable is None or path in readable]
+            found = _matches(case, proposal["text"], searchable)
+            if len(found) == 1 and not cite(found[0][0]):
+                raise WriteError(f"expression {label}: {found[0][0]} belongs to evidence items {', '.join(owners[found[0][0]])}; "
+                                 "name the one you mean in original_evidence_bundle_id")
+        if not found:
+            searched = ", ".join(named) or "no file named"
+            raise WriteError(f"expression {label}: the text is not in {searched} nor in any other file of data/evidence-bundle.json, "
+                             f"so it is not from a source you acquired. {ESCAPE}")
+        if len(found) > 1:
+            ranges = ", ".join(f"{path} lines {start}-{end}" for path, start, end in found[:8])
+            raise WriteError(f"expression {label}: the text occurs {len(found)} times ({ranges}); give anchor_ref with the path, line_start and line_end you mean")
+        path, start, end = found[0]
         anchor = {"path": path, "line_start": start, "line_end": end}
         stored = "\n".join(source_lines((case / path).resolve())[start - 1:end])
-        notes.append(f"expression {label}: anchored at {path} lines {start}-{end}"
-                     + ("" if stored == proposal["text"] else "; text set to those lines as the file has them"))
+        note = f"expression {label}: anchored at {path} lines {start}-{end}"
+        if stored != proposal["text"]:
+            note += "; text set to those lines as the file has them"
+        if len(stored) > 3 * len(proposal["text"]):
+            note += f" ({len(stored)} characters, wider than your quote)"
+        notes.append(note)
         proposal["text"] = stored
     proposal["anchor_ref"] = anchor
     expression = {"id": proposal["id"]}
@@ -261,7 +315,7 @@ LIFECYCLE_EXAMPLE = ('{"expression_id": "P1", "event": "superseded", '
 
 
 def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], actor: str, cycle: int,
-          notes: list[str] | None = None) -> dict[str, Any]:
+          notes: list[str] | None = None, readable: set[str] | None = None) -> dict[str, Any]:
     """Return the merged document; raise WriteError and change nothing on any problem."""
     findings_doc = _load(case / "data" / "findings.json", {})
     findings = {f.get("id"): f for f in findings_doc.get("findings", []) if isinstance(f, dict)}
@@ -276,7 +330,7 @@ def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], 
     for raw in proposal.get("expressions", []):
         if not isinstance(raw, dict) or not isinstance(raw.get("id"), str) or not raw["id"]:
             raise WriteError("every proposed expression needs a non-empty id")
-        built = _build_expression(case, raw, bundle, notes if notes is not None else [])
+        built = _build_expression(case, raw, bundle, notes if notes is not None else [], readable)
         existing = by_id.get(raw["id"])
         if existing is None:
             built.update({"finding_links": [], "created_by": actor, "cycle": cycle,
@@ -374,12 +428,13 @@ def merge_positions(current: dict[str, Any] | None, proposal: dict[str, Any], pr
     return doc
 
 
-def write(case: Path, proposal: dict[str, Any], actor: str, cycle: int, notes: list[str] | None = None) -> dict[str, Any]:
+def write(case: Path, proposal: dict[str, Any], actor: str, cycle: int, notes: list[str] | None = None,
+          readable: set[str] | None = None) -> dict[str, Any]:
     if actor not in ACTORS:
         raise WriteError(f"--actor must be one of {', '.join(ACTORS)}")
     with transaction(case) as descriptor:
         current = _load(case / TARGET)
-        doc = merge(case, current, proposal, actor, cycle, notes)
+        doc = merge(case, current, proposal, actor, cycle, notes, readable)
         findings = _load(case / "data" / "findings.json", {})
         bundle = _load(case / "data" / "evidence-bundle.json")
         # The passages are checked, not the fact-check citing them: when a
@@ -514,6 +569,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--actor", choices=ACTORS)
     parser.add_argument("--cycle", type=int)
     parser.add_argument("--file", help="proposal JSON; default stdin")
+    parser.add_argument("--readable", action="append",
+                        help="an evidence file the writer may search for an unanchored passage (repeat); default every evidence file")
     parser.add_argument("--fingerprint-findings", action="store_true",
                         help="set finding_fingerprint on every finding (run after writing findings.json)")
     parser.add_argument("--resolve-fact-check-refs", action="store_true",
@@ -543,7 +600,8 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(proposal, dict):
             raise WriteError("the proposal must be a JSON object")
         notes: list[str] = []
-        doc = write(Path(args.case_dir), proposal, args.actor, args.cycle, notes)
+        doc = write(Path(args.case_dir), proposal, args.actor, args.cycle, notes,
+                    set(args.readable) if args.readable is not None else None)
     except (WriteError, OrchestrationError, json.JSONDecodeError, OSError) as exc:
         print(f"source-expressions: refused: {exc}", file=sys.stderr)
         return 2

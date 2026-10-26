@@ -273,6 +273,27 @@ test('a case data file written or edited into anything but one JSON object is re
 	await call('write_file', { path: 'research/list.json', content: '[]' });
 });
 
+// 12B r1 okfn and fsf on 97f066b6: bundle items named fetch's distilled leads file, so
+// every exact quote from the page's .raw was refused as not from an acquired source.
+test('an evidence item naming a distilled leads file is refused, naming its .raw; an item on the .raw is kept', async (t) => {
+	const { caseDir, call } = await fixture(t);
+	await mkdir(join(caseDir, 'research'));
+	await writeFile(join(caseDir, 'research', 'page.md'), '# RLM-distilled leads from https://example.org/\n- a lead\n');
+	await writeFile(join(caseDir, 'research', 'page.md.raw'), 'The page as fetched.\n');
+	const bundle = (item: object) => JSON.stringify({ items: [{ id: 'E1', ...item }] });
+
+	await assert.rejects(call('write_file', { path: 'data/evidence-bundle.json', content: bundle({ path: 'research/page.md' }) }),
+		(error: Error) => error.message === 'refused: data/evidence-bundle.json records fetch\'s distilled leads as evidence for E1 (path: research/page.md); the file is unchanged. Record the page as fetched instead: raw_path "<that file>.raw" with the raw_sha256 the fetch returned for it.');
+	assert.equal(existsSync(join(caseDir, 'data', 'evidence-bundle.json')), false);
+	// The marker counts on any of the first eight lines, as the validator reads it.
+	await writeFile(join(caseDir, 'research', 'late.md'), '\n\uFEFF  # RLM-distilled leads from https://example.org/\n');
+	await assert.rejects(call('write_file', { path: 'data/evidence-bundle.json', content: bundle({ raw_path: 'research/late.md' }) }), /distilled leads as evidence for E1/);
+
+	await call('write_file', { path: 'data/evidence-bundle.json', content: bundle({ raw_path: 'research/page.md.raw' }) });
+	await assert.rejects(call('edit_file', { path: 'data/evidence-bundle.json', old_text: 'page.md.raw', new_text: 'page.md' }), /distilled leads as evidence for E1 \(raw_path: research\/page\.md\)/);
+	assert.equal(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8'), bundle({ raw_path: 'research/page.md.raw' }));
+});
+
 // gold mozilla s0 a2 on a2ab7e20: the fact-checker wrote a verified claim with its ref under
 // a misspelt key, the validator blocked the case, and the one correction was spent.
 test('a verified claim citing no passage is refused, naming the refs on record, and kept', async (t) => {
@@ -300,7 +321,7 @@ test('a verified claim citing no passage is refused, naming the refs on record, 
 test('in an activated case a verified claim is refused while no passage is on record; a 1.0 fact-check is not', async (t) => {
 	const { caseDir, call } = await fixture(t);
 	const claim = (verdict: string, schema_version = '1.1') => JSON.stringify({ schema_version, claims: [{ finding_id: 'F1', verdict, evidence_for: [{}] }] });
-	const none = 'no passage on record supports F1; record the passage you checked with source_expressions, then cite its ref here, or change the verdict.';
+	const none = 'no passage on record supports F1; record the passage you checked with source_expressions, then cite its ref here, or change the verdict. If no source you acquired contains a passage that supports the finding, do not record one: set the verdict to unverified (or use missing_source_gate for a source that was requested and not returned).';
 
 	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
 	for (const expressions of [undefined, '{"expressions": []}']) {

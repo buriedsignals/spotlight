@@ -223,11 +223,48 @@ function refuseUncitedVerdicts(caseDir: string, target: string, content: string)
 		});
 		const misspelt = items.some((item) => item?.source_expression_ref !== undefined) ? ' (the key is source_expression_refs, a list, not source_expression_ref)' : '';
 		if (refs.length > 0) missing.push(`${String(claim.finding_id)}${misspelt}: ${JSON.stringify(refs)}`);
-		else if (activated) unsupported.push(`\nno passage on record supports ${String(claim.finding_id)}; record the passage you checked with source_expressions, then cite its ref here, or change the verdict.`);
+		else if (activated) unsupported.push(`\nno passage on record supports ${String(claim.finding_id)}; record the passage you checked with source_expressions, then cite its ref here, or change the verdict. If no source you acquired contains a passage that supports the finding, do not record one: set the verdict to unverified (or use missing_source_gate for a source that was requested and not returned).`);
 	}
 	if (missing.length === 0 && unsupported.length === 0) return;
 	const cite = missing.length > 0 ? ` In "source_expression_refs": [<ref>, ...] cite only the passages you checked against their source; if none of them supports the verdict, change the verdict. Refs on record for active passages supporting the finding:\n${missing.join('\n')}` : '';
 	throw new FileRefused(`refused: data/fact-check.json gives a verified verdict whose evidence_for has no source_expression_refs; the file is unchanged.${cite}${unsupported.join('')}`);
+}
+
+// The first line the validators recognise as a lead file (scripts/evidence_anchors.py
+// RLM_LEAD_MARKER), written by fetch: such a file can never anchor evidence; its .raw can.
+export const LEAD_MARKER = '# RLM-distilled leads from';
+
+// As scripts/evidence_anchors.py rlm_lead_failure tells a lead file: the marker
+// on one of its first eight lines. Read through the case's confined reader.
+function isLeadFile(caseDir: string, path: string): boolean {
+	try {
+		const lines = readFileSync(readTarget(caseDir, path), 'utf8').split('\n', 8);
+		return lines.some((line) => line.replace(/^\uFEFF/, '').trim().startsWith(LEAD_MARKER));
+	} catch {
+		return false;
+	}
+}
+
+// An evidence item records the page as fetched, never fetch's distilled leads
+// (12B r1 okfn and fsf: items named the leads file, so every exact quote from
+// the page's .raw was refused as not from an acquired source).
+function refuseLeadsEvidence(caseDir: string, target: string, content: string): void {
+	if (caseRelative(caseDir, target) !== 'data/evidence-bundle.json') return;
+	let items: unknown;
+	try {
+		items = (JSON.parse(content) as { items?: unknown }).items;
+	} catch {
+		return;
+	}
+	const leads = (Array.isArray(items) ? items : []).flatMap((item) =>
+		['raw_path', 'downloaded_document_path', 'path'].flatMap((key) => {
+			const path = item?.[key];
+			if (typeof path !== 'string') return [];
+			return isLeadFile(caseDir, path) ? [`${String(item.id)} (${key}: ${path})`] : [];
+		}),
+	);
+	if (leads.length === 0) return;
+	throw new FileRefused(`refused: data/evidence-bundle.json records fetch's distilled leads as evidence for ${leads.join(', ')}; the file is unchanged. Record the page as fetched instead: raw_path "<that file>.raw" with the raw_sha256 the fetch returned for it.`);
 }
 
 // A fact-check claim checks the finding it names, word for word (gold osmf
@@ -456,6 +493,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseRecordedFramework(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseNonObjectData(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseUncitedVerdicts(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
+				refuseLeadsEvidence(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, input.content, writes, denyWrites)}`);
 			},
@@ -489,6 +527,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseRecordedFramework(caseDir, target);
 				refuseNonObjectData(caseDir, target, updated);
 				refuseUncitedVerdicts(caseDir, target, updated);
+				refuseLeadsEvidence(caseDir, target, updated);
 				refuseDriftedClaims(caseDir, target, updated);
 				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes, denyWrites)}`);
 			},

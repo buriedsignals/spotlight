@@ -169,8 +169,9 @@ def main() -> int:
         wrong_text = proposal(3)
         wrong_text["expressions"][0]["text"] = "Not what line 4 says."
         refused = run_writer(case, wrong_text)
-        require(refused.returncode == 2 and "is not found in research/passages.txt" in refused.stderr and target.read_bytes() == before,
-                "a passage that is not in its file was written")
+        require(refused.returncode == 2 and "is not in research/passages.txt nor in any other file of data/evidence-bundle.json" in refused.stderr
+                and WRITER.ESCAPE in refused.stderr and target.read_bytes() == before,
+                "a passage that is not in any acquired source was written, or its refusal gave no honest exit")
 
         # r1/r2 source_expressions refusals the writer now resolves itself: each
         # case below was refused on 97f066b6.
@@ -222,6 +223,49 @@ def main() -> int:
         refused = relaxed("SXR-AMBIGUOUS", 5, text="Passage number", anchor_ref=None)
         require(refused.returncode == 2 and "occurs 8 times" in refused.stderr and "research/passages.txt lines 1-1" in refused.stderr
                 and target.read_bytes() == before, "an ambiguous passage was anchored")
+
+        # 12B r1 quotes that were the source's words but not exact, or cited the
+        # wrong file or item, or were the model's own text (each refused on #206).
+        other = case / "research" / "other.txt"
+        other.write_text("**Revenue** was `42` million in 2024.\nMinutes: the board met on 9 June.\n", encoding="utf-8")
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        item = json.loads(json.dumps(next(i for i in bundle["items"] if i["id"] == "E2")))
+        item.update({"id": "E3", "raw_path": "research/other.txt", "sha256": hashlib.sha256(other.read_bytes()).hexdigest()})
+        item.pop("text_derivatives", None)
+        bundle["items"].append(item)
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        # A markdown-only difference: the file's own line is stored, never the model's version.
+        done = relaxed("SXR-MD", 4, text='"Revenue was 42 million in 2024."', anchor_ref={"path": "research/other.txt"}, original_evidence_bundle_id="E3")
+        require(done.returncode == 0 and stored("SXR-MD")["text"] == "**Revenue** was `42` million in 2024.",
+                f"a quote differing only in markdown and wrapping quotes was not stored as the file's line: {done.stderr}")
+        # The named file lacks the quote and one other evidence file has it: that file and its item are cited.
+        done = relaxed("SXR-DERIVE", 4, text="Minutes: the board met on 9 June.")
+        require(done.returncode == 0 and stored("SXR-DERIVE")["anchor_ref"]["path"] == "research/other.txt"
+                and stored("SXR-DERIVE")["original_evidence_bundle_id"] == "E3" and "cites evidence item E3" in done.stdout,
+                f"the one acquired source holding the quote was not derived: {done.stderr}")
+        # The quote is exact in the named file, but that file is another item's: that item is cited.
+        done = relaxed("SXR-OWNER", 4, text="Minutes: the board met on 9 June.",
+                       anchor_ref={"path": "research/other.txt", "line_start": 2, "line_end": 2})
+        require(done.returncode == 0 and stored("SXR-OWNER")["original_evidence_bundle_id"] == "E3",
+                f"an anchor in another item's file was not cited to that item: {done.stderr}")
+        # A bundle item that does not exist is replaced by the one that holds the quote.
+        done = relaxed("SXR-NOITEM", 4, text="Minutes: the board met on 9 June.", original_evidence_bundle_id="E99", anchor_ref=None)
+        require(done.returncode == 0 and stored("SXR-NOITEM")["original_evidence_bundle_id"] == "E3", f"a missing bundle item was not derived: {done.stderr}")
+        # A quote much shorter than its line says the passage is wider.
+        done = relaxed("SXR-WIDE", 4, text="9 June.", anchor_ref={"path": "research/other.txt"}, original_evidence_bundle_id="E3")
+        require(done.returncode == 0 and "wider than your quote" in done.stdout, f"a widened passage was not flagged: {done.stdout}")
+        # The model's own placeholder is in no acquired source: refused, with the honest exit.
+        before = target.read_bytes()
+        refused = relaxed("SXR-PLACEHOLDER", 4, text="Passage for F2")
+        require(refused.returncode == 2 and WRITER.ESCAPE in refused.stderr and target.read_bytes() == before,
+                "a placeholder passage was written, or its refusal gave no honest exit")
+        # Derivation searches only the files the caller may read.
+        body = proposal(4)
+        body["expressions"][0].update({"id": "SXR-SCOPE", "text": "Minutes: the board met on 9 June."})
+        scoped = subprocess.run([sys.executable, str(SCRIPTS / "write-source-expressions.py"), str(case), "--actor", "fact-checker", "--cycle", "1",
+                                 "--readable", "research/passages.txt"], input=json.dumps(body), capture_output=True, text=True)
+        require(scoped.returncode == 2 and WRITER.ESCAPE in scoped.stderr and target.read_bytes() == before,
+                "derivation searched a file outside --readable")
 
         # Interrupted write: the publish fails after staging; the previous file
         # stays byte for byte and no temporary file is left behind.
