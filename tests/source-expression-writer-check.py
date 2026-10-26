@@ -125,27 +125,36 @@ def main() -> int:
         require(again.returncode == 0 and next(e for e in expressions(case)["expressions"] if e["id"] == "SXW0")["created_by"] == "investigator",
                 "re-proposing an expression changed its author")
         changed = proposal(0)
-        changed["expressions"][0]["text"] = "A different passage."
+        changed["expressions"][0]["text"] = PASSAGES[1]
         changed["expressions"][0]["anchor_ref"] = {"path": "research/passages.txt", "line_start": 2, "line_end": 2}
         before = target.read_bytes()
         refused = run_writer(case, changed)
         require(refused.returncode == 2 and "different passage" in refused.stderr and target.read_bytes() == before,
                 "a changed passage under an existing id was accepted")
+        # r1/r2: the 12B sent the hashes and fingerprints the writer computes; they are
+        # dropped with a note, and the writer's own values are written.
         forged = proposal(1)
-        forged["expressions"][0]["expression_fingerprint"] = "0" * 64
-        require(run_writer(case, forged).returncode == 2, "a caller-supplied fingerprint was accepted")
+        forged["expressions"][0].update({"expression_fingerprint": "0" * 64, "anchor_sha256": "1" * 64, "cycle": 9})
+        written = run_writer(case, forged)
+        stored = next(e for e in expressions(case)["expressions"] if e["id"] == "SXW1")
+        require(written.returncode == 0 and stored["expression_fingerprint"] != "0" * 64 and stored["anchor_sha256"] != "1" * 64
+                and stored["cycle"] == 1 and "ignored ['anchor_sha256', 'cycle', 'expression_fingerprint']" in written.stdout,
+                f"caller-supplied computed fields were kept or refused: {written.stderr}")
+        before = target.read_bytes()
         # Ingest refuses a passage without a language, so the writer does too (E2E D14).
         no_language = proposal(1)
         no_language["expressions"][0].pop("language", None)
         refused = run_writer(case, no_language)
         require(refused.returncode == 2 and "language is required" in refused.stderr and target.read_bytes() == before,
                 "a passage without a language was written")
-        # Gold run: a 12B teacher sent anchor_ref as "path:81-81" and the refusal never named the shape.
+        # Gold run: a 12B teacher sent anchor_ref as "path:81-81"; the path is read and the text located.
         string_anchor = proposal(1)
         string_anchor["expressions"][0]["anchor_ref"] = "research/passages.txt:2-2"
-        refused = run_writer(case, string_anchor)
+        written = run_writer(case, string_anchor)
+        require(written.returncode == 0 and target.read_bytes() == before, f"a string anchor_ref was not read as its path: {written.stderr}")
+        refused = run_writer(case, {"expressions": [{**proposal(1)["expressions"][0], "anchor_ref": ["research/passages.txt"]}]})
         require(refused.returncode == 2 and "must be an object" in refused.stderr and target.read_bytes() == before,
-                "a string anchor_ref was not refused with its expected shape")
+                "an anchor_ref that is neither an object nor a path was not refused with its expected shape")
         # 73308129 shakedown: a teacher sent line numbers as strings and lifecycle entries with other keys.
         string_lines = proposal(2)
         string_lines["expressions"][0]["anchor_ref"] = {"path": "research/passages.txt", "line_start": "3", "line_end": "3"}
@@ -156,10 +165,63 @@ def main() -> int:
         refused = run_writer(case, wrong_keys)
         require(refused.returncode == 2 and '"expression_id": "P1"' in refused.stderr and '"action": "supersede"' in refused.stderr
                 and target.read_bytes() == before, "a lifecycle entry with the wrong keys was not refused with the expected shape")
-        wrong_text = proposal(1)
-        wrong_text["expressions"][0]["text"] = "Not what line 2 says."
-        require(run_writer(case, wrong_text).returncode == 2 and target.read_bytes() == before,
-                "a passage that does not match its locator was written")
+        # Text the file does not hold is refused, whatever the anchor says.
+        wrong_text = proposal(3)
+        wrong_text["expressions"][0]["text"] = "Not what line 4 says."
+        refused = run_writer(case, wrong_text)
+        require(refused.returncode == 2 and "is not found in research/passages.txt" in refused.stderr and target.read_bytes() == before,
+                "a passage that is not in its file was written")
+
+        # r1/r2 source_expressions refusals the writer now resolves itself: each
+        # case below was refused on 97f066b6.
+        def stored(expression_id: str) -> dict:
+            return next(e for e in expressions(case)["expressions"] if e["id"] == expression_id)
+
+        def relaxed(expression_id: str, index: int, **fields) -> subprocess.CompletedProcess:
+            body = proposal(index)
+            body["expressions"][0].update({"id": expression_id, **fields})
+            for key in [key for key, value in fields.items() if value is None]:
+                body["expressions"][0].pop(key)
+            return run_writer(case, body)
+
+        # 199 of 232 "unknown fields" refusals were the tag sent as `lang`.
+        done = relaxed("SXR-LANG", 4, language=None, lang="en")
+        require(done.returncode == 0 and stored("SXR-LANG")["language"] == "en" and "read lang as language" in done.stdout,
+                f"lang was not read as language: {done.stderr}")
+        refused = relaxed("SXR-LANG2", 4, lang="fr")
+        require(refused.returncode == 2 and "differ" in refused.stderr, "lang and language that differ were accepted")
+        refused = relaxed("SXR-QUOTE", 4, quote="Passage number 4.")
+        require(refused.returncode == 2 and "unknown fields ['quote']" in refused.stderr and "allowed fields are text, anchor_ref" in refused.stderr,
+                "an invented field was accepted, or its refusal did not name the allowed fields")
+        # No anchor: the text is found in the evidence item's own file.
+        done = relaxed("SXR-NOANCHOR", 6, anchor_ref=None)
+        require(done.returncode == 0 and stored("SXR-NOANCHOR")["anchor_ref"] == {"path": "research/passages.txt", "line_start": 7, "line_end": 7},
+                f"a passage without anchor_ref was not located: {done.stderr}")
+        # No anchor, and the passage is in the item's OCR text: the derivative is searched too.
+        ocr = case / "research" / "ocr.txt"
+        ocr.write_text("Scanned page: the board met on 3 May.\n", encoding="utf-8")
+        bundle_path = case / "data" / "evidence-bundle.json"
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        next(item for item in bundle["items"] if item["id"] == "E2")["text_derivatives"] = [{
+            "id": "E2-ocr", "derivative_type": "ocr", "path": "research/ocr.txt",
+            "sha256": hashlib.sha256(ocr.read_bytes()).hexdigest(), "human_verification_required": False}]
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        done = relaxed("SXR-OCR", 4, text="the board met on 3 May.", anchor_ref=None)
+        require(done.returncode == 0 and stored("SXR-OCR")["anchor_ref"]["path"] == "research/ocr.txt"
+                and stored("SXR-OCR")["text"] == "Scanned page: the board met on 3 May.", f"a passage in a text derivative was not located: {done.stderr}")
+        # An anchor whose lines do not select the text: the text is found in that file.
+        done = relaxed("SXR-WRONGLINES", 7, anchor_ref={"path": "research/passages.txt", "line_start": 1, "line_end": 1})
+        require(done.returncode == 0 and stored("SXR-WRONGLINES")["anchor_ref"]["line_start"] == 8, f"a wrong line range was not relocated: {done.stderr}")
+        # Line-wrapped or re-spaced text matches on validate-case's NFKC whitespace rule;
+        # the stored text is the file's own lines.
+        done = relaxed("SXR-SPACING", 5, text="Passage   number\n5.", anchor_ref={"path": "research/passages.txt"})
+        require(done.returncode == 0 and stored("SXR-SPACING")["text"] == PASSAGES[5] and "text set to those lines" in done.stdout,
+                f"a whitespace-normalised match was not anchored to the file's lines: {done.stderr}")
+        # Text found more than once is refused with the candidate ranges, never chosen.
+        before = target.read_bytes()
+        refused = relaxed("SXR-AMBIGUOUS", 5, text="Passage number", anchor_ref=None)
+        require(refused.returncode == 2 and "occurs 8 times" in refused.stderr and "research/passages.txt lines 1-1" in refused.stderr
+                and target.read_bytes() == before, "an ambiguous passage was anchored")
 
         # Interrupted write: the publish fails after staging; the previous file
         # stays byte for byte and no temporary file is left behind.
@@ -234,11 +296,12 @@ def main() -> int:
         require(unioned.returncode == 0 and json.loads(positions_path.read_text(encoding="utf-8"))["positions"][0]["source_expression_ids"] == ["SXW2", "SXW3"],
                 "re-proposing a position did not union its passages: " + unioned.stderr)
         # A refused position refuses the passages proposed with it.
-        mixed = proposal(1)
+        mixed = proposal(5)
+        mixed["expressions"][0]["id"] = "SXW-MIXED"
         mixed["positions"] = position(id="SP2", attribution_verbatim="not in any passage")["positions"]
         refused = run_writer(case, mixed)
         require(refused.returncode == 2 and target.read_bytes() == passages_before
-                and "SXW1" not in {e["id"] for e in expressions(case)["expressions"]},
+                and "SXW-MIXED" not in {e["id"] for e in expressions(case)["expressions"]},
                 "passages were written although their position was refused")
         # Withdrawing every cited passage is refused while the position stands.
         supersede = {"expressions": [], "lifecycle": [

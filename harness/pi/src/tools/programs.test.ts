@@ -222,6 +222,13 @@ test('source_expressions refuses a case that is not activated or an anchor the r
 	await writeFile(join(caseDir, 'research', 'swarm', 'web', 'page.md'), 'swarm text');
 	const proposal = { expressions: [{ id: 'p1', text: 'swarm text', anchor_ref: { path: 'research/swarm/web/page.md', line_start: 1, line_end: 1 } }] };
 	await assert.rejects(call('source_expressions', { action: 'write', cycle: 1, proposal }), /outside the case files/);
+	// The writer also takes a path as a string, or finds the text in the evidence item's own files.
+	const asString = { expressions: [{ id: 'p1', text: 'swarm text', anchor_ref: 'research/swarm/web/page.md:1-1' }] };
+	await assert.rejects(call('source_expressions', { action: 'write', cycle: 1, proposal: asString }), /outside the case files/);
+	await writeFile(join(caseDir, 'research', 'page.md'), 'page text');
+	await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), JSON.stringify({ items: [{ id: 'E9', raw_path: 'research/page.md', text_derivatives: [{ path: 'research/swarm/web/page.md' }] }] }));
+	const noAnchor = { expressions: [{ id: 'p1', text: 'swarm text', original_evidence_bundle_id: 'E9' }] };
+	await assert.rejects(call('source_expressions', { action: 'write', cycle: 1, proposal: noAnchor }), /outside the case files/);
 	assert.deepEqual(await recorded(), []);
 	await call('source_expressions', { action: 'fingerprint_findings' });
 	assert.ok((await recorded()).some((run) => run.args.includes('--fingerprint-findings')));

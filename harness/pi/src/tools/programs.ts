@@ -282,6 +282,28 @@ function wikiDestinationTool(context: ToolContext): ToolDefinition {
 const PROPOSAL_LIST = Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }), { maxItems: 500 }));
 const WRITER_ACTORS = ['investigator', 'fact-checker'];
 
+// The files the writer may read for one proposed passage, as
+// write-source-expressions.py chooses them: the anchor's path (an object's
+// path, or a string with an optional ":12-14" suffix), else the evidence
+// item's own text files and text derivatives.
+function writerReads(caseDir: string, expression: unknown): string[] {
+	const { anchor_ref: anchor, original_evidence_bundle_id: itemId } = (expression ?? {}) as { anchor_ref?: unknown; original_evidence_bundle_id?: unknown };
+	if (typeof anchor === 'string') return [anchor.replace(/:\d+(-\d+)?$/, '')];
+	if (anchor && typeof anchor === 'object') {
+		const path = (anchor as { path?: unknown }).path;
+		return typeof path === 'string' ? [path] : [];
+	}
+	let items: unknown;
+	try {
+		items = (JSON.parse(readFileSync(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')) as { items?: unknown }).items;
+	} catch {
+		return [];
+	}
+	const item = (Array.isArray(items) ? items : []).find((entry) => entry?.id === itemId) ?? {};
+	const derivatives = Array.isArray(item.text_derivatives) ? item.text_derivatives : [];
+	return [...['raw_path', 'downloaded_document_path', 'path'].map((key) => item[key]), ...derivatives.map((entry: { path?: unknown }) => entry?.path)].filter((path): path is string => typeof path === 'string');
+}
+
 function sourceExpressionsTool(context: ToolContext): ToolDefinition {
 	const params = Type.Object(
 		{
@@ -300,7 +322,7 @@ function sourceExpressionsTool(context: ToolContext): ToolDefinition {
 		name: 'source_expressions',
 		label: 'Source expressions',
 		description:
-			'The only way to record passages and source positions in an activated case (scripts/write-source-expressions.py). {action: "write", cycle: N, proposal: {expressions, lifecycle, positions, withdraw_positions}} merges your proposal into data/source-expressions.json and data/source-positions.json as your role; give each passage\'s id, exact text, anchor_ref, original_evidence_bundle_id and finding_links, never hashes or fingerprints. anchor_ref is {path, line_start, line_end} or {path, json_pointer}: a file of the evidence bundle item (its original artifact or a text_derivatives path; for a page fetch distilled, its .raw file, never the leads file), and text must equal exactly what that range selects. original_evidence_bundle_id names an item already in data/evidence-bundle.json: add the item first, then cite it. Example expression: {"id": "P1", "text": "<the exact lines>", "anchor_ref": {"path": "research/page.md.raw", "line_start": 12, "line_end": 13}, "original_evidence_bundle_id": "E1", "language": "en", "direct_quote": true, "finding_links": [{"finding_id": "F1", "relation": "supports"}]}. {action: "fingerprint_findings"} sets every finding_fingerprint in data/findings.json from its claim and refreshes stale passage links; run it after writing or merging findings. A refusal changes nothing and says why.',
+			'The only way to record passages and source positions in an activated case. {action: "write", cycle: N, proposal: {expressions, lifecycle, positions, withdraw_positions}}. For each passage give id, text (the exact quote as the file has it), anchor_ref {path} (the evidence item\'s file: its original artifact or a text_derivatives path; for a distilled fetch its .raw file, never the leads file), original_evidence_bundle_id (an item already in data/evidence-bundle.json), language (BCP 47) and finding_links. The writer finds the lines and computes every hash and fingerprint. Example: {"id": "P1", "text": "<exact quote>", "anchor_ref": {"path": "research/page.md.raw"}, "original_evidence_bundle_id": "E1", "language": "en", "finding_links": [{"finding_id": "F1", "relation": "supports"}]}. {action: "fingerprint_findings"} sets every finding_fingerprint from its claim; run it after writing or merging findings. A refusal changes nothing and says why.',
 		parameters: params,
 		executionMode: 'sequential',
 		async execute(_id, raw, signal) {
@@ -320,12 +342,12 @@ function sourceExpressionsTool(context: ToolContext): ToolDefinition {
 			if (input.cycle === undefined || input.proposal === undefined) {
 				throw new ToolArgumentError('source_expressions: action "write" needs cycle and proposal');
 			}
-			// The writer reads each anchor's file, so an anchor must be a file this
-			// role may read: the fact-checker cannot cite the research it is kept from.
+			// The writer reads each anchor's file, or without one the evidence
+			// item's own files, so each must be a file this role may read: the
+			// fact-checker cannot cite the research it is kept from.
 			const expressions = (input.proposal as { expressions?: unknown }).expressions;
 			for (const expression of Array.isArray(expressions) ? expressions : []) {
-				const path = (expression as { anchor_ref?: { path?: unknown } } | null)?.anchor_ref?.path;
-				if (typeof path === 'string') readTarget(context.caseDir, path, context.scope);
+				for (const path of writerReads(context.caseDir, expression)) readTarget(context.caseDir, path, context.scope);
 			}
 			const result = await runPython(context, [writer, context.caseDir, '--actor', actor, '--cycle', String(input.cycle)], {
 				input: JSON.stringify(input.proposal),
