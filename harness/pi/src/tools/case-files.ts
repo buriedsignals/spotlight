@@ -207,6 +207,33 @@ function refuseUncitedVerdicts(caseDir: string, target: string, content: string)
 	throw new FileRefused(`refused: data/fact-check.json gives a verified verdict whose evidence_for has no source_expression_refs; the file is unchanged. In "source_expression_refs": [<ref>, ...] cite only the passages you checked against their source; if none of them supports the verdict, change the verdict. Refs on record for active passages supporting the finding:\n${missing.join('\n')}`);
 }
 
+// A fact-check claim checks the finding it names, word for word (gold osmf
+// s1: the fact-checker rewrote a finding into an invented address and marked
+// it false). Compared as validate-case.py does: Unicode NFKC, whitespace runs
+// collapsed.
+function refuseDriftedClaims(caseDir: string, target: string, content: string): void {
+	if (caseRelative(caseDir, target) !== 'data/fact-check.json') return;
+	const normalized = (text: string) => text.normalize('NFKC').replace(/\s+/g, ' ').trim();
+	let claims: unknown;
+	let findings: Map<unknown, unknown>;
+	try {
+		claims = (JSON.parse(content) as { claims?: unknown }).claims;
+		const recorded = (JSON.parse(readFileSync(join(caseDir, 'data', 'findings.json'), 'utf8')) as { findings?: { id?: unknown; claim?: unknown }[] }).findings;
+		findings = new Map((Array.isArray(recorded) ? recorded : []).map((finding) => [finding?.id, finding?.claim]));
+	} catch {
+		return;
+	}
+	const drifted = (Array.isArray(claims) ? claims : []).flatMap((claim) => {
+		const expected = findings.get(claim?.finding_id);
+		const text = claim?.claim_text;
+		return typeof expected === 'string' && typeof text === 'string' && normalized(text) !== normalized(expected)
+			? [`${String(claim.finding_id)}: ${JSON.stringify(expected)}`]
+			: [];
+	});
+	if (drifted.length === 0) return;
+	throw new FileRefused(`refused: data/fact-check.json checks a claim that is not its finding's; the file is unchanged. Set each claim_text to its finding's claim, word for word, and judge that claim:\n${drifted.join('\n')}`);
+}
+
 // Writes without following a symlink at the last step either.
 export function writeConfined(caseDir: string, root: string, path: string, content: string | Buffer, writes?: string[], denyWrites?: string[]): string {
 	const target = writeTarget(caseDir, root, path, writes, denyWrites);
@@ -405,6 +432,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseUnactivatedStart(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseNonObjectData(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseUncitedVerdicts(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
+				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, input.content, writes, denyWrites)}`);
 			},
 		},
@@ -436,6 +464,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				const updated = text.slice(0, first) + input.new_text + text.slice(first + input.old_text.length);
 				refuseNonObjectData(caseDir, target, updated);
 				refuseUncitedVerdicts(caseDir, target, updated);
+				refuseDriftedClaims(caseDir, target, updated);
 				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes, denyWrites)}`);
 			},
 		},

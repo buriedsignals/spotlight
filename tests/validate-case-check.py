@@ -69,6 +69,8 @@ def valid_findings() -> dict:
 
 def findings_with_indicator() -> dict:
     findings = valid_findings()
+    # A fact-check claim copies its finding's claim, so the claim names the indicator's value.
+    findings["findings"][0]["claim"] = "The domain observed.example was independently observed."
     findings["technical_indicators"] = [{
         "id": "TI-1",
         "finding_id": "F1",
@@ -437,12 +439,23 @@ def main() -> int:
     # --- cross reference ---
     check("cross-ref: resolves", vc.cross_reference(valid_findings(), valid_fact_check()), False)
     check("cross-ref: dangling finding_id", vc.cross_reference(valid_findings(), mutate(valid_fact_check(), lambda d: d["claims"][0].__setitem__("finding_id", "F9"))), True)
+    # gold osmf s1: the fact-checker rewrote F3's claim into an invented address and marked it false.
+    drifted = vc.cross_reference(valid_findings(), mutate(valid_fact_check(), lambda d: d["claims"][0].__setitem__("claim_text", "Acme paid Roe.")))
+    check("cross-ref: a fact-check claim that is not its finding's claim names the claim to copy",
+          [] if any("claim_text must copy finding F1's claim verbatim" in e and '"Acme paid Doe."' in e for e in drifted)
+          else ["claim drift not reported"] + drifted, False)
+    check("cross-ref: whitespace and Unicode form are not drift",
+          vc.cross_reference(valid_findings(), mutate(valid_fact_check(), lambda d: d["claims"][0].__setitem__("claim_text", "Acme  paid\nDoe."))), False)
     check("cross-ref: technical indicator resolves", vc.cross_reference(findings_with_indicator(), fact_check_with_indicator()), False)
     check("cross-ref: dangling technical indicator", vc.cross_reference(findings_with_indicator(), mutate(fact_check_with_indicator(), lambda d: d["claims"][0].__setitem__("technical_indicator_ids", ["TI-404"]))), True)
-    check("cross-ref: technical indicator exact value required", vc.cross_reference(findings_with_indicator(), mutate(fact_check_with_indicator(), lambda d: d["claims"][0].__setitem__("claim_text", "A different domain was checked."))), True)
+    # The finding and its fact-check claim share their text here, so only the indicator rule can fire.
+    def same_claim(text: str, findings: dict | None = None) -> tuple[dict, dict]:
+        return (mutate(findings or findings_with_indicator(), lambda d: d["findings"][0].__setitem__("claim", text)),
+                mutate(fact_check_with_indicator(), lambda d: d["claims"][0].__setitem__("claim_text", text)))
+    check("cross-ref: technical indicator exact value required", vc.cross_reference(*same_claim("A different domain was checked.")), True)
     case_sensitive_url = mutate(findings_with_indicator(), lambda d: d["technical_indicators"][0].update({"type": "url", "value": "https://observed.example/Reset"}))
-    case_folded_claim = mutate(fact_check_with_indicator(), lambda d: d["claims"][0].__setitem__("claim_text", "https://observed.example/reset was checked."))
-    check("cross-ref: URL path remains case-sensitive", vc.cross_reference(case_sensitive_url, case_folded_claim), True)
+    check("cross-ref: URL path remains case-sensitive", vc.cross_reference(*same_claim("https://observed.example/reset was checked.", case_sensitive_url)), True)
+    case_sensitive_url["findings"][0]["claim"] = "https://observed.example/Reset was checked."
     legacy_indicator = {"project": "p", "fact_checks": [{"finding_id": "F1", "claim": "https://observed.example/Reset was checked.", "status": "verified", "technical_indicator_ids": ["TI-1"]}]}
     check("cross-ref: legacy technical indicator claim", vc.cross_reference(case_sensitive_url, legacy_indicator), False)
 

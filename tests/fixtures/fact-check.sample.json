@@ -42,7 +42,7 @@
     {
       "id": 2,
       "finding_id": "F2",
-      "claim_text": "12 of the 43 companies connected to Acme Trust Services share the same ultimate beneficial owner.",
+      "claim_text": "The registered agent Acme Trust Services provides incorporation services for at least 43 other companies sharing the same Tortola address, 12 of which are connected to a single ultimate beneficial owner.",
       "verdict": "unverified",
       "confidence": "medium",
       "grounding_assessment": {

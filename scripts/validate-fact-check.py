@@ -517,11 +517,10 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
             failures.append(f"fact-check status {status!r} is not a contract {version} verdict ({', '.join(sorted(verdicts))})")
         if finding is None:
             failures.append(f"finding_id={finding_id!r} does not resolve to a finding")
+        # A claim that is not its finding's claim fails the structure check
+        # above (validate-case.py cross_reference), whatever the verdict.
         if not normalized(check.get("claim")):
             failures.append("fact-check claim text is missing")
-        elif (finding is not None and status in anchored
-              and normalized(check.get("claim")) != normalized(finding.get("claim"))):
-            failures.append("fact-check claim text does not exactly match the linked finding")
         if failures:
             failed += 1
             results.append({"id": check_id, "ok": False, "owner": "fact-checker", "reason": "; ".join(failures)})

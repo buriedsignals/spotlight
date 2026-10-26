@@ -1009,11 +1009,12 @@ def cross_reference(findings_data: dict[str, Any] | None, factcheck_data: dict[s
     errors: list[str] = []
     if findings_data is None or factcheck_data is None:
         return errors
-    finding_ids = {
-        finding.get("id")
+    finding_claims = {
+        finding.get("id"): finding.get("claim")
         for finding in findings_data.get("findings", [])
         if isinstance(finding, dict) and nonempty_string(finding.get("id"))
     }
+    finding_ids = set(finding_claims)
     indicators = {
         indicator.get("id"): indicator
         for indicator in findings_data.get("technical_indicators", [])
@@ -1026,6 +1027,15 @@ def cross_reference(findings_data: dict[str, Any] | None, factcheck_data: dict[s
         fid = claim.get("finding_id")
         if nonempty_string(fid) and fid not in finding_ids:
             errors.append(f"fact-check.json.{container}[{i}]: 'finding_id' {fid!r} does not match any id in findings.json")
+        # A fact-check claim checks the finding it names, word for word: a
+        # rewritten claim (gold osmf s1, matrix-stall s0) verifies or refutes
+        # something the investigator never claimed.
+        checked, _ = fact_check_values(container, claim)
+        if fid in finding_ids and nonempty_string(checked) and normalized(checked) != normalized(finding_claims[fid]):
+            errors.append(
+                f"fact-check.json.{container}[{i}]: claim_text must copy finding {fid}'s claim verbatim: "
+                f"{json.dumps(finding_claims[fid], ensure_ascii=False)}"
+            )
         technical_ids = claim.get("technical_indicator_ids", [])
         if not isinstance(technical_ids, list):
             continue
