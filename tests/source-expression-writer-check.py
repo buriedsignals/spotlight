@@ -110,12 +110,16 @@ def main() -> int:
         require(json.loads(result.stdout)["source_expression_refs"] == {link["finding_id"]: {link["relation"]: [expected]}},
                 "the writer did not return the fact-check refs for its passages")
         # Gold run 1 on 99c6567e: the fact-checker cited passages by bare id and the case blocked.
+        # Gold asf s1 on 8c7bf163: it cited them as {expression_id, relation} objects and looped.
+        # A ref that carries a fingerprint is left for validate-case to judge.
         fact_check = case / "data" / "fact-check.json"
         original = fact_check.read_bytes()
-        fact_check.write_text(json.dumps({"claims": [{"finding_id": link["finding_id"], "evidence_for": [{"source_expression_refs": ["SXW0", "SX-UNKNOWN"]}]}]}))
+        id_only = {"expression_id": "SXW0", "relation": "supports"}
+        stale = {"expression_id": "SXW0", "link_fingerprint": "0" * 64}
+        fact_check.write_text(json.dumps({"claims": [{"finding_id": link["finding_id"], "evidence_for": [{"source_expression_refs": ["SXW0", id_only, stale, "SX-UNKNOWN"]}]}]}))
         subprocess.run([sys.executable, str(SCRIPTS / "write-source-expressions.py"), str(case), "--resolve-fact-check-refs"], check=True, capture_output=True)
-        require(json.loads(fact_check.read_text())["claims"][0]["evidence_for"][0]["source_expression_refs"] == [expected, "SX-UNKNOWN"],
-                "a bare expression id was not resolved to its full ref (or an unknown id was changed)")
+        require(json.loads(fact_check.read_text())["claims"][0]["evidence_for"][0]["source_expression_refs"] == [expected, expected, stale, "SX-UNKNOWN"],
+                "a bare id or id-only ref was not resolved to its full ref (or a fingerprinted or unknown ref was changed)")
         fact_check.write_bytes(original)
         again = run_writer(case, proposal(0, relation="context"), actor="fact-checker")
         require(again.returncode == 0 and next(e for e in expressions(case)["expressions"] if e["id"] == "SXW0")["created_by"] == "investigator",
