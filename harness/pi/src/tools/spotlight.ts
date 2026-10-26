@@ -100,16 +100,14 @@ export function transitionArguments(operation: unknown, payload: Payload, active
 	switch (operation as ModelOperation) {
 		case 'recordAttempt':
 			return ['record-attempt', stringField(payload, 'kind'), '--gap', stringField(payload, 'gap'), ...boundary];
+		// A follow-up cycle is the member's decision, taken on the Investigation
+		// page (gold osmf s1: the orchestrator requested one itself to overturn
+		// a fact-check verdict). The agent channel stays for runtimes where the
+		// member asks in the chat; this harness has the page.
 		case 'requestFollowUp':
-			// Recorded on the agent channel with the requesting role, never a member name.
-			return [
-				'request-follow-up',
-				'--instructions',
-				stringField(payload, 'instructions'),
-				'--requested-by-role',
-				role,
-				...boundary,
-			];
+			throw new TransitionRefused(
+				"spotlight_transition refuses requestFollowUp: a follow-up cycle is the member's decision on the Investigation page. To fix a finding or verdict before the gate, spawn the investigator or fact-checker with the correction; otherwise tell the member what you would follow up and end your turn.",
+			);
 		case 'sealInvestigationGate':
 			return ['seal-investigation-gate', ...boundary];
 		// Both read case files the model wrote and are checked in code: the
