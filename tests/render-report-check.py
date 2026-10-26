@@ -663,7 +663,7 @@ def main() -> int:
             [sys.executable, str(FACT_CHECK_VALIDATOR), str(case)], capture_output=True, text=True
         )
         assert mismatch.returncode == 3, mismatch.stdout
-        assert 'claim text does not exactly match the linked finding' in mismatch.stdout, mismatch.stdout
+        assert "claim_text must copy finding F1's claim verbatim" in mismatch.stdout, mismatch.stdout
 
         # Legacy aliases cannot override the canonical fields in claims[].
         case = build_case(Path(tmp) / "mixed-claim-aliases")

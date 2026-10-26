@@ -312,6 +312,22 @@ test('a new case gets no investigation file before the harness activates it; act
 	await legacy.call('write_file', { path: 'data/investigation-log.json', content: '{}' });
 });
 
+// gold osmf s1 a1 on d74a171e: the fact-checker rewrote F3's claim into an invented London
+// address and marked it false; matrix-stall s0 verified claims under the wrong finding ids.
+test('a fact-check claim that is not its finding\'s claim is refused, naming the claim to copy', async (t) => {
+	const { caseDir, call } = await fixture(t);
+	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
+	await writeFile(join(caseDir, 'data', 'findings.json'), JSON.stringify({ findings: [{ id: 'F3', claim: 'The registered office is in Cambridge, CB4 0WS.' }] }));
+	const factCheck = (claimText: string) => JSON.stringify({ schema_version: '1.1', claims: [{ finding_id: 'F3', claim_text: claimText, verdict: 'false' }] });
+
+	await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: factCheck('The registered office is 103-105 High Street, London.') }),
+		(error: Error) => error.message.includes("checks a claim that is not its finding's; the file is unchanged") && error.message.includes('F3: "The registered office is in Cambridge, CB4 0WS."'));
+	assert.equal(existsSync(join(caseDir, 'data', 'fact-check.json')), false);
+
+	await call('write_file', { path: 'data/fact-check.json', content: factCheck('The registered office is in  Cambridge,\nCB4 0WS.') });
+	await assert.rejects(call('edit_file', { path: 'data/fact-check.json', old_text: 'Cambridge', new_text: 'London' }), /not its finding's/);
+});
+
 // E2E D11: the tool text promises the checkout's schemas/, but a relative
 // schemas/ path resolved inside the case and came back "not found".
 test('a relative schemas/ path reads the checkout schema', async (t) => {
