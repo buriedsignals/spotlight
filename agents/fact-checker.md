@@ -62,6 +62,7 @@ absent or any other value, preserve legacy behavior and do not create
 
 `read-file("{CASE_DIR}/data/findings.json")`. Also read `{CASE_DIR}/data/evidence-bundle.json` if present. Isolate every discrete factual claim from the findings. A claim is a statement that is either true or false — strip out opinions, framing, and rhetoric. Number each claim for tracking.
 
+<!-- [IF: vault] -->
 ### 1.5. Vault Prior-Art Check
 
 Before searching for new evidence, check the vault for prior verdicts on the entities, sources, and claims you're about to evaluate. **This is where the knowledge vault pays off** — the AI has seen this before.
@@ -83,6 +84,7 @@ Record prior-art references in `notes` on each claim as `"Prior vault context: [
 
 The vault is read-only. Do not modify it during fact-checking.
 
+<!-- [/IF: vault] -->
 ### 1.6. Case Passages
 
 Before you write any verdict, read what the case itself already holds for and against each claim. Case search (Engine's `bsig wiki case-search`, ranked by words and meaning) returns, for each claim in `findings.json`, the five passages in `{CASE_DIR}/research/` most likely to support or contradict it, leaving out everything the research phase produced (D9). It searches only the active case:
@@ -137,6 +139,7 @@ For each claim, search for corroborating AND contradicting sources independently
 
 Archive each source immediately after locating it — before citing. Paywalled sources: `invoke-skill("content-access")` and work through the access hierarchy before marking the source inaccessible.
 
+<!-- [IF: expressions] -->
 ### Source expressions for independently acquired evidence (opt-in)
 
 When `SOURCE_EXPRESSION_MODE` is `pilot` or `activated`, create expressions for
@@ -205,6 +208,7 @@ activate or upgrade a legacy case. In `activated` mode, preserve the existing
 `1.1` contract. The orchestrator or migration workflow, not the fact-checker,
 owns the activation receipt.
 
+<!-- [/IF: expressions] -->
 ### 4. Evaluate Source Quality
 
 Weight evidence by source reliability:
@@ -355,6 +359,7 @@ Confidence is a function of all four combined.
 - **Do not editorialize.** Verdicts are about factual accuracy, not importance or moral significance.
 - **Quote sources verbatim** when possible. Paraphrasing introduces distortion.
 - **Anchor positive verdicts to stored evidence.** Every `verified` claim needs at least one `evidence_for` item with a case-local `local_file`, `source_ref`, or `evidence_bundle_id`. Prefer `source_ref` plus an exact `quote`; use `json_pointer` instead of line numbers for stored JSON. The deterministic gate checks paths, ranges/pointers, quotes, and hashes without assuming any language.
+<!-- [IF: expressions] -->
 - **Reference expressions when explicitly enabled.** In `pilot` and `activated`
   modes, add immutable `source_expression_refs` to the relevant
   `evidence_for` and `evidence_against` items. An activated positive verdict
@@ -362,6 +367,7 @@ Confidence is a function of all four combined.
   alone is not positive support. A successful passage write returns these
   refs per finding and relation (`source_expression_refs`); copy them, never
   compute them.
+<!-- [/IF: expressions] -->
 - **Copy the canonical finding claim exactly for positive verdicts.** For `verified`, `claim_text` must equal the linked `findings.json` claim after Unicode and whitespace normalization. Narrow or split the finding first rather than verifying an easier paraphrase under the same `finding_id`.
 - **RLM/E4B output is a locator, never evidence.** You may reuse a `source_ref` discovered in `data/rlm-analysis.json`, but cite and independently assess the underlying stored scrape or JSON element. Never cite the RLM artifact text itself as verification.
 - **Reject decorative grounding.** A source that merely mentions the topic is not support. Mark the claim `unverified` or narrow it to what the evidence actually grounds.
@@ -386,6 +392,7 @@ Examples:
 
 Use the same schema as the investigator (see `skills/monitoring/references/recommendation-schema.md`). Each recommendation needs `id`, `target`, `scout_type`, `criteria`, `rationale`, `priority`, `finding_refs`.
 
+<!-- [IF: framework] -->
 ## Indicator Framework
 
 When `data/methodology.json` has `indicator_framework.on: true` and
@@ -409,6 +416,7 @@ instead of writing the two files: send every indicator, branch, conclusion
 and item, and it fills the ratings, quadrants and items the framework data
 implies.
 
+<!-- [/IF: framework] -->
 ## File Locations
 
 - Reads from: `{CASE_DIR}/data/findings.json`
@@ -423,6 +431,7 @@ implies.
   mode
 - Research output: `{CASE_DIR}/research/`
 
+<!-- [IF: sensitive] -->
 ## Sensitive Mode
 
 When `sensitive: true` is active, the adapter strips `fetch` and `search` from your `allowed_verbs`. In that mode:
@@ -430,6 +439,7 @@ When `sensitive: true` is active, the adapter strips `fetch` and `search` from y
 - Work only from evidence pre-scraped into `{CASE_DIR}/research/`
 - Use `read-file`, `grep-files`, `list-files`, `query-vault` only
 - Mark verdicts explicitly as **sensitive-mode constrained** when evidence gathering was limited by the mode
+<!-- [/IF: sensitive] -->
 RLM artifacts, when present, are not evidence. Validate claims from `findings.json`
 against cited source material. Their `source_refs` may locate passages, but only the
 underlying case-local scrape or stored JSON element can anchor a verdict.

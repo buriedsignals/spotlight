@@ -26,7 +26,7 @@ function compactions(chat: Chat): Array<Record<string, unknown>> {
 		.filter((record) => record.type === 'compaction_end' && record.result);
 }
 
-async function twoTurns(t: test.TestContext, tier: string) {
+async function twoTurns(t: test.TestContext, tier: string, env: Record<string, string> = {}) {
 	const fake = await startFakeOpenAI((request) =>
 		isSummaryRequest(request)
 			? { text: `## Goal\nFind the owner.\n## Progress\n${CHECKPOINT}\n## Decisions\nNone.\n## Next\nResolve.\n## Open gate\nNone.` }
@@ -39,6 +39,7 @@ async function twoTurns(t: test.TestContext, tier: string) {
 		SPOTLIGHT_MODEL_CONTEXT_WINDOW: '65536',
 		SPOTLIGHT_MODEL_TIER: tier,
 		SPOTLIGHT_PROVIDER_REQUEST_BODY: '{"provider":{"zdr":true}}',
+		...env,
 	});
 	await settledPrompt(chat, LONG_TURN);
 	await settledPrompt(chat, RECENT_TURN);
@@ -60,6 +61,34 @@ test('the local tier folds a conversation past its threshold into one checkpoint
 	const last = fake.requests.filter((request) => !isSummaryRequest(request)).at(-1)!;
 	assert.match(requestText(last), new RegExp(CHECKPOINT));
 	assert.doesNotMatch(requestText(last), new RegExp(OLD_TURN));
+});
+
+// r1 on 97f066b6: the 12B wrote its own checkpoints from ~24k tokens of
+// transcript. With an RLM the e4b writes them, from the same prompt, and the
+// session model is asked nothing.
+test('with an RLM the local tier\'s checkpoint is written by the RLM, not the session model', async (t) => {
+	const rlm = await startFakeOpenAI(() => ({ text: `## Goal\nFind the owner.\n## Progress\n${CHECKPOINT}\n## Decisions\nNone.\n## Next\nResolve.\n## Open gate\nNone.` }));
+	t.after(() => rlm.close());
+	const { fake, chat } = await twoTurns(t, '12b', { SPOTLIGHT_RLM_OPENAI_BASE_URL: rlm.baseURL });
+
+	assert.equal(compactions(chat).length, 1);
+	assert.equal(fake.requests.filter(isSummaryRequest).length, 0);
+	assert.equal(rlm.requests.length, 1);
+	assert.match(requestText(rlm.requests[0]), new RegExp(OLD_TURN));
+	assert.match(requestText(rlm.requests[0]), /Open gate/);
+	const last = fake.requests.at(-1)!;
+	assert.match(requestText(last), new RegExp(CHECKPOINT));
+	assert.doesNotMatch(requestText(last), new RegExp(OLD_TURN));
+});
+
+test('in sensitive mode the checkpoint stays with the session model even when an RLM is set', async (t) => {
+	const rlm = await startFakeOpenAI(() => ({ text: 'unused' }));
+	t.after(() => rlm.close());
+	const { fake, chat } = await twoTurns(t, '12b', { SPOTLIGHT_RLM_OPENAI_BASE_URL: rlm.baseURL, SPOTLIGHT_SENSITIVE: 'true' });
+
+	assert.equal(compactions(chat).length, 1);
+	assert.equal(rlm.requests.length, 0);
+	assert.equal(fake.requests.filter(isSummaryRequest).length, 1);
 });
 
 test('the frontier tier keeps Pi\'s default threshold and does not fold the same conversation', async (t) => {

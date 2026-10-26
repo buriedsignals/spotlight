@@ -57,17 +57,22 @@ const RLM_TIMEOUT_MS = 120_000;
 
 // The RLM endpoint for this process, or undefined off the local tier. An
 // endpoint the launcher did not confirm as own is refused, never used.
-function rlmEndpoint(env: ToolContext['env']): string | undefined {
+export function rlmEndpoint(env: ToolContext['env']): string | undefined {
 	const url = env.SPOTLIGHT_RLM_OPENAI_BASE_URL?.trim();
 	if (!url) return undefined;
 	if (env.SPOTLIGHT_RLM_INFERENCE !== 'own') {
-		throw new Error('fetch: SPOTLIGHT_RLM_OPENAI_BASE_URL is not confirmed as an endpoint you run yourself; refusing to send case material to it.');
+		throw new Error('SPOTLIGHT_RLM_OPENAI_BASE_URL is not confirmed as an endpoint you run yourself; refusing to send case material to it.');
 	}
 	return url.replace(/\/$/, '');
 }
 
-async function distill(baseURL: string, env: ToolContext['env'], markdown: string, signal?: AbortSignal): Promise<string> {
-	const request = JSON.parse(readFileSync(LEAD_REQUEST, 'utf8')) as LeadRequest;
+// The RLM model: SPOTLIGHT_RLM_OPENAI_MODEL, else the lead request's default.
+export function rlmModel(env: ToolContext['env']): string {
+	return env.SPOTLIGHT_RLM_OPENAI_MODEL?.trim() || (JSON.parse(readFileSync(LEAD_REQUEST, 'utf8')) as LeadRequest).default_model;
+}
+
+// One chat completion from the RLM; its answer text, trimmed.
+export async function rlmComplete(baseURL: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
 	const url = baseURL.endsWith('/v1') ? `${baseURL}/chat/completions` : `${baseURL}/v1/chat/completions`;
 	const timeout = AbortSignal.timeout(RLM_TIMEOUT_MS);
 	const response = await fetch(url, {
@@ -75,16 +80,25 @@ async function distill(baseURL: string, env: ToolContext['env'], markdown: strin
 		headers: { 'content-type': 'application/json' },
 		redirect: 'error',
 		signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-		body: JSON.stringify({
-			model: env.SPOTLIGHT_RLM_OPENAI_MODEL?.trim() || request.default_model,
+		body: JSON.stringify({ ...body, stream: false }),
+	});
+	if (!response.ok) throw new Error(`RLM answered HTTP ${response.status}`);
+	const answer = (await response.json()) as { choices?: Array<{ message?: { content?: string | null } }> };
+	return answer.choices?.[0]?.message?.content?.trim() ?? '';
+}
+
+async function distill(baseURL: string, env: ToolContext['env'], markdown: string, signal?: AbortSignal): Promise<string> {
+	const request = JSON.parse(readFileSync(LEAD_REQUEST, 'utf8')) as LeadRequest;
+	const leads = await rlmComplete(
+		baseURL,
+		{
+			model: rlmModel(env),
 			messages: [{ role: 'user', content: request.prompt + markdown.slice(0, request.max_input_chars) }],
 			max_tokens: request.max_tokens,
 			temperature: request.temperature,
-		}),
-	});
-	if (!response.ok) throw new Error(`RLM answered HTTP ${response.status}`);
-	const body = (await response.json()) as { choices?: Array<{ message?: { content?: string | null } }> };
-	const leads = body.choices?.[0]?.message?.content?.trim();
+		},
+		signal,
+	);
 	if (!leads) throw new Error('RLM returned no leads');
 	return leads;
 }

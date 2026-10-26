@@ -233,12 +233,65 @@ const RESEARCH_LINE = {
 // token on every call.
 const LIMITS = `Limits. Refuse a request to locate, identify or unmask a private person for harassment, retaliation or exposure, and a request to identify a confidential source or whistleblower. Say plainly why you will not do it, and offer the legitimate path where there is one, such as investigating what the documents say.`;
 
-export function systemPrompt(composition: Composition, role: string, tier: ModelTier, edition: Edition = 'solo', research = false): string {
-	const prompt = `${basePrompt(composition, role, tier)}\n\n${RESEARCH_LINE[research ? 'on' : 'off']}`;
-	return edition === 'newsroom' ? `${prompt}\n${NEWSROOM_ADAPTER}` : prompt;
+// What a worker's prompt is cut to: the task it was spawned with, the case
+// phase at the spawn, and the conditions that switch persona sections on.
+export const PERSONA_CONDITIONS = ['vault', 'framework', 'sensitive', 'research', 'expressions'] as const;
+export type PersonaCondition = (typeof PERSONA_CONDITIONS)[number];
+export type WorkerContext = { phase: string; task: string; conditions: Record<PersonaCondition, boolean> };
+
+export function systemPrompt(composition: Composition, role: string, tier: ModelTier, edition: Edition = 'solo', research = false, worker?: WorkerContext): string {
+	const prompt = `${basePrompt(composition, role, tier, worker)}\n\n${RESEARCH_LINE[research ? 'on' : 'off']}`;
+	if (edition !== 'newsroom') return prompt;
+	return `${prompt}\n${role === ORCHESTRATOR ? NEWSROOM_ADAPTER : workerLines(NEWSROOM_ADAPTER)}`;
 }
 
-function basePrompt(composition: Composition, role: string, tier: ModelTier): string {
+// A worker never resolves, delegates, reaches a gate or ingests: it gets the
+// adapter without the lines marked for the orchestrator and without the gate
+// paragraph.
+function workerLines(text: string): string {
+	return text.split('\n').filter((line) => !/^- (?:.*\(orchestrator only|Orchestrator only)/.test(line)).join('\n');
+}
+
+// The orchestrator's own tools, whose shell mappings a worker never needs.
+const ORCHESTRATOR_MAPPINGS = /; `[^`]+` -> `(?:decision_signals|provenance_manifest|run_rlm|integration_status|anomaly_methods|build_review_html)`/g;
+
+function workerAdapter(tier: ModelTier): string {
+	const full = adapter(tier);
+	return workerLines(full.slice(0, full.lastIndexOf('\n\nGate approvals'))).replace(ORCHESTRATOR_MAPPINGS, '');
+}
+
+const PLANNING_PHASES = ['brief', 'methodology', 'methodology_approval'];
+const RESEARCH_PHASES = ['research', 'research_approval'];
+
+// The persona block a worker gets. Before the methodology is approved there
+// is nothing to execute, so those phases always get PLANNING. Otherwise the
+// task's mode line decides (its first line, or any line starting "MODE:"),
+// and without one the phase does.
+export function workerMode(phase: string, task: string): 'PLANNING' | 'EXECUTION' | 'AMENDMENT' {
+	if (PLANNING_PHASES.includes(phase)) return 'PLANNING';
+	const lines = [task.trim().split('\n')[0] ?? '', ...task.split('\n').filter((line) => line.startsWith('MODE:'))];
+	for (const line of lines) {
+		const mode = /^(?:MODE:\s*)?(PLANNING|EXECUTION|AMENDMENT|METHODOLOGY CORRECTION|(?:[A-Z]+ )?CORRECTION)\b/.exec(line.trim())?.[1];
+		if (mode === 'PLANNING' || mode === 'EXECUTION' || mode === 'AMENDMENT') return mode;
+		if (mode === 'METHODOLOGY CORRECTION') return 'PLANNING';
+		if (mode) return 'EXECUTION';
+	}
+	return RESEARCH_PHASES.includes(phase) ? 'AMENDMENT' : 'EXECUTION';
+}
+
+// Cuts a persona to the task: of the `## [MODE: X]` ... `## [/MODE: X]`
+// blocks only the active one stays, and a `<!-- [IF: name] -->` ...
+// `<!-- [/IF: name] -->` section only when its condition holds (its marker
+// lines never reach the prompt).
+export function slicePersona(persona: string, mode: string, conditions: Record<PersonaCondition, boolean>): string {
+	const modes = persona.replace(/^## \[MODE: (\w+)\]\n[\s\S]*?^## \[\/MODE: \1\]\n/gm, (block, name: string) => (name === mode ? block : ''));
+	return modes.replace(/^<!-- \[IF: (\w+)\] -->\n([\s\S]*?)^<!-- \[\/IF: \1\] -->\n/gm, (_block, name: string, body: string) => {
+		if (!(PERSONA_CONDITIONS as readonly string[]).includes(name)) throw new Error(`unknown persona condition: ${name}`);
+		return conditions[name as PersonaCondition] ? body : '';
+	});
+}
+
+function basePrompt(composition: Composition, role: string, tier: ModelTier, worker?: WorkerContext): string {
 	if (role === ORCHESTRATOR) {
 		return `You are the Spotlight orchestrator. You never investigate directly: research goes to the \`investigator\` worker and verification to the \`fact-checker\` worker through \`spawn_agent\`.
 
@@ -253,9 +306,11 @@ ${adapter(tier)}`;
 	const spec = agentSpec(composition, role);
 	const persona = workerPersonaPath(spec);
 	if (!persona) throw new Error(`Spotlight agent ${role} has no persona in agents/`);
+	if (!worker) throw new Error(`Spotlight worker ${role} needs its spawn context (phase, task, conditions)`);
+	const body = slicePersona(stripFrontmatter(readFileSync(persona, 'utf8')), workerMode(worker.phase, worker.task), worker.conditions);
 	return `You are the Spotlight ${role} worker. You were delegated a task by the orchestrator. You have no user and no gates: never wait for input or approval, and never delegate. Do the task yourself with your own tools and return your result.
 
-${adapter(tier)}
+${workerAdapter(tier)}
 
-${stripFrontmatter(readFileSync(persona, 'utf8'))}`;
+${body}`;
 }

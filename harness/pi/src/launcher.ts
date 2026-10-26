@@ -37,7 +37,8 @@ import { runResearchRound } from './lanes.ts';
 import type { ResearchPlan, RoundSummary } from './lanes.ts';
 import { discardIncompleteLanes } from './resume.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, isolationRefusal, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
-import type { Composition } from './roles.ts';
+import type { Composition, WorkerContext } from './roles.ts';
+import { approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { WorkerQueue, runWorker } from './subagents.ts';
 import { withCasePassages } from './case-search.ts';
 import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
@@ -207,7 +208,7 @@ function forwardStderr(harness: Harness, child: ChildProcess): void {
 
 // Called right before each pi process starts: it also writes that process's
 // Pi settings (the local tier's fold point) into its configuration folder.
-function processLaunch(harness: Harness, role: string) {
+function processLaunch(harness: Harness, role: string, worker?: WorkerContext) {
 	const route = routeFor(harness.config);
 	const spec = agentSpec(harness.composition, role);
 	const env = childEnv(harness.config, harness.composition, role, process.env);
@@ -215,7 +216,7 @@ function processLaunch(harness: Harness, role: string) {
 	return {
 		command: process.execPath,
 		args: piArguments({
-			systemPrompt: systemPrompt(harness.composition, role, harness.config.modelTier, harness.config.edition, harness.config.research),
+			systemPrompt: systemPrompt(harness.composition, role, harness.config.modelTier, harness.config.edition, harness.config.research, worker),
 			skills: skillsFor(harness.composition, role),
 			tools: allowedTools(spec, harness.config.sensitive, harness.config.edition),
 			model: route.model,
@@ -273,7 +274,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 					const task = await finalTask(harness, request.agent, request.task, controller.signal);
 					return runWorker(
 						{
-							...processLaunch(harness, request.agent),
+							...processLaunch(harness, request.agent, await workerContext(harness, request.agent, request.task)),
 							onSpawn: (child) => {
 								track(harness, child);
 								serveEditorial(harness, child, request.agent, running);
@@ -351,6 +352,23 @@ function researchRound(harness: Harness, retry: boolean, signal: AbortSignal): P
 		roundInFlight = undefined;
 	});
 	return roundInFlight;
+}
+
+// What the worker's persona is cut to (roles.ts slicePersona), read at the
+// spawn, after a new case was activated.
+async function workerContext(harness: Harness, role: string, task: string): Promise<WorkerContext> {
+	const { config, active } = harness;
+	return {
+		phase: await casePhase(harness),
+		task,
+		conditions: {
+			vault: allowedTools(agentSpec(harness.composition, role), config.sensitive, config.edition).includes('query_vault'),
+			framework: approvedIndicatorFramework(active.caseDir),
+			sensitive: config.sensitive,
+			research: config.research,
+			expressions: existsSync(resolve(active.caseDir, 'data/case-contract.json')) || /^SOURCE_EXPRESSION_MODE:\s*pilot\s*$/m.test(task),
+		},
+	};
 }
 
 // The task the worker gets: the requested one plus, for the fact-checker, the

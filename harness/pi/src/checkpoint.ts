@@ -7,11 +7,13 @@
 // transcript. Past the tier's fold point (set by the launcher in Pi's
 // compaction settings) Pi compacts, and this handler replaces Pi's generic
 // summary with a Spotlight checkpoint written by the session model on the
-// same route. Frontier tier: Pi's own threshold and summary, only with the
+// same route, or by the RLM when the harness has one (the e4b that distills
+// every fetch, on an endpoint the operator runs). Frontier tier: Pi's own threshold and summary, only with the
 // policy applied.
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { compact, convertToLlm, serializeConversation } from '@earendil-works/pi-coding-agent';
 import { applyFixedRequestBody } from './provider-policy.ts';
+import { rlmComplete, rlmEndpoint, rlmModel } from './tools/fetch.ts';
 
 type FixedBody = Parameters<typeof applyFixedRequestBody>[1];
 
@@ -57,8 +59,8 @@ function policy(fixedBody: FixedBody) {
 	};
 }
 
-export function registerCompaction(pi: ExtensionAPI, fixedBody: FixedBody, local: boolean): void {
-	if (local) registerCheckpoint(pi, fixedBody);
+export function registerCompaction(pi: ExtensionAPI, fixedBody: FixedBody, local: boolean, env: NodeJS.ProcessEnv = process.env): void {
+	if (local) registerCheckpoint(pi, fixedBody, env);
 	else if (fixedBody) registerPolicyOnDefaultSummary(pi, fixedBody);
 }
 
@@ -86,48 +88,27 @@ function registerPolicyOnDefaultSummary(pi: ExtensionAPI, fixedBody: FixedBody):
 	});
 }
 
-function registerCheckpoint(pi: ExtensionAPI, fixedBody: FixedBody): void {
+function registerCheckpoint(pi: ExtensionAPI, fixedBody: FixedBody, env: NodeJS.ProcessEnv): void {
 	pi.on('session_before_compact', async (event, ctx) => {
 		const { preparation, signal } = event;
-		const model = ctx.model;
-		// Cancel rather than fall back to Pi's own summary request, which is
-		// sent without the before_provider_request policy.
-		if (!model) {
-			log('no session model for the checkpoint; compaction skipped');
-			return { cancel: true };
-		}
 		const messages = [...preparation.messagesToSummarize, ...preparation.turnPrefixMessages];
 		const previous = preparation.previousSummary
 			? `<previous-checkpoint>\n${preparation.previousSummary}\n</previous-checkpoint>\n\n`
 			: '';
 		const text = `<conversation>\n${serializeConversation(convertToLlm(messages))}\n</conversation>\n\n${previous}${CHECKPOINT_PROMPT}`;
-		const guard = policy(fixedBody);
 		try {
-			const response = await ctx.modelRegistry.complete(
-				model,
-				{ messages: [{ role: 'user', content: [{ type: 'text', text }], timestamp: Date.now() }] },
-				{
-					signal,
-					cacheRetention: 'none',
-					onPayload: guard.onPayload,
-				},
-			);
-			if (guard.blocked()) throw new Error('the provider privacy policy could not apply to the checkpoint request');
-			if (response.stopReason === 'error' || response.stopReason === 'aborted' || response.stopReason === 'length') {
-				throw new Error(`checkpoint request ended with ${response.stopReason}`);
-			}
-			const summary = response.content
-				.filter((block): block is { type: 'text'; text: string } => block.type === 'text')
-				.map((block) => block.text)
-				.join('\n')
-				.trim();
+			// Sensitive mode keeps case text away from the RLM, as it does for run_rlm.
+			const rlm = env.SPOTLIGHT_SENSITIVE === 'true' ? undefined : rlmEndpoint(env);
+			const { summary, usage } = rlm
+				? { summary: await rlmComplete(rlm, { model: rlmModel(env), messages: [{ role: 'user', content: text }], temperature: 0 }, signal), usage: undefined }
+				: await sessionCheckpoint(ctx, fixedBody, text, signal);
 			if (!summary) throw new Error('the checkpoint came back empty');
 			return {
 				compaction: {
 					summary: `${summary}${STATE_NOTE}`,
 					firstKeptEntryId: preparation.firstKeptEntryId,
 					tokensBefore: preparation.tokensBefore,
-					usage: response.usage,
+					usage,
 					details: { kind: 'spotlight-checkpoint' },
 				},
 			};
@@ -137,4 +118,31 @@ function registerCheckpoint(pi: ExtensionAPI, fixedBody: FixedBody): void {
 			return { cancel: true };
 		}
 	});
+}
+
+// The checkpoint from the session model, under the fixed request body. With
+// no session model it fails rather than fall back to Pi's own summary
+// request, which is sent without the before_provider_request policy.
+async function sessionCheckpoint(ctx: ExtensionContext, fixedBody: FixedBody, text: string, signal?: AbortSignal) {
+	if (!ctx.model) throw new Error('no session model for the checkpoint');
+	const guard = policy(fixedBody);
+	const response = await ctx.modelRegistry.complete(
+		ctx.model,
+		{ messages: [{ role: 'user', content: [{ type: 'text', text }], timestamp: Date.now() }] },
+		{
+			signal,
+			cacheRetention: 'none',
+			onPayload: guard.onPayload,
+		},
+	);
+	if (guard.blocked()) throw new Error('the provider privacy policy could not apply to the checkpoint request');
+	if (response.stopReason === 'error' || response.stopReason === 'aborted' || response.stopReason === 'length') {
+		throw new Error(`checkpoint request ended with ${response.stopReason}`);
+	}
+	const summary = response.content
+		.filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+		.map((block) => block.text)
+		.join('\n')
+		.trim();
+	return { summary, usage: response.usage };
 }
