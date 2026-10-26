@@ -1,0 +1,8 @@
+{
+  "integrations": {
+    "decisions": {
+      "enabled": true,
+      "research_triage": {"backend": "jev"}
+    }
+  }
+}

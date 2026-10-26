@@ -4,7 +4,7 @@
   "leads_sha256": "0f1c410c644f9c2924a33bf769094830505fb111e9f201b64d0595b0ff869abe",
   "triage": {
     "mode": "flag_only",
-    "backend": "rules"
+    "backend": "local"
   },
   "clues": [
     {

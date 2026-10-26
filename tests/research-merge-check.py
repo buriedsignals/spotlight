@@ -6,6 +6,7 @@ Research page's ranking. Offline lane folders built by research_lane_fixture.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import subprocess
 import sys
@@ -142,11 +143,19 @@ class Merge(MergeTestCase):
         self.case.page_lead("contracts-news-courts", "b", page_text="Capital: 900 EUR", excerpt="Capital: 900 EUR",
                             facts=[{"subject": "Northwind Holdings", "attribute": "capital", "value": "900 EUR"}])
         self.merged()
+        spec = importlib.util.spec_from_file_location("research_triage_check", Path(__file__).with_name("research-triage-check.py"))
+        triage_check = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(triage_check)
+        server = triage_check.kev_server([])
         config = Path(self.tmp.name) / "config.json"
-        config.write_text(json.dumps({"integrations": {"decisions": {"research_triage": {"backend": "rules"}}}}), encoding="utf-8")
+        config.write_text(json.dumps({"integrations": {"decisions": {"research_triage": {"backend": "local"}, "endpoint": {
+            "url": f"http://127.0.0.1:{server.server_port}/v1/systemone", "api": "openrouter-decisions"}}}}), encoding="utf-8")
         env = {"PATH": "/usr/bin:/bin", "SPOTLIGHT_CONFIG": str(config), "OPENROUTER_API_KEY": ""}
-        done = subprocess.run([sys.executable, str(ROOT / "scripts" / "research-triage.py"), str(self.case.root)],
-                              env=env, capture_output=True, text=True, check=False)
+        try:
+            done = subprocess.run([sys.executable, str(ROOT / "scripts" / "research-triage.py"), str(self.case.root)],
+                                  env=env, capture_output=True, text=True, check=False)
+        finally:
+            server.shutdown()
         self.assertEqual(done.returncode, 0, done.stderr)
         triage = self.case.data("research-triage.json")
         self.assertEqual(triage["invalid_leads"], [])

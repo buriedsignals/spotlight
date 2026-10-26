@@ -15,13 +15,13 @@ which one answered:
   template comes from ``/apply-template``; ``/completion`` is constrained by a
   grammar to one option letter, with ``n_probs`` giving each letter's
   probability.
-- ``rules``: no model; only the deterministic rules run.
 
-Routing: journalist input and sensitive mode never leave the machine (local
-tune or rules only). In newsroom mode the cloud backends are off unless the
+Research always triages with a decision model: there is no rules-only
+backend. Routing: journalist input and sensitive mode never leave the machine
+(local tune only). In newsroom mode the cloud backends are off unless the
 decision endpoint is the newsroom's own (a non-OpenRouter endpoint in the
-install config). A backend that is not configured falls back to rules, and
-the output records why.
+install config). A lead with no backend it may go to stops the triage and
+names what to configure.
 """
 
 from __future__ import annotations
@@ -34,9 +34,12 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from client import LOOPBACK, RETRYABLE, DecisionUnavailable, answer_problem
+from client import LOOPBACK, RETRYABLE, DecisionUnavailable, answer_problem, endpoint_from_config, is_local, is_openrouter
 
-BACKENDS = ("jev", "clef", "clef-flash", "local", "rules")
+BACKENDS = ("jev", "clef", "clef-flash", "local")
+NO_TRIAGE_MODEL = ('research needs a decision model for triage: set integrations.decisions.research_triage.backend '
+                   'to "local" (Kev on this computer, a loopback integrations.decisions.endpoint) or "jev" '
+                   '(Jev on OpenRouter, with integrations.decisions.enabled)')
 CLOUD = {"jev", "clef", "clef-flash"}
 WORKERS_AI = "https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/@cf/cloudflare/{model}"
 CLEF_ACCOUNT_ENV = "CLOUDFLARE_ACCOUNT_ID"
@@ -164,20 +167,59 @@ class LlamaServerProvider:
 def route(requested: str, *, newsroom: bool, sensitive: bool, journalist_input: bool,
           local_available: bool, cloud_enabled: bool, newsroom_endpoint: bool) -> tuple[str, str]:
     """(backend, reason) for one request. Never routes journalist input,
-    sensitive cases or (by default) newsroom cases to a cloud backend."""
+    sensitive cases or (by default) newsroom cases to a cloud backend; raises
+    DecisionUnavailable when such a request has no local model."""
     if requested not in BACKENDS:
         raise ValueError(f"unknown triage backend {requested!r}")
-    local = ("local", "") if local_available else ("rules", "no local triage model is configured")
-    if requested == "rules":
-        return "rules", ""
+
+    def local(reason: str) -> tuple[str, str]:
+        if not local_available:
+            raise DecisionUnavailable(f"{reason or 'the triage backend is local'}, and no local triage model is configured "
+                                      "(Kev on loopback as integrations.decisions.endpoint, or research_triage.local_url)")
+        return "local", reason
+
     if requested == "local":
-        return local
+        return local("")
     if journalist_input:
-        return local[0], "journalist input is triaged only on this computer"
+        return local("journalist input is triaged only on this computer")
     if sensitive:
-        return local[0], "sensitive mode keeps triage on this computer"
+        return local("sensitive mode keeps triage on this computer")
     if newsroom and not (requested == "jev" and newsroom_endpoint):
-        return local[0], "newsroom mode turns cloud triage off unless the newsroom's own endpoint serves it"
+        return local("newsroom mode turns cloud triage off unless the newsroom's own endpoint serves it")
     if not cloud_enabled:
-        return local[0], "cloud decision models are not enabled in the install config"
+        return local("cloud decision models are not enabled in the install config")
     return requested, ""
+
+
+def triage_settings(config: Mapping[str, Any]) -> dict[str, Any]:
+    """The triage backend and models from the install config. Raises
+    DecisionUnavailable when no decision model is named."""
+    block = (config.get("integrations") or {}).get("decisions") or {}
+    triage = block.get("research_triage") or {}
+    backend = triage.get("backend")
+    if backend not in BACKENDS:
+        raise DecisionUnavailable(NO_TRIAGE_MODEL)
+    try:
+        endpoint = endpoint_from_config(block.get("endpoint"))
+    except DecisionUnavailable:
+        endpoint = ("", "")
+    host = (urlparse(endpoint[0]).hostname or "").lower()
+    return {"backend": backend, "local_url": triage.get("local_url") or "",
+            # A decision endpoint on this computer (Kev in Ninja mode) is the local triage model.
+            "local_endpoint": endpoint if is_local(endpoint[0]) else None, "cloud_enabled": block.get("enabled") is True,
+            "newsroom_endpoint": bool(host) and not is_openrouter(host) and not is_local(endpoint[0]),
+            "model": block.get("model") or "typesafe/jev-1.13", "env_file": block.get("env_file")}
+
+
+def plan_problems(config: Mapping[str, Any], *, sensitive: bool, newsroom: bool, journalist_input: bool) -> list[str]:
+    """Why this install could not triage a research plan's leads, from the
+    config alone (D1); whether the model answers is the triage step's check."""
+    try:
+        cfg = triage_settings(config)
+        for lead_input in {False, journalist_input}:
+            route(cfg["backend"], newsroom=newsroom, sensitive=sensitive, journalist_input=lead_input,
+                  local_available=bool(cfg["local_url"] or cfg["local_endpoint"]),
+                  cloud_enabled=cfg["cloud_enabled"], newsroom_endpoint=cfg["newsroom_endpoint"])
+    except DecisionUnavailable as exc:
+        return [f"research triage: {exc}"]
+    return []

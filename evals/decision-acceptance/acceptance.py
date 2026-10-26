@@ -243,6 +243,15 @@ class Metered:
         return out
 
 
+class NoModel:
+    """The rules baseline: answers nothing, so only the deterministic rules
+    decide. The runtime has no such backend; it exists here to measure what a
+    model adds."""
+
+    def decide(self, state: Any, questions: Any) -> dict[str, Any]:
+        return {"answers": {}}
+
+
 def build_provider(contender: str, args: argparse.Namespace) -> tuple[Any | None, str]:
     """(provider, egress host) for a contender; rules has none. Raises AcceptanceError when not configured."""
     if contender == "rules":
@@ -284,7 +293,7 @@ def run_case(fixture: Mapping[str, Any], split: str, contender: str, provider: A
         return contender, ""
 
     document = triage.run_triage([item["lead"] for item in items], brief, clues_doc,
-                                 lambda backend: provider if backend == contender else None, routing, acceptance)
+                                 lambda backend: (provider if backend == contender else None) or NoModel(), routing, acceptance)
     violations = rr.triage_violations(document)
     ranked = {r["lead_id"]: r for r in merge.rank(leads_doc, clues_doc, document)}
     rule_groups: dict[str, set[str]] = {}

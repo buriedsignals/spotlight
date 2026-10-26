@@ -92,7 +92,9 @@ class SeamCase(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, str(SEAM), *args, str(case or self.case)],
             capture_output=True, text=True, check=False,
-            env={"PATH": "", "PYTHONNOUSERSITE": "1", "SPOTLIGHT_RESEARCH_SWARMS": self.research, **(env or {})},
+            env={"PATH": "", "PYTHONNOUSERSITE": "1", "SPOTLIGHT_RESEARCH_SWARMS": self.research,
+                 # Research always names a decision model for triage (Jev here).
+                 "SPOTLIGHT_CONFIG": str(ROOT / "tests" / "fixtures" / "research" / "install-config.sample.json"), **(env or {})},
         )
         self.assertEqual(result.returncode, expect, result.stderr or result.stdout)
         return result

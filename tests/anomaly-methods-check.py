@@ -212,7 +212,8 @@ class PlanValidation(AnomalyTestCase):
         plan["research_plan"]["egress"] = [{"topic_id": "ownership-ad-hoc", "destination": "openrouter"}]
         case = Case(self.tmp / "case", plan)
         config = self.tmp / "config.json"
-        config.write_text(json.dumps({"model_tier": "frontier", "integrations": {}}), encoding="utf-8")
+        config.write_text(json.dumps({"model_tier": "frontier", "integrations": {
+            "decisions": {"enabled": True, "research_triage": {"backend": "jev"}}}}), encoding="utf-8")
         env = {k: v for k, v in os.environ.items()
                if k not in ("ANOMALY_HOME", "SPOTLIGHT_SENSITIVE", "SPOTLIGHT_MODEL_BASE_URL")}
         env["SPOTLIGHT_RESEARCH_SWARMS"] = "on"

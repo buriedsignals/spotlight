@@ -1057,6 +1057,8 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 	const chat = launch(t, {
 		...baseEnv(space, orchestratorModel.baseURL),
 		SPOTLIGHT_RESEARCH_SWARMS: 'on',
+		// Research always names a decision model for triage; this round has no leads to send it.
+		SPOTLIGHT_CONFIG: join(CHECKOUT_ROOT, 'tests/fixtures/research/install-config.sample.json'),
 		OPENROUTER_API_KEY: 'sk-or-v1-launcher-secret',
 		SPOTLIGHT_SWARM_BASE_URL: swarm.baseURL,
 	});
