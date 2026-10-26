@@ -138,6 +138,10 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			const page = {
 				requested_url: input.url,
 				final_url: result.source_url ?? destination,
+				// The time comes from the harness, so a source's access date is never guessed.
+				fetched_at: new Date().toISOString(),
+				// No archive capture is made by this harness.
+				archive_url: null,
 				provider: result.provider,
 				status_code: result.status_code ?? null,
 				title: result.title ?? null,
