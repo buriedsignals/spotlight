@@ -14,7 +14,7 @@ import type { ModelTier } from './config.ts';
 import { bindActiveCase, pythonAdapter, spotlightTools } from './tools/spotlight.ts';
 import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
-import { openReviewTool } from './tools/review.ts';
+import { openReviewTool, reportDraftCheck } from './tools/review.ts';
 import { REPEAT_REASON } from './tools/run.ts';
 
 const log = (message: string) => process.stderr.write(`spotlight-extension: ${message}\n`);
@@ -36,25 +36,27 @@ function toolsFor(role: string): ToolDefinition[] {
 	const hosted = INDICATOR_FRAMEWORK_ROLES.includes(role)
 		? { caseDir: active.caseDir, dataDir: required('SPOTLIGHT_HARNESS_DATA'), env: process.env, tier: (process.env.SPOTLIGHT_MODEL_TIER || '12b') as ModelTier, sensitive }
 		: undefined;
+	const context = {
+		caseDir: active.caseDir,
+		writeRoot: active.caseDir,
+		python,
+		configPath: process.env.SPOTLIGHT_CONFIG || `${CHECKOUT_ROOT}/.spotlight-config.json`,
+		env: process.env,
+		scope: { reads: spec.reads, writes: spec.writes, denyReads: spec.denyReads, denyWrites: spec.denyWrites },
+	};
 	const tools: ToolDefinition[] = [
 		invokeSkillTool(skillsFor(composition, role), hosted),
-		...typedTools({
-			caseDir: active.caseDir,
-			writeRoot: active.caseDir,
-			python,
-			configPath: process.env.SPOTLIGHT_CONFIG || `${CHECKOUT_ROOT}/.spotlight-config.json`,
-			env: process.env,
-			scope: { reads: spec.reads, writes: spec.writes, denyReads: spec.denyReads, denyWrites: spec.denyWrites },
-		}),
+		...typedTools(context),
 	];
 	const edition = process.env.SPOTLIGHT_EDITION === 'newsroom' ? 'newsroom' : 'solo';
 	// Newsroom edition: the Editorial MCP tools, served by the launcher. The
 	// allowlist below keeps only the ones this role's swaps grant.
 	if (edition === 'newsroom') tools.push(...editorialTools(requestEditorial));
 	if (role === ORCHESTRATOR) {
-		tools.push(...spotlightTools(active, pythonAdapter(python, resolverEnv(process.env, composition)), role, requestResearchRound));
+		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
+		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound));
 		tools.push(spawnAgentTool(spawnableWorkers(composition)));
-		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT')));
+		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, reportDraftCheck(active, runAdapter, context)));
 	}
 	const allowlist = new Set(allowedTools(spec, sensitive, edition));
 	return tools.filter((tool) => allowlist.has(tool.name));
