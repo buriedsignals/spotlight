@@ -514,11 +514,22 @@ def validate_source_expressions(
             if expression is None or link is None:
                 errors.append(f"fact-check.json.{container}[{index}]: expression ref {expression_id!r} does not resolve for finding {finding_id}")
                 continue
-            if any(ref.get(key) != expected for key, expected in (
-                ("expression_fingerprint", expression.get("expression_fingerprint")),
-                ("finding_fingerprint", link.get("finding_fingerprint")),
-                ("link_fingerprint", link.get("link_fingerprint")),
-            )):
+            expected = {
+                "expression_id": expression_id,
+                "expression_fingerprint": expression.get("expression_fingerprint"),
+                "finding_fingerprint": link.get("finding_fingerprint"),
+                "link_fingerprint": link.get("link_fingerprint"),
+            }
+            missing = [key for key in expected if key not in ref]
+            if missing:
+                # A ref written without its fingerprints is not stale; name
+                # the whole ref to copy so the producer can converge.
+                errors.append(
+                    f"fact-check.json.{container}[{index}]: expression ref {expression_id!r} is missing "
+                    f"{', '.join(missing)}; copy the whole ref: {json.dumps(expected)}"
+                )
+                continue
+            if any(ref.get(key) != value for key, value in expected.items()):
                 errors.append(f"fact-check.json.{container}[{index}]: stale expression ref {expression_id!r}")
                 continue
             valid_ref_ids.add(expression_id)
@@ -1519,7 +1530,8 @@ def main() -> int:
             print(
                 "\n[fact-checker] errors are in data/fact-check.json, which only the fact-checker "
                 "writes; a stale expression ref means the claim or passage changed after that "
-                "fact-check, and the next fact-check replaces it. Route them to the fact-checker, "
+                "fact-check, and the next fact-check replaces it; a ref missing its fingerprints "
+                "takes the whole ref the error names. Route them to the fact-checker, "
                 "never to the investigator.",
                 file=sys.stderr,
             )

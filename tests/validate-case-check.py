@@ -554,6 +554,16 @@ def main() -> int:
             vc.validate_source_expressions(case, expressions, findings, fact_check, bundle),
             False,
         )
+        # Gold runs on 8c7bf163: the fact-checker kept only expression_id and
+        # relation, and "stale" never told it the fingerprints were missing.
+        bare = mutate(fact_check, lambda d: d["claims"][0]["evidence_for"][0].__setitem__("source_expression_refs", [{"expression_id": "SX1", "relation": "supports"}]))
+        full_ref = json.dumps(fact_check["claims"][0]["evidence_for"][0]["source_expression_refs"][0])
+        bare_errors = [e for e in vc.validate_source_expressions(case, expressions, findings, bare, bundle) if "'SX1'" in e]
+        check(
+            "source expression refs: a ref without fingerprints names the whole ref to copy",
+            [] if bare_errors and all("is missing expression_fingerprint, finding_fingerprint, link_fingerprint" in e and full_ref in e for e in bare_errors) else ["missing-fingerprint ref not named"] + bare_errors,
+            False,
+        )
         check(
             "source expressions runtime: exact selected text",
             vc.validate_source_expressions(
