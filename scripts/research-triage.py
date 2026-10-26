@@ -12,17 +12,19 @@ to ask about; they are listed, not triaged.
 
 The backend comes from the install config only:
 ``integrations.decisions.research_triage`` = {"backend": "jev" | "clef" |
-"clef-flash" | "local" | "rules", "local_url": "http://127.0.0.1:PORT"}.
+"clef-flash" | "local", "local_url": "http://127.0.0.1:PORT"}. Research
+always triages with a decision model; without one nothing is written.
 Without a ``local_url``, a decision endpoint on loopback (Kev in Ninja mode,
 ``integrations.decisions.endpoint``) is the local model.
 Cloud backends also need ``integrations.decisions.enabled``. Journalist-input
-leads and sensitive cases are triaged only by the local tune or by rules; in
+leads and sensitive cases are triaged only by the local tune; in
 newsroom mode cloud backends are off unless the decision endpoint is the
 newsroom's own.
 
 Until the decision-model acceptance test passes, triage only flags (see
 integrations/decisions/research_rules.py). Output that breaks the triage
 invariants (D7) is never written: the script exits 3 and names the breach.
+A missing or unreachable decision model exits 2 and names what to configure.
 --check reports the routing without a request; --dry-run prints the states
 that would be sent.
 """
@@ -49,7 +51,7 @@ import decision_signals_lib as lib  # noqa: E402
 import research_backends as backends  # noqa: E402
 import research_questions as rq  # noqa: E402
 import research_rules as rr  # noqa: E402
-from client import DecisionUnavailable, JevOpenRouterProvider, endpoint_from_config, is_local, is_openrouter  # noqa: E402
+from client import DecisionUnavailable, JevOpenRouterProvider, is_openrouter  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
 from spotlight_orchestration.storage import transaction  # noqa: E402
@@ -121,7 +123,9 @@ def run_triage(raw_leads: list[Any], brief: rr.TriageBrief, clues_doc: Mapping[s
                provider_for: Callable[[str], Any], routing: Callable[[bool], tuple[str, str]],
                acceptance: Mapping[str, Any] | None = rr.ACCEPTANCE) -> dict[str, Any]:
     """Triage every valid lead. ``routing(journalist_input)`` gives (backend,
-    reason); ``provider_for(backend)`` gives a provider or None (rules)."""
+    reason) and raises DecisionUnavailable when no backend may take the lead;
+    ``provider_for(backend)`` gives a provider or None. A lead the model cannot
+    answer stops the triage: nothing is triaged by rules alone."""
     mode = rr.triage_mode(acceptance)
     per_lead, pairs = rule_clues(clues_doc)
     leads: dict[str, rr.TriageLead] = {}
@@ -148,13 +152,13 @@ def run_triage(raw_leads: list[Any], brief: rr.TriageBrief, clues_doc: Mapping[s
     def ask(journalist_input: bool, state: dict[str, Any],
             qs_for: Callable[[str], Mapping[str, Any]]) -> tuple[dict[str, Any], str, str]:
         backend, reason = routing(journalist_input)
-        provider = provider_for(backend) if backend != "rules" else None
+        provider = provider_for(backend)
         if provider is None:
-            return {}, "rules", reason or ("" if backend == "rules" else f"{backend} is not configured")
+            raise DecisionUnavailable(f"{backend} is not configured")
         try:
             return provider.decide(state, qs_for(backend))["answers"], backend, reason
         except DecisionUnavailable as exc:
-            return {}, "rules", f"{backend} unavailable: {exc}"
+            raise DecisionUnavailable(f"{backend} unavailable: {exc}") from None
 
     results = []
     asked: set[str] = set()
@@ -199,22 +203,6 @@ def run_triage(raw_leads: list[Any], brief: rr.TriageBrief, clues_doc: Mapping[s
 
 
 # ------------------------------------------------------------------ install config
-def triage_settings(config: Mapping[str, Any]) -> dict[str, Any]:
-    block = (config.get("integrations") or {}).get("decisions") or {}
-    triage = block.get("research_triage") or {}
-    backend = triage.get("backend", "rules")
-    if backend not in backends.BACKENDS:
-        raise SystemExit(f"integrations.decisions.research_triage.backend must be one of {', '.join(backends.BACKENDS)}")
-    try:
-        endpoint = endpoint_from_config(block.get("endpoint"))
-    except DecisionUnavailable:
-        endpoint = ("", "")
-    return {"backend": backend, "local_url": triage.get("local_url") or "",
-            # A decision endpoint on this computer (Kev in Ninja mode) is the local triage model.
-            "local_endpoint": endpoint if is_local(endpoint[0]) else None, "cloud_enabled": block.get("enabled") is True,
-            "model": block.get("model") or "typesafe/jev-1.13", "env_file": block.get("env_file")}
-
-
 def build_providers(cfg: Mapping[str, Any], signals: Any) -> tuple[dict[str, Any], bool, list[str]]:
     """Providers that could be built, whether the decision endpoint is a newsroom's own, and why others could not."""
     providers: dict[str, Any] = {}
@@ -275,7 +263,11 @@ def main(argv: list[str] | None = None) -> int:
         config = json.loads(credentials.config_path(ROOT).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         config = {}
-    cfg = triage_settings(config)
+    try:
+        cfg = backends.triage_settings(config)
+    except DecisionUnavailable as exc:
+        print(f"research-triage: {exc}", file=sys.stderr)
+        return 2
     signals = _signals_cli()
     sensitive = signals.manifest_sensitive()
     newsroom = knowledge_mode(config) == "newsroom"
@@ -286,9 +278,15 @@ def main(argv: list[str] | None = None) -> int:
                               local_available="local" in providers or (args.check and bool(cfg["local_url"] or cfg["local_endpoint"])),
                               cloud_enabled=cfg["cloud_enabled"], newsroom_endpoint=newsroom_endpoint)
 
+    def checked(journalist_input: bool) -> tuple[str | None, str]:
+        try:
+            return routing(journalist_input)
+        except DecisionUnavailable as exc:
+            return None, str(exc)
+
     if args.check:
-        backend, reason = routing(False)
-        local_backend, local_reason = routing(True)
+        backend, reason = checked(False)
+        local_backend, local_reason = checked(True)
         print(json.dumps({"requested": cfg["backend"], "leads": {"backend": backend, "reason": reason},
                           "journalist_input_leads": {"backend": local_backend, "reason": local_reason},
                           "mode": rr.triage_mode(), "knowledge_mode": "newsroom" if newsroom else "solo"}, indent=2))
@@ -316,7 +314,11 @@ def main(argv: list[str] | None = None) -> int:
             rr.lead_state(rr.parse_lead(raw)) for raw in raw_leads if _valid(raw)]}, indent=2, ensure_ascii=False))
         return 0
 
-    document = run_triage(raw_leads, brief, clues_doc, providers.get, routing)
+    try:
+        document = run_triage(raw_leads, brief, clues_doc, providers.get, routing)
+    except DecisionUnavailable as exc:
+        print(f"research-triage: no triage written: {exc}" + (f" ({'; '.join(notes)})" if notes else ""), file=sys.stderr)
+        return 2
     document["generated_at"] = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     if notes:
         document["backend_notes"] = notes

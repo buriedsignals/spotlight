@@ -23,6 +23,9 @@ CATALOGUE = {"web", "registries", "archives", "social", "technical", "news-court
              "prior-knowledge", "ad-hoc"}
 VALIDATOR = ROOT / "scripts" / "validate-methodology-navigator.py"
 RESEARCH_OFF = "Research is off; turn on Research in the app to add a research plan"
+# Kev on this computer (Ninja) and Jev on OpenRouter (Frontier): the two ways research triages its leads.
+KEV = {"research_triage": {"backend": "local"}, "endpoint": {"url": "http://127.0.0.1:8009/v1/systemone", "api": "openrouter-decisions"}}
+JEV = {"research_triage": {"backend": "jev"}, "enabled": True}
 
 
 def d1(method: dict, *, sensitive: bool = False, newsroom: bool = False, local_model: bool = True) -> list[str]:
@@ -172,7 +175,25 @@ class D1LanePlan(unittest.TestCase):
             self.assertEqual(checks.d1_from_config(no_plan, {}, local_model=True),
                              ['SPOTLIGHT_RESEARCH_SWARMS must be "on" or "off".'])
         with unittest.mock.patch.dict(os.environ, {"SPOTLIGHT_RESEARCH_SWARMS": "on", "SPOTLIGHT_SENSITIVE": ""}):
-            self.assertEqual(checks.d1_from_config(local_only, {}, local_model=True), [])
+            self.assertEqual(checks.d1_from_config(local_only, {"integrations": {"decisions": KEV}}, local_model=True), [])
+
+    def test_a_research_plan_needs_a_decision_model_for_triage(self) -> None:
+        web = methodology()
+        journalist = methodology()
+        local_corpus(journalist, journalist_input=True)
+        plan_of(journalist)["consent"]["journalist_input"] = True
+        with unittest.mock.patch.dict(os.environ, {"SPOTLIGHT_RESEARCH_SWARMS": "on", "SPOTLIGHT_SENSITIVE": ""}):
+            def triage_problems(method: dict, decisions: dict) -> list[str]:
+                return [p for p in checks.d1_from_config(method, {"integrations": {"decisions": decisions}}, local_model=True)
+                        if p.startswith("research triage:")]
+            self.assertIn("integrations.decisions.research_triage.backend", " ".join(triage_problems(web, {})))
+            self.assertEqual(triage_problems(web, JEV), [])
+            self.assertEqual(triage_problems(web, KEV), [])
+            # Journalist input never leaves the computer: Jev alone cannot triage it.
+            self.assertIn("no local triage model is configured", " ".join(triage_problems(journalist, JEV)))
+            self.assertEqual(triage_problems(journalist, {**JEV, "endpoint": KEV["endpoint"]}), [])
+            # Jev without the cloud opt-in has nowhere to go either.
+            self.assertIn("cloud decision models are not enabled", " ".join(triage_problems(web, {**JEV, "enabled": False})))
 
     def test_newsroom_mode_sends_nothing_to_openrouter(self) -> None:
         method = methodology()
@@ -203,7 +224,7 @@ class D1LanePlan(unittest.TestCase):
 
             # Subscription path: no launcher, the install config's switch is off.
             self.assertIn(RESEARCH_OFF, validate().stderr)
-            config.write_text(json.dumps({"model_tier": "frontier", "integrations": {"research_swarms": {"enabled": True}}}),
+            config.write_text(json.dumps({"model_tier": "frontier", "integrations": {"research_swarms": {"enabled": True}, "decisions": JEV}}),
                               encoding="utf-8")
             self.assertEqual(validate().returncode, 0, validate().stderr)
             # Pi path: the harness passes its switch, which wins over the config.

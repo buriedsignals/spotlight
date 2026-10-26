@@ -116,7 +116,7 @@ def test_bank_is_separate_and_versioned() -> None:
 
 def test_q2_is_never_asked_and_q1_only_of_jev() -> None:
     # Q2 (direction) is gone for every backend; Q1 (identity) is asked only of
-    # Jev (Frontier). The local model and the rules give no identity label and
+    # Jev (Frontier). The local model gives no identity label and
     # no circumstantial context.
     cloud = client.FakeProvider(answers_from({"q1_identity": "none_of_the_brief"}))
     local = client.FakeProvider(answers_from({"q1_identity": "none_of_the_brief"}), model="kev")
@@ -129,8 +129,6 @@ def test_q2_is_never_asked_and_q1_only_of_jev() -> None:
     require(public["context"] == ["circumstantial"], f"Jev's identity answer had no effect: {public}")
     require("identity" not in ji["labels"] and ji["context"] == [] and "q1_identity" not in ji["answers"],
             f"the local model's lead carries identity: {ji}")
-    rules_only = by_id(run([lead()], None), "lead-1")
-    require("identity" not in rules_only["labels"] and rules_only["context"] == [], f"rules gave identity: {rules_only}")
 
 
 def test_both_orders_must_agree() -> None:
@@ -211,14 +209,15 @@ def test_host_prior_backs_q3() -> None:
     result = by_id(run([lead()], client.FakeProvider(answers_from({"q3_source": "secondary"})), acceptance=ACCEPTED), "lead-1")
     require(result["labels"]["source"] == "primary_record", f"the register host did not set the source: {result['labels']}")
     require(any(f["reason"] == "source_rule_override" for f in result["flags"]), "the override was not flagged")
-    # A social host is only a prior: the model's answer stands, and rules alone use the prior.
+    # A social host is only a prior: the model's answer stands, and the prior applies when no answer counted.
     social = lead(capture={"source_url": "https://x.com/someone/status/1"})
     result = by_id(run([social], client.FakeProvider(answers_from({"q3_source": "interested_party"})), acceptance=ACCEPTED), "lead-1")
     require(result["labels"]["source"] == "interested_party" and not any(f["reason"] == "source_rule_override" for f in result["flags"]),
             f"a social host overrode the model: {result}")
-    result = by_id(run([social], None), "lead-1")
-    require(result["labels"].get("source") == "user_generated", f"rules alone ignored the social prior: {result['labels']}")
-    result = by_id(run([lead(capture={"source_url": "https://news.example.org/a"})], None), "lead-1")
+    split = client.FakeProvider(answers_from({"q3_source": "secondary"}, {"q3_source": "interested_party"}))
+    result = by_id(run([social], split, acceptance=ACCEPTED), "lead-1")
+    require(result["labels"].get("source") == "user_generated", f"a split answer ignored the social prior: {result['labels']}")
+    result = by_id(run([lead(capture={"source_url": "https://news.example.org/a"})], split, acceptance=ACCEPTED), "lead-1")
     require("source" not in result["labels"], "an unknown host got a source label")
 
 
@@ -306,13 +305,17 @@ def test_journalist_input_never_reaches_cloud() -> None:
                                         excerpt={"text": "Source X: 2019 transfer staged"})], cloud, local=local)
     require("Source X" not in json.dumps(cloud.calls), "a journalist-input lead reached the cloud backend")
     require(by_id(document, "ji")["backend"] == "local" and "Source X" in json.dumps(local.calls), "journalist input not triaged locally")
-    # Without a local model it is triaged by rules only.
+    # Without a local model nothing is triaged, and nothing reaches the cloud.
     cloud = client.FakeProvider(answers_from({}))
-    document = run([lead("ji", journalist_input=True)], cloud, journalist_backend="rules")
-    require(cloud.calls == [] and by_id(document, "ji")["backend"] == "rules", "journalist input without a local model")
+    try:
+        run([lead("ji", journalist_input=True)], cloud)
+        raise AssertionError("journalist input was triaged without a local model")
+    except client.DecisionUnavailable:
+        pass
+    require(cloud.calls == [], "journalist input without a local model reached the cloud")
     # A K2 pair with one journalist-input lead is not sent to the cloud either.
     cloud = client.FakeProvider(answers_from({}))
-    run([lead("a"), lead("b", journalist_input=True)], cloud, journalist_backend="rules",
+    run([lead("a"), lead("b", journalist_input=True)], cloud, local=client.FakeProvider(answers_from({}), model="kev"),
         clues=clues(("K2", ["a", "b"], "owner")))
     require(all("item_b" not in call["state"] for call in cloud.calls), "a journalist-input pair reached the cloud")
 
@@ -326,10 +329,16 @@ def test_routing() -> None:
     require(route("clef", newsroom=True) == "local" and route("jev", newsroom=True) == "local", "newsroom mode left cloud on")
     require(route("jev", newsroom=True, newsroom_endpoint=True) == "jev", "the newsroom's own endpoint was refused")
     require(route("clef", newsroom=True, newsroom_endpoint=True) == "local", "Clef allowed in newsroom mode")
-    require(route("jev", sensitive=True, local_available=False) == "rules", "sensitive mode reached the cloud")
     require(route("jev", journalist_input=True) == "local", "journalist input routed to the cloud")
-    require(route("jev", cloud_enabled=False, local_available=False) == "rules", "cloud used without the opt-in")
-    require(route("local", local_available=False) == "rules", "local backend without a local model")
+    # A request that may go only to a local model, with none configured, is refused, never triaged by rules.
+    for requested, kw in (("jev", {"sensitive": True}), ("jev", {"journalist_input": True}), ("jev", {"cloud_enabled": False}),
+                          ("jev", {"newsroom": True}), ("local", {})):
+        try:
+            route(requested, local_available=False, **kw)
+            raise AssertionError(f"routed without a local model: {requested} {kw}")
+        except client.DecisionUnavailable as exc:
+            require("no local triage model is configured" in str(exc), f"refusal does not say what to configure: {exc}")
+    require("rules" not in backends.BACKENDS, "a rules-only triage backend is still offered")
 
 
 class FakeResponse(io.BytesIO):
@@ -401,7 +410,29 @@ def test_local_provider() -> None:
         raise AssertionError(f"local provider accepted {url}")
 
 
-def test_cli_rules_only_case() -> None:
+def kev_server(seen: list):
+    """Kev on loopback: answers every question it is sent (first criterion, or noul 0.2) and records the Authorization header."""
+    import http.server
+    import threading
+
+    class Kev(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            seen.append(self.headers.get("Authorization"))
+            asked = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))["questions"]
+            answers = {qid: {"noul": 0.2} if q["type"] == "noul" else
+                       {"choice": next(iter(q["criteria"])), "probabilities": {next(iter(q["criteria"])): 0.9}} for qid, q in asked.items()}
+            body = json.dumps({"model": "kev", "answers": answers}).encode()
+            self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Kev)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def test_cli_case() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         case = Path(tmp) / "case"
         (case / "data").mkdir(parents=True)
@@ -415,14 +446,25 @@ def test_cli_rules_only_case() -> None:
         (case / "data" / "methodology.json").write_text(json.dumps(methodology))
         (case / "data" / "clues.json").write_text(json.dumps(clues(("K6", ["s"]))))
         config = Path(tmp) / "config.json"
-        config.write_text(json.dumps({"integrations": {"decisions": {"research_triage": {"backend": "rules"}}}}))
         env = {**os.environ, "SPOTLIGHT_CONFIG": str(config), "OPENROUTER_API_KEY": ""}
+        # Research always triages with a decision model: with none named, nothing is written.
+        config.write_text(json.dumps({"integrations": {"decisions": {}}}))
         done = subprocess.run([sys.executable, str(ROOT / "scripts" / "research-triage.py"), str(case)], env=env,
                               capture_output=True, text=True, check=False)
+        require(done.returncode == 2 and "integrations.decisions.research_triage.backend" in done.stderr
+                and not (case / "data" / "research-triage.json").exists(), f"triage ran without a decision model: {done.stderr}")
+        server = kev_server([])
+        try:
+            config.write_text(json.dumps({"integrations": {"decisions": {"research_triage": {"backend": "local"}, "endpoint": {
+                "url": f"http://127.0.0.1:{server.server_port}/v1/systemone", "api": "openrouter-decisions"}}}}))
+            done = subprocess.run([sys.executable, str(ROOT / "scripts" / "research-triage.py"), str(case)], env=env,
+                                  capture_output=True, text=True, check=False)
+        finally:
+            server.shutdown()
         require(done.returncode == 0, done.stderr)
         out = json.loads((case / "data" / "research-triage.json").read_text())
-        require(out["mode"] == "flag_only" and all(r["backend"] == "rules" for r in out["leads"]), "rules-only run")
-        require(any(f["reason"] == "snippet_only" for f in by_id(out, "s")["flags"]), "S1 not applied in a rules-only run")
+        require(out["mode"] == "flag_only" and all(r["backend"] == "local" for r in out["leads"]), f"Kev did not triage: {out['leads']}")
+        require(any(f["reason"] == "snippet_only" for f in by_id(out, "s")["flags"]), "S1 not applied")
         require("watchlist" in by_id(out, "s")["clues"], "the K6 clue in data/clues.json was not read")
         require(out["absence_leads"] == [{"lead_id": "gap-1", "direction_id": "ownership"}], "absence lead not listed")
         require(rr.triage_violations(out) == [], "written triage breaks D7")
@@ -449,25 +491,11 @@ def test_cli_rules_only_case() -> None:
         require(routed["leads"]["backend"] == "local" and routed["journalist_input_leads"]["backend"] == "local",
                 f"a local decision endpoint was not used as the local triage model: {routed}")
         # A local endpoint that names a credential gets it.
-        import http.server
-        import threading
         seen = []
-
-        class Kev(http.server.BaseHTTPRequestHandler):
-            def do_POST(self):
-                seen.append(self.headers.get("Authorization"))
-                self.rfile.read(int(self.headers.get("Content-Length", 0)))  # unread bodies reset the connection
-                body = b'{"model":"kev","answers":{"q":{"noul":0.2}}}'
-                self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
-
-            def log_message(self, *args):
-                pass
-
-        server = http.server.HTTPServer(("127.0.0.1", 0), Kev)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        server = kev_server(seen)
         os.environ["KEV_TEST_KEY"] = "kev-secret"
         try:
-            cfg = triage.triage_settings({"integrations": {"decisions": {"research_triage": {"backend": "local"}, "endpoint": {
+            cfg = backends.triage_settings({"integrations": {"decisions": {"research_triage": {"backend": "local"}, "endpoint": {
                 "url": f"http://127.0.0.1:{server.server_port}/v1/systemone", "api": "openrouter-decisions", "credential_env": "KEV_TEST_KEY"}}}})
             providers, _newsroom, notes = triage.build_providers(cfg, triage._signals_cli())
             providers["local"].decide({"s": 1}, {"q": {"type": "noul"}})

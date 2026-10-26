@@ -63,7 +63,7 @@ member's ingest gets none. Deterministic code turns the answers into signals:
 each merged lead in `data/leads.json` and writes `data/research-triage.json`.
 Rules S1, S2 and N1 and the questions' effects are in `research_rules.py`.
 There is no direction question. Q1 (identity) is asked only of Jev (Frontier
-mode); with the local model (Kev in Ninja mode) or the rules there is no
+mode); with the local model (Kev in Ninja mode) there is no
 identity label, no circumstantial label, and the page ranking has no identity
 tier: clue type, then source, then assertion, then source families, then
 stored pages before snippets.
@@ -78,14 +78,19 @@ counted. The host list is `research_rules.PRIMARY_RECORD_HOSTS` and
 `SOCIAL_HOSTS`.
 
 - **Backend** (install config only): `integrations.decisions.research_triage`
-  = `{"backend": "jev" | "clef" | "clef-flash" | "local" | "rules",
-  "local_url": "http://127.0.0.1:PORT"}`. Clef reads `CLOUDFLARE_ACCOUNT_ID`
+  = `{"backend": "jev" | "clef" | "clef-flash" | "local",
+  "local_url": "http://127.0.0.1:PORT"}`. Research always triages with a
+  decision model: Ninja uses Kev (`"local"`, Kev on loopback as
+  `integrations.decisions.endpoint`), Frontier uses Jev (`"jev"`). Without
+  one, the methodology check (D1) refuses a research plan and triage writes
+  nothing. Clef reads `CLOUDFLARE_ACCOUNT_ID`
   and `CLOUDFLARE_AUTH_TOKEN`; the local tune is llama-server on loopback.
   Cloud backends also need `integrations.decisions.enabled`.
 - **Routing:** journalist-input leads and sensitive cases are triaged only by
-  the local tune or by rules. In newsroom mode cloud backends are off unless
-  the decision endpoint is the newsroom's own. An unavailable backend falls
-  back to rules, and the output says why.
+  the local model, so they need Kev in Frontier mode too. In newsroom mode
+  cloud backends are off unless the decision endpoint is the newsroom's own.
+  A lead with no backend it may go to, or a backend that does not answer,
+  stops the triage and names what to configure.
 - **Flag-only until the acceptance test passes:** C2 and C3 are not asked and
   no probability band is set. The output
   carries a notice the Research page shows.

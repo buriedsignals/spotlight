@@ -421,7 +421,7 @@ def rank(leads_doc: Mapping[str, Any], clues_doc: Mapping[str, Any] | None,
          triage_doc: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
     """The Research page's lead order. No question asks how important a lead
     is: clue type, then identity (circumstantial leads after the rest; only
-    Jev answers Q1, so with the local model or the rules this tier is empty),
+    Jev answers Q1, so with the local model this tier is empty),
     then source, then assertion (triage labels, counted only when both orders
     agreed), then more independent source families (S2), then stored pages
     before snippets (S1)."""

@@ -1118,7 +1118,8 @@ async function runMerge(options: RoundOptions, round: number): Promise<MergeOutc
 
 // Then the triage of the merged leads (scripts/research-triage.py), so
 // data/research-triage.json exists before the Research page opens. Its
-// backend comes from the install config; it never blocks on a model.
+// backend comes from the install config. Without a decision model that
+// answers it writes nothing, and the resolver holds the round at triage.
 async function runTriage(options: RoundOptions): Promise<TriageOutcome> {
 	const env = programEnv(options.env);
 	if (options.config.spotlightConfig) env.SPOTLIGHT_CONFIG = options.config.spotlightConfig;

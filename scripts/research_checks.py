@@ -36,6 +36,7 @@ for _path in (SCRIPT_DIR, ROOT / "integrations" / "decisions"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
+import research_backends  # noqa: E402
 import research_rules as rr  # noqa: E402
 import schema_check  # noqa: E402
 
@@ -272,8 +273,15 @@ def d1_from_config(methodology: Mapping[str, Any], config: Mapping[str, Any],
     if local_model is None:
         triage = ((config.get("integrations") or {}).get("decisions") or {}).get("research_triage") or {}
         local_model = bool(os.environ.get("SPOTLIGHT_MODEL_BASE_URL") or triage.get("local_url"))
-    return d1_lane_plan(methodology, catalogue=lane_catalogue(), sensitive=sensitive,
-                        newsroom=newsroom, local_model=local_model)
+    problems = d1_lane_plan(methodology, catalogue=lane_catalogue(), sensitive=sensitive,
+                            newsroom=newsroom, local_model=local_model)
+    plan = methodology.get("research_plan")
+    if isinstance(plan, Mapping):
+        # Research always triages its leads with a decision model (Kev or Jev).
+        journalist_input = any(topic.get("journalist_input") is True for topic in topics(plan))
+        problems += research_backends.plan_problems(config, sensitive=sensitive, newsroom=newsroom,
+                                                    journalist_input=journalist_input)
+    return problems
 
 
 # ------------------------------------------------------------------ D2
