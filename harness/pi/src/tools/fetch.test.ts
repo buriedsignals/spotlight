@@ -148,6 +148,19 @@ test('without an RLM endpoint fetch returns the page as before and says it was n
 	assert.equal(existsSync(join(caseDir, 'research/company-42.md.raw')), false);
 });
 
+// gold-asf s0 and gold-wikimedia s1 on 135e8796: with no time in the result, the model invented access dates and Wayback URLs.
+test('fetch returns the harness time it fetched the page and no archive capture', async (t) => {
+	const { call } = await fixture(t, {});
+	const before = Date.now();
+
+	const result = await call({ url: PAGE_URL, save_as: 'research/company-42.md' });
+
+	const fetchedAt = Date.parse(String(result.fetched_at));
+	assert.match(String(result.fetched_at), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+	assert.ok(fetchedAt >= before && fetchedAt <= Date.now());
+	assert.equal(result.archive_url, null);
+});
+
 // E2E D1: a provider that compiles `pattern` as a whole-value grammar let the
 // model emit only the prefix the pattern named: url "https://", save_as "research/".
 test('the url and save_as patterns still admit a real URL and file when applied as full matches', () => {

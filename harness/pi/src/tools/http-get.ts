@@ -74,6 +74,8 @@ export function httpGetTool(context: ToolContext): ToolDefinition {
 			const text = body.toString('utf8');
 			return jsonResult({
 				final_url: response.finalURL,
+				fetched_at: new Date().toISOString(),
+				archive_url: null,
 				redirects: response.redirects,
 				status: response.status,
 				content_type: response.headers['content-type'] ?? null,
