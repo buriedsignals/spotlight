@@ -162,7 +162,10 @@ export function runsResearchRound(resolved: Record<string, unknown>): boolean {
 // returns the round's outcome. `retry` repeats a round that stopped.
 export type ResearchRunner = (retry: boolean, signal?: AbortSignal) => Promise<unknown>;
 
-export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, role: string, research?: ResearchRunner): ToolDefinition[] {
+// Whether validate-case.py and validate-fact-check.py both pass now.
+export type EvidenceCheck = () => Promise<boolean>;
+
+export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, role: string, research?: ResearchRunner, evidenceValidates?: EvidenceCheck): ToolDefinition[] {
 	const resolveTool: ToolDefinition = {
 		name: 'spotlight_resolve',
 		label: 'Spotlight resolve',
@@ -192,6 +195,11 @@ export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, ro
 		async execute(_id, params, signal) {
 			const input = params as { operation: unknown; payload?: Payload };
 			const arguments_ = transitionArguments(input.operation, input.payload ?? {}, active, role);
+			// An evidence-repair attempt is exhaustion: recorded only while the evidence
+			// still fails, never after a repair that passed (it blocks the case).
+			if (input.operation === 'recordAttempt' && input.payload?.kind === 'fact-check-evidence-repair' && (await evidenceValidates?.())) {
+				throw new TransitionRefused('Evidence validation passes (validate-case.py and validate-fact-check.py), so there is no failed repair to record. Continue to the Investigation gate.');
+			}
 			if (signal?.aborted) throw signal.reason ?? new Error('Spotlight transition aborted before commit');
 			// Once started, a transition runs to its durable outcome even if the
 			// caller aborts: the resolver write is atomic and must not be orphaned.

@@ -16,6 +16,7 @@ import { requestEditorial, requestResearchRound, spawnAgentTool } from './subage
 import { editorialTools } from './tools/editorial.ts';
 import { openReviewTool, reportDraftCheck } from './tools/review.ts';
 import { REPEAT_REASON } from './tools/run.ts';
+import { evidenceValidates } from './validators.ts';
 
 const log = (message: string) => process.stderr.write(`spotlight-extension: ${message}\n`);
 
@@ -54,7 +55,7 @@ function toolsFor(role: string): ToolDefinition[] {
 	if (edition === 'newsroom') tools.push(...editorialTools(requestEditorial));
 	if (role === ORCHESTRATOR) {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
-		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound));
+		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context)));
 		tools.push(spawnAgentTool(spawnableWorkers(composition)));
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, reportDraftCheck(active, runAdapter, context)));
 	}
