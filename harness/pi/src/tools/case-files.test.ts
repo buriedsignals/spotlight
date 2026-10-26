@@ -276,6 +276,7 @@ test('a case data file written or edited into anything but one JSON object is re
 // a misspelt key, the validator blocked the case, and the one correction was spent.
 test('a verified claim citing no passage is refused, naming the refs on record, and kept', async (t) => {
 	const { caseDir, call } = await fixture(t);
+	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
 	const link = { finding_id: 'F1', relation: 'supports', finding_fingerprint: 'f'.repeat(64), link_fingerprint: 'l'.repeat(64) };
 	await writeFile(join(caseDir, 'data', 'source-expressions.json'), JSON.stringify({ expressions: [
 		{ id: 'P2', expression_fingerprint: 'e'.repeat(64), lifecycle_events: [{ event: 'activated' }], finding_links: [link] },
@@ -291,6 +292,24 @@ test('a verified claim citing no passage is refused, naming the refs on record, 
 	await call('write_file', { path: 'data/fact-check.json', content: claim({ source_expression_refs: [ref] }) });
 	await assert.rejects(call('edit_file', { path: 'data/fact-check.json', old_text: '"source_expression_refs"', new_text: '"source_expression_ref"' }), /has no source_expression_refs/);
 	await call('write_file', { path: 'data/fact-check.json', content: claim({}, 'unverified') });
+});
+
+// gold osmf s1 on a2ab7e20: the investigator wrote 1.0 findings in the methodology phase, the
+// case was never activated, and verified claims reached the report with no grounded passage.
+test('a new case gets no investigation file before the harness activates it; activated and legacy cases do', async (t) => {
+	const { caseDir, call } = await fixture(t);
+	for (const path of ['data/findings.json', 'data/fact-check.json', 'data/investigation-log.json']) {
+		await assert.rejects(call('write_file', { path, content: '{"schema_version": "1.0"}' }), /starts the investigation record, which opens at Investigation/, path);
+		assert.equal(existsSync(join(caseDir, path)), false, path);
+	}
+	await call('write_file', { path: 'data/methodology.json', content: '{}' });
+
+	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
+	await call('write_file', { path: 'data/findings.json', content: '{"schema_version": "1.1"}' });
+
+	const legacy = await fixture(t);
+	await writeFile(join(legacy.caseDir, 'data', 'findings.json'), '{"schema_version": "1.0"}');
+	await legacy.call('write_file', { path: 'data/investigation-log.json', content: '{}' });
 });
 
 // E2E D11: the tool text promises the checkout's schemas/, but a relative

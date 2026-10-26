@@ -157,6 +157,21 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 	return target;
 }
 
+// Files whose presence marks a case as legacy (findings contract 1.0); the
+// launcher's activation (case-contract.py activate-new) refuses such a case.
+export const LEGACY_MARKERS = ['data/findings.json', 'findings.json', 'data/fact-check.json', 'data/investigation-log.json'];
+
+// gold osmf s1: the investigator wrote 1.0 findings during the methodology
+// phase, so the case skipped activation and passage grounding. A new case (no
+// contract, no legacy file) gets its first investigation file only after the
+// harness activates it at Investigation.
+function refuseUnactivatedStart(caseDir: string, target: string): void {
+	const path = caseRelative(caseDir, target);
+	const exists = (name: string) => lstatOrUndefined(join(caseDir, name)) !== undefined;
+	if (!LEGACY_MARKERS.includes(path) || exists('data/case-contract.json') || LEGACY_MARKERS.some(exists)) return;
+	throw new FileRefused(`refused: ${path} starts the investigation record, which opens at Investigation once the harness has activated the case (data/case-contract.json); the file is unchanged. Before Investigation, write only the files your task names.`);
+}
+
 type Passage = { id?: unknown; expression_fingerprint?: unknown; lifecycle_events?: { event?: unknown }[]; finding_links?: { finding_id?: unknown; relation?: unknown; finding_fingerprint?: unknown; link_fingerprint?: unknown }[] };
 
 // A verified claim whose evidence_for cites no passage blocks the case at the
@@ -387,6 +402,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 						throw new FileRefused(`refused: empty content would erase ${input.path}. If your output was cut off, write the file again in full.`);
 					}
 				}
+				refuseUnactivatedStart(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseNonObjectData(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseUncitedVerdicts(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, input.content, writes, denyWrites)}`);
