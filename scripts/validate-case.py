@@ -1111,11 +1111,18 @@ def validate_missing_source_gate(data: Any, prefix: str) -> list[str]:
     errors: list[str] = []
     if not isinstance(data, dict):
         return [f"{prefix}: must be an object"]
-    for key in ("requested_source", "returned_artifact", "missing"):
-        if not nonempty_string(data.get(key)):
-            errors.append(f"{prefix}: missing or empty '{key}'")
+    problems = [f"'{key}' is not text" for key in ("requested_source", "returned_artifact", "missing")
+                if not nonempty_string(data.get(key))]
     if not isinstance(data.get("fallback_required"), bool):
-        errors.append(f"{prefix}.fallback_required: must be boolean")
+        problems.append("'fallback_required' is not true or false")
+    if problems:
+        # Gold matrix-stall s1: a returned source was recorded as a partial gate
+        # ("missing": false), and per-field errors never said to drop it.
+        errors.append(
+            f"{prefix}: is only for a requested source that was not returned; omit it when the source came back. "
+            "Otherwise give requested_source, returned_artifact and missing as text (what was asked for, what came "
+            f"back, what is missing) and fallback_required as true or false. Here {', '.join(problems)}"
+        )
     if "fallback_outcome" in data and data.get("fallback_outcome") not in FALLBACK_OUTCOMES:
         errors.append(f"{prefix}.fallback_outcome: must be one of {sorted(FALLBACK_OUTCOMES)}")
     if "confidence_effect" in data and data.get("confidence_effect") not in MISSING_SOURCE_CONFIDENCE_EFFECTS:
