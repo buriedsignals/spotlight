@@ -14,7 +14,7 @@ import type { ModelTier } from './config.ts';
 import { bindActiveCase, pythonAdapter, spotlightTools } from './tools/spotlight.ts';
 import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
-import { openReviewTool, reportDraftCheck } from './tools/review.ts';
+import { openReviewTool, gateCheck } from './tools/review.ts';
 import { REPEAT_REASON } from './tools/run.ts';
 import { evidenceValidates } from './validators.ts';
 
@@ -57,7 +57,7 @@ function toolsFor(role: string): ToolDefinition[] {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
 		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context)));
 		tools.push(spawnAgentTool(spawnableWorkers(composition)));
-		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, reportDraftCheck(active, runAdapter, context)));
+		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context)));
 	}
 	const allowlist = new Set(allowedTools(spec, sensitive, edition));
 	return tools.filter((tool) => allowlist.has(tool.name));
