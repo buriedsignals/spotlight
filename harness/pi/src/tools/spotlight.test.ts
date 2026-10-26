@@ -199,3 +199,26 @@ test('a stall round, an amendment and continuing without research are model oper
 	await assert.rejects(transition({ operation: 'recordAmendment' }), /not waiting for a methodology amendment/);
 	await assert.rejects(transition({ operation: 'continueWithoutResearch' }), /only for a case paused because Research is off/);
 });
+
+// gold-mozilla s0 on 18652cde: the orchestrator recorded an evidence-repair
+// attempt after both validators passed, and the case went to blocked.
+test('an evidence-repair attempt is refused while the evidence validates, and recorded while it fails', async (t) => {
+	const { caseDir, root } = await casePath(t);
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	const recorded: string[][] = [];
+	const adapter: AdapterRunner = async (arguments_) => {
+		if (arguments_[0] === 'record-attempt') recorded.push(arguments_);
+		return JSON.stringify({ phase: 'investigation' });
+	};
+	const transitionAt = (passes: boolean) => spotlightTools(bindActiveCase(root, caseDir), adapter, ORCHESTRATOR, undefined, async () => passes)[1];
+	const params = { operation: 'recordAttempt', payload: { kind: 'fact-check-evidence-repair', gap: 'All findings now correctly mapped' } };
+
+	await assert.rejects(
+		transitionAt(true).execute('call', params, undefined, undefined, undefined as never),
+		/Evidence validation passes .* no failed repair to record\. Continue to the Investigation gate\./,
+	);
+	assert.equal(recorded.length, 0);
+
+	await transitionAt(false).execute('call', params, undefined, undefined, undefined as never);
+	assert.equal(recorded.length, 1);
+});

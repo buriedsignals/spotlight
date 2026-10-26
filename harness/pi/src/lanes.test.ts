@@ -297,6 +297,8 @@ test('a lane that answers in prose after reading a source, with no lead recorded
 	const lane = await laneOf(space, 'a-web');
 	assert.equal(lane.status, 'completed');
 	assert.deepEqual(lane.final_turn, { ran: true, reason: 'answered' });
+	// gold-mozilla s0 on 18652cde: lane page results carried no time, so access dates were invented.
+	assert.match(toolResults(fakes.swarm.requests[1])[0], /^source_id: s1\nurl: .+\nfetched_at: \d{4}-\d{2}-\d{2}T[\d:.]+Z\narchive_url: null\n/);
 });
 
 test('a lane that captured no source stops at its budget without the lead-only turn', async (t) => {

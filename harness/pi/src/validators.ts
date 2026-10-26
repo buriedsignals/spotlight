@@ -87,3 +87,13 @@ export async function validateAfterWorker(role: string, phase: string, producerM
 	}
 	return { ran: checks.map((check) => check.name), passed, report: lines.join('\n\n') };
 }
+
+// Whether the evidence chain validates now: validate-case.py and
+// validate-fact-check.py both pass, as the fact-checker's repair loop checks.
+export async function evidenceValidates(context: ToolContext): Promise<boolean> {
+	for (const name of ['validate-case.py', 'validate-fact-check.py']) {
+		const result = await runPython(context, [`${CHECKOUT_ROOT}/scripts/${name}`, context.caseDir], { keys: [RESEARCH_SWITCH], timeoutMs: 300_000 });
+		if (result.code !== 0) return false;
+	}
+	return true;
+}
