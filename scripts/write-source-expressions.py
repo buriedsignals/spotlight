@@ -67,6 +67,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from evidence_anchors import normalized, selected_source_texts, source_lines  # noqa: E402
 from source_expression_contract import canonical_fingerprint, canonical_json_bytes, passage_core  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
@@ -85,6 +86,13 @@ ACTORS = ("investigator", "fact-checker", "human")
 LANGUAGE = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
 PROPOSED_CORE = ("text", "anchor_ref", "original_evidence_bundle_id", "language",
                  "attribution", "direct_quote", "derived_from_expression_id", "derivative_type")
+ALLOWED = (*PROPOSED_CORE, "id", "finding_links", "supersedes_expression_id")
+# Fields the writer sets itself: a proposal carrying them loses them, with a note.
+COMPUTED = {"anchor_sha256", "original_artifact_sha256", "expression_fingerprint", "lifecycle_events",
+            "created_by", "cycle", "sha256"}
+# The bundle fields naming an item's own text files, as validate-case reads
+# them (a screenshot holds no text to find).
+BUNDLE_FILES = ("raw_path", "downloaded_document_path", "path")
 
 
 class WriteError(Exception):
@@ -121,25 +129,111 @@ def _bundle_hash(bundle: dict[str, Any], bundle_id: str) -> str:
     raise WriteError(f"evidence bundle item {bundle_id!r} does not exist")
 
 
-def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any]:
-    unknown = set(proposal) - set(PROPOSED_CORE) - {"id", "finding_links", "supersedes_expression_id"}
+def _bundle_item(bundle: dict[str, Any], bundle_id: Any) -> dict[str, Any] | None:
+    items = bundle.get("items", []) if isinstance(bundle, dict) else []
+    return next((item for item in items if isinstance(item, dict) and item.get("id") == bundle_id), None)
+
+
+def _item_files(item: dict[str, Any]) -> list[str]:
+    derivatives = item.get("text_derivatives") if isinstance(item.get("text_derivatives"), list) else []
+    paths = [item.get(key) for key in BUNDLE_FILES] + [d.get("path") for d in derivatives if isinstance(d, dict)]
+    return list(dict.fromkeys(path for path in paths if isinstance(path, str)))
+
+
+def _occurrences(lines: list[str], needle: str, normalize: bool) -> list[tuple[int, int]]:
+    """The (line_start, line_end) of every place `needle` occurs in the lines,
+    exactly or, with `normalize`, on validate-case's NFKC and whitespace rule."""
+    pieces = [(number, normalized(line) if normalize else line) for number, line in enumerate(lines, 1)]
+    if normalize:
+        pieces = [(number, line) for number, line in pieces if line]
+        needle = normalized(needle)
+    if not needle:
+        return []
+    starts, offset = [], 0
+    for _number, line in pieces:
+        starts.append(offset)
+        offset += len(line) + 1
+    full = (" " if normalize else "\n").join(line for _number, line in pieces)
+    found, at = [], full.find(needle)
+    while at >= 0:
+        first = max(i for i, start in enumerate(starts) if start <= at)
+        last = max(i for i, start in enumerate(starts) if start <= at + len(needle) - 1)
+        found.append((pieces[first][0], pieces[last][0]))
+        at = full.find(needle, at + 1)
+    return sorted(set(found))
+
+
+def _locate(case: Path, label: str, text: str, paths: list[str]) -> tuple[str, int, int]:
+    """The one place `text` occurs in the named files: an exact match first,
+    then a whitespace-normalised one. Anything else is refused."""
+    if not paths:
+        raise WriteError(f"expression {label}: name the file the passage is in, as anchor_ref {{\"path\": \"research/page.md.raw\"}}")
+    for normalize in (False, True):
+        matches = []
+        for relative in paths:
+            target = (case / relative).resolve()
+            if case.resolve() not in target.parents or not target.is_file():
+                raise WriteError(f"expression {label}: not found: {relative} is not a case-local file")
+            matches += [(relative, start, end) for start, end in _occurrences(source_lines(target), text, normalize)]
+        if len(matches) == 1:
+            return matches[0]
+        if matches:
+            ranges = ", ".join(f"{path} lines {start}-{end}" for path, start, end in matches[:8])
+            raise WriteError(f"expression {label}: the text occurs {len(matches)} times ({ranges}); give anchor_ref with the line_start and line_end you mean")
+    raise WriteError(f"expression {label}: the text is not found in {', '.join(paths)}; quote it exactly as the file has it")
+
+
+def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, Any], notes: list[str]) -> dict[str, Any]:
+    label = repr(proposal.get("id"))
+    proposal = dict(proposal)
+    dropped = sorted(COMPUTED & set(proposal))
+    for key in dropped:
+        del proposal[key]
+    if dropped:
+        notes.append(f"expression {label}: ignored {dropped}; the writer computes them")
+    # `lang` is the model's own tag under a short key, not a guess.
+    if "lang" in proposal:
+        lang = proposal.pop("lang")
+        if "language" in proposal and proposal["language"] != lang:
+            raise WriteError(f"expression {label}: lang {lang!r} and language {proposal['language']!r} differ; send only language")
+        if "language" not in proposal:
+            proposal["language"] = lang
+            notes.append(f"expression {label}: read lang as language")
+    unknown = set(proposal) - set(ALLOWED)
     if unknown:
-        raise WriteError(f"expression {proposal.get('id')!r}: unknown or computed fields {sorted(unknown)}; the writer computes hashes and fingerprints")
-    anchor = proposal.get("anchor_ref")
-    # A line number sent as a string of digits ("65") is that number.
-    if isinstance(anchor, dict):
-        for field in ("line_start", "line_end"):
-            if isinstance(anchor.get(field), str) and anchor[field].isdigit():
-                anchor[field] = int(anchor[field])
-    if not isinstance(anchor, dict) or not isinstance(anchor.get("path"), str):
-        raise WriteError(
-            f"expression {proposal.get('id')!r}: anchor_ref must be an object with a case-local path, "
-            'for example {"path": "research/page.md.raw", "line_start": 81, "line_end": 81}, '
-            f"not {json.dumps(anchor)}"
-        )
+        raise WriteError(f"expression {label}: unknown fields {sorted(unknown)}; the allowed fields are {', '.join(ALLOWED)}")
     # Ingest builds claims only from passages with a language, so it is asked for here.
     if not isinstance(proposal.get("language"), str) or not LANGUAGE.match(proposal["language"]):
-        raise WriteError(f"expression {proposal.get('id')!r}: language is required, a BCP 47 tag of the passage's original language (for example \"en\" or \"fr-CH\")")
+        raise WriteError(f"expression {label}: language is required, a BCP 47 tag of the passage's original language (for example \"en\" or \"fr-CH\")")
+    if not isinstance(proposal.get("text"), str) or not proposal["text"].strip():
+        raise WriteError(f"expression {label}: text is required, the exact passage as the file has it")
+    anchor = proposal.get("anchor_ref")
+    # A path sent as a string, with or without a ":12-14" line suffix, is that path.
+    if isinstance(anchor, str):
+        anchor = {"path": re.sub(r":\d+(-\d+)?$", "", anchor)}
+    if anchor is not None and not (isinstance(anchor, dict) and isinstance(anchor.get("path"), str)):
+        raise WriteError(f"expression {label}: anchor_ref must be an object with a case-local path, "
+                         f'for example {{"path": "research/page.md.raw"}}, not {json.dumps(anchor)}')
+    anchor = dict(anchor) if anchor else None
+    # A line number sent as a string of digits ("65") is that number.
+    for field in ("line_start", "line_end"):
+        if anchor and isinstance(anchor.get(field), str) and anchor[field].isdigit():
+            anchor[field] = int(anchor[field])
+    target = (case / anchor["path"]).resolve() if anchor else None
+    reproduces = (anchor is not None and target is not None and case.resolve() in target.parents and target.is_file()
+                  and proposal["text"] in selected_source_texts(target, anchor)[0])
+    if not reproduces:
+        # Without an anchor that selects the text, the writer finds it: in the
+        # named file, or else in the evidence item's own files.
+        item = _bundle_item(bundle, proposal.get("original_evidence_bundle_id")) or {}
+        paths = [anchor["path"]] if anchor else _item_files(item)
+        path, start, end = _locate(case, label, proposal["text"], paths)
+        anchor = {"path": path, "line_start": start, "line_end": end}
+        stored = "\n".join(source_lines((case / path).resolve())[start - 1:end])
+        notes.append(f"expression {label}: anchored at {path} lines {start}-{end}"
+                     + ("" if stored == proposal["text"] else "; text set to those lines as the file has them"))
+        proposal["text"] = stored
+    proposal["anchor_ref"] = anchor
     expression = {"id": proposal["id"]}
     expression.update({key: copy.deepcopy(proposal[key]) for key in PROPOSED_CORE if key in proposal})
     expression["anchor_sha256"] = _sha256_case_file(case, anchor["path"])
@@ -166,7 +260,8 @@ LIFECYCLE_EXAMPLE = ('{"expression_id": "P1", "event": "superseded", '
                      '"successor_expression_id": "P1b", "reason": "..."}')
 
 
-def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], actor: str, cycle: int) -> dict[str, Any]:
+def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], actor: str, cycle: int,
+          notes: list[str] | None = None) -> dict[str, Any]:
     """Return the merged document; raise WriteError and change nothing on any problem."""
     findings_doc = _load(case / "data" / "findings.json", {})
     findings = {f.get("id"): f for f in findings_doc.get("findings", []) if isinstance(f, dict)}
@@ -181,7 +276,7 @@ def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], 
     for raw in proposal.get("expressions", []):
         if not isinstance(raw, dict) or not isinstance(raw.get("id"), str) or not raw["id"]:
             raise WriteError("every proposed expression needs a non-empty id")
-        built = _build_expression(case, raw, bundle)
+        built = _build_expression(case, raw, bundle, notes if notes is not None else [])
         existing = by_id.get(raw["id"])
         if existing is None:
             built.update({"finding_links": [], "created_by": actor, "cycle": cycle,
@@ -279,12 +374,12 @@ def merge_positions(current: dict[str, Any] | None, proposal: dict[str, Any], pr
     return doc
 
 
-def write(case: Path, proposal: dict[str, Any], actor: str, cycle: int) -> dict[str, Any]:
+def write(case: Path, proposal: dict[str, Any], actor: str, cycle: int, notes: list[str] | None = None) -> dict[str, Any]:
     if actor not in ACTORS:
         raise WriteError(f"--actor must be one of {', '.join(ACTORS)}")
     with transaction(case) as descriptor:
         current = _load(case / TARGET)
-        doc = merge(case, current, proposal, actor, cycle)
+        doc = merge(case, current, proposal, actor, cycle, notes)
         findings = _load(case / "data" / "findings.json", {})
         bundle = _load(case / "data" / "evidence-bundle.json")
         # The passages are checked, not the fact-check citing them: when a
@@ -447,12 +542,14 @@ def main(argv: list[str] | None = None) -> int:
         proposal = json.loads(raw)
         if not isinstance(proposal, dict):
             raise WriteError("the proposal must be a JSON object")
-        doc = write(Path(args.case_dir), proposal, args.actor, args.cycle)
+        notes: list[str] = []
+        doc = write(Path(args.case_dir), proposal, args.actor, args.cycle, notes)
     except (WriteError, OrchestrationError, json.JSONDecodeError, OSError) as exc:
         print(f"source-expressions: refused: {exc}", file=sys.stderr)
         return 2
     print(json.dumps({
         "ok": True,
+        **({"notes": notes} if notes else {}),
         "expressions": len(doc["expressions"]),
         "source_expression_refs": proposal_refs(doc, proposal),
         "next": "These are the refs per finding and relation for the passages just written. In data/fact-check.json, "
