@@ -119,6 +119,13 @@ class D1LanePlan(unittest.TestCase):
                 problems = d1(method)
                 self.assertTrue(any(expected in p for p in problems), problems)
 
+    # gold-mozilla a2 on 3f37dcc3: a list-shaped plan was read as no plan and passed.
+    def test_a_plan_that_is_not_an_object_is_named(self) -> None:
+        method = methodology()
+        method["research_plan"] = [plan_of(method)]
+        self.assertEqual(len(d1(method)), 1)
+        self.assertIn("research_plan must be an object", d1(method)[0])
+
     def test_sensitive_mode_allows_only_the_local_corpus_lane(self) -> None:
         method = methodology()
         problems = d1(method, sensitive=True)
