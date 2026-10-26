@@ -111,6 +111,10 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
     ``local_model``: a model endpoint the member runs is configured. The Pi
     harness always has one; a subscription host without one cannot run the
     local corpus lane or journalist input."""
+    raw = methodology.get("research_plan")
+    if raw is not None and not isinstance(raw, Mapping):
+        return [f"research_plan must be an object (topics, round_budget_usd, case_budget_usd, keys, egress, consent), "
+                f"not a {type(raw).__name__}"]
     plan = research_plan(methodology)
     if plan is None:
         return []
