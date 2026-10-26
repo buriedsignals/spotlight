@@ -189,20 +189,30 @@ type Passage = { id?: unknown; expression_fingerprint?: unknown; lifecycle_event
 // validator, and the one correction it gets is easily spent re-dropping the refs
 // (gold mozilla s0 a2). Refused at write time instead, naming the refs on record
 // for active passages that support the finding; nothing is added for the writer.
+// In an activated 1.1 case a verified claim needs a passage even when none is
+// on record yet (12B r2 cc: the fact-checker verified F1 and F2 before any
+// passage existed).
 function refuseUncitedVerdicts(caseDir: string, target: string, content: string): void {
 	if (caseRelative(caseDir, target) !== 'data/fact-check.json') return;
 	let claims: unknown;
-	let passages: Passage[];
+	let activated: boolean;
 	try {
 		const factCheck = JSON.parse(content) as { schema_version?: unknown; claims?: unknown };
 		claims = factCheck.claims;
 		const positive = factCheck.schema_version === '1.1' ? ['verified'] : ['verified', 'partially_verified'];
 		claims = Array.isArray(claims) ? claims.filter((claim) => positive.includes(claim?.verdict)) : [];
-		passages = (JSON.parse(readFileSync(join(caseDir, 'data', 'source-expressions.json'), 'utf8')) as { expressions?: Passage[] }).expressions ?? [];
+		activated = factCheck.schema_version === '1.1' && lstatOrUndefined(join(caseDir, 'data', 'case-contract.json')) !== undefined;
 	} catch {
 		return;
 	}
+	let passages: Passage[] = [];
+	try {
+		passages = (JSON.parse(readFileSync(join(caseDir, 'data', 'source-expressions.json'), 'utf8')) as { expressions?: Passage[] }).expressions ?? [];
+	} catch {
+		if (!activated) return;
+	}
 	const missing: string[] = [];
+	const unsupported: string[] = [];
 	for (const claim of claims as { finding_id?: unknown; evidence_for?: unknown }[]) {
 		const items = Array.isArray(claim.evidence_for) ? claim.evidence_for : [];
 		if (items.some((item) => Array.isArray(item?.source_expression_refs) && item.source_expression_refs.length > 0)) continue;
@@ -213,9 +223,11 @@ function refuseUncitedVerdicts(caseDir: string, target: string, content: string)
 		});
 		const misspelt = items.some((item) => item?.source_expression_ref !== undefined) ? ' (the key is source_expression_refs, a list, not source_expression_ref)' : '';
 		if (refs.length > 0) missing.push(`${String(claim.finding_id)}${misspelt}: ${JSON.stringify(refs)}`);
+		else if (activated) unsupported.push(`\nno passage on record supports ${String(claim.finding_id)}; record the passage you checked with source_expressions, then cite its ref here, or change the verdict.`);
 	}
-	if (missing.length === 0) return;
-	throw new FileRefused(`refused: data/fact-check.json gives a verified verdict whose evidence_for has no source_expression_refs; the file is unchanged. In "source_expression_refs": [<ref>, ...] cite only the passages you checked against their source; if none of them supports the verdict, change the verdict. Refs on record for active passages supporting the finding:\n${missing.join('\n')}`);
+	if (missing.length === 0 && unsupported.length === 0) return;
+	const cite = missing.length > 0 ? ` In "source_expression_refs": [<ref>, ...] cite only the passages you checked against their source; if none of them supports the verdict, change the verdict. Refs on record for active passages supporting the finding:\n${missing.join('\n')}` : '';
+	throw new FileRefused(`refused: data/fact-check.json gives a verified verdict whose evidence_for has no source_expression_refs; the file is unchanged.${cite}${unsupported.join('')}`);
 }
 
 // A fact-check claim checks the finding it names, word for word (gold osmf
