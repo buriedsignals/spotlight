@@ -30,7 +30,7 @@ import { basename, resolve } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT } from '../roles.ts';
-import { writeConfined } from './case-files.ts';
+import { LEAD_MARKER, writeConfined } from './case-files.ts';
 import { anonymizedFetch, assertPublicDestination, checkURL, publicDestination } from './egress.ts';
 import { startEgressProxy } from './proxy.ts';
 import { ToolArgumentError, checkedParams, jsonResult, programOutput, runPython, savePath, saveTarget } from './run.ts';
@@ -50,9 +50,6 @@ const params = Type.Object({ url: webURL, save_as: Type.Optional(savePath) }, { 
 // The lead-distillation request the scraping seam's --rlm path also uses.
 type LeadRequest = { default_model: string; max_input_chars: number; max_tokens: number; temperature: number; prompt: string };
 const LEAD_REQUEST = resolve(CHECKOUT_ROOT, 'integrations/scraping/rlm-leads.json');
-// The first line the validators recognise as a lead file (scripts/evidence_anchors.py
-// RLM_LEAD_MARKER): such a file can never anchor evidence; its .raw can.
-const LEAD_MARKER = '# RLM-distilled leads from';
 const RLM_TIMEOUT_MS = 120_000;
 
 // The RLM endpoint for this process, or undefined off the local tier. An

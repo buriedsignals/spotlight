@@ -282,26 +282,36 @@ function wikiDestinationTool(context: ToolContext): ToolDefinition {
 const PROPOSAL_LIST = Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }), { maxItems: 500 }));
 const WRITER_ACTORS = ['investigator', 'fact-checker'];
 
-// The files the writer may read for one proposed passage, as
-// write-source-expressions.py chooses them: the anchor's path (an object's
-// path, or a string with an optional ":12-14" suffix), else the evidence
-// item's own text files and text derivatives.
-function writerReads(caseDir: string, expression: unknown): string[] {
-	const { anchor_ref: anchor, original_evidence_bundle_id: itemId } = (expression ?? {}) as { anchor_ref?: unknown; original_evidence_bundle_id?: unknown };
-	if (typeof anchor === 'string') return [anchor.replace(/:\d+(-\d+)?$/, '')];
-	if (anchor && typeof anchor === 'object') {
-		const path = (anchor as { path?: unknown }).path;
-		return typeof path === 'string' ? [path] : [];
-	}
+// The anchor path a proposed passage names: an object's path, or a string
+// with an optional ":12-14" suffix, as write-source-expressions.py reads it.
+function anchorPath(expression: unknown): string | undefined {
+	const anchor = (expression as { anchor_ref?: unknown } | null)?.anchor_ref;
+	if (typeof anchor === 'string') return anchor.replace(/:\d+(-\d+)?$/, '');
+	const path = (anchor as { path?: unknown } | null)?.path;
+	return typeof path === 'string' ? path : undefined;
+}
+
+// The evidence files this role may read: the only ones the writer searches
+// for a passage without an anchor (--readable).
+function readableEvidence(context: ToolContext): string[] {
 	let items: unknown;
 	try {
-		items = (JSON.parse(readFileSync(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')) as { items?: unknown }).items;
+		items = (JSON.parse(readFileSync(join(context.caseDir, 'data', 'evidence-bundle.json'), 'utf8')) as { items?: unknown }).items;
 	} catch {
 		return [];
 	}
-	const item = (Array.isArray(items) ? items : []).find((entry) => entry?.id === itemId) ?? {};
-	const derivatives = Array.isArray(item.text_derivatives) ? item.text_derivatives : [];
-	return [...['raw_path', 'downloaded_document_path', 'path'].map((key) => item[key]), ...derivatives.map((entry: { path?: unknown }) => entry?.path)].filter((path): path is string => typeof path === 'string');
+	const paths = (Array.isArray(items) ? items : []).flatMap((item) => [
+		...['raw_path', 'downloaded_document_path', 'path'].map((key) => item?.[key]),
+		...(Array.isArray(item?.text_derivatives) ? item.text_derivatives : []).map((entry: { path?: unknown }) => entry?.path),
+	]);
+	return [...new Set(paths.filter((path): path is string => typeof path === 'string'))].filter((path) => {
+		try {
+			readTarget(context.caseDir, path, context.scope);
+			return true;
+		} catch {
+			return false;
+		}
+	});
 }
 
 function sourceExpressionsTool(context: ToolContext): ToolDefinition {
@@ -322,7 +332,7 @@ function sourceExpressionsTool(context: ToolContext): ToolDefinition {
 		name: 'source_expressions',
 		label: 'Source expressions',
 		description:
-			'The only way to record passages and source positions in an activated case. {action: "write", cycle: N, proposal: {expressions, lifecycle, positions, withdraw_positions}}. For each passage give id, text (the exact quote as the file has it), anchor_ref {path} (the evidence item\'s file: its original artifact or a text_derivatives path; for a distilled fetch its .raw file, never the leads file), original_evidence_bundle_id (an item already in data/evidence-bundle.json), language (BCP 47) and finding_links. The writer finds the lines and computes every hash and fingerprint. Example: {"id": "P1", "text": "<exact quote>", "anchor_ref": {"path": "research/page.md.raw"}, "original_evidence_bundle_id": "E1", "language": "en", "finding_links": [{"finding_id": "F1", "relation": "supports"}]}. {action: "fingerprint_findings"} sets every finding_fingerprint from its claim; run it after writing or merging findings. A refusal changes nothing and says why.',
+			'The only way to record passages and source positions in an activated case. {action: "write", cycle: N, proposal: {expressions, lifecycle, positions, withdraw_positions}}. For each passage give id, text (the exact quote as the file has it), anchor_ref {path} (the evidence item\'s file: its original artifact or a text_derivatives path; for a distilled fetch its .raw file, never the leads file), original_evidence_bundle_id (an item already in data/evidence-bundle.json), language (BCP 47) and finding_links. The writer finds the lines and computes every hash and fingerprint. If no source you acquired contains a passage that supports the finding, do not record one: set the verdict to unverified. Example: {"id": "P1", "text": "<exact quote>", "anchor_ref": {"path": "research/page.md.raw"}, "original_evidence_bundle_id": "E1", "language": "en", "finding_links": [{"finding_id": "F1", "relation": "supports"}]}. {action: "fingerprint_findings"} sets every finding_fingerprint from its claim; run it after writing or merging findings. A refusal changes nothing and says why.',
 		parameters: params,
 		executionMode: 'sequential',
 		async execute(_id, raw, signal) {
@@ -342,14 +352,17 @@ function sourceExpressionsTool(context: ToolContext): ToolDefinition {
 			if (input.cycle === undefined || input.proposal === undefined) {
 				throw new ToolArgumentError('source_expressions: action "write" needs cycle and proposal');
 			}
-			// The writer reads each anchor's file, or without one the evidence
-			// item's own files, so each must be a file this role may read: the
+			// The writer reads each named anchor's file, so it must be a file this
+			// role may read, and searches only readable evidence files for the
+			// rest (an empty --readable= first, so none readable means none): the
 			// fact-checker cannot cite the research it is kept from.
 			const expressions = (input.proposal as { expressions?: unknown }).expressions;
 			for (const expression of Array.isArray(expressions) ? expressions : []) {
-				for (const path of writerReads(context.caseDir, expression)) readTarget(context.caseDir, path, context.scope);
+				const path = anchorPath(expression);
+				if (path !== undefined) readTarget(context.caseDir, path, context.scope);
 			}
-			const result = await runPython(context, [writer, context.caseDir, '--actor', actor, '--cycle', String(input.cycle)], {
+			const readable = ['--readable=', ...readableEvidence(context).map((path) => `--readable=${path}`)];
+			const result = await runPython(context, [writer, context.caseDir, '--actor', actor, '--cycle', String(input.cycle), ...readable], {
 				input: JSON.stringify(input.proposal),
 				signal,
 			});
