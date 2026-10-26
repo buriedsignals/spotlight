@@ -88,6 +88,22 @@ function mayRead(scope: CaseScope | undefined, name: string): boolean {
 	return inScope(scope?.reads, name) && !denied(scope?.denyReads, name);
 }
 
+// Every case data file under data/ is one JSON object, and the resolver hashes
+// them as objects: a list or broken JSON there leaves the case at an unknown phase.
+function refuseNonObjectData(caseDir: string, target: string, content: string): void {
+	const path = caseRelative(caseDir, target);
+	if (!/^data\/[^/]+\.json$/.test(path)) return;
+	let value: unknown;
+	try {
+		value = JSON.parse(content);
+	} catch {
+		value = undefined;
+	}
+	if (value !== null && typeof value === 'object' && !Array.isArray(value)) return;
+	const shape = path === 'data/evidence-bundle.json' ? ' with an `items` list' : '';
+	throw new FileRefused(`refused: ${path} must stay one JSON object${shape}; the file is unchanged. Read it, change the part you need, and write the whole object back.`);
+}
+
 function lstatOrUndefined(path: string): Stats | undefined {
 	try {
 		return lstatSync(path);
@@ -336,6 +352,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 						throw new FileRefused(`refused: empty content would erase ${input.path}. If your output was cut off, write the file again in full.`);
 					}
 				}
+				refuseNonObjectData(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, input.content, writes, denyWrites)}`);
 			},
 		},
@@ -365,6 +382,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 					throw new Error(`edit_file: old_text occurs more than once in ${input.path}; include more context`);
 				}
 				const updated = text.slice(0, first) + input.new_text + text.slice(first + input.old_text.length);
+				refuseNonObjectData(caseDir, target, updated);
 				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes, denyWrites)}`);
 			},
 		},

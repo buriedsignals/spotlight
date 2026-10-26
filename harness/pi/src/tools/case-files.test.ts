@@ -257,6 +257,21 @@ test('empty or whitespace content over an existing non-empty file is refused and
 	assert.equal(await readFile(join(caseDir, 'research/empty.md'), 'utf8'), '');
 });
 
+// gold-matrix s0 on 18652cde: the fact-checker wrote data/evidence-bundle.json as a bare list,
+// and the resolver could no longer hash the case or name its phase.
+test('a case data file written or edited into anything but one JSON object is refused and kept', async (t) => {
+	const { caseDir, call } = await fixture(t);
+	const bundle = '{"items": [{"id": "E1"}]}';
+	await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), bundle);
+
+	await assert.rejects(call('write_file', { path: 'data/evidence-bundle.json', content: '[{"id": "E1"}]' }), /data\/evidence-bundle\.json must stay one JSON object with an `items` list; the file is unchanged/);
+	await assert.rejects(call('edit_file', { path: 'data/evidence-bundle.json', old_text: '"id": "E1"}]}', new_text: '"id": "E1"}]' }), /must stay one JSON object/);
+	assert.equal(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8'), bundle);
+
+	await call('write_file', { path: 'data/evidence-bundle.json', content: '{"items": []}' });
+	await call('write_file', { path: 'research/list.json', content: '[]' });
+});
+
 // E2E D11: the tool text promises the checkout's schemas/, but a relative
 // schemas/ path resolved inside the case and came back "not found".
 test('a relative schemas/ path reads the checkout schema', async (t) => {
