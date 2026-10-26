@@ -9,8 +9,8 @@ import { PROVIDER_ID } from './pi-process.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillsFor, spawnableWorkers } from './roles.ts';
 import { typedTools } from './tools/index.ts';
 import { invokeSkillTool } from './tools/skills.ts';
-import { INDICATOR_FRAMEWORK_ROLES } from './tools/hosted-skill.ts';
-import type { ModelTier } from './config.ts';
+import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/hosted-skill.ts';
+import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
 import { bindActiveCase, pythonAdapter, spotlightTools } from './tools/spotlight.ts';
 import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
@@ -35,7 +35,7 @@ function toolsFor(role: string): ToolDefinition[] {
 	// The Navigator-hosted Indicator Framework, cached per revision in the
 	// harness data folder.
 	const hosted = INDICATOR_FRAMEWORK_ROLES.includes(role)
-		? { caseDir: active.caseDir, dataDir: required('SPOTLIGHT_HARNESS_DATA'), env: process.env, tier: (process.env.SPOTLIGHT_MODEL_TIER || '12b') as ModelTier, sensitive }
+		? { caseDir: active.caseDir, dataDir: required('SPOTLIGHT_HARNESS_DATA'), env: process.env, sensitive }
 		: undefined;
 	const context = {
 		caseDir: active.caseDir,
@@ -60,7 +60,11 @@ function toolsFor(role: string): ToolDefinition[] {
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context)));
 	}
 	const allowlist = new Set(allowedTools(spec, sensitive, edition));
-	return tools.filter((tool) => allowlist.has(tool.name));
+	const allowed = tools.filter((tool) => allowlist.has(tool.name));
+	// Only a case whose approved methodology turns the framework on gets the
+	// tool, so every other case keeps the same tool list.
+	if (hosted && approvedIndicatorFramework(active.caseDir)) allowed.push(recordIndicatorFrameworkTool(hosted, context.writeRoot));
+	return allowed;
 }
 
 export default function spotlightExtension(pi: ExtensionAPI): void {

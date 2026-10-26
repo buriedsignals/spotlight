@@ -404,6 +404,10 @@ Update `{CASE_DIR}/data/indicator-framework.json` and
 add no score, likelihood or percentage fields, and keep it apart from your
 verdicts and confidence. `scripts/validate-indicator-framework.py {CASE_DIR}`
 checks the file after you finish.
+Where `record_indicator_framework` is one of your tools, record through it
+instead of writing the two files: send every indicator, branch, conclusion
+and item, and it fills the ratings, quadrants and items the framework data
+implies.
 
 ## File Locations
 

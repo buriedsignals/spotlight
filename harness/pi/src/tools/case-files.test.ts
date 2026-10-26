@@ -9,6 +9,7 @@ import test from 'node:test';
 import type { TestContext } from 'node:test';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT } from '../roles.ts';
+import { approve } from '../test-support/hosted-skill.ts';
 import { caseFileTools } from './case-files.ts';
 import type { CaseScope } from './run.ts';
 
@@ -326,6 +327,21 @@ test('a fact-check claim that is not its finding\'s claim is refused, naming the
 
 	await call('write_file', { path: 'data/fact-check.json', content: factCheck('The registered office is in  Cambridge,\nCB4 0WS.') });
 	await assert.rejects(call('edit_file', { path: 'data/fact-check.json', old_text: 'Cambridge', new_text: 'London' }), /not its finding's/);
+});
+
+test('with the Indicator Framework on, its case file and report are written only through record_indicator_framework', async (t) => {
+	const on = await fixture(t);
+	await approve(on.caseDir, true);
+	for (const path of ['data/indicator-framework.json', 'data/indicator-framework.md']) {
+		await assert.rejects(on.call('write_file', { path, content: '{}' }), /written only through record_indicator_framework/, path);
+		assert.equal(existsSync(join(on.caseDir, path)), false, path);
+	}
+	await writeFile(join(on.caseDir, 'data/indicator-framework.json'), '{"a": 1}');
+	await assert.rejects(on.call('edit_file', { path: 'data/indicator-framework.json', old_text: '1', new_text: '2' }), /written only through record_indicator_framework/);
+
+	const off = await fixture(t);
+	await approve(off.caseDir, false);
+	await off.call('write_file', { path: 'data/indicator-framework.json', content: '{}' });
 });
 
 // E2E D11: the tool text promises the checkout's schemas/, but a relative

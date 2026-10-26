@@ -270,7 +270,7 @@ class ReviewGate(CaseFixture):
         (case / "data" / "indicator-framework.json").write_text(json.dumps(indicator_document("F1")), encoding="utf-8")
         view = self.view(case, "investigation_gate")
         section = view["content"]["indicator_framework"]
-        self.assertEqual([(row["id"], row["quadrant"]) for row in section["indicators"]], [("ind-1", "Solid"), ("ind-2", "Shared")])
+        self.assertEqual([(row["id"], row["quadrant"]) for row in section["indicators"]], [("ind-1", "Q-anchor"), ("ind-2", "Q-context")])
         self.assertEqual([(b["branch_id"], b["strongest"]) for b in section["branches"]], [("br-1", ["ind-1"]), ("br-2", ["ind-2"])])
         self.assertIn("2026-03-02", section["temporal_summary"])
         assignments = [item for item in view["items"] if item["kind"] == "assignment"]

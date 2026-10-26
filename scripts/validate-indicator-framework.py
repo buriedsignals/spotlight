@@ -10,7 +10,9 @@ grades, so this check proves only that the file holds together:
   branch's indicators and strongest ones, a conclusion's branches, an item's
   indicators and conclusions), and every ``finding_ids`` entry is a finding in
   data/findings.json;
-* quadrants, pairing statuses and item kinds use the framework's values;
+* quadrants, pairing statuses and item kinds use the framework's values, when
+  the framework data sits beside this script (``../assets/framework.json``, as
+  in the Lab-gated skill bundle); the public checkout carries none of it;
 * no field carries a score, likelihood, probability or percentage, and no item
   arrives already assigned: the member assigns items on the Investigation gate
   page.
@@ -29,23 +31,23 @@ from pathlib import Path
 from typing import Any
 
 FILE = "data/indicator-framework.json"
-QUADRANTS = ("Solid", "Forged", "Shared", "Weak")
-PAIRING_STATUSES = {"untested", "confirmed_theirs", "confirmed_planted", "not_applicable"}
-ITEM_KINDS = {
-    "unrated", "fidelity_line", "specificity_line", "shared_carrying_weight", "branch_map",
-    "confirmed_plant", "third_party_claim", "not_in_hand", "temporal", "competing_explanations", "dead_end",
-}
+FRAMEWORK = Path(__file__).resolve().parent.parent / "assets" / "framework.json"
 SCORE_KEY = re.compile(r"score|likelihood|probabilit|percent", re.IGNORECASE)
 # "80%" or "12.5 %", but not a URL escape such as "%20".
 PERCENTAGE = re.compile(r"\b\d+(?:\.\d+)?\s*%(?![0-9A-Fa-f]{2})")
 
 
-def quadrant_ok(value: object) -> bool:
-    """One quadrant, the centre, or a straddle of two different quadrants."""
-    if value == "center" or value in QUADRANTS:
-        return True
-    parts = value.split("/") if isinstance(value, str) else []
-    return len(parts) == 2 and parts[0] != parts[1] and all(part in QUADRANTS for part in parts)
+def framework_values() -> dict[str, set[str]] | None:
+    """The quadrant names (the matrix's cells), pairing statuses and item kinds."""
+    try:
+        framework = json.loads(FRAMEWORK.read_text(encoding="utf-8"))
+        return {
+            "quadrant": {cell["quadrant"] for cell in framework["matrix"]},
+            "pairing_status": set(framework["pairing_statuses"]),
+            "kind": {kind["kind"] for kind in framework["item_kinds"]},
+        }
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def entries(document: dict[str, Any], key: str) -> list[dict[str, Any]]:
@@ -109,6 +111,11 @@ def validate(case: Path) -> list[str]:
     conclusions = unique("conclusions", "conclusion_id")
     unique("indicator_gaps", "item_id")
     findings = finding_ids(case)
+    values = framework_values()
+
+    def allowed(owner: str, field: str, value: object) -> None:
+        if values is not None and value not in values[field]:
+            failures.append(f"{owner}: {field} {value!r} is not one of {', '.join(sorted(values[field]))}")
 
     def resolve(owner: str, field: str, values: list[object], known: set[object], what: str) -> None:
         for value in values:
@@ -124,10 +131,10 @@ def validate(case: Path) -> list[str]:
         resolve(owner, "finding_ids", ids(indicator.get("finding_ids")), findings, "a finding in data/findings.json")
         for rating in ("starting_rating", "current_rating"):
             value = indicator.get(rating)
-            if isinstance(value, dict) and "quadrant" in value and not quadrant_ok(value["quadrant"]):
-                failures.append(f"{owner} {rating}: quadrant {value['quadrant']!r} is not a quadrant, a straddle or center")
-        if "pairing_status" in indicator and indicator["pairing_status"] not in PAIRING_STATUSES:
-            failures.append(f"{owner}: pairing_status {indicator['pairing_status']!r} is not one of {', '.join(sorted(PAIRING_STATUSES))}")
+            if isinstance(value, dict) and "quadrant" in value:
+                allowed(f"{owner} {rating}", "quadrant", value["quadrant"])
+        if "pairing_status" in indicator:
+            allowed(owner, "pairing_status", indicator["pairing_status"])
     for branch in entries(document, "branches"):
         owner = f"branch {branch.get('branch_id')}"
         members = ids(branch.get("indicator_ids"))
@@ -139,8 +146,7 @@ def validate(case: Path) -> list[str]:
         resolve(owner, "finding_ids", ids(conclusion.get("finding_ids")), findings, "a finding in data/findings.json")
     for item in entries(document, "indicator_gaps"):
         owner = f"item {item.get('item_id')}"
-        if item.get("kind") not in ITEM_KINDS:
-            failures.append(f"{owner}: kind {item.get('kind')!r} is not one of {', '.join(sorted(ITEM_KINDS))}")
+        allowed(owner, "kind", item.get("kind"))
         resolve(owner, "indicator_ids", ids(item.get("indicator_ids")), indicators, "an indicator")
         resolve(owner, "conclusion_ids", ids(item.get("conclusion_ids")), conclusions, "a conclusion")
         if item.get("assign_to") is not None:

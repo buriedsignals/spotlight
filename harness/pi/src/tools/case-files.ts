@@ -9,6 +9,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT } from '../roles.ts';
+import { approvedIndicatorFramework } from './hosted-skill.ts';
 import { ToolArgumentError, checkedParams, jsonResult, textResult } from './run.ts';
 import type { CaseScope, ToolContext } from './run.ts';
 
@@ -170,6 +171,16 @@ function refuseUnactivatedStart(caseDir: string, target: string): void {
 	const exists = (name: string) => lstatOrUndefined(join(caseDir, name)) !== undefined;
 	if (!LEGACY_MARKERS.includes(path) || exists('data/case-contract.json') || LEGACY_MARKERS.some(exists)) return;
 	throw new FileRefused(`refused: ${path} starts the investigation record, which opens at Investigation once the harness has activated the case (data/case-contract.json); the file is unchanged. Before Investigation, write only the files your task names.`);
+}
+
+// With the Indicator Framework on, its case file and report come only from
+// record_indicator_framework, which fills ratings, quadrants and items from
+// the fetched framework data.
+const RECORDED_FRAMEWORK = ['data/indicator-framework.json', 'data/indicator-framework.md'];
+function refuseRecordedFramework(caseDir: string, target: string): void {
+	const path = caseRelative(caseDir, target);
+	if (!RECORDED_FRAMEWORK.includes(path.toLowerCase()) || !approvedIndicatorFramework(caseDir)) return;
+	throw new FileRefused(`refused: ${path} is written only through record_indicator_framework, which fills the ratings, quadrants and items from the framework data; the file is unchanged. Call it with every indicator, branch, conclusion and item.`);
 }
 
 type Passage = { id?: unknown; expression_fingerprint?: unknown; lifecycle_events?: { event?: unknown }[]; finding_links?: { finding_id?: unknown; relation?: unknown; finding_fingerprint?: unknown; link_fingerprint?: unknown }[] };
@@ -430,6 +441,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 					}
 				}
 				refuseUnactivatedStart(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
+				refuseRecordedFramework(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseNonObjectData(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseUncitedVerdicts(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
@@ -462,6 +474,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 					throw new Error(`edit_file: old_text occurs more than once in ${input.path}; include more context`);
 				}
 				const updated = text.slice(0, first) + input.new_text + text.slice(first + input.old_text.length);
+				refuseRecordedFramework(caseDir, target);
 				refuseNonObjectData(caseDir, target, updated);
 				refuseUncitedVerdicts(caseDir, target, updated);
 				refuseDriftedClaims(caseDir, target, updated);

@@ -552,6 +552,10 @@ Write `{CASE_DIR}/data/indicator-framework.json` and
 no score, likelihood or percentage fields, and never change a finding's
 `confidence` or `grounding` because of it. `scripts/validate-indicator-framework.py {CASE_DIR}`
 checks the file after you finish.
+Where `record_indicator_framework` is one of your tools, record through it
+instead of writing the two files: send every indicator, branch, conclusion
+and item, and it fills the ratings, quadrants and items the framework data
+implies.
 
 ### Research directions (researched cases)
 
