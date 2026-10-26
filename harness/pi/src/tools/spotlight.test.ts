@@ -105,7 +105,9 @@ test('a model-named sibling case is ignored: the tools act only on the bound cas
 	assert.deepEqual(state.attempts, { 'investigation-cycle': 1 });
 });
 
-test('a model follow-up records the agent channel and the harness role, whatever the payload claims', async (t) => {
+// gold osmf s1 a1 on d74a171e: the orchestrator requested a follow-up itself, with no member
+// asking, to have a fact-check verdict changed; the harness recorded it.
+test('a model follow-up is refused and names the spawn that fixes a finding before the gate', async (t) => {
 	const { caseDir, root } = await casePath(t);
 	await new Promise<void>((done, fail) =>
 		execFile(
@@ -114,17 +116,13 @@ test('a model follow-up records the agent channel and the harness role, whatever
 			(error) => (error ? fail(error) : done()),
 		),
 	);
+	const before = await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8');
 
-	const resolution = await tools(caseDir, root).transition({
-		operation: 'requestFollowUp',
-		payload: { instructions: 'Find a second filing.', requestedByRole: 'member', decidedBy: 'A. Member' },
-	});
-
-	assert.equal(resolution.phase, 'investigation');
-	const { follow_up: followUp } = JSON.parse(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'));
-	assert.equal(followUp.review.channel, 'agent');
-	assert.equal(followUp.requested_by_role, 'orchestrator');
-	assert.equal(followUp.decided_by, undefined);
+	await assert.rejects(
+		tools(caseDir, root).transition({ operation: 'requestFollowUp', payload: { instructions: 'Mark F3 verified.' } }),
+		/a follow-up cycle is the member's decision on the Investigation page\. To fix a finding or verdict before the gate, spawn the investigator or fact-checker/,
+	);
+	assert.equal(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'), before);
 });
 
 test('gate approvals, the report decision and an ingest request or decline are refused', async (t) => {
