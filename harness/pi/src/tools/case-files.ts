@@ -17,6 +17,7 @@ export class FileRefused extends Error {}
 
 const SCHEMAS_DIR = resolve(CHECKOUT_ROOT, 'schemas');
 const MAX_READ_CHARS = 200_000;
+export const READ_TRUNCATED = '[truncated: use offset and limit to read the rest]';
 const MAX_WRITE_BYTES = 20 * 1024 * 1024;
 const MAX_LIST = 500;
 const MAX_MATCHES = 200;
@@ -467,7 +468,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				}
 				return textResult(
 					selected.length > MAX_READ_CHARS
-						? `${selected.slice(0, MAX_READ_CHARS)}\n[truncated: use offset and limit to read the rest]`
+						? `${selected.slice(0, MAX_READ_CHARS)}\n${READ_TRUNCATED}`
 						: selected,
 				);
 			},

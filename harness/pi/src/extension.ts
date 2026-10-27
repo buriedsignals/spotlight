@@ -7,6 +7,7 @@ import { maxOutputTokens, resolverEnv } from './config.ts';
 import { applyFixedRequestBody, parseFixedRequestBody } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillsFor, spawnableWorkers } from './roles.ts';
+import { READ_TRUNCATED } from './tools/case-files.ts';
 import { typedTools } from './tools/index.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/hosted-skill.ts';
@@ -106,10 +107,36 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	// frontier tier keeps Pi's default threshold and summary.
 	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier');
 	registerLoopGuard(pi);
+	if ((process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') === '12b') registerReadBudget(pi);
 	registerToolOwners(pi, role);
 	const tools = toolsFor(role);
 	for (const tool of tools) pi.registerTool(tool);
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
+}
+
+// The 12b serves 40,960 tokens per slot, and Pi cannot fold a turn's own tool
+// results away when they overflow it: its one compact-and-retry keeps them,
+// because a tool result is never a cut point. So on the 12b all the read_file
+// results of one turn together return at most 30,000 characters (tool-result
+// text runs about 3.1 characters per Gemma token: about 9.6k tokens, which fits
+// right after a fold), cut with read_file's own truncation notice. Pi runs a
+// turn's tool calls in parallel, so the read that is cut is the one that
+// finishes last, not necessarily the one called last.
+const TURN_READ_CHARS_12B = 30_000;
+
+function registerReadBudget(pi: ExtensionAPI): void {
+	let left = TURN_READ_CHARS_12B;
+	pi.on('turn_start', () => {
+		left = TURN_READ_CHARS_12B;
+	});
+	pi.on('tool_result', (event) => {
+		if (event.toolName !== 'read_file' || event.isError) return;
+		const text = event.content.map((part) => (part.type === 'text' ? part.text : '')).join('');
+		const kept = Math.min(text.length, left);
+		left -= kept;
+		if (kept === text.length) return;
+		return { content: [{ type: 'text' as const, text: `${text.slice(0, kept)}\n${READ_TRUNCATED}` }] };
+	});
 }
 
 // A small model can repeat one call over and over (12B retune: the same
