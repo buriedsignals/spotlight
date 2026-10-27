@@ -61,8 +61,11 @@ export async function withCasePassages(
 // query_vault in 2 of 3 cases). So in sensitive mode the launcher searches the
 // wiki itself with the approved brief and appends the hits to the
 // investigator's and the fact-checker's task, inside one untrusted-data block
-// (scripts/query_vault.py --format prompt). Without a wiki, without Engine or
-// on any failure the task goes unchanged.
+// (scripts/query_vault.py --format prompt). Each note the block shows is also
+// saved whole under research/wiki/ (as the cloud audience reads it, so
+// protected sources stay out), and the block names that file, so a finding can
+// cite and anchor it like any capture. Without a wiki, without Engine or on any
+// failure the task goes unchanged.
 const WIKI_ROLES = ['investigator', 'fact-checker'];
 const BRIEF_QUERY_CHARS = 4000;
 
@@ -83,7 +86,7 @@ export async function withWikiPassages(
 	try {
 		result = await runFixed(
 			options.python,
-			[join(CHECKOUT_ROOT, 'scripts/query_vault.py'), '--config', options.configPath, '--case-dir', options.caseDir, '--limit', '6', '--format', 'prompt', '--', brief],
+			[join(CHECKOUT_ROOT, 'scripts/query_vault.py'), '--config', options.configPath, '--case-dir', options.caseDir, '--limit', '6', '--format', 'prompt', '--capture-dir', join(options.caseDir, 'research', 'wiki'), '--', brief],
 			{ env: programEnv(options.env, engineEnv(options.env)), cwd: CHECKOUT_ROOT, timeoutMs: CASE_SEARCH_TIMEOUT_MS, signal: options.signal },
 		);
 	} catch {

@@ -21,6 +21,14 @@ FAKE_BSIG = r'''#!/usr/bin/env python3
 import json, os, sys
 open(os.environ["FAKE_BSIG_ARGS"], "w").write(json.dumps(sys.argv[1:]))
 mode = os.environ.get("FAKE_BSIG_MODE", "ok")
+if sys.argv[3] == "read":
+    path = json.loads(sys.argv[-1])["path"]
+    if path == "notes/meeting.md":  # a note the cloud audience may not see
+        print(json.dumps({"event": "error", "message": "wiki: not found: notes/meeting.md"}))
+        sys.exit(1)
+    content = f"# {path}\n\nThe whole note: Acme paid Doe in 2021.{' Revised.' if mode == 'changed' else ''}\n"
+    print(json.dumps({"event": "result", "message": "wiki read", "data": {"tool": "read", "result": {"path": path, "hash": "", "content": content}}}))
+    sys.exit(0)
 if mode == "error":
     print(json.dumps({"event": "error", "message": "wiki: workspace has no .ok"}))
     sys.exit(1)
@@ -53,9 +61,9 @@ class QueryVaultChecks(unittest.TestCase):
                               capture_output=True, text=True, env=env)
         return done.returncode, json.loads(done.stdout or done.stderr)
 
-    def run_prompt(self, mode: str = "ok") -> tuple[int, str]:
+    def run_prompt(self, mode: str = "ok", *extra: str) -> tuple[int, str]:
         env = {**os.environ, "SPOTLIGHT_BSIG": str(self.bsig), "FAKE_BSIG_ARGS": str(self.args_file), "FAKE_BSIG_MODE": mode}
-        done = subprocess.run([sys.executable, str(SCRIPT), "--config", str(self.config), "--format", "prompt", "--", "Calder"],
+        done = subprocess.run([sys.executable, str(SCRIPT), "--config", str(self.config), "--format", "prompt", *extra, "--", "Calder"],
                               capture_output=True, text=True, env=env)
         return done.returncode, done.stdout
 
@@ -118,6 +126,32 @@ class QueryVaultChecks(unittest.TestCase):
         self.assertNotIn("\x07", block)
         self.assertLessEqual(block.count("<<<NOTE "), 6)
         self.assertEqual(self.run_prompt("error"), (0, ""))
+
+    # A wiki note the block shows is saved whole in the case, so a finding can
+    # cite it like any research/ capture; a saved file is never rewritten.
+    def test_capture_saves_each_shown_note_whole_in_the_case_and_never_rewrites_one(self):
+        case = self.tmp / "case"
+        case.mkdir()
+        capture = ("--case-dir", str(case), "--capture-dir", str(case / "research" / "wiki"))
+        code, block = self.run_prompt("ok", *capture)
+        self.assertEqual(code, 0)
+        saved = case / "research" / "wiki" / "spotlight-claims-acme.md"
+        self.assertEqual(saved.read_text(), "Wiki note: spotlight/claims/acme.md\n\n# spotlight/claims/acme.md\n\nThe whole note: Acme paid Doe in 2021.\n")
+        self.assertIn("<<<NOTE 1 spotlight/claims/acme.md (Acme paid Doe)\ncase file: research/wiki/spotlight-claims-acme.md\nAcme paid Doe.\nNOTE 1>>>", block)
+        self.assertIn("<<<NOTE 2 notes/meeting.md\nAbout [protected].\nNOTE 2>>>", block, "a note the wiki will not read is shown without a case file")
+        self.assertEqual(sorted(p.name for p in (case / "research" / "wiki").iterdir()), ["spotlight-claims-acme.md"])
+        self.assertEqual(self.run_prompt("ok", *capture), (0, block), "the same note saves to the same file")
+        code, changed = self.run_prompt("changed", *capture)
+        self.assertEqual(saved.read_text().count("Revised"), 0, "the first capture is untouched")
+        revised = [p for p in (case / "research" / "wiki").iterdir() if p.name != "spotlight-claims-acme.md"]
+        self.assertEqual(len(revised), 1)
+        self.assertIn("Revised", revised[0].read_text())
+        self.assertIn(f"case file: research/wiki/{revised[0].name}", changed)
+        outside = ("--case-dir", str(case), "--capture-dir", str(self.tmp / "elsewhere"))
+        code, block = self.run_prompt("ok", *outside)
+        self.assertEqual(code, 0)
+        self.assertNotIn("case file:", block)
+        self.assertFalse((self.tmp / "elsewhere").exists(), "nothing is written outside the case")
 
     def test_malformed_input_is_refused(self):
         code, out = self.run_query("--", "x" * 4097)
