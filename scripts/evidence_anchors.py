@@ -162,6 +162,52 @@ def selected_source_texts(path: Path, source_ref: dict[str, Any]) -> tuple[list[
     return candidates, None
 
 
+def quote_variants(quote: Any) -> list[str]:
+    """The normalized quote, then, when it differs, the quote with each literal
+    \\n (the two characters a model can write for a line break, 12B r3 cc and
+    gold sens4 marlow) read as a line break: the rule the passage writer uses."""
+    text = quote if isinstance(quote, str) else ""
+    variants = [normalized(text)]
+    if "\\n" in text and normalized(text.replace("\\n", "\n")) not in variants:
+        variants.append(normalized(text.replace("\\n", "\n")))
+    return [variant for variant in variants if variant]
+
+
+def locate_quote(path: Path, quote: Any) -> tuple[int, int] | None:
+    """The one line range of ``path`` (as source_lines numbers it) that holds
+    the quote, when the quote occurs exactly once in the file; otherwise None.
+    The range is the smallest one, from the first to the last line the quote
+    touches. A quote found as written is never retried with \\n read as a line
+    break, so an ambiguous quote stays unlocated."""
+    try:
+        lines = source_lines(path)
+    except OSError:
+        return None
+
+    def holds(start: int, end: int) -> bool:
+        return wanted in normalized("\n".join(lines[start:end]))
+
+    whole = normalized("\n".join(lines))
+    for wanted in quote_variants(quote):
+        first = whole.find(wanted)
+        if first == -1:
+            continue
+        if whole.find(wanted, first + 1) != -1:
+            return None
+        # Holding the quote only grows with the range, so search both ends.
+        low, high = 1, len(lines)
+        while low < high:  # the fewest leading lines that hold it
+            middle = (low + high) // 2
+            low, high = (low, middle) if holds(0, middle) else (middle + 1, high)
+        end = low
+        low, high = 0, end - 1
+        while low < high:  # the latest start that still holds it
+            middle = (low + high + 1) // 2
+            low, high = (middle, high) if holds(middle, end) else (low, middle - 1)
+        return low + 1, end
+    return None
+
+
 def validate_source_ref(
     case_dir: Path,
     source_ref: Any,
@@ -180,7 +226,7 @@ def validate_source_ref(
     candidates, error = selected_source_texts(path, source_ref)
     if error:
         return {path}, [error]
-    wanted = normalized(quote)
-    if wanted and not any(wanted in normalized(selected) for selected in candidates):
+    variants = quote_variants(quote)
+    if variants and not any(wanted in normalized(selected) for wanted in variants for selected in candidates):
         return {path}, [f"exact quote is not present in the selected source_ref from {path.name}"]
     return {path}, []
