@@ -25,6 +25,11 @@ note the block shows is also read whole through `bsig wiki read` (the cloud
 audience: protected notes are not found and protected names are redacted) and
 saved there, so the case can cite it like any research/ capture. A saved file
 is never rewritten: a changed note is saved under a new name.
+
+`--brief` treats the query as a case brief and searches each of its clauses
+separately, keeping each note's best score. Engine keeps a note only when it
+holds half the query's words (without an embedding match), so a whole brief,
+long and full of instructions ("using only the case folder"), finds nothing.
 """
 
 from __future__ import annotations
@@ -170,6 +175,25 @@ def _inert(text: str) -> str:
     return text
 
 
+BRIEF_CLAUSES = 8
+
+
+def brief_clauses(brief: str) -> list[str]:
+    """The brief's clauses of two words or more, at most BRIEF_CLAUSES."""
+    parts = re.split(r"[.;:,!?]|\band\b|\bor\b", brief)
+    return [part.strip() for part in parts if len(re.findall(r"\w+", part)) >= 2][:BRIEF_CLAUSES]
+
+
+def search_brief(bsig: str, workspace: Path, brief: str, limit: int) -> list[dict[str, Any]]:
+    """Each clause's hits merged by note, each kept at its best score."""
+    best: dict[str, dict[str, Any]] = {}
+    for clause in brief_clauses(brief) or [brief]:
+        for hit in search(bsig, workspace, clause, limit, None):
+            if hit["path"] not in best or hit["score"] > best[hit["path"]]["score"]:
+                best[hit["path"]] = hit
+    return sorted(best.values(), key=lambda hit: (-hit["score"], hit["path"]))[:limit]
+
+
 def read_note(bsig: str, workspace: Path, path: str) -> str | None:
     """A whole note as the cloud audience sees it; None when it cannot be read."""
     try:
@@ -260,6 +284,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workflow", choices=("auto", "prior-verdict", "dedup"), default="auto")
     parser.add_argument("--proposition")
     parser.add_argument("--format", choices=("json", "prompt"), default="json")
+    parser.add_argument("--brief", action="store_true", help="the query is a case brief: search each clause and merge")
     parser.add_argument("--capture-dir", type=Path, help="with --format prompt: save each shown note whole here (inside --case-dir)")
     # Retired 1.0 graph options: accepted so existing callers keep working, ignored.
     for flag in ("--db", "--case-id", "--classification", "--destination-id",
@@ -298,7 +323,9 @@ def main(argv: list[str] | None = None) -> int:
             bsig = bsig_path()
             if bsig is None:
                 raise QueryError("Engine is not installed: the wiki is searched through bsig")
-            output = envelope(search(bsig, workspace, query, min(args.limit, MAX_LIMIT), types), query=query, types=types)
+            limit = min(args.limit, MAX_LIMIT)
+            hits = search_brief(bsig, workspace, query, limit) if args.brief else search(bsig, workspace, query, limit, types)
+            output = envelope(hits, query=query, types=types)
         except QueryError as exc:
             output = envelope([], query=query, types=types, unavailable=str(exc))
     captured: dict[str, str] = {}

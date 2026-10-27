@@ -372,10 +372,10 @@ test('case material reaches only a route the operator runs: refused at start wit
 });
 
 // A case whose methodology is approved, so the next worker task is Investigation.
-async function caseAtInvestigation(space: Workspace): Promise<string> {
+async function caseAtInvestigation(space: Workspace, brief = 'Who owns the fixture company?'): Promise<string> {
 	const caseDir = join(space.casesRoot, 'case-a');
 	await mkdir(join(caseDir, 'data'), { recursive: true });
-	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
+	await writeFile(join(caseDir, 'brief-directions.txt'), `${brief}\n`);
 	await writeFile(join(caseDir, 'data', 'methodology.json'), '{}\n');
 	await new Promise<void>((done, fail) =>
 		execFile(
@@ -1042,7 +1042,9 @@ test('in sensitive mode the investigator\'s and fact-checker\'s tasks carry the 
 		});
 		t.after(() => fake.close());
 		const space = await workspace(t);
-		await caseAtInvestigation(space);
+		// A brief as members write them: long, with instructions. Like Engine, the
+		// stand-in finds nothing for a query that long (gold sens3 marlow, calder).
+		await caseAtInvestigation(space, 'Identify who owns the fixture company now, the date it changed hands, and what could not be checked, using only the case folder and the wiki.');
 		const wiki = join(space.root, 'wiki');
 		await mkdir(wiki, { recursive: true });
 		const config = join(space.root, 'install-config.json');
@@ -1054,7 +1056,8 @@ require('node:fs').appendFileSync(${JSON.stringify(requests)}, JSON.stringify(pr
 if (process.argv[4] === 'read') {
 	console.log(JSON.stringify({ event: 'result', message: 'wiki read', data: { tool: 'read', result: { path: 'notes/fixture-company.md', hash: '', content: '# Fixture company\\n\\nFixture Ltd is owned by A. Holder since 2019, per the 2019 return.\\n' } } }));
 } else {
-	const hits = [{ path: 'notes/fixture-company.md', type: 'note', title: 'Fixture company', snippet: 'Fixture Ltd is owned by A. Holder since 2019.', score: 1 }];
+	const words = JSON.parse(process.argv.at(-1)).query.split(' ').length;
+	const hits = words > 8 ? [] : [{ path: 'notes/fixture-company.md', type: 'note', title: 'Fixture company', snippet: 'Fixture Ltd is owned by A. Holder since 2019.', score: 1 }];
 	console.log(JSON.stringify({ event: 'result', message: 'wiki search', data: { tool: 'search', result: { hits } } }));
 }
 `);
@@ -1079,7 +1082,8 @@ if (process.argv[4] === 'read') {
 		if (sensitive) {
 			assert.equal(await readFile(saved, 'utf8'), 'Wiki note: notes/fixture-company.md\n\n# Fixture company\n\nFixture Ltd is owned by A. Holder since 2019, per the 2019 return.\n');
 			const searched = (await readFile(requests, 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as string[]).filter((argv) => argv.includes('search'));
-			assert.equal(JSON.parse(searched[0].at(-1)!).query, 'Who owns the fixture company?', 'the wiki is searched with the approved brief');
+			const clauses = ['Identify who owns the fixture company now', 'the date it changed hands', 'what could not be checked', 'using only the case folder', 'the wiki'];
+			assert.deepEqual(searched.map((argv) => JSON.parse(argv.at(-1)!).query), [...clauses, ...clauses], 'each worker\'s task searches the wiki with each clause of the approved brief');
 		}
 	}
 });
