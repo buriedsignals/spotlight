@@ -130,9 +130,10 @@ def _bundle_hash(case: Path, bundle: dict[str, Any], bundle_id: str) -> str:
             original = next((path for path in (item.get(key) for key in BUNDLE_FILES)
                              if isinstance(path, str) and (case / path).resolve().is_file()
                              and case.resolve() in (case / path).resolve().parents), None)
-            fix = (f" {original} hashes to {_sha256_case_file(case, original)} now: the item's owner adds "
-                   f"\"sha256\" with that value to {bundle_id} in data/evidence-bundle.json, then the passage can cite it"
-                   if original else "")
+            digest = _sha256_case_file(case, original) if original else ""
+            fix = (f" {original} hashes to {digest} now. The investigator adds \"sha256\": \"{digest}\" to {bundle_id} in "
+                   f"data/evidence-bundle.json; a fact-checker instead appends its own item for {original} with that sha256 "
+                   "and created_by fact-checker, and cites that item" if original else "")
             raise WriteError(f"evidence bundle item {bundle_id!r} has no sha256 for its original artifact.{fix}")
     raise WriteError(f"evidence bundle item {bundle_id!r} does not exist")
 
@@ -285,9 +286,18 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
             searched = ", ".join(named) or "no file named"
             raise WriteError(f"expression {label}: the text is not in {searched} nor in any other file of data/evidence-bundle.json, "
                              f"so it is not from a source you acquired. {ESCAPE}")
+        # The same whole line repeated in one file is one passage: a reader
+        # checking the first sees exactly the quoted text (12B r3 cc: an EIN
+        # on sixteen identical lines).
+        if len(found) > 1 and len({path for path, _start, _end in found}) == 1:
+            lines = source_lines((case / found[0][0]).resolve())
+            if len({"\n".join(lines[start - 1:end]) for _path, start, end in found}) == 1:
+                notes.append(f"expression {label}: the text is on {len(found)} identical lines of {found[0][0]}; anchored the first")
+                found = found[:1]
         if len(found) > 1:
             ranges = ", ".join(f"{path} lines {start}-{end}" for path, start, end in found[:8])
-            raise WriteError(f"expression {label}: the text occurs {len(found)} times ({ranges}); give anchor_ref with the path, line_start and line_end you mean")
+            raise WriteError(f"expression {label}: the text appears in {len(found)} places ({ranges}); quote a longer span that is unique, "
+                             "or give anchor_ref with the path, line_start and line_end you mean")
         path, start, end = found[0]
         anchor = {"path": path, "line_start": start, "line_end": end}
         stored = "\n".join(source_lines((case / path).resolve())[start - 1:end])

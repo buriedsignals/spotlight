@@ -221,7 +221,7 @@ def main() -> int:
         # Text found more than once is refused with the candidate ranges, never chosen.
         before = target.read_bytes()
         refused = relaxed("SXR-AMBIGUOUS", 5, text="Passage number", anchor_ref=None)
-        require(refused.returncode == 2 and "occurs 8 times" in refused.stderr and "research/passages.txt lines 1-1" in refused.stderr
+        require(refused.returncode == 2 and "appears in 8 places" in refused.stderr and "quote a longer span that is unique" in refused.stderr and "research/passages.txt lines 1-1" in refused.stderr
                 and target.read_bytes() == before, "an ambiguous passage was anchored")
 
         # 12B r1 quotes that were the source's words but not exact, or cited the
@@ -567,6 +567,16 @@ def main() -> int:
                 f"an escaped line break was not located as one: {stored}")
         require(all(len(f.get("finding_fingerprint", "")) == 64 for f in json.loads(findings_path.read_text(encoding="utf-8"))["findings"]),
                 "the write did not fingerprint the findings")
+        # The same whole line repeated in one file is anchored at its first occurrence.
+        repeated = case / "research" / "repeated.txt"
+        repeated.write_text("EIN: 04-3585301\nMission\nEIN: 04-3585301\n", encoding="utf-8")
+        bundle["items"].append({**item, "id": "E3", "raw_path": "research/repeated.txt", "sha256": hashlib.sha256(repeated.read_bytes()).hexdigest()})
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        twice = {"expressions": [{"id": "SXW9", "text": "EIN: 04-3585301", "original_evidence_bundle_id": "E3", "language": "en",
+                                  "finding_links": [{"finding_id": "F1", "relation": "supports"}]}]}
+        once = run_writer(case, twice, actor="fact-checker")
+        anchored = next((e for e in expressions(case)["expressions"] if e["id"] == "SXW9"), {}).get("anchor_ref", {})
+        require(once.returncode == 0 and anchored.get("line_start") == 1 and anchored.get("line_end") == 1, once.stderr)
         bundle["evidence_bundle"] = bundle.pop("items")
         bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
         itemless = run_writer(case, proposal(5))
