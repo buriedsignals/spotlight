@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { openReviewTool, gateCheck } from './review.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
-import { bindActiveCase } from './spotlight.ts';
+import { bindActiveCase, pythonAdapter } from './spotlight.ts';
 
 const PYTHON = process.env.SPOTLIGHT_PYTHON ?? 'python3';
 
@@ -59,4 +60,35 @@ test('open_review at the Methodology gate refuses a methodology the methodology 
 		/review page was not opened: data\/methodology\.json does not pass validate-methodology-navigator\.py[\s\S]*research_plan must be an object/,
 	);
 	assert.equal(opened, 0);
+});
+
+// r3/r4 12B (A2 northwind): the orchestrator opened the Investigation gate page
+// before writing the summaries, and the gate refused the member's approval
+// with an HTTP 422 ("still needs: summary.md, data/summary.json").
+test('open_review at the Investigation gate refuses until both summaries are written, then opens', async (t) => {
+	const root = await mkdtemp(join(tmpdir(), 'spotlight-pi-review-'));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests/fixtures/review_case.py'), join(root, 'case'), 'investigation_gate', '--activated', '--clean']);
+	const active = bindActiveCase(root, join(root, 'case'));
+	const summaries = await Promise.all(['summary.md', 'data/summary.json'].map((file) => readFile(join(active.caseDir, file), 'utf8')));
+	const context = { caseDir: active.caseDir, writeRoot: active.caseDir, python: PYTHON, configPath: '', env: { PATH: process.env.PATH ?? '' } };
+	let opened = 0;
+	const tool = openReviewTool(active.caseDir, root, async () => {
+		opened += 1;
+		return { status: 'opened' };
+	}, gateCheck(active, pythonAdapter(PYTHON), context));
+	const call = () => tool.execute('call', {}, undefined, undefined, undefined as never);
+
+	await unlink(join(active.caseDir, 'summary.md'));
+	await unlink(join(active.caseDir, 'data/summary.json'));
+	await assert.rejects(call(), /^Error: The review page was not opened: the Investigation gate still needs: summary\.md, data\/summary\.json\. Write summary\.md and data\/summary\.json as phase-investigation-gate "Generate summary" says, then call spotlight_resolve and open_review again\.$/);
+	assert.equal(opened, 0);
+
+	await writeFile(join(active.caseDir, 'summary.md'), summaries[0]);
+	await assert.rejects(call(), /still needs: data\/summary\.json\./);
+	assert.equal(opened, 0);
+
+	await writeFile(join(active.caseDir, 'data/summary.json'), summaries[1]);
+	await call();
+	assert.equal(opened, 1, 'with both summaries written the page opens');
 });
