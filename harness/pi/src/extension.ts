@@ -4,7 +4,7 @@
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
-import { applyFixedRequestBody, parseFixedRequestBody } from './provider-policy.ts';
+import { applyFixedRequestBody, parseFixedRequestBody, withoutHistoryReasoning } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillsFor, spawnableWorkers } from './roles.ts';
 import { READ_TRUNCATED } from './tools/case-files.ts';
@@ -95,8 +95,10 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 			},
 		],
 	});
+	const tier12b = (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') === '12b';
 	pi.on('before_provider_request', (event, ctx) => {
-		const outcome = applyFixedRequestBody(event.payload, fixedBody);
+		const payload = tier12b ? withoutHistoryReasoning(event.payload) : event.payload;
+		const outcome = applyFixedRequestBody(payload, fixedBody);
 		if (outcome.blocked) {
 			log('provider privacy policy could not apply to this request; it was sent without content and the run is aborted');
 			ctx.abort();
@@ -106,7 +108,6 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	// The launcher sets the local tier's fold point in Pi's settings; the
 	// frontier tier keeps Pi's default threshold and summary.
 	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier');
-	const tier12b = (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') === '12b';
 	registerLoopGuard(pi, tier12b && role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
 	if (tier12b) {
 		registerReadBudget(pi);
