@@ -187,6 +187,10 @@ test('a swarm request carries only its approved brief and its own web results; c
 		assert.ok(!body.includes(KEY), 'the key travels only in the Authorization header');
 		assert.deepEqual((request.tools ?? []).map((tool) => tool.function.name).sort(), ['fetch', 'record_absence', 'record_lead', 'search']);
 		assert.deepEqual(request.provider, { zdr: true });
+		for (const tool of request.tools ?? []) {
+			const url = (tool.function.parameters as { properties?: Record<string, { pattern?: string }> }).properties?.url;
+			if (url) assert.ok(!new RegExp(url.pattern ?? '').test('https://'), `${tool.function.name} url pattern admits a bare "https://" as a whole value`);
+		}
 		assert.equal(request.messages.length >= 2 && request.messages[0].role === 'system' && request.messages[1].role === 'user', true);
 	}
 	assert.ok(fakes.local.requests.length > 0);
