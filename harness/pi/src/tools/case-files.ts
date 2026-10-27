@@ -159,6 +159,11 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 	if (SCRIPT_WRITTEN.some((pattern) => pattern.test(name))) {
 		throw new FileRefused(`refused: ${name} is written only through the source_expressions tool, which computes its hashes and fingerprints`);
 	}
+	// Written only by the Anomaly runner (integrations/anomaly/adapter.py),
+	// which checks every signal; the gate shows it to the member as is.
+	if (name === 'data/anomaly-signals.json') {
+		throw new FileRefused(`refused: ${name} is written only through the anomaly_run tool, which runs the detector and checks its output`);
+	}
 	return target;
 }
 

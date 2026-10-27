@@ -28,7 +28,7 @@ from .storage import LEGACY_CHANNEL, LEGACY_LEDGER_KEY, case_path, load_state, r
 
 if str(SCRIPT_DIR.parent) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR.parent))
-from integrations.anomaly import adapter as anomaly_methods  # noqa: E402
+from integrations.anomaly import adapter as anomaly  # noqa: E402
 from integrations import case_search  # noqa: E402
 
 REVIEW_VERSION = "spotlight-review/v1"
@@ -47,6 +47,11 @@ DISPOSITIONS = ("keep", "set_aside")
 # cycle, or a later gate.
 ASSIGNMENTS = ("next_cycle", "report", "ingest")
 INDICATOR_FRAMEWORK = "data/indicator-framework.json"
+# Anomaly signals the gate shows, one accept-or-dismiss item each, at most
+# this many (the rest are counted, not shown).
+ANOMALY_SIGNALS_SHOWN = 100
+# An accepted signal is a lead for the case, never a finding.
+SIGNAL_MARKS = ("accept", "dismiss")
 # Batch 1.1 flag dispositions, decided on the ingest page.
 FLAG_ACTIONS = ("amend", "exclude", "investigate_further", "accept_with_reason")
 INGEST_BATCH = "data/knowledge-batch.json"
@@ -171,13 +176,14 @@ def subject_digest(case: Path, gate: str) -> str:
             bound["proposal"] = hashlib.sha256(proposal.read_bytes()).hexdigest()
         return _canonical_sha(bound)
     if gate == "investigation_gate":
-        # The page shows the Indicator Framework file, so a decision binds it
-        # too; without the file the digest is the dependency digest as before.
-        framework = case_path(case, INDICATOR_FRAMEWORK)
-        if framework.is_file():
-            return _canonical_sha({"dependencies": dependency,
-                                   "indicator_framework": hashlib.sha256(framework.read_bytes()).hexdigest()})
-        return dependency
+        # The page shows the Indicator Framework file and the Anomaly signals,
+        # so a decision binds them too; without either the digest is the
+        # dependency digest as before.
+        shown = {name: hashlib.sha256(path.read_bytes()).hexdigest()
+                 for name, path in (("indicator_framework", case_path(case, INDICATOR_FRAMEWORK)),
+                                    ("anomaly_signals", case_path(case, anomaly.SIGNALS_FILE)))
+                 if path.is_file()}
+        return _canonical_sha({"dependencies": dependency, **shown}) if shown else dependency
     if gate == "report":
         draft = case_path(case, REPORT_DRAFT)
         draft_sha = hashlib.sha256(draft.read_bytes()).hexdigest() if draft.is_file() else None
@@ -637,11 +643,11 @@ def _methodology_content(case: Path) -> tuple[dict[str, Any], list[str]]:
     blocking += not_shown
     if research is not None:
         content["research_plan"] = research
-    # Anomaly methods that fit a lane, and each topic's attached ones; absent
-    # when the pinned catalogue is not installed and no topic names a method.
-    methods = anomaly_methods.view(methodology)
-    if methods is not None:
-        content["anomaly_methods"] = methods
+    # The Anomaly domains and sources the plan names, with the detectors that
+    # read them; absent when the member did not opt in.
+    plan = anomaly.view(methodology)
+    if plan is not None:
+        content["anomaly"] = plan
     framework = methodology.get("indicator_framework")
     if isinstance(framework, dict):
         content["indicator_framework"] = {"on": framework.get("on") is True, "reason": _text(framework.get("reason"), 1000)}
@@ -779,8 +785,41 @@ def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[
         blocking += _run_check([str(SCRIPT_DIR / "validate-indicator-framework.py"), str(case)])
         content["indicator_framework"] = framework
         items += framework_items
+    signals, signal_items = _anomaly_content(case)
+    if signals is not None:
+        content["anomaly_signals"] = signals
+        items += signal_items
     return content, blocking, items
 
+
+def _anomaly_content(case: Path) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    """The Anomaly runs and their signals, each a lead the member accepts or
+    dismisses; accepted signals stay leads, never findings."""
+    runs = anomaly.signal_runs(case)
+    if not runs:
+        return None, []
+    shown_runs, items, total = [], [], 0
+    for run in runs:
+        signals = [signal for signal in run.get("signals") or [] if isinstance(signal, dict)]
+        total += len(signals)
+        shown = []
+        for signal in signals:
+            if len(items) >= ANOMALY_SIGNALS_SHOWN or not isinstance(signal.get("signal_id"), str):
+                continue
+            target = f"signal:{signal['signal_id']}"
+            shown.append({"target": target, "candidate": _text(signal.get("candidate_id"), 300),
+                          "summary": _text(signal.get("summary"), 500),
+                          "values": _text(json.dumps(signal.get("values"), ensure_ascii=False), 2000)})
+            items.append({"key": target, "kind": "signal", "target": target, "suggested": None,
+                          "suggestion_source": "Anomaly", "suggestion_reason": "A detector flagged this; check it against the source.",
+                          "required": False})
+        shown_runs.append({"method": _text(run.get("method"), 200), "ran_at": _text(run.get("ran_at"), 40),
+                           "tables": sorted(str(table.get("path")) for table in (run.get("tables") or {}).values()
+                                            if isinstance(table, dict)),
+                           "assumptions": _items_text(run.get("assumptions"), 10),
+                           "false_positives": _items_text(run.get("false_positives"), 10),
+                           "signals": shown, "count": len(signals)})
+    return {"runs": shown_runs, "total": total, "shown": len(items)}, items
 
 def _indicator_framework_content(case: Path) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     """The Indicator Framework section, shown only when the file exists: the
@@ -1183,6 +1222,9 @@ def _validated_edit(edit: object, items: dict[str, dict[str, Any]]) -> dict[str,
     elif item["kind"] == "selection":
         if not isinstance(value, bool):
             raise OrchestrationError("a selection mark is true or false")
+    elif item["kind"] == "signal":
+        if value not in SIGNAL_MARKS:
+            raise OrchestrationError(f"an Anomaly signal is one of: {', '.join(SIGNAL_MARKS)}")
     elif item["kind"] in ("clue", "direction"):
         research_view.validate_mark(item, value)
     elif item["kind"] == "entity_link":

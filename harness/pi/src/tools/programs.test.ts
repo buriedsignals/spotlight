@@ -193,6 +193,7 @@ test('each tool rejects arguments outside its schema without starting anything',
 		run_rlm: { request: 7 },
 		integration_status: { model_tier: '$(id)' },
 		anomaly_methods: { anomaly_home: '/elsewhere' },
+		anomaly_run: { method: 7 },
 		read_file: { path: 3 },
 		write_file: { path: 'a.txt' },
 		edit_file: { path: 'a.txt', old_text: 'a' },
@@ -399,10 +400,23 @@ test('build_review_html builds review.html from the case files with script-safe 
 	assert.equal(data.provenance_manifest, null);
 });
 
+// anomaly_run hands the runner the files it names, so each must be one this
+// role may read; the adapter's own refusals are its contract (tests/anomaly-check.py).
+test('anomaly_run refuses a table the role may not read before anything runs', async (t) => {
+	const { call, recorded, caseDir, context } = await fixture(t, { SPOTLIGHT_ROLE: 'investigator' });
+	context.scope = { denyReads: ['research/swarm/'] };
+	await mkdir(join(caseDir, 'research', 'swarm', 'web'), { recursive: true });
+	await writeFile(join(caseDir, 'research', 'swarm', 'web', 'table.csv'), 'id,amount\n1,2\n');
+	const request = { method: 'method:numeric.zscore_outliers@1.1.0', fields: { id: 'id', amount: 'amount' } };
+	await assert.rejects(call('anomaly_run', { ...request, table: 'research/swarm/web/table.csv' }), /outside the case files/);
+	await assert.rejects(call('anomaly_run', { method: 'method:x@1', tables: { a: 'research/swarm/web/table.csv' } }), /outside the case files/);
+	assert.deepEqual(await recorded(), []);
+});
+
 // anomaly_methods runs the real adapter (integrations/anomaly/adapter.py
-// methods). The pinned catalogue's listing is the adapter's own contract
-// (tests/anomaly-methods-check.py); here: the tool reaches the install named by
-// ANOMALY_HOME and reports the hidden feature with its reason, no methods.
+// context). The lookup itself is the adapter's own contract
+// (tests/anomaly-check.py); here: the tool reaches the install named by
+// ANOMALY_HOME and reports the hidden feature with its reason, nothing listed.
 test('anomaly_methods reports the feature hidden, with the reason, unless the pinned catalogue is installed', async (t) => {
 	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-anomaly-')));
 	t.after(() => rm(root, { recursive: true, force: true }));
@@ -415,7 +429,7 @@ test('anomaly_methods reports the feature hidden, with the reason, unless the pi
 		const context: ToolContext = { caseDir, writeRoot: caseDir, python: PYTHON, configPath: join(root, 'config.json'), env: { PATH: process.env.PATH, HOME: root, ...env } };
 		const tool = typedTools(context).find((each) => each.name === 'anomaly_methods') as ToolDefinition;
 		const result = await tool.execute('call', {}, undefined, undefined, undefined as never);
-		return JSON.parse((result.content[0] as { text: string }).text) as { available: boolean; reason: string; methods: unknown[] };
+		return JSON.parse((result.content[0] as { text: string }).text) as { available: boolean; reason: string; domains: unknown[]; any_table: unknown[] };
 	};
 
 	const unset = await list({});
@@ -424,5 +438,5 @@ test('anomaly_methods reports the feature hidden, with the reason, unless the pi
 	const unpinned = await list({ ANOMALY_HOME: other });
 	assert.equal(unpinned.available, false);
 	assert.match(unpinned.reason, /not the pinned release/);
-	for (const outcome of [unset, unpinned]) assert.deepEqual(outcome.methods, []);
+	for (const outcome of [unset, unpinned]) assert.deepEqual([outcome.domains, outcome.any_table], [[], []]);
 });

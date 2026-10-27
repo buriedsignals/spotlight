@@ -225,22 +225,67 @@ function integrationStatusTool(context: ToolContext): ToolDefinition {
 
 // Read-only: the adapter reads the installed catalogue and makes no network
 // request, so the tool stays in sensitive mode (roles.ts EGRESS_TOOLS).
+// Anomaly (integrations/anomaly): at Methodology, which data sources and
+// detectors fit the case; in Investigation, one chosen detector run on tables
+// the investigator fetched. Both run the pinned Anomaly install with no keys.
 function anomalyMethodsTool(context: ToolContext): ToolDefinition {
-	const params = Type.Object({}, { additionalProperties: false });
+	const params = Type.Object(
+		{ domain: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })), source: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })) },
+		{ additionalProperties: false },
+	);
 	return {
 		name: 'anomaly_methods',
 		label: 'Anomaly methods',
 		description:
-			'List the Anomaly clue methods a research topic can name in anomaly_methods (integrations/anomaly/adapter.py methods): the single-table methods of the pinned catalogue, each with its required fields, assumptions and known false positives. available: false with a reason, and no methods, when ANOMALY_HOME is unset or the installed catalogue is not the pinned one; then name none.',
+			'What Anomaly offers this case (integrations/anomaly/adapter.py context): each domain (a type of data such as lobbying or procurement) with its data sources (access, cost, licence, the SKILL.md that says how to get the data) and the detectors that read it, plus the core detectors that run on any table under any_table. Give domain to see one domain, or source to read one source\'s SKILL.md. available: false with a reason when ANOMALY_HOME is unset or the installed catalogue is not the pinned one; then plan no Anomaly work.',
 		parameters: params,
 		async execute(_id, raw, signal) {
-			checkedParams('anomaly_methods', params, raw);
-			const result = await runPython(context, [script('integrations/anomaly/adapter.py'), 'methods'], {
+			const input = checkedParams<{ domain?: string; source?: string }>('anomaly_methods', params, raw);
+			if (input.domain && input.source) throw new ToolArgumentError('anomaly_methods: give domain or source, not both');
+			const scope = input.domain ? ['--domain', input.domain] : input.source ? ['--source', input.source] : [];
+			const result = await runPython(context, [script('integrations/anomaly/adapter.py'), 'context', ...scope], {
 				keys: ['ANOMALY_HOME'],
 				extra: { SPOTLIGHT_CONFIG: context.configPath },
 				signal,
 			});
 			return textResult(programOutput('anomaly_methods', result));
+		},
+	};
+}
+
+function anomalyRunTool(context: ToolContext): ToolDefinition {
+	const names = Type.Record(Type.String({ minLength: 1 }), Type.String({ minLength: 1 }), { minProperties: 1, maxProperties: 20 });
+	const params = Type.Object(
+		{
+			method: Type.String({ minLength: 1, maxLength: 200 }),
+			table: Type.Optional(Type.String({ minLength: 1 })),
+			fields: Type.Optional(names),
+			tables: Type.Optional(names),
+			columns: Type.Optional(Type.Record(Type.String({ minLength: 1 }), names)),
+		},
+		{ additionalProperties: false },
+	);
+	return {
+		name: 'anomaly_run',
+		label: 'Run an Anomaly detector',
+		description:
+			'Run one Anomaly detector on tables you fetched (CSV, JSONL or Parquet case files under research/ or evidence/), in a case whose approved methodology has an anomaly section. A core detector (anomaly_methods any_table) takes table and fields: {"method": "method:numeric.zscore_outliers@1.1.0", "table": "research/payments.csv", "fields": {"id": "record_id", "amount": "value"}}, each field role mapped to a table column. A domain detector takes tables, one file per contract table it reads, and optional columns ({table: {contract column: file column}}). Code runs the detector; it never edits a table. Each signal is recorded in data/anomaly-signals.json as a lead to check against the source, never a finding. A refusal runs nothing and says why.',
+		parameters: params,
+		executionMode: 'sequential',
+		async execute(_id, raw, signal) {
+			const input = checkedParams<Record<string, unknown>>('anomaly_run', params, raw);
+			// The runner reads every named table, so each must be a file this role may read.
+			const paths = [input.table, ...Object.values((input.tables as Record<string, string> | undefined) ?? {})];
+			for (const path of paths) if (typeof path === 'string') readTarget(context.caseDir, path, context.scope);
+			const result = await runPython(context, [script('integrations/anomaly/adapter.py'), 'run', context.caseDir], {
+				keys: ['ANOMALY_HOME'],
+				extra: { SPOTLIGHT_CONFIG: context.configPath },
+				input: JSON.stringify(input),
+				signal,
+				// The adapter caps one runner call at 120 s (adapter.py RUN_TIMEOUT_SECONDS).
+				timeoutMs: 150_000,
+			});
+			return textResult(programOutput('anomaly_run', result));
 		},
 	};
 }
@@ -395,6 +440,7 @@ export function programTools(context: ToolContext): ToolDefinition[] {
 		rlmTool(context),
 		integrationStatusTool(context),
 		anomalyMethodsTool(context),
+		anomalyRunTool(context),
 		wikiDestinationTool(context),
 		sourceExpressionsTool(context),
 	];

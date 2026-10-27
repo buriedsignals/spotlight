@@ -13,7 +13,7 @@ import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { readConfig } from './config.ts';
 import { EditorialError, EditorialToolError } from './editorial.ts';
-import { mergeTimeoutMs, ROUND_LEDGER, runResearchRound } from './lanes.ts';
+import { ROUND_LEDGER, runResearchRound } from './lanes.ts';
 import type { ResearchPlan, RoundSummary, TopicBrief } from './lanes.ts';
 import { startFakeOpenAI } from './test-support/fake-openai.ts';
 import type { ChatRequest, FakeOpenAI, Reply, ToolCall } from './test-support/fake-openai.ts';
@@ -430,56 +430,19 @@ test('a lane cannot write outside its folder', async (t) => {
 	assert.equal(fakes.swarm.requests.length, 0);
 });
 
-test('a topic with Anomaly methods names its stored tables as method inputs, and the runner keeps only approved methods on its own D3-passed page leads', async (t) => {
+// Anomaly moved from Research to Investigation: a plan approved before the move
+// may still carry a topic's anomaly_methods. The lane starts, the brief that
+// leaves the machine no longer names them, and the lane gets no method tool.
+test('a topic approved with the retired anomaly_methods still runs, without them in its brief or tools', async (t) => {
 	const space = await setup(t);
-	const ZSCORE = 'method:numeric.zscore_outliers@1.1.0';
-	const input = (method: string, leadId: string) => call('record_method_input', { method, lead_id: leadId, format: 'csv', fields: { id: 'record_id', amount: 'value' } });
-	const fakes = await servers(
-		t,
-		scripted({
-			'a-web': [
-				call('fetch', { url: PAGE_URL }),
-				lead('s1', VERBATIM),
-				call('search', { query: 'Analytical Engines SA' }),
-				lead('s2', SNIPPET),
-				input('method:table.duplicate_rows@1.1.0', 'a-web-l1'),
-				input(ZSCORE, 'a-web-l2'),
-				input(ZSCORE, 'a-web-l9'),
-				input(ZSCORE, 'a-web-l1'),
-			],
-		}),
-	);
-	// An Anomaly install without its catalogue: the merge must see ANOMALY_HOME to say so.
-	const anomalyHome = join(space.root, 'anomaly');
-	await mkdir(anomalyHome);
-	const summary = await round(space, fakes, plan([topic('a-web', 'web', { anomaly_methods: [ZSCORE] })]), { ANOMALY_HOME: anomalyHome });
+	const fakes = await servers(t, scripted({ 'a-web': [call('fetch', { url: PAGE_URL }), lead('s1', VERBATIM)] }));
+	const summary = await round(space, fakes, plan([topic('a-web', 'web', { anomaly_methods: ['method:numeric.zscore_outliers@1.1.0'] })]));
 
-	const last = fakes.swarm.requests.at(-1)!;
-	assert.ok((last.tools ?? []).some((tool) => tool.function.name === 'record_method_input'));
-	const results = toolResults(last).slice(-4);
-	assert.match(results[0], /refused: .* not one of this topic's approved methods/);
-	assert.match(results[1], /refused: a-web-l2 is not a stored page that passed/, 'a snippet lead is not a table');
-	assert.match(results[2], /refused: a-web-l9 is not a lead this lane recorded/);
-	const written = JSON.parse(await readFile(join(space.caseDir, 'research/swarm/a-web/method-inputs.json'), 'utf8'));
-	assert.deepEqual(written, { schema_version: '1.0', inputs: [{ method: ZSCORE, lead_id: 'a-web-l1', format: 'csv', fields: { id: 'record_id', amount: 'value' } }] });
-	assert.equal(summary.merge?.ok, true, JSON.stringify(summary.merge));
-	assert.ok((summary.merge as { report: string[] }).report.some((line) => /methods not run: detectors\/catalogue\.json is missing/.test(line)), JSON.stringify(summary.merge));
-});
-
-// The merge runs one Anomaly runner per table (each capped at 120 s by the
-// adapter), so its own timeout grows with the tables the lanes named.
-test('the merge timeout allows one Anomaly run per named table on top of the merge itself', async (t) => {
-	const space = await setup(t);
-	assert.equal(mergeTimeoutMs(space.caseDir), 120_000, 'no method inputs: the merge alone');
-	const inputs = (rows: Array<[string, string, string]>) => JSON.stringify({ schema_version: '1.0', inputs: rows.map(([method, lead_id, format]) => ({ method, lead_id, format, fields: {} })) });
-	await mkdir(join(space.caseDir, 'research/swarm/a-web'), { recursive: true });
-	await mkdir(join(space.caseDir, 'research/swarm/b-web'), { recursive: true });
-	// Two methods on one table share a run; a second table and another lane's table each add one.
-	await writeFile(join(space.caseDir, 'research/swarm/a-web/method-inputs.json'), inputs([['method:x@1', 'a-web-l1', 'csv'], ['method:y@1', 'a-web-l1', 'csv'], ['method:x@1', 'a-web-l2', 'csv']]));
-	await writeFile(join(space.caseDir, 'research/swarm/b-web/method-inputs.json'), inputs([['method:x@1', 'b-web-l1', 'csv']]));
-	assert.equal(mergeTimeoutMs(space.caseDir), 120_000 + 3 * 120_000);
-	await writeFile(join(space.caseDir, 'research/swarm/b-web/method-inputs.json'), 'not json');
-	assert.equal(mergeTimeoutMs(space.caseDir), 120_000 + 2 * 120_000, 'an unreadable file adds nothing; the merge reports it');
+	assert.equal(summary.failed.length, 0, JSON.stringify(summary.failed));
+	for (const request of fakes.swarm.requests) {
+		assert.doesNotMatch(JSON.stringify(request.messages[1]), /anomaly_methods|zscore/);
+		assert.ok(!(request.tools ?? []).some((tool) => tool.function.name === 'record_method_input'));
+	}
 });
 
 test('newsroom edition: the prior-knowledge lane reads search_knowledge, never query_vault, and journalist input never reaches a third-party route', async (t) => {

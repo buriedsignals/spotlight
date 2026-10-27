@@ -173,6 +173,29 @@ function methodologyContent(content) {
       ? el("p", { className: "card", text: `Indicator Framework: ${content.indicator_framework.on ? "on" : "off"}${content.indicator_framework.reason ? ` — ${content.indicator_framework.reason}` : ""}` })
       : null,
     content.research_plan ? researchPlanContent(content.research_plan) : null,
+    content.anomaly ? anomalyPlanContent(content.anomaly) : null,
+  );
+}
+
+// What approving the plan also approves for Anomaly: the types of data and
+// sources to look at, and the detectors that could read them. Which detector
+// runs on which table is decided in Investigation.
+function anomalyPlanContent(plan) {
+  return el(
+    "div",
+    { className: "card" },
+    el("h3", { text: "Anomaly" }),
+    plan.available ? null : el("p", { className: "muted", text: `Anomaly is unavailable: ${plan.reason}` }),
+    (plan.domains || []).map((domain) =>
+      el(
+        "div",
+        {},
+        el("p", { text: `${domain.domain}: ${domain.why || ""}` }),
+        el("p", { className: "muted", text: "Sources" }),
+        list((domain.sources || []).map((source) => [source.title || source.id, source.auth, source.license].filter(Boolean).join(" · ")), "No Anomaly source; the tables come from elsewhere."),
+        domain.detectors ? [el("p", { className: "muted", text: "Detectors that read this data" }), list(domain.detectors.map((detector) => detector.title || detector.method), "None.")] : null,
+      ),
+    ),
   );
 }
 
@@ -317,6 +340,37 @@ function selectionCard(item, finding, label = `Include finding ${finding?.id ?? 
   );
 }
 
+const SIGNAL_LABELS = { accept: "Accept as a lead", dismiss: "Dismiss" };
+
+// Anomaly signals: what a detector flagged in a table the investigator
+// fetched. Each is a lead to check against the source; accepting one keeps it
+// as a lead, never a finding.
+function anomalySignalsSection(signals, items) {
+  if (!signals) return null;
+  const byTarget = new Map(items.filter((item) => item.kind === "signal").map((item) => [item.target, item]));
+  return el(
+    "section",
+    { "aria-labelledby": "anomaly-heading" },
+    el("h2", { id: "anomaly-heading", text: "Anomaly signals" }),
+    el("p", { className: "muted", text: `Leads a detector flagged, never findings.${signals.shown < signals.total ? ` ${signals.shown} of ${signals.total} shown.` : ""}` }),
+    signals.runs.map((run) =>
+      el(
+        "div",
+        { className: "card" },
+        el("h3", { text: `${run.method}: ${run.count} signal${run.count === 1 ? "" : "s"}` }),
+        el("p", { className: "muted", text: `Tables: ${run.tables.join(", ")}` }),
+        run.assumptions.length ? [el("p", { className: "muted", text: "Assumes" }), list(run.assumptions, "")] : null,
+        run.false_positives.length ? [el("p", { className: "muted", text: "Known false positives" }), list(run.false_positives, "")] : null,
+        run.signals.map((signal) =>
+          byTarget.has(signal.target)
+            ? [el("p", { className: "quote", text: `${signal.candidate}: ${signal.values}` }), dispositionCard(byTarget.get(signal.target), null, SIGNAL_LABELS, `Signal ${signal.candidate}`)]
+            : null,
+        ),
+      ),
+    ),
+  );
+}
+
 // Newsroom edition: the newsroom's decision-check flags. They never block;
 // "unavailable" is not "no flags".
 function newsroomChecks(checks) {
@@ -371,6 +425,7 @@ function investigationContent(content, items) {
       selection.length ? selection.map((item) => selectionCard(item, findings.get(item.target))) : el("p", { className: "muted", text: "No verified findings to select." }),
     ),
     indicatorFrameworkSection(content.indicator_framework, items),
+    anomalySignalsSection(content.anomaly_signals, items),
     newsroomChecks(content.newsroom_checks),
   ];
 }

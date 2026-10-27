@@ -137,7 +137,7 @@ Broad discovery uses `query-vault`, which searches the member wiki through Engin
 
 ### Research plan
 
-The methodology can carry a `research_plan`: the topic briefs Research will run. Each brief names a direction, a lane type from the catalogue in `lanes/` (web, registries, archives, social, technical, news-courts, local-corpus, prior-knowledge) or `ad-hoc`, the questions to answer, seed queries, sources to try and, when the Anomaly catalogue is installed, the methods whose input tables the lane should collect. The plan also holds the round budget ($1 by default, never more than the case budget, at most $5 per case), the research mode and a consent record. Code checks the plan (D1) before the gate opens.
+The methodology can carry a `research_plan`: the topic briefs Research will run. Each brief names a direction, a lane type from the catalogue in `lanes/` (web, registries, archives, social, technical, news-courts, local-corpus, prior-knowledge) or `ad-hoc`, the questions to answer, seed queries and sources to try. The plan also holds the round budget ($1 by default, never more than the case budget, at most $5 per case), the research mode and a consent record. Code checks the plan (D1) before the gate opens.
 
 ### Gate
 

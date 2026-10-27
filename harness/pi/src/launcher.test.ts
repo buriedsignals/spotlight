@@ -708,7 +708,7 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 });
 
 // Tools whose effects stay on this machine (case files, the local vault, its
-// wiki write and the tool index, the Anomaly catalogue, the passage writer, the resolver, the loopback review page), plus the two checks
+// wiki write and the tool index, the Anomaly lookup and runner, the passage writer, the resolver, the loopback review page), plus the two checks
 // that refuse their remote step themselves when SPOTLIGHT_SENSITIVE is set.
 // Any other tool a sensitive process declares is a possible way out.
 const LOCAL_TOOLS = new Set([
@@ -730,6 +730,7 @@ const LOCAL_TOOLS = new Set([
 	'decision_signals',
 	'provenance_manifest',
 	'anomaly_methods',
+	'anomaly_run',
 	'wiki_destination',
 	'source_expressions',
 ]);

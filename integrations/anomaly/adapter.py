@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Anomaly clue methods: the pinned catalogue, the methods that fit a topic
-brief, and approved methods run on lane tables into Research clues.
+"""Anomaly as context and a runner: which data sources and detectors fit a
+case, and the chosen detectors run on tables the investigator fetched.
 
     scripts/spotlight-python integrations/anomaly/adapter.py state
-    scripts/spotlight-python integrations/anomaly/adapter.py methods
+    scripts/spotlight-python integrations/anomaly/adapter.py context [--domain D | --source ID]
+    scripts/spotlight-python integrations/anomaly/adapter.py run CASE_DIR < request.json
 
 Anomaly (github.com/buriedsignals/Anomaly) stays a separate install, named by
 ``ANOMALY_HOME`` (its checkout, with its own ``.venv``). Spotlight trusts its
@@ -11,55 +12,60 @@ catalogue only when ``detectors/catalogue.json`` carries the hash pinned in
 ``manifest.json`` and that hash matches the file's content; anything else
 hides the feature.
 
-A method is ``method:<detector id>@<version>``. Only detectors that run on one
-supplied table (``required_tables == ["*"]``) can serve a lane. A topic brief
-names its methods in ``anomaly_methods`` (D1 caps them at 10 per plan). The
-lane that collected a table lists it in its folder's ``method-inputs.json``:
+``context`` is Anomaly's read-only lookup (``python -m anomaly.context``): each
+domain (a type of data) with its sources and their SKILL.md, and the detectors
+that read it; core detectors that run on any table are listed under
+``any_table``. At Methodology the member opts in, and the methodology's
+``anomaly`` section records the domains and sources judged useful.
 
-    {"schema_version": "1.0",
-     "inputs": [{"method": "method:numeric.zscore_outliers@1.1.0",
-                 "lead_id": "<the lead whose stored original is the table>",
-                 "format": "csv" | "jsonl" | "parquet",
-                 "fields": {"<detector field>": "<table column>"}}]}
-
-At merge time each input runs only when its method is approved for that
-topic, its lead passed D3 as a stored page and the table's sha256 still
-matches the lead. The runner gets a read-only copy of the table in a private
-temporary folder, an environment without keys, and the request pinned to the
-catalogue's version and implementation hash. Every output line is checked
-against the catalogue's signal schema and the method's expected output before
-it becomes a clue.
+``run`` is the Investigation step. A method is ``method:<detector id>@<version>``.
+A core detector takes one ``table`` and ``fields`` (its field roles, such as id
+or amount, to table columns); a domain detector takes ``tables`` (each contract
+table it reads, to a file) and optional ``columns`` (per table, contract column
+to file column). Every file is a case file under research/ or evidence/. The
+runner gets read-only copies in a private temporary folder, an environment
+without keys, and the request pinned to the catalogue's version and
+implementation hash. Every output line is checked against the catalogue's
+signal schema and the method's expected output, then the run is appended to
+``data/anomaly-signals.json``. A signal is a lead to check, never a finding.
 """
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
 import re
-import shutil
 import stat
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
-from typing import Any, Iterable, Mapping
+from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
+from typing import Any, Mapping
 
 _CHECKOUT = Path(__file__).resolve().parents[2]
-if str(_CHECKOUT) not in sys.path:
-    sys.path.insert(0, str(_CHECKOUT))
+for _path in (_CHECKOUT, _CHECKOUT / "scripts"):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 from integrations._credentials import credential  # noqa: E402
+from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
+from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
+from spotlight_orchestration.storage import transaction  # noqa: E402
 
 MANIFEST = Path(__file__).with_name("manifest.json")
 PIN: Mapping[str, Any] = json.loads(MANIFEST.read_text(encoding="utf-8"))["catalogue_pin"]
 HOME_ENV = "ANOMALY_HOME"
 METHOD_REF = re.compile(r"^method:(?P<id>[a-z0-9][a-z0-9._-]*)@(?P<version>[0-9A-Za-z][0-9A-Za-z.+-]*)$")
-INPUTS_FILE = "method-inputs.json"
-FORMATS = {"csv", "jsonl", "parquet"}
-MAX_PER_RUN = 10  # Anomaly's one-shot limit, and D1's per-plan limit
+FORMATS = {".csv", ".jsonl", ".parquet"}
+TABLE_ROOTS = ("research", "evidence")
+SIGNALS_FILE = "data/anomaly-signals.json"
+# The plan's name for the core detectors, which run on any table: tables may
+# come from any Anomaly source, or from outside Anomaly.
+ANY_TABLE = "any_table"
 RUN_TIMEOUT_SECONDS = 120
-MAX_CANDIDATES_SHOWN = 5
-CLUE_TYPE = "method_signal"
+CONTEXT_TIMEOUT_SECONDS = 60
 
 
 class AnomalyUnavailable(Exception):
@@ -67,7 +73,7 @@ class AnomalyUnavailable(Exception):
 
 
 class MethodRefused(Exception):
-    """One method input cannot run, or its output is not what the method declares."""
+    """A run request that cannot run, or output that is not what the method declares."""
 
 
 # ------------------------------------------------------------------ catalogue
@@ -136,80 +142,16 @@ def state(pin: Mapping[str, Any] | None = None) -> dict[str, Any]:
 
 
 def runnable(catalogue: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
-    """Methods a lane table can serve: detectors that run on one supplied table."""
-    return {method_ref(entry): entry for entry in catalogue.get("detectors") or []
-            if isinstance(entry, Mapping) and entry.get("required_tables") == ["*"]}
+    """Every pinned detector, by method ref: core ones read one table, domain ones named tables."""
+    return {method_ref(entry): entry for entry in catalogue.get("detectors") or [] if isinstance(entry, Mapping)}
 
 
-def describe(entry: Mapping[str, Any]) -> dict[str, Any]:
-    """What a brief and the Methodology page show for one method."""
-    return {
-        "method": method_ref(entry),
-        "title": entry.get("title"),
-        "description": entry.get("description"),
-        "required_fields": [field.get("name") for field in entry.get("required_fields") or []],
-        "assumptions": list(entry.get("assumptions") or []),
-        "false_positives": list(entry.get("false_positives") or []),
-    }
+def is_core(entry: Mapping[str, Any]) -> bool:
+    return entry.get("required_tables") == ["*"]
 
 
-def methods() -> list[dict[str, Any]]:
-    """The methods that fit a lane, or [] when the feature is hidden."""
-    try:
-        catalogue = load_catalogue()
-    except AnomalyUnavailable:
-        return []
-    return [describe(entry) for _ref, entry in sorted(runnable(catalogue).items())]
-
-
-def plan_methods(methodology: Mapping[str, Any]) -> dict[str, list[str]]:
-    plan = methodology.get("research_plan")
-    topics = plan.get("topics") if isinstance(plan, Mapping) else None
-    out: dict[str, list[str]] = {}
-    for topic in topics if isinstance(topics, list) else []:
-        if isinstance(topic, Mapping) and topic.get("anomaly_methods"):
-            out[str(topic.get("topic_id"))] = [str(m) for m in topic["anomaly_methods"]]
-    return out
-
-
-def plan_problems(methodology: Mapping[str, Any]) -> list[str]:
-    """Methodology validation: every named method is in the pinned catalogue and
-    runs on one table. D1 (scripts/research_checks.py) owns the count."""
-    named = plan_methods(methodology)
-    if not named:
-        return []
-    try:
-        available = runnable(load_catalogue())
-    except AnomalyUnavailable as exc:
-        return [f"research_plan names Anomaly methods, but the method catalogue is unavailable ({exc})"]
-    return [f"research_plan.topics ({topic_id}): {ref} is not a single-table method in the pinned Anomaly catalogue"
-            for topic_id, refs in sorted(named.items()) for ref in refs if ref not in available]
-
-
-def view(methodology: Mapping[str, Any]) -> dict[str, Any] | None:
-    """The Methodology page's data: the methods that fit, and each topic's
-    attached methods. None when the feature is hidden and no topic names one."""
-    named = plan_methods(methodology)
-    try:
-        available = runnable(load_catalogue())
-    except AnomalyUnavailable as exc:
-        if not named:
-            return None
-        return {"available": False, "reason": str(exc), "methods": [],
-                "topics": {topic_id: [{"method": ref, "known": False} for ref in refs] for topic_id, refs in named.items()}}
-    return {
-        "available": True,
-        "release": PIN["release"],
-        "methods": [describe(entry) for _ref, entry in sorted(available.items())],
-        "topics": {topic_id: [{**describe(available[ref]), "known": True} if ref in available
-                              else {"method": ref, "known": False} for ref in refs]
-                   for topic_id, refs in named.items()},
-    }
-
-
-# ------------------------------------------------------------------ running
 def _runner_env(scratch: Path) -> dict[str, str]:
-    """No keys, tokens, proxies or Python hooks reach the runner."""
+    """No keys, tokens, proxies or Python hooks reach Anomaly."""
     env = {"PATH": os.defpath, "HOME": str(scratch), "TMPDIR": str(scratch), "PYTHONDONTWRITEBYTECODE": "1",
            "PYTHONUTF8": "1"}
     for name in ("SYSTEMROOT", "WINDIR"):  # Windows cannot start Python without them
@@ -218,16 +160,112 @@ def _runner_env(scratch: Path) -> dict[str, str]:
     return env
 
 
-def check_signal(signal: Any, entry: Mapping[str, Any], input_hash: str, schema: Mapping[str, Any]) -> list[str]:
-    """Problems with one output line, against the catalogue's signal schema and the method's declaration."""
+# ------------------------------------------------------------------ context
+def context(domain: str | None = None, source: str | None = None) -> dict[str, Any]:
+    """Anomaly's own lookup, run from the pinned install with no keys."""
+    home = anomaly_home()
+    load_catalogue(home)
+    python = runner_python(home)
+    args = ["--domain", domain] if domain else ["--source", source] if source else []
+    with tempfile.TemporaryDirectory(prefix="spotlight-anomaly-") as scratch_name:
+        try:
+            proc = subprocess.run([str(python), "-I", "-m", "anomaly.context", *args], cwd=home,
+                                  env=_runner_env(Path(scratch_name)), capture_output=True, text=True,
+                                  encoding="utf-8", timeout=CONTEXT_TIMEOUT_SECONDS, check=False,
+                                  stdin=subprocess.DEVNULL)
+        except subprocess.TimeoutExpired:
+            raise AnomalyUnavailable(f"the lookup did not finish within {CONTEXT_TIMEOUT_SECONDS} s") from None
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout).strip().splitlines()
+        raise MethodRefused(detail[-1][:300] if detail else f"the lookup failed ({proc.returncode})")
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        raise AnomalyUnavailable("the lookup did not print JSON") from None
+
+
+def plan_domains(methodology: Mapping[str, Any]) -> list[dict[str, Any]]:
+    section = methodology.get("anomaly")
+    domains = section.get("domains") if isinstance(section, Mapping) else None
+    return [entry for entry in domains if isinstance(entry, dict)] if isinstance(domains, list) else []
+
+
+def plan_problems(methodology: Mapping[str, Any]) -> list[str]:
+    """Methodology validation: every domain and source the plan names is one
+    Anomaly lists. The schema owns the section's shape."""
+    named = plan_domains(methodology)
+    if not named:
+        return []
+    try:
+        known = {entry["domain"]: {source["id"] for source in entry.get("sources") or []}
+                 for entry in context().get("domains") or []}
+    except (AnomalyUnavailable, MethodRefused) as exc:
+        return [f"anomaly names domains, but the Anomaly lookup is unavailable ({exc})"]
+    known[ANY_TABLE] = set().union(*known.values())
+    problems = []
+    for index, entry in enumerate(named):
+        domain = entry.get("domain")
+        if domain not in known:
+            problems.append(f"anomaly.domains[{index}]: {domain!r} is not an Anomaly domain")
+            continue
+        problems += [f"anomaly.domains[{index}]: {source!r} is not an Anomaly source for {domain}"
+                     for source in entry.get("sources") or [] if source not in known[domain]]
+    return problems
+
+
+def view(methodology: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The Methodology page's data: the domains and sources the plan names,
+    each with the detectors that read that type of data. None without a plan."""
+    named = plan_domains(methodology)
+    if not named:
+        return None
+    try:
+        lookup = context()
+    except (AnomalyUnavailable, MethodRefused) as exc:
+        return {"available": False, "reason": str(exc), "domains": named}
+    by_domain = {entry["domain"]: entry for entry in lookup.get("domains") or []}
+    shown = []
+    for entry in named:
+        known = by_domain.get(entry.get("domain"), {})
+        if entry.get("domain") == ANY_TABLE:
+            known = {"sources": [source for domain in by_domain.values() for source in domain.get("sources") or []],
+                     "detectors": lookup.get("any_table") or []}
+        sources = {source["id"]: source for source in known.get("sources") or []}
+        shown.append({
+            "domain": entry.get("domain"),
+            "why": entry.get("why"),
+            "sources": [{key: sources.get(source_id, {}).get(key) for key in ("id", "title", "status", "auth", "cost", "license")}
+                        | {"id": source_id} for source_id in entry.get("sources") or []],
+            "detectors": [_describe(detector) for detector in known.get("detectors") or []],
+        })
+    return {"available": True, "release": PIN["release"], "domains": shown,
+            "any_table": [_describe(detector) for detector in lookup.get("any_table") or []]}
+
+
+def _describe(entry: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "method": method_ref(entry),
+        "title": entry.get("title"),
+        "assumptions": list(entry.get("assumptions") or []),
+        "false_positives": list(entry.get("false_positives") or []),
+    }
+
+
+# ------------------------------------------------------------------ running
+def check_signal(signal: Any, entry: Mapping[str, Any], input_hash: str, input_hashes: Mapping[str, str] | None,
+                 schema: Mapping[str, Any]) -> list[str]:
+    """Problems with one output line, against the catalogue's signal schema and the method's declaration.
+    A domain detector's provenance has column_map for field_map, and input_hashes per table."""
     if not isinstance(signal, dict):
         return ["an output line is not an object"]
     problems = []
     if set(signal) != set(schema):
         problems.append(f"fields {sorted(set(signal) ^ set(schema))} differ from the signal schema")
     provenance = signal.get("provenance")
-    provenance_schema = schema.get("provenance") if isinstance(schema.get("provenance"), Mapping) else {}
-    if not isinstance(provenance, dict) or set(provenance) != set(provenance_schema):
+    expected_keys = set(schema.get("provenance") or {}) if isinstance(schema.get("provenance"), Mapping) else set()
+    if input_hashes is not None:
+        expected_keys = (expected_keys - {"field_map"}) | {"column_map", "input_hashes"}
+    if not isinstance(provenance, dict) or set(provenance) != expected_keys:
         problems.append("provenance differs from the signal schema")
         provenance = provenance if isinstance(provenance, dict) else {}
     for key, declared in schema.items():
@@ -243,6 +281,8 @@ def check_signal(signal: Any, entry: Mapping[str, Any], input_hash: str, schema:
                  if signal.get(key) != value]
     if provenance.get("input_hash") != input_hash:
         problems.append("provenance.input_hash is not the table that was supplied")
+    if input_hashes is not None and provenance.get("input_hashes") != dict(input_hashes):
+        problems.append("provenance.input_hashes are not the tables that were supplied")
     if provenance.get("approval") != "caller-recorded":
         problems.append("provenance.approval is not caller-recorded")
     values = signal.get("values")
@@ -253,41 +293,111 @@ def check_signal(signal: Any, entry: Mapping[str, Any], input_hash: str, schema:
     return problems
 
 
-def run_table(table: Path, fmt: str, requests: list[tuple[Mapping[str, Any], Mapping[str, str]]],
-              catalogue: Mapping[str, Any], home: Path) -> dict[str, list[dict[str, Any]]]:
-    """Run up to ten methods on one table; signals per method ref, each checked."""
-    if not 1 <= len(requests) <= MAX_PER_RUN:
-        raise MethodRefused(f"between 1 and {MAX_PER_RUN} methods may run on one table")
+def _case_table(case: Path, relative: Any) -> Path:
+    """A case file under research/ or evidence/ in a format the runner reads."""
+    if not isinstance(relative, str) or not relative or "\\" in relative:
+        raise MethodRefused("a table is a case-relative path")
+    parts = PurePosixPath(relative).parts
+    if PurePosixPath(relative).is_absolute() or ".." in parts or parts[0] not in TABLE_ROOTS:
+        raise MethodRefused(f"{relative}: a table is a case file under research/ or evidence/")
+    if PurePosixPath(relative).suffix.lower() not in FORMATS:
+        raise MethodRefused(f"{relative}: a table is a .csv, .jsonl or .parquet file")
+    path = case / relative
+    if any((case / Path(*parts[:end])).is_symlink() for end in range(1, len(parts) + 1)) or not path.is_file():
+        raise MethodRefused(f"{relative} is not a regular case file")
+    return path
+
+
+def _sha256(data: bytes) -> str:
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+def _string_map(value: Any, what: str) -> dict[str, str]:
+    if not isinstance(value, dict) or not value or not all(
+            isinstance(key, str) and key and isinstance(item, str) and item for key, item in value.items()):
+        raise MethodRefused(f"{what} must map names to non-empty strings")
+    return dict(value)
+
+
+def _parse_request(case: Path, request: Any, catalogue: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Path], dict[str, Any]]:
+    """The detector entry, the tables by name ("*" for a core detector's one
+    table) and the runner request, or MethodRefused."""
+    if not isinstance(request, dict):
+        raise MethodRefused("the request is a JSON object")
+    ref = request.get("method")
+    entry = runnable(catalogue).get(ref) if isinstance(ref, str) else None
+    if entry is None:
+        raise MethodRefused(f"{ref!r} is not a method in the pinned Anomaly catalogue")
+    pinned = {"id": entry["id"], "version": entry["version"], "implementation_hash": entry["implementation_hash"]}
+    if is_core(entry):
+        if set(request) != {"method", "table", "fields"}:
+            raise MethodRefused(f"{ref} reads one table: give exactly method, table and fields")
+        fields = _string_map(request["fields"], "fields")
+        required = [field.get("name") for field in entry.get("required_fields") or []]
+        unmapped = [name for name in required if name not in fields]
+        if unmapped:
+            raise MethodRefused(f"{ref} needs a column for each of {required}; missing {unmapped}")
+        return entry, {"*": _case_table(case, request["table"])}, {**pinned, "fields": fields}
+    if not set(request) <= {"method", "tables", "columns"} or "tables" not in request:
+        raise MethodRefused(f"{ref} reads named tables: give method, tables and optionally columns")
+    names = _string_map(request["tables"], "tables")
+    required = list(entry.get("required_tables") or [])
+    if sorted(names) != sorted(required):
+        raise MethodRefused(f"{ref} reads exactly the tables {required}")
+    runner_request: dict[str, Any] = dict(pinned)
+    if "columns" in request:
+        columns = request["columns"]
+        if not isinstance(columns, dict) or set(columns) - set(required):
+            raise MethodRefused(f"columns may only name {ref}'s tables")
+        runner_request["columns"] = {name: _string_map(mapping, f"columns.{name}") for name, mapping in columns.items()}
+    return entry, {name: _case_table(case, path) for name, path in names.items()}, runner_request
+
+
+def run_method(case: Path, request: Any, home: Path | None = None) -> dict[str, Any]:
+    """Run one approved method on the investigator's tables and append the run
+    to data/anomaly-signals.json; return what the investigator is told."""
+    home = anomaly_home() if home is None else home
+    catalogue = load_catalogue(home)
     python = runner_python(home)
-    data = table.read_bytes()
-    input_hash = "sha256:" + hashlib.sha256(data).hexdigest()
+    methodology = _read_json(case / "data" / "methodology.json")
+    domains = {entry.get("domain") for entry in plan_domains(methodology)}
+    if not domains:
+        raise MethodRefused("the approved methodology has no anomaly section: the member did not opt in to Anomaly")
+    entry, tables, runner_request = _parse_request(case, request, catalogue)
+    if not is_core(entry) and entry.get("data_type") not in domains:
+        raise MethodRefused(f"{method_ref(entry)} reads {entry.get('data_type')} data, which the approved methodology does not name")
+    data = {name: path.read_bytes() for name, path in tables.items()}
+    hashes = {name: _sha256(content) for name, content in data.items()}
+    named = "*" not in tables
+    input_hash = (_sha256(json.dumps(hashes, sort_keys=True).encode("utf-8")) if named else hashes["*"])
     with tempfile.TemporaryDirectory(prefix="spotlight-anomaly-") as scratch_name:
         scratch = Path(scratch_name)
         os.chmod(scratch, 0o700)
-        copy = scratch / f"table.{fmt}"
-        copy.write_bytes(data)
-        os.chmod(copy, stat.S_IRUSR)
+        copies = {}
+        for name, path in tables.items():
+            copy = scratch / f"{'table' if name == '*' else name}{path.suffix.lower()}"
+            copy.write_bytes(data[name])
+            os.chmod(copy, stat.S_IRUSR)
+            copies[name] = copy
         request_file = scratch / "request.json"
-        request_file.write_text(json.dumps([
-            {"id": entry["id"], "version": entry["version"], "implementation_hash": entry["implementation_hash"],
-             "fields": dict(fields)} for entry, fields in requests]), encoding="utf-8")
+        request_file.write_text(json.dumps([runner_request]), encoding="utf-8")
         os.chmod(request_file, stat.S_IRUSR)
+        source = ([arg for name, copy in sorted(copies.items()) for arg in ("--tables", f"{name}={copy}")]
+                  if named else ["--table", str(copies["*"])])
         try:
             proc = subprocess.run(
-                [str(python), "-I", "-m", "anomaly.oneshot", "--table", str(copy), "--request", str(request_file),
-                 "--approved"],
+                [str(python), "-I", "-m", "anomaly.oneshot", *source, "--request", str(request_file), "--approved"],
                 cwd=scratch, env=_runner_env(scratch), capture_output=True, text=True, encoding="utf-8",
                 timeout=RUN_TIMEOUT_SECONDS, check=False, stdin=subprocess.DEVNULL)
         except subprocess.TimeoutExpired:
             raise MethodRefused(f"the runner did not finish within {RUN_TIMEOUT_SECONDS} s") from None
-        if hashlib.sha256(copy.read_bytes()).hexdigest() != input_hash.removeprefix("sha256:"):
+        if any(_sha256(copies[name].read_bytes()) != hashes[name] for name in copies):
             raise MethodRefused("the runner changed its read-only table copy")
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout).strip().splitlines()
         raise MethodRefused(f"the runner refused ({proc.returncode}): {detail[-1][:300] if detail else 'no message'}")
-    by_id = {entry["id"]: entry for entry, _fields in requests}
-    signals: dict[str, list[dict[str, Any]]] = {method_ref(entry): [] for entry, _fields in requests}
     schema = catalogue.get("signal_schema") or {}
+    signals = []
     for number, line in enumerate(proc.stdout.splitlines(), start=1):
         if not line.strip():
             continue
@@ -295,163 +405,83 @@ def run_table(table: Path, fmt: str, requests: list[tuple[Mapping[str, Any], Map
             signal = json.loads(line)
         except json.JSONDecodeError:
             raise MethodRefused(f"output line {number} is not JSON") from None
-        entry = by_id.get(signal.get("detector_id")) if isinstance(signal, dict) else None
-        if entry is None:
-            raise MethodRefused(f"output line {number} names a method that was not requested")
-        problems = check_signal(signal, entry, input_hash, schema)
+        problems = check_signal(signal, entry, input_hash, hashes if named else None, schema)
         if problems:
             raise MethodRefused(f"{method_ref(entry)} output line {number}: {problems[0]}")
-        signals[method_ref(entry)].append(signal)
-    return signals
-
-
-def _read_inputs(folder: Path) -> list[Any]:
-    path = folder / INPUTS_FILE
-    if not path.exists():
-        return []
-    if path.is_symlink() or not path.is_file():
-        raise MethodRefused(f"{INPUTS_FILE} is not a regular file")
-    try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise MethodRefused(f"{INPUTS_FILE} is unreadable: {exc}") from None
-    if not isinstance(document, dict) or document.get("schema_version") != "1.0" or not isinstance(document.get("inputs"), list):
-        raise MethodRefused(f"{INPUTS_FILE} needs schema_version 1.0 and an inputs list")
-    return document["inputs"]
-
-
-def _valid_input(item: Any) -> str | None:
-    if not isinstance(item, dict) or set(item) != {"method", "lead_id", "format", "fields"}:
-        return "an input needs exactly method, lead_id, format and fields"
-    if not isinstance(item["method"], str) or not METHOD_REF.match(item["method"]):
-        return "method is not method:<id>@<version>"
-    if not isinstance(item["lead_id"], str) or not item["lead_id"]:
-        return "lead_id is missing"
-    if item["format"] not in FORMATS:
-        return f"format is not one of {sorted(FORMATS)}"
-    fields = item["fields"]
-    if not isinstance(fields, dict) or not all(isinstance(k, str) and isinstance(v, str) and k and v
-                                               for k, v in fields.items()):
-        return "fields must map detector fields to table columns"
-    return None
-
-
-def _table_lead(leads_doc: Mapping[str, Any], topic_id: str, lead_id: str) -> Mapping[str, Any] | None:
-    """The merged lead that holds this lane's lead: itself, or the copy D4 kept."""
-    for entry in leads_doc.get("leads") or []:
-        lead = entry.get("lead") or {}
-        if (lead.get("topic_id"), lead.get("lead_id")) == (topic_id, lead_id):
-            return lead
-        if any((c.get("topic_id"), c.get("lead_id")) == (topic_id, lead_id) for c in entry.get("copies") or []):
-            return lead
-    return None
-
-
-def _table_file(case: Path, lead: Mapping[str, Any]) -> Path:
-    if lead.get("absence") or lead.get("stored") != "page" or lead.get("status") != "candidate":
-        raise MethodRefused("the table's lead is not a stored page that passed D3")
-    ref = lead.get("content_ref")
-    if not isinstance(ref, str) or not ref.startswith("sources/") or ".." in Path(ref).parts or "\\" in ref:
-        raise MethodRefused("the table is not a file under the lane's sources/")
-    path = case / "research" / "swarm" / str(lead["topic_id"]) / ref
-    if path.is_symlink() or not path.is_file():
-        raise MethodRefused(f"{ref} is missing")
-    if hashlib.sha256(path.read_bytes()).hexdigest() != lead.get("content_sha256"):
-        raise MethodRefused(f"{ref}: sha256 does not match the lead")
-    return path
-
-
-def _clue(ref: str, entry: Mapping[str, Any], lead: Mapping[str, Any], signals: list[dict[str, Any]]) -> dict[str, Any]:
-    candidates = sorted({str(s["candidate_id"]) for s in signals})
-    shown = ", ".join(candidates[:MAX_CANDIDATES_SHOWN]) + (" …" if len(candidates) > MAX_CANDIDATES_SHOWN else "")
-    key = json.dumps([ref, lead["lead_id"], candidates], ensure_ascii=False)
-    caveat = "; ".join(entry.get("false_positives") or []) or "none declared"
+        signals.append(signal)
+    record = {
+        "method": method_ref(entry),
+        "ran_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "tables": {name: {"path": str(request.get("table") if name == "*" else request["tables"][name]), "sha256": hashes[name]}
+                   for name in tables},
+        "map": runner_request.get("fields") or runner_request.get("columns") or {},
+        "assumptions": list(entry.get("assumptions") or []),
+        "false_positives": list(entry.get("false_positives") or []),
+        "signals": signals,
+    }
+    _append_run(case, record)
+    candidates = sorted({str(signal.get("candidate_id")) for signal in signals})
     return {
-        "clue_id": "method-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:12],
-        "type": CLUE_TYPE,
-        "source": ref,
-        "lead_ids": [lead["lead_id"]],
-        "direction_ids": [lead["direction_id"]],
-        "summary": f"{entry.get('title') or entry['id']}: {len(candidates)} flagged in the table from "
-                   f"{lead['lead_id']} ({shown}).",
-        "warning": f"A method signal is a lead to check, never a finding. Known false positives: {caveat}.",
+        "ok": True,
+        "method": record["method"],
+        "signals": len(signals),
+        "candidates": candidates[:20],
+        "assumptions": record["assumptions"],
+        "false_positives": record["false_positives"],
+        "note": f"Recorded in {SIGNALS_FILE}. Each signal is a lead to check against the source, never a finding.",
     }
 
 
-def method_clues(case: Path, leads_doc: Mapping[str, Any], methodology: Mapping[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
-    """Clues from the approved methods on the lanes' tables, and the merge report lines.
-
-    Never refuses the merge: a method that cannot run is reported and raises no clue."""
-    approved = plan_methods(methodology)
-    if not approved:
-        return [], []
+def _read_json(path: Path) -> dict[str, Any]:
     try:
-        home = anomaly_home()
-        catalogue = load_catalogue(home)
-        runner_python(home)
-    except AnomalyUnavailable as exc:
-        return [], [f"methods not run: {exc}"]
-    available = runnable(catalogue)
-    report: list[str] = []
-    batches: dict[tuple[str, str, str], list[tuple[Mapping[str, Any], Mapping[str, str]]]] = {}
-    leads: dict[tuple[str, str], Mapping[str, Any]] = {}
-    for topic_id in sorted(approved):
-        folder = case / "research" / "swarm" / topic_id
-        try:
-            inputs = _read_inputs(folder)
-        except MethodRefused as exc:
-            report.append(f"methods {topic_id}: {exc}")
-            continue
-        for index, item in enumerate(inputs):
-            where = f"methods {topic_id} input {index}"
-            problem = _valid_input(item)
-            if problem:
-                report.append(f"{where}: {problem}")
-                continue
-            ref = item["method"]
-            if ref not in approved[topic_id]:
-                report.append(f"{where}: {ref} is not approved for this topic")
-                continue
-            if ref not in available:
-                report.append(f"{where}: {ref} is not a single-table method in the pinned catalogue")
-                continue
-            lead = _table_lead(leads_doc, topic_id, item["lead_id"])
-            if lead is None:
-                report.append(f"{where}: lead {item['lead_id']} is not among the merged leads")
-                continue
-            key = (str(lead["topic_id"]), str(lead["lead_id"]), item["format"])
-            if any(method_ref(entry) == ref for entry, _f in batches.get(key, [])):
-                report.append(f"{where}: {ref} already runs on this table")
-                continue
-            batches.setdefault(key, []).append((available[ref], item["fields"]))
-            leads[key[:2]] = lead
-    clues: list[dict[str, Any]] = []
-    for (topic_id, lead_id, fmt), requests in sorted(batches.items()):
-        lead = leads[(topic_id, lead_id)]
-        try:
-            signals = run_table(_table_file(case, lead), fmt, requests, catalogue, home)
-        except (MethodRefused, AnomalyUnavailable, OSError) as exc:
-            refs = ", ".join(method_ref(entry) for entry, _f in requests)
-            report.append(f"methods on {lead_id} ({refs}): {exc}")
-            continue
-        for ref, found in sorted(signals.items()):
-            report.append(f"methods on {lead_id}: {ref} gave {len(found)} signal(s)")
-            if found:
-                clues.append(_clue(ref, available[ref], lead, found))
-    return clues, report
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _append_run(case: Path, record: Mapping[str, Any]) -> None:
+    with transaction(case) as descriptor:
+        document = _read_json(case / SIGNALS_FILE) or {"schema_version": "1.0", "runs": []}
+        runs = document.get("runs") if isinstance(document.get("runs"), list) else []
+        document = {"schema_version": "1.0", "runs": [*runs, dict(record)]}
+        payload = (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+        atomic_write_files(case, {SIGNALS_FILE: payload}, data_descriptor=descriptor)
+
+
+def signal_runs(case: Path) -> list[dict[str, Any]]:
+    runs = _read_json(case / SIGNALS_FILE).get("runs")
+    return [run for run in runs if isinstance(run, dict)] if isinstance(runs, list) else []
 
 
 # ------------------------------------------------------------------ CLI
-def main(argv: Iterable[str] | None = None) -> int:
-    args = list(sys.argv[1:] if argv is None else argv)
-    if args == ["state"]:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("state")
+    lookup = sub.add_parser("context")
+    scope = lookup.add_mutually_exclusive_group()
+    scope.add_argument("--domain")
+    scope.add_argument("--source")
+    runner = sub.add_parser("run")
+    runner.add_argument("case_dir", type=Path)
+    args = parser.parse_args(argv)
+    if args.command == "state":
         print(json.dumps(state(), indent=2))
         return 0
-    if args == ["methods"]:
-        print(json.dumps({**state(), "methods": methods()}, indent=2, ensure_ascii=False))
-        return 0
-    print("usage: adapter.py state | methods", file=sys.stderr)
-    return 2
+    try:
+        if args.command == "context":
+            # A hidden feature is an answer, not a refusal: available false and why.
+            current = state()
+            result: Any = {**current, **(context(args.domain, args.source) if current["available"]
+                                         else {"domains": [], "any_table": []})}
+        else:
+            result = run_method(args.case_dir.resolve(), json.loads(sys.stdin.read() or "null"))
+    except (AnomalyUnavailable, MethodRefused, OrchestrationError, json.JSONDecodeError) as exc:
+        print(f"anomaly: refused: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
 
 
 if __name__ == "__main__":

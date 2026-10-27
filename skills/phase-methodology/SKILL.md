@@ -207,11 +207,7 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    direction a `direction_id` slug, then propose topic briefs, each on one
    direction and one lane type (a lane catalogue id, or `ad-hoc` for generic
    search and fetch with no keys), with the questions it answers, seed
-   queries, sources to try and, where an Anomaly method catalogue is
-   available, the methods whose input data the lane should collect
-   (`execute-shell("scripts/spotlight-python integrations/anomaly/adapter.py methods")`
-   lists them with the fields each needs; an empty list means the feature is
-   off, so name none). Several
+   queries and sources to try. Several
    topics may serve one direction. The member approves, edits, deletes or adds
    topics. Write the result to `methodology.json` as `research_plan`
    (`schemas/methodology.schema.json`): the topics, a round budget in USD
@@ -243,9 +239,8 @@ Correct only methodology.json as required by the validator evidence. On Navigato
    - Every topic id is `<direction_id>-<lane_type>` with an optional `-<n>`,
      names a direction in `investigation_plan`, has at least one question and
      a lane type that exists in the lane catalogue or is `ad-hoc`.
-   - Keys, egress and consent are listed for every topic; at most 10 Anomaly
-     methods across the plan, each a single-table method of the pinned
-     Anomaly catalogue.
+   - Keys, egress and consent are listed for every topic. A topic names no
+     Anomaly methods: Anomaly runs in Investigation (below).
    - No research plan at all while the Research switch is off, not even
      local lanes.
    - No cloud topic (`swarm` or `subscription` route) without the member's
@@ -257,6 +252,21 @@ Correct only methodology.json as required by the validator evidence. On Navigato
      Contacts and off-record material are never eligible.
    - Newsroom mode: no OpenRouter swarm and no cloud triage unless the
      newsroom allows the endpoint.
+
+   **Anomaly (optional).** Anomaly runs detectors on tables of data (payments,
+   filings, contracts) to flag records worth checking. Offer it only when the
+   brief turns on such data, and plan it only when the member agrees. Then
+   `execute-shell("scripts/spotlight-python integrations/anomaly/adapter.py context")`
+   lists each domain (a type of data such as lobbying or procurement) with its
+   data sources (access, cost, licence) and the detectors that read it, and
+   the core detectors that run on any table under `any_table`; `--domain D`
+   narrows it. `available: false` means the feature is off: plan nothing. Write
+   the domains and sources that fit, and why, to `methodology.json` as
+   `anomaly` (`{"domains": [{"domain": "...", "sources": ["..."], "why": "..."}]}`;
+   `any_table` for the core detectors). It is a rough plan: which detector
+   runs on which table is decided in Investigation, once the tables are in
+   hand. The methodology validator checks every domain and source against the
+   lookup. Without the member's agreement, no `anomaly` section.
 
 5. **Gate: user approves the methodology.** Iterate if the user has changes.
    When the methodology has `indicator_framework`, the synthesis says

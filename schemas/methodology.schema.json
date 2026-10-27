@@ -96,6 +96,29 @@
         "reason": {"type": "string", "minLength": 1}
       }
     },
+    "anomaly": {
+      "type": "object",
+      "description": "Present only when the member opted in to Anomaly in the brief conversation: the Anomaly domains (types of data) and data sources judged useful for this case, from the anomaly_methods lookup, and why. A rough plan: which detector runs on which table is decided in Investigation, once the tables are in hand. The member's methodology approval confirms it.",
+      "required": ["domains"],
+      "additionalProperties": false,
+      "properties": {
+        "domains": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "required": ["domain", "sources", "why"],
+            "additionalProperties": false,
+            "properties": {
+              "domain": { "type": "string", "minLength": 1, "description": "An Anomaly domain, or any_table for the core detectors that run on any table." },
+              "sources": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 }, "description": "Anomaly source ids to fetch tables from; empty when the tables come from elsewhere." },
+              "why": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
     "rlm": {
       "type": "object",
       "description": "Per-case RLM decision made during methodology approval. RLM output is lead-only and never publishable evidence.",
@@ -258,9 +281,8 @@
               "sources_to_try": { "type": "array", "items": { "type": "string", "minLength": 1 } },
               "anomaly_methods": {
                 "type": "array",
-                "maxItems": 10,
                 "uniqueItems": true,
-                "description": "Anomaly catalogue methods whose input tables the lane should collect.",
+                "description": "Retired: Anomaly runs in Investigation (the methodology's anomaly section). A plan approved before the move may carry an empty list; D1 refuses a non-empty one.",
                 "items": { "type": "string", "pattern": "^method:[a-z0-9][a-z0-9._-]*@[0-9A-Za-z][0-9A-Za-z.+-]*$" }
               },
               "token_budget": { "type": "integer", "minimum": 1, "description": "Keeps one topic from taking the round." },

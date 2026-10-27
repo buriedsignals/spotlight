@@ -106,6 +106,8 @@ Fact-check gaps:
 {if resume.instructions: Follow-up requested at the Investigation gate, with any Indicator Framework items the member assigned to this cycle:
 {resume.instructions}}
 
+{if methodology.anomaly: ANOMALY: the approved methodology's anomaly section names the types of data and sources to look at. Fetch each table as its source's SKILL.md says (execute-shell("scripts/spotlight-python integrations/anomaly/adapter.py context --source <id>") prints it) and record it in the evidence bundle like any source. Then run a detector that fits on it: execute-shell("scripts/spotlight-python integrations/anomaly/adapter.py run {CASE_DIR}") with a request on stdin, {"method": "method:<id>@<version>", "table": "research/<file>.csv", "fields": {"<role>": "<column>"}} for a core detector, or {"method": ..., "tables": {"<contract table>": "<file>"}} for a domain detector. Map each role to the column that holds it; never edit a table to make a detector fit. Each signal is recorded in data/anomaly-signals.json as a lead to check against the source, never a finding: a finding comes only from what you then verify.}
+
 When you identify targets worth persistent monitoring, add them to monitoring_recommendations[] in data/findings.json.
 
 Read methodology from {CASE_DIR}/data/methodology.json.

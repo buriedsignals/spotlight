@@ -207,6 +207,7 @@ decision.
 │   ├── source-expression-migration.json # migration audit only
 │   ├── investigation-log.json
 │   ├── summary.json
+│   ├── anomaly-signals.json  # optional: Anomaly detector runs and signals (leads, never findings)
 │   └── monitoring.json       # optional external-monitor registry
 └── research/
     ├── *.md                  # Scraped web content
@@ -235,7 +236,6 @@ Only a case whose approved methodology has a `research_plan` has these.
     └── swarm/<topic-id>/         # one folder per approved topic, owner-only
         ├── lane.json             # lane status and budget (research-lane schema)
         ├── leads.jsonl           # one lead per line (research-lead schema)
-        ├── method-inputs.json    # optional: tables for approved Anomaly methods
         └── sources/              # the pages the lane captured
 ```
 
