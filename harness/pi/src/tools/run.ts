@@ -36,6 +36,9 @@ export class ToolArgumentError extends Error {}
 // What a model is told when it repeats a call that already ran twice in a row
 // with the same result (the extension's loop guard and the lane loop).
 export const REPEAT_REASON = 'This is the same call as the last two. Act on what you already have or take the next phase step.';
+// What a 12b worker's run ends with on its third refusal in a row, and what the
+// orchestrator then gets as that worker's answer.
+export const LOOP_STOP = 'repeated one call and was stopped; its last results stand.';
 
 // Pi validates arguments before it calls a tool; this repeats the check at the
 // tool boundary so a tool never acts on input outside its schema, whoever calls it.

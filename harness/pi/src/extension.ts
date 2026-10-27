@@ -16,7 +16,7 @@ import { bindActiveCase, pythonAdapter, spotlightTools } from './tools/spotlight
 import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
 import { openReviewTool, gateCheck } from './tools/review.ts';
-import { REPEAT_REASON } from './tools/run.ts';
+import { LOOP_STOP, REPEAT_REASON } from './tools/run.ts';
 import { evidenceValidates } from './validators.ts';
 
 const log = (message: string) => process.stderr.write(`spotlight-extension: ${message}\n`);
@@ -106,8 +106,9 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	// The launcher sets the local tier's fold point in Pi's settings; the
 	// frontier tier keeps Pi's default threshold and summary.
 	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier');
-	registerLoopGuard(pi);
-	if ((process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') === '12b') {
+	const tier12b = (process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') === '12b';
+	registerLoopGuard(pi, tier12b && role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
+	if (tier12b) {
 		registerReadBudget(pi);
 		registerEmptyTurnNudge(pi);
 	}
@@ -172,15 +173,19 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 // row and got the same result both times is refused instead of run. Keying
 // on the result keeps status calls such as spotlight_resolve free to repeat
 // while the state they read changes, and each new prompt starts afresh, so a
-// member's gate decision between two resolves never trips it.
-function registerLoopGuard(pi: ExtensionAPI): void {
+// member's gate decision between two resolves never trips it. With `stop`
+// (12b workers), the third refusal in a row ends the worker's run with that
+// line instead (12B r3 A2 nordhaven: six refusals of one search in a row).
+function registerLoopGuard(pi: ExtensionAPI, stop?: string): void {
 	let lastCall = '';
 	let lastResult = '';
 	let repeats = 0;
+	let refusals = 0;
 	const key = (toolName: string, input: unknown) => JSON.stringify([toolName, input]);
 	pi.on('agent_start', () => {
 		lastCall = '';
 		repeats = 0;
+		refusals = 0;
 	});
 	pi.on('tool_call', (event) => {
 		const call = key(event.toolName, event.input);
@@ -189,7 +194,12 @@ function registerLoopGuard(pi: ExtensionAPI): void {
 			lastResult = '';
 			repeats = 0;
 		}
-		return repeats >= 2 ? { block: true, reason: REPEAT_REASON } : undefined;
+		if (repeats < 2) {
+			refusals = 0;
+			return undefined;
+		}
+		refusals += 1;
+		return stop && refusals >= 3 ? { block: true, reason: stop, terminate: true } : { block: true, reason: REPEAT_REASON };
 	});
 	pi.on('tool_result', (event) => {
 		const result = JSON.stringify(event.content);

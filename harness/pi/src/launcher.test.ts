@@ -458,6 +458,28 @@ test('a worker\'s empty final answer gets the nudge before its answer reaches th
 	assert.doesNotMatch(delegated, /\(no output\)/);
 });
 
+// 12B r3 A2 nordhaven on ad768b54: investigator-7 repeated one search through six
+// loop-guard refusals in a row until the case was stopped.
+test('on the 12b a worker refused three times in a row for one repeated call is stopped, and the orchestrator gets that as its answer', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { toolCalls: [{ name: 'list_files', arguments: { pattern: 'data/*' } }] };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const investigator = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	const results = toolResults(investigator[investigator.length - 1]);
+	assert.equal(investigator.length, 5, 'two calls run, two are refused, and the third refusal ends the run');
+	assert.deepEqual(results.slice(2).map((text) => /same call as the last two/.test(text)), [true, true]);
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /The investigator repeated one call and was stopped; its last results stand\./);
+});
+
 // D5: a new case is activated by the harness, not by a model writing the
 // receipt. The contract must exist before the investigator's first turn, and
 // no role can write it.
