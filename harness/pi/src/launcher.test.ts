@@ -1029,6 +1029,54 @@ test('D9: the fact-checker\'s own file tools cannot list or read the research le
 	assert.doesNotMatch(grepped, /leads|clues|research-|swarm/);
 });
 
+// Gold sens2 on d49a9a01: in sensitive mode the wiki is the only source outside
+// the case, the trained worker prompts skip it (VAULT_PATH is always "none"),
+// and 2 of 3 investigators never called query_vault. The launcher searches it
+// with the approved brief and appends the hits to the worker's task.
+test('in sensitive mode the investigator\'s and fact-checker\'s tasks carry the wiki passages for the brief; otherwise they do not', async (t) => {
+	for (const sensitive of [true, false]) {
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'investigator') || isWorkerRequest(request, 'fact-checker')) return { text: 'Done.' };
+			const done = toolResults(request).length;
+			return done < 2 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: done === 0 ? 'investigator' : 'fact-checker', task: 'Work the case.' } }] } : { text: 'Done.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		await caseAtInvestigation(space);
+		const wiki = join(space.root, 'wiki');
+		await mkdir(wiki, { recursive: true });
+		const config = join(space.root, 'install-config.json');
+		await writeFile(config, JSON.stringify({ knowledge_destination: { type: 'wiki', mode: 'solo', workspace_path: wiki } }));
+		const bsig = join(space.root, 'bsig');
+		const requests = join(space.root, 'bsig-requests.jsonl');
+		await writeFile(bsig, `#!${process.execPath}
+require('node:fs').appendFileSync(${JSON.stringify(requests)}, JSON.stringify(process.argv.slice(2)) + '\\n');
+const hits = [{ path: 'notes/fixture-company.md', type: 'note', title: 'Fixture company', snippet: 'Fixture Ltd is owned by A. Holder since 2019.', score: 1 }];
+console.log(JSON.stringify({ event: 'result', message: 'wiki search', data: { tool: 'search', result: { hits } } }));
+`);
+		await chmod(bsig, 0o755);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: config, SPOTLIGHT_BSIG: bsig, SPOTLIGHT_SENSITIVE: String(sensitive) });
+
+		await settledPrompt(chat, 'Continue.');
+
+		for (const role of ['investigator', 'fact-checker']) {
+			const worker = fake.requests.find((request) => isWorkerRequest(request, role));
+			assert.ok(worker, `the ${role} ran`);
+			const task = userText(worker);
+			if (!sensitive) {
+				assert.doesNotMatch(task, /WIKI PASSAGES/, `${role}: no wiki block outside sensitive mode`);
+				continue;
+			}
+			assert.match(task, /^Work the case\.\n\nWIKI PASSAGES\. Sensitive mode:/, role);
+			assert.match(task, /<<<BEGIN UNTRUSTED WIKI DATA>>>\n<<<NOTE 1 notes\/fixture-company\.md \(Fixture company\)\nFixture Ltd is owned by A\. Holder since 2019\.\nNOTE 1>>>\n<<<END UNTRUSTED WIKI DATA>>>$/, role);
+		}
+		if (sensitive) {
+			const searched = (await readFile(requests, 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as string[]).filter((argv) => argv.includes('search'));
+			assert.equal(JSON.parse(searched[0].at(-1)!).query, 'Who owns the fixture company?', 'the wiki is searched with the approved brief');
+		}
+	}
+});
+
 // The shared stand-in Engine `bsig` (tests/fixtures/case_search_bsig.py),
 // answering `wiki case-search` with the NDJSON result contract, or refusing as
 // Engine does while its switch is off. Its scenario sits next to it.
