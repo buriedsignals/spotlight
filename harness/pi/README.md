@@ -149,7 +149,7 @@ There is no shell in this harness. Each tool takes typed arguments, refuses anyt
 | `build_review_html` | `scripts/build-review-html.py --stdout`, written to `review.html` under the case-file rules | orchestrator |
 | `run_rlm` | `integrations/rlm/run_rlm.py` | orchestrator |
 | `integration_status` | `integrations/preflight.py --json` | orchestrator |
-| `anomaly_methods` | `integrations/anomaly/adapter.py context` (read-only: Anomaly's domains, sources and detectors from the pinned install, or `available: false` with the reason; `domain` or `source` narrows it) | orchestrator |
+| `anomaly_methods` | `integrations/anomaly/adapter.py context` (read-only: Anomaly's domains, sources and detectors from the installed checkout, or `available: false` with the reason; `domain` or `source` narrows it) | orchestrator |
 | `anomaly_run` | `integrations/anomaly/adapter.py run` (one detector on case tables the investigator fetched, in a case whose approved methodology opted in; signals appended to `data/anomaly-signals.json`) | investigator |
 | `search_knowledge`, `get_record`, `traverse`, `coverage` | the newsroom's Editorial MCP, through the launcher (newsroom edition, in place of `query_vault`) | investigator, fact-checker |
 | `run_checks`, `newsroom_submit` | the Editorial MCP and `scripts/newsroom-package.py`, through the launcher (newsroom edition, in place of `decision_signals`) | orchestrator |

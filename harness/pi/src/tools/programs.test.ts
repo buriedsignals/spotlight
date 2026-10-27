@@ -417,7 +417,7 @@ test('anomaly_run refuses a table the role may not read before anything runs', a
 // context). The lookup itself is the adapter's own contract
 // (tests/anomaly-check.py); here: the tool reaches the install named by
 // ANOMALY_HOME and reports the hidden feature with its reason, nothing listed.
-test('anomaly_methods reports the feature hidden, with the reason, unless the pinned catalogue is installed', async (t) => {
+test('anomaly_methods reports the feature hidden, with the reason, without an install or with a catalogue that does not match its own hash', async (t) => {
 	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-anomaly-')));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const caseDir = join(root, 'case');
@@ -435,8 +435,8 @@ test('anomaly_methods reports the feature hidden, with the reason, unless the pi
 	const unset = await list({});
 	assert.equal(unset.available, false);
 	assert.match(unset.reason, /ANOMALY_HOME is not set/);
-	const unpinned = await list({ ANOMALY_HOME: other });
-	assert.equal(unpinned.available, false);
-	assert.match(unpinned.reason, /not the pinned release/);
-	for (const outcome of [unset, unpinned]) assert.deepEqual([outcome.domains, outcome.any_table], [[], []]);
+	const broken = await list({ ANOMALY_HOME: other });
+	assert.equal(broken.available, false);
+	assert.match(broken.reason, /does not match its catalogue_hash/);
+	for (const outcome of [unset, broken]) assert.deepEqual([outcome.domains, outcome.any_table], [[], []]);
 });

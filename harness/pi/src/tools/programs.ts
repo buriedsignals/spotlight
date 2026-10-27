@@ -227,7 +227,7 @@ function integrationStatusTool(context: ToolContext): ToolDefinition {
 // request, so the tool stays in sensitive mode (roles.ts EGRESS_TOOLS).
 // Anomaly (integrations/anomaly): at Methodology, which data sources and
 // detectors fit the case; in Investigation, one chosen detector run on tables
-// the investigator fetched. Both run the pinned Anomaly install with no keys.
+// the investigator fetched. Both run the installed Anomaly checkout with no keys.
 function anomalyMethodsTool(context: ToolContext): ToolDefinition {
 	const params = Type.Object(
 		{ domain: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })), source: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })) },
@@ -237,7 +237,7 @@ function anomalyMethodsTool(context: ToolContext): ToolDefinition {
 		name: 'anomaly_methods',
 		label: 'Anomaly methods',
 		description:
-			'What Anomaly offers this case (integrations/anomaly/adapter.py context): each domain (a type of data such as lobbying or procurement) with its data sources (access, cost, licence, the SKILL.md that says how to get the data) and the detectors that read it, plus the core detectors that run on any table under any_table. Give domain to see one domain, or source to read one source\'s SKILL.md. available: false with a reason when ANOMALY_HOME is unset or the installed catalogue is not the pinned one; then plan no Anomaly work.',
+			'What Anomaly offers this case (integrations/anomaly/adapter.py context): each domain (a type of data such as lobbying or procurement) with its data sources (access, cost, licence, the SKILL.md that says how to get the data) and the detectors that read it, plus the core detectors that run on any table under any_table. Give domain to see one domain, or source to read one source\'s SKILL.md. available: false with a reason when ANOMALY_HOME is unset or the installed catalogue cannot be used; then plan no Anomaly work.',
 		parameters: params,
 		async execute(_id, raw, signal) {
 			const input = checkedParams<{ domain?: string; source?: string }>('anomaly_methods', params, raw);

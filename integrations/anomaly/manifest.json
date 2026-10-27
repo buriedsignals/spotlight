@@ -9,11 +9,6 @@
   "activation_env_vars": [
     "ANOMALY_HOME"
   ],
-  "catalogue_pin": {
-    "release": "7d5267f63d206bd55316fefddb428a380f69d333",
-    "schema_version": 1,
-    "catalogue_hash": "sha256:df1c64d25292ac2c6e3be8df91f25436f44ddeb347fa4b45ee4b74e3a4d3b7f7"
-  },
   "capabilities": [
     "anomaly-context",
     "anomaly-runner"
@@ -24,7 +19,7 @@
   ],
   "homepage": "https://github.com/buriedsignals/Anomaly",
   "docs": "https://github.com/buriedsignals/Anomaly/blob/main/docs/catalogue.md",
-  "egress_note": "None. The lookup reads the Anomaly checkout offline; methods run locally on read-only copies of case tables, in a child process with no keys in its environment, and Anomaly loads the tables into an in-memory DuckDB and disables external access before any method SQL runs.",
-  "risk_note": "A method signal is a lead, never a finding or evidence. The catalogue is read only when its hash equals the pin above; any other catalogue hides the feature.",
+  "egress_note": "None from Spotlight. Spotlight runs only Anomaly's read-only lookup (anomaly.context) and its one-shot runner (anomaly.oneshot); it never runs the data-source adapters under data-skills/, some of which fetch over the network. The lookup reads the checkout offline; methods run locally on read-only copies of case tables, in a child process with no keys in its environment, and Anomaly loads the tables into an in-memory DuckDB and disables external access before any method SQL runs.",
+  "risk_note": "A method signal is a lead, never a finding or evidence. The installed catalogue is read only when its schema is supported and its catalogue_hash matches its own content; a detector whose implementation hash changed since Methodology approval is refused.",
   "network_smoke": false
 }

@@ -9,20 +9,26 @@ Spotlight never changes, and it fetches nothing for Spotlight.
 
 ## Setup
 
-1. Clone Anomaly at the release pinned in `manifest.json`
-   (`catalogue_pin.release`) and run `uv sync` in it, so its `.venv` exists.
+1. Clone Anomaly's main branch and run `uv sync` in it, so its `.venv` exists.
+   Engine installs and updates this checkout; Spotlight never changes it.
 2. Set `ANOMALY_HOME` to that checkout (environment, the checkout `.env`, or
    the install's `env_file`).
 
 Preflight reports `unconfigured` without `ANOMALY_HOME`, and `yellow` with the
-reason when the installed catalogue is not the pinned one. The catalogue is
-used only when its `catalogue_hash` equals the pin and matches the file's
-content (sha256 over the canonical JSON of the other keys, Anomaly's own
-rule). Any other catalogue hides the feature: the lookup lists nothing, a plan
-that names a domain fails Methodology validation, and nothing runs.
+reason when the installed catalogue cannot be used. Spotlight uses whatever
+catalogue is installed, but only when its `schema_version` is one it reads
+(currently 1) and its `catalogue_hash` matches the file's content (sha256 over
+the canonical JSON of the other keys, Anomaly's own rule). Any other catalogue
+hides the feature: the lookup lists nothing, a plan that names a domain fails
+Methodology validation, and nothing runs.
 
-To move to a newer Anomaly release, update `catalogue_pin` (release commit,
-`schema_version`, `catalogue_hash`) in a reviewed change.
+Without a pinned release, reproducibility comes from each detector's
+`implementation_hash`. Approving a methodology with an `anomaly` section
+records the hash of every detector the plan allows (the core detectors and
+those of its domains) in the approval. A run refuses a detector whose hash
+differs ("detector changed since approval; re-approve") or that was not in the
+catalogue at approval. Each run in `data/anomaly-signals.json` records the
+`catalogue_hash` and the detector's `implementation_hash`.
 
 ## Methodology: the lookup
 
@@ -30,7 +36,7 @@ To move to a newer Anomaly release, update `catalogue_pin` (release commit,
 execute-shell("scripts/spotlight-python integrations/anomaly/adapter.py context [--domain D | --source ID]")
 ```
 
-runs Anomaly's read-only `python -m anomaly.context` from the pinned install,
+runs Anomaly's read-only `python -m anomaly.context` from the installed checkout,
 with no keys. It prints each domain (a type of data such as lobbying or
 procurement), with its data sources (status, access, cost, licence, the
 SKILL.md that says how to get and use the data) and the detectors that read
@@ -72,14 +78,15 @@ run is refused, and nothing runs, unless:
 
 - the approved methodology has an `anomaly` section (the member opted in),
   and a domain detector's data type is one of its domains;
-- the method is in the pinned catalogue, with exactly the inputs its kind
-  takes and a column for every field role it needs;
+- the method is in the installed catalogue, with the implementation hash the
+  methodology approval recorded for it, exactly the inputs its kind takes and
+  a column for every field role it needs;
 - every table is a regular case file under `research/` or `evidence/`, in CSV,
   JSONL or Parquet.
 
 The runner gets read-only copies of the tables in a private temporary folder,
 an environment with no keys, tokens, proxies or Python hooks, and a request
-pinned to the method's catalogue version and implementation hash, with
+that names the method's catalogue version and implementation hash, with
 `--approved` (the member's Methodology approval is the approval). Anomaly
 loads only the mapped columns into an in-memory DuckDB and disables external
 access before any method SQL runs; the method SQL must pass Anomaly's

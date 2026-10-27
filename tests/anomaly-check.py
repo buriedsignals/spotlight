@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Anomaly as context and runner (integrations/anomaly): the pinned catalogue
+"""Anomaly as context and runner (integrations/anomaly): the installed catalogue
 hides the feature unless it matches; Methodology validation and the
 Methodology view use Anomaly's own lookup; the investigator's runs check the
 opt-in, the request and every output line before anything is recorded; the
@@ -122,7 +122,7 @@ def catalogue(detectors=DETECTORS) -> dict:
 
 
 def cli(*args: str, stdin: str = "") -> subprocess.CompletedProcess:
-    """adapter.py's command line, in process so the test's pin applies."""
+    """adapter.py's command line, in process so the test's environment applies."""
     out, err = io.StringIO(), io.StringIO()
     with mock.patch.object(sys, "stdin", io.StringIO(stdin)), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         code = adapter.main(list(args))
@@ -144,7 +144,9 @@ class StandIn:
         python.write_text(f"#!/bin/sh\nexec '{sys.executable}' '{home / 'standin.py'}' \"$@\"\n")
         python.chmod(0o755)
         self.behave()
-        self.pin = {"release": "0" * 40, "schema_version": 1, "catalogue_hash": self.document["catalogue_hash"]}
+
+    def install(self, document: dict) -> None:
+        (self.home / "detectors" / "catalogue.json").write_text(json.dumps(document, indent=2))
 
     def behave(self, **behaviour) -> None:
         (self.home / "behaviour.json").write_text(json.dumps(behaviour))
@@ -166,34 +168,39 @@ class AnomalyTestCase(unittest.TestCase):
                                                "ANOMALY_HOME": str(self.anomaly.home)})
         patcher.start()
         self.addCleanup(patcher.stop)
-        pin = mock.patch.object(adapter, "PIN", self.anomaly.pin)
-        pin.start()
-        self.addCleanup(pin.stop)
         self.case = self.tmp / "case"
         (self.case / "data").mkdir(parents=True)
         (self.case / "research").mkdir()
         (self.case / "research" / "payments.csv").write_text(TABLE)
 
     def opt_in(self, *domains: str) -> None:
+        """The member approves a plan with these Anomaly domains: the approval
+        records what approve() records (tested in Approval)."""
         plan = {"anomaly": {"domains": [{"domain": d, "sources": [], "why": "test"} for d in domains]}} if domains else {}
         (self.case / "data" / "methodology.json").write_text(json.dumps(plan))
+        approval = {"approved_by": "journalist:test", "anomaly_methods": adapter.approved_methods(plan)}
+        (self.case / "data" / "orchestration.json").write_text(json.dumps({"approvals": {"methodology": approval}}))
 
 
 class Catalogue(AnomalyTestCase):
-    def test_anything_but_the_pinned_catalogue_hides_the_feature(self) -> None:
-        self.assertTrue(adapter.state()["available"])
+    def test_any_catalogue_that_matches_its_own_hash_is_used_and_anything_else_hides_the_feature(self) -> None:
+        self.assertEqual(adapter.state(), {"available": True, "reason": None, "catalogue_hash": self.anomaly.document["catalogue_hash"]})
+        another = catalogue(DETECTORS[:1])  # a newer Anomaly main: no pin to match
+        self.anomaly.install(another)
+        self.assertEqual(adapter.state()["catalogue_hash"], another["catalogue_hash"])
         tampered = catalogue()
-        tampered["detectors"][0]["required_tables"] = ["lobbying_registrations"]  # content changed, pinned hash kept
-        tampered["catalogue_hash"] = self.anomaly.pin["catalogue_hash"]
-        cases = {"no install": None, "another release": catalogue(DETECTORS[:1]),
-                 "content changed under the pinned hash": tampered}
+        tampered["detectors"][0]["required_tables"] = ["lobbying_registrations"]  # content changed, hash kept
+        tampered["catalogue_hash"] = self.anomaly.document["catalogue_hash"]
+        future = {key: value for key, value in catalogue().items() if key != "catalogue_hash"} | {"schema_version": 2}
+        future["catalogue_hash"] = "sha256:" + hashlib.sha256(json.dumps(future, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        cases = {"no install": None, "content changed under its hash": tampered, "a schema this Spotlight does not read": future}
         for label, document in cases.items():
             with self.subTest(label):
                 os.environ["ANOMALY_HOME"] = str(self.anomaly.home)
                 if document is None:
                     os.environ.pop("ANOMALY_HOME")
                 else:
-                    (self.anomaly.home / "detectors" / "catalogue.json").write_text(json.dumps(document))
+                    self.anomaly.install(document)
                 self.assertFalse(adapter.state()["available"])
                 # The lookup answers that the feature is off, and lists nothing.
                 out = cli("context")
@@ -202,7 +209,7 @@ class Catalogue(AnomalyTestCase):
                 self.assertEqual((listed["available"], listed["domains"], listed["any_table"]), (False, [], []))
         self.assertEqual(self.anomaly.calls(), [], "a hidden feature never runs Anomaly")
 
-    def test_preflight_reports_unconfigured_then_the_unpinned_install(self) -> None:
+    def test_preflight_reports_unconfigured_the_installed_catalogue_then_a_broken_one(self) -> None:
         def status(**env: str) -> dict:
             base = {k: v for k, v in os.environ.items() if k != "ANOMALY_HOME"}
             out = subprocess.run([sys.executable, str(ROOT / "integrations" / "preflight.py"), "--json"],
@@ -210,14 +217,18 @@ class Catalogue(AnomalyTestCase):
             return next(r for r in json.loads(out.stdout)["integrations"] if r["id"] == "anomaly")
 
         self.assertEqual(status()["status"], "unconfigured")
-        # The stand-in is not the release the shipped manifest pins.
-        unpinned = status(ANOMALY_HOME=str(self.anomaly.home))
-        self.assertEqual(unpinned["status"], "yellow")
-        self.assertIn("pinned release", unpinned["smoke_error"])
+        installed = status(ANOMALY_HOME=str(self.anomaly.home))
+        self.assertNotEqual(installed["status"], "yellow", installed.get("smoke_error"))
+        self.assertEqual(installed["catalogue_hash"], self.anomaly.document["catalogue_hash"])
+        broken = dict(self.anomaly.document, catalogue_hash="sha256:" + "0" * 64)
+        self.anomaly.install(broken)
+        refused = status(ANOMALY_HOME=str(self.anomaly.home))
+        self.assertEqual(refused["status"], "yellow")
+        self.assertIn("does not match its catalogue_hash", refused["smoke_error"])
 
 
 class Context(AnomalyTestCase):
-    def test_the_lookup_runs_anomaly_from_the_pinned_install_with_no_keys(self) -> None:
+    def test_the_lookup_runs_anomaly_from_the_installed_checkout_with_no_keys(self) -> None:
         self.assertEqual(adapter.context(domain="lobbying"), CONTEXT)
         [call] = self.anomaly.calls("anomaly.context")
         self.assertEqual(call["args"], ["--domain", "lobbying"])
@@ -262,6 +273,9 @@ class Run(AnomalyTestCase):
         sha = "sha256:" + hashlib.sha256(TABLE.encode()).hexdigest()
         self.assertEqual((run["method"], run["tables"], run["false_positives"]),
                          (ZSCORE, {"*": {"path": "research/payments.csv", "sha256": sha}}, ["legitimate large payments"]))
+        zscore = next(entry for entry in DETECTORS if adapter.method_ref(entry) == ZSCORE)
+        self.assertEqual((run["catalogue_hash"], run["implementation_hash"]),
+                         (self.anomaly.document["catalogue_hash"], zscore["implementation_hash"]))
         [call] = self.anomaly.calls("anomaly.oneshot")
         self.assertIn("--approved", call["args"])
         self.assertNotIn("OPENROUTER_API_KEY", call["env"])
@@ -284,7 +298,7 @@ class Run(AnomalyTestCase):
         cases = {
             "no opt-in": (None, core, "did not opt in"),
             "a domain the plan does not name": ("any_table", {"method": FILINGS, "tables": {"lobbying_registrations": "research/payments.csv", "lobbying_foreign_entities": "research/payments.csv"}}, "does not name"),
-            "a method outside the catalogue": ("any_table", {**core, "method": "method:made.up@1.0.0"}, "not a method in the pinned"),
+            "a method outside the catalogue": ("any_table", {**core, "method": "method:made.up@1.0.0"}, "not a method in the installed"),
             "a core detector given tables": ("any_table", {"method": ZSCORE, "tables": {"x": "research/payments.csv"}}, "give exactly method, table and fields"),
             "a field role left unmapped": ("any_table", {**core, "fields": {"id": "id"}}, "missing ['amount']"),
             "a domain detector missing a table": ("lobbying", {"method": FILINGS, "tables": {"lobbying_registrations": "research/payments.csv"}}, "reads exactly the tables"),
@@ -302,6 +316,31 @@ class Run(AnomalyTestCase):
         self.assertEqual(self.anomaly.calls("anomaly.oneshot"), [])
         self.assertEqual(self.runs(), [])
 
+    def test_a_detector_that_changed_or_appeared_since_approval_is_refused(self) -> None:
+        core = {"method": ZSCORE, "table": "research/payments.csv", "fields": {"id": "id", "amount": "amount"}}
+        self.opt_in("any_table")
+        changed = copy.deepcopy(DETECTORS)
+        for entry in changed:
+            if adapter.method_ref(entry) == ZSCORE:
+                entry["implementation_hash"] = "sha256:" + "c" * 64  # same id and version, new SQL
+        self.anomaly.install(catalogue(changed))
+        out = self.run_cli(core)
+        self.assertEqual(out.returncode, 2)
+        self.assertIn(f"{ZSCORE}: detector changed since approval; re-approve", out.stderr)
+        self.opt_in("any_table")  # re-approved against the new catalogue: it runs
+        self.assertEqual(self.run_cli(core).returncode, 0)
+        self.anomaly.install(catalogue())
+        (self.case / "data" / "orchestration.json").write_text(json.dumps({"approvals": {"methodology": {"anomaly_methods": {}}}}))
+        out = self.run_cli(core)
+        self.assertIn("Anomaly was not available when the methodology was approved; re-approve", out.stderr)
+        both = {"anomaly": {"domains": [{"domain": "any_table"}, {"domain": "lobbying"}]}}
+        approved = {key: value for key, value in adapter.approved_methods(both).items() if key != ZSCORE}
+        self.assertEqual(list(approved), [FILINGS])
+        (self.case / "data" / "orchestration.json").write_text(json.dumps({"approvals": {"methodology": {"anomaly_methods": approved}}}))
+        out = self.run_cli(core)
+        self.assertIn(f"{ZSCORE} was not in the Anomaly catalogue when the methodology was approved; re-approve", out.stderr)
+        self.assertEqual(len(self.anomaly.calls("anomaly.oneshot")), 1, "only the re-approved run reached Anomaly")
+
     def test_output_that_breaks_the_declared_schema_or_a_refusing_runner_records_nothing(self) -> None:
         self.opt_in("any_table")
         core = {"method": ZSCORE, "table": "research/payments.csv", "fields": {"id": "id", "amount": "amount"}}
@@ -314,6 +353,23 @@ class Run(AnomalyTestCase):
                 self.assertEqual(out.returncode, 2)
                 self.assertIn(reason, out.stderr)
         self.assertEqual(self.runs(), [])
+
+
+class Approval(AnomalyTestCase):
+    def test_approving_the_methodology_records_each_allowed_detectors_implementation_hash(self) -> None:
+        (self.case / "brief-directions.txt").write_text("Who lobbied for Acme?\n")
+        plan = {"anomaly": {"domains": [{"domain": "lobbying", "sources": [], "why": "test"}]}}
+        (self.case / "data" / "methodology.json").write_text(json.dumps(plan))
+        out = subprocess.run([sys.executable, str(ROOT / "scripts" / "spotlight-orchestration.py"), "approve", "methodology",
+                              "--approved-by", "journalist:test", "--approved-at", "2026-10-27T12:00:00Z", str(self.case)],
+                             capture_output=True, text=True, cwd=ROOT, check=False)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        recorded = json.loads((self.case / "data" / "orchestration.json").read_text())["approvals"]["methodology"]["anomaly_methods"]
+        # The core detectors and the plan's lobbying detector, nothing else.
+        expected = {adapter.method_ref(entry): entry["implementation_hash"] for entry in DETECTORS
+                    if adapter.is_core(entry) or entry.get("data_type") == "lobbying"}
+        self.assertEqual(recorded, expected)
+        self.assertIn(FILINGS, recorded)
 
 
 class Gate(AnomalyTestCase):

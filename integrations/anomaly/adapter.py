@@ -7,10 +7,13 @@ case, and the chosen detectors run on tables the investigator fetched.
     scripts/spotlight-python integrations/anomaly/adapter.py run CASE_DIR < request.json
 
 Anomaly (github.com/buriedsignals/Anomaly) stays a separate install, named by
-``ANOMALY_HOME`` (its checkout, with its own ``.venv``). Spotlight trusts its
-catalogue only when ``detectors/catalogue.json`` carries the hash pinned in
-``manifest.json`` and that hash matches the file's content; anything else
-hides the feature.
+``ANOMALY_HOME`` (its checkout, with its own ``.venv``), which Engine installs
+and updates; Spotlight never changes it. Spotlight uses whatever catalogue is
+installed, but only when ``detectors/catalogue.json`` has a supported
+``schema_version`` and a ``catalogue_hash`` that matches the file's own
+content; anything else hides the feature. Methodology approval records the
+implementation hash of every detector the plan allows, and a run refuses a
+detector whose hash has changed since.
 
 ``context`` is Anomaly's read-only lookup (``python -m anomaly.context``): each
 domain (a type of data) with its sources and their SKILL.md, and the detectors
@@ -25,7 +28,8 @@ table it reads, to a file) and optional ``columns`` (per table, contract column
 to file column). Every file is a case file under research/ or evidence/. The
 runner gets read-only copies in a private temporary folder, an environment
 without keys, and the request pinned to the catalogue's version and
-implementation hash. Every output line is checked against the catalogue's
+implementation hash. A detector whose implementation hash differs from the one
+recorded at Methodology approval is refused. Every output line is checked against the catalogue's
 signal schema and the method's expected output, then the run is appended to
 ``data/anomaly-signals.json``. A signal is a lead to check, never a finding.
 """
@@ -54,8 +58,7 @@ from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
 from spotlight_orchestration.storage import transaction  # noqa: E402
 
-MANIFEST = Path(__file__).with_name("manifest.json")
-PIN: Mapping[str, Any] = json.loads(MANIFEST.read_text(encoding="utf-8"))["catalogue_pin"]
+SCHEMA_VERSIONS = (1,)  # the catalogue schema versions this adapter reads
 HOME_ENV = "ANOMALY_HOME"
 METHOD_REF = re.compile(r"^method:(?P<id>[a-z0-9][a-z0-9._-]*)@(?P<version>[0-9A-Za-z][0-9A-Za-z.+-]*)$")
 FORMATS = {".csv", ".jsonl", ".parquet"}
@@ -69,7 +72,7 @@ CONTEXT_TIMEOUT_SECONDS = 60
 
 
 class AnomalyUnavailable(Exception):
-    """No Anomaly install, or one whose catalogue is not the pinned release."""
+    """No Anomaly install, or one whose catalogue cannot be trusted."""
 
 
 class MethodRefused(Exception):
@@ -105,9 +108,9 @@ def runner_python(home: Path) -> Path:
     raise AnomalyUnavailable("Anomaly's .venv is missing; run `uv sync` in its checkout")
 
 
-def load_catalogue(home: Path | None = None, pin: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """The installed catalogue, only when it is exactly the pinned release."""
-    pin = PIN if pin is None else pin
+def load_catalogue(home: Path | None = None) -> dict[str, Any]:
+    """The installed catalogue, only when its schema is supported and its hash
+    matches its own content."""
     home = anomaly_home() if home is None else home
     path = home / "detectors" / "catalogue.json"
     if path.is_symlink() or not path.is_file():
@@ -118,31 +121,28 @@ def load_catalogue(home: Path | None = None, pin: Mapping[str, Any] | None = Non
         raise AnomalyUnavailable(f"the Anomaly catalogue is unreadable: {exc}") from None
     if not isinstance(catalogue, dict) or not isinstance(catalogue.get("detectors"), list):
         raise AnomalyUnavailable("the Anomaly catalogue has no detector list")
-    if catalogue.get("schema_version") != pin["schema_version"]:
-        raise AnomalyUnavailable(f"catalogue schema {catalogue.get('schema_version')!r} is not the pinned "
-                                 f"{pin['schema_version']}")
-    if catalogue.get("catalogue_hash") != pin["catalogue_hash"]:
-        raise AnomalyUnavailable(f"the installed catalogue is not the pinned release {pin['release'][:12]}")
+    if catalogue.get("schema_version") not in SCHEMA_VERSIONS:
+        raise AnomalyUnavailable(f"catalogue schema {catalogue.get('schema_version')!r} is not one this Spotlight "
+                                 f"reads ({', '.join(map(str, SCHEMA_VERSIONS))})")
     body = {key: value for key, value in catalogue.items() if key != "catalogue_hash"}
-    if _canonical_hash(body) != pin["catalogue_hash"]:
-        raise AnomalyUnavailable("the catalogue's content does not match its pinned hash")
+    if not isinstance(catalogue.get("catalogue_hash"), str) or _canonical_hash(body) != catalogue["catalogue_hash"]:
+        raise AnomalyUnavailable("the catalogue's content does not match its catalogue_hash")
     return catalogue
 
 
-def state(pin: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def state() -> dict[str, Any]:
     """Whether the feature is shown, and why not."""
-    pin = PIN if pin is None else pin
     try:
         home = anomaly_home()
-        load_catalogue(home, pin)
+        catalogue = load_catalogue(home)
         runner_python(home)
     except AnomalyUnavailable as exc:
-        return {"available": False, "reason": str(exc), "release": pin["release"]}
-    return {"available": True, "reason": None, "release": pin["release"], "catalogue_hash": pin["catalogue_hash"]}
+        return {"available": False, "reason": str(exc)}
+    return {"available": True, "reason": None, "catalogue_hash": catalogue["catalogue_hash"]}
 
 
 def runnable(catalogue: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
-    """Every pinned detector, by method ref: core ones read one table, domain ones named tables."""
+    """Every detector, by method ref: core ones read one table, domain ones named tables."""
     return {method_ref(entry): entry for entry in catalogue.get("detectors") or [] if isinstance(entry, Mapping)}
 
 
@@ -162,7 +162,7 @@ def _runner_env(scratch: Path) -> dict[str, str]:
 
 # ------------------------------------------------------------------ context
 def context(domain: str | None = None, source: str | None = None) -> dict[str, Any]:
-    """Anomaly's own lookup, run from the pinned install with no keys."""
+    """Anomaly's own lookup, run from the installed checkout with no keys."""
     home = anomaly_home()
     load_catalogue(home)
     python = runner_python(home)
@@ -213,6 +213,27 @@ def plan_problems(methodology: Mapping[str, Any]) -> list[str]:
     return problems
 
 
+def approved_methods(methodology: Mapping[str, Any], home: Path | None = None) -> dict[str, str]:
+    """What Methodology approval records: the implementation hash of every
+    detector the plan allows (the core ones and those of the domains it
+    names), by method ref. Empty without a plan or without a usable install."""
+    domains = {entry.get("domain") for entry in plan_domains(methodology)}
+    if not domains:
+        return {}
+    try:
+        catalogue = load_catalogue(anomaly_home() if home is None else home)
+    except AnomalyUnavailable:
+        return {}
+    return {ref: str(entry.get("implementation_hash")) for ref, entry in runnable(catalogue).items()
+            if is_core(entry) or entry.get("data_type") in domains}
+
+
+def _approved_hashes(case: Path) -> dict[str, str]:
+    approval = (_read_json(case / "data" / "orchestration.json").get("approvals") or {}).get("methodology")
+    recorded = approval.get("anomaly_methods") if isinstance(approval, dict) else None
+    return recorded if isinstance(recorded, dict) else {}
+
+
 def view(methodology: Mapping[str, Any]) -> dict[str, Any] | None:
     """The Methodology page's data: the domains and sources the plan names,
     each with the detectors that read that type of data. None without a plan."""
@@ -238,7 +259,7 @@ def view(methodology: Mapping[str, Any]) -> dict[str, Any] | None:
                         | {"id": source_id} for source_id in entry.get("sources") or []],
             "detectors": [_describe(detector) for detector in known.get("detectors") or []],
         })
-    return {"available": True, "release": PIN["release"], "domains": shown,
+    return {"available": True, "domains": shown,
             "any_table": [_describe(detector) for detector in lookup.get("any_table") or []]}
 
 
@@ -327,7 +348,7 @@ def _parse_request(case: Path, request: Any, catalogue: Mapping[str, Any]) -> tu
     ref = request.get("method")
     entry = runnable(catalogue).get(ref) if isinstance(ref, str) else None
     if entry is None:
-        raise MethodRefused(f"{ref!r} is not a method in the pinned Anomaly catalogue")
+        raise MethodRefused(f"{ref!r} is not a method in the installed Anomaly catalogue")
     pinned = {"id": entry["id"], "version": entry["version"], "implementation_hash": entry["implementation_hash"]}
     if is_core(entry):
         if set(request) != {"method", "table", "fields"}:
@@ -366,6 +387,13 @@ def run_method(case: Path, request: Any, home: Path | None = None) -> dict[str, 
     entry, tables, runner_request = _parse_request(case, request, catalogue)
     if not is_core(entry) and entry.get("data_type") not in domains:
         raise MethodRefused(f"{method_ref(entry)} reads {entry.get('data_type')} data, which the approved methodology does not name")
+    recorded = _approved_hashes(case)
+    approved = recorded.get(method_ref(entry))
+    if approved != entry.get("implementation_hash"):
+        if not recorded:
+            raise MethodRefused("Anomaly was not available when the methodology was approved; re-approve")
+        raise MethodRefused(f"{method_ref(entry)}: detector changed since approval; re-approve" if approved
+                            else f"{method_ref(entry)} was not in the Anomaly catalogue when the methodology was approved; re-approve")
     data = {name: path.read_bytes() for name, path in tables.items()}
     hashes = {name: _sha256(content) for name, content in data.items()}
     named = "*" not in tables
@@ -415,6 +443,8 @@ def run_method(case: Path, request: Any, home: Path | None = None) -> dict[str, 
         "tables": {name: {"path": str(request.get("table") if name == "*" else request["tables"][name]), "sha256": hashes[name]}
                    for name in tables},
         "map": runner_request.get("fields") or runner_request.get("columns") or {},
+        "catalogue_hash": catalogue["catalogue_hash"],
+        "implementation_hash": entry.get("implementation_hash"),
         "assumptions": list(entry.get("assumptions") or []),
         "false_positives": list(entry.get("false_positives") or []),
         "signals": signals,
