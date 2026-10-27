@@ -1051,8 +1051,12 @@ test('in sensitive mode the investigator\'s and fact-checker\'s tasks carry the 
 		const requests = join(space.root, 'bsig-requests.jsonl');
 		await writeFile(bsig, `#!${process.execPath}
 require('node:fs').appendFileSync(${JSON.stringify(requests)}, JSON.stringify(process.argv.slice(2)) + '\\n');
-const hits = [{ path: 'notes/fixture-company.md', type: 'note', title: 'Fixture company', snippet: 'Fixture Ltd is owned by A. Holder since 2019.', score: 1 }];
-console.log(JSON.stringify({ event: 'result', message: 'wiki search', data: { tool: 'search', result: { hits } } }));
+if (process.argv[4] === 'read') {
+	console.log(JSON.stringify({ event: 'result', message: 'wiki read', data: { tool: 'read', result: { path: 'notes/fixture-company.md', hash: '', content: '# Fixture company\\n\\nFixture Ltd is owned by A. Holder since 2019, per the 2019 return.\\n' } } }));
+} else {
+	const hits = [{ path: 'notes/fixture-company.md', type: 'note', title: 'Fixture company', snippet: 'Fixture Ltd is owned by A. Holder since 2019.', score: 1 }];
+	console.log(JSON.stringify({ event: 'result', message: 'wiki search', data: { tool: 'search', result: { hits } } }));
+}
 `);
 		await chmod(bsig, 0o755);
 		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: config, SPOTLIGHT_BSIG: bsig, SPOTLIGHT_SENSITIVE: String(sensitive) });
@@ -1068,9 +1072,12 @@ console.log(JSON.stringify({ event: 'result', message: 'wiki search', data: { to
 				continue;
 			}
 			assert.match(task, /^Work the case\.\n\nWIKI PASSAGES\. Sensitive mode:/, role);
-			assert.match(task, /<<<BEGIN UNTRUSTED WIKI DATA>>>\n<<<NOTE 1 notes\/fixture-company\.md \(Fixture company\)\nFixture Ltd is owned by A\. Holder since 2019\.\nNOTE 1>>>\n<<<END UNTRUSTED WIKI DATA>>>$/, role);
+			assert.match(task, /<<<BEGIN UNTRUSTED WIKI DATA>>>\n<<<NOTE 1 notes\/fixture-company\.md \(Fixture company\)\ncase file: research\/wiki\/notes-fixture-company\.md\nFixture Ltd is owned by A\. Holder since 2019\.\nNOTE 1>>>\n<<<END UNTRUSTED WIKI DATA>>>$/, role);
 		}
+		const saved = join(space.casesRoot, 'case-a', 'research', 'wiki', 'notes-fixture-company.md');
+		if (!sensitive) assert.ok(!existsSync(saved), 'nothing is saved outside sensitive mode');
 		if (sensitive) {
+			assert.equal(await readFile(saved, 'utf8'), 'Wiki note: notes/fixture-company.md\n\n# Fixture company\n\nFixture Ltd is owned by A. Holder since 2019, per the 2019 return.\n');
 			const searched = (await readFile(requests, 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as string[]).filter((argv) => argv.includes('search'));
 			assert.equal(JSON.parse(searched[0].at(-1)!).query, 'Who owns the fixture company?', 'the wiki is searched with the approved brief');
 		}
