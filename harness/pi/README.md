@@ -211,7 +211,7 @@ Every `execute-shell` step in `agents/` and in the skills these roles load, and 
 | phase-preflight | `scripts/spotlight-orchestration.py status` | `spotlight_resolve` |
 | phase-preflight, integrations | `integrations/preflight.py --json` | `integration_status` |
 | phase-methodology | `integrations/anomaly/adapter.py context` | `anomaly_methods` |
-| phase-investigation (investigator) | `integrations/anomaly/adapter.py run {CASE_DIR}` with a request on stdin | `anomaly_run` with the request's fields |
+| phase-investigation (investigator) | `integrations/anomaly/adapter.py run {CASE_DIR}` with a request on stdin | `anomaly_run` with the request's fields (the task names the tool, so the shared mapping line stays as it is) |
 | phase-preflight | Crawl4AI probe (`integrations.scraping https://example.com`) and SearXNG `curl` probe | not run by the orchestrator, which has no web tools; a worker's first `fetch` or `search` reports a broken backing |
 | phase-preflight, social-media-intelligence | `integrations.apify status` and `run`, `apify call` | not available |
 | phase-preflight | `test -f ~/.mycroft/monitoring/monitor.py` | not available (monitoring runs outside this harness) |
