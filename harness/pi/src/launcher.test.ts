@@ -420,6 +420,29 @@ test('a worker writes through its typed tools and the harness validates its outp
 	assert.match(delegated, /no_qualifying_findings/);
 });
 
+// 12B r3 A2 ia: every assistant message in the requests carried its earlier
+// reasoning_content, which the Gemma 4 template renders after the last user
+// message; the 12b was trained on renders without it.
+for (const [tier, kept] of [['12b', false], ['26b', true]] as const) {
+	test(`on the ${tier} an earlier turn's reasoning is ${kept ? 'sent back' : 'left out of the request'}`, async (t) => {
+		const fake = await startFakeOpenAI((request) =>
+			toolResults(request).length === 0
+				? { reasoning: 'Resolve the case first.', toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] }
+				: { text: 'Resolved.' },
+		);
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier });
+
+		await settledPrompt(chat, 'Open the case.');
+
+		const history = fake.requests[1].messages.filter((message) => message.role === 'assistant') as Array<Record<string, unknown>>;
+		assert.equal(history.length, 1);
+		assert.equal(history[0].reasoning_content, kept ? 'Resolve the case first.' : undefined);
+		assert.ok(Array.isArray(history[0].tool_calls), 'the tool call itself is kept');
+	});
+}
+
 // 12B r3 A2 cc seq 4 on ad768b54: the 12b ended a turn inside its reasoning with no text
 // and no tool call, and the run ended with nothing for the member.
 const NUDGE = 'Your last turn was empty. Call the next tool, or give your answer.';

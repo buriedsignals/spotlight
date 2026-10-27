@@ -16,7 +16,8 @@ export type ChatRequest = {
 
 export type ToolCall = { name: string; arguments: Record<string, unknown> };
 export type Usage = { total_tokens?: number; cost?: number };
-export type Reply = ({ text: string } | { toolCalls: ToolCall[] }) & { usage?: Usage } | { status: number } | 'hang';
+// `reasoning` streams first as `reasoning_content`, as llama-server sends a model's thinking.
+export type Reply = ({ text: string } | { toolCalls: ToolCall[] }) & { usage?: Usage; reasoning?: string } | { status: number } | 'hang';
 export type Responder = (request: ChatRequest, index: number) => Reply;
 
 export type FakeOpenAI = {
@@ -75,6 +76,7 @@ function answerJSON(response: ServerResponse, reply: Exclude<Reply, 'hang' | { s
 
 function answer(response: ServerResponse, reply: Exclude<Reply, 'hang' | { status: number }>) {
 	response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+	if (reply.reasoning) chunk(response, { role: 'assistant', reasoning_content: reply.reasoning }, null);
 	if ('text' in reply) {
 		chunk(response, { role: 'assistant', content: reply.text }, null);
 		chunk(response, {}, 'stop');

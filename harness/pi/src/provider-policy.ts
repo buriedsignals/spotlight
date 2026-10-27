@@ -45,3 +45,22 @@ export function applyFixedRequestBody(payload: unknown, fixed: JSONRecord | unde
 	if (!isRecord(payload)) return { payload: { ...fixed }, blocked: true };
 	return { payload: mergeRequestBody(payload, fixed), blocked: false };
 }
+
+// Pi replays each earlier assistant turn's thinking in the field it streamed
+// from (`reasoning_content` on llama-server), and the Gemma 4 template renders
+// it for every assistant message after the last user message, so a worker's
+// tool chain would show the model all its earlier thoughts. The 12b was trained
+// on renders without them, so on the 12b every assistant message in the
+// request goes without them; the model still thinks on the current turn.
+const HISTORY_REASONING_FIELDS = ['reasoning_content', 'reasoning', 'reasoning_text'];
+
+export function withoutHistoryReasoning(payload: unknown): unknown {
+	if (!isRecord(payload) || !Array.isArray(payload.messages)) return payload;
+	const messages = payload.messages.map((message) => {
+		if (!isRecord(message) || message.role !== 'assistant') return message;
+		const kept = { ...message };
+		for (const field of HISTORY_REASONING_FIELDS) delete kept[field];
+		return kept;
+	});
+	return { ...payload, messages };
+}
