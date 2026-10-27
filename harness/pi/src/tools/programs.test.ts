@@ -50,8 +50,11 @@ async function fixture(t: TestContext, env: Record<string, string> = {}) {
 		env: { PATH: `${bin}${delimiter}${dirname(process.execPath)}`, HOME: root, ...env },
 	};
 	const tools = new Map(typedTools(context).map((tool) => [tool.name, tool]));
-	const call = (name: string, params: Record<string, unknown>) =>
-		(tools.get(name) as ToolDefinition).execute('call', params, undefined, undefined, undefined as never);
+	// As Pi's agent loop: a tool's prepareArguments, then execute.
+	const call = (name: string, params: Record<string, unknown>) => {
+		const tool = tools.get(name) as ToolDefinition;
+		return tool.execute('call', tool.prepareArguments ? tool.prepareArguments(params) : params, undefined, undefined, undefined as never);
+	};
 	const recorded = async () =>
 		(await readFile(join(bin, 'argv.jsonl'), 'utf8').catch(() => ''))
 			.split('\n')
@@ -230,6 +233,9 @@ test('source_expressions refuses a case that is not activated or an anchor the r
 	assert.deepEqual(await recorded(), []);
 	// Without an anchor the writer searches only the evidence files this role may read.
 	const noAnchor = { expressions: [{ id: 'p1', text: 'swarm text', original_evidence_bundle_id: 'E9' }] };
+	// 12B r3 ia on f43df365: the proposal sent as a JSON string of the object, refused three times.
+	await call('source_expressions', { action: 'write', cycle: 1, proposal: JSON.stringify(noAnchor) });
+	await assert.rejects(call('source_expressions', { action: 'write', cycle: 1, proposal: '{"expressions": [' }), /outside the schema/);
 	await call('source_expressions', { action: 'write', cycle: 1, proposal: noAnchor });
 	const args = (await recorded()).at(-1)!.args;
 	assert.ok(args.includes('--readable=') && args.includes('--readable=research/page.md'), String(args));

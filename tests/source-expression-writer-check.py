@@ -539,6 +539,39 @@ def main() -> int:
         before_gate = subprocess.run([sys.executable, str(SCRIPTS / "validate-case.py"), str(migrated)], capture_output=True, text=True)
         require(before_gate.returncode == 0, "positions on a migrated case before its gate failed: " + before_gate.stdout[-800:] + before_gate.stderr[-800:])
 
+    # 12B r3 arm A on f43df365: true passages refused for a missing item hash
+    # (unexplained), unfingerprinted findings, a line break sent as the two
+    # characters \\n, and bundle items under another key (unexplained).
+    with tempfile.TemporaryDirectory() as tmp:
+        case = make_case(Path(tmp))
+        findings_path, bundle_path = case / "data" / "findings.json", case / "data" / "evidence-bundle.json"
+        findings = json.loads(findings_path.read_text(encoding="utf-8"))
+        for finding in findings["findings"]:
+            finding.pop("finding_fingerprint", None)
+        findings_path.write_text(json.dumps(findings), encoding="utf-8")
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        item = next(item for item in bundle["items"] if item["id"] == "E2")
+        digest = item.pop("sha256")
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        body = proposal(2, relation="supports")
+        del body["expressions"][0]["anchor_ref"]
+        body["expressions"][0]["text"] = PASSAGES[2] + "\\n" + PASSAGES[3]
+        unhashed = run_writer(case, body, actor="fact-checker")
+        require(unhashed.returncode != 0 and f"research/passages.txt hashes to {digest} now" in unhashed.stderr, unhashed.stderr)
+        item["sha256"] = digest
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        written = run_writer(case, body, actor="fact-checker")
+        require(written.returncode == 0, written.stderr)
+        stored = next(e for e in expressions(case)["expressions"] if e["id"] == "SXW2")
+        require(stored["text"] == PASSAGES[2] + "\n" + PASSAGES[3] and stored["anchor_ref"]["line_start"] == 3 and stored["anchor_ref"]["line_end"] == 4,
+                f"an escaped line break was not located as one: {stored}")
+        require(all(len(f.get("finding_fingerprint", "")) == 64 for f in json.loads(findings_path.read_text(encoding="utf-8"))["findings"]),
+                "the write did not fingerprint the findings")
+        bundle["evidence_bundle"] = bundle.pop("items")
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        itemless = run_writer(case, proposal(5))
+        require(itemless.returncode != 0 and 'data/evidence-bundle.json has no "items" list' in itemless.stderr, itemless.stderr)
+
     print("source-expression writer and case contract: PASS")
     return 0
 

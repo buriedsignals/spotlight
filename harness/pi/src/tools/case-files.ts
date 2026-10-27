@@ -101,8 +101,10 @@ function refuseNonObjectData(caseDir: string, target: string, content: string): 
 	} catch {
 		value = undefined;
 	}
-	if (value !== null && typeof value === 'object' && !Array.isArray(value)) return;
-	const shape = path === 'data/evidence-bundle.json' ? ' with an `items` list' : '';
+	const bundle = path === 'data/evidence-bundle.json';
+	// The bundle's items under another key read as no items at all (12B r3 cc: "evidence_bundle").
+	if (value !== null && typeof value === 'object' && !Array.isArray(value) && (!bundle || Array.isArray((value as { items?: unknown }).items))) return;
+	const shape = bundle ? ' with an `items` list' : '';
 	throw new FileRefused(`refused: ${path} must stay one JSON object${shape}; the file is unchanged. Read it, change the part you need, and write the whole object back.`);
 }
 
@@ -192,20 +194,24 @@ type Passage = { id?: unknown; expression_fingerprint?: unknown; lifecycle_event
 // for active passages that support the finding; nothing is added for the writer.
 // In an activated 1.1 case a verified claim needs a passage even when none is
 // on record yet (12B r2 cc: the fact-checker verified F1 and F2 before any
-// passage existed).
+// passage existed). A cited ref counts only when it names an active passage
+// supporting the finding, with the fingerprints on record (12B r3 ia: refs to
+// a passage never recorded went through). An activated case's fact-check is
+// 1.1 (12B r3 ia: "schema_validation": "1.1" passed as a legacy file).
 function refuseUncitedVerdicts(caseDir: string, target: string, content: string): void {
 	if (caseRelative(caseDir, target) !== 'data/fact-check.json') return;
-	let claims: unknown;
-	let activated: boolean;
+	let factCheck: { schema_version?: unknown; claims?: unknown };
 	try {
-		const factCheck = JSON.parse(content) as { schema_version?: unknown; claims?: unknown };
-		claims = factCheck.claims;
-		const positive = factCheck.schema_version === '1.1' ? ['verified'] : ['verified', 'partially_verified'];
-		claims = Array.isArray(claims) ? claims.filter((claim) => positive.includes(claim?.verdict)) : [];
-		activated = factCheck.schema_version === '1.1' && lstatOrUndefined(join(caseDir, 'data', 'case-contract.json')) !== undefined;
+		factCheck = JSON.parse(content);
 	} catch {
 		return;
 	}
+	const activated = lstatOrUndefined(join(caseDir, 'data', 'case-contract.json')) !== undefined;
+	if (activated && factCheck?.schema_version !== '1.1') {
+		throw new FileRefused('refused: data/fact-check.json in an activated case needs "schema_version": "1.1"; the file is unchanged.');
+	}
+	const positive = factCheck?.schema_version === '1.1' ? ['verified'] : ['verified', 'partially_verified'];
+	const claims = Array.isArray(factCheck?.claims) ? factCheck.claims.filter((claim) => positive.includes(claim?.verdict)) : [];
 	let passages: Passage[] = [];
 	try {
 		passages = (JSON.parse(readFileSync(join(caseDir, 'data', 'source-expressions.json'), 'utf8')) as { expressions?: Passage[] }).expressions ?? [];
@@ -216,15 +222,25 @@ function refuseUncitedVerdicts(caseDir: string, target: string, content: string)
 	const unsupported: string[] = [];
 	for (const claim of claims as { finding_id?: unknown; evidence_for?: unknown }[]) {
 		const items = Array.isArray(claim.evidence_for) ? claim.evidence_for : [];
-		if (items.some((item) => Array.isArray(item?.source_expression_refs) && item.source_expression_refs.length > 0)) continue;
 		const refs = passages.flatMap((passage) => {
 			if (passage?.lifecycle_events?.at(-1)?.event !== 'activated') return [];
 			const link = passage.finding_links?.find((l) => l?.finding_id === claim.finding_id && l?.relation === 'supports');
 			return link ? [{ expression_id: passage.id, expression_fingerprint: passage.expression_fingerprint, finding_fingerprint: link.finding_fingerprint, link_fingerprint: link.link_fingerprint }] : [];
 		});
+		// A bare id or an id-only object is resolved to the full ref after the
+		// fact-checker returns (--resolve-fact-check-refs); any fingerprint given must match.
+		const onRecord = (cited: unknown) => refs.some((ref) => {
+			if (typeof cited === 'string') return cited === ref.expression_id;
+			if (typeof cited !== 'object' || cited === null) return false;
+			const given = cited as Record<string, unknown>;
+			return given.expression_id === ref.expression_id && Object.entries(ref).every(([key, value]) => !(key in given) || given[key] === value);
+		});
+		if (items.some((item) => Array.isArray(item?.source_expression_refs) && item.source_expression_refs.some(onRecord))) continue;
 		const misspelt = items.some((item) => item?.source_expression_ref !== undefined) ? ' (the key is source_expression_refs, a list, not source_expression_ref)' : '';
-		if (refs.length > 0) missing.push(`${String(claim.finding_id)}${misspelt}: ${JSON.stringify(refs)}`);
-		else if (activated) unsupported.push(`\nno passage on record supports ${String(claim.finding_id)}; record the passage you checked with source_expressions, then cite its ref here, or change the verdict. If no source you acquired contains a passage that supports the finding, do not record one: set the verdict to unverified (or use missing_source_gate for a source that was requested and not returned).`);
+		const cited = items.flatMap((item) => (Array.isArray(item?.source_expression_refs) ? item.source_expression_refs : []));
+		const offRecord = cited.length > 0 ? ` (${JSON.stringify(cited)} is not an active passage supporting it)` : '';
+		if (refs.length > 0) missing.push(`${String(claim.finding_id)}${misspelt}${offRecord}: ${JSON.stringify(refs)}`);
+		else if (activated) unsupported.push(`\nno passage on record supports ${String(claim.finding_id)}${offRecord}; record the passage you checked with source_expressions, then cite its ref here, or change the verdict. If no source you acquired contains a passage that supports the finding, do not record one: set the verdict to unverified (or use missing_source_gate for a source that was requested and not returned).`);
 	}
 	if (missing.length === 0 && unsupported.length === 0) return;
 	const cite = missing.length > 0 ? ` In "source_expression_refs": [<ref>, ...] cite only the passages you checked against their source; if none of them supports the verdict, change the verdict. Refs on record for active passages supporting the finding:\n${missing.join('\n')}` : '';
