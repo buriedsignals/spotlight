@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { closeSync, constants, globSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, writeSync } from 'node:fs';
 import type { Stats } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT } from '../roles.ts';
@@ -284,6 +285,54 @@ function refuseLeadsEvidence(caseDir: string, target: string, content: string): 
 	throw new FileRefused(`refused: data/evidence-bundle.json records fetch's distilled leads as evidence for ${leads.join(', ')}; the file is unchanged. Record the page as fetched instead: raw_path "<that file>.raw" with the raw_sha256 the fetch returned for it.`);
 }
 
+// A bundle write keeps what others rely on (12B r3 ia: the fact-checker
+// rewrote investigator item E1 to another file, and every passage already
+// anchored to it failed validation from then on). A fact-checker changes only
+// its own items, as phase-investigation tells it; no role moves the files of an
+// item that active passages cite.
+const ITEM_FILES = ['raw_path', 'path', 'downloaded_document_path', 'text_derivatives'];
+
+function refuseBundleRewrites(caseDir: string, target: string, content: string, role: string | undefined): void {
+	if (caseRelative(caseDir, target) !== 'data/evidence-bundle.json') return;
+	type Item = Record<string, unknown>;
+	const itemsOf = (text: string): Map<unknown, Item> | undefined => {
+		try {
+			const items = (JSON.parse(text) as { items?: unknown }).items;
+			return Array.isArray(items) ? new Map(items.filter((item) => item && typeof item === 'object').map((item: Item) => [item.id, item])) : undefined;
+		} catch {
+			return undefined;
+		}
+	};
+	let before: Map<unknown, Item> | undefined;
+	try {
+		before = itemsOf(readFileSync(target, 'utf8'));
+	} catch {
+		return;
+	}
+	const after = itemsOf(content);
+	if (!before || !after) return;
+	if (role === 'fact-checker') {
+		const changed = [...before].filter(([id, item]) => item.created_by !== 'fact-checker' && !isDeepStrictEqual(item, after.get(id))).map(([id]) => String(id));
+		if (changed.length > 0) {
+			throw new FileRefused(`refused: data/evidence-bundle.json changes or removes ${changed.join(', ')}, which you did not create; the file is unchanged. In data/evidence-bundle.json correct only items with created_by fact-checker; never edit an investigator item. Append your own item with "created_by": "fact-checker" instead.`);
+		}
+	}
+	let passages: { id?: unknown; original_evidence_bundle_id?: unknown; lifecycle_events?: { event?: unknown }[] }[] = [];
+	try {
+		passages = JSON.parse(readFileSync(join(caseDir, 'data', 'source-expressions.json'), 'utf8')).expressions ?? [];
+	} catch {
+		return;
+	}
+	const moved = [...before].flatMap(([id, item]) => {
+		const cited = passages.filter((p) => p?.original_evidence_bundle_id === id && p?.lifecycle_events?.at(-1)?.event === 'activated').map((p) => String(p.id));
+		const next = after.get(id);
+		if (cited.length === 0 || (next && ITEM_FILES.every((key) => isDeepStrictEqual(item[key], next[key])))) return [];
+		return [`${String(id)} (cited by ${cited.join(', ')})`];
+	});
+	if (moved.length === 0) return;
+	throw new FileRefused(`refused: data/evidence-bundle.json changes or removes the files of ${moved.join('; ')}; the file is unchanged. Recorded passages anchor to those files, so keep them as they are, and record any other file as a new item.`);
+}
+
 // A fact-check claim checks the finding it names, word for word (gold osmf
 // s1: the fact-checker rewrote a finding into an invented address and marked
 // it false). Compared as validate-case.py does: Unicode NFKC, whitespace runs
@@ -456,8 +505,9 @@ function* caseFiles(caseDir: string, start: string): Generator<string> {
 	}
 }
 
-export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot' | 'scope'>): ToolDefinition[] {
+export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot' | 'scope'> & Partial<Pick<ToolContext, 'env'>>): ToolDefinition[] {
 	const { caseDir, writeRoot } = context;
+	const role = context.env?.SPOTLIGHT_ROLE;
 	const scope = context.scope;
 	const reads = scope?.reads;
 	const writes = scope?.writes;
@@ -511,6 +561,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseNonObjectData(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseUncitedVerdicts(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseLeadsEvidence(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
+				refuseBundleRewrites(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, role);
 				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, input.content, writes, denyWrites)}`);
 			},
@@ -545,6 +596,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseNonObjectData(caseDir, target, updated);
 				refuseUncitedVerdicts(caseDir, target, updated);
 				refuseLeadsEvidence(caseDir, target, updated);
+				refuseBundleRewrites(caseDir, target, updated, role);
 				refuseDriftedClaims(caseDir, target, updated);
 				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes, denyWrites)}`);
 			},
