@@ -77,7 +77,14 @@ export async function requestEditorial(op: string, args: Record<string, unknown>
 	}
 }
 
+// phase-investigation step 4.5 re-spawns the fact-checker once per cycle for
+// evidence correction, then records the attempt. r1 12B looped those re-spawns
+// instead. A plain fact-checker spawn (step 3) starts the next cycle.
+const EVIDENCE_CORRECTION = /MODE:\s*EVIDENCE CORRECTION/;
+export const CORRECTION_SPENT = 'The fact-checker already had its one evidence correction this cycle. Record the failure with spotlight_transition recordAttempt (kind fact-check-evidence-repair, gap: the validator reason), then call spotlight_resolve.';
+
 export function spawnAgentTool(workers: string[]): ToolDefinition {
+	let corrections = 0;
 	return {
 		name: 'spawn_agent',
 		label: 'Spawn agent',
@@ -89,6 +96,11 @@ export function spawnAgentTool(workers: string[]): ToolDefinition {
 		async execute(_id, params, signal) {
 			const { agent, task } = params as { agent: string; task: string };
 			if (!workers.includes(agent)) throw new Error(`spawn_agent: unknown worker "${agent}"`);
+			if (agent === 'fact-checker') {
+				if (!EVIDENCE_CORRECTION.test(task)) corrections = 0;
+				else if (corrections > 0) throw new Error(CORRECTION_SPENT);
+				else corrections += 1;
+			}
 			if (typeof process.send !== 'function') {
 				throw new Error('spawn_agent needs the Spotlight launcher; this process was started without it');
 			}

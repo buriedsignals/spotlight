@@ -481,6 +481,31 @@ test('a worker\'s empty final answer gets the nudge before its answer reaches th
 	assert.doesNotMatch(delegated, /\(no output\)/);
 });
 
+// r1 12B: the orchestrator re-spawned the fact-checker for evidence correction
+// again and again instead of recording the attempt after the one the skill allows.
+test('a second evidence-correction fact-checker spawn in one cycle is refused, and a new cycle allows one again', async (t) => {
+	const tasks = ['MODE: EVIDENCE CORRECTION\nreason 1', 'MODE: EVIDENCE CORRECTION\nreason 2', 'Fact-check all claims.', 'MODE: EVIDENCE CORRECTION\nreason 3'];
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
+		const done = toolResults(request).length;
+		return done < tasks.length ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: tasks[done] } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier' });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker'));
+	const results = toolResults(orchestrator[orchestrator.length - 1]);
+	assert.equal(results.length, 4);
+	assert.match(results[1], /The fact-checker already had its one evidence correction this cycle\. Record the failure with spotlight_transition recordAttempt \(kind fact-check-evidence-repair, gap: the validator reason\), then call spotlight_resolve\./);
+	for (const index of [0, 2, 3]) assert.match(results[index], /Checked\./);
+	const spawned = new Set(fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker')).map((request) => JSON.stringify(request.messages.find((message) => message.role === 'user')?.content)));
+	assert.equal(spawned.size, 3, 'the refused correction never started a worker');
+});
+
 // 12B r3 A2 nordhaven on ad768b54: investigator-7 repeated one search through six
 // loop-guard refusals in a row until the case was stopped.
 test('on the 12b a worker refused three times in a row for one repeated call is stopped, and the orchestrator gets that as its answer', async (t) => {
