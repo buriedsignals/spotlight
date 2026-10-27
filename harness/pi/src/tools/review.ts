@@ -14,8 +14,8 @@ import { resolveCase } from './spotlight.ts';
 import type { ActiveCase, AdapterRunner } from './spotlight.ts';
 
 type Opener = (request: { caseDir: string }) => Promise<{ status: string }>;
-// Why the page must not open yet: the failing validator's name and output.
-type GateCheck = () => Promise<{ file: string; validator: string; output: string } | undefined>;
+// Why the page must not open yet, or undefined when it may.
+type GateCheck = () => Promise<string | undefined>;
 
 // The files the member decides on at each gate, and the validator for them. The
 // review page refuses an invalid file only when the member submits, which the
@@ -30,12 +30,27 @@ const GATE_CHECKS: Record<string, (context: ToolContext) => { file: string; args
 	report: (context) => (existsSync(join(context.caseDir, 'data/report-draft.json')) ? [{ file: 'data/report-draft.json', args: ['validate-report-draft.py', context.caseDir] }] : []),
 };
 
+// With nothing left to write, the resolver's `missing` at the Investigation
+// gate is only the approval itself.
+const GATE_APPROVAL = 'Investigation gate approval';
+
 export function gateCheck(active: ActiveCase, runAdapter: AdapterRunner, context: ToolContext): GateCheck {
 	return async () => {
-		const checks = GATE_CHECKS[String((await resolveCase(active, runAdapter)).phase ?? '')]?.(context) ?? [];
+		const resolved = await resolveCase(active, runAdapter);
+		const phase = String(resolved.phase ?? '');
+		// r3/r4 12B (A2 northwind): the page opened before the summaries were
+		// written, and the gate refused the member's approval with a 422.
+		const unwritten = phase === 'investigation_gate_approval' && Array.isArray(resolved.missing) ? resolved.missing.filter((item) => item !== GATE_APPROVAL) : [];
+		if (unwritten.length > 0) {
+			return `the Investigation gate still needs: ${unwritten.join(', ')}. Write summary.md and data/summary.json as phase-investigation-gate "Generate summary" says, then call spotlight_resolve and open_review again.`;
+		}
+		const checks = GATE_CHECKS[phase]?.(context) ?? [];
 		for (const { file, args } of checks) {
 			const result = await runPython(context, [join(CHECKOUT_ROOT, 'scripts', args[0]), ...args.slice(1)], { keys: [RESEARCH_SWITCH], timeoutMs: 300_000 });
-			if (result.code !== 0) return { file, validator: args[0], output: `${result.stdout}\n${result.stderr}`.trim() };
+			if (result.code !== 0) {
+				const output = `${result.stdout}\n${result.stderr}`.trim();
+				return `${file} does not pass ${args[0]}. Fix it and call open_review again; nothing is rendered or recorded until the member decides on the page.\n${output.slice(-6000)}`;
+			}
 		}
 		return undefined;
 	};
@@ -51,9 +66,7 @@ export function openReviewTool(caseDir: string, casesRoot: string, opener?: Open
 		parameters: Type.Object({}),
 		async execute() {
 			const failed = await check?.();
-			if (failed) {
-				throw new Error(`The review page was not opened: ${failed.file} does not pass ${failed.validator}. Fix it and call open_review again; nothing is rendered or recorded until the member decides on the page.\n${failed.output.slice(-6000)}`);
-			}
+			if (failed) throw new Error(`The review page was not opened: ${failed}`);
 			const result = await open({ caseDir });
 			return { content: [{ type: 'text', text: describeOpenResult(result) }], details: undefined };
 		},
