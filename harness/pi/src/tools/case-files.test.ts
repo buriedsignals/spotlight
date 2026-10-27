@@ -267,6 +267,9 @@ test('a case data file written or edited into anything but one JSON object is re
 
 	await assert.rejects(call('write_file', { path: 'data/evidence-bundle.json', content: '[{"id": "E1"}]' }), /data\/evidence-bundle\.json must stay one JSON object with an `items` list; the file is unchanged/);
 	await assert.rejects(call('edit_file', { path: 'data/evidence-bundle.json', old_text: '"id": "E1"}]}', new_text: '"id": "E1"}]' }), /must stay one JSON object/);
+	// 12B r3 cc on f43df365: the bundle's items under another key went through.
+	await assert.rejects(call('write_file', { path: 'data/evidence-bundle.json', content: '{"evidence_bundle": [{"id": "E1"}]}' }), /must stay one JSON object with an `items` list/);
+	await assert.rejects(call('edit_file', { path: 'data/evidence-bundle.json', old_text: '"items"', new_text: '"evidence_bundle"' }), /must stay one JSON object with an `items` list/);
 	assert.equal(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8'), bundle);
 
 	await call('write_file', { path: 'data/evidence-bundle.json', content: '{"items": []}' });
@@ -311,6 +314,13 @@ test('a verified claim citing no passage is refused, naming the refs on record, 
 		(error: Error) => error.message.includes('has no source_expression_refs; the file is unchanged') && error.message.includes(`F1 (the key is source_expression_refs, a list, not source_expression_ref): ${JSON.stringify([ref])}`));
 	assert.equal(existsSync(join(caseDir, 'data', 'fact-check.json')), false);
 
+	// 12B r3 ia on f43df365: a ref naming a passage never recorded went through.
+	for (const cited of ['SE-F1-TAX', 'P9', { ...ref, link_fingerprint: '0'.repeat(64) }]) {
+		await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: claim({ source_expression_refs: [cited] }) }),
+			(error: Error) => error.message.includes(`F1 (${JSON.stringify([cited])} is not an active passage supporting it): ${JSON.stringify([ref])}`));
+	}
+	assert.equal(existsSync(join(caseDir, 'data', 'fact-check.json')), false);
+	for (const cited of ['P2', { expression_id: 'P2' }]) await call('write_file', { path: 'data/fact-check.json', content: claim({ source_expression_refs: [cited] }) });
 	await call('write_file', { path: 'data/fact-check.json', content: claim({ source_expression_refs: [ref] }) });
 	await assert.rejects(call('edit_file', { path: 'data/fact-check.json', old_text: '"source_expression_refs"', new_text: '"source_expression_ref"' }), /has no source_expression_refs/);
 	await call('write_file', { path: 'data/fact-check.json', content: claim({}, 'unverified') });
@@ -318,7 +328,9 @@ test('a verified claim citing no passage is refused, naming the refs on record, 
 
 // 12B r2 cc on ef4e6ab0: with no passage recorded yet, the fact-checker verified F1 and F2
 // citing nothing, the write went through, and the validator blocked the case afterwards.
-test('in an activated case a verified claim is refused while no passage is on record; a 1.0 fact-check is not', async (t) => {
+// 12B r3 ia on f43df365: a fact-check written with "schema_validation": "1.1" was taken for a
+// legacy file and its verified claim went through.
+test('in an activated case a verified claim is refused while no passage is on record, and a fact-check that is not 1.1 is refused', async (t) => {
 	const { caseDir, call } = await fixture(t);
 	const claim = (verdict: string, schema_version = '1.1') => JSON.stringify({ schema_version, claims: [{ finding_id: 'F1', verdict, evidence_for: [{}] }] });
 	const none = 'no passage on record supports F1; record the passage you checked with source_expressions, then cite its ref here, or change the verdict. If no source you acquired contains a passage that supports the finding, do not record one: set the verdict to unverified (or use missing_source_gate for a source that was requested and not returned).';
@@ -331,7 +343,10 @@ test('in an activated case a verified claim is refused while no passage is on re
 	}
 	await call('write_file', { path: 'data/fact-check.json', content: claim('unverified') });
 	await assert.rejects(call('edit_file', { path: 'data/fact-check.json', old_text: '"unverified"', new_text: '"verified"' }), /no passage on record supports F1/);
-	await call('write_file', { path: 'data/fact-check.json', content: claim('verified', '1.0') });
+	for (const content of [claim('verified', '1.0'), claim('verified').replace('schema_version', 'schema_validation')]) {
+		await assert.rejects(call('write_file', { path: 'data/fact-check.json', content }),
+			(error: Error) => error.message === 'refused: data/fact-check.json in an activated case needs "schema_version": "1.1"; the file is unchanged.');
+	}
 });
 
 // gold osmf s1 on a2ab7e20: the investigator wrote 1.0 findings in the methodology phase, the

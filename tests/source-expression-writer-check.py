@@ -221,7 +221,7 @@ def main() -> int:
         # Text found more than once is refused with the candidate ranges, never chosen.
         before = target.read_bytes()
         refused = relaxed("SXR-AMBIGUOUS", 5, text="Passage number", anchor_ref=None)
-        require(refused.returncode == 2 and "occurs 8 times" in refused.stderr and "research/passages.txt lines 1-1" in refused.stderr
+        require(refused.returncode == 2 and "appears in 8 places" in refused.stderr and "quote a longer span that is unique" in refused.stderr and "research/passages.txt lines 1-1" in refused.stderr
                 and target.read_bytes() == before, "an ambiguous passage was anchored")
 
         # 12B r1 quotes that were the source's words but not exact, or cited the
@@ -538,6 +538,49 @@ def main() -> int:
                            "attribution_verbatim": passage["text"], "created_by": "investigator", "cycle": 1}]}), encoding="utf-8")
         before_gate = subprocess.run([sys.executable, str(SCRIPTS / "validate-case.py"), str(migrated)], capture_output=True, text=True)
         require(before_gate.returncode == 0, "positions on a migrated case before its gate failed: " + before_gate.stdout[-800:] + before_gate.stderr[-800:])
+
+    # 12B r3 arm A on f43df365: true passages refused for a missing item hash
+    # (unexplained), unfingerprinted findings, a line break sent as the two
+    # characters \\n, and bundle items under another key (unexplained).
+    with tempfile.TemporaryDirectory() as tmp:
+        case = make_case(Path(tmp))
+        findings_path, bundle_path = case / "data" / "findings.json", case / "data" / "evidence-bundle.json"
+        findings = json.loads(findings_path.read_text(encoding="utf-8"))
+        for finding in findings["findings"]:
+            finding.pop("finding_fingerprint", None)
+        findings_path.write_text(json.dumps(findings), encoding="utf-8")
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        item = next(item for item in bundle["items"] if item["id"] == "E2")
+        digest = item.pop("sha256")
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        body = proposal(2, relation="supports")
+        del body["expressions"][0]["anchor_ref"]
+        body["expressions"][0]["text"] = PASSAGES[2] + "\\n" + PASSAGES[3]
+        written = run_writer(case, body, actor="fact-checker")
+        require(written.returncode == 0, written.stderr)
+        pinned = next(i for i in json.loads(bundle_path.read_text(encoding="utf-8"))["items"] if i["id"] == "E2")
+        require(pinned.get("sha256") == digest and pinned.get("sha256_source") == "computed_at_passage_write",
+                f"a hashless item whose own file holds the passage was not pinned and marked: {pinned}")
+        item.update(sha256=digest, sha256_source="computed_at_passage_write")
+        stored = next(e for e in expressions(case)["expressions"] if e["id"] == "SXW2")
+        require(stored["text"] == PASSAGES[2] + "\n" + PASSAGES[3] and stored["anchor_ref"]["line_start"] == 3 and stored["anchor_ref"]["line_end"] == 4,
+                f"an escaped line break was not located as one: {stored}")
+        require(all(len(f.get("finding_fingerprint", "")) == 64 for f in json.loads(findings_path.read_text(encoding="utf-8"))["findings"]),
+                "the write did not fingerprint the findings")
+        # The same whole line repeated in one file is anchored at its first occurrence.
+        repeated = case / "research" / "repeated.txt"
+        repeated.write_text("EIN: 04-3585301\nMission\nEIN: 04-3585301\n", encoding="utf-8")
+        bundle["items"].append({**item, "id": "E3", "raw_path": "research/repeated.txt", "sha256": hashlib.sha256(repeated.read_bytes()).hexdigest()})
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        twice = {"expressions": [{"id": "SXW9", "text": "EIN: 04-3585301", "original_evidence_bundle_id": "E3", "language": "en",
+                                  "finding_links": [{"finding_id": "F1", "relation": "supports"}]}]}
+        once = run_writer(case, twice, actor="fact-checker")
+        anchored = next((e for e in expressions(case)["expressions"] if e["id"] == "SXW9"), {}).get("anchor_ref", {})
+        require(once.returncode == 0 and anchored.get("line_start") == 1 and anchored.get("line_end") == 1, once.stderr)
+        bundle["evidence_bundle"] = bundle.pop("items")
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        itemless = run_writer(case, proposal(5))
+        require(itemless.returncode != 0 and 'data/evidence-bundle.json has no "items" list' in itemless.stderr, itemless.stderr)
 
     print("source-expression writer and case contract: PASS")
     return 0

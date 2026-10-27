@@ -9,6 +9,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { Type } from 'typebox';
+import type { Static } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { engineEnv } from '../case-search.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
@@ -334,6 +335,19 @@ function sourceExpressionsTool(context: ToolContext): ToolDefinition {
 		description:
 			'The only way to record passages and source positions in an activated case. {action: "write", cycle: N, proposal: {expressions, lifecycle, positions, withdraw_positions}}. For each passage give id, text (the exact quote as the file has it), anchor_ref {path} (the evidence item\'s file: its original artifact or a text_derivatives path; for a distilled fetch its .raw file, never the leads file), original_evidence_bundle_id (an item already in data/evidence-bundle.json), language (BCP 47) and finding_links. The writer finds the lines and computes every hash and fingerprint. If no source you acquired contains a passage that supports the finding, do not record one: set the verdict to unverified. Example: {"id": "P1", "text": "<exact quote>", "anchor_ref": {"path": "research/page.md.raw"}, "original_evidence_bundle_id": "E1", "language": "en", "finding_links": [{"finding_id": "F1", "relation": "supports"}]}. {action: "fingerprint_findings"} sets every finding_fingerprint from its claim; run it after writing or merging findings. A refusal changes nothing and says why.',
 		parameters: params,
+		// A small model sends the proposal as a JSON string of the object (12B r3
+		// ia, three times); decoded here, so the declared schema stays as it is.
+		prepareArguments: (args) => {
+			const proposal = (args as { proposal?: unknown })?.proposal;
+			if (typeof proposal !== 'string') return args as Static<typeof params>;
+			try {
+				const decoded = JSON.parse(proposal);
+				if (decoded !== null && typeof decoded === 'object' && !Array.isArray(decoded)) return { ...(args as object), proposal: decoded } as Static<typeof params>;
+			} catch {
+				// Not JSON: left for the schema to refuse.
+			}
+			return args as Static<typeof params>;
+		},
 		executionMode: 'sequential',
 		async execute(_id, raw, signal) {
 			const input = checkedParams<{ action: string; cycle?: number; proposal?: Record<string, unknown> }>('source_expressions', params, raw);

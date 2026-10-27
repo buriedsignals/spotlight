@@ -119,13 +119,26 @@ def _sha256_case_file(case: Path, relative: str) -> str:
     return hashlib.sha256(target.read_bytes()).hexdigest()
 
 
-def _bundle_hash(bundle: dict[str, Any], bundle_id: str) -> str:
+# Marks a bundle hash the writer took itself, not one recorded at acquisition.
+HASH_AT_PASSAGE = "computed_at_passage_write"
+
+
+def _bundle_hash(case: Path, bundle: dict[str, Any], bundle_id: str, anchor_path: str, notes: list[str]) -> str:
     for item in bundle.get("items", []) if isinstance(bundle, dict) else []:
         if isinstance(item, dict) and item.get("id") == bundle_id:
             digest = item.get("sha256")
             if isinstance(digest, str) and len(digest) == 64:
                 return digest
-            raise WriteError(f"evidence bundle item {bundle_id!r} has no sha256 for its original artifact")
+            # An item with no hash whose own research/ file holds the passage is
+            # pinned now, to the bytes the passage was just checked against, and
+            # marked so (12B r3: both cases that reached passages stopped here).
+            if anchor_path.startswith("research/") and anchor_path in (item.get(key) for key in BUNDLE_FILES):
+                item["sha256"] = _sha256_case_file(case, anchor_path)
+                item["sha256_source"] = HASH_AT_PASSAGE
+                notes.append(f"evidence item {bundle_id}: sha256 of {anchor_path} recorded now ({HASH_AT_PASSAGE})")
+                return item["sha256"]
+            raise WriteError(f"evidence bundle item {bundle_id!r} has no sha256 for its original artifact, and the passage "
+                             "is not in that item's own file under research/; record the item's sha256 in data/evidence-bundle.json")
     raise WriteError(f"evidence bundle item {bundle_id!r} does not exist")
 
 
@@ -183,10 +196,13 @@ def _matches(case: Path, text: str, paths: list[str]) -> list[tuple[str, int, in
     the first rule that finds it anywhere."""
     files = [(relative, (case / relative).resolve()) for relative in paths]
     files = [(relative, target) for relative, target in files if case.resolve() in target.parents and target.is_file()]
-    for rule, _transform in MATCH_RULES:
-        found = [(relative, start, end) for relative, target in files for start, end in _occurrences(source_lines(target), text, rule)]
-        if found:
-            return found
+    # A line break written as the two characters \n (12B r3 cc) is a line
+    # break, tried only after the text as sent; what is stored is the file's lines.
+    for needle in [text] + ([text.replace("\\n", "\n")] if "\\n" in text else []):
+        for rule, _transform in MATCH_RULES:
+            found = [(relative, start, end) for relative, target in files for start, end in _occurrences(source_lines(target), needle, rule)]
+            if found:
+                return found
     return []
 
 
@@ -274,9 +290,18 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
             searched = ", ".join(named) or "no file named"
             raise WriteError(f"expression {label}: the text is not in {searched} nor in any other file of data/evidence-bundle.json, "
                              f"so it is not from a source you acquired. {ESCAPE}")
+        # The same whole line repeated in one file is one passage: a reader
+        # checking the first sees exactly the quoted text (12B r3 cc: an EIN
+        # on sixteen identical lines).
+        if len(found) > 1 and len({path for path, _start, _end in found}) == 1:
+            lines = source_lines((case / found[0][0]).resolve())
+            if len({"\n".join(lines[start - 1:end]) for _path, start, end in found}) == 1:
+                notes.append(f"expression {label}: the text is on {len(found)} identical lines of {found[0][0]}; anchored the first")
+                found = found[:1]
         if len(found) > 1:
             ranges = ", ".join(f"{path} lines {start}-{end}" for path, start, end in found[:8])
-            raise WriteError(f"expression {label}: the text occurs {len(found)} times ({ranges}); give anchor_ref with the path, line_start and line_end you mean")
+            raise WriteError(f"expression {label}: the text appears in {len(found)} places ({ranges}); quote a longer span that is unique, "
+                             "or give anchor_ref with the path, line_start and line_end you mean")
         path, start, end = found[0]
         anchor = {"path": path, "line_start": start, "line_end": end}
         stored = "\n".join(source_lines((case / path).resolve())[start - 1:end])
@@ -291,7 +316,7 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
     expression = {"id": proposal["id"]}
     expression.update({key: copy.deepcopy(proposal[key]) for key in PROPOSED_CORE if key in proposal})
     expression["anchor_sha256"] = _sha256_case_file(case, anchor["path"])
-    expression["original_artifact_sha256"] = _bundle_hash(bundle, str(proposal.get("original_evidence_bundle_id")))
+    expression["original_artifact_sha256"] = _bundle_hash(case, bundle, str(proposal.get("original_evidence_bundle_id")), anchor["path"], notes)
     expression["expression_fingerprint"] = canonical_fingerprint(passage_core(expression))
     if "supersedes_expression_id" in proposal:
         expression["supersedes_expression_id"] = proposal["supersedes_expression_id"]
@@ -315,11 +340,14 @@ LIFECYCLE_EXAMPLE = ('{"expression_id": "P1", "event": "superseded", '
 
 
 def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], actor: str, cycle: int,
-          notes: list[str] | None = None, readable: set[str] | None = None) -> dict[str, Any]:
-    """Return the merged document; raise WriteError and change nothing on any problem."""
+          notes: list[str] | None = None, readable: set[str] | None = None,
+          bundle: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return the merged document; raise WriteError and change nothing on any
+    problem. A bundle item hash the writer records is set on `bundle`."""
     findings_doc = _load(case / "data" / "findings.json", {})
     findings = {f.get("id"): f for f in findings_doc.get("findings", []) if isinstance(f, dict)}
-    bundle = _load(case / "data" / "evidence-bundle.json", {})
+    if bundle is None:
+        bundle = _load(case / "data" / "evidence-bundle.json", {})
     doc = copy.deepcopy(current) if current else {
         "schema_version": "1.0",
         "project": findings_doc.get("project"),
@@ -327,6 +355,11 @@ def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], 
         "expressions": [],
     }
     by_id = {e.get("id"): e for e in doc.get("expressions", []) if isinstance(e, dict)}
+    # A passage names its evidence item, so a bundle with no items list leaves
+    # nothing to cite (12B r3 cc: its items were under "evidence_bundle").
+    if proposal.get("expressions") and not (isinstance(bundle, dict) and isinstance(bundle.get("items"), list)):
+        raise WriteError('data/evidence-bundle.json has no "items" list, so no passage can name its evidence item; '
+                         'the bundle must keep its items under "items" before a passage is recorded')
     for raw in proposal.get("expressions", []):
         if not isinstance(raw, dict) or not isinstance(raw.get("id"), str) or not raw["id"]:
             raise WriteError("every proposed expression needs a non-empty id")
@@ -434,9 +467,13 @@ def write(case: Path, proposal: dict[str, Any], actor: str, cycle: int, notes: l
         raise WriteError(f"--actor must be one of {', '.join(ACTORS)}")
     with transaction(case) as descriptor:
         current = _load(case / TARGET)
-        doc = merge(case, current, proposal, actor, cycle, notes, readable)
         findings = _load(case / "data" / "findings.json", {})
-        bundle = _load(case / "data" / "evidence-bundle.json")
+        # Findings not yet fingerprinted are, first: the validator refuses a
+        # link to an unfingerprinted finding (12B r3 ia: eight refusals).
+        refingerprinted, _relinked = _refingerprint(findings, current)
+        bundle = _load(case / "data" / "evidence-bundle.json", {})
+        bundle_before = json.dumps(bundle, sort_keys=True)
+        doc = merge(case, current, proposal, actor, cycle, notes, readable, bundle)
         # The passages are checked, not the fact-check citing them: when a
         # claim changes between cycles, the previous fact-check's refs go
         # stale and the next fact-check replaces them, so they must not block
@@ -446,6 +483,10 @@ def write(case: Path, proposal: dict[str, Any], actor: str, cycle: int, notes: l
         if errors:
             raise WriteError("the merged passages are not valid: " + "; ".join(errors[:8]))
         outputs = {TARGET: canonical_json_bytes(doc) + b"\n"}
+        if refingerprinted:
+            outputs["data/findings.json"] = _findings_bytes(findings)
+        if json.dumps(bundle, sort_keys=True) != bundle_before:
+            outputs["data/evidence-bundle.json"] = (json.dumps(bundle, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
         current_positions = _load(case / POSITIONS)
         positions = merge_positions(current_positions, proposal, doc.get("project"), actor, cycle)
         # Positions are re-checked on every write, so a passage change that
@@ -457,7 +498,7 @@ def write(case: Path, proposal: dict[str, Any], actor: str, cycle: int, notes: l
                                  + " (re-propose the position with the successor passage, or withdraw it)")
             if positions is not current_positions:
                 outputs[POSITIONS] = canonical_json_bytes(positions) + b"\n"
-        # Both files publish together or not at all.
+        # The files publish together or not at all.
         atomic_write_files(case, outputs, data_descriptor=descriptor)
     return doc
 
@@ -522,6 +563,35 @@ def resolve_fact_check_refs(case: Path) -> int:
     return resolved
 
 
+def _refingerprint(findings_doc: Any, expressions: Any) -> tuple[int, bool]:
+    """Set every finding's finding_fingerprint from its claim and rebuild every
+    passage link whose finding fingerprint no longer matches, in place; return
+    how many findings changed and whether any link did."""
+    changed = 0
+    current: dict[str, dict[str, Any]] = {}
+    for finding in findings_doc.get("findings", []) if isinstance(findings_doc, dict) else []:
+        if not isinstance(finding, dict):
+            continue
+        fp = canonical_fingerprint({"claim": finding.get("claim")})
+        current[str(finding.get("id"))] = finding
+        if finding.get("finding_fingerprint") != fp:
+            finding["finding_fingerprint"] = fp
+            changed += 1
+    relinked = False
+    for expression in expressions.get("expressions", []) if isinstance(expressions, dict) else []:
+        links = expression.get("finding_links", []) if isinstance(expression, dict) else []
+        for index, link in enumerate(links):
+            finding = current.get(link.get("finding_id")) if isinstance(link, dict) else None
+            if finding is not None and link.get("finding_fingerprint") != finding["finding_fingerprint"]:
+                links[index] = _link(expression, finding, link["finding_id"], link["relation"])
+                relinked = True
+    return changed, relinked
+
+
+def _findings_bytes(findings_doc: dict[str, Any]) -> bytes:
+    return (json.dumps(findings_doc, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+
+
 def fingerprint_findings(case: Path) -> int:
     """Set every finding's finding_fingerprint from its claim, and refresh the
     passage links of any finding whose claim changed, in one locked write."""
@@ -529,38 +599,17 @@ def fingerprint_findings(case: Path) -> int:
         findings_doc = _load(case / "data" / "findings.json")
         if not isinstance(findings_doc, dict) or not isinstance(findings_doc.get("findings"), list):
             raise WriteError("data/findings.json has no findings to fingerprint")
-        changed: dict[str, dict[str, Any]] = {}
-        current: dict[str, dict[str, Any]] = {}
-        for finding in findings_doc["findings"]:
-            if not isinstance(finding, dict):
-                continue
-            fp = canonical_fingerprint({"claim": finding.get("claim")})
-            current[str(finding.get("id"))] = finding
-            if finding.get("finding_fingerprint") != fp:
-                finding["finding_fingerprint"] = fp
-                changed[str(finding.get("id"))] = finding
-        # Rewrite findings.json only when a fingerprint changed, so an idle
-        # run never moves the file's hash.
+        expressions = _load(case / TARGET)
+        changed, relinked = _refingerprint(findings_doc, expressions)
+        # Rewrite a file only when it changed, so an idle run never moves its hash.
         outputs = {}
         if changed:
-            outputs["data/findings.json"] = (json.dumps(findings_doc, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
-        expressions = _load(case / TARGET)
-        relinked = False
-        if isinstance(expressions, dict):
-            # Any link whose finding fingerprint no longer matches the claim
-            # is rebuilt, whether or not the stored fingerprint just changed.
-            for expression in expressions.get("expressions", []):
-                links = expression.get("finding_links", []) if isinstance(expression, dict) else []
-                for index, link in enumerate(links):
-                    finding = current.get(link.get("finding_id")) if isinstance(link, dict) else None
-                    if finding is not None and link.get("finding_fingerprint") != finding["finding_fingerprint"]:
-                        links[index] = _link(expression, finding, link["finding_id"], link["relation"])
-                        relinked = True
-            if relinked:
-                outputs[TARGET] = canonical_json_bytes(expressions) + b"\n"
+            outputs["data/findings.json"] = _findings_bytes(findings_doc)
+        if relinked:
+            outputs[TARGET] = canonical_json_bytes(expressions) + b"\n"
         if outputs:
             atomic_write_files(case, outputs, data_descriptor=descriptor)
-    return len(changed)
+    return changed
 
 
 def main(argv: list[str] | None = None) -> int:
