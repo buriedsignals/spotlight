@@ -420,6 +420,44 @@ test('a worker writes through its typed tools and the harness validates its outp
 	assert.match(delegated, /no_qualifying_findings/);
 });
 
+// 12B r3 A2 cc seq 4 on ad768b54: the 12b ended a turn inside its reasoning with no text
+// and no tool call, and the run ended with nothing for the member.
+const NUDGE = 'Your last turn was empty. Call the next tool, or give your answer.';
+const nudges = (request: ChatRequest) => request.messages.filter((message) => message.role === 'user' && JSON.stringify(message.content ?? '').includes(NUDGE)).length;
+
+test('on the 12b an empty turn gets one nudge per prompt, and a second empty turn still ends the run', async (t) => {
+	let answer = '';
+	const fake = await startFakeOpenAI((request) => ({ text: JSON.stringify(request.messages.at(-1)?.content ?? '').includes(NUDGE) ? answer : '' }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Open the case.');
+	assert.deepEqual(fake.requests.map(nudges), [0, 1], 'one nudge, and the empty answer to it ends the run');
+	answer = 'Here is where the case stands.';
+	await settledPrompt(chat, 'Go on.');
+	assert.deepEqual(fake.requests.map(nudges), [0, 1, 1, 2], 'the next prompt gets its own nudge');
+	assert.equal(fake.requests.length, 4);
+});
+
+test('a worker\'s empty final answer gets the nudge before its answer reaches the orchestrator', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { text: nudges(request) > 0 ? 'Investigator finished.' : '' };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+	const delegated = toolResults(orchestrator[orchestrator.length - 1]).join('\n');
+	assert.match(delegated, /Investigator finished\./);
+	assert.doesNotMatch(delegated, /\(no output\)/);
+});
+
 // D5: a new case is activated by the harness, not by a model writing the
 // receipt. The contract must exist before the investigator's first turn, and
 // no role can write it.

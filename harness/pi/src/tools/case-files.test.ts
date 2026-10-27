@@ -13,14 +13,14 @@ import { approve } from '../test-support/hosted-skill.ts';
 import { caseFileTools } from './case-files.ts';
 import type { CaseScope } from './run.ts';
 
-async function fixture(t: TestContext, scope?: CaseScope) {
+async function fixture(t: TestContext, scope?: CaseScope, role?: string) {
 	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-files-')));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const caseDir = join(root, 'case');
 	const outside = join(root, 'outside');
 	await mkdir(join(caseDir, 'data'), { recursive: true });
 	await mkdir(outside);
-	const tools = new Map(caseFileTools({ caseDir, writeRoot: caseDir, scope }).map((tool) => [tool.name, tool]));
+	const tools = new Map(caseFileTools({ caseDir, writeRoot: caseDir, scope, env: role ? { SPOTLIGHT_ROLE: role } : {} }).map((tool) => [tool.name, tool]));
 	const call = async (name: string, params: Record<string, unknown>) => {
 		const tool = tools.get(name) as ToolDefinition;
 		const result = await tool.execute('call', params, undefined, undefined, undefined as never);
@@ -324,6 +324,40 @@ test('a verified claim citing no passage is refused, naming the refs on record, 
 	await call('write_file', { path: 'data/fact-check.json', content: claim({ source_expression_refs: [ref] }) });
 	await assert.rejects(call('edit_file', { path: 'data/fact-check.json', old_text: '"source_expression_refs"', new_text: '"source_expression_ref"' }), /has no source_expression_refs/);
 	await call('write_file', { path: 'data/fact-check.json', content: claim({}, 'unverified') });
+});
+
+// 12B r3 ia on ad768b54: the fact-checker rewrote investigator item E1 to another file,
+// and every passage already anchored to E1 failed validation from then on.
+test('a fact-checker changes only its own bundle items, and no role moves the files of an item passages cite', async (t) => {
+	const investigatorItem = { id: 'E1', raw_path: 'research/a.md.raw', sha256: 'a'.repeat(64) };
+	const ownItem = { id: 'E2', raw_path: 'research/b.md.raw', created_by: 'fact-checker' };
+	const bundle = (...items: object[]) => JSON.stringify({ items }, null, 2);
+	for (const role of ['fact-checker', 'investigator']) {
+		const { caseDir, call } = await fixture(t, undefined, role);
+		await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), bundle(investigatorItem, ownItem));
+		// A rewrite that keeps every item as it was, and an appended item, are fine.
+		await call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [investigatorItem, ownItem, { id: 'E3', raw_path: 'research/c.md.raw', created_by: 'fact-checker' }] }) });
+		await call('write_file', { path: 'data/evidence-bundle.json', content: bundle(investigatorItem, { ...ownItem, raw_path: 'research/d.md.raw' }) });
+		const kept = { ...ownItem, raw_path: 'research/d.md.raw' };
+		const moved = bundle({ ...investigatorItem, raw_path: 'research/z.md.raw' }, kept);
+		if (role === 'fact-checker') {
+			await assert.rejects(call('write_file', { path: 'data/evidence-bundle.json', content: moved }),
+				(error: Error) => error.message.startsWith('refused: data/evidence-bundle.json changes or removes E1, which you did not create') && error.message.includes('never edit an investigator item'));
+			await assert.rejects(call('write_file', { path: 'data/evidence-bundle.json', content: bundle(kept) }), /changes or removes E1, which you did not create/);
+		} else {
+			await call('write_file', { path: 'data/evidence-bundle.json', content: moved });
+			await call('write_file', { path: 'data/evidence-bundle.json', content: bundle(investigatorItem, kept) });
+		}
+		await writeFile(join(caseDir, 'data', 'source-expressions.json'), JSON.stringify({ expressions: [
+			{ id: 'P1', original_evidence_bundle_id: 'E2', lifecycle_events: [{ event: 'activated' }] },
+			{ id: 'P2', original_evidence_bundle_id: 'E2', lifecycle_events: [{ event: 'activated' }, { event: 'withdrawn' }] },
+		] }));
+		const current = await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8');
+		await assert.rejects(call('edit_file', { path: 'data/evidence-bundle.json', old_text: 'research/d.md.raw', new_text: 'research/e.md.raw' }),
+			(error: Error) => error.message.startsWith('refused: data/evidence-bundle.json changes or removes the files of E2 (cited by P1); the file is unchanged.'));
+		assert.equal(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8'), current);
+		await call('edit_file', { path: 'data/evidence-bundle.json', old_text: '"created_by": "fact-checker"', new_text: '"created_by": "fact-checker", "extraction_confidence": "high"' });
+	}
 });
 
 // 12B r2 cc on ef4e6ab0: with no passage recorded yet, the fact-checker verified F1 and F2
