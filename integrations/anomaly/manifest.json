@@ -10,9 +10,9 @@
     "ANOMALY_HOME"
   ],
   "catalogue_pin": {
-    "release": "a9c9269f386d7a655e8aea4ef5b6a40ab821cc68",
+    "release": "94219f6b2c1c137bf97b60ede25b5c9e5307f59d",
     "schema_version": 1,
-    "catalogue_hash": "sha256:0dabc7adf9d7f2d2b14aefe7bf09731c704f56dd2c2bfe72ae4736790c3043aa"
+    "catalogue_hash": "sha256:e9afbbaea43716a6207f9f5a91c3875c76eb43ca147a6fa72b3d19d92de29a56"
   },
   "capabilities": [
     "anomaly-context",
