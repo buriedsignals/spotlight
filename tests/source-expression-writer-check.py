@@ -556,12 +556,12 @@ def main() -> int:
         body = proposal(2, relation="supports")
         del body["expressions"][0]["anchor_ref"]
         body["expressions"][0]["text"] = PASSAGES[2] + "\\n" + PASSAGES[3]
-        unhashed = run_writer(case, body, actor="fact-checker")
-        require(unhashed.returncode != 0 and f"research/passages.txt hashes to {digest} now" in unhashed.stderr, unhashed.stderr)
-        item["sha256"] = digest
-        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
         written = run_writer(case, body, actor="fact-checker")
         require(written.returncode == 0, written.stderr)
+        pinned = next(i for i in json.loads(bundle_path.read_text(encoding="utf-8"))["items"] if i["id"] == "E2")
+        require(pinned.get("sha256") == digest and pinned.get("sha256_source") == "computed_at_passage_write",
+                f"a hashless item whose own file holds the passage was not pinned and marked: {pinned}")
+        item.update(sha256=digest, sha256_source="computed_at_passage_write")
         stored = next(e for e in expressions(case)["expressions"] if e["id"] == "SXW2")
         require(stored["text"] == PASSAGES[2] + "\n" + PASSAGES[3] and stored["anchor_ref"]["line_start"] == 3 and stored["anchor_ref"]["line_end"] == 4,
                 f"an escaped line break was not located as one: {stored}")

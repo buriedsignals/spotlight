@@ -119,22 +119,26 @@ def _sha256_case_file(case: Path, relative: str) -> str:
     return hashlib.sha256(target.read_bytes()).hexdigest()
 
 
-def _bundle_hash(case: Path, bundle: dict[str, Any], bundle_id: str) -> str:
+# Marks a bundle hash the writer took itself, not one recorded at acquisition.
+HASH_AT_PASSAGE = "computed_at_passage_write"
+
+
+def _bundle_hash(case: Path, bundle: dict[str, Any], bundle_id: str, anchor_path: str, notes: list[str]) -> str:
     for item in bundle.get("items", []) if isinstance(bundle, dict) else []:
         if isinstance(item, dict) and item.get("id") == bundle_id:
             digest = item.get("sha256")
             if isinstance(digest, str) and len(digest) == 64:
                 return digest
-            # The hash records the artifact as acquired, so the writer never
-            # fills it in; it names the fix (12B r3 ia: refused twice, unexplained).
-            original = next((path for path in (item.get(key) for key in BUNDLE_FILES)
-                             if isinstance(path, str) and (case / path).resolve().is_file()
-                             and case.resolve() in (case / path).resolve().parents), None)
-            digest = _sha256_case_file(case, original) if original else ""
-            fix = (f" {original} hashes to {digest} now. The investigator adds \"sha256\": \"{digest}\" to {bundle_id} in "
-                   f"data/evidence-bundle.json; a fact-checker instead appends its own item for {original} with that sha256 "
-                   "and created_by fact-checker, and cites that item" if original else "")
-            raise WriteError(f"evidence bundle item {bundle_id!r} has no sha256 for its original artifact.{fix}")
+            # An item with no hash whose own research/ file holds the passage is
+            # pinned now, to the bytes the passage was just checked against, and
+            # marked so (12B r3: both cases that reached passages stopped here).
+            if anchor_path.startswith("research/") and anchor_path in (item.get(key) for key in BUNDLE_FILES):
+                item["sha256"] = _sha256_case_file(case, anchor_path)
+                item["sha256_source"] = HASH_AT_PASSAGE
+                notes.append(f"evidence item {bundle_id}: sha256 of {anchor_path} recorded now ({HASH_AT_PASSAGE})")
+                return item["sha256"]
+            raise WriteError(f"evidence bundle item {bundle_id!r} has no sha256 for its original artifact, and the passage "
+                             "is not in that item's own file under research/; record the item's sha256 in data/evidence-bundle.json")
     raise WriteError(f"evidence bundle item {bundle_id!r} does not exist")
 
 
@@ -312,7 +316,7 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
     expression = {"id": proposal["id"]}
     expression.update({key: copy.deepcopy(proposal[key]) for key in PROPOSED_CORE if key in proposal})
     expression["anchor_sha256"] = _sha256_case_file(case, anchor["path"])
-    expression["original_artifact_sha256"] = _bundle_hash(case, bundle, str(proposal.get("original_evidence_bundle_id")))
+    expression["original_artifact_sha256"] = _bundle_hash(case, bundle, str(proposal.get("original_evidence_bundle_id")), anchor["path"], notes)
     expression["expression_fingerprint"] = canonical_fingerprint(passage_core(expression))
     if "supersedes_expression_id" in proposal:
         expression["supersedes_expression_id"] = proposal["supersedes_expression_id"]
@@ -336,11 +340,14 @@ LIFECYCLE_EXAMPLE = ('{"expression_id": "P1", "event": "superseded", '
 
 
 def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], actor: str, cycle: int,
-          notes: list[str] | None = None, readable: set[str] | None = None) -> dict[str, Any]:
-    """Return the merged document; raise WriteError and change nothing on any problem."""
+          notes: list[str] | None = None, readable: set[str] | None = None,
+          bundle: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return the merged document; raise WriteError and change nothing on any
+    problem. A bundle item hash the writer records is set on `bundle`."""
     findings_doc = _load(case / "data" / "findings.json", {})
     findings = {f.get("id"): f for f in findings_doc.get("findings", []) if isinstance(f, dict)}
-    bundle = _load(case / "data" / "evidence-bundle.json", {})
+    if bundle is None:
+        bundle = _load(case / "data" / "evidence-bundle.json", {})
     doc = copy.deepcopy(current) if current else {
         "schema_version": "1.0",
         "project": findings_doc.get("project"),
@@ -464,8 +471,9 @@ def write(case: Path, proposal: dict[str, Any], actor: str, cycle: int, notes: l
         # Findings not yet fingerprinted are, first: the validator refuses a
         # link to an unfingerprinted finding (12B r3 ia: eight refusals).
         refingerprinted, _relinked = _refingerprint(findings, current)
-        doc = merge(case, current, proposal, actor, cycle, notes, readable)
-        bundle = _load(case / "data" / "evidence-bundle.json")
+        bundle = _load(case / "data" / "evidence-bundle.json", {})
+        bundle_before = json.dumps(bundle, sort_keys=True)
+        doc = merge(case, current, proposal, actor, cycle, notes, readable, bundle)
         # The passages are checked, not the fact-check citing them: when a
         # claim changes between cycles, the previous fact-check's refs go
         # stale and the next fact-check replaces them, so they must not block
@@ -477,6 +485,8 @@ def write(case: Path, proposal: dict[str, Any], actor: str, cycle: int, notes: l
         outputs = {TARGET: canonical_json_bytes(doc) + b"\n"}
         if refingerprinted:
             outputs["data/findings.json"] = _findings_bytes(findings)
+        if json.dumps(bundle, sort_keys=True) != bundle_before:
+            outputs["data/evidence-bundle.json"] = (json.dumps(bundle, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
         current_positions = _load(case / POSITIONS)
         positions = merge_positions(current_positions, proposal, doc.get("project"), actor, cycle)
         # Positions are re-checked on every write, so a passage change that
@@ -488,7 +498,7 @@ def write(case: Path, proposal: dict[str, Any], actor: str, cycle: int, notes: l
                                  + " (re-propose the position with the successor passage, or withdraw it)")
             if positions is not current_positions:
                 outputs[POSITIONS] = canonical_json_bytes(positions) + b"\n"
-        # Both files publish together or not at all.
+        # The files publish together or not at all.
         atomic_write_files(case, outputs, data_descriptor=descriptor)
     return doc
 
