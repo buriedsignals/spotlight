@@ -40,7 +40,7 @@ import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, isolationRefusal,
 import type { Composition, WorkerContext } from './roles.ts';
 import { approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { WorkerQueue, runWorker } from './subagents.ts';
-import { withCasePassages } from './case-search.ts';
+import { withCasePassages, withWikiPassages } from './case-search.ts';
 import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
 import { bindActiveCase, pythonAdapter, runsResearchRound } from './tools/spotlight.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
@@ -372,14 +372,25 @@ async function workerContext(harness: Harness, role: string, task: string): Prom
 }
 
 // The task the worker gets: the requested one plus, for the fact-checker, the
-// case passages. D9 is checked again on that final text; passages that would
-// name what the fact-checker may not see are left out and the task goes as asked.
+// case passages, and in a sensitive solo case the wiki passages for the
+// investigator and the fact-checker. D9 is checked again on that final text;
+// passages that would name what the fact-checker may not see are left out and
+// the task goes as asked.
 async function finalTask(harness: Harness, role: string, task: string, signal: AbortSignal): Promise<string> {
-	const withPassages = await withCasePassages(role, task, {
+	const withCase = await withCasePassages(role, task, {
 		caseDir: harness.active.caseDir,
 		casesRoot: harness.active.casesRoot,
 		python: harness.config.python,
 		env: process.env,
+		log: harness.log,
+		signal,
+	});
+	const withPassages = await withWikiPassages(role, withCase, {
+		caseDir: harness.active.caseDir,
+		python: harness.config.python,
+		configPath: harness.config.spotlightConfig,
+		env: process.env,
+		sensitive: harness.config.sensitive && harness.config.edition !== 'newsroom',
 		log: harness.log,
 		signal,
 	});
