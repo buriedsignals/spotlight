@@ -22,7 +22,8 @@ test('after the investigator and the fact-checker the Indicator Framework file i
 	const caseDir = await mkdtemp(join(tmpdir(), 'spotlight-pi-validators-'));
 	t.after(() => rm(caseDir, { recursive: true, force: true }));
 	const context = { caseDir, writeRoot: caseDir, python: process.env.SPOTLIGHT_PYTHON ?? 'python3', configPath: join(caseDir, 'config.json'), env: process.env } as ToolContext;
-	assert.deepEqual((await validateAfterWorker('fact-checker', 'investigation', 'local-model', context)).ran, ['validate-case.py', 'validate-fact-check.py']);
+	// The locator repair runs after every fact-checker, passages or not (gold sens4).
+	assert.deepEqual((await validateAfterWorker('fact-checker', 'investigation', 'local-model', context)).ran, ['write-source-expressions.py --resolve-fact-check-refs', 'validate-case.py', 'validate-fact-check.py']);
 	await mkdir(join(caseDir, 'data'));
 	await writeFile(join(caseDir, 'data', 'indicator-framework.json'), JSON.stringify({ indicators: [{ id: 'ind-1', finding_ids: ['F9'] }] }));
 	for (const role of ['investigator', 'fact-checker']) {

@@ -67,7 +67,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from evidence_anchors import normalized, selected_source_texts, source_lines  # noqa: E402
+from evidence_anchors import case_evidence_path, locate_quote, normalized, selected_source_texts, source_lines, validate_source_ref  # noqa: E402
 from source_expression_contract import canonical_fingerprint, canonical_json_bytes, passage_core  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
@@ -525,17 +525,55 @@ def _ref(expression: dict[str, Any], link: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def resolve_fact_check_refs(case: Path) -> int:
-    """Replace each bare expression id (or id-only ref object) in
-    data/fact-check.json's source_expression_refs with the full ref for that claim's finding, exactly
-    what a write returns, in one locked write. The stored refs still pin the
-    fingerprints of that moment; an id with no link to the finding is left for
-    validate-case to report."""
+def repair_locators(case: Path, fact_check: dict[str, Any]) -> list[dict[str, Any]]:
+    """Correct, in place, the line range of each evidence item whose quote is
+    not in its cited lines but occurs exactly once in that same cited case
+    file (as written, or with each literal \\n read as a line break). A model
+    counts the lines of read_file text itself and miscounts (gold sens4 calder:
+    two lines short on a saved wiki note). The quote, the file, the verdict and
+    every ref stay as they are; the old range is kept in
+    locator_repaired_from, so a reviewer sees that code moved it."""
+    repairs = []
+    claims = fact_check.get("claims")
+    for claim in claims if isinstance(claims, list) else []:
+        if not isinstance(claim, dict):
+            continue
+        for field in ("evidence_for", "evidence_against"):
+            items = claim.get(field)
+            for index, item in enumerate(items if isinstance(items, list) else []):
+                ref = item.get("source_ref") if isinstance(item, dict) else None
+                if not isinstance(ref, dict) or "json_pointer" in ref or not isinstance(item.get("quote"), str):
+                    continue
+                path = case_evidence_path(case, ref.get("path"))
+                if path is None or not validate_source_ref(case, ref, item["quote"])[1]:
+                    continue
+                located = locate_quote(path, item["quote"])
+                if located is None:
+                    continue
+                old = [ref.get("line_start"), ref.get("line_end")]
+                ref["line_start"], ref["line_end"] = located
+                item["locator_repaired_from"] = old
+                repairs.append({"claim": claim.get("id", claim.get("claim_id")), "item": f"{field}[{index}]",
+                                "path": ref.get("path"), "from": old, "to": list(located)})
+    return repairs
+
+
+def resolve_fact_check_refs(case: Path) -> tuple[int, list[dict[str, Any]]]:
+    """In one locked write of data/fact-check.json: repair the evidence
+    locators (repair_locators), then replace each bare expression id (or
+    id-only ref object) in source_expression_refs with the full ref for that
+    claim's finding, exactly what a write returns. The stored refs still pin
+    the fingerprints of that moment; an id with no link to the finding is left
+    for validate-case to report. Returns the refs resolved and the repairs."""
+    if not (case / "data" / "fact-check.json").is_file():
+        return 0, []
     with transaction(case) as descriptor:
         fact_check = _load(case / "data" / "fact-check.json")
+        if not isinstance(fact_check, dict):
+            return 0, []
+        repairs = repair_locators(case, fact_check)
         expressions = _load(case / TARGET)
-        if not isinstance(fact_check, dict) or not isinstance(expressions, dict):
-            return 0
+        expressions = expressions if isinstance(expressions, dict) else {}
         by_id = {item.get("id"): item for item in expressions.get("expressions", []) if isinstance(item, dict)}
         resolved = 0
         claims = fact_check.get("claims")
@@ -557,10 +595,10 @@ def resolve_fact_check_refs(case: Path) -> int:
                         if link is not None:
                             refs[index] = _ref(expression, link)
                             resolved += 1
-        if resolved:
+        if resolved or repairs:
             atomic_write_files(case, {"data/fact-check.json": (json.dumps(fact_check, indent=2, ensure_ascii=False) + "\n").encode("utf-8")},
                                data_descriptor=descriptor)
-    return resolved
+    return resolved, repairs
 
 
 def _refingerprint(findings_doc: Any, expressions: Any) -> tuple[int, bool]:
@@ -623,15 +661,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fingerprint-findings", action="store_true",
                         help="set finding_fingerprint on every finding (run after writing findings.json)")
     parser.add_argument("--resolve-fact-check-refs", action="store_true",
-                        help="replace bare expression ids in fact-check.json refs with full refs (the harness runs it after the fact-checker)")
+                        help="repair evidence line ranges and replace bare expression ids in fact-check.json refs with full refs (the harness runs it after the fact-checker)")
     args = parser.parse_args(argv)
     if args.resolve_fact_check_refs:
         try:
-            count = resolve_fact_check_refs(Path(args.case_dir))
+            count, repairs = resolve_fact_check_refs(Path(args.case_dir))
         except (WriteError, OrchestrationError, OSError) as exc:
             print(f"source-expressions: refused: {exc}", file=sys.stderr)
             return 2
-        print(json.dumps({"ok": True, "refs_resolved": count}))
+        for repair in repairs:
+            print(f"locator repaired by code: claim {repair['claim']} {repair['item']} in {repair['path']}: "
+                  f"lines {repair['from'][0]}-{repair['from'][1]} -> {repair['to'][0]}-{repair['to'][1]} (the quote occurs once, there)")
+        print(json.dumps({"ok": True, "refs_resolved": count, "locators_repaired": len(repairs)}))
         return 0
     if args.fingerprint_findings:
         try:
