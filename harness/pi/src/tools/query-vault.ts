@@ -3,6 +3,7 @@
 // config and the active case. Nothing here reaches the web.
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { engineEnv } from '../case-search.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { checkedParams, programOutput, runPython, textResult } from './run.ts';
 import type { ToolContext } from './run.ts';
@@ -40,7 +41,7 @@ export function queryVaultTool(context: ToolContext): ToolDefinition {
 			if (input.proposition !== undefined) args.push(`--proposition=${input.proposition}`);
 			args.push('--');
 			if (input.query !== undefined) args.push(input.query);
-			return textResult(programOutput('query_vault', await runPython(context, args, { signal })));
+			return textResult(programOutput('query_vault', await runPython(context, args, { keys: engineEnv(context.env), signal })));
 		},
 	};
 }

@@ -29,6 +29,7 @@ import { readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { engineEnv } from '../case-search.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { LEAD_MARKER, writeConfined } from './case-files.ts';
 import { anonymizedFetch, assertPublicDestination, checkURL, publicDestination } from './egress.ts';
@@ -131,8 +132,9 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 				output = programOutput(
 					'fetch',
 					await runPython(context, ['-m', 'integrations.scraping', '--json', ...(viaTor ? ['--tor'] : []), '--', destination], {
-						keys: SEAM_ENV,
-						extra: proxy ? { SPOTLIGHT_BROWSER_PROXY: proxy.url } : {},
+						// Engine's bsig checks the URL for protected sources in the install's wiki.
+						keys: [...SEAM_ENV, ...engineEnv(context.env)],
+						extra: { SPOTLIGHT_CONFIG: context.configPath, ...(proxy ? { SPOTLIGHT_BROWSER_PROXY: proxy.url } : {}) },
 						signal,
 						timeoutMs: 180_000,
 					}),

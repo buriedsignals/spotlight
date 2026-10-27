@@ -87,7 +87,7 @@ function decisionSignalsTool(context: ToolContext): ToolDefinition {
 			const args = [script('scripts/decision-signals.py'), context.caseDir, '--phase', input.phase, '--config', context.configPath];
 			if (input.check) args.push('--check');
 			if (input.case_opt_in) args.push('--case-opt-in');
-			const result = await runPython(context, args, { keys: ['OPENROUTER_API_KEY', 'SPOTLIGHT_SENSITIVE'], signal, timeoutMs: 600_000 });
+			const result = await runPython(context, args, { keys: ['OPENROUTER_API_KEY', 'SPOTLIGHT_SENSITIVE', ...engineEnv(context.env)], signal, timeoutMs: 600_000 });
 			return textResult(programOutput('decision_signals', result));
 		},
 	};

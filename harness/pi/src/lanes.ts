@@ -28,6 +28,7 @@ import { extname, relative, resolve, sep } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import type { HarnessConfig, SwarmRoute } from './config.ts';
+import { engineEnv } from './case-search.ts';
 import { applyFixedRequestBody } from './provider-policy.ts';
 import { LANES_DIRECTORY } from './resume.ts';
 import { CHECKOUT_ROOT } from './roles.ts';
@@ -1125,7 +1126,8 @@ async function runMerge(options: RoundOptions, round: number): Promise<MergeOutc
 // backend comes from the install config. Without a decision model that
 // answers it writes nothing, and the resolver holds the round at triage.
 async function runTriage(options: RoundOptions): Promise<TriageOutcome> {
-	const env = programEnv(options.env);
+	// Engine's bsig masks protected sources in what the decision model is sent.
+	const env = programEnv(options.env, engineEnv(options.env));
 	if (options.config.spotlightConfig) env.SPOTLIGHT_CONFIG = options.config.spotlightConfig;
 	const result = await runFixed(options.config.python, [resolve(CHECKOUT_ROOT, 'scripts/research-triage.py'), options.caseDir], {
 		env,
