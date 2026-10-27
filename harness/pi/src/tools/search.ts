@@ -5,6 +5,7 @@
 // until the model fetches one, which goes through fetch's guard.
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { engineEnv } from '../case-search.ts';
 import { writeConfined } from './case-files.ts';
 import { checkedParams, jsonResult, programOutput, runPython, savePath, saveTarget } from './run.ts';
 import type { ToolContext } from './run.ts';
@@ -39,8 +40,9 @@ export function searchTool(context: ToolContext): ToolDefinition {
 			const output = programOutput(
 				'search',
 				await runPython(context, args, {
-					keys: ['FIRECRAWL_API_KEY'],
-					extra: searchURL ? { SEARXNG_URL: searchURL } : {},
+					// Engine's bsig checks the query for protected sources in the install's wiki.
+					keys: ['FIRECRAWL_API_KEY', ...engineEnv(context.env)],
+					extra: { SPOTLIGHT_CONFIG: context.configPath, ...(searchURL ? { SEARXNG_URL: searchURL } : {}) },
 					signal,
 				}),
 			);
