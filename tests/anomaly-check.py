@@ -47,13 +47,13 @@ DETECTORS = [
      "description": "Finds numeric outliers.", "expected_output": ["candidate_id"], "assumptions": ["numeric amounts"],
      "false_positives": ["legitimate large payments"], "parameters": {}},
     {"id": "lobbying.foreign_filings", "version": "1.2.0", "implementation_hash": "sha256:" + "b" * 64,
-     "required_tables": ["lobbying_filings", "legislators"], "required_fields": [], "data_type": "lobbying",
+     "required_tables": ["lobbying_registrations", "lobbying_foreign_entities"], "required_fields": [], "data_type": "lobbying",
      "signal_category": "anomaly", "severity": "low", "title": "Foreign filings", "description": "Two tables.",
      "expected_output": ["candidate_id"], "assumptions": ["filings are complete"], "false_positives": ["late filings"],
      "parameters": {}},
 ]
 CONTEXT = {
-    "domains": [{"domain": "lobbying", "contract": {"lobbying_filings": ["id", "amount"], "legislators": ["id"]},
+    "domains": [{"domain": "lobbying", "contract": {"lobbying_registrations": ["id", "amount"], "lobbying_foreign_entities": ["id"]},
                  "sources": [{"id": "us/senate-lda", "title": "Senate LDA", "status": "queryable", "auth": "none",
                               "cost": ["free"], "license": "public domain"}],
                  "detectors": [DETECTORS[1]]},
@@ -183,7 +183,7 @@ class Catalogue(AnomalyTestCase):
     def test_anything_but_the_pinned_catalogue_hides_the_feature(self) -> None:
         self.assertTrue(adapter.state()["available"])
         tampered = catalogue()
-        tampered["detectors"][0]["required_tables"] = ["lobbying_filings"]  # content changed, pinned hash kept
+        tampered["detectors"][0]["required_tables"] = ["lobbying_registrations"]  # content changed, pinned hash kept
         tampered["catalogue_hash"] = self.anomaly.pin["catalogue_hash"]
         cases = {"no install": None, "another release": catalogue(DETECTORS[:1]),
                  "content changed under the pinned hash": tampered}
@@ -269,12 +269,12 @@ class Run(AnomalyTestCase):
 
     def test_a_domain_detector_takes_one_file_per_contract_table(self) -> None:
         self.opt_in("lobbying")
-        (self.case / "research" / "legislators.csv").write_text("id,x\n9,5000\n")
-        out = self.run_cli({"method": FILINGS, "tables": {"lobbying_filings": "research/payments.csv",
-                                                           "legislators": "research/legislators.csv"}})
+        (self.case / "research" / "foreign-entities.csv").write_text("id,x\n9,5000\n")
+        out = self.run_cli({"method": FILINGS, "tables": {"lobbying_registrations": "research/payments.csv",
+                                                           "lobbying_foreign_entities": "research/foreign-entities.csv"}})
         self.assertEqual(out.returncode, 0, out.stderr)
         [call] = self.anomaly.calls("anomaly.oneshot")
-        self.assertEqual(sorted(arg.split("=")[0] for arg in call["args"] if "=" in arg), ["legislators", "lobbying_filings"])
+        self.assertEqual(sorted(arg.split("=")[0] for arg in call["args"] if "=" in arg), ["lobbying_foreign_entities", "lobbying_registrations"])
         self.assertEqual(len(self.runs()[0]["signals"]), 1)
 
     def test_a_request_that_cannot_run_is_refused_before_anomaly_runs(self) -> None:
@@ -283,11 +283,11 @@ class Run(AnomalyTestCase):
         os.symlink(self.case / "research" / "payments.csv", self.case / "research" / "link.csv")
         cases = {
             "no opt-in": (None, core, "did not opt in"),
-            "a domain the plan does not name": ("any_table", {"method": FILINGS, "tables": {"lobbying_filings": "research/payments.csv", "legislators": "research/payments.csv"}}, "does not name"),
+            "a domain the plan does not name": ("any_table", {"method": FILINGS, "tables": {"lobbying_registrations": "research/payments.csv", "lobbying_foreign_entities": "research/payments.csv"}}, "does not name"),
             "a method outside the catalogue": ("any_table", {**core, "method": "method:made.up@1.0.0"}, "not a method in the pinned"),
             "a core detector given tables": ("any_table", {"method": ZSCORE, "tables": {"x": "research/payments.csv"}}, "give exactly method, table and fields"),
             "a field role left unmapped": ("any_table", {**core, "fields": {"id": "id"}}, "missing ['amount']"),
-            "a domain detector missing a table": ("lobbying", {"method": FILINGS, "tables": {"lobbying_filings": "research/payments.csv"}}, "reads exactly the tables"),
+            "a domain detector missing a table": ("lobbying", {"method": FILINGS, "tables": {"lobbying_registrations": "research/payments.csv"}}, "reads exactly the tables"),
             "a file outside research/ and evidence/": ("any_table", {**core, "table": "data/notes.csv"}, "under research/ or evidence/"),
             "a path out of the case": ("any_table", {**core, "table": "research/../../anomaly/standin.py"}, "under research/ or evidence/"),
             "a symlink": ("any_table", {**core, "table": "research/link.csv"}, "not a regular case file"),
