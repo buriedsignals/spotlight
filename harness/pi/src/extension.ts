@@ -107,7 +107,10 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	// frontier tier keeps Pi's default threshold and summary.
 	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier');
 	registerLoopGuard(pi);
-	if ((process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') === '12b') registerReadBudget(pi);
+	if ((process.env.SPOTLIGHT_MODEL_TIER?.trim() || '12b') === '12b') {
+		registerReadBudget(pi);
+		registerEmptyTurnNudge(pi);
+	}
 	registerToolOwners(pi, role);
 	const tools = toolsFor(role);
 	for (const tool of tools) pi.registerTool(tool);
@@ -136,6 +139,31 @@ function registerReadBudget(pi: ExtensionAPI): void {
 		left -= kept;
 		if (kept === text.length) return;
 		return { content: [{ type: 'text' as const, text: `${text.slice(0, kept)}\n${READ_TRUNCATED}` }] };
+	});
+}
+
+// The 12b can end a turn inside its own reasoning, with no text and no tool
+// call (12B r3 A2 cc seq 4), and Pi then ends the run: the member sees nothing,
+// and a worker's empty answer reaches the orchestrator as "(no output)". Such a
+// turn gets this one follow-up, at most once per prompt. Every Spotlight process
+// loads this extension, so workers get it too. The count resets on a user message
+// other than the nudge, not on agent_start: a nudge sent after the run ended
+// starts a new run, and resetting there could nudge forever.
+export const EMPTY_TURN_NUDGE = 'Your last turn was empty. Call the next tool, or give your answer.';
+
+function registerEmptyTurnNudge(pi: ExtensionAPI): void {
+	let nudged = false;
+	pi.on('message_end', (event) => {
+		const message = event.message as { role?: string; stopReason?: string; content?: string | Array<{ type: string; text?: string }> };
+		const parts = typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : (message.content ?? []);
+		if (message.role === 'user') {
+			if (!parts.some((part) => part.type === 'text' && part.text === EMPTY_TURN_NUDGE)) nudged = false;
+			return;
+		}
+		if (message.role !== 'assistant' || message.stopReason !== 'stop' || nudged) return;
+		if (parts.some((part) => part.type === 'toolCall' || (part.type === 'text' && part.text?.trim()))) return;
+		nudged = true;
+		pi.sendUserMessage(EMPTY_TURN_NUDGE, { deliverAs: 'followUp' });
 	});
 }
 
