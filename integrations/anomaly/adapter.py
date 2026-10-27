@@ -255,7 +255,7 @@ def _describe(entry: Mapping[str, Any]) -> dict[str, Any]:
 def check_signal(signal: Any, entry: Mapping[str, Any], input_hash: str, input_hashes: Mapping[str, str] | None,
                  schema: Mapping[str, Any]) -> list[str]:
     """Problems with one output line, against the catalogue's signal schema and the method's declaration.
-    A domain detector's provenance has column_map for field_map, and input_hashes per table."""
+    Provenance has field_map for a core detector, and column_map and input_hashes for a domain one."""
     if not isinstance(signal, dict):
         return ["an output line is not an object"]
     problems = []
@@ -263,8 +263,8 @@ def check_signal(signal: Any, entry: Mapping[str, Any], input_hash: str, input_h
         problems.append(f"fields {sorted(set(signal) ^ set(schema))} differ from the signal schema")
     provenance = signal.get("provenance")
     expected_keys = set(schema.get("provenance") or {}) if isinstance(schema.get("provenance"), Mapping) else set()
-    if input_hashes is not None:
-        expected_keys = (expected_keys - {"field_map"}) | {"column_map", "input_hashes"}
+    domain_only = {"column_map", "input_hashes"}
+    expected_keys = ((expected_keys - {"field_map"}) | domain_only) if input_hashes is not None else expected_keys - domain_only
     if not isinstance(provenance, dict) or set(provenance) != expected_keys:
         problems.append("provenance differs from the signal schema")
         provenance = provenance if isinstance(provenance, dict) else {}

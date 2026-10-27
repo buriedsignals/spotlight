@@ -35,8 +35,10 @@ SIGNAL_SCHEMA = {
     "candidate_id": "string", "category": "string", "detector_hash": "string", "detector_id": "string",
     "detector_version": "string", "severity": "string", "signal_id": "string", "status": "string",
     "summary": "string", "values": "object",
-    "provenance": {"approval": "string", "executed_at": "string", "field_map": "object", "input_format": "string",
-                   "input_hash": "string", "limits": "object", "parameters": "object", "run_id": "string"},
+    # Anomaly's schema since #8: field_map for core detectors, column_map and input_hashes for domain ones.
+    "provenance": {"approval": "string", "column_map": "object", "executed_at": "string", "field_map": "object",
+                   "input_format": "string", "input_hash": "string", "input_hashes": "object", "limits": "object",
+                   "parameters": "object", "run_id": "string"},
 }
 DETECTORS = [
     {"id": "numeric.zscore_outliers", "version": "1.1.0", "implementation_hash": "sha256:" + "a" * 64,
