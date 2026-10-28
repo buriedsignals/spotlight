@@ -13,14 +13,14 @@ import { approve } from '../test-support/hosted-skill.ts';
 import { caseFileTools } from './case-files.ts';
 import type { CaseScope } from './run.ts';
 
-async function fixture(t: TestContext, scope?: CaseScope, role?: string) {
+async function fixture(t: TestContext, scope?: CaseScope, role?: string, env: Record<string, string> = {}) {
 	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-files-')));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const caseDir = join(root, 'case');
 	const outside = join(root, 'outside');
 	await mkdir(join(caseDir, 'data'), { recursive: true });
 	await mkdir(outside);
-	const tools = new Map(caseFileTools({ caseDir, writeRoot: caseDir, scope, env: role ? { SPOTLIGHT_ROLE: role } : {} }).map((tool) => [tool.name, tool]));
+	const tools = new Map(caseFileTools({ caseDir, writeRoot: caseDir, scope, env: { ...(role ? { SPOTLIGHT_ROLE: role } : {}), ...env } }).map((tool) => [tool.name, tool]));
 	const call = async (name: string, params: Record<string, unknown>) => {
 		const tool = tools.get(name) as ToolDefinition;
 		const result = await tool.execute('call', params, undefined, undefined, undefined as never);
@@ -28,6 +28,43 @@ async function fixture(t: TestContext, scope?: CaseScope, role?: string) {
 	};
 	return { caseDir, outside, call };
 }
+
+// U3 census on 84674fd9: investigators working every direction in one context
+// peaked above 30k prompt tokens. A direction's worker (directions.ts) sees only
+// its own entries, and its write must keep every entry it was not shown.
+test('a direction\'s worker reads only its own entries, and its write keeps every other direction\'s and the fact-checker\'s', async (t) => {
+	const { caseDir, call } = await fixture(t, undefined, 'investigator', { SPOTLIGHT_DIRECTION: 'D2' });
+	const data = (name: string) => join(caseDir, 'data', name);
+	await writeFile(data('findings.json'), JSON.stringify({ project: 'p', findings: [{ id: 'D1-F1', claim: 'first' }, { id: 'F3', claim: 'before the split' }], gaps: ['D1 gap'] }));
+	await writeFile(data('evidence-bundle.json'), JSON.stringify({ project: 'p', items: [{ id: 'D1-E1' }, { id: 'FC-E1', created_by: 'fact-checker' }] }));
+	await writeFile(data('investigation-log.json'), JSON.stringify({ project: 'p', cycles: [{ cycle: 1, focus: 'D1: first direction' }] }));
+
+	assert.deepEqual(JSON.parse(await call('read_file', { path: 'data/findings.json' })).findings, []);
+	assert.deepEqual(JSON.parse(await call('read_file', { path: 'data/investigation-log.json' })).cycles, []);
+	await call('write_file', { path: 'data/findings.json', content: JSON.stringify({ project: 'p', findings: [{ id: 'D2-F1', claim: 'second' }], gaps: ['D2 gap'] }) });
+	await call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ project: 'p', items: [{ id: 'D2-E1' }] }) });
+	await call('write_file', { path: 'data/investigation-log.json', content: JSON.stringify({ project: 'p', cycles: [{ cycle: 1, focus: 'second direction' }] }) });
+	await call('edit_file', { path: 'data/findings.json', old_text: '"claim": "second"', new_text: '"claim": "second, corrected"' });
+
+	const findings = JSON.parse(await readFile(data('findings.json'), 'utf8'));
+	assert.deepEqual(findings.findings, [{ id: 'D1-F1', claim: 'first' }, { id: 'F3', claim: 'before the split' }, { id: 'D2-F1', claim: 'second, corrected' }]);
+	assert.deepEqual(findings.gaps, ['D1 gap', 'D2 gap']);
+	assert.deepEqual(JSON.parse(await readFile(data('evidence-bundle.json'), 'utf8')).items.map((item: { id: string }) => item.id), ['D1-E1', 'FC-E1', 'D2-E1']);
+	assert.deepEqual(JSON.parse(await readFile(data('investigation-log.json'), 'utf8')).cycles.map((cycle: { focus: string }) => cycle.focus), ['D1: first direction', 'D2: second direction']);
+	assert.deepEqual(JSON.parse(await call('read_file', { path: 'data/findings.json' })).findings, [{ id: 'D2-F1', claim: 'second, corrected' }]);
+});
+
+test('a direction\'s worker writing an id without its tag is refused and the file is unchanged', async (t) => {
+	const { caseDir, call } = await fixture(t, undefined, 'investigator', { SPOTLIGHT_DIRECTION: 'D2' });
+	const before = JSON.stringify({ project: 'p', findings: [{ id: 'D1-F1', claim: 'first' }] });
+	await writeFile(join(caseDir, 'data', 'findings.json'), before);
+
+	await assert.rejects(
+		call('write_file', { path: 'data/findings.json', content: JSON.stringify({ project: 'p', findings: [{ id: 'F1', claim: 'untagged' }] }) }),
+		/every finding id in data\/findings\.json starts with D2-F \(D2-F1, D2-F2\), and F1 does not; the file is unchanged/,
+	);
+	assert.equal(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8'), before);
+});
 
 test('a write inside the case lands there and reads back', async (t) => {
 	const { caseDir, call } = await fixture(t);

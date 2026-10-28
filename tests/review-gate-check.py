@@ -204,6 +204,30 @@ class ReviewGate(CaseFixture):
         status = json.loads(self.seam(case, "status", "--json").stdout)
         self.assertEqual(status["ingest"], {"state": "pending", "resume_at": "decision"})
 
+    # A direction's investigator (harness/pi/src/directions.ts) tags its ids:
+    # D2-F1, D2-E1. They pass every check from the gate to the built batch.
+    def test_direction_tagged_ids_pass_the_gate_the_report_and_the_ingest_build(self) -> None:
+        case = self.build("tagged", "report", "--clean", "--activated", "--prefixed")
+        for script in ("validate-case.py", "validate-fact-check.py"):
+            checked = subprocess.run([sys.executable, str(ROOT / "scripts" / script), str(case)],
+                                     capture_output=True, text=True, check=False)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+        draft = {
+            "schema_version": "1.0", "title": "Tagged report", "deck": "What the direction found.",
+            "framing_finding_ids": ["D2-F1"], "finding_order": ["D2-F1"],
+            "finding_treatments": [{"finding_id": "D2-F1", "headline": "The filing names the payer",
+                                    "summary": "One filing.", "why_it_matters": "It is primary."}],
+            "caveats": [{"text": "Only one filing.", "finding_ids": ["D2-F1"]}],
+            "next_steps": [{"text": "Ask the payer.", "finding_ids": ["D2-F1"]}],
+        }
+        (case / "data/report-draft.json").write_text(json.dumps(draft), encoding="utf-8")
+        report = subprocess.run([sys.executable, str(ROOT / "scripts" / "validate-report-draft.py"), str(case)],
+                                capture_output=True, text=True, check=False)
+        self.assertEqual(report.returncode, 0, report.stdout + report.stderr)
+        self.assertEqual(self.view(case, "report")["content"]["treatments"][0]["headline"], "The filing names the payer")
+        ingest = self.build("tagged-ingest", "ingest", "--clean", "--activated", "--prefixed", "--proposal")
+        self.assertIn("D2-F1", (ingest / "data/knowledge-ids.json").read_text(encoding="utf-8"))
+
     def test_report_page_shows_the_draft_and_its_digest_binds_it(self) -> None:
         case = self.build("draft", "report")
         draft = {

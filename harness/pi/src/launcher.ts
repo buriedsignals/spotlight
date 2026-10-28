@@ -42,6 +42,7 @@ import { approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { BRIEF_PENDING_REFUSAL, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL, WorkerQueue, runWorker } from './subagents.ts';
 import { withCasePassages, withWikiPassages } from './case-search.ts';
 import { decideAnomaly, withAnomalyBlock } from './anomaly-decision.ts';
+import { directionBlock, directionCallBudget, directionDeliverable, directionsToRun, planDirections } from './directions.ts';
 import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
 import { bindActiveCase, nextAction, pythonAdapter, runsResearchRound } from './tools/spotlight.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
@@ -212,10 +213,11 @@ function forwardStderr(harness: Harness, child: ChildProcess): void {
 
 // Called right before each pi process starts: it also writes that process's
 // Pi settings (the local tier's fold point) into its configuration folder.
-function processLaunch(harness: Harness, role: string, worker?: WorkerContext) {
+function processLaunch(harness: Harness, role: string, worker?: WorkerContext, direction?: { tag: string; budget: number }) {
 	const route = routeFor(harness.config);
 	const spec = agentSpec(harness.composition, role);
 	const env = childEnv(harness.config, harness.composition, role, process.env);
+	if (direction) Object.assign(env, { SPOTLIGHT_DIRECTION: direction.tag, SPOTLIGHT_CALL_BUDGET: String(direction.budget) });
 	writePiSettings(env.PI_CODING_AGENT_DIR, piSettings(harness.config));
 	return {
 		command: process.execPath,
@@ -277,19 +279,40 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 				return queue.run(async () => {
 					await activateNewCase(harness, request.agent, controller.signal);
 					owed = await deliverable(harness, request.agent, request.task);
-					const task = await finalTask(harness, request.agent, request.task, controller.signal, owed);
-					return runWorker(
-						{
-							...processLaunch(harness, request.agent, await workerContext(harness, request.agent, request.task)),
-							onSpawn: (child) => {
-								track(harness, child);
-								serveEditorial(harness, child, request.agent, running);
+					const run = async (task: string, due: Deliverable | undefined, direction?: { tag: string; budget: number }) =>
+						runWorker(
+							{
+								...processLaunch(harness, request.agent, await workerContext(harness, request.agent, request.task), direction),
+								onSpawn: (child) => {
+									track(harness, child);
+									serveEditorial(harness, child, request.agent, running);
+								},
+								onStderr: (child) => forwardStderr(harness, child),
 							},
-							onStderr: (child) => forwardStderr(harness, child),
-						},
-						task,
-						controller.signal,
-					);
+							await finalTask(harness, request.agent, task, controller.signal, due),
+							controller.signal,
+						);
+					// On a local tier, an investigation task on a plan of two or
+					// more directions runs one worker per direction (directions.ts).
+					// The frontier tier's window holds every direction at once.
+					const split = owed?.files.includes('data/findings.json') && harness.config.modelTier !== 'frontier';
+					const directions = split ? planDirections(harness.active.caseDir) : [];
+					if (directions.length < 2) return run(request.task, owed);
+					const todo = directionsToRun(harness.active.caseDir, directions);
+					const budget = directionCallBudget(todo.length);
+					const answers: string[] = [];
+					for (const direction of todo) {
+						harness.log(`investigator: direction ${direction.tag} (${direction.ref}), ${budget} calls`);
+						let answer: string;
+						try {
+							answer = await run(`${request.task}\n\n${directionBlock(direction, directions.length)}`, directionDeliverable(direction.tag), { tag: direction.tag, budget });
+						} catch (error) {
+							if (controller.signal.aborted) throw error;
+							answer = (error as Error).message;
+						}
+						answers.push(`Direction ${direction.tag} (${direction.ref}): ${answer}`);
+					}
+					return answers.join('\n\n');
 				});
 			})
 			.then((text) => withValidation(harness, request.agent, text))

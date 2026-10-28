@@ -193,6 +193,11 @@ def test_no_identifier_in_both_halves() -> None:
     require(found == {"source", "registry"}, f"a shared source and registry id must be caught: {found}")
 
 
+def test_direction_tagged_findings_stay_apart() -> None:
+    directions = [builder.direction_of({"finding_id": fid}) for fid in ("F1", "D1-F1", "D2-F1")]
+    require(directions == ["f1", "d1-f1", "d2-f1"], f"each finding keeps its own direction: {directions}")
+
+
 def test_claim_becomes_lead() -> None:
     fact_check = {"project": "case", "claims": [
         {"id": 1, "finding_id": "F2-C1", "claim_text": "Firm X paid 3 million to Firm Y.", "verdict": "verified",

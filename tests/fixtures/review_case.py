@@ -13,7 +13,9 @@ verified and writes a valid log, so nothing blocks approval. ``--activated``
 replaces the investigation artifacts with an activated (findings 1.1) case,
 born and bound at the Investigation-gate approval like a new case;
 ``--flagged`` gives its fact-check one flag for the ingest page to decide;
-``--proposal`` gives it the analyst's proposal and a built knowledge batch.
+``--proposal`` gives it the analyst's proposal and a built knowledge batch;
+``--prefixed`` gives its finding and evidence item the ids a direction's
+investigator writes (``D2-F1``, ``D2-E1``; harness/pi/src/directions.ts).
 ``research`` builds a case with a research plan paused at the Research gate
 (see ``build_research``); there ``--excerpt`` is the first lead's excerpt.
 """
@@ -160,8 +162,20 @@ def build_research(case: Path, excerpt: str | None, suggestions: bool) -> None:
             ]})
 
 
+# The activated fixture's ids as one research direction's worker writes them.
+DIRECTION_IDS = {"F1": "D2-F1", "E1": "D2-E1"}
+
+
+def with_direction_ids(value: object) -> object:
+    if isinstance(value, dict):
+        return {key: with_direction_ids(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [with_direction_ids(item) for item in value]
+    return DIRECTION_IDS.get(value, value) if isinstance(value, str) else value
+
+
 def build(case: Path, stage: str, excerpt: str | None, clean: bool, activated: bool = False, flagged: bool = False,
-          suggestions: bool = True, proposal: bool = False) -> None:
+          suggestions: bool = True, proposal: bool = False, prefixed: bool = False) -> None:
     if stage == "research":
         build_research(case, excerpt, suggestions)
         return
@@ -208,6 +222,24 @@ def build(case: Path, stage: str, excerpt: str | None, clean: bool, activated: b
         evidence.update({"local_file": "research/filing.txt",
                          "source_ref": {"path": "research/filing.txt", "line_start": 2, "line_end": 2},
                          "sha256": hashlib.sha256(anchor.read_bytes()).hexdigest()})
+        if prefixed:
+            findings, check, bundle, expressions = (with_direction_ids(doc) for doc in (findings, check, bundle, expressions))
+            # The passage's fingerprint covers its evidence item id, and its
+            # link's fingerprint the finding id.
+            expression = expressions["expressions"][0]
+            expression["expression_fingerprint"] = cases.canonical_fingerprint({
+                key: expression[key] for key in ("text", "anchor_ref", "anchor_sha256", "original_evidence_bundle_id",
+                                                 "original_artifact_sha256", "language", "attribution", "direct_quote")
+            })
+            link = expression["finding_links"][0]
+            link["link_fingerprint"] = cases.canonical_fingerprint({
+                "expression_fingerprint": expression["expression_fingerprint"],
+                **{key: link[key] for key in ("finding_id", "finding_fingerprint", "relation")},
+            })
+            for claim in check["claims"]:
+                for evidence in claim.get("evidence_for", []):
+                    for ref in evidence.get("source_expression_refs", []):
+                        ref.update(expression_fingerprint=expression["expression_fingerprint"], link_fingerprint=link["link_fingerprint"])
         if flagged:
             check["claims"][0]["flags"] = [{"code": "partial_support", "reason": "Only part of the payment is documented."}]
         for name, document in (("findings.json", findings), ("fact-check.json", check),
@@ -228,7 +260,7 @@ def build(case: Path, stage: str, excerpt: str | None, clean: bool, activated: b
     run(str(SEAM), "decide-report", "declined", str(case))
     if proposal:
         ingest = load_module("ingest_review_check", ROOT / "tests" / "ingest-review-check.py")
-        write_json(case / "data/knowledge-proposal.json", ingest.PROPOSAL)
+        write_json(case / "data/knowledge-proposal.json", with_direction_ids(ingest.PROPOSAL) if prefixed else ingest.PROPOSAL)
         run(str(ROOT / "scripts" / "build-knowledge-batch.py"), str(case), "--review",
             "--model", "investigator=inv-1", "--model", "fact-checker=fc-1")
 
@@ -242,10 +274,11 @@ def main() -> int:
     parser.add_argument("--activated", action="store_true")
     parser.add_argument("--flagged", action="store_true", help="with --activated: the fact-check carries one flag")
     parser.add_argument("--proposal", action="store_true", help="ingest with --activated: a proposal and a built batch")
+    parser.add_argument("--prefixed", action="store_true", help="with --activated: direction-tagged ids (D2-F1, D2-E1)")
     parser.add_argument("--no-suggestions", dest="suggestions", action="store_false",
                         help="research: no data/research-suggestions.json")
     args = parser.parse_args()
-    build(Path(args.case_dir), args.stage, args.excerpt, args.clean, args.activated, args.flagged, args.suggestions, args.proposal)
+    build(Path(args.case_dir), args.stage, args.excerpt, args.clean, args.activated, args.flagged, args.suggestions, args.proposal, args.prefixed)
     return 0
 
 

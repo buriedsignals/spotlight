@@ -114,8 +114,11 @@ def claim_lead(alias: str, claim: Mapping[str, Any], direction: str) -> dict[str
 
 
 def direction_of(claim: Mapping[str, Any]) -> str:
-    match = re.match(r"\s*F?(\d+)", str(claim.get("finding_id") or ""), re.IGNORECASE)
-    return f"f{match.group(1)}" if match else "f0"
+    # A direction's investigator tags its ids (D2-F1; harness/pi/src/directions.ts).
+    match = re.match(r"\s*(?:(D\d+)-)?F?(\d+)", str(claim.get("finding_id") or ""), re.IGNORECASE)
+    if not match:
+        return "f0"
+    return f"{match.group(1).lower()}-f{match.group(2)}" if match.group(1) else f"f{match.group(2)}"
 
 
 def case_key_of(fact_check: Path) -> str:
