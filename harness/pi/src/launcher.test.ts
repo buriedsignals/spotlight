@@ -16,7 +16,7 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, agentSpec, loadComposition, deliverableFor } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
-import { GATE_BOUND, GATE_BOUND_REFUSAL, PROPOSAL_DONE, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, repeatsItself, skillAlreadyLoaded } from './extension.ts';
+import { GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, repeatsItself, skillAlreadyLoaded } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
@@ -1790,6 +1790,22 @@ test('every Investigation gate dependency is refused to the orchestrator after t
 	const denied = new Set((agentSpec(loadComposition(), 'orchestrator').denyWrites ?? []).map((path) => path.toLowerCase()));
 	assert.ok(paths.length > 0);
 	for (const path of paths) assert.ok(GATE_BOUND.has(path) || denied.has(path), `${path} is not refused after the gate`);
+});
+
+// U3 census, r5 on swiss (84674fd9): the orchestrator made one call 286 times
+// and got the loop notice 273 times, with nothing to end the turn.
+test('the orchestrator\'s turn ends at the fifth loop notice, and the member is told why', async (t) => {
+	const fake = await startFakeOpenAI(() => ({ toolCalls: [{ name: 'list_files', arguments: { pattern: 'data/*' } }] }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const notices = toolResults(fake.requests.at(-1)!).filter((result) => result.includes('This is the same call as the last two'));
+	assert.equal(notices.length, LOOP_NOTICE_CAP - 1, 'no model request follows the fifth notice');
+	assert.ok(chat.lines.some((line) => line.includes(ORCHESTRATOR_LOOP_STOP)), 'the member is told why the turn stopped');
 });
 
 // LFM3 r3 kde stage 2 on Osaurus (03f008b0): the review page opened and the
