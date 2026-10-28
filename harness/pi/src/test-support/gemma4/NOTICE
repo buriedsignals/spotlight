@@ -1,0 +1,5 @@
+chat_template.jinja is the Gemma 4 chat template, copied unchanged from the
+Osaurus model folder gemma-4-12B-it-qat-MXFP4, and used only by the tests to
+render tool lists as Osaurus does. It is not part of Spotlight.
+
+Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms
