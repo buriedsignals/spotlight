@@ -144,6 +144,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	if (role === ORCHESTRATOR) {
 		registerReviewRefusalCap(pi);
 		registerEndTurnOnOpen(pi);
+		registerOrchestratorLoopBound(pi);
 	}
 	if (role === 'analyst') registerProposalEnd(pi);
 	if (tier12b) {
@@ -656,6 +657,41 @@ function registerProposalEnd(pi: ExtensionAPI): void {
 		if (!written || message.role !== 'assistant' || !message.content?.some((part) => part.type === 'toolCall')) return undefined;
 		log('the analyst went on after writing a valid proposal; its turn was ended');
 		return { message: { ...event.message, content: [{ type: 'text', text: PROPOSAL_DONE }] } as typeof event.message };
+	});
+}
+
+// U3 census, r5 on swiss (84674fd9): the orchestrator made one osint_tools
+// call 286 times in one turn and got the loop guard's notice 273 times. The
+// guard stops only workers (ending the orchestrator would end the case), so
+// nothing bounded it. At the fifth notice in one run the orchestrator's turn
+// ends, not the case, before the next request, and the member sees this line.
+export const LOOP_NOTICE_CAP = 5;
+export const ORCHESTRATOR_LOOP_STOP = 'Spotlight stopped this turn because it kept repeating the same step without getting anything new. Ask Spotlight to continue, or say what to change.';
+
+function registerOrchestratorLoopBound(pi: ExtensionAPI): void {
+	let notices = 0;
+	let stopping = false;
+	pi.on('agent_start', () => {
+		notices = 0;
+		stopping = false;
+	});
+	pi.on('message_end', (event) => {
+		const message = event.message as { role?: string; content?: Array<{ type: string; text?: string }> };
+		if (message.role === 'toolResult') {
+			if (message.content?.some((part) => part.type === 'text' && part.text?.includes(REPEAT_REASON)) && ++notices >= LOOP_NOTICE_CAP && !stopping) {
+				stopping = true;
+				log(`the orchestrator got ${LOOP_NOTICE_CAP} loop notices; its turn was stopped`);
+			}
+			return undefined;
+		}
+		if (!stopping || message.role !== 'assistant') return undefined;
+		stopping = false;
+		notices = 0;
+		return { message: { ...event.message, content: [{ type: 'text', text: ORCHESTRATOR_LOOP_STOP }] } as typeof event.message };
+	});
+	pi.on('before_provider_request', (_event, ctx) => {
+		if (stopping) ctx.abort();
+		return undefined;
 	});
 }
 
