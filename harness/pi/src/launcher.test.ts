@@ -394,6 +394,28 @@ async function caseAtInvestigation(space: Workspace, brief = 'Who owns the fixtu
 	return caseDir;
 }
 
+// r6 northwind on dd14e2e5: the brief went to data/brief-directions.txt and the
+// case never left Brief.
+test('a brief written under data/ is refused with the root path, and the brief at the root moves the case past Brief', async (t) => {
+	const calls = [
+		{ name: 'write_file', arguments: { path: 'data/brief-directions.txt', content: 'Who owns the fixture company?\n' } },
+		{ name: 'write_file', arguments: { path: 'brief-directions.txt', content: 'Who owns the fixture company?\n' } },
+		{ name: 'spotlight_resolve', arguments: {} },
+	];
+	const fake = await startFakeOpenAI(orchestratorScript(calls));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'That direction is fine, go ahead.');
+
+	const results = toolResults(fake.requests[fake.requests.length - 1]);
+	assert.match(results[0], /refused: the approved brief goes to brief-directions\.txt at the case root/);
+	assert.equal(existsSync(join(space.casesRoot, 'case-a', 'data', 'brief-directions.txt')), false);
+	const resolved = JSON.parse(results[2]) as { next_phase: string };
+	assert.notEqual(resolved.next_phase, 'brief');
+});
+
 test('a worker writes through its typed tools and the harness validates its output when it finishes', async (t) => {
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) {
