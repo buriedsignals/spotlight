@@ -746,7 +746,7 @@ function registerOrchestratorLoopBound(pi: ExtensionAPI): void {
 // the turn as usual; a message with more tool calls is replaced by this line,
 // with no calls, so the turn ends. The member's next message starts afresh.
 export const blockedStop = (open: number) =>
-	`Spotlight stopped the investigation because it has used all its research rounds and ${open > 1 ? 'some questions are' : 'one question is'} still open. To continue, change the methodology and approve it again.`;
+	`Spotlight stopped the investigation because it has tried every step it is allowed and ${open > 1 ? 'some questions are' : 'one question is'} still open. To continue, change the methodology and approve it again.`;
 
 function registerBlockedStop(pi: ExtensionAPI): void {
 	let blocked = false;
