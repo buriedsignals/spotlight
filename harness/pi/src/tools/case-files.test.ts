@@ -301,6 +301,22 @@ test('an evidence item naming a distilled leads file is refused, naming its .raw
 	assert.equal(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8'), bundle({ raw_path: 'research/page.md.raw' }));
 });
 
+// LFM3 e2 stage 1 on Osaurus (bc87c716): flags coded "context" were accepted,
+// and the case stalled on "needs a known Batch 1.1 code" the fact-checker never saw.
+test('a fact-check flag with an unknown code or no reason is refused, naming the allowed codes', async (t) => {
+	const { caseDir, call } = await fixture(t);
+	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
+	const write = (flags: unknown) => call('write_file', { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', claims: [{ finding_id: 'F1', verdict: 'unverified', flags }] }) });
+
+	await assert.rejects(write([{ code: 'context', reason: 'Background on the organisation.' }]),
+		(error: Error) => error.message.includes('claims[0] (F1).flags[0]: code "context" is not a Batch 1.1 code') && error.message.includes('partial_support') && error.message.includes('drop the flag'));
+	await assert.rejects(write([{ code: 'partial_support', reason: ' ' }]), /claims\[0\] \(F1\)\.flags\[0\]: has no reason/);
+	assert.equal(existsSync(join(caseDir, 'data', 'fact-check.json')), false);
+	await write([{ code: 'partial_support', reason: 'The filing names the chair, not the date.' }]);
+	await write([]);
+	await assert.rejects(call('edit_file', { path: 'data/fact-check.json', old_text: '"flags":[]', new_text: '"flags":[{"code":"context","reason":"x"}]' }), /"context" is not a Batch 1\.1 code/);
+});
+
 // gold mozilla s0 a2 on a2ab7e20: the fact-checker wrote a verified claim with its ref under
 // a misspelt key, the validator blocked the case, and the one correction was spent.
 test('a verified claim citing no passage is refused, naming the refs on record, and kept', async (t) => {

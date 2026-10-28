@@ -387,6 +387,41 @@ function refuseDriftedClaims(caseDir: string, target: string, content: string): 
 // A positive verdict cites only files saved in the case (12B r5 fsf s0: F2 was
 // verified citing research/fsf_leadership_browse.md, never saved). Checked are
 // local_file, source_ref.path and an archive_url that is a path, not a URL.
+// LFM3 e2 stage 1 on Osaurus (bc87c716): a fact-check.json with flags coded
+// "context" was accepted, and the case then stayed at investigation on "needs a
+// known Batch 1.1 code" without the fact-checker ever being told which codes
+// exist. The codes are read from the schema the validators use.
+let flagCodes: string[] | undefined;
+function knownFlagCodes(): string[] {
+	flagCodes ??= (JSON.parse(readFileSync(join(SCHEMAS_DIR, 'fact-check.schema.json'), 'utf8')) as { definitions: { flag_code: { enum: string[] } } }).definitions.flag_code.enum;
+	return flagCodes;
+}
+
+function refuseUnknownFlags(caseDir: string, target: string, content: string): void {
+	if (caseRelative(caseDir, target) !== 'data/fact-check.json') return;
+	let factCheck: { schema_version?: unknown; claims?: unknown };
+	try {
+		factCheck = JSON.parse(content);
+	} catch {
+		return;
+	}
+	if (factCheck?.schema_version !== '1.1' || !Array.isArray(factCheck.claims)) return;
+	const codes = knownFlagCodes();
+	const bad: string[] = [];
+	factCheck.claims.forEach((claim: { finding_id?: unknown; flags?: unknown }, index: number) => {
+		if (!Array.isArray(claim?.flags)) return;
+		claim.flags.forEach((flag: { code?: unknown; reason?: unknown }, k: number) => {
+			const code = flag?.code;
+			const reason = typeof flag?.reason === 'string' && flag.reason.trim() !== '';
+			if (typeof code === 'string' && codes.includes(code) && reason) return;
+			const what = typeof code === 'string' && codes.includes(code) ? 'has no reason' : `code ${JSON.stringify(code ?? null)} is not a Batch 1.1 code`;
+			bad.push(`claims[${index}] (${String(claim?.finding_id ?? '?')}).flags[${k}]: ${what}`);
+		});
+	});
+	if (bad.length === 0) return;
+	throw new FileRefused(`refused: data/fact-check.json has flags the validators reject; the file is unchanged.\n${bad.join('\n')}\nA flag needs one of these codes and a non-empty reason: ${codes.join(', ')}. Flags are optional: if none of these fits, drop the flag.`);
+}
+
 function refuseMissingCitedFiles(caseDir: string, target: string, content: string): void {
 	if (caseRelative(caseDir, target) !== 'data/fact-check.json') return;
 	let factCheck: { schema_version?: unknown; claims?: unknown };
@@ -617,6 +652,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseBundleRewrites(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, role);
 				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseMissingCitedFiles(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
+				refuseUnknownFlags(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, input.content, writes, denyWrites)}`);
 			},
 		},
@@ -653,6 +689,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseBundleRewrites(caseDir, target, updated, role);
 				refuseDriftedClaims(caseDir, target, updated);
 				refuseMissingCitedFiles(caseDir, target, updated);
+				refuseUnknownFlags(caseDir, target, updated);
 				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes, denyWrites)}`);
 			},
 		},
