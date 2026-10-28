@@ -157,7 +157,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		}
 	}
 	registerToolOwners(pi, role);
-	const tools = toolsFor(role).map(guarded).map(streakGuarded);
+	const tools = toolsFor(role).map(guarded).map(streakGuarded).map(registerSkillDedup(pi));
 	if (tier12b) registerHyphenNames(pi, new Set(tools.map((tool) => tool.name)));
 	for (const tool of tools) pi.registerTool(tool);
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
@@ -201,6 +201,41 @@ function registerHyphenNames(pi: ExtensionAPI, names: Set<string>): void {
 // whole is not loaded, and the model can load it in a later turn.
 export const skillNotLoaded = (name: string) =>
 	`Not loaded: this turn's skills and reads already use the ${TURN_READ_CHARS_12B.toLocaleString('en-US')} characters one turn may load. Call invoke_skill for ${name} again in a later turn if you still need it.`;
+
+// A skill loaded once stays in the conversation until a fold, and loading it
+// again repeats its whole text (U4 candidate: repeated skill loads). Until the
+// next fold a repeat call returns this line instead; a skill the read budget
+// did not load counts as not loaded.
+export const skillAlreadyLoaded = (name: string) => `${name} is already loaded above in this conversation; follow those instructions.`;
+
+function registerSkillDedup(pi: ExtensionAPI): (tool: ToolDefinition) => ToolDefinition {
+	const loaded = new Set<string>();
+	pi.on('session_compact', () => {
+		loaded.clear();
+	});
+	const requested = new Map<string, unknown>();
+	pi.on('tool_execution_start', (event) => {
+		if (event.toolName === 'invoke_skill') requested.set(event.toolCallId, (event.args as { skill?: unknown } | undefined)?.skill);
+	});
+	pi.on('tool_execution_end', (event) => {
+		const skill = requested.get(event.toolCallId);
+		requested.delete(event.toolCallId);
+		if (event.toolName !== 'invoke_skill' || event.isError || typeof skill !== 'string') return;
+		const text: string = event.result?.content?.[0]?.text ?? '';
+		if (text !== '' && !text.startsWith('Not loaded:') && text !== skillAlreadyLoaded(skill)) loaded.add(skill);
+	});
+	return (tool) =>
+		tool.name !== 'invoke_skill'
+			? tool
+			: {
+					...tool,
+					async execute(id, params, ...rest) {
+						const skill = (params as { skill?: unknown }).skill;
+						if (typeof skill === 'string' && loaded.has(skill)) return { content: [{ type: 'text', text: skillAlreadyLoaded(skill) }], details: undefined };
+						return tool.execute(id, params, ...rest);
+					},
+				};
+}
 
 function registerReadBudget(pi: ExtensionAPI): void {
 	let left = TURN_READ_CHARS_12B;

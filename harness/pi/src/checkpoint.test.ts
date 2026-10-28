@@ -8,6 +8,7 @@ import { startFakeOpenAI } from './test-support/fake-openai.ts';
 import type { ChatRequest } from './test-support/fake-openai.ts';
 import { baseEnv, launch, settledPrompt, workspace } from './test-support/launch.ts';
 import type { Chat } from './test-support/launch.ts';
+import { skillAlreadyLoaded } from './extension.ts';
 
 const OLD_TURN = 'OLD-TURN-MARKER';
 const CHECKPOINT = 'CHECKPOINT-SENTINEL';
@@ -157,4 +158,33 @@ test('the frontier tier compacts at Pi\'s default threshold with Pi\'s summary, 
 	assert.deepEqual(summaries[0].provider, { zdr: true });
 	assert.doesNotMatch(requestText(summaries[0]), /Open gate/);
 	assert.doesNotMatch(requestText(fake.requests.at(-1)!), new RegExp(OLD_TURN));
+});
+
+// #246: a skill loaded before a fold must load in full after it, since the fold
+// drops its text; only a repeat within the same unfolded conversation is cut.
+test('after a fold the same skill loads in full again', async (t) => {
+	const lastUser = (request: ChatRequest) => JSON.stringify(request.messages.filter((message) => message.role === 'user').at(-1)?.content ?? '');
+	const skillCall = { toolCalls: [{ name: 'invoke_skill', arguments: { skill: 'spotlight' } }] };
+	const fake = await startFakeOpenAI((request) => {
+		if (isSummaryRequest(request)) return { text: WELL_FORMED };
+		const last = request.messages.at(-1);
+		const asked = /Load the skill/.test(lastUser(request));
+		return asked && last?.role === 'user' ? skillCall : { text: 'Noted.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '65536', SPOTLIGHT_MODEL_TIER: '12b' });
+
+	await settledPrompt(chat, 'Load the skill.');
+	await settledPrompt(chat, LONG_TURN);
+	await settledPrompt(chat, RECENT_TURN);
+	await settledPrompt(chat, 'Continue.');
+	assert.ok(compactions(chat).length >= 1, 'the conversation folded');
+	await settledPrompt(chat, 'Load the skill again.');
+
+	const loads = fake.requests
+		.filter((request) => !isSummaryRequest(request))
+		.flatMap((request) => request.messages.filter((message) => message.role === 'tool').map((message) => JSON.stringify(message.content)));
+	const last = loads.at(-1)!;
+	assert.ok(!last.includes(skillAlreadyLoaded('spotlight')) && last.length > 1000, 'after the fold the skill loads in full');
 });
