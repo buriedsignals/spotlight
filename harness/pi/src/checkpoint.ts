@@ -40,6 +40,20 @@ Keep exact file paths, tool names, finding ids and error messages. Do not invent
 
 const STATE_NOTE = '\n\n(Checkpoint of earlier turns. The case files and `spotlight_resolve` are the source of truth: re-read them before acting on this.)';
 
+// A checkpoint is kept only in its own sections. base213 (5ce09322): the e4b
+// RLM wrote its reasoning ("Here's a thinking process to construct the
+// checkpoint: 1. Analyze the Request...") with the sections only as bullets
+// inside it, and the investigator that read it next produced 10,240 tokens of
+// nothing, twice. Text before the first "## Goal" line is cut; without Goal,
+// Progress and Next lines the checkpoint is refused.
+export function checkpointSections(text: string): { kept: string; cut: boolean } | undefined {
+	const start = text.search(/^## Goal\b/m);
+	if (start < 0) return undefined;
+	const kept = text.slice(start).trim();
+	if (!/^## Progress\b/m.test(kept) || !/^## Next\b/m.test(kept)) return undefined;
+	return { kept, cut: text.slice(0, start).trim() !== '' };
+}
+
 function log(message: string): void {
 	process.stderr.write(`spotlight-extension: ${message}\n`);
 }
@@ -99,10 +113,24 @@ function registerCheckpoint(pi: ExtensionAPI, fixedBody: FixedBody, env: NodeJS.
 		try {
 			// Sensitive mode keeps case text away from the RLM, as it does for run_rlm.
 			const rlm = env.SPOTLIGHT_SENSITIVE === 'true' ? undefined : rlmEndpoint(env);
-			const { summary, usage } = rlm
-				? { summary: await rlmComplete(rlm, { model: rlmModel(env), messages: [{ role: 'user', content: text }], temperature: 0 }, signal), usage: undefined }
-				: await sessionCheckpoint(ctx, fixedBody, text, signal);
-			if (!summary) throw new Error('the checkpoint came back empty');
+			// The RLM writes it when there is one; a checkpoint out of shape falls
+			// back once to the session model, with the same prompt and check.
+			// Each outcome is logged, so the arms show how often each path runs.
+			let written: { kept: string; cut: boolean } | undefined;
+			let usage: Awaited<ReturnType<typeof sessionCheckpoint>>['usage'] | undefined;
+			if (rlm) {
+				written = checkpointSections((await rlmComplete(rlm, { model: rlmModel(env), messages: [{ role: 'user', content: text }], temperature: 0 }, signal)) ?? '');
+				if (written) log(`checkpoint: ${written.cut ? 'rlm-cut-preamble' : 'rlm-ok'}`);
+			}
+			if (!written) {
+				const session = await sessionCheckpoint(ctx, fixedBody, text, signal);
+				written = checkpointSections(session.summary);
+				usage = session.usage;
+				const source = rlm ? 'rlm-failed, session' : 'session';
+				log(`checkpoint: ${written ? `${source}-${written.cut ? 'cut-preamble' : 'ok'}` : rlm ? 'both-failed' : 'session-failed'}`);
+			}
+			if (!written) throw new Error('the checkpoint has no Goal, Progress and Next sections');
+			const summary = written.kept;
 			return {
 				compaction: {
 					summary: `${summary}${STATE_NOTE}`,

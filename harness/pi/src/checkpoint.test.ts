@@ -2,6 +2,8 @@
 // process, against the scripted OpenAI-compatible server. No network, no model.
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { startFakeOpenAI } from './test-support/fake-openai.ts';
 import type { ChatRequest } from './test-support/fake-openai.ts';
 import { baseEnv, launch, settledPrompt, workspace } from './test-support/launch.ts';
@@ -26,12 +28,10 @@ function compactions(chat: Chat): Array<Record<string, unknown>> {
 		.filter((record) => record.type === 'compaction_end' && record.result);
 }
 
-async function twoTurns(t: test.TestContext, tier: string, env: Record<string, string> = {}) {
-	const fake = await startFakeOpenAI((request) =>
-		isSummaryRequest(request)
-			? { text: `## Goal\nFind the owner.\n## Progress\n${CHECKPOINT}\n## Decisions\nNone.\n## Next\nResolve.\n## Open gate\nNone.` }
-			: { text: 'Noted.' },
-	);
+const WELL_FORMED = `## Goal\nFind the owner.\n## Progress\n${CHECKPOINT}\n## Decisions\nNone.\n## Next\nResolve.\n## Open gate\nNone.`;
+
+async function twoTurns(t: test.TestContext, tier: string, env: Record<string, string> = {}, sessionSummary = WELL_FORMED) {
+	const fake = await startFakeOpenAI((request) => (isSummaryRequest(request) ? { text: sessionSummary } : { text: 'Noted.' }));
 	t.after(() => fake.close());
 	const space = await workspace(t);
 	const chat = launch(t, {
@@ -79,6 +79,42 @@ test('with an RLM the local tier\'s checkpoint is written by the RLM, not the se
 	const last = fake.requests.at(-1)!;
 	assert.match(requestText(last), new RegExp(CHECKPOINT));
 	assert.doesNotMatch(requestText(last), new RegExp(OLD_TURN));
+});
+
+// base213 on 5ce09322: the e4b RLM wrote its reasoning as the checkpoint, with
+// the sections only as bullets inside it (seq 26 and 35, paths replaced), and
+// the investigator after each fold produced 10,240 tokens of nothing.
+const THINKING = JSON.parse(readFileSync(join(import.meta.dirname, 'test-support', 'rlm-thinking-checkpoints.json'), 'utf8')) as Record<string, string>;
+const carriedSummary = (chat: Chat) => String((compactions(chat)[0].result as { summary?: string }).summary ?? '');
+
+test('a checkpoint out of shape from the RLM falls back once to the session model, and the fold carries only the sections', async (t) => {
+	for (const [name, written] of Object.entries(THINKING)) {
+		const rlm = await startFakeOpenAI(() => ({ text: written }));
+		t.after(() => rlm.close());
+		const { fake, chat } = await twoTurns(t, '12b', { SPOTLIGHT_RLM_OPENAI_BASE_URL: rlm.baseURL });
+
+		assert.equal(rlm.requests.length, 1, name);
+		assert.equal(fake.requests.filter(isSummaryRequest).length, 1, `${name}: the session model is asked once`);
+		assert.match(carriedSummary(chat), /^## Goal\n/, name);
+		const last = fake.requests.at(-1)!;
+		assert.match(requestText(last), new RegExp(CHECKPOINT), name);
+		assert.doesNotMatch(requestText(last), /thinking process/i, name);
+	}
+});
+
+test('a checkpoint\'s preamble before ## Goal is cut, and one with no sections from both writers leaves the conversation unfolded', async (t) => {
+	const preamble = await startFakeOpenAI(() => ({ text: `Here is the checkpoint you asked for.\n\n${WELL_FORMED}` }));
+	t.after(() => preamble.close());
+	const cut = await twoTurns(t, '12b', { SPOTLIGHT_RLM_OPENAI_BASE_URL: preamble.baseURL });
+	assert.equal(cut.fake.requests.filter(isSummaryRequest).length, 0, 'a cut RLM checkpoint needs no fallback');
+	assert.match(carriedSummary(cut.chat), /^## Goal\n/);
+	assert.doesNotMatch(carriedSummary(cut.chat), /Here is the checkpoint/);
+
+	const rlm = await startFakeOpenAI(() => ({ text: THINKING.seq26 }));
+	t.after(() => rlm.close());
+	const failed = await twoTurns(t, '12b', { SPOTLIGHT_RLM_OPENAI_BASE_URL: rlm.baseURL }, 'Thinking Process: the checkpoint would say the owner is unknown.');
+	assert.equal(compactions(failed.chat).length, 0);
+	assert.ok(failed.fake.requests.filter(isSummaryRequest).length >= 1);
 });
 
 test('in sensitive mode the checkpoint stays with the session model even when an RLM is set', async (t) => {
