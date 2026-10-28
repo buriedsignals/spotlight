@@ -16,7 +16,7 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, agentSpec, loadComposition, deliverableFor } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
-import { GATE_BOUND, GATE_BOUND_REFUSAL, PROPOSAL_DONE, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, repeatsItself } from './extension.ts';
+import { GATE_BOUND, GATE_BOUND_REFUSAL, PROPOSAL_DONE, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, repeatsItself, skillAlreadyLoaded } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
@@ -980,6 +980,28 @@ test('after an approved Anomaly plan from the decision model, the investigator\'
 // skills in one turn (99,184 characters), the fold could not cut inside that
 // turn, and the next request had a 1-token completion budget.
 const SEQ7_SKILLS = ['integrations', 'osint', 'investigation-methodology', 'epistemic-grounding', 'acquisition-graduation', 'web-archiving', 'content-access', 'shell-safety', 'follow-the-money', 'social-media-intelligence', 'technical-investigation'];
+
+// U4 candidate: a worker loading the same skill again repeats its whole text.
+test('a skill loaded once is not loaded again in the same conversation', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			const done = toolResults(request).length;
+			return done < 2 ? { toolCalls: [{ name: 'invoke_skill', arguments: { skill: 'osint' } }] } : { text: 'Planned.' };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: PLANNING. Plan the case.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const results = toolResults(fake.requests.filter((request) => isWorkerRequest(request, 'investigator')).at(-1)!);
+	assert.equal(results.length, 2);
+	assert.ok(results[0].length > 1000 && !results[0].startsWith('Not loaded'), 'the first call loads the skill');
+	assert.equal(results[1], skillAlreadyLoaded('osint'));
+});
 
 test('on the 12b one turn loads at most 30,000 characters of skills and reads, each skill whole, and a skill left out loads in a later turn', async (t) => {
 	const fake = await startFakeOpenAI((request) => {
