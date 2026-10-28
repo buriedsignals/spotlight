@@ -29,6 +29,7 @@ from .storage import LEGACY_CHANNEL, LEGACY_LEDGER_KEY, case_path, load_state, r
 if str(SCRIPT_DIR.parent) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR.parent))
 from integrations.anomaly import adapter as anomaly  # noqa: E402
+from . import anomaly_gate  # noqa: E402
 from integrations import case_search  # noqa: E402
 
 REVIEW_VERSION = "spotlight-review/v1"
@@ -785,18 +786,21 @@ def _investigation_content(case: Path) -> tuple[dict[str, Any], list[str], list[
         blocking += _run_check([str(SCRIPT_DIR / "validate-indicator-framework.py"), str(case)])
         content["indicator_framework"] = framework
         items += framework_items
-    signals, signal_items = _anomaly_content(case)
+    signals, signal_items = _anomaly_content(case, _read_case_json(case, "data/orchestration.json"))
     if signals is not None:
         content["anomaly_signals"] = signals
         items += signal_items
     return content, blocking, items
 
 
-def _anomaly_content(case: Path) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+def _anomaly_content(case: Path, orchestration: Any = None) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     """The Anomaly runs and their signals, each a lead the member accepts or
-    dismisses; accepted signals stay leads, never findings."""
+    dismisses; accepted signals stay leads, never findings. Tables the approved
+    plan named with no run are listed as a note, never a blocker."""
+    approvals = orchestration.get("approvals") if isinstance(orchestration, dict) else None
+    not_run = anomaly_gate.tables_without_run(case, approvals if isinstance(approvals, dict) else {})
     runs = anomaly.signal_runs(case)
-    if not runs:
+    if not runs and not not_run:
         return None, []
     shown_runs, items, total = [], [], 0
     for run in runs:
@@ -819,7 +823,7 @@ def _anomaly_content(case: Path) -> tuple[dict[str, Any] | None, list[dict[str, 
                            "assumptions": _items_text(run.get("assumptions"), 10),
                            "false_positives": _items_text(run.get("false_positives"), 10),
                            "signals": shown, "count": len(signals)})
-    return {"runs": shown_runs, "total": total, "shown": len(items)}, items
+    return {"runs": shown_runs, "total": total, "shown": len(items), "not_run": not_run}, items
 
 def _indicator_framework_content(case: Path) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     """The Indicator Framework section, shown only when the file exists: the

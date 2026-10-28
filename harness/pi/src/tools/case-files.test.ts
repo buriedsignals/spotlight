@@ -326,18 +326,22 @@ test('a verified claim citing no passage is refused, naming the refs on record, 
 	await writeFile(join(caseDir, 'data', 'source-expressions.json'), JSON.stringify({ expressions: [
 		{ id: 'P2', expression_fingerprint: 'e'.repeat(64), lifecycle_events: [{ event: 'activated' }], finding_links: [link] },
 		{ id: 'P9', expression_fingerprint: '9'.repeat(64), lifecycle_events: [{ event: 'activated' }, { event: 'superseded' }], finding_links: [link] },
+		// Active and supporting, but another finding's passage.
+		{ id: 'P3', expression_fingerprint: '3'.repeat(64), lifecycle_events: [{ event: 'activated' }], finding_links: [{ ...link, finding_id: 'F2' }] },
 	] }));
 	const ref = { expression_id: 'P2', expression_fingerprint: 'e'.repeat(64), finding_fingerprint: 'f'.repeat(64), link_fingerprint: 'l'.repeat(64) };
 	const claim = (item: object, verdict = 'verified') => JSON.stringify({ schema_version: '1.1', claims: [{ finding_id: 'F1', verdict, evidence_for: [item] }] });
 
 	await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: claim({ source_expression_ref: ref }) }),
-		(error: Error) => error.message.includes('has no source_expression_refs; the file is unchanged') && error.message.includes(`F1 (the key is source_expression_refs, a list, not source_expression_ref): ${JSON.stringify([ref])}`));
+		(error: Error) => error.message.includes('has no source_expression_refs; the file is unchanged') && error.message.includes('F1 (the key is source_expression_refs, a list, not source_expression_ref): "source_expression_refs": ["P2"]'));
 	assert.equal(existsSync(join(caseDir, 'data', 'fact-check.json')), false);
 
 	// 12B r3 ia on f43df365: a ref naming a passage never recorded went through.
-	for (const cited of ['SE-F1-TAX', 'P9', { ...ref, link_fingerprint: '0'.repeat(64) }]) {
+	// A bare id is accepted only for an active passage supporting this finding:
+	// unknown, superseded or another finding's passage is refused.
+	for (const cited of ['SE-F1-TAX', 'P9', 'P3', { expression_id: 'P3' }, { ...ref, link_fingerprint: '0'.repeat(64) }]) {
 		await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: claim({ source_expression_refs: [cited] }) }),
-			(error: Error) => error.message.includes(`F1 (${JSON.stringify([cited])} is not an active passage supporting it): ${JSON.stringify([ref])}`));
+			(error: Error) => error.message.includes(`F1 (${JSON.stringify([cited])} is not an active passage supporting it): "source_expression_refs": ["P2"]`));
 	}
 	assert.equal(existsSync(join(caseDir, 'data', 'fact-check.json')), false);
 	for (const cited of ['P2', { expression_id: 'P2' }]) await call('write_file', { path: 'data/fact-check.json', content: claim({ source_expression_refs: [cited] }) });

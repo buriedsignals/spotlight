@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .contract import METHODOLOGY_INPUTS, RESEARCH_ROUND, STATUS_VERSION, SUMMARY_OUTPUTS, OrchestrationError
-from . import anomaly_gate, research
+from . import research
 from .dependencies import (
     current_hashes,
     digest_receipt_matches,
@@ -221,7 +221,6 @@ def status_for(
         checks = research.fact_check_problems(case)
         if plan is not None:
             checks += research.d10_problems(case)
-        checks += anomaly_gate.problems(case, state["approvals"])
         if checks:
             return investigation_status(status, checks, open_cycle=open_cycle, checks=checks)
         missing = list(dependencies["investigation_gate_missing"])

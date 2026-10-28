@@ -1,11 +1,12 @@
-"""The Investigation gate's Anomaly check.
+"""The Investigation gate's Anomaly note.
 
 When the harness's decision model added Anomaly to the plan
 (scripts/anomaly-decision.py, data/anomaly-decision.json says yes) and the
-member approved that plan, every table the decision named needs at least one
-anomaly_run in data/anomaly-signals.json before the gate is offered. A case
-without that record, or whose approved plan no longer has the section, is not
-affected: the model's own plan stands.
+member approved that plan, the gate page lists each table the decision named
+that has no anomaly_run in data/anomaly-signals.json. It is a note for the
+member, never a reason to withhold the gate: Anomaly is optional (Tom,
+2026-10-28). A case without that record, or whose approved plan no longer has
+the section, gets no note.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ def _read(path: Path) -> Any:
         return None
 
 
-def problems(case: Path, approvals: dict[str, Any]) -> list[str]:
+def tables_without_run(case: Path, approvals: dict[str, Any]) -> list[str]:
     decision = _read(case / DECISION_FILE)
     if not (isinstance(decision, dict) and decision.get("decision") is True):
         return []
@@ -38,6 +39,4 @@ def problems(case: Path, approvals: dict[str, Any]) -> list[str]:
         return []
     done = {table.get("path") for run in anomaly.signal_runs(case) for table in (run.get("tables") or {}).values()
             if isinstance(table, dict)}
-    return [f"anomaly: {table} has no anomaly_run yet. The approved methodology runs Anomaly on it: run a core detector "
-            f"on it with anomaly_run (the ANOMALY block in the investigator's task gives the call)"
-            for table in decision.get("tables") or [] if table not in done and (case / table).is_file()]
+    return [table for table in decision.get("tables") or [] if table not in done and (case / table).is_file()]
