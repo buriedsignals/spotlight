@@ -530,7 +530,19 @@ def main(argv: list[str] | None = None) -> int:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--draft", action="store_true", help="write the draft only")
     group.add_argument("--review", action="store_true", help="write the draft, and the final batch when nothing is pending")
+    group.add_argument("--check-proposal", action="store_true",
+                       help="check the proposal JSON on stdin against interface 1 and write nothing (the Pi harness, when a proposal is written)")
     args = parser.parse_args(argv)
+    if args.check_proposal:
+        try:
+            check_proposal(json.loads(sys.stdin.read()))
+        except json.JSONDecodeError as exc:
+            print(f"build-knowledge-batch: refused: {PROPOSAL} is not JSON: {exc}", file=sys.stderr)
+            return 2
+        except BuildError as exc:
+            print(f"build-knowledge-batch: refused: {exc}", file=sys.stderr)
+            return 2
+        return 0
     models = dict(item.split("=", 1) for item in args.model if "=" in item)
     try:
         result = write(Path(args.case_dir), models, "review" if args.review else "draft" if args.draft else "final")

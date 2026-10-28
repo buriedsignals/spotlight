@@ -11,7 +11,7 @@ import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
-import { ToolArgumentError, checkedParams, jsonResult, textResult } from './run.ts';
+import { ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
 import type { CaseScope, ToolContext } from './run.ts';
 
 export class FileRefused extends Error {}
@@ -107,6 +107,18 @@ function refuseNonObjectData(caseDir: string, target: string, content: string): 
 	if (value !== null && typeof value === 'object' && !Array.isArray(value) && (!bundle || Array.isArray((value as { items?: unknown }).items))) return;
 	const shape = bundle ? ' with an `items` list' : '';
 	throw new FileRefused(`refused: ${path} must stay one JSON object${shape}; the file is unchanged. Read it, change the part you need, and write the whole object back.`);
+}
+
+// LFM3 r3 kde stage 3 on Osaurus (03f008b0): the analyst's proposal failed
+// interface 1, which the builder reports only after the analyst's turn, and
+// the analyst read and grepped until the stall rule stopped it. A proposal is
+// checked by the builder's own check when written, and refused with its text.
+async function refuseInvalidProposal(context: ToolContext, target: string, content: string): Promise<void> {
+	if (caseRelative(context.caseDir, target) !== 'data/knowledge-proposal.json') return;
+	const result = await runPython(context, [join(CHECKOUT_ROOT, 'scripts', 'build-knowledge-batch.py'), context.caseDir, '--check-proposal'], { input: content, timeoutMs: 60_000 });
+	if (result.code === 0) return;
+	const reason = (result.stderr || result.stdout).trim().replace(/^build-knowledge-batch: refused: /, '');
+	throw new FileRefused(`refused: ${reason}; the file is unchanged. Fix the proposal as schemas/knowledge-proposal.schema.json says and write it again.`);
 }
 
 function lstatOrUndefined(path: string): Stats | undefined {
@@ -657,6 +669,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseMissingCitedFiles(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseUnknownFlags(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
+				await refuseInvalidProposal(context, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, input.content, writes, denyWrites)}`);
 			},
 		},
@@ -694,6 +707,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseDriftedClaims(caseDir, target, updated);
 				refuseMissingCitedFiles(caseDir, target, updated);
 				refuseUnknownFlags(caseDir, target, updated);
+				await refuseInvalidProposal(context, target, updated);
 				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes, denyWrites)}`);
 			},
 		},
