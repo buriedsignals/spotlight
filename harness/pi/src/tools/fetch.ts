@@ -38,8 +38,9 @@ import { ToolArgumentError, checkedParams, jsonResult, programOutput, runPython,
 import type { ToolContext } from './run.ts';
 
 const MAX_RETURNED_CHARS = 30_000;
-// Variables the seam reads: the optional fallback key and the Tor posture.
-export const SEAM_ENV = ['FIRECRAWL_API_KEY', 'SPOTLIGHT_ANONYMIZE_FETCH', 'TOR_SOCKS', 'SCRAPE_PROVIDER'];
+// Variables the seam reads: the optional fallback key, the Tor posture, and
+// where Engine's runtime pack keeps Crawl4AI's Chromium and cache (Ninja U46).
+export const SEAM_ENV = ['FIRECRAWL_API_KEY', 'SPOTLIGHT_ANONYMIZE_FETCH', 'TOR_SOCKS', 'SCRAPE_PROVIDER', 'PLAYWRIGHT_BROWSERS_PATH', 'CRAWL4_AI_BASE_DIRECTORY'];
 
 // Patterns are written to hold as full matches too: some providers compile
 // `pattern` into a whole-value grammar, and a bare prefix then lets the model
