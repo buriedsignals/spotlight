@@ -1,7 +1,7 @@
 // End-to-end tests of the real launcher and real pi processes against a
 // scripted OpenAI-compatible server on 127.0.0.1. No network, no model.
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmod, copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
@@ -13,10 +13,10 @@ import type { ChatRequest, Reply } from './test-support/fake-openai.ts';
 import { baseEnv, caseAtIngest, launch, newsroomEnv, requestNewsroomIngest, settledPrompt, waitUntil, workspace } from './test-support/launch.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import type { Chat, Workspace } from './test-support/launch.ts';
-import { CHECKOUT_ROOT, loadComposition } from './roles.ts';
+import { CHECKOUT_ROOT, agentSpec, loadComposition } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
-import { FACT_CHECKERS_SPENT, GATE_READY_REFUSAL } from './subagents.ts';
-import { repeatsItself } from './extension.ts';
+import { FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
+import { GATE_BOUND, GATE_BOUND_REFUSAL, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, repeatsItself } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
@@ -1524,6 +1524,117 @@ test('on the 12b a worker spawn while the Investigation gate is ready is refused
 	}
 });
 
+// LFM3 e2 kde stage 2 on Osaurus (03f008b0): an invalid report draft was
+// rewritten between open_review refusals 31 times, until the test's time cap.
+test('the orchestrator is stopped at the fifth open_review refusal, even with writes between them, and told what failed', async (t) => {
+	const draft = { path: 'data/report-draft.json', content: '{"schema_version": "1.0"}\n' };
+	const fake = await startFakeOpenAI((request) =>
+		toolResults(request).length % 2 === 0 ? { toolCalls: [{ name: 'write_file', arguments: draft }] } : { toolCalls: [{ name: 'open_review', arguments: {} }] });
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await new Promise<void>((done, fail) =>
+		execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), join(space.casesRoot, 'case-a'), 'report'], (error) => (error ? fail(error) : done())),
+	);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const refusals = toolResults(fake.requests.at(-1)!).filter((result) => result.startsWith('The review page was not opened'));
+	assert.equal(refusals.length, REVIEW_REFUSAL_CAP - 1, 'no model request follows the fifth refusal');
+	assert.ok(
+		chat.lines.some((line) => line.includes('Spotlight stopped this turn because the report draft was refused five times.') && line.includes('The check found these problems.\\nSTRUCTURE: ')),
+		'the member is told what failed and the first validator errors',
+	);
+	const stopLine = chat.lines.find((line) => line.includes('The check found these problems.')) ?? '';
+	assert.equal(stopLine.split('\\nSTRUCTURE: ').length - 1, 3, 'at most the first three errors');
+});
+
+// LFM3 e2 kde stage 2 on Osaurus (03f008b0): at Report, ten investigator
+// spawns rewrote the approved findings, and the approved fact-check broke.
+test('no investigator starts after the Investigation gate, at Report or Ingest', async (t) => {
+	for (const stage of ['report', 'ingest']) {
+		const fake = await startFakeOpenAI(orchestratorScript([{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Re-research F2.' } }]));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		await new Promise<void>((done, fail) =>
+			execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), join(space.casesRoot, 'case-a'), stage], (error) => (error ? fail(error) : done())),
+		);
+		const findings = await readFile(join(space.casesRoot, 'case-a', 'data', 'findings.json'), 'utf8');
+		const chat = launch(t, baseEnv(space, fake.baseURL));
+
+		await settledPrompt(chat, 'Continue.');
+
+		assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'investigator')).length, 0, stage);
+		assert.ok(toolResults(fake.requests.at(-1)!).join('\n').includes(GATE_DECIDED_REFUSAL), stage);
+		assert.equal(await readFile(join(space.casesRoot, 'case-a', 'data', 'findings.json'), 'utf8'), findings, `${stage}: the approved findings are unchanged`);
+	}
+});
+
+// LFM3 e2 kde stage 3 on Osaurus (03f008b0): at Ingest the orchestrator
+// rewrote data/summary.json and the approved case fell back to finalization.
+test('after the Investigation gate the orchestrator cannot rewrite the files the gate binds; before it, it can', async (t) => {
+	const write = { name: 'write_file', arguments: { path: 'data/summary.json', content: '{"title": "Rewritten"}\n' } };
+	const fake = await startFakeOpenAI(orchestratorScript([write]));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtIngest(space);
+	const summary = await readFile(join(caseDir, 'data', 'summary.json'), 'utf8');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.ok(toolResults(fake.requests.at(-1)!).join('\n').includes(`refused: data/summary.json ${GATE_BOUND_REFUSAL}`));
+	assert.equal(await readFile(join(caseDir, 'data', 'summary.json'), 'utf8'), summary, 'the approved summary is unchanged');
+
+	const before = await startFakeOpenAI(orchestratorScript([write]));
+	t.after(() => before.close());
+	const open = await workspace(t);
+	await new Promise<void>((done, fail) =>
+		execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), join(open.casesRoot, 'case-a'), 'investigation_gate'], (error) => (error ? fail(error) : done())),
+	);
+	await settledPrompt(launch(t, baseEnv(open, before.baseURL)), 'Continue.');
+	assert.equal(await readFile(join(open.casesRoot, 'case-a', 'data', 'summary.json'), 'utf8'), '{"title": "Rewritten"}\n', 'before the gate is approved the summary is the orchestrator\'s to write');
+});
+
+// A gate dependency added to the provenance builder must not fall outside the
+// orchestrator's post-gate refusal: each is either refused after the gate or
+// never the orchestrator's to write.
+test('every Investigation gate dependency is refused to the orchestrator after the gate', async () => {
+	const script = "import importlib.util, json, sys; sys.path[:0] = [sys.argv[1] + '/scripts', sys.argv[1]]; spec = importlib.util.spec_from_file_location('m', sys.argv[1] + '/scripts/build-provenance-manifest.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); print(json.dumps([a['path'] for a in m.ARTIFACTS if a.get('investigation_gate_dependency')]))";
+	const paths: string[] = JSON.parse(await new Promise<string>((done, fail) => execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', ['-c', script, CHECKOUT_ROOT], (error, stdout) => (error ? fail(error) : done(stdout)))));
+	const denied = new Set((agentSpec(loadComposition(), 'orchestrator').denyWrites ?? []).map((path) => path.toLowerCase()));
+	assert.ok(paths.length > 0);
+	for (const path of paths) assert.ok(GATE_BOUND.has(path) || denied.has(path), `${path} is not refused after the gate`);
+});
+
+// LFM3 r3 kde stage 2 on Osaurus (03f008b0): the review page opened and the
+// orchestrator called open_review 16 more times in the same turn.
+// It opens the real review page, whose child process does not start in the
+// Linux CI image (a separate follow-up); there the page never opens.
+test('once the review page opens, the turn ends with no further model request', { skip: process.platform === 'linux' && 'the review child does not start on Linux CI' }, async (t) => {
+	const fake = await startFakeOpenAI(() => ({ toolCalls: [{ name: 'open_review', arguments: {} }] }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), join(space.casesRoot, 'case-a'), 'investigation_gate', '--activated', '--clean']);
+	// The browser opener is a stub that records each call.
+	const bin = join(space.root, 'bin');
+	await mkdir(bin);
+	for (const name of ['open', 'xdg-open']) {
+		await writeFile(join(bin, name), `#!/bin/sh\necho "$1" >> "${join(space.root, 'opened.log')}"\n`);
+		await chmod(join(bin, name), 0o755);
+	}
+	const env = baseEnv(space, fake.baseURL);
+	const chat = launch(t, { ...env, PATH: `${bin}:${env.PATH}` });
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(fake.requests.length, 1, 'no model request after the page opened');
+	assert.equal((await readFile(join(space.root, 'opened.log'), 'utf8')).trim().split('\n').length, 1, 'the page opened once');
+	assert.ok(chat.lines.some((line) => line.includes(REVIEW_OPEN_STOP)), 'the member is told the page is open');
+	chat.process.stdin.end();
+	await chat.exited;
+});
+
 test('the fact-checker is not started after the Investigation gate', async (t) => {
 	const fake = await startFakeOpenAI((request) =>
 		toolResults(request).length === 0
@@ -1957,7 +2068,13 @@ test('newsroom edition: prior knowledge and decision checks go to the Editorial 
 	const editorial = await startFakeEditorial({ handlers: { get_record: () => ({ isError: true, text: `no such record ${'z'.repeat(30_000)}` }) } });
 	t.after(() => Promise.all([fake.close(), editorial.close()]));
 	const space = await workspace(t);
-	const caseDir = await caseAtIngest(space);
+	const caseDir = await caseAtInvestigation(space);
+	// The investigator runs only before the Investigation gate; run_checks needs findings to send.
+	const source = join(space.root, 'gate-fixture');
+	await new Promise<void>((done, fail) =>
+		execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), source, 'investigation_gate'], (error) => (error ? fail(error) : done())),
+	);
+	await copyFile(join(source, 'data', 'findings.json'), join(caseDir, 'data', 'findings.json'));
 	const chat = launch(t, newsroomEnv(space, newsroomRoute(fake.baseURL), editorial));
 
 	await settledPrompt(chat, 'Continue.');
@@ -2125,7 +2242,7 @@ test('an Editorial MCP that cannot be used stops the newsroom case with a plain 
 	const editorial = await startFakeEditorial({ handlers: { search_knowledge: () => ({ httpStatus: 503 }) } });
 	t.after(() => Promise.all([fake.close(), editorial.close()]));
 	const space = await workspace(t);
-	await caseAtIngest(space);
+	await caseAtInvestigation(space);
 	const chat = launch(t, newsroomEnv(space, newsroomRoute(fake.baseURL), editorial));
 	chat.send({ id: 'p', type: 'prompt', message: 'Continue.' });
 

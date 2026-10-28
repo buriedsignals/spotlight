@@ -1,6 +1,7 @@
 // The Spotlight extension, loaded by path into every Spotlight pi process. It
 // registers the model route chosen by the launcher, applies the fixed
 // provider request-body policy, and registers exactly the role's tools.
+import { relative, resolve, sep } from 'node:path';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
@@ -15,7 +16,7 @@ import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
 import { bindActiveCase, pythonAdapter, resolveCase, spotlightTools } from './tools/spotlight.ts';
 import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
-import { gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
+import { PAGE_NOT_OPENED, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
 import { LOOP_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
 import { evidenceValidates } from './validators.ts';
 
@@ -60,6 +61,7 @@ function toolsFor(role: string): ToolDefinition[] {
 		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => (cycle.spawns = 0)));
 		tools.push(spawnAgentTool(spawnableWorkers(composition), cycle));
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter))));
+		tools.splice(0, tools.length, ...tools.map((tool) => keepGateBound(tool, active.caseDir, async () => String((await resolveCase(active, runAdapter)).phase ?? ''))));
 	}
 	const allowlist = new Set(allowedTools(spec, sensitive, edition));
 	const allowed = tools.filter((tool) => allowlist.has(tool.name));
@@ -67,6 +69,33 @@ function toolsFor(role: string): ToolDefinition[] {
 	// tool, so every other case keeps the same tool list.
 	if (hosted && approvedIndicatorFramework(active.caseDir)) allowed.push(recordIndicatorFrameworkTool(hosted, context.writeRoot));
 	return allowed;
+}
+
+// LFM3 e2 kde stage 3 on Osaurus (03f008b0): at Ingest the orchestrator
+// rewrote data/summary.json, which the approved Investigation gate and its
+// provenance manifest bind, and the case fell back to the gate's finalization.
+// Once the gate is approved the orchestrator may not write the files the gate
+// and its finalization bind (the rest are in its denyWrites), nor anything in
+// the folders the evidence bundle's files live in, which the gate's dependency
+// digest hashes too. A follow-up returns the case to Investigation, where it
+// may again. launcher.test.ts checks the list against the provenance builder's
+// gate dependencies.
+export const GATE_BOUND = new Set(['summary.md', 'data/summary.json', 'data/case-contract.json', 'data/provenance-manifest.json', 'review.html']);
+const GATE_BOUND_FOLDERS = ['research/', 'evidence/'];
+const GATE_APPROVED_PHASES = new Set(['investigation_gate_finalization', 'report', 'ingest', 'complete']);
+export const GATE_BOUND_REFUSAL = 'is bound by the approved Investigation gate, so it stays as the member approved it; the file is unchanged. Work from it as it is.';
+
+function keepGateBound(tool: ToolDefinition, caseDir: string, phase: () => Promise<string>): ToolDefinition {
+	if (tool.name !== 'write_file' && tool.name !== 'edit_file') return tool;
+	return {
+		...tool,
+		async execute(id, params, ...rest) {
+			const path = String((params as { path?: unknown }).path ?? '');
+			const name = relative(caseDir, resolve(caseDir, path.replace(/^\{CASE_DIR\}(?:[\\/]|$)/, ''))).split(sep).join('/').toLowerCase();
+			if ((GATE_BOUND.has(name) || GATE_BOUND_FOLDERS.some((folder) => name.startsWith(folder))) && GATE_APPROVED_PHASES.has(await phase())) throw new Error(`refused: ${name} ${GATE_BOUND_REFUSAL}`);
+			return tool.execute(id, params, ...rest);
+		},
+	};
 }
 
 export default function spotlightExtension(pi: ExtensionAPI): void {
@@ -112,6 +141,10 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	const guarded = registerLoopGuard(pi, tier12b && role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
 	// Ending the orchestrator would end the case, so only workers are stopped.
 	const streakGuarded = tier12b && role !== ORCHESTRATOR ? registerRefusalStreak(pi, `The ${role} ${REFUSAL_STOP}`) : (tool: ToolDefinition) => tool;
+	if (role === ORCHESTRATOR) {
+		registerReviewRefusalCap(pi);
+		registerEndTurnOnOpen(pi);
+	}
 	if (tier12b) {
 		registerReadBudget(pi);
 		registerCompletionFloor(pi);
@@ -510,6 +543,82 @@ function registerRefusalStreak(pi: ExtensionAPI, stop: string): (tool: ToolDefin
 			}
 			return tool.prepareArguments ? tool.prepareArguments(args) : args;
 		},
+	});
+}
+
+// LFM3 e2 kde stage 2 on Osaurus (03f008b0): the orchestrator rewrote an
+// invalid report draft 23 times and open_review refused it 31 times. Writes
+// came between the refusals, so no consecutive-refusal guard fired, and only
+// the test's 30-minute cap ended it. On every tier the orchestrator's turn is
+// stopped at the fifth refusal since the page last opened, before the next
+// model request, and the member is told what failed. The count starts again
+// after the stop, so a member who asks to try again gets five more attempts.
+export const REVIEW_REFUSAL_CAP = 5;
+const REVIEW_ERROR_LINES = 3;
+
+// The stop line is the member's, so it names the problem in plain words and
+// shows at most the validator's first three FAIL lines.
+export function reviewRefusalStop(refusal: string): string {
+	const report = refusal.slice(PAGE_NOT_OPENED.length).startsWith('data/report-draft.json ');
+	const stop = report
+		? 'Spotlight stopped this turn because the report draft was refused five times. The draft did not pass the report check, so nothing was rendered or recorded. Ask Spotlight to try again, or say what to change.'
+		: 'Spotlight stopped this turn because the review page was refused five times. The case files it needed did not pass their check, so nothing was recorded. Ask Spotlight to try again, or say what to change.';
+	const errors = refusal
+		.split('\n')
+		.filter((line) => line.startsWith('FAIL '))
+		.slice(0, REVIEW_ERROR_LINES)
+		.map((line) => line.replace(/^FAIL\s+/, ''));
+	return errors.length > 0 ? `${stop}\nThe check found these problems.\n${errors.join('\n')}` : stop;
+}
+
+// LFM3 r3 kde stage 2 on Osaurus (03f008b0): the review page opened, and the
+// orchestrator went on calling open_review in the same turn 16 times; the
+// member and the test driver act only between turns. Every phase skill ends
+// the turn at the page, so once it opens the harness ends the turn before the
+// next model request and the member sees this line.
+export const REVIEW_OPEN_STOP = 'Spotlight opened the review page in your browser and is waiting for your decision there. Say here when you are done.';
+
+function registerEndTurnOnOpen(pi: ExtensionAPI): void {
+	let opened = false;
+	pi.on('agent_start', () => {
+		opened = false;
+	});
+	pi.on('tool_execution_end', (event) => {
+		if (event.toolName === 'open_review' && !event.isError && (event.result?.details as { opened?: unknown } | undefined)?.opened === true) opened = true;
+	});
+	pi.on('before_provider_request', (_event, ctx) => {
+		if (opened) ctx.abort();
+		return undefined;
+	});
+	pi.on('message_end', (event) => {
+		if (!opened || (event.message as { role?: string }).role !== 'assistant') return undefined;
+		opened = false;
+		return { message: { ...event.message, content: [{ type: 'text', text: REVIEW_OPEN_STOP }] } as typeof event.message };
+	});
+}
+
+function registerReviewRefusalCap(pi: ExtensionAPI): void {
+	let refusals = 0;
+	let stop: string | undefined;
+	pi.on('tool_execution_end', (event) => {
+		if (event.toolName !== 'open_review') return;
+		const text: string = event.result?.content?.[0]?.text ?? '';
+		if (!event.isError) refusals = 0;
+		else if (text.startsWith(PAGE_NOT_OPENED) && ++refusals >= REVIEW_REFUSAL_CAP) {
+			refusals = 0;
+			stop = reviewRefusalStop(text);
+			log(`open_review was refused ${REVIEW_REFUSAL_CAP} times; the turn was stopped`);
+		}
+	});
+	pi.on('before_provider_request', (_event, ctx) => {
+		if (stop) ctx.abort();
+		return undefined;
+	});
+	pi.on('message_end', (event) => {
+		if (!stop || (event.message as { role?: string }).role !== 'assistant') return undefined;
+		const text = stop;
+		stop = undefined;
+		return { message: { ...event.message, content: [{ type: 'text', text }] } as typeof event.message };
 	});
 }
 
