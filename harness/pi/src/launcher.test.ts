@@ -416,6 +416,32 @@ test('a brief written under data/ is refused with the root path, and the brief a
 	assert.notEqual(resolved.next_phase, 'brief');
 });
 
+// r6 northwind on dd14e2e5: the orchestrator ended the run on a text summary
+// while the case waited on it. At Investigation the first text turn gets one
+// nudge and a second one ends the run; at Brief, where the orchestrator talks
+// with the member, a text turn ends it at once.
+test('on the 12b an orchestrator text turn at a phase only it can move gets one nudge, never two in a row; at Brief it gets none', async (t) => {
+	for (const atInvestigation of [true, false]) {
+		const fake = await startFakeOpenAI(() => ({ text: 'Here is the plan.' }));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		if (atInvestigation) await caseAtInvestigation(space);
+		const chat = launch(t, baseEnv(space, fake.baseURL));
+
+		await settledPrompt(chat, 'Continue.');
+
+		const nudges = fake.requests.flatMap((request) => request.messages).filter((message) => message.role === 'user' && JSON.stringify(message.content).includes('Your turn ended with text'));
+		const last = fake.requests[fake.requests.length - 1].messages;
+		if (atInvestigation) {
+			assert.equal(fake.requests.length, 2, 'one nudge, then the second text turn ends the run');
+			assert.match(JSON.stringify(last[last.length - 1].content), /the case is at investigation \(skill: phase-investigation\)/);
+		} else {
+			assert.equal(fake.requests.length, 1, 'no nudge at Brief');
+			assert.equal(nudges.length, 0);
+		}
+	}
+});
+
 test('a worker writes through its typed tools and the harness validates its output when it finishes', async (t) => {
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) {
@@ -1017,9 +1043,9 @@ test('the analyst is not started before Ingest or in the newsroom edition', asyn
 	await settledPrompt(routed, 'Continue.');
 
 	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'analyst')).length, 0);
-	const refusals = fake.requests
-		.filter((request) => toolResults(request).length > 0)
-		.map((request) => toolResults(request).join('\n'));
+	// Distinct results: at Investigation the text-turn nudge asks once more,
+	// carrying the same refusal.
+	const refusals = [...new Set(fake.requests.flatMap((request) => toolResults(request)))];
 	assert.equal(refusals.length, 2);
 	assert.match(refusals[0], /the analyst runs only at ingest; the case is at investigation/);
 	assert.match(refusals[1], /the analyst does not run in the newsroom edition/);

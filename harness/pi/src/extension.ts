@@ -12,7 +12,7 @@ import { typedTools } from './tools/index.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
-import { bindActiveCase, pythonAdapter, spotlightTools } from './tools/spotlight.ts';
+import { bindActiveCase, pythonAdapter, resolveCase, spotlightTools } from './tools/spotlight.ts';
 import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
 import { openReviewTool, gateCheck } from './tools/review.ts';
@@ -112,6 +112,11 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	if (tier12b) {
 		registerReadBudget(pi);
 		registerEmptyTurnNudge(pi);
+		if (role === ORCHESTRATOR) {
+			const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
+			const runAdapter = pythonAdapter(process.env.SPOTLIGHT_PYTHON || 'python3', resolverEnv(process.env, loadComposition()));
+			registerTextTurnNudge(pi, () => resolveCase(active, runAdapter));
+		}
 	}
 	registerToolOwners(pi, role);
 	const tools = toolsFor(role).map(guarded);
@@ -166,6 +171,43 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 		if (parts.some((part) => part.type === 'toolCall' || (part.type === 'text' && part.text?.trim()))) return;
 		nudged = true;
 		pi.sendUserMessage(EMPTY_TURN_NUDGE, { deliverAs: 'followUp' });
+	});
+}
+
+// The phases where the orchestrator does the next step itself and no gate waits
+// for the member. Brief, Research and Ingest also hold conversations with the
+// member, so a text turn there can be right.
+const ACTING_PHASES = ['methodology', 'investigation', 'investigation_gate_finalization'];
+export const textTurnNudge = (phase: string, owner: string) =>
+	`Your turn ended with text, but the case is at ${phase} (skill: ${owner}) and no gate is waiting for the member, so the case moves only when you act. Take that phase's next step with your tools now; call spotlight_resolve if you are unsure what it is.`;
+
+// r6 northwind on dd14e2e5: the orchestrator ended the run with a plain-text
+// summary of the methodology after its gate steps were refused. A text turn
+// with no tool call, in a phase only the orchestrator can move, gets one
+// nudge; a second text turn in a row ends the run as before, so a model that
+// is done is not held.
+function registerTextTurnNudge(pi: ExtensionAPI, resolve: () => Promise<Record<string, unknown>>): void {
+	let nudged = false;
+	pi.on('message_end', async (event) => {
+		const message = event.message as { role?: string; stopReason?: string; content?: string | Array<{ type: string; text?: string }> };
+		const parts = typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : (message.content ?? []);
+		if (message.role !== 'assistant') return;
+		if (parts.some((part) => part.type === 'toolCall')) {
+			nudged = false;
+			return;
+		}
+		if (message.stopReason !== 'stop' || nudged || !parts.some((part) => part.type === 'text' && part.text?.trim())) return;
+		let status: Record<string, unknown>;
+		try {
+			status = await resolve();
+		} catch (error) {
+			log(`text-turn check skipped: ${(error as Error).message}`);
+			return;
+		}
+		const phase = String(status.next_phase ?? '');
+		if (!ACTING_PHASES.includes(phase)) return;
+		nudged = true;
+		pi.sendUserMessage(textTurnNudge(phase, String(status.owner ?? '')), { deliverAs: 'followUp' });
 	});
 }
 
