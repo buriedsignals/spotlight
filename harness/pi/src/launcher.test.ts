@@ -1833,6 +1833,36 @@ test('a first fact-check task carries the structure, one claim per finding; once
 	assert.ok(!userText(second).includes('Start from this structure'), 'a fact-check that exists gets no structure');
 });
 
+// U3 census (84674fd9): a fact-checker wrote fact-check content over
+// data/findings.json. Each worker writes only its own files.
+test('the fact-checker cannot write the findings and the investigator cannot write the fact-check; each is told its own file', async (t) => {
+	for (const [agent, path, own] of [
+		['fact-checker', 'data/findings.json', 'data/fact-check.json'],
+		['investigator', 'data/fact-check.json', 'data/findings.json and data/evidence-bundle.json'],
+	] as const) {
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, agent)) return toolResults(request).length === 0 ? { toolCalls: [{ name: 'write_file', arguments: { path, content: '{"claims": []}' } }] } : { text: 'Done.' };
+			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent, task: 'Work the case.' } }] } : { text: 'Done.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = join(space.casesRoot, 'case-a');
+		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+		await unlink(join(caseDir, 'data', 'fact-check.json'));
+		const before = await caseDigests(caseDir);
+		const chat = launch(t, baseEnv(space, fake.baseURL));
+
+		await settledPrompt(chat, 'Continue.');
+		chat.process.stdin.end();
+		await chat.exited;
+
+		const worker = fake.requests.filter((request) => isWorkerRequest(request, agent)).at(-1);
+		assert.ok(worker, `${agent} ran`);
+		assert.equal(toolResults(worker)[0], `refused: ${path} is a case file another role writes; this agent may not write it. Your own file is ${own}.`, agent);
+		assert.deepEqual(await caseDigests(caseDir), before, `${agent}: no case file changed`);
+	}
+});
+
 // LFM3 e2 kde stage 2 on Osaurus (03f008b0): at Report, ten investigator
 // spawns rewrote the approved findings, and the approved fact-check broke.
 test('no investigator starts after the Investigation gate, at Report or Ingest', async (t) => {
