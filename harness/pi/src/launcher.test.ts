@@ -528,6 +528,29 @@ test('on the 12b a worker refused three times in a row for one repeated call is 
 	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /The investigator repeated one call and was stopped; its last results stand\./);
 });
 
+// 12B r5 fsf s0 on 2f357029: fact-checker-71 made one source_expressions call nine times in a
+// row; Pi refused its arguments each time, before the loop guard ever saw the call.
+test('on the 12b a worker repeating one call whose arguments fail the schema is refused, then stopped', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { toolCalls: [{ name: 'read_file', arguments: { file: 'data/findings.json' } }] };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const investigator = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	const results = toolResults(investigator[investigator.length - 1]);
+	assert.equal(investigator.length, 5, 'two calls fail validation, two are refused, and the third refusal ends the run');
+	assert.deepEqual(results.map((text) => /^Validation failed for tool "read_file"/.test(text)), [true, true, false, false]);
+	assert.deepEqual(results.slice(2).map((text) => /same call as the last two/.test(text)), [true, true]);
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /The investigator repeated one call and was stopped; its last results stand\./);
+});
+
 // D5: a new case is activated by the harness, not by a model writing the
 // receipt. The contract must exist before the investigator's first turn, and
 // no role can write it.
