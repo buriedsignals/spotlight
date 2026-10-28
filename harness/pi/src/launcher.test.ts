@@ -1524,6 +1524,24 @@ test('on the 12b a worker spawn while the Investigation gate is ready is refused
 	}
 });
 
+// LFM3 e2 kde stage 2 on Osaurus (03f008b0): all 23 report drafts failed on
+// structure. Resolving at Report writes the draft's structure for the model.
+test('resolving at Report writes the report draft\'s structure with empty prose', async (t) => {
+	const fake = await startFakeOpenAI(orchestratorScript([{ name: 'spotlight_resolve', arguments: {} }]));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await new Promise<void>((done, fail) =>
+		execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), join(space.casesRoot, 'case-a'), 'report'], (error) => (error ? fail(error) : done())),
+	);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const draft = JSON.parse(await readFile(join(space.casesRoot, 'case-a', 'data', 'report-draft.json'), 'utf8'));
+	assert.deepEqual(draft.finding_order, ['F1']);
+	assert.deepEqual(draft.finding_treatments, [{ finding_id: 'F1', headline: '', summary: '', why_it_matters: '' }]);
+});
+
 test('the fact-checker is not started after the Investigation gate', async (t) => {
 	const fake = await startFakeOpenAI((request) =>
 		toolResults(request).length === 0

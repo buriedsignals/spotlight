@@ -986,13 +986,58 @@ def _newsroom_checks(case: Path, kind: str) -> dict[str, Any] | None:
     }
 
 
+REPORT_PROSE = ("headline", "summary", "why_it_matters")
+
+
+def report_draft_written(draft: object) -> bool:
+    """Whether the model has written any of the draft's prose. The harness's
+    skeleton (report_skeleton) has none, and counts as no draft yet."""
+    if not isinstance(draft, dict):
+        return False
+    treatments = draft.get("finding_treatments")
+    prose = [draft.get("title"), draft.get("deck")] + [
+        item.get(field)
+        for item in (treatments if isinstance(treatments, list) else [])
+        if isinstance(item, dict)
+        for field in REPORT_PROSE
+    ]
+    return any(isinstance(text, str) and text.strip() for text in prose)
+
+
+def report_skeleton(case: Path) -> dict[str, Any] | None:
+    """The report draft's structure, with the prose left empty: one treatment
+    per finding the Investigation gate kept, in findings.json order. None when
+    the gate kept no finding (the report can only be declined)."""
+    findings_doc = _read_case_json(case, "data/findings.json")
+    raw = findings_doc.get("findings") if isinstance(findings_doc, dict) else None
+    kept_out = set_aside_findings(case)
+    ids = [
+        finding["id"]
+        for finding in (raw if isinstance(raw, list) else [])
+        if isinstance(finding, dict) and isinstance(finding.get("id"), str) and finding["id"].strip()
+        and finding["id"] not in kept_out
+    ]
+    if not ids:
+        return None
+    return {
+        "schema_version": "1.0",
+        "title": "",
+        "deck": "",
+        "framing_finding_ids": ids,
+        "finding_order": ids,
+        "finding_treatments": [{"finding_id": fid, **{field: "" for field in REPORT_PROSE}} for fid in ids],
+        "caveats": [],
+        "next_steps": [],
+    }
+
+
 def _report_content(case: Path) -> dict[str, Any]:
     """The draft the member publishes or declines, as text for the page."""
     draft = _read_case_json(case, REPORT_DRAFT)
     summary = _read_case_json(case, "data/summary.json")
     content: dict[str, Any] = {
         "title": _text(summary.get("title"), 500) if isinstance(summary, dict) else "",
-        "draft_ready": isinstance(draft, dict),
+        "draft_ready": report_draft_written(draft),
         "draft_title": _text(draft.get("title"), 500) if isinstance(draft, dict) else "",
     }
     if isinstance(draft, dict):

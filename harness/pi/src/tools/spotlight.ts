@@ -181,6 +181,10 @@ export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, ro
 		parameters: Type.Object({ retry_research: Type.Optional(Type.Boolean()) }),
 		async execute(_id, params, signal) {
 			const resolved = await resolveCase(active, runAdapter, signal);
+			// LFM3 e2 kde stage 2 on Osaurus (03f008b0): all 23 report drafts
+			// failed on structure. At Report the harness writes the draft's
+			// structure once, and the model writes only its prose and order.
+			if (resolved.phase === 'report') await runAdapter(['report-skeleton', '--authorized-cases-root', active.casesRoot, active.caseDir], signal);
 			// Approval of the methodology is what starts Research: the resolver
 			// reports the phase and code runs the approved topics. The model only
 			// resolves; it chooses no topic and starts no swarm.
