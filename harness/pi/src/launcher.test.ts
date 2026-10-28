@@ -16,7 +16,7 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, agentSpec, loadComposition, deliverableFor } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
-import { BLOCKED_STOP, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded } from './extension.ts';
+import { blockedStop, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
@@ -1870,7 +1870,7 @@ test('once the case is blocked, the orchestrator\'s next tool calls end the turn
 
 	assert.equal(fake.requests.length, 2, 'no call runs after the blocked resolve');
 	assert.match(toolResults(fake.requests[1])[0], /"status":"blocked"/);
-	assert.ok(chat.lines.some((line) => line.includes(BLOCKED_STOP)), 'the member is told why');
+	assert.ok(chat.lines.some((line) => line.includes(blockedStop(1))), 'the member is told why');
 });
 
 // U3 census, r5 on swiss (84674fd9): the orchestrator made one call 286 times

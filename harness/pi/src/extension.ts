@@ -745,17 +745,23 @@ function registerOrchestratorLoopBound(pi: ExtensionAPI): void {
 // methodology. Once a resolve or transition returns it, a text answer ends
 // the turn as usual; a message with more tool calls is replaced by this line,
 // with no calls, so the turn ends. The member's next message starts afresh.
-export const BLOCKED_STOP = 'Spotlight stopped the investigation because its cycles are used up and a gap is still open. To go on, revise the methodology and approve it again.';
+export const blockedStop = (open: number) =>
+	`Spotlight stopped the investigation because it has used all its research rounds and ${open > 1 ? 'some questions are' : 'one question is'} still open. To continue, change the methodology and approve it again.`;
 
 function registerBlockedStop(pi: ExtensionAPI): void {
 	let blocked = false;
+	let open = 1;
 	pi.on('agent_start', () => {
 		blocked = false;
 	});
 	pi.on('tool_execution_end', (event) => {
 		if ((event.toolName !== 'spotlight_resolve' && event.toolName !== 'spotlight_transition') || event.isError) return;
 		try {
-			blocked ||= (JSON.parse(event.result?.content?.[0]?.text ?? '') as { status?: unknown }).status === 'blocked';
+			const status = JSON.parse(event.result?.content?.[0]?.text ?? '') as { status?: unknown; blocked?: { gaps_report?: unknown } };
+			if (status.status !== 'blocked') return;
+			blocked = true;
+			const gaps = status.blocked?.gaps_report;
+			open = Array.isArray(gaps) && gaps.length > 1 ? gaps.length : 1;
 		} catch {
 			// Not a resolved state.
 		}
@@ -764,7 +770,7 @@ function registerBlockedStop(pi: ExtensionAPI): void {
 		const message = event.message as { role?: string; content?: Array<{ type: string }> };
 		if (!blocked || message.role !== 'assistant' || !message.content?.some((part) => part.type === 'toolCall')) return undefined;
 		log('the case is blocked and the orchestrator went on; its turn was ended');
-		return { message: { ...event.message, content: [{ type: 'text', text: BLOCKED_STOP }] } as typeof event.message };
+		return { message: { ...event.message, content: [{ type: 'text', text: blockedStop(open) }] } as typeof event.message };
 	});
 }
 
