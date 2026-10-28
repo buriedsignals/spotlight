@@ -520,6 +520,22 @@ def _run_helper(script: str, case: Path) -> None:
         raise OrchestrationError(detail)
 
 
+def write_report_skeleton(case: Path, data_descriptor: int) -> bool:
+    """At Report, before any draft exists, write the draft's structure for the
+    model to fill in (review.report_skeleton). Returns whether it wrote one."""
+    state = load_state(case, data_descriptor)
+    if status_for(case, state, data_descriptor)["next_phase"] != "report":
+        return False
+    if case_path(case, review.REPORT_DRAFT).exists():
+        return False
+    skeleton = review.report_skeleton(case)
+    if skeleton is None:
+        return False
+    content = (json.dumps(skeleton, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    atomic_write_files(case, {review.REPORT_DRAFT: content}, data_descriptor=data_descriptor)
+    return True
+
+
 def decide_report(
     case: Path,
     data_descriptor: int,

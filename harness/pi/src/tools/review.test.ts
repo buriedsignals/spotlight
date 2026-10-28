@@ -17,7 +17,7 @@ test('open_review at the Report gate refuses an invalid report draft with the va
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const active = bindActiveCase(root, join(root, 'case'));
 	await mkdir(join(active.caseDir, 'data'), { recursive: true });
-	await writeFile(join(active.caseDir, 'data/report-draft.json'), '{}\n');
+	await writeFile(join(active.caseDir, 'data/report-draft.json'), '{"title": "Written, but no structure"}\n');
 	const context = { caseDir: active.caseDir, writeRoot: active.caseDir, python: PYTHON, configPath: '', env: { PATH: process.env.PATH ?? '' } };
 	let opened = 0;
 	const opener = async () => {
@@ -51,11 +51,14 @@ test('open_review at the Report or Ingest gate with nothing to approve still ope
 	const toolAt = (resolved: Record<string, unknown>) => openReviewTool(active.caseDir, root, opener, undefined, () => missingForApproval(active.caseDir, resolved));
 	const text = async (resolved: Record<string, unknown>) => ((await toolAt(resolved).execute('call', {}, undefined, undefined, undefined as never)).content[0] as { text: string }).text;
 
-	assert.match(await text({ phase: 'report' }), /review page is open[\s\S]*No report draft exists, so the member can only decline the report on the page\. If the member wants the report, write data\/report-draft\.json/);
+	assert.match(await text({ phase: 'report' }), /review page is open[\s\S]*No report draft is written yet, so the member can only decline the report on the page\. If the member wants the report, write the prose in data\/report-draft\.json/);
+	// The skeleton the harness writes at Report has no prose, so it is no draft yet.
+	await writeFile(join(active.caseDir, 'data/report-draft.json'), JSON.stringify({ schema_version: '1.0', title: '', deck: '', framing_finding_ids: ['F1'], finding_order: ['F1'], finding_treatments: [{ finding_id: 'F1', headline: '', summary: '', why_it_matters: '' }], caveats: [], next_steps: [] }));
+	assert.match(await text({ phase: 'report' }), /No report draft is written yet/);
 	assert.match(await text({ phase: 'ingest', ingest: { resume_at: 'decision' } }), /No knowledge batch exists[\s\S]*call spawn_agent with agent analyst/);
-	assert.equal(opened, 2, 'the page still opens, so the member can decline');
+	assert.equal(opened, 3, 'the page still opens, so the member can decline');
 
-	await writeFile(join(active.caseDir, 'data/report-draft.json'), '{}\n');
+	await writeFile(join(active.caseDir, 'data/report-draft.json'), '{"title": "Fixture report"}\n');
 	await writeFile(join(active.caseDir, 'data/knowledge-batch.json'), '{}\n');
 	assert.doesNotMatch(await text({ phase: 'report' }), /No report draft/);
 	assert.doesNotMatch(await text({ phase: 'ingest', ingest: { resume_at: 'decision' } }), /No knowledge batch/);

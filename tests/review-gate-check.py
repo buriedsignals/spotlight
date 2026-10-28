@@ -227,6 +227,31 @@ class ReviewGate(CaseFixture):
         draft_path.write_text(json.dumps(draft), encoding="utf-8")
         self.assertNotEqual(self.view(case, "report")["digest"], view["digest"])
 
+    # LFM3 e2 kde stage 2 on Osaurus (03f008b0): all 23 report drafts failed on
+    # structure. At Report the draft's structure is written once, prose empty.
+    def test_report_skeleton_is_written_once_and_is_no_draft_until_its_prose_is(self) -> None:
+        case = self.build("skeleton", "report")
+        self.assertEqual(json.loads(self.seam(case, "report-skeleton").stdout), {"written": True})
+        draft_path = case / "data/report-draft.json"
+        draft = json.loads(draft_path.read_text(encoding="utf-8"))
+        self.assertEqual((draft["finding_order"], draft["framing_finding_ids"]), (["F1"], ["F1"]))
+        self.assertEqual(draft["finding_treatments"], [{"finding_id": "F1", "headline": "", "summary": "", "why_it_matters": ""}])
+        self.assertFalse(self.view(case, "report")["content"]["draft_ready"], "the skeleton is no draft yet")
+        refused = subprocess.run([sys.executable, str(ROOT / "scripts/validate-report-draft.py"), str(case)],
+                                 capture_output=True, text=True, check=False)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("finding_treatments[F1].headline must be a non-empty string", refused.stdout)
+
+        draft["title"] = "Fixture report"
+        draft_path.write_text(json.dumps(draft), encoding="utf-8")
+        self.assertTrue(self.view(case, "report")["content"]["draft_ready"])
+        self.assertEqual(json.loads(self.seam(case, "report-skeleton").stdout), {"written": False}, "a draft is never overwritten")
+        self.assertEqual(json.loads(draft_path.read_text(encoding="utf-8"))["title"], "Fixture report")
+
+        before = self.build("before-gate", "investigation_gate")
+        self.assertEqual(json.loads(self.seam(before, "report-skeleton").stdout), {"written": False})
+        self.assertFalse((before / "data/report-draft.json").exists(), "only at Report")
+
     def test_page_report_and_ingest_decisions_record_the_members_name(self) -> None:
         case = self.build("named", "report")
         nonce = self.nonce(case, "report")

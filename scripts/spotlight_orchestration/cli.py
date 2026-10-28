@@ -22,6 +22,7 @@ from . import (
     review_view,
     seal_investigation_gate,
     start_research_round,
+    write_report_skeleton,
 )
 from .contract import RECORDABLE_ATTEMPTS
 from .review import REVIEW_GATES, ReviewDigestChanged
@@ -99,6 +100,8 @@ def build_parser() -> argparse.ArgumentParser:
     passages = commands.add_parser("review-passages")
     passages.add_argument("gate", choices=REVIEW_GATES)
     add_case_boundary(passages)
+    skeleton = commands.add_parser("report-skeleton")
+    add_case_boundary(skeleton)
     edit = commands.add_parser("review-edit")
     edit.add_argument("gate", choices=REVIEW_GATES)
     edit.add_argument("--edit", required=True, help="one edit as a JSON object")
@@ -116,6 +119,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
         return review_passages(args.case_dir, args.gate, **boundary)
     if args.command == "issue-review-nonce":
         return {"nonce": issue_review_nonce(args.case_dir, args.gate, **boundary)}
+    if args.command == "report-skeleton":
+        return {"written": write_report_skeleton(args.case_dir, **boundary)}
     if args.command == "review-edit":
         try:
             edit = json.loads(args.edit)
