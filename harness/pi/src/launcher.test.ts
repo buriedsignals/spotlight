@@ -16,7 +16,7 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, loadComposition } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
-import { REVIEW_REFUSAL_CAP, repeatsItself } from './extension.ts';
+import { GATE_BOUND_REFUSAL, REVIEW_REFUSAL_CAP, repeatsItself } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
@@ -1568,6 +1568,32 @@ test('no investigator starts after the Investigation gate, at Report or Ingest',
 		assert.ok(toolResults(fake.requests.at(-1)!).join('\n').includes(GATE_DECIDED_REFUSAL), stage);
 		assert.equal(await readFile(join(space.casesRoot, 'case-a', 'data', 'findings.json'), 'utf8'), findings, `${stage}: the approved findings are unchanged`);
 	}
+});
+
+// LFM3 e2 kde stage 3 on Osaurus (03f008b0): at Ingest the orchestrator
+// rewrote data/summary.json and the approved case fell back to finalization.
+test('after the Investigation gate the orchestrator cannot rewrite the files the gate binds; before it, it can', async (t) => {
+	const write = { name: 'write_file', arguments: { path: 'data/summary.json', content: '{"title": "Rewritten"}\n' } };
+	const fake = await startFakeOpenAI(orchestratorScript([write]));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtIngest(space);
+	const summary = await readFile(join(caseDir, 'data', 'summary.json'), 'utf8');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.ok(toolResults(fake.requests.at(-1)!).join('\n').includes(`refused: data/summary.json ${GATE_BOUND_REFUSAL}`));
+	assert.equal(await readFile(join(caseDir, 'data', 'summary.json'), 'utf8'), summary, 'the approved summary is unchanged');
+
+	const before = await startFakeOpenAI(orchestratorScript([write]));
+	t.after(() => before.close());
+	const open = await workspace(t);
+	await new Promise<void>((done, fail) =>
+		execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), join(open.casesRoot, 'case-a'), 'investigation_gate'], (error) => (error ? fail(error) : done())),
+	);
+	await settledPrompt(launch(t, baseEnv(open, before.baseURL)), 'Continue.');
+	assert.equal(await readFile(join(open.casesRoot, 'case-a', 'data', 'summary.json'), 'utf8'), '{"title": "Rewritten"}\n', 'before the gate is approved the summary is the orchestrator\'s to write');
 });
 
 test('the fact-checker is not started after the Investigation gate', async (t) => {

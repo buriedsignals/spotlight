@@ -1,6 +1,7 @@
 // The Spotlight extension, loaded by path into every Spotlight pi process. It
 // registers the model route chosen by the launcher, applies the fixed
 // provider request-body policy, and registers exactly the role's tools.
+import { relative, resolve, sep } from 'node:path';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
@@ -60,6 +61,7 @@ function toolsFor(role: string): ToolDefinition[] {
 		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => (cycle.spawns = 0)));
 		tools.push(spawnAgentTool(spawnableWorkers(composition), cycle));
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter))));
+		tools.splice(0, tools.length, ...tools.map((tool) => keepGateBound(tool, active.caseDir, async () => String((await resolveCase(active, runAdapter)).phase ?? ''))));
 	}
 	const allowlist = new Set(allowedTools(spec, sensitive, edition));
 	const allowed = tools.filter((tool) => allowlist.has(tool.name));
@@ -67,6 +69,29 @@ function toolsFor(role: string): ToolDefinition[] {
 	// tool, so every other case keeps the same tool list.
 	if (hosted && approvedIndicatorFramework(active.caseDir)) allowed.push(recordIndicatorFrameworkTool(hosted, context.writeRoot));
 	return allowed;
+}
+
+// LFM3 e2 kde stage 3 on Osaurus (03f008b0): at Ingest the orchestrator
+// rewrote data/summary.json, which the approved Investigation gate and its
+// provenance manifest bind, and the case fell back to the gate's finalization.
+// Once the gate is approved the orchestrator may not write the files the gate
+// and its finalization bind (the rest are in its denyWrites); a follow-up
+// returns the case to Investigation, where it may again.
+const GATE_BOUND = new Set(['summary.md', 'data/summary.json', 'data/case-contract.json', 'data/provenance-manifest.json', 'review.html']);
+const GATE_APPROVED_PHASES = new Set(['investigation_gate_finalization', 'report', 'ingest', 'complete']);
+export const GATE_BOUND_REFUSAL = 'is bound by the approved Investigation gate, so it stays as the member approved it; the file is unchanged. Work from it as it is.';
+
+function keepGateBound(tool: ToolDefinition, caseDir: string, phase: () => Promise<string>): ToolDefinition {
+	if (tool.name !== 'write_file' && tool.name !== 'edit_file') return tool;
+	return {
+		...tool,
+		async execute(id, params, ...rest) {
+			const path = String((params as { path?: unknown }).path ?? '');
+			const name = relative(caseDir, resolve(caseDir, path.replace(/^\{CASE_DIR\}(?:[\\/]|$)/, ''))).split(sep).join('/').toLowerCase();
+			if (GATE_BOUND.has(name) && GATE_APPROVED_PHASES.has(await phase())) throw new Error(`refused: ${name} ${GATE_BOUND_REFUSAL}`);
+			return tool.execute(id, params, ...rest);
+		},
+	};
 }
 
 export default function spotlightExtension(pi: ExtensionAPI): void {
