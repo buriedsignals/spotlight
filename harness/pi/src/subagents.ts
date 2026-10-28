@@ -83,7 +83,18 @@ export async function requestEditorial(op: string, args: Record<string, unknown>
 const EVIDENCE_CORRECTION = /MODE:\s*EVIDENCE CORRECTION/;
 export const CORRECTION_SPENT = 'The fact-checker already had its one evidence correction this cycle. Record the failure with spotlight_transition recordAttempt (kind fact-check-evidence-repair, gap: the validator reason), then call spotlight_resolve.';
 
-export function spawnAgentTool(workers: string[]): ToolDefinition {
+// r6 nordhaven on dd14e2e5: the orchestrator spawned about 15 fact-checkers in
+// 25 minutes, each rewriting fact-check.json against the validator, with no
+// recordAttempt in between. A cycle (one plain check, one correction) needs
+// two; a successful spotlight_transition starts the next cycle.
+export const FACT_CHECKER_CAP = 3;
+export const FACT_CHECKERS_SPENT = `The fact-checker has run ${FACT_CHECKER_CAP} times this cycle; do not spawn it again. If the readiness criteria are met, open the Investigation gate with open_review and the current verdicts. Otherwise record the cycle with spotlight_transition recordAttempt (kind investigation-cycle, gap: what is still missing), then call spotlight_resolve.`;
+
+// Fact-checker spawns since the last successful spotlight_transition, shared by
+// spawn_agent and the transition tool of one orchestrator process.
+export type FactCheckerCycle = { spawns: number };
+
+export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }): ToolDefinition {
 	let corrections = 0;
 	return {
 		name: 'spawn_agent',
@@ -97,9 +108,11 @@ export function spawnAgentTool(workers: string[]): ToolDefinition {
 			const { agent, task } = params as { agent: string; task: string };
 			if (!workers.includes(agent)) throw new Error(`spawn_agent: unknown worker "${agent}"`);
 			if (agent === 'fact-checker') {
+				if (cycle.spawns >= FACT_CHECKER_CAP) throw new Error(FACT_CHECKERS_SPENT);
 				if (!EVIDENCE_CORRECTION.test(task)) corrections = 0;
 				else if (corrections > 0) throw new Error(CORRECTION_SPENT);
 				else corrections += 1;
+				cycle.spawns += 1;
 			}
 			if (typeof process.send !== 'function') {
 				throw new Error('spawn_agent needs the Spotlight launcher; this process was started without it');

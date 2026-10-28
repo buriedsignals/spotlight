@@ -15,6 +15,7 @@ import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, loadComposition } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
+import { FACT_CHECKERS_SPENT } from './subagents.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
 
@@ -504,6 +505,40 @@ test('a second evidence-correction fact-checker spawn in one cycle is refused, a
 	for (const index of [0, 2, 3]) assert.match(results[index], /Checked\./);
 	const spawned = new Set(fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker')).map((request) => JSON.stringify(request.messages.find((message) => message.role === 'user')?.content)));
 	assert.equal(spawned.size, 3, 'the refused correction never started a worker');
+});
+
+// r6 nordhaven on dd14e2e5: about 15 fact-checker spawns in one cycle. The
+// refusal names only calls the orchestrator can make there, and a real
+// recordAttempt with the named kind starts the next cycle.
+test('a fourth fact-checker spawn in one cycle is refused, again on every retry, and a recorded attempt allows the next', async (t) => {
+	const calls = [
+		...[1, 2, 3, 4, 5].map((n) => ({ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: `Fact-check pass ${n}.` } })),
+		{ name: 'spotlight_transition', arguments: { operation: 'recordAttempt', payload: { kind: 'investigation-cycle', gap: 'F1 has no stored source.' } } },
+		{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Fact-check pass 6.' } },
+	];
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
+		const next = calls[toolResults(request).length];
+		return next ? { toolCalls: [next] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker'));
+	const last = orchestrator[orchestrator.length - 1];
+	const results = toolResults(last);
+	assert.equal(results.length, calls.length);
+	for (const index of [3, 4]) assert.equal(results[index].includes(FACT_CHECKERS_SPENT), true, `spawn ${index + 1} is refused with the cap line`);
+	assert.doesNotMatch(results[5], /refused|error/i);
+	const spawned = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker') && toolResults(request).length === 0).map(userText);
+	assert.deepEqual(spawned.map((task) => task.match(/Fact-check pass \d/)?.[0]), ['Fact-check pass 1', 'Fact-check pass 2', 'Fact-check pass 3', 'Fact-check pass 6']);
+	// Every tool the line names is one the orchestrator has.
+	for (const name of FACT_CHECKERS_SPENT.match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []) assert.ok(toolNames(last).includes(name), `${name} is an orchestrator tool`);
+	assert.match(FACT_CHECKERS_SPENT, /recordAttempt \(kind investigation-cycle/);
 });
 
 // 12B r3 A2 nordhaven on ad768b54: investigator-7 repeated one search through six
@@ -1254,12 +1289,16 @@ test('a case search refusal (exit 2) fails the fact-checker spawn with the reaso
 });
 
 test('case search runs inside the worker limit, and cancelling a spawn stops its search before the fact-checker starts', async (t) => {
-	const spawns = 6;
+	// Three fact-checkers (the per-cycle cap) and two investigators that never
+	// answer: five spawns for four places.
+	const spawns = [
+		...[0, 1, 2].map((i) => ({ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: `Check finding F${i}.` } })),
+		...[0, 1].map((i) => ({ name: 'spawn_agent', arguments: { agent: 'investigator', task: `Work direction D${i}.` } })),
+	];
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
-		return toolResults(request).length === 0
-			? { toolCalls: Array.from({ length: spawns }, (_, i) => ({ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: `Check finding F${i}.` } })) }
-			: { text: 'Done.' };
+		if (isWorkerRequest(request, 'investigator')) return 'hang';
+		return toolResults(request).length === 0 ? { toolCalls: spawns } : { text: 'Done.' };
 	});
 	t.after(() => fake.close());
 	const space = await workspace(t);
@@ -1270,14 +1309,15 @@ test('case search runs inside the worker limit, and cancelling a spawn stops its
 	chat.send({ id: 'p-1', type: 'prompt', message: 'Continue.' });
 	const records = async () =>
 		(await readFile(pidLog, 'utf8').catch(() => '')).split('\n').filter(Boolean).map((line) => JSON.parse(line) as { pid: number; start?: number; end?: number });
+	const investigators = () => fake.requests.filter((request) => isWorkerRequest(request, 'investigator')).length;
 	let started: number[] = [];
 	await waitUntil(() => {
 		void records().then((each) => (started = each.filter((r) => r.start).map((r) => r.pid)));
-		return started.length >= 4;
+		return started.length + investigators() >= 4;
 	}, 30_000);
 	await new Promise((done) => setTimeout(done, 1500));
 	started = (await records()).filter((r) => r.start).map((r) => r.pid);
-	assert.equal(started.length, 4, 'at most four searches run at once: the queue admits case search like a worker');
+	assert.equal(started.length + investigators(), 4, 'four places at once: the queue admits case search like a worker');
 
 	chat.send({ id: 'abort-1', type: 'abort' });
 	await waitUntil(() => started.every((pid) => !isAlive(pid)), 20_000);
