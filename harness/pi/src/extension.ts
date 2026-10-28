@@ -56,8 +56,9 @@ function toolsFor(role: string): ToolDefinition[] {
 	if (edition === 'newsroom') tools.push(...editorialTools(requestEditorial));
 	if (role === ORCHESTRATOR) {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
-		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context)));
-		tools.push(spawnAgentTool(spawnableWorkers(composition)));
+		const cycle = { spawns: 0 };
+		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => (cycle.spawns = 0)));
+		tools.push(spawnAgentTool(spawnableWorkers(composition), cycle));
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context)));
 	}
 	const allowlist = new Set(allowedTools(spec, sensitive, edition));
