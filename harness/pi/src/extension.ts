@@ -75,9 +75,13 @@ function toolsFor(role: string): ToolDefinition[] {
 // rewrote data/summary.json, which the approved Investigation gate and its
 // provenance manifest bind, and the case fell back to the gate's finalization.
 // Once the gate is approved the orchestrator may not write the files the gate
-// and its finalization bind (the rest are in its denyWrites); a follow-up
-// returns the case to Investigation, where it may again.
-const GATE_BOUND = new Set(['summary.md', 'data/summary.json', 'data/case-contract.json', 'data/provenance-manifest.json', 'review.html']);
+// and its finalization bind (the rest are in its denyWrites), nor anything in
+// the folders the evidence bundle's files live in, which the gate's dependency
+// digest hashes too. A follow-up returns the case to Investigation, where it
+// may again. launcher.test.ts checks the list against the provenance builder's
+// gate dependencies.
+export const GATE_BOUND = new Set(['summary.md', 'data/summary.json', 'data/case-contract.json', 'data/provenance-manifest.json', 'review.html']);
+const GATE_BOUND_FOLDERS = ['research/', 'evidence/'];
 const GATE_APPROVED_PHASES = new Set(['investigation_gate_finalization', 'report', 'ingest', 'complete']);
 export const GATE_BOUND_REFUSAL = 'is bound by the approved Investigation gate, so it stays as the member approved it; the file is unchanged. Work from it as it is.';
 
@@ -88,7 +92,7 @@ function keepGateBound(tool: ToolDefinition, caseDir: string, phase: () => Promi
 		async execute(id, params, ...rest) {
 			const path = String((params as { path?: unknown }).path ?? '');
 			const name = relative(caseDir, resolve(caseDir, path.replace(/^\{CASE_DIR\}(?:[\\/]|$)/, ''))).split(sep).join('/').toLowerCase();
-			if (GATE_BOUND.has(name) && GATE_APPROVED_PHASES.has(await phase())) throw new Error(`refused: ${name} ${GATE_BOUND_REFUSAL}`);
+			if ((GATE_BOUND.has(name) || GATE_BOUND_FOLDERS.some((folder) => name.startsWith(folder))) && GATE_APPROVED_PHASES.has(await phase())) throw new Error(`refused: ${name} ${GATE_BOUND_REFUSAL}`);
 			return tool.execute(id, params, ...rest);
 		},
 	};

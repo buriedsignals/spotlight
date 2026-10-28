@@ -13,10 +13,10 @@ import type { ChatRequest, Reply } from './test-support/fake-openai.ts';
 import { baseEnv, caseAtIngest, launch, newsroomEnv, requestNewsroomIngest, settledPrompt, waitUntil, workspace } from './test-support/launch.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import type { Chat, Workspace } from './test-support/launch.ts';
-import { CHECKOUT_ROOT, loadComposition } from './roles.ts';
+import { CHECKOUT_ROOT, agentSpec, loadComposition } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
-import { GATE_BOUND_REFUSAL, REVIEW_REFUSAL_CAP, repeatsItself } from './extension.ts';
+import { GATE_BOUND, GATE_BOUND_REFUSAL, REVIEW_REFUSAL_CAP, repeatsItself } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
@@ -1594,6 +1594,17 @@ test('after the Investigation gate the orchestrator cannot rewrite the files the
 	);
 	await settledPrompt(launch(t, baseEnv(open, before.baseURL)), 'Continue.');
 	assert.equal(await readFile(join(open.casesRoot, 'case-a', 'data', 'summary.json'), 'utf8'), '{"title": "Rewritten"}\n', 'before the gate is approved the summary is the orchestrator\'s to write');
+});
+
+// A gate dependency added to the provenance builder must not fall outside the
+// orchestrator's post-gate refusal: each is either refused after the gate or
+// never the orchestrator's to write.
+test('every Investigation gate dependency is refused to the orchestrator after the gate', async () => {
+	const script = "import importlib.util, json, sys; sys.path[:0] = [sys.argv[1] + '/scripts', sys.argv[1]]; spec = importlib.util.spec_from_file_location('m', sys.argv[1] + '/scripts/build-provenance-manifest.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); print(json.dumps([a['path'] for a in m.ARTIFACTS if a.get('investigation_gate_dependency')]))";
+	const paths: string[] = JSON.parse(await new Promise<string>((done, fail) => execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', ['-c', script, CHECKOUT_ROOT], (error, stdout) => (error ? fail(error) : done(stdout)))));
+	const denied = new Set((agentSpec(loadComposition(), 'orchestrator').denyWrites ?? []).map((path) => path.toLowerCase()));
+	assert.ok(paths.length > 0);
+	for (const path of paths) assert.ok(GATE_BOUND.has(path) || denied.has(path), `${path} is not refused after the gate`);
 });
 
 test('the fact-checker is not started after the Investigation gate', async (t) => {
