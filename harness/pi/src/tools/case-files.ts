@@ -177,6 +177,14 @@ function refuseUnactivatedStart(caseDir: string, target: string): void {
 	throw new FileRefused(`refused: ${path} starts the investigation record, which opens at Investigation once the harness has activated the case (data/case-contract.json); the file is unchanged. Before Investigation, write only the files your task names.`);
 }
 
+// The resolver reads the approved brief only at the case root. r6 northwind on
+// dd14e2e5: the orchestrator wrote data/brief-directions.txt, the case stayed
+// at Brief, and every later gate step was refused.
+function refuseMisplacedBrief(caseDir: string, target: string): void {
+	if (caseRelative(caseDir, target) !== 'data/brief-directions.txt') return;
+	throw new FileRefused('refused: the approved brief goes to brief-directions.txt at the case root (path: brief-directions.txt); data/brief-directions.txt is not read. The file was not written.');
+}
+
 // With the Indicator Framework on, its case file and report come only from
 // record_indicator_framework, which fills ratings, quadrants and items from
 // the fetched framework data.
@@ -590,6 +598,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 						throw new FileRefused(`refused: empty content would erase ${input.path}. If your output was cut off, write the file again in full.`);
 					}
 				}
+				refuseMisplacedBrief(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseUnactivatedStart(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseRecordedFramework(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseNonObjectData(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
