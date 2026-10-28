@@ -586,6 +586,33 @@ test('on the 12b a worker repeating one call whose arguments fail the schema is 
 	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /The investigator repeated one call and was stopped; its last results stand\./);
 });
 
+// r6 on dd14e2e5: cc investigator-12 had 15 writes refused in a row, each a
+// different call, so the loop guard never saw a repeat.
+test('on the 12b a worker whose last six calls were all refused, each a different call, is stopped at its next call; a search with no matches is not a refusal', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			const done = toolResults(request).length;
+			return done === 5 ? { toolCalls: [{ name: 'grep_files', arguments: { pattern: 'no such text anywhere', path: 'data' } }] } : { toolCalls: [{ name: 'read_file', arguments: { path: `research/missing-${done}.md` } }] };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const investigator = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	// Five refusals, one search that finds nothing (not a refusal: the streak
+	// starts again), six refusals, then the stop.
+	assert.equal(investigator.length, 13);
+	const results = toolResults(investigator[investigator.length - 1]);
+	assert.equal(results[5], 'no matches');
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /The investigator had six tool calls in a row refused and was stopped; its last results stand\./);
+});
+
 // D5: a new case is activated by the harness, not by a model writing the
 // receipt. The contract must exist before the investigator's first turn, and
 // no role can write it.
