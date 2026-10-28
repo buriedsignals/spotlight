@@ -94,6 +94,9 @@ export const FACT_CHECKERS_SPENT = `The fact-checker has run ${FACT_CHECKER_CAP}
 // spawn_agent and the transition tool of one orchestrator process.
 export type FactCheckerCycle = { spawns: number };
 
+// What the launcher answers a worker spawn while the Investigation gate is ready (launcher.ts gateReady).
+export const GATE_READY_REFUSAL = 'The investigation is complete: call open_review to present the Investigation gate to the member.';
+
 export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }): ToolDefinition {
 	let corrections = 0;
 	return {

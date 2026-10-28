@@ -39,7 +39,7 @@ import { discardIncompleteLanes } from './resume.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, isolationRefusal, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
 import type { Composition, WorkerContext } from './roles.ts';
 import { approvedIndicatorFramework } from './tools/hosted-skill.ts';
-import { WorkerQueue, runWorker } from './subagents.ts';
+import { GATE_READY_REFUSAL, WorkerQueue, runWorker } from './subagents.ts';
 import { withCasePassages, withWikiPassages } from './case-search.ts';
 import { decideAnomaly, withAnomalyBlock } from './anomaly-decision.ts';
 import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
@@ -452,9 +452,22 @@ async function activateOnce(harness: Harness, signal: AbortSignal): Promise<void
 
 // A worker with spawn conditions in harness/composition.json (the analyst:
 // Ingest, solo edition) starts only when the case meets them.
+// LFM3 e2 stage 1 on Osaurus (bc87c716): right after the fact-check was
+// accepted, the orchestrator spawned another fact-checker instead of opening
+// the Investigation gate. On the 12b, a worker spawn while the resolver offers
+// the gate with nothing missing is refused with the next step.
+
+async function gateReady(harness: Harness): Promise<boolean> {
+	const status = await caseStatus(harness);
+	// At a ready gate the only thing missing is the member's approval itself.
+	const missing = Array.isArray(status.missing) ? status.missing : [];
+	return status.next_phase === 'investigation_gate_approval' && missing.every((item) => item === 'Investigation gate approval');
+}
+
 async function refusalFor(harness: Harness, role: string, task: string): Promise<string | undefined> {
 	const isolation = isolationRefusal(role, task);
 	if (isolation) return isolation;
+	if ((role === 'investigator' || role === 'fact-checker') && harness.config.modelTier === '12b' && (await gateReady(harness))) return GATE_READY_REFUSAL;
 	const spec = agentSpec(harness.composition, role);
 	if (!spec.phases && !spec.editions) return undefined;
 	return spawnRefusal(spec, role, spec.phases ? await casePhase(harness) : '', harness.config.edition);

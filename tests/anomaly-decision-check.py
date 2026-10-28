@@ -35,7 +35,7 @@ def load(name: str, path: Path):
 
 decision = load("anomaly_decision", ROOT / "scripts" / "anomaly-decision.py")
 standin = load("anomaly_check", ROOT / "tests" / "anomaly-check.py")
-from spotlight_orchestration import anomaly_gate  # noqa: E402
+from spotlight_orchestration import anomaly_gate, review  # noqa: E402
 from integrations.anomaly import adapter  # noqa: E402
 
 PAYMENTS = "id,amount\n1,12\n2,15\n3,14\n4,11\n5,13\n6,16\n7,12\n8,48000\n"
@@ -177,7 +177,7 @@ class TaskBlockAndGate(DecisionTestCase):
         methodology = self.methodology()
         return {"methodology": {"approved_by": "journalist:test", "anomaly_methods": adapter.approved_methods(methodology)}}
 
-    def test_after_a_yes_the_task_names_each_table_and_the_gate_waits_for_a_run_on_it(self) -> None:
+    def test_after_a_yes_the_task_names_each_table_and_the_gate_page_notes_a_table_without_a_run(self) -> None:
         fake = self.endpoint(0.9)
         self.decide({"integrations": {"decisions": {"endpoint": {"url": fake.url, "api": "openrouter-decisions"}}}})
         block = decision.task_block(self.case)
@@ -190,21 +190,23 @@ class TaskBlockAndGate(DecisionTestCase):
                 self.assertEqual(sorted(call["fields"]), sorted(needs), "every example names every role it needs")
         approvals = self.approve()
         (self.case / "data" / "orchestration.json").write_text(json.dumps({"approvals": approvals}))
-        [problem] = anomaly_gate.problems(self.case, approvals)
-        self.assertIn("research/payments.csv has no anomaly_run yet", problem)
+        # A note on the gate page, never a reason to withhold the gate.
+        self.assertEqual(anomaly_gate.tables_without_run(self.case, approvals), ["research/payments.csv"])
+        content, _ = review._anomaly_content(self.case, {"approvals": approvals})
+        self.assertEqual(content["not_run"], ["research/payments.csv"], "the Investigation gate page names it")
         out = standin.cli("run", str(self.case), stdin=json.dumps(
             {"method": standin.ZSCORE, "table": "research/payments.csv", "fields": {"id": "id", "amount": "amount"}}))
         self.assertEqual(out.returncode, 0, out.stderr)
-        self.assertEqual(anomaly_gate.problems(self.case, approvals), [])
+        self.assertEqual(anomaly_gate.tables_without_run(self.case, approvals), [])
         self.assertEqual(decision.task_block(self.case), "", "a table with a run is not asked for again")
 
     def test_without_a_yes_the_task_and_the_gate_are_unchanged(self) -> None:
         fake = self.endpoint(0.1)
         self.decide({"integrations": {"decisions": {"endpoint": {"url": fake.url, "api": "openrouter-decisions"}}}})
         self.assertEqual(decision.task_block(self.case), "")
-        self.assertEqual(anomaly_gate.problems(self.case, {"methodology": {"anomaly_methods": {"m": "h"}}}), [])
+        self.assertEqual(anomaly_gate.tables_without_run(self.case, {"methodology": {"anomaly_methods": {"m": "h"}}}), [])
         (self.case / decision.DECISION_FILE).unlink()
-        self.assertEqual(anomaly_gate.problems(self.case, {"methodology": {"anomaly_methods": {"m": "h"}}}), [])
+        self.assertEqual(anomaly_gate.tables_without_run(self.case, {"methodology": {"anomaly_methods": {"m": "h"}}}), [])
 
 
 if __name__ == "__main__":

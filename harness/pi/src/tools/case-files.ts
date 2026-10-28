@@ -264,11 +264,15 @@ function refuseUncitedVerdicts(caseDir: string, target: string, content: string)
 		const misspelt = items.some((item) => item?.source_expression_ref !== undefined) ? ' (the key is source_expression_refs, a list, not source_expression_ref)' : '';
 		const cited = items.flatMap((item) => (Array.isArray(item?.source_expression_refs) ? item.source_expression_refs : []));
 		const offRecord = cited.length > 0 ? ` (${JSON.stringify(cited)} is not an active passage supporting it)` : '';
-		if (refs.length > 0) missing.push(`${String(claim.finding_id)}${misspelt}${offRecord}: ${JSON.stringify(refs)}`);
+		// The ids alone: they are resolved to full refs after the fact-checker
+		// returns, and the fingerprints buried the fix (LFM3 e2 stage 1 on
+		// bc87c716: four refusals listing P1/P4 with fingerprints before the
+		// model cited them).
+		if (refs.length > 0) missing.push(`${String(claim.finding_id)}${misspelt}${offRecord}: "source_expression_refs": ${JSON.stringify(refs.map((ref) => ref.expression_id))}`);
 		else if (activated) unsupported.push(`\nno passage on record supports ${String(claim.finding_id)}${offRecord}; record the passage you checked with source_expressions, then cite its ref here, or change the verdict. If no source you acquired contains a passage that supports the finding, do not record one: set the verdict to unverified (or use missing_source_gate for a source that was requested and not returned).`);
 	}
 	if (missing.length === 0 && unsupported.length === 0) return;
-	const cite = missing.length > 0 ? ` In "source_expression_refs": [<ref>, ...] cite only the passages you checked against their source; if none of them supports the verdict, change the verdict. Refs on record for active passages supporting the finding:\n${missing.join('\n')}` : '';
+	const cite = missing.length > 0 ? ` For each finding below, add this key to one of its evidence_for items, keeping only the passages you checked against their source (the ids are enough; the fingerprints are filled in for you). If none of them supports the verdict, change the verdict instead.\n${missing.join('\n')}` : '';
 	throw new FileRefused(`refused: data/fact-check.json gives a verified verdict whose evidence_for has no source_expression_refs; the file is unchanged.${cite}${unsupported.join('')}`);
 }
 
