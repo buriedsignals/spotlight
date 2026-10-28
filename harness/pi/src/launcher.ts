@@ -43,7 +43,7 @@ import { BRIEF_PENDING_REFUSAL, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL, Worker
 import { withCasePassages, withWikiPassages } from './case-search.ts';
 import { decideAnomaly, withAnomalyBlock } from './anomaly-decision.ts';
 import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
-import { bindActiveCase, pythonAdapter, runsResearchRound } from './tools/spotlight.ts';
+import { bindActiveCase, nextAction, pythonAdapter, runsResearchRound } from './tools/spotlight.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
 import { PLANNING_PHASES, validateAfterWorker } from './validators.ts';
 
@@ -537,7 +537,12 @@ async function refusalFor(harness: Harness, role: string, task: string): Promise
 	if (role === 'analyst' && harness.batchBlocked) return `${BATCH_BLOCKED} ${harness.batchBlocked}`;
 	const spec = agentSpec(harness.composition, role);
 	if (!spec.phases && !spec.editions) return undefined;
-	return spawnRefusal(spec, role, spec.phases ? await casePhase(harness) : '', harness.config.edition);
+	const status = await caseStatus(harness);
+	const refusal = spawnRefusal(spec, role, spec.phases ? String(status.phase ?? '') : '', harness.config.edition);
+	// U3 census (84674fd9): a refused spawn was asked again 3 to 5 times; the
+	// refusal now carries the step the case is waiting on.
+	const next = refusal ? nextAction(status, (relative) => existsSync(resolve(harness.active.caseDir, relative))) : undefined;
+	return refusal && next ? `${refusal}. ${next}` : refusal;
 }
 
 // Fixed point: when a worker finishes, the harness runs the validators for
