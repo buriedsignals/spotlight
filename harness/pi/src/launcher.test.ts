@@ -1,7 +1,7 @@
 // End-to-end tests of the real launcher and real pi processes against a
 // scripted OpenAI-compatible server on 127.0.0.1. No network, no model.
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmod, copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
@@ -16,7 +16,7 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, agentSpec, loadComposition } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
-import { GATE_BOUND, GATE_BOUND_REFUSAL, REVIEW_REFUSAL_CAP, repeatsItself } from './extension.ts';
+import { GATE_BOUND, GATE_BOUND_REFUSAL, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, repeatsItself } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
@@ -1605,6 +1605,32 @@ test('every Investigation gate dependency is refused to the orchestrator after t
 	const denied = new Set((agentSpec(loadComposition(), 'orchestrator').denyWrites ?? []).map((path) => path.toLowerCase()));
 	assert.ok(paths.length > 0);
 	for (const path of paths) assert.ok(GATE_BOUND.has(path) || denied.has(path), `${path} is not refused after the gate`);
+});
+
+// LFM3 r3 kde stage 2 on Osaurus (03f008b0): the review page opened and the
+// orchestrator called open_review 16 more times in the same turn.
+test('once the review page opens, the turn ends with no further model request', async (t) => {
+	const fake = await startFakeOpenAI(() => ({ toolCalls: [{ name: 'open_review', arguments: {} }] }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), join(space.casesRoot, 'case-a'), 'investigation_gate', '--activated', '--clean']);
+	// The browser opener is a stub that records each call.
+	const bin = join(space.root, 'bin');
+	await mkdir(bin);
+	for (const name of ['open', 'xdg-open']) {
+		await writeFile(join(bin, name), `#!/bin/sh\necho "$1" >> "${join(space.root, 'opened.log')}"\n`);
+		await chmod(join(bin, name), 0o755);
+	}
+	const env = baseEnv(space, fake.baseURL);
+	const chat = launch(t, { ...env, PATH: `${bin}:${env.PATH}` });
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(fake.requests.length, 1, 'no model request after the page opened');
+	assert.equal((await readFile(join(space.root, 'opened.log'), 'utf8')).trim().split('\n').length, 1, 'the page opened once');
+	assert.ok(chat.lines.some((line) => line.includes(REVIEW_OPEN_STOP)), 'the member is told the page is open');
+	chat.process.stdin.end();
+	await chat.exited;
 });
 
 test('the fact-checker is not started after the Investigation gate', async (t) => {

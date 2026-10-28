@@ -141,7 +141,10 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	const guarded = registerLoopGuard(pi, tier12b && role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
 	// Ending the orchestrator would end the case, so only workers are stopped.
 	const streakGuarded = tier12b && role !== ORCHESTRATOR ? registerRefusalStreak(pi, `The ${role} ${REFUSAL_STOP}`) : (tool: ToolDefinition) => tool;
-	if (role === ORCHESTRATOR) registerReviewRefusalCap(pi);
+	if (role === ORCHESTRATOR) {
+		registerReviewRefusalCap(pi);
+		registerEndTurnOnOpen(pi);
+	}
 	if (tier12b) {
 		registerReadBudget(pi);
 		registerCompletionFloor(pi);
@@ -566,6 +569,32 @@ export function reviewRefusalStop(refusal: string): string {
 		.slice(0, REVIEW_ERROR_LINES)
 		.map((line) => line.replace(/^FAIL\s+/, ''));
 	return errors.length > 0 ? `${stop}\nThe check found these problems.\n${errors.join('\n')}` : stop;
+}
+
+// LFM3 r3 kde stage 2 on Osaurus (03f008b0): the review page opened, and the
+// orchestrator went on calling open_review in the same turn 16 times; the
+// member and the test driver act only between turns. Every phase skill ends
+// the turn at the page, so once it opens the harness ends the turn before the
+// next model request and the member sees this line.
+export const REVIEW_OPEN_STOP = 'Spotlight opened the review page in your browser and is waiting for your decision there. Say here when you are done.';
+
+function registerEndTurnOnOpen(pi: ExtensionAPI): void {
+	let opened = false;
+	pi.on('agent_start', () => {
+		opened = false;
+	});
+	pi.on('tool_execution_end', (event) => {
+		if (event.toolName === 'open_review' && !event.isError && (event.result?.details as { opened?: unknown } | undefined)?.opened === true) opened = true;
+	});
+	pi.on('before_provider_request', (_event, ctx) => {
+		if (opened) ctx.abort();
+		return undefined;
+	});
+	pi.on('message_end', (event) => {
+		if (!opened || (event.message as { role?: string }).role !== 'assistant') return undefined;
+		opened = false;
+		return { message: { ...event.message, content: [{ type: 'text', text: REVIEW_OPEN_STOP }] } as typeof event.message };
+	});
 }
 
 function registerReviewRefusalCap(pi: ExtensionAPI): void {

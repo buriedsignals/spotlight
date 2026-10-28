@@ -89,7 +89,7 @@ export function openReviewTool(caseDir: string, casesRoot: string, opener?: Open
 			if (failed) throw new Error(`${PAGE_NOT_OPENED}${failed}`);
 			const result = await open({ caseDir });
 			const missing = result.status === 'opened' ? await note?.() : undefined;
-			return { content: [{ type: 'text', text: missing ? `${describeOpenResult(result)}\n${missing}` : describeOpenResult(result) }], details: undefined };
+			return { content: [{ type: 'text', text: missing ? `${describeOpenResult(result)}\n${missing}` : describeOpenResult(result) }], details: { opened: result.status === 'opened' } };
 		},
 	};
 }
