@@ -13,6 +13,9 @@ import type { ToolContext } from './run.ts';
 import { resolveCase } from './spotlight.ts';
 import type { ActiveCase, AdapterRunner } from './spotlight.ts';
 
+// open_review's refusal starts with this; the refusal cap in extension.ts counts it.
+export const PAGE_NOT_OPENED = 'The review page was not opened: ';
+
 type Opener = (request: { caseDir: string }) => Promise<{ status: string }>;
 // Why the page must not open yet, or undefined when it may.
 type GateCheck = () => Promise<string | undefined>;
@@ -83,7 +86,7 @@ export function openReviewTool(caseDir: string, casesRoot: string, opener?: Open
 		parameters: Type.Object({}),
 		async execute() {
 			const failed = await check?.();
-			if (failed) throw new Error(`The review page was not opened: ${failed}`);
+			if (failed) throw new Error(`${PAGE_NOT_OPENED}${failed}`);
 			const result = await open({ caseDir });
 			const missing = result.status === 'opened' ? await note?.() : undefined;
 			return { content: [{ type: 'text', text: missing ? `${describeOpenResult(result)}\n${missing}` : describeOpenResult(result) }], details: undefined };

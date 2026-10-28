@@ -15,7 +15,7 @@ import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
 import { bindActiveCase, pythonAdapter, resolveCase, spotlightTools } from './tools/spotlight.ts';
 import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
-import { gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
+import { PAGE_NOT_OPENED, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
 import { LOOP_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
 import { evidenceValidates } from './validators.ts';
 
@@ -112,6 +112,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	const guarded = registerLoopGuard(pi, tier12b && role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
 	// Ending the orchestrator would end the case, so only workers are stopped.
 	const streakGuarded = tier12b && role !== ORCHESTRATOR ? registerRefusalStreak(pi, `The ${role} ${REFUSAL_STOP}`) : (tool: ToolDefinition) => tool;
+	if (role === ORCHESTRATOR) registerReviewRefusalCap(pi);
 	if (tier12b) {
 		registerReadBudget(pi);
 		registerCompletionFloor(pi);
@@ -510,6 +511,49 @@ function registerRefusalStreak(pi: ExtensionAPI, stop: string): (tool: ToolDefin
 			}
 			return tool.prepareArguments ? tool.prepareArguments(args) : args;
 		},
+	});
+}
+
+// LFM3 e2 kde stage 2 on Osaurus (03f008b0): the orchestrator rewrote an
+// invalid report draft 23 times and open_review refused it 31 times. Writes
+// came between the refusals, so no consecutive-refusal guard fired, and only
+// the test's 30-minute cap ended it. On every tier the orchestrator's turn is
+// stopped at the fifth refusal since the page last opened, before the next
+// model request, and the member is told what failed. The count starts again
+// after the stop, so a member who asks to try again gets five more attempts.
+export const REVIEW_REFUSAL_CAP = 5;
+const REVIEW_ERRORS_CHARS = 2000;
+
+export function reviewRefusalStop(refusal: string): string {
+	const reason = refusal.slice(PAGE_NOT_OPENED.length);
+	const [first, ...rest] = reason.split('\n');
+	const failed = first.split('. ')[0];
+	const errors = rest.join('\n').trim().slice(-REVIEW_ERRORS_CHARS);
+	return `Spotlight stopped this turn because the review page was refused ${REVIEW_REFUSAL_CAP} times: ${failed}.${errors ? `\nThe last check reported:\n${errors}` : ''}\nNothing was rendered or recorded. Ask Spotlight to try again, or say what to change.`;
+}
+
+function registerReviewRefusalCap(pi: ExtensionAPI): void {
+	let refusals = 0;
+	let stop: string | undefined;
+	pi.on('tool_execution_end', (event) => {
+		if (event.toolName !== 'open_review') return;
+		const text: string = event.result?.content?.[0]?.text ?? '';
+		if (!event.isError) refusals = 0;
+		else if (text.startsWith(PAGE_NOT_OPENED) && ++refusals >= REVIEW_REFUSAL_CAP) {
+			refusals = 0;
+			stop = reviewRefusalStop(text);
+			log(`open_review was refused ${REVIEW_REFUSAL_CAP} times; the turn was stopped`);
+		}
+	});
+	pi.on('before_provider_request', (_event, ctx) => {
+		if (stop) ctx.abort();
+		return undefined;
+	});
+	pi.on('message_end', (event) => {
+		if (!stop || (event.message as { role?: string }).role !== 'assistant') return undefined;
+		const text = stop;
+		stop = undefined;
+		return { message: { ...event.message, content: [{ type: 'text', text }] } as typeof event.message };
 	});
 }
 

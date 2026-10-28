@@ -39,7 +39,7 @@ import { discardIncompleteLanes } from './resume.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, isolationRefusal, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
 import type { Composition, WorkerContext } from './roles.ts';
 import { approvedIndicatorFramework } from './tools/hosted-skill.ts';
-import { GATE_READY_REFUSAL, WorkerQueue, runWorker } from './subagents.ts';
+import { GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL, WorkerQueue, runWorker } from './subagents.ts';
 import { withCasePassages, withWikiPassages } from './case-search.ts';
 import { decideAnomaly, withAnomalyBlock } from './anomaly-decision.ts';
 import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
@@ -464,10 +464,18 @@ async function gateReady(harness: Harness): Promise<boolean> {
 	return status.next_phase === 'investigation_gate_approval' && missing.every((item) => item === 'Investigation gate approval');
 }
 
+// LFM3 e2 kde stage 2 on Osaurus (03f008b0): at Report, ten investigator
+// spawns rewrote the findings the member had approved, and the approved
+// fact-check no longer validated. A follow-up can be requested only at the
+// Investigation gate and returns the case to Investigation, so after the gate
+// no investigator runs, on every tier.
+const GATE_DECIDED_PHASES = new Set(['report', 'ingest', 'complete']);
+
 async function refusalFor(harness: Harness, role: string, task: string): Promise<string | undefined> {
 	const isolation = isolationRefusal(role, task);
 	if (isolation) return isolation;
 	if ((role === 'investigator' || role === 'fact-checker') && harness.config.modelTier === '12b' && (await gateReady(harness))) return GATE_READY_REFUSAL;
+	if (role === 'investigator' && GATE_DECIDED_PHASES.has(await casePhase(harness))) return GATE_DECIDED_REFUSAL;
 	const spec = agentSpec(harness.composition, role);
 	if (!spec.phases && !spec.editions) return undefined;
 	return spawnRefusal(spec, role, spec.phases ? await casePhase(harness) : '', harness.config.edition);
