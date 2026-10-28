@@ -1663,7 +1663,8 @@ test('the analyst is not started before Ingest or in the newsroom edition', asyn
 	// carrying the same refusal.
 	const refusals = [...new Set(fake.requests.flatMap((request) => toolResults(request)))];
 	assert.equal(refusals.length, 2);
-	assert.match(refusals[0], /the analyst runs only at ingest; the case is at investigation/);
+	// U3 census (84674fd9): the refusal carries the step the case waits on.
+	assert.match(refusals[0], /the analyst runs only at ingest; the case is at investigation\. Next: /);
 	assert.match(refusals[1], /the analyst does not run in the newsroom edition/);
 	await assert.rejects(readFile(join(newsroom.casesRoot, 'case-a', 'data', 'knowledge-proposal.json')), { code: 'ENOENT' });
 });
