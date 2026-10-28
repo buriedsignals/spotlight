@@ -108,13 +108,13 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	// The launcher sets the local tier's fold point in Pi's settings; the
 	// frontier tier keeps Pi's default threshold and summary.
 	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier');
-	registerLoopGuard(pi, tier12b && role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
+	const guarded = registerLoopGuard(pi, tier12b && role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
 	if (tier12b) {
 		registerReadBudget(pi);
 		registerEmptyTurnNudge(pi);
 	}
 	registerToolOwners(pi, role);
-	const tools = toolsFor(role);
+	const tools = toolsFor(role).map(guarded);
 	for (const tool of tools) pi.registerTool(tool);
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
 }
@@ -177,16 +177,48 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 // member's gate decision between two resolves never trips it. With `stop`
 // (12b workers), the third refusal in a row ends the worker's run with that
 // line instead (12B r3 A2 nordhaven: six refusals of one search in a row).
-function registerLoopGuard(pi: ExtensionAPI, stop?: string): void {
+// A call whose arguments fail Pi's schema check counts the same way, though
+// Pi answers it before the tool_call hook: its error is its result, it is
+// refused before the check (prepareArguments runs first), and the third
+// refusal ends the run when the turn ends (12B r5 fsf s0: one invalid
+// source_expressions call nine times). Returns the wrapper for each tool.
+function registerLoopGuard(pi: ExtensionAPI, stop?: string): (tool: ToolDefinition) => ToolDefinition {
 	let lastCall = '';
 	let lastResult = '';
 	let repeats = 0;
 	let refusals = 0;
+	let lastInvalid = false;
+	let stopping = false;
 	const key = (toolName: string, input: unknown) => JSON.stringify([toolName, input]);
+	const startedWith = new Map<string, string>();
 	pi.on('agent_start', () => {
 		lastCall = '';
 		repeats = 0;
 		refusals = 0;
+		lastInvalid = false;
+		stopping = false;
+	});
+	pi.on('tool_execution_start', (event) => {
+		startedWith.set(event.toolCallId, key(event.toolName, event.args));
+	});
+	pi.on('tool_execution_end', (event) => {
+		const call = startedWith.get(event.toolCallId);
+		startedWith.delete(event.toolCallId);
+		const result = JSON.stringify(event.result?.content);
+		const text = event.result?.content?.[0]?.text ?? '';
+		if (call === undefined || !event.isError || !text.startsWith('Validation failed for tool ')) return;
+		if (call !== lastCall) {
+			lastCall = call;
+			lastResult = '';
+			repeats = 0;
+		}
+		repeats = result === lastResult ? repeats + 1 : 1;
+		lastResult = result;
+		lastInvalid = true;
+		refusals = 0;
+	});
+	pi.on('turn_end', (_event, ctx) => {
+		if (stopping) ctx.abort();
 	});
 	pi.on('tool_call', (event) => {
 		const call = key(event.toolName, event.input);
@@ -207,6 +239,19 @@ function registerLoopGuard(pi: ExtensionAPI, stop?: string): void {
 		if (key(event.toolName, event.input) !== lastCall || result.includes(REPEAT_REASON)) return;
 		repeats = result === lastResult ? repeats + 1 : 1;
 		lastResult = result;
+		lastInvalid = false;
+	});
+	return (tool) => ({
+		...tool,
+		prepareArguments: (args: unknown) => {
+			if (lastInvalid && repeats >= 2 && key(tool.name, args) === lastCall) {
+				refusals += 1;
+				const reason = stop && refusals >= 3 ? stop : REPEAT_REASON;
+				stopping = reason === stop;
+				throw new Error(reason);
+			}
+			return tool.prepareArguments ? tool.prepareArguments(args) : args;
+		},
 	});
 }
 
