@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmod, copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -1759,6 +1759,41 @@ test('a fact-checker spawned with the wrong file still gets its deliverable, and
 	assert.match(results, /worker ended without an answer\. data\/fact-check\.json is still missing\. Next: spawn the fact-checker again with the same task\./);
 });
 
+// U3 census (84674fd9): fact-checkers rebuilt the file's structure by hand.
+test('a first fact-check task carries the structure, one claim per finding; once the file exists it does not, and no case file changes', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	const factCheck = await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8');
+	await unlink(join(caseDir, 'data', 'fact-check.json'));
+	const before = await caseDigests(caseDir);
+
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+	await settledPrompt(chat, 'Continue.');
+	chat.process.stdin.end();
+	await chat.exited;
+
+	const first = userText(fake.requests.find((request) => isWorkerRequest(request, 'fact-checker'))!);
+	const start = JSON.parse(first.split('Start from this structure: one claim per finding, with the verdict, confidence and evidence yours to fill in.\n')[1]);
+	assert.deepEqual(start.claims, [{ finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: '', confidence: '', evidence_for: [], evidence_against: [] }]);
+	assert.equal(start.schema_version, '1.1');
+	assert.deepEqual(await caseDigests(caseDir), before, 'the structure is only in the task; no case file changed');
+
+	// An unfinished fact-check keeps the case at Investigation, so the fact-checker runs again.
+	await writeFile(join(caseDir, 'data', 'fact-check.json'), JSON.stringify({ ...JSON.parse(factCheck), claims: [] }));
+	const again = await startFakeOpenAI((request) => (isWorkerRequest(request, 'fact-checker') ? { text: 'Checked.' } : toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' }));
+	t.after(() => again.close());
+	await settledPrompt(launch(t, baseEnv(space, again.baseURL)), 'Continue.');
+	const second = again.requests.find((request) => isWorkerRequest(request, 'fact-checker'));
+	assert.ok(second, 'the fact-checker ran again');
+	assert.ok(!userText(second).includes('Start from this structure'), 'a fact-check that exists gets no structure');
+});
+
 // LFM3 e2 kde stage 2 on Osaurus (03f008b0): at Report, ten investigator
 // spawns rewrote the approved findings, and the approved fact-check broke.
 test('no investigator starts after the Investigation gate, at Report or Ingest', async (t) => {
@@ -2048,7 +2083,9 @@ test('every fact-checker task carries each claim\'s case passages between marker
 		assert.ok(worker, 'the fact-checker ran');
 		const task = userText(worker);
 		if (off) {
-			assert.equal(task, `Check data/findings.json.\n\n${deliverableFor('fact-checker', 'investigation', '')!.line}`);
+			// Only the deliverable line (and, for a first fact-check, its structure) is added.
+			assert.ok(task.startsWith(`Check data/findings.json.\n\n${deliverableFor('fact-checker', 'investigation', '')!.line}`), task);
+			assert.doesNotMatch(task, /CASE PASSAGES/);
 			continue;
 		}
 		assert.match(task, /^Check data\/findings\.json\.\n\nCASE PASSAGES\. Retrieval only/);
