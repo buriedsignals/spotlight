@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
-import { CHECKOUT_ROOT, PERSONA_CONDITIONS, agentSpec, allowedTools, loadComposition, systemPrompt } from './roles.ts';
+import { CHECKOUT_ROOT, PERSONA_CONDITIONS, agentSpec, allowedTools, loadComposition, systemPrompt, deliverableFor } from './roles.ts';
 import type { AgentSpec, PersonaCondition, WorkerContext } from './roles.ts';
 
 async function compositionWith(t: TestContext, spec: AgentSpec): Promise<string> {
@@ -142,4 +142,22 @@ test('the raw-page rule in every prompt follows the model tier', () => {
 // tipster, and the 31B went into the Brief asking for "a list of internal suspects".
 test('the orchestrator prompt carries the limits on unmasking people and sources', () => {
 	assert.match(systemPrompt(loadComposition(), 'orchestrator', '12b'), /Refuse a request to locate, identify or unmask a private person .* a request to identify a confidential source or whistleblower\./);
+});
+
+// tools-da on r4 (LFM3): a fact-checker task naming another role's file, and
+// the worker writing that instead of data/fact-check.json. Each role's
+// deliverable comes from its return_contract in agents/*.md.
+test('each spawn names the role\'s deliverable from its return contract, and a correction task names its own', () => {
+	const files = (role: string, phase: string, task: string, step?: string) => deliverableFor(role, phase, task, step)?.files;
+	assert.deepEqual(files('fact-checker', 'investigation', 'Ingest: write only knowledge-proposal.json'), ['data/fact-check.json']);
+	assert.match(deliverableFor('fact-checker', 'investigation', '')!.line, /^Your deliverable: data\/fact-check\.json covering every finding in data\/findings\.json/);
+	assert.deepEqual(files('analyst', 'ingest', 'Propose.'), ['data/knowledge-proposal.json']);
+	assert.deepEqual(files('investigator', 'methodology', 'MODE: EXECUTION'), ['data/methodology.json'], 'before the methodology is approved it plans');
+	assert.deepEqual(files('investigator', 'investigation', 'MODE: EXECUTION\nWork.'), ['data/findings.json', 'data/evidence-bundle.json']);
+	assert.deepEqual(files('investigator', 'research', 'MODE: AMENDMENT', 'suggestions'), ['data/research-suggestions.json']);
+	assert.deepEqual(files('investigator', 'research', 'MODE: AMENDMENT', 'amendment'), ['data/methodology-amendment.json']);
+	assert.deepEqual(files('investigator', 'investigation', 'MODE: AMENDMENT', 'round_topics'), ['data/research-round.json']);
+	assert.equal(deliverableFor('investigator', 'investigation', 'MODE: STRUCTURAL CORRECTION\nFix F2.'), undefined);
+	assert.equal(deliverableFor('investigator', 'investigation', 'MODE: EVIDENCE CORRECTION'), undefined);
+	assert.equal(deliverableFor('orchestrator', 'investigation', 'x'), undefined);
 });

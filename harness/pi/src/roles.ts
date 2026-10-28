@@ -280,6 +280,36 @@ export function workerMode(phase: string, task: string): 'PLANNING' | 'EXECUTION
 	return RESEARCH_PHASES.includes(phase) ? 'AMENDMENT' : 'EXECUTION';
 }
 
+// tools-da on r4 (LFM3): the fact-checker's task said "write only
+// knowledge-proposal.json" (analyst rows bleeding in) or "data/fact-check-*.json",
+// and the worker obeyed the task, so data/fact-check.json was never written.
+// Every spawn now ends with the role's fixed deliverable, from its
+// return_contract in agents/*.md: the files it must write and the line that
+// says so. A correction task names its own targets and gets none.
+export type Deliverable = { files: string[]; line: string };
+const AMENDMENT_FILES: Record<string, string> = {
+	suggestions: 'data/research-suggestions.json',
+	amendment: 'data/methodology-amendment.json',
+	round_topics: 'data/research-round.json',
+};
+export function deliverableFor(role: string, phase: string, task: string, researchStep?: string): Deliverable | undefined {
+	const one = (file: string, line = `Your deliverable: ${file}; write it with write_file, then finish.`) => ({ files: [file], line });
+	if (role === 'fact-checker') return one('data/fact-check.json', 'Your deliverable: data/fact-check.json covering every finding in data/findings.json for this cycle; write it with write_file, then finish.');
+	if (role === 'analyst') return one('data/knowledge-proposal.json');
+	if (role !== 'investigator') return undefined;
+	if (/^(?:MODE:\s*)?(?:[A-Z]+ )?CORRECTION\b/m.test(task.trim())) return undefined;
+	const mode = workerMode(phase, task);
+	if (mode === 'PLANNING') return one('data/methodology.json');
+	if (mode === 'AMENDMENT') {
+		const file = researchStep ? AMENDMENT_FILES[researchStep] : undefined;
+		return file ? one(file) : undefined;
+	}
+	return {
+		files: ['data/findings.json', 'data/evidence-bundle.json'],
+		line: 'Your deliverable: data/findings.json and data/evidence-bundle.json, with this cycle appended to data/investigation-log.json; write them with write_file, then finish.',
+	};
+}
+
 // Cuts a persona to the task: of the `## [MODE: X]` ... `## [/MODE: X]`
 // blocks only the active one stays, and a `<!-- [IF: name] -->` ...
 // `<!-- [/IF: name] -->` section only when its condition holds (its marker
