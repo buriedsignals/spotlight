@@ -15,7 +15,7 @@ import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
 import { bindActiveCase, pythonAdapter, resolveCase, spotlightTools } from './tools/spotlight.ts';
 import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
-import { openReviewTool, gateCheck } from './tools/review.ts';
+import { gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
 import { LOOP_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
 import { evidenceValidates } from './validators.ts';
 
@@ -59,7 +59,7 @@ function toolsFor(role: string): ToolDefinition[] {
 		const cycle = { spawns: 0 };
 		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => (cycle.spawns = 0)));
 		tools.push(spawnAgentTool(spawnableWorkers(composition), cycle));
-		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context)));
+		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter))));
 	}
 	const allowlist = new Set(allowedTools(spec, sensitive, edition));
 	const allowed = tools.filter((tool) => allowlist.has(tool.name));

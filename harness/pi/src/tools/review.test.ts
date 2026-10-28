@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { openReviewTool, gateCheck } from './review.ts';
+import { gateCheck, missingForApproval, openReviewTool } from './review.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { bindActiveCase, pythonAdapter } from './spotlight.ts';
 
@@ -34,6 +34,31 @@ test('open_review at the Report gate refuses an invalid report draft with the va
 
 	await toolAt('ingest').execute('call', {}, undefined, undefined, undefined as never);
 	assert.equal(opened, 1, 'past the Report gate the page opens as before');
+});
+
+// LFM3 e2 kde stages 2 and 3 on Osaurus (327ec248): the Report page opened with
+// no draft and the Ingest page with no batch; the member could only decline.
+test('open_review at the Report or Ingest gate with nothing to approve still opens, and says what is missing and the next step', async (t) => {
+	const root = await mkdtemp(join(tmpdir(), 'spotlight-pi-review-'));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const active = bindActiveCase(root, join(root, 'case'));
+	await mkdir(join(active.caseDir, 'data'), { recursive: true });
+	let opened = 0;
+	const opener = async () => {
+		opened += 1;
+		return { status: 'opened' };
+	};
+	const toolAt = (resolved: Record<string, unknown>) => openReviewTool(active.caseDir, root, opener, undefined, () => missingForApproval(active.caseDir, resolved));
+	const text = async (resolved: Record<string, unknown>) => ((await toolAt(resolved).execute('call', {}, undefined, undefined, undefined as never)).content[0] as { text: string }).text;
+
+	assert.match(await text({ phase: 'report' }), /review page is open[\s\S]*No report draft exists, so the member can only decline the report on the page\. If the member wants the report, write data\/report-draft\.json/);
+	assert.match(await text({ phase: 'ingest', ingest: { resume_at: 'decision' } }), /No knowledge batch exists[\s\S]*call spawn_agent with agent analyst/);
+	assert.equal(opened, 2, 'the page still opens, so the member can decline');
+
+	await writeFile(join(active.caseDir, 'data/report-draft.json'), '{}\n');
+	await writeFile(join(active.caseDir, 'data/knowledge-batch.json'), '{}\n');
+	assert.doesNotMatch(await text({ phase: 'report' }), /No report draft/);
+	assert.doesNotMatch(await text({ phase: 'ingest', ingest: { resume_at: 'decision' } }), /No knowledge batch/);
 });
 
 // gold-mozilla a2 on 3f37dcc3: a list-shaped research_plan reached the Methodology page,
