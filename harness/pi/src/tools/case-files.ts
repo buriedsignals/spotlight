@@ -9,7 +9,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
-import { CHECKOUT_ROOT } from '../roles.ts';
+import { CHECKOUT_ROOT, deliverableFor } from '../roles.ts';
 import { currentText, directionView, isDirectionFile, mergeDirection } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
 import { ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
@@ -164,7 +164,10 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 		throw new FileRefused(`refused: ${path} is not a file this agent may write (${(writes ?? []).join(', ') || 'none'})`);
 	}
 	if (denied(denyWrites, caseRelative(caseDir, target))) {
-		throw new FileRefused(`refused: ${path} is a case file another role writes; this agent may not write it`);
+		// U3 census (84674fd9): a fact-checker wrote fact-check content over
+		// data/findings.json. The refusal names the writer's own file.
+		const own = deliverableFor(process.env.SPOTLIGHT_ROLE ?? '', '', '')?.files;
+		throw new FileRefused(`refused: ${path} is a case file another role writes; this agent may not write it${own ? `. Your own file is ${own.join(' and ')}.` : ''}`);
 	}
 	const parts = relative(root, target).split(sep);
 	let current = root;
@@ -333,7 +336,7 @@ function refuseLeadsEvidence(caseDir: string, target: string, content: string): 
 		['raw_path', 'downloaded_document_path', 'path'].flatMap((key) => {
 			const path = item?.[key];
 			if (typeof path !== 'string') return [];
-			return isLeadFile(caseDir, path) ? [`${String(item.id)} (${key}: ${path})`] : [];
+			return isLeadFile(caseDir, path) ? [`${typeof item.id === 'string' ? item.id : 'an item with no id'} (${key}: ${path})`] : [];
 		}),
 	);
 	if (leads.length === 0) return;
