@@ -193,6 +193,27 @@ def main() -> int:
         missing_provenance = run(case_dir, config)
         if missing_provenance.returncode == 0 or "requires non-empty method_provenance" not in missing_provenance.stderr:
             raise AssertionError("technical methodology without provenance should fail")
+        technical["method_provenance"] = []
+        write_json(methodology_path, technical)
+        empty_provenance = run(case_dir, config)
+        if empty_provenance.returncode == 0 or "requires non-empty method_provenance" not in empty_provenance.stderr:
+            raise AssertionError("technical methodology with empty provenance should fail")
+
+        # Base arm ia: provenance as an object keyed by skill, rewritten nine
+        # times against two messages that read as a contradiction. It still
+        # fails; the message says it must be a list and names the near-miss id.
+        keyed = methodology_without_navigator()
+        keyed["skills_invoked"] = ["osint", "technical_investigation"]
+        keyed["method_provenance"] = {"technical_investigation": {"source": "fixture"}}
+        write_json(methodology_path, keyed)
+        keyed_result = run(case_dir, config)
+        if keyed_result.returncode == 0:
+            raise AssertionError("provenance keyed by skill should still fail")
+        for expected in ("method_provenance must be a list of entries", "skills_invoked has 'technical_investigation'; the skill is named 'technical-investigation'"):
+            if expected not in keyed_result.stderr:
+                raise AssertionError(f"missing {expected!r}\nSTDERR:\n{keyed_result.stderr}")
+        if "requires non-empty method_provenance" in keyed_result.stderr:
+            raise AssertionError(f"the contradictory message is still emitted\nSTDERR:\n{keyed_result.stderr}")
 
         technical["method_provenance"] = [
             {

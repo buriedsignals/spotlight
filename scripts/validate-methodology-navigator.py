@@ -186,15 +186,30 @@ def validate_method_provenance(
 ) -> list[str]:
     errors: list[str] = []
     skills = methodology.get("skills_invoked", [])
-    technical_invoked = isinstance(skills, list) and "technical-investigation" in skills
+    skills = [skill for skill in skills if isinstance(skill, str)] if isinstance(skills, list) else []
+    technical_invoked = "technical-investigation" in skills
+    # The rule is unchanged; the messages say what to fix (base arm ia rewrote
+    # the plan nine times against the old two, which read as a contradiction).
+    near_miss = [skill for skill in skills if skill != "technical-investigation" and skill.replace("_", "-") == "technical-investigation"]
     provenance = methodology.get("method_provenance")
 
     if not technical_invoked and provenance is None:
         return []
+    if near_miss:
+        errors.append(f"methodology.json: skills_invoked has {near_miss[0]!r}; the skill is named 'technical-investigation'")
     if not technical_invoked:
-        errors.append("methodology.json: method_provenance requires technical-investigation in skills_invoked")
+        errors.append("methodology.json: method_provenance is only for the technical-investigation skill, which skills_invoked does not list: add it to skills_invoked, or remove method_provenance")
+    # Base arm ia rewrote method_provenance as an object keyed by skill nine
+    # times: the old message never said it is a list.
+    if isinstance(provenance, dict):
+        return errors + [
+            "methodology.json: method_provenance must be a list of entries, one per technical method used, "
+            "each an object with skill_id 'technical-investigation', upstream, active_sha, method and reference; not an object keyed by skill"
+        ]
     if not isinstance(provenance, list) or not provenance:
-        return errors + ["methodology.json: technical-investigation requires non-empty method_provenance"]
+        if technical_invoked:
+            errors.append("methodology.json: technical-investigation requires non-empty method_provenance (a list of entries)")
+        return errors
 
     for index, entry in enumerate(provenance):
         prefix = f"methodology.json: method_provenance[{index}]"
