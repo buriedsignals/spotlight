@@ -16,7 +16,7 @@ import { bindActiveCase, pythonAdapter, spotlightTools } from './tools/spotlight
 import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
 import { openReviewTool, gateCheck } from './tools/review.ts';
-import { LOOP_STOP, REPEAT_REASON } from './tools/run.ts';
+import { LOOP_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
 import { evidenceValidates } from './validators.ts';
 
 const log = (message: string) => process.stderr.write(`spotlight-extension: ${message}\n`);
@@ -109,12 +109,14 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	// frontier tier keeps Pi's default threshold and summary.
 	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier');
 	const guarded = registerLoopGuard(pi, tier12b && role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
+	// Ending the orchestrator would end the case, so only workers are stopped.
+	const streakGuarded = tier12b && role !== ORCHESTRATOR ? registerRefusalStreak(pi, `The ${role} ${REFUSAL_STOP}`) : (tool: ToolDefinition) => tool;
 	if (tier12b) {
 		registerReadBudget(pi);
 		registerEmptyTurnNudge(pi);
 	}
 	registerToolOwners(pi, role);
-	const tools = toolsFor(role).map(guarded);
+	const tools = toolsFor(role).map(guarded).map(streakGuarded);
 	for (const tool of tools) pi.registerTool(tool);
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
 }
@@ -249,6 +251,38 @@ function registerLoopGuard(pi: ExtensionAPI, stop?: string): (tool: ToolDefiniti
 				const reason = stop && refusals >= 3 ? stop : REPEAT_REASON;
 				stopping = reason === stop;
 				throw new Error(reason);
+			}
+			return tool.prepareArguments ? tool.prepareArguments(args) : args;
+		},
+	});
+}
+
+// The loop guard sees only one call repeated. r6 on dd14e2e5: workers were
+// refused for varied calls with no end (cc investigator-12: 15 writes refused
+// before activation; fsf fact-checker-45 and nordhaven investigator-7: about 9
+// source_expressions refusals each). Once a worker's last REFUSAL_STREAK
+// results were all errors, of any kind, its next call ends the run with
+// `stop` when the turn ends. prepareArguments runs before Pi's schema check
+// and the tool_call hook, so every next call meets it.
+function registerRefusalStreak(pi: ExtensionAPI, stop: string): (tool: ToolDefinition) => ToolDefinition {
+	let streak = 0;
+	let stopping = false;
+	pi.on('agent_start', () => {
+		streak = 0;
+		stopping = false;
+	});
+	pi.on('tool_execution_end', (event) => {
+		streak = event.isError ? streak + 1 : 0;
+	});
+	pi.on('turn_end', (_event, ctx) => {
+		if (stopping) ctx.abort();
+	});
+	return (tool) => ({
+		...tool,
+		prepareArguments: (args: unknown) => {
+			if (streak >= REFUSAL_STREAK) {
+				stopping = true;
+				throw new Error(stop);
 			}
 			return tool.prepareArguments ? tool.prepareArguments(args) : args;
 		},
