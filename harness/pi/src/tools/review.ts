@@ -56,7 +56,24 @@ export function gateCheck(active: ActiveCase, runAdapter: AdapterRunner, context
 	};
 }
 
-export function openReviewTool(caseDir: string, casesRoot: string, opener?: Opener, check?: GateCheck): ToolDefinition {
+// LFM3 e2 kde stages 2 and 3 on Osaurus (327ec248): the orchestrator opened
+// the Report page with no draft and the Ingest page with no knowledge batch.
+// The page then offers only the decline (the approval is disabled with its
+// reason), so the page still opens, and the orchestrator is told what the
+// member cannot approve yet and the step that makes it possible.
+export async function missingForApproval(caseDir: string, resolved: Record<string, unknown>): Promise<string | undefined> {
+	const has = (path: string) => existsSync(join(caseDir, path));
+	if (resolved.phase === 'report' && !has('data/report-draft.json')) {
+		return 'No report draft exists, so the member can only decline the report on the page. If the member wants the report, write data/report-draft.json as report-drafting says, then call open_review again.';
+	}
+	const ingest = resolved.ingest as { resume_at?: unknown } | undefined;
+	if (resolved.phase === 'ingest' && ingest?.resume_at === 'decision' && !has('data/knowledge-batch.json') && !has('data/knowledge-batch-draft.json')) {
+		return 'No knowledge batch exists, so the member can only decline ingestion on the page. If the member wants to ingest, call spawn_agent with agent analyst (phase-ingest step 1); the harness builds the batch when the analyst finishes. Then call open_review again.';
+	}
+	return undefined;
+}
+
+export function openReviewTool(caseDir: string, casesRoot: string, opener?: Opener, check?: GateCheck, note?: () => Promise<string | undefined>): ToolDefinition {
 	const open: Opener = opener ?? createReviewOpener({ casesRoot });
 	return {
 		name: 'open_review',
@@ -68,7 +85,8 @@ export function openReviewTool(caseDir: string, casesRoot: string, opener?: Open
 			const failed = await check?.();
 			if (failed) throw new Error(`The review page was not opened: ${failed}`);
 			const result = await open({ caseDir });
-			return { content: [{ type: 'text', text: describeOpenResult(result) }], details: undefined };
+			const missing = result.status === 'opened' ? await note?.() : undefined;
+			return { content: [{ type: 'text', text: missing ? `${describeOpenResult(result)}\n${missing}` : describeOpenResult(result) }], details: undefined };
 		},
 	};
 }
