@@ -41,10 +41,11 @@ import type { Composition, WorkerContext } from './roles.ts';
 import { approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { WorkerQueue, runWorker } from './subagents.ts';
 import { withCasePassages, withWikiPassages } from './case-search.ts';
+import { decideAnomaly, withAnomalyBlock } from './anomaly-decision.ts';
 import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
 import { bindActiveCase, pythonAdapter, runsResearchRound } from './tools/spotlight.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
-import { validateAfterWorker } from './validators.ts';
+import { PLANNING_PHASES, validateAfterWorker } from './validators.ts';
 
 const STDIN_CLOSE_GRACE_MS = 15_000;
 const KILL_GRACE_MS = 5_000;
@@ -398,7 +399,19 @@ async function finalTask(harness: Harness, role: string, task: string, signal: A
 		harness.log('case passages left out: they name material the fact-checker works without');
 		return task;
 	}
-	return withPassages;
+	return withAnomalyBlock(role, withPassages, anomalyOptions(harness, signal));
+}
+
+function anomalyOptions(harness: Harness, signal?: AbortSignal) {
+	return {
+		caseDir: harness.active.caseDir,
+		python: harness.config.python,
+		configPath: harness.config.spotlightConfig,
+		sensitive: harness.config.sensitive,
+		env: process.env,
+		log: harness.log,
+		signal,
+	};
 }
 
 // A new case starts activated (phase-investigation, "Source-expression release
@@ -452,7 +465,13 @@ async function refusalFor(harness: Harness, role: string, task: string): Promise
 // worker's answer. The resolver's phase tells planning from investigation.
 async function withValidation(harness: Harness, role: string, text: string): Promise<string> {
 	const { config, active } = harness;
-	const phase = await casePhase(harness);
+	let phase = await casePhase(harness);
+	// On a local tier the decision model may add the plan's anomaly section
+	// before the methodology is checked (anomaly-decision.ts).
+	if (role === 'investigator' && PLANNING_PHASES.has(phase) && config.modelTier !== 'frontier') {
+		await decideAnomaly(anomalyOptions(harness));
+		phase = await casePhase(harness);
+	}
 	// Every Pi process runs on the one route the launcher chose, so the
 	// investigator and the fact-checker ran on this model.
 	const outcome = await validateAfterWorker(role, phase, routeFor(config).model, {

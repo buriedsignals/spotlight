@@ -124,6 +124,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	}
 	registerToolOwners(pi, role);
 	const tools = toolsFor(role).map(guarded).map(streakGuarded);
+	if (tier12b) registerHyphenNames(pi, new Set(tools.map((tool) => tool.name)));
 	for (const tool of tools) pi.registerTool(tool);
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
 }
@@ -137,6 +138,27 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 // turn's tool calls in parallel, so the read that is cut is the one that
 // finishes last, not necessarily the one called last.
 const TURN_READ_CHARS_12B = 30_000;
+
+// LFM3 on Osaurus (7513e421) wrote tool names with "-" for "_" ("invoke-skill",
+// "query-vault"), and each call failed as a tool that does not exist. On the
+// 12b a call whose name becomes a real tool by that one swap is renamed and
+// logged; no other name is ever mapped.
+function registerHyphenNames(pi: ExtensionAPI, names: Set<string>): void {
+	pi.on('message_end', (event) => {
+		const message = event.message as { role?: string; content?: Array<{ type: string; name?: string }> };
+		if (message.role !== 'assistant' || !Array.isArray(message.content)) return undefined;
+		let renamed = false;
+		const content = message.content.map((part) => {
+			if (part.type !== 'toolCall' || !part.name || names.has(part.name)) return part;
+			const real = part.name.replaceAll('-', '_');
+			if (real === part.name || !names.has(real)) return part;
+			log(`tool name ${part.name} read as ${real}`);
+			renamed = true;
+			return { ...part, name: real };
+		});
+		return renamed ? { message: { ...event.message, content } as typeof event.message } : undefined;
+	});
+}
 
 // Skill bodies share the budget (LFM3 e1 on Osaurus, 7513e421: a planning
 // investigator loaded 11 skills in one turn, 99,184 characters; Pi cannot fold

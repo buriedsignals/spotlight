@@ -164,6 +164,11 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 	if (name === 'data/anomaly-signals.json') {
 		throw new FileRefused(`refused: ${name} is written only through the anomaly_run tool, which runs the detector and checks its output`);
 	}
+	// The decision model's answer keeps the Investigation gate closed until each
+	// table it named has a run; only the harness writes it.
+	if (name === 'data/anomaly-decision.json') {
+		throw new FileRefused(`refused: ${name} is written only by the harness`);
+	}
 	return target;
 }
 
