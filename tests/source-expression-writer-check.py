@@ -172,6 +172,23 @@ def main() -> int:
         require(refused.returncode == 2 and "is not in research/passages.txt nor in any other file of data/evidence-bundle.json" in refused.stderr
                 and WRITER.ESCAPE in refused.stderr and target.read_bytes() == before,
                 "a passage that is not in any acquired source was written, or its refusal gave no honest exit")
+        # U3 census (84674fd9): a near-miss quote is shown the closest lines,
+        # verbatim with line numbers, and told a line counts only if it states
+        # the claim, else the verdict is unverified.
+        near = proposal(3)
+        near["expressions"][0]["text"] = "Passage number three."
+        refused = run_writer(case, near)
+        hint = refused.stderr.split("The lines closest to it in the files searched are below.", 1)
+        listed = [line for line in hint[-1].splitlines() if line.startswith("research/passages.txt line ")]
+        require(refused.returncode == 2 and len(hint) == 2
+                and "A line counts only if it states what the finding claims; then quote it exactly as written. "
+                    "If none does, set the verdict to unverified." in hint[1]
+                and 1 <= len(listed) <= 3
+                and all(line.split(": ", 1)[1] == PASSAGES[int(line.split(" line ")[1].split(":")[0]) - 1] for line in listed)
+                and target.read_bytes() == before,
+                f"a near-miss quote was not shown at most three verbatim closest lines with the unverified fallback: {refused.stderr}")
+        require("The lines closest to it" not in run_writer(case, wrong_text).stderr,
+                "a quote close to no line was shown candidate lines")
 
         # r1/r2 source_expressions refusals the writer now resolves itself: each
         # case below was refused on 97f066b6.

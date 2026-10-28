@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import difflib
 import hashlib
 import importlib.util
 import json
@@ -191,6 +192,40 @@ def _occurrences(lines: list[str], needle: str, rule: str) -> list[tuple[int, in
     return sorted(set(found))
 
 
+# U3 census (84674fd9): fact-checkers resubmitted a paraphrase of a passage
+# up to 33 times. A refused quote is shown the lines of the searched files
+# closest to it, at most three, verbatim with their line numbers. Whether one
+# states what the finding claims stays the model's judgment.
+CLOSEST_LINES = 3
+CLOSEST_MIN_RATIO = 0.5
+CLOSEST_MAX_CHARS = 600
+
+
+def _closest_lines(case: Path, text: str, paths: list[str]) -> str:
+    wanted = " ".join(text.split()).lower()
+    scored: list[tuple[float, str, int, str]] = []
+    for relative in paths:
+        target = (case / relative).resolve()
+        if case.resolve() not in target.parents or not target.is_file():
+            continue
+        for number, line in enumerate(source_lines(target), start=1):
+            shown = line.strip()
+            if not shown or len(shown) > CLOSEST_MAX_CHARS:
+                continue
+            matcher = difflib.SequenceMatcher(None, wanted, " ".join(shown.split()).lower())
+            if matcher.real_quick_ratio() < CLOSEST_MIN_RATIO or matcher.quick_ratio() < CLOSEST_MIN_RATIO:
+                continue
+            ratio = matcher.ratio()
+            if ratio >= CLOSEST_MIN_RATIO:
+                scored.append((ratio, relative, number, shown))
+    if not scored:
+        return ""
+    best = sorted(scored, key=lambda item: -item[0])[:CLOSEST_LINES]
+    listed = "\n".join(f"{relative} line {number}: {shown}" for _ratio, relative, number, shown in best)
+    return ("\nThe lines closest to it in the files searched are below. A line counts only if it states what the finding "
+            "claims; then quote it exactly as written. If none does, set the verdict to unverified.\n" + listed)
+
+
 def _matches(case: Path, text: str, paths: list[str]) -> list[tuple[str, int, int]]:
     """Every place `text` occurs in the case-local files among `paths`, under
     the first rule that finds it anywhere."""
@@ -289,7 +324,8 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
         if not found:
             searched = ", ".join(named) or "no file named"
             raise WriteError(f"expression {label}: the text is not in {searched} nor in any other file of data/evidence-bundle.json, "
-                             f"so it is not from a source you acquired. {ESCAPE}")
+                             f"so it is not from a source you acquired. {ESCAPE}"
+                             + _closest_lines(case, proposal["text"], named or [path for path in owners if readable is None or path in readable]))
         # The same whole line repeated in one file is one passage: a reader
         # checking the first sees exactly the quoted text (12B r3 cc: an EIN
         # on sixteen identical lines).
