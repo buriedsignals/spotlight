@@ -860,7 +860,8 @@ def validate_fact_check(data: dict[str, Any]) -> list[str]:
                     else:
                         for k, flag in enumerate(flags):
                             if not isinstance(flag, dict) or flag.get("code") not in FLAG_CODES or not nonempty_string(flag.get("reason")):
-                                errors.append(f"{prefix}.flags[{k}]: needs a known Batch 1.1 code and a non-empty reason")
+                                errors.append(f"{prefix}.flags[{k}]: needs a known Batch 1.1 code and a non-empty reason "
+                                              f"(codes: {', '.join(sorted(FLAG_CODES))}; flags are optional, so drop one that fits none)")
                 if "confidence" in claim and claim.get("confidence") not in FACT_CHECK_CONFIDENCES:
                     errors.append(f"{prefix}: 'confidence' must be one of {sorted(FACT_CHECK_CONFIDENCES)}")
                 if "finding_id" in claim and not nonempty_string(claim.get("finding_id")):
