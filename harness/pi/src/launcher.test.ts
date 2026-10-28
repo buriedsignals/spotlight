@@ -1289,6 +1289,37 @@ test('a worker\'s search seam gets the launcher\'s SPOTLIGHT_BSIG and XDG_*', as
 	assert.equal(env.XDG_DATA_HOME, join(xdg, 'data'));
 });
 
+// Inside Osaurus, Engine runs the scraping seam on its runtime pack's Python:
+// Crawl4AI finds the pack's Chromium and its cache only through these two
+// variables, so both must survive the launcher's child environment and the
+// fetch tool's seam allowlist. Tor mode keeps the harness off the network.
+test('a worker\'s fetch seam gets the launcher\'s runtime pack Chromium and Crawl4AI cache folders', async (t) => {
+	const fake = await startFakeOpenAI(
+		orchestratorScript([{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }], (request) =>
+			toolResults(request).length === 0 ? { toolCalls: [{ name: 'fetch', arguments: { url: 'https://registry.example.org/company/42' } }] } : { text: 'Investigator finished.' },
+		),
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const seen = join(space.root, 'fetch-env.json');
+	const python = join(space.root, 'python-recording-fetch');
+	const envelope = JSON.stringify({ markdown: '# Company 42', source_url: 'https://registry.example.org/company/42', provider: 'crawl4ai', status_code: 200 });
+	await writeFile(
+		python,
+		`#!${process.execPath}\nconst { execFileSync } = require('node:child_process');\nconst args = process.argv.slice(2);\nif (args.includes('integrations.scraping')) { require('node:fs').writeFileSync(${JSON.stringify(seen)}, JSON.stringify(process.env)); process.stdout.write(${JSON.stringify(envelope)}); }\nelse { try { process.stdout.write(execFileSync(${JSON.stringify(process.env.SPOTLIGHT_PYTHON ?? 'python3')}, args, { stdio: ['inherit', 'pipe', 'inherit'] })); } catch (error) { process.stdout.write(error.stdout ?? ''); process.exitCode = error.status ?? 1; } }\n`,
+		{ mode: 0o755 },
+	);
+	const pack = { PLAYWRIGHT_BROWSERS_PATH: join(space.root, 'pack', 'playwright'), CRAWL4_AI_BASE_DIRECTORY: join(space.root, 'runtime-data', 'crawl4ai') };
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_PYTHON: python, SPOTLIGHT_ANONYMIZE_FETCH: 'true', ...pack });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const env = JSON.parse(await readFile(seen, 'utf8')) as Record<string, string>;
+	assert.equal(env.PLAYWRIGHT_BROWSERS_PATH, pack.PLAYWRIGHT_BROWSERS_PATH);
+	assert.equal(env.CRAWL4_AI_BASE_DIRECTORY, pack.CRAWL4_AI_BASE_DIRECTORY);
+});
+
 test('after a planning task the harness runs the methodology check, not the findings check', async (t) => {
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) {
