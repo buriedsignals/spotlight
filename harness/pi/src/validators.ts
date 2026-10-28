@@ -15,7 +15,7 @@ type Check = { name: string; args: string[] };
 // Phases the case is in once an investigator planning task ends: still
 // planning, or waiting for methodology approval because methodology.json now
 // exists. Either way the investigator wrote a methodology, not findings.
-const PLANNING_PHASES = new Set(['brief', 'methodology', 'methodology_approval']);
+export const PLANNING_PHASES = new Set(['brief', 'methodology', 'methodology_approval']);
 // At Research the investigator works in AMENDMENT mode: suggested marks, an
 // amendment or a stall round, which the resolver and its transitions check
 // (the suggestions' schema, D8, D1). It wrote no findings to validate.

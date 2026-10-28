@@ -84,6 +84,10 @@ Every process reads the case, which may hold journalist input or local-corpus co
 [{"name": "model", "base_url": "https://models.newsroom.example/v1", "model": "model-id", "inference": "own", "key_env": "NEWSROOM_MODEL_TOKEN"}]
 ```
 
+## Anomaly decision (local tiers)
+
+Small models rarely plan Anomaly themselves. When a PLANNING investigator finishes on a local tier, the harness runs `scripts/anomaly-decision.py` before the validators. If the case holds tables (`.csv`, `.jsonl`, `.parquet` under `research/` or `evidence/`), the plan has no `anomaly` section and Anomaly is installed, it asks the decision model one yes/no question: would anomaly detection on these tables help answer the brief? A decision endpoint on a literal loopback address (d1 on this computer) is asked without the decision-checks switch or the case's opt-in, also in sensitive mode, and gets up to five sample rows per table; a cloud endpoint needs both, never runs in sensitive mode, and gets column names only. At a probability of 0.5 or more the plan gets an `any_table` section with the reason, which the member approves or not on the Methodology page. Every outcome goes to `data/anomaly-decision.json` and the log. After a yes, each investigator task carries an ANOMALY block (each table's columns and a filled-in `anomaly_run` call), and the resolver keeps the Investigation gate closed until each table named has a run. No answer, a no, or any failure changes nothing.
+
 ## Newsroom edition
 
 With `SPOTLIGHT_EDITION=newsroom` the harness runs the same pipeline and routes four steps through the newsroom's Editorial MCP. The contract the newsroom's server implements is [`docs/newsroom-editorial-mcp.md`](../../docs/newsroom-editorial-mcp.md).

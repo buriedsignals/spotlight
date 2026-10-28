@@ -79,6 +79,8 @@ test('writes outside the case, through a symlink, or to a protected file are ref
 	}
 	// The gate shows the Anomaly signals as the runner checked them.
 	await assert.rejects(call('write_file', { path: 'data/anomaly-signals.json', content: '{"runs": []}' }), /written only through the anomaly_run tool/);
+	// The decision record opens or closes the Investigation gate's Anomaly check.
+	await assert.rejects(call('write_file', { path: 'data/anomaly-decision.json', content: '{"decision": false}' }), /written only by the harness/);
 	assert.equal(existsSync(join(outside, 'escape.txt')), false);
 	assert.equal(await readFile(join(outside, 'target.json'), 'utf8'), 'outside');
 	assert.equal(await readFile(join(caseDir, 'data', 'orchestration.json'), 'utf8'), '{"phase":"brief"}');

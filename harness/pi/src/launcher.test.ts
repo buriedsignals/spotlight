@@ -848,6 +848,124 @@ test('an orchestrator trying to approve a gate through spotlight_transition is t
 	assert.deepEqual(await caseDigests(caseDir), before, 'nothing was approved or written');
 });
 
+// LFM3 on Osaurus (7513e421) called "invoke-skill" and "query-vault"; each
+// failed as a tool that does not exist.
+test('on the 12b a tool name with "-" for "_" runs the real tool, and no other near-miss is mapped', async (t) => {
+	const fake = await startFakeOpenAI((request) =>
+		toolResults(request).length === 0
+			? { toolCalls: [{ name: 'invoke-skill', arguments: { skill: 'integrations' } }, { name: 'invokeskill', arguments: { skill: 'osint' } }] }
+			: { text: 'Done.' },
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Start.');
+
+	const [hyphen, other] = toolResults(fake.requests.at(-1)!);
+	assert.match(hyphen, /^---\nname: integrations/m);
+	assert.match(other, /invokeskill/);
+	assert.doesNotMatch(other, /^---\nname: osint/m);
+});
+
+// LFM3 and the base 12B on Osaurus (7513e421) never planned Anomaly for a case
+// with a payments table. On a local tier the harness asks the decision model
+// when a PLANNING investigator finishes; on yes the plan gets the section,
+// and the next EXECUTION task names the table and the call.
+async function anomalyStandIn(dir: string): Promise<string> {
+	const home = join(dir, 'anomaly');
+	const script = `import importlib.util, sys; from pathlib import Path
+spec = importlib.util.spec_from_file_location("c", sys.argv[1]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+m.StandIn(Path(sys.argv[2]))`;
+	await new Promise<void>((done, fail) =>
+		execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', ['-c', script, join(CHECKOUT_ROOT, 'tests', 'anomaly-check.py'), home], (error) => (error ? fail(error) : done())),
+	);
+	return home;
+}
+
+async function fakeDecisions(probability: number) {
+	const { createServer } = await import('node:http');
+	const states: unknown[] = [];
+	const server = createServer((request, response) => {
+		let body = '';
+		request.on('data', (chunk) => (body += chunk));
+		request.on('end', () => {
+			const parsed = JSON.parse(body) as { state: unknown; questions: Record<string, unknown> };
+			states.push(parsed.state);
+			const answers = Object.fromEntries(Object.keys(parsed.questions).map((key) => [key, { noul: probability }]));
+			response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ model: 'd1-test', answers }));
+		});
+	});
+	await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+	const { port } = server.address() as { port: number };
+	return { url: `http://127.0.0.1:${port}/v1/systemone`, states, close: () => new Promise<void>((done) => server.close(() => done())) };
+}
+
+test('on a local tier a PLANNING investigator\'s plan gets the Anomaly section when the decision model says yes, and the EXECUTION task names the table', async (t) => {
+	for (const probability of [0.9, 0.05]) {
+		const decisions = await fakeDecisions(probability);
+		t.after(() => decisions.close());
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'investigator')) {
+				return toolResults(request).length === 0
+					? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: JSON.stringify({ questions: ['Which payments stand out?'] }) } }] }
+					: { text: 'Planned.' };
+			}
+			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: PLANNING. Plan the case.' } }] } : { text: 'Done.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = join(space.casesRoot, 'case-a');
+		await mkdir(join(caseDir, 'research'), { recursive: true });
+		await writeFile(join(caseDir, 'brief-directions.txt'), 'Payments from the city to Acme.\nWere any payments unusually large?\n');
+		await writeFile(join(caseDir, 'research', 'payments.csv'), 'id,amount\n1,12\n2,15\n3,48000\n');
+		const config = join(space.root, 'spotlight-config.json');
+		await writeFile(config, JSON.stringify({ integrations: { decisions: { endpoint: { url: decisions.url, api: 'openrouter-decisions' } } } }));
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: config, ANOMALY_HOME: await anomalyStandIn(space.root) });
+
+		await settledPrompt(chat, 'Continue.');
+
+		assert.equal(decisions.states.length, 1, `${probability}: one question when the PLANNING investigator finished`);
+		const methodology = JSON.parse(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8')) as { anomaly?: { domains: Array<{ domain: string }> } };
+		const record = JSON.parse(await readFile(join(caseDir, 'data', 'anomaly-decision.json'), 'utf8')) as { path: string; decision: boolean };
+		assert.equal(record.path, 'local-asked');
+		if (probability >= 0.5) {
+			assert.equal(methodology.anomaly?.domains[0].domain, 'any_table');
+			const block = await new Promise<string>((done, fail) =>
+				execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'anomaly-decision.py'), caseDir, '--task-block'], { env: { ...process.env, ANOMALY_HOME: join(space.root, 'anomaly') } }, (error, stdout) => (error ? fail(error) : done(stdout))),
+			);
+			assert.match(block, /ANOMALY: .*\n- research\/payments\.csv: columns id, amount/);
+		} else {
+			assert.equal(methodology.anomaly, undefined, 'a no adds nothing');
+		}
+	}
+});
+
+test('after an approved Anomaly plan from the decision model, the investigator\'s EXECUTION task carries the ANOMALY block', async (t) => {
+	const fake = await startFakeOpenAI(orchestratorScript([{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }], () => ({ text: 'Investigated.' })));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const home = await anomalyStandIn(space.root);
+	const caseDir = join(space.casesRoot, 'case-a');
+	await mkdir(join(caseDir, 'research'), { recursive: true });
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	await writeFile(join(caseDir, 'brief-directions.txt'), 'Were any payments unusually large?\n');
+	await writeFile(join(caseDir, 'research', 'payments.csv'), 'id,amount\n1,12\n2,15\n3,48000\n');
+	await writeFile(join(caseDir, 'data', 'methodology.json'), JSON.stringify({ anomaly: { domains: [{ domain: 'any_table', sources: [], why: 'test' }] } }));
+	await writeFile(join(caseDir, 'data', 'anomaly-decision.json'), JSON.stringify({ path: 'local-asked', decision: true, probability: 0.9, tables: ['research/payments.csv'] }));
+	await new Promise<void>((done, fail) =>
+		execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'), 'approve', 'methodology', '--approved-by', 'journalist:fixture', '--approved-at', '2026-10-28T12:00:00Z', '--authorized-cases-root', space.casesRoot, caseDir], { env: { ...process.env, ANOMALY_HOME: home } }, (error) => (error ? fail(error) : done())),
+	);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), ANOMALY_HOME: home });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const task = userText(fake.requests.find((request) => isWorkerRequest(request, 'investigator'))!);
+	assert.match(task, /ANOMALY: the approved methodology runs Anomaly/);
+	assert.match(task, /research\/payments\.csv: columns id, amount/);
+	assert.match(task, /anomaly_run \{"method": "method:numeric\.zscore_outliers@1\.1\.0", "table": "research\/payments\.csv"/);
+});
+
 // D5: a new case is activated by the harness, not by a model writing the
 // receipt. The contract must exist before the investigator's first turn, and
 // no role can write it.
