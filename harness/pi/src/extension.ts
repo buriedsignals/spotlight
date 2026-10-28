@@ -522,14 +522,21 @@ function registerRefusalStreak(pi: ExtensionAPI, stop: string): (tool: ToolDefin
 // model request, and the member is told what failed. The count starts again
 // after the stop, so a member who asks to try again gets five more attempts.
 export const REVIEW_REFUSAL_CAP = 5;
-const REVIEW_ERRORS_CHARS = 2000;
+const REVIEW_ERROR_LINES = 3;
 
+// The stop line is the member's, so it names the problem in plain words and
+// shows at most the validator's first three FAIL lines.
 export function reviewRefusalStop(refusal: string): string {
-	const reason = refusal.slice(PAGE_NOT_OPENED.length);
-	const [first, ...rest] = reason.split('\n');
-	const failed = first.split('. ')[0];
-	const errors = rest.join('\n').trim().slice(-REVIEW_ERRORS_CHARS);
-	return `Spotlight stopped this turn because the review page was refused ${REVIEW_REFUSAL_CAP} times: ${failed}.${errors ? `\nThe last check reported:\n${errors}` : ''}\nNothing was rendered or recorded. Ask Spotlight to try again, or say what to change.`;
+	const report = refusal.slice(PAGE_NOT_OPENED.length).startsWith('data/report-draft.json ');
+	const stop = report
+		? 'Spotlight stopped this turn because the report draft was refused five times. The draft did not pass the report check, so nothing was rendered or recorded. Ask Spotlight to try again, or say what to change.'
+		: 'Spotlight stopped this turn because the review page was refused five times. The case files it needed did not pass their check, so nothing was recorded. Ask Spotlight to try again, or say what to change.';
+	const errors = refusal
+		.split('\n')
+		.filter((line) => line.startsWith('FAIL '))
+		.slice(0, REVIEW_ERROR_LINES)
+		.map((line) => line.replace(/^FAIL\s+/, ''));
+	return errors.length > 0 ? `${stop}\nThe check found these problems.\n${errors.join('\n')}` : stop;
 }
 
 function registerReviewRefusalCap(pi: ExtensionAPI): void {

@@ -1542,9 +1542,11 @@ test('the orchestrator is stopped at the fifth open_review refusal, even with wr
 	const refusals = toolResults(fake.requests.at(-1)!).filter((result) => result.startsWith('The review page was not opened'));
 	assert.equal(refusals.length, REVIEW_REFUSAL_CAP - 1, 'no model request follows the fifth refusal');
 	assert.ok(
-		chat.lines.some((line) => line.includes('Spotlight stopped this turn because the review page was refused 5 times: data/report-draft.json does not pass validate-report-draft.py.') && line.includes('The last check reported')),
-		'the member is told what failed and the validator output',
+		chat.lines.some((line) => line.includes('Spotlight stopped this turn because the report draft was refused five times.') && line.includes('The check found these problems.\\nSTRUCTURE: ')),
+		'the member is told what failed and the first validator errors',
 	);
+	const stopLine = chat.lines.find((line) => line.includes('The check found these problems.')) ?? '';
+	assert.equal(stopLine.split('\\nSTRUCTURE: ').length - 1, 3, 'at most the first three errors');
 });
 
 // LFM3 e2 kde stage 2 on Osaurus (03f008b0): at Report, ten investigator
