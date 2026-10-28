@@ -16,6 +16,7 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, loadComposition } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { FACT_CHECKERS_SPENT } from './subagents.ts';
+import { repeatsItself } from './extension.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
 
@@ -550,6 +551,123 @@ test('on the 12b an empty turn gets one nudge per prompt, and a second empty tur
 	await settledPrompt(chat, 'Go on.');
 	assert.deepEqual(fake.requests.map(nudges), [0, 1, 1, 2], 'the next prompt gets its own nudge');
 	assert.equal(fake.requests.length, 4);
+});
+
+// Base 12B with no reasoning budget (step-eval, 2026-10-28) ran turns to the
+// 10,240-token cap: the orchestrator repeating "<channel|><|channel>thought",
+// a fact-checker cycling three sentences. Each sample is its repeated tail.
+const DEGENERATE_SAMPLES = {
+	channel: '<channel|><|channel>thought\n'.repeat(400),
+	sentences: 'Actually, I\'ll do the main one first.\n\nActually, I\'ll do them all.\n\nWait, I\'ll start.\n\n'.repeat(120),
+};
+
+// The guard's threshold: both samples trip it; a long fact-check JSON (keys
+// repeated on every claim, as in the 34 KB r4arm cc:114 write) does not, even
+// read as text.
+test('a repeated unit trips the stream guard and a long, key-repetitive JSON does not', () => {
+	assert.equal(repeatsItself(DEGENERATE_SAMPLES.channel), true);
+	assert.equal(repeatsItself(DEGENERATE_SAMPLES.sentences), true);
+	const claims = Array.from({ length: 80 }, (_, i) => ({
+		claim_id: `F${i + 1}`,
+		verdict: i % 3 ? 'verified' : 'unverified',
+		confidence: 'medium',
+		evidence_for: [{ source_ref: { path: `research/source-${i}.md`, lines: [i + 3, i + 9] }, support_type: 'direct', claim_elements_checked: ['actor', 'role', 'organization', 'date'] }],
+		note: `Checked against the source for finding F${i + 1}.`,
+	}));
+	const json = JSON.stringify({ schema_version: '1.1', claims }, null, 2);
+	assert.ok(json.length > 30_000);
+	assert.equal(repeatsItself(json), false);
+});
+
+test('on the 12b a turn repeating itself or streaming nothing visible is stopped with an honest line, and a turn that ran to the cap is nudged once', async (t) => {
+	for (const [name, first] of [
+		['channel', { text: DEGENERATE_SAMPLES.channel }],
+		['sentences', { text: DEGENERATE_SAMPLES.sentences }],
+		['length', { text: 'A long summary that ran out of room', finish: 'length' as const }],
+		// base213 seq 26: 10,240 tokens the server stripped to nothing.
+		['invisible', { text: '', invisible: 3000, finish: 'length' as const }],
+		// The server sends one empty chunk, then nothing, with the stream open.
+		['stalled', { text: '', invisible: 1, stall: true }],
+		// A full context slot: cut after one token. No nudge would help.
+		['slot full', { text: '<channel|>', finish: 'length' as const, usage: { prompt_tokens: 40959, completion_tokens: 1, total_tokens: 40960 } }],
+	] as const) {
+		const fake = await startFakeOpenAI((_request, index) => (index === 0 ? first : { text: 'Done.' }));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const chat = launch(t, baseEnv(space, fake.baseURL));
+
+		if (name === 'stalled') {
+			// The clock stops a turn after 60 s with nothing visible.
+			chat.send({ id: 'p-stalled', type: 'prompt', message: 'Start.' });
+			await chat.waitFor((record) => record.type === 'agent_settled', 0, 90_000);
+		} else {
+			await settledPrompt(chat, 'Start.');
+		}
+		const settled = chat.lines.filter((line) => line.includes('"type":"message_end"')).join('\n');
+
+		if (name === 'slot full') {
+			// The full slot also makes Pi compact; only the nudge is checked.
+			assert.ok(!fake.requests.some((request) => JSON.stringify(request.messages).includes('ran on without a tool call and was cut off')), 'a turn cut after one token gets no nudge');
+		} else if (name === 'length') {
+			assert.equal(fake.requests.length, 2, 'one nudge, then the answer');
+			const history = fake.requests[1].messages;
+			assert.match(JSON.stringify(history[history.length - 1].content), /Your last turn ran on without a tool call and was cut off/);
+		} else {
+			assert.equal(fake.requests.length, 1, `${name}: the run ends at the stop`);
+			assert.match(settled, /Spotlight stopped this turn because it ran on without calling a tool/, name);
+			const unit = name === 'channel' ? '<|channel>thought' : name === 'sentences' ? 'Wait, I\'ll start.' : '\u0000';
+			assert.ok(settled.split(unit).length - 1 < 5, `${name}: the repeated text is gone from what the member sees`);
+		}
+	}
+});
+
+// A stopped orchestrator must leave the case as it was: every case file
+// unchanged, the lock released on exit, and the next launch resolving where
+// the case stood.
+test('on the 12b an orchestrator stopped for repeating itself leaves the case unchanged, and the next launch resolves it', async (t) => {
+	let stopped = false;
+	const fake = await startFakeOpenAI((request) => {
+		if (!stopped) {
+			stopped = true;
+			return { text: DEGENERATE_SAMPLES.channel };
+		}
+		return resolveThenStop(request);
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	const before = await caseDigests(caseDir);
+
+	const first = launch(t, baseEnv(space, fake.baseURL));
+	await settledPrompt(first, 'Continue.');
+	assert.ok(first.lines.some((line) => line.includes('Spotlight stopped this turn because it ran on without calling a tool')), 'the guard stopped the turn');
+	first.process.stdin.end();
+	assert.equal((await first.exited).code, 0);
+	await assert.rejects(lockRecord(space), 'the lock is released');
+	assert.deepEqual(await caseDigests(caseDir), before, 'no case file was written or changed');
+
+	const resumed = launch(t, baseEnv(space, fake.baseURL));
+	await settledPrompt(resumed, 'Continue.');
+	assert.deepEqual([lastResolution(resumed).phase, lastResolution(resumed).next_phase], ['investigation', 'investigation']);
+});
+
+// A worker stopped for repeating itself answers the orchestrator with the stop line.
+test('on the 12b a worker turn repeating itself reaches the orchestrator as the stop line', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { text: DEGENERATE_SAMPLES.sentences };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+	const answer = toolResults(orchestrator[orchestrator.length - 1]).join('\n');
+	assert.match(answer, /Spotlight stopped this turn because it ran on without calling a tool/);
+	assert.doesNotMatch(answer, /Actually, I'll do them all\.\n\nWait/);
 });
 
 test('a worker\'s empty final answer gets the nudge before its answer reaches the orchestrator', async (t) => {

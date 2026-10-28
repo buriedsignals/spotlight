@@ -15,9 +15,13 @@ export type ChatRequest = {
 };
 
 export type ToolCall = { name: string; arguments: Record<string, unknown> };
-export type Usage = { total_tokens?: number; cost?: number };
+export type Usage = { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; cost?: number };
 // `reasoning` streams first as `reasoning_content`, as llama-server sends a model's thinking.
-export type Reply = ({ text: string } | { toolCalls: ToolCall[] }) & { usage?: Usage; reasoning?: string } | { status: number } | 'hang';
+// `finish: 'length'` ends a text reply as a server does at the output cap;
+// `invisible` first streams that many chunks with nothing in them, as a
+// server does for tokens it strips; `stall` then holds the stream open with
+// nothing more, as a server that sends nothing for stripped tokens.
+export type Reply = ({ text: string; finish?: 'stop' | 'length'; invisible?: number; stall?: boolean } | { toolCalls: ToolCall[] }) & { usage?: Usage; reasoning?: string } | { status: number } | 'hang';
 export type Responder = (request: ChatRequest, index: number) => Reply;
 
 export type FakeOpenAI = {
@@ -48,13 +52,14 @@ export function toolResults(request: ChatRequest): string[] {
 		.map((message) => (typeof message.content === 'string' ? message.content : JSON.stringify(message.content)));
 }
 
-function chunk(response: ServerResponse, delta: Record<string, unknown>, finish: string | null) {
+function chunk(response: ServerResponse, delta: Record<string, unknown>, finish: string | null, usage?: Usage) {
 	const body = {
 		id: 'chatcmpl-fake',
 		object: 'chat.completion.chunk',
 		created: 0,
 		model: 'fake',
 		choices: [{ index: 0, delta, finish_reason: finish }],
+		...(usage ? { usage } : {}),
 	};
 	response.write(`data: ${JSON.stringify(body)}\n\n`);
 }
@@ -71,15 +76,17 @@ function toolCallsOf(calls: ToolCall[]) {
 function answerJSON(response: ServerResponse, reply: Exclude<Reply, 'hang' | { status: number }>) {
 	const message = 'text' in reply ? { role: 'assistant', content: reply.text } : { role: 'assistant', content: null, tool_calls: toolCallsOf(reply.toolCalls) };
 	response.writeHead(200, { 'content-type': 'application/json' });
-	response.end(JSON.stringify({ id: 'chatcmpl-fake', object: 'chat.completion', model: 'fake', choices: [{ index: 0, message, finish_reason: 'text' in reply ? 'stop' : 'tool_calls' }], usage: reply.usage ?? {} }));
+	response.end(JSON.stringify({ id: 'chatcmpl-fake', object: 'chat.completion', model: 'fake', choices: [{ index: 0, message, finish_reason: 'text' in reply ? (reply.finish ?? 'stop') : 'tool_calls' }], usage: reply.usage ?? {} }));
 }
 
 function answer(response: ServerResponse, reply: Exclude<Reply, 'hang' | { status: number }>) {
 	response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
 	if (reply.reasoning) chunk(response, { role: 'assistant', reasoning_content: reply.reasoning }, null);
 	if ('text' in reply) {
+		for (let i = 0; i < (reply.invisible ?? 0); i += 1) chunk(response, { content: '' }, null);
+		if (reply.stall) return;
 		chunk(response, { role: 'assistant', content: reply.text }, null);
-		chunk(response, {}, 'stop');
+		chunk(response, {}, reply.finish ?? 'stop', reply.usage);
 	} else {
 		chunk(
 			response,
@@ -124,6 +131,7 @@ export async function startFakeOpenAI(responder: Responder): Promise<FakeOpenAI>
 		}
 		if (body.stream === false) answerJSON(response, reply);
 		else answer(response, reply);
+		if ('text' in reply && reply.stall) hanging.add(response);
 	});
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 	const { port } = server.address() as AddressInfo;

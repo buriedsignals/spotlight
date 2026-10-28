@@ -160,20 +160,134 @@ function registerReadBudget(pi: ExtensionAPI): void {
 // other than the nudge, not on agent_start: a nudge sent after the run ended
 // starts a new run, and resetting there could nudge forever.
 export const EMPTY_TURN_NUDGE = 'Your last turn was empty. Call the next tool, or give your answer.';
+// A turn that ran to the output cap with no tool call gets the same one follow-up.
+export const RUNAWAY_TURN_NUDGE = 'Your last turn ran on without a tool call and was cut off. Call the next tool, or give your answer in a few sentences.';
+const NUDGES = [EMPTY_TURN_NUDGE, RUNAWAY_TURN_NUDGE];
+
+// Base 12B with no reasoning budget (step-eval, 2026-10-28) ran two turns to the
+// 10,240-token cap: the orchestrator repeating "<channel|><|channel>thought"
+// for 71,680 characters, a fact-checker cycling three sentences for 31,538.
+// The guard stops a turn once the last TAIL_CHARS of its text or reasoning are
+// one unit of at most MAX_PERIOD characters repeated exactly. Tool-call
+// arguments are not watched: a long JSON write (r4arm cc:114, 34 KB) repeats its
+// keys but never a whole 2,048-character stretch.
+const TAIL_CHARS = 2048;
+const MAX_PERIOD = 512;
+const CHECK_EVERY = 256;
+// base213 (Anomaly, 5ce09322): an investigator turn ran 10,240 tokens with no
+// text, reasoning or tool call left after the server stripped its special
+// tokens. Each streamed chunk is about one token, so this many chunks in a row
+// with nothing visible stop the turn too. Prompt processing sends no chunks.
+const INVISIBLE_CHUNKS = 1024;
+// A server may send nothing at all for stripped tokens while the stream stays
+// open, so a turn with nothing visible for this long after its first token
+// chunk is stopped as well. The clock starts at the first chunk after the role
+// chunk, so prompt processing (20-40 s for a 16k prompt on a Mac) never counts.
+const INVISIBLE_MS = 60_000;
+// A turn cut at the cap after this few tokens is a full context slot, not a
+// ramble: a nudge would only overflow again.
+const MIN_CUT_TOKENS = 10;
+
+// Whether a raw OpenAI-style stream chunk carries anything the turn keeps.
+function visibleChunk(data: unknown): boolean {
+	const delta = (data as { choices?: Array<{ delta?: Record<string, unknown> }> } | undefined)?.choices?.[0]?.delta;
+	if (!delta) return true;
+	const text = (value: unknown) => typeof value === 'string' && value.length > 0;
+	return text(delta.content) || text(delta.reasoning_content) || text(delta.reasoning) || (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0);
+}
+
+export function repeatsItself(text: string): boolean {
+	if (text.length < TAIL_CHARS + MAX_PERIOD) return false;
+	const tail = text.slice(-(TAIL_CHARS + MAX_PERIOD));
+	const window = tail.slice(-TAIL_CHARS);
+	for (let period = 1; period <= MAX_PERIOD; period += 1) {
+		if (tail.slice(-TAIL_CHARS - period, -period) === window) return true;
+	}
+	return false;
+}
+
+export const REPEAT_STOP = 'Spotlight stopped this turn because it ran on without calling a tool or writing anything usable; nothing in it was used. The results before it stand.';
 
 function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 	let nudged = false;
+	let streamed = '';
+	let unchecked = 0;
+	let stopped = false;
+	let invisible = 0;
+	let lastVisible = 0;
+	let clock: ReturnType<typeof setInterval> | undefined;
+	const stopClock = () => {
+		if (clock) clearInterval(clock);
+		clock = undefined;
+	};
+	const stopInvisible = (abort: () => void) => {
+		stopClock();
+		stopped = true;
+		log('a turn streaming nothing visible was stopped');
+		abort();
+	};
+	// Pi starts the assistant message after its first chunk, so each turn's
+	// counters reset when the turn starts.
+	pi.on('turn_start', () => {
+		streamed = '';
+		unchecked = 0;
+		invisible = 0;
+		stopped = false;
+		stopClock();
+	});
+	pi.on('provider_stream_event', (event, ctx) => {
+		if (stopped) return;
+		const delta = (event.data as { choices?: Array<{ delta?: Record<string, unknown> }> } | undefined)?.choices?.[0]?.delta;
+		if (delta && 'role' in delta && !visibleChunk(event.data)) return;
+		if (visibleChunk(event.data)) {
+			invisible = 0;
+			lastVisible = Date.now();
+		} else {
+			invisible += 1;
+		}
+		if (!clock) {
+			lastVisible = Date.now();
+			clock = setInterval(() => {
+				if (!stopped && Date.now() - lastVisible >= INVISIBLE_MS) stopInvisible(() => ctx.abort());
+			}, 1000);
+			clock.unref();
+		}
+		if (invisible >= INVISIBLE_CHUNKS) stopInvisible(() => ctx.abort());
+	});
+	pi.on('message_update', (event, ctx) => {
+		const update = event.assistantMessageEvent;
+		if (stopped || (update.type !== 'text_delta' && update.type !== 'thinking_delta')) return;
+		streamed = (streamed + update.delta).slice(-(TAIL_CHARS + MAX_PERIOD));
+		unchecked += update.delta.length;
+		if (unchecked < CHECK_EVERY) return;
+		unchecked = 0;
+		if (!repeatsItself(streamed)) return;
+		stopped = true;
+		log('a turn repeating itself was stopped');
+		ctx.abort();
+	});
 	pi.on('message_end', (event) => {
-		const message = event.message as { role?: string; stopReason?: string; content?: string | Array<{ type: string; text?: string }> };
+		const message = event.message as { role?: string; stopReason?: string; content?: string | Array<{ type: string; text?: string; thinking?: string }> };
 		const parts = typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : (message.content ?? []);
 		if (message.role === 'user') {
-			if (!parts.some((part) => part.type === 'text' && part.text === EMPTY_TURN_NUDGE)) nudged = false;
+			if (!parts.some((part) => part.type === 'text' && NUDGES.includes(part.text ?? ''))) nudged = false;
 			return;
 		}
-		if (message.role !== 'assistant' || message.stopReason !== 'stop' || nudged) return;
-		if (parts.some((part) => part.type === 'toolCall' || (part.type === 'text' && part.text?.trim()))) return;
+		if (message.role !== 'assistant') return undefined;
+		stopClock();
+		if (parts.some((part) => part.type === 'toolCall')) return undefined;
+		// Pi's abort ends the whole run and drops queued follow-ups, so a stopped
+		// turn ends the run on an honest line instead of a nudge: the member sees
+		// it, and a worker's line is its answer to the orchestrator.
+		if (stopped) return { message: { ...event.message, content: [{ type: 'text', text: REPEAT_STOP }] } as typeof event.message };
+		const output = (event.message as { usage?: { output?: number } }).usage?.output;
+		if (message.stopReason === 'length' && output && output < MIN_CUT_TOKENS) return undefined;
+		const cut = message.stopReason === 'length';
+		if (!cut && (message.stopReason !== 'stop' || parts.some((part) => part.type === 'text' && part.text?.trim()))) return undefined;
+		if (nudged) return undefined;
 		nudged = true;
-		pi.sendUserMessage(EMPTY_TURN_NUDGE, { deliverAs: 'followUp' });
+		pi.sendUserMessage(cut ? RUNAWAY_TURN_NUDGE : EMPTY_TURN_NUDGE, { deliverAs: 'followUp' });
+		return undefined;
 	});
 }
 
