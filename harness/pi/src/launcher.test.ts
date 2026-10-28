@@ -186,6 +186,46 @@ test('each process declares exactly its allowlist, workers cannot delegate, and 
 	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /Investigator finished\./);
 });
 
+// Osaurus (gemma-4-12b-it-qat-mxfp4, 0.25.28) renders tools through the Gemma 4
+// chat template and answered every investigator request with HTTP 500 "upper
+// filter requires string": http_get's query and anomaly_run's maps carried
+// maxProperties, a number the template reads as a parameter. Every role's tools,
+// exactly as sent, must render (test-support/gemma4/render.py).
+test('every role\'s tools, as sent, render through the Gemma 4 chat template as Osaurus does', async (t) => {
+	const sent = new Map<string, ChatRequest['tools']>();
+	const roleOf = (request: ChatRequest) => ['investigator', 'fact-checker', 'analyst'].find((role) => isWorkerRequest(request, role)) ?? 'orchestrator';
+	const record = (request: ChatRequest) => sent.set(roleOf(request), request.tools);
+	const fake = await startFakeOpenAI((request) => {
+		record(request);
+		if (roleOf(request) !== 'orchestrator') return { text: 'Done.' };
+		const next = [
+			{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } },
+			{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Fact-check all claims.' } },
+		][toolResults(request).length];
+		return next ? { toolCalls: [next] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	await settledPrompt(launch(t, baseEnv(space, fake.baseURL)), 'Continue.');
+	const ingest = await startFakeOpenAI((request) => (record(request), delegateToAnalyst(() => ({ text: 'Proposed.' }))(request)));
+	t.after(() => ingest.close());
+	const later = await workspace(t);
+	await caseAtIngest(later);
+	await settledPrompt(launch(t, baseEnv(later, ingest.baseURL)), 'Continue.');
+
+	assert.deepEqual([...sent.keys()].sort(), ['analyst', 'fact-checker', 'investigator', 'orchestrator']);
+	for (const [role, tools] of sent) {
+		const rendered = await new Promise<{ code: number | null; stderr: string }>((done) => {
+			const child = execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'harness/pi/src/test-support/gemma4/render.py')], (error, _stdout, stderr) =>
+				done({ code: error ? ((error as { code?: number }).code ?? 1) : 0, stderr }),
+			);
+			child.stdin!.end(JSON.stringify({ tools }));
+		});
+		assert.equal(rendered.code, 0, `${role}: ${rendered.stderr}`);
+	}
+});
+
 // E2E D2: a fixed 8192-token output cap cut off whole-file rewrites on a
 // 131072-token model.
 test('the output cap follows the context window', async (t) => {

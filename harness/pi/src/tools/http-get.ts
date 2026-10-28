@@ -14,18 +14,31 @@ import type { ToolContext } from './run.ts';
 
 const MAX_RETURNED_CHARS = 60_000;
 
+const fields = {
+	url: webURL,
+	accept: Type.Optional(Type.Union([Type.Literal('json'), Type.Literal('text'), Type.Literal('any')])),
+	save_as: Type.Optional(savePath),
+};
+// The check run on every call: query keys, value types and count.
 const params = Type.Object(
 	{
-		url: webURL,
+		...fields,
 		query: Type.Optional(
 			Type.Record(Type.String({ pattern: '^[A-Za-z0-9_.\\[\\]-]{1,64}$' }), Type.Union([Type.String({ maxLength: 2048 }), Type.Number(), Type.Boolean()]), {
 				maxProperties: 30,
 				additionalProperties: false,
 			}),
 		),
-		accept: Type.Optional(Type.Union([Type.Literal('json'), Type.Literal('text'), Type.Literal('any')])),
-		save_as: Type.Optional(savePath),
 	},
+	{ additionalProperties: false },
+);
+// What the model is sent. The Gemma 4 chat template walks an object parameter
+// without `properties` key by key, and Osaurus refuses the number in
+// maxProperties ("upper filter requires string", HTTP 500 on every request).
+// So the map is declared with typed additionalProperties only; Pi converts a
+// number or boolean value to the string the URL gets anyway.
+const declared = Type.Object(
+	{ ...fields, query: Type.Optional(Type.Object({}, { additionalProperties: Type.String() })) },
 	{ additionalProperties: false },
 );
 
@@ -56,7 +69,7 @@ export function httpGetTool(context: ToolContext): ToolDefinition {
 		label: 'HTTP GET',
 		description:
 			'GET one public http(s) URL (registry, archive or API endpoint) and return status, content type and body. Optional query: an object of query parameters, each percent-encoded and appended to the URL (the replacement for curl --get --data-urlencode); pass values raw, not pre-encoded. Optional save_as stores the raw body in the case under research/ or evidence/.',
-		parameters: params,
+		parameters: declared,
 		async execute(_id, raw, signal) {
 			const input = checkedParams<{ url: string; query?: Record<string, QueryValue>; accept?: keyof typeof ACCEPT; save_as?: string }>(
 				'http_get',

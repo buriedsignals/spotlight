@@ -44,7 +44,7 @@ jobs:
         run: npm ci --prefix harness/review
 
       - name: Install Python test deps
-        run: pip install --quiet jsonschema==4.25.1 requests==2.32.5
+        run: pip install --quiet jsonschema==4.25.1 requests==2.32.5 jinja2==3.1.6
 
       - name: Install c2patool 0.27.22 (tests/provenance-manifest-check.py)
         run: |

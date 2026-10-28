@@ -255,14 +255,20 @@ function anomalyMethodsTool(context: ToolContext): ToolDefinition {
 
 function anomalyRunTool(context: ToolContext): ToolDefinition {
 	const names = Type.Record(Type.String({ minLength: 1 }), Type.String({ minLength: 1 }), { minProperties: 1, maxProperties: 20 });
+	const scalars = {
+		method: Type.String({ minLength: 1, maxLength: 200 }),
+		table: Type.Optional(Type.String({ minLength: 1 })),
+	};
+	// The check run on every call.
 	const params = Type.Object(
-		{
-			method: Type.String({ minLength: 1, maxLength: 200 }),
-			table: Type.Optional(Type.String({ minLength: 1 })),
-			fields: Type.Optional(names),
-			tables: Type.Optional(names),
-			columns: Type.Optional(Type.Record(Type.String({ minLength: 1 }), names)),
-		},
+		{ ...scalars, fields: Type.Optional(names), tables: Type.Optional(names), columns: Type.Optional(Type.Record(Type.String({ minLength: 1 }), names)) },
+		{ additionalProperties: false },
+	);
+	// What the model is sent: maps with typed additionalProperties only, which
+	// the Gemma 4 chat template renders on Osaurus (see http_get).
+	const map = Type.Object({}, { additionalProperties: Type.String() });
+	const declared = Type.Object(
+		{ ...scalars, fields: Type.Optional(map), tables: Type.Optional(map), columns: Type.Optional(Type.Object({}, { additionalProperties: map })) },
 		{ additionalProperties: false },
 	);
 	return {
@@ -270,7 +276,7 @@ function anomalyRunTool(context: ToolContext): ToolDefinition {
 		label: 'Run an Anomaly detector',
 		description:
 			'Run one Anomaly detector on tables you fetched (CSV, JSONL or Parquet case files under research/ or evidence/), in a case whose approved methodology has an anomaly section. A core detector (anomaly_methods any_table) takes table and fields: {"method": "method:numeric.zscore_outliers@1.1.0", "table": "research/payments.csv", "fields": {"id": "record_id", "amount": "value"}}, each field role mapped to a table column. A domain detector takes tables, one file per contract table it reads, and optional columns ({table: {contract column: file column}}). Code runs the detector; it never edits a table. Each signal is recorded in data/anomaly-signals.json as a lead to check against the source, never a finding. A refusal runs nothing and says why.',
-		parameters: params,
+		parameters: declared,
 		executionMode: 'sequential',
 		async execute(_id, raw, signal) {
 			const input = checkedParams<Record<string, unknown>>('anomaly_run', params, raw);
