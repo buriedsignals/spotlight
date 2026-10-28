@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { ConfigError, RouteRefused, checkNewsroomInstall, checkRouteSecrets, childEnv, parseLaunchArgs, piSettings, readConfig, researchEnv, routeFor, resolverEnv, secretValues } from './config.ts';
 import {
 	CASE_REFERENCE_FILE,
@@ -67,6 +67,9 @@ type Harness = {
 	editorial?: EditorialClient;
 	// The newsroom case reference, validated at the start.
 	caseRef?: string;
+	// Why the knowledge batch cannot be built for a reason no agent can fix;
+	// no analyst runs again in this chat once it is set.
+	batchBlocked?: string;
 };
 
 // A revoked or expired newsroom token, or an Editorial MCP that cannot be
@@ -476,6 +479,7 @@ async function refusalFor(harness: Harness, role: string, task: string): Promise
 	if (isolation) return isolation;
 	if ((role === 'investigator' || role === 'fact-checker') && harness.config.modelTier === '12b' && (await gateReady(harness))) return GATE_READY_REFUSAL;
 	if (role === 'investigator' && GATE_DECIDED_PHASES.has(await casePhase(harness))) return GATE_DECIDED_REFUSAL;
+	if (role === 'analyst' && harness.batchBlocked) return `${BATCH_BLOCKED} ${harness.batchBlocked}`;
 	const spec = agentSpec(harness.composition, role);
 	if (!spec.phases && !spec.editions) return undefined;
 	return spawnRefusal(spec, role, spec.phases ? await casePhase(harness) : '', harness.config.edition);
@@ -484,6 +488,28 @@ async function refusalFor(harness: Harness, role: string, task: string): Promise
 // Fixed point: when a worker finishes, the harness runs the validators for
 // what that worker writes and hands their outcome to the orchestrator with the
 // worker's answer. The resolver's phase tells planning from investigation.
+// LFM3 r3 kde stage 3 on Osaurus (ecbcd23e): the builder refused, the
+// orchestrator spawned analysts that could not fix it, and they read and
+// grepped until stopped. When the proposal passes every check the builder
+// makes, the refusal is the case's or the harness's: the orchestrator is told
+// so, and no analyst runs again in this chat.
+const BATCH_BLOCKED = 'The knowledge batch cannot be built for a reason no agent can fix, so no analyst runs again. Tell the member this in plain words and stop. The builder said:';
+
+async function proposalNotAtFault(harness: Harness): Promise<boolean> {
+	let proposal: string;
+	try {
+		proposal = readFileSync(join(harness.active.caseDir, 'data', 'knowledge-proposal.json'), 'utf8');
+	} catch {
+		return false;
+	}
+	const result = await runPython(
+		{ caseDir: harness.active.caseDir, writeRoot: harness.active.caseDir, python: harness.config.python, configPath: harness.config.spotlightConfig, env: process.env },
+		[join(CHECKOUT_ROOT, 'scripts', 'build-knowledge-batch.py'), harness.active.caseDir, '--check-proposal'],
+		{ input: proposal, timeoutMs: 120_000 },
+	);
+	return result.code === 0 || result.code === 3;
+}
+
 async function withValidation(harness: Harness, role: string, text: string): Promise<string> {
 	const { config, active } = harness;
 	let phase = await casePhase(harness);
@@ -503,6 +529,11 @@ async function withValidation(harness: Harness, role: string, text: string): Pro
 		env: { ...process.env, ...researchEnv(config) },
 	});
 	if (outcome.ran.length === 0) return text;
+	if (role === 'analyst' && !outcome.passed && (await proposalNotAtFault(harness))) {
+		harness.batchBlocked = outcome.report.split('\n').slice(1).join(' ').replace(/\s+/g, ' ').trim().slice(0, 800);
+		harness.log(`the knowledge batch cannot be built for a reason no agent can fix: ${harness.batchBlocked}`);
+		return `${text}\n\n[Harness checks after the analyst finished: ${BATCH_BLOCKED} ${harness.batchBlocked}]`;
+	}
 	const verdict = outcome.passed ? 'all passed' : 'FAILED: send the worker the correction the phase skill describes';
 	return `${text}\n\n[Harness checks after the ${role} finished: ${verdict}]\n${outcome.report}`;
 }

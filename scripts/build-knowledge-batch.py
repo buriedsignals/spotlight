@@ -104,6 +104,11 @@ class BuildError(Exception):
     """The case cannot yield a valid batch; nothing is written."""
 
 
+class CaseNotReady(BuildError):
+    """The case itself, not the proposal, refuses the build: no analyst can
+    fix it by changing the proposal."""
+
+
 def _load(case: Path, relative: str, required: bool = True) -> Any:
     path = case / relative
     if not path.is_file():
@@ -202,7 +207,16 @@ class Ids:
         return placed, True
 
 
-def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
+def build(case: Path, models: dict[str, str], draft: bool, proposal: Any = None) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
+    try:
+        findings, fact_check, expressions_doc, bundle, positions_doc = _case_inputs(case)
+    except BuildError as exc:
+        raise CaseNotReady(str(exc)) from exc
+    proposal = _load(case, PROPOSAL) if proposal is None else proposal
+    return _build(case, models, draft, proposal, findings, fact_check, expressions_doc, bundle, positions_doc)
+
+
+def _case_inputs(case: Path) -> tuple[Any, Any, Any, Any, Any]:
     findings = _load(case, "data/findings.json")
     if not isinstance(findings, dict) or findings.get("schema_version") != "1.1" or not (case / "data" / "case-contract.json").is_file():
         raise BuildError("only an activated case (findings contract 1.1) builds a Batch 1.1")
@@ -219,7 +233,11 @@ def build(case: Path, models: dict[str, str], draft: bool) -> tuple[dict[str, An
     expressions_doc = _load(case, "data/source-expressions.json")
     bundle = _load(case, "data/evidence-bundle.json")
     positions_doc = _load(case, "data/source-positions.json", required=False) or {"positions": []}
-    proposal = _load(case, PROPOSAL)
+    return findings, fact_check, expressions_doc, bundle, positions_doc
+
+
+def _build(case: Path, models: dict[str, str], draft: bool, proposal: Any, findings: Any, fact_check: Any,
+           expressions_doc: Any, bundle: Any, positions_doc: Any) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
     check_proposal(proposal)
     review = _review_items(_load(case, REVIEW, required=False))
     ids = Ids(_load(case, IDS, required=False))
@@ -534,10 +552,20 @@ def main(argv: list[str] | None = None) -> int:
                        help="check the proposal JSON on stdin against interface 1 and write nothing (the Pi harness, when a proposal is written)")
     args = parser.parse_args(argv)
     if args.check_proposal:
+        # Every check the build makes, on the proposal from stdin, writing
+        # nothing: 2 when the proposal is refused, 3 when the case is.
         try:
-            check_proposal(json.loads(sys.stdin.read()))
+            proposal = json.loads(sys.stdin.read())
         except json.JSONDecodeError as exc:
             print(f"build-knowledge-batch: refused: {PROPOSAL} is not JSON: {exc}", file=sys.stderr)
+            return 2
+        try:
+            build(Path(args.case_dir), {"investigator": "check", "fact-checker": "check"}, True, proposal)
+        except CaseNotReady as exc:
+            print(f"build-knowledge-batch: the case cannot be built: {exc}", file=sys.stderr)
+            return 3
+        except (KeyError, TypeError, AttributeError) as exc:
+            print(f"build-knowledge-batch: refused: {PROPOSAL} is malformed ({type(exc).__name__}: {exc})", file=sys.stderr)
             return 2
         except BuildError as exc:
             print(f"build-knowledge-batch: refused: {exc}", file=sys.stderr)

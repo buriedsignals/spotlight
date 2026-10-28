@@ -111,12 +111,15 @@ function refuseNonObjectData(caseDir: string, target: string, content: string): 
 
 // LFM3 r3 kde stage 3 on Osaurus (03f008b0): the analyst's proposal failed
 // interface 1, which the builder reports only after the analyst's turn, and
-// the analyst read and grepped until the stall rule stopped it. A proposal is
-// checked by the builder's own check when written, and refused with its text.
+// the analyst read and grepped until the stall rule stopped it (s3-1), or failed
+// its cross-record rules (s3-3). A proposal is checked by every check the
+// builder makes when written, and refused with the builder's text.
 async function refuseInvalidProposal(context: ToolContext, target: string, content: string): Promise<void> {
 	if (caseRelative(context.caseDir, target) !== 'data/knowledge-proposal.json') return;
 	const result = await runPython(context, [join(CHECKOUT_ROOT, 'scripts', 'build-knowledge-batch.py'), context.caseDir, '--check-proposal'], { input: content, timeoutMs: 60_000 });
-	if (result.code === 0) return;
+	// 3: the case, not the proposal, refuses the build; the harness reports
+	// that when the analyst finishes, so the write is not refused for it.
+	if (result.code !== 2) return;
 	const reason = (result.stderr || result.stdout).trim().replace(/^build-knowledge-batch: refused: /, '');
 	throw new FileRefused(`refused: ${reason}; the file is unchanged. Fix the proposal as schemas/knowledge-proposal.schema.json says and write it again.`);
 }
