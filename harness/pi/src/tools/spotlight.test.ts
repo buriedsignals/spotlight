@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { CHECKOUT_ROOT, ORCHESTRATOR } from '../roles.ts';
-import { bindActiveCase, pythonAdapter, spotlightTools } from './spotlight.ts';
+import { NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, bindActiveCase, pythonAdapter, spotlightTools } from './spotlight.ts';
 import type { AdapterRunner } from './spotlight.ts';
 
 const PYTHON = process.env.SPOTLIGHT_PYTHON ?? 'python3';
@@ -219,4 +219,47 @@ test('an evidence-repair attempt is refused while the evidence validates, and re
 
 	await transitionAt(false).execute('call', params, undefined, undefined, undefined as never);
 	assert.equal(recorded.length, 1);
+});
+
+// tools-da on the r3/r4 LFM3 runs (kde stage 1): with only data/fact-check.json
+// missing, nothing in the resolve result said to spawn the fact-checker, and
+// the small model looped or re-ran the investigator. The result now names the
+// next step, in the sorted key order the resolver writes.
+test('resolve names the next step at the brief, the methodology and each investigation state', async (t) => {
+	const brief = await casePath(t);
+	assert.equal((await tools(brief.caseDir, brief.root).resolve()).next_action, NEXT_BRIEF);
+
+	const planning = await casePath(t);
+	await mkdir(planning.caseDir, { recursive: true });
+	await writeFile(join(planning.caseDir, 'brief-directions.txt'), 'Verify the offline fixture.\n');
+	assert.equal((await tools(planning.caseDir, planning.root).resolve()).next_action, NEXT_PLANNING);
+
+	// A fresh investigation, through the product module.
+	const fresh = await caseAwaitingInvestigation(t);
+	const started = await tools(fresh.caseDir, fresh.root).resolve();
+	assert.equal(started.phase, 'investigation');
+	assert.ok((started.missing as string[]).includes('data/findings.json'));
+	assert.equal(started.next_action, NEXT_INVESTIGATOR);
+
+	// The recorded states: only the fact-check owed, and an evidence correction.
+	const { caseDir, root } = await casePath(t);
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	for (const name of ['findings.json', 'evidence-bundle.json', 'investigation-log.json']) await writeFile(join(caseDir, 'data', name), '{}\n');
+	const resolveWith = async (state: Record<string, unknown>) => {
+		const [resolveTool] = spotlightTools(bindActiveCase(root, caseDir), async () => JSON.stringify(state), ORCHESTRATOR);
+		return ((await resolveTool.execute('call', {}, undefined, undefined, undefined as never)).content[0] as { text: string }).text;
+	};
+	const owed = { missing: ['data/fact-check.json'], next_phase: 'investigation', owner: 'phase-investigation', phase: 'investigation', status: 'active' };
+	assert.equal(
+		await resolveWith(owed),
+		JSON.stringify({ missing: ['data/fact-check.json'], next_action: NEXT_FACT_CHECKER, next_phase: 'investigation', owner: 'phase-investigation', phase: 'investigation', status: 'active' }),
+	);
+	const correction = JSON.parse(await resolveWith({ ...owed, missing: ['investigator update to data/findings.json or data/evidence-bundle.json', "fresh data/fact-check.json after the investigator's update"] }));
+	assert.equal(
+		correction.next_action,
+		'On disk: data/findings.json, data/evidence-bundle.json, data/investigation-log.json. Next: spawn the investigator (phase-investigation step 1), then the fact-checker (phase-investigation step 3) for what missing lists.',
+	);
+	// Every other phase resolves exactly as the resolver wrote it.
+	const report = { next_phase: 'report', phase: 'report', status: 'pending' };
+	assert.equal(await resolveWith(report), JSON.stringify(report));
 });
