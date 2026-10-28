@@ -1482,6 +1482,31 @@ test('an analyst proposal the builder\'s cross-record rules refuse is refused wh
 	assert.equal(existsSync(join(caseDir, 'data', 'knowledge-proposal.json')), false);
 });
 
+// LFM3 r4 held-out ingest: 9 of 12 proposal writes put claim keys in a story
+// arc's event_keys.
+test('a story arc naming claim keys as events is refused with the note that story_arcs is optional', async (t) => {
+	const arced = { ...PROPOSAL, story_arcs: [{ key: 's1', language: 'en', title: 'Payments', description: 'The payments.', event_keys: ['c1'] }] };
+	const fake = await startFakeOpenAI(
+		delegateToAnalyst((request) =>
+			toolResults(request).length === 0
+				? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(arced) } }] }
+				: { text: 'Stopped.' }),
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtIngest(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const analyst = fake.requests.filter((request) => isWorkerRequest(request, 'analyst'));
+	assert.equal(
+		toolResults(analyst.at(-1)!)[0],
+		"refused: data/knowledge-proposal.json: story arc s1 names unknown events ['c1']; the file is unchanged. Fix the proposal as schemas/knowledge-proposal.schema.json says and write it again. story_arcs is optional. Its event_keys must be keys of events in this file, not claim keys. If there are no events for the arc, remove the story_arcs entry.",
+	);
+	assert.equal(existsSync(join(caseDir, 'data', 'knowledge-proposal.json')), false);
+});
+
 // The same run: the builder then refused for a reason no proposal change can
 // fix, and the orchestrator kept spawning analysts that could not fix it.
 test('when the batch cannot be built for a reason no agent can fix, the orchestrator is told so and no analyst runs again', async (t) => {
