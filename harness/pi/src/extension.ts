@@ -114,6 +114,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	const streakGuarded = tier12b && role !== ORCHESTRATOR ? registerRefusalStreak(pi, `The ${role} ${REFUSAL_STOP}`) : (tool: ToolDefinition) => tool;
 	if (tier12b) {
 		registerReadBudget(pi);
+		registerCompletionFloor(pi);
 		registerEmptyTurnNudge(pi);
 		if (role === ORCHESTRATOR) {
 			const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
@@ -159,18 +160,62 @@ function registerHyphenNames(pi: ExtensionAPI, names: Set<string>): void {
 	});
 }
 
+// Skill bodies share the budget (LFM3 e1 on Osaurus, 7513e421: a planning
+// investigator loaded 11 skills in one turn, 99,184 characters; Pi cannot fold
+// inside one turn's results, so the next request was 33,177 tokens with a
+// 1-token completion budget). A skill is never cut: one that does not fit
+// whole is not loaded, and the model can load it in a later turn.
+export const skillNotLoaded = (name: string) =>
+	`Not loaded: this turn's skills and reads already use the ${TURN_READ_CHARS_12B.toLocaleString('en-US')} characters one turn may load. Call invoke_skill for ${name} again in a later turn if you still need it.`;
+
 function registerReadBudget(pi: ExtensionAPI): void {
 	let left = TURN_READ_CHARS_12B;
 	pi.on('turn_start', () => {
 		left = TURN_READ_CHARS_12B;
 	});
 	pi.on('tool_result', (event) => {
-		if (event.toolName !== 'read_file' || event.isError) return;
+		if ((event.toolName !== 'read_file' && event.toolName !== 'invoke_skill') || event.isError) return;
 		const text = event.content.map((part) => (part.type === 'text' ? part.text : '')).join('');
+		if (event.toolName === 'invoke_skill') {
+			if (text.length <= left) {
+				left -= text.length;
+				return;
+			}
+			const name = String((event.input as { skill?: unknown }).skill ?? 'that skill');
+			return { content: [{ type: 'text' as const, text: skillNotLoaded(name) }] };
+		}
 		const kept = Math.min(text.length, left);
 		left -= kept;
 		if (kept === text.length) return;
 		return { content: [{ type: 'text' as const, text: `${text.slice(0, kept)}\n${READ_TRUNCATED}` }] };
+	});
+}
+
+// Pi sizes each request's completion budget as the window minus its prompt
+// estimate minus 4,096, and sends as little as 1 token (pi-ai
+// clampMaxTokensToContext): the model can then only end its turn. Below this
+// many tokens the 12b turn is stopped with an honest line instead; a fold
+// cannot help, since Pi never cuts inside the turn that filled the window.
+const MIN_COMPLETION_TOKENS = 512;
+export const NO_ROOM_STOP = 'Spotlight stopped this turn because the conversation no longer leaves the model room to answer; nothing in it was used. The results before it stand.';
+
+function registerCompletionFloor(pi: ExtensionAPI): void {
+	let starved = false;
+	pi.on('turn_start', () => {
+		starved = false;
+	});
+	pi.on('before_provider_request', (event, ctx) => {
+		const payload = event.payload as { max_completion_tokens?: unknown; max_tokens?: unknown } | undefined;
+		const budget = payload?.max_completion_tokens ?? payload?.max_tokens;
+		if (typeof budget !== 'number' || budget >= MIN_COMPLETION_TOKENS) return undefined;
+		starved = true;
+		log(`a turn with a ${budget}-token completion budget was stopped`);
+		ctx.abort();
+		return undefined;
+	});
+	pi.on('message_end', (event) => {
+		if (!starved || (event.message as { role?: string }).role !== 'assistant') return undefined;
+		return { message: { ...event.message, content: [{ type: 'text', text: NO_ROOM_STOP }] } as typeof event.message };
 	});
 }
 

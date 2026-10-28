@@ -966,6 +966,56 @@ test('after an approved Anomaly plan from the decision model, the investigator\'
 	assert.match(task, /anomaly_run \{"method": "method:numeric\.zscore_outliers@1\.1\.0", "table": "research\/payments\.csv"/);
 });
 
+// LFM3 e1 on Osaurus (7513e421): a planning investigator loaded these 11
+// skills in one turn (99,184 characters), the fold could not cut inside that
+// turn, and the next request had a 1-token completion budget.
+const SEQ7_SKILLS = ['integrations', 'osint', 'investigation-methodology', 'epistemic-grounding', 'acquisition-graduation', 'web-archiving', 'content-access', 'shell-safety', 'follow-the-money', 'social-media-intelligence', 'technical-investigation'];
+
+test('on the 12b one turn loads at most 30,000 characters of skills and reads, each skill whole, and a skill left out loads in a later turn', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			const done = toolResults(request).length;
+			if (done === 0) return { toolCalls: SEQ7_SKILLS.map((skill) => ({ name: 'invoke_skill', arguments: { skill } })) };
+			if (done === SEQ7_SKILLS.length) {
+				const left = SEQ7_SKILLS.find((_skill, index) => toolResults(request)[index].startsWith('Not loaded'))!;
+				return { toolCalls: [{ name: 'invoke_skill', arguments: { skill: left } }] };
+			}
+			return { text: 'Planned.' };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: PLANNING. Plan the case.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	const first = toolResults(worker[1]);
+	const loaded = first.filter((text) => !text.startsWith('Not loaded'));
+	const refused = first.filter((text) => text.startsWith('Not loaded'));
+	assert.ok(refused.length > 0, 'the 11 skills do not fit one turn');
+	assert.ok(loaded.length > 0);
+	assert.ok(loaded.join('').length <= 30_000, `one turn loaded ${loaded.join('').length} characters`);
+	const later = toolResults(worker[2]).at(-1)!;
+	assert.ok(!later.startsWith('Not loaded') && later.length > 1000, 'a skill left out loads in the next turn');
+});
+
+test('on the 12b a request left less than 512 tokens to answer is stopped with an honest line instead of sent', async (t) => {
+	const fake = await startFakeOpenAI(() => ({ text: 'Should not be asked.' }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	// A window the system prompt and tools alone nearly fill (Pi estimates
+	// about 5,000 tokens and keeps 4,096 back).
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '9000', SPOTLIGHT_COMPACT_AT: '8000' });
+
+	await settledPrompt(chat, 'Start.');
+
+	assert.ok(chat.lines.some((line) => line.includes('the conversation no longer leaves the model room to answer')));
+	assert.ok(!chat.lines.some((line) => line.includes('Should not be asked.')));
+});
+
 // D5: a new case is activated by the harness, not by a model writing the
 // receipt. The contract must exist before the investigator's first turn, and
 // no role can write it.
