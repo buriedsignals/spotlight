@@ -121,7 +121,13 @@ async function refuseInvalidProposal(context: ToolContext, target: string, conte
 	// that when the analyst finishes, so the write is not refused for it.
 	if (result.code !== 2) return;
 	const reason = (result.stderr || result.stdout).trim().replace(/^build-knowledge-batch: refused: /, '');
-	throw new FileRefused(`refused: ${reason}; the file is unchanged. Fix the proposal as schemas/knowledge-proposal.schema.json says and write it again.`);
+	// After the gate the analyst cannot record a source position, so the two
+	// fixes it can make are named (agents/analyst.md: attributed, findings left
+	// without a claim).
+	const position = / is attributed but finding \S+ has no source position/.test(reason)
+		? ' If the claim states what the finding itself asserts, set attributed to false. If it reports what someone said, leave that claim out and say why in your final answer.'
+		: '';
+	throw new FileRefused(`refused: ${reason}; the file is unchanged. Fix the proposal as schemas/knowledge-proposal.schema.json says and write it again.${position}`);
 }
 
 function lstatOrUndefined(path: string): Stats | undefined {

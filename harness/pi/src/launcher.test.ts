@@ -1467,7 +1467,7 @@ test('an analyst proposal the builder\'s cross-record rules refuse is refused wh
 	await settledPrompt(chat, 'Continue.');
 
 	const analyst = fake.requests.filter((request) => isWorkerRequest(request, 'analyst'));
-	assert.match(toolResults(analyst.at(-1)!)[0], /^refused: claim c1 is attributed but finding F1 has no source position; record who said it before ingesting; the file is unchanged\./);
+	assert.match(toolResults(analyst.at(-1)!)[0], /^refused: claim c1 is attributed but finding F1 has no source position; record who said it before ingesting; the file is unchanged\.[^]* If the claim states what the finding itself asserts, set attributed to false\. If it reports what someone said, leave that claim out and say why in your final answer\.$/);
 	assert.equal(existsSync(join(caseDir, 'data', 'knowledge-proposal.json')), false);
 });
 
