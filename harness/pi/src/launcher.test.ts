@@ -16,7 +16,7 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, agentSpec, loadComposition, deliverableFor } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
-import { GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded } from './extension.ts';
+import { blockedStop, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
@@ -1850,6 +1850,27 @@ test('every Investigation gate dependency is refused to the orchestrator after t
 	const denied = new Set((agentSpec(loadComposition(), 'orchestrator').denyWrites ?? []).map((path) => path.toLowerCase()));
 	assert.ok(paths.length > 0);
 	for (const path of paths) assert.ok(GATE_BOUND.has(path) || denied.has(path), `${path} is not refused after the gate`);
+});
+
+// U3 census, r5 on uk-cpi (84674fd9): the case reached `blocked` and the
+// orchestrator went on to about 300 calls.
+test('once the case is blocked, the orchestrator\'s next tool calls end the turn with the stop line', async (t) => {
+	const fake = await startFakeOpenAI((request) =>
+		toolResults(request).length === 0 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { toolCalls: [{ name: 'list_files', arguments: { pattern: 'data/*' } }] });
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	const python = process.env.SPOTLIGHT_PYTHON ?? 'python3';
+	execFileSync(python, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	await unlink(join(caseDir, 'data', 'fact-check.json'));
+	execFileSync(python, [join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'), 'record-attempt', 'fact-check-evidence-repair', '--gap', 'evidence mismatch', caseDir]);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(fake.requests.length, 2, 'no call runs after the blocked resolve');
+	assert.match(toolResults(fake.requests[1])[0], /"status":"blocked"/);
+	assert.ok(chat.lines.some((line) => line.includes(blockedStop(1))), 'the member is told why');
 });
 
 // U3 census, r5 on swiss (84674fd9): the orchestrator made one call 286 times
