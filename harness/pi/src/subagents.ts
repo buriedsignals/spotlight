@@ -100,6 +100,9 @@ export const GATE_READY_REFUSAL = 'The investigation is complete: call open_revi
 // What the launcher answers an investigator spawn once the Investigation gate is decided (launcher.ts refusalFor).
 export const GATE_DECIDED_REFUSAL = 'The Investigation gate is decided: the member approved data/findings.json and data/fact-check.json as they are, and no investigator runs after it. Work from the approved findings. At Report, if the member asks for more research, call spotlight_transition with requestFollowUp {instructions} first; that returns the case to Investigation.';
 
+// What the launcher answers an investigator spawn before the brief is approved (launcher.ts refusalFor).
+export const BRIEF_PENDING_REFUSAL = 'The brief is not approved yet, so no investigator runs. Agree the direction with the member, and once they approve it write it to brief-directions.txt with write_file. Then spawn the investigator with MODE: PLANNING to design the methodology.';
+
 export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }): ToolDefinition {
 	let corrections = 0;
 	return {

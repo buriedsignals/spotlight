@@ -15,7 +15,7 @@ import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, agentSpec, loadComposition } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
-import { FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
+import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
 import { GATE_BOUND, GATE_BOUND_REFUSAL, PROPOSAL_DONE, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, repeatsItself } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 
@@ -164,6 +164,7 @@ test('each process declares exactly its allowlist, workers cannot delegate, and 
 	});
 	t.after(() => fake.close());
 	const space = await workspace(t);
+	await briefApproved(space);
 	const chat = launch(t, {
 		...baseEnv(space, fake.baseURL),
 		SPOTLIGHT_PROVIDER_REQUEST_BODY: '{"provider":{"zdr":true}}',
@@ -392,6 +393,7 @@ test('case material reaches only a route the operator runs: refused at start wit
 	const editorial = await startFakeEditorial();
 	t.after(() => Promise.all([own.close(), thirdParty.close(), editorial.close()]));
 	const space = await workspace(t);
+	await briefApproved(space);
 	const route = (name: string, baseURL: string, inference: string) => ({ name, base_url: baseURL, model: 'stub-model', inference });
 	const newsroom = (routes: object[], extra: Record<string, string> = {}) => newsroomEnv(space, routes, editorial, extra);
 
@@ -415,6 +417,14 @@ test('case material reaches only a route the operator runs: refused at start wit
 });
 
 // A case whose methodology is approved, so the next worker task is Investigation.
+// The member approved the brief: the case is at Methodology, where the
+// investigator plans. Before it no investigator starts (refusalFor).
+async function briefApproved(space: Workspace, caseId = 'case-a'): Promise<void> {
+	const caseDir = join(space.casesRoot, caseId);
+	await mkdir(caseDir, { recursive: true });
+	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
+}
+
 async function caseAtInvestigation(space: Workspace, brief = 'Who owns the fixture company?'): Promise<string> {
 	const caseDir = join(space.casesRoot, 'case-a');
 	await mkdir(join(caseDir, 'data'), { recursive: true });
@@ -1237,6 +1247,7 @@ test('sensitive mode leaves every process only local tools, and a tool that can 
 	});
 	t.after(() => fake.close());
 	const space = await workspace(t);
+	await briefApproved(space);
 	const caseDir = join(space.casesRoot, 'case-a');
 	await mkdir(join(caseDir, 'data'), { recursive: true });
 	await writeFile(join(caseDir, 'notes.txt'), 'Contact source@example.org on 2024-03-01.\n');
@@ -1631,6 +1642,23 @@ test('the orchestrator is stopped at the fifth open_review refusal, even with wr
 	);
 	const stopLine = chat.lines.find((line) => line.includes('The check found these problems.')) ?? '';
 	assert.equal(stopLine.split('\\nSTRUCTURE: ').length - 1, 3, 'at most the first three errors');
+});
+
+// r3 held-kde run (ecbcd23e): at brief, with no brief-directions.txt and no
+// approved methodology, the orchestrator spawned an investigator that ran 69
+// calls and wrote research, evidence and a stray data file.
+test('no investigator starts before the brief is approved, and the refusal names the next step', async (t) => {
+	const fake = await startFakeOpenAI(orchestratorScript([{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Research the company.' } }]));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Investigate who owns the fixture company.');
+
+	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'investigator')).length, 0);
+	const results = toolResults(fake.requests.at(-1)!).join('\n');
+	assert.ok(results.includes(BRIEF_PENDING_REFUSAL), results);
+	assert.ok(BRIEF_PENDING_REFUSAL.includes('brief-directions.txt'));
 });
 
 // LFM3 e2 kde stage 2 on Osaurus (03f008b0): at Report, ten investigator
@@ -2445,6 +2473,7 @@ test('the appended system prompt reaches the orchestrator and no worker', async 
 	});
 	t.after(() => fake.close());
 	const space = await workspace(t);
+	await briefApproved(space);
 	await mkdir(space.root, { recursive: true });
 	const promptFile = join(space.root, 'system-prompt.md');
 	await writeFile(promptFile, 'OSAURUS-AGENT-MARKER: answer in French.\n', { mode: 0o600 });
