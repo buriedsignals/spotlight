@@ -36,8 +36,8 @@ import { piArguments, piCliPath, writePiSettings } from './pi-process.ts';
 import { runResearchRound } from './lanes.ts';
 import type { ResearchPlan, RoundSummary } from './lanes.ts';
 import { discardIncompleteLanes } from './resume.ts';
-import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, isolationRefusal, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
-import type { Composition, WorkerContext } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, deliverableFor, isolationRefusal, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
+import type { Composition, Deliverable, WorkerContext } from './roles.ts';
 import { approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { BRIEF_PENDING_REFUSAL, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL, WorkerQueue, runWorker } from './subagents.ts';
 import { withCasePassages, withWikiPassages } from './case-search.ts';
@@ -268,6 +268,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 		}
 		const controller = new AbortController();
 		running.set(request.id, controller);
+		let owed: Deliverable | undefined;
 		refusalFor(harness, request.agent, request.task)
 			.then((refusal) => {
 				if (refusal) throw new Error(`spawn_agent: ${refusal}`);
@@ -275,7 +276,8 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 				// against the worker limit, and a cancel stops it.
 				return queue.run(async () => {
 					await activateNewCase(harness, request.agent, controller.signal);
-					const task = await finalTask(harness, request.agent, request.task, controller.signal);
+					owed = await deliverable(harness, request.agent, request.task);
+					const task = await finalTask(harness, request.agent, request.task, controller.signal, owed);
 					return runWorker(
 						{
 							...processLaunch(harness, request.agent, await workerContext(harness, request.agent, request.task)),
@@ -292,7 +294,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 			})
 			.then((text) => withValidation(harness, request.agent, text))
 			.then((text) => reply({ ok: true, text }))
-			.catch((error: Error) => reply({ ok: false, error: harness.redact(error.message) }))
+			.catch((error: Error) => reply({ ok: false, error: harness.redact(withRespawn(harness, request.agent, error.message, owed)) }))
 			.finally(() => running.delete(request.id));
 	});
 }
@@ -375,12 +377,28 @@ async function workerContext(harness: Harness, role: string, task: string): Prom
 	};
 }
 
+// The role's deliverable for this spawn (roles.ts deliverableFor), read at the spawn.
+async function deliverable(harness: Harness, role: string, task: string): Promise<Deliverable | undefined> {
+	const status = await caseStatus(harness);
+	const step = (status.research as { resume_at?: unknown } | undefined)?.resume_at;
+	return deliverableFor(role, String(status.phase ?? ''), task, typeof step === 'string' ? step : undefined);
+}
+
+// A worker that ended without an answer: when a file it had to write is still
+// missing, the orchestrator is told which, and to spawn it again.
+function withRespawn(harness: Harness, role: string, message: string, owed: Deliverable | undefined): string {
+	if (!owed || !/worker ended without an answer/.test(message)) return message;
+	const missing = owed.files.filter((file) => !existsSync(resolve(harness.active.caseDir, file)));
+	if (missing.length === 0) return message;
+	return `${message}. ${missing.join(' and ')} ${missing.length === 1 ? 'is' : 'are'} still missing. Next: spawn the ${role} again with the same task.`;
+}
+
 // The task the worker gets: the requested one plus, for the fact-checker, the
 // case passages, and in a sensitive solo case the wiki passages for the
 // investigator and the fact-checker. D9 is checked again on that final text;
 // passages that would name what the fact-checker may not see are left out and
 // the task goes as asked.
-async function finalTask(harness: Harness, role: string, task: string, signal: AbortSignal): Promise<string> {
+async function finalTask(harness: Harness, role: string, task: string, signal: AbortSignal, owed?: Deliverable): Promise<string> {
 	const withCase = await withCasePassages(role, task, {
 		caseDir: harness.active.caseDir,
 		casesRoot: harness.active.casesRoot,
@@ -400,9 +418,10 @@ async function finalTask(harness: Harness, role: string, task: string, signal: A
 	});
 	if (withPassages !== task && isolationRefusal(role, withPassages)) {
 		harness.log('case passages left out: they name material the fact-checker works without');
-		return task;
+		return owed ? `${task}\n\n${owed.line}` : task;
 	}
-	return withAnomalyBlock(role, withPassages, anomalyOptions(harness, signal));
+	const withAnomaly = await withAnomalyBlock(role, withPassages, anomalyOptions(harness, signal));
+	return owed ? `${withAnomaly}\n\n${owed.line}` : withAnomaly;
 }
 
 function anomalyOptions(harness: Harness, signal?: AbortSignal) {

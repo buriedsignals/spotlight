@@ -13,7 +13,7 @@ import type { ChatRequest, Reply } from './test-support/fake-openai.ts';
 import { baseEnv, caseAtIngest, launch, newsroomEnv, requestNewsroomIngest, settledPrompt, waitUntil, workspace } from './test-support/launch.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import type { Chat, Workspace } from './test-support/launch.ts';
-import { CHECKOUT_ROOT, agentSpec, loadComposition } from './roles.ts';
+import { CHECKOUT_ROOT, agentSpec, loadComposition, deliverableFor } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
 import { GATE_BOUND, GATE_BOUND_REFUSAL, PROPOSAL_DONE, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, repeatsItself } from './extension.ts';
@@ -1686,6 +1686,32 @@ test('no investigator starts before the brief is approved, and the refusal names
 	assert.ok(BRIEF_PENDING_REFUSAL.includes('brief-directions.txt'));
 });
 
+// tools-da on r4 (LFM3): the orchestrator's fact-checker task named
+// another role's file, the fact-checker obeyed it, and data/fact-check.json
+// was never written. The task now ends with the role's deliverable; a worker
+// that ends without an answer and without it leaves the orchestrator the
+// re-spawn as its next step.
+test('a fact-checker spawned with the wrong file still gets its deliverable, and a silent one is re-spawned', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) return { text: '' };
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Ingest the case: write only data/knowledge-proposal.json.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const worker = fake.requests.find((request) => isWorkerRequest(request, 'fact-checker'));
+	assert.ok(worker, 'the fact-checker ran');
+	assert.ok(userText(worker).endsWith(`\n\n${deliverableFor('fact-checker', 'investigation', '')!.line}`), userText(worker));
+	const results = toolResults(fake.requests.at(-1)!).join('\n');
+	assert.match(results, /worker ended without an answer\. data\/fact-check\.json is still missing\. Next: spawn the fact-checker again with the same task\./);
+});
+
 // LFM3 e2 kde stage 2 on Osaurus (03f008b0): at Report, ten investigator
 // spawns rewrote the approved findings, and the approved fact-check broke.
 test('no investigator starts after the Investigation gate, at Report or Ingest', async (t) => {
@@ -1896,7 +1922,7 @@ if (process.argv[4] === 'read') {
 				continue;
 			}
 			assert.match(task, /^Work the case\.\n\nWIKI PASSAGES\. Sensitive mode:/, role);
-			assert.match(task, /<<<BEGIN UNTRUSTED WIKI DATA>>>\n<<<NOTE 1 notes\/fixture-company\.md \(Fixture company\)\ncase file: research\/wiki\/notes-fixture-company\.md\nFixture Ltd is owned by A\. Holder since 2019\.\nNOTE 1>>>\n<<<END UNTRUSTED WIKI DATA>>>$/, role);
+			assert.match(task, /<<<BEGIN UNTRUSTED WIKI DATA>>>\n<<<NOTE 1 notes\/fixture-company\.md \(Fixture company\)\ncase file: research\/wiki\/notes-fixture-company\.md\nFixture Ltd is owned by A\. Holder since 2019\.\nNOTE 1>>>\n<<<END UNTRUSTED WIKI DATA>>>\n\nYour deliverable: [^\n]+$/, role);
 		}
 		const saved = join(space.casesRoot, 'case-a', 'research', 'wiki', 'notes-fixture-company.md');
 		if (!sensitive) assert.ok(!existsSync(saved), 'nothing is saved outside sensitive mode');
@@ -1959,7 +1985,7 @@ test('every fact-checker task carries each claim\'s case passages between marker
 		assert.ok(worker, 'the fact-checker ran');
 		const task = userText(worker);
 		if (off) {
-			assert.equal(task, 'Check data/findings.json.');
+			assert.equal(task, `Check data/findings.json.\n\n${deliverableFor('fact-checker', 'investigation', '')!.line}`);
 			continue;
 		}
 		assert.match(task, /^Check data\/findings\.json\.\n\nCASE PASSAGES\. Retrieval only/);
