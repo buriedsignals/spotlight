@@ -419,6 +419,31 @@ test('a fact-check claim that is not its finding\'s claim is refused, naming the
 	await assert.rejects(call('edit_file', { path: 'data/fact-check.json', old_text: 'Cambridge', new_text: 'London' }), /not its finding's/);
 });
 
+// 12B r5 fsf s0 on 2f357029: the fact-checker verified F2 citing research/fsf_leadership_browse.md,
+// a file never saved in the case, and the write went through.
+test('a positive verdict citing a file that is not in the case is refused, naming each path', async (t) => {
+	const { caseDir, call } = await fixture(t);
+	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
+	const link = { finding_id: 'F2', relation: 'supports', finding_fingerprint: 'f'.repeat(64), link_fingerprint: 'l'.repeat(64) };
+	await writeFile(join(caseDir, 'data', 'source-expressions.json'), JSON.stringify({ expressions: [
+		{ id: 'P1', expression_fingerprint: 'e'.repeat(64), lifecycle_events: [{ event: 'activated' }], finding_links: [link] },
+	] }));
+	await mkdir(join(caseDir, 'research'), { recursive: true });
+	await writeFile(join(caseDir, 'research', 'fsf_board.md'), 'The board has five members.\n');
+	const evidence = (path: string, archive_url = path) => ({ local_file: path, archive_url, source_ref: { path, line_start: 1, line_end: 1 }, source_expression_refs: ['P1'] });
+	const factCheck = (item: object, verdict = 'verified') => JSON.stringify({ schema_version: '1.1', claims: [{ finding_id: 'F2', verdict, evidence_for: [item] }] }, null, 2);
+
+	await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: factCheck(evidence('research/fsf_leadership_browse.md')) }),
+		(error: Error) => error.message === 'refused: data/fact-check.json cites files that are not in the case folder; the file is unchanged.\nF2: research/fsf_leadership_browse.md\nCite only a file you saved in the case (list_files shows them). If no saved source supports the finding, set the verdict to unverified.');
+	assert.equal(existsSync(join(caseDir, 'data', 'fact-check.json')), false);
+	await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: factCheck({ ...evidence('research/fsf_board.md'), source_ref: { path: '../outside/x.md' } }) }), /\nF2: \.\.\/outside\/x\.md\n/);
+
+	await call('write_file', { path: 'data/fact-check.json', content: factCheck(evidence('research/fsf_board.md', 'https://web.archive.org/web/2026/https://fsf.org/')) });
+	await call('write_file', { path: 'data/fact-check.json', content: factCheck(evidence('research/fsf_board.md')) });
+	await assert.rejects(call('edit_file', { path: 'data/fact-check.json', old_text: '"local_file": "research/fsf_board.md"', new_text: '"local_file": "research/gone.md"' }), /\nF2: research\/gone\.md\n/);
+	await call('write_file', { path: 'data/fact-check.json', content: factCheck(evidence('research/fsf_leadership_browse.md'), 'unverified') });
+});
+
 test('with the Indicator Framework on, its case file and report are written only through record_indicator_framework', async (t) => {
 	const on = await fixture(t);
 	await approve(on.caseDir, true);

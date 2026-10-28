@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { onJsonlRecords } from './pi-process.ts';
-import { LOOP_STOP } from './tools/run.ts';
+import { LOOP_STOP, REFUSAL_STOP } from './tools/run.ts';
 
 export type SpawnRequest = { kind: 'spotlight-spawn'; id: string; agent: string; task: string };
 export type CancelRequest = { kind: 'spotlight-cancel'; id: string };
@@ -83,7 +83,18 @@ export async function requestEditorial(op: string, args: Record<string, unknown>
 const EVIDENCE_CORRECTION = /MODE:\s*EVIDENCE CORRECTION/;
 export const CORRECTION_SPENT = 'The fact-checker already had its one evidence correction this cycle. Record the failure with spotlight_transition recordAttempt (kind fact-check-evidence-repair, gap: the validator reason), then call spotlight_resolve.';
 
-export function spawnAgentTool(workers: string[]): ToolDefinition {
+// r6 nordhaven on dd14e2e5: the orchestrator spawned about 15 fact-checkers in
+// 25 minutes, each rewriting fact-check.json against the validator, with no
+// recordAttempt in between. A cycle (one plain check, one correction) needs
+// two; a successful spotlight_transition starts the next cycle.
+export const FACT_CHECKER_CAP = 3;
+export const FACT_CHECKERS_SPENT = `The fact-checker has run ${FACT_CHECKER_CAP} times this cycle; do not spawn it again. If the readiness criteria are met, open the Investigation gate with open_review and the current verdicts. Otherwise record the cycle with spotlight_transition recordAttempt (kind investigation-cycle, gap: what is still missing), then call spotlight_resolve.`;
+
+// Fact-checker spawns since the last successful spotlight_transition, shared by
+// spawn_agent and the transition tool of one orchestrator process.
+export type FactCheckerCycle = { spawns: number };
+
+export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }): ToolDefinition {
 	let corrections = 0;
 	return {
 		name: 'spawn_agent',
@@ -97,9 +108,11 @@ export function spawnAgentTool(workers: string[]): ToolDefinition {
 			const { agent, task } = params as { agent: string; task: string };
 			if (!workers.includes(agent)) throw new Error(`spawn_agent: unknown worker "${agent}"`);
 			if (agent === 'fact-checker') {
+				if (cycle.spawns >= FACT_CHECKER_CAP) throw new Error(FACT_CHECKERS_SPENT);
 				if (!EVIDENCE_CORRECTION.test(task)) corrections = 0;
 				else if (corrections > 0) throw new Error(CORRECTION_SPENT);
 				else corrections += 1;
+				cycle.spawns += 1;
 			}
 			if (typeof process.send !== 'function') {
 				throw new Error('spawn_agent needs the Spotlight launcher; this process was started without it');
@@ -165,15 +178,16 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 		if (child.stdin.writable) child.stdin.write(`${JSON.stringify(command)}\n`);
 	};
 	let started = false;
-	// A 12b worker stopped for repeating one call ends on that line as its last
-	// tool result, with no answer of its own; the line is its answer.
+	// A 12b worker stopped for repeating one call, or for a streak of refusals,
+	// ends on that line as its last tool result, with no answer of its own; the
+	// line is its answer.
 	let stopped = '';
 	const transcript = openTranscript();
 	onJsonlRecords(child.stdout, (record) => {
 		transcript?.(record);
 		if (record.type === 'tool_execution_end') {
 			const text = (record.result as { content?: Array<{ text?: string }> } | undefined)?.content?.[0]?.text ?? '';
-			stopped = text.endsWith(LOOP_STOP) ? text : '';
+			stopped = text.endsWith(LOOP_STOP) || text.endsWith(REFUSAL_STOP) ? text : '';
 		}
 		if (record.type === 'response' && record.id === 'prompt') {
 			if (!record.success) answer.reject(new Error(`worker refused the task: ${String(record.error)}`));

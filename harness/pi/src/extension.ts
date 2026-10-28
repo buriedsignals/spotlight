@@ -12,11 +12,11 @@ import { typedTools } from './tools/index.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
-import { bindActiveCase, pythonAdapter, spotlightTools } from './tools/spotlight.ts';
+import { bindActiveCase, pythonAdapter, resolveCase, spotlightTools } from './tools/spotlight.ts';
 import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
 import { openReviewTool, gateCheck } from './tools/review.ts';
-import { LOOP_STOP, REPEAT_REASON } from './tools/run.ts';
+import { LOOP_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
 import { evidenceValidates } from './validators.ts';
 
 const log = (message: string) => process.stderr.write(`spotlight-extension: ${message}\n`);
@@ -56,8 +56,9 @@ function toolsFor(role: string): ToolDefinition[] {
 	if (edition === 'newsroom') tools.push(...editorialTools(requestEditorial));
 	if (role === ORCHESTRATOR) {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
-		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context)));
-		tools.push(spawnAgentTool(spawnableWorkers(composition)));
+		const cycle = { spawns: 0 };
+		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => (cycle.spawns = 0)));
+		tools.push(spawnAgentTool(spawnableWorkers(composition), cycle));
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context)));
 	}
 	const allowlist = new Set(allowedTools(spec, sensitive, edition));
@@ -108,13 +109,20 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	// The launcher sets the local tier's fold point in Pi's settings; the
 	// frontier tier keeps Pi's default threshold and summary.
 	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier');
-	registerLoopGuard(pi, tier12b && role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
+	const guarded = registerLoopGuard(pi, tier12b && role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
+	// Ending the orchestrator would end the case, so only workers are stopped.
+	const streakGuarded = tier12b && role !== ORCHESTRATOR ? registerRefusalStreak(pi, `The ${role} ${REFUSAL_STOP}`) : (tool: ToolDefinition) => tool;
 	if (tier12b) {
 		registerReadBudget(pi);
 		registerEmptyTurnNudge(pi);
+		if (role === ORCHESTRATOR) {
+			const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
+			const runAdapter = pythonAdapter(process.env.SPOTLIGHT_PYTHON || 'python3', resolverEnv(process.env, loadComposition()));
+			registerTextTurnNudge(pi, () => resolveCase(active, runAdapter));
+		}
 	}
 	registerToolOwners(pi, role);
-	const tools = toolsFor(role);
+	const tools = toolsFor(role).map(guarded).map(streakGuarded);
 	for (const tool of tools) pi.registerTool(tool);
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
 }
@@ -169,6 +177,43 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 	});
 }
 
+// The phases where the orchestrator does the next step itself and no gate waits
+// for the member. Brief, Research and Ingest also hold conversations with the
+// member, so a text turn there can be right.
+const ACTING_PHASES = ['methodology', 'investigation', 'investigation_gate_finalization'];
+export const textTurnNudge = (phase: string, owner: string) =>
+	`Your turn ended with text, but the case is at ${phase} (skill: ${owner}) and no gate is waiting for the member, so the case moves only when you act. Take that phase's next step with your tools now; call spotlight_resolve if you are unsure what it is.`;
+
+// r6 northwind on dd14e2e5: the orchestrator ended the run with a plain-text
+// summary of the methodology after its gate steps were refused. A text turn
+// with no tool call, in a phase only the orchestrator can move, gets one
+// nudge; a second text turn in a row ends the run as before, so a model that
+// is done is not held.
+function registerTextTurnNudge(pi: ExtensionAPI, resolve: () => Promise<Record<string, unknown>>): void {
+	let nudged = false;
+	pi.on('message_end', async (event) => {
+		const message = event.message as { role?: string; stopReason?: string; content?: string | Array<{ type: string; text?: string }> };
+		const parts = typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : (message.content ?? []);
+		if (message.role !== 'assistant') return;
+		if (parts.some((part) => part.type === 'toolCall')) {
+			nudged = false;
+			return;
+		}
+		if (message.stopReason !== 'stop' || nudged || !parts.some((part) => part.type === 'text' && part.text?.trim())) return;
+		let status: Record<string, unknown>;
+		try {
+			status = await resolve();
+		} catch (error) {
+			log(`text-turn check skipped: ${(error as Error).message}`);
+			return;
+		}
+		const phase = String(status.next_phase ?? '');
+		if (!ACTING_PHASES.includes(phase)) return;
+		nudged = true;
+		pi.sendUserMessage(textTurnNudge(phase, String(status.owner ?? '')), { deliverAs: 'followUp' });
+	});
+}
+
 // A small model can repeat one call over and over (12B retune: the same
 // list four times, the same read forty). A call that already ran twice in a
 // row and got the same result both times is refused instead of run. Keying
@@ -177,16 +222,48 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 // member's gate decision between two resolves never trips it. With `stop`
 // (12b workers), the third refusal in a row ends the worker's run with that
 // line instead (12B r3 A2 nordhaven: six refusals of one search in a row).
-function registerLoopGuard(pi: ExtensionAPI, stop?: string): void {
+// A call whose arguments fail Pi's schema check counts the same way, though
+// Pi answers it before the tool_call hook: its error is its result, it is
+// refused before the check (prepareArguments runs first), and the third
+// refusal ends the run when the turn ends (12B r5 fsf s0: one invalid
+// source_expressions call nine times). Returns the wrapper for each tool.
+function registerLoopGuard(pi: ExtensionAPI, stop?: string): (tool: ToolDefinition) => ToolDefinition {
 	let lastCall = '';
 	let lastResult = '';
 	let repeats = 0;
 	let refusals = 0;
+	let lastInvalid = false;
+	let stopping = false;
 	const key = (toolName: string, input: unknown) => JSON.stringify([toolName, input]);
+	const startedWith = new Map<string, string>();
 	pi.on('agent_start', () => {
 		lastCall = '';
 		repeats = 0;
 		refusals = 0;
+		lastInvalid = false;
+		stopping = false;
+	});
+	pi.on('tool_execution_start', (event) => {
+		startedWith.set(event.toolCallId, key(event.toolName, event.args));
+	});
+	pi.on('tool_execution_end', (event) => {
+		const call = startedWith.get(event.toolCallId);
+		startedWith.delete(event.toolCallId);
+		const result = JSON.stringify(event.result?.content);
+		const text = event.result?.content?.[0]?.text ?? '';
+		if (call === undefined || !event.isError || !text.startsWith('Validation failed for tool ')) return;
+		if (call !== lastCall) {
+			lastCall = call;
+			lastResult = '';
+			repeats = 0;
+		}
+		repeats = result === lastResult ? repeats + 1 : 1;
+		lastResult = result;
+		lastInvalid = true;
+		refusals = 0;
+	});
+	pi.on('turn_end', (_event, ctx) => {
+		if (stopping) ctx.abort();
 	});
 	pi.on('tool_call', (event) => {
 		const call = key(event.toolName, event.input);
@@ -207,6 +284,51 @@ function registerLoopGuard(pi: ExtensionAPI, stop?: string): void {
 		if (key(event.toolName, event.input) !== lastCall || result.includes(REPEAT_REASON)) return;
 		repeats = result === lastResult ? repeats + 1 : 1;
 		lastResult = result;
+		lastInvalid = false;
+	});
+	return (tool) => ({
+		...tool,
+		prepareArguments: (args: unknown) => {
+			if (lastInvalid && repeats >= 2 && key(tool.name, args) === lastCall) {
+				refusals += 1;
+				const reason = stop && refusals >= 3 ? stop : REPEAT_REASON;
+				stopping = reason === stop;
+				throw new Error(reason);
+			}
+			return tool.prepareArguments ? tool.prepareArguments(args) : args;
+		},
+	});
+}
+
+// The loop guard sees only one call repeated. r6 on dd14e2e5: workers were
+// refused for varied calls with no end (cc investigator-12: 15 writes refused
+// before activation; fsf fact-checker-45 and nordhaven investigator-7: about 9
+// source_expressions refusals each). Once a worker's last REFUSAL_STREAK
+// results were all errors, of any kind, its next call ends the run with
+// `stop` when the turn ends. prepareArguments runs before Pi's schema check
+// and the tool_call hook, so every next call meets it.
+function registerRefusalStreak(pi: ExtensionAPI, stop: string): (tool: ToolDefinition) => ToolDefinition {
+	let streak = 0;
+	let stopping = false;
+	pi.on('agent_start', () => {
+		streak = 0;
+		stopping = false;
+	});
+	pi.on('tool_execution_end', (event) => {
+		streak = event.isError ? streak + 1 : 0;
+	});
+	pi.on('turn_end', (_event, ctx) => {
+		if (stopping) ctx.abort();
+	});
+	return (tool) => ({
+		...tool,
+		prepareArguments: (args: unknown) => {
+			if (streak >= REFUSAL_STREAK) {
+				stopping = true;
+				throw new Error(stop);
+			}
+			return tool.prepareArguments ? tool.prepareArguments(args) : args;
+		},
 	});
 }
 

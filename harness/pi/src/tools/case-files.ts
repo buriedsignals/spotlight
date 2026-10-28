@@ -182,6 +182,14 @@ function refuseUnactivatedStart(caseDir: string, target: string): void {
 	throw new FileRefused(`refused: ${path} starts the investigation record, which opens at Investigation once the harness has activated the case (data/case-contract.json); the file is unchanged. Before Investigation, write only the files your task names.`);
 }
 
+// The resolver reads the approved brief only at the case root. r6 northwind on
+// dd14e2e5: the orchestrator wrote data/brief-directions.txt, the case stayed
+// at Brief, and every later gate step was refused.
+function refuseMisplacedBrief(caseDir: string, target: string): void {
+	if (caseRelative(caseDir, target) !== 'data/brief-directions.txt') return;
+	throw new FileRefused('refused: the approved brief goes to brief-directions.txt at the case root (path: brief-directions.txt); data/brief-directions.txt is not read. The file was not written.');
+}
+
 // With the Indicator Framework on, its case file and report come only from
 // record_indicator_framework, which fills ratings, quadrants and items from
 // the fetched framework data.
@@ -204,6 +212,13 @@ type Passage = { id?: unknown; expression_fingerprint?: unknown; lifecycle_event
 // supporting the finding, with the fingerprints on record (12B r3 ia: refs to
 // a passage never recorded went through). An activated case's fact-check is
 // 1.1 (12B r3 ia: "schema_validation": "1.1" passed as a legacy file).
+// The claims whose verdict needs evidence: verified, and in a legacy file also
+// partially_verified.
+function positiveClaims(factCheck: { schema_version?: unknown; claims?: unknown }): { finding_id?: unknown; evidence_for?: unknown }[] {
+	const positive = factCheck?.schema_version === '1.1' ? ['verified'] : ['verified', 'partially_verified'];
+	return Array.isArray(factCheck?.claims) ? factCheck.claims.filter((claim) => positive.includes(claim?.verdict)) : [];
+}
+
 function refuseUncitedVerdicts(caseDir: string, target: string, content: string): void {
 	if (caseRelative(caseDir, target) !== 'data/fact-check.json') return;
 	let factCheck: { schema_version?: unknown; claims?: unknown };
@@ -216,8 +231,7 @@ function refuseUncitedVerdicts(caseDir: string, target: string, content: string)
 	if (activated && factCheck?.schema_version !== '1.1') {
 		throw new FileRefused('refused: data/fact-check.json in an activated case needs "schema_version": "1.1"; the file is unchanged.');
 	}
-	const positive = factCheck?.schema_version === '1.1' ? ['verified'] : ['verified', 'partially_verified'];
-	const claims = Array.isArray(factCheck?.claims) ? factCheck.claims.filter((claim) => positive.includes(claim?.verdict)) : [];
+	const claims = positiveClaims(factCheck);
 	let passages: Passage[] = [];
 	try {
 		passages = (JSON.parse(readFileSync(join(caseDir, 'data', 'source-expressions.json'), 'utf8')) as { expressions?: Passage[] }).expressions ?? [];
@@ -363,6 +377,34 @@ function refuseDriftedClaims(caseDir: string, target: string, content: string): 
 	});
 	if (drifted.length === 0) return;
 	throw new FileRefused(`refused: data/fact-check.json checks a claim that is not its finding's; the file is unchanged. Set each claim_text to its finding's claim, word for word, and judge that claim:\n${drifted.join('\n')}`);
+}
+
+// A positive verdict cites only files saved in the case (12B r5 fsf s0: F2 was
+// verified citing research/fsf_leadership_browse.md, never saved). Checked are
+// local_file, source_ref.path and an archive_url that is a path, not a URL.
+function refuseMissingCitedFiles(caseDir: string, target: string, content: string): void {
+	if (caseRelative(caseDir, target) !== 'data/fact-check.json') return;
+	let factCheck: { schema_version?: unknown; claims?: unknown };
+	try {
+		factCheck = JSON.parse(content);
+	} catch {
+		return;
+	}
+	const saved = (path: string) => {
+		const resolved = resolve(caseDir, path);
+		return inside(caseDir, resolved) && lstatOrUndefined(resolved)?.isFile() === true;
+	};
+	const missing = new Set<string>();
+	for (const claim of positiveClaims(factCheck)) {
+		for (const item of Array.isArray(claim.evidence_for) ? claim.evidence_for : []) {
+			const archive = typeof item?.archive_url === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(item.archive_url) ? item.archive_url : undefined;
+			for (const path of [item?.local_file, item?.source_ref?.path, archive]) {
+				if (typeof path === 'string' && path.trim() !== '' && !path.includes('\0') && !saved(path.trim())) missing.add(`${String(claim.finding_id)}: ${path}`);
+			}
+		}
+	}
+	if (missing.size === 0) return;
+	throw new FileRefused(`refused: data/fact-check.json cites files that are not in the case folder; the file is unchanged.\n${[...missing].join('\n')}\nCite only a file you saved in the case (list_files shows them). If no saved source supports the finding, set the verdict to unverified.`);
 }
 
 // Writes without following a symlink at the last step either.
@@ -561,6 +603,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 						throw new FileRefused(`refused: empty content would erase ${input.path}. If your output was cut off, write the file again in full.`);
 					}
 				}
+				refuseMisplacedBrief(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseUnactivatedStart(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseRecordedFramework(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseNonObjectData(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
@@ -568,6 +611,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseLeadsEvidence(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseBundleRewrites(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, role);
 				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
+				refuseMissingCitedFiles(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, input.content, writes, denyWrites)}`);
 			},
 		},
@@ -603,6 +647,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseLeadsEvidence(caseDir, target, updated);
 				refuseBundleRewrites(caseDir, target, updated, role);
 				refuseDriftedClaims(caseDir, target, updated);
+				refuseMissingCitedFiles(caseDir, target, updated);
 				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes, denyWrites)}`);
 			},
 		},

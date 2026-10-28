@@ -39,6 +39,10 @@ export const REPEAT_REASON = 'This is the same call as the last two. Act on what
 // What a 12b worker's run ends with on its third refusal in a row, and what the
 // orchestrator then gets as that worker's answer.
 export const LOOP_STOP = 'repeated one call and was stopped; its last results stand.';
+// What a 12b worker's run ends with when its last REFUSAL_STREAK tool calls were
+// all refused or failed, whatever they were.
+export const REFUSAL_STREAK = 6;
+export const REFUSAL_STOP = 'had six tool calls in a row refused and was stopped; its last results stand.';
 
 // Pi validates arguments before it calls a tool; this repeats the check at the
 // tool boundary so a tool never acts on input outside its schema, whoever calls it.

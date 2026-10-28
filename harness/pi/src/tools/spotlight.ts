@@ -163,7 +163,7 @@ export type ResearchRunner = (retry: boolean, signal?: AbortSignal) => Promise<u
 // Whether validate-case.py and validate-fact-check.py both pass now.
 export type EvidenceCheck = () => Promise<boolean>;
 
-export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, role: string, research?: ResearchRunner, evidenceValidates?: EvidenceCheck): ToolDefinition[] {
+export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, role: string, research?: ResearchRunner, evidenceValidates?: EvidenceCheck, onTransition?: () => void): ToolDefinition[] {
 	const resolveTool: ToolDefinition = {
 		name: 'spotlight_resolve',
 		label: 'Spotlight resolve',
@@ -202,6 +202,7 @@ export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, ro
 			// Once started, a transition runs to its durable outcome even if the
 			// caller aborts: the resolver write is atomic and must not be orphaned.
 			await runAdapter(arguments_);
+			onTransition?.();
 			return jsonResult(await resolveCase(active, runAdapter));
 		},
 	};

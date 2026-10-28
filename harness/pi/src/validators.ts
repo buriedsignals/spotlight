@@ -40,10 +40,12 @@ function checksAfter(role: string, phase: string, producerModel: string, context
 		: [];
 	if (role === 'investigator') return [caseCheck, ...indicatorCheck];
 	if (role === 'fact-checker') {
-		// A fact-checker that cites passages by bare id gets the full refs filled
-		// in before the checks, the fingerprints a model must never copy by hand.
+		// Before the checks, code repairs evidence line ranges the fact-checker
+		// miscounted (a quote found once in its cited file) and fills in the full
+		// refs for passages cited by bare id, the fingerprints a model must never
+		// copy by hand.
 		const resolveRefs = { name: 'write-source-expressions.py --resolve-fact-check-refs', args: [script('write-source-expressions.py'), context.caseDir, '--resolve-fact-check-refs'] };
-		return [...(existsSync(join(context.caseDir, 'data/source-expressions.json')) ? [resolveRefs] : []), caseCheck, { name: 'validate-fact-check.py', args: [script('validate-fact-check.py'), context.caseDir] }, ...indicatorCheck];
+		return [resolveRefs, caseCheck, { name: 'validate-fact-check.py', args: [script('validate-fact-check.py'), context.caseDir] }, ...indicatorCheck];
 	}
 	if (role === 'analyst' && phase === 'ingest') {
 		// --review writes the draft for the ingest page, and the final batch when

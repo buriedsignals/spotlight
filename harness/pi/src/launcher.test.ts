@@ -15,6 +15,7 @@ import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, loadComposition } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
+import { FACT_CHECKERS_SPENT } from './subagents.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
 
@@ -372,10 +373,10 @@ test('case material reaches only a route the operator runs: refused at start wit
 });
 
 // A case whose methodology is approved, so the next worker task is Investigation.
-async function caseAtInvestigation(space: Workspace): Promise<string> {
+async function caseAtInvestigation(space: Workspace, brief = 'Who owns the fixture company?'): Promise<string> {
 	const caseDir = join(space.casesRoot, 'case-a');
 	await mkdir(join(caseDir, 'data'), { recursive: true });
-	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
+	await writeFile(join(caseDir, 'brief-directions.txt'), `${brief}\n`);
 	await writeFile(join(caseDir, 'data', 'methodology.json'), '{}\n');
 	await new Promise<void>((done, fail) =>
 		execFile(
@@ -393,6 +394,54 @@ async function caseAtInvestigation(space: Workspace): Promise<string> {
 	);
 	return caseDir;
 }
+
+// r6 northwind on dd14e2e5: the brief went to data/brief-directions.txt and the
+// case never left Brief.
+test('a brief written under data/ is refused with the root path, and the brief at the root moves the case past Brief', async (t) => {
+	const calls = [
+		{ name: 'write_file', arguments: { path: 'data/brief-directions.txt', content: 'Who owns the fixture company?\n' } },
+		{ name: 'write_file', arguments: { path: 'brief-directions.txt', content: 'Who owns the fixture company?\n' } },
+		{ name: 'spotlight_resolve', arguments: {} },
+	];
+	const fake = await startFakeOpenAI(orchestratorScript(calls));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'That direction is fine, go ahead.');
+
+	const results = toolResults(fake.requests[fake.requests.length - 1]);
+	assert.match(results[0], /refused: the approved brief goes to brief-directions\.txt at the case root/);
+	assert.equal(existsSync(join(space.casesRoot, 'case-a', 'data', 'brief-directions.txt')), false);
+	const resolved = JSON.parse(results[2]) as { next_phase: string };
+	assert.notEqual(resolved.next_phase, 'brief');
+});
+
+// r6 northwind on dd14e2e5: the orchestrator ended the run on a text summary
+// while the case waited on it. At Investigation the first text turn gets one
+// nudge and a second one ends the run; at Brief, where the orchestrator talks
+// with the member, a text turn ends it at once.
+test('on the 12b an orchestrator text turn at a phase only it can move gets one nudge, never two in a row; at Brief it gets none', async (t) => {
+	for (const atInvestigation of [true, false]) {
+		const fake = await startFakeOpenAI(() => ({ text: 'Here is the plan.' }));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		if (atInvestigation) await caseAtInvestigation(space);
+		const chat = launch(t, baseEnv(space, fake.baseURL));
+
+		await settledPrompt(chat, 'Continue.');
+
+		const nudges = fake.requests.flatMap((request) => request.messages).filter((message) => message.role === 'user' && JSON.stringify(message.content).includes('Your turn ended with text'));
+		const last = fake.requests[fake.requests.length - 1].messages;
+		if (atInvestigation) {
+			assert.equal(fake.requests.length, 2, 'one nudge, then the second text turn ends the run');
+			assert.match(JSON.stringify(last[last.length - 1].content), /the case is at investigation \(skill: phase-investigation\)/);
+		} else {
+			assert.equal(fake.requests.length, 1, 'no nudge at Brief');
+			assert.equal(nudges.length, 0);
+		}
+	}
+});
 
 test('a worker writes through its typed tools and the harness validates its output when it finishes', async (t) => {
 	const fake = await startFakeOpenAI((request) => {
@@ -506,6 +555,40 @@ test('a second evidence-correction fact-checker spawn in one cycle is refused, a
 	assert.equal(spawned.size, 3, 'the refused correction never started a worker');
 });
 
+// r6 nordhaven on dd14e2e5: about 15 fact-checker spawns in one cycle. The
+// refusal names only calls the orchestrator can make there, and a real
+// recordAttempt with the named kind starts the next cycle.
+test('a fourth fact-checker spawn in one cycle is refused, again on every retry, and a recorded attempt allows the next', async (t) => {
+	const calls = [
+		...[1, 2, 3, 4, 5].map((n) => ({ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: `Fact-check pass ${n}.` } })),
+		{ name: 'spotlight_transition', arguments: { operation: 'recordAttempt', payload: { kind: 'investigation-cycle', gap: 'F1 has no stored source.' } } },
+		{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Fact-check pass 6.' } },
+	];
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
+		const next = calls[toolResults(request).length];
+		return next ? { toolCalls: [next] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker'));
+	const last = orchestrator[orchestrator.length - 1];
+	const results = toolResults(last);
+	assert.equal(results.length, calls.length);
+	for (const index of [3, 4]) assert.equal(results[index].includes(FACT_CHECKERS_SPENT), true, `spawn ${index + 1} is refused with the cap line`);
+	assert.doesNotMatch(results[5], /refused|error/i);
+	const spawned = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker') && toolResults(request).length === 0).map(userText);
+	assert.deepEqual(spawned.map((task) => task.match(/Fact-check pass \d/)?.[0]), ['Fact-check pass 1', 'Fact-check pass 2', 'Fact-check pass 3', 'Fact-check pass 6']);
+	// Every tool the line names is one the orchestrator has.
+	for (const name of FACT_CHECKERS_SPENT.match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []) assert.ok(toolNames(last).includes(name), `${name} is an orchestrator tool`);
+	assert.match(FACT_CHECKERS_SPENT, /recordAttempt \(kind investigation-cycle/);
+});
+
 // 12B r3 A2 nordhaven on ad768b54: investigator-7 repeated one search through six
 // loop-guard refusals in a row until the case was stopped.
 test('on the 12b a worker refused three times in a row for one repeated call is stopped, and the orchestrator gets that as its answer', async (t) => {
@@ -526,6 +609,56 @@ test('on the 12b a worker refused three times in a row for one repeated call is 
 	assert.deepEqual(results.slice(2).map((text) => /same call as the last two/.test(text)), [true, true]);
 	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
 	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /The investigator repeated one call and was stopped; its last results stand\./);
+});
+
+// 12B r5 fsf s0 on 2f357029: fact-checker-71 made one source_expressions call nine times in a
+// row; Pi refused its arguments each time, before the loop guard ever saw the call.
+test('on the 12b a worker repeating one call whose arguments fail the schema is refused, then stopped', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { toolCalls: [{ name: 'read_file', arguments: { file: 'data/findings.json' } }] };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const investigator = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	const results = toolResults(investigator[investigator.length - 1]);
+	assert.equal(investigator.length, 5, 'two calls fail validation, two are refused, and the third refusal ends the run');
+	assert.deepEqual(results.map((text) => /^Validation failed for tool "read_file"/.test(text)), [true, true, false, false]);
+	assert.deepEqual(results.slice(2).map((text) => /same call as the last two/.test(text)), [true, true]);
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /The investigator repeated one call and was stopped; its last results stand\./);
+});
+
+// r6 on dd14e2e5: cc investigator-12 had 15 writes refused in a row, each a
+// different call, so the loop guard never saw a repeat.
+test('on the 12b a worker whose last six calls were all refused, each a different call, is stopped at its next call; a search with no matches is not a refusal', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			const done = toolResults(request).length;
+			return done === 5 ? { toolCalls: [{ name: 'grep_files', arguments: { pattern: 'no such text anywhere', path: 'data' } }] } : { toolCalls: [{ name: 'read_file', arguments: { path: `research/missing-${done}.md` } }] };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const investigator = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	// Five refusals, one search that finds nothing (not a refusal: the streak
+	// starts again), six refusals, then the stop.
+	assert.equal(investigator.length, 13);
+	const results = toolResults(investigator[investigator.length - 1]);
+	assert.equal(results[5], 'no matches');
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /The investigator had six tool calls in a row refused and was stopped; its last results stand\./);
 });
 
 // D5: a new case is activated by the harness, not by a model writing the
@@ -769,6 +902,38 @@ test('sensitive mode leaves every process only local tools, and a tool that can 
 	}
 });
 
+// 12B final arm on b479466b: the pi processes never got SPOTLIGHT_BSIG, so a
+// worker's search checked protected sources with the installed bsig (no
+// `wiki` verb) and every search failed. The stand-in interpreter records the
+// environment the search seam is started with.
+test('a worker\'s search seam gets the launcher\'s SPOTLIGHT_BSIG and XDG_*', async (t) => {
+	const fake = await startFakeOpenAI(
+		orchestratorScript([{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }], (request) =>
+			toolResults(request).length === 0 ? { toolCalls: [{ name: 'search', arguments: { query: 'Acme' } }] } : { text: 'Investigator finished.' },
+		),
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const seen = join(space.root, 'search-env.json');
+	const python = join(space.root, 'python-recording-search');
+	await writeFile(
+		python,
+		`#!${process.execPath}\nconst { execFileSync } = require('node:child_process');\nconst args = process.argv.slice(2);\nif (args.includes('integrations.search')) { require('node:fs').writeFileSync(${JSON.stringify(seen)}, JSON.stringify(process.env)); process.stdout.write('[]'); }\nelse { try { process.stdout.write(execFileSync(${JSON.stringify(process.env.SPOTLIGHT_PYTHON ?? 'python3')}, args, { stdio: ['inherit', 'pipe', 'inherit'] })); } catch (error) { process.stdout.write(error.stdout ?? ''); process.exitCode = error.status ?? 1; } }\n`,
+		{ mode: 0o755 },
+	);
+	const bsig = join(space.root, 'engine', 'bsig');
+	const xdg = join(space.root, 'xdg');
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_PYTHON: python, SPOTLIGHT_BSIG: bsig, XDG_CONFIG_HOME: xdg, XDG_DATA_HOME: join(xdg, 'data') });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const env = JSON.parse(await readFile(seen, 'utf8')) as Record<string, string>;
+	assert.equal(env.SPOTLIGHT_BSIG, bsig);
+	assert.equal(env.XDG_CONFIG_HOME, xdg);
+	assert.equal(env.XDG_DATA_HOME, join(xdg, 'data'));
+});
+
 test('after a planning task the harness runs the methodology check, not the findings check', async (t) => {
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) {
@@ -941,9 +1106,9 @@ test('the analyst is not started before Ingest or in the newsroom edition', asyn
 	await settledPrompt(routed, 'Continue.');
 
 	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'analyst')).length, 0);
-	const refusals = fake.requests
-		.filter((request) => toolResults(request).length > 0)
-		.map((request) => toolResults(request).join('\n'));
+	// Distinct results: at Investigation the text-turn nudge asks once more,
+	// carrying the same refusal.
+	const refusals = [...new Set(fake.requests.flatMap((request) => toolResults(request)))];
 	assert.equal(refusals.length, 2);
 	assert.match(refusals[0], /the analyst runs only at ingest; the case is at investigation/);
 	assert.match(refusals[1], /the analyst does not run in the newsroom edition/);
@@ -1043,7 +1208,9 @@ test('in sensitive mode the investigator\'s and fact-checker\'s tasks carry the 
 		});
 		t.after(() => fake.close());
 		const space = await workspace(t);
-		await caseAtInvestigation(space);
+		// A brief as members write them: long, with instructions. Like Engine, the
+		// stand-in finds nothing for a query that long (gold sens3 marlow, calder).
+		await caseAtInvestigation(space, 'Identify who owns the fixture company now, the date it changed hands, and what could not be checked, using only the case folder and the wiki.');
 		const wiki = join(space.root, 'wiki');
 		await mkdir(wiki, { recursive: true });
 		const config = join(space.root, 'install-config.json');
@@ -1052,8 +1219,13 @@ test('in sensitive mode the investigator\'s and fact-checker\'s tasks carry the 
 		const requests = join(space.root, 'bsig-requests.jsonl');
 		await writeFile(bsig, `#!${process.execPath}
 require('node:fs').appendFileSync(${JSON.stringify(requests)}, JSON.stringify(process.argv.slice(2)) + '\\n');
-const hits = [{ path: 'notes/fixture-company.md', type: 'note', title: 'Fixture company', snippet: 'Fixture Ltd is owned by A. Holder since 2019.', score: 1 }];
-console.log(JSON.stringify({ event: 'result', message: 'wiki search', data: { tool: 'search', result: { hits } } }));
+if (process.argv[4] === 'read') {
+	console.log(JSON.stringify({ event: 'result', message: 'wiki read', data: { tool: 'read', result: { path: 'notes/fixture-company.md', hash: '', content: '# Fixture company\\n\\nFixture Ltd is owned by A. Holder since 2019, per the 2019 return.\\n' } } }));
+} else {
+	const words = JSON.parse(process.argv.at(-1)).query.split(' ').length;
+	const hits = words > 8 ? [] : [{ path: 'notes/fixture-company.md', type: 'note', title: 'Fixture company', snippet: 'Fixture Ltd is owned by A. Holder since 2019.', score: 1 }];
+	console.log(JSON.stringify({ event: 'result', message: 'wiki search', data: { tool: 'search', result: { hits } } }));
+}
 `);
 		await chmod(bsig, 0o755);
 		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: config, SPOTLIGHT_BSIG: bsig, SPOTLIGHT_SENSITIVE: String(sensitive) });
@@ -1069,11 +1241,15 @@ console.log(JSON.stringify({ event: 'result', message: 'wiki search', data: { to
 				continue;
 			}
 			assert.match(task, /^Work the case\.\n\nWIKI PASSAGES\. Sensitive mode:/, role);
-			assert.match(task, /<<<BEGIN UNTRUSTED WIKI DATA>>>\n<<<NOTE 1 notes\/fixture-company\.md \(Fixture company\)\nFixture Ltd is owned by A\. Holder since 2019\.\nNOTE 1>>>\n<<<END UNTRUSTED WIKI DATA>>>$/, role);
+			assert.match(task, /<<<BEGIN UNTRUSTED WIKI DATA>>>\n<<<NOTE 1 notes\/fixture-company\.md \(Fixture company\)\ncase file: research\/wiki\/notes-fixture-company\.md\nFixture Ltd is owned by A\. Holder since 2019\.\nNOTE 1>>>\n<<<END UNTRUSTED WIKI DATA>>>$/, role);
 		}
+		const saved = join(space.casesRoot, 'case-a', 'research', 'wiki', 'notes-fixture-company.md');
+		if (!sensitive) assert.ok(!existsSync(saved), 'nothing is saved outside sensitive mode');
 		if (sensitive) {
+			assert.equal(await readFile(saved, 'utf8'), 'Wiki note: notes/fixture-company.md\n\n# Fixture company\n\nFixture Ltd is owned by A. Holder since 2019, per the 2019 return.\n');
 			const searched = (await readFile(requests, 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as string[]).filter((argv) => argv.includes('search'));
-			assert.equal(JSON.parse(searched[0].at(-1)!).query, 'Who owns the fixture company?', 'the wiki is searched with the approved brief');
+			const clauses = ['Identify who owns the fixture company now', 'the date it changed hands', 'what could not be checked', 'using only the case folder', 'the wiki'];
+			assert.deepEqual(searched.map((argv) => JSON.parse(argv.at(-1)!).query), [...clauses, ...clauses], 'each worker\'s task searches the wiki with each clause of the approved brief');
 		}
 	}
 });
@@ -1189,12 +1365,16 @@ test('a case search refusal (exit 2) fails the fact-checker spawn with the reaso
 });
 
 test('case search runs inside the worker limit, and cancelling a spawn stops its search before the fact-checker starts', async (t) => {
-	const spawns = 6;
+	// Three fact-checkers (the per-cycle cap) and two investigators that never
+	// answer: five spawns for four places.
+	const spawns = [
+		...[0, 1, 2].map((i) => ({ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: `Check finding F${i}.` } })),
+		...[0, 1].map((i) => ({ name: 'spawn_agent', arguments: { agent: 'investigator', task: `Work direction D${i}.` } })),
+	];
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
-		return toolResults(request).length === 0
-			? { toolCalls: Array.from({ length: spawns }, (_, i) => ({ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: `Check finding F${i}.` } })) }
-			: { text: 'Done.' };
+		if (isWorkerRequest(request, 'investigator')) return 'hang';
+		return toolResults(request).length === 0 ? { toolCalls: spawns } : { text: 'Done.' };
 	});
 	t.after(() => fake.close());
 	const space = await workspace(t);
@@ -1205,14 +1385,15 @@ test('case search runs inside the worker limit, and cancelling a spawn stops its
 	chat.send({ id: 'p-1', type: 'prompt', message: 'Continue.' });
 	const records = async () =>
 		(await readFile(pidLog, 'utf8').catch(() => '')).split('\n').filter(Boolean).map((line) => JSON.parse(line) as { pid: number; start?: number; end?: number });
+	const investigators = () => fake.requests.filter((request) => isWorkerRequest(request, 'investigator')).length;
 	let started: number[] = [];
 	await waitUntil(() => {
 		void records().then((each) => (started = each.filter((r) => r.start).map((r) => r.pid)));
-		return started.length >= 4;
+		return started.length + investigators() >= 4;
 	}, 30_000);
 	await new Promise((done) => setTimeout(done, 1500));
 	started = (await records()).filter((r) => r.start).map((r) => r.pid);
-	assert.equal(started.length, 4, 'at most four searches run at once: the queue admits case search like a worker');
+	assert.equal(started.length + investigators(), 4, 'four places at once: the queue admits case search like a worker');
 
 	chat.send({ id: 'abort-1', type: 'abort' });
 	await waitUntil(() => started.every((pid) => !isAlive(pid)), 20_000);
