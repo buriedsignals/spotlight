@@ -2001,7 +2001,13 @@ test('newsroom edition: prior knowledge and decision checks go to the Editorial 
 	const editorial = await startFakeEditorial({ handlers: { get_record: () => ({ isError: true, text: `no such record ${'z'.repeat(30_000)}` }) } });
 	t.after(() => Promise.all([fake.close(), editorial.close()]));
 	const space = await workspace(t);
-	const caseDir = await caseAtIngest(space);
+	const caseDir = await caseAtInvestigation(space);
+	// The investigator runs only before the Investigation gate; run_checks needs findings to send.
+	const source = join(space.root, 'gate-fixture');
+	await new Promise<void>((done, fail) =>
+		execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), source, 'investigation_gate'], (error) => (error ? fail(error) : done())),
+	);
+	await copyFile(join(source, 'data', 'findings.json'), join(caseDir, 'data', 'findings.json'));
 	const chat = launch(t, newsroomEnv(space, newsroomRoute(fake.baseURL), editorial));
 
 	await settledPrompt(chat, 'Continue.');
@@ -2169,7 +2175,7 @@ test('an Editorial MCP that cannot be used stops the newsroom case with a plain 
 	const editorial = await startFakeEditorial({ handlers: { search_knowledge: () => ({ httpStatus: 503 }) } });
 	t.after(() => Promise.all([fake.close(), editorial.close()]));
 	const space = await workspace(t);
-	await caseAtIngest(space);
+	await caseAtInvestigation(space);
 	const chat = launch(t, newsroomEnv(space, newsroomRoute(fake.baseURL), editorial));
 	chat.send({ id: 'p', type: 'prompt', message: 'Continue.' });
 
