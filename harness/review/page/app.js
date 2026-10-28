@@ -353,6 +353,9 @@ function anomalySignalsSection(signals, items) {
     { "aria-labelledby": "anomaly-heading" },
     el("h2", { id: "anomaly-heading", text: "Anomaly signals" }),
     el("p", { className: "muted", text: `Leads a detector flagged, never findings.${signals.shown < signals.total ? ` ${signals.shown} of ${signals.total} shown.` : ""}` }),
+    signals.not_run?.length
+      ? el("p", { className: "muted", text: `Not run: ${signals.not_run.join(", ")}. The approved plan named ${signals.not_run.length === 1 ? "this table" : "these tables"} for Anomaly, but no detector ran; you can approve without it.` })
+      : null,
     signals.runs.map((run) =>
       el(
         "div",

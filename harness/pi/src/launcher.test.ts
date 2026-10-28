@@ -15,7 +15,7 @@ import { startFakeEditorial } from './test-support/fake-editorial.ts';
 import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, loadComposition } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
-import { FACT_CHECKERS_SPENT } from './subagents.ts';
+import { FACT_CHECKERS_SPENT, GATE_READY_REFUSAL } from './subagents.ts';
 import { repeatsItself } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 
@@ -1472,6 +1472,27 @@ test('the analyst is not started before Ingest or in the newsroom edition', asyn
 
 // E2E D15: a fact-checker respawned at Ingest rewrote files the Investigation
 // gate had bound, and the case fell back to Investigation for good.
+// LFM3 e2 stage 1 on Osaurus (bc87c716): with the fact-check accepted and the
+// gate ready, the orchestrator spawned another fact-checker.
+test('on the 12b a worker spawn while the Investigation gate is ready is refused with the open_review step', async (t) => {
+	for (const agent of ['fact-checker', 'investigator']) {
+		const fake = await startFakeOpenAI(orchestratorScript([{ name: 'spawn_agent', arguments: { agent, task: 'Check again.' } }]));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		await new Promise<void>((done, fail) =>
+			execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), join(space.casesRoot, 'case-a'), 'investigation_gate'], (error) => (error ? fail(error) : done())),
+		);
+		const chat = launch(t, baseEnv(space, fake.baseURL));
+
+		await settledPrompt(chat, 'Continue.');
+
+		assert.equal(fake.requests.filter((request) => isWorkerRequest(request, agent)).length, 0, `no ${agent} started`);
+		const last = fake.requests.at(-1)!;
+		assert.ok(toolResults(last).join('\n').includes(GATE_READY_REFUSAL), agent);
+		assert.ok(toolNames(last).includes('open_review'), 'the step it names is an orchestrator tool');
+	}
+});
+
 test('the fact-checker is not started after the Investigation gate', async (t) => {
 	const fake = await startFakeOpenAI((request) =>
 		toolResults(request).length === 0
