@@ -391,6 +391,8 @@ async function deliverable(harness: Harness, role: string, task: string): Promis
 // its structure, one claim per finding with the verdict and evidence left to
 // the fact-checker. Only the task text carries it: a file the harness wrote
 // would read to the resolver as the fact-checker's own work.
+const FACT_CHECK_START_CHARS = 4000;
+
 function factCheckStart(caseDir: string): string {
 	if (existsSync(resolve(caseDir, 'data/fact-check.json'))) return '';
 	let findings: { schema_version?: unknown; project?: unknown; findings?: unknown };
@@ -404,8 +406,12 @@ function factCheckStart(caseDir: string): string {
 		.filter((row): row is { id: string; claim?: unknown } => typeof row?.id === 'string')
 		.map((row) => ({ finding_id: row.id, claim_text: typeof row.claim === 'string' ? row.claim : '', verdict: '', confidence: '', evidence_for: [], evidence_against: [] }));
 	if (claims.length === 0) return '';
-	const start = { ...(findings.schema_version === '1.1' ? { schema_version: '1.1' } : {}), project: findings.project, claims };
-	return `Start from this structure: one claim per finding, with the verdict, confidence and evidence yours to fill in.\n${JSON.stringify(start, null, 2)}`;
+	const frame = (rows: object[]) => JSON.stringify({ ...(findings.schema_version === '1.1' ? { schema_version: '1.1' } : {}), project: findings.project, claims: rows }, null, 2);
+	// claim_text must equal the finding's claim (validate-fact-check.py), so it
+	// is never cut: past FACT_CHECK_START_CHARS the structure names findings only.
+	const full = frame(claims);
+	const structure = full.length <= FACT_CHECK_START_CHARS ? full : frame(claims.map(({ claim_text: _claim, ...rest }) => rest));
+	return `Start from this structure: one claim per finding, with the verdict, confidence and evidence yours to fill in.\n${structure}`;
 }
 
 // A worker that ended without an answer: when a file it had to write is still
