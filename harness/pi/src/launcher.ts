@@ -39,7 +39,7 @@ import { discardIncompleteLanes } from './resume.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, isolationRefusal, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
 import type { Composition, WorkerContext } from './roles.ts';
 import { approvedIndicatorFramework } from './tools/hosted-skill.ts';
-import { GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL, WorkerQueue, runWorker } from './subagents.ts';
+import { BRIEF_PENDING_REFUSAL, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL, WorkerQueue, runWorker } from './subagents.ts';
 import { withCasePassages, withWikiPassages } from './case-search.ts';
 import { decideAnomaly, withAnomalyBlock } from './anomaly-decision.ts';
 import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
@@ -478,7 +478,13 @@ async function refusalFor(harness: Harness, role: string, task: string): Promise
 	const isolation = isolationRefusal(role, task);
 	if (isolation) return isolation;
 	if ((role === 'investigator' || role === 'fact-checker') && harness.config.modelTier === '12b' && (await gateReady(harness))) return GATE_READY_REFUSAL;
-	if (role === 'investigator' && GATE_DECIDED_PHASES.has(await casePhase(harness))) return GATE_DECIDED_REFUSAL;
+	if (role === 'investigator') {
+		const phase = await casePhase(harness);
+		if (GATE_DECIDED_PHASES.has(phase)) return GATE_DECIDED_REFUSAL;
+		// r3 held-kde run (ecbcd23e): at brief, with no brief-directions.txt,
+		// an investigator ran 69 calls of research before any methodology.
+		if (phase === 'brief') return BRIEF_PENDING_REFUSAL;
+	}
 	if (role === 'analyst' && harness.batchBlocked) return `${BATCH_BLOCKED} ${harness.batchBlocked}`;
 	const spec = agentSpec(harness.composition, role);
 	if (!spec.phases && !spec.editions) return undefined;
