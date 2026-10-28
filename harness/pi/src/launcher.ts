@@ -466,8 +466,8 @@ async function gateReady(harness: Harness): Promise<boolean> {
 
 // LFM3 e2 kde stage 2 on Osaurus (03f008b0): at Report, ten investigator
 // spawns rewrote the findings the member had approved, and the approved
-// fact-check no longer validated. A follow-up can be requested only at the
-// Investigation gate and returns the case to Investigation, so after the gate
+// fact-check no longer validated. A follow-up (requestFollowUp, which the
+// member asks for) returns the case to Investigation first, so after the gate
 // no investigator runs, on every tier.
 const GATE_DECIDED_PHASES = new Set(['report', 'ingest', 'complete']);
 

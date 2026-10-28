@@ -98,7 +98,7 @@ export type FactCheckerCycle = { spawns: number };
 export const GATE_READY_REFUSAL = 'The investigation is complete: call open_review to present the Investigation gate to the member.';
 
 // What the launcher answers an investigator spawn once the Investigation gate is decided (launcher.ts refusalFor).
-export const GATE_DECIDED_REFUSAL = 'The Investigation gate is decided: the member approved data/findings.json and data/fact-check.json as they are, and no investigator runs after it. Work from the approved findings; never rewrite them.';
+export const GATE_DECIDED_REFUSAL = 'The Investigation gate is decided: the member approved data/findings.json and data/fact-check.json as they are, and no investigator runs after it. Work from the approved findings. At Report, if the member asks for more research, call spotlight_transition with requestFollowUp {instructions} first; that returns the case to Investigation.';
 
 export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }): ToolDefinition {
 	let corrections = 0;
