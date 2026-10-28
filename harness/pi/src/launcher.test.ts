@@ -16,7 +16,7 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, agentSpec, loadComposition, deliverableFor } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
-import { blockedStop, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded } from './extension.ts';
+import { blockedStop, CALL_BUDGET_SPENT, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
@@ -425,11 +425,11 @@ async function briefApproved(space: Workspace, caseId = 'case-a'): Promise<void>
 	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
 }
 
-async function caseAtInvestigation(space: Workspace, brief = 'Who owns the fixture company?'): Promise<string> {
+async function caseAtInvestigation(space: Workspace, brief = 'Who owns the fixture company?', methodology: object = {}): Promise<string> {
 	const caseDir = join(space.casesRoot, 'case-a');
 	await mkdir(join(caseDir, 'data'), { recursive: true });
 	await writeFile(join(caseDir, 'brief-directions.txt'), `${brief}\n`);
-	await writeFile(join(caseDir, 'data', 'methodology.json'), '{}\n');
+	await writeFile(join(caseDir, 'data', 'methodology.json'), `${JSON.stringify(methodology)}\n`);
 	await new Promise<void>((done, fail) =>
 		execFile(
 			process.env.SPOTLIGHT_PYTHON ?? 'python3',
@@ -519,6 +519,44 @@ test('a worker writes through its typed tools and the harness validates its outp
 	assert.match(delegated, /Investigator finished\./);
 	assert.match(delegated, /validate-case\.py: FAILED/);
 	assert.match(delegated, /no_qualifying_findings/);
+});
+
+// U3 census on 84674fd9: investigators working every direction of the plan in
+// one context peaked above 30k prompt tokens (also the 12B in 34 of 237 runs).
+test('on a local tier a plan of two directions runs one investigator per direction, each with its share of calls, and the harness checks the merged findings once', async (t) => {
+	const plan = { investigation_plan: [
+		{ direction: 'Who owns the company', direction_id: 'owners', questions: ['Who are the shareholders?'], steps: [] },
+		{ direction: 'Who runs the company', direction_id: 'board', questions: [], steps: [] },
+	] };
+	const finding = (id: string) => ({ name: 'write_file', arguments: { path: 'data/findings.json', content: JSON.stringify({ project: 'case-a', findings: [{ id, claim: id }] }) } });
+	const fake = await startFakeOpenAI((request) => {
+		const done = toolResults(request).length;
+		if (isWorkerRequest(request, 'investigator') && userText(request).includes('DIRECTION 1 of 2')) {
+			if (done <= 40) return { toolCalls: [{ name: 'list_files', arguments: { pattern: `research/${done}-*.md` } }] };
+			return done === 41 ? { toolCalls: [finding('D1-F1')] } : { text: 'Owners done.' };
+		}
+		if (isWorkerRequest(request, 'investigator')) return done === 0 ? { toolCalls: [finding('D2-F1')] } : { text: 'Board done.' };
+		return done === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: EXECUTION\nInvestigate.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space, undefined, plan);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const tasks = [...new Set(fake.requests.filter((request) => isWorkerRequest(request, 'investigator')).map(userText))];
+	assert.equal(tasks.length, 2);
+	assert.match(tasks[0], /DIRECTION 1 of 2 \(direction:owners\): Who owns the company\nQuestions:\n- Who are the shareholders\?/);
+	assert.match(tasks[0], /every finding id starting D1-F/);
+	assert.match(tasks[1], /DIRECTION 2 of 2 \(direction:board\)/);
+	assert.doesNotMatch(tasks[1], /Who owns the company/);
+	const owners = fake.requests.filter((request) => userText(request) === tasks[0]).at(-1)!;
+	assert.equal(toolResults(owners)[40], CALL_BUDGET_SPENT);
+	assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')).findings.map((each: { id: string }) => each.id), ['D1-F1', 'D2-F1']);
+	const delegated = toolResults(fake.requests.at(-1)!).join('\n');
+	assert.match(delegated, /Direction D1 \(direction:owners\): Owners done\.\n\nDirection D2 \(direction:board\): Board done\./);
+	assert.equal(delegated.match(/validate-case\.py/g)?.length, 1);
 });
 
 // 12B r3 A2 ia: every assistant message in the requests carried its earlier

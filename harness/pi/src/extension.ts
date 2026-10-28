@@ -160,6 +160,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		}
 	}
 	registerToolOwners(pi, role);
+	if (process.env.SPOTLIGHT_CALL_BUDGET) registerCallBudget(pi, Number(process.env.SPOTLIGHT_CALL_BUDGET));
 	const tools = toolsFor(role).map(guarded).map(streakGuarded).map(registerSkillDedup(pi)).map(registerReadDedup(pi));
 	if (tier12b) registerHyphenNames(pi, new Set(tools.map((tool) => tool.name)));
 	for (const tool of tools) pi.registerTool(tool);
@@ -624,6 +625,22 @@ function registerRefusalStreak(pi: ExtensionAPI, stop: string): (tool: ToolDefin
 			}
 			return tool.prepareArguments ? tool.prepareArguments(args) : args;
 		},
+	});
+}
+
+// One research direction's worker (directions.ts) has its share of the
+// investigator's calls. Past it, only the calls that write its deliverable
+// run, and CALL_BUDGET_GRACE calls later its run ends.
+export const CALL_BUDGET_SPENT = "This direction's calls are spent. Write what you found to data/findings.json, data/evidence-bundle.json and data/investigation-log.json now, then finish.";
+const CALL_BUDGET_GRACE = 10;
+const BUDGET_WRITES = new Set(['write_file', 'edit_file', 'source_expressions']);
+function registerCallBudget(pi: ExtensionAPI, budget: number): void {
+	let calls = 0;
+	pi.on('tool_call', (event) => {
+		calls += 1;
+		if (calls <= budget) return undefined;
+		if (calls > budget + CALL_BUDGET_GRACE) return { block: true, reason: CALL_BUDGET_SPENT, terminate: true };
+		return BUDGET_WRITES.has(event.toolName) ? undefined : { block: true, reason: CALL_BUDGET_SPENT };
 	});
 }
 

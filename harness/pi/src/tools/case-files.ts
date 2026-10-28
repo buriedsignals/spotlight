@@ -10,6 +10,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT } from '../roles.ts';
+import { currentText, directionView, isDirectionFile, mergeDirection } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
 import { ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
 import type { CaseScope, ToolContext } from './run.ts';
@@ -629,6 +630,23 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 	const reads = scope?.reads;
 	const writes = scope?.writes;
 	const denyWrites = scope?.denyWrites;
+	// One research direction's investigator (directions.ts) reads only its own
+	// entries in the files it writes, and its writes merge into the whole file.
+	const direction = context.env?.SPOTLIGHT_DIRECTION;
+	const split = (target: string) => (direction && isDirectionFile(caseRelative(caseDir, target)) ? caseRelative(caseDir, target) : undefined);
+	const shown = (target: string, text: string) => {
+		const name = split(target);
+		if (!name) return text;
+		try {
+			return directionView(name, text, direction!);
+		} catch {
+			return text;
+		}
+	};
+	const whole = (target: string, content: string) => {
+		const name = split(target);
+		return name ? mergeDirection(name, currentText(target), content, direction!) : content;
+	};
 	return [
 		{
 			name: 'read_file',
@@ -641,7 +659,8 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				if (input.json_pointer !== undefined && (input.offset || input.limit)) {
 					throw new ToolArgumentError('read_file: use either json_pointer or offset/limit');
 				}
-				const text = readFileSync(readTarget(caseDir, input.path, scope), 'utf8');
+				const source = readTarget(caseDir, input.path, scope);
+				const text = shown(source, readFileSync(source, 'utf8'));
 				let selected = text;
 				if (input.json_pointer !== undefined) {
 					selected = selectJsonPointer(text, input.json_pointer, input.path);
@@ -673,18 +692,19 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 						throw new FileRefused(`refused: empty content would erase ${input.path}. If your output was cut off, write the file again in full.`);
 					}
 				}
+				const content = whole(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseMisplacedBrief(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseUnactivatedStart(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseRecordedFramework(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
-				refuseNonObjectData(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
-				refuseUncitedVerdicts(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
-				refuseLeadsEvidence(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
-				refuseBundleRewrites(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, role);
-				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
-				refuseMissingCitedFiles(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
-				refuseUnknownFlags(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
-				await refuseInvalidProposal(context, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
-				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, input.content, writes, denyWrites)}`);
+				refuseNonObjectData(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
+				refuseUncitedVerdicts(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
+				refuseLeadsEvidence(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
+				refuseBundleRewrites(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content, role);
+				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
+				refuseMissingCitedFiles(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
+				refuseUnknownFlags(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
+				await refuseInvalidProposal(context, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
+				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, content, writes, denyWrites)}`);
 			},
 		},
 		{
@@ -702,7 +722,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				}
 				let text: string;
 				try {
-					text = readFileSync(target, 'utf8');
+					text = shown(target, readFileSync(target, 'utf8'));
 				} catch (error) {
 					if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`not found: ${input.path}`);
 					throw error;
@@ -712,7 +732,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				if (text.indexOf(input.old_text, first + 1) !== -1) {
 					throw new Error(`edit_file: old_text occurs more than once in ${input.path}; include more context`);
 				}
-				const updated = text.slice(0, first) + input.new_text + text.slice(first + input.old_text.length);
+				const updated = whole(target, text.slice(0, first) + input.new_text + text.slice(first + input.old_text.length));
 				refuseRecordedFramework(caseDir, target);
 				refuseNonObjectData(caseDir, target, updated);
 				refuseUncitedVerdicts(caseDir, target, updated);
