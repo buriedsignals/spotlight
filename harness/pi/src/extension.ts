@@ -145,6 +145,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		registerReviewRefusalCap(pi);
 		registerEndTurnOnOpen(pi);
 	}
+	if (role === 'analyst') registerProposalEnd(pi);
 	if (tier12b) {
 		registerReadBudget(pi);
 		registerCompletionFloor(pi);
@@ -594,6 +595,32 @@ function registerEndTurnOnOpen(pi: ExtensionAPI): void {
 		if (!opened || (event.message as { role?: string }).role !== 'assistant') return undefined;
 		opened = false;
 		return { message: { ...event.message, content: [{ type: 'text', text: REVIEW_OPEN_STOP }] } as typeof event.message };
+	});
+}
+
+// LFM3 r3 kde stage 3 on Osaurus (03f008b0): the analyst never ended its turn,
+// so the builder the harness runs when it finishes never ran. Its one output is
+// data/knowledge-proposal.json, refused when it fails interface 1, and then a
+// short final answer (agents/analyst.md). Once a proposal is written, a text
+// answer ends the run as usual; a message with more tool calls is replaced by
+// this answer, with no calls, so the run ends and the builder runs.
+export const PROPOSAL_DONE = 'The analyst wrote data/knowledge-proposal.json and was stopped there; its final answer and any watch candidates were not written.';
+
+function registerProposalEnd(pi: ExtensionAPI): void {
+	let written = false;
+	pi.on('agent_start', () => {
+		written = false;
+	});
+	pi.on('tool_execution_end', (event) => {
+		if ((event.toolName !== 'write_file' && event.toolName !== 'edit_file') || event.isError) return;
+		const text: string = event.result?.content?.[0]?.text ?? '';
+		if (/^(wrote|edited) (?:.*[\\/])?data[\\/]knowledge-proposal\.json$/.test(text.trim())) written = true;
+	});
+	pi.on('message_end', (event) => {
+		const message = event.message as { role?: string; content?: Array<{ type: string }> };
+		if (!written || message.role !== 'assistant' || !message.content?.some((part) => part.type === 'toolCall')) return undefined;
+		log('the analyst went on after writing a valid proposal; its turn was ended');
+		return { message: { ...event.message, content: [{ type: 'text', text: PROPOSAL_DONE }] } as typeof event.message };
 	});
 }
 

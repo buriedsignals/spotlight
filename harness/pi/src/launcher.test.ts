@@ -16,7 +16,7 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, agentSpec, loadComposition } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
-import { GATE_BOUND, GATE_BOUND_REFUSAL, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, repeatsItself } from './extension.ts';
+import { GATE_BOUND, GATE_BOUND_REFUSAL, PROPOSAL_DONE, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, repeatsItself } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
@@ -1419,6 +1419,90 @@ function delegateToAnalyst(analyst: (request: ChatRequest) => Reply) {
 			: { text: 'Done.' };
 	};
 }
+
+// LFM3 r3 kde stage 3 on Osaurus (03f008b0): the analyst's proposal failed
+// interface 1, which it never saw, and it read and grepped until stopped.
+test('an analyst proposal that fails interface 1 is refused when written, and after a valid one the analyst\'s turn ends and the batch is built', async (t) => {
+	const invalid = { ...PROPOSAL, claims: [{ ...PROPOSAL.claims[0], statement: { ...PROPOSAL.claims[0].statement, object: { text: 7 } } }] };
+	const fake = await startFakeOpenAI(
+		delegateToAnalyst((request) => {
+			const done = toolResults(request).length;
+			if (done === 0) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(invalid) } }] };
+			if (done === 1) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(PROPOSAL) } }] };
+			return { toolCalls: [{ name: 'read_file', arguments: { path: 'data/findings.json' } }] };
+		}),
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtIngest(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const analyst = fake.requests.filter((request) => isWorkerRequest(request, 'analyst'));
+	assert.equal(analyst.length, 3, 'no analyst request after the one that went on past a valid proposal');
+	const results = toolResults(analyst[analyst.length - 1]);
+	assert.match(results[0], /^refused: data\/knowledge-proposal\.json does not match interface 1: \$\.claims\[0\]\.statement\.object\.text: must be string/);
+	assert.match(results[1], /wrote data\/knowledge-proposal\.json/);
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'analyst'));
+	assert.ok(toolResults(orchestrator.at(-1)!).join('\n').includes(PROPOSAL_DONE), 'the orchestrator gets the stop line as the analyst\'s answer');
+	assert.ok(existsSync(join(caseDir, 'data', 'knowledge-batch.json')), 'the harness built the batch after the analyst ended');
+});
+
+// LFM3 r3 kde stage 3 on Osaurus (ecbcd23e): a schema-valid proposal broke the
+// builder's cross-record rules, which the analyst never saw in its turn.
+test('an analyst proposal the builder\'s cross-record rules refuse is refused when written', async (t) => {
+	const attributed = { ...PROPOSAL, claims: [{ ...PROPOSAL.claims[0], attributed: true }] };
+	const fake = await startFakeOpenAI(
+		delegateToAnalyst((request) =>
+			toolResults(request).length === 0
+				? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(attributed) } }] }
+				: { text: 'Stopped.' }),
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtIngest(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const analyst = fake.requests.filter((request) => isWorkerRequest(request, 'analyst'));
+	assert.match(toolResults(analyst.at(-1)!)[0], /^refused: claim c1 is attributed but finding F1 has no source position; record who said it before ingesting; the file is unchanged\.[^]* If the claim states what the finding itself asserts, set attributed to false\. If it reports what someone said, leave that claim out and say why in your final answer\.$/);
+	assert.equal(existsSync(join(caseDir, 'data', 'knowledge-proposal.json')), false);
+});
+
+// The same run: the builder then refused for a reason no proposal change can
+// fix, and the orchestrator kept spawning analysts that could not fix it.
+test('when the batch cannot be built for a reason no agent can fix, the orchestrator is told so and no analyst runs again', async (t) => {
+	let spawns = 0;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'analyst')) {
+			return toolResults(request).length === 0
+				? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/knowledge-proposal.json', content: JSON.stringify(PROPOSAL) } }] }
+				: { text: 'Proposed one claim.' };
+		}
+		if (spawns < 2) {
+			spawns += 1;
+			return { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'analyst', task: 'Propose the knowledge batch.' } }] };
+		}
+		return { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtIngest(space);
+	// A case file the gate does not bind but the build reads, broken: the case
+	// refuses the build, which no proposal change can fix.
+	await writeFile(join(caseDir, 'data', 'source-positions.json'), 'not json\n');
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'analyst') && toolResults(request).length === 0).length, 1, 'one analyst ran');
+	const results = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'analyst')).at(-1)!).join('\n');
+	assert.match(results, /\[Harness checks after the analyst finished: The knowledge batch cannot be built for a reason no agent can fix, so no analyst runs again\. Tell the member this in plain words and stop\. The builder said: build-knowledge-batch: refused: the case does not validate/);
+	assert.equal(results.split('The knowledge batch cannot be built for a reason no agent can fix').length - 1, 2, 'the second spawn is refused with the same reason');
+	assert.equal(existsSync(join(caseDir, 'data', 'knowledge-batch.json')), false);
+});
 
 test('at Ingest the analyst reads only its inputs and writes only its proposal, and the harness builds the batch from it', async (t) => {
 	const fake = await startFakeOpenAI(
