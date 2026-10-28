@@ -17,6 +17,7 @@ import { CHECKOUT_ROOT, loadComposition } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { FACT_CHECKERS_SPENT } from './subagents.ts';
 import { repeatsItself } from './extension.ts';
+import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
 
@@ -817,6 +818,34 @@ test('on the 12b a worker whose last six calls were all refused, each a differen
 	assert.equal(results[5], 'no matches');
 	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
 	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /The investigator had six tool calls in a row refused and was stopped; its last results stand\./);
+});
+
+// base213 on Osaurus (e7b81f21): the orchestrator tried spotlight_transition
+// "approve" on its own methodology gate, twice, got only a schema error, and
+// the case stalled. The refusal says who approves and names the real next step.
+test('an orchestrator trying to approve a gate through spotlight_transition is told only the member approves, and the gate stays open', async (t) => {
+	const calls = [
+		{ name: 'spotlight_transition', arguments: { operation: 'approve', payload: { approvedBy: 'User', gate: 'methodology', decision: 'approved' } } },
+		{ name: 'spotlight_resolve', arguments: {} },
+	];
+	const fake = await startFakeOpenAI(orchestratorScript(calls));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	await new Promise<void>((done, fail) =>
+		execFile(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'methodology'], (error) => (error ? fail(error) : done())),
+	);
+	const before = await caseDigests(caseDir);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const last = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator')).at(-1)!;
+	const [refused, resolved] = toolResults(last);
+	assert.ok(refused.includes(GATE_APPROVAL_REFUSAL), refused);
+	assert.ok(toolNames(last).includes('open_review'), 'the step it names is an orchestrator tool');
+	assert.equal((JSON.parse(resolved) as { next_phase: string }).next_phase, 'methodology_approval');
+	assert.deepEqual(await caseDigests(caseDir), before, 'nothing was approved or written');
 });
 
 // D5: a new case is activated by the harness, not by a model writing the

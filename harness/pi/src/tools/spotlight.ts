@@ -163,6 +163,15 @@ export type ResearchRunner = (retry: boolean, signal?: AbortSignal) => Promise<u
 // Whether validate-case.py and validate-fact-check.py both pass now.
 export type EvidenceCheck = () => Promise<boolean>;
 
+// base213 on Osaurus (e7b81f21): the orchestrator tried to approve its own
+// methodology gate through spotlight_transition ("approve", twice), got only
+// the schema's "must be equal to constant", asked the member which operation
+// to use, and the case stalled at the gate. An approval-like operation outside
+// the allowed set gets this line before the schema check.
+export const GATE_APPROVAL_REFUSAL =
+	'Only the member approves a gate; spotlight_transition cannot. When the step is ready for review, call open_review to show the member the review page, then end your turn and wait for their decision.';
+const APPROVAL_LIKE = /approv|accept|confirm|reject|sign.?off|decide|gate/i;
+
 export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, role: string, research?: ResearchRunner, evidenceValidates?: EvidenceCheck, onTransition?: () => void): ToolDefinition[] {
 	const resolveTool: ToolDefinition = {
 		name: 'spotlight_resolve',
@@ -190,6 +199,13 @@ export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, ro
 			payload: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 		}),
 		executionMode: 'sequential',
+		prepareArguments: (args: unknown) => {
+			const operation = (args as { operation?: unknown } | null)?.operation;
+			if (typeof operation === 'string' && !(MODEL_OPERATIONS as readonly string[]).includes(operation) && APPROVAL_LIKE.test(operation)) {
+				throw new TransitionRefused(GATE_APPROVAL_REFUSAL);
+			}
+			return args as never;
+		},
 		async execute(_id, params, signal) {
 			const input = params as { operation: unknown; payload?: Payload };
 			const arguments_ = transitionArguments(input.operation, input.payload ?? {}, active, role);
