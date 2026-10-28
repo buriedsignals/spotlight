@@ -791,6 +791,38 @@ test('sensitive mode leaves every process only local tools, and a tool that can 
 	}
 });
 
+// 12B final arm on b479466b: the pi processes never got SPOTLIGHT_BSIG, so a
+// worker's search checked protected sources with the installed bsig (no
+// `wiki` verb) and every search failed. The stand-in interpreter records the
+// environment the search seam is started with.
+test('a worker\'s search seam gets the launcher\'s SPOTLIGHT_BSIG and XDG_*', async (t) => {
+	const fake = await startFakeOpenAI(
+		orchestratorScript([{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }], (request) =>
+			toolResults(request).length === 0 ? { toolCalls: [{ name: 'search', arguments: { query: 'Acme' } }] } : { text: 'Investigator finished.' },
+		),
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const seen = join(space.root, 'search-env.json');
+	const python = join(space.root, 'python-recording-search');
+	await writeFile(
+		python,
+		`#!${process.execPath}\nconst { execFileSync } = require('node:child_process');\nconst args = process.argv.slice(2);\nif (args.includes('integrations.search')) { require('node:fs').writeFileSync(${JSON.stringify(seen)}, JSON.stringify(process.env)); process.stdout.write('[]'); }\nelse { try { process.stdout.write(execFileSync(${JSON.stringify(process.env.SPOTLIGHT_PYTHON ?? 'python3')}, args, { stdio: ['inherit', 'pipe', 'inherit'] })); } catch (error) { process.stdout.write(error.stdout ?? ''); process.exitCode = error.status ?? 1; } }\n`,
+		{ mode: 0o755 },
+	);
+	const bsig = join(space.root, 'engine', 'bsig');
+	const xdg = join(space.root, 'xdg');
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_PYTHON: python, SPOTLIGHT_BSIG: bsig, XDG_CONFIG_HOME: xdg, XDG_DATA_HOME: join(xdg, 'data') });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const env = JSON.parse(await readFile(seen, 'utf8')) as Record<string, string>;
+	assert.equal(env.SPOTLIGHT_BSIG, bsig);
+	assert.equal(env.XDG_CONFIG_HOME, xdg);
+	assert.equal(env.XDG_DATA_HOME, join(xdg, 'data'));
+});
+
 test('after a planning task the harness runs the methodology check, not the findings check', async (t) => {
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) {
