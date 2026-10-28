@@ -138,7 +138,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	});
 	// The launcher sets the local tier's fold point in Pi's settings; the
 	// frontier tier keeps Pi's default threshold and summary.
-	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier');
+	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier', process.env, role !== ORCHESTRATOR);
 	const guarded = registerLoopGuard(pi, tier12b && role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
 	// Ending the orchestrator would end the case, so only workers are stopped.
 	const streakGuarded = tier12b && role !== ORCHESTRATOR ? registerRefusalStreak(pi, `The ${role} ${REFUSAL_STOP}`) : (tool: ToolDefinition) => tool;

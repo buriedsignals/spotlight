@@ -18,6 +18,8 @@ import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
 import { blockedStop, CALL_BUDGET_SPENT, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
+import { TASK_AFTER_FOLD } from './checkpoint.ts';
+import { maxOutputTokens } from './config.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
 
@@ -557,6 +559,81 @@ test('on a local tier a plan of two directions runs one investigator per directi
 	const delegated = toolResults(fake.requests.at(-1)!).join('\n');
 	assert.match(delegated, /Direction D1 \(direction:owners\): Owners done\.\n\nDirection D2 \(direction:board\): Board done\./);
 	assert.equal(delegated.match(/validate-case\.py/g)?.length, 1);
+});
+
+// tools-da on b0d862e2: a fold replaced the investigator's task, and with it
+// SOURCE_EXPRESSION_MODE, so it re-read the case files to rebuild it.
+// The 12b, where every Osaurus model runs, at its own fold point and window;
+// its reads are cut at 30,000 characters a turn, so it folds after two.
+for (const [tier, env] of [
+	['12b', { SPOTLIGHT_MODEL_CONTEXT_WINDOW: '40960' }],
+	['26b', { SPOTLIGHT_MODEL_CONTEXT_WINDOW: '65536', SPOTLIGHT_COMPACT_AT: '20000', SPOTLIGHT_COMPACT_KEEP: '2000' }],
+	['frontier', { SPOTLIGHT_MODEL_CONTEXT_WINDOW: '40000' }],
+] as const) {
+test(`on the ${tier} after a fold a worker\'s next request carries its task word for word, after the checkpoint`, async (t) => {
+	const task = 'MODE: EXECUTION\nSOURCE_EXPRESSION_MODE: activated\nTASK-MARKER: read the long filing.';
+	const checkpoint = '## Goal\nRead the filing.\n## Progress\nCHECKPOINT-SENTINEL\n## Decisions\nNone.\n## Next\nWrite findings.\n## Open gate\nNone.';
+	const fake = await startFakeOpenAI((request) => {
+		if ((request.tools ?? []).length === 0) return { text: checkpoint };
+		if (isWorkerRequest(request, 'investigator')) {
+			const read = toolResults(request).length;
+			return read < 3 && !JSON.stringify(request.messages).includes('CHECKPOINT-SENTINEL')
+				? { toolCalls: [{ name: 'read_file', arguments: { path: `research/filing-${read}.md` } }] }
+				: { text: 'Read it.' };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	await mkdir(join(caseDir, 'research'), { recursive: true });
+	for (const n of [0, 1, 2]) await writeFile(join(caseDir, 'research', `filing-${n}.md`), `${n} ${'The registry lists the fixture company. '.repeat(tier === 'frontier' ? 2000 : 1500)}`);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier, ...env });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const folded = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && JSON.stringify(request.messages).includes('CHECKPOINT-SENTINEL'));
+	assert.ok(folded.length > 0, 'the investigator folded');
+	const text = JSON.stringify(folded[0].messages);
+	assert.ok(text.indexOf('CHECKPOINT-SENTINEL') < text.indexOf(JSON.stringify(TASK_AFTER_FOLD).slice(1, -1)), text.slice(0, 2000));
+	assert.ok(text.includes(JSON.stringify(`${TASK_AFTER_FOLD}\n\n${task}`).slice(1, -1)), 'the task follows the checkpoint word for word');
+	// On a local tier, with the task, the request after the fold leaves room
+	// for a full turn (the output cap) at about 3.1 characters per token. The
+	// frontier tier keeps Pi's 20,000 recent tokens, here the reads themselves.
+	if (tier !== 'frontier') assert.ok(text.length / 3.1 < Number(env.SPOTLIGHT_MODEL_CONTEXT_WINDOW) - maxOutputTokens(Number(env.SPOTLIGHT_MODEL_CONTEXT_WINDOW)), `${Math.round(text.length / 3.1)} tokens`);
+});
+}
+
+// r5 norway on cc8710fd: the task inside the previous checkpoint reached the
+// next checkpoint request, and r5 answered it with read_file calls, so the fold
+// was skipped. Only the worker's own requests carry the task.
+test('on the 12b a second fold\'s checkpoint request carries the previous checkpoint without the task', async (t) => {
+	const task = 'MODE: EXECUTION\nTASK-MARKER: read every filing.';
+	const checkpoint = '## Goal\nRead the filings.\n## Progress\nCHECKPOINT-SENTINEL\n## Decisions\nNone.\n## Next\nRead on.\n## Open gate\nNone.';
+	let reads = 0;
+	const fake = await startFakeOpenAI((request) => {
+		if ((request.tools ?? []).length === 0) return { text: checkpoint };
+		if (isWorkerRequest(request, 'investigator')) {
+			return reads < 6 ? { toolCalls: [{ name: 'read_file', arguments: { path: `research/filing-${reads++}.md` } }] } : { text: 'Read them.' };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	await mkdir(join(caseDir, 'research'), { recursive: true });
+	for (const n of [0, 1, 2, 3, 4, 5]) await writeFile(join(caseDir, 'research', `filing-${n}.md`), `${n} ${'The registry lists the fixture company. '.repeat(1500)}`);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '40960' });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const checkpoints = fake.requests.filter((request) => (request.tools ?? []).length === 0).map((request) => JSON.stringify(request.messages));
+	assert.ok(checkpoints.length >= 2, `${checkpoints.length} checkpoint requests`);
+	for (const text of checkpoints.slice(1)) {
+		assert.match(text, /<previous-checkpoint>/);
+		assert.match(text, /CHECKPOINT-SENTINEL/);
+		assert.doesNotMatch(text, /TASK-MARKER|Your task, word for word/);
+	}
 });
 
 // 12B r3 A2 ia: every assistant message in the requests carried its earlier
