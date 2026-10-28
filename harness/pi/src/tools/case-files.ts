@@ -127,7 +127,12 @@ async function refuseInvalidProposal(context: ToolContext, target: string, conte
 	const position = / is attributed but finding \S+ has no source position/.test(reason)
 		? ' If the claim states what the finding itself asserts, set attributed to false. If it reports what someone said, leave that claim out and say why in your final answer.'
 		: '';
-	throw new FileRefused(`refused: ${reason}; the file is unchanged. Fix the proposal as schemas/knowledge-proposal.schema.json says and write it again.${position}`);
+	// LFM3 r4 held-out ingest: 9 of 12 proposals put claim keys in a story
+	// arc's event_keys; story_arcs is optional (schemas/knowledge-proposal.schema.json).
+	const arc = /: story arc \S+ names unknown events /.test(reason)
+		? ' story_arcs is optional. Its event_keys must be keys of events in this file, not claim keys. If there are no events for the arc, remove the story_arcs entry.'
+		: '';
+	throw new FileRefused(`refused: ${reason}; the file is unchanged. Fix the proposal as schemas/knowledge-proposal.schema.json says and write it again.${position}${arc}`);
 }
 
 function lstatOrUndefined(path: string): Stats | undefined {
