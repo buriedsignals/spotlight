@@ -13,6 +13,7 @@ import type { Composition } from './roles.ts';
 import { MIN_REDACTED_LENGTH } from './log.ts';
 import { SEAM_ENV } from './tools/fetch.ts';
 import { BASE_ENV, DESKTOP_ENV } from './tools/run.ts';
+import { engineEnv } from './case-search.ts';
 
 export type Edition = 'solo' | 'newsroom';
 export type ModelTier = '12b' | '26b' | '31b' | 'frontier';
@@ -554,7 +555,8 @@ export function childEnv(
 	const route = routeFor(config);
 	const spec = agentSpec(composition, role);
 	const out: Record<string, string> = {};
-	for (const name of [...BASE_ENV, ...BACKING_SETTINGS]) if (env[name]) out[name] = env[name] as string;
+	// Engine's bsig and its base folder, for the tools' seams over it (paths, never keys).
+	for (const name of [...BASE_ENV, ...BACKING_SETTINGS, ...engineEnv(env)]) if (env[name]) out[name] = env[name] as string;
 	// The Editorial token stays in the harness even if a composition names it.
 	for (const key of spec.keys ?? []) if (env[key] && key !== EDITORIAL_TOKEN_ENV) out[key] = env[key] as string;
 	const token = route.keyEnv ? env[route.keyEnv] : undefined;
