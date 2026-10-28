@@ -16,9 +16,7 @@ when any other folder exists there or a lane has not ended. Per lane:
 
 Then D4 (merge by canonical URL and content hash: syndicated copies collapse,
 the same source twice is not corroboration), D6 (each direction's gap, with
-the queries tried) and the fixed clue rules K1-K6, with no model. Approved
-Anomaly methods then run on the lanes' tables (integrations/anomaly/adapter.py)
-and add clues tagged method:<id>@<version>.
+the queries tried) and the fixed clue rules K1-K6, with no model.
 The output is deterministic: the same lanes give byte-identical files, so a
 re-run never reopens the Research gate.
 
@@ -51,7 +49,6 @@ import research_checks as checks  # noqa: E402
 import research_rules as rr  # noqa: E402
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from integrations.anomaly import adapter as anomaly  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
 from spotlight_orchestration.storage import transaction  # noqa: E402
@@ -80,7 +77,8 @@ CLUE_RANK_GROUP = {"watchlist": "watchlist", "premise_complicated": "premise", "
                    "conflict": "conflict", "new_actor": "new_actor", "change": "change_or_absence",
                    "absence": "change_or_absence", "change_or_absence": "change_or_absence",
                    "timing": "timing", "shared_identifier": "shared_identifier",
-                   anomaly.CLUE_TYPE: "method_signal"}
+                   # Clues from Anomaly methods, which ran at Research before they moved to Investigation.
+                   "method_signal": "method_signal"}
 IDENTITY_ORDER = ("same_identifier", "consistent_details", "name_only")
 SOURCE_ORDER = ("primary_record", "original_reporting", "secondary", "interested_party", "user_generated")
 ASSERTION_ORDER = ("asserted", "reported_claim", "interpretation")
@@ -395,10 +393,9 @@ def clue_order(clue: Mapping[str, Any]) -> tuple:
     return (CLUE_ORDER.index(CLUE_RANK_GROUP[clue["type"]]), clue["source"], clue["clue_id"])
 
 
-def build_clues(leads_bytes: bytes, leads_doc: Mapping[str, Any], methodology: Mapping[str, Any],
-                method_clues: Iterable[Mapping[str, Any]] = ()) -> dict[str, Any]:
-    """The rules' clues plus any from approved Anomaly methods (integrations/anomaly)."""
-    clues = sorted([*clue_rules(leads_doc, methodology), *method_clues], key=clue_order)
+def build_clues(leads_bytes: bytes, leads_doc: Mapping[str, Any], methodology: Mapping[str, Any]) -> dict[str, Any]:
+    """The rules' clues."""
+    clues = sorted(clue_rules(leads_doc, methodology), key=clue_order)
     return {"schema_version": SCHEMA_VERSION, "generated_at": leads_doc["generated_at"],
             "leads_sha256": checks.sha256_bytes(leads_bytes), "clues": clues}
 
@@ -479,9 +476,7 @@ def run(case: Path, round_number: int | None) -> list[str]:
     methodology = read_json(case / "data" / "methodology.json")
     leads_doc, report = build_leads(case, methodology, round_number)
     leads_bytes = serialize(leads_doc)
-    method_clues, method_report = anomaly.method_clues(case, leads_doc, methodology)
-    report += method_report
-    clues_bytes = serialize(build_clues(leads_bytes, leads_doc, methodology, method_clues))
+    clues_bytes = serialize(build_clues(leads_bytes, leads_doc, methodology))
     try:
         with transaction(case) as descriptor:
             atomic_write_files(case, {"data/leads.json": leads_bytes, "data/clues.json": clues_bytes},

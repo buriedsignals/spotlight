@@ -25,7 +25,6 @@
         "questions": ["Which shareholders does the 2025 annual return name?"],
         "seed_queries": ["Northwind Holdings annual return"],
         "sources_to_try": ["registry.example.test"],
-        "anomaly_methods": ["method:shell-signals@1.2.0"],
         "token_budget": 200000
       }
     ]

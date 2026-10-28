@@ -74,6 +74,18 @@ def _publish(
     atomic_write_files(case, outputs, data_descriptor=data_descriptor)
 
 
+def _anomaly_methods(case: Path) -> dict[str, str]:
+    """The implementation hash of each Anomaly detector the plan allows, so a
+    detector that changes after approval is refused at run time."""
+    from integrations.anomaly import adapter as anomaly  # only when approving a methodology
+
+    try:
+        methodology = json.loads((case / "data" / "methodology.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return {}
+    return anomaly.approved_methods(methodology) if isinstance(methodology, dict) else {}
+
+
 def approve(
     case: Path,
     data_descriptor: int,
@@ -109,6 +121,9 @@ def approve(
             "input_sha256": hashes,
             "review": binding,
         }
+        anomaly_methods = _anomaly_methods(case)
+        if anomaly_methods:
+            state["approvals"][gate]["anomaly_methods"] = anomaly_methods
         record_decision(ledger, binding, "approved")
         if not approval_matches(previous, hashes):
             state["approvals"].pop("research", None)

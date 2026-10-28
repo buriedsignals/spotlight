@@ -54,7 +54,6 @@ CASE_BUDGET_CEILING_USD = 5
 # about 5,000 tokens) sent twice and three 4,096-token answers
 # (harness/pi/src/lanes.ts); below this it ends before its first call.
 MIN_TOKEN_BUDGET = 20_000
-MAX_ANOMALY_METHODS = 10
 CLUE_MARKS = {"pursue", "dismiss"}
 DIRECTION_MARKS = {"keep", "drop", "add"}
 
@@ -147,7 +146,6 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
     if not entries:
         problems.append(f"{p}.topics must list at least one topic brief")
     seen: set[str] = set()
-    methods = 0
     routes = lane_routes()
     for index, topic in enumerate(entries):
         topic_id = str(topic.get("topic_id") or "")
@@ -173,7 +171,11 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
         elif topic["token_budget"] < MIN_TOKEN_BUDGET:
             problems.append(f"{where}: token_budget {topic['token_budget']} is below one lane call; "
                             f"set at least {MIN_TOKEN_BUDGET}")
-        methods += len(topic.get("anomaly_methods") or [])
+        # Anomaly runs in Investigation now (integrations/anomaly/integration.md);
+        # an empty list from a plan written before the move is fine.
+        if topic.get("anomaly_methods"):
+            problems.append(f"{where}: anomaly_methods are retired from research topics; "
+                            "record the Anomaly sources in the methodology's anomaly section instead")
         own_egress = [e for e in egress if e.get("topic_id") == topic_id]
         if not own_egress:
             problems.append(f"{where}: egress is not listed; add a {p}.egress entry "
@@ -212,8 +214,6 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
         for topic_id in key.get("topics") or []:
             if topic_id not in seen:
                 problems.append(f"{p}.keys[{key.get('name')}] names an unknown topic {topic_id!r}")
-    if methods > MAX_ANOMALY_METHODS:
-        problems.append(f"{p}: {methods} Anomaly methods; at most {MAX_ANOMALY_METHODS} across the plan")
     return problems
 
 

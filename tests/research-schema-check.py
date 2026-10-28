@@ -92,9 +92,6 @@ REFUSED = {
     "a topic without questions": ("methodology", lambda d: topic(d).update(questions=[])),
     "a topic id that is not a folder-safe slug": ("methodology", lambda d: topic(d).update(topic_id="../ownership")),
     "an unversioned Anomaly method": ("methodology", lambda d: topic(d).update(anomaly_methods=["method:shell-signals"])),
-    "more than ten Anomaly methods": (
-        "methodology", lambda d: topic(d).update(anomaly_methods=[f"method:m{i}@1" for i in range(11)])
-    ),
     "a key value instead of its name": ("methodology", lambda d: d["research_plan"]["keys"][0].update(name="sk-or-v1-abc")),
 }
 

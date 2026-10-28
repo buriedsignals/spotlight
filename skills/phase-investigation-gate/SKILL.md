@@ -143,6 +143,14 @@ incomplete-support flag is a good reason to offer another fact-check cycle
 
 **Confidence assessment:** Overall investigation strength — not just pass/fail on criteria, but how strongly each was met.
 
+**Anomaly signals** (only when `data/anomaly-signals.json` exists): the
+detectors run, each with its tables, assumptions and known false positives,
+and how many records each flagged. The Investigation page lists each signal
+for the member to accept as a lead or dismiss. A signal is never a finding,
+and accepting one does not make it one: an accepted signal is a lead for a
+follow-up cycle or the report's limitations, and only what the investigator
+then verifies becomes a finding.
+
 ## Iterate
 
 If the user requests a follow-up cycle, persist the transition before returning

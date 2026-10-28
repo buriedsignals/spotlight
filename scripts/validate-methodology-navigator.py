@@ -291,7 +291,7 @@ def main() -> int:
     # D1: a research plan must be runnable as approved (budgets, topic ids,
     # lane types, consent, egress, sensitive, newsroom and journalist-input rules).
     errors.extend(f"methodology.json: {problem}" for problem in research_checks.d1_from_config(methodology, config))
-    # Named Anomaly methods must be single-table methods of the pinned catalogue.
+    # Every Anomaly domain and source the plan names must be one the installed catalogue lists.
     errors.extend(f"methodology.json: {problem}" for problem in anomaly.plan_problems(methodology))
 
     if errors:

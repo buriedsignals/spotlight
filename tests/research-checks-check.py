@@ -76,9 +76,8 @@ class D1LanePlan(unittest.TestCase):
             p["topics"].append(topic("ownership-ad-hoc", "ownership", "ad-hoc"))
             p["egress"].append({"topic_id": "ownership-ad-hoc", "destination": "public_web"})
             p["keys"].append({"name": "REGISTRY_API_KEY", "topics": ["ownership-ad-hoc"]})
-        def too_many_methods(p):
-            p["topics"][0]["anomaly_methods"] = [f"method:m{i}@1.0" for i in range(6)]
-            p["topics"][1]["anomaly_methods"] = [f"method:n{i}@1.0" for i in range(5)]
+        # Anomaly moved to Investigation: a topic may no longer name methods.
+        def retired_methods(p): p["topics"][0]["anomaly_methods"] = ["method:numeric.zscore_outliers@1.1.0"]
         def unknown_egress_topic(p): p["egress"].append({"topic_id": "ghost-web", "destination": "public_web"})
         # Plans the lane runner refuses or leaves out must fail here, against the schema.
         def unknown_destination(p): p["egress"][0]["destination"] = "openrouter_swarm"
@@ -108,7 +107,7 @@ class D1LanePlan(unittest.TestCase):
             "needs the member's swarm opt-in": no_opt_in,
             "local_only mode runs no cloud topic": local_only_cloud,
             "an ad-hoc topic gets no keys": key_on_ad_hoc,
-            "at most 10 across the plan": too_many_methods,
+            "anomaly_methods are retired from research topics": retired_methods,
             "egress names an unknown topic": unknown_egress_topic,
             "research_plan.egress[0].destination: must be one of": unknown_destination,
             "(ownership-web): a swarm topic needs the member's swarm opt-in": web_lane_without_opt_in,

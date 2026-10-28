@@ -138,6 +138,8 @@ export type TopicBrief = {
 	questions: string[];
 	seed_queries?: string[];
 	sources_to_try?: string[];
+	// Retired: Anomaly runs in Investigation now. Accepted on a plan approved
+	// before, never sent and never run.
 	anomaly_methods?: string[];
 	token_budget?: number;
 	journalist_input?: boolean;
@@ -160,7 +162,7 @@ const TOPIC_FIELDS = new Set([
 	'anomaly_methods', 'token_budget', 'journalist_input',
 ]);
 // What leaves the machine: the brief proper, nothing about routing or consent.
-const BRIEF_FIELDS = ['topic_id', 'direction_id', 'lane_type', 'questions', 'seed_queries', 'sources_to_try', 'anomaly_methods'] as const;
+const BRIEF_FIELDS = ['topic_id', 'direction_id', 'lane_type', 'questions', 'seed_queries', 'sources_to_try'] as const;
 
 type Refusal = { code: LaneFailureCode; message: string };
 
@@ -388,7 +390,7 @@ function assertSwarmPayload(messages: Message[], system: string, brief: string, 
 		messages[0]?.role === 'system' && messages[0].content === system &&
 		messages[1]?.role === 'user' && messages[1].content === brief &&
 		messages.slice(2).every((message) => produced.has(message)) &&
-		tools.every((tool) => SWARM_TOOLS.includes(tool) || LEAD_TOOLS.includes(tool) || tool === METHOD_TOOL);
+		tools.every((tool) => SWARM_TOOLS.includes(tool) || LEAD_TOOLS.includes(tool));
 	if (!ok) throw new Error('refused: a swarm request may carry only its approved brief and the lane\'s own web results');
 }
 
@@ -427,19 +429,6 @@ type Source = { id: string; kind: 'page' | 'search'; tool: string; route: 'brows
 type Lead = Record<string, unknown> & { lead_id: string; status: 'candidate' | 'unverifiable' };
 
 const LEAD_TOOLS = ['record_lead', 'record_absence'];
-
-// Anomaly method inputs (integrations/anomaly/integration.md). A topic with
-// approved methods gets one more lane tool: the model names which of its own
-// stored, D3-passed leads is a table for which method, and how the columns map
-// to the method's fields; code checks that and writes the lane's
-// method-inputs.json when the lane ends. Code cannot choose the lead or the
-// column mapping itself: which page is a table, and which column is the
-// amount, is a reading of the source.
-const METHOD_TOOL = 'record_method_input';
-const METHOD_INPUTS_FILE = 'method-inputs.json';
-const TABLE_FORMATS = ['csv', 'jsonl', 'parquet'];
-const MAX_MAPPED_FIELDS = 50;
-type MethodInput = { method: string; lead_id: string; format: string; fields: Record<string, string> };
 
 const normalize = (text: string) => text.normalize('NFC').replace(/\s+/g, ' ').trim();
 
@@ -509,18 +498,6 @@ const TOOL_SPECS: Record<string, object> = {
 	}),
 };
 
-function methodInputSpec(methods: string[]): object {
-	return fn(METHOD_TOOL, 'Name a table this lane stored as input for one of the brief\'s anomaly_methods: the recorded lead whose fetched original is the table (CSV, JSONL or Parquet), its format, and which table column serves each field the method needs. Never edit a table to make a method fit. The method runs after the merge; what it flags is a lead to check, never a finding.', {
-		type: 'object', additionalProperties: false, required: ['method', 'lead_id', 'format', 'fields'],
-		properties: {
-			method: { enum: methods },
-			lead_id: { type: 'string', minLength: 1 },
-			format: { enum: TABLE_FORMATS },
-			fields: { type: 'object', minProperties: 1, maxProperties: MAX_MAPPED_FIELDS, additionalProperties: { type: 'string', minLength: 1 } },
-		},
-	});
-}
-
 type LaneRun = {
 	checks: Checks;
 	caseDir: string;
@@ -530,7 +507,6 @@ type LaneRun = {
 	toolContext: ToolContext;
 	sources: Map<string, Source>;
 	leads: Lead[];
-	methodInputs: MethodInput[];
 	returned: Set<string>;
 	queries: string[];
 	model: string;
@@ -651,8 +627,6 @@ async function runTool(run: LaneRun, name: string, args: Record<string, unknown>
 			return await recordLead(run, args);
 		case 'record_absence':
 			return recordAbsence(run, args);
-		case METHOD_TOOL:
-			return recordMethodInput(run, args);
 		default:
 			throw new Error(`unknown tool ${name}`);
 	}
@@ -764,30 +738,6 @@ function recordAbsence(run: LaneRun, args: Record<string, unknown>): string {
 	return `${leadId} recorded.`;
 }
 
-// Only a method approved for this topic, on a lead this lane recorded from a
-// stored page that passed D3: the merge runs nothing else (adapter.py
-// method_clues), so the lane is told now rather than at the merge.
-function recordMethodInput(run: LaneRun, args: Record<string, unknown>): string {
-	const method = String(args.method ?? '');
-	const leadId = String(args.lead_id ?? '');
-	const format = String(args.format ?? '');
-	if (!(run.topic.anomaly_methods ?? []).includes(method)) return `refused: ${method} is not one of this topic's approved methods`;
-	const lead = run.leads.find((item) => item.lead_id === leadId);
-	if (!lead) return `refused: ${leadId} is not a lead this lane recorded`;
-	if (lead.absence || lead.stored !== 'page' || lead.status !== 'candidate') {
-		return `refused: ${leadId} is not a stored page that passed the excerpt check; fetch the table and record a lead from it first`;
-	}
-	if (!TABLE_FORMATS.includes(format)) return `refused: format must be one of ${TABLE_FORMATS.join(', ')}`;
-	const fields = args.fields;
-	const entries = fields && typeof fields === 'object' && !Array.isArray(fields) ? Object.entries(fields as Record<string, unknown>) : [];
-	if (entries.length === 0 || entries.length > MAX_MAPPED_FIELDS || !entries.every(([key, value]) => key.trim() && typeof value === 'string' && value.trim())) {
-		return 'refused: fields must map each field the method needs to a table column';
-	}
-	if (run.methodInputs.some((input) => input.method === method && input.lead_id === leadId)) return `refused: ${method} is already named for ${leadId}`;
-	run.methodInputs.push({ method, lead_id: leadId, format, fields: Object.fromEntries(entries) as Record<string, string> });
-	return `${method} will run on the table from ${leadId} after the merge.`;
-}
-
 // ── One lane ─────────────────────────────────────────────────────────────────
 
 type Spend = { usd: number; tokens: number };
@@ -834,7 +784,6 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 		toolContext: { ...job.backing, caseDir, writeRoot: laneDir },
 		sources: new Map(),
 		leads: [],
-		methodInputs: [],
 		returned: new Set(),
 		queries: [],
 		model: endpoint.models[0],
@@ -871,19 +820,14 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 		if (status !== 'running' && Object.keys(callTally).length > 0) lane.calls = callTally;
 		if (failure) lane.failure = failure;
 		if (status !== 'running') writeConfined(caseDir, laneDir, `${LANES_DIRECTORY}/${topic.topic_id}/leads.jsonl`, run.leads.map((lead) => `${JSON.stringify(lead)}\n`).join(''));
-		if (status !== 'running' && run.methodInputs.length > 0) {
-			const inputs = { schema_version: '1.0', inputs: run.methodInputs };
-			writeConfined(caseDir, laneDir, `${LANES_DIRECTORY}/${topic.topic_id}/${METHOD_INPUTS_FILE}`, `${JSON.stringify(inputs, null, 2)}\n`);
-		}
 		writeConfined(caseDir, laneDir, `${LANES_DIRECTORY}/${topic.topic_id}/lane.json`, `${JSON.stringify(lane, null, 2)}\n`);
 	};
 	writeLane('running');
 	const brief = briefOf(topic, laneType);
-	const methods = topic.anomaly_methods ?? [];
 	// Newsroom edition: prior knowledge comes from the newsroom, not a wiki.
 	const laneTools = run.knowledge ? laneType.tools.map((name) => (name === 'query_vault' ? 'search_knowledge' : name)) : laneType.tools;
-	const toolNames = [...laneTools, ...LEAD_TOOLS, ...(methods.length > 0 ? [METHOD_TOOL] : [])];
-	const tools = toolNames.map((name) => (name === METHOD_TOOL ? methodInputSpec(methods) : TOOL_SPECS[name]));
+	const toolNames = [...laneTools, ...LEAD_TOOLS];
+	const tools = toolNames.map((name) => TOOL_SPECS[name]);
 	const finalToolNames = toolNames.filter((name) => LEAD_TOOLS.includes(name));
 	const finalTools = finalToolNames.map((name) => TOOL_SPECS[name]);
 	const produced = new WeakSet<Message>();
@@ -979,7 +923,7 @@ async function runLane(job: LaneJob): Promise<LaneOutcome> {
 				} else if (!finalTurn && toolCalls >= MAX_TOOL_CALLS) {
 					content = 'not run: the tool-call budget is spent; record your leads';
 					finalReason ??= 'tool_call_limit';
-				} else if (!finalTurn && ![...LEAD_TOOLS, METHOD_TOOL].includes(call.function.name) && spend.tokens + conversation + RESULT_TOKENS + MAX_TOKENS_PER_ANSWER > tokenBudget) {
+				} else if (!finalTurn && !LEAD_TOOLS.includes(call.function.name) && spend.tokens + conversation + RESULT_TOKENS + MAX_TOKENS_PER_ANSWER > tokenBudget) {
 					// A web or case result runs only while the last turn still fits after it.
 					content = 'not run: the rest of the token budget is kept for recording leads';
 					finalReason ??= 'token_budget';
@@ -1073,45 +1017,16 @@ function writeEndedLane(caseDir: string, topic: TopicBrief, laneType: LaneType |
 	writeConfined(caseDir, laneDir, `${LANES_DIRECTORY}/${topic.topic_id}/lane.json`, `${JSON.stringify(lane, null, 2)}\n`);
 }
 
-// The merge's own work, and the adapter's cap on one Anomaly runner
-// (integrations/anomaly/adapter.py RUN_TIMEOUT_SECONDS): one run per table.
-const MERGE_BASE_MS = 120_000;
-const METHOD_RUN_MS = 120_000;
-
-// How long the merge may take: its own work plus one Anomaly run per distinct
-// table (topic, lead, format) the lanes named in their method inputs.
-export function mergeTimeoutMs(caseDir: string): number {
-	const tables = new Set<string>();
-	let topics: string[] = [];
-	try {
-		topics = readdirSync(resolve(caseDir, LANES_DIRECTORY));
-	} catch {
-		return MERGE_BASE_MS;
-	}
-	for (const topicId of topics) {
-		let inputs: unknown;
-		try {
-			inputs = (JSON.parse(readFileSync(resolve(caseDir, LANES_DIRECTORY, topicId, METHOD_INPUTS_FILE), 'utf8')) as { inputs?: unknown }).inputs;
-		} catch {
-			continue; // missing or unreadable: the merge reports it and runs nothing for it
-		}
-		if (!Array.isArray(inputs)) continue;
-		for (const input of inputs as Array<{ lead_id?: unknown; format?: unknown }>) {
-			if (input && typeof input.lead_id === 'string') tables.add(`${topicId}\u0000${input.lead_id}\u0000${String(input.format)}`);
-		}
-	}
-	return MERGE_BASE_MS + tables.size * METHOD_RUN_MS;
-}
+// The merge's own work.
+const MERGE_TIMEOUT_MS = 120_000;
 
 // The Pi harness has no shell, so it runs the merge itself once every approved
 // topic has ended: data/leads.json and data/clues.json (scripts/research-merge.py).
 async function runMerge(options: RoundOptions, round: number): Promise<MergeOutcome> {
 	const result = await runFixed(options.config.python, [resolve(CHECKOUT_ROOT, 'scripts/research-merge.py'), options.caseDir, '--round', String(round)], {
-		// ANOMALY_HOME and the install config: the merge runs the approved
-		// Anomaly methods on the lanes' tables (integrations/anomaly).
-		env: programEnv(options.env, ['ANOMALY_HOME'], { SPOTLIGHT_CONFIG: options.config.spotlightConfig }),
+		env: programEnv(options.env, [], { SPOTLIGHT_CONFIG: options.config.spotlightConfig }),
 		cwd: CHECKOUT_ROOT,
-		timeoutMs: mergeTimeoutMs(options.caseDir),
+		timeoutMs: MERGE_TIMEOUT_MS,
 	});
 	if (result.code !== 0) return { ok: false, error: (result.stderr || result.stdout).trim().slice(-2000) };
 	try {

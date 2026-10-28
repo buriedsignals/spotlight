@@ -36,7 +36,7 @@ any agent.
   (`agents/researcher.md`) per approved swarm topic through the host's
   subagents, as many at once as the host allows. Give each only that topic's
   brief (`topic_id`, `direction_id`, `lane_type`, `questions`,
-  `seed_queries`, `sources_to_try`, `anomaly_methods` from
+  `seed_queries`, `sources_to_try` from
   `research_plan.topics[]`), the lane type's entry in `lanes/<lane_type>.yaml`,
   and its lane folder. Never pass case files, findings, evidence, leads of
   other lanes, or journalist input to a subagent, and never write a brief
@@ -55,13 +55,6 @@ any agent.
   `schemas/research-lead.schema.json` object per line, and `sources/`. Lane
   folders are owner-only. A folder not named in the approved `research_plan`
   is never read.
-- A topic with `anomaly_methods` may also write `method-inputs.json` in its
-  folder, naming each collected table (a stored-page lead whose original is a
-  CSV, JSONL or Parquet file) and how its columns map to the method's fields
-  (`integrations/anomaly/integration.md`). The merge runs each approved
-  method on its table and adds the signals as clues tagged
-  `method:<id>@<version>`; a method that cannot run is listed in the merge
-  report and raises no clue.
 
 ## Outputs the resolver waits for
 

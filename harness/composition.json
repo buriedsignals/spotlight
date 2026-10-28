@@ -90,7 +90,8 @@
         "osint_tools",
         "navigator_tools",
         "exiftool",
-        "source_expressions"
+        "source_expressions",
+        "anomaly_run"
       ],
       "keys": [
         "FIRECRAWL_API_KEY"

@@ -168,13 +168,14 @@ def load_decisions_key(block: dict) -> None:
 
 
 def anomaly_fields(fields: dict) -> dict:
-    """Anomaly is ready only with the pinned catalogue; otherwise its methods stay hidden."""
+    """Anomaly is ready only with a catalogue it can trust; otherwise its methods stay hidden."""
     from integrations.anomaly import adapter
 
     if not credential(adapter.HOME_ENV):
         return fields  # unconfigured: the activation variable is missing
     current = adapter.state()
-    fields["catalogue_release"] = current["release"]
+    if current.get("catalogue_hash"):
+        fields["catalogue_hash"] = current["catalogue_hash"]
     if not current["available"]:
         fields.update(status="yellow", smoke_error=current["reason"])
     return fields

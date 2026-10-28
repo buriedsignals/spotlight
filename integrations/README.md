@@ -15,7 +15,7 @@ An agent invokes a skill to get *guidance*; it calls an integration to get *data
 
 | ID | Category | Requires key | Env vars |
 |---|---|---|---|
-| `anomaly` | research-clue-methods | No — `unconfigured` until set | `ANOMALY_HOME` (an Anomaly checkout at the pinned release) |
+| `anomaly` | investigation-methods | No — `unconfigured` until set | `ANOMALY_HOME` (an Anomaly checkout, installed and updated by Engine) |
 | `apify` | social-osint | Optional — `unconfigured` until set | `APIFY_API_TOKEN` (legacy alias `APIFY_TOKEN` is not read by preflight; re-export it) |
 | `arbiter` | social-osint | Yes — member-owned `ARBITER_API_KEY`, configured locally | `ARBITER_API_KEY` (optional `ARBITER_API_BASE` deployment override) |
 | `dev-browser` | browser-automation | No | none |
