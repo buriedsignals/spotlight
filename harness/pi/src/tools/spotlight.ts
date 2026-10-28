@@ -1,7 +1,7 @@
 // Resolver and transition tools, bound by the harness to the active case and
 // backed by the product orchestration module (scripts/spotlight-orchestration.py).
 import { execFile } from 'node:child_process';
-import { lstatSync, mkdirSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
@@ -144,6 +144,68 @@ export async function resolveCase(active: ActiveCase, runAdapter: AdapterRunner,
 	}
 }
 
+// tools-da on the r3/r4 LFM3 runs (kde stage 1): with only
+// data/fact-check.json missing, spotlight_resolve said nothing a model could
+// act on, and the 1.7B model looped or spawned the investigator again where
+// Sonnet spawned the fact-checker. The result now carries the next step for
+// the phases a worker spawn or the brief moves forward. Text only: the
+// harness starts nothing.
+export const NEXT_FACT_CHECKER =
+	"Next: spawn the fact-checker (phase-investigation step 3). The investigator's findings, evidence bundle and log are on disk; do not re-run the investigator, and do not re-read the case files first.";
+export const NEXT_INVESTIGATOR = 'Next: spawn the investigator in EXECUTION mode (phase-investigation step 1).';
+// r4 on held-kde: 147 orchestrator calls in one turn (read, grep,
+// invoke_skill), then brief-directions.txt written without asking the member.
+export const NEXT_BRIEF =
+	"Next: restate the lead in one sentence, propose the direction in plain words, ask the member to approve it (with up to three clarifying questions if scope, angle or priority is unclear), and end your turn (phase-methodology, Brief steps 2 to 5). Write brief-directions.txt with write_file only after the member has answered and approved (step 6). You need not read case or skill files first, and no investigator runs before the brief.";
+export const NEXT_PLANNING = 'Next: spawn the investigator with MODE: PLANNING to write data/methodology.json (phase-methodology, Methodology).';
+export const NEXT_METHODOLOGY_APPROVAL =
+	'Next: call open_review so the member can approve the methodology, then end your turn and wait for their decision.';
+
+const INVESTIGATION_FILES = ['data/findings.json', 'data/evidence-bundle.json', 'data/investigation-log.json', 'data/fact-check.json'];
+
+// Who writes a missing item the resolver names (a file, or a sentence that
+// names one).
+function writerOf(item: string): 'investigator' | 'fact-checker' | undefined {
+	if (/fact-check/.test(item)) return 'fact-checker';
+	if (/findings|evidence-bundle|investigation-log|investigator/.test(item)) return 'investigator';
+	return undefined;
+}
+
+export function nextAction(resolved: Record<string, unknown>, onDisk: (relative: string) => boolean): string | undefined {
+	const missing = Array.isArray(resolved.missing) ? resolved.missing.map(String) : [];
+	switch (resolved.phase) {
+		case 'brief':
+			return NEXT_BRIEF;
+		case 'methodology':
+			return NEXT_PLANNING;
+		case 'methodology_approval':
+			return NEXT_METHODOLOGY_APPROVAL;
+		case 'investigation':
+			break;
+		default:
+			return undefined;
+	}
+	if (missing.length === 1 && missing[0] === 'data/fact-check.json') return NEXT_FACT_CHECKER;
+	if (missing.includes('data/findings.json')) return NEXT_INVESTIGATOR;
+	if (missing.length === 0) return undefined;
+	const present = INVESTIGATION_FILES.filter(onDisk);
+	const writers = [...new Set(missing.map(writerOf).filter((writer) => writer !== undefined))];
+	const order = writers.includes('investigator') ? ['investigator', 'fact-checker'].filter((writer) => writers.includes(writer as never)) : writers;
+	const steps = order.map((writer) => (writer === 'investigator' ? 'the investigator (phase-investigation step 1)' : 'the fact-checker (phase-investigation step 3)'));
+	const onDiskText = present.length ? `On disk: ${present.join(', ')}.` : 'None of the investigation files are on disk yet.';
+	if (!steps.length) return `${onDiskText} Next: resolve what missing lists, then call spotlight_resolve again.`;
+	return `${onDiskText} Next: spawn ${steps.join(', then ')} for what missing lists.`;
+}
+
+// The resolved state with next_action in its sorted place among the
+// resolver's sorted keys.
+function withNextAction(resolved: Record<string, unknown>, caseDir: string): Record<string, unknown> {
+	const next = nextAction(resolved, (relative) => existsSync(resolve(caseDir, relative)));
+	if (!next) return resolved;
+	const merged: Record<string, unknown> = { ...resolved, next_action: next };
+	return Object.fromEntries(Object.keys(merged).sort().map((key) => [key, merged[key]]));
+}
+
 function jsonResult(value: unknown) {
 	return { content: [{ type: 'text' as const, text: JSON.stringify(value) }], details: undefined };
 }
@@ -184,7 +246,7 @@ export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, ro
 			// Approval of the methodology is what starts Research: the resolver
 			// reports the phase and code runs the approved topics. The model only
 			// resolves; it chooses no topic and starts no swarm.
-			if (!research || !runsResearchRound(resolved)) return jsonResult(resolved);
+			if (!research || !runsResearchRound(resolved)) return jsonResult(withNextAction(resolved, active.caseDir));
 			const round = await research((params as { retry_research?: boolean }).retry_research === true, signal);
 			return jsonResult({ ...(await resolveCase(active, runAdapter, signal)), research_round: round });
 		},
