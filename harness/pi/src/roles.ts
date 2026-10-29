@@ -193,26 +193,116 @@ const RAW_PAGE_RULE = {
 		'Read the leads. Read a section of a `.raw` file only when the leads look thin or you need exact wording for a citation: find it with `grep_files`, then `read_file` with offset/limit. Never load a raw page whole.',
 };
 
-const adapter = (tier: ModelTier) => `## Runtime adapter (Pi)
+// The runtime adapter is built per role from the tools it holds: a line or a
+// shell mapping for a tool the role does not have never reaches its prompt
+// (the 12b pays for every token on every call). A line with `skill` is
+// phase-only: it is not in the system prompt but comes with that phase skill
+// when invoke_skill loads it (skillAdapterNote). `orchestrator` lines are the
+// orchestrator's alone.
+type AdapterLine = { text: string | ((tier: ModelTier, tools: string[]) => string); tools?: string[]; orchestrator?: true; skill?: string };
 
-The skills use abstract verbs and some shell steps. This harness has no shell: every step you may take is one of the tools in your tool list.
-- invoke-skill(id) -> \`invoke_skill\`; its description lists the skills you have.
-- Spotlight durable state (orchestrator only) -> \`spotlight_resolve\` and \`spotlight_transition\`. Both are bound by the harness to the active case.
-- spawn-agent(id, prompt) / wait-agent -> \`spawn_agent\` (orchestrator only). It returns the worker's final answer.
-- read-file, write-file, edit-file, list-files, grep-files -> \`read_file\`, \`write_file\`, \`edit_file\`, \`list_files\`, \`grep_files\`. {CASE_DIR} is the active case folder: give paths relative to it, keeping every folder the skill names and adding none (\`{CASE_DIR}/brief-directions.txt\` -> \`brief-directions.txt\`, \`{CASE_DIR}/data/methodology.json\` -> \`data/methodology.json\`). Files under the checkout's \`schemas/\` are readable. Writes outside your folder, through a symlink, or to resolver, review or receipt files are refused.
-- fetch -> \`fetch\` (use save_as for output_path); search -> \`search\`; query-vault -> \`query_vault\`.
-- Context hygiene: when the harness has a local RLM, \`fetch\` distills every page itself. You do not run the RLM. The result says \`distilled: true\` and gives you compact leads; save_as holds those leads and \`raw_path\` (save_as + \`.raw\`) the page as fetched, for citations and provenance. ${RAW_PAGE_RULE[tier === '12b' ? '12b' : 'default']} Leads are unverified pointers, never facts, and never evidence: a \`source_ref\` must point at the \`.raw\` file, not the lead file (the validators refuse lead files). If the result says the RLM failed, the page is only at \`raw_path\`; treat it the same way.
-- Shell steps in the skills map to typed tools: a \`curl\` GET to a registry, archive or API -> \`http_get\` (\`--data-urlencode\` values go in its \`query\` object, unencoded); a dev-browser script -> \`browse\` (one page: rendered text, HTML or a screenshot); \`scripts/osint-tools.py find|categories\` -> \`osint_tools\`; \`navigator tools find|show\` -> \`navigator_tools\`; \`exiftool {file}\` -> \`exiftool\`; \`scripts/decision-signals.py\` -> \`decision_signals\`; \`scripts/build-provenance-manifest.py\` -> \`provenance_manifest\`; \`integrations/rlm/run_rlm.py\` -> \`run_rlm\`; \`integrations/preflight.py\` -> \`integration_status\`; \`integrations/anomaly/adapter.py context [--domain D | --source ID]\` -> \`anomaly_methods\` with domain or source; \`scripts/build-review-html.py\` -> \`build_review_html\`; \`scripts/write-source-expressions.py {CASE_DIR} --actor <you> --cycle N < proposal.json\` -> \`source_expressions\` with action \`write\`, the cycle and the proposal object (the harness passes your role as the actor), and \`--fingerprint-findings\` -> \`source_expressions\` with action \`fingerprint_findings\`; \`data/source-expressions.json\` and \`data/source-positions.json\` refuse every file-tool write; \`spotlight_safe.py sha256\` or any SHA-256 of a case file -> \`hash_files\`; \`grep -n\`, \`sed -n\` or Python to find a source_ref line range or JSON Pointer -> \`grep_files\` and \`read_file\` (offset/limit or json_pointer), which count and select exactly as the validators do. \`scripts/spotlight_safe.py validate-*\` checks are not needed: each tool checks its own arguments, and the web tools reach only public http(s) addresses.
-- \`scripts/validate-case.py\`, \`scripts/validate-fact-check.py\`, \`scripts/validate-indicator-framework.py\` and \`scripts/validate-methodology-navigator.py\` are run by the harness itself when a worker finishes; their outcome is appended to the \`spawn_agent\` result. Act on that outcome; do not try to run them.
-- \`scripts/case-contract.py activate-new\` (orchestrator only) is run by the harness itself right before the first investigator task of a new case at Investigation; \`data/case-contract.json\` is the harness's and no tool writes it. Resolve the source-expression mode as the skill says, reading that file: a new case with no findings is activated.
-- Worker files (orchestrator only): the files the workers write and the harness checks after them (\`data/methodology.json\`, the findings, the fact-check, the evidence bundle, the investigation log, the passages, the Indicator Framework files) refuse your writes. Where a skill has you change one (a research plan, an RLM block), send the change to the investigator as a METHODOLOGY CORRECTION, or to the worker that wrote the file.
-- Research (orchestrator only): at the Research phase \`spotlight_resolve\` runs the approved research topics itself and returns the round as \`research_round\` (what ran, the spend, the topics left out, and \`stopped\` with the fix when the provider failed). You never start, widen or choose topics. Pass \`retry_research: true\` only when the member asks to retry a stopped round.
-- Preflight step 0 (the shell check): skipped. A \`spotlight_resolve\` that answers confirms the checkout.
-- Ingest, the analyst proposal (orchestrator only): \`spawn_agent\` with agent \`analyst\`, at Ingest in the solo edition. It reads the approved case files and writes only \`data/knowledge-proposal.json\`. When it finishes, the harness runs \`scripts/build-knowledge-batch.py --review\` itself with the producers' model ids and appends the outcome to the result; do not try to run it. A refusal names what to fix.
-- Ingest, the wiki write (orchestrator only, solo edition): \`scripts/wiki-destination.py {CASE_DIR}\` -> \`wiki_destination\`, only once the member has requested ingestion on the page (\`resume_at\` \`ingest\`). It writes the member's wiki and the completed receipt; then resolve again and seal.
-- Anything else (a POST request, git clone, Apify, the retired \`ingest\` skill's scripts, a tool not in your list): do not improvise around it. Say which step needs it and stop that step.
+const ADAPTER_INTRO = `## Runtime adapter (Pi)
 
-Gate approvals, the report decision and the ingest request or decline are recorded by the review page, never by you. At a gate, present the synthesis, call \`open_review\` so the member can decide on the page, and END YOUR TURN. When the member says they are done, call \`spotlight_resolve\` again.`;
+The skills use abstract verbs and some shell steps. This harness has no shell: every step you may take is one of the tools in your tool list.`;
+
+// The skills' shell steps and the typed tool each maps to; undefined for one
+// every role keeps.
+const SHELL_MAPPINGS: Array<[string, string | undefined]> = [
+	['a `curl` GET to a registry, archive or API -> `http_get` (`--data-urlencode` values go in its `query` object, unencoded)', 'http_get'],
+	['a dev-browser script -> `browse` (one page: rendered text, HTML or a screenshot)', 'browse'],
+	['`scripts/osint-tools.py find|categories` -> `osint_tools`', 'osint_tools'],
+	['`navigator tools find|show` -> `navigator_tools`', 'navigator_tools'],
+	['`exiftool {file}` -> `exiftool`', 'exiftool'],
+	['`scripts/decision-signals.py` -> `decision_signals`', 'decision_signals'],
+	['`scripts/build-provenance-manifest.py` -> `provenance_manifest`', 'provenance_manifest'],
+	['`integrations/rlm/run_rlm.py` -> `run_rlm`', 'run_rlm'],
+	['`integrations/preflight.py` -> `integration_status`', 'integration_status'],
+	['`integrations/anomaly/adapter.py context [--domain D | --source ID]` -> `anomaly_methods` with domain or source', 'anomaly_methods'],
+	['`scripts/build-review-html.py` -> `build_review_html`', 'build_review_html'],
+	[
+		'`scripts/write-source-expressions.py {CASE_DIR} --actor <you> --cycle N < proposal.json` -> `source_expressions` with action `write`, the cycle and the proposal object (the harness passes your role as the actor), and `--fingerprint-findings` -> `source_expressions` with action `fingerprint_findings`',
+		'source_expressions',
+	],
+	['`data/source-expressions.json` and `data/source-positions.json` refuse every file-tool write', 'source_expressions'],
+	['`spotlight_safe.py sha256` or any SHA-256 of a case file -> `hash_files`', 'hash_files'],
+	['`grep -n`, `sed -n` or Python to find a source_ref line range or JSON Pointer -> `grep_files` and `read_file` (offset/limit or json_pointer), which count and select exactly as the validators do', undefined],
+];
+
+const SHELL_LINE = (_tier: ModelTier, tools: string[]) =>
+	`- Shell steps in the skills map to typed tools: ${SHELL_MAPPINGS.filter(([, tool]) => !tool || tools.includes(tool))
+		.map(([step]) => step)
+		.join('; ')}. \`scripts/spotlight_safe.py validate-*\` checks are not needed: each tool checks its own arguments, and the web tools reach only public http(s) addresses.`;
+
+const ADAPTER_LINES: AdapterLine[] = [
+	{ text: '- invoke-skill(id) -> `invoke_skill`; its description lists the skills you have.', tools: ['invoke_skill'] },
+	{ text: '- Spotlight durable state (orchestrator only) -> `spotlight_resolve` and `spotlight_transition`. Both are bound by the harness to the active case.', orchestrator: true },
+	{ text: "- spawn-agent(id, prompt) / wait-agent -> `spawn_agent` (orchestrator only). It returns the worker's final answer.", orchestrator: true },
+	{
+		text: "- read-file, write-file, edit-file, list-files, grep-files -> `read_file`, `write_file`, `edit_file`, `list_files`, `grep_files`. {CASE_DIR} is the active case folder: give paths relative to it, keeping every folder the skill names and adding none (`{CASE_DIR}/brief-directions.txt` -> `brief-directions.txt`, `{CASE_DIR}/data/methodology.json` -> `data/methodology.json`). Files under the checkout's `schemas/` are readable. Writes outside your folder, through a symlink, or to resolver, review or receipt files are refused.",
+	},
+	{ text: '- fetch -> `fetch` (use save_as for output_path).', tools: ['fetch'] },
+	{ text: '- search -> `search`.', tools: ['search'] },
+	{ text: '- query-vault -> `query_vault`.', tools: ['query_vault'] },
+	{
+		text: (tier) =>
+			`- Context hygiene: when the harness has a local RLM, \`fetch\` distills every page itself. You do not run the RLM. The result says \`distilled: true\` and gives you compact leads; save_as holds those leads and \`raw_path\` (save_as + \`.raw\`) the page as fetched, for citations and provenance. ${RAW_PAGE_RULE[tier === '12b' ? '12b' : 'default']} Leads are unverified pointers, never facts, and never evidence: a \`source_ref\` must point at the \`.raw\` file, not the lead file (the validators refuse lead files). If the result says the RLM failed, the page is only at \`raw_path\`; treat it the same way.`,
+		tools: ['fetch'],
+	},
+	{ text: SHELL_LINE },
+	{
+		text: '- `scripts/validate-case.py`, `scripts/validate-fact-check.py`, `scripts/validate-indicator-framework.py` and `scripts/validate-methodology-navigator.py` are run by the harness itself when a worker finishes; their outcome is appended to the `spawn_agent` result. Act on that outcome; do not try to run them.',
+	},
+	{
+		text: "- `scripts/case-contract.py activate-new` (orchestrator only) is run by the harness itself right before the first investigator task of a new case at Investigation; `data/case-contract.json` is the harness's and no tool writes it. Resolve the source-expression mode as the skill says, reading that file: a new case with no findings is activated.",
+		orchestrator: true,
+		skill: 'phase-investigation',
+	},
+	{
+		text: '- Worker files (orchestrator only): the files the workers write and the harness checks after them (`data/methodology.json`, the findings, the fact-check, the evidence bundle, the investigation log, the passages, the Indicator Framework files) refuse your writes. Where a skill has you change one (a research plan, an RLM block), send the change to the investigator as a METHODOLOGY CORRECTION, or to the worker that wrote the file.',
+		orchestrator: true,
+	},
+	{
+		text: '- Research (orchestrator only): at the Research phase `spotlight_resolve` runs the approved research topics itself and returns the round as `research_round` (what ran, the spend, the topics left out, and `stopped` with the fix when the provider failed). You never start, widen or choose topics. Pass `retry_research: true` only when the member asks to retry a stopped round.',
+		orchestrator: true,
+		skill: 'phase-research',
+	},
+	{ text: '- Preflight step 0 (the shell check): skipped. A `spotlight_resolve` that answers confirms the checkout.', orchestrator: true, skill: 'phase-preflight' },
+	{
+		text: "- Ingest, the analyst proposal (orchestrator only): `spawn_agent` with agent `analyst`, at Ingest in the solo edition. It reads the approved case files and writes only `data/knowledge-proposal.json`. When it finishes, the harness runs `scripts/build-knowledge-batch.py --review` itself with the producers' model ids and appends the outcome to the result; do not try to run it. A refusal names what to fix.",
+		orchestrator: true,
+		skill: 'phase-ingest',
+	},
+	{
+		text: "- Ingest, the wiki write (orchestrator only, solo edition): `scripts/wiki-destination.py {CASE_DIR}` -> `wiki_destination`, only once the member has requested ingestion on the page (`resume_at` `ingest`). It writes the member's wiki and the completed receipt; then resolve again and seal.",
+		tools: ['wiki_destination'],
+		orchestrator: true,
+		skill: 'phase-ingest',
+	},
+	{
+		text: "- Anything else (a POST request, git clone, Apify, the retired `ingest` skill's scripts, a tool not in your list): do not improvise around it. Say which step needs it and stop that step.",
+	},
+];
+
+const GATE_PARAGRAPH =
+	'Gate approvals, the report decision and the ingest request or decline are recorded by the review page, never by you. At a gate, present the synthesis, call `open_review` so the member can decide on the page, and END YOUR TURN. When the member says they are done, call `spotlight_resolve` again.';
+
+function adapterLines(tools: string[], orchestrator: boolean, tier: ModelTier, skill?: string): string[] {
+	return ADAPTER_LINES.filter((line) => line.skill === skill && (orchestrator || !line.orchestrator) && (!line.tools || line.tools.some((tool) => tools.includes(tool)))).map((line) =>
+		typeof line.text === 'string' ? line.text : line.text(tier, tools),
+	);
+}
+
+function adapter(tier: ModelTier, tools: string[], orchestrator: boolean): string {
+	const body = [ADAPTER_INTRO, ...adapterLines(tools, orchestrator, tier)].join('\n');
+	return orchestrator ? `${body}\n\n${GATE_PARAGRAPH}` : body;
+}
+
+// The phase-only adapter lines of one skill, which invoke_skill appends to its
+// text; undefined when the role gets none.
+export function skillAdapterNote(skill: string, tools: string[], orchestrator: boolean): string | undefined {
+	const lines = adapterLines(tools, orchestrator, '12b', skill);
+	return lines.length === 0 ? undefined : `## Runtime adapter (Pi) for this phase\n${lines.join('\n')}`;
+}
 
 // The newsroom edition's differences, appended to every role's adapter.
 const NEWSROOM_ADAPTER = `## Newsroom edition
@@ -250,15 +340,6 @@ export function systemPrompt(composition: Composition, role: string, tier: Model
 // paragraph.
 function workerLines(text: string): string {
 	return text.split('\n').filter((line) => !/^- (?:.*\(orchestrator only|Orchestrator only)/.test(line)).join('\n');
-}
-
-// The orchestrator's own tools, whose shell mappings a worker never needs.
-// A mapping runs to the next ";", so any note after the tool name goes too.
-const ORCHESTRATOR_MAPPINGS = /; `[^`]+` -> `(?:decision_signals|provenance_manifest|run_rlm|integration_status|anomaly_methods|build_review_html)`[^;]*/g;
-
-function workerAdapter(tier: ModelTier): string {
-	const full = adapter(tier);
-	return workerLines(full.slice(0, full.lastIndexOf('\n\nGate approvals'))).replace(ORCHESTRATOR_MAPPINGS, '');
 }
 
 const PLANNING_PHASES = ['brief', 'methodology', 'methodology_approval'];
@@ -353,7 +434,7 @@ Human gates are real. When the phase owner presents a gate, present its synthesi
 
 ${LIMITS}
 
-${adapter(tier)}`;
+${adapter(tier, agentSpec(composition, role).tools, true)}`;
 	}
 	const spec = agentSpec(composition, role);
 	const persona = workerPersonaPath(spec);
@@ -362,7 +443,7 @@ ${adapter(tier)}`;
 	const body = slicePersona(stripFrontmatter(readFileSync(persona, 'utf8')), workerMode(worker.phase, worker.task), worker.conditions, tier === '12b');
 	return `You are the Spotlight ${role} worker. You were delegated a task by the orchestrator. You have no user and no gates: never wait for input or approval, and never delegate. Do the task yourself with your own tools and return your result.
 
-${workerAdapter(tier)}
+${adapter(tier, spec.tools, false)}
 
 ${body}`;
 }

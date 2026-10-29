@@ -162,9 +162,13 @@ test('the frontier tier compacts at Pi\'s default threshold with Pi\'s summary, 
 
 // #246: a skill loaded before a fold must load in full after it, since the fold
 // drops its text; only a repeat within the same unfolded conversation is cut.
-test('after a fold the same skill loads in full again', async (t) => {
+// A phase skill carries its phase-only runtime adapter lines (roles.ts,
+// skillAdapterNote): they come with the first load, the repeat points back at
+// that load, and after the fold they come again with the skill.
+test('after a fold the same skill loads in full again, with its phase lines', async (t) => {
+	const toolText = (content: unknown) => (typeof content === 'string' ? content : Array.isArray(content) ? content.map((part) => (part as { text?: string }).text ?? '').join('') : '');
 	const lastUser = (request: ChatRequest) => JSON.stringify(request.messages.filter((message) => message.role === 'user').at(-1)?.content ?? '');
-	const skillCall = { toolCalls: [{ name: 'invoke_skill', arguments: { skill: 'spotlight' } }] };
+	const skillCall = { toolCalls: [{ name: 'invoke_skill', arguments: { skill: 'phase-ingest' } }] };
 	const fake = await startFakeOpenAI((request) => {
 		if (isSummaryRequest(request)) return { text: WELL_FORMED };
 		const last = request.messages.at(-1);
@@ -176,17 +180,24 @@ test('after a fold the same skill loads in full again', async (t) => {
 	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '65536', SPOTLIGHT_MODEL_TIER: '12b' });
 
 	await settledPrompt(chat, 'Load the skill.');
+	await settledPrompt(chat, 'Load the skill once more.');
 	await settledPrompt(chat, LONG_TURN);
 	await settledPrompt(chat, RECENT_TURN);
 	await settledPrompt(chat, 'Continue.');
 	assert.ok(compactions(chat).length >= 1, 'the conversation folded');
 	await settledPrompt(chat, 'Load the skill again.');
 
+	// Each load's result, from the request that answered it.
 	const loads = fake.requests
-		.filter((request) => !isSummaryRequest(request))
-		.flatMap((request) => request.messages.filter((message) => message.role === 'tool').map((message) => JSON.stringify(message.content)));
+		.filter((request) => !isSummaryRequest(request) && request.messages.at(-1)?.role === 'tool')
+		.map((request) => toolText(request.messages.at(-1)!.content));
+	const phaseLine = /- Ingest, the wiki write \(orchestrator only, solo edition\)/;
+	assert.match(loads[0], phaseLine, 'the first load carries the phase lines');
+	assert.equal(loads[1], skillAlreadyLoaded('phase-ingest'), 'a repeat before the fold points back at the first load');
 	const last = loads.at(-1)!;
-	assert.ok(!last.includes(skillAlreadyLoaded('spotlight')) && last.length > 1000, 'after the fold the skill loads in full');
+	assert.equal(loads.length, 3);
+	assert.ok(last !== skillAlreadyLoaded('phase-ingest') && last.length > 1000, 'after the fold the skill loads in full');
+	assert.match(last, phaseLine, 'and with its phase lines');
 });
 
 // The same for reads: a file read before a fold returns its text after it.

@@ -9,7 +9,7 @@ import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
 import { applyFixedRequestBody, parseFixedRequestBody, withoutHistoryReasoning } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
-import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillsFor, spawnableWorkers } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
 import { READ_TRUNCATED, writeConfined } from './tools/case-files.ts';
 import { typedTools } from './tools/index.ts';
 import { invokeSkillTool } from './tools/skills.ts';
@@ -50,7 +50,7 @@ function toolsFor(role: string): ToolDefinition[] {
 		scope: { reads: spec.reads, writes: spec.writes, denyReads: spec.denyReads, denyWrites: spec.denyWrites },
 	};
 	const tools: ToolDefinition[] = [
-		invokeSkillTool(skillsFor(composition, role), hosted),
+		invokeSkillTool(skillsFor(composition, role), hosted, (skill) => skillAdapterNote(skill, spec.tools, role === ORCHESTRATOR)),
 		...typedTools(context),
 	];
 	const edition = process.env.SPOTLIGHT_EDITION === 'newsroom' ? 'newsroom' : 'solo';
