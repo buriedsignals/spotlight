@@ -348,7 +348,9 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
             if len(found) == 1:
                 cite(found[0][0])
         if not found:
-            searched = ", ".join(named) or "no file named"
+            # Replay check on 8699f11d: with no file named this read "the text
+            # is not in no file named".
+            searched = ", ".join(named) if named else "the anchor_ref you gave (none was named)"
             raise WriteError(f"expression {label}: the text is not in {searched} nor in any other file of data/evidence-bundle.json, "
                              f"so it is not from a source you acquired. {ESCAPE}"
                              + _closest_lines(case, proposal["text"], named or [path for path in owners if readable is None or path in readable]))

@@ -54,7 +54,12 @@ export function checkedParams<T>(tool: string, schema: TSchema, params: unknown)
 	const reasons = [...Value.Errors(schema, params)]
 		.slice(0, 5)
 		.map((error) => `${error.instancePath || '/'} ${error.message}`);
-	throw new ToolArgumentError(`${tool}: arguments outside the schema (${reasons.join('; ')})`);
+	// Replay check on 8699f11d: schema refusals were the largest family with no
+	// next step. The refusal names the parameters the tool takes.
+	const properties = (schema as { properties?: Record<string, unknown>; required?: string[] }).properties;
+	const required = new Set((schema as { required?: string[] }).required ?? []);
+	const takes = properties ? ` ${tool} takes ${Object.keys(properties).map((key) => (required.has(key) ? key : `${key} (optional)`)).join(', ')}; call it again with those.` : '';
+	throw new ToolArgumentError(`${tool}: arguments outside the schema (${reasons.join('; ')}).${takes}`);
 }
 
 export function textResult(text: string) {

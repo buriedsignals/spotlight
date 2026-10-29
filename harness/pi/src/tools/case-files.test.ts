@@ -735,3 +735,16 @@ test('the analyst reads the brief and the methodology its task names', async (t)
 	assert.equal(await call('read_file', { path: 'brief-directions.txt' }), 'Who owns the company?');
 	assert.equal(await call('read_file', { path: 'data/methodology.json' }), '{"directions": []}');
 });
+
+// Replay check on 8699f11d: refusals with no next step. A schema refusal names
+// the parameters, a missing file points at list_files, a literal-text grep says
+// how to escape, and hash_files takes one path as a string.
+test('refusals name the next step, and hash_files takes one path as a string', async (t) => {
+	const { caseDir, call } = await fixture(t);
+	await mkdir(join(caseDir, 'research'), { recursive: true });
+	await writeFile(join(caseDir, 'research', 'a.md'), 'x');
+	await assert.rejects(call('write_file', { content: 'x' }), /write_file: arguments outside the schema \([^)]*\)\. write_file takes path, content; call it again with those\./);
+	await assert.rejects(call('read_file', { path: 'research/missing.md' }), /not found: research\/missing\.md\. Call list_files with a pattern/);
+	await assert.rejects(call('grep_files', { pattern: '## [TARRY, Jason](https://x' }), /put a backslash before \[ \] \( \)/);
+	assert.match(await call('hash_files', { paths: 'research/a.md' }), /research\/a\.md/);
+});

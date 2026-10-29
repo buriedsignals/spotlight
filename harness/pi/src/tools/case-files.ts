@@ -658,7 +658,7 @@ export function readTarget(caseDir: string, path: string, scope?: CaseScope): st
 		// U3 census stage 1 (0af4585b): the orchestrator asked for
 		// schemas/case-contract.json about 100 times; the schema has .schema.json.
 		const schema = /^schemas[\\/].+\.json$/.test(path) && !path.endsWith('.schema.json') ? path.replace(/\.json$/, '.schema.json') : '';
-		throw new Error(schema && existsSync(requested(CHECKOUT_ROOT, schema)) ? `not found: ${path}; the schema is ${schema}` : `not found: ${path}`);
+		throw new Error(schema && existsSync(requested(CHECKOUT_ROOT, schema)) ? `not found: ${path}; the schema is ${schema}` : `not found: ${path}. Call list_files with a pattern (for example "research/*") to see the files that exist.`);
 	}
 	if (!readable(caseDir, real, scope)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
 	return real;
@@ -1052,7 +1052,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				try {
 					expression = new RegExp(inline ? input.pattern.slice(4) : input.pattern, input.ignore_case || inline ? 'i' : '');
 				} catch (error) {
-					throw new Error(`grep_files: invalid regular expression: ${(error as Error).message}`);
+					throw new Error(`grep_files: invalid regular expression: ${(error as Error).message}. The pattern is a regular expression: for literal text, put a backslash before [ ] ( ) . * + ? or search a shorter plain word.`);
 				}
 				// A narrowed role may name a folder; only its files in scope are searched.
 				const start = input.path ? (reads ? scopedFolderOrFile(caseDir, input.path, scope) : readTarget(caseDir, input.path, scope)) : caseDir;
@@ -1090,7 +1090,9 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				'SHA-256 of case files exactly as stored on disk (raw bytes), the digest the evidence validators recompute for sha256, anchor_sha256 and original_artifact_sha256. Use it for any artifact you wrote or derived yourself (extracted text, saved API JSON, transcripts). Paths relative to the case folder; up to 50 per call.',
 			parameters: hashParams,
 			async execute(_id, params) {
-				const { paths } = checkedParams<{ paths: string[] }>('hash_files', hashParams, params);
+				// Replay check on 8699f11d: one path given as a string was refused.
+				const given = params as { paths?: unknown };
+				const { paths } = checkedParams<{ paths: string[] }>('hash_files', hashParams, typeof given?.paths === 'string' ? { ...given, paths: [given.paths] } : params);
 				return jsonResult(
 					paths.map((path) => {
 						const target = readTarget(caseDir, path, scope);
