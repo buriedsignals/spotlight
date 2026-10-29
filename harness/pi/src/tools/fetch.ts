@@ -25,8 +25,8 @@
 // `save_as`.raw the page itself; the agent gets the leads, never the page.
 // Without an RLM endpoint fetch returns the page as it always did.
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, dirname, resolve } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { engineEnv } from '../case-search.ts';
@@ -106,6 +106,54 @@ const sha256 = (text: string) => createHash('sha256').update(Buffer.from(text, '
 
 type ScrapeResult = { markdown?: string; source_url?: string; provider?: string; status_code?: number | null; title?: string | null; content_sha256?: string };
 
+// fc-stall scan: a failed fetch came back as crawl4ai's whole log, a
+// deprecation warning first and the cause last (195 hits), and the same
+// blocked page was fetched again and again (one Reuters URL 43 times). The
+// cause comes first and short, and a URL that failed in this case is not
+// fetched again: once if a site blocked it, twice otherwise.
+export function fetchFailure(detail: string): string {
+	const lines = detail.split('\n').map((line) => line.trim()).filter((line) => line && !/Warning\b|warnings\.warn\(|^\[(?:FETCH|SCRAPE|COMPLETE|INIT)\]/.test(line));
+	const cause = lines.find((line) => line.startsWith('scrape failed:')) ?? lines.find((line) => line.startsWith('[ERROR]')) ?? lines.at(-1) ?? 'no output';
+	return cause.replace(/^scrape failed:\s*/, '').slice(0, 400);
+}
+
+const blocked = (cause: string) => /bot-blocked|anti-bot|captcha|\b403\b|access denied/i.test(cause);
+type Failures = Record<string, Record<string, { count: number; cause: string }>>;
+
+function failuresPath(context: ToolContext): string | undefined {
+	const dataDir = context.env?.SPOTLIGHT_HARNESS_DATA;
+	return dataDir ? resolve(dataDir, 'work', 'fetch-failures.json') : undefined;
+}
+
+function readFailures(path: string | undefined): Failures {
+	if (!path) return {};
+	try {
+		return JSON.parse(readFileSync(path, 'utf8')) as Failures;
+	} catch {
+		return {};
+	}
+}
+
+export function priorFailure(context: ToolContext, url: string): string | undefined {
+	const seen = readFailures(failuresPath(context))[context.caseDir]?.[url];
+	if (!seen || (seen.count < 2 && !blocked(seen.cause))) return undefined;
+	return `fetch: ${url} already failed in this case (${seen.cause}); it is not fetched again. Try its archived copy (https://web.archive.org/web/${url}) with fetch, open it with browse, or use another source.`;
+}
+
+function recordFailure(context: ToolContext, url: string, cause: string): void {
+	const path = failuresPath(context);
+	if (!path) return;
+	const all = readFailures(path);
+	const forCase = (all[context.caseDir] ??= {});
+	forCase[url] = { count: (forCase[url]?.count ?? 0) + 1, cause };
+	try {
+		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+		writeFileSync(path, JSON.stringify(all), { mode: 0o600 });
+	} catch {
+		// A failure that cannot be recorded only means the next fetch is tried.
+	}
+}
+
 export function fetchTool(context: ToolContext): ToolDefinition {
 	return {
 		name: 'fetch',
@@ -122,6 +170,8 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			}
 			const rlm = rlmEndpoint(context.env);
 			if (rlm && !input.save_as) throw new Error('fetch: on this tier fetch needs save_as, so the raw page is kept beside its leads.');
+			const prior = priorFailure(context, input.url);
+			if (prior) throw new Error(prior);
 			const viaTor = anonymizedFetch(context.env);
 			const destination = viaTor ? checkURL(input.url).href : await publicDestination(input.url, signal);
 			// Outside Tor mode every connection the seam's browser makes goes through
@@ -130,16 +180,19 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			const proxy = viaTor ? undefined : await startEgressProxy();
 			let output: string;
 			try {
-				output = programOutput(
-					'fetch',
-					await runPython(context, ['-m', 'integrations.scraping', '--json', ...(viaTor ? ['--tor'] : []), '--', destination], {
-						// Engine's bsig checks the URL for protected sources in the install's wiki.
-						keys: [...SEAM_ENV, ...engineEnv(context.env)],
-						extra: { SPOTLIGHT_CONFIG: context.configPath, ...(proxy ? { SPOTLIGHT_BROWSER_PROXY: proxy.url } : {}) },
-						signal,
-						timeoutMs: 180_000,
-					}),
-				);
+				const run = await runPython(context, ['-m', 'integrations.scraping', '--json', ...(viaTor ? ['--tor'] : []), '--', destination], {
+					// Engine's bsig checks the URL for protected sources in the install's wiki.
+					keys: [...SEAM_ENV, ...engineEnv(context.env)],
+					extra: { SPOTLIGHT_CONFIG: context.configPath, ...(proxy ? { SPOTLIGHT_BROWSER_PROXY: proxy.url } : {}) },
+					signal,
+					timeoutMs: 180_000,
+				});
+				if (run.code !== 0) {
+					const cause = fetchFailure(run.stderr.trim() || run.stdout.trim());
+					recordFailure(context, input.url, cause);
+					throw new Error(`fetch failed: ${cause}`);
+				}
+				output = programOutput('fetch', run);
 			} finally {
 				await proxy?.close();
 			}

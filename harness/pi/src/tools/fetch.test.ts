@@ -193,3 +193,35 @@ test('fetch refuses a .json save_as and writes nothing', async (t) => {
 	await assert.rejects(call({ url: PAGE_URL, save_as: 'research/company-42.JSON' }), /http_get/);
 	assert.equal(existsSync(join(caseDir, 'research/company-42.JSON')), false);
 });
+
+// fc-stall items 4 and 13 (pq-gold-wikimedia on 52bf6183: one Reuters page
+// fetched 43 times; each failure was crawl4ai's log with a deprecation warning
+// first): the cause comes first, and a page a site blocked is not fetched again.
+test('a failed fetch says its cause first, and a page a site blocked is refused the next time with the next step', async (t) => {
+	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-fetch-')));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const caseDir = join(root, 'case');
+	await mkdir(join(caseDir, 'research'), { recursive: true });
+	const runs = join(root, 'runs.txt');
+	const stderr = [
+		"/x/crawl4ai/async_configs.py:853: UserWarning: The 'proxy' parameter is deprecated and will be removed in a future release. Use 'proxy_config' instead.",
+		'  warnings.warn("The \'proxy\' parameter is deprecated", UserWarning)',
+		'[FETCH]... ↓ https://news.example.com/story  | ✓ | ⏱: 0.92s',
+		'[ERROR]... × https://news.example.com/story  | Error: Blocked by anti-bot protection: DataDome captcha',
+		'scrape failed: crawl4ai was bot-blocked/empty on https://news.example.com/story and no FIRECRAWL_API_KEY is set',
+	].join('\n');
+	const seam = join(root, 'python');
+	await writeFile(seam, `#!${process.execPath}\nrequire('fs').appendFileSync(${JSON.stringify(runs)}, 'x');\nprocess.stderr.write(${JSON.stringify(stderr)});\nprocess.exit(3);\n`);
+	await chmod(seam, 0o755);
+	const tool = fetchTool({
+		caseDir,
+		writeRoot: caseDir,
+		python: seam,
+		configPath: join(root, 'config.json'),
+		env: { PATH: process.env.PATH, HOME: root, SPOTLIGHT_ANONYMIZE_FETCH: 'true', SPOTLIGHT_HARNESS_DATA: join(root, 'data') },
+	}) as ToolDefinition;
+	const fetchOnce = () => tool.execute('call', { url: 'https://news.example.com/story', save_as: 'story.md' }, undefined, undefined, undefined as never);
+	await assert.rejects(fetchOnce(), (error: Error) => error.message === 'fetch failed: crawl4ai was bot-blocked/empty on https://news.example.com/story and no FIRECRAWL_API_KEY is set');
+	await assert.rejects(fetchOnce(), /^Error: fetch: https:\/\/news\.example\.com\/story already failed in this case \(crawl4ai was bot-blocked[^)]*\); it is not fetched again\. Try its archived copy \(https:\/\/web\.archive\.org\/web\/https:\/\/news\.example\.com\/story\) with fetch, open it with browse, or use another source\.$/);
+	assert.equal(await readFile(runs, 'utf8'), 'x', 'the blocked page is fetched once');
+});

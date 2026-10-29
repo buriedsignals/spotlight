@@ -16,6 +16,7 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, agentSpec, loadComposition, deliverableFor } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
+import { registerFetchedPages } from './extension.ts';
 import { blockedStop, budgetedWebResult, CALL_BUDGET_SPENT, FACT_CHECK_DUE, FACT_CHECK_DUE_NOTICE, FACT_CHECK_DUE_REPEAT, FACT_CHECK_STOP, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded, UNPRODUCTIVE_NEXT, UNPRODUCTIVE_STOP } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 import { TASK_AFTER_FOLD, taskAfterFold } from './checkpoint.ts';
@@ -763,6 +764,27 @@ test('after a fold the first checklist comes back until data/fact-check.json is 
 	assert.equal(taskAfterFold(env, () => false, () => 'Next to check (1 of 1 …)'), `Check.\n\nYour deliverable: data/fact-check.json\nNext to check (3 of 3 …):\n- F1${pointer}`);
 	assert.equal(taskAfterFold(env, () => true, () => 'Next to check (1 of 1 …):\n- F3'), `Check.\n\nYour deliverable: data/fact-check.json\nNext to check (1 of 1 …):\n- F3${pointer}`);
 	assert.equal(taskAfterFold({}, () => false), undefined);
+	// fc-stall item 3: after a fold the task says what was already fetched.
+	const pages = 'Already fetched in this task (read the saved file; do not fetch again): https://a.example/x -> research/x.md.';
+	assert.equal(taskAfterFold(env, () => true, () => undefined, () => pages), `Check.\n\nYour deliverable: data/fact-check.json${pointer}\n\n${pages}`);
+});
+
+// fc-stall item 3 (incr-test2 sp98): fact-checker threads fetched the same pages
+// again after each fold. A worker's successful fetches are listed by URL, the
+// latest save per URL; a failed fetch is not.
+test('the pages a worker fetched are listed for the text after a fold, failures left out', () => {
+	const handlers = new Map<string, (event: Record<string, unknown>) => void>();
+	const pi = { on: (name: string, handler: (event: Record<string, unknown>) => void) => handlers.set(name, handler) } as unknown as Parameters<typeof registerFetchedPages>[0];
+	const fetched = registerFetchedPages(pi);
+	assert.equal(fetched(), undefined);
+	const run = (id: string, args: Record<string, unknown>, isError = false) => {
+		handlers.get('tool_execution_start')!({ toolName: 'fetch', toolCallId: id, args });
+		handlers.get('tool_execution_end')!({ toolName: 'fetch', toolCallId: id, isError });
+	};
+	run('1', { url: 'https://a.example/x', save_as: 'x.md' });
+	run('2', { url: 'https://b.example/y', save_as: 'y.md' }, true);
+	run('3', { url: 'https://a.example/x', save_as: 'x2.md' });
+	assert.equal(fetched(), 'Already fetched in this task (read the saved file; do not fetch again): https://a.example/x -> x2.md.');
 });
 
 // 12B r3 A2 ia: every assistant message in the requests carried its earlier

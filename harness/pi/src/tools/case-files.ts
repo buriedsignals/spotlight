@@ -9,7 +9,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
-import { CHECKOUT_ROOT, deliverableFor, nextCheckText, readCheckDocs } from '../roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, deliverableFor, nextCheckText, readCheckDocs } from '../roles.ts';
 import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
 import { ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
@@ -22,6 +22,27 @@ const SCHEMAS_DIR = resolve(CHECKOUT_ROOT, 'schemas');
 const AGENT_REFERENCES_DIR = resolve(CHECKOUT_ROOT, 'agents', 'references');
 const MAX_READ_CHARS = 200_000;
 export const READ_TRUNCATED = '[truncated: use offset and limit to read the rest]';
+
+// fc-stall scan (incr-test2 sp98): fact-checker threads folded at 50-54k after
+// whole reads of findings.json, evidence-bundle.json and source-expressions.json,
+// then started over. A worker's whole read of one of these, past this size,
+// returns the file's entries by json_pointer instead of the file.
+export const INDEXED_READ_CHARS = 12_000;
+const INDEXED_LISTS: Record<string, string> = { 'data/findings.json': 'findings', 'data/evidence-bundle.json': 'items', 'data/source-expressions.json': 'expressions' };
+
+export function readIndex(name: string, text: string): string | undefined {
+	const key = INDEXED_LISTS[name];
+	if (!key || text.length <= INDEXED_READ_CHARS) return undefined;
+	let rows: unknown;
+	try {
+		rows = (JSON.parse(text) as Record<string, unknown>)[key];
+	} catch {
+		return undefined;
+	}
+	if (!Array.isArray(rows)) return undefined;
+	const entries = rows.map((row, index) => `/${key}/${index} ${String((row as Record<string, unknown> | null)?.id ?? '?')}`);
+	return `${name} is ${text.length.toLocaleString('en-US')} characters, too long to read whole. Its ${key} by json_pointer: ${entries.join('; ')}. Read the ones you need with json_pointer, or a range with offset and limit.`;
+}
 const MAX_WRITE_BYTES = 20 * 1024 * 1024;
 const MAX_LIST = 500;
 const MAX_MATCHES = 200;
@@ -857,6 +878,8 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				}
 				const source = input.path === passages && keptPassages(passages) ? passages : readTarget(caseDir, input.path, scope);
 				const text = shown(source, readFileSync(source, 'utf8'));
+				const index = role !== ORCHESTRATOR && input.json_pointer === undefined && !input.offset && !input.limit ? readIndex(caseRelative(caseDir, source), text) : undefined;
+				if (index) return textResult(index);
 				let selected = text;
 				if (input.json_pointer !== undefined) {
 					selected = selectJsonPointer(text, input.json_pointer, input.path);
@@ -971,8 +994,11 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			async execute(_id, params) {
 				const input = checkedParams<{ pattern: string; path?: string; ignore_case?: boolean }>('grep_files', grepParams, params);
 				let expression: RegExp;
+				// fc-stall scan: a leading (?i) (87 hits, investigator and fact-checker)
+				// was refused as an invalid regex; it is the ignore-case flag.
+				const inline = /^\(\?i\)/.test(input.pattern);
 				try {
-					expression = new RegExp(input.pattern, input.ignore_case ? 'i' : '');
+					expression = new RegExp(inline ? input.pattern.slice(4) : input.pattern, input.ignore_case || inline ? 'i' : '');
 				} catch (error) {
 					throw new Error(`grep_files: invalid regular expression: ${(error as Error).message}`);
 				}

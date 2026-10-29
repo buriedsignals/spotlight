@@ -226,6 +226,8 @@ test('a write inside the case lands there and reads back', async (t) => {
 	assert.match(await call('read_file', { path: 'research/notes/a.md' }), /second/);
 	assert.match(await call('list_files', { pattern: 'research/**/*.md' }), /research\/notes\/a\.md/);
 	assert.match(await call('grep_files', { pattern: 'sec.nd' }), /research\/notes\/a\.md:1:second/);
+	// fc-stall item 5: a leading (?i), refused as invalid 87 times, is ignore case.
+	assert.match(await call('grep_files', { pattern: '(?i)SECOND' }), /research\/notes\/a\.md:1:second/);
 });
 
 test('a path copied from a skill with its {CASE_DIR}/ prefix lands in the case root', async (t) => {
@@ -680,4 +682,19 @@ test('a relative schemas/ path reads the checkout schema', async (t) => {
 	const text = await call('read_file', { path: 'schemas/methodology.schema.json' });
 
 	assert.equal(text, await readFile(join(CHECKOUT_ROOT, 'schemas', 'methodology.schema.json'), 'utf8'));
+});
+
+// fc-stall item 3 (incr-test2 sp98): fact-checker threads folded after whole
+// reads of the big case files and started over. A worker's whole read of one
+// past INDEXED_READ_CHARS returns its entries by json_pointer instead.
+test('a worker reading a big findings.json whole gets its entries by json_pointer, and reads one that way', async (t) => {
+	const { caseDir, call } = await fixture(t);
+	const findings = { findings: Array.from({ length: 40 }, (_, n) => ({ id: `F${n + 1}`, claim: `Claim ${n + 1}. ${'x'.repeat(400)}` })) };
+	await writeFile(join(caseDir, 'data', 'findings.json'), JSON.stringify(findings, null, 2));
+	const index = await call('read_file', { path: 'data/findings.json' });
+	assert.match(index, /^data\/findings\.json is [\d,]+ characters, too long to read whole\. Its findings by json_pointer: \/findings\/0 F1; \/findings\/1 F2; .* \/findings\/39 F40\. Read the ones you need with json_pointer, or a range with offset and limit\.$/);
+	assert.match(await call('read_file', { path: 'data/findings.json', json_pointer: '/findings/1' }), /"id": "F2"/);
+	assert.match(await call('read_file', { path: 'data/findings.json', offset: 1, limit: 3 }), /"findings"/);
+	await writeFile(join(caseDir, 'data', 'findings.json'), JSON.stringify({ findings: [{ id: 'F1', claim: 'Small.' }] }));
+	assert.match(await call('read_file', { path: 'data/findings.json' }), /"Small\."/, 'a small file reads whole');
 });

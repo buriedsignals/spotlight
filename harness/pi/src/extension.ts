@@ -140,7 +140,9 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	// The launcher sets the local tier's fold point in Pi's settings; the
 	// frontier tier keeps Pi's default threshold and summary.
 	const caseDir = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR')).caseDir;
-	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier', process.env, role !== ORCHESTRATOR, (path) => existsSync(resolve(caseDir, path)), role === 'fact-checker' ? () => nextCheckText(readCheckDocs(caseDir)) : undefined);
+	const fetched = role !== ORCHESTRATOR ? registerFetchedPages(pi) : () => undefined;
+	const remaining = role === 'fact-checker' ? () => nextCheckText(readCheckDocs(caseDir)) : undefined;
+	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier', process.env, role !== ORCHESTRATOR, (path) => existsSync(resolve(caseDir, path)), remaining, fetched);
 	const guarded = registerLoopGuard(pi, tier12b && role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
 	// Ending the orchestrator would end the case, so only workers are stopped.
 	const streakGuarded = tier12b && role !== ORCHESTRATOR ? registerRefusalStreak(pi, `The ${role} ${REFUSAL_STOP}`) : (tool: ToolDefinition) => tool;
@@ -202,6 +204,30 @@ function registerHyphenNames(pi: ExtensionAPI, names: Set<string>): void {
 		});
 		return renamed ? { message: { ...event.message, content } as typeof event.message } : undefined;
 	});
+}
+
+// fc-stall scan (incr-test2 sp98): after a fold, fact-checker threads fetched
+// the same Companies House pages again (3x). The pages a worker saved this run,
+// by URL, for the text that comes back after a fold.
+const FETCHED_SHOWN = 12;
+export function registerFetchedPages(pi: ExtensionAPI): () => string | undefined {
+	const saved = new Map<string, string>();
+	const started = new Map<string, { url?: unknown; save_as?: unknown }>();
+	pi.on('tool_execution_start', (event) => {
+		if (event.toolName === 'fetch') started.set(event.toolCallId, (event.args ?? {}) as { url?: unknown; save_as?: unknown });
+	});
+	pi.on('tool_execution_end', (event) => {
+		const args = started.get(event.toolCallId);
+		started.delete(event.toolCallId);
+		if (!args || event.isError || typeof args.url !== 'string' || typeof args.save_as !== 'string') return;
+		saved.delete(args.url);
+		saved.set(args.url, args.save_as);
+	});
+	return () => {
+		if (saved.size === 0) return undefined;
+		const pages = [...saved].slice(-FETCHED_SHOWN).map(([url, path]) => `${url} -> ${path}`);
+		return `Already fetched in this task (read the saved file; do not fetch again): ${pages.join('; ')}.`;
+	};
 }
 
 // Skill bodies share the budget (LFM3 e1 on Osaurus, 7513e421: a planning
