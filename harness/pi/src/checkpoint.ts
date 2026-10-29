@@ -9,7 +9,7 @@
 // summary with a Spotlight checkpoint written by the session model on the
 // same route, or by the RLM when the harness has one (the e4b that distills
 // every fetch, on an endpoint the operator runs). Frontier tier: Pi's own threshold and summary, only with the
-// policy applied.
+// policy applied. On every tier a worker's fold ends with its task.
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { compact, convertToLlm, serializeConversation } from '@earendil-works/pi-coding-agent';
 import { applyFixedRequestBody } from './provider-policy.ts';
@@ -73,12 +73,28 @@ function policy(fixedBody: FixedBody) {
 	};
 }
 
-export function registerCompaction(pi: ExtensionAPI, fixedBody: FixedBody, local: boolean, env: NodeJS.ProcessEnv = process.env): void {
-	if (local) registerCheckpoint(pi, fixedBody, env);
-	else if (fixedBody) registerPolicyOnDefaultSummary(pi, fixedBody);
+// tools-da on b0d862e2 (DeepSeek V4.1 Flash pilot, 0 of 6 accepted): a fold
+// replaces a worker's first message, its task, and the checkpoint keeps none of
+// the task's fields (MODE, SOURCE_EXPRESSION_MODE, the direction, the
+// deliverable line). The investigator then re-read the methodology 25 times and
+// the case contract 22 times to rebuild them. A worker has one task per
+// process, so every fold, on every tier, ends with that task word for word.
+export const TASK_AFTER_FOLD = 'Your task, word for word as it was given (the checkpoint above replaces the message that carried it):';
+
+export function registerCompaction(pi: ExtensionAPI, fixedBody: FixedBody, local: boolean, env: NodeJS.ProcessEnv = process.env, worker = false): void {
+	let task: string | undefined;
+	if (worker) {
+		pi.on('before_agent_start', (event) => {
+			if (task === undefined && event.messageType === 'user') task = event.prompt;
+			return undefined;
+		});
+	}
+	const withTask = (summary: string) => (task ? `${summary}\n\n${TASK_AFTER_FOLD}\n\n${task}` : summary);
+	if (local) registerCheckpoint(pi, fixedBody, env, withTask);
+	else if (fixedBody || worker) registerPolicyOnDefaultSummary(pi, fixedBody, withTask);
 }
 
-function registerPolicyOnDefaultSummary(pi: ExtensionAPI, fixedBody: FixedBody): void {
+function registerPolicyOnDefaultSummary(pi: ExtensionAPI, fixedBody: FixedBody, withTask: (summary: string) => string): void {
 	pi.on('session_before_compact', async (event, ctx: ExtensionContext) => {
 		if (!ctx.model) return { cancel: true };
 		const guard = policy(fixedBody);
@@ -94,7 +110,7 @@ function registerPolicyOnDefaultSummary(pi: ExtensionAPI, fixedBody: FixedBody):
 				(model, context, options) => ctx.modelRegistry.streamSimple(model, context, { ...options, onPayload: guard.onPayload }),
 			);
 			if (guard.blocked()) throw new Error('the provider privacy policy could not apply to the summary request');
-			return { compaction: result };
+			return { compaction: { ...result, summary: withTask(result.summary) } };
 		} catch (error) {
 			log(`summary failed, compaction skipped: ${(error as Error).message}`);
 			return { cancel: true };
@@ -102,13 +118,16 @@ function registerPolicyOnDefaultSummary(pi: ExtensionAPI, fixedBody: FixedBody):
 	});
 }
 
-function registerCheckpoint(pi: ExtensionAPI, fixedBody: FixedBody, env: NodeJS.ProcessEnv): void {
+function registerCheckpoint(pi: ExtensionAPI, fixedBody: FixedBody, env: NodeJS.ProcessEnv, withTask: (summary: string) => string): void {
 	pi.on('session_before_compact', async (event, ctx) => {
 		const { preparation, signal } = event;
 		const messages = [...preparation.messagesToSummarize, ...preparation.turnPrefixMessages];
-		const previous = preparation.previousSummary
-			? `<previous-checkpoint>\n${preparation.previousSummary}\n</previous-checkpoint>\n\n`
-			: '';
+		// r5 norway on cc8710fd: with the task inside the previous checkpoint, the
+		// session model answered the checkpoint request with read_file calls and the
+		// fold was skipped (15 times against 4 on main). The task is attached
+		// again after the new checkpoint, so the request never carries it.
+		const earlier = preparation.previousSummary?.split(`\n\n${TASK_AFTER_FOLD}\n\n`)[0];
+		const previous = earlier ? `<previous-checkpoint>\n${earlier}\n</previous-checkpoint>\n\n` : '';
 		const text = `<conversation>\n${serializeConversation(convertToLlm(messages))}\n</conversation>\n\n${previous}${CHECKPOINT_PROMPT}`;
 		try {
 			// Sensitive mode keeps case text away from the RLM, as it does for run_rlm.
@@ -133,7 +152,7 @@ function registerCheckpoint(pi: ExtensionAPI, fixedBody: FixedBody, env: NodeJS.
 			const summary = written.kept;
 			return {
 				compaction: {
-					summary: `${summary}${STATE_NOTE}`,
+					summary: withTask(`${summary}${STATE_NOTE}`),
 					firstKeptEntryId: preparation.firstKeptEntryId,
 					tokensBefore: preparation.tokensBefore,
 					usage,
