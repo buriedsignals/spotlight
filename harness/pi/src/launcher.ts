@@ -5,7 +5,7 @@
 // chat down in order, SIGTERM is the fallback, and no pi child outlives it.
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { ConfigError, RouteRefused, checkNewsroomInstall, checkRouteSecrets, childEnv, parseLaunchArgs, piSettings, readConfig, researchEnv, routeFor, resolverEnv, secretValues } from './config.ts';
 import {
@@ -213,11 +213,12 @@ function forwardStderr(harness: Harness, child: ChildProcess): void {
 
 // Called right before each pi process starts: it also writes that process's
 // Pi settings (the local tier's fold point) into its configuration folder.
-function processLaunch(harness: Harness, role: string, worker?: WorkerContext, direction?: { tag: string; budget: number }) {
+function processLaunch(harness: Harness, role: string, worker?: WorkerContext, direction?: { tag: string; budget: number }, fold: Record<string, string> = {}) {
 	const route = routeFor(harness.config);
 	const spec = agentSpec(harness.composition, role);
 	const env = childEnv(harness.config, harness.composition, role, process.env);
 	if (direction) Object.assign(env, { SPOTLIGHT_DIRECTION: direction.tag, SPOTLIGHT_CALL_BUDGET: String(direction.budget) });
+	Object.assign(env, fold);
 	writePiSettings(env.PI_CODING_AGENT_DIR, piSettings(harness.config));
 	return {
 		command: process.execPath,
@@ -279,19 +280,27 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 				return queue.run(async () => {
 					await activateNewCase(harness, request.agent, controller.signal);
 					owed = await deliverable(harness, request.agent, request.task);
-					const run = async (task: string, due: Deliverable | undefined, direction?: { tag: string; budget: number }) =>
-						runWorker(
+					const run = async (task: string, due: Deliverable | undefined, direction?: { tag: string; budget: number }) => {
+						const worker = await finalTask(harness, request.agent, task, controller.signal, due);
+						const kept = keepPassages(harness, request.agent, worker.passages);
+						const fold = {
+							SPOTLIGHT_TASK_HEADER: worker.header,
+							...(worker.start ? { SPOTLIGHT_TASK_START: worker.start } : {}),
+							...(kept ? { SPOTLIGHT_TASK_PASSAGES: kept } : {}),
+						};
+						return runWorker(
 							{
-								...processLaunch(harness, request.agent, await workerContext(harness, request.agent, request.task), direction),
+								...processLaunch(harness, request.agent, await workerContext(harness, request.agent, request.task), direction, fold),
 								onSpawn: (child) => {
 									track(harness, child);
 									serveEditorial(harness, child, request.agent, running);
 								},
 								onStderr: (child) => forwardStderr(harness, child),
 							},
-							await finalTask(harness, request.agent, task, controller.signal, due),
+							worker.text,
 							controller.signal,
 						);
+					};
 					// On a local tier, an investigation task on a plan of two or
 					// more directions runs one worker per direction (directions.ts).
 					// The frontier tier's window holds every direction at once.
@@ -406,7 +415,7 @@ async function deliverable(harness: Harness, role: string, task: string): Promis
 	const step = (status.research as { resume_at?: unknown } | undefined)?.resume_at;
 	const owed = deliverableFor(role, String(status.phase ?? ''), task, typeof step === 'string' ? step : undefined);
 	const start = role === 'fact-checker' ? factCheckStart(harness.active.caseDir) : '';
-	return owed && start ? { ...owed, line: `${owed.line}\n${start}` } : owed;
+	return owed && start ? { ...owed, start } : owed;
 }
 
 // U3 census (84674fd9): fact-checkers rebuilt the file's structure by hand
@@ -451,7 +460,14 @@ function withRespawn(harness: Harness, role: string, message: string, owed: Deli
 // investigator and the fact-checker. D9 is checked again on that final text;
 // passages that would name what the fact-checker may not see are left out and
 // the task goes as asked.
-async function finalTask(harness: Harness, role: string, task: string, signal: AbortSignal, owed?: Deliverable): Promise<string> {
+// What a worker gets, and what comes back after a fold (checkpoint.ts): the
+// task's own lines without the case or wiki passages, the deliverable's
+// structure apart, and the passages, which the launcher keeps in a case file.
+type WorkerTask = { text: string; header: string; start?: string; passages?: string };
+
+async function finalTask(harness: Harness, role: string, task: string, signal: AbortSignal, owed?: Deliverable): Promise<WorkerTask> {
+	const line = owed ? `\n\n${owed.line}` : '';
+	const start = owed?.start ? `\n${owed.start}` : '';
 	const withCase = await withCasePassages(role, task, {
 		caseDir: harness.active.caseDir,
 		casesRoot: harness.active.casesRoot,
@@ -471,10 +487,30 @@ async function finalTask(harness: Harness, role: string, task: string, signal: A
 	});
 	if (withPassages !== task && isolationRefusal(role, withPassages)) {
 		harness.log('case passages left out: they name material the fact-checker works without');
-		return owed ? `${task}\n\n${owed.line}` : task;
+		return { text: `${task}${line}${start}`, header: `${task}${line}`, start: owed?.start };
 	}
 	const withAnomaly = await withAnomalyBlock(role, withPassages, anomalyOptions(harness, signal));
-	return owed ? `${withAnomaly}\n\n${owed.line}` : withAnomaly;
+	// Each step appends its block, so the passages and the anomaly block are the added text.
+	const passages = withPassages.startsWith(task) ? withPassages.slice(task.length).trim() : '';
+	const anomaly = withAnomaly.startsWith(withPassages) ? withAnomaly.slice(withPassages.length) : '';
+	return { text: `${withAnomaly}${line}${start}`, header: `${task}${anomaly}${line}`, start: owed?.start, passages: passages || undefined };
+}
+
+// The passages a worker started with, kept once in a harness-written case
+// file so a fold can point at them instead of carrying them (wave 1 on
+// 52bf6183: about 15k of the fact-checker's 21.8k-character task).
+let passagesWritten = 0;
+function keepPassages(harness: Harness, role: string, passages: string | undefined): string | undefined {
+	if (!passages) return undefined;
+	const path = `data/worker-passages/${role}-${Date.now()}-${++passagesWritten}.md`;
+	try {
+		mkdirSync(resolve(harness.active.caseDir, 'data', 'worker-passages'), { recursive: true, mode: 0o700 });
+		writeFileSync(resolve(harness.active.caseDir, path), `${passages}\n`, { mode: 0o600 });
+		return path;
+	} catch (error) {
+		harness.log(`the ${role}'s case passages could not be kept: ${(error as Error).message}`);
+		return undefined;
+	}
 }
 
 function anomalyOptions(harness: Harness, signal?: AbortSignal) {

@@ -81,7 +81,21 @@ function policy(fixedBody: FixedBody) {
 // process, so every fold, on every tier, ends with that task word for word.
 export const TASK_AFTER_FOLD = 'Your task, word for word as it was given (the checkpoint above replaces the message that carried it):';
 
-export function registerCompaction(pi: ExtensionAPI, fixedBody: FixedBody, local: boolean, env: NodeJS.ProcessEnv = process.env, worker = false): void {
+// wave 1 on 52bf6183: the fact-checker's whole task came back after each fold,
+// 21.8k characters median (about 15k of case passages, 5k of the fact-check
+// structure), and its post-fold prompt was 42.7k tokens. What comes back is the
+// task's own lines (SPOTLIGHT_TASK_HEADER, from the launcher), the structure
+// only while the file it starts is not written yet, and a pointer to the
+// passages' case file.
+export function taskAfterFold(env: NodeJS.ProcessEnv, written: (path: string) => boolean): string | undefined {
+	const header = env.SPOTLIGHT_TASK_HEADER;
+	if (!header) return undefined;
+	const start = env.SPOTLIGHT_TASK_START && !written('data/fact-check.json') ? `\n${env.SPOTLIGHT_TASK_START}` : '';
+	const passages = env.SPOTLIGHT_TASK_PASSAGES ? `\n\nCase passages for this task: ${env.SPOTLIGHT_TASK_PASSAGES}; read it if you need them again.` : '';
+	return `${header}${start}${passages}`;
+}
+
+export function registerCompaction(pi: ExtensionAPI, fixedBody: FixedBody, local: boolean, env: NodeJS.ProcessEnv = process.env, worker = false, written: (path: string) => boolean = () => false): void {
 	let task: string | undefined;
 	if (worker) {
 		pi.on('before_agent_start', (event) => {
@@ -89,7 +103,10 @@ export function registerCompaction(pi: ExtensionAPI, fixedBody: FixedBody, local
 			return undefined;
 		});
 	}
-	const withTask = (summary: string) => (task ? `${summary}\n\n${TASK_AFTER_FOLD}\n\n${task}` : summary);
+	const withTask = (summary: string) => {
+		const reattached = worker ? (taskAfterFold(env, written) ?? task) : undefined;
+		return reattached ? `${summary}\n\n${TASK_AFTER_FOLD}\n\n${reattached}` : summary;
+	};
 	if (local) registerCheckpoint(pi, fixedBody, env, withTask);
 	else if (fixedBody || worker) registerPolicyOnDefaultSummary(pi, fixedBody, withTask);
 }

@@ -296,7 +296,8 @@ export function workerMode(phase: string, task: string): 'PLANNING' | 'EXECUTION
 // Every spawn now ends with the role's fixed deliverable, from its
 // return_contract in agents/*.md: the files it must write and the line that
 // says so. A correction task names its own targets and gets none.
-export type Deliverable = { files: string[]; line: string };
+// `start` is a structure to begin the file from (the fact-check's), sent after the line.
+export type Deliverable = { files: string[]; line: string; start?: string };
 const AMENDMENT_FILES: Record<string, string> = {
 	suggestions: 'data/research-suggestions.json',
 	amendment: 'data/methodology-amendment.json',
