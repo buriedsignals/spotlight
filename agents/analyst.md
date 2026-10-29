@@ -91,13 +91,16 @@ parts that need judgment:
   finding's `finding_id`, the original-language passage it was extracted from
   (`origin_expression_id`), a `proposition` and `statement`, and `attributed`
   set to `true` when the claim reports what someone said or holds (the
-  builder then requires a source position for that finding). Name the
+  builder then requires a source position for that finding). A claim that
+  states what the finding itself asserts has `attributed: false`. Name the
   `fact_check_id` when the finding has more than one fact-check row.
 - `events` and `story_arcs`, with their memberships (`claim_keys`,
-  `event_keys`).
+  `event_keys`). Both are optional. A story arc's `event_keys` name events in
+  this file, never claim keys; with no events, leave `story_arcs` out.
 - `model`: the exact model id you run on.
 
-Keys are your own handles (`c1`, `e1`, `a1`); record ids never appear. Write
+Check the proposal against `schemas/knowledge-proposal.schema.json` before you
+finish. Keys are your own handles (`c1`, `e1`, `a1`); record ids never appear. Write
 no evidence, passage, link, position or assessment records: the builder adds
 them from the case, assigns ids and versions, and validates. It writes
 `data/knowledge-batch.json` separately, so a rebuild after review edits never

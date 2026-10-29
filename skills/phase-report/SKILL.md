@@ -36,7 +36,10 @@ The member records the decision on the review page, after the draft exists
 for (a). Open the page: `open_review` in the Pi harness, or the
 `open_spotlight_review` tool where the review server is registered
 (`harness/review/README.md`). End the turn. When the member says they are
-done, call `spotlight_resolve` again; never record the decision yourself.
+done, call `spotlight_resolve` again; never record the decision yourself. If
+the page is refused because the draft does not validate, fix the named fields
+in `data/report-draft.json`; after a few refusals, stop and tell the member
+what the check still reports.
 
 Only in a runtime with neither tool, apply the transition through the
 command-line adapter (its `direct` channel) after the user answers in chat:
