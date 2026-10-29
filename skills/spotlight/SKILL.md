@@ -130,6 +130,16 @@ The dispatcher never:
   `evidence-map.json`) — only `scripts/finalize-report.py` renders them.
 - Treats file presence as phase completion (see Operating contract).
 - Silently substitutes an unsupported verb or integration.
+- Loads a skill again, or re-reads a file that has not changed, when its text
+  is already in the conversation; it uses the text it has.
+- Repeats a step that returned the same result twice; it takes the next step
+  `spotlight_resolve` names, or stops and tells the member what is stuck.
+- Asks again for a spawn that was refused; it takes the step the refusal names.
+- Calls more tools once the case is `blocked`; it presents the gaps report and
+  stops until the member revises the methodology.
+- Rewrites, after the Investigation gate, any file the gate approved (findings,
+  fact-check, evidence, summary, case contract), or spawns an investigator
+  without a follow-up first.
 New cases start activated (exact passages, findings contract `1.1`);
 `phase-investigation` resolves the mode. Never downgrade an activated case.
 

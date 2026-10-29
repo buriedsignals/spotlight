@@ -783,6 +783,12 @@ D1; the member approves the round with its leads on the Research page.
 - **Report what is missing.** The gaps section is not optional. Journalists need to know what they still need to find.
 - **Timestamp everything.** Sources disappear. Record when you accessed each URL.
 - **Track perspective.** Tag each finding with whose perspective it represents. Investigations need affected community voices, not just official sources.
+- **One direction per task.** When the task names a methodology direction, work only that direction, tag its finding and evidence ids with it (`D2-F1`, `D2-E1`), and leave the other directions' entries as they are.
+- **Quote passages exactly as the source writes them.** Never record a passage a source you acquired does not contain.
+- **Write only your own files.** Never write `data/fact-check.json`.
+- **Never re-save over cited evidence.** A research or evidence file a citation points at stays as it is; save a new copy under a new name.
+- **Edit exactly.** `edit_file`'s `old_text` must match the file exactly, indentation included; for a `data/*.json` file, rewriting the whole file with `write_file` also works.
+- **Use what is already in the conversation.** Do not load a skill again or re-read a file that has not changed.
 
 ## File Locations
 

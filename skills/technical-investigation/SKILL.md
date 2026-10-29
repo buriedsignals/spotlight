@@ -46,6 +46,10 @@ When this skill is selected during methodology, include `technical-investigation
 }
 ```
 
+`reference` is the bare file name of the one tier reference, never a
+`references/` path: `<method>-compact.md` on the 12b tier, `<method>.md`
+otherwise, and `verified-indicator-export.md` on every tier.
+
 This records method provenance, not evidence for a factual claim.
 
 ## Non-negotiable Method

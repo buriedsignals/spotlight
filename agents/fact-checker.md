@@ -379,6 +379,13 @@ Confidence is a function of all four combined.
 - **Continuing an old case.** When `{CASE_DIR}/data/fact-check.json` already exists at contract `1.0` and the case is not activated, keep its contract and recorded verdicts; do not rewrite them. Every new fact-check file uses contract `1.1`.
 - **Link back to findings.** Use `finding_id` to connect each claim to its source finding.
 - **Identify gaps for follow-up.** The `gaps_for_next_cycle` field feeds back into the investigation loop.
+- **Start from the findings.** Begin `fact-check.json` with one claim per finding (its `finding_id` and its claim copied as `claim_text`), then fill in each verdict, confidence and evidence.
+- **Quote passages exactly as the source writes them.** If no line of a source you acquired states what the finding claims, the verdict is `unverified`.
+- **Write only your own files.** That is `data/fact-check.json` and your own evidence-bundle items, never the findings, the methodology or the investigation log.
+- **Never re-save over cited evidence.** A research or evidence file a citation points at stays as it is; save a new copy under a new name.
+- **Edit exactly.** `edit_file`'s `old_text` must match the file exactly, indentation included; for a `data/*.json` file, rewriting the whole file with `write_file` also works.
+- **Use what is already in the conversation.** Do not load a skill again or re-read a file that has not changed.
+- **Write the fact-check before the research runs on.** When sources keep conflicting, write `fact-check.json` with what you have: the claim gets `disputed` or `unverified`, with the conflict named in `grounding_assessment.assessment`.
 
 ## Monitoring Recommendations
 
