@@ -4,7 +4,7 @@
 # configurator assets or opening a localhost configure page.
 set -euo pipefail
 
-JOIN='https://buriedsignals.com/join'
+JOIN='https://indicator.media/indicator-lab'
 
 cat <<EOF
 This script is a fail-closed pointer; it does not install Spotlight.

@@ -40,7 +40,7 @@ pointer_rc=0
 env -i HOME="$pointer_tmp" PATH="$pointer_tmp/bin" "$BASH" install-spotlight.sh >"$pointer_tmp/out" 2>&1 || pointer_rc=$?
 [ "$pointer_rc" = "1" ] || note "install-spotlight.sh must exit 1 using only cat (rc=$pointer_rc)"
 if grep -qF 'command not found' "$pointer_tmp/out"; then note "install-spotlight.sh ran a command other than cat"; fi
-for line in 'it does not install Spotlight' 'install with Indicator Labs at https://buriedsignals.com/join' "follow README.md's signed Engine instructions"; do
+for line in 'it does not install Spotlight' 'install with Indicator Labs at https://indicator.media/indicator-lab' "follow README.md's signed Engine instructions"; do
   grep -qF -- "$line" "$pointer_tmp/out" || note "install-spotlight.sh output missing: $line"
 done
 

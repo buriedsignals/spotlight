@@ -1,0 +1,75 @@
+/* Shared property signature. Radar from Indicator Workshop closing-signal.js. */
+.bs-property-signal {
+  --bs-reveal-height: 240px;
+  --bs-reveal-radius: 24px;
+  position: relative; z-index: 20; isolation: isolate; box-sizing: border-box;
+  width: 100%; height: calc(var(--bs-reveal-height) + var(--bs-reveal-radius));
+  margin-top: calc(-1 * var(--bs-reveal-radius)); padding-top: var(--bs-reveal-radius);
+  overflow: clip; color: #f5f0e6;
+  /* Cut around the page's lower corners without wrapping or moving its DOM. */
+  -webkit-mask:
+    radial-gradient(circle at 100% 0, transparent 23px, #000 24px) top left / 24px 24px no-repeat,
+    radial-gradient(circle at 0 0, transparent 23px, #000 24px) top right / 24px 24px no-repeat,
+    linear-gradient(#000 0 0) bottom / 100% calc(100% - 24px) no-repeat;
+  mask:
+    radial-gradient(circle at 100% 0, transparent 23px, #000 24px) top left / 24px 24px no-repeat,
+    radial-gradient(circle at 0 0, transparent 23px, #000 24px) top right / 24px 24px no-repeat,
+    linear-gradient(#000 0 0) bottom / 100% calc(100% - 24px) no-repeat;
+  font-family: ui-monospace, 'Space Mono', monospace; font-size: 11px;
+  line-height: 1.4; letter-spacing: .09em; text-transform: uppercase;
+}
+.bs-property-signal__content {
+  position: relative; isolation: isolate; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  gap: 16px; height: var(--bs-reveal-height); padding: 24px 16px;
+  background: #16191b; transform: translateY(var(--bs-reveal-offset, 0px));
+}
+.bs-property-signal__content::before {
+  content: ''; position: absolute; z-index: -2;
+  inset: calc(-1 * var(--bs-reveal-radius)) 0 0; background: #16191b;
+}
+.bs-property-signal::after {
+  content: ''; position: absolute; z-index: 2; pointer-events: none;
+  top: var(--bs-reveal-radius); left: 0; right: 0; height: 42px;
+  background: linear-gradient(rgb(0 0 0 / .45), transparent);
+}
+.bs-property-signal .bs-property-signal__radar {
+  position: absolute; z-index: -1; bottom: 0; left: 50%;
+  width: min(100%, 960px); aspect-ratio: 2; transform: translateX(-50%);
+  pointer-events: none; color: #f5f2ed;
+  mask-image: linear-gradient(to bottom, transparent, #000 35%);
+}
+.bs-property-signal__radar > svg { display: block; width: 100%; height: 100%; }
+.bs-property-signal a {
+  box-sizing: border-box; color: inherit; text-decoration: none;
+  font: inherit; letter-spacing: inherit; text-transform: inherit;
+}
+.bs-property-signal .bs-property-signal__owner { color: #d4a853; }
+.bs-property-signal__switch {
+  display: flex; gap: 4px; padding: 4px; background: #16191b;
+  border: 1px solid #55574f; border-radius: 3px;
+}
+.bs-property-signal__switch a {
+  display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 8px 12px;
+}
+.bs-property-signal__switch a[aria-current] { background: #292c2c; }
+.bs-property-signal a:hover { color: #d4a853; }
+.bs-property-signal a:focus-visible { outline: 2px solid #d4a853; outline-offset: 4px; }
+@media (max-width: 480px) { .bs-property-signal { --bs-reveal-height: 200px; } }
+
+/* Native viewport anchoring for ordinary pages; Mycroft keeps its CSS3D path. */
+html:has(.bs-property-signal--fixed) { background-color: #16191b; }
+.bs-property-signal--fixed { overflow: visible; -webkit-mask: none; mask: none; }
+.bs-property-signal--fixed .bs-property-signal__content {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: calc(var(--bs-reveal-height) + var(--bs-reveal-radius)); transform: none;
+  clip-path: inset(max(0px, calc(var(--bs-reveal-cut, 100vh) - 24px)) 0 0);
+  -webkit-mask:
+    radial-gradient(circle at 100% 0, transparent 23px, #000 24px) left top calc(var(--bs-reveal-cut, 100vh) - 24px) / 24px 24px no-repeat,
+    radial-gradient(circle at 0 0, transparent 23px, #000 24px) right top calc(var(--bs-reveal-cut, 100vh) - 24px) / 24px 24px no-repeat,
+    linear-gradient(#000 0 0) left top var(--bs-reveal-cut, 100vh) / 100% 100% no-repeat;
+  mask:
+    radial-gradient(circle at 100% 0, transparent 23px, #000 24px) left top calc(var(--bs-reveal-cut, 100vh) - 24px) / 24px 24px no-repeat,
+    radial-gradient(circle at 0 0, transparent 23px, #000 24px) right top calc(var(--bs-reveal-cut, 100vh) - 24px) / 24px 24px no-repeat,
+    linear-gradient(#000 0 0) left top var(--bs-reveal-cut, 100vh) / 100% 100% no-repeat;
+}

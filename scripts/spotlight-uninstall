@@ -3,7 +3,7 @@
 # Indicator Labs; this script must not apply a cached bootstrap.
 set -euo pipefail
 
-JOIN='https://buriedsignals.com/join'
+JOIN='https://indicator.media/indicator-lab'
 
 setup="$HOME/.config/spotlight/setup-config.env"
 if [ -f "$setup" ]; then

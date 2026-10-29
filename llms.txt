@@ -1,10 +1,19 @@
 # Spotlight
 
-> Runtime-agnostic OSINT investigation system for journalists. Spotlight gives an agent runtime a reporting methodology, an investigator and fact-checker loop, human review gates, and a reusable case archive.
+> An investigation workflow for AI agents, built for journalists. Spotlight takes a reporting lead through an approved methodology, evidence gathering, independent fact-checking, and editorial review, keeping the work in a local case folder.
+
+## When to use it
+
+Give Spotlight a lead, question, URL, document, or entity when you need to develop an investigation. It works with you on the brief and methodology, gathers and saves sources, runs investigation and independent fact-checking cycles, and brings the findings back for editorial review.
+
+**Input:** a reporting lead and an approved scope. **Output:** a local case folder containing evidence, source-linked findings, fact-check verdicts, gaps, and review/report artifacts. A completed agent run is not permission to publish.
+
+Spotlight owns the casework. Navigator helps find methods and tools; Scoutpost monitors sources over time; Anomaly provides data-source context and deterministic checks; Splash produces publication visuals from approved reporting. Each integration depends on the installed release and its configured capabilities.
 
 ## Start here
 
-- [Install](https://spotlight.buriedsignals.com/setup.html): install landing page — one command (`curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash`); configuration happens in a local configurator on the journalist's machine
+- [Managed setup](https://indicator.media/indicator-lab): Indicator Lab membership and guided installation
+- [Installation reference](https://github.com/buriedsignals/spotlight#install): signed Engine installation or the documented source-only route; follow the current release instructions
 - [Landing page](https://spotlight.buriedsignals.com/): public product overview
 - [Documentation index](https://spotlight.buriedsignals.com/docs/README.md): operator manual and reading order
 - [Runtime contract](https://spotlight.buriedsignals.com/AGENTS.md): machine-readable verb registry, agent manifests, skill registry, and case structure
@@ -66,8 +75,8 @@
 
 ## Runtime contract
 
-- The fixed verb registry is: `fetch`, `search`, `read-file`, `write-file`, `edit-file`, `list-files`, `grep-files`, `execute-shell`, `spawn-agent`, `wait-agent`, `invoke-skill`, `query-vault`, `vault-write`.
-- `fetch` and `search` are backed by `firecrawl`.
+- Read the [runtime contract](https://spotlight.buriedsignals.com/AGENTS.md) for the supported verbs, adapter requirements, and agent boundaries.
+- Source acquisition depends on the configured runtime and providers; see the current integration documentation.
 - `query-vault` searches the member wiki through Engine's `bsig wiki search`.
 - `vault-write` is retired with the 1.0 knowledge graph.
 

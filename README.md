@@ -324,7 +324,7 @@ Two routes, one decision:
 **Buried Signals Engine (`bsig`) is Spotlight's only managed installation authority.**
 Indicator Labs submits the same Engine plans while adding guided runtime/model
 selection, credential prompts, repair, and automatic updates for
-[members](https://buriedsignals.com/join).
+[members](https://indicator.media/indicator-lab).
 
 For agent-led manual setup, fetch the signed Engine descriptor at:
 
