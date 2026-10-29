@@ -406,9 +406,18 @@ def _build(case: Path, models: dict[str, str], draft: bool, proposal: Any, findi
         # The assessment comes from the fact-check row for this claim.
         candidates = [r for r in rows if r.get("finding_id") == finding_id]
         if "fact_check_id" in claim:
-            candidates = [r for r in candidates if str(r.get("id")) == str(claim["fact_check_id"])]
+            matching = [r for r in candidates if r.get("id") is not None and str(r["id"]) == str(claim["fact_check_id"])]
+            if not matching:
+                if len(candidates) == 1:
+                    raise BuildError(f"claim {claim['key']}: fact_check_id does not match the row for finding {finding_id}; omit fact_check_id to select its sole row")
+                if not candidates:
+                    raise BuildError(f"claim {claim['key']}: no fact-check rows match finding {finding_id}")
+                raise BuildError(f"claim {claim['key']}: fact_check_id does not match a row for finding {finding_id}; copy the actual row.id, not its position")
+            candidates = matching
+        if not candidates:
+            raise BuildError(f"claim {claim['key']}: no fact-check rows match finding {finding_id}")
         if len(candidates) != 1:
-            raise BuildError(f"claim {claim['key']}: {len(candidates)} fact-check rows match finding {finding_id}; name one with fact_check_id")
+            raise BuildError(f"claim {claim['key']}: {len(candidates)} fact-check rows match finding {finding_id}; select one by its actual row.id with fact_check_id")
         row = candidates[0]
         verdict, confidence = row.get("verdict"), row.get("confidence")
         if verdict not in VERDICTS_1_1 or confidence not in ("high", "medium", "low"):

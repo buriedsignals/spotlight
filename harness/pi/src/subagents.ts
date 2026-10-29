@@ -10,12 +10,14 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { taskMode } from './roles.ts';
+import { canonicalWriteCall } from './tools/case-files.ts';
 import { onJsonlRecords } from './pi-process.ts';
-import { FACT_CHECK_DUE_STOP, LOOP_STOP, REFUSAL_STOP } from './tools/run.ts';
+import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, REFUSAL_STOP } from './tools/run.ts';
 
 export type SpawnRequest = { kind: 'spotlight-spawn'; id: string; agent: string; task: string };
 export type CancelRequest = { kind: 'spotlight-cancel'; id: string };
-export type SpawnResult = { kind: 'spotlight-result'; id: string; ok: boolean; text?: string; error?: string; round?: unknown };
+export type SpawnResult = { kind: 'spotlight-result'; id: string; ok: boolean; text?: string; error?: string; round?: unknown; factCheckProgress?: string[] };
 // The orchestrator's resolve asks the launcher to run the approved research
 // topics; the launcher checks the phase and the plan itself.
 export type ResearchRequest = { kind: 'spotlight-research'; id: string; retry: boolean };
@@ -80,7 +82,6 @@ export async function requestEditorial(op: string, args: Record<string, unknown>
 // phase-investigation step 4.5 re-spawns the fact-checker once per cycle for
 // evidence correction, then records the attempt. r1 12B looped those re-spawns
 // instead. A plain fact-checker spawn (step 3) starts the next cycle.
-const EVIDENCE_CORRECTION = /MODE:\s*EVIDENCE CORRECTION/;
 export const CORRECTION_SPENT = 'The fact-checker already had its one evidence correction this cycle. Record the failure with spotlight_transition recordAttempt (kind fact-check-evidence-repair, gap: the validator reason), then call spotlight_resolve.';
 
 // r6 nordhaven on dd14e2e5: the orchestrator spawned about 15 fact-checkers in
@@ -88,23 +89,29 @@ export const CORRECTION_SPENT = 'The fact-checker already had its one evidence c
 // recordAttempt in between. A cycle (one plain check, one correction) needs
 // two; a successful spotlight_transition starts the next cycle.
 export const FACT_CHECKER_CAP = 3;
-export const FACT_CHECKERS_SPENT = `The fact-checker has run ${FACT_CHECKER_CAP} times this cycle; do not spawn it again. If the readiness criteria are met, open the Investigation gate with open_review and the current verdicts. Otherwise record the cycle with spotlight_transition recordAttempt (kind investigation-cycle, gap: what is still missing), then call spotlight_resolve.`;
+export const FACT_CHECKERS_SPENT = `The fact-checker has used ${FACT_CHECKER_CAP} attempts without new validated batch progress in this automatic allowance; do not spawn it again. A new member turn grants one bounded retry allowance. Call spotlight_resolve. If verdicts are missing or fact-check validator errors remain, stop this turn and report those repairs; do not restart the investigator or record an investigation cycle for them. Only after the fact-check is complete and valid: if applicable readiness criteria are met, call open_review; for genuine remaining evidence gaps recordAttempt (kind investigation-cycle, gap: what is still missing) through spotlight_transition, then resolve again.`;
 
-// Fact-checker spawns since the last successful spotlight_transition, shared by
-// spawn_agent and the transition tool of one orchestrator process.
-export type FactCheckerCycle = { spawns: number };
+// Resource allowance for one member turn or successful cycle transition.
+// Semantic attempt exhaustion remains durable in the Python resolver.
+export type FactCheckerCycle = { spawns: number; corrections?: number; generation?: number; credited?: Set<string> };
+
+export function resetFactCheckerCycle(cycle: FactCheckerCycle): void {
+	cycle.spawns = 0;
+	cycle.corrections = 0;
+	cycle.generation = (cycle.generation ?? 0) + 1;
+	cycle.credited = new Set();
+}
 
 // What the launcher answers a worker spawn while the Investigation gate is ready (launcher.ts gateReady).
 export const GATE_READY_REFUSAL = 'The investigation is complete: call open_review to present the Investigation gate to the member.';
 
 // What the launcher answers an investigator spawn once the Investigation gate is decided (launcher.ts refusalFor).
-export const GATE_DECIDED_REFUSAL = 'The Investigation gate is decided: the member approved data/findings.json and data/fact-check.json as they are, and no investigator runs after it. Work from the approved findings. At Report, if the member asks for more research, call spotlight_transition with requestFollowUp {instructions} first; that returns the case to Investigation.';
+export const GATE_DECIDED_REFUSAL = 'The Investigation gate is decided: the member approved data/findings.json and data/fact-check.json as they are, and no investigator runs after it. Work from the approved findings. If the member asks for more research, call open_review; they request a follow-up on that page, which returns the case to Investigation.';
 
 // What the launcher answers an investigator spawn before the brief is approved (launcher.ts refusalFor).
 export const BRIEF_PENDING_REFUSAL = 'The brief is not approved yet, so no investigator runs. Agree the direction with the member, and once they approve it write it to brief-directions.txt with write_file. Then spawn the investigator with MODE: PLANNING to design the methodology.';
 
 export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }): ToolDefinition {
-	let corrections = 0;
 	return {
 		name: 'spawn_agent',
 		label: 'Spawn agent',
@@ -125,11 +132,12 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 		async execute(_id, params, signal) {
 			const { agent, task } = params as { agent: string; task: string };
 			if (!workers.includes(agent)) throw new Error(`spawn_agent: unknown worker "${agent}"`);
+			const generation = cycle.generation ?? 0;
 			if (agent === 'fact-checker') {
 				if (cycle.spawns >= FACT_CHECKER_CAP) throw new Error(FACT_CHECKERS_SPENT);
-				if (!EVIDENCE_CORRECTION.test(task)) corrections = 0;
-				else if (corrections > 0) throw new Error(CORRECTION_SPENT);
-				else corrections += 1;
+				if (taskMode(task) !== 'EVIDENCE CORRECTION') cycle.corrections = 0;
+				else if ((cycle.corrections ?? 0) > 0) throw new Error(CORRECTION_SPENT);
+				else cycle.corrections = (cycle.corrections ?? 0) + 1;
 				cycle.spawns += 1;
 			}
 			if (typeof process.send !== 'function') {
@@ -145,6 +153,14 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 			try {
 				const result = await promise;
 				if (!result.ok) throw new Error(result.error ?? `${agent} failed`);
+				// Only the launcher can attest strict-valid new batch work. Consume
+				// every ID once so withdrawing and recreating claims cannot earn retries.
+				if (agent === 'fact-checker' && !signal?.aborted && generation === (cycle.generation ?? 0)) {
+					const credited = cycle.credited ??= new Set<string>();
+					const ids = result.factCheckProgress ?? [];
+					if (ids.some((id) => !credited.has(id))) cycle.spawns = Math.max(0, cycle.spawns - 1);
+					for (const id of ids) credited.add(id);
+				}
 				return { content: [{ type: 'text', text: result.text || '(no output)' }], details: undefined };
 			} finally {
 				signal?.removeEventListener('abort', onAbort);
@@ -162,6 +178,7 @@ export type WorkerLaunch = {
 	cwd: string;
 	onSpawn(child: ChildProcess): void;
 	onStderr(child: ChildProcess): void;
+	onFactCheckWrite?(path: string, proposal: string, error?: string): void;
 };
 
 // Runs one task on a fresh worker: send the prompt, wait for `agent_settled`,
@@ -205,12 +222,23 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 	// line is its answer.
 	let stopped = '';
 	let refolded = false;
+	const factCheckWrites = new Map<string, { path: string; proposal: string }>();
 	const transcript = openTranscript();
 	onJsonlRecords(child.stdout, (record) => {
 		transcript?.(record);
+		if (launch.onFactCheckWrite && record.type === 'tool_execution_start' && (record.toolName === 'write_file' || record.toolName === 'record_assessment')) {
+			const args = canonicalWriteCall(String(record.toolName), record.args);
+			if (typeof args?.path === 'string' && typeof args.content === 'string' && typeof record.toolCallId === 'string') factCheckWrites.set(record.toolCallId, { path: args.path, proposal: args.content });
+		}
 		if (record.type === 'tool_execution_end') {
 			const text = (record.result as { content?: Array<{ text?: string }> } | undefined)?.content?.[0]?.text ?? '';
-			stopped = text.endsWith(LOOP_STOP) || text.endsWith(REFUSAL_STOP) || text.endsWith(FACT_CHECK_DUE_STOP) ? text : '';
+			const write = typeof record.toolCallId === 'string' ? factCheckWrites.get(record.toolCallId) : undefined;
+			if (write !== undefined) {
+				factCheckWrites.delete(String(record.toolCallId));
+				if (record.isError === true) launch.onFactCheckWrite?.(write.path, write.proposal, ((record.result as { content?: Array<{ text?: string }> })?.content ?? []).map((part) => part.text ?? '').join('\n'));
+				else if (text.startsWith('wrote ')) launch.onFactCheckWrite?.(write.path, write.proposal);
+			}
+			stopped = text.endsWith(LOOP_STOP) || text.endsWith(REFUSAL_STOP) || text.endsWith(FACT_CHECK_DUE_STOP) || text.endsWith(CALL_BUDGET_STOP) ? text : '';
 		}
 		if (record.type === 'response' && record.id === 'compact') {
 			if (record.success) send({ id: 'prompt', type: 'prompt', message: CONTINUE_AFTER_FOLD });

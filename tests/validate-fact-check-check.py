@@ -285,7 +285,28 @@ def main() -> int:
         require(code == 3 and owners == {"fact-checker"},
                 f"a fact-checker's own bundle record is routed to someone else: {results}")
 
-    print("validate-fact-check characterization: 21 passed")
+    # A model may reuse its human-facing id in several batches. Repair targets
+    # must identify the actual finding and raw claim position, not that label.
+    with tempfile.TemporaryDirectory() as tmp:
+        case = REPORT_FIXTURE.build_case(Path(tmp))
+        path = case / "data" / "fact-check.json"
+        document = json.loads(path.read_text())
+        document["claims"][1]["id"] = document["claims"][0]["id"]
+        document["claims"][1]["verdict"] = "verified"
+        document["claims"][1]["evidence_for"] = [{
+            "access_method": "full_text", "local_file": "research/official-record.md",
+            "description": "A deliberately mismatched quote.", "source": "https://example.org/official_record(v1)",
+            "source_ref": {"path": "research/official-record.md", "line_start": 1, "line_end": 1},
+            "quote": "This sentence is absent from the source.",
+        }]
+        path.write_text(json.dumps(document))
+        results, code = VALIDATOR.validate(case)
+        failed = [row for row in results if not row["ok"]]
+        require(code == 3 and len(failed) == 1, f"duplicate label changed validation: {results}")
+        require(failed[0].get("finding_id") == "F2" and failed[0].get("locator") == "fact-check.json.claims[1]",
+                f"duplicate claim label hides the actual repair target: {failed}")
+
+    print("validate-fact-check characterization: 22 passed")
     return 0
 
 

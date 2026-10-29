@@ -49,6 +49,7 @@
       "properties": {
         "required": { "type": "boolean" },
         "used": { "type": "boolean" },
+        "outcome": { "enum": ["used", "not-needed", "unavailable", "policy-skipped"] },
         "status": { "enum": ["green", "yellow", "red", "missing", "unknown"] },
 		"interface": { "enum": ["cli", "api_fallback", "none"] },
 		"capabilities": { "type": "array", "items": { "enum": ["osint_tools"] } },
@@ -56,7 +57,7 @@
           "type": "array",
           "items": {
             "type": "object",
-			"required": ["direction", "response_path"],
+			"required": ["response_path"],
             "properties": {
               "direction": { "type": "string" },
 			  "mode": { "enum": ["tool_discovery"] },
@@ -68,6 +69,9 @@
 			  "endpoint": { "enum": ["/api/tools/search", "/api/query"] },
               "request_path": { "type": "string" },
               "response_path": { "type": "string" },
+              "receipt_path": { "type": "string" },
+              "response_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "query": { "type": "string" },
               "selected_tools": { "type": "array", "items": { "type": "string" } },
               "rejected_tools": {
                 "type": "array",

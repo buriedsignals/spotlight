@@ -155,6 +155,45 @@ def main() -> int:
         require(batch["claims"][0]["provenance"] == {"method": "agent_candidate", "model": "analyst-model-1"}, "claim provenance")
         first_ids = {r["id"] for array in RULES.ARRAYS for r in batch.get(array, [])}
 
+        # A single idless fact-check row needs no invented selector. A wrong
+        # selector is still refused with an actionable correction.
+        original_check = read(case, "fact-check.json")
+        idless = json.loads(json.dumps(original_check))
+        idless["claims"][0].pop("id", None)
+        write(case, "fact-check.json", idless)
+        require(build(case).returncode == 0, "the unique idless row should not need a selector")
+        selected = json.loads(json.dumps(PROPOSAL))
+        selected["claims"][0]["fact_check_id"] = "None"
+        write(case, "knowledge-proposal.json", selected)
+        invalid = build(case)
+        require(invalid.returncode == 2 and "omit fact_check_id" in invalid.stderr,
+                f"a missing id must not match the literal string None: {invalid.stderr}")
+        selected["claims"][0]["fact_check_id"] = 2
+        write(case, "knowledge-proposal.json", selected)
+        invalid = build(case)
+        require(invalid.returncode == 2 and "omit fact_check_id" in invalid.stderr,
+                f"an invalid selector must explain how to select the unique row: {invalid.stderr}")
+        multiple = json.loads(json.dumps(idless))
+        multiple["claims"][0]["id"] = 17
+        other = json.loads(json.dumps(multiple["claims"][0]))
+        other["id"] = 29
+        multiple["claims"].append(other)
+        write(case, "fact-check.json", multiple)
+        selected["claims"][0]["fact_check_id"] = 29
+        write(case, "knowledge-proposal.json", selected)
+        require(build(case).returncode == 0, "an existing row id must select among multiple rows")
+        multiple["claims"][0]["id"] = 0
+        write(case, "fact-check.json", multiple)
+        selected["claims"][0]["fact_check_id"] = "0"
+        write(case, "knowledge-proposal.json", selected)
+        require(build(case).returncode == 0, "a real zero id must remain selectable")
+        selected["claims"][0]["fact_check_id"] = 2
+        write(case, "knowledge-proposal.json", selected)
+        invalid = build(case)
+        require(invalid.returncode == 2 and "row.id" in invalid.stderr, f"an invalid selector must name the real id field: {invalid.stderr}")
+        write(case, "fact-check.json", original_check)
+        write(case, "knowledge-proposal.json", PROPOSAL)
+
         # Identifiers the analyst found stay on this computer: in the
         # mentions file for the register lookup, never in the batch.
         with_ids = json.loads(json.dumps(PROPOSAL))

@@ -22,6 +22,7 @@ import argparse
 import dataclasses
 import json
 import os
+import re
 import sys
 import urllib.request
 from pathlib import Path
@@ -45,19 +46,52 @@ def _rlm_distill(markdown: str, source: str) -> str | None:
     model = os.environ.get("SPOTLIGHT_RLM_OPENAI_MODEL", request["default_model"])
     if not base or not markdown.strip():
         return None
-    # cap the input so a huge page doesn't blow the RLM's own context
-    prompt = request["prompt"] + markdown[:request["max_input_chars"]]
-    body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}],
-                       "max_tokens": request["max_tokens"], "temperature": request["temperature"]}).encode()
+    task = os.environ.get("SPOTLIGHT_TASK_HEADER", "")[:4000]
+    scope = f"Task scope (not source evidence):\n{task}\n\n" if task else ""
+    lines = [line[:-1] if line.endswith("\r") else line for line in markdown.split("\n")]
+    if lines[-1] == "":
+        lines.pop()
+    excerpts: list[str] = []
+    next_line = 0
     url = base.rstrip("/") + ("/chat/completions" if base.rstrip("/").endswith("/v1") else "/v1/chat/completions")
     try:
-        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            data = json.loads(resp.read().decode())
-        content = ((data.get("choices") or [{}])[0].get("message", {}) or {}).get("content") or ""
-        return content.strip() or None
-    except Exception:
+        for _ in range(3):
+            start = next_line
+            numbered = ""
+            while next_line < len(lines):
+                line = f"{next_line + 1}: {lines[next_line]}\n"
+                if len(numbered) + len(line) > request["max_input_chars"]:
+                    break
+                numbered += line
+                next_line += 1
+            if next_line == start:
+                break
+            body = json.dumps({"model": model, "messages": [{"role": "user", "content": scope + request["prompt"] + numbered}],
+                               "response_format": request["response_format"], "max_tokens": request["max_tokens"], "temperature": request["temperature"]}).encode()
+            req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                data = json.loads(resp.read().decode())
+            content = ((data.get("choices") or [{}])[0].get("message", {}) or {}).get("content") or ""
+            fenced = re.fullmatch(r"```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```", content.strip(), re.IGNORECASE)
+            selected = json.loads(fenced.group(1) if fenced else content)
+            if not isinstance(selected, dict) or set(selected) != {"ranges"} or not isinstance(selected["ranges"], list):
+                raise ValueError("invalid line selections")
+            for item in selected["ranges"]:
+                if not isinstance(item, dict) or set(item) != {"start", "end"}:
+                    raise ValueError("invalid line selection")
+                first, last = item["start"], item["end"]
+                if type(first) is not int or type(last) is not int or first < start + 1 or last > next_line or last < first:
+                    raise ValueError("line selection outside inspected range")
+                excerpts.append(f"[raw lines {first}-{last}]\n" + "\n".join(lines[first - 1:last]))
+            if next_line == len(lines):
+                break
+        leads = "\n\n".join(excerpts)
+        if not leads or len(leads) > 30_000:
+            raise ValueError("empty or oversized line selections")
+        return f"[Inspected raw lines 1-{next_line} of {len(lines)}; coverage {'complete' if next_line == len(lines) else 'incomplete'}; selected excerpts may omit relevant text]\n\n{leads}"
+    except (OSError, TimeoutError, ValueError, KeyError, TypeError, IndexError, AttributeError):
         return None
+
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -351,6 +351,119 @@ def test_remote_pdf_is_downloaded_and_its_text_extracted():
         served.close()
 
 
+
+def test_rlm_cli_uses_only_validated_raw_line_ranges_and_reports_coverage():
+    import contextlib
+    import http.server
+    import json
+    import re
+    import tempfile
+    import threading
+    from pathlib import Path
+    import integrations.scraping.__main__ as cli
+
+    page = "\n".join(f"line {i} " + "x" * 150 for i in range(1, 901))
+    requests = []
+    invalid = [False]
+    prose = [False]
+    oversized = [False]
+    range_count = [1]
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            requests.append(body)
+            numbers = [int(n) for n in re.findall(r"^(\d+): ", body["messages"][0]["content"], re.M)]
+            width = 36 if range_count[0] == 1 else 1
+            selected = {"ranges": [] if len(requests) == 1 and not invalid[0] else [
+                {"start": numbers[-1] - width + 1 - i * width, "end": numbers[-1] - i * width + (1 if invalid[0] else 0)}
+                for i in range(range_count[0])
+            ]}
+            if oversized[0]:
+                selected = {"ranges": [{"start": numbers[0], "end": numbers[-1]}]}
+            content = ("```json\n" if len(requests) % 2 else "```\n") + json.dumps(selected) + "\n```" + (" trailing prose" if prose[0] else "")
+            response = json.dumps({"choices": [{"message": {"content": content}}]}).encode()
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(response)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    old_base = os.environ.get("SPOTLIGHT_RLM_OPENAI_BASE_URL")
+    old_scope = os.environ.get("SPOTLIGHT_TASK_HEADER")
+    scope = "Compare original and revised August euro-area unemployment, preserving release dates."
+    old_scrape = cli.scrape
+    os.environ["SPOTLIGHT_RLM_OPENAI_BASE_URL"] = f"http://127.0.0.1:{server.server_address[1]}/v1"
+    os.environ["SPOTLIGHT_TASK_HEADER"] = scope.ljust(4000) + "OUTSIDE-SCOPE-LIMIT"
+    cli.scrape = lambda *args, **kwargs: _mk(page)
+    try:
+        with tempfile.TemporaryDirectory() as tmp, open(os.devnull, "w") as sink, contextlib.redirect_stderr(sink):
+            for count in (1, 14):
+                range_count[0] = count
+                width = 36 if count == 1 else 1
+                target = Path(tmp) / f"page-{count}.md"
+                assert cli.main(["https://example.org/record", "--rlm", "--out", str(target)]) == 0
+                text = target.read_text()
+                for request in requests:
+                    fmt = request.get("response_format", {})
+                    assert fmt.get("type") == "json_schema", "the CLI helper needs a structured JSON response contract"
+                    assert fmt["json_schema"]["strict"] is True
+                    schema = fmt["json_schema"]["schema"]
+                    assert schema["type"] == "object" and schema["additionalProperties"] is False
+                    assert schema["required"] == ["ranges"] and set(schema["properties"]) == {"ranges"}
+                    ranges = schema["properties"]["ranges"]
+                    assert ranges["type"] == "array" and ranges["items"]["type"] == "object"
+                    assert ranges["items"]["additionalProperties"] is False
+                    assert set(ranges["items"]["required"]) == {"start", "end"}
+                    assert set(ranges["items"]["properties"]) == {"start", "end"}
+                    assert all(ranges["items"]["properties"][key]["type"] == "integer" for key in ("start", "end"))
+                    request_text = "\n".join(message["content"] for message in request["messages"])
+                    assert scope in request_text, "the CLI helper needs the bounded task scope"
+                    assert "OUTSIDE-SCOPE-LIMIT" not in request_text
+                assert len(requests) == 3, f"{count} valid ranges should reach all bounded chunks"
+                assert "Inspected raw lines 1-" in text and "of 900; coverage incomplete" in text
+                selected = [int(n) for n in re.findall(r"\[raw lines (\d+)-\d+\]", text)]
+                assert len(selected) == 2 * count and selected[0] > 120
+                assert all("\n".join(page.split("\n")[n - 1:n - 1 + width]) in text for n in selected)
+                assert len(text) < 30_000
+                assert Path(str(target) + ".raw").read_text() == page
+                requests.clear()
+            range_count[0] = 1
+            invalid[0] = True
+            rejected = Path(tmp) / "rejected.md"
+            assert cli.main(["https://example.org/record", "--rlm", "--out", str(rejected)]) == 0
+            assert rejected.read_text() == page
+            assert not Path(str(rejected) + ".raw").exists()
+            requests.clear()
+            invalid[0] = False
+            prose[0] = True
+            rejected_prose = Path(tmp) / "prose.md"
+            assert cli.main(["https://example.org/record", "--rlm", "--out", str(rejected_prose)]) == 0
+            assert rejected_prose.read_text() == page
+            assert not Path(str(rejected_prose) + ".raw").exists()
+            requests.clear()
+            prose[0] = False
+            oversized[0] = True
+            rejected_large = Path(tmp) / "oversized.md"
+            assert cli.main(["https://example.org/record", "--rlm", "--out", str(rejected_large)]) == 0
+            assert rejected_large.read_text() == page
+            assert not Path(str(rejected_large) + ".raw").exists()
+    finally:
+        cli.scrape = old_scrape
+        if old_scope is None:
+            os.environ.pop("SPOTLIGHT_TASK_HEADER", None)
+        else:
+            os.environ["SPOTLIGHT_TASK_HEADER"] = old_scope
+        if old_base is None:
+            os.environ.pop("SPOTLIGHT_RLM_OPENAI_BASE_URL", None)
+        else:
+            os.environ["SPOTLIGHT_RLM_OPENAI_BASE_URL"] = old_base
+        server.shutdown()
+        server.server_close()
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

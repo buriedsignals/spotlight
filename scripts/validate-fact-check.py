@@ -90,6 +90,7 @@ def canonical_fact_checks(document: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         check = dict(item)
         check["id"] = item.get("id", f"FC{index}")
+        check["_locator"] = f"fact-check.json.{container}[{index - 1}]"
         if container == "claims":
             check["status"] = normalized(item.get("verdict")).lower()
             check["claim"] = item.get("claim_text") or ""
@@ -510,6 +511,7 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
     for check in checks:
         check_id = check.get("id", "?")
         finding_id = normalized(check.get("finding_id"))
+        identity = {"id": check_id, "finding_id": finding_id, "locator": check["_locator"]}
         status = check.get("status")
         finding = findings.get(finding_id)
         failures: list[str] = []
@@ -523,11 +525,11 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
             failures.append("fact-check claim text is missing")
         if failures:
             failed += 1
-            results.append({"id": check_id, "ok": False, "owner": "fact-checker", "reason": "; ".join(failures)})
+            results.append({**identity, "ok": False, "owner": "fact-checker", "reason": "; ".join(failures)})
             continue
 
         if status not in anchored:
-            results.append({"id": check_id, "ok": True,
+            results.append({**identity, "ok": True,
                             "reason": f"status={status} (evidence anchor not required)"})
             continue
 
@@ -568,7 +570,7 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
         }
         if not any(by_owner.values()):
             results.append({
-                "id": check_id,
+                **identity,
                 "ok": True,
                 "reason": "case-local evidence anchors validated",
                 "claim": finding.get("claim"),
@@ -578,7 +580,7 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
         for owner, reasons in by_owner.items():
             if reasons:
                 results.append({
-                    "id": check_id,
+                    **identity,
                     "ok": False,
                     "owner": owner,
                     "reason": "; ".join(reasons),
@@ -608,7 +610,8 @@ def main() -> int:
     else:
         for result in results:
             owner = f" [{result['owner']}]" if result.get("owner") else ""
-            print(f"{'PASS' if result['ok'] else 'FAIL'}  {result['id']}{owner}: {result['reason']}")
+            target = f" {result['locator']} ({result['finding_id']})" if result.get("locator") else ""
+            print(f"{'PASS' if result['ok'] else 'FAIL'}  {result['id']}{owner}{target}: {result['reason']}")
         outcome = "OK" if code == 0 else (
             "FAILED — [investigator] reasons go to the investigator (evidence correction), "
             "[fact-checker] reasons to the fact-checker, [structure] reasons to the structural correction"

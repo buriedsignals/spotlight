@@ -31,7 +31,7 @@ import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { engineEnv } from '../case-search.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
-import { LEAD_MARKER, writeConfined } from './case-files.ts';
+import { LEAD_MARKER, readTarget, writeConfined } from './case-files.ts';
 import { anonymizedFetch, assertPublicDestination, checkURL, publicDestination } from './egress.ts';
 import { startEgressProxy } from './proxy.ts';
 import { ToolArgumentError, checkedParams, jsonResult, programOutput, runPython, savePath, saveTarget } from './run.ts';
@@ -50,7 +50,7 @@ export const webURL = Type.String({ minLength: 1, maxLength: 2048, pattern: '^[H
 const params = Type.Object({ url: webURL, save_as: Type.Optional(savePath) }, { additionalProperties: false });
 
 // The lead-distillation request the scraping seam's --rlm path also uses.
-type LeadRequest = { default_model: string; max_input_chars: number; max_tokens: number; temperature: number; prompt: string };
+type LeadRequest = { default_model: string; max_input_chars: number; max_tokens: number; temperature: number; prompt: string; response_format: Record<string, unknown> };
 const LEAD_REQUEST = resolve(CHECKOUT_ROOT, 'integrations/scraping/rlm-leads.json');
 const RLM_TIMEOUT_MS = 120_000;
 
@@ -108,20 +108,44 @@ export async function rlmComplete(baseURL: string, body: Record<string, unknown>
 	return answer.choices?.[0]?.message?.content?.trim() ?? '';
 }
 
-async function distill(baseURL: string, env: ToolContext['env'], markdown: string, signal?: AbortSignal): Promise<string> {
+// The helper chooses line ranges only. It never writes the text returned as a lead.
+async function distill(baseURL: string, env: ToolContext['env'], markdown: string, signal?: AbortSignal): Promise<{ leads: string; inspected: number; total: number; selections: Array<{ line_start: number; line_end: number }> }> {
 	const request = JSON.parse(readFileSync(LEAD_REQUEST, 'utf8')) as LeadRequest;
-	const leads = await rlmComplete(
-		baseURL,
-		{
-			model: rlmModel(env),
-			messages: [{ role: 'user', content: request.prompt + markdown.slice(0, request.max_input_chars) }],
-			max_tokens: request.max_tokens,
-			temperature: request.temperature,
-		},
-		signal,
-	);
-	if (!leads) throw new Error('RLM returned no leads');
-	return leads;
+	const task = env.SPOTLIGHT_TASK_HEADER?.slice(0, 4000);
+	const scope = task ? `Task scope (not source evidence):\n${task}\n\n` : '';
+	const lines = markdown.split('\n').map((line) => line.endsWith('\r') ? line.slice(0, -1) : line);
+	if (lines.at(-1) === '') lines.pop();
+	const excerpts: string[] = [];
+	const selections: Array<{ line_start: number; line_end: number }> = [];
+	let next = 0;
+	for (let chunk = 0; chunk < 3 && next < lines.length; chunk++) {
+		const start = next;
+		let numbered = '';
+		while (next < lines.length) {
+			const line = `${next + 1}: ${lines[next]}\n`;
+			if (numbered.length + line.length > request.max_input_chars) break;
+			numbered += line;
+			next++;
+		}
+		if (next === start) break;
+		const answer = await rlmComplete(baseURL, { model: rlmModel(env), messages: [{ role: 'user', content: scope + request.prompt + numbered }], response_format: request.response_format, max_tokens: request.max_tokens, temperature: request.temperature }, signal);
+		const fenced = answer.trim().match(/^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i);
+		const parsed: unknown = JSON.parse(fenced ? fenced[1] : answer);
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.keys(parsed).join() !== 'ranges') throw new Error('RLM returned invalid line selections');
+		const ranges = (parsed as { ranges: unknown }).ranges;
+		if (!Array.isArray(ranges)) throw new Error('RLM returned invalid line selections');
+		for (const range of ranges) {
+			if (!range || typeof range !== 'object' || Array.isArray(range) || Object.keys(range).sort().join() !== 'end,start') throw new Error('RLM returned invalid line selection');
+			const { start: first, end: last } = range as { start: unknown; end: unknown };
+			if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || (first as number) < start + 1 || (last as number) > next || (last as number) < (first as number)) throw new Error('RLM selected lines outside the inspected range');
+			selections.push({ line_start: first as number, line_end: last as number });
+			excerpts.push(`[raw lines ${first}-${last}]\n${lines.slice((first as number) - 1, last as number).join('\n')}`);
+		}
+	}
+	if (!excerpts.length) throw new Error('RLM returned no extractive leads');
+	const leads = excerpts.join('\n\n');
+	if (leads.length > MAX_RETURNED_CHARS) throw new Error('RLM selections exceed the output bound');
+	return { leads, inspected: next, total: lines.length, selections };
 }
 
 const sha256 = (text: string) => createHash('sha256').update(Buffer.from(text, 'utf8')).digest('hex');
@@ -183,7 +207,7 @@ function recordFailure(context: ToolContext, url: string, cause: string): void {
 // has no tool to add one).
 // sha256 is the saved text's hash: a file changed after the fetch is not that
 // fetch any more (Codex review of #274b).
-export type Fetched = { url: string; accessed: string; provider?: string; sha256: string };
+export type Fetched = { url: string; accessed: string; provider?: string; sha256: string; acquired_by?: string };
 function fetchedPath(context: ToolContext): string | undefined {
 	const dataDir = context.env?.SPOTLIGHT_HARNESS_DATA;
 	return dataDir ? resolve(dataDir, 'work', 'fetched', `${createHash('sha256').update(context.caseDir).digest('hex').slice(0, 16)}.json`) : undefined;
@@ -197,7 +221,7 @@ function recordFetched(context: ToolContext, paths: string[], entry: Fetched): v
 	} catch {
 		all = {};
 	}
-	for (const saved of paths) all[saved] = entry;
+	for (const saved of paths) all[saved] = { ...entry, acquired_by: context.env?.SPOTLIGHT_ROLE };
 	try {
 		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 		writeFileSync(path, JSON.stringify(all), { mode: 0o600 });
@@ -210,6 +234,39 @@ export function fetchedFile(context: ToolContext, relative: string): Fetched | u
 	if (!path) return undefined;
 	try {
 		return (JSON.parse(readFileSync(path, 'utf8')) as Record<string, Fetched>)[relative];
+	} catch {
+		return undefined;
+	}
+}
+
+// Independent acquisition is a runtime fact, never inferred from an fc- name
+// or a model-authored bundle row. Older receipts remain readable but untrusted.
+export function factCheckerCapture(context: ToolContext, relative: string): Fetched | undefined {
+	const capture = fetchedFile(context, relative);
+	if (capture?.acquired_by !== 'fact-checker' || typeof capture.url !== 'string' || !Number.isFinite(Date.parse(capture.accessed))) return undefined;
+	try {
+		checkURL(capture.url);
+		const bytes = readFileSync(readTarget(context.caseDir, relative));
+		return createHash('sha256').update(bytes).digest('hex') === capture.sha256 ? capture : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+// A repair hint, never a citation rewrite: two separately acquired captures
+// can contain identical bytes while retaining distinct acquisition provenance.
+export function factCheckerAlternative(context: ToolContext, relative: string): string | undefined {
+	const original = fetchedFile(context, relative);
+	const registry = fetchedPath(context);
+	if (!original || !registry) return undefined;
+	try {
+		checkURL(original.url);
+		if (createHash('sha256').update(readFileSync(readTarget(context.caseDir, relative))).digest('hex') !== original.sha256) return undefined;
+		const captures = JSON.parse(readFileSync(registry, 'utf8')) as Record<string, Fetched>;
+		return Object.keys(captures).sort().find((path) => {
+			const candidate = captures[path];
+			return path !== relative && candidate?.url === original.url && candidate.sha256 === original.sha256 && !!factCheckerCapture(context, path);
+		});
 	} catch {
 		return undefined;
 	}
@@ -290,9 +347,9 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			const leadPath = saveTarget(context, input.save_as as string);
 			const rawPath = writeConfined(context.caseDir, context.writeRoot, `${leadPath}.raw`, markdown);
 			recordFetched(context, [rawPath], { url: page.final_url, accessed: page.fetched_at, provider: page.provider, sha256: sha256(markdown) });
-			let leads: string;
+			let selected: Awaited<ReturnType<typeof distill>>;
 			try {
-				leads = await distill(rlm, context.env, markdown, signal);
+				selected = await distill(rlm, context.env, markdown, signal);
 			} catch (error) {
 				// The page stays on disk; its text still never enters the context.
 				return jsonResult({
@@ -301,16 +358,21 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 					rlm_error: (error as Error).message,
 					raw_path: rawPath,
 					raw_sha256: sha256(markdown),
-					note: 'The RLM could not distill this page. Do not load the raw page whole: grep raw_path for what you need and read only those lines.',
+					note: 'The RLM could not distill this page. No distilled output was written to save_as for this acquisition; use raw_path for the saved page. Do not load the raw page whole: grep raw_path for what you need and read only those lines.',
 				});
 			}
-			const leadFile = `${LEAD_MARKER} ${page.final_url}\n# (compact; raw source: ${basename(rawPath)})\n\n${leads}\n`;
+			const { leads, inspected, total, selections } = selected;
+			const leadFile = `${LEAD_MARKER} ${page.final_url}\n# (extracts; raw source: ${basename(rawPath)}; inspected lines 1-${inspected} of ${total})\n\n${leads}\n`;
 			const saved = writeConfined(context.caseDir, context.writeRoot, leadPath, leadFile);
 			return jsonResult({
 				...page,
 				distilled: true,
 				saved_to: saved,
 				leads_sha256: sha256(leadFile),
+				inspected_lines: { start: 1, end: inspected, total },
+				coverage_complete: inspected === total,
+				...(inspected < total ? { coverage_note: `Raw lines ${inspected + 1}-${total} were not inspected by the helper.` } : {}),
+				selections: selections.map((selection) => ({ path: rawPath, ...selection })),
 				raw_path: rawPath,
 				raw_sha256: sha256(markdown),
 				truncated: leads.length > MAX_RETURNED_CHARS,

@@ -24,7 +24,7 @@ test('open_review at the Report gate refuses an invalid report draft with the va
 		opened += 1;
 		return { status: 'opened' };
 	};
-	const toolAt = (phase: string) => openReviewTool(active.caseDir, root, opener, gateCheck(active, async () => JSON.stringify({ phase }), context));
+	const toolAt = (phase: string) => openReviewTool(active.caseDir, root, opener, gateCheck(active, async () => JSON.stringify({ phase, status: 'active' }), context));
 
 	await assert.rejects(
 		toolAt('report').execute('call', {}, undefined, undefined, undefined as never),
@@ -78,7 +78,7 @@ test('open_review at the Methodology gate refuses a methodology the methodology 
 	const tool = openReviewTool(active.caseDir, root, async () => {
 		opened += 1;
 		return { status: 'opened' };
-	}, gateCheck(active, async () => JSON.stringify({ phase: 'methodology_approval' }), context));
+	}, gateCheck(active, async () => JSON.stringify({ phase: 'methodology_approval', status: 'active' }), context));
 
 	await assert.rejects(
 		tool.execute('call', {}, undefined, undefined, undefined as never),

@@ -1,2 +1,1 @@
-Load the skills your task's SKILLS line names, each when you reach the step it serves; `fetch` and `search` need none. Save what you acquire under `{CASE_DIR}/research/` (screenshots and downloads under `{CASE_DIR}/evidence/`).
-
+Load the full relevant skill only when the current operation needs it; `fetch` and `search` need none. Navigator lookup is available for specialized discovery. Archives, browser work and specialist integrations are conditional on the source or approved question; never invent a completed action. Save actual acquisitions under `{CASE_DIR}/research/` (screenshots/downloads under `{CASE_DIR}/evidence/`).

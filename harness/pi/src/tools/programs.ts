@@ -12,10 +12,12 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { engineEnv } from '../case-search.ts';
+import { redactor } from '../log.ts';
+import { recordNavigatorLookup } from './navigator-receipts.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { FileRefused, readTarget, writeConfined } from './case-files.ts';
 import { NAVIGATOR_ENV } from './hosted-skill.ts';
-import { ToolArgumentError, checkedParams, jsonResult, programEnv, programOutput, runFixed, runPython, textResult } from './run.ts';
+import { ToolArgumentError, RETURNED_CHARS, capped, checkedParams, jsonResult, programEnv, programOutput, runFixed, runPython, textResult } from './run.ts';
 import type { ToolContext } from './run.ts';
 
 const script = (path: string) => `${CHECKOUT_ROOT}/${path}`;
@@ -53,16 +55,33 @@ function navigatorTool(context: ToolContext): ToolDefinition {
 		name: 'navigator_tools',
 		label: 'Navigator tools',
 		description:
-			'Search the OSINT Navigator tool catalogue: {action: "find", value: "<what you need, in plain words>"} or {action: "show", value: "<tool id>"}. Needs the Navigator CLI installed and signed in.',
+			'When you need a new OSINT tool or technique, query Navigator with {action: "find", value: "<need, in plain words>"} or inspect {action: "show", value: "<tool id>"}. Code runs the CLI and saves provenance; you choose relevance. Existing search/fetch needs no lookup. Unavailable discovery may use the local osint_tools fallback.',
 		parameters: params,
 		async execute(_id, raw, signal) {
 			const input = checkedParams<{ action: 'find' | 'show'; value: string }>('navigator_tools', params, raw);
-			const result = await runFixed('navigator', ['tools', input.action, '--json', '--', input.value], {
-				env: programEnv(context.env, NAVIGATOR_ENV),
-				cwd: context.caseDir,
-				signal,
-			});
-			return textResult(programOutput('navigator_tools', result));
+			if (context.env.SPOTLIGHT_SENSITIVE === 'true') {
+				return jsonResult({ outcome: 'policy-skipped', reason: 'Sensitive mode prohibits Navigator egress.', next_action: 'Use permitted local material or osint_tools.' });
+			}
+			const redact = redactor([context.env.NAVIGATOR_TOKEN]);
+			let result;
+			try {
+				result = await runFixed('navigator', ['tools', input.action, '--json', '--', input.value], {
+					env: programEnv(context.env, NAVIGATOR_ENV), cwd: context.caseDir, signal,
+				});
+			} catch (error) {
+				signal?.throwIfAborted();
+				return jsonResult({ outcome: 'unavailable', reason: redact((error as Error).message), next_action: 'Use osint_tools or existing search/fetch; do not invent a successful lookup.' });
+			}
+			if (result.code !== 0) {
+				return jsonResult({ outcome: 'unavailable', reason: redact((result.stderr || result.stdout).trim()).slice(0, 500), next_action: 'Use osint_tools or existing search/fetch; reconnect Navigator outside the model if needed.' });
+			}
+			let response: unknown;
+			try { response = JSON.parse(redact(result.stdout)); }
+			catch { throw new Error('navigator_tools: Navigator returned invalid JSON; no lookup receipt was saved. Use osint_tools or existing sources.'); }
+			const receipt_path = recordNavigatorLookup(context, input, response);
+			return jsonResult(JSON.stringify(response).length <= RETURNED_CHARS
+				? { outcome: 'used', receipt_path, response }
+				: { outcome: 'used', receipt_path, response_text: capped(JSON.stringify(response), '; full response is in the receipt') });
 		},
 	};
 }

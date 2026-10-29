@@ -353,3 +353,63 @@ test("the Research gate page opens, saves clue marks and approves with the membe
   // The Research receipt binds the methodology; the amendment comes next.
   assert.equal(seamStatus(caseDir).research.resume_at, "amendment");
 });
+
+// Human-only reopening is available after approval without reopening approval itself.
+test("a member can reopen approved finalization or Report with a fresh bound follow-up", async (t) => {
+ for (const phase of ["finalization", "report"]) await t.test(phase, async (t) => {
+  const root=tempRoot(t); const caseDir=buildCase(root,"case","report");
+  if(phase==="finalization") {
+   const statePath=join(caseDir,"data/orchestration.json"); const state=JSON.parse(readFileSync(statePath,"utf8"));
+   delete state.investigation_gate_finalization; writeFileSync(statePath,JSON.stringify(state));
+  }
+  const {json}=await authed(t,caseDir);
+  if (phase === "report") await json("/api/edit", {edit:{kind:"reviewer",value:"New reviewer"}});
+  const view=(await json("/api/view")).body;
+  const requester = phase === "finalization" ? {requestedBy:"New reviewer"} : {};
+  const before=readFileSync(join(caseDir,"data/findings.json"),"utf8");
+  const stale=await json("/api/follow-up",{instructions:"Recheck the date.",digest:"stale",...requester});
+  assert.equal(stale.status,409);
+  const result=await json("/api/follow-up",{instructions:"Recheck the date.",digest:view.digest,...requester});
+  assert.equal(result.status,200,JSON.stringify(result.body));
+  assert.equal(view.can_request_follow_up,true);
+  assert.equal(result.body.receipt.approved_by,"New reviewer");
+  const state=JSON.parse(readFileSync(join(caseDir,"data/orchestration.json"),"utf8"));
+  assert.equal(state.follow_up.decided_by,"New reviewer");
+  assert.equal(state.follow_up.review.channel,"page");
+  assert.equal(seamStatus(caseDir).phase,"investigation");
+  assert.deepEqual(state.approvals.investigation_gate,undefined);
+  assert.equal(readFileSync(join(caseDir,"data/findings.json"),"utf8"),before);
+  assert.notEqual((await json("/api/follow-up",{instructions:"Repeat",digest:view.digest,requestedBy:"New reviewer"})).status,200);
+ });
+});
+
+// Force the real boundary ordering: a case changes after page preconditions but before commit.
+test("a Report follow-up binds the member's displayed digest atomically", async (t) => {
+  const root = tempRoot(t);
+  const caseDir = buildCase(root, "case", "report");
+  const real = createCaseBridge({ caseDir });
+  let armed = false;
+  const bridge = {
+    ...real,
+    async view(gate) {
+      const view = await real.view(gate);
+      if (armed && gate === "report") {
+        armed = false;
+        const path = join(caseDir, "summary.md");
+        writeFileSync(path, readFileSync(path, "utf8") + "\nCase changed after the page snapshot.\n");
+      }
+      return view;
+    },
+  };
+  const { json } = await authed(t, caseDir, { bridge });
+  await json("/api/edit", { edit: { kind: "reviewer", value: "A. Reviewer" } });
+  const loaded = (await json("/api/view")).body;
+  const before = readFileSync(join(caseDir, "data/orchestration.json"), "utf8");
+  armed = true;
+
+  const result = await json("/api/follow-up", { instructions: "Recheck the filing.", digest: loaded.digest });
+
+  assert.equal(result.status, 409, JSON.stringify(result.body));
+  assert.equal(result.body.code, "digest-changed");
+  assert.equal(readFileSync(join(caseDir, "data/orchestration.json"), "utf8"), before);
+});

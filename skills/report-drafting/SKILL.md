@@ -31,6 +31,8 @@ The renderer places this at the top of the page. Do not soften:
 1. Read `{CASE_DIR}/data/findings.json` and `{CASE_DIR}/data/fact-check.json`.
 2. Author `{CASE_DIR}/data/report-draft.json` in the report's natural language. Choose the title, deck, finding order, headlines, concise summaries, why each finding matters, caveats, and next steps. Cover every finding exactly once, except the findings the member left out at the Investigation gate (unselected, or set aside, in `data/investigation-gate-review.json`): they stay in the case and never appear in the report, and the validator refuses a draft that names them. Every prose block must reference the fact-checked finding IDs it interprets; do not author verdicts or confidence.
 
+   Significance may explain how a finding answers the approved question; no new implication is required. Preserve the accepted actor, quantifiers, scope, exact date or vintage, and uncertainty. Name the dates when releases share a month. Do not turn one documented source into a claim about where everyone obtained their information.
+
    When an existing structure would clarify the report, add an optional
    `diagrams` item. For relationship structures, select one of `flow`,
    `hierarchy`, `network`, or `loop`; cite its supporting finding IDs; and select

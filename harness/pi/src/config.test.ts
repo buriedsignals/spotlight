@@ -34,6 +34,17 @@ test('the frontier compaction reserve covers the output cap', () => {
 	}
 });
 
+// A silent 10,240-token response at 20 tokens/second plus prefill must not
+// expire at Pi's shorter default, while the connection still has a finite bound.
+test('Pi settings allow a slow valid model response while retaining a finite idle timeout', () => {
+	for (const tier of ['12b', 'frontier']) {
+		const config = readConfig({ ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', SPOTLIGHT_MODEL_TIER: tier, SPOTLIGHT_MODEL_CONTEXT_WINDOW: '40960' });
+		const idle = piSettings(config).httpIdleTimeoutMs;
+		assert.equal(typeof idle, 'number', `${tier} must explicitly set Pi's timeout`);
+		assert.ok(Number.isFinite(idle) && (idle as number) >= 600_000 && (idle as number) <= 900_000, `${tier} idle timeout must cover a slow completion and remain bounded`);
+	}
+});
+
 test('the Anomaly install path reaches the processes, so anomaly_methods can read its catalogue', () => {
 	const env = { ...BASE, SPOTLIGHT_MODEL_BASE_URL: 'http://127.0.0.1:8080/v1', SPOTLIGHT_MODEL_ID: 'm', ANOMALY_HOME: '/opt/anomaly' };
 	assert.equal(childEnv(readConfig(env), COMPOSITION, 'orchestrator', env).ANOMALY_HOME, '/opt/anomaly');

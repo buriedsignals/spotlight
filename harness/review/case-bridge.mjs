@@ -147,7 +147,7 @@ export function createCaseBridge({
       if (result.code !== 0) throw seamError(result);
     },
     // The Investigation gate's other outcome: back to Investigation with the member's note.
-    async requestFollowUp({ instructions, nonce, digest, requestedBy, requestedAt }) {
+    async requestFollowUp({ instructions, nonce, digest, requestedBy, requestedAt, shownGate, shownDigest }) {
       const result = await run([
         "request-follow-up",
         `--instructions=${instructions}`,
@@ -155,6 +155,7 @@ export function createCaseBridge({
         `--decided-at=${requestedAt}`,
         `--nonce=${nonce}`,
         `--digest=${digest}`,
+        ...(shownGate ? [`--shown-gate=${shownGate}`, `--shown-digest=${shownDigest}`] : []),
       ]);
       if (result.code !== 0) throw seamError(result);
     },
@@ -246,7 +247,7 @@ export function createWikiBridge({
 export function pendingGate(status) {
   if (status?.next_phase === "methodology_approval") return "methodology";
   if (status?.next_phase === "research_approval") return "research";
-  if (status?.next_phase === "investigation_gate_approval") return "investigation_gate";
+  if (["investigation_gate_approval", "investigation_gate_finalization"].includes(status?.next_phase)) return "investigation_gate";
   if (status?.next_phase === "report") return "report";
   if (status?.next_phase === "ingest" && status?.ingest?.resume_at === "decision") return "ingest";
   return "";

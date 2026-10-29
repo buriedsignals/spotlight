@@ -90,9 +90,49 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def check_distilled_anchor_diagnostic(root: Path) -> None:
+    # Local12B used save_as ending .raw; the summary still is not evidence.
+    # The CLI must not invite registration that the evidence guard refuses.
+    case = make_case(root / "distilled-anchor")
+    lead = case / "research" / "page.md.raw"
+    raw = case / "research" / "page.md.raw.raw"
+    text = "The public register records the appointment on 8 June."
+    lead.write_text(f"# RLM-distilled leads from https://example.org/register\n{text}\n", encoding="utf-8")
+    raw.write_text(text + "\n", encoding="utf-8")
+    target, bundle_path = case / "data/source-expressions.json", case / "data/evidence-bundle.json"
+    before = (target.read_bytes(), bundle_path.read_bytes())
+    body = proposal(5)
+    body["expressions"][0].update({"text": text, "anchor_ref": {"path": "research/page.md.raw"}, "original_evidence_bundle_id": None})
+    refused = run_writer(case, body, actor="fact-checker")
+    require(refused.returncode == 2 and "RLM-distilled lead file, not source evidence" in refused.stderr
+            and "page.md.raw.raw" in refused.stderr and "Add the evidence item" not in refused.stderr,
+            f"distilled lead was given misleading evidence-registration advice: {refused.stderr}")
+    require((target.read_bytes(), bundle_path.read_bytes()) == before,
+            "refusing a distilled anchor mutated expressions or evidence bundle")
+    body["expressions"][0]["anchor_ref"] = {"path": "research/page.md.raw.raw"}
+    unlisted = run_writer(case, body, actor="fact-checker")
+    require(unlisted.returncode == 2 and "Add the evidence item for research/page.md.raw.raw" in unlisted.stderr
+            and (target.read_bytes(), bundle_path.read_bytes()) == before,
+            f"genuine unlisted raw evidence lost registration guidance or refusal atomicity: {unlisted.stderr}")
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+    item = json.loads(json.dumps(bundle["items"][0]))
+    item.update({"id": "FC-RAW", "raw_path": "research/page.md.raw.raw", "sha256": hashlib.sha256(raw.read_bytes()).hexdigest()})
+    item.pop("text_derivatives", None)
+    bundle["items"].append(item)
+    bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+    registered = bundle_path.read_bytes()
+    accepted = run_writer(case, body, actor="fact-checker")
+    require(accepted.returncode == 0, f"registered genuine raw evidence did not write: {accepted.stderr}")
+    stored = next(row for row in expressions(case)["expressions"] if row["id"] == "SXW5")
+    require(stored["anchor_ref"]["path"] == "research/page.md.raw.raw"
+            and stored["original_evidence_bundle_id"] == "FC-RAW" and bundle_path.read_bytes() == registered,
+            "successful raw passage did not retain its actual anchor/item or mutated the bundle")
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
+        check_distilled_anchor_diagnostic(root)
         case = make_case(root)
         target = case / "data" / "source-expressions.json"
 

@@ -234,6 +234,12 @@ def record_attempt(case: Path, data_descriptor: int, kind: str, gap: str) -> Non
     if status["next_phase"] not in allowed:
         where = "research" if research else "investigation"
         raise OrchestrationError(f"{kind} attempts can only be recorded during {where}")
+    repairs = [item for item in status.get("checks", []) if item.startswith("validate-fact-check:")]
+    if kind in (CYCLE, ROUND_CYCLE) and repairs:
+        raise OrchestrationError(
+            "Finish or correct the fact-check before recording an investigation cycle. "
+            "Spawn the fact-checker for these unfinished checks: " + "; ".join(repairs)
+        )
     attempts = state["attempts"]
     stall = state.get("stall")
     if kind == CYCLE and isinstance(stall, dict) and stall.get("approved"):
@@ -447,20 +453,28 @@ def request_follow_up(
     decided_by: str | None = None,
     decided_at: str | None = None,
     requested_by_role: str | None = None,
+    shown_gate: str | None = None,
+    shown_digest: str | None = None,
 ) -> None:
     if not instructions.strip():
         raise OrchestrationError("instructions must describe the requested follow-up")
     requester = _follow_up_requester(nonce, decided_by, decided_at, requested_by_role)
     state = load_state(case, data_descriptor)
     phase = status_for(case, state, data_descriptor)["next_phase"]
+    # Bind the Report the member actually saw in this same locked transaction.
+    if shown_gate is not None or shown_digest is not None:
+        if shown_gate != "report" or nonce is None or not isinstance(shown_digest, str):
+            raise OrchestrationError("a shown Report digest requires its page nonce and gate")
+        if review.review_digest(case, "report", data_descriptor) != shown_digest:
+            raise review.ReviewDigestChanged("review digest changed since the page loaded; reload and decide again")
+        if phase != "report":
+            raise OrchestrationError("the Report is no longer waiting for the member")
     if phase not in {
         "investigation_gate_approval",
         "investigation_gate_finalization",
         "report",
     }:
         raise OrchestrationError("follow-up can only be requested from the Investigation gate")
-    if nonce is not None and phase != "investigation_gate_approval":
-        raise OrchestrationError("the Investigation gate is not waiting for the member")
     # The page asks for a follow-up while the gate waits for the member; open
     # flags and blocking failures are what a follow-up answers, so they do not
     # block it. Without a nonce the request is recorded on the agent channel.

@@ -58,7 +58,7 @@ successor id in the same write; withdraw a position that no longer stands
 with `withdraw_positions` (`id`, `reason`). Never write `{CASE_DIR}/data/source-positions.json` with
 file tools.
 
-After writing or merging `findings.json` in `activated` mode, set the finding
+An accepted `record_finding` refreshes finding fingerprints automatically. After a generic file write or merge of `findings.json` in `activated` mode, set the finding
 fingerprints with
 `scripts/spotlight-python scripts/write-source-expressions.py {CASE_DIR} --fingerprint-findings`
 (never compute them yourself). In `pilot` mode the passages are an

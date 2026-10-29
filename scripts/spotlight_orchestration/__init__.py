@@ -127,6 +127,8 @@ def request_follow_up(
     decided_by: str | None = None,
     decided_at: str | None = None,
     requested_by_role: str | None = None,
+    shown_gate: str | None = None,
+    shown_digest: str | None = None,
     authorized_cases_root: str | Path | None = None,
 ) -> None:
     """Send the case back to Investigation. ``nonce``/``digest`` come from the
@@ -142,6 +144,8 @@ def request_follow_up(
         decided_by,
         decided_at,
         requested_by_role,
+        shown_gate,
+        shown_digest,
         authorized_cases_root=authorized_cases_root,
     )
 
@@ -284,4 +288,6 @@ def review_view(
             "review_digest": None,
             "nonce_sha256": None,
         }
-    return {**view, "phase": status["phase"], "pending_gate": pending, "receipt": receipt}
+    return {**view, "phase": status["phase"], "pending_gate": pending, "receipt": receipt,
+            "can_request_follow_up": gate in {"investigation_gate", "report"}
+            and status["phase"] in {"investigation_gate_approval", "investigation_gate_finalization", "report"}}

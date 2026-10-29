@@ -2,7 +2,7 @@
 // confined to the active case. Reads stay inside the case (plus the checkout's schemas/);
 // writes stay inside the caller's write folder, never follow a symlink, and
 // never touch the files only the resolver and the review page may write.
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, constants, existsSync, globSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, writeSync } from 'node:fs';
 import type { Stats } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -10,8 +10,10 @@ import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT, ORCHESTRATOR, deliverableFor, factCheckChecklist, readCheckDocs } from '../roles.ts';
-import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey } from '../directions.ts';
+import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey, removesAnonymousRows } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
+import { fetchedFile } from './fetch.ts';
+import { completeNavigatorMetadata } from './navigator-receipts.ts';
 import { ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
 import type { CaseScope, ToolContext } from './run.ts';
 
@@ -87,9 +89,11 @@ function requested(base: string, path: string): string {
 }
 
 // A role narrowed in harness/composition.json reaches only its named case
-// files. Names compare case-insensitively, as the protected list does.
-function inScope(allowed: string[] | undefined, name: string): boolean {
-	return allowed === undefined || allowed.some((entry) => entry.toLowerCase() === name.toLowerCase());
+// files or explicitly named read-only folders. Writes stay exact-file scoped.
+// Names compare case-insensitively, as the protected list does.
+function inScope(allowed: string[] | undefined, name: string, folders = false): boolean {
+	const lower = name.toLowerCase();
+	return allowed === undefined || allowed.some((entry) => entry.toLowerCase() === lower || (folders && entry.endsWith('/') && lower.startsWith(entry.toLowerCase())));
 }
 
 // A role's read denylist (`denyReads` in harness/composition.json) hides case
@@ -112,7 +116,7 @@ function denied(deny: string[] | undefined, name: string): boolean {
 }
 
 function mayRead(scope: CaseScope | undefined, name: string): boolean {
-	return inScope(scope?.reads, name) && !denied(scope?.denyReads, name);
+	return inScope(scope?.reads, name, true) && !denied(scope?.denyReads, name);
 }
 
 // Every case data file under data/ is one JSON object, and the resolver hashes
@@ -384,7 +388,11 @@ function refuseUncitedVerdicts(caseDir: string, target: string, content: string)
 			const given = cited as Record<string, unknown>;
 			return given.expression_id === ref.expression_id && Object.entries(ref).every(([key, value]) => !(key in given) || given[key] === value);
 		});
-		if (items.some((item) => Array.isArray(item?.source_expression_refs) && item.source_expression_refs.some(onRecord))) continue;
+		if (items.some((item) => Array.isArray(item?.source_expression_refs) && item.source_expression_refs.some(onRecord))) {
+			const unmatched = items.flatMap((item) => Array.isArray(item?.source_expression_refs) ? item.source_expression_refs.filter((ref: unknown) => !onRecord(ref)) : []);
+			if (unmatched.length) throw new FileRefused(`refused: data/fact-check.json is unchanged; ${claim.finding_id} has unmatched source_expression_refs ${JSON.stringify(unmatched)}. Keep only passages you checked that support this finding; its active supporting passage ids are ${JSON.stringify(refs.map((ref) => ref.expression_id))}. Do not copy another finding's fingerprints.`);
+			continue;
+		}
 		const misspelt = items.some((item) => item?.source_expression_ref !== undefined) ? ' (the key is source_expression_refs, a list, not source_expression_ref)' : '';
 		const cited = items.flatMap((item) => (Array.isArray(item?.source_expression_refs) ? item.source_expression_refs : []));
 		const offRecord = cited.length > 0 ? ` (${JSON.stringify(cited)} is not an active passage supporting it)` : '';
@@ -476,6 +484,7 @@ function refuseBundleRewrites(caseDir: string, target: string, content: string, 
 		return;
 	}
 	const moved = [...before].flatMap(([id, item]) => {
+		if (typeof id !== 'string' || !id.trim()) return [];
 		const cited = passages.filter((p) => p?.original_evidence_bundle_id === id && p?.lifecycle_events?.at(-1)?.event === 'activated').map((p) => String(p.id));
 		const next = after.get(id);
 		if (cited.length === 0 || (next && ITEM_FILES.every((key) => isDeepStrictEqual(item[key], next[key])))) return [];
@@ -489,7 +498,7 @@ function refuseBundleRewrites(caseDir: string, target: string, content: string, 
 // s1: the fact-checker rewrote a finding into an invented address and marked
 // it false). Compared as validate-case.py does: Unicode NFKC, whitespace runs
 // collapsed.
-function refuseDriftedClaims(caseDir: string, target: string, content: string): void {
+function refuseDriftedClaims(caseDir: string, target: string, content: string, requireText = false): void {
 	if (caseRelative(caseDir, target) !== 'data/fact-check.json') return;
 	const normalized = (text: string) => text.normalize('NFKC').replace(/\s+/g, ' ').trim();
 	let claims: unknown;
@@ -504,7 +513,8 @@ function refuseDriftedClaims(caseDir: string, target: string, content: string): 
 	const drifted = (Array.isArray(claims) ? claims : []).flatMap((claim) => {
 		const expected = findings.get(claim?.finding_id);
 		const text = claim?.claim_text;
-		return typeof expected === 'string' && typeof text === 'string' && normalized(text) !== normalized(expected)
+		if (requireText && claim && typeof claim === 'object' && 'withdrawn' in claim) return [];
+		return typeof expected === 'string' && ((requireText && typeof text !== 'string') || (typeof text === 'string' && normalized(text) !== normalized(expected)))
 			? [`${String(claim.finding_id)}: ${JSON.stringify(expected)}`]
 			: [];
 	});
@@ -662,6 +672,91 @@ export function readTarget(caseDir: string, path: string, scope?: CaseScope): st
 	}
 	if (!readable(caseDir, real, scope)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read. Give a path relative to the case folder, such as data/findings.json.`);
 	return real;
+}
+
+// Only documented path fields get the case-root alias; other text is evidence
+// or judgment, and an absent or unsafe path remains for the validator to flag.
+// These are record-envelope facts, never source dates or semantic judgments.
+// Derive the active format after merging: mergeByKey preserves the old header,
+// so an explicit repair of a stale 1.0 header otherwise cannot take effect.
+function artifactEnvelope(caseDir: string, target: string, submitted: string, merged: string): string {
+	const name = caseRelative(caseDir, target);
+	if (!['data/methodology.json', 'data/findings.json', 'data/fact-check.json', 'data/evidence-bundle.json', 'data/investigation-log.json'].includes(name)) return merged;
+	const object = (text: string | undefined): Record<string, unknown> | undefined => {
+		if (text === undefined) return undefined;
+		try {
+			const value = JSON.parse(text);
+			return value && typeof value === 'object' && !Array.isArray(value) ? value : undefined;
+		} catch { return undefined; }
+	};
+	const input = object(submitted), document = object(name === 'data/methodology.json' ? completeNavigatorMetadata(caseDir, merged) : merged);
+	if (!input || !document) return merged;
+	const before = JSON.stringify(object(merged));
+	const contract = object(currentText(join(caseDir, 'data/case-contract.json')));
+	const events = contract?.activation_events;
+	const activated = contract?.schema_version === '1.0' && contract.current_contract_version === '1.1'
+		&& Array.isArray(events) && events.some((event) => event?.activated_contract_version === '1.1');
+	if (activated && ['data/findings.json', 'data/fact-check.json'].includes(name)) {
+		if (input.schema_version !== undefined && input.schema_version !== '1.1') {
+			throw new FileRefused(`refused: ${name} belongs to an activated case and requires schema_version "1.1". Submit its 1.1 fields and exact evidence references; do not rename legacy verdicts or invent missing evidence. Omit the version to use the active contract. The file is unchanged.`);
+		}
+		document.schema_version = '1.1';
+	}
+	const existing = object(currentText(target));
+	if (activated && typeof contract?.project === 'string' && contract.project.trim()) document.project = contract.project;
+	else if (typeof existing?.project === 'string' && existing.project.trim()) document.project = existing.project;
+	if (name === 'data/evidence-bundle.json') {
+		const valid = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
+		document.run_id = valid(existing?.run_id) ? existing.run_id : valid(input.run_id) ? input.run_id : `local-${randomUUID()}`;
+	}
+	const created = name === 'data/methodology.json' ? 'planned_at' : name === 'data/evidence-bundle.json' ? 'created_at' : undefined;
+	if (created) document[created] = existing?.[created] ?? new Date().toISOString();
+	return JSON.stringify(document) === before ? merged : `${JSON.stringify(document, null, 2)}\n`;
+}
+
+function normalizeArtifactPaths(caseDir: string, target: string, content: string, scope?: CaseScope): string {
+	const name = caseRelative(caseDir, target);
+	if (name !== 'data/findings.json' && name !== 'data/evidence-bundle.json' && name !== 'data/fact-check.json') return content;
+	let document: Record<string, unknown>;
+	try { document = JSON.parse(content); } catch { return content; }
+	if (!document || typeof document !== 'object' || Array.isArray(document)) return content;
+	let changed = false;
+	const paths = (row: unknown, fields: string[]) => {
+		if (!row || typeof row !== 'object' || Array.isArray(row)) return;
+		const value = row as Record<string, unknown>;
+		for (const field of fields) {
+			const path = value[field];
+			if (typeof path !== 'string' || !path.startsWith('{CASE_DIR}/')) continue;
+			const suffix = path.slice('{CASE_DIR}/'.length);
+			if (!suffix || suffix.split(/[\\/]/).some((part) => !part || part === '.' || part === '..')) continue;
+			try {
+				const file = readTarget(caseDir, path, scope);
+				if (!inside(caseDir, file) || !lstatSync(file).isFile()) continue;
+				value[field] = relative(caseDir, file).split(sep).join('/');
+				changed = true;
+			} catch (error) {
+				if (error instanceof FileRefused || (error as NodeJS.ErrnoException).code === 'ENOENT' || (error instanceof Error && error.message.startsWith('not found:'))) continue;
+				throw error;
+			}
+		}
+	};
+	const rows = (value: unknown) => Array.isArray(value) ? value : [];
+	if (name === 'data/findings.json') {
+		for (const finding of rows(document.findings)) for (const source of rows(finding?.sources)) paths(source, ['local_file']);
+	} else if (name === 'data/fact-check.json') {
+		for (const claim of rows(document.claims)) {
+			for (const item of [...rows(claim?.evidence_for), ...rows(claim?.evidence_against)]) {
+				paths(item, ['local_file']);
+				paths(item?.source_ref, ['path']);
+			}
+		}
+	} else {
+		for (const item of rows(document.items)) {
+			paths(item, ['raw_path', 'screenshot_path', 'downloaded_document_path']);
+			for (const derivative of rows(item?.text_derivatives)) paths(derivative, ['path']);
+		}
+	}
+	return changed ? JSON.stringify(document, null, 2) : content;
 }
 
 // Lines as the evidence validators count them (scripts/evidence_anchors.py
@@ -865,11 +960,14 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 	};
 	// The investigator's and the fact-checker's writes to the files they build
 	// merge by id, so each write may carry a few entries (directions.ts mergeByKey).
-	const whole = (target: string, content: string) => {
+	const whole = (target: string, content: string, exactEdit = false) => {
 		const name = split(target);
 		if (name) return mergeDirection(name, currentText(target), content, direction!);
 		const relative = caseRelative(caseDir, target);
-		return mergesByKey(role, relative) ? mergeByKey(role!, relative, currentText(target), content) : content;
+		if (!mergesByKey(role, relative)) return content;
+		const current = currentText(target);
+		if (exactEdit && removesAnonymousRows(role!, relative, current, content)) return content;
+		return mergeByKey(role!, relative, current, content);
 	};
 	// What a merged write did, so a writer that left entries out learns they stay.
 	const LISTS: Record<string, string> = { 'data/findings.json': 'findings', 'data/evidence-bundle.json': 'items', 'data/fact-check.json': 'claims', 'data/investigation-log.json': 'cycles' };
@@ -888,15 +986,19 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 	};
 	// After the fact-checker's accepted write to its file: the next findings to
 	// check, in full (roles.ts nextCheckText).
-	const nextToCheck = (wrote: string) => {
+	const assignedWrites = new Set<string>();
+	const nextToCheck = (wrote: string, written: string) => {
 		if (role !== 'fact-checker' || wrote !== 'data/fact-check.json') return '';
 		// #274: a batch fact-checker finishes once its findings have claims; the
 		// launcher starts the next batch with a fresh worker.
 		const batch = context.env?.SPOTLIGHT_FC_BATCH?.split(',').filter(Boolean);
 		if (!batch?.length) return `\n${factCheckChecklist(readCheckDocs(caseDir))}`;
+		for (const claim of (JSON.parse(written) as { claims?: Array<{ finding_id?: string }> }).claims ?? []) {
+			if (typeof claim?.finding_id === 'string' && batch.includes(claim.finding_id)) assignedWrites.add(claim.finding_id);
+		}
 		const claimed = new Set((((readCheckDocs(caseDir).factCheck ?? {}) as { claims?: Array<{ finding_id?: unknown }> }).claims ?? []).map((claim) => claim?.finding_id));
-		const open = batch.filter((id) => !claimed.has(id));
-		return open.length === 0 ? `\nEvery finding in your batch has a claim (${batch.join(', ')}). Finish now; the harness starts the next batch.` : `\nStill without a claim in your batch: ${open.join(', ')}. Write their claims, then finish.`;
+		const open = batch.filter((id) => !claimed.has(id) || !assignedWrites.has(id));
+		return open.length === 0 ? `\nEvery finding in your batch has a claim (${batch.join(', ')}). Batch validation is pending.` : `\nStill awaiting an accepted claim write in your batch: ${open.join(', ')}. Write their claims, then finish.`;
 	};
 	// fc-stall scan (incr-test3 sp98 seq 35): a fact-check write that added no
 	// claim still read "wrote data/fact-check.json", and the count stayed put.
@@ -929,7 +1031,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			name: 'read_file',
 			label: 'Read file',
 			description:
-				'Read a text file in the active case (path relative to the case folder, or absolute inside it), or a Spotlight schema under the checkout schemas/ folder. Optional 1-based line offset and line limit; lines are counted as the evidence validators count them, so they serve as source_ref line_start/line_end. Optional json_pointer (RFC 6901, for a JSON file) returns exactly the text the validators select for a source_ref json_pointer: a string value as is, anything else as compact sorted JSON.',
+				'Read a text file in the active case (path relative to the case folder, or absolute inside it), or a Spotlight schema under the checkout schemas/ folder or agent instruction under agents/references/. Optional 1-based line offset and line limit; lines are counted as the evidence validators count them, so they serve as source_ref line_start/line_end. Optional json_pointer (RFC 6901, for a JSON file) returns exactly the text the validators select for a source_ref json_pointer: a string value as is, anything else as compact sorted JSON.',
 			parameters: readParams,
 			async execute(_id, params) {
 				const input = checkedParams<{ path: string; offset?: number; limit?: number; json_pointer?: string }>('read_file', readParams, params);
@@ -958,9 +1060,17 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			name: 'write_file',
 			label: 'Write file',
 			description:
-				'Create or overwrite a file in the active case (path relative to the case folder). Parent folders are created. Refused outside your folder, through symlinks, for a folder path, for resolver, review and receipt files, and for empty content over an existing non-empty file.',
+				'Create or overwrite a file in the active case (path relative to the case folder). Exception: fact-checker writes to data/fact-check.json merge claims by finding_id; omitted entries stay. For that file, write only this batch’s new or corrected claims, not the existing file. Investigator writes to data/findings.json and investigator/fact-checker writes to data/evidence-bundle.json likewise merge entries by id. The harness supplies a stable local bundle run_id when absent. For activated findings and fact-checks, omit schema_version to use the active contract; an explicit incompatible version is refused. The harness supplies the durable project and new planning/bundle creation timestamps, preserving historical creation times. You supply claims, judgments and evidence. Parent folders are created. Refused outside your folder, through symlinks, for a folder path, for resolver, review and receipt files, and for empty content over an existing non-empty file.',
 			parameters: writeParams,
 			executionMode: 'sequential',
+			prepareArguments: (args: unknown) => {
+				if (args && typeof args === 'object' && !Array.isArray(args) && !Object.hasOwn(args, 'path')) {
+					// Pi's schema error otherwise repeats the entire proposed file,
+					// inflating the context while the model tries to add one field.
+					throw new ToolArgumentError('write_file: path is required alongside content. Reissue the call with the case-relative destination named in your task, using {"path":"...","content":"..."}. No file was written.');
+				}
+				return args;
+			},
 			async execute(_id, params) {
 				const input = checkedParams<{ path: string; content: string }>('write_file', writeParams, params);
 				// An output-capped call arrives with empty content; overwriting would erase
@@ -971,7 +1081,10 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 						throw new FileRefused(`refused: empty content would erase ${input.path}. If your output was cut off, write the file again in full.`);
 					}
 				}
-				const content = whole(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
+				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, true);
+				const normalized = normalizeArtifactPaths(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, scope);
+				const destination = writeTarget(caseDir, writeRoot, input.path, writes, denyWrites);
+				const content = artifactEnvelope(caseDir, destination, normalized, whole(destination, normalized));
 				refuseCitedWithdrawal(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseMisplacedBrief(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseUnactivatedStart(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
@@ -983,16 +1096,17 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseMissingCitedFiles(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseUnknownFlags(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
+				refuseUnacquiredArchiveDocument(context, destination, content);
 				await refuseInvalidProposal(context, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				const before = currentText(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				const wrote = writeConfined(caseDir, writeRoot, input.path, content, writes, denyWrites);
-				return textResult(`wrote ${wrote}${claimsAdded(wrote, before, input.content)}${keptNote(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, content)}${nextToCheck(wrote)}`);
+				return textResult(`wrote ${wrote}${claimsAdded(wrote, before, input.content)}${keptNote(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, content)}${nextToCheck(wrote, input.content)}`);
 			},
 		},
 		{
 			name: 'edit_file',
 			label: 'Edit file',
-			description: 'Replace one exact, unique occurrence of old_text with new_text in a case file. Same limits as write_file.',
+			description: 'Replace one exact, unique occurrence of old_text with new_text in a case file. Same role and path limits as write_file. For managed findings and evidence lists, an unscoped authorized writer can explicitly remove malformed rows without a valid id, keeping all keyed records, their order, and file metadata unchanged. Omission in write_file still keeps existing rows.',
 			parameters: editParams,
 			executionMode: 'sequential',
 			async execute(_id, params) {
@@ -1014,7 +1128,8 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				if (text.indexOf(input.old_text, first + 1) !== -1) {
 					throw new Error(`edit_file: old_text occurs more than once in ${input.path}; include more context`);
 				}
-				const updated = whole(target, text.slice(0, first) + input.new_text + text.slice(first + input.old_text.length));
+				const replacement = text.slice(0, first) + input.new_text + text.slice(first + input.old_text.length);
+				const updated = artifactEnvelope(caseDir, target, replacement, whole(target, replacement, true));
 				refuseRecordedFramework(caseDir, target);
 				refuseNonObjectData(caseDir, target, updated);
 				refuseUncitedVerdicts(caseDir, target, updated);
@@ -1023,6 +1138,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseDriftedClaims(caseDir, target, updated);
 				refuseMissingCitedFiles(caseDir, target, updated);
 				refuseUnknownFlags(caseDir, target, updated);
+				refuseUnacquiredArchiveDocument(context, target, updated);
 				await refuseInvalidProposal(context, target, updated);
 				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes, denyWrites)}`);
 			},
@@ -1035,7 +1151,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			async execute(_id, params) {
 				const { pattern } = checkedParams<{ pattern: string }>('list_files', listParams, params);
 				if (isAbsolute(pattern) || pattern.split(/[\\/]/).includes('..')) {
-					throw new FileRefused('refused: list_files patterns are relative to the case and cannot contain ".."');
+					throw new FileRefused('refused: list_files patterns are relative to the case and cannot contain "..". To read a schema, use read_file with schemas/<name>.schema.json.');
 				}
 				const matches = globSync(pattern, { cwd: caseDir })
 					.map((path) => path.split(sep).join('/'))
@@ -1077,7 +1193,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 					}
 					return textResult(matches.length ? matches.join('\n') : 'no matches');
 				}
-				if (!inside(caseDir, start)) throw new FileRefused(`refused: ${input.path} is outside the case`);
+				if (!inside(caseDir, start)) throw new FileRefused(`refused: ${input.path} is outside the case.${/^schemas[\\/]?$/.test(input.path ?? '') ? ' To read a schema, use read_file with schemas/<name>.schema.json.' : ''}`);
 				for (const file of caseFiles(caseDir, start)) {
 					if (!mayRead(scope, caseRelative(caseDir, file))) continue;
 					if (lstatSync(file).size > MAX_GREP_FILE_BYTES) continue;
@@ -1113,4 +1229,190 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			},
 		},
 	];
+}
+
+// Canonical write identity shared by budget/completion hooks and the worker's
+// rejected-proposal carry. Typed records retain the file boundary's receipts.
+export function canonicalWriteCall(tool: string, args: unknown): { path: string; content?: string } | undefined {
+	const input = args as Record<string, unknown> | undefined;
+	if (!input || typeof input !== 'object') return undefined;
+	if (tool === 'write_file' || tool === 'edit_file') {
+		return typeof input.path === 'string'
+			? { path: input.path, ...(typeof input.content === 'string' ? { content: input.content } : {}) }
+			: undefined;
+	}
+	const key = tool === 'record_finding' ? 'finding' : tool === 'record_assessment' ? 'assessment' : undefined;
+	if (!key || !input[key] || typeof input[key] !== 'object' || Array.isArray(input[key])) return undefined;
+	return {
+		path: key === 'finding' ? 'data/findings.json' : 'data/fact-check.json',
+		content: JSON.stringify({ [key === 'finding' ? 'findings' : 'claims']: [input[key]] }),
+	};
+}
+
+type RecordRow = Record<string, unknown>;
+const recordRows = (value: unknown): RecordRow[] => Array.isArray(value)
+	? value.filter((row): row is RecordRow => !!row && typeof row === 'object' && !Array.isArray(row))
+	: [];
+
+// Project the canonical row schema into a structured tool parameter, rather
+// than maintaining a second taxonomy. Local references are inlined because
+// this row is now the top-level tool schema, not the original document.
+function recordSchema(file: string, key: string, omitted: string[]): ReturnType<typeof Type.Object> {
+	const doc = JSON.parse(readFileSync(join(SCHEMAS_DIR, file), 'utf8'));
+	const expand = (value: unknown): unknown => {
+		if (Array.isArray(value)) return value.map(expand);
+		if (!value || typeof value !== 'object') return value;
+		const row = value as RecordRow;
+		if (typeof row.$ref === 'string' && row.$ref.startsWith('#/')) {
+			const ref = row.$ref.slice(2).split('/').reduce((at: RecordRow, part) => at[part] as RecordRow, doc);
+			const expanded = expand(ref) as RecordRow;
+			// Tools accept the same shorthand as the canonical writer. The
+			// worker validator resolves it to full immutable refs before the
+			// persistent schema is checked; supplied fingerprints still must
+			// have the canonical shape and match the selected relation.
+			return row.$ref === '#/definitions/source_expression_ref'
+				? { anyOf: [{ type: 'string', minLength: 1 }, { ...expanded, required: ['expression_id'] }] }
+				: expanded;
+		}
+		const expanded = Object.fromEntries(Object.entries(row).map(([name, child]) => [name, expand(child)]));
+		if (!Array.isArray(expanded.type)) return expanded;
+		// Gemma's native tool template expects a scalar type. A JSON Schema
+		// type array is the same union expressed as anyOf, including null;
+		// preserve sibling constraints and any pre-existing union unchanged.
+		const { type, ...constraints } = expanded;
+		const union = { anyOf: (type as unknown[]).map((item) => ({ type: item })) };
+		return constraints.anyOf === undefined
+			? { ...constraints, ...union }
+			: { ...constraints, allOf: [...(Array.isArray(constraints.allOf) ? constraints.allOf : []), union] };
+	};
+	const row = expand(doc.properties[key].items) as { required: string[]; allOf?: unknown };
+	row.required = row.required.filter((name) => !omitted.includes(name));
+	// Positive anchors are completed by quote resolution, then checked by the
+	// existing strict write and final validators. A real exact-quote proposal
+	// must reach that production step before its references can be validated.
+	delete row.allOf;
+	return Type.Object({ [key === 'findings' ? 'finding' : 'assessment']: Type.Unsafe(row) }, { additionalProperties: false });
+}
+
+function recordDocument(context: ToolContext, path: string): RecordRow {
+	if (!existsSync(join(context.caseDir, path))) return {};
+	return JSON.parse(readFileSync(readTarget(context.caseDir, path, context.scope), 'utf8')) as RecordRow;
+}
+
+const recordCitations = (row: RecordRow | undefined): RecordRow[] =>
+	['sources', 'evidence_for', 'evidence_against'].flatMap((field) => recordRows(row?.[field]));
+
+function refuseUnacquiredArchiveCitation(context: Parameters<typeof caseFileTools>[0], source: RecordRow, previous: RecordRow[], tool: string): void {
+	if (typeof source.archive_url !== 'string' || !source.archive_url.trim()) return;
+	// Historical/manual records stay readable and editable only with their
+	// original archive identity; changing the capture needs a real receipt.
+	const identity = ['archive_url', 'url', 'source', 'source_url', 'local_file', 'source_ref', 'evidence_bundle_id', 'raw_path', 'downloaded_document_path', 'screenshot_path', 'path', 'sha256', 'text_derivatives'];
+	if (previous.some((old) => identity.every((key) => isDeepStrictEqual(old[key], source[key])))) return;
+	const ref = source.source_ref as RecordRow | undefined;
+	const path = [source.local_file, ref?.path, source.raw_path, source.downloaded_document_path, source.screenshot_path, source.path].find((value): value is string => typeof value === 'string');
+	// fetchedFile reads only the case directory and optional runtime env.
+	const capture = path ? fetchedFile(context as ToolContext, path) : undefined;
+	if (path && context.env?.SPOTLIGHT_ROLE && capture?.url === source.archive_url && capture.acquired_by === context.env.SPOTLIGHT_ROLE) {
+		const bytes = readFileSync(readTarget(context.caseDir, path, context.scope));
+		if (createHash('sha256').update(bytes).digest('hex') === capture.sha256) return;
+	}
+	throw new FileRefused(`${tool}: archive_url needs an actual acquired archive capture with its matching local_file/source_ref. Omit it when no capture exists; the artifact is unchanged.`);
+}
+
+// Every model-accessible canonical write, including the generic file tools,
+// checks new archive metadata before committing. Otherwise a generic write
+// could turn an invented URL into a supposedly historical typed record.
+function refuseUnacquiredArchiveDocument(context: Parameters<typeof caseFileTools>[0], target: string, content: string): void {
+	const name = caseRelative(context.caseDir, target);
+	const list = name === 'data/findings.json' ? 'findings' : name === 'data/fact-check.json' ? 'claims' : name === 'data/evidence-bundle.json' ? 'items' : undefined;
+	if (!list) return;
+	const current = currentText(target);
+	let previous: RecordRow[] = [];
+	if (current) {
+		try { previous = recordRows((JSON.parse(current) as RecordRow)[list]); }
+		catch (error) {
+			// Broken JSON supplies no trusted historical citation identity, but
+			// must not prevent a valid replacement without archive metadata.
+			if (!(error instanceof SyntaxError)) throw error;
+		}
+	}
+	const proposed = recordRows((JSON.parse(content) as RecordRow)[list]);
+	const key = list === 'claims' ? 'finding_id' : 'id';
+	for (const row of proposed) {
+		const old = typeof row[key] === 'string' ? previous.find((candidate) => candidate[key] === row[key]) : undefined;
+		const oldCitations = list === 'items' ? old ? [old] : [] : recordCitations(old);
+		for (const source of list === 'items' ? [row] : recordCitations(row)) {
+			refuseUnacquiredArchiveCitation(context, source, oldCitations, name);
+		}
+	}
+}
+
+export function recordTools(tools: ToolDefinition[], context: ToolContext): ToolDefinition[] {
+	const role = context.env.SPOTLIGHT_ROLE;
+	if (role !== 'investigator' && role !== 'fact-checker') return [];
+	const finding = role === 'investigator';
+	const name = finding ? 'record_finding' : 'record_assessment';
+	const key = finding ? 'finding' : 'assessment';
+	const file = finding ? 'findings.json' : 'fact-check.json';
+	const parameters = recordSchema(
+		finding ? 'findings.schema.json' : 'fact-check.schema.json',
+		finding ? 'findings' : 'claims',
+		finding ? ['id', 'finding_fingerprint'] : ['claim_text'],
+	);
+	const write = tools.find((tool) => tool.name === 'write_file');
+	const expressions = tools.find((tool) => tool.name === 'source_expressions');
+	if (!write) return [];
+	return [{
+		name,
+		label: finding ? 'Record finding' : 'Record assessment',
+		parameters,
+		executionMode: 'sequential',
+		description: finding
+			? 'Record one finding as a structured object. Supply claim, evidence, sources and confidence with any relevant grounding fields. Omit id for a stable generated ID; supply an existing id to correct it. Code supplies the file, contract, project and fingerprint. Other findings remain unchanged. Archive URLs require an actual capture. You choose evidence and judgment.'
+			: 'Record one independent assessment as a structured object. Supply finding_id, verdict, confidence and your evidence/grounding assessment. Omit claim_text to copy the exact finding. Exact quotes and source_ref locators use the same acquired-capture and passage checks as a fact-check write. Other assessments remain unchanged. You choose the verdict and evidence; code supplies the canonical file and references.',
+		async execute(id, raw, signal, ...rest) {
+			const input = checkedParams<Record<string, RecordRow>>(name, parameters, raw);
+			const row = structuredClone(input[key]);
+			const findings = recordDocument(context, 'data/findings.json');
+			const rows = recordRows(findings.findings);
+			const existing = recordDocument(context, `data/${file}`);
+			const contract = recordDocument(context, 'data/case-contract.json');
+			const active = contract.current_contract_version === '1.1';
+			if (finding) {
+				if (active && !expressions) throw new FileRefused('record_finding: this runtime is missing the canonical passage/fingerprint writer; no finding was written.');
+				if (active && row.confidence === 'disputed') throw new ToolArgumentError('record_finding: activated findings use confidence high, medium or low; record uncertainty in the claim and grounding.');
+				if (!row.id) {
+					const prefix = context.env.SPOTLIGHT_DIRECTION ? `${context.env.SPOTLIGHT_DIRECTION}-F` : 'F';
+					const same = rows.find((item) => typeof item.id === 'string' && item.id.startsWith(prefix) && item.claim === row.claim);
+					let next = 1;
+					const taken = new Set(rows.map((item) => item.id));
+					while (taken.has(`${prefix}${next}`)) next++;
+					row.id = same?.id ?? `${prefix}${next}`;
+				}
+				delete row.finding_fingerprint;
+			} else {
+				const source = rows.find((item) => item.id === row.finding_id);
+				if (!source || typeof source.claim !== 'string') throw new FileRefused(`record_assessment: unknown finding_id ${JSON.stringify(row.finding_id)}. Read data/findings.json and use the assigned finding's id.`);
+				if (row.claim_text === undefined) row.claim_text = source.claim;
+				if (active && !['verified', 'unverified', 'disputed', 'false', 'not_checkable'].includes(String(row.verdict))) throw new ToolArgumentError('record_assessment: activated cases use verdict verified, unverified, disputed, false or not_checkable.');
+			}
+			const project = existing.project ?? contract.project ?? findings.project ?? recordDocument(context, 'data/methodology.json').project;
+			if (typeof project !== 'string' || !project.trim()) throw new FileRefused(`${name}: the approved case has no project label; repair the methodology through its owner before recording results.`);
+			const content = JSON.stringify({
+				project,
+				...(!active && existing.schema_version ? { schema_version: existing.schema_version } : {}),
+				[finding ? 'findings' : 'claims']: [row],
+			});
+			const result = await write.execute(id, { path: `data/${file}`, content }, signal, ...rest);
+			if (finding && active && expressions) {
+				try {
+					// The sole passage writer refreshes fingerprints and affected links.
+					await expressions.execute(`${id}-fingerprint`, { action: 'fingerprint_findings' }, signal, ...rest);
+				} catch (error) {
+					throw new Error(`record_finding: data/findings.json was written, but fingerprint refresh failed. Do not recreate the finding. Repair the fingerprint step with source_expressions action fingerprint_findings before continuing. ${(error as Error).message}`);
+				}
+			}
+			return finding ? { ...result, content: [...result.content, { type: 'text' as const, text: `Finding id: ${String(row.id)}.` }] } : result;
+		},
+	}];
 }

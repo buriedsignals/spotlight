@@ -8,8 +8,8 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import type { CheckDocs, Recheck } from './roles.ts';
-import { fetchTool } from './tools/fetch.ts';
+import type { CheckDocs, Recheck, SourceRecheck } from './roles.ts';
+import { factCheckerCapture, fetchTool } from './tools/fetch.ts';
 import type { ToolContext } from './tools/run.ts';
 
 type Row = Record<string, unknown>;
@@ -49,10 +49,11 @@ export async function recheckSources(docs: CheckDocs, ids: string[], options: Re
 			const path = result.raw_path ?? result.saved_to;
 			const page = flat(path ? readFileSync(resolve(options.context.caseDir, path), 'utf8') : (result.markdown ?? ''));
 			const missing = quotes.filter((quote) => !page.includes(quote)).length;
-			const where = `harness re-fetch ${stamp}${path ? `, ${path}` : ''}`;
-			done[url] = quotes.length === 0 ? `re-fetched, no recorded passage to compare (${where})` : missing === 0 ? `still says the ${quotes.length} recorded passage${quotes.length === 1 ? '' : 's'} (${where})` : `changed: ${missing} of ${quotes.length} recorded passages are no longer on the page (${where})`;
+			const status = quotes.length === 0 ? 're-fetched, no recorded passage to compare' : missing === 0 ? `still says the ${quotes.length} recorded passage${quotes.length === 1 ? '' : 's'}` : `changed: ${missing} of ${quotes.length} recorded passages are no longer on the page`;
+			const capture = path ? factCheckerCapture(options.context, path) : undefined;
+			done[url] = { status, ...(capture && path ? { acquisition: { ...capture, path } } : {}) };
 		} catch (error) {
-			done[url] = `unreachable: ${(error as Error).message.slice(0, 160)} (harness re-fetch ${stamp})`;
+			done[url] = { status: `unreachable: ${(error as Error).message.slice(0, 160)} (harness re-fetch ${stamp})` };
 		}
 	}
 	try {
@@ -61,5 +62,15 @@ export async function recheckSources(docs: CheckDocs, ids: string[], options: Re
 	} catch {
 		// A re-check that cannot be kept is done again for the next batch.
 	}
-	return done;
+	const urls = new Set(items.map((item) => item.source_url ?? item.url));
+	// Cached captures retain their real acquisition time. Revalidate the proof
+	// on each use; status strings and modified/missing files cannot grant trust.
+	return Object.fromEntries(Object.entries(done).filter(([url]) => urls.has(url)).map(([url, check]) => {
+		if (!check || (typeof check !== 'string' && (typeof check !== 'object' || typeof check.status !== 'string'))) return [url, { status: 'Cached recheck metadata is unusable' }];
+		if (typeof check === 'string' || !check.acquisition) return [url, check];
+		const { acquisition, status } = check;
+		const current = factCheckerCapture(options.context, acquisition.path);
+		const valid = acquisition.acquired_by === 'fact-checker' && current && current.url === acquisition.url && current.accessed === acquisition.accessed && current.sha256 === acquisition.sha256;
+		return [url, valid ? check : { status } satisfies SourceRecheck];
+	}));
 }

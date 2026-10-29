@@ -68,7 +68,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from evidence_anchors import case_evidence_path, locate_quote, normalized, selected_source_texts, source_lines, validate_source_ref  # noqa: E402
+from evidence_anchors import case_evidence_path, locate_quote, normalized, rlm_lead_failure, selected_source_texts, source_lines, validate_source_ref  # noqa: E402
 from source_expression_contract import canonical_fingerprint, canonical_json_bytes, passage_core  # noqa: E402
 from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
@@ -301,6 +301,12 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
         if anchor and isinstance(anchor.get(field), str) and anchor[field].isdigit():
             anchor[field] = int(anchor[field])
     target = (case / anchor["path"]).resolve() if anchor else None
+    if target is not None and case.resolve() in target.parents and target.is_file():
+        # A lead summary cannot become evidence by registering it in the
+        # bundle. Report that boundary before suggesting a missing item.
+        lead_failure = rlm_lead_failure(target)
+        if lead_failure:
+            raise WriteError(f"expression {label}: {lead_failure}")
     reproduces = (anchor is not None and target is not None and case.resolve() in target.parents and target.is_file()
                   and proposal["text"] in selected_source_texts(target, anchor)[0])
     item = _bundle_item(bundle, proposal.get("original_evidence_bundle_id")) or {}

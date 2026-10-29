@@ -77,6 +77,8 @@ def build_parser() -> argparse.ArgumentParser:
     # Without a page nonce the follow-up is the agent's; the harness names
     # the requesting role (default orchestrator), never a member.
     follow_up.add_argument("--requested-by-role")
+    follow_up.add_argument("--shown-gate", choices=("report",))
+    follow_up.add_argument("--shown-digest")
     add_case_boundary(follow_up)
     seal = commands.add_parser("seal-investigation-gate")
     add_case_boundary(seal)
@@ -155,6 +157,8 @@ def dispatch(args: argparse.Namespace) -> dict[str, object] | None:
             **receipt,
             **decider,
             requested_by_role=args.requested_by_role,
+            shown_gate=args.shown_gate,
+            shown_digest=args.shown_digest,
             **boundary,
         )
     elif args.command == "seal-investigation-gate":

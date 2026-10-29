@@ -623,6 +623,39 @@ class OrchestrationConformance(unittest.TestCase):
         (self.case / "summary.md").write_text("# Older follow-up\n", encoding="utf-8")
         self.assertEqual(self.status()["next_phase"], "investigation_gate_approval")
 
+    def test_fact_check_repairs_do_not_start_another_investigation_cycle(self) -> None:
+        self.approve("methodology")
+        investigation_outputs(self.case)
+        state_path = self.case / "data/orchestration.json"
+        before = state_path.read_bytes()
+        check_path = self.case / "data/fact-check.json"
+        complete = check_path.read_text()
+        for defect in ("missing verdict", "mismatched artifact"):
+            with self.subTest(defect=defect):
+                state_path.write_bytes(before)
+                fact_check = json.loads(complete)
+                if defect == "missing verdict":
+                    fact_check["claims"] = []
+                else:
+                    claim = fact_check["claims"][0]
+                    claim["verdict"] = "verified"
+                    claim["evidence_for"] = [{
+                        "description": "The local primary record.",
+                        "source": "https://example.test/primary",
+                        "local_file": "research/corroboration.txt",
+                        "source_ref": {"path": "research/primary-record.txt", "line_start": 1, "line_end": 1},
+                        "quote": claim["claim_text"],
+                    }]
+                write_json(check_path, fact_check)
+                self.assertTrue(self.status().get("checks"), "the real fact-check validator rejects the fixture")
+                result = self.command("record-attempt", "investigation-cycle", "--gap", defect, expect=3)
+                self.assertIn("fact-checker", result.stderr)
+                self.assertEqual(state_path.read_bytes(), before, "a repair does not consume a cycle or require investigator rework")
+        state_path.write_bytes(before)
+        check_path.write_text(complete)
+        self.command("record-attempt", "investigation-cycle", "--gap", "Independent corroboration is still unavailable")
+        self.assertEqual(self.status()["attempts"], {"investigation-cycle": 1})
+
     def test_unmet_readiness_runs_further_cycles_until_the_cap(self) -> None:
         self.approve("methodology")
         investigation_outputs(self.case)

@@ -42,6 +42,7 @@ The gate waiting for the member's decision on the review page, or "None".
 Keep exact file paths, tool names, finding ids and error messages. Do not invent anything that is not in the conversation.`;
 
 const STATE_NOTE = '\n\n(Checkpoint of earlier turns. The case files and `spotlight_resolve` are the source of truth: re-read them before acting on this.)';
+const WORKER_STATE_NOTE = '\n\n(Checkpoint of earlier turns. Your restored assignment and canonical task artifacts hold task state; re-read those permitted files before acting. The orchestrator owns phase transitions, human approvals and budget enforcement.)';
 
 // A checkpoint is kept only in its own sections. base213 (5ce09322): the e4b
 // RLM wrote its reasoning ("Here's a thinking process to construct the
@@ -95,10 +96,11 @@ export const TASK_AFTER_FOLD = 'Your task, word for word as it was given (the ch
 export function taskAfterFold(env: NodeJS.ProcessEnv, written: (path: string) => boolean, remaining: () => string | undefined = () => undefined, fetched: () => string | undefined = () => undefined): string | undefined {
 	const header = env.SPOTLIGHT_TASK_HEADER;
 	if (!header) return undefined;
-	const left = written('data/fact-check.json') ? remaining() : undefined;
+	const checker = env.SPOTLIGHT_ROLE === 'fact-checker';
+	const left = checker && written('data/fact-check.json') ? remaining() : undefined;
 	const start = !env.SPOTLIGHT_TASK_START
 		? ''
-		: !written('data/fact-check.json')
+		: !checker || !written('data/fact-check.json')
 			? `\n${env.SPOTLIGHT_TASK_START}`
 			: left
 				? `\n${left}`
@@ -120,7 +122,7 @@ export function registerCompaction(pi: ExtensionAPI, fixedBody: FixedBody, local
 		const reattached = worker ? (taskAfterFold(env, written, remaining, fetched) ?? task) : undefined;
 		return reattached ? `${summary}\n\n${TASK_AFTER_FOLD}\n\n${reattached}` : summary;
 	};
-	if (local) registerCheckpoint(pi, fixedBody, env, withTask);
+	if (local) registerCheckpoint(pi, fixedBody, env, withTask, worker);
 	else if (fixedBody || worker) registerPolicyOnDefaultSummary(pi, fixedBody, withTask);
 }
 
@@ -148,7 +150,7 @@ function registerPolicyOnDefaultSummary(pi: ExtensionAPI, fixedBody: FixedBody, 
 	});
 }
 
-function registerCheckpoint(pi: ExtensionAPI, fixedBody: FixedBody, env: NodeJS.ProcessEnv, withTask: (summary: string) => string): void {
+function registerCheckpoint(pi: ExtensionAPI, fixedBody: FixedBody, env: NodeJS.ProcessEnv, withTask: (summary: string) => string, worker: boolean): void {
 	pi.on('session_before_compact', async (event, ctx) => {
 		const { preparation, signal } = event;
 		const messages = [...preparation.messagesToSummarize, ...preparation.turnPrefixMessages];
@@ -198,7 +200,7 @@ function registerCheckpoint(pi: ExtensionAPI, fixedBody: FixedBody, env: NodeJS.
 			const summary = written.kept;
 			return {
 				compaction: {
-					summary: withTask(`${summary}${STATE_NOTE}`),
+					summary: withTask(`${summary}${worker ? WORKER_STATE_NOTE : STATE_NOTE}`),
 					firstKeptEntryId: preparation.firstKeptEntryId,
 					tokensBefore: preparation.tokensBefore,
 					usage,

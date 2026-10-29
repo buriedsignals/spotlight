@@ -1371,6 +1371,7 @@ def main() -> int:
     parser.add_argument("case_dir", help="Path to {CASE_DIR}/")
     parser.add_argument("--strict", action="store_true", help="Treat warnings as errors")
     parser.add_argument("--include-rlm", action="store_true", help="Also validate optional data/rlm-analysis.json if present")
+    parser.add_argument("--json", action="store_true", help="Return owner-tagged validation errors as JSON")
     parser.add_argument(
         "--fact-check-only",
         action="store_true",
@@ -1546,6 +1547,9 @@ def main() -> int:
                 all_errors.extend(validate_rlm_analysis(rlm_data))
 
     if all_errors:
+        if args.json:
+            print(json.dumps({"ok": False, "errors": [{"message": err, "owner": "fact-checker" if owner_tag(err) else "investigator"} for err in all_errors]}))
+            return 1
         print(f"\n{len(all_errors)} validation error(s) in {case_dir.name}:\n", file=sys.stderr)
         for err in all_errors:
             print(f"  • {owner_tag(err)}{err}", file=sys.stderr)
@@ -1561,6 +1565,9 @@ def main() -> int:
         print(file=sys.stderr)
         return 1
 
+    if args.json:
+        print(json.dumps({"ok": True, "errors": []}))
+        return 0
     suffix = " (fact-check only)" if args.fact_check_only else (" + RLM" if args.include_rlm else "")
     print(f"✓ {case_dir.name} validates against case schemas{suffix}")
     return 0

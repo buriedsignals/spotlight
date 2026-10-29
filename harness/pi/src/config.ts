@@ -14,6 +14,7 @@ import { MIN_REDACTED_LENGTH } from './log.ts';
 import { SEAM_ENV } from './tools/fetch.ts';
 import { BASE_ENV, DESKTOP_ENV } from './tools/run.ts';
 import { engineEnv } from './case-search.ts';
+import { spotlightPython } from '../../review/case-bridge.mjs';
 
 export type Edition = 'solo' | 'newsroom';
 export type ModelTier = '12b' | '26b' | '31b' | 'frontier';
@@ -315,7 +316,7 @@ export function readConfig(env: Env, chatId?: string): HarnessConfig {
 		contextWindow,
 		modelTier,
 		fold: readFold(env, modelTier, contextWindow),
-		python: env.SPOTLIGHT_PYTHON?.trim() || 'python3',
+		python: env.SPOTLIGHT_PYTHON?.trim() || spotlightPython({ env, root: CHECKOUT_ROOT }) || 'python3',
 		spotlightConfig: spotlightConfigPath(env),
 		sensitive,
 		research,
@@ -478,11 +479,16 @@ function readFold(env: Env, tier: ModelTier, contextWindow: number): Fold | unde
 // Pi's defaults, except that its reserve grows with the output cap, so a
 // request near the compaction point still fits the context window.
 export function piSettings(config: HarnessConfig): Record<string, unknown> {
+	// A server may buffer a structured tool call until its JSON is complete.
+	// Valid local decoding can exceed Pi's five-minute idle default; keep a
+	// finite allowance without changing token, case-time or spending limits.
+	const transport = { httpIdleTimeoutMs: 900_000 };
 	if (!config.fold) {
 		const cap = maxOutputTokens(config.contextWindow);
-		return cap > PI_DEFAULT_RESERVE ? { compaction: { reserveTokens: cap } } : {};
+		return cap > PI_DEFAULT_RESERVE ? { ...transport, compaction: { reserveTokens: cap } } : transport;
 	}
 	return {
+		...transport,
 		compaction: {
 			enabled: true,
 			reserveTokens: config.contextWindow - config.fold.at,

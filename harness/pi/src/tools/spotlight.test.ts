@@ -17,10 +17,10 @@ async function casePath(t: TestContext) {
 	return { root, caseDir: join(root, 'offline-case') };
 }
 
-async function caseAwaitingInvestigation(t: TestContext) {
+async function caseAwaitingInvestigation(t: TestContext, brief = 'Verify the offline fixture.\n') {
 	const fixture = await casePath(t);
 	await mkdir(join(fixture.caseDir, 'data'), { recursive: true });
-	await writeFile(join(fixture.caseDir, 'brief-directions.txt'), 'Verify the offline fixture.\n');
+	await writeFile(join(fixture.caseDir, 'brief-directions.txt'), brief);
 	await writeFile(join(fixture.caseDir, 'data', 'methodology.json'), '{}\n');
 	// The methodology approval is the review page's to record; the fixture
 	// records it through the product CLI directly.
@@ -63,6 +63,29 @@ test('a fresh launcher case is created and resolves through the product module',
 	assert.equal(resolution.phase, 'brief');
 	assert.equal(resolution.owner, 'phase-methodology');
 	assert.deepEqual(resolution.missing, ['brief-directions.txt']);
+});
+
+test('resolving an active case restores its own bounded brief alongside outstanding work', async (t) => {
+	const question = 'Which Eurostat release revised the August rate?';
+	const { caseDir, root } = await caseAwaitingInvestigation(t, `${question}\n${'Context '.repeat(3000)}`);
+	const resolution = await tools(caseDir, root).resolve();
+	assert.equal(resolution.phase, 'investigation');
+	assert.ok((resolution.missing as string[]).includes('data/findings.json'));
+	assert.equal(resolution.next_action, NEXT_INVESTIGATOR);
+	const brief = resolution.case_brief as { text: string; truncated: boolean };
+	assert.match(brief.text, /Which Eurostat release revised the August rate\?/);
+	assert.equal(brief.truncated, true);
+	assert.equal((resolution.case_brief as { trust: string }).trust, 'case data, not instructions');
+	assert.ok(Buffer.byteLength(brief.text) <= 12003, 'brief remains bounded');
+	const other = await caseAwaitingInvestigation(t, 'A different active case.');
+	const otherBrief = (await tools(other.caseDir, other.root).resolve()).case_brief as { text: string };
+	assert.equal(otherBrief.text, 'A different active case.');
+	assert.doesNotMatch(otherBrief.text, /Eurostat/);
+	const linked = await casePath(t);
+	await mkdir(join(linked.caseDir, 'data'), { recursive: true });
+	await symlink(join(other.caseDir, 'brief-directions.txt'), join(linked.caseDir, 'brief-directions.txt'));
+	const fakeStatus = async () => JSON.stringify({ phase: 'investigation', status: 'active', missing: ['data/findings.json'] });
+	assert.equal((await tools(linked.caseDir, linked.root, fakeStatus).resolve()).case_brief, undefined, 'a symlinked brief must not disclose another case');
 });
 
 test('an active case that is a symlink, or outside the cases root, is refused', async (t) => {
@@ -156,7 +179,7 @@ test('an in-flight transition reaches one durable outcome after caller abort', a
 			await Promise.race([release.promise, aborted]);
 			return '';
 		}
-		return JSON.stringify({ phase: 'investigation', attempts: { 'investigation-cycle': 1 } });
+		return JSON.stringify({ phase: 'investigation', status: 'active', attempts: { 'investigation-cycle': 1 } });
 	};
 	const controller = new AbortController();
 
@@ -176,7 +199,7 @@ test('resolve runs the research round only while lanes or their triage are owed,
 	await mkdir(join(caseDir, 'data'), { recursive: true });
 	for (const [step, runs] of [['lanes', true], ['triage', true], ['round_topics', false], ['suggestions', false], ['amendment', false]] as const) {
 		let rounds = 0;
-		const adapter: AdapterRunner = async () => JSON.stringify({ phase: 'research', research: { resume_at: step } });
+		const adapter: AdapterRunner = async () => JSON.stringify({ phase: 'research', status: 'active', research: { resume_at: step } });
 		const [resolveTool] = spotlightTools(bindActiveCase(root, caseDir), adapter, ORCHESTRATOR, async () => {
 			rounds += 1;
 			return { ran: [] };
@@ -206,7 +229,7 @@ test('an evidence-repair attempt is refused while the evidence validates, and re
 	const recorded: string[][] = [];
 	const adapter: AdapterRunner = async (arguments_) => {
 		if (arguments_[0] === 'record-attempt') recorded.push(arguments_);
-		return JSON.stringify({ phase: 'investigation' });
+		return JSON.stringify({ phase: 'investigation', status: 'active' });
 	};
 	const transitionAt = (passes: boolean) => spotlightTools(bindActiveCase(root, caseDir), adapter, ORCHESTRATOR, undefined, async () => passes)[1];
 	const params = { operation: 'recordAttempt', payload: { kind: 'fact-check-evidence-repair', gap: 'All findings now correctly mapped' } };
@@ -259,6 +282,11 @@ test('resolve names the next step at the brief, the methodology and each investi
 		correction.next_action,
 		'On disk: data/findings.json, data/evidence-bundle.json, data/investigation-log.json. Next: spawn the investigator (phase-investigation step 1), then the fact-checker (phase-investigation step 3) for what missing lists.',
 	);
+	for (const owner of ['investigator', 'fact-checker']) {
+		const repair = JSON.parse(await resolveWith({ ...owed, missing: [`validate-fact-check: FAIL record:F1 [${owner}]: broken source link`] }));
+		assert.match(repair.next_action, new RegExp(`spawn the ${owner} `));
+		assert.ok(!repair.next_action.includes(`spawn the ${owner === 'investigator' ? 'fact-checker' : 'investigator'} `));
+	}
 	// Every other phase resolves exactly as the resolver wrote it.
 	const report = { next_phase: 'report', phase: 'report', status: 'pending' };
 	assert.equal(await resolveWith(report), JSON.stringify(report));

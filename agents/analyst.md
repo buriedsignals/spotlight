@@ -93,7 +93,9 @@ parts that need judgment:
   set to `true` when the claim reports what someone said or holds (the
   builder then requires a source position for that finding). A claim that
   states what the finding itself asserts has `attributed: false`. Name the
-  `fact_check_id` when the finding has more than one fact-check row.
+  `fact_check_id` only when the finding has more than one fact-check row; copy
+  the chosen row’s actual `id`, not its array position. Omit `fact_check_id`
+  when there is one row, including when that row has no `id`.
 - `events` and `story_arcs`, with their memberships (`claim_keys`,
   `event_keys`). Both are optional. A story arc's `event_keys` name events in
   this file, never claim keys; with no events, leave `story_arcs` out.

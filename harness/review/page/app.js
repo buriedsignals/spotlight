@@ -132,6 +132,10 @@ function keepFocus(render) {
   else if (id && readOnly()) document.getElementById("receipt-heading")?.focus();
 }
 
+function canFollowUp() {
+  return !ended && Boolean(view?.can_request_follow_up || (view?.gate === "investigation_gate" && view?.pending_gate === view?.gate));
+}
+
 function readOnly() {
   return ended || !view || view.pending_gate !== view.gate;
 }
@@ -936,7 +940,7 @@ function reviewerField() {
       autocomplete: "name",
       maxlength: "200",
       value: reviewerDraft ?? view.reviewer,
-      disabled: readOnly() || busy,
+      disabled: (readOnly() && !canFollowUp()) || busy,
       on: { input: (event) => typeReviewer(event.target.value), change: () => flushReviewer() },
     }),
   );
@@ -984,7 +988,7 @@ function decisionControls() {
 
 function followUpControls() {
   const reason = !memberName() ? "Enter your name before deciding." : !followUpNote.trim() ? "Describe the follow-up you want first." : "";
-  const unavailable = readOnly() || busy || Boolean(reason);
+  const unavailable = !canFollowUp() || busy || Boolean(reason);
   return [
     reason ? el("p", { id: "follow-up-reason", text: reason }) : null,
     el("button", {
@@ -1010,7 +1014,7 @@ function followUpSection() {
       id: "follow-up-note",
       maxlength: "4000",
       value: followUpNote,
-      disabled: readOnly() || busy,
+      disabled: !canFollowUp() || busy,
       on: {
         input: (event) => {
           followUpNote = event.target.value;
@@ -1033,14 +1037,14 @@ function decisionSection() {
       : null,
     reviewerField(),
     el("div", { id: "decision-controls" }, decisionControls()),
-    view.gate === "investigation_gate" ? followUpSection() : null,
+    canFollowUp() ? followUpSection() : null,
   );
 }
 
 // Re-renders only the buttons and reasons, so a field being typed in keeps
 // its caret and its text.
 function refreshControls() {
-  if (readOnly()) return;
+  if (readOnly() && !canFollowUp()) return;
   const focused = document.activeElement?.id;
   document.getElementById("decision-controls")?.replaceChildren(...decisionControls().flat().filter(Boolean));
   document.getElementById("follow-up-controls")?.replaceChildren(...followUpControls().filter(Boolean));
@@ -1330,7 +1334,7 @@ function render(next) {
     if (view.gate === "report") parts.push(...reportContent(view.content));
     if (view.gate === "ingest") parts.push(...ingestContent(view.content, view.items), entitySection());
     parts.push(passagesSection());
-    if (!readOnly()) parts.push(decisionSection());
+    if (!readOnly() || canFollowUp()) parts.push(decisionSection());
     if (wikiError) parts.push(wikiErrorSection());
     else if (wikiChanges?.length) parts.push(wikiSection());
     app.replaceChildren(...parts.filter(Boolean));
@@ -1440,14 +1444,14 @@ async function decide(decision) {
 }
 
 async function requestFollowUp() {
-  if (busy || readOnly()) return;
+  if (busy || !canFollowUp()) return;
   await flushReviewer();
-  if (busy || readOnly()) return;
+  if (busy || !canFollowUp()) return;
   warn("");
   setBusy(true);
   say("Recording the follow-up request…");
   try {
-    const { status, data } = await post("/api/follow-up", { instructions: followUpNote, digest: view.digest });
+    const { status, data } = await post("/api/follow-up", { instructions: followUpNote, digest: view.digest, requestedBy: memberName() });
     if (status === 200) {
       view = data;
       followUpNote = "";

@@ -10,10 +10,11 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
-import { fetchedFile } from './fetch.ts';
+import { factCheckerAlternative, factCheckerCapture } from './fetch.ts';
 import type { ToolContext } from './run.ts';
 
 type Row = Record<string, unknown>;
+type PendingQuote = { item: Row; finding: string; relation: string; supportType: string };
 const RELATION: Record<string, string> = { evidence_for: 'supports', evidence_against: 'contradicts' };
 
 function readJson(caseDir: string, name: string): Row {
@@ -36,18 +37,26 @@ const list = (doc: unknown, key: string): Row[] => {
 // adds the fact-checker's item for it (its URL, access time, hash) through the
 // fact-checker's own bundle write, and the quote cites that item.
 const ITEM_FILES = ['raw_path', 'downloaded_document_path', 'screenshot_path', 'path'];
-async function recordFetchedItems(context: ToolContext, tools: ToolDefinition[], items: Row[], signal?: AbortSignal): Promise<void> {
+async function recordFetchedItems(context: ToolContext, tools: ToolDefinition[], pending: PendingQuote[], signal?: AbortSignal): Promise<void> {
 	const bundle = list(readJson(context.caseDir, 'evidence-bundle.json'), 'items');
-	const listed = new Set(bundle.flatMap((item) => [...ITEM_FILES.map((key) => item[key]), ...list(item, 'text_derivatives').map((d) => d.path)].filter((path): path is string => typeof path === 'string')));
+	const files = (item: Row) => [...ITEM_FILES.map((key) => item[key]), ...list(item, 'text_derivatives').map((d) => d.path)];
+	const findings = list(readJson(context.caseDir, 'findings.json'), 'findings');
 	const taken = new Set(bundle.map((item) => String(item.id)));
 	let next = 1;
-	const added: Row[] = [];
-	for (const item of items) {
+	const updates = new Map<string, Row>();
+	for (const { item, finding, supportType } of pending) {
 		const ref = (item.source_ref ?? {}) as Row;
 		const path = typeof ref.path === 'string' ? ref.path : typeof item.local_file === 'string' ? item.local_file : undefined;
-		if (!path || listed.has(path) || typeof item.evidence_bundle_id === 'string') continue;
-		const fetched = fetchedFile(context, path);
-		if (!fetched) continue;
+		if (!path) continue;
+		let evidence = bundle.find((entry) => files(entry).includes(path));
+		if (evidence && evidence.created_by !== 'fact-checker') continue;
+		if (typeof item.evidence_bundle_id === 'string' && item.evidence_bundle_id !== evidence?.id) continue;
+		const fetched = factCheckerCapture(context, path);
+		if (!fetched) {
+			const alternative = !evidence ? factCheckerAlternative(context, path) : undefined;
+			if (alternative) throw new Error(`refused: data/fact-check.json is unchanged; ${path} is not a registered fact-checker evidence item. A separately acquired fact-checker capture of the same URL and identical bytes is available at ${alternative}. Read that capture, then resubmit the claim with its source_ref.path and matching locators. The harness will register its evidence item and passage; no new fetch is needed to resolve this registration error. Your submitted citation has not been changed.`);
+			continue;
+		}
 		let sha256: string;
 		try {
 			sha256 = createHash('sha256').update(readFileSync(join(context.caseDir, path))).digest('hex');
@@ -56,29 +65,38 @@ async function recordFetchedItems(context: ToolContext, tools: ToolDefinition[],
 		}
 		// A file rewritten since the fetch is no longer what the URL served.
 		if (sha256 !== fetched.sha256) continue;
-		while (taken.has(`FC-E${next}`)) next += 1;
-		const id = `FC-E${next}`;
-		taken.add(id);
-		listed.add(path);
-		added.push({
-			id,
-			created_by: 'fact-checker',
-			query_or_task: `Fetched by the fact-checker to check a finding: ${fetched.url}`,
-			acquisition_method: fetched.provider === 'crawl4ai' || fetched.provider === 'firecrawl' ? fetched.provider : 'other',
-			source_url: fetched.url,
-			accessed: fetched.accessed,
-			raw_path: path,
-			sha256,
-			extraction_confidence: 'medium',
-			human_verification_required: false,
-		});
-		item.evidence_bundle_id = id;
+		if (!evidence) {
+			while (taken.has(`FC-E${next}`)) next += 1;
+			const id = `FC-E${next}`;
+			taken.add(id);
+			evidence = {
+				id,
+				created_by: 'fact-checker',
+				query_or_task: `Fetched by the fact-checker to check a finding: ${fetched.url}`,
+				acquisition_method: fetched.provider === 'crawl4ai' || fetched.provider === 'firecrawl' ? fetched.provider : 'other',
+				source_url: fetched.url,
+				accessed: fetched.accessed,
+				raw_path: path,
+				sha256,
+				extraction_confidence: 'medium',
+				human_verification_required: false,
+				claim_links: [],
+			};
+			bundle.push(evidence);
+		}
+		const claim = findings.find((entry) => entry.id === finding)?.claim;
+		if (typeof claim !== 'string') continue;
+		const links = list(evidence, 'claim_links');
+		if (!links.some((link) => link.finding_id === finding && link.support_type === supportType)) links.push({ finding_id: finding, claim_text: claim, support_type: supportType });
+		evidence.claim_links = links;
+		updates.set(String(evidence.id), evidence);
+		item.evidence_bundle_id = evidence.id;
 	}
-	if (added.length === 0) return;
+	if (updates.size === 0) return;
 	const write = tools.find((tool) => tool.name === 'write_file');
 	if (!write) return;
 	try {
-		await write.execute('fetched-items', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: added }) }, signal, undefined, undefined as never);
+		await write.execute('fetched-items', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: [...updates.values()] }) }, signal, undefined, undefined as never);
 	} catch (error) {
 		throw new Error(`refused: data/fact-check.json is unchanged; the harness could not add the evidence item for a file you fetched. ${(error as Error).message}`);
 	}
@@ -93,19 +111,21 @@ async function resolveQuotes(context: ToolContext, tools: ToolDefinition[], sour
 	} catch {
 		return content;
 	}
-	const pending: Array<{ item: Row; finding: string; relation: string }> = [];
+	const pending: PendingQuote[] = [];
 	for (const claim of list(doc, 'claims')) {
 		for (const [key, relation] of Object.entries(RELATION)) {
 			for (const item of list(claim, key)) {
 				const refs = item.source_expression_refs;
 				if (typeof item.quote === 'string' && item.quote.trim() && !(Array.isArray(refs) && refs.length > 0) && typeof claim.finding_id === 'string') {
-					pending.push({ item, finding: claim.finding_id, relation });
+					const support = (claim.grounding_assessment as Row | undefined)?.support_type;
+					const supportType = relation === 'contradicts' ? 'contradicted' : typeof support === 'string' && ['direct', 'indirect', 'inferred', 'contradicted', 'insufficient'].includes(support) ? support : 'insufficient';
+					pending.push({ item, finding: claim.finding_id, relation, supportType });
 				}
 			}
 		}
 	}
 	if (pending.length === 0) return content;
-	await recordFetchedItems(context, tools, pending.map(({ item }) => item), signal);
+	await recordFetchedItems(context, tools, pending, signal);
 	const passages = list(readJson(context.caseDir, 'source-expressions.json'), 'expressions');
 	const taken = new Set(passages.map((p) => String(p.id)));
 	let next = 1;
@@ -135,6 +155,11 @@ async function resolveQuotes(context: ToolContext, tools: ToolDefinition[], sour
 	});
 	try {
 		await sourceExpressions.execute('quotes', { action: 'write', cycle: Math.max(1, cycles), proposal: { expressions } }, signal, undefined, undefined as never);
+		// Only hash anchors the strict passage writer has accepted, never model-supplied hashes.
+		for (const { item } of pending) {
+			const path = (item.source_ref as Row | undefined)?.path ?? item.local_file;
+			if (typeof path === 'string') item.sha256 = createHash('sha256').update(readFileSync(join(context.caseDir, path))).digest('hex');
+		}
 	} catch (error) {
 		throw new Error(`refused: data/fact-check.json is unchanged; the harness could not record a quote you cited as a passage. ${(error as Error).message}`);
 	}

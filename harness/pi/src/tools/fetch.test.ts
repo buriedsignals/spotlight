@@ -20,11 +20,11 @@ import { fetchTool } from './fetch.ts';
 
 const PAGE_URL = 'https://registry.example.org/company/42';
 const RAW_PAGE = '# Company 42\n\nNavigation | Login | Cookies\n\nAda Lovelace is President of Analytical Engines SA since 2019.\n\nFooter boilerplate.\n';
-const LEADS = '- Ada Lovelace: President, Analytical Engines SA (since 2019)';
+const LEADS = JSON.stringify({ ranges: [{ start: 5, end: 5 }] });
 
-type RLMRequest = { model: string; messages: Array<{ role: string; content: string }>; max_tokens: number };
+type RLMRequest = { model: string; messages: Array<{ role: string; content: string }>; max_tokens: number; response_format?: { type: string; json_schema: { strict: boolean; schema: Record<string, unknown> } } };
 
-async function standInRLM(t: TestContext, status = 200) {
+async function standInRLM(t: TestContext, status = 200, select: (request: RLMRequest) => string = () => LEADS) {
 	const requests: RLMRequest[] = [];
 	const server = createServer((req, res) => {
 		let body = '';
@@ -32,7 +32,7 @@ async function standInRLM(t: TestContext, status = 200) {
 		req.on('end', () => {
 			requests.push(JSON.parse(body) as RLMRequest);
 			res.writeHead(status, { 'content-type': 'application/json' });
-			res.end(status === 200 ? JSON.stringify({ choices: [{ message: { role: 'assistant', content: LEADS } }] }) : '{"error":"overloaded"}');
+			res.end(status === 200 ? JSON.stringify({ choices: [{ message: { role: 'assistant', content: select(requests[requests.length - 1]) } }] }) : '{"error":"overloaded"}');
 		});
 	});
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -40,13 +40,13 @@ async function standInRLM(t: TestContext, status = 200) {
 	return { baseURL: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`, requests };
 }
 
-async function fixture(t: TestContext, env: Record<string, string>) {
+async function fixture(t: TestContext, env: Record<string, string>, page = RAW_PAGE) {
 	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-fetch-')));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const caseDir = join(root, 'case');
 	await mkdir(join(caseDir, 'research'), { recursive: true });
 	const seam = join(root, 'python');
-	const envelope = { markdown: RAW_PAGE, source_url: PAGE_URL, provider: 'crawl4ai', status_code: 200, title: 'Company 42' };
+	const envelope = { markdown: page, source_url: PAGE_URL, provider: 'crawl4ai', status_code: 200, title: 'Company 42' };
 	await writeFile(seam, `#!${process.execPath}\nprocess.stdout.write(${JSON.stringify(JSON.stringify(envelope))});\n`);
 	await chmod(seam, 0o755);
 	const tool = fetchTool({
@@ -79,22 +79,48 @@ function validatorErrors(caseDir: string, path: string, lineStart: number, lineE
 }
 
 test('on the local tier fetch returns RLM leads, keeps the raw page beside them, and the validators anchor only on the raw page', async (t) => {
-	const rlm = await standInRLM(t);
+	const scope = 'Compare original and revised August euro-area unemployment, preserving release dates.';
+	const taskHeader = scope.padEnd(4000, ' ') + 'OUTSIDE-SCOPE-LIMIT';
+	const rlm = await standInRLM(t, 200, () => '```json\n' + LEADS + '\n```');
 	const { caseDir, call } = await fixture(t, {
 		SPOTLIGHT_RLM_OPENAI_BASE_URL: rlm.baseURL,
 		SPOTLIGHT_RLM_OPENAI_MODEL: 'e4b-test',
 		SPOTLIGHT_RLM_INFERENCE: 'own',
+		SPOTLIGHT_TASK_HEADER: taskHeader,
 	});
 
 	const result = await call({ url: PAGE_URL, save_as: 'research/company-42.md' });
 
 	assert.equal(rlm.requests.length, 1);
 	assert.equal(rlm.requests[0].model, 'e4b-test');
+	const requestText = rlm.requests[0].messages.map(message => message.content).join('\n');
+	assert.ok(requestText.includes(scope), 'the helper needs its bounded investigation scope');
+	assert.ok(!requestText.includes('OUTSIDE-SCOPE-LIMIT'), 'scope is capped at 4000 characters');
+	const format = rlm.requests[0].response_format;
+	assert.equal(format?.type, 'json_schema', 'the helper response is constrained as structured JSON');
+	assert.equal(format?.json_schema.strict, true);
+	const schema = format!.json_schema.schema;
+	assert.equal(schema.type, 'object');
+	assert.equal(schema.additionalProperties, false);
+	assert.deepEqual(schema.required, ['ranges']);
+	assert.deepEqual(Object.keys(schema.properties as object), ['ranges']);
+	const ranges = (schema.properties as { ranges: { type: string; items: { type: string; required: string[]; additionalProperties: boolean; properties: Record<string, { type: string }> } } }).ranges;
+	assert.equal(ranges.type, 'array');
+	assert.equal(ranges.items.type, 'object');
+	assert.equal(ranges.items.additionalProperties, false);
+	assert.deepEqual(new Set(ranges.items.required), new Set(['start', 'end']));
+	assert.deepEqual(Object.keys(ranges.items.properties).sort(), ['end', 'start']);
+	assert.equal(ranges.items.properties.start.type, 'integer');
+	assert.equal(ranges.items.properties.end.type, 'integer');
 	assert.match(rlm.requests[0].messages[0].content, /Ada Lovelace is President of Analytical Engines SA since 2019\./);
 	assert.equal(result.distilled, true);
 	assert.equal(result.saved_to, 'research/company-42.md');
 	assert.equal(result.raw_path, 'research/company-42.md.raw');
-	assert.match(String(result.leads), /Ada Lovelace: President/);
+	assert.match(String(result.leads), /Ada Lovelace is President of Analytical Engines SA since 2019\./);
+	assert.match(String(result.leads), /lines 5-5/);
+	assert.deepEqual(result.inspected_lines, { start: 1, end: 7, total: 7 });
+	assert.equal(result.coverage_complete, true);
+	assert.deepEqual(result.selections, [{ path: 'research/company-42.md.raw', line_start: 5, line_end: 5 }]);
 	assert.equal(JSON.stringify(result).includes('Footer boilerplate'), false, 'the raw page must not reach the agent');
 
 	const leadsBytes = await readFile(join(caseDir, 'research/company-42.md'));
@@ -110,6 +136,89 @@ test('on the local tier fetch returns RLM leads, keeps the raw page beside them,
 	assert.deepEqual(validatorErrors(caseDir, 'research/company-42.md.raw', 5, 5, quote), []);
 });
 
+test('invalid or invented selections never become source extracts', async (t) => {
+	for (const reply of ['summary not JSON', '```json\n' + JSON.stringify({ranges:[{start:5,end:50}]}) + '\n```', '```json\n' + LEADS + '\n``` trailing prose', JSON.stringify({ranges:[{start:5,end:50}]}), JSON.stringify({ranges:[{start:5,end:5,quote:'invented'}]}), JSON.stringify({ranges:[]})]) await t.test(reply.slice(0, 30), async (t) => {
+		const rlm = await standInRLM(t, 200, () => reply);
+		const { caseDir, call } = await fixture(t, {SPOTLIGHT_RLM_OPENAI_BASE_URL:rlm.baseURL,SPOTLIGHT_RLM_INFERENCE:'own'});
+		const result = await call({url:PAGE_URL,save_as:'research/a.md'});
+		assert.equal(result.distilled,false);
+		assert.equal(await readFile(join(caseDir,'research/a.md.raw'),'utf8'),RAW_PAGE);
+		assert.equal(existsSync(join(caseDir,'research/a.md')),false);
+	});
+});
+
+test('bounded chunks expose late exact passages and disclose uninspected tail', async (t) => {
+	for (const rangeCount of [1, 14]) await t.test(`${rangeCount} exact ranges per selected chunk`, async (t) => {
+		const width = rangeCount === 1 ? 36 : 1;
+		const page = Array.from({length: 900}, (_, i) => `line ${i + 1} ${'x'.repeat(150)}`).join('\n');
+		const rlm = await standInRLM(t, 200, request => {
+			const numbers = [...request.messages[0].content.matchAll(/^(\d+): /gm)].map(m => Number(m[1]));
+			const last = numbers.at(-1)!;
+			return JSON.stringify({ranges: numbers[0] === 1 ? [] : Array.from({length:rangeCount}, (_, i) => ({start:last-width+1-i*width,end:last-i*width}))});
+		});
+		const { caseDir, call } = await fixture(t,{SPOTLIGHT_RLM_OPENAI_BASE_URL:rlm.baseURL,SPOTLIGHT_RLM_INFERENCE:'own'},page);
+		const result = await call({url:PAGE_URL,save_as:'research/long.md'});
+		assert.equal(result.distilled,true, String(result.rlm_error));
+		assert.equal(rlm.requests.length,3);
+		const coverage = result.inspected_lines as {end:number;total:number};
+		assert.ok(coverage.end > 160 && coverage.end < coverage.total);
+		assert.equal(result.coverage_complete, false);
+		assert.match(String(result.coverage_note), /not inspected/);
+		const selections = result.selections as Array<{line_start:number;line_end:number;path:string}>;
+		assert.equal(selections.length,2*rangeCount);
+		assert.ok(String(result.leads).length < 30_000);
+		const rawLines = (await readFile(join(caseDir,'research/long.md.raw'),'utf8')).split('\n');
+		for (const selection of selections) {
+			assert.equal(selection.line_end - selection.line_start + 1, width);
+			assert.ok(String(result.leads).includes(rawLines.slice(selection.line_start-1,selection.line_end).join('\n')));
+		}
+		assert.ok(selections[0].line_start > 160,'selection after an empty first chunk reaches beyond the old input prefix');
+	});
+});
+
+test('oversized combined selections fall back to the preserved raw page', async (t) => {
+	const page = Array.from({length: 350}, (_, i) => `line ${i + 1} ${'x'.repeat(150)}`).join('\n');
+	const rlm = await standInRLM(t, 200, request => {
+		const numbers = [...request.messages[0].content.matchAll(/^(\d+): /gm)].map(m => Number(m[1]));
+		return JSON.stringify({ranges:[{start:numbers[0],end:numbers.at(-1)}]});
+	});
+	const {caseDir,call} = await fixture(t,{SPOTLIGHT_RLM_OPENAI_BASE_URL:rlm.baseURL,SPOTLIGHT_RLM_INFERENCE:'own'},page);
+	const result = await call({url:PAGE_URL,save_as:'research/oversized.md'});
+	assert.equal(result.distilled,false);
+	assert.match(String(result.rlm_error),/output bound/);
+	assert.equal(await readFile(join(caseDir,'research/oversized.md.raw'),'utf8'),page);
+	assert.equal(existsSync(join(caseDir,'research/oversized.md')),false);
+});
+
+test('CRLF source selections use the same line numbers as source anchors', async (t) => {
+	const page = 'Title\r\n\r\nCafé filed the report.\r\n';
+	const rlm = await standInRLM(t, 200, () => '```\n' + JSON.stringify({ranges:[{start:3,end:3}]}) + '\n```');
+	const { caseDir, call } = await fixture(t,{SPOTLIGHT_RLM_OPENAI_BASE_URL:rlm.baseURL,SPOTLIGHT_RLM_INFERENCE:'own'},page);
+	const result = await call({url:PAGE_URL,save_as:'research/crlf.md'});
+	assert.equal(result.distilled,true);
+	assert.deepEqual(result.inspected_lines,{start:1,end:3,total:3});
+	assert.deepEqual(result.selections,[{path:'research/crlf.md.raw',line_start:3,line_end:3}]);
+	assert.match(String(result.leads), /Café filed the report\./);
+	assert.deepEqual(validatorErrors(caseDir,'research/crlf.md.raw',3,3,'Café filed the report.'),[]);
+	assert.equal(await readFile(join(caseDir,'research/crlf.md.raw'),'utf8'),page);
+});
+
+test('a later invalid chunk rejects all extracts and preserves the full raw page', async (t) => {
+	const page = Array.from({length: 400}, (_, i) => `line ${i + 1} ${'x'.repeat(150)}`).join('\r\n');
+	let calls = 0;
+	const rlm = await standInRLM(t, 200, request => {
+		calls++;
+		const numbers = [...request.messages[0].content.matchAll(/^(\d+): /gm)].map(m => Number(m[1]));
+		return JSON.stringify({ranges:[{start:numbers[0],end:calls === 2 ? numbers.at(-1)! + 1 : numbers[0]}]});
+	});
+	const { caseDir, call } = await fixture(t,{SPOTLIGHT_RLM_OPENAI_BASE_URL:rlm.baseURL,SPOTLIGHT_RLM_INFERENCE:'own'},page);
+	const result = await call({url:PAGE_URL,save_as:'research/late.md'});
+	assert.equal(calls,2);
+	assert.equal(result.distilled,false);
+	assert.equal(await readFile(join(caseDir,'research/late.md.raw'),'utf8'),page);
+	assert.equal(existsSync(join(caseDir,'research/late.md')),false);
+});
+
 test('when the RLM fails, fetch keeps the raw page on disk and still returns no raw text', async (t) => {
 	const rlm = await standInRLM(t, 503);
 	const { caseDir, call } = await fixture(t, { SPOTLIGHT_RLM_OPENAI_BASE_URL: rlm.baseURL, SPOTLIGHT_RLM_INFERENCE: 'own' });
@@ -119,6 +228,8 @@ test('when the RLM fails, fetch keeps the raw page on disk and still returns no 
 	assert.equal(result.distilled, false);
 	assert.match(String(result.rlm_error), /503/);
 	assert.equal(result.raw_path, 'research/company-42.md.raw');
+	assert.match(String(result.note), /No distilled output was written to save_as/i);
+	assert.match(String(result.note), /raw_path/);
 	assert.equal(await readFile(join(caseDir, 'research/company-42.md.raw'), 'utf8'), RAW_PAGE);
 	assert.equal(existsSync(join(caseDir, 'research/company-42.md')), false);
 	assert.equal(JSON.stringify(result).includes('Footer boilerplate'), false);

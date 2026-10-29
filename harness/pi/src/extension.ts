@@ -9,18 +9,18 @@ import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
 import { applyFixedRequestBody, parseFixedRequestBody, withoutHistoryReasoning } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
-import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
-import { READ_TRUNCATED, writeConfined } from './tools/case-files.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, checkPacket, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
+import { READ_TRUNCATED, canonicalWriteCall, readTarget, writeConfined } from './tools/case-files.ts';
 import { typedTools } from './tools/index.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
 import { bindActiveCase, nextAction, pythonAdapter, resolveCase, spotlightTools } from './tools/spotlight.ts';
-import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
+import { requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
 import { PAGE_NOT_OPENED, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
-import { FACT_CHECK_DUE_STOP, LOOP_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
-import { evidenceValidates } from './validators.ts';
+import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
+import { evidenceValidates, validateFactCheckBatch } from './validators.ts';
 
 const log = (message: string) => process.stderr.write(`spotlight-extension: ${message}\n`);
 
@@ -30,7 +30,7 @@ function required(name: string): string {
 	return value;
 }
 
-function toolsFor(role: string): ToolDefinition[] {
+function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 	const composition = loadComposition();
 	const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
 	const python = process.env.SPOTLIGHT_PYTHON || 'python3';
@@ -59,8 +59,11 @@ function toolsFor(role: string): ToolDefinition[] {
 	if (edition === 'newsroom') tools.push(...editorialTools(requestEditorial));
 	if (role === ORCHESTRATOR) {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
-		const cycle = { spawns: 0 };
-		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => (cycle.spawns = 0)));
+		const cycle = { spawns: 0, corrections: 0 };
+		pi.on('before_agent_start', (event) => {
+			if (event.messageType === 'user') resetFactCheckerCycle(cycle);
+		});
+		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle)));
 		tools.push(spawnAgentTool(spawnableWorkers(composition), cycle));
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter))));
 		tools.splice(0, tools.length, ...tools.map((tool) => keepGateBound(tool, active.caseDir, async () => String((await resolveCase(active, runAdapter)).phase ?? ''))));
@@ -141,7 +144,12 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	// frontier tier keeps Pi's default threshold and summary.
 	const caseDir = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR')).caseDir;
 	const fetched = role !== ORCHESTRATOR ? registerFetchedPages(pi) : () => undefined;
-	const remaining = role === 'fact-checker' ? () => nextCheckText(readCheckDocs(caseDir)) : undefined;
+	const assigned = (process.env.SPOTLIGHT_FC_BATCH ?? '').split(',').filter(Boolean);
+	const remaining = role === 'fact-checker' ? () => {
+		const recheckPath = process.env.SPOTLIGHT_TASK_RECHECK;
+		const recheck = recheckPath ? JSON.parse(readFileSync(readTarget(caseDir, recheckPath), 'utf8')) : {};
+		return assigned.length ? checkPacket(caseDir, readCheckDocs(caseDir), assigned, recheck, recheckPath) : nextCheckText(readCheckDocs(caseDir));
+	} : undefined;
 	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier', process.env, role !== ORCHESTRATOR, (path) => existsSync(resolve(caseDir, path)), remaining, fetched);
 	const guarded = registerLoopGuard(pi, tier12b && role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
 	// Ending the orchestrator would end the case, so only workers are stopped.
@@ -156,7 +164,6 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		registerUnproductiveBound(pi, async () => nextAction(await resolveCase(active, runAdapter), (relative) => existsSync(resolve(active.caseDir, relative))));
 	}
 	if (role === 'analyst') registerProposalEnd(pi);
-	if (role === 'fact-checker' && process.env.SPOTLIGHT_FC_BATCH) registerBatchEnd(pi);
 	const factCheckDue = role === 'fact-checker' ? registerFactCheckDue(pi) : (tool: ToolDefinition) => tool;
 	if (tier12b) {
 		registerReadBudget(pi, bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR')).caseDir);
@@ -170,7 +177,8 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	}
 	registerToolOwners(pi, role);
 	if (process.env.SPOTLIGHT_CALL_BUDGET) registerCallBudget(pi, Number(process.env.SPOTLIGHT_CALL_BUDGET));
-	const tools = toolsFor(role).map(guarded).map(streakGuarded).map(registerSkillDedup(pi)).map(registerReadDedup(pi)).map(factCheckDue);
+	const tools = toolsFor(role, pi).map(guarded).map(streakGuarded).map(registerSkillDedup(pi)).map(registerReadDedup(pi)).map(factCheckDue);
+	if (role === 'fact-checker' && process.env.SPOTLIGHT_FC_BATCH) registerBatchEnd(pi, tools.map((tool) => tool.name));
 	if (tier12b) registerHyphenNames(pi, new Set(tools.map((tool) => tool.name)));
 	for (const tool of tools) pi.registerTool(tool);
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
@@ -252,7 +260,10 @@ function registerSkillDedup(pi: ExtensionAPI): (tool: ToolDefinition) => ToolDef
 	});
 	const requested = new Map<string, unknown>();
 	pi.on('tool_execution_start', (event) => {
-		if (event.toolName === 'invoke_skill') requested.set(event.toolCallId, (event.args as { skill?: unknown } | undefined)?.skill);
+		if (event.toolName === 'invoke_skill') {
+			const args = event.args as { skill?: unknown; reference?: unknown } | undefined;
+			requested.set(event.toolCallId, typeof args?.skill === 'string' ? `${args.skill}${typeof args.reference === 'string' ? '/' + args.reference : ''}` : undefined);
+		}
 	});
 	pi.on('tool_execution_end', (event) => {
 		const skill = requested.get(event.toolCallId);
@@ -267,7 +278,8 @@ function registerSkillDedup(pi: ExtensionAPI): (tool: ToolDefinition) => ToolDef
 			: {
 					...tool,
 					async execute(id, params, ...rest) {
-						const skill = (params as { skill?: unknown }).skill;
+						const args = params as { skill?: unknown; reference?: unknown };
+						const skill = typeof args.skill === 'string' ? `${args.skill}${typeof args.reference === 'string' ? '/' + args.reference : ''}` : undefined;
 						if (typeof skill === 'string' && loaded.has(skill)) return { content: [{ type: 'text', text: skillAlreadyLoaded(skill) }], details: undefined };
 						return tool.execute(id, params, ...rest);
 					},
@@ -710,15 +722,15 @@ function registerRefusalStreak(pi: ExtensionAPI, stop: string): (tool: ToolDefin
 // One research direction's worker (directions.ts) has its share of the
 // investigator's calls. Past it, only the calls that write its deliverable
 // run, and CALL_BUDGET_GRACE calls later its run ends.
-export const CALL_BUDGET_SPENT = "This direction's calls are spent. Write what you found to data/findings.json, data/evidence-bundle.json and data/investigation-log.json now, then finish.";
+export const CALL_BUDGET_SPENT = "This task's calls are spent. Write only your assigned deliverable with what you have, state what remains incomplete, then finish.";
 const CALL_BUDGET_GRACE = 10;
-const BUDGET_WRITES = new Set(['write_file', 'edit_file', 'source_expressions']);
+const BUDGET_WRITES = new Set(['write_file', 'edit_file', 'source_expressions', 'record_finding', 'record_assessment']);
 function registerCallBudget(pi: ExtensionAPI, budget: number): void {
 	let calls = 0;
 	pi.on('tool_call', (event) => {
 		calls += 1;
 		if (calls <= budget) return undefined;
-		if (calls > budget + CALL_BUDGET_GRACE) return { block: true, reason: CALL_BUDGET_SPENT, terminate: true };
+		if (calls > budget + CALL_BUDGET_GRACE) return { block: true, reason: `The worker ${CALL_BUDGET_STOP}`, terminate: true };
 		return BUDGET_WRITES.has(event.toolName) ? undefined : { block: true, reason: CALL_BUDGET_SPENT };
 	});
 }
@@ -786,27 +798,45 @@ export const PROPOSAL_DONE = 'The analyst wrote data/knowledge-proposal.json and
 // ("Finish now") the fact-checker rewrote the same claims and read for 32 more
 // calls, and batch threads grew to about 55k tokens on reads and fetches. A
 // batch fact-checker (SPOTLIGHT_FC_BATCH) ends once its batch has claims; past
-// FC_BATCH_DUE calls each result says to write now, and at FC_BATCH_STOP the
-// run ends and the launcher goes on with the next batch.
+// FC_BATCH_DUE calls, only writing and local inspection remain; at FC_BATCH_STOP the run ends.
 export const FC_BATCH_DUE = 15;
 export const FC_BATCH_STOP = 30;
 export const FC_BATCH_DONE = 'Wrote the claims for this batch.';
-export const FC_BATCH_NOTICE = 'Write this batch\'s claims now with what you have: a claim you could not confirm gets the verdict unverified, with the reason in grounding_assessment.assessment. Then finish.';
-export const FC_BATCH_SPENT = 'made the batch\'s calls without writing all its claims; the harness goes on with the next batch.';
-function registerBatchEnd(pi: ExtensionAPI): void {
+export const FC_BATCH_NOTICE = 'Write this batch\'s claims now with what you have: a claim you could not confirm gets the verdict unverified, with the reason in grounding_assessment.assessment. Use the available local file tools to inspect saved evidence and record_assessment to finish; new source acquisition is closed for this batch. Write ONLY this batch’s claims to data/fact-check.json; the harness merges by finding_id and preserves omitted claims. Do not reconstruct the file or write probe files. Then finish.';
+export const FC_BATCH_SPENT = 'made the batch\'s calls without writing all its claims; the batch is incomplete.';
+function registerBatchEnd(pi: ExtensionAPI, tools: string[]): void {
+	const writingTools = tools.filter((name) => ['write_file', 'record_assessment', 'read_file', 'grep_files', 'list_files', 'hash_files'].includes(name));
 	let done = false;
 	let calls = 0;
 	pi.on('agent_start', () => {
 		done = false;
 		calls = 0;
+		pi.setActiveTools(tools);
 	});
-	pi.on('tool_execution_end', (event) => {
+	// Reserve each call before execution: a model can emit many in one response.
+	pi.on('tool_call', (event) => {
+		if (done) return { block: true, reason: FC_BATCH_DONE, terminate: true };
 		calls += 1;
-		const text: string = event.result?.content?.[0]?.text ?? '';
-		if ((event.toolName === 'write_file' || event.toolName === 'edit_file') && !event.isError && text.includes('Every finding in your batch has a claim')) done = true;
+		if (calls > FC_BATCH_STOP) return { block: true, reason: `The fact-checker ${FC_BATCH_SPENT}`, terminate: true };
+		if (calls > FC_BATCH_DUE && !writingTools.includes(event.toolName)) return { block: true, reason: FC_BATCH_NOTICE };
+		return undefined;
 	});
-	pi.on('tool_result', (event) => {
-		if (done || calls + 1 < FC_BATCH_DUE) return undefined;
+	pi.on('tool_execution_end', () => {
+		if (calls >= FC_BATCH_DUE) pi.setActiveTools(writingTools);
+	});
+	pi.on('tool_result', async (event) => {
+		const text = event.content.map((part) => part.type === 'text' ? part.text : '').join('\n');
+		if ((event.toolName === 'write_file' || event.toolName === 'edit_file' || event.toolName === 'record_assessment') && !event.isError && text.includes('Every finding in your batch has a claim')) {
+			const caseDir = required('SPOTLIGHT_CASE_DIR');
+			const batch = new Set(required('SPOTLIGHT_FC_BATCH').split(','));
+			const docs = readCheckDocs(caseDir);
+			const findings = (docs.findings as { findings?: Array<{ id: string }> })?.findings ?? [];
+			const future = findings.filter((finding) => !batch.has(finding.id)).map((finding) => finding.id);
+			const checked = await validateFactCheckBatch({ caseDir, writeRoot: caseDir, python: process.env.SPOTLIGHT_PYTHON || 'python3', configPath: required('SPOTLIGHT_CONFIG'), env: process.env }, future);
+			done = checked.passed;
+			if (!done) return { content: [...event.content, { type: 'text' as const, text: `\nBatch validation failed; repair these errors within the remaining call allowance before finishing:\n${checked.report}` }] };
+		}
+		if (done || calls < FC_BATCH_DUE) return undefined;
 		return { content: [...event.content, { type: 'text' as const, text: `\n${FC_BATCH_NOTICE}` }] };
 	});
 	pi.on('message_end', (event) => {
@@ -975,13 +1005,13 @@ function registerFactCheckDue(pi: ExtensionAPI): (tool: ToolDefinition) => ToolD
 		stopping = false;
 	});
 	pi.on('tool_execution_start', (event) => {
-		started.set(event.toolCallId, (event.args as { path?: unknown } | undefined)?.path);
+		started.set(event.toolCallId, canonicalWriteCall(event.toolName, event.args)?.path);
 	});
 	pi.on('tool_execution_end', (event) => {
 		const path = started.get(event.toolCallId);
 		started.delete(event.toolCallId);
 		calls += 1;
-		if (!event.isError && (event.toolName === 'write_file' || event.toolName === 'edit_file') && typeof path === 'string' && path.replace(/^\{CASE_DIR\}[\\/]/, '') === 'data/fact-check.json') {
+		if (!event.isError && (event.toolName === 'write_file' || event.toolName === 'edit_file' || event.toolName === 'record_assessment') && typeof path === 'string' && path.replace(/^\{CASE_DIR\}[\\/]/, '') === 'data/fact-check.json') {
 			calls = 0;
 			notice = FACT_CHECK_DUE;
 		}

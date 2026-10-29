@@ -45,6 +45,7 @@ export const REFUSAL_STREAK = 6;
 export const REFUSAL_STOP = 'had six tool calls in a row refused and was stopped; its last results stand.';
 // What a fact-checker's run ends with when it made FACT_CHECK_STOP calls
 // without writing data/fact-check.json (extension.ts registerFactCheckDue).
+export const CALL_BUDGET_STOP = 'stopped because its tool-call budget was exhausted; the deliverable may be incomplete.';
 export const FACT_CHECK_DUE_STOP = 'made 250 calls without writing data/fact-check.json and was stopped; its last results stand.';
 
 // Pi validates arguments before it calls a tool; this repeats the check at the

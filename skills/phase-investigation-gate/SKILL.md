@@ -231,7 +231,7 @@ Offer the user:
 > "Review artifact written to `{CASE_DIR}/review.html`. Open it in any browser to inspect findings. Request a targeted follow-up, or proceed to the public report."
 
 For a follow-up, validate the feedback, convert it to targeted instructions,
-and apply `requestFollowUp` as shown above before dispatching execution. Do not
+and have the member record the follow-up on the review page (in Pi, call `open_review`) before proceeding; on a runtime that supports the member-authorized transition, apply `requestFollowUp` as shown above before dispatching execution. Do not
 derive the transition from feedback-file presence.
 
 ### `resume_at: seal`

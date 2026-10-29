@@ -148,6 +148,7 @@ export async function startReviewServer({
   let origin = "";
   let expectedHost = "";
   let pageNonce = "";
+  let nonceGate = "";
   let opened = 0;
   let inFlight = 0;
   let pendingShutdown = "";
@@ -291,8 +292,8 @@ export async function startReviewServer({
 
   // The decision nonce lives only in this process and in the case ledger's
   // hash; the page never receives it.
-  async function decisionNonce() {
-    if (!pageNonce) pageNonce = await bridge.issueNonce(gate);
+  async function decisionNonce(forGate = gate) {
+    if (!pageNonce || nonceGate !== forGate) { pageNonce = await bridge.issueNonce(forGate); nonceGate = forGate; }
     return pageNonce;
   }
 
@@ -343,13 +344,13 @@ export async function startReviewServer({
 
   // Checks shared by every decision: the gate still waits, the page saw the
   // current record, and the member's name is recorded.
-  async function decisionPreconditions(digest) {
+  async function decisionPreconditions(digest, followUp = false, requestedBy) {
     const view = await bridge.view(gate);
-    if (view.pending_gate !== gate)
+    if (view.pending_gate !== gate && !(followUp && view.can_request_follow_up))
       return [409, { code: "not-pending", message: "This gate is no longer waiting for a decision.", view: { ...view, gate_label: GATE_LABELS[gate] } }];
     if (typeof digest !== "string" || digest !== view.digest)
       return [409, { code: "digest-changed", message: "The record changed since you loaded it. It has been reloaded: review it and decide again.", view: { ...view, gate_label: GATE_LABELS[gate] } }];
-    if (!view.reviewer)
+    if (!view.reviewer && !requestedBy)
       return [422, { code: "reviewer-required", message: "Enter your name before deciding." }];
     return [0, view];
   }
@@ -373,28 +374,36 @@ export async function startReviewServer({
   }
 
   async function requestFollowUp(body) {
-    const { instructions, digest } = exactObject(body, ["instructions", "digest"], "follow-up");
-    if (gate !== "investigation_gate")
-      return [400, { code: "invalid-decision", message: "A follow-up is requested at the Investigation gate." }];
+    const fields = body && Object.hasOwn(body, "requestedBy") ? ["instructions", "digest", "requestedBy"] : ["instructions", "digest"];
+    const { instructions, digest, requestedBy } = exactObject(body, fields, "follow-up");
+    if (!["investigation_gate", "report"].includes(gate))
+      return [400, { code: "invalid-decision", message: "A follow-up is requested from Investigation review or Report." }];
     if (typeof instructions !== "string" || !instructions.trim() || instructions.length > MAX_FOLLOW_UP)
       return [400, { code: "note-required", message: `Describe the follow-up in at most ${MAX_FOLLOW_UP} characters.` }];
-    const [refusal, view] = await decisionPreconditions(digest);
+    const [refusal, view] = await decisionPreconditions(digest, true, requestedBy);
     if (refusal) return [refusal, view];
+    const reviewer = requestedBy ?? view.reviewer;
+    if (typeof reviewer !== "string" || !reviewer.trim() || reviewer.length > 200)
+      return [422, { code: "reviewer-required", message: "Enter your name before deciding." }];
+    const investigation = await bridge.view("investigation_gate");
+    if (!investigation.can_request_follow_up)
+      return [409, { code: "not-pending", message: "This case cannot be reopened from this page." }];
     return record((nonce) =>
       bridge.requestFollowUp({
         instructions,
         nonce,
-        digest,
-        requestedBy: view.reviewer,
+        digest: gate === "investigation_gate" ? digest : investigation.digest,
+        ...(gate === "report" ? { shownGate: "report", shownDigest: digest } : {}),
+        requestedBy: reviewer,
         requestedAt: now().toISOString(),
-      }),
+      }), "investigation_gate",
     );
   }
 
   // Records one decision with the nonce this page holds.
-  async function record(write) {
+  async function record(write, forGate = gate) {
     try {
-      await write(await decisionNonce());
+      await write(await decisionNonce(forGate));
     } catch (error) {
       if (error.code === "digest-changed") {
         const fresh = await bridge.view(gate);
@@ -405,6 +414,7 @@ export async function startReviewServer({
       return [422, { code: "refused", message: error.message }];
     }
     pageNonce = "";
+    gate = forGate;
     lifecycle("decided");
     return [200, { ...(await bridge.view(gate)), gate_label: GATE_LABELS[gate] }];
   }

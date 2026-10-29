@@ -10,7 +10,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { syncBuiltinESMExports } from 'node:module';
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import fs, { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import test from 'node:test';
@@ -74,6 +74,69 @@ test('the shared runner passes metacharacters to the program as literal argv', a
 
 	assert.deepEqual((await recorded())[0].args, [HOSTILE, '--', '-x']);
 	assert.equal(existsSync(join(root, 'PWNED')), false);
+});
+
+// Authoring gate: protect actual invocation/receipt/protected-write behavior.
+// Existing argv tests do not assert persistence or distinguish skipped discovery.
+// The public typed tool and real case writer need no new test seam.
+test('Navigator preserves its actual response and immutable provenance without inventing a selection', async (t) => {
+	const { bin, caseDir, call } = await fixture(t, { NAVIGATOR_TOKEN: 'test-secret-never-persist' });
+	await writeFile(join(bin, 'result.json'), JSON.stringify({ tools: [{ id: 'registry', label: 'Registry' }], warning: 'test-secret-never-persist' }));
+	const result = await call('navigator_tools', { action: 'find', value: 'company registry Norway' });
+	const output = JSON.parse((result.content[0] as { text: string }).text);
+	assert.equal(output.outcome, 'used');
+	assert.match(output.receipt_path, /^research\/navigator\/[0-9a-f-]{36}-receipt\.json$/);
+	const bytes = await readFile(join(caseDir, output.receipt_path), 'utf8');
+	const receipt = JSON.parse(bytes);
+	assert.deepEqual(receipt.argv, ['navigator', 'tools', 'find', '--json', '--', 'company registry Norway']);
+	assert.equal(receipt.query, 'company registry Norway');
+	assert.equal(Number.isNaN(Date.parse(receipt.retrieved_at)), false);
+	assert.deepEqual(JSON.parse(receipt.response_json).tools, [{ id: 'registry', label: 'Registry' }]);
+	assert.equal(bytes.includes('test-secret-never-persist'), false);
+	assert.equal(output.response.warning, '[redacted]');
+	await assert.rejects(call('write_file', { path: output.receipt_path, content: '{}' }), /protected/);
+});
+
+test('methodology writes copy actual Navigator provenance without choosing tools or requiring model bookkeeping', async (t) => {
+	const { bin, caseDir, call } = await fixture(t);
+	await writeFile(join(bin, 'result.json'), JSON.stringify({ tools: [{ id: 'registry', label: 'Registry' }] }));
+	const lookup = JSON.parse(((await call('navigator_tools', { action: 'find', value: 'company registry Norway' })).content[0] as { text: string }).text);
+	const receipt = JSON.parse(await readFile(join(caseDir, lookup.receipt_path), 'utf8'));
+	await call('write_file', { path: 'data/methodology.json', content: JSON.stringify({
+		investigation_plan: [{ direction: 'Ownership', questions: ['Who owns Example?'], steps: [{ order: 1, action: 'Read official registry', tool: 'fetch' }] }],
+		tools_required: ['fetch'],
+	}) });
+	const methodology = JSON.parse(await readFile(join(caseDir, 'data/methodology.json'), 'utf8'));
+	assert.equal(methodology.navigator.outcome, 'used');
+	assert.equal(methodology.navigator.queries.length, 1);
+	const query = methodology.navigator.queries[0];
+	assert.equal(query.receipt_path, lookup.receipt_path);
+	assert.equal(query.retrieved_at, receipt.retrieved_at);
+	assert.equal(query.response_sha256, receipt.response_sha256);
+	assert.deepEqual(query.selected_tools, []);
+	assert.deepEqual(methodology.tools_required, ['fetch']);
+	// Receipt metadata is mechanical; a chosen tool remains the model's decision.
+	methodology.navigator.queries[0].selected_tools = ['Registry'];
+	methodology.tools_required.push('Registry');
+	methodology.navigator.queries[0].retrieved_at = 'invented';
+	await call('write_file', { path: 'data/methodology.json', content: JSON.stringify(methodology) });
+	const revised = JSON.parse(await readFile(join(caseDir, 'data/methodology.json'), 'utf8'));
+	assert.equal(revised.navigator.queries[0].retrieved_at, receipt.retrieved_at);
+	assert.deepEqual(revised.navigator.queries[0].selected_tools, ['Registry']);
+});
+
+test('Navigator policy and missing CLI outcomes do not claim lookup success or create receipts', async (t) => {
+	const sensitive = await fixture(t, { SPOTLIGHT_SENSITIVE: 'true' });
+	const skipped = JSON.parse(((await sensitive.call('navigator_tools', { action: 'find', value: 'registry' })).content[0] as { text: string }).text);
+	assert.equal(skipped.outcome, 'policy-skipped');
+	assert.deepEqual(await sensitive.recorded(), []);
+	assert.equal(existsSync(join(sensitive.caseDir, 'research/navigator')), false);
+	const missing = await fixture(t);
+	await rm(join(missing.bin, 'navigator'));
+	const unavailable = JSON.parse(((await missing.call('navigator_tools', { action: 'find', value: 'registry' })).content[0] as { text: string }).text);
+	assert.equal(unavailable.outcome, 'unavailable');
+	assert.equal(existsSync(join(missing.caseDir, 'research/navigator')), false);
+	assert.match(unavailable.next_action, /osint_tools/);
 });
 
 test('every program-backed tool and harness validator runs without a shell', async (t) => {
@@ -439,4 +502,40 @@ test('anomaly_methods reports the feature hidden, with the reason, without an in
 	assert.equal(broken.available, false);
 	assert.match(broken.reason, /does not match its catalogue_hash/);
 	for (const outcome of [unset, broken]) assert.deepEqual([outcome.domains, outcome.any_table], [[], []]);
+});
+
+
+// Authoring gate: real receipt publication and methodology consumption must
+// recover from a partial disk write; successful-lookup tests do not cover it.
+test('an interrupted Navigator receipt cannot poison the next methodology write', async t=>{
+	const {caseDir,call}=await fixture(t);
+	const folder=join(caseDir,'research','navigator');
+	const originalWrite=fs.writeFileSync;
+	let injected=false;
+	const fault=t.mock.method(fs,'writeFileSync',(...args: Parameters<typeof fs.writeFileSync>)=>{
+		const [file,data,options]=args;
+		if(!injected && typeof file==='string' && dirname(file)===folder && typeof data==='string' && data.includes('"outcome":"used"')) {
+			injected=true;
+			originalWrite(file,data.slice(0,30),options);
+			throw Object.assign(new Error('synthetic ENOSPC after partial receipt write'),{code:'ENOSPC'});
+		}
+		return originalWrite(...args);
+	});
+	try {
+		syncBuiltinESMExports();
+		await assert.rejects(call('navigator_tools',{action:'find',value:'public registry'}),/ENOSPC/);
+	} finally {
+		fault.mock.restore();
+		syncBuiltinESMExports();
+	}
+	assert.equal(injected,true,'the fault reached the actual receipt file write');
+	assert.deepEqual(fs.readdirSync(folder).filter(name=>name.endsWith('-receipt.json')),[],'partial bytes must never be published as a consumable receipt');
+	const lookup=JSON.parse(((await call('navigator_tools',{action:'find',value:'public registry'})).content[0] as {text:string}).text);
+	await call('write_file',{path:'data/methodology.json',content:JSON.stringify({
+		investigation_plan:[{direction:'Ownership',questions:['Who owns Example?'],steps:[{order:1,action:'Read public registry',tool:'fetch'}]}],
+		tools_required:['fetch'],
+	})});
+	const methodology=JSON.parse(await readFile(join(caseDir,'data/methodology.json'),'utf8'));
+	assert.equal(methodology.navigator.queries.length,1);
+	assert.equal(methodology.navigator.queries[0].receipt_path,lookup.receipt_path,'only the completed retry supplies provenance');
 });
