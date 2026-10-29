@@ -136,6 +136,52 @@ async function refuseInvalidProposal(context: ToolContext, target: string, conte
 	throw new FileRefused(`refused: ${reason}; the file is unchanged. Fix the proposal as schemas/knowledge-proposal.schema.json says and write it again.${position}${arc}`);
 }
 
+// U3 ledger row 17: small models (Gemma 12B 13 of 132 runs, LFM3 r5 6 of 22)
+// missed edit_file's old_text three or more times in a thread, re-guessing
+// whitespace even after reading the file. A miss now shows the closest spans
+// of the text the tool edits (a direction's view included), old_text's line
+// count each, verbatim, as in the source-expression refusal (#249).
+const CLOSEST_SPANS = 3;
+const CLOSEST_SPAN_MIN = 0.5;
+const CLOSEST_SPAN_MAX_CHARS = 1500;
+
+function bigrams(text: string): Map<string, number> {
+	const grams = new Map<string, number>();
+	for (let i = 0; i < text.length - 1; i++) grams.set(text.slice(i, i + 2), (grams.get(text.slice(i, i + 2)) ?? 0) + 1);
+	return grams;
+}
+
+function similarity(a: string, b: string): number {
+	const [x, y] = [bigrams(a), bigrams(b)];
+	let shared = 0;
+	for (const [gram, count] of x) shared += Math.min(count, y.get(gram) ?? 0);
+	const total = Math.max(a.length - 1, 0) + Math.max(b.length - 1, 0);
+	return total === 0 ? 0 : (2 * shared) / total;
+}
+
+function closestSpans(text: string, oldText: string, path: string): string {
+	const normal = (value: string) => value.replace(/\s+/g, ' ').trim();
+	const wanted = normal(oldText);
+	const lines = text.split('\n');
+	const size = Math.max(1, oldText.replace(/\n+$/, '').split('\n').length);
+	const scored: Array<{ start: number; score: number }> = [];
+	for (let start = 0; start + size <= lines.length; start++) {
+		const window = lines.slice(start, start + size).join('\n');
+		if (window.length > CLOSEST_SPAN_MAX_CHARS || !window.trim()) continue;
+		const score = similarity(wanted, normal(window));
+		if (score >= CLOSEST_SPAN_MIN) scored.push({ start, score });
+	}
+	const chosen: number[] = [];
+	for (const { start } of scored.sort((a, b) => b.score - a.score)) {
+		if (chosen.length === CLOSEST_SPANS) break;
+		if (chosen.every((other) => Math.abs(other - start) >= size)) chosen.push(start);
+	}
+	const json = /^data\/[^/]+\.json$/.test(path) ? ' For a data/*.json file, write_file of the whole file also works.' : '';
+	if (chosen.length === 0) return `. old_text must match the file exactly, whitespace and indentation included; read the part you mean to change and copy it.${json}`;
+	const spans = chosen.map((start) => `--- lines ${start + 1}-${start + size}:\n${lines.slice(start, start + size).join('\n')}`).join('\n');
+	return `. old_text must match the file exactly, whitespace and indentation included. The closest spans are below; copy one exactly as old_text, without the "--- lines" marker.${json}\n${spans}`;
+}
+
 function lstatOrUndefined(path: string): Stats | undefined {
 	try {
 		return lstatSync(path);
@@ -780,7 +826,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 					throw error;
 				}
 				const first = text.indexOf(input.old_text);
-				if (first === -1) throw new Error(`edit_file: old_text not found in ${input.path}`);
+				if (first === -1) throw new Error(`edit_file: old_text not found in ${input.path}${closestSpans(text, input.old_text, caseRelative(caseDir, target))}`);
 				if (text.indexOf(input.old_text, first + 1) !== -1) {
 					throw new Error(`edit_file: old_text occurs more than once in ${input.path}; include more context`);
 				}
