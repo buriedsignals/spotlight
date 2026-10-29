@@ -140,11 +140,12 @@ export function fetchFailure(detail: string): string {
 }
 
 const blocked = (cause: string) => /bot-blocked|anti-bot|captcha|\b403\b|access denied/i.test(cause);
-type Failures = Record<string, Record<string, { count: number; cause: string }>>;
+type Failures = Record<string, { count: number; cause: string }>;
 
+// One file per case, so two cases' workers never write the same file.
 function failuresPath(context: ToolContext): string | undefined {
 	const dataDir = context.env?.SPOTLIGHT_HARNESS_DATA;
-	return dataDir ? resolve(dataDir, 'work', 'fetch-failures.json') : undefined;
+	return dataDir ? resolve(dataDir, 'work', 'fetch-failures', `${createHash('sha256').update(context.caseDir).digest('hex').slice(0, 16)}.json`) : undefined;
 }
 
 function readFailures(path: string | undefined): Failures {
@@ -157,7 +158,7 @@ function readFailures(path: string | undefined): Failures {
 }
 
 export function priorFailure(context: ToolContext, url: string): string | undefined {
-	const seen = readFailures(failuresPath(context))[context.caseDir]?.[url];
+	const seen = readFailures(failuresPath(context))[url];
 	if (!seen || (seen.count < 2 && !blocked(seen.cause))) return undefined;
 	return `fetch: ${url} already failed in this case (${seen.cause}); it is not fetched again. Try its archived copy (https://web.archive.org/web/${url}) with fetch, open it with browse, or use another source.`;
 }
@@ -166,8 +167,7 @@ function recordFailure(context: ToolContext, url: string, cause: string): void {
 	const path = failuresPath(context);
 	if (!path) return;
 	const all = readFailures(path);
-	const forCase = (all[context.caseDir] ??= {});
-	forCase[url] = { count: (forCase[url]?.count ?? 0) + 1, cause };
+	all[url] = { count: (all[url]?.count ?? 0) + 1, cause };
 	try {
 		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 		writeFileSync(path, JSON.stringify(all), { mode: 0o600 });

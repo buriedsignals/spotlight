@@ -5,6 +5,7 @@
 // dated as harness-acquired; it is not added to the evidence bundle, so it is
 // evidence only if the fact-checker records it as an item of its own. Sensitive
 // cases make no request.
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { CheckDocs, Recheck } from './roles.ts';
@@ -21,17 +22,18 @@ const flat = (text: string) => text.replace(/\s+/g, ' ').trim();
 export type RecheckOptions = { context: ToolContext; dataDir: string; sensitive: boolean; signal?: AbortSignal };
 
 // The re-check of each cited http(s) source of these findings, by URL; done
-// once per case, read back from <dataDir>/work/recheck.json after that.
+// once per case, read back from <dataDir>/work/recheck/<case>.json after that.
 export async function recheckSources(docs: CheckDocs, ids: string[], options: RecheckOptions): Promise<Recheck> {
 	if (options.sensitive) return {};
-	const store = resolve(options.dataDir, 'work', 'recheck.json');
-	let all: Record<string, Recheck> = {};
+	// One file per case: a case's batches run one after another, and two cases
+	// running at once never write the same file (Codex review of #274).
+	const store = resolve(options.dataDir, 'work', 'recheck', `${createHash('sha256').update(options.context.caseDir).digest('hex').slice(0, 16)}.json`);
+	let done: Recheck = {};
 	try {
-		all = JSON.parse(readFileSync(store, 'utf8')) as Record<string, Recheck>;
+		done = JSON.parse(readFileSync(store, 'utf8')) as Recheck;
 	} catch {
-		all = {};
+		done = {};
 	}
-	const done = (all[options.context.caseDir] ??= {});
 	const findings = rows(docs.findings, 'findings').filter((row) => ids.includes(String(row.id)));
 	const refs = new Set(findings.flatMap((row) => (Array.isArray(row.evidence_bundle_refs) ? row.evidence_bundle_refs.map(String) : [])));
 	const items = rows(docs.bundle, 'items').filter((item) => refs.has(String(item.id)) || rows(item, 'claim_links').some((link) => ids.includes(String(link.finding_id))));
@@ -55,7 +57,7 @@ export async function recheckSources(docs: CheckDocs, ids: string[], options: Re
 	}
 	try {
 		mkdirSync(dirname(store), { recursive: true, mode: 0o700 });
-		writeFileSync(store, JSON.stringify(all), { mode: 0o600 });
+		writeFileSync(store, JSON.stringify(done), { mode: 0o600 });
 	} catch {
 		// A re-check that cannot be kept is done again for the next batch.
 	}
