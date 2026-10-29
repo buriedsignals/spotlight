@@ -182,7 +182,11 @@ Correct only the output shape identified by the validator. Do not change finding
      correction. Two failed corrections exhaust the case. There is no
      shape-repair loop beyond that cap.
 
-  3. Spawn fact-checker:
+  3. Spawn fact-checker. On a case with many findings, give each fact-checker a
+     batch of about three findings without a claim and spawn the next one when it
+     finishes, until every finding has a claim; a fresh, short fact-checker per
+     batch works better than one long one. (The Pi harness runs these batches
+     itself.)
 
      handle = spawn-agent(
        agent_id: "fact-checker",

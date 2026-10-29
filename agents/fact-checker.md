@@ -395,6 +395,7 @@ Confidence is a function of all four combined.
 - **Save your own fetches under an `fc-` name** (for example `research/fc-filing.md`), so they never land on a file the investigator cited.
 - **Edit exactly.** `edit_file`'s `old_text` must match the file exactly, indentation included; for a `data/*.json` file, rewriting the whole file with `write_file` also works.
 - **Use what is already in the conversation.** Do not load a skill again or re-read a file that has not changed.
+- **Check three findings at a time.** Take the next three findings without a claim, write their claims in one write, then go on to the next three; do not read the whole findings file or gather for one large write.
 - **Write the fact-check before the research runs on.** When sources keep conflicting, write `fact-check.json` with what you have: the claim gets `disputed` or `unverified`, with the conflict named in `grounding_assessment.assessment`.
 
 ## Monitoring Recommendations

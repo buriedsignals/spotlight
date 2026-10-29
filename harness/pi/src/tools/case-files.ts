@@ -888,7 +888,16 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 	};
 	// After the fact-checker's accepted write to its file: the next findings to
 	// check, in full (roles.ts nextCheckText).
-	const nextToCheck = (wrote: string) => (role === 'fact-checker' && wrote === 'data/fact-check.json' ? `\n${factCheckChecklist(readCheckDocs(caseDir))}` : '');
+	const nextToCheck = (wrote: string) => {
+		if (role !== 'fact-checker' || wrote !== 'data/fact-check.json') return '';
+		// #274: a batch fact-checker finishes once its findings have claims; the
+		// launcher starts the next batch with a fresh worker.
+		const batch = context.env?.SPOTLIGHT_FC_BATCH?.split(',').filter(Boolean);
+		if (!batch?.length) return `\n${factCheckChecklist(readCheckDocs(caseDir))}`;
+		const claimed = new Set((((readCheckDocs(caseDir).factCheck ?? {}) as { claims?: Array<{ finding_id?: unknown }> }).claims ?? []).map((claim) => claim?.finding_id));
+		const open = batch.filter((id) => !claimed.has(id));
+		return open.length === 0 ? `\nEvery finding in your batch has a claim (${batch.join(', ')}). Finish now; the harness starts the next batch.` : `\nStill without a claim in your batch: ${open.join(', ')}. Write their claims, then finish.`;
+	};
 	// fc-stall scan (incr-test3 sp98 seq 35): a fact-check write that added no
 	// claim still read "wrote data/fact-check.json", and the count stayed put.
 	const claimsAdded = (wrote: string, before: string | undefined, written: string): string => {
