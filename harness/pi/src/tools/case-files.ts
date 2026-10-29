@@ -864,6 +864,32 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 	// After the fact-checker's accepted write to its file: the next findings to
 	// check, in full (roles.ts nextCheckText).
 	const nextToCheck = (wrote: string) => (role === 'fact-checker' && wrote === 'data/fact-check.json' ? `\n${nextCheckText(readCheckDocs(caseDir))}` : '');
+	// fc-stall scan (incr-test3 sp98 seq 35): a fact-check write that added no
+	// claim still read "wrote data/fact-check.json", and the count stayed put.
+	const claimsAdded = (wrote: string, before: string | undefined, written: string): string => {
+		if (wrote !== 'data/fact-check.json') return '';
+		const ids = (text: string | undefined) => {
+			try {
+				const claims = (JSON.parse(text ?? '{}') as { claims?: unknown }).claims;
+				return Array.isArray(claims) ? claims.map((claim) => (claim as { finding_id?: unknown } | null)?.finding_id) : [];
+			} catch {
+				return [];
+			}
+		};
+		const sent = ids(written);
+		if (sent.length === 0) return '';
+		const had = new Set(ids(before));
+		const findingRows = (readCheckDocs(caseDir).findings as { findings?: unknown } | undefined)?.findings;
+		const findings = new Set(Array.isArray(findingRows) ? findingRows.map((row) => (row as { id?: unknown } | null)?.id) : []);
+		if (sent.some((id) => typeof id === 'string' && !had.has(id) && findings.has(id))) return '';
+		const replaced = sent.filter((id): id is string => typeof id === 'string' && had.has(id));
+		const unknown = sent.filter((id) => typeof id !== 'string' || !findings.has(id));
+		const why = [
+			...(replaced.length ? [`${replaced.join(', ')} already had a claim, which this write replaced`] : []),
+			...(unknown.length ? [`${unknown.map(String).join(', ')} is not a finding id in data/findings.json`] : []),
+		].join('; ');
+		return ` (0 claims added: ${why || 'no claim had a finding_id'})`;
+	};
 	return [
 		{
 			name: 'read_file',
@@ -924,8 +950,9 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseMissingCitedFiles(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseUnknownFlags(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				await refuseInvalidProposal(context, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
+				const before = currentText(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				const wrote = writeConfined(caseDir, writeRoot, input.path, content, writes, denyWrites);
-				return textResult(`wrote ${wrote}${keptNote(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, content)}${nextToCheck(wrote)}`);
+				return textResult(`wrote ${wrote}${claimsAdded(wrote, before, input.content)}${keptNote(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, content)}${nextToCheck(wrote)}`);
 			},
 		},
 		{
@@ -989,7 +1016,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			name: 'grep_files',
 			label: 'Grep files',
 			description:
-				'Search case files for a regular expression. Optional path (file or folder, relative to the case) narrows the search. Returns path:line:text, with lines counted as read_file and the evidence validators count them.',
+				'Search case files for a regular expression. Optional path (file or folder, relative to the case, or one schema under schemas/) narrows the search. Returns path:line:text, with lines counted as read_file and the evidence validators count them.',
 			parameters: grepParams,
 			async execute(_id, params) {
 				const input = checkedParams<{ pattern: string; path?: string; ignore_case?: boolean }>('grep_files', grepParams, params);
@@ -1004,8 +1031,19 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				}
 				// A narrowed role may name a folder; only its files in scope are searched.
 				const start = input.path ? (reads ? scopedFolderOrFile(caseDir, input.path, scope) : readTarget(caseDir, input.path, scope)) : caseDir;
-				if (!inside(caseDir, start)) throw new FileRefused(`refused: ${input.path} is outside the case`);
 				const matches: string[] = [];
+				// fc-stall scan: greps of a schema the task names were refused as
+				// outside the case (24 hits, every role); read_file reads them, so
+				// grep_files searches one schema file too.
+				const schema = input.path !== undefined && /^schemas[\\/][^\\/]+\.json$/.test(input.path) && start.startsWith(resolve(CHECKOUT_ROOT, 'schemas'));
+				if (schema) {
+					const lines = sourceLines(readFileSync(start, 'utf8'));
+					for (let index = 0; index < lines.length && matches.length < MAX_MATCHES; index += 1) {
+						if (expression.test(lines[index])) matches.push(`${input.path}:${index + 1}:${lines[index].slice(0, 400)}`);
+					}
+					return textResult(matches.length ? matches.join('\n') : 'no matches');
+				}
+				if (!inside(caseDir, start)) throw new FileRefused(`refused: ${input.path} is outside the case`);
 				for (const file of caseFiles(caseDir, start)) {
 					if (!mayRead(scope, caseRelative(caseDir, file))) continue;
 					if (lstatSync(file).size > MAX_GREP_FILE_BYTES) continue;

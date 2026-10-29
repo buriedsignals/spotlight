@@ -228,6 +228,9 @@ test('a write inside the case lands there and reads back', async (t) => {
 	assert.match(await call('grep_files', { pattern: 'sec.nd' }), /research\/notes\/a\.md:1:second/);
 	// fc-stall item 5: a leading (?i), refused as invalid 87 times, is ignore case.
 	assert.match(await call('grep_files', { pattern: '(?i)SECOND' }), /research\/notes\/a\.md:1:second/);
+	// fc-stall item 7: a grep of a schema the task names was refused as outside the case.
+	assert.match(await call('grep_files', { pattern: '"not_checkable"', path: 'schemas/fact-check.schema.json' }), /^schemas\/fact-check\.schema\.json:\d+:.*not_checkable/);
+	await assert.rejects(call('grep_files', { pattern: 'x', path: 'schemas/' }), /outside the case|not found/, 'only one schema file, not the folder');
 });
 
 test('a path copied from a skill with its {CASE_DIR}/ prefix lands in the case root', async (t) => {
@@ -697,4 +700,16 @@ test('a worker reading a big findings.json whole gets its entries by json_pointe
 	assert.match(await call('read_file', { path: 'data/findings.json', offset: 1, limit: 3 }), /"findings"/);
 	await writeFile(join(caseDir, 'data', 'findings.json'), JSON.stringify({ findings: [{ id: 'F1', claim: 'Small.' }] }));
 	assert.match(await call('read_file', { path: 'data/findings.json' }), /"Small\."/, 'a small file reads whole');
+});
+
+// fc-stall item 8 (incr-test3 sp98 seq 35): a fact-check write that added no
+// claim read "wrote data/fact-check.json" while the count stayed at 3 of 22.
+test('a fact-check write that adds no claim says so and why', async (t) => {
+	const { caseDir, call } = await fixture(t, undefined, 'fact-checker');
+	await writeFile(join(caseDir, 'data', 'findings.json'), JSON.stringify({ project: 'p', findings: [{ id: 'F1', claim: 'One.' }, { id: 'F2', claim: 'Two.' }] }));
+	const claim = (id: string) => ({ project: 'p', claims: [{ finding_id: id, claim_text: 'One.', verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [] }] });
+	const first = await call('write_file', { path: 'data/fact-check.json', content: JSON.stringify(claim('F1')) });
+	assert.doesNotMatch(first, /0 claims added/);
+	assert.match(await call('write_file', { path: 'data/fact-check.json', content: JSON.stringify(claim('F1')) }), /^wrote data\/fact-check\.json \(0 claims added: F1 already had a claim, which this write replaced\)/);
+	assert.match(await call('write_file', { path: 'data/fact-check.json', content: JSON.stringify(claim('F9')) }), /0 claims added: F9 is not a finding id in data\/findings\.json/);
 });

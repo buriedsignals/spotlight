@@ -217,6 +217,14 @@ def main() -> int:
                 and target.read_bytes() == before,
                 f"a quote anchored in an unlisted file was not told to add it or use the listed file: {refused.stderr}")
         twin.unlink()
+        # fc-stall item 6: a new passage given an id already taken is told a
+        # free id in the same numbering.
+        taken = proposal(4)
+        taken["expressions"][0]["id"] = "SXW0"
+        refused = run_writer(case, taken)
+        require(refused.returncode == 2 and "already exists with a different passage. For a new passage, give it a free id such as 'SXW" in refused.stderr
+                and "give it a free id such as 'SXW0'" not in refused.stderr and target.read_bytes() == before,
+                f"an id collision did not name a free id: {refused.stderr}")
         # u3 p1 eu-ai-act: a file that several evidence items list is cited by
         # the first of them, with a note, instead of a refusal.
         bundle_path = case / "data" / "evidence-bundle.json"

@@ -241,6 +241,16 @@ def _matches(case: Path, text: str, paths: list[str]) -> list[tuple[str, int, in
     return []
 
 
+def _free_id(taken_id: str, by_id: dict[str, Any]) -> str:
+    """The next unused id in `taken_id`'s numbering (FC-P1 -> FC-P4 when up to
+    FC-P3 is taken); an id with no trailing number gets "-2", "-3"."""
+    match = re.match(r"^(.*?)(\d+)$", taken_id)
+    prefix, number = (match.group(1), int(match.group(2))) if match else (f"{taken_id}-", 2)
+    while f"{prefix}{number}" in by_id or f"{prefix}{number}" == taken_id:
+        number += 1
+    return f"{prefix}{number}"
+
+
 def _owned_files(bundle: dict[str, Any], readable: set[str] | None) -> dict[str, list[str]]:
     """Each bundle-owned text file (that this role may read) and the items owning it."""
     owners: dict[str, list[str]] = {}
@@ -425,7 +435,10 @@ def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], 
             target = built
         else:
             if existing.get("expression_fingerprint") != built["expression_fingerprint"]:
-                raise WriteError(f"expression {raw['id']!r} already exists with a different passage; "
+                # fc-stall scan: 45 refusals in 18 runs, mostly a new passage
+                # given an id already taken; name a free one.
+                raise WriteError(f"expression {raw['id']!r} already exists with a different passage. For a new passage, "
+                                 f"give it a free id such as {_free_id(raw['id'], by_id)!r}. To change {raw['id']!r}, "
                                  "propose the changed passage under a new id and supersede the old one with "
                                  f"{LIFECYCLE_EXAMPLE}")
             target = existing
