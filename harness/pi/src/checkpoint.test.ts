@@ -8,7 +8,7 @@ import { startFakeOpenAI } from './test-support/fake-openai.ts';
 import type { ChatRequest } from './test-support/fake-openai.ts';
 import { baseEnv, launch, settledPrompt, workspace } from './test-support/launch.ts';
 import type { Chat } from './test-support/launch.ts';
-import { readAlreadyShown, skillAlreadyLoaded } from './extension.ts';
+import { skillAlreadyLoaded } from './extension.ts';
 
 const OLD_TURN = 'OLD-TURN-MARKER';
 const CHECKPOINT = 'CHECKPOINT-SENTINEL';
@@ -187,32 +187,4 @@ test('after a fold the same skill loads in full again', async (t) => {
 		.flatMap((request) => request.messages.filter((message) => message.role === 'tool').map((message) => JSON.stringify(message.content)));
 	const last = loads.at(-1)!;
 	assert.ok(!last.includes(skillAlreadyLoaded('spotlight')) && last.length > 1000, 'after the fold the skill loads in full');
-});
-
-// The same for reads: a file read before a fold returns its text after it.
-test('after a fold an unchanged file read again returns its text', async (t) => {
-	const lastUser = (request: ChatRequest) => JSON.stringify(request.messages.filter((message) => message.role === 'user').at(-1)?.content ?? '');
-	const readCall = { toolCalls: [{ name: 'read_file', arguments: { path: 'brief-directions.txt' } }] };
-	const fake = await startFakeOpenAI((request) => {
-		if (isSummaryRequest(request)) return { text: WELL_FORMED };
-		return /Read the brief/.test(lastUser(request)) && request.messages.at(-1)?.role === 'user' ? readCall : { text: 'Noted.' };
-	});
-	t.after(() => fake.close());
-	const space = await workspace(t);
-	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '65536', SPOTLIGHT_MODEL_TIER: '12b' });
-	await settledPrompt(chat, 'Write nothing yet.');
-	writeFileSync(join(space.casesRoot, 'case-a', 'brief-directions.txt'), 'Who owns the fixture company?\n');
-
-	await settledPrompt(chat, 'Read the brief.');
-	await settledPrompt(chat, LONG_TURN);
-	await settledPrompt(chat, RECENT_TURN);
-	await settledPrompt(chat, 'Continue.');
-	assert.ok(compactions(chat).length >= 1, 'the conversation folded');
-	await settledPrompt(chat, 'Read the brief again.');
-
-	const reads = fake.requests
-		.filter((request) => !isSummaryRequest(request))
-		.flatMap((request) => request.messages.filter((message) => message.role === 'tool').map((message) => JSON.stringify(message.content)));
-	const last = reads.at(-1)!;
-	assert.ok(last.includes('Who owns the fixture company?') && !last.includes(readAlreadyShown('brief-directions.txt')), 'after the fold the file is read in full');
 });

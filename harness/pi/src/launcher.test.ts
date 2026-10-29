@@ -16,7 +16,7 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, agentSpec, loadComposition, deliverableFor } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
-import { blockedStop, CALL_BUDGET_SPENT, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded } from './extension.ts';
+import { blockedStop, CALL_BUDGET_SPENT, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
@@ -1018,31 +1018,6 @@ test('after an approved Anomaly plan from the decision model, the investigator\'
 // skills in one turn (99,184 characters), the fold could not cut inside that
 // turn, and the next request had a 1-token completion budget.
 const SEQ7_SKILLS = ['integrations', 'osint', 'investigation-methodology', 'epistemic-grounding', 'acquisition-graduation', 'web-archiving', 'content-access', 'shell-safety', 'follow-the-money', 'social-media-intelligence', 'technical-investigation'];
-
-// U3 census (84674fd9): both models read the same file again and again.
-test('an unchanged file read again with the same range returns a short line; another range or a changed file returns the text', async (t) => {
-	const calls = [
-		{ name: 'write_file', arguments: { path: 'notes.md', content: 'first\nsecond\n' } },
-		{ name: 'read_file', arguments: { path: 'notes.md' } },
-		{ name: 'read_file', arguments: { path: 'notes.md' } },
-		{ name: 'read_file', arguments: { path: 'notes.md', offset: 2, limit: 1 } },
-		{ name: 'write_file', arguments: { path: 'notes.md', content: 'changed\n' } },
-		{ name: 'read_file', arguments: { path: 'notes.md' } },
-	];
-	const fake = await startFakeOpenAI(orchestratorScript(calls));
-	t.after(() => fake.close());
-	const space = await workspace(t);
-	await caseAtInvestigation(space);
-	const chat = launch(t, baseEnv(space, fake.baseURL));
-
-	await settledPrompt(chat, 'Continue.');
-
-	const results = toolResults(fake.requests.at(-1)!);
-	assert.equal(results[1], 'first\nsecond\n');
-	assert.equal(results[2], readAlreadyShown('notes.md'));
-	assert.equal(results[3], 'second');
-	assert.equal(results[5], 'changed\n');
-});
 
 // U4 candidate: a worker loading the same skill again repeats its whole text.
 test('a skill loaded once is not loaded again in the same conversation', async (t) => {

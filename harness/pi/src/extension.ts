@@ -1,7 +1,6 @@
 // The Spotlight extension, loaded by path into every Spotlight pi process. It
 // registers the model route chosen by the launcher, applies the fixed
 // provider request-body policy, and registers exactly the role's tools.
-import { createHash } from 'node:crypto';
 import { relative, resolve, sep } from 'node:path';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { registerCompaction } from './checkpoint.ts';
@@ -161,7 +160,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	}
 	registerToolOwners(pi, role);
 	if (process.env.SPOTLIGHT_CALL_BUDGET) registerCallBudget(pi, Number(process.env.SPOTLIGHT_CALL_BUDGET));
-	const tools = toolsFor(role).map(guarded).map(streakGuarded).map(registerSkillDedup(pi)).map(registerReadDedup(pi));
+	const tools = toolsFor(role).map(guarded).map(streakGuarded).map(registerSkillDedup(pi));
 	if (tier12b) registerHyphenNames(pi, new Set(tools.map((tool) => tool.name)));
 	for (const tool of tools) pi.registerTool(tool);
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
@@ -237,48 +236,6 @@ function registerSkillDedup(pi: ExtensionAPI): (tool: ToolDefinition) => ToolDef
 						const skill = (params as { skill?: unknown }).skill;
 						if (typeof skill === 'string' && loaded.has(skill)) return { content: [{ type: 'text', text: skillAlreadyLoaded(skill) }], details: undefined };
 						return tool.execute(id, params, ...rest);
-					},
-				};
-}
-
-// U3 census (84674fd9): both models read the same file again and again (r5's
-// orchestrator 61 to 167 times per case, base's investigator 56 to 129). A
-// read of the same path and range whose text is unchanged since an earlier
-// read in this conversation returns this line instead; a changed file, another
-// range, a read the budget cut short, and any read after a fold return the text.
-export const readAlreadyShown = (path: string) => `${path} is unchanged since you read it above in this conversation; use that text.`;
-
-function registerReadDedup(pi: ExtensionAPI): (tool: ToolDefinition) => ToolDefinition {
-	// Read key (path and range) -> hash of the text it returned in full.
-	const shown = new Map<string, string>();
-	const pending = new Map<string, { key: string; hash: string }>();
-	const readKey = (params: unknown) => {
-		const { path, offset, limit, json_pointer } = params as { path?: unknown; offset?: unknown; limit?: unknown; json_pointer?: unknown };
-		return JSON.stringify([path, offset ?? null, limit ?? null, json_pointer ?? null]);
-	};
-	const textOf = (result: { content?: Array<{ type: string; text?: string }> }) => (result.content ?? []).map((part) => (part.type === 'text' ? (part.text ?? '') : '')).join('');
-	pi.on('session_compact', () => {
-		shown.clear();
-	});
-	pi.on('tool_execution_end', (event) => {
-		const read = pending.get(event.toolCallId);
-		pending.delete(event.toolCallId);
-		if (!read || event.isError) return;
-		const text = textOf(event.result ?? {});
-		if (!text.includes(READ_TRUNCATED) && !text.endsWith(' is unchanged since you read it above in this conversation; use that text.')) shown.set(read.key, read.hash);
-	});
-	return (tool) =>
-		tool.name !== 'read_file'
-			? tool
-			: {
-					...tool,
-					async execute(id, params, ...rest) {
-						const result = await tool.execute(id, params, ...rest);
-						const key = readKey(params);
-						const hash = createHash('sha256').update(textOf(result as { content?: Array<{ type: string; text?: string }> })).digest('hex');
-						if (shown.get(key) === hash) return { content: [{ type: 'text', text: readAlreadyShown(String((params as { path?: unknown }).path)) }], details: undefined };
-						pending.set(id, { key, hash });
-						return result;
 					},
 				};
 }
