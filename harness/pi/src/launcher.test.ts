@@ -3193,3 +3193,25 @@ test('a worker that runs out of room is folded once and continues its task', asy
 	assert.match(result, /Fact-check continued after the fold\./, result.slice(0, 600));
 	assert.match(chat.stderr(), /checkpoint: session-ok/, 'the worker was folded');
 });
+
+// arms on 8699f11d (g12-spectator): stock Gemma 12B called spawn_agent with
+// "fact_checker" three times, got a schema error each time and gave up.
+test('a worker named with an underscore, capitals or spaces is the worker', async (t) => {
+	for (const agent of ['fact_checker', 'Fact-Checker', 'fact checker']) {
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'fact-checker')) return { text: `Checked as ${agent}.` };
+			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent, task: 'Check the findings.' } }] } : { text: 'Done.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = join(space.casesRoot, 'case-a');
+		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+		await unlink(join(caseDir, 'data', 'fact-check.json'));
+		const chat = launch(t, baseEnv(space, fake.baseURL));
+		await settledPrompt(chat, 'Continue.');
+		chat.process.stdin.end();
+		await chat.exited;
+		const result = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker')).at(-1)!).join('\n');
+		assert.match(result, new RegExp(`Checked as ${agent}\\.`), `${agent}: ${result.slice(0, 300)}`);
+	}
+});

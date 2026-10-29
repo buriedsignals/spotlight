@@ -113,6 +113,15 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 			agent: Type.Union(workers.map((name) => Type.Literal(name))),
 			task: Type.String({ minLength: 1 }),
 		}),
+		// arms on 8699f11d: stock Gemma 12B asked for "fact_checker" three times,
+		// got a schema error each time and gave up. Case, spaces and underscores
+		// in a worker's name are read as the name.
+		prepareArguments: (args: unknown) => {
+			const input = args as { agent?: unknown } | undefined;
+			if (!input || typeof input.agent !== 'string') return args;
+			const named = input.agent.trim().toLowerCase().replace(/[\s_]+/g, '-');
+			return workers.includes(named) ? { ...input, agent: named } : args;
+		},
 		async execute(_id, params, signal) {
 			const { agent, task } = params as { agent: string; task: string };
 			if (!workers.includes(agent)) throw new Error(`spawn_agent: unknown worker "${agent}"`);
