@@ -313,6 +313,10 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
         # own files), else in the one evidence file that holds it.
         named = [anchor["path"]] if anchor else [path for path in _item_files(item) if readable is None or path in readable]
         found = _matches(case, proposal["text"], named)
+        # rc3 john-lewis (52bf6183): the quote was in the named file, but no
+        # evidence item listed that file, and the refusal said the text was
+        # not in it.
+        unlisted = [path for path, _start, _end in found if not owners.get(path)]
         if len(found) == 1 and not cite(found[0][0]):
             found = []
         if not found:
@@ -321,6 +325,9 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
             if len(found) == 1 and not cite(found[0][0]):
                 raise WriteError(f"expression {label}: {found[0][0]} belongs to evidence items {', '.join(owners[found[0][0]])}; "
                                  "name the one you mean in original_evidence_bundle_id")
+        if not found and unlisted:
+            raise WriteError(f"expression {label}: the text is in {unlisted[0]}, but no item in data/evidence-bundle.json lists that file, "
+                             f"so it cannot be cited yet. Add the evidence item for {unlisted[0]} to data/evidence-bundle.json, then record the passage again.")
         if not found:
             searched = ", ".join(named) or "no file named"
             raise WriteError(f"expression {label}: the text is not in {searched} nor in any other file of data/evidence-bundle.json, "

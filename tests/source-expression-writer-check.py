@@ -189,6 +189,19 @@ def main() -> int:
                 f"a near-miss quote was not shown at most three verbatim closest lines with the unverified fallback: {refused.stderr}")
         require("The lines closest to it" not in run_writer(case, wrong_text).stderr,
                 "a quote close to no line was shown candidate lines")
+        # rc3 john-lewis (52bf6183): a quote that is in the named file, which no
+        # evidence item lists, was refused as "not in" that file. It is told
+        # the file needs its evidence item first.
+        unlisted_file = case / "research" / "unlisted.txt"
+        unlisted_file.write_text("A line only an unlisted file holds.\n", encoding="utf-8")
+        unlisted = proposal(5)
+        unlisted["expressions"][0].update({"text": "A line only an unlisted file holds.", "anchor_ref": {"path": "research/unlisted.txt"}, "original_evidence_bundle_id": None})
+        refused = run_writer(case, unlisted)
+        require(refused.returncode == 2
+                and "the text is in research/unlisted.txt, but no item in data/evidence-bundle.json lists that file" in refused.stderr
+                and "is not in research/unlisted.txt" not in refused.stderr and target.read_bytes() == before,
+                f"a quote in a file no evidence item lists was not told to add the item: {refused.stderr}")
+        unlisted_file.unlink()
 
         # r1/r2 source_expressions refusals the writer now resolves itself: each
         # case below was refused on 97f066b6.
