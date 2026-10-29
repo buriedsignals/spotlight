@@ -296,14 +296,17 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
     owners = _owned_files(bundle, None)
 
     def cite(path: str) -> bool:
-        """Cite the evidence item that owns `path`: the named one, else its one
-        owner. False when no single item owns it."""
+        """Cite the evidence item that owns `path`: the named one, else the
+        first that lists it (u3 p1 eu-ai-act: three items listed one page, and
+        a quote anchored there was refused). False when no item owns it."""
         if path in _item_files(item):
             return True
-        if len(owners.get(path, [])) != 1:
+        ids = owners.get(path, [])
+        if not ids:
             return False
-        proposal["original_evidence_bundle_id"] = owners[path][0]
-        notes.append(f"expression {label}: the text is in {path}, so it cites evidence item {owners[path][0]}")
+        proposal["original_evidence_bundle_id"] = ids[0]
+        also = f" (also listed by {', '.join(ids[1:])})" if len(ids) > 1 else ""
+        notes.append(f"expression {label}: the text is in {path}, so it cites evidence item {ids[0]}{also}")
         return True
 
     if reproduces and cite(anchor["path"]):
@@ -313,21 +316,26 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
         # own files), else in the one evidence file that holds it.
         named = [anchor["path"]] if anchor else [path for path in _item_files(item) if readable is None or path in readable]
         found = _matches(case, proposal["text"], named)
-        # rc3 john-lewis (52bf6183): the quote was in the named file, but no
-        # evidence item listed that file, and the refusal said the text was
-        # not in it.
-        unlisted = [path for path, _start, _end in found if not owners.get(path)]
+        searchable = [path for path in owners if readable is None or path in readable]
+        # The named file decides the place. rc3 john-lewis (52bf6183) and
+        # incr-test2 sp98: a quote in a file no evidence item lists was refused
+        # as "not in" it, or sent to other files the model never named.
+        unlisted = sorted({path for path, _start, _end in found if not owners.get(path)})
+        if found and len(unlisted) == len({path for path, _start, _end in found}):
+            elsewhere = sorted({path for path, _start, _end in _matches(case, proposal["text"], searchable)})
+            alternative = (f" Or anchor it to {', '.join(elsewhere[:3])}, which data/evidence-bundle.json lists and which "
+                           f"{'hold' if len(elsewhere) > 1 else 'holds'} the same text." if elsewhere else "")
+            named_id = proposal.get("original_evidence_bundle_id")
+            missing = f" ({named_id} is not in it yet)" if isinstance(named_id, str) and not item else ""
+            raise WriteError(f"expression {label}: the text is in {unlisted[0]}, but no item in data/evidence-bundle.json lists that file, "
+                             f"so it cannot be cited yet. Add the evidence item for {unlisted[0]} to data/evidence-bundle.json{missing}, "
+                             f"then record the passage again.{alternative}")
         if len(found) == 1 and not cite(found[0][0]):
             found = []
         if not found:
-            searchable = [path for path in owners if readable is None or path in readable]
             found = _matches(case, proposal["text"], searchable)
-            if len(found) == 1 and not cite(found[0][0]):
-                raise WriteError(f"expression {label}: {found[0][0]} belongs to evidence items {', '.join(owners[found[0][0]])}; "
-                                 "name the one you mean in original_evidence_bundle_id")
-        if not found and unlisted:
-            raise WriteError(f"expression {label}: the text is in {unlisted[0]}, but no item in data/evidence-bundle.json lists that file, "
-                             f"so it cannot be cited yet. Add the evidence item for {unlisted[0]} to data/evidence-bundle.json, then record the passage again.")
+            if len(found) == 1:
+                cite(found[0][0])
         if not found:
             searched = ", ".join(named) or "no file named"
             raise WriteError(f"expression {label}: the text is not in {searched} nor in any other file of data/evidence-bundle.json, "
