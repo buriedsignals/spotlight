@@ -18,7 +18,7 @@ import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
 import { blockedStop, budgetedWebResult, CALL_BUDGET_SPENT, FACT_CHECK_DUE, FACT_CHECK_DUE_NOTICE, FACT_CHECK_STOP, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded, UNPRODUCTIVE_NEXT, UNPRODUCTIVE_STOP } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
-import { TASK_AFTER_FOLD } from './checkpoint.ts';
+import { TASK_AFTER_FOLD, taskAfterFold } from './checkpoint.ts';
 import { maxOutputTokens } from './config.ts';
 
 const FORBIDDEN_TOOL = /^(bash|read|edit|write|ls|find|grep|powershell|codemode|tool_search)$|^mcp__/;
@@ -703,6 +703,61 @@ test('a correction task on a plan of two directions runs one investigator, unspl
 	const tasks = [...new Set(fake.requests.filter((request) => isWorkerRequest(request, 'investigator')).map(userText))];
 	assert.equal(tasks.length, 1);
 	assert.doesNotMatch(tasks[0], /DIRECTION \d of \d|Your deliverable/);
+});
+
+// wave 1 on 52bf6183: the fact-checker's whole task, case passages and the
+// fact-check structure included, came back after every fold (21.8k characters
+// median), and its post-fold prompt was 42.7k tokens.
+test('on the 12b after a fold a fact-checker gets its task\'s own lines, the structure and a pointer to its passages, never the passages', async (t) => {
+	const task = 'TASK-MARKER: check every finding.';
+	const checkpoint = '## Goal\nCheck the findings.\n## Progress\nCHECKPOINT-SENTINEL\n## Decisions\nNone.\n## Next\nRead on.\n## Open gate\nNone.';
+	let reads = 0;
+	const fake = await startFakeOpenAI((request) => {
+		if ((request.tools ?? []).length === 0) return { text: checkpoint };
+		if (isWorkerRequest(request, 'fact-checker')) {
+			return reads < 3 && !JSON.stringify(request.messages).includes('CHECKPOINT-SENTINEL')
+				? { toolCalls: [{ name: 'read_file', arguments: { path: `research/filing-${reads++}.md` } }] }
+				: { text: 'Checked.' };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	await mkdir(join(caseDir, 'research'), { recursive: true });
+	await writeFile(join(caseDir, 'data', 'findings.json'), JSON.stringify({ project: 'case-a', findings: [{ id: 'F1', claim: 'Acme paid Doe.' }] }));
+	for (const n of [0, 1, 2]) await writeFile(join(caseDir, 'research', `filing-${n}.md`), `${n} ${'The registry lists the fixture company. '.repeat(1500)}`);
+	const passages = `CASE PASSAGES\nPASSAGE-MARKER ${'A passage from the case. '.repeat(400)}`;
+	const python = join(space.root, 'python-case-search');
+	await writeFile(
+		python,
+		`#!${process.execPath}\nconst { execFileSync } = require('node:child_process');\nconst args = process.argv.slice(2);\nif (args.includes('integrations.case_search')) process.stdout.write(${JSON.stringify(passages)});\nelse { try { process.stdout.write(execFileSync(${JSON.stringify(process.env.SPOTLIGHT_PYTHON ?? 'python3')}, args, { stdio: ['inherit', 'pipe', 'inherit'] })); } catch (error) { process.stdout.write(error.stdout ?? ''); process.exitCode = error.status ?? 1; } }\n`,
+		{ mode: 0o755 },
+	);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_PYTHON: python, SPOTLIGHT_MODEL_CONTEXT_WINDOW: '40960' });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const first = fake.requests.find((request) => isWorkerRequest(request, 'fact-checker'))!;
+	assert.match(userText(first), /PASSAGE-MARKER/, 'the fact-checker starts with its passages');
+	const folded = fake.requests.find((request) => isWorkerRequest(request, 'fact-checker') && JSON.stringify(request.messages).includes('CHECKPOINT-SENTINEL'));
+	assert.ok(folded, 'the fact-checker folded');
+	const text = JSON.stringify(folded.messages);
+	const after = text.slice(text.indexOf('Your task, word for word'));
+	assert.match(after, /TASK-MARKER: check every finding\./);
+	assert.match(after, /Your deliverable: data\/fact-check\.json/);
+	assert.match(after, /Start from this structure/, 'the structure comes back while data/fact-check.json is not written');
+	const kept = /Case passages for this task: (data\/worker-passages\/fact-checker-[^;]+\.md); read it if you need them again\./.exec(after)?.[1];
+	assert.ok(kept, after.slice(0, 2000));
+	assert.doesNotMatch(text, /PASSAGE-MARKER/);
+	assert.match(await readFile(join(caseDir, kept), 'utf8'), /PASSAGE-MARKER/);
+});
+
+test('after a fold the fact-check structure comes back only while data/fact-check.json is not written', () => {
+	const env = { SPOTLIGHT_TASK_HEADER: 'Check.\n\nYour deliverable: data/fact-check.json', SPOTLIGHT_TASK_START: 'Start from this structure: {}', SPOTLIGHT_TASK_PASSAGES: 'data/worker-passages/fc.md' };
+	assert.equal(taskAfterFold(env, () => false), 'Check.\n\nYour deliverable: data/fact-check.json\nStart from this structure: {}\n\nCase passages for this task: data/worker-passages/fc.md; read it if you need them again.');
+	assert.equal(taskAfterFold(env, (path) => path === 'data/fact-check.json'), 'Check.\n\nYour deliverable: data/fact-check.json\n\nCase passages for this task: data/worker-passages/fc.md; read it if you need them again.');
+	assert.equal(taskAfterFold({}, () => false), undefined);
 });
 
 // 12B r3 A2 ia: every assistant message in the requests carried its earlier
