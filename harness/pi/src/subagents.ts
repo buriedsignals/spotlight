@@ -103,8 +103,16 @@ export const GATE_DECIDED_REFUSAL = 'The Investigation gate is decided: the memb
 // What the launcher answers an investigator spawn before the brief is approved (launcher.ts refusalFor).
 export const BRIEF_PENDING_REFUSAL = 'The brief is not approved yet, so no investigator runs. Agree the direction with the member, and once they approve it write it to brief-directions.txt with write_file. Then spawn the investigator with MODE: PLANNING to design the methodology.';
 
-export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }): ToolDefinition {
+// The fact-check's progress: findings still without a claim.
+export type FactCheckProgress = () => { left: number };
+
+export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }, progress?: FactCheckProgress): ToolDefinition {
 	let corrections = 0;
+	// arms on 8699f11d: a fact-checker that wrote claims but not all of them was
+	// cut off by the cap of runs per cycle. A run that checked more findings
+	// lets the next one continue without counting against the cap; with at most
+	// one finding fewer each time, the bypass ends.
+	let progressed = false;
 	return {
 		name: 'spawn_agent',
 		label: 'Spawn agent',
@@ -113,15 +121,26 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 			agent: Type.Union(workers.map((name) => Type.Literal(name))),
 			task: Type.String({ minLength: 1 }),
 		}),
+		// arms on 8699f11d: stock Gemma 12B asked for "fact_checker" three times,
+		// got a schema error each time and gave up. Case, spaces and underscores
+		// in a worker's name are read as the name.
+		prepareArguments: (args: unknown) => {
+			const input = args as { agent?: unknown } | undefined;
+			if (!input || typeof input.agent !== 'string') return args;
+			const named = input.agent.trim().toLowerCase().replace(/[\s_]+/g, '-');
+			return workers.includes(named) ? { ...input, agent: named } : args;
+		},
 		async execute(_id, params, signal) {
 			const { agent, task } = params as { agent: string; task: string };
 			if (!workers.includes(agent)) throw new Error(`spawn_agent: unknown worker "${agent}"`);
+			const before = agent === 'fact-checker' ? progress?.() : undefined;
 			if (agent === 'fact-checker') {
-				if (cycle.spawns >= FACT_CHECKER_CAP) throw new Error(FACT_CHECKERS_SPENT);
+				const continuing = progressed && (before?.left ?? 0) > 0;
+				if (!continuing && cycle.spawns >= FACT_CHECKER_CAP) throw new Error(FACT_CHECKERS_SPENT);
 				if (!EVIDENCE_CORRECTION.test(task)) corrections = 0;
-				else if (corrections > 0) throw new Error(CORRECTION_SPENT);
+				else if (corrections > 0 && !continuing) throw new Error(CORRECTION_SPENT);
 				else corrections += 1;
-				cycle.spawns += 1;
+				if (!continuing) cycle.spawns += 1;
 			}
 			if (typeof process.send !== 'function') {
 				throw new Error('spawn_agent needs the Spotlight launcher; this process was started without it');
@@ -135,6 +154,9 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 			process.send({ kind: 'spotlight-spawn', id, agent, task } satisfies SpawnRequest);
 			try {
 				const result = await promise;
+				// Progress is findings checked, not claims written: claims under ids
+				// that are no finding would let the bypass run on without end.
+				if (before) progressed = (progress?.().left ?? before.left) < before.left;
 				if (!result.ok) throw new Error(result.error ?? `${agent} failed`);
 				return { content: [{ type: 'text', text: result.text || '(no output)' }], details: undefined };
 			} finally {
@@ -158,6 +180,10 @@ export type WorkerLaunch = {
 // Runs one task on a fresh worker: send the prompt, wait for `agent_settled`,
 // read the last assistant text, then close stdin so Pi shuts down in order.
 const CONTROL_TOKENS = /<\|[^<>]*>|<[^<>]*\|>/g;
+// The words of NO_ROOM_STOP (extension.ts) that mark a worker that filled its
+// window, and the prompt it continues with after its one extra fold.
+const NO_ROOM = 'the conversation no longer leaves the model room to answer';
+export const CONTINUE_AFTER_FOLD = 'Your conversation was folded to make room. Continue your task from the checkpoint above.';
 
 export async function runWorker(launch: WorkerLaunch, task: string, signal: AbortSignal): Promise<string> {
 	// A task cancelled while it waited in the queue never starts a worker.
@@ -191,12 +217,18 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 	// ends on that line as its last tool result, with no answer of its own; the
 	// line is its answer.
 	let stopped = '';
+	let refolded = false;
 	const transcript = openTranscript();
 	onJsonlRecords(child.stdout, (record) => {
 		transcript?.(record);
 		if (record.type === 'tool_execution_end') {
 			const text = (record.result as { content?: Array<{ text?: string }> } | undefined)?.content?.[0]?.text ?? '';
 			stopped = text.endsWith(LOOP_STOP) || text.endsWith(REFUSAL_STOP) || text.endsWith(FACT_CHECK_DUE_STOP) ? text : '';
+		}
+		if (record.type === 'response' && record.id === 'compact') {
+			if (record.success) send({ id: 'prompt', type: 'prompt', message: CONTINUE_AFTER_FOLD });
+			else send({ id: 'last', type: 'get_last_assistant_text' });
+			return;
 		}
 		if (record.type === 'response' && record.id === 'prompt') {
 			if (!record.success) answer.reject(new Error(`worker refused the task: ${String(record.error)}`));
@@ -207,6 +239,13 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 			send({ id: 'last', type: 'get_last_assistant_text' });
 		} else if (record.type === 'response' && record.id === 'last') {
 			const text = String((record.data as { text?: string | null } | undefined)?.text ?? '');
+			// arms on 8699f11d: a fact-checker that filled its window ended on the
+			// no-room line after 6 of 22 claims. It is folded once and continues.
+			if (!stopped && !refolded && text.includes(NO_ROOM)) {
+				refolded = true;
+				send({ id: 'compact', type: 'compact' });
+				return;
+			}
 			// A worker that ended with nothing, or only a chat-template control
 			// token such as <|tool_response>, failed; it did not answer.
 			if (stopped) answer.resolve(stopped);

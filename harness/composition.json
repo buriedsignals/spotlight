@@ -175,6 +175,8 @@
         "write_file"
       ],
       "reads": [
+        "brief-directions.txt",
+        "data/methodology.json",
         "data/findings.json",
         "data/fact-check.json",
         "data/source-expressions.json",

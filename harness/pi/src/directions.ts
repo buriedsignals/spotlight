@@ -91,7 +91,7 @@ export function directionBlock(direction: Direction, count: number): string {
 export function directionDeliverable(tag: string): Deliverable {
 	return {
 		files: ['data/findings.json', 'data/evidence-bundle.json'],
-		line: `Your deliverable: data/findings.json and data/evidence-bundle.json for this direction, every finding id starting ${tag}-F (${tag}-F1, ${tag}-F2) and every evidence item id starting ${tag}-E (${tag}-E1), with this direction's cycle appended to data/investigation-log.json; write them with write_file, then finish.`,
+		line: `Your deliverable: data/findings.json and data/evidence-bundle.json for this direction, every finding id starting ${tag}-F (${tag}-F1, ${tag}-F2) and every evidence item id starting ${tag}-E (${tag}-E1), with this direction's cycle appended to data/investigation-log.json. Write up to 3 findings or items at a time with write_file: each write adds or replaces the entries with those ids and keeps the others. Then finish.`,
 	};
 }
 
@@ -124,6 +124,77 @@ export function directionView(name: string, text: string, tag: string): string {
 
 export class DirectionRefused extends Error {}
 
+// Entries written replace the entry with the same key in place; new ones are
+// added and none is dropped. Writers build a file a few entries at a time
+// (wave 1 on 038df55f: 7 of 9 big-case fact-checkers never wrote in 109-260
+// calls, gathering for one whole-file write past the 10,240-token output cap,
+// and both whole-file writes made, 52k and 79k characters, were refused over
+// one claim; investigators wrote up to 20 findings in one call).
+//
+// An entry leaves only by a withdrawal the writer states, never by being left
+// out: `{"<field>": "<id>", "withdrawn": "<reason>"}` removes it from the
+// list, and the file's top-level `withdrawn` list keeps its id and reason.
+// validate-case.py tells a worker to drop a finding it cannot state, so a
+// correction must be able to.
+export const WITHDRAW_HINT = 'To remove an entry, write it as {"id": "<its id>", "withdrawn": "<why>"}; leaving it out keeps it.';
+
+function byKey(base: Entry[], mine: Entry[], field: string, name: string): { merged: Entry[]; withdrawn: Entry[] } {
+	const merged = [...base];
+	const withdrawn: Entry[] = [];
+	for (const entry of mine) {
+		const same = entry[field] === undefined ? -1 : merged.findIndex((kept) => kept[field] === entry[field]);
+		if ('withdrawn' in entry) {
+			if (typeof entry.withdrawn !== 'string' || !entry.withdrawn.trim()) {
+				throw new DirectionRefused(`refused: withdrawing ${String(entry[field])} from ${name} needs a reason: write {"${field}": "${String(entry[field])}", "withdrawn": "<why>"}; the file is unchanged.`);
+			}
+			if (same === -1) throw new DirectionRefused(`refused: ${name} has no entry ${String(entry[field])} to withdraw; the file is unchanged.`);
+			merged.splice(same, 1);
+			withdrawn.push({ [field]: entry[field], reason: entry.withdrawn });
+		} else if (same === -1) merged.push(entry);
+		else merged[same] = entry;
+	}
+	return { merged, withdrawn };
+}
+
+function withWithdrawn(out: Doc, base: Doc | undefined, withdrawn: Entry[]): void {
+	const earlier = Array.isArray(base?.withdrawn) ? (base!.withdrawn as Entry[]) : [];
+	if (earlier.length + withdrawn.length > 0) out.withdrawn = [...earlier, ...withdrawn];
+}
+
+// The files a role's writes merge into by key, outside a direction split.
+const BY_KEY: Record<string, Record<string, { key: string; field: string }>> = {
+	investigator: { 'data/findings.json': { key: 'findings', field: 'id' }, 'data/evidence-bundle.json': { key: 'items', field: 'id' } },
+	'fact-checker': { 'data/fact-check.json': { key: 'claims', field: 'finding_id' }, 'data/evidence-bundle.json': { key: 'items', field: 'id' } },
+};
+
+export function mergesByKey(role: string | undefined, name: string): boolean {
+	return !!role && !!BY_KEY[role]?.[name];
+}
+
+// The whole file after `written`: its entries merged by key into the current
+// ones, its other fields as written, the fields that name the file as the case
+// has them. A whole-file write gives the same file it always did, less any
+// entry it left out, which stays. Text that is not one JSON object is returned
+// as written, for the write checks to refuse.
+export function mergeByKey(role: string, name: string, current: string | undefined, written: string): string {
+	let doc: Doc;
+	let base: Doc | undefined;
+	try {
+		doc = JSON.parse(written);
+		base = current === undefined ? undefined : JSON.parse(current);
+	} catch {
+		return written;
+	}
+	if (!doc || typeof doc !== 'object' || Array.isArray(doc) || !base || typeof base !== 'object' || Array.isArray(base)) return written;
+	const { key, field } = BY_KEY[role][name];
+	const { merged, withdrawn } = byKey(entries(base, key), entries(doc, key), field, name);
+	const out: Doc = { ...base, ...doc, [key]: merged };
+	withWithdrawn(out, base, withdrawn);
+	for (const identity of IDENTITY_FIELDS) if (base[identity] !== undefined) out[identity] = base[identity];
+	if (name === 'data/findings.json' && merged.length > 0) delete out.no_qualifying_findings;
+	return `${JSON.stringify(out, null, 2)}\n`;
+}
+
 const IDENTITY_FIELDS = ['schema_version', 'project', 'lead', 'run_id', 'created_at'];
 
 // The whole file after the direction's worker wrote `written` from its view:
@@ -144,6 +215,7 @@ export function mergeDirection(name: string, current: string | undefined, writte
 	const base = current === undefined ? undefined : (JSON.parse(current) as Doc);
 	const mine = entries(doc, key);
 	let merged: Entry[];
+	let withdrawnHere: Entry[] = [];
 	if (letter) {
 		const foreign = mine.filter((entry) => !owns(tag, entry.id)).map((entry) => String(entry.id));
 		if (foreign.length > 0) {
@@ -151,7 +223,9 @@ export function mergeDirection(name: string, current: string | undefined, writte
 				`refused: in this direction every ${noun} id in ${name} starts with ${tag}-${letter} (${tag}-${letter}1, ${tag}-${letter}2), and ${foreign.join(', ')} does not; the file is unchanged. The other directions' entries are kept by the harness and not shown here.`,
 			);
 		}
-		merged = [...entries(base, key).filter((entry) => !owns(tag, entry.id)), ...mine];
+		const result = byKey(entries(base, key), mine, 'id', name);
+		merged = result.merged;
+		withdrawnHere = result.withdrawn;
 	} else {
 		merged = entries(base, key);
 		for (const cycle of mine) {
@@ -162,6 +236,7 @@ export function mergeDirection(name: string, current: string | undefined, writte
 		}
 	}
 	const out: Doc = { ...doc, [key]: merged };
+	withWithdrawn(out, base, withdrawnHere);
 	// The fields that name the file stay as the case has them. train-tor on
 	// 52bf6183: one direction's write renamed the project "... (direction 1)"
 	// and left out run_id and created_at, and the case failed validation.
@@ -169,7 +244,7 @@ export function mergeDirection(name: string, current: string | undefined, writte
 	// The file's other lists (gaps, connections, monitoring) gather every
 	// direction's entries: a worker that wrote without reading keeps the rest.
 	for (const [field, value] of Object.entries(base ?? {})) {
-		if (field === key || !Array.isArray(value)) continue;
+		if (field === key || field === 'withdrawn' || !Array.isArray(value)) continue;
 		const added = Array.isArray(out[field]) ? (out[field] as unknown[]) : [];
 		out[field] = [...value, ...added.filter((entry) => !value.some((kept) => isDeepStrictEqual(kept, entry)))];
 	}

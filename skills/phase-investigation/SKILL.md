@@ -205,7 +205,7 @@ Archive every source before citing it. Work through the content-access hierarchy
 If you identify sources worth monitoring for ongoing verification, add them to monitoring_recommendations[] in data/findings.json.
 
 Fact-check all claims in {CASE_DIR}/data/findings.json.
-Read {CASE_DIR}/data/evidence-bundle.json when present and use it to assess acquisition quality, missing-source gates, screenshots/downloads, hashes, and human-verification flags.
+For each finding you check, read its own evidence-bundle items in {CASE_DIR}/data/evidence-bundle.json (by id, not the whole file) to assess acquisition quality, missing-source gates, screenshots/downloads, hashes, and human-verification flags.
 Write to {CASE_DIR}/data/fact-check.json.",
        config: { iteration_limit: 50 }
      )

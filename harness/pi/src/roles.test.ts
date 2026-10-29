@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
-import { CHECKOUT_ROOT, PERSONA_CONDITIONS, agentSpec, allowedTools, loadComposition, skillAdapterNote, skillsFor, slicePersona, systemPrompt, deliverableFor } from './roles.ts';
+import { CHECKOUT_ROOT, PERSONA_CONDITIONS, agentSpec, allowedTools, loadComposition, skillAdapterNote, skillsFor, slicePersona, systemPrompt, deliverableFor, factCheckChecklist, nextCheckBatch, nextCheckText } from './roles.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import type { AgentSpec, PersonaCondition, WorkerContext } from './roles.ts';
 
@@ -245,4 +245,33 @@ test('on the 12b each FULL block is its compact text, which keeps every rule sen
 			if (compact.trim()) assert.ok(compactPrompts.some((prompt) => prompt.includes(flat(compact))), `${name}: the 12b prompt carries the compact block`);
 		}
 	}
+});
+
+// The fact-checker's next findings, rendered from the case files; the training
+// rows (tools-da's u6 converter) call these to render the same bytes.
+test('the next findings to check come in batches of 3 with their claim, evidence files and quoted passages, and the first task adds one write\'s shape', () => {
+	const docs = {
+		findings: { schema_version: '1.1', project: 'p', findings: [1, 2, 3, 4].map((n) => ({ id: `F${n}`, claim: `Claim ${n}.`, evidence_bundle_refs: n === 1 ? ['E1'] : [] })) },
+		factCheck: { claims: [{ finding_id: 'F2' }] },
+		bundle: { items: [{ id: 'E1', raw_path: 'research/filing.md.raw', claim_links: [{ finding_id: 'F3' }] }] },
+		expressions: { expressions: [
+			{ id: 'SX1', text: 'Acme paid Doe in 2024. '.repeat(20), finding_links: [{ finding_id: 'F1' }], lifecycle_events: [{ event: 'activated' }] },
+			{ id: 'SX2', text: 'gone', finding_links: [{ finding_id: 'F1' }], lifecycle_events: [{ event: 'activated' }, { event: 'withdrawn' }] },
+		] },
+	};
+	const { batch, left, total } = nextCheckBatch(docs);
+	assert.deepEqual([batch.map((item) => item.id), left, total], [['F1', 'F3', 'F4'], 3, 4]);
+	const text = nextCheckText(docs);
+	assert.ok(text.startsWith('Next to check (3 of 3 findings still without a claim):\n- F1: "Claim 1."\n  evidence: E1 research/filing.md.raw\n  passages: SX1 "Acme paid Doe in 2024.'), text);
+	assert.match(text, /- F3: "Claim 3."\n  evidence: E1 research\/filing\.md\.raw\n- F4: "Claim 4."\n/);
+	// fc-stall item 2: 172 verified claims refused for citing no passage.
+	assert.ok(text.endsWith("\nTo verify a finding, cite its passages above by id in one evidence_for item's source_expression_refs. Record a new passage only to dispute it or to add a source you acquired."), text);
+	assert.ok(!nextCheckText({ ...docs, expressions: { expressions: [] } }).includes('cite its passages'), 'no passages, no line');
+	assert.ok(!text.includes('SX2') && text.length <= 3200);
+	assert.match(factCheckChecklist(docs), /^Next to check[\s\S]*A write with one claim, its verdict, confidence and evidence yours to fill in:\n\{/);
+	// arms on 8699f11d item D: the shape starts evidence_for with the passages on record.
+	assert.deepEqual(JSON.parse(factCheckChecklist(docs).split('fill in:\n')[1]).claims[0].evidence_for, [{ source_expression_refs: ['SX1'] }]);
+	assert.deepEqual(JSON.parse(factCheckChecklist({ ...docs, expressions: { expressions: [] } }).split('fill in:\n')[1]).claims[0].evidence_for, []);
+	assert.equal(nextCheckText({ ...docs, factCheck: { claims: [1, 2, 3, 4].map((n) => ({ finding_id: `F${n}` })) } }), 'Every finding has a claim.');
+	assert.equal(nextCheckText({}), '');
 });

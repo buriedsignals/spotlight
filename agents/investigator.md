@@ -793,6 +793,8 @@ D1; the member approves the round with its leads on the Research page.
 - **Quote passages exactly as the source writes them.** Never record a passage a source you acquired does not contain.
 - **Write only your own files.** Never write `data/fact-check.json`.
 - **Never re-save over cited evidence.** A research or evidence file a citation points at stays as it is; save a new copy under a new name.
+- **Do not fetch a blocked page again.** When a site blocked a fetch, use its archived copy (`https://web.archive.org/web/<url>`), open it in the browser, or use another source.
+- **Write the finding before its passages.** A passage links to a finding already in `data/findings.json`; record passages after the finding is written.
 - **Edit exactly.** `edit_file`'s `old_text` must match the file exactly, indentation included; for a `data/*.json` file, rewriting the whole file with `write_file` also works.
 - **Use what is already in the conversation.** Do not load a skill again or re-read a file that has not changed.
 

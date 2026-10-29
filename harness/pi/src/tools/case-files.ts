@@ -9,8 +9,8 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
-import { CHECKOUT_ROOT, deliverableFor } from '../roles.ts';
-import { currentText, directionView, isDirectionFile, mergeDirection } from '../directions.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, deliverableFor, factCheckChecklist, readCheckDocs } from '../roles.ts';
+import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
 import { ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
 import type { CaseScope, ToolContext } from './run.ts';
@@ -22,6 +22,27 @@ const SCHEMAS_DIR = resolve(CHECKOUT_ROOT, 'schemas');
 const AGENT_REFERENCES_DIR = resolve(CHECKOUT_ROOT, 'agents', 'references');
 const MAX_READ_CHARS = 200_000;
 export const READ_TRUNCATED = '[truncated: use offset and limit to read the rest]';
+
+// fc-stall scan (incr-test2 sp98): fact-checker threads folded at 50-54k after
+// whole reads of findings.json, evidence-bundle.json and source-expressions.json,
+// then started over. A worker's whole read of one of these, past this size,
+// returns the file's entries by json_pointer instead of the file.
+export const INDEXED_READ_CHARS = 12_000;
+const INDEXED_LISTS: Record<string, string> = { 'data/findings.json': 'findings', 'data/evidence-bundle.json': 'items', 'data/source-expressions.json': 'expressions' };
+
+export function readIndex(name: string, text: string): string | undefined {
+	const key = INDEXED_LISTS[name];
+	if (!key || text.length <= INDEXED_READ_CHARS) return undefined;
+	let rows: unknown;
+	try {
+		rows = (JSON.parse(text) as Record<string, unknown>)[key];
+	} catch {
+		return undefined;
+	}
+	if (!Array.isArray(rows)) return undefined;
+	const entries = rows.map((row, index) => `/${key}/${index} ${String((row as Record<string, unknown> | null)?.id ?? '?')}`);
+	return `${name} is ${text.length.toLocaleString('en-US')} characters, too long to read whole. Its ${key} by json_pointer: ${entries.join('; ')}. Read the ones you need with json_pointer, or a range with offset and limit.`;
+}
 const MAX_WRITE_BYTES = 20 * 1024 * 1024;
 const MAX_LIST = 500;
 const MAX_MATCHES = 200;
@@ -100,16 +121,22 @@ function refuseNonObjectData(caseDir: string, target: string, content: string): 
 	const path = caseRelative(caseDir, target);
 	if (!/^data\/[^/]+\.json$/.test(path)) return;
 	let value: unknown;
+	// fc-stall scan: 57 investigator writes refused as not one JSON object, with
+	// nothing on where the JSON broke.
+	let broken = '';
 	try {
 		value = JSON.parse(content);
-	} catch {
+	} catch (error) {
 		value = undefined;
+		const at = Number(/at position (\d+)/.exec((error as Error).message)?.[1]);
+		const near = Number.isFinite(at) ? ` near ${JSON.stringify(content.slice(Math.max(0, at - 40), at + 40))}` : '';
+		broken = ` ${(error as Error).message}${near}.`;
 	}
 	const bundle = path === 'data/evidence-bundle.json';
 	// The bundle's items under another key read as no items at all (12B r3 cc: "evidence_bundle").
 	if (value !== null && typeof value === 'object' && !Array.isArray(value) && (!bundle || Array.isArray((value as { items?: unknown }).items))) return;
 	const shape = bundle ? ' with an `items` list' : '';
-	throw new FileRefused(`refused: ${path} must stay one JSON object${shape}; the file is unchanged. Read it, change the part you need, and write the whole object back.`);
+	throw new FileRefused(`refused: ${path} must stay one JSON object${shape}; the file is unchanged.${broken} Read it, change the part you need, and write the whole object back.`);
 }
 
 // LFM3 r3 kde stage 3 on Osaurus (03f008b0): the analyst's proposal failed
@@ -196,6 +223,15 @@ function lstatOrUndefined(path: string): Stats | undefined {
 // Resolves a write target under `root` without following any symlink: every
 // existing parent must be a real directory, missing ones are created owner-only,
 // and an existing target must be a regular file.
+// Who writes each worker file, and the task that asks them to change it.
+const FILE_OWNERS: Record<string, { role: string; task: string }> = {
+	'data/methodology.json': { role: 'investigator', task: 'starting "MODE: METHODOLOGY CORRECTION" that says what to change' },
+	'data/findings.json': { role: 'investigator', task: 'that names the findings to change and how' },
+	'data/evidence-bundle.json': { role: 'investigator', task: 'that names the evidence items to change and how' },
+	'data/investigation-log.json': { role: 'investigator', task: 'that says what the log is missing' },
+	'data/fact-check.json': { role: 'fact-checker', task: 'that names the claims to check again and why' },
+};
+
 export function writeTarget(caseDir: string, root: string, path: string, writes?: string[], denyWrites?: string[]): string {
 	// resolve() drops a trailing slash, so "research/" would become a file named
 	// like the folder and block everything later written inside it.
@@ -215,7 +251,11 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 		// U3 census (84674fd9): a fact-checker wrote fact-check content over
 		// data/findings.json. The refusal names the writer's own file.
 		const own = deliverableFor(process.env.SPOTLIGHT_ROLE ?? '', '', '')?.files;
-		throw new FileRefused(`refused: ${path} is a case file another role writes; this agent may not write it${own ? `. Your own file is ${own.join(' and ')}.` : ''}`);
+		// fc-stall scan: 93 orchestrator writes to workers' files in 48 runs;
+		// the refusal names the owner and the spawn that changes the file.
+		const owner = FILE_OWNERS[caseRelative(caseDir, target)];
+		const next = !own && owner ? ` It is the ${owner.role}'s file: to change it, call spawn_agent with agent "${owner.role}" and a task ${owner.task}.` : '';
+		throw new FileRefused(`refused: ${path} is a case file another role writes; this agent may not write it${own ? `. Your own file is ${own.join(' and ')}.` : '.'}${next}`);
 	}
 	const parts = relative(root, target).split(sep);
 	let current = root;
@@ -235,7 +275,7 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 		throw new FileRefused(`refused: ${name} is protected; only the resolver or the review page writes it`);
 	}
 	if (SCRIPT_WRITTEN.some((pattern) => pattern.test(name))) {
-		throw new FileRefused(`refused: ${name} is written only through the source_expressions tool, which computes its hashes and fingerprints`);
+		throw new FileRefused(`refused: ${name} is written only through the source_expressions tool, which computes its hashes and fingerprints. Call source_expressions with action write and the passage proposal instead.`);
 	}
 	// Written only by the Anomaly runner (integrations/anomaly/adapter.py),
 	// which checks every signal; the gate shows it to the member as is.
@@ -324,6 +364,12 @@ function refuseUncitedVerdicts(caseDir: string, target: string, content: string)
 	const missing: string[] = [];
 	const unsupported: string[] = [];
 	for (const claim of claims as { finding_id?: unknown; evidence_for?: unknown }[]) {
+		// arms on 8699f11d (r5-spectator): "no passage on record supports undefined"
+		// for a verified claim written without its finding_id.
+		if (typeof claim.finding_id !== 'string') {
+			unsupported.push('\na verified claim has no finding_id; give it the id of the finding it checks, as in the next-to-check list.');
+			continue;
+		}
 		const items = Array.isArray(claim.evidence_for) ? claim.evidence_for : [];
 		const refs = passages.flatMap((passage) => {
 			if (passage?.lifecycle_events?.at(-1)?.event !== 'activated') return [];
@@ -603,7 +649,7 @@ export function readTarget(caseDir: string, path: string, scope?: CaseScope): st
 	const target = /^(?:schemas|agents[\\/]references)[\\/]/.test(path) ? requested(CHECKOUT_ROOT, path) : requested(caseDir, path);
 	// Refuse before looking: "not found" for an outside path would tell the model
 	// which files exist beyond the case or the scope.
-	if (!readable(caseDir, target, scope)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
+	if (!readable(caseDir, target, scope)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read. Give a path relative to the case folder, such as data/findings.json.`);
 	let real: string;
 	try {
 		real = realpathSync(target);
@@ -612,9 +658,9 @@ export function readTarget(caseDir: string, path: string, scope?: CaseScope): st
 		// U3 census stage 1 (0af4585b): the orchestrator asked for
 		// schemas/case-contract.json about 100 times; the schema has .schema.json.
 		const schema = /^schemas[\\/].+\.json$/.test(path) && !path.endsWith('.schema.json') ? path.replace(/\.json$/, '.schema.json') : '';
-		throw new Error(schema && existsSync(requested(CHECKOUT_ROOT, schema)) ? `not found: ${path}; the schema is ${schema}` : `not found: ${path}`);
+		throw new Error(schema && existsSync(requested(CHECKOUT_ROOT, schema)) ? `not found: ${path}; the schema is ${schema}` : `not found: ${path}. Call list_files with a pattern (for example "research/*") to see the files that exist.`);
 	}
-	if (!readable(caseDir, real, scope)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
+	if (!readable(caseDir, real, scope)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read. Give a path relative to the case folder, such as data/findings.json.`);
 	return real;
 }
 
@@ -649,7 +695,7 @@ function selectJsonPointer(text: string, pointer: string, path: string): string 
 		throw new Error(`read_file: ${path} is not valid JSON: ${(error as Error).message}`);
 	}
 	if (pointer !== '') {
-		if (!pointer.startsWith('/')) throw new Error(`read_file: JSON pointer ${JSON.stringify(pointer)} must start with '/'`);
+		if (!pointer.startsWith('/')) throw new Error(`read_file: JSON pointer ${JSON.stringify(pointer)} must start with '/', for example /findings/0`);
 		for (const encoded of pointer.slice(1).split('/')) {
 			const token = encoded.replaceAll('~1', '/').replaceAll('~0', '~');
 			if (current !== null && typeof current === 'object' && !Array.isArray(current) && Object.hasOwn(current, token)) {
@@ -657,7 +703,7 @@ function selectJsonPointer(text: string, pointer: string, path: string): string 
 			} else if (Array.isArray(current) && /^[0-9]+$/.test(token) && Number(token) < current.length) {
 				current = current[Number(token)];
 			} else {
-				throw new Error(`read_file: JSON pointer ${JSON.stringify(pointer)} does not resolve at ${JSON.stringify(token)} in ${path}`);
+				throw new Error(`read_file: JSON pointer ${JSON.stringify(pointer)} does not resolve at ${JSON.stringify(token)} in ${path}. Read a shorter pointer to see the keys at that level.`);
 			}
 		}
 	}
@@ -702,7 +748,7 @@ const grepParams = Type.Object(
 // A folder inside the case, or one of the scope's files.
 function scopedFolderOrFile(caseDir: string, path: string, scope: CaseScope): string {
 	const target = requested(caseDir, path);
-	if (!inside(caseDir, target)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
+	if (!inside(caseDir, target)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read. Give a path relative to the case folder, such as data/findings.json.`);
 	const stats = lstatOrUndefined(target);
 	if (stats?.isDirectory()) return realpathSync(target);
 	return readTarget(caseDir, path, scope);
@@ -729,6 +775,71 @@ function keptPassages(path: string): boolean {
 	return isAbsolute(path) && lstatOrUndefined(path)?.isFile() === true;
 }
 
+// The ids a write withdraws, by the key its file merges on.
+function withdrawals(name: string, written: string): string[] {
+	const field = name === 'data/fact-check.json' ? 'finding_id' : 'id';
+	try {
+		return Object.values(JSON.parse(written) as Record<string, unknown>)
+			.filter(Array.isArray)
+			.flat()
+			.filter((entry) => entry && typeof entry === 'object' && 'withdrawn' in entry)
+			.map((entry) => String((entry as Record<string, unknown>)[field]));
+	} catch {
+		return [];
+	}
+}
+
+// A recorded passage stays on record, and the validators resolve every
+// passage's finding link and evidence item, so a finding or an item a passage
+// records is never withdrawn.
+function refuseCitedWithdrawal(caseDir: string, target: string, written: string): void {
+	const name = caseRelative(caseDir, target);
+	if (name !== 'data/findings.json' && name !== 'data/evidence-bundle.json') return;
+	const ids = withdrawals(name, written);
+	if (ids.length === 0) return;
+	let passages: Record<string, unknown>[] = [];
+	try {
+		passages = (JSON.parse(readFileSync(join(caseDir, 'data', 'source-expressions.json'), 'utf8')) as { expressions?: Record<string, unknown>[] }).expressions ?? [];
+	} catch {
+		return;
+	}
+	const recorded = ids.flatMap((id) => {
+		const by = passages
+			.filter((p) => (name === 'data/findings.json' ? Array.isArray(p.finding_links) && (p.finding_links as Record<string, unknown>[]).some((link) => link?.finding_id === id) : p.original_evidence_bundle_id === id))
+			.map((p) => String(p.id));
+		return by.length > 0 ? [`${id} (recorded by ${by.join(', ')})`] : [];
+	});
+	if (recorded.length === 0) return;
+	throw new FileRefused(`refused: ${recorded.join('; ')} cannot be withdrawn, because a recorded passage stays on record; the file is unchanged. Keep it, and lower its confidence with the reason in confidence_rationale, or leave its verdict to the fact-checker.`);
+}
+
+// What still refers to an entry this write withdrew, read from the case after
+// the write, so the writer can clear each reference with its owner's tool: the
+// validators stay strict and a withdrawn finding never dangles unseen.
+function withdrawnRefs(caseDir: string, name: string, written: string): string {
+	const json = (path: string): Record<string, unknown> => {
+		try {
+			return JSON.parse(readFileSync(join(caseDir, path), 'utf8')) as Record<string, unknown>;
+		} catch {
+			return {};
+		}
+	};
+	const list = (doc: Record<string, unknown>, key: string) => (Array.isArray(doc[key]) ? (doc[key] as Record<string, unknown>[]) : []);
+	const ids = withdrawals(name, written);
+	if (ids.length === 0 || (name !== 'data/findings.json' && name !== 'data/evidence-bundle.json')) return '';
+	const lines = ids.flatMap((id) => {
+		const refs: string[] = [];
+		if (name === 'data/findings.json') {
+			if (list(json('data/fact-check.json'), 'claims').some((claim) => claim.finding_id === id)) refs.push(`the fact-check's claim for ${id} (the fact-checker withdraws it: {"finding_id": "${id}", "withdrawn": "<why>"})`);
+			for (const item of list(json('data/evidence-bundle.json'), 'items')) if (list(item, 'claim_links').some((link) => link.finding_id === id)) refs.push(`evidence item ${String(item.id)}'s claim_links (write the item again without that link)`);
+		} else {
+			for (const finding of list(json('data/findings.json'), 'findings')) if (Array.isArray(finding.evidence_bundle_refs) && finding.evidence_bundle_refs.includes(id)) refs.push(`finding ${String(finding.id)}'s evidence_bundle_refs (write the finding again without ${id})`);
+		}
+		return refs.length > 0 ? [` ${id} is withdrawn; these still refer to it and must be cleared: ${refs.join('; ')}.`] : [];
+	});
+	return lines.join('');
+}
+
 export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot' | 'scope'> & Partial<Pick<ToolContext, 'env'>>): ToolDefinition[] {
 	const { caseDir, writeRoot } = context;
 	const role = context.env?.SPOTLIGHT_ROLE;
@@ -752,9 +863,57 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			return text;
 		}
 	};
+	// The investigator's and the fact-checker's writes to the files they build
+	// merge by id, so each write may carry a few entries (directions.ts mergeByKey).
 	const whole = (target: string, content: string) => {
 		const name = split(target);
-		return name ? mergeDirection(name, currentText(target), content, direction!) : content;
+		if (name) return mergeDirection(name, currentText(target), content, direction!);
+		const relative = caseRelative(caseDir, target);
+		return mergesByKey(role, relative) ? mergeByKey(role!, relative, currentText(target), content) : content;
+	};
+	// What a merged write did, so a writer that left entries out learns they stay.
+	const LISTS: Record<string, string> = { 'data/findings.json': 'findings', 'data/evidence-bundle.json': 'items', 'data/fact-check.json': 'claims', 'data/investigation-log.json': 'cycles' };
+	const keptNote = (target: string, written: string, merged: string) => {
+		const name = caseRelative(caseDir, target);
+		if (written === merged || !(split(target) || mergesByKey(role, name))) return '';
+		const size = (text: string) => {
+			try {
+				const list = (JSON.parse(text) as Record<string, unknown>)[LISTS[name]];
+				return Array.isArray(list) ? list.length : 0;
+			} catch {
+				return 0;
+			}
+		};
+		return ` (${size(written)} written, ${size(merged)} in the file; entries you left out stay. ${WITHDRAW_HINT})${withdrawnRefs(caseDir, name, written)}`;
+	};
+	// After the fact-checker's accepted write to its file: the next findings to
+	// check, in full (roles.ts nextCheckText).
+	const nextToCheck = (wrote: string) => (role === 'fact-checker' && wrote === 'data/fact-check.json' ? `\n${factCheckChecklist(readCheckDocs(caseDir))}` : '');
+	// fc-stall scan (incr-test3 sp98 seq 35): a fact-check write that added no
+	// claim still read "wrote data/fact-check.json", and the count stayed put.
+	const claimsAdded = (wrote: string, before: string | undefined, written: string): string => {
+		if (wrote !== 'data/fact-check.json') return '';
+		const ids = (text: string | undefined) => {
+			try {
+				const claims = (JSON.parse(text ?? '{}') as { claims?: unknown }).claims;
+				return Array.isArray(claims) ? claims.map((claim) => (claim as { finding_id?: unknown } | null)?.finding_id) : [];
+			} catch {
+				return [];
+			}
+		};
+		const sent = ids(written);
+		if (sent.length === 0) return '';
+		const had = new Set(ids(before));
+		const findingRows = (readCheckDocs(caseDir).findings as { findings?: unknown } | undefined)?.findings;
+		const findings = new Set(Array.isArray(findingRows) ? findingRows.map((row) => (row as { id?: unknown } | null)?.id) : []);
+		if (sent.some((id) => typeof id === 'string' && !had.has(id) && findings.has(id))) return '';
+		const replaced = sent.filter((id): id is string => typeof id === 'string' && had.has(id));
+		const unknown = sent.filter((id) => typeof id !== 'string' || !findings.has(id));
+		const why = [
+			...(replaced.length ? [`${replaced.join(', ')} already had a claim, which this write replaced`] : []),
+			...(unknown.length ? [`${unknown.map(String).join(', ')} is not a finding id in data/findings.json`] : []),
+		].join('; ');
+		return ` (0 claims added: ${why || 'no claim had a finding_id'})`;
 	};
 	return [
 		{
@@ -770,6 +929,8 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				}
 				const source = input.path === passages && keptPassages(passages) ? passages : readTarget(caseDir, input.path, scope);
 				const text = shown(source, readFileSync(source, 'utf8'));
+				const index = role !== ORCHESTRATOR && input.json_pointer === undefined && !input.offset && !input.limit ? readIndex(caseRelative(caseDir, source), text) : undefined;
+				if (index) return textResult(index);
 				let selected = text;
 				if (input.json_pointer !== undefined) {
 					selected = selectJsonPointer(text, input.json_pointer, input.path);
@@ -802,6 +963,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 					}
 				}
 				const content = whole(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
+				refuseCitedWithdrawal(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseMisplacedBrief(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseUnactivatedStart(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseRecordedFramework(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
@@ -813,7 +975,9 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseMissingCitedFiles(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseUnknownFlags(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				await refuseInvalidProposal(context, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
-				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, content, writes, denyWrites)}`);
+				const before = currentText(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
+				const wrote = writeConfined(caseDir, writeRoot, input.path, content, writes, denyWrites);
+				return textResult(`wrote ${wrote}${claimsAdded(wrote, before, input.content)}${keptNote(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, content)}${nextToCheck(wrote)}`);
 			},
 		},
 		{
@@ -827,7 +991,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				const target = writeTarget(caseDir, writeRoot, input.path, writes, denyWrites);
 				// Editing reads the file, so a file hidden from this role is refused.
 				if (denied(scope?.denyReads, caseRelative(caseDir, target))) {
-					throw new FileRefused(`refused: ${input.path} is outside the case files this agent may read`);
+					throw new FileRefused(`refused: ${input.path} is outside the case files this agent may read. Give a path relative to the case folder, such as data/findings.json.`);
 				}
 				let text: string;
 				try {
@@ -877,20 +1041,34 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			name: 'grep_files',
 			label: 'Grep files',
 			description:
-				'Search case files for a regular expression. Optional path (file or folder, relative to the case) narrows the search. Returns path:line:text, with lines counted as read_file and the evidence validators count them.',
+				'Search case files for a regular expression. Optional path (file or folder, relative to the case, or one schema under schemas/) narrows the search. Returns path:line:text, with lines counted as read_file and the evidence validators count them.',
 			parameters: grepParams,
 			async execute(_id, params) {
 				const input = checkedParams<{ pattern: string; path?: string; ignore_case?: boolean }>('grep_files', grepParams, params);
 				let expression: RegExp;
+				// fc-stall scan: a leading (?i) (87 hits, investigator and fact-checker)
+				// was refused as an invalid regex; it is the ignore-case flag.
+				const inline = /^\(\?i\)/.test(input.pattern);
 				try {
-					expression = new RegExp(input.pattern, input.ignore_case ? 'i' : '');
+					expression = new RegExp(inline ? input.pattern.slice(4) : input.pattern, input.ignore_case || inline ? 'i' : '');
 				} catch (error) {
-					throw new Error(`grep_files: invalid regular expression: ${(error as Error).message}`);
+					throw new Error(`grep_files: invalid regular expression: ${(error as Error).message}. The pattern is a regular expression: for literal text, put a backslash before [ ] ( ) . * + ? or search a shorter plain word.`);
 				}
 				// A narrowed role may name a folder; only its files in scope are searched.
 				const start = input.path ? (reads ? scopedFolderOrFile(caseDir, input.path, scope) : readTarget(caseDir, input.path, scope)) : caseDir;
-				if (!inside(caseDir, start)) throw new FileRefused(`refused: ${input.path} is outside the case`);
 				const matches: string[] = [];
+				// fc-stall scan: greps of a schema the task names were refused as
+				// outside the case (24 hits, every role); read_file reads them, so
+				// grep_files searches one schema file too.
+				const schema = input.path !== undefined && /^schemas[\\/][^\\/]+\.json$/.test(input.path) && start.startsWith(resolve(CHECKOUT_ROOT, 'schemas'));
+				if (schema) {
+					const lines = sourceLines(readFileSync(start, 'utf8'));
+					for (let index = 0; index < lines.length && matches.length < MAX_MATCHES; index += 1) {
+						if (expression.test(lines[index])) matches.push(`${input.path}:${index + 1}:${lines[index].slice(0, 400)}`);
+					}
+					return textResult(matches.length ? matches.join('\n') : 'no matches');
+				}
+				if (!inside(caseDir, start)) throw new FileRefused(`refused: ${input.path} is outside the case`);
 				for (const file of caseFiles(caseDir, start)) {
 					if (!mayRead(scope, caseRelative(caseDir, file))) continue;
 					if (lstatSync(file).size > MAX_GREP_FILE_BYTES) continue;
@@ -912,7 +1090,9 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				'SHA-256 of case files exactly as stored on disk (raw bytes), the digest the evidence validators recompute for sha256, anchor_sha256 and original_artifact_sha256. Use it for any artifact you wrote or derived yourself (extracted text, saved API JSON, transcripts). Paths relative to the case folder; up to 50 per call.',
 			parameters: hashParams,
 			async execute(_id, params) {
-				const { paths } = checkedParams<{ paths: string[] }>('hash_files', hashParams, params);
+				// Replay check on 8699f11d: one path given as a string was refused.
+				const given = params as { paths?: unknown };
+				const { paths } = checkedParams<{ paths: string[] }>('hash_files', hashParams, typeof given?.paths === 'string' ? { ...given, paths: [given.paths] } : params);
 				return jsonResult(
 					paths.map((path) => {
 						const target = readTarget(caseDir, path, scope);
