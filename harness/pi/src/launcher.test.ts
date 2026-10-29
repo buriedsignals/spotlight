@@ -1958,6 +1958,40 @@ test('a first fact-check task carries the structure, one claim per finding; once
 	assert.ok(!userText(second).includes('Start from this structure'), 'a fact-check that exists gets no structure');
 });
 
+// U3 ledger row 17: small models missed edit_file's old_text again and again,
+// re-guessing whitespace. A miss shows the closest spans to copy.
+test('on every tier an edit_file miss shows the closest spans verbatim, and copying one edits the file', async (t) => {
+	const file = 'notes.md';
+	const content = 'Title\n    owner: Acme Holdings\n    since: 2019\nEnd\n';
+	for (const tier of ['12b', 'frontier']) {
+		const calls = [
+			{ name: 'write_file', arguments: { path: file, content } },
+			{ name: 'edit_file', arguments: { path: file, old_text: 'owner: Acme Holdings\nsince: 2019', new_text: 'x' } },
+			{ name: 'edit_file', arguments: { path: file, old_text: '    owner: Acme Holdings\n    since: 2019', new_text: '    owner: Acme Group\n    since: 2019' } },
+			{ name: 'edit_file', arguments: { path: file, old_text: 'Something unrelated entirely', new_text: 'x' } },
+		];
+		const fake = await startFakeOpenAI(
+			orchestratorScript([{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Edit the notes.' } }], (request) => {
+				const next = calls[toolResults(request).length];
+				return next ? { toolCalls: [next] } : { text: 'Done.' };
+			}),
+		);
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		await caseAtInvestigation(space);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier });
+
+		await settledPrompt(chat, 'Continue.');
+		chat.process.stdin.end();
+		await chat.exited;
+
+		const results = toolResults(fake.requests.filter((request) => isWorkerRequest(request, 'investigator')).at(-1)!);
+		assert.equal(results[1], `edit_file: old_text not found in ${file}. old_text must match the file exactly, whitespace and indentation included. The closest spans are below; copy one exactly as old_text, without the "--- lines" marker.\n--- lines 2-3:\n    owner: Acme Holdings\n    since: 2019`, tier);
+		assert.equal(results[2], `edited ${file}`, tier);
+		assert.equal(results[3], `edit_file: old_text not found in ${file}. old_text must match the file exactly, whitespace and indentation included; read the part you mean to change and copy it.`, tier);
+	}
+});
+
 // U4 (f9fed1d2, r5 kde stage 1): after its verdicts were accepted, the
 // fact-checker saved new copies over the research files they cite.
 test('on every tier a cited research file is never overwritten, and a new name saves', async (t) => {
