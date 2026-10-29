@@ -878,19 +878,24 @@ function registerBlockedStop(pi: ExtensionAPI): void {
 // DeepSeek V4.1 Flash on wikimedia stage 0 (704dcc78): the fact-checker
 // chased a real address conflict for 501 calls through three research rounds
 // and never wrote data/fact-check.json; its calls kept producing something,
-// so no other bound tripped. At FACT_CHECK_DUE calls without a write of the
-// file, the next result carries this notice; at FACT_CHECK_STOP the run stops
+// so no other bound tripped. From FACT_CHECK_DUE calls without a write of the
+// file, the first result past the count carries this notice, and again every
+// FACT_CHECK_DUE_REPEAT calls (a parallel batch can step over the exact count,
+// and a fold drops the notice); at FACT_CHECK_STOP the run stops
 // as its answer, and the orchestrator re-spawns for the missing file (#245).
 export const FACT_CHECK_DUE = 150;
 export const FACT_CHECK_STOP = 250;
+export const FACT_CHECK_DUE_REPEAT = 50;
 export const FACT_CHECK_DUE_NOTICE = 'Write data/fact-check.json now with what you have. A claim whose sources conflict gets the verdict disputed or unverified, with the conflict named in its grounding_assessment.assessment.';
 
 function registerFactCheckDue(pi: ExtensionAPI): (tool: ToolDefinition) => ToolDefinition {
 	let calls = 0;
+	let notice = FACT_CHECK_DUE;
 	let stopping = false;
 	const started = new Map<string, unknown>();
 	pi.on('agent_start', () => {
 		calls = 0;
+		notice = FACT_CHECK_DUE;
 		stopping = false;
 	});
 	pi.on('tool_execution_start', (event) => {
@@ -900,10 +905,14 @@ function registerFactCheckDue(pi: ExtensionAPI): (tool: ToolDefinition) => ToolD
 		const path = started.get(event.toolCallId);
 		started.delete(event.toolCallId);
 		calls += 1;
-		if (!event.isError && (event.toolName === 'write_file' || event.toolName === 'edit_file') && typeof path === 'string' && path.replace(/^\{CASE_DIR\}[\\/]/, '') === 'data/fact-check.json') calls = 0;
+		if (!event.isError && (event.toolName === 'write_file' || event.toolName === 'edit_file') && typeof path === 'string' && path.replace(/^\{CASE_DIR\}[\\/]/, '') === 'data/fact-check.json') {
+			calls = 0;
+			notice = FACT_CHECK_DUE;
+		}
 	});
 	pi.on('tool_result', (event) => {
-		if (calls + 1 !== FACT_CHECK_DUE) return undefined;
+		if (calls + 1 < notice) return undefined;
+		notice = calls + 1 + FACT_CHECK_DUE_REPEAT;
 		return { content: [...event.content, { type: 'text' as const, text: `\n${FACT_CHECK_DUE_NOTICE}` }] };
 	});
 	pi.on('turn_end', (_event, ctx) => {

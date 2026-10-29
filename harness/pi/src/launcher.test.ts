@@ -16,7 +16,7 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, agentSpec, loadComposition, deliverableFor } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
-import { blockedStop, budgetedWebResult, CALL_BUDGET_SPENT, FACT_CHECK_DUE, FACT_CHECK_DUE_NOTICE, FACT_CHECK_STOP, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded, UNPRODUCTIVE_NEXT, UNPRODUCTIVE_STOP } from './extension.ts';
+import { blockedStop, budgetedWebResult, CALL_BUDGET_SPENT, FACT_CHECK_DUE, FACT_CHECK_DUE_NOTICE, FACT_CHECK_DUE_REPEAT, FACT_CHECK_STOP, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded, UNPRODUCTIVE_NEXT, UNPRODUCTIVE_STOP } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 import { TASK_AFTER_FOLD, taskAfterFold } from './checkpoint.ts';
 import { maxOutputTokens } from './config.ts';
@@ -2100,10 +2100,16 @@ test('on every tier a cited research file is never overwritten, and a new name s
 });
 
 // DeepSeek V4.1 Flash on wikimedia stage 0 (704dcc78): the fact-checker ran
-// 501 calls on a real conflict and never wrote data/fact-check.json.
-test('a fact-checker that does not write its file is told to at the 150th call and stopped at the 250th', async (t) => {
+// 501 calls on a real conflict and never wrote data/fact-check.json. On
+// 52bf6183 (eurostat teacher run) its batches of parallel calls stepped over
+// the 150th and the notice never came; a fold also drops a notice given once.
+test('a fact-checker that does not write its file is told to from the 150th call, again every 50, and stopped at the 250th', async (t) => {
+	const batch = 7;
 	const fake = await startFakeOpenAI((request) => {
-		if (isWorkerRequest(request, 'fact-checker')) return { toolCalls: [{ name: 'list_files', arguments: { pattern: `research/none-${toolResults(request).length}-*` } }] };
+		if (isWorkerRequest(request, 'fact-checker')) {
+			const n = toolResults(request).length;
+			return { toolCalls: Array.from({ length: batch }, (_, i) => ({ name: 'list_files', arguments: { pattern: `research/none-${n}-${i}-*` } })) };
+		}
 		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
 	});
 	t.after(() => fake.close());
@@ -2117,9 +2123,11 @@ test('a fact-checker that does not write its file is told to at the 150th call a
 
 	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker'));
 	const results = toolResults(worker.at(-1)!);
-	assert.ok(results[FACT_CHECK_DUE - 1].endsWith(`\n${FACT_CHECK_DUE_NOTICE}`), 'the 150th result carries the notice');
-	assert.ok(!results[FACT_CHECK_DUE - 2].includes(FACT_CHECK_DUE_NOTICE) && !results[FACT_CHECK_DUE].includes(FACT_CHECK_DUE_NOTICE), 'once');
-	assert.ok(results.length <= FACT_CHECK_STOP + 1, `stopped by ${FACT_CHECK_STOP} calls: ${results.length}`);
+	const notices = results.flatMap((result, index) => (result.endsWith(`\n${FACT_CHECK_DUE_NOTICE}`) ? [index + 1] : []));
+	assert.ok(notices.length >= 2, `told at least twice: ${notices}`);
+	assert.ok(notices[0] >= FACT_CHECK_DUE && notices[0] < FACT_CHECK_DUE + batch, `first told at the batch crossing the 150th call: ${notices}`);
+	for (let i = 1; i < notices.length; i++) assert.ok(notices[i] - notices[i - 1] >= FACT_CHECK_DUE_REPEAT && notices[i] - notices[i - 1] < FACT_CHECK_DUE_REPEAT + batch, `again every ${FACT_CHECK_DUE_REPEAT}: ${notices}`);
+	assert.ok(results.length < FACT_CHECK_STOP + batch, `stopped by ${FACT_CHECK_STOP} calls: ${results.length}`);
 	const answer = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker')).at(-1)!).join('\n');
 	assert.match(answer, /made 250 calls without writing data\/fact-check\.json and was stopped/);
 });
