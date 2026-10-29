@@ -20,8 +20,9 @@ export type Usage = { prompt_tokens?: number; completion_tokens?: number; total_
 // `finish: 'length'` ends a text reply as a server does at the output cap;
 // `invisible` first streams that many chunks with nothing in them, as a
 // server does for tokens it strips; `stall` then holds the stream open with
-// nothing more, as a server that sends nothing for stripped tokens.
-export type Reply = ({ text: string; finish?: 'stop' | 'length'; invisible?: number; stall?: boolean } | { toolCalls: ToolCall[] }) & { usage?: Usage; reasoning?: string } | { status: number } | 'hang';
+// nothing more, as a server that sends nothing for stripped tokens. On a
+// tool-call reply `stall` holds the stream open after the complete calls.
+export type Reply = ({ text: string; finish?: 'stop' | 'length'; invisible?: number; stall?: boolean } | { toolCalls: ToolCall[]; stall?: boolean }) & { usage?: Usage; reasoning?: string } | { status: number } | 'hang';
 export type Responder = (request: ChatRequest, index: number) => Reply;
 
 export type FakeOpenAI = {
@@ -93,6 +94,7 @@ function answer(response: ServerResponse, reply: Exclude<Reply, 'hang' | { statu
 			{ role: 'assistant', tool_calls: toolCallsOf(reply.toolCalls) },
 			null,
 		);
+		if (reply.stall) return;
 		chunk(response, {}, 'tool_calls');
 	}
 	response.write('data: [DONE]\n\n');
