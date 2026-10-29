@@ -6,9 +6,11 @@
 // fingerprints, anchors, the role's read scope) and puts the new passage's id
 // in the item's source_expression_refs. A quote the writer refuses refuses the
 // write with the writer's reason; the validators stay as strict as before.
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { fetchedFile } from './fetch.ts';
 import type { ToolContext } from './run.ts';
 
 type Row = Record<string, unknown>;
@@ -27,9 +29,62 @@ const list = (doc: unknown, key: string): Row[] => {
 	return Array.isArray(value) ? value.filter((row): row is Row => !!row && typeof row === 'object') : [];
 };
 
+// arm2 ds-spectator on ce4f010e: a quote from the fact-checker's own fetch
+// was refused three times because no evidence item listed the file, and the
+// fact-checker cannot edit the bundle. When a cited file is one a fetch saved
+// in this case (tools/fetch.ts fetchedFile) and no item lists it, the harness
+// adds the fact-checker's item for it (its URL, access time, hash) through the
+// fact-checker's own bundle write, and the quote cites that item.
+const ITEM_FILES = ['raw_path', 'downloaded_document_path', 'screenshot_path', 'path'];
+async function recordFetchedItems(context: ToolContext, tools: ToolDefinition[], items: Row[], signal?: AbortSignal): Promise<void> {
+	const bundle = list(readJson(context.caseDir, 'evidence-bundle.json'), 'items');
+	const listed = new Set(bundle.flatMap((item) => [...ITEM_FILES.map((key) => item[key]), ...list(item, 'text_derivatives').map((d) => d.path)].filter((path): path is string => typeof path === 'string')));
+	const taken = new Set(bundle.map((item) => String(item.id)));
+	let next = 1;
+	const added: Row[] = [];
+	for (const item of items) {
+		const ref = (item.source_ref ?? {}) as Row;
+		const path = typeof ref.path === 'string' ? ref.path : typeof item.local_file === 'string' ? item.local_file : undefined;
+		if (!path || listed.has(path) || typeof item.evidence_bundle_id === 'string') continue;
+		const fetched = fetchedFile(context, path);
+		if (!fetched) continue;
+		while (taken.has(`FC-E${next}`)) next += 1;
+		const id = `FC-E${next}`;
+		taken.add(id);
+		listed.add(path);
+		let sha256: string;
+		try {
+			sha256 = createHash('sha256').update(readFileSync(join(context.caseDir, path))).digest('hex');
+		} catch {
+			continue;
+		}
+		added.push({
+			id,
+			created_by: 'fact-checker',
+			query_or_task: `Fetched by the fact-checker to check a finding: ${fetched.url}`,
+			acquisition_method: fetched.provider === 'crawl4ai' || fetched.provider === 'firecrawl' ? fetched.provider : 'other',
+			source_url: fetched.url,
+			accessed: fetched.accessed,
+			raw_path: path,
+			sha256,
+			extraction_confidence: 'medium',
+			human_verification_required: false,
+		});
+		item.evidence_bundle_id = id;
+	}
+	if (added.length === 0) return;
+	const write = tools.find((tool) => tool.name === 'write_file');
+	if (!write) return;
+	try {
+		await write.execute('fetched-items', { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: added }) }, signal, undefined, undefined as never);
+	} catch (error) {
+		throw new Error(`refused: data/fact-check.json is unchanged; the harness could not add the evidence item for a file you fetched. ${(error as Error).message}`);
+	}
+}
+
 // The fact-check write with its quotes recorded, or the content unchanged when
 // it cites none.
-async function resolveQuotes(context: ToolContext, sourceExpressions: ToolDefinition, content: string, signal?: AbortSignal): Promise<string> {
+async function resolveQuotes(context: ToolContext, tools: ToolDefinition[], sourceExpressions: ToolDefinition, content: string, signal?: AbortSignal): Promise<string> {
 	let doc: Row;
 	try {
 		doc = JSON.parse(content) as Row;
@@ -48,6 +103,7 @@ async function resolveQuotes(context: ToolContext, sourceExpressions: ToolDefini
 		}
 	}
 	if (pending.length === 0) return content;
+	await recordFetchedItems(context, tools, pending.map(({ item }) => item), signal);
 	const passages = list(readJson(context.caseDir, 'source-expressions.json'), 'expressions');
 	const taken = new Set(passages.map((p) => String(p.id)));
 	let next = 1;
@@ -97,7 +153,7 @@ export function withQuoteResolution(tools: ToolDefinition[], context: ToolContex
 						const input = params as { path?: unknown; content?: unknown };
 						const target = typeof input.path === 'string' ? input.path.replace(/^\{CASE_DIR\}[\\/]/, '') : '';
 						if (target !== 'data/fact-check.json' || typeof input.content !== 'string') return tool.execute(id, params, signal, ...rest);
-						const content = await resolveQuotes(context, sourceExpressions, input.content, signal);
+						const content = await resolveQuotes(context, tools, sourceExpressions, input.content, signal);
 						return tool.execute(id, { ...input, content }, signal, ...rest);
 					},
 				},

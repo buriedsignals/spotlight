@@ -16,7 +16,7 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, agentSpec, loadComposition, deliverableFor } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
-import { registerFetchedPages } from './extension.ts';
+import { FC_BATCH_DONE, FC_BATCH_DUE, FC_BATCH_NOTICE, FC_BATCH_STOP, registerFetchedPages } from './extension.ts';
 import { CONTINUE_AFTER_FOLD } from './subagents.ts';
 import { blockedStop, budgetedWebResult, CALL_BUDGET_SPENT, FACT_CHECK_DUE, FACT_CHECK_DUE_NOTICE, FACT_CHECK_DUE_REPEAT, FACT_CHECK_STOP, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded, UNPRODUCTIVE_NEXT, UNPRODUCTIVE_STOP } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
@@ -2199,8 +2199,13 @@ test('a fact-checker that does not write its file is told to from the 150th call
 	const space = await workspace(t);
 	const caseDir = join(space.casesRoot, 'case-a');
 	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
-	await unlink(join(caseDir, 'data', 'fact-check.json'));
-	const chat = launch(t, baseEnv(space, fake.baseURL));
+	// Every finding has a claim, so the spawn is one fact-checker, not the
+	// harness's batches (#274), which end a batch long before 150 calls; an
+	// invalid verdict keeps the case at Investigation.
+	const factCheck = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8'));
+	factCheck.claims[0].verdict = 'pending';
+	await writeFile(join(caseDir, 'data', 'fact-check.json'), JSON.stringify(factCheck));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier' });
 
 	await settledPrompt(chat, 'Continue.');
 
@@ -3257,4 +3262,81 @@ test('a fact-check claim that cites a quote and its file gets the passage record
 	assert.deepEqual((recorded.finding_links as Array<{ finding_id: string; relation: string }>).map((link) => [link.finding_id, link.relation]), [['F1', 'supports']]);
 	const factCheck = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8')) as { claims: Array<{ evidence_for: Array<{ source_expression_refs: unknown[] }> }> };
 	assert.match(JSON.stringify(factCheck.claims[0].evidence_for[0].source_expression_refs), /FC-Q1/);
+});
+
+// arm2 ds-spectator on ce4f010e (calls 28, 43, 47): a quote from the
+// fact-checker's own fetch was refused because no evidence item listed the file.
+test('a quote from a file the fact-checker fetched gets its evidence item added by the harness, and the passage cites it', async (t) => {
+	const claim = { finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: 'verified', confidence: 'high', evidence_for: [{ quote: 'Acme paid Doe in full.', source_ref: { path: 'research/fc-own.md', line_start: 2, line_end: 2 } }], evidence_against: [], grounding_assessment: { support_type: 'direct', claim_elements_checked: ['payment'], missing_assumptions: [], confidence_cap: 'high', assessment: 'The page states it.' } };
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) {
+			const done = toolResults(request).length;
+			if (done === 0) return { toolCalls: [{ name: 'fetch', arguments: { url: 'https://registry.example.org/acme', save_as: 'fc-own.md' } }] };
+			if (done === 1) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', project: 'p', claims: [claim] }) } }] };
+			return { text: 'Checked.' };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	await unlink(join(caseDir, 'data', 'fact-check.json'));
+	const python = join(space.root, 'python-fetch');
+	const envelope = JSON.stringify({ markdown: 'Registry record\nAcme paid Doe in full.\n', source_url: 'https://registry.example.org/acme', provider: 'crawl4ai', status_code: 200 });
+	await writeFile(
+		python,
+		`#!${process.execPath}\nconst { execFileSync } = require('node:child_process');\nconst args = process.argv.slice(2);\nif (args.includes('integrations.scraping')) process.stdout.write(${JSON.stringify(envelope)});\nelse { try { process.stdout.write(execFileSync(${JSON.stringify(process.env.SPOTLIGHT_PYTHON ?? 'python3')}, args, { stdio: ['inherit', 'pipe', 'inherit'] })); } catch (error) { process.stdout.write(error.stdout ?? ''); process.exitCode = error.status ?? 1; } }\n`,
+		{ mode: 0o755 },
+	);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_PYTHON: python, SPOTLIGHT_ANONYMIZE_FETCH: 'true' });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const written = toolResults(fake.requests.find((request) => isWorkerRequest(request, 'fact-checker') && toolResults(request).length === 2)!)[1];
+	assert.match(written, /^wrote data\/fact-check\.json/, written);
+	const bundle = JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')) as { items: Array<Record<string, unknown>> };
+	const item = bundle.items.find((entry) => entry.raw_path === 'research/fc-own.md');
+	assert.ok(item, 'the harness added an item for the fetched file');
+	assert.equal(item.created_by, 'fact-checker');
+	assert.equal(item.source_url, 'https://registry.example.org/acme');
+	const expressions = JSON.parse(await readFile(join(caseDir, 'data', 'source-expressions.json'), 'utf8')) as { expressions: Array<Record<string, unknown>> };
+	assert.equal(expressions.expressions.find((expression) => expression.id === 'FC-Q1')?.original_evidence_bundle_id, item.id);
+});
+
+// arm2 ds-spectator on ce4f010e (call 51 on): after the write that completed
+// its batch the fact-checker rewrote the claims and read for 32 more calls.
+test('a batch fact-checker ends once its batch has claims, and one that never writes is ended at the batch budget', async (t) => {
+	for (const writes of [true, false]) {
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'fact-checker')) {
+				const done = toolResults(request).length;
+				if (writes && done === 0) {
+					const claim = { finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [] };
+					return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', project: 'p', claims: [claim] }) } }] };
+				}
+				return { toolCalls: [{ name: 'list_files', arguments: { pattern: `research/none-${done}-*` } }] };
+			}
+			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = join(space.casesRoot, 'case-a');
+		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+		await unlink(join(caseDir, 'data', 'fact-check.json'));
+		const chat = launch(t, baseEnv(space, fake.baseURL));
+
+		await settledPrompt(chat, 'Continue.');
+
+		const worker = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker'));
+		const result = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker')).at(-1)!).join('\n');
+		if (writes) {
+			assert.equal(worker.length, 2, 'no request after the write that completed the batch was answered with more work');
+			assert.match(result, new RegExp(FC_BATCH_DONE.replace('.', '\\.')));
+		} else {
+			assert.ok(worker.every((request) => toolResults(request).length <= FC_BATCH_STOP), `a batch stops by ${FC_BATCH_STOP} calls`);
+			assert.match(toolResults(worker.find((request) => toolResults(request).length === FC_BATCH_DUE)!).at(-1)!, new RegExp(`${FC_BATCH_NOTICE.slice(0, 40).replace(/[.*+?^${}()|[\]\\']/g, '\\$&')}`));
+			assert.match(result, /made the batch's calls without writing all its claims/);
+		}
+	}
 });

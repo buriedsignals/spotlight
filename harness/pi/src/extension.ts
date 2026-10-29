@@ -156,6 +156,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		registerUnproductiveBound(pi, async () => nextAction(await resolveCase(active, runAdapter), (relative) => existsSync(resolve(active.caseDir, relative))));
 	}
 	if (role === 'analyst') registerProposalEnd(pi);
+	if (role === 'fact-checker' && process.env.SPOTLIGHT_FC_BATCH) registerBatchEnd(pi);
 	const factCheckDue = role === 'fact-checker' ? registerFactCheckDue(pi) : (tool: ToolDefinition) => tool;
 	if (tier12b) {
 		registerReadBudget(pi, bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR')).caseDir);
@@ -780,6 +781,46 @@ function registerEndTurnOnOpen(pi: ExtensionAPI): void {
 // answer ends the run as usual; a message with more tool calls is replaced by
 // this answer, with no calls, so the run ends and the builder runs.
 export const PROPOSAL_DONE = 'The analyst wrote data/knowledge-proposal.json and was stopped there; its final answer and any watch candidates were not written.';
+
+// arm2 ds-spectator on ce4f010e: after the write that completed its batch
+// ("Finish now") the fact-checker rewrote the same claims and read for 32 more
+// calls, and batch threads grew to about 55k tokens on reads and fetches. A
+// batch fact-checker (SPOTLIGHT_FC_BATCH) ends once its batch has claims; past
+// FC_BATCH_DUE calls each result says to write now, and at FC_BATCH_STOP the
+// run ends and the launcher goes on with the next batch.
+export const FC_BATCH_DUE = 15;
+export const FC_BATCH_STOP = 30;
+export const FC_BATCH_DONE = 'Wrote the claims for this batch.';
+export const FC_BATCH_NOTICE = 'Write this batch\'s claims now with what you have: a claim you could not confirm gets the verdict unverified, with the reason in grounding_assessment.assessment. Then finish.';
+export const FC_BATCH_SPENT = 'made the batch\'s calls without writing all its claims; the harness goes on with the next batch.';
+function registerBatchEnd(pi: ExtensionAPI): void {
+	let done = false;
+	let calls = 0;
+	pi.on('agent_start', () => {
+		done = false;
+		calls = 0;
+	});
+	pi.on('tool_execution_end', (event) => {
+		calls += 1;
+		const text: string = event.result?.content?.[0]?.text ?? '';
+		if ((event.toolName === 'write_file' || event.toolName === 'edit_file') && !event.isError && text.includes('Every finding in your batch has a claim')) done = true;
+	});
+	pi.on('tool_result', (event) => {
+		if (done || calls + 1 < FC_BATCH_DUE) return undefined;
+		return { content: [...event.content, { type: 'text' as const, text: `\n${FC_BATCH_NOTICE}` }] };
+	});
+	pi.on('message_end', (event) => {
+		const message = event.message as { role?: string; content?: Array<{ type: string }> };
+		if (message.role !== 'assistant' || !message.content?.some((part) => part.type === 'toolCall')) return undefined;
+		if (done) {
+			log('the fact-checker went on after its batch had claims; its turn was ended');
+			return { message: { ...event.message, content: [{ type: 'text', text: FC_BATCH_DONE }] } as typeof event.message };
+		}
+		if (calls < FC_BATCH_STOP) return undefined;
+		log(`the fact-checker made ${FC_BATCH_STOP} calls on one batch; its turn was ended`);
+		return { message: { ...event.message, content: [{ type: 'text', text: `The fact-checker ${FC_BATCH_SPENT}` }] } as typeof event.message };
+	});
+}
 
 function registerProposalEnd(pi: ExtensionAPI): void {
 	let written = false;

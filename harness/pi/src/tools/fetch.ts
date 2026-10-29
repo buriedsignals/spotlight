@@ -176,6 +176,43 @@ function recordFailure(context: ToolContext, url: string, cause: string): void {
 	}
 }
 
+// What a fetch saved, kept per case in harness data, so the harness can
+// record a fetched file as an evidence item when a quote is cited from it
+// (arm2 ds-spectator on ce4f010e: a fact-checker's quote from its own fetch was
+// refused three times because no item listed the file, and the fact-checker
+// has no tool to add one).
+export type Fetched = { url: string; accessed: string; provider?: string };
+function fetchedPath(context: ToolContext): string | undefined {
+	const dataDir = context.env?.SPOTLIGHT_HARNESS_DATA;
+	return dataDir ? resolve(dataDir, 'work', 'fetched', `${createHash('sha256').update(context.caseDir).digest('hex').slice(0, 16)}.json`) : undefined;
+}
+function recordFetched(context: ToolContext, paths: string[], entry: Fetched): void {
+	const path = fetchedPath(context);
+	if (!path) return;
+	let all: Record<string, Fetched> = {};
+	try {
+		all = JSON.parse(readFileSync(path, 'utf8')) as Record<string, Fetched>;
+	} catch {
+		all = {};
+	}
+	for (const saved of paths) all[saved] = entry;
+	try {
+		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+		writeFileSync(path, JSON.stringify(all), { mode: 0o600 });
+	} catch {
+		// Without the record the file is cited as before: its item added by hand.
+	}
+}
+export function fetchedFile(context: ToolContext, relative: string): Fetched | undefined {
+	const path = fetchedPath(context);
+	if (!path) return undefined;
+	try {
+		return (JSON.parse(readFileSync(path, 'utf8')) as Record<string, Fetched>)[relative];
+	} catch {
+		return undefined;
+	}
+}
+
 export function fetchTool(context: ToolContext): ToolDefinition {
 	return {
 		name: 'fetch',
@@ -238,6 +275,7 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			};
 			if (!rlm) {
 				const saved = input.save_as ? writeConfined(context.caseDir, context.writeRoot, saveTarget(context, input.save_as), markdown) : undefined;
+				if (saved) recordFetched(context, [saved], { url: page.final_url, accessed: page.fetched_at, provider: page.provider });
 				return jsonResult({
 					...page,
 					distilled: false,
@@ -249,6 +287,7 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			}
 			const leadPath = saveTarget(context, input.save_as as string);
 			const rawPath = writeConfined(context.caseDir, context.writeRoot, `${leadPath}.raw`, markdown);
+			recordFetched(context, [rawPath], { url: page.final_url, accessed: page.fetched_at, provider: page.provider });
 			let leads: string;
 			try {
 				leads = await distill(rlm, context.env, markdown, signal);
