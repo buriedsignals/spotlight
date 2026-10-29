@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
-import { CHECKOUT_ROOT } from '../roles.ts';
+import { CHECKOUT_ROOT, loadComposition } from '../roles.ts';
 import { approve } from '../test-support/hosted-skill.ts';
 import { caseFileTools } from './case-files.ts';
 import type { CaseScope } from './run.ts';
@@ -723,4 +723,15 @@ test('a verified claim with no finding_id is told to name its finding', async (t
 	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
 	const content = JSON.stringify({ schema_version: '1.1', project: 'p', claims: [{ claim_text: 'One.', verdict: 'verified', confidence: 'high', evidence_for: [], evidence_against: [] }] });
 	await assert.rejects(call('write_file', { path: 'data/fact-check.json', content }), (error: Error) => error.message.includes('a verified claim has no finding_id; give it the id of the finding it checks') && !error.message.includes('undefined'));
+});
+
+// replay check on 8699f11d (flag 4): the analyst's task names the brief and the
+// methodology, and its read scope refused both.
+test('the analyst reads the brief and the methodology its task names', async (t) => {
+	const reads = loadComposition().analyst.reads;
+	const { caseDir, call } = await fixture(t, { reads }, 'analyst');
+	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the company?');
+	await writeFile(join(caseDir, 'data', 'methodology.json'), '{"directions": []}');
+	assert.equal(await call('read_file', { path: 'brief-directions.txt' }), 'Who owns the company?');
+	assert.equal(await call('read_file', { path: 'data/methodology.json' }), '{"directions": []}');
 });
