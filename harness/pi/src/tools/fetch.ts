@@ -181,7 +181,9 @@ function recordFailure(context: ToolContext, url: string, cause: string): void {
 // (arm2 ds-spectator on ce4f010e: a fact-checker's quote from its own fetch was
 // refused three times because no item listed the file, and the fact-checker
 // has no tool to add one).
-export type Fetched = { url: string; accessed: string; provider?: string };
+// sha256 is the saved text's hash: a file changed after the fetch is not that
+// fetch any more (Codex review of #274b).
+export type Fetched = { url: string; accessed: string; provider?: string; sha256: string };
 function fetchedPath(context: ToolContext): string | undefined {
 	const dataDir = context.env?.SPOTLIGHT_HARNESS_DATA;
 	return dataDir ? resolve(dataDir, 'work', 'fetched', `${createHash('sha256').update(context.caseDir).digest('hex').slice(0, 16)}.json`) : undefined;
@@ -275,7 +277,7 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			};
 			if (!rlm) {
 				const saved = input.save_as ? writeConfined(context.caseDir, context.writeRoot, saveTarget(context, input.save_as), markdown) : undefined;
-				if (saved) recordFetched(context, [saved], { url: page.final_url, accessed: page.fetched_at, provider: page.provider });
+				if (saved) recordFetched(context, [saved], { url: page.final_url, accessed: page.fetched_at, provider: page.provider, sha256: sha256(markdown) });
 				return jsonResult({
 					...page,
 					distilled: false,
@@ -287,7 +289,7 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			}
 			const leadPath = saveTarget(context, input.save_as as string);
 			const rawPath = writeConfined(context.caseDir, context.writeRoot, `${leadPath}.raw`, markdown);
-			recordFetched(context, [rawPath], { url: page.final_url, accessed: page.fetched_at, provider: page.provider });
+			recordFetched(context, [rawPath], { url: page.final_url, accessed: page.fetched_at, provider: page.provider, sha256: sha256(markdown) });
 			let leads: string;
 			try {
 				leads = await distill(rlm, context.env, markdown, signal);

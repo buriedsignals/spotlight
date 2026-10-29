@@ -48,16 +48,18 @@ async function recordFetchedItems(context: ToolContext, tools: ToolDefinition[],
 		if (!path || listed.has(path) || typeof item.evidence_bundle_id === 'string') continue;
 		const fetched = fetchedFile(context, path);
 		if (!fetched) continue;
-		while (taken.has(`FC-E${next}`)) next += 1;
-		const id = `FC-E${next}`;
-		taken.add(id);
-		listed.add(path);
 		let sha256: string;
 		try {
 			sha256 = createHash('sha256').update(readFileSync(join(context.caseDir, path))).digest('hex');
 		} catch {
 			continue;
 		}
+		// A file rewritten since the fetch is no longer what the URL served.
+		if (sha256 !== fetched.sha256) continue;
+		while (taken.has(`FC-E${next}`)) next += 1;
+		const id = `FC-E${next}`;
+		taken.add(id);
+		listed.add(path);
 		added.push({
 			id,
 			created_by: 'fact-checker',

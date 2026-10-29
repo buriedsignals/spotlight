@@ -3272,7 +3272,11 @@ test('a quote from a file the fact-checker fetched gets its evidence item added 
 		if (isWorkerRequest(request, 'fact-checker')) {
 			const done = toolResults(request).length;
 			if (done === 0) return { toolCalls: [{ name: 'fetch', arguments: { url: 'https://registry.example.org/acme', save_as: 'fc-own.md' } }] };
-			if (done === 1) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', project: 'p', claims: [claim] }) } }] };
+			// A fetched file rewritten afterwards is not evidence of that URL.
+			if (done === 1) return { toolCalls: [{ name: 'fetch', arguments: { url: 'https://registry.example.org/acme', save_as: 'fc-two.md' } }] };
+			if (done === 2) return { toolCalls: [{ name: 'write_file', arguments: { path: 'research/fc-two.md', content: 'Registry record\nAcme paid Doe twice.\n' } }] };
+			if (done === 3) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', project: 'p', claims: [{ ...claim, evidence_for: [{ quote: 'Acme paid Doe twice.', source_ref: { path: 'research/fc-two.md', line_start: 2, line_end: 2 } }] }] }) } }] };
+			if (done === 4) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', project: 'p', claims: [claim] }) } }] };
 			return { text: 'Checked.' };
 		}
 		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
@@ -3293,7 +3297,10 @@ test('a quote from a file the fact-checker fetched gets its evidence item added 
 
 	await settledPrompt(chat, 'Continue.');
 
-	const written = toolResults(fake.requests.find((request) => isWorkerRequest(request, 'fact-checker') && toolResults(request).length === 2)!)[1];
+	const results = toolResults(fake.requests.find((request) => isWorkerRequest(request, 'fact-checker') && toolResults(request).length === 5)!);
+	assert.match(results[2], /^wrote research\/fc-two\.md/, results[2]);
+	assert.match(results[3], /^refused: data\/fact-check\.json is unchanged/, results[3]);
+	const written = results[4];
 	assert.match(written, /^wrote data\/fact-check\.json/, written);
 	const bundle = JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')) as { items: Array<Record<string, unknown>> };
 	const item = bundle.items.find((entry) => entry.raw_path === 'research/fc-own.md');
@@ -3302,6 +3309,7 @@ test('a quote from a file the fact-checker fetched gets its evidence item added 
 	assert.equal(item.source_url, 'https://registry.example.org/acme');
 	const expressions = JSON.parse(await readFile(join(caseDir, 'data', 'source-expressions.json'), 'utf8')) as { expressions: Array<Record<string, unknown>> };
 	assert.equal(expressions.expressions.find((expression) => expression.id === 'FC-Q1')?.original_evidence_bundle_id, item.id);
+	assert.equal(bundle.items.some((entry) => entry.raw_path === 'research/fc-two.md'), false, 'no item for a file changed since its fetch');
 });
 
 // arm2 ds-spectator on ce4f010e (call 51 on): after the write that completed
