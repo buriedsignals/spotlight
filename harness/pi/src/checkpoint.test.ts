@@ -106,6 +106,19 @@ test('a checkpoint out of shape from the RLM falls back once to the session mode
 	}
 });
 
+// arms on 8699f11d (ds-spectator): the RLM answered HTTP 400 to a long
+// conversation, the throw skipped the session fallback and every fold was
+// cancelled until the fact-checker overflowed at 87.6k.
+test('an RLM error on the checkpoint falls back to the session model, and the conversation folds', async (t) => {
+	const rlm = await startFakeOpenAI(() => ({ status: 400 }));
+	t.after(() => rlm.close());
+	const { fake, chat } = await twoTurns(t, '12b', { SPOTLIGHT_RLM_OPENAI_BASE_URL: rlm.baseURL });
+	assert.equal(rlm.requests.length, 1);
+	assert.equal(fake.requests.filter(isSummaryRequest).length, 1, 'the session model writes the checkpoint');
+	assert.equal(compactions(chat).length, 1, 'the conversation folded');
+	assert.match(carriedSummary(chat), /^## Goal\n/);
+});
+
 test('a checkpoint\'s preamble before ## Goal is cut, and one with no sections from both writers leaves the conversation unfolded', async (t) => {
 	const preamble = await startFakeOpenAI(() => ({ text: `Here is the checkpoint you asked for.\n\n${WELL_FORMED}` }));
 	t.after(() => preamble.close());

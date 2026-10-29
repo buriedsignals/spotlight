@@ -165,7 +165,17 @@ function registerCheckpoint(pi: ExtensionAPI, fixedBody: FixedBody, env: NodeJS.
 			let written: { kept: string; cut: boolean } | undefined;
 			let usage: Awaited<ReturnType<typeof sessionCheckpoint>>['usage'] | undefined;
 			if (rlm) {
-				written = checkpointSections((await rlmComplete(rlm, { model: rlmModel(env), messages: [{ role: 'user', content: text }], temperature: 0 }, signal)) ?? '');
+				// arms on 8699f11d (ds-spectator): the RLM answered HTTP 400 to a
+				// fact-checker's long conversation, the throw skipped the session
+				// fallback, and the fold was cancelled at every check until the worker
+				// overflowed at 87.6k. An RLM error falls back like an RLM answer out
+				// of shape.
+				try {
+					written = checkpointSections((await rlmComplete(rlm, { model: rlmModel(env), messages: [{ role: 'user', content: text }], temperature: 0 }, signal)) ?? '');
+				} catch (error) {
+					if (signal?.aborted) throw error;
+					log(`checkpoint: rlm error, ${(error as Error).message}`);
+				}
 				if (written) log(`checkpoint: ${written.cut ? 'rlm-cut-preamble' : 'rlm-ok'}`);
 			}
 			if (!written) {
