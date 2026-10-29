@@ -415,7 +415,7 @@ function sourceExpressionsTool(context: ToolContext): ToolDefinition {
 				return textResult(programOutput('source_expressions', result));
 			}
 			if (input.cycle === undefined || input.proposal === undefined) {
-				throw new ToolArgumentError('source_expressions: action "write" needs cycle and proposal');
+				throw new ToolArgumentError('source_expressions: action "write" needs cycle and proposal, for example {"action": "write", "cycle": 1, "proposal": {"expressions": [ ... ]}}');
 			}
 			// The writer reads each named anchor's file, so it must be a file this
 			// role may read, and searches only readable evidence files for the

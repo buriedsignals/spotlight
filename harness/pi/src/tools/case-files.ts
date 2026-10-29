@@ -275,7 +275,7 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 		throw new FileRefused(`refused: ${name} is protected; only the resolver or the review page writes it`);
 	}
 	if (SCRIPT_WRITTEN.some((pattern) => pattern.test(name))) {
-		throw new FileRefused(`refused: ${name} is written only through the source_expressions tool, which computes its hashes and fingerprints`);
+		throw new FileRefused(`refused: ${name} is written only through the source_expressions tool, which computes its hashes and fingerprints. Call source_expressions with action write and the passage proposal instead.`);
 	}
 	// Written only by the Anomaly runner (integrations/anomaly/adapter.py),
 	// which checks every signal; the gate shows it to the member as is.
@@ -649,7 +649,7 @@ export function readTarget(caseDir: string, path: string, scope?: CaseScope): st
 	const target = /^(?:schemas|agents[\\/]references)[\\/]/.test(path) ? requested(CHECKOUT_ROOT, path) : requested(caseDir, path);
 	// Refuse before looking: "not found" for an outside path would tell the model
 	// which files exist beyond the case or the scope.
-	if (!readable(caseDir, target, scope)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
+	if (!readable(caseDir, target, scope)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read. Give a path relative to the case folder, such as data/findings.json.`);
 	let real: string;
 	try {
 		real = realpathSync(target);
@@ -660,7 +660,7 @@ export function readTarget(caseDir: string, path: string, scope?: CaseScope): st
 		const schema = /^schemas[\\/].+\.json$/.test(path) && !path.endsWith('.schema.json') ? path.replace(/\.json$/, '.schema.json') : '';
 		throw new Error(schema && existsSync(requested(CHECKOUT_ROOT, schema)) ? `not found: ${path}; the schema is ${schema}` : `not found: ${path}. Call list_files with a pattern (for example "research/*") to see the files that exist.`);
 	}
-	if (!readable(caseDir, real, scope)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
+	if (!readable(caseDir, real, scope)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read. Give a path relative to the case folder, such as data/findings.json.`);
 	return real;
 }
 
@@ -695,7 +695,7 @@ function selectJsonPointer(text: string, pointer: string, path: string): string 
 		throw new Error(`read_file: ${path} is not valid JSON: ${(error as Error).message}`);
 	}
 	if (pointer !== '') {
-		if (!pointer.startsWith('/')) throw new Error(`read_file: JSON pointer ${JSON.stringify(pointer)} must start with '/'`);
+		if (!pointer.startsWith('/')) throw new Error(`read_file: JSON pointer ${JSON.stringify(pointer)} must start with '/', for example /findings/0`);
 		for (const encoded of pointer.slice(1).split('/')) {
 			const token = encoded.replaceAll('~1', '/').replaceAll('~0', '~');
 			if (current !== null && typeof current === 'object' && !Array.isArray(current) && Object.hasOwn(current, token)) {
@@ -703,7 +703,7 @@ function selectJsonPointer(text: string, pointer: string, path: string): string 
 			} else if (Array.isArray(current) && /^[0-9]+$/.test(token) && Number(token) < current.length) {
 				current = current[Number(token)];
 			} else {
-				throw new Error(`read_file: JSON pointer ${JSON.stringify(pointer)} does not resolve at ${JSON.stringify(token)} in ${path}`);
+				throw new Error(`read_file: JSON pointer ${JSON.stringify(pointer)} does not resolve at ${JSON.stringify(token)} in ${path}. Read a shorter pointer to see the keys at that level.`);
 			}
 		}
 	}
@@ -748,7 +748,7 @@ const grepParams = Type.Object(
 // A folder inside the case, or one of the scope's files.
 function scopedFolderOrFile(caseDir: string, path: string, scope: CaseScope): string {
 	const target = requested(caseDir, path);
-	if (!inside(caseDir, target)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
+	if (!inside(caseDir, target)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read. Give a path relative to the case folder, such as data/findings.json.`);
 	const stats = lstatOrUndefined(target);
 	if (stats?.isDirectory()) return realpathSync(target);
 	return readTarget(caseDir, path, scope);
@@ -991,7 +991,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				const target = writeTarget(caseDir, writeRoot, input.path, writes, denyWrites);
 				// Editing reads the file, so a file hidden from this role is refused.
 				if (denied(scope?.denyReads, caseRelative(caseDir, target))) {
-					throw new FileRefused(`refused: ${input.path} is outside the case files this agent may read`);
+					throw new FileRefused(`refused: ${input.path} is outside the case files this agent may read. Give a path relative to the case folder, such as data/findings.json.`);
 				}
 				let text: string;
 				try {

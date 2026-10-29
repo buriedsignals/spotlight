@@ -462,7 +462,8 @@ def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], 
             if existing_link is None:
                 target["finding_links"].append(built_link)
             elif existing_link.get("relation") != relation:
-                raise WriteError(f"expression {raw['id']!r} already links {finding_id!r} as {existing_link.get('relation')}")
+                raise WriteError(f"expression {raw['id']!r} already links {finding_id!r} as {existing_link.get('relation')}; "
+                                 "keep that link, or record the passage with the other relation under a new id")
             elif existing_link.get("link_fingerprint") != built_link["link_fingerprint"]:
                 raise WriteError(f"expression {raw['id']!r}: the link to {finding_id!r} is stale because the claim changed; run --fingerprint-findings")
     lifecycle = proposal.get("lifecycle", [])
@@ -500,7 +501,7 @@ def merge_positions(current: dict[str, Any] | None, proposal: dict[str, Any], pr
         if unknown:
             raise WriteError(f"position {raw.get('id')!r}: unknown fields {sorted(unknown)}")
         if not isinstance(raw.get("id"), str) or not raw["id"]:
-            raise WriteError("every proposed position needs a non-empty id")
+            raise WriteError("every proposed position needs a non-empty id; give each one an id such as \"SP1\"")
         ids = raw.get("source_expression_ids")
         if not isinstance(ids, list) or not ids or not all(isinstance(i, str) and i for i in ids):
             raise WriteError(f"position {raw['id']!r}: source_expression_ids must be a non-empty list of ids")
@@ -706,7 +707,7 @@ def fingerprint_findings(case: Path) -> int:
     with transaction(case) as descriptor:
         findings_doc = _load(case / "data" / "findings.json")
         if not isinstance(findings_doc, dict) or not isinstance(findings_doc.get("findings"), list):
-            raise WriteError("data/findings.json has no findings to fingerprint")
+            raise WriteError("data/findings.json has no findings to fingerprint; write the findings first, then fingerprint them")
         expressions = _load(case / TARGET)
         changed, relinked = _refingerprint(findings_doc, expressions)
         # Rewrite a file only when it changed, so an idle run never moves its hash.

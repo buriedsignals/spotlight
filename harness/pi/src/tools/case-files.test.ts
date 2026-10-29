@@ -747,4 +747,9 @@ test('refusals name the next step, and hash_files takes one path as a string', a
 	await assert.rejects(call('read_file', { path: 'research/missing.md' }), /not found: research\/missing\.md\. Call list_files with a pattern/);
 	await assert.rejects(call('grep_files', { pattern: '## [TARRY, Jason](https://x' }), /put a backslash before \[ \] \( \)/);
 	assert.match(await call('hash_files', { paths: 'research/a.md' }), /research\/a\.md/);
+	await writeFile(join(caseDir, 'data', 'findings.json'), '{"findings": []}');
+	await assert.rejects(call('read_file', { path: 'data/findings.json', json_pointer: 'findings' }), /must start with '\/', for example \/findings\/0/);
+	await assert.rejects(call('read_file', { path: 'data/findings.json', json_pointer: '/findings/3' }), /Read a shorter pointer to see the keys at that level\./);
+	await assert.rejects(call('read_file', { path: '../outside.txt' }), /Give a path relative to the case folder, such as data\/findings\.json\./);
+	await assert.rejects(call('write_file', { path: 'data/source-expressions.json', content: '{}' }), /Call source_expressions with action write and the passage proposal instead\./);
 });
