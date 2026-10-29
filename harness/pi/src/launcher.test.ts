@@ -2518,7 +2518,7 @@ if (process.argv[4] === 'read') {
 				continue;
 			}
 			assert.match(task, /^Work the case\.\n\nWIKI PASSAGES\. Sensitive mode:/, role);
-			assert.match(task, /<<<BEGIN UNTRUSTED WIKI DATA>>>\n<<<NOTE 1 notes\/fixture-company\.md \(Fixture company\)\ncase file: research\/wiki\/notes-fixture-company\.md\nFixture Ltd is owned by A\. Holder since 2019\.\nNOTE 1>>>\n<<<END UNTRUSTED WIKI DATA>>>\n\nYour deliverable: [^\n]+$/, role);
+			assert.match(task, /<<<BEGIN UNTRUSTED WIKI DATA>>>\n<<<NOTE 1 notes\/fixture-company\.md \(Fixture company\)\ncase file: research\/wiki\/notes-fixture-company\.md\nFixture Ltd is owned by A\. Holder since 2019\.\nNOTE 1>>>\n<<<END UNTRUSTED WIKI DATA>>>\n\nYour deliverable: [^\n]+(\n(The case so far|The findings in this batch)[\s\S]*)?$/, role);
 		}
 		const saved = join(space.casesRoot, 'case-a', 'research', 'wiki', 'notes-fixture-company.md');
 		if (!sensitive) assert.ok(!existsSync(saved), 'nothing is saved outside sensitive mode');
@@ -3347,4 +3347,25 @@ test('a batch fact-checker ends once its batch has claims, and one that never wr
 			assert.match(result, /made the batch's calls without writing all its claims/);
 		}
 	}
+});
+
+// #275 (bookkeeping census: the orchestrator's top calls were spotlight_resolve
+// 191 and reads of findings, the contract and the methodology): every worker
+// result ends with the case as it now stands and the next step.
+test('a worker result ends with the case now: its phase, what is missing, the counts and the next step', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	await unlink(join(caseDir, 'data', 'fact-check.json'));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const result = toolResults(fake.requests.at(-1)!).join('\n');
+	assert.match(result, /\[Case now: phase investigation \(skill: phase-investigation\); missing: data\/fact-check\.json; 1 findings, 0 with a fact-check claim\. Next: [^\]]+\]$/, result.slice(-400));
 });

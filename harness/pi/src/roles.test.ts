@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
-import { CHECKOUT_ROOT, PERSONA_CONDITIONS, agentSpec, allowedTools, loadComposition, skillAdapterNote, skillsFor, slicePersona, systemPrompt, deliverableFor, factCheckChecklist, nextCheckBatch, nextCheckText, checkPacket, batchDeliverable } from './roles.ts';
+import { CHECKOUT_ROOT, PERSONA_CONDITIONS, agentSpec, allowedTools, loadComposition, skillAdapterNote, skillsFor, slicePersona, systemPrompt, deliverableFor, factCheckChecklist, nextCheckBatch, nextCheckText, checkPacket, batchDeliverable, investigatorPacket } from './roles.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import type { AgentSpec, PersonaCondition, WorkerContext } from './roles.ts';
 
@@ -303,4 +303,24 @@ test('a fact-check packet carries each evidence item, each passage with its line
 	const due = batchDeliverable(caseDir, docs, ['F2']);
 	assert.deepEqual(due.packet, ['F2']);
 	assert.match(due.line, /^Your deliverable: the claims for F2 in data\/fact-check\.json\./);
+});
+
+// #275 (bookkeeping census: the investigator's top reads were the bundle, the
+// methodology, the contract, the findings and the passages): an investigation
+// task carries the contract mode and the worker's own ids so far.
+test('an investigation task carries the contract mode and its own findings, evidence items and passages, by direction', async (t) => {
+	const caseDir = await mkdtemp(join(tmpdir(), 'spotlight-inv-packet-'));
+	t.after(() => rm(caseDir, { recursive: true, force: true }));
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	const docs = {
+		findings: { findings: [{ id: 'D1-F1', claim: 'Acme paid Doe.' }, { id: 'D2-F1', claim: 'Doe runs Acme.' }] },
+		bundle: { items: [{ id: 'D1-E1', raw_path: 'research/filing.md.raw' }, { id: 'D2-E1', raw_path: 'research/other.md.raw' }] },
+		expressions: { expressions: [{ id: 'D1-P1', finding_links: [{ finding_id: 'D1-F1' }] }, { id: 'D2-P1', finding_links: [{ finding_id: 'D2-F1' }] }] },
+	};
+	assert.match(investigatorPacket(caseDir, docs, 'D1'), /^The case so far \(from its files\):\nContract: legacy case[^\n]*\nYour findings so far: D1-F1 "Acme paid Doe\."\nYour evidence items: D1-E1 research\/filing\.md\.raw\nRecorded passages: D1-P1 -> D1-F1$/);
+	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{"activation_events": []}');
+	const all = investigatorPacket(caseDir, docs);
+	assert.match(all, /Contract: this case is activated \(findings contract 1\.1\)\. Record each exact passage with source_expressions/);
+	assert.match(all, /D2-F1 "Doe runs Acme\."/);
+	assert.match(investigatorPacket(caseDir, {}), /Your findings so far: none\.\nYour evidence items: none\.\nRecorded passages: none\.$/);
 });

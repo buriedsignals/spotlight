@@ -36,7 +36,7 @@ import { piArguments, piCliPath, writePiSettings } from './pi-process.ts';
 import { runResearchRound } from './lanes.ts';
 import type { ResearchPlan, RoundSummary } from './lanes.ts';
 import { discardIncompleteLanes } from './resume.ts';
-import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, batchDeliverable, deliverableFor, factCheckChecklist, isolationRefusal, nextCheckBatch, readCheckDocs, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, batchDeliverable, deliverableFor, factCheckChecklist, investigatorPacket, isolationRefusal, nextCheckBatch, readCheckDocs, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
 import type { Composition, Deliverable, WorkerContext } from './roles.ts';
 import { approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { BRIEF_PENDING_REFUSAL, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL, WorkerQueue, runWorker } from './subagents.ts';
@@ -320,7 +320,8 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 						harness.log(`investigator: direction ${direction.tag} (${direction.ref}), ${budget} calls`);
 						let answer: string;
 						try {
-							answer = await run(`${request.task}\n\n${directionBlock(direction, directions.length)}`, directionDeliverable(direction.tag), { tag: direction.tag, budget });
+							const due = { ...directionDeliverable(direction.tag), start: investigatorPacket(harness.active.caseDir, readCheckDocs(harness.active.caseDir), direction.tag) };
+							answer = await run(`${request.task}\n\n${directionBlock(direction, directions.length)}`, due, { tag: direction.tag, budget });
 						} catch (error) {
 							if (controller.signal.aborted) throw error;
 							answer = (error as Error).message;
@@ -331,6 +332,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 				});
 			})
 			.then((text) => withValidation(harness, request.agent, text))
+			.then((text) => withCaseNow(harness, text))
 			.then((text) => reply({ ok: true, text }))
 			.catch((error: Error) => reply({ ok: false, error: harness.redact(withRespawn(harness, request.agent, error.message, owed)) }))
 			.finally(() => running.delete(request.id));
@@ -420,7 +422,7 @@ async function deliverable(harness: Harness, role: string, task: string): Promis
 	const status = await caseStatus(harness);
 	const step = (status.research as { resume_at?: unknown } | undefined)?.resume_at;
 	const owed = deliverableFor(role, String(status.phase ?? ''), task, typeof step === 'string' ? step : undefined);
-	const start = role === 'fact-checker' ? factCheckStart(harness.active.caseDir) : '';
+	const start = role === 'fact-checker' ? factCheckStart(harness.active.caseDir) : owed?.files.includes('data/findings.json') ? investigatorPacket(harness.active.caseDir, readCheckDocs(harness.active.caseDir)) : '';
 	return owed && start ? { ...owed, start } : owed;
 }
 
@@ -638,6 +640,24 @@ async function gateReady(harness: Harness): Promise<boolean> {
 // member asks for) returns the case to Investigation first, so after the gate
 // no investigator runs, on every tier.
 const GATE_DECIDED_PHASES = new Set(['report', 'ingest', 'complete']);
+
+// #275 (bookkeeping census: the orchestrator's top calls were spotlight_resolve
+// 191 and reads of findings, the contract and the methodology 77/64/58): every
+// worker result ends with the case as it now stands and the next step, so a
+// separate resolve or read is rarely needed.
+export function caseNowLine(status: Record<string, unknown>, docs: ReturnType<typeof readCheckDocs>, next: string | undefined): string {
+	if (!status.phase) return '';
+	const missing = Array.isArray(status.missing) && status.missing.length ? `; missing: ${status.missing.map(String).join(', ')}` : '';
+	const { left, total } = nextCheckBatch(docs);
+	const counts = total ? `; ${total} findings, ${total - left} with a fact-check claim` : '';
+	return `\n\n[Case now: phase ${String(status.phase)}${status.owner ? ` (skill: ${String(status.owner)})` : ''}${missing}${counts}. Next: ${next ?? 'call spotlight_resolve for the next step'}]`;
+}
+
+async function withCaseNow(harness: Harness, text: string): Promise<string> {
+	const status = await caseStatus(harness);
+	const caseDir = harness.active.caseDir;
+	return `${text}${caseNowLine(status, readCheckDocs(caseDir), nextAction(status, (relative) => existsSync(resolve(caseDir, relative))))}`;
+}
 
 async function refusalFor(harness: Harness, role: string, task: string): Promise<string | undefined> {
 	const isolation = isolationRefusal(role, task);
