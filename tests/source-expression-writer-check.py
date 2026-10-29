@@ -202,6 +202,54 @@ def main() -> int:
                 and "is not in research/unlisted.txt" not in refused.stderr and target.read_bytes() == before,
                 f"a quote in a file no evidence item lists was not told to add the item: {refused.stderr}")
         unlisted_file.unlink()
+        # incr-test2 sp98: the anchored file is unlisted but the same text is
+        # in listed files; the anchor decides the place, and the listed files
+        # are offered, not "appears in N places".
+        twin = case / "research" / "twin.txt"
+        twin.write_text(PASSAGES[6] + "\n", encoding="utf-8")
+        anchored = proposal(6)
+        anchored["expressions"][0].update({"anchor_ref": {"path": "research/twin.txt"}, "original_evidence_bundle_id": "FC-E9"})
+        refused = run_writer(case, anchored)
+        require(refused.returncode == 2
+                and "the text is in research/twin.txt, but no item in data/evidence-bundle.json lists that file" in refused.stderr
+                and "(FC-E9 is not in it yet)" in refused.stderr
+                and "Or anchor it to research/passages.txt" in refused.stderr and "places" not in refused.stderr
+                and target.read_bytes() == before,
+                f"a quote anchored in an unlisted file was not told to add it or use the listed file: {refused.stderr}")
+        twin.unlink()
+        # fc-stall item 12: a passage linked to a finding not written yet is
+        # told to write the finding first.
+        early = proposal(2, finding="D9-F1")
+        early["expressions"][0]["id"] = "SXW90"
+        refused = run_writer(case, early)
+        require(refused.returncode == 2 and "finding 'D9-F1' does not exist in data/findings.json yet. Write the finding first" in refused.stderr
+                and target.read_bytes() == before, f"a passage before its finding was not told to write the finding first: {refused.stderr}")
+        # fc-stall item 6: a new passage given an id already taken is told a
+        # free id in the same numbering.
+        taken = proposal(4)
+        taken["expressions"][0]["id"] = "SXW0"
+        refused = run_writer(case, taken)
+        require(refused.returncode == 2 and "already exists with a different passage. For a new passage, give it a free id such as 'SXW" in refused.stderr
+                and "give it a free id such as 'SXW0'" not in refused.stderr and target.read_bytes() == before,
+                f"an id collision did not name a free id: {refused.stderr}")
+        # u3 p1 eu-ai-act: a file that several evidence items list is cited by
+        # the first of them, with a note, instead of a refusal.
+        bundle_path = case / "data" / "evidence-bundle.json"
+        saved_bundle = bundle_path.read_bytes()
+        bundle = json.loads(saved_bundle)
+        extra = json.loads(json.dumps(next(i for i in bundle["items"] if i["id"] == "E2")))
+        extra["id"] = "E3"
+        bundle["items"].append(extra)
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        shared = proposal(7)
+        shared["expressions"][0]["original_evidence_bundle_id"] = None
+        result = run_writer(case, shared)
+        stored_shared = next((e for e in expressions(case)["expressions"] if e["id"] == "SXW7"), {})
+        require(result.returncode == 0 and stored_shared.get("original_evidence_bundle_id") == "E2"
+                and "cites evidence item E2 (also listed by E3)" in result.stdout,
+                f"a file two items list was not cited by the first: {result.stdout} {result.stderr}")
+        bundle_path.write_bytes(saved_bundle)
+        target.write_bytes(before)
 
         # r1/r2 source_expressions refusals the writer now resolves itself: each
         # case below was refused on 97f066b6.

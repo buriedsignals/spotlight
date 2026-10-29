@@ -87,15 +87,25 @@ export const TASK_AFTER_FOLD = 'Your task, word for word as it was given (the ch
 // task's own lines (SPOTLIGHT_TASK_HEADER, from the launcher), the structure
 // only while the file it starts is not written yet, and a pointer to the
 // passages' case file.
-export function taskAfterFold(env: NodeJS.ProcessEnv, written: (path: string) => boolean): string | undefined {
+// Once data/fact-check.json exists, the fact-checker's checklist comes back as
+// the next findings it has no claim for, read from the files at the fold.
+export function taskAfterFold(env: NodeJS.ProcessEnv, written: (path: string) => boolean, remaining: () => string | undefined = () => undefined, fetched: () => string | undefined = () => undefined): string | undefined {
 	const header = env.SPOTLIGHT_TASK_HEADER;
 	if (!header) return undefined;
-	const start = env.SPOTLIGHT_TASK_START && !written('data/fact-check.json') ? `\n${env.SPOTLIGHT_TASK_START}` : '';
+	const left = written('data/fact-check.json') ? remaining() : undefined;
+	const start = !env.SPOTLIGHT_TASK_START
+		? ''
+		: !written('data/fact-check.json')
+			? `\n${env.SPOTLIGHT_TASK_START}`
+			: left
+				? `\n${left}`
+				: '';
 	const passages = env.SPOTLIGHT_TASK_PASSAGES ? `\n\nCase passages for this task: ${env.SPOTLIGHT_TASK_PASSAGES}; read it if you need them again.` : '';
-	return `${header}${start}${passages}`;
+	const pages = fetched();
+	return `${header}${start}${passages}${pages ? `\n\n${pages}` : ''}`;
 }
 
-export function registerCompaction(pi: ExtensionAPI, fixedBody: FixedBody, local: boolean, env: NodeJS.ProcessEnv = process.env, worker = false, written: (path: string) => boolean = () => false): void {
+export function registerCompaction(pi: ExtensionAPI, fixedBody: FixedBody, local: boolean, env: NodeJS.ProcessEnv = process.env, worker = false, written: (path: string) => boolean = () => false, remaining: () => string | undefined = () => undefined, fetched: () => string | undefined = () => undefined): void {
 	let task: string | undefined;
 	if (worker) {
 		pi.on('before_agent_start', (event) => {
@@ -104,7 +114,7 @@ export function registerCompaction(pi: ExtensionAPI, fixedBody: FixedBody, local
 		});
 	}
 	const withTask = (summary: string) => {
-		const reattached = worker ? (taskAfterFold(env, written) ?? task) : undefined;
+		const reattached = worker ? (taskAfterFold(env, written, remaining, fetched) ?? task) : undefined;
 		return reattached ? `${summary}\n\n${TASK_AFTER_FOLD}\n\n${reattached}` : summary;
 	};
 	if (local) registerCheckpoint(pi, fixedBody, env, withTask);

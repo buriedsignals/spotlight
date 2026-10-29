@@ -386,7 +386,7 @@ const AMENDMENT_FILES: Record<string, string> = {
 };
 export function deliverableFor(role: string, phase: string, task: string, researchStep?: string): Deliverable | undefined {
 	const one = (file: string, line = `Your deliverable: ${file}; write it with write_file, then finish.`) => ({ files: [file], line });
-	if (role === 'fact-checker') return one('data/fact-check.json', 'Your deliverable: data/fact-check.json covering every finding in data/findings.json for this cycle; write it with write_file, then finish.');
+	if (role === 'fact-checker') return one('data/fact-check.json', 'Your deliverable: data/fact-check.json covering every finding in data/findings.json for this cycle. Write up to 3 claims at a time with write_file: each write adds or replaces the claims for those finding_ids and keeps the others. Then finish.');
 	if (role === 'analyst') return one('data/knowledge-proposal.json');
 	if (role !== 'investigator') return undefined;
 	if (modeLines(task).some((line) => /^(?:MODE:\s*)?(?:[A-Z]+ )?CORRECTION\b/.test(line))) return undefined;
@@ -398,8 +398,108 @@ export function deliverableFor(role: string, phase: string, task: string, resear
 	}
 	return {
 		files: ['data/findings.json', 'data/evidence-bundle.json'],
-		line: 'Your deliverable: data/findings.json and data/evidence-bundle.json, with this cycle appended to data/investigation-log.json; write them with write_file, then finish.',
+		line: 'Your deliverable: data/findings.json and data/evidence-bundle.json, with this cycle appended to data/investigation-log.json. Write up to 3 findings or items at a time with write_file: each write adds or replaces the entries with those ids and keeps the others. Then finish.',
 	};
+}
+
+// The fact-checker's work, fed a few findings at a time (ofcom on 59deb4d0:
+// a 35-finding list fell back to ids only, the fact-checker read findings.json
+// whole, cut at the 30k read budget, paged it 78 times and never wrote). The
+// task and every accepted fact-check write carry the next findings without a
+// claim in full: the claim, the evidence items with their stored files, and
+// the active passages; so the fact-checker never needs findings.json to know
+// what to check. Pure functions over the case files, exported for the
+// training rows, which render the same text from the case state.
+export type CheckDocs = { findings?: unknown; factCheck?: unknown; bundle?: unknown; expressions?: unknown };
+type Row = Record<string, unknown>;
+const rowsOf = (doc: unknown, key: string): Row[] => {
+	const value = (doc as Row | undefined)?.[key];
+	return Array.isArray(value) ? value.filter((row): row is Row => !!row && typeof row === 'object') : [];
+};
+
+export function readCheckDocs(caseDir: string): CheckDocs {
+	const read = (name: string) => {
+		try {
+			return JSON.parse(readFileSync(resolve(caseDir, 'data', name), 'utf8')) as unknown;
+		} catch {
+			return undefined;
+		}
+	};
+	return { findings: read('findings.json'), factCheck: read('fact-check.json'), bundle: read('evidence-bundle.json'), expressions: read('source-expressions.json') };
+}
+
+export type CheckItem = { id: string; claim: string; evidence: { id: string; path?: string }[]; passages: { id: string; text: string }[] };
+export function nextCheckBatch(docs: CheckDocs, size = 3): { batch: CheckItem[]; left: number; total: number } {
+	const findings = rowsOf(docs.findings, 'findings').filter((row) => typeof row.id === 'string');
+	const checked = new Set(rowsOf(docs.factCheck, 'claims').map((claim) => claim.finding_id));
+	const open = findings.filter((row) => !checked.has(row.id));
+	const items = rowsOf(docs.bundle, 'items');
+	const passages = rowsOf(docs.expressions, 'expressions').filter((p) => rowsOf(p, 'lifecycle_events').at(-1)?.event === 'activated');
+	const pathOf = (item: Row | undefined) => {
+		const derivative = rowsOf(item, 'text_derivatives')[0];
+		const path = item?.raw_path ?? item?.downloaded_document_path ?? item?.screenshot_path ?? derivative?.path;
+		return typeof path === 'string' ? path : undefined;
+	};
+	const batch = open.slice(0, size).map((row) => {
+		const id = String(row.id);
+		const refs = Array.isArray(row.evidence_bundle_refs) ? row.evidence_bundle_refs.map(String) : [];
+		const linked = items.filter((item) => rowsOf(item, 'claim_links').some((link) => link.finding_id === id)).map((item) => String(item.id));
+		const evidence = [...new Set([...refs, ...linked])].map((ref) => ({ id: ref, path: pathOf(items.find((item) => item.id === ref)) }));
+		return {
+			id,
+			claim: typeof row.claim === 'string' ? row.claim : '',
+			evidence,
+			passages: passages
+				.filter((p) => rowsOf(p, 'finding_links').some((link) => link.finding_id === id))
+				.map((p) => ({ id: String(p.id), text: typeof p.text === 'string' ? p.text : '' })),
+		};
+	});
+	return { batch, left: open.length, total: findings.length };
+}
+
+// "Next to check" with the next findings in full, or that every finding has a
+// claim; '' when the case has no findings.
+// Each passage comes with its quote, trimmed to keep a batch near
+// NEXT_CHECK_CHARS: first to 200 characters, then 80, then ids only.
+const NEXT_CHECK_CHARS = 3000;
+export function nextCheckText(docs: CheckDocs, size = 3): string {
+	const { batch, left, total } = nextCheckBatch(docs, size);
+	if (total === 0) return '';
+	if (left === 0) return 'Every finding has a claim.';
+	const render = (quote: number) => {
+		const trim = (text: string) => (text.length <= quote ? text : `${text.slice(0, quote - 1)}…`);
+		const lines = batch.flatMap((item) => [
+			`- ${item.id}: ${JSON.stringify(item.claim)}`,
+			...(item.evidence.length > 0 ? [`  evidence: ${item.evidence.map((e) => (e.path ? `${e.id} ${e.path}` : e.id)).join('; ')}`] : []),
+			...(item.passages.length > 0 ? [`  passages: ${item.passages.map((p) => (quote > 0 && p.text ? `${p.id} ${JSON.stringify(trim(p.text))}` : p.id)).join('; ')}`] : []),
+		]);
+		return `Next to check (${batch.length} of ${left} findings still without a claim):\n${lines.join('\n')}`;
+	};
+	// fc-stall scan (315 logs): 172 verified claims refused for citing no
+	// passage, with the finding's passages listed in the task.
+	const cite = batch.some((item) => item.passages.length > 0)
+		? '\nTo verify a finding, cite its passages above by id in one evidence_for item\'s source_expression_refs. Record a new passage only to dispute it or to add a source you acquired.'
+		: '';
+	return `${[200, 80, 0].map(render).find((text) => text.length <= NEXT_CHECK_CHARS) ?? render(0)}${cite}`;
+}
+
+// The first fact-check task's part: the next findings and the shape of one
+// write; the file merges by finding_id. '' when the case has no findings.
+export function factCheckChecklist(docs: CheckDocs): string {
+	const next = nextCheckText(docs);
+	const first = nextCheckBatch(docs, 1).batch[0];
+	if (!next || !first) return next;
+	const findings = (docs.findings ?? {}) as Row;
+	const shape = JSON.stringify(
+		{
+			...(findings.schema_version === '1.1' ? { schema_version: '1.1' } : {}),
+			project: findings.project,
+			claims: [{ finding_id: first.id, claim_text: first.claim, verdict: '', confidence: '', evidence_for: [], evidence_against: [] }],
+		},
+		null,
+		2,
+	);
+	return `${next}\nA write with one claim, its verdict, confidence and evidence yours to fill in:\n${shape}`;
 }
 
 // Cuts a persona to the task: of the `## [MODE: X]` ... `## [/MODE: X]`
