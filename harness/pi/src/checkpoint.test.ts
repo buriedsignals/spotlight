@@ -14,8 +14,10 @@ const OLD_TURN = 'OLD-TURN-MARKER';
 const CHECKPOINT = 'CHECKPOINT-SENTINEL';
 // About 20,000 tokens at Pi's four-characters-per-token estimate. With the
 // recent turn (about 5,000 tokens, more than the 12b tier keeps verbatim) the
-// conversation passes the 12b fold point (16,384) but stays well under the
-// 65,536-token window's default threshold (65,536 - 16,384).
+// conversation passes a 20,480 fold point, pinned with SPOTLIGHT_COMPACT_AT
+// (the derived point for a 65,536 window is higher; config.test.ts covers it),
+// but stays well under the 65,536-token window's default threshold
+// (65,536 - 16,384), which the frontier tier keeps.
 const LONG_TURN = `${OLD_TURN} ${'The registry lists the fixture company. '.repeat(2000)}`;
 const RECENT_TURN = `Next step. ${'The member asked for the filing history. '.repeat(500)}`;
 
@@ -38,6 +40,7 @@ async function twoTurns(t: test.TestContext, tier: string, env: Record<string, s
 	const chat = launch(t, {
 		...baseEnv(space, fake.baseURL),
 		SPOTLIGHT_MODEL_CONTEXT_WINDOW: '65536',
+		SPOTLIGHT_COMPACT_AT: '20480',
 		SPOTLIGHT_MODEL_TIER: tier,
 		SPOTLIGHT_PROVIDER_REQUEST_BODY: '{"provider":{"zdr":true}}',
 		...env,
@@ -177,7 +180,7 @@ test('after a fold the same skill loads in full again, with its phase lines', as
 	});
 	t.after(() => fake.close());
 	const space = await workspace(t);
-	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '65536', SPOTLIGHT_MODEL_TIER: '12b' });
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '65536', SPOTLIGHT_COMPACT_AT: '20480', SPOTLIGHT_MODEL_TIER: '12b' });
 
 	await settledPrompt(chat, 'Load the skill.');
 	await settledPrompt(chat, 'Load the skill once more.');
@@ -210,7 +213,7 @@ test('after a fold an unchanged file read again returns its text', async (t) => 
 	});
 	t.after(() => fake.close());
 	const space = await workspace(t);
-	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '65536', SPOTLIGHT_MODEL_TIER: '12b' });
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '65536', SPOTLIGHT_COMPACT_AT: '20480', SPOTLIGHT_MODEL_TIER: '12b' });
 	await settledPrompt(chat, 'Write nothing yet.');
 	writeFileSync(join(space.casesRoot, 'case-a', 'brief-directions.txt'), 'Who owns the fixture company?\n');
 

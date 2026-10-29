@@ -206,6 +206,32 @@ class ReviewGate(CaseFixture):
 
     # A direction's investigator (harness/pi/src/directions.ts) tags its ids:
     # D2-F1, D2-E1. They pass every check from the gate to the built batch.
+    # A finding a worker withdrew (harness/pi/src/directions.ts) leaves
+    # findings[] and lives only in the file's top-level withdrawn list: no check
+    # asks for its claim, and no page, report or batch shows it.
+    def test_a_withdrawn_finding_passes_the_gate_the_report_and_the_ingest_build_and_appears_in_none(self) -> None:
+        case = self.build("withdrawn", "report", "--clean", "--activated", "--withdrawn")
+        for script in ("validate-case.py", "validate-fact-check.py"):
+            checked = subprocess.run([sys.executable, str(ROOT / "scripts" / script), str(case)],
+                                     capture_output=True, text=True, check=False)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+        self.assertNotIn("F9", json.dumps(self.view(case, "investigation_gate")["content"]))
+        draft = {
+            "schema_version": "1.0", "title": "Report", "deck": "What the case found.",
+            "framing_finding_ids": ["F1"], "finding_order": ["F1"],
+            "finding_treatments": [{"finding_id": "F1", "headline": "The filing names the payer",
+                                    "summary": "One filing.", "why_it_matters": "It is primary."}],
+            "caveats": [{"text": "Only one filing.", "finding_ids": ["F1"]}],
+            "next_steps": [{"text": "Ask the payer.", "finding_ids": ["F1"]}],
+        }
+        (case / "data/report-draft.json").write_text(json.dumps(draft), encoding="utf-8")
+        report = subprocess.run([sys.executable, str(ROOT / "scripts" / "validate-report-draft.py"), str(case)],
+                                capture_output=True, text=True, check=False)
+        self.assertEqual(report.returncode, 0, report.stdout + report.stderr)
+        self.assertNotIn("F9", json.dumps(self.view(case, "report")["content"]))
+        ingest = self.build("withdrawn-ingest", "ingest", "--clean", "--activated", "--withdrawn", "--proposal")
+        self.assertNotIn("F9", (ingest / "data/knowledge-batch-draft.json").read_text(encoding="utf-8"))
+
     def test_direction_tagged_ids_pass_the_gate_the_report_and_the_ingest_build(self) -> None:
         case = self.build("tagged", "report", "--clean", "--activated", "--prefixed")
         for script in ("validate-case.py", "validate-fact-check.py"):
