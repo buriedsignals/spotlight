@@ -19,7 +19,7 @@ import { bindActiveCase, nextAction, pythonAdapter, resolveCase, spotlightTools 
 import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
 import { PAGE_NOT_OPENED, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
-import { LOOP_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
+import { FACT_CHECK_DUE_STOP, LOOP_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
 import { evidenceValidates } from './validators.ts';
 
 const log = (message: string) => process.stderr.write(`spotlight-extension: ${message}\n`);
@@ -153,6 +153,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		registerUnproductiveBound(pi, async () => nextAction(await resolveCase(active, runAdapter), (relative) => existsSync(resolve(active.caseDir, relative))));
 	}
 	if (role === 'analyst') registerProposalEnd(pi);
+	const factCheckDue = role === 'fact-checker' ? registerFactCheckDue(pi) : (tool: ToolDefinition) => tool;
 	if (tier12b) {
 		registerReadBudget(pi, bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR')).caseDir);
 		registerCompletionFloor(pi);
@@ -165,7 +166,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	}
 	registerToolOwners(pi, role);
 	if (process.env.SPOTLIGHT_CALL_BUDGET) registerCallBudget(pi, Number(process.env.SPOTLIGHT_CALL_BUDGET));
-	const tools = toolsFor(role).map(guarded).map(streakGuarded).map(registerSkillDedup(pi)).map(registerReadDedup(pi));
+	const tools = toolsFor(role).map(guarded).map(streakGuarded).map(registerSkillDedup(pi)).map(registerReadDedup(pi)).map(factCheckDue);
 	if (tier12b) registerHyphenNames(pi, new Set(tools.map((tool) => tool.name)));
 	for (const tool of tools) pi.registerTool(tool);
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
@@ -870,6 +871,52 @@ function registerBlockedStop(pi: ExtensionAPI): void {
 		if (!blocked || message.role !== 'assistant' || !message.content?.some((part) => part.type === 'toolCall')) return undefined;
 		log('the case is blocked and the orchestrator went on; its turn was ended');
 		return { message: { ...event.message, content: [{ type: 'text', text: blockedStop(open) }] } as typeof event.message };
+	});
+}
+
+// DeepSeek V4.1 Flash on wikimedia stage 0 (704dcc78): the fact-checker
+// chased a real address conflict for 501 calls through three research rounds
+// and never wrote data/fact-check.json; its calls kept producing something,
+// so no other bound tripped. At FACT_CHECK_DUE calls without a write of the
+// file, the next result carries this notice; at FACT_CHECK_STOP the run stops
+// as its answer, and the orchestrator re-spawns for the missing file (#245).
+export const FACT_CHECK_DUE = 150;
+export const FACT_CHECK_STOP = 250;
+export const FACT_CHECK_DUE_NOTICE = 'Write data/fact-check.json now with what you have. A claim whose sources conflict gets the verdict disputed or unverified, with the conflict named in its grounding_assessment.assessment.';
+
+function registerFactCheckDue(pi: ExtensionAPI): (tool: ToolDefinition) => ToolDefinition {
+	let calls = 0;
+	let stopping = false;
+	const started = new Map<string, unknown>();
+	pi.on('agent_start', () => {
+		calls = 0;
+		stopping = false;
+	});
+	pi.on('tool_execution_start', (event) => {
+		started.set(event.toolCallId, (event.args as { path?: unknown } | undefined)?.path);
+	});
+	pi.on('tool_execution_end', (event) => {
+		const path = started.get(event.toolCallId);
+		started.delete(event.toolCallId);
+		calls += 1;
+		if (!event.isError && (event.toolName === 'write_file' || event.toolName === 'edit_file') && typeof path === 'string' && path.replace(/^\{CASE_DIR\}[\\/]/, '') === 'data/fact-check.json') calls = 0;
+	});
+	pi.on('tool_result', (event) => {
+		if (calls + 1 !== FACT_CHECK_DUE) return undefined;
+		return { content: [...event.content, { type: 'text' as const, text: `\n${FACT_CHECK_DUE_NOTICE}` }] };
+	});
+	pi.on('turn_end', (_event, ctx) => {
+		if (stopping) ctx.abort();
+	});
+	return (tool) => ({
+		...tool,
+		prepareArguments: (args: unknown) => {
+			if (calls >= FACT_CHECK_STOP) {
+				stopping = true;
+				throw new Error(`The fact-checker ${FACT_CHECK_DUE_STOP}`);
+			}
+			return tool.prepareArguments ? tool.prepareArguments(args) : args;
+		},
 	});
 }
 

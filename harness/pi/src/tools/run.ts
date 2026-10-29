@@ -43,6 +43,9 @@ export const LOOP_STOP = 'repeated one call and was stopped; its last results st
 // all refused or failed, whatever they were.
 export const REFUSAL_STREAK = 6;
 export const REFUSAL_STOP = 'had six tool calls in a row refused and was stopped; its last results stand.';
+// What a fact-checker's run ends with when it made FACT_CHECK_STOP calls
+// without writing data/fact-check.json (extension.ts registerFactCheckDue).
+export const FACT_CHECK_DUE_STOP = 'made 250 calls without writing data/fact-check.json and was stopped; its last results stand.';
 
 // Pi validates arguments before it calls a tool; this repeats the check at the
 // tool boundary so a tool never acts on input outside its schema, whoever calls it.

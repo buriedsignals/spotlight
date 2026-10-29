@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { onJsonlRecords } from './pi-process.ts';
-import { LOOP_STOP, REFUSAL_STOP } from './tools/run.ts';
+import { FACT_CHECK_DUE_STOP, LOOP_STOP, REFUSAL_STOP } from './tools/run.ts';
 
 export type SpawnRequest = { kind: 'spotlight-spawn'; id: string; agent: string; task: string };
 export type CancelRequest = { kind: 'spotlight-cancel'; id: string };
@@ -196,7 +196,7 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 		transcript?.(record);
 		if (record.type === 'tool_execution_end') {
 			const text = (record.result as { content?: Array<{ text?: string }> } | undefined)?.content?.[0]?.text ?? '';
-			stopped = text.endsWith(LOOP_STOP) || text.endsWith(REFUSAL_STOP) ? text : '';
+			stopped = text.endsWith(LOOP_STOP) || text.endsWith(REFUSAL_STOP) || text.endsWith(FACT_CHECK_DUE_STOP) ? text : '';
 		}
 		if (record.type === 'response' && record.id === 'prompt') {
 			if (!record.success) answer.reject(new Error(`worker refused the task: ${String(record.error)}`));
