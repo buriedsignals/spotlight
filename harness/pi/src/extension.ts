@@ -2,6 +2,7 @@
 // registers the model route chosen by the launcher, applies the fixed
 // provider request-body policy, and registers exactly the role's tools.
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { registerCompaction } from './checkpoint.ts';
@@ -14,7 +15,7 @@ import { typedTools } from './tools/index.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
-import { bindActiveCase, pythonAdapter, resolveCase, spotlightTools } from './tools/spotlight.ts';
+import { bindActiveCase, nextAction, pythonAdapter, resolveCase, spotlightTools } from './tools/spotlight.ts';
 import { requestEditorial, requestResearchRound, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
 import { PAGE_NOT_OPENED, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
@@ -147,6 +148,9 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		registerEndTurnOnOpen(pi);
 		registerOrchestratorLoopBound(pi);
 		registerBlockedStop(pi);
+		const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
+		const runAdapter = pythonAdapter(process.env.SPOTLIGHT_PYTHON || 'python3', resolverEnv(process.env, loadComposition()));
+		registerUnproductiveBound(pi, async () => nextAction(await resolveCase(active, runAdapter), (relative) => existsSync(resolve(active.caseDir, relative))));
 	}
 	if (role === 'analyst') registerProposalEnd(pi);
 	if (tier12b) {
@@ -765,6 +769,47 @@ function registerProposalEnd(pi: ExtensionAPI): void {
 // ends, not the case, before the next request, and the member sees this line.
 export const LOOP_NOTICE_CAP = 5;
 export const ORCHESTRATOR_LOOP_STOP = 'Spotlight stopped this turn because it kept repeating the same step without getting anything new. Ask Spotlight to continue, or say what to change.';
+
+// U3 census stage 1 (0af4585b): told to spawn the fact-checker, the r5
+// orchestrator read and listed case files for 60 minutes, 197 to 280 calls,
+// each returning nothing new (not found, no matching files, unchanged), with
+// pairs varied enough that the loop guard never fired. Such results are
+// counted per run: at the fifth the next one carries the step the case is
+// waiting on, and at the fifteenth the turn ends with the loop stop line.
+export const UNPRODUCTIVE_NEXT = 5;
+export const UNPRODUCTIVE_STOP = 15;
+const unproductive = (text: string) => text.startsWith('not found: ') || text === 'no matching files' || text.endsWith(' is unchanged since you read it above in this conversation; use that text.');
+
+function registerUnproductiveBound(pi: ExtensionAPI, next: () => Promise<string | undefined>): void {
+	let count = 0;
+	let stopping = false;
+	pi.on('agent_start', () => {
+		count = 0;
+		stopping = false;
+	});
+	pi.on('tool_result', async (event) => {
+		const text = event.content.map((part) => (part.type === 'text' ? part.text : '')).join('');
+		if (!unproductive(text)) return undefined;
+		count += 1;
+		if (count >= UNPRODUCTIVE_STOP && !stopping) {
+			stopping = true;
+			log(`the orchestrator got ${UNPRODUCTIVE_STOP} results with nothing new; its turn was stopped`);
+		}
+		if (count !== UNPRODUCTIVE_NEXT) return undefined;
+		const step = await next();
+		return step ? { content: [{ type: 'text' as const, text: `${text}\n${step}` }] } : undefined;
+	});
+	pi.on('before_provider_request', (_event, ctx) => {
+		if (stopping) ctx.abort();
+		return undefined;
+	});
+	pi.on('message_end', (event) => {
+		if (!stopping || (event.message as { role?: string }).role !== 'assistant') return undefined;
+		stopping = false;
+		count = 0;
+		return { message: { ...event.message, content: [{ type: 'text', text: ORCHESTRATOR_LOOP_STOP }] } as typeof event.message };
+	});
+}
 
 function registerOrchestratorLoopBound(pi: ExtensionAPI): void {
 	let notices = 0;

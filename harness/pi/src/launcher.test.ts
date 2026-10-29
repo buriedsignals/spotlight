@@ -16,7 +16,7 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, agentSpec, loadComposition, deliverableFor } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
-import { blockedStop, budgetedWebResult, CALL_BUDGET_SPENT, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded } from './extension.ts';
+import { blockedStop, budgetedWebResult, CALL_BUDGET_SPENT, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded, UNPRODUCTIVE_NEXT, UNPRODUCTIVE_STOP } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 import { TASK_AFTER_FOLD } from './checkpoint.ts';
 import { maxOutputTokens } from './config.ts';
@@ -2065,6 +2065,27 @@ test('once the case is blocked, the orchestrator\'s next tool calls end the turn
 	assert.equal(fake.requests.length, 2, 'no call runs after the blocked resolve');
 	assert.match(toolResults(fake.requests[1])[0], /"status":"blocked"/);
 	assert.ok(chat.lines.some((line) => line.includes(blockedStop(1))), 'the member is told why');
+});
+
+// U3 census stage 1 (0af4585b): told to spawn the fact-checker, the r5
+// orchestrator alternated a missing schema and empty listings for 60 minutes.
+test('results with nothing new bring the next step at the fifth and end the turn at the fifteenth', async (t) => {
+	const calls = [{ name: 'read_file', arguments: { path: 'schemas/case-contract.json' } }, { name: 'list_files', arguments: { pattern: 'data/nothing-*' } }];
+	const fake = await startFakeOpenAI((request) => ({ toolCalls: [calls[toolResults(request).length % 2]] }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	await unlink(join(caseDir, 'data', 'fact-check.json'));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const results = toolResults(fake.requests.at(-1)!);
+	assert.equal(results[0], 'not found: schemas/case-contract.json; the schema is schemas/case-contract.schema.json');
+	assert.match(results[UNPRODUCTIVE_NEXT - 1], /\nNext: spawn the fact-checker/);
+	assert.equal(results.length, UNPRODUCTIVE_STOP - 1, 'no model request follows the fifteenth');
+	assert.ok(chat.lines.some((line) => line.includes(ORCHESTRATOR_LOOP_STOP)), 'the member is told why the turn stopped');
 });
 
 // U3 census, r5 on swiss (84674fd9): the orchestrator made one call 286 times
