@@ -83,6 +83,8 @@ tools refuse every other path.
 
 ## Output
 
+Start from the skeleton: `scripts/spotlight-python scripts/knowledge-proposal-skeleton.py {CASE_DIR} --format prompt` prints the proposal with what the case fixes filled in (claims per fact-check row, finding and passage references, `attributed: false` where no source position exists) and lists the fields you fill. Under the Pi harness the skeleton is already in your task.
+
 `{CASE_DIR}/data/knowledge-proposal.json`, matching
 `schemas/knowledge-proposal.schema.json` (interface 1). It holds only the
 parts that need judgment:

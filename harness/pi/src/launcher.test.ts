@@ -3369,3 +3369,20 @@ test('a worker result ends with the case now: its phase, what is missing, the co
 	const result = toolResults(fake.requests.at(-1)!).join('\n');
 	assert.match(result, /\[Case now: phase investigation \(skill: phase-investigation\); missing: data\/fact-check\.json; 1 findings, 0 with a fact-check claim\. Next: [^\]]+\]$/, result.slice(-400));
 });
+
+// #275 (bookkeeping census: 83% of the analyst's calls were reads of the
+// proposal schema and its four case files): the analyst's task carries the
+// proposal skeleton, with what the case fixes filled in.
+test('the analyst\'s task carries the knowledge-proposal skeleton between untrusted-data markers', async (t) => {
+	const fake = await startFakeOpenAI(delegateToAnalyst(() => ({ text: 'Stopped.' })));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtIngest(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const task = userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst'))!);
+	assert.match(task, /<<<BEGIN UNTRUSTED CASE DATA>>>\nKnowledge-proposal skeleton \(from the case files[\s\S]*"finding_id": "F1"[\s\S]*"proposition": ""[\s\S]*\n<<<END UNTRUSTED CASE DATA>>>$/, task.slice(-1500));
+	assert.match(task, /"model": "stub-model"/, 'the route model is prefilled');
+});
