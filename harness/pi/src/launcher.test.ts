@@ -2037,7 +2037,7 @@ test('a fact-checker spawned with the wrong file still gets its deliverable, and
 });
 
 // U3 census (84674fd9): fact-checkers rebuilt the file's structure by hand.
-test('a first fact-check task carries the structure, one claim per finding; once the file exists it does not, and no case file changes', async (t) => {
+test('a first fact-check task carries the structure, one claim per finding; and an unfinished one carries the rest, and no case file changes', async (t) => {
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
 		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
@@ -2058,7 +2058,8 @@ test('a first fact-check task carries the structure, one claim per finding; once
 	const first = userText(fake.requests.find((request) => isWorkerRequest(request, 'fact-checker'))!);
 	assert.match(first, /Next to check \(1 of 1 findings still without a claim\):\n- F1: "Acme paid Doe\."\n/);
 	const start = JSON.parse(first.split('A write with one claim, its verdict, confidence and evidence yours to fill in:\n')[1]);
-	assert.deepEqual(start.claims, [{ finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: '', confidence: '', evidence_for: [], evidence_against: [] }]);
+	// The finding's passage on record starts evidence_for (arms on 8699f11d, item D).
+	assert.deepEqual(start.claims, [{ finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: '', confidence: '', evidence_for: [{ source_expression_refs: ['SX1'] }], evidence_against: [] }]);
 	assert.equal(start.schema_version, '1.1');
 	assert.deepEqual(await caseDigests(caseDir), before, 'the structure is only in the task; no case file changed');
 
@@ -2066,10 +2067,16 @@ test('a first fact-check task carries the structure, one claim per finding; once
 	await writeFile(join(caseDir, 'data', 'fact-check.json'), JSON.stringify({ ...JSON.parse(factCheck), claims: [] }));
 	const again = await startFakeOpenAI((request) => (isWorkerRequest(request, 'fact-checker') ? { text: 'Checked.' } : toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' }));
 	t.after(() => again.close());
-	await settledPrompt(launch(t, baseEnv(space, again.baseURL)), 'Continue.');
+	const secondChat = launch(t, baseEnv(space, again.baseURL));
+	await settledPrompt(secondChat, 'Continue.');
+	secondChat.process.stdin.end();
+	await secondChat.exited;
 	const second = again.requests.find((request) => isWorkerRequest(request, 'fact-checker'));
 	assert.ok(second, 'the fact-checker ran again');
-	assert.ok(!userText(second).includes('Next to check'), 'a fact-check that exists gets no checklist');
+	// arms on 8699f11d (ds-spectator seq 96): an unfinished fact-check gets the
+	// findings still without a claim.
+	assert.match(userText(second), /Next to check \(1 of 1 findings still without a claim\)/, 'an unfinished fact-check gets the rest');
+
 });
 
 // wave 1 on 038df55f: on 20-35-finding cases the fact-checker gathered for
