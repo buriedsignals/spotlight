@@ -2,14 +2,14 @@
 // registers the model route chosen by the launcher, applies the fixed
 // provider request-body policy, and registers exactly the role's tools.
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
 import { applyFixedRequestBody, parseFixedRequestBody, withoutHistoryReasoning } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
-import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
 import { READ_TRUNCATED, writeConfined } from './tools/case-files.ts';
 import { typedTools } from './tools/index.ts';
 import { invokeSkillTool } from './tools/skills.ts';
@@ -140,7 +140,9 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	// The launcher sets the local tier's fold point in Pi's settings; the
 	// frontier tier keeps Pi's default threshold and summary.
 	const caseDir = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR')).caseDir;
-	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier', process.env, role !== ORCHESTRATOR, (path) => existsSync(resolve(caseDir, path)));
+	const fetched = role !== ORCHESTRATOR ? registerFetchedPages(pi) : () => undefined;
+	const remaining = role === 'fact-checker' ? () => nextCheckText(readCheckDocs(caseDir)) : undefined;
+	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier', process.env, role !== ORCHESTRATOR, (path) => existsSync(resolve(caseDir, path)), remaining, fetched);
 	const guarded = registerLoopGuard(pi, tier12b && role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
 	// Ending the orchestrator would end the case, so only workers are stopped.
 	const streakGuarded = tier12b && role !== ORCHESTRATOR ? registerRefusalStreak(pi, `The ${role} ${REFUSAL_STOP}`) : (tool: ToolDefinition) => tool;
@@ -154,6 +156,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		registerUnproductiveBound(pi, async () => nextAction(await resolveCase(active, runAdapter), (relative) => existsSync(resolve(active.caseDir, relative))));
 	}
 	if (role === 'analyst') registerProposalEnd(pi);
+	if (role === 'fact-checker' && process.env.SPOTLIGHT_FC_BATCH) registerBatchEnd(pi);
 	const factCheckDue = role === 'fact-checker' ? registerFactCheckDue(pi) : (tool: ToolDefinition) => tool;
 	if (tier12b) {
 		registerReadBudget(pi, bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR')).caseDir);
@@ -202,6 +205,30 @@ function registerHyphenNames(pi: ExtensionAPI, names: Set<string>): void {
 		});
 		return renamed ? { message: { ...event.message, content } as typeof event.message } : undefined;
 	});
+}
+
+// fc-stall scan (incr-test2 sp98): after a fold, fact-checker threads fetched
+// the same Companies House pages again (3x). The pages a worker saved this run,
+// by URL, for the text that comes back after a fold.
+const FETCHED_SHOWN = 12;
+export function registerFetchedPages(pi: ExtensionAPI): () => string | undefined {
+	const saved = new Map<string, string>();
+	const started = new Map<string, { url?: unknown; save_as?: unknown }>();
+	pi.on('tool_execution_start', (event) => {
+		if (event.toolName === 'fetch') started.set(event.toolCallId, (event.args ?? {}) as { url?: unknown; save_as?: unknown });
+	});
+	pi.on('tool_execution_end', (event) => {
+		const args = started.get(event.toolCallId);
+		started.delete(event.toolCallId);
+		if (!args || event.isError || typeof args.url !== 'string' || typeof args.save_as !== 'string') return;
+		saved.delete(args.url);
+		saved.set(args.url, args.save_as);
+	});
+	return () => {
+		if (saved.size === 0) return undefined;
+		const pages = [...saved].slice(-FETCHED_SHOWN).map(([url, path]) => `${url} -> ${path}`);
+		return `Already fetched in this task (read the saved file; do not fetch again): ${pages.join('; ')}.`;
+	};
 }
 
 // Skill bodies share the budget (LFM3 e1 on Osaurus, 7513e421: a planning
@@ -754,6 +781,46 @@ function registerEndTurnOnOpen(pi: ExtensionAPI): void {
 // answer ends the run as usual; a message with more tool calls is replaced by
 // this answer, with no calls, so the run ends and the builder runs.
 export const PROPOSAL_DONE = 'The analyst wrote data/knowledge-proposal.json and was stopped there; its final answer and any watch candidates were not written.';
+
+// arm2 ds-spectator on ce4f010e: after the write that completed its batch
+// ("Finish now") the fact-checker rewrote the same claims and read for 32 more
+// calls, and batch threads grew to about 55k tokens on reads and fetches. A
+// batch fact-checker (SPOTLIGHT_FC_BATCH) ends once its batch has claims; past
+// FC_BATCH_DUE calls each result says to write now, and at FC_BATCH_STOP the
+// run ends and the launcher goes on with the next batch.
+export const FC_BATCH_DUE = 15;
+export const FC_BATCH_STOP = 30;
+export const FC_BATCH_DONE = 'Wrote the claims for this batch.';
+export const FC_BATCH_NOTICE = 'Write this batch\'s claims now with what you have: a claim you could not confirm gets the verdict unverified, with the reason in grounding_assessment.assessment. Then finish.';
+export const FC_BATCH_SPENT = 'made the batch\'s calls without writing all its claims; the harness goes on with the next batch.';
+function registerBatchEnd(pi: ExtensionAPI): void {
+	let done = false;
+	let calls = 0;
+	pi.on('agent_start', () => {
+		done = false;
+		calls = 0;
+	});
+	pi.on('tool_execution_end', (event) => {
+		calls += 1;
+		const text: string = event.result?.content?.[0]?.text ?? '';
+		if ((event.toolName === 'write_file' || event.toolName === 'edit_file') && !event.isError && text.includes('Every finding in your batch has a claim')) done = true;
+	});
+	pi.on('tool_result', (event) => {
+		if (done || calls + 1 < FC_BATCH_DUE) return undefined;
+		return { content: [...event.content, { type: 'text' as const, text: `\n${FC_BATCH_NOTICE}` }] };
+	});
+	pi.on('message_end', (event) => {
+		const message = event.message as { role?: string; content?: Array<{ type: string }> };
+		if (message.role !== 'assistant' || !message.content?.some((part) => part.type === 'toolCall')) return undefined;
+		if (done) {
+			log('the fact-checker went on after its batch had claims; its turn was ended');
+			return { message: { ...event.message, content: [{ type: 'text', text: FC_BATCH_DONE }] } as typeof event.message };
+		}
+		if (calls < FC_BATCH_STOP) return undefined;
+		log(`the fact-checker made ${FC_BATCH_STOP} calls on one batch; its turn was ended`);
+		return { message: { ...event.message, content: [{ type: 'text', text: `The fact-checker ${FC_BATCH_SPENT}` }] } as typeof event.message };
+	});
+}
 
 function registerProposalEnd(pi: ExtensionAPI): void {
 	let written = false;

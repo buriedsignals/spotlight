@@ -16,6 +16,8 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, agentSpec, loadComposition, deliverableFor } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
+import { FC_BATCH_DONE, FC_BATCH_DUE, FC_BATCH_NOTICE, FC_BATCH_STOP, registerFetchedPages } from './extension.ts';
+import { CONTINUE_AFTER_FOLD } from './subagents.ts';
 import { blockedStop, budgetedWebResult, CALL_BUDGET_SPENT, FACT_CHECK_DUE, FACT_CHECK_DUE_NOTICE, FACT_CHECK_DUE_REPEAT, FACT_CHECK_STOP, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded, UNPRODUCTIVE_NEXT, UNPRODUCTIVE_STOP } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 import { TASK_AFTER_FOLD, taskAfterFold } from './checkpoint.ts';
@@ -746,8 +748,8 @@ test('on the 12b after a fold a fact-checker gets its task\'s own lines, the str
 	const text = JSON.stringify(folded.messages);
 	const after = text.slice(text.indexOf('Your task, word for word'));
 	assert.match(after, /TASK-MARKER: check every finding\./);
-	assert.match(after, /Your deliverable: data\/fact-check\.json/);
-	assert.match(after, /Start from this structure/, 'the structure comes back while data/fact-check.json is not written');
+	assert.match(after, /Your deliverable: the claims for F1 in data\/fact-check\.json/);
+	assert.match(after, /The findings in this batch:[\s\S]*- F1: \\"Acme paid Doe\.\\"/, 'the batch packet comes back while data/fact-check.json is not written');
 	const kept = /Case passages for this task: (\/[^;]+\/work\/fact-checker\/passages\/fact-checker-[^;]+\.md); read it if you need them again\./.exec(after)?.[1];
 	assert.ok(kept, after.slice(0, 2000));
 	assert.doesNotMatch(text, /PASSAGE-MARKER/);
@@ -757,11 +759,33 @@ test('on the 12b after a fold a fact-checker gets its task\'s own lines, the str
 	assert.deepEqual(await caseDigests(caseDir), before);
 });
 
-test('after a fold the fact-check structure comes back only while data/fact-check.json is not written', () => {
-	const env = { SPOTLIGHT_TASK_HEADER: 'Check.\n\nYour deliverable: data/fact-check.json', SPOTLIGHT_TASK_START: 'Start from this structure: {}', SPOTLIGHT_TASK_PASSAGES: 'data/worker-passages/fc.md' };
-	assert.equal(taskAfterFold(env, () => false), 'Check.\n\nYour deliverable: data/fact-check.json\nStart from this structure: {}\n\nCase passages for this task: data/worker-passages/fc.md; read it if you need them again.');
-	assert.equal(taskAfterFold(env, (path) => path === 'data/fact-check.json'), 'Check.\n\nYour deliverable: data/fact-check.json\n\nCase passages for this task: data/worker-passages/fc.md; read it if you need them again.');
+test('after a fold the first checklist comes back until data/fact-check.json is written, then the next findings to check', () => {
+	const env = { SPOTLIGHT_TASK_HEADER: 'Check.\n\nYour deliverable: data/fact-check.json', SPOTLIGHT_TASK_START: 'Next to check (3 of 3 …):\n- F1', SPOTLIGHT_TASK_PASSAGES: '/h/passages/fc.md' };
+	const pointer = '\n\nCase passages for this task: /h/passages/fc.md; read it if you need them again.';
+	assert.equal(taskAfterFold(env, () => false, () => 'Next to check (1 of 1 …)'), `Check.\n\nYour deliverable: data/fact-check.json\nNext to check (3 of 3 …):\n- F1${pointer}`);
+	assert.equal(taskAfterFold(env, () => true, () => 'Next to check (1 of 1 …):\n- F3'), `Check.\n\nYour deliverable: data/fact-check.json\nNext to check (1 of 1 …):\n- F3${pointer}`);
 	assert.equal(taskAfterFold({}, () => false), undefined);
+	// fc-stall item 3: after a fold the task says what was already fetched.
+	const pages = 'Already fetched in this task (read the saved file; do not fetch again): https://a.example/x -> research/x.md.';
+	assert.equal(taskAfterFold(env, () => true, () => undefined, () => pages), `Check.\n\nYour deliverable: data/fact-check.json${pointer}\n\n${pages}`);
+});
+
+// fc-stall item 3 (incr-test2 sp98): fact-checker threads fetched the same pages
+// again after each fold. A worker's successful fetches are listed by URL, the
+// latest save per URL; a failed fetch is not.
+test('the pages a worker fetched are listed for the text after a fold, failures left out', () => {
+	const handlers = new Map<string, (event: Record<string, unknown>) => void>();
+	const pi = { on: (name: string, handler: (event: Record<string, unknown>) => void) => handlers.set(name, handler) } as unknown as Parameters<typeof registerFetchedPages>[0];
+	const fetched = registerFetchedPages(pi);
+	assert.equal(fetched(), undefined);
+	const run = (id: string, args: Record<string, unknown>, isError = false) => {
+		handlers.get('tool_execution_start')!({ toolName: 'fetch', toolCallId: id, args });
+		handlers.get('tool_execution_end')!({ toolName: 'fetch', toolCallId: id, isError });
+	};
+	run('1', { url: 'https://a.example/x', save_as: 'x.md' });
+	run('2', { url: 'https://b.example/y', save_as: 'y.md' }, true);
+	run('3', { url: 'https://a.example/x', save_as: 'x2.md' });
+	assert.equal(fetched(), 'Already fetched in this task (read the saved file; do not fetch again): https://a.example/x -> x2.md.');
 });
 
 // 12B r3 A2 ia: every assistant message in the requests carried its earlier
@@ -1420,6 +1444,9 @@ test('the orchestrator cannot write the files the workers write, and writes its 
 	const results = toolResults(fake.requests[fake.requests.length - 1]).join('\n');
 	assert.equal(existsSync(join(caseDir, 'data', 'indicator-framework.json')), false);
 	assert.equal(results.match(/another role writes/g)?.length, 3);
+	// fc-stall item 9: the refusal names the owner and the spawn to make.
+	assert.match(results, /refused: data\/methodology\.json is a case file another role writes; this agent may not write it\. It is the investigator's file: to change it, call spawn_agent with agent "investigator" and a task starting "MODE: METHODOLOGY CORRECTION" that says what to change\./);
+	assert.match(results, /data\/fact-check\.json [^\n]*It is the fact-checker's file: to change it, call spawn_agent with agent "fact-checker"/);
 });
 
 // D13: in an activated case the producers record passages only through
@@ -2010,7 +2037,7 @@ test('a fact-checker spawned with the wrong file still gets its deliverable, and
 });
 
 // U3 census (84674fd9): fact-checkers rebuilt the file's structure by hand.
-test('a first fact-check task carries the structure, one claim per finding; once the file exists it does not, and no case file changes', async (t) => {
+test('a first fact-check task carries the structure, one claim per finding; and an unfinished one carries the rest, and no case file changes', async (t) => {
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
 		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
@@ -2029,8 +2056,10 @@ test('a first fact-check task carries the structure, one claim per finding; once
 	await chat.exited;
 
 	const first = userText(fake.requests.find((request) => isWorkerRequest(request, 'fact-checker'))!);
-	const start = JSON.parse(first.split('Start from this structure: one claim per finding, with the verdict, confidence and evidence yours to fill in.\n')[1]);
-	assert.deepEqual(start.claims, [{ finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: '', confidence: '', evidence_for: [], evidence_against: [] }]);
+	assert.match(first, /The findings in this batch:\n[\s\S]*\n- F1: "Acme paid Doe\."\n/);
+	const start = JSON.parse(first.split('The write, yours to fill in:\n')[1]);
+	// The finding's passage on record starts evidence_for (arms on 8699f11d, item D).
+	assert.deepEqual(start.claims, [{ finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: '', confidence: '', evidence_for: [{ source_expression_refs: ['SX1'] }], evidence_against: [] }]);
 	assert.equal(start.schema_version, '1.1');
 	assert.deepEqual(await caseDigests(caseDir), before, 'the structure is only in the task; no case file changed');
 
@@ -2038,10 +2067,53 @@ test('a first fact-check task carries the structure, one claim per finding; once
 	await writeFile(join(caseDir, 'data', 'fact-check.json'), JSON.stringify({ ...JSON.parse(factCheck), claims: [] }));
 	const again = await startFakeOpenAI((request) => (isWorkerRequest(request, 'fact-checker') ? { text: 'Checked.' } : toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' }));
 	t.after(() => again.close());
-	await settledPrompt(launch(t, baseEnv(space, again.baseURL)), 'Continue.');
+	const secondChat = launch(t, baseEnv(space, again.baseURL));
+	await settledPrompt(secondChat, 'Continue.');
+	secondChat.process.stdin.end();
+	await secondChat.exited;
 	const second = again.requests.find((request) => isWorkerRequest(request, 'fact-checker'));
 	assert.ok(second, 'the fact-checker ran again');
-	assert.ok(!userText(second).includes('Start from this structure'), 'a fact-check that exists gets no structure');
+	// arms on 8699f11d (ds-spectator seq 96): an unfinished fact-check gets the
+	// findings still without a claim.
+	assert.match(userText(second), /The findings in this batch:\n[\s\S]*- F1: /, 'an unfinished fact-check gets the rest');
+
+});
+
+// wave 1 on 038df55f: on 20-35-finding cases the fact-checker gathered for
+// one whole-file write it never made, or made past the output cap.
+// #274 (arm1 ds-spectator at 54c0ee60: 313 fact-checker calls for 12 of 22
+// claims in one long folded thread; ofcom on 59deb4d0: findings.json paged 78
+// times): the harness runs one fresh fact-checker per batch of 3, each with its
+// batch's packet, until every finding has a claim.
+test('a 35-finding fact-check runs as fresh fact-checkers of 3 findings each, from packets alone, and the harness checks the file once', async (t) => {
+	const findings = Array.from({ length: 35 }, (_, i) => ({ id: `F${i + 1}`, claim: `On ${i + 1} May the fixture company filed report ${i + 1}.` }));
+	const next = (text: string) => [...text.matchAll(/^- (F\d+): "(.*)"$/gm)].map(([, id, claim]) => ({ id, claim }));
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) {
+			if (toolResults(request).length > 0) return { text: 'Checked.' };
+			const claims = next(userText(request)).map(({ id, claim }) => ({ finding_id: id, claim_text: claim, verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [] }));
+			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ project: 'case-a', claims }) } }] };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	await writeFile(join(caseDir, 'data', 'findings.json'), JSON.stringify({ project: 'case-a', findings }));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const file = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8'));
+	assert.deepEqual(file.claims.map((claim: { claim_text: string }) => claim.claim_text), findings.map((finding) => finding.claim));
+	const starts = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker') && toolResults(request).length === 0);
+	assert.equal(starts.length, 12, 'one fresh fact-checker per batch of 3');
+	assert.ok(starts.every((request) => next(userText(request)).length <= 3));
+	const results = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker') && toolResults(request).length === 1).map((request) => toolResults(request)[0]);
+	assert.ok(results.every((result) => /^wrote data\/fact-check\.json[\s\S]*Every finding in your batch has a claim \(F\d+(, F\d+)*\)\. Finish now/.test(result)), results.find((result) => !/Finish now/.test(result)));
+	const delegated = toolResults(fake.requests.at(-1)!).join('\n');
+	assert.equal(delegated.match(/validate-fact-check\.py/g)?.length, 1, 'the harness checks the whole file once');
+	assert.match(delegated, /Every finding has a claim \(35 of 35\)\./);
 });
 
 // U3 ledger row 17: small models missed edit_file's old_text again and again,
@@ -2102,7 +2174,8 @@ test('on every tier a cited research file is never overwritten, and a new name s
 		chat.process.stdin.end();
 		await chat.exited;
 
-		const results = toolResults(fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker')).at(-1)!);
+		// The first batch's worker; with no claim written the harness tries one more batch (#274).
+		const results = toolResults(fake.requests.find((request) => isWorkerRequest(request, 'fact-checker') && toolResults(request).length === 2)!);
 		assert.equal(results[0], 'refused: research/filing.txt is cited evidence and must not change; the file is unchanged. Save the new copy under a new name, such as research/filing-2.txt.', tier);
 		assert.equal(results[1], 'wrote research/filing-2.txt', tier);
 		assert.equal(await readFile(join(caseDir, 'research', 'filing.txt'), 'utf8'), cited, `${tier}: the cited file is unchanged`);
@@ -2126,8 +2199,13 @@ test('a fact-checker that does not write its file is told to from the 150th call
 	const space = await workspace(t);
 	const caseDir = join(space.casesRoot, 'case-a');
 	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
-	await unlink(join(caseDir, 'data', 'fact-check.json'));
-	const chat = launch(t, baseEnv(space, fake.baseURL));
+	// Every finding has a claim, so the spawn is one fact-checker, not the
+	// harness's batches (#274), which end a batch long before 150 calls; an
+	// invalid verdict keeps the case at Investigation.
+	const factCheck = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8'));
+	factCheck.claims[0].verdict = 'pending';
+	await writeFile(join(caseDir, 'data', 'fact-check.json'), JSON.stringify(factCheck));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier' });
 
 	await settledPrompt(chat, 'Continue.');
 
@@ -2503,8 +2581,8 @@ test('every fact-checker task carries each claim\'s case passages between marker
 		assert.ok(worker, 'the fact-checker ran');
 		const task = userText(worker);
 		if (off) {
-			// Only the deliverable line (and, for a first fact-check, its structure) is added.
-			assert.ok(task.startsWith(`Check data/findings.json.\n\n${deliverableFor('fact-checker', 'investigation', '')!.line}`), task);
+			// Only the batch's deliverable line and packet are added (#274).
+			assert.ok(task.startsWith('Check data/findings.json.\n\nYour deliverable: the claims for F1 in data/fact-check.json.'), task);
 			assert.doesNotMatch(task, /CASE PASSAGES/);
 			continue;
 		}
@@ -2544,8 +2622,9 @@ test('D9 and injection: a passage that names hidden material never reaches the f
 		],
 	});
 	assert.ok(!/clues\.json|leads\.json|research\/swarm/.test(task), 'D9: no passage names hidden material');
-	assert.equal(task.split('<<<BEGIN UNTRUSTED CASE DATA>>>').length - 1, 1);
-	assert.equal(task.split('<<<END UNTRUSTED CASE DATA>>>').length - 1, 1);
+	// Two untrusted blocks: the case search's and the batch packet's (#274); no forged third.
+	assert.equal(task.split('<<<BEGIN UNTRUSTED CASE DATA>>>').length - 1, 2);
+	assert.equal(task.split('<<<END UNTRUSTED CASE DATA>>>').length - 1, 2);
 	assert.equal(task.split('<<<PASSAGE ').length - 1, 1);
 	assert.equal(task.split('PASSAGE 1>>>').length - 1, 1);
 	const inside = task.slice(task.indexOf('<<<BEGIN UNTRUSTED CASE DATA>>>'), task.indexOf('<<<END UNTRUSTED CASE DATA>>>'));
@@ -3072,4 +3151,200 @@ test('Stop: {"type":"abort"} on stdin reaches the orchestrator and ends the turn
 	chat.send({ type: 'abort' });
 	assert.equal((await chat.waitFor((record) => record.type === 'response' && record.command === 'abort', before)).success, true);
 	await chat.waitFor((record) => record.type === 'agent_settled', before);
+});
+
+// arms on 8699f11d (ds-spectator fact-checker-4, r5-spectator fact-checker-2):
+// a worker that filled its window ended on the no-room line, and its task
+// with it. It is folded once and continues.
+test('a worker that runs out of room is folded once and continues its task', async (t) => {
+	const checkpoint = '## Goal\nCheck the findings.\n## Progress\nRead the filing.\n## Decisions\nNone.\n## Next\nWrite the fact-check.\n## Open gate\nNone.';
+	const fake = await startFakeOpenAI((request) => {
+		// The checkpoint request carries no tools and no role prompt.
+		if ((request.tools ?? []).length === 0) return { text: checkpoint };
+		if (isWorkerRequest(request, 'fact-checker')) {
+			if (JSON.stringify(request.messages).includes(CONTINUE_AFTER_FOLD)) return { text: 'Fact-check continued after the fold.' };
+			// Large tool results and long reasoning, as fact-checker-4's 10-13k reasoning turns.
+			return { reasoning: Array.from({ length: 300 }, (_, step) => `Step ${step} of part ${toolResults(request).length}.`).join(' '), toolCalls: [{ name: 'read_file', arguments: { path: `research/part-${toolResults(request).length}.txt` } }] };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	await unlink(join(caseDir, 'data', 'fact-check.json'));
+	for (let n = 0; n < 12; n += 1) await writeFile(join(caseDir, 'research', `part-${n}.txt`), `Part ${n}: the filing names the owner. `.repeat(400));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '32000', SPOTLIGHT_COMPACT_AT: '31000' });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const result = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker')).at(-1)!).join('\n');
+	assert.match(result, /Fact-check continued after the fold\./, result.slice(0, 600));
+	assert.match(chat.stderr(), /checkpoint: session-ok/, 'the worker was folded');
+});
+
+// arms on 8699f11d (g12-spectator): stock Gemma 12B called spawn_agent with
+// "fact_checker" three times, got a schema error each time and gave up.
+test('a worker named with an underscore, capitals or spaces is the worker', async (t) => {
+	for (const agent of ['fact_checker', 'Fact-Checker', 'fact checker']) {
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'fact-checker')) return { text: `Checked as ${agent}.` };
+			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent, task: 'Check the findings.' } }] } : { text: 'Done.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = join(space.casesRoot, 'case-a');
+		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+		await unlink(join(caseDir, 'data', 'fact-check.json'));
+		const chat = launch(t, baseEnv(space, fake.baseURL));
+		await settledPrompt(chat, 'Continue.');
+		chat.process.stdin.end();
+		await chat.exited;
+		const result = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker')).at(-1)!).join('\n');
+		assert.match(result, new RegExp(`Checked as ${agent}\\.`), `${agent}: ${result.slice(0, 300)}`);
+	}
+});
+
+// arms on 8699f11d (ds-spectator seq 96): the one evidence-correction fact-checker,
+// spawned with 16 of 22 findings still without a claim, had no checklist, made
+// 250 calls without writing, and the case blocked on the spent repair.
+test('a fact-checker spawned while findings have no claim gets the next ones, and its result calls them unfinished work', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Corrected the evidence.' };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'MODE: EVIDENCE CORRECTION\nFix the evidence the validator named.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	const factCheck = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8')) as { claims: Array<{ finding_id: string }> };
+	const findings = JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')) as { findings: Array<{ id: string }> };
+	factCheck.claims = [];
+	await writeFile(join(caseDir, 'data', 'fact-check.json'), JSON.stringify(factCheck, null, 2));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const task = userText(fake.requests.find((request) => isWorkerRequest(request, 'fact-checker'))!);
+	assert.match(task, /The findings in this batch:\n[\s\S]*\n- F1: /);
+	const result = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker')).at(-1)!).join('\n');
+	assert.match(result, new RegExp(`\\[${findings.findings.length} of ${findings.findings.length} findings have no claim yet\\. That is unfinished work, not an evidence error`));
+});
+
+
+
+// #274 (arm1 ds-spectator at 54c0ee60: the fact-checker spent its calls on
+// bookkeeping): a fact-check write may cite a line by its exact text and file;
+// the harness records it as the fact-checker's passage and cites it.
+test('a fact-check claim that cites a quote and its file gets the passage recorded and cited by the harness', async (t) => {
+	const claim = { finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: 'verified', confidence: 'high', evidence_for: [{ quote: 'Acme paid Doe.', source_ref: { path: 'research/filing.txt', line_start: 2, line_end: 2 }, evidence_bundle_id: 'E1' }], evidence_against: [], grounding_assessment: { support_type: 'direct', claim_elements_checked: ['payment'], missing_assumptions: [], confidence_cap: 'high', assessment: 'The filing states it.' } };
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) {
+			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', project: 'p', claims: [claim] }) } }] } : { text: 'Checked.' };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	await unlink(join(caseDir, 'data', 'fact-check.json'));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const written = toolResults(fake.requests.find((request) => isWorkerRequest(request, 'fact-checker') && toolResults(request).length === 1)!)[0];
+	assert.match(written, /^wrote data\/fact-check\.json/, written);
+	const expressions = JSON.parse(await readFile(join(caseDir, 'data', 'source-expressions.json'), 'utf8')) as { expressions: Array<Record<string, unknown>> };
+	const recorded = expressions.expressions.find((expression) => expression.id === 'FC-Q1');
+	assert.ok(recorded, 'the quote was recorded as a passage');
+	assert.equal(recorded.created_by, 'fact-checker');
+	assert.deepEqual((recorded.finding_links as Array<{ finding_id: string; relation: string }>).map((link) => [link.finding_id, link.relation]), [['F1', 'supports']]);
+	const factCheck = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8')) as { claims: Array<{ evidence_for: Array<{ source_expression_refs: unknown[] }> }> };
+	assert.match(JSON.stringify(factCheck.claims[0].evidence_for[0].source_expression_refs), /FC-Q1/);
+});
+
+// arm2 ds-spectator on ce4f010e (calls 28, 43, 47): a quote from the
+// fact-checker's own fetch was refused because no evidence item listed the file.
+test('a quote from a file the fact-checker fetched gets its evidence item added by the harness, and the passage cites it', async (t) => {
+	const claim = { finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: 'verified', confidence: 'high', evidence_for: [{ quote: 'Acme paid Doe in full.', source_ref: { path: 'research/fc-own.md', line_start: 2, line_end: 2 } }], evidence_against: [], grounding_assessment: { support_type: 'direct', claim_elements_checked: ['payment'], missing_assumptions: [], confidence_cap: 'high', assessment: 'The page states it.' } };
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) {
+			const done = toolResults(request).length;
+			if (done === 0) return { toolCalls: [{ name: 'fetch', arguments: { url: 'https://registry.example.org/acme', save_as: 'fc-own.md' } }] };
+			// A fetched file rewritten afterwards is not evidence of that URL.
+			if (done === 1) return { toolCalls: [{ name: 'fetch', arguments: { url: 'https://registry.example.org/acme', save_as: 'fc-two.md' } }] };
+			if (done === 2) return { toolCalls: [{ name: 'write_file', arguments: { path: 'research/fc-two.md', content: 'Registry record\nAcme paid Doe twice.\n' } }] };
+			if (done === 3) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', project: 'p', claims: [{ ...claim, evidence_for: [{ quote: 'Acme paid Doe twice.', source_ref: { path: 'research/fc-two.md', line_start: 2, line_end: 2 } }] }] }) } }] };
+			if (done === 4) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', project: 'p', claims: [claim] }) } }] };
+			return { text: 'Checked.' };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	await unlink(join(caseDir, 'data', 'fact-check.json'));
+	const python = join(space.root, 'python-fetch');
+	const envelope = JSON.stringify({ markdown: 'Registry record\nAcme paid Doe in full.\n', source_url: 'https://registry.example.org/acme', provider: 'crawl4ai', status_code: 200 });
+	await writeFile(
+		python,
+		`#!${process.execPath}\nconst { execFileSync } = require('node:child_process');\nconst args = process.argv.slice(2);\nif (args.includes('integrations.scraping')) process.stdout.write(${JSON.stringify(envelope)});\nelse { try { process.stdout.write(execFileSync(${JSON.stringify(process.env.SPOTLIGHT_PYTHON ?? 'python3')}, args, { stdio: ['inherit', 'pipe', 'inherit'] })); } catch (error) { process.stdout.write(error.stdout ?? ''); process.exitCode = error.status ?? 1; } }\n`,
+		{ mode: 0o755 },
+	);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_PYTHON: python, SPOTLIGHT_ANONYMIZE_FETCH: 'true' });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const results = toolResults(fake.requests.find((request) => isWorkerRequest(request, 'fact-checker') && toolResults(request).length === 5)!);
+	assert.match(results[2], /^wrote research\/fc-two\.md/, results[2]);
+	assert.match(results[3], /^refused: data\/fact-check\.json is unchanged/, results[3]);
+	const written = results[4];
+	assert.match(written, /^wrote data\/fact-check\.json/, written);
+	const bundle = JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')) as { items: Array<Record<string, unknown>> };
+	const item = bundle.items.find((entry) => entry.raw_path === 'research/fc-own.md');
+	assert.ok(item, 'the harness added an item for the fetched file');
+	assert.equal(item.created_by, 'fact-checker');
+	assert.equal(item.source_url, 'https://registry.example.org/acme');
+	const expressions = JSON.parse(await readFile(join(caseDir, 'data', 'source-expressions.json'), 'utf8')) as { expressions: Array<Record<string, unknown>> };
+	assert.equal(expressions.expressions.find((expression) => expression.id === 'FC-Q1')?.original_evidence_bundle_id, item.id);
+	assert.equal(bundle.items.some((entry) => entry.raw_path === 'research/fc-two.md'), false, 'no item for a file changed since its fetch');
+});
+
+// arm2 ds-spectator on ce4f010e (call 51 on): after the write that completed
+// its batch the fact-checker rewrote the claims and read for 32 more calls.
+test('a batch fact-checker ends once its batch has claims, and one that never writes is ended at the batch budget', async (t) => {
+	for (const writes of [true, false]) {
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'fact-checker')) {
+				const done = toolResults(request).length;
+				if (writes && done === 0) {
+					const claim = { finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [] };
+					return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', project: 'p', claims: [claim] }) } }] };
+				}
+				return { toolCalls: [{ name: 'list_files', arguments: { pattern: `research/none-${done}-*` } }] };
+			}
+			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = join(space.casesRoot, 'case-a');
+		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+		await unlink(join(caseDir, 'data', 'fact-check.json'));
+		const chat = launch(t, baseEnv(space, fake.baseURL));
+
+		await settledPrompt(chat, 'Continue.');
+
+		const worker = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker'));
+		const result = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker')).at(-1)!).join('\n');
+		if (writes) {
+			assert.equal(worker.length, 2, 'no request after the write that completed the batch was answered with more work');
+			assert.match(result, new RegExp(FC_BATCH_DONE.replace('.', '\\.')));
+		} else {
+			assert.ok(worker.every((request) => toolResults(request).length <= FC_BATCH_STOP), `a batch stops by ${FC_BATCH_STOP} calls`);
+			assert.match(toolResults(worker.find((request) => toolResults(request).length === FC_BATCH_DUE)!).at(-1)!, new RegExp(`${FC_BATCH_NOTICE.slice(0, 40).replace(/[.*+?^${}()|[\]\\']/g, '\\$&')}`));
+			assert.match(result, /made the batch's calls without writing all its claims/);
+		}
+	}
 });

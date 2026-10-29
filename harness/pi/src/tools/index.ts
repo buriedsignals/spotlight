@@ -10,11 +10,12 @@ import { httpGetTool } from './http-get.ts';
 import { osintToolsTool } from './osint-tools.ts';
 import { programTools } from './programs.ts';
 import { queryVaultTool } from './query-vault.ts';
+import { withQuoteResolution } from './quotes.ts';
 import type { ToolContext } from './run.ts';
 import { searchTool } from './search.ts';
 
 export function typedTools(context: ToolContext): ToolDefinition[] {
-	return [
+	return withQuoteResolution([
 		...caseFileTools(context),
 		fetchTool(context),
 		searchTool(context),
@@ -23,5 +24,5 @@ export function typedTools(context: ToolContext): ToolDefinition[] {
 		queryVaultTool(context),
 		osintToolsTool(context),
 		...programTools(context),
-	];
+	], context);
 }

@@ -140,7 +140,8 @@ def _bundle_hash(case: Path, bundle: dict[str, Any], bundle_id: str, anchor_path
                 return item["sha256"]
             raise WriteError(f"evidence bundle item {bundle_id!r} has no sha256 for its original artifact, and the passage "
                              "is not in that item's own file under research/; record the item's sha256 in data/evidence-bundle.json")
-    raise WriteError(f"evidence bundle item {bundle_id!r} does not exist")
+    raise WriteError(f"evidence bundle item {bundle_id!r} does not exist in data/evidence-bundle.json yet. "
+                     "Write the evidence item first, then record its passages.")
 
 
 def _bundle_item(bundle: dict[str, Any], bundle_id: Any) -> dict[str, Any] | None:
@@ -241,6 +242,16 @@ def _matches(case: Path, text: str, paths: list[str]) -> list[tuple[str, int, in
     return []
 
 
+def _free_id(taken_id: str, by_id: dict[str, Any]) -> str:
+    """The next unused id in `taken_id`'s numbering (FC-P1 -> FC-P4 when up to
+    FC-P3 is taken); an id with no trailing number gets "-2", "-3"."""
+    match = re.match(r"^(.*?)(\d+)$", taken_id)
+    prefix, number = (match.group(1), int(match.group(2))) if match else (f"{taken_id}-", 2)
+    while f"{prefix}{number}" in by_id or f"{prefix}{number}" == taken_id:
+        number += 1
+    return f"{prefix}{number}"
+
+
 def _owned_files(bundle: dict[str, Any], readable: set[str] | None) -> dict[str, list[str]]:
     """Each bundle-owned text file (that this role may read) and the items owning it."""
     owners: dict[str, list[str]] = {}
@@ -296,14 +307,17 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
     owners = _owned_files(bundle, None)
 
     def cite(path: str) -> bool:
-        """Cite the evidence item that owns `path`: the named one, else its one
-        owner. False when no single item owns it."""
+        """Cite the evidence item that owns `path`: the named one, else the
+        first that lists it (u3 p1 eu-ai-act: three items listed one page, and
+        a quote anchored there was refused). False when no item owns it."""
         if path in _item_files(item):
             return True
-        if len(owners.get(path, [])) != 1:
+        ids = owners.get(path, [])
+        if not ids:
             return False
-        proposal["original_evidence_bundle_id"] = owners[path][0]
-        notes.append(f"expression {label}: the text is in {path}, so it cites evidence item {owners[path][0]}")
+        proposal["original_evidence_bundle_id"] = ids[0]
+        also = f" (also listed by {', '.join(ids[1:])})" if len(ids) > 1 else ""
+        notes.append(f"expression {label}: the text is in {path}, so it cites evidence item {ids[0]}{also}")
         return True
 
     if reproduces and cite(anchor["path"]):
@@ -313,23 +327,30 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
         # own files), else in the one evidence file that holds it.
         named = [anchor["path"]] if anchor else [path for path in _item_files(item) if readable is None or path in readable]
         found = _matches(case, proposal["text"], named)
-        # rc3 john-lewis (52bf6183): the quote was in the named file, but no
-        # evidence item listed that file, and the refusal said the text was
-        # not in it.
-        unlisted = [path for path, _start, _end in found if not owners.get(path)]
+        searchable = [path for path in owners if readable is None or path in readable]
+        # The named file decides the place. rc3 john-lewis (52bf6183) and
+        # incr-test2 sp98: a quote in a file no evidence item lists was refused
+        # as "not in" it, or sent to other files the model never named.
+        unlisted = sorted({path for path, _start, _end in found if not owners.get(path)})
+        if found and len(unlisted) == len({path for path, _start, _end in found}):
+            elsewhere = sorted({path for path, _start, _end in _matches(case, proposal["text"], searchable)})
+            alternative = (f" Or anchor it to {', '.join(elsewhere[:3])}, which data/evidence-bundle.json lists and which "
+                           f"{'hold' if len(elsewhere) > 1 else 'holds'} the same text." if elsewhere else "")
+            named_id = proposal.get("original_evidence_bundle_id")
+            missing = f" ({named_id} is not in it yet)" if isinstance(named_id, str) and not item else ""
+            raise WriteError(f"expression {label}: the text is in {unlisted[0]}, but no item in data/evidence-bundle.json lists that file, "
+                             f"so it cannot be cited yet. Add the evidence item for {unlisted[0]} to data/evidence-bundle.json{missing}, "
+                             f"then record the passage again.{alternative}")
         if len(found) == 1 and not cite(found[0][0]):
             found = []
         if not found:
-            searchable = [path for path in owners if readable is None or path in readable]
             found = _matches(case, proposal["text"], searchable)
-            if len(found) == 1 and not cite(found[0][0]):
-                raise WriteError(f"expression {label}: {found[0][0]} belongs to evidence items {', '.join(owners[found[0][0]])}; "
-                                 "name the one you mean in original_evidence_bundle_id")
-        if not found and unlisted:
-            raise WriteError(f"expression {label}: the text is in {unlisted[0]}, but no item in data/evidence-bundle.json lists that file, "
-                             f"so it cannot be cited yet. Add the evidence item for {unlisted[0]} to data/evidence-bundle.json, then record the passage again.")
+            if len(found) == 1:
+                cite(found[0][0])
         if not found:
-            searched = ", ".join(named) or "no file named"
+            # Replay check on 8699f11d: with no file named this read "the text
+            # is not in no file named".
+            searched = ", ".join(named) if named else "the anchor_ref you gave (none was named)"
             raise WriteError(f"expression {label}: the text is not in {searched} nor in any other file of data/evidence-bundle.json, "
                              f"so it is not from a source you acquired. {ESCAPE}"
                              + _closest_lines(case, proposal["text"], named or [path for path in owners if readable is None or path in readable]))
@@ -341,11 +362,22 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
             if len({"\n".join(lines[start - 1:end]) for _path, start, end in found}) == 1:
                 notes.append(f"expression {label}: the text is on {len(found)} identical lines of {found[0][0]}; anchored the first")
                 found = found[:1]
+            elif anchor and found[0][0] == anchor["path"]:
+                # arm2 ds-spectator on ce4f010e: a quote found twice in the one
+                # file it was anchored to was refused; the passage is the same
+                # exact text at either place, so the first is anchored.
+                notes.append(f"expression {label}: the text is in {found[0][0]} at {len(found)} places; anchored the first "
+                             f"(lines {found[0][1]}-{found[0][2]}); give line_start and line_end to anchor another")
+                found = found[:1]
         if len(found) > 1:
             ranges = ", ".join(f"{path} lines {start}-{end}" for path, start, end in found[:8])
             raise WriteError(f"expression {label}: the text appears in {len(found)} places ({ranges}); quote a longer span that is unique, "
                              "or give anchor_ref with the path, line_start and line_end you mean")
         path, start, end = found[0]
+        # A text found at several places of one file (above) cites the item
+        # that lists that file, as a single match does.
+        if not proposal.get("original_evidence_bundle_id"):
+            cite(path)
         anchor = {"path": path, "line_start": start, "line_end": end}
         stored = "\n".join(source_lines((case / path).resolve())[start - 1:end])
         note = f"expression {label}: anchored at {path} lines {start}-{end}"
@@ -417,7 +449,10 @@ def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], 
             target = built
         else:
             if existing.get("expression_fingerprint") != built["expression_fingerprint"]:
-                raise WriteError(f"expression {raw['id']!r} already exists with a different passage; "
+                # fc-stall scan: 45 refusals in 18 runs, mostly a new passage
+                # given an id already taken; name a free one.
+                raise WriteError(f"expression {raw['id']!r} already exists with a different passage. For a new passage, "
+                                 f"give it a free id such as {_free_id(raw['id'], by_id)!r}. To change {raw['id']!r}, "
                                  "propose the changed passage under a new id and supersede the old one with "
                                  f"{LIFECYCLE_EXAMPLE}")
             target = existing
@@ -427,7 +462,10 @@ def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], 
         for link in links:
             finding_id, relation = link.get("finding_id"), link.get("relation")
             if finding_id not in findings:
-                raise WriteError(f"expression {raw['id']!r}: finding {finding_id!r} does not exist")
+                # fc-stall scan: investigators recorded passages before writing
+                # the finding they link to.
+                raise WriteError(f"expression {raw['id']!r}: finding {finding_id!r} does not exist in data/findings.json yet. "
+                                 "Write the finding first, then record its passages; the passage file is unchanged.")
             if relation not in ("supports", "contradicts", "context"):
                 raise WriteError(f"expression {raw['id']!r}: relation must be supports, contradicts or context")
             built_link = _link(target, findings[finding_id], finding_id, relation)
@@ -435,7 +473,8 @@ def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], 
             if existing_link is None:
                 target["finding_links"].append(built_link)
             elif existing_link.get("relation") != relation:
-                raise WriteError(f"expression {raw['id']!r} already links {finding_id!r} as {existing_link.get('relation')}")
+                raise WriteError(f"expression {raw['id']!r} already links {finding_id!r} as {existing_link.get('relation')}; "
+                                 "keep that link, or record the passage with the other relation under a new id")
             elif existing_link.get("link_fingerprint") != built_link["link_fingerprint"]:
                 raise WriteError(f"expression {raw['id']!r}: the link to {finding_id!r} is stale because the claim changed; run --fingerprint-findings")
     lifecycle = proposal.get("lifecycle", [])
@@ -473,7 +512,7 @@ def merge_positions(current: dict[str, Any] | None, proposal: dict[str, Any], pr
         if unknown:
             raise WriteError(f"position {raw.get('id')!r}: unknown fields {sorted(unknown)}")
         if not isinstance(raw.get("id"), str) or not raw["id"]:
-            raise WriteError("every proposed position needs a non-empty id")
+            raise WriteError("every proposed position needs a non-empty id; give each one an id such as \"SP1\"")
         ids = raw.get("source_expression_ids")
         if not isinstance(ids, list) or not ids or not all(isinstance(i, str) and i for i in ids):
             raise WriteError(f"position {raw['id']!r}: source_expression_ids must be a non-empty list of ids")
@@ -679,7 +718,7 @@ def fingerprint_findings(case: Path) -> int:
     with transaction(case) as descriptor:
         findings_doc = _load(case / "data" / "findings.json")
         if not isinstance(findings_doc, dict) or not isinstance(findings_doc.get("findings"), list):
-            raise WriteError("data/findings.json has no findings to fingerprint")
+            raise WriteError("data/findings.json has no findings to fingerprint; write the findings first, then fingerprint them")
         expressions = _load(case / TARGET)
         changed, relinked = _refingerprint(findings_doc, expressions)
         # Rewrite a file only when it changed, so an idle run never moves its hash.

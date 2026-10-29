@@ -118,7 +118,9 @@ A case whose approved methodology has a `research_plan` goes through Research be
 
 A small local model degrades as its context grows: the conversation alone (reasoning, delegations, tool results) can stall it after a single gate. The case's state lives in the case folder and the resolver, not in the transcript, so on the local tiers the harness folds the conversation into a checkpoint once it passes the tier's fold point.
 
-| Tier | Fold point (tokens) | Kept verbatim (tokens) |
+A local tier folds where one more turn still fits its window: the context window minus the output cap (`max(8192, window / 4)`), one full 30,000-character read turn (13,044 tokens at about 2.3 characters a token) and a 4,096-token margin, but never below the tier's point in the table. At 40,960 that is the table's point; at 98,304 it is 56,588.
+
+| Tier | Fold point floor (tokens) | Kept verbatim (tokens) |
 |---|---|---|
 | `12b` | 20480 | 4000 |
 | `26b` | 24576 | 6000 |

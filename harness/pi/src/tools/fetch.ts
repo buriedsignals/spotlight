@@ -25,8 +25,8 @@
 // `save_as`.raw the page itself; the agent gets the leads, never the page.
 // Without an RLM endpoint fetch returns the page as it always did.
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, dirname, resolve } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { engineEnv } from '../case-search.ts';
@@ -70,6 +70,28 @@ export function rlmModel(env: ToolContext['env']): string {
 	return env.SPOTLIGHT_RLM_OPENAI_MODEL?.trim() || (JSON.parse(readFileSync(LEAD_REQUEST, 'utf8')) as LeadRequest).default_model;
 }
 
+// The RLM's context per request, in tokens: SPOTLIGHT_RLM_CONTEXT, else the
+// n_ctx a llama.cpp server reports at /props (per slot), else unknown. arms
+// on 8699f11d: the e4b served 24,576 per slot while a 98k-window fold sent
+// about 57k, and every checkpoint request got HTTP 400.
+let knownContext: Promise<number | undefined> | undefined;
+export function rlmContext(env: ToolContext['env'], baseURL: string): Promise<number | undefined> {
+	const set = Number(env.SPOTLIGHT_RLM_CONTEXT);
+	if (Number.isInteger(set) && set > 0) return Promise.resolve(set);
+	knownContext ??= (async () => {
+		try {
+			const response = await fetch(new URL('/props', baseURL), { signal: AbortSignal.timeout(5_000) });
+			if (!response.ok) return undefined;
+			const props = (await response.json()) as { n_ctx?: unknown; default_generation_settings?: { n_ctx?: unknown } };
+			const n = props.default_generation_settings?.n_ctx ?? props.n_ctx;
+			return typeof n === 'number' && n > 0 ? n : undefined;
+		} catch {
+			return undefined;
+		}
+	})();
+	return knownContext;
+}
+
 // One chat completion from the RLM; its answer text, trimmed.
 export async function rlmComplete(baseURL: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
 	const url = baseURL.endsWith('/v1') ? `${baseURL}/chat/completions` : `${baseURL}/v1/chat/completions`;
@@ -106,6 +128,93 @@ const sha256 = (text: string) => createHash('sha256').update(Buffer.from(text, '
 
 type ScrapeResult = { markdown?: string; source_url?: string; provider?: string; status_code?: number | null; title?: string | null; content_sha256?: string };
 
+// fc-stall scan: a failed fetch came back as crawl4ai's whole log, a
+// deprecation warning first and the cause last (195 hits), and the same
+// blocked page was fetched again and again (one Reuters URL 43 times). The
+// cause comes first and short, and a URL that failed in this case is not
+// fetched again: once if a site blocked it, twice otherwise.
+export function fetchFailure(detail: string): string {
+	const lines = detail.split('\n').map((line) => line.trim()).filter((line) => line && !/Warning\b|warnings\.warn\(|^\[(?:FETCH|SCRAPE|COMPLETE|INIT)\]/.test(line));
+	const cause = lines.find((line) => line.startsWith('scrape failed:')) ?? lines.find((line) => line.startsWith('[ERROR]')) ?? lines.at(-1) ?? 'no output';
+	return cause.replace(/^scrape failed:\s*/, '').slice(0, 400);
+}
+
+const blocked = (cause: string) => /bot-blocked|anti-bot|captcha|\b403\b|access denied/i.test(cause);
+type Failures = Record<string, { count: number; cause: string }>;
+
+// One file per case, so two cases' workers never write the same file.
+function failuresPath(context: ToolContext): string | undefined {
+	const dataDir = context.env?.SPOTLIGHT_HARNESS_DATA;
+	return dataDir ? resolve(dataDir, 'work', 'fetch-failures', `${createHash('sha256').update(context.caseDir).digest('hex').slice(0, 16)}.json`) : undefined;
+}
+
+function readFailures(path: string | undefined): Failures {
+	if (!path) return {};
+	try {
+		return JSON.parse(readFileSync(path, 'utf8')) as Failures;
+	} catch {
+		return {};
+	}
+}
+
+export function priorFailure(context: ToolContext, url: string): string | undefined {
+	const seen = readFailures(failuresPath(context))[url];
+	if (!seen || (seen.count < 2 && !blocked(seen.cause))) return undefined;
+	return `fetch: ${url} already failed in this case (${seen.cause}); it is not fetched again. Try its archived copy (https://web.archive.org/web/${url}) with fetch, open it with browse, or use another source.`;
+}
+
+function recordFailure(context: ToolContext, url: string, cause: string): void {
+	const path = failuresPath(context);
+	if (!path) return;
+	const all = readFailures(path);
+	all[url] = { count: (all[url]?.count ?? 0) + 1, cause };
+	try {
+		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+		writeFileSync(path, JSON.stringify(all), { mode: 0o600 });
+	} catch {
+		// A failure that cannot be recorded only means the next fetch is tried.
+	}
+}
+
+// What a fetch saved, kept per case in harness data, so the harness can
+// record a fetched file as an evidence item when a quote is cited from it
+// (arm2 ds-spectator on ce4f010e: a fact-checker's quote from its own fetch was
+// refused three times because no item listed the file, and the fact-checker
+// has no tool to add one).
+// sha256 is the saved text's hash: a file changed after the fetch is not that
+// fetch any more (Codex review of #274b).
+export type Fetched = { url: string; accessed: string; provider?: string; sha256: string };
+function fetchedPath(context: ToolContext): string | undefined {
+	const dataDir = context.env?.SPOTLIGHT_HARNESS_DATA;
+	return dataDir ? resolve(dataDir, 'work', 'fetched', `${createHash('sha256').update(context.caseDir).digest('hex').slice(0, 16)}.json`) : undefined;
+}
+function recordFetched(context: ToolContext, paths: string[], entry: Fetched): void {
+	const path = fetchedPath(context);
+	if (!path) return;
+	let all: Record<string, Fetched> = {};
+	try {
+		all = JSON.parse(readFileSync(path, 'utf8')) as Record<string, Fetched>;
+	} catch {
+		all = {};
+	}
+	for (const saved of paths) all[saved] = entry;
+	try {
+		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+		writeFileSync(path, JSON.stringify(all), { mode: 0o600 });
+	} catch {
+		// Without the record the file is cited as before: its item added by hand.
+	}
+}
+export function fetchedFile(context: ToolContext, relative: string): Fetched | undefined {
+	const path = fetchedPath(context);
+	if (!path) return undefined;
+	try {
+		return (JSON.parse(readFileSync(path, 'utf8')) as Record<string, Fetched>)[relative];
+	} catch {
+		return undefined;
+	}
+}
+
 export function fetchTool(context: ToolContext): ToolDefinition {
 	return {
 		name: 'fetch',
@@ -122,6 +231,8 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			}
 			const rlm = rlmEndpoint(context.env);
 			if (rlm && !input.save_as) throw new Error('fetch: on this tier fetch needs save_as, so the raw page is kept beside its leads.');
+			const prior = priorFailure(context, input.url);
+			if (prior) throw new Error(prior);
 			const viaTor = anonymizedFetch(context.env);
 			const destination = viaTor ? checkURL(input.url).href : await publicDestination(input.url, signal);
 			// Outside Tor mode every connection the seam's browser makes goes through
@@ -130,16 +241,19 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			const proxy = viaTor ? undefined : await startEgressProxy();
 			let output: string;
 			try {
-				output = programOutput(
-					'fetch',
-					await runPython(context, ['-m', 'integrations.scraping', '--json', ...(viaTor ? ['--tor'] : []), '--', destination], {
-						// Engine's bsig checks the URL for protected sources in the install's wiki.
-						keys: [...SEAM_ENV, ...engineEnv(context.env)],
-						extra: { SPOTLIGHT_CONFIG: context.configPath, ...(proxy ? { SPOTLIGHT_BROWSER_PROXY: proxy.url } : {}) },
-						signal,
-						timeoutMs: 180_000,
-					}),
-				);
+				const run = await runPython(context, ['-m', 'integrations.scraping', '--json', ...(viaTor ? ['--tor'] : []), '--', destination], {
+					// Engine's bsig checks the URL for protected sources in the install's wiki.
+					keys: [...SEAM_ENV, ...engineEnv(context.env)],
+					extra: { SPOTLIGHT_CONFIG: context.configPath, ...(proxy ? { SPOTLIGHT_BROWSER_PROXY: proxy.url } : {}) },
+					signal,
+					timeoutMs: 180_000,
+				});
+				if (run.code !== 0) {
+					const cause = fetchFailure(run.stderr.trim() || run.stdout.trim());
+					recordFailure(context, input.url, cause);
+					throw new Error(`fetch failed: ${cause}`);
+				}
+				output = programOutput('fetch', run);
 			} finally {
 				await proxy?.close();
 			}
@@ -163,6 +277,7 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			};
 			if (!rlm) {
 				const saved = input.save_as ? writeConfined(context.caseDir, context.writeRoot, saveTarget(context, input.save_as), markdown) : undefined;
+				if (saved) recordFetched(context, [saved], { url: page.final_url, accessed: page.fetched_at, provider: page.provider, sha256: sha256(markdown) });
 				return jsonResult({
 					...page,
 					distilled: false,
@@ -174,6 +289,7 @@ export function fetchTool(context: ToolContext): ToolDefinition {
 			}
 			const leadPath = saveTarget(context, input.save_as as string);
 			const rawPath = writeConfined(context.caseDir, context.writeRoot, `${leadPath}.raw`, markdown);
+			recordFetched(context, [rawPath], { url: page.final_url, accessed: page.fetched_at, provider: page.provider, sha256: sha256(markdown) });
 			let leads: string;
 			try {
 				leads = await distill(rlm, context.env, markdown, signal);

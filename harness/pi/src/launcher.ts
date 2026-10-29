@@ -36,7 +36,7 @@ import { piArguments, piCliPath, writePiSettings } from './pi-process.ts';
 import { runResearchRound } from './lanes.ts';
 import type { ResearchPlan, RoundSummary } from './lanes.ts';
 import { discardIncompleteLanes } from './resume.ts';
-import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, deliverableFor, isolationRefusal, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, batchDeliverable, deliverableFor, factCheckChecklist, isolationRefusal, nextCheckBatch, readCheckDocs, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
 import type { Composition, Deliverable, WorkerContext } from './roles.ts';
 import { approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { BRIEF_PENDING_REFUSAL, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL, WorkerQueue, runWorker } from './subagents.ts';
@@ -47,6 +47,8 @@ import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, Sp
 import { bindActiveCase, nextAction, pythonAdapter, runsResearchRound } from './tools/spotlight.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
 import { PLANNING_PHASES, validateAfterWorker } from './validators.ts';
+import { recheckSources as recheck } from './recheck.ts';
+import type { Recheck } from './roles.ts';
 
 const STDIN_CLOSE_GRACE_MS = 15_000;
 const KILL_GRACE_MS = 5_000;
@@ -280,13 +282,14 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 				return queue.run(async () => {
 					await activateNewCase(harness, request.agent, controller.signal);
 					owed = await deliverable(harness, request.agent, request.task);
-					const run = async (task: string, due: Deliverable | undefined, direction?: { tag: string; budget: number }) => {
+					const run = async (task: string, due: Deliverable | undefined, direction?: { tag: string; budget: number }, extra: Record<string, string> = {}) => {
 						const worker = await finalTask(harness, request.agent, task, controller.signal, due);
 						const kept = keepPassages(harness, request.agent, worker.passages);
 						const fold = {
 							SPOTLIGHT_TASK_HEADER: worker.header,
 							...(worker.start ? { SPOTLIGHT_TASK_START: worker.start } : {}),
 							...(kept ? { SPOTLIGHT_TASK_PASSAGES: kept } : {}),
+							...extra,
 						};
 						return runWorker(
 							{
@@ -301,6 +304,9 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 							controller.signal,
 						);
 					};
+					if (request.agent === 'fact-checker' && nextCheckBatch(readCheckDocs(harness.active.caseDir)).left > 0) {
+						return factCheckBatches(harness, request.task, controller.signal, (task, due, ids) => run(task, due, undefined, { SPOTLIGHT_FC_BATCH: ids.join(',') }));
+					}
 					// On a local tier, an investigation task on a plan of two or
 					// more directions runs one worker per direction (directions.ts).
 					// The frontier tier's window holds every direction at once.
@@ -420,30 +426,30 @@ async function deliverable(harness: Harness, role: string, task: string): Promis
 
 // U3 census (84674fd9): fact-checkers rebuilt the file's structure by hand
 // and wrote fact-check.json late or never. A first fact-check task carries
-// its structure, one claim per finding with the verdict and evidence left to
-// the fact-checker. Only the task text carries it: a file the harness wrote
-// would read to the resolver as the fact-checker's own work.
-const FACT_CHECK_START_CHARS = 4000;
+// its checklist (roles.ts factCheckChecklist). Only the task text carries it:
+// a file the harness wrote would read to the resolver as the fact-checker's
+// own work.
 
+// arms on 8699f11d (ds-spectator seq 96): a fact-checker re-spawned with 16 of
+// 22 findings still without a claim had no checklist, made 250 calls without
+// writing, and the case blocked. Any fact-checker task, a correction too,
+// carries the next findings while some have no claim.
 function factCheckStart(caseDir: string): string {
-	if (existsSync(resolve(caseDir, 'data/fact-check.json'))) return '';
-	let findings: { schema_version?: unknown; project?: unknown; findings?: unknown };
 	try {
-		findings = JSON.parse(readFileSync(resolve(caseDir, 'data/findings.json'), 'utf8'));
+		const docs = readCheckDocs(caseDir);
+		if (existsSync(resolve(caseDir, 'data/fact-check.json')) && nextCheckBatch(docs).left === 0) return '';
+		return factCheckChecklist(docs);
 	} catch {
 		return '';
 	}
-	const rows = Array.isArray(findings.findings) ? findings.findings : [];
-	const claims = rows
-		.filter((row): row is { id: string; claim?: unknown } => typeof row?.id === 'string')
-		.map((row) => ({ finding_id: row.id, claim_text: typeof row.claim === 'string' ? row.claim : '', verdict: '', confidence: '', evidence_for: [], evidence_against: [] }));
-	if (claims.length === 0) return '';
-	const frame = (rows: object[]) => JSON.stringify({ ...(findings.schema_version === '1.1' ? { schema_version: '1.1' } : {}), project: findings.project, claims: rows }, null, 2);
-	// claim_text must equal the finding's claim (validate-fact-check.py), so it
-	// is never cut: past FACT_CHECK_START_CHARS the structure names findings only.
-	const full = frame(claims);
-	const structure = full.length <= FACT_CHECK_START_CHARS ? full : frame(claims.map(({ claim_text: _claim, ...rest }) => rest));
-	return `Start from this structure: one claim per finding, with the verdict, confidence and evidence yours to fill in.\n${structure}`;
+}
+
+// Findings with no claim after a fact-checker run are its unfinished work, not
+// an evidence error: the next step is a fact-checker that continues.
+export function unfinishedNote(caseDir: string): string {
+	const { left, total } = nextCheckBatch(readCheckDocs(caseDir));
+	if (left === 0 || !existsSync(resolve(caseDir, 'data/fact-check.json'))) return '';
+	return `\n[${left} of ${total} findings have no claim yet. That is unfinished work, not an evidence error: spawn the fact-checker again with a task to continue; it gets the next findings to check.]`;
 }
 
 // A worker that ended without an answer: when a file it had to write is still
@@ -463,6 +469,53 @@ function withRespawn(harness: Harness, role: string, message: string, owed: Deli
 // What a worker gets, and what comes back after a fold (checkpoint.ts): the
 // task's own lines without the case or wiki passages, the deliverable's
 // structure apart, and the passages, which the launcher keeps in a case file.
+// #274 (arm1 ds-spectator at 54c0ee60: 313 fact-checker calls for 12 of 22
+// claims in one long folded thread): the fact-check runs as fresh, short
+// fact-checkers, one per batch of FC_BATCH findings without a claim, each with
+// the batch's packet. The loop ends when every finding has a claim, or after
+// two batches in a row that add none.
+const FC_BATCH = 3;
+async function factCheckBatches(harness: Harness, task: string, signal: AbortSignal, run: (task: string, due: Deliverable, ids: string[]) => Promise<string>): Promise<string> {
+	const caseDir = harness.active.caseDir;
+	const answers: string[] = [];
+	let idle = 0;
+	for (let left = nextCheckBatch(readCheckDocs(caseDir)).left; left > 0 && idle < 2 && !signal.aborted; ) {
+		const docs = readCheckDocs(caseDir);
+		const ids = nextCheckBatch(docs, FC_BATCH).batch.map((item) => item.id);
+		const recheck = await recheckSources(harness, docs, ids, signal);
+		const due = batchDeliverable(caseDir, docs, ids, recheck);
+		harness.log(`fact-checker: batch ${ids.join(', ')} (${left} findings without a claim)`);
+		let answer: string;
+		try {
+			answer = await run(task, due, ids);
+		} catch (error) {
+			if (signal.aborted) throw error;
+			answer = (error as Error).message;
+		}
+		const now = nextCheckBatch(readCheckDocs(caseDir)).left;
+		idle = now < left ? 0 : idle + 1;
+		left = now;
+		answers.push(`Batch ${ids.join(', ')}: ${answer}`);
+	}
+	const { left, total } = nextCheckBatch(readCheckDocs(caseDir));
+	answers.push(left === 0 ? `Every finding has a claim (${total} of ${total}).` : `${total - left} of ${total} findings have a claim; two batches in a row added none, so the fact-check stopped here.`);
+	return answers.join('\n\n');
+}
+
+// The cited sources' re-check for a batch, made with the fact-checker's own
+// process environment (its egress posture, Tor and RLM settings).
+function recheckSources(harness: Harness, docs: ReturnType<typeof readCheckDocs>, ids: string[], signal: AbortSignal): Promise<Recheck> {
+	const env = childEnv(harness.config, harness.composition, 'fact-checker', process.env);
+	const caseDir = harness.active.caseDir;
+	return recheck(docs, ids, {
+		context: { caseDir, writeRoot: caseDir, python: harness.config.python, configPath: harness.config.spotlightConfig, env },
+		dataDir: harness.config.dataDir,
+		// SPOTLIGHT_RECHECK=off turns the re-check off (tests, which reach no network).
+		sensitive: harness.config.sensitive || process.env.SPOTLIGHT_RECHECK === 'off',
+		signal,
+	});
+}
+
 type WorkerTask = { text: string; header: string; start?: string; passages?: string };
 
 async function finalTask(harness: Harness, role: string, task: string, signal: AbortSignal, owed?: Deliverable): Promise<WorkerTask> {
@@ -475,6 +528,7 @@ async function finalTask(harness: Harness, role: string, task: string, signal: A
 		env: process.env,
 		log: harness.log,
 		signal,
+		findings: owed?.packet,
 	});
 	const withPassages = await withWikiPassages(role, withCase, {
 		caseDir: harness.active.caseDir,
@@ -657,7 +711,8 @@ async function withValidation(harness: Harness, role: string, text: string): Pro
 		return `${text}\n\n[Harness checks after the analyst finished: ${BATCH_BLOCKED} ${harness.batchBlocked}]`;
 	}
 	const verdict = outcome.passed ? 'all passed' : 'FAILED: send the worker the correction the phase skill describes';
-	return `${text}\n\n[Harness checks after the ${role} finished: ${verdict}]\n${outcome.report}`;
+	const unfinished = role === 'fact-checker' ? unfinishedNote(active.caseDir) : '';
+	return `${text}\n\n[Harness checks after the ${role} finished: ${verdict}]\n${outcome.report}${unfinished}`;
 }
 
 function terminate(harness: Harness): void {
