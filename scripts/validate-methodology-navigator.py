@@ -177,6 +177,16 @@ def validate_not_required(methodology: dict[str, Any]) -> list[str]:
     return []
 
 
+# The one reference a method takes on a tier, as the error names it. r5 norway
+# on 704dcc78: "reference does not match method" named no value, and the
+# investigator guessed paths ("references/indicator-triage.md", ...) through 45
+# corrections; the 12B base arm repeated the same error 15 times.
+def expected_reference(method: str, model_tier: str) -> str:
+    if method == "verified-indicator-export":
+        return "verified-indicator-export.md"
+    return f"{method}-compact.md" if model_tier == "12b" else f"{method}.md"
+
+
 def validate_method_provenance(
     methodology: dict[str, Any],
     model_tier: str,
@@ -228,20 +238,21 @@ def validate_method_provenance(
         method = entry.get("method")
         reference = entry.get("reference")
         allowed_references = CTI_REFERENCES.get(method) if isinstance(method, str) else None
+        tier_label = model_tier or "desktop/default"
         if allowed_references is None:
-            errors.append(f"{prefix}.method is not recognized")
+            errors.append(f"{prefix}.method is not recognized; use one of {', '.join(repr(name) for name in CTI_REFERENCES)}")
             continue
+        expected = f"set reference to {expected_reference(method, model_tier)!r}, the bare file name for model_tier {tier_label}"
         if reference not in allowed_references:
-            errors.append(f"{prefix}.reference does not match method {method!r}")
+            errors.append(f"{prefix}.reference does not match method {method!r}: {expected}")
             continue
         if method == "verified-indicator-export":
             continue
         compact = isinstance(reference, str) and reference.endswith("-compact.md")
         if model_tier == "12b" and not compact:
-            errors.append(f"{prefix}.reference must be compact for model_tier 12b")
+            errors.append(f"{prefix}.reference must be compact for model_tier 12b: {expected}")
         if model_tier in {"26b", "31b", "frontier", "api", ""} and compact:
-            tier_label = model_tier or "desktop/default"
-            errors.append(f"{prefix}.reference must be expanded for model_tier {tier_label}")
+            errors.append(f"{prefix}.reference must be expanded for model_tier {tier_label}: {expected}")
 
     return errors
 

@@ -229,12 +229,35 @@ def main() -> int:
         if valid_technical.returncode != 0:
             raise AssertionError(f"valid technical provenance should pass\n{valid_technical.stderr}")
 
+        expanded = json.loads(json.dumps(technical))
+        expanded["method_provenance"][0]["reference"] = "infrastructure-history-compact.md"
+        write_json(methodology_path, expanded)
+        too_compact = run(case_dir, config)
+        if too_compact.returncode == 0 or "must be expanded for model_tier frontier: set reference to 'infrastructure-history.md'" not in too_compact.stderr:
+            raise AssertionError(f"frontier compact reference should fail naming the expanded one\n{too_compact.stderr}")
+        write_json(methodology_path, technical)
+
         local_config = base_config(required=False)
         local_config["model_tier"] = "12b"
         write_json(config, local_config)
         wrong_density = run(case_dir, config)
         if wrong_density.returncode == 0 or "must be compact for model_tier 12b" not in wrong_density.stderr:
             raise AssertionError("12b expanded reference should fail")
+
+        if "set reference to 'infrastructure-history-compact.md', the bare file name for model_tier 12b" not in wrong_density.stderr:
+            raise AssertionError(f"the tier error names the accepted reference\n{wrong_density.stderr}")
+        # r5 norway on 704dcc78: a guessed path, then an unknown method, each
+        # answered with the value that passes on this tier.
+        for field, value, expected in (
+            ("reference", "references/infrastructure-history.md", "does not match method 'infrastructure-history': set reference to 'infrastructure-history-compact.md'"),
+            ("method", "infrastructure-triage", "method is not recognized; use one of 'indicator-triage', 'infrastructure-history'"),
+        ):
+            guessed = json.loads(json.dumps(technical))
+            guessed["method_provenance"][0][field] = value
+            write_json(methodology_path, guessed)
+            refused = run(case_dir, config)
+            if refused.returncode == 0 or expected not in refused.stderr:
+                raise AssertionError(f"{field} {value!r} should be refused naming {expected!r}\n{refused.stderr}")
 
         technical["method_provenance"][0]["reference"] = "infrastructure-history-compact.md"
         write_json(methodology_path, technical)
