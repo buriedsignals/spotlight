@@ -80,6 +80,15 @@ test('a direction\'s worker writing an id without its tag is refused and the fil
 	assert.equal(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8'), before);
 });
 
+// U4 prompt shrink: a 12b persona points at agents/references/ for a long
+// procedure; the worker reads it there and nothing else of agents/.
+test('agents/references/ is readable from a case, and the rest of agents/ is not', async (t) => {
+	const { call } = await fixture(t);
+
+	assert.match(await call('read_file', { path: 'agents/references/investigator-source-expressions.md' }), /^### Source Expressions/);
+	await assert.rejects(call('read_file', { path: 'agents/investigator.md' }), /not found|outside the case files/);
+});
+
 test('a write inside the case lands there and reads back', async (t) => {
 	const { caseDir, call } = await fixture(t);
 

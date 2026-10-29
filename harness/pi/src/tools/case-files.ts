@@ -18,6 +18,8 @@ import type { CaseScope, ToolContext } from './run.ts';
 export class FileRefused extends Error {}
 
 const SCHEMAS_DIR = resolve(CHECKOUT_ROOT, 'schemas');
+// The procedures a 12b persona points at instead of carrying (roles.ts slicePersona).
+const AGENT_REFERENCES_DIR = resolve(CHECKOUT_ROOT, 'agents', 'references');
 const MAX_READ_CHARS = 200_000;
 export const READ_TRUNCATED = '[truncated: use offset and limit to read the rest]';
 const MAX_WRITE_BYTES = 20 * 1024 * 1024;
@@ -591,7 +593,7 @@ export function writeConfined(caseDir: string, root: string, path: string, conte
 // Inside the case and, for a narrowed role, one of its named files and none it
 // is denied; or under the checkout's schemas/.
 function readable(caseDir: string, path: string, scope: CaseScope | undefined): boolean {
-	if (inside(SCHEMAS_DIR, path)) return true;
+	if (inside(SCHEMAS_DIR, path) || inside(AGENT_REFERENCES_DIR, path)) return true;
 	return inside(caseDir, path) && mayRead(scope, caseRelative(caseDir, path));
 }
 
@@ -599,7 +601,7 @@ function readable(caseDir: string, path: string, scope: CaseScope | undefined): 
 // (within the role's scope) or the checkout's schemas/.
 export function readTarget(caseDir: string, path: string, scope?: CaseScope): string {
 	// A relative schemas/ path names the checkout's schemas, as the tool text says.
-	const target = /^schemas[\\/]/.test(path) ? requested(CHECKOUT_ROOT, path) : requested(caseDir, path);
+	const target = /^(?:schemas|agents[\\/]references)[\\/]/.test(path) ? requested(CHECKOUT_ROOT, path) : requested(caseDir, path);
 	// Refuse before looking: "not found" for an outside path would tell the model
 	// which files exist beyond the case or the scope.
 	if (!readable(caseDir, target, scope)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);

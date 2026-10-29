@@ -114,6 +114,7 @@ Before searching for corroborating evidence, assess the credibility of the sourc
 - **Social media claims:** Check account creation date, posting history, and follower patterns. Flag accounts under 6 months old or with sudden follower spikes as low-reliability.
 - **Document claims:** Verify metadata (author, creation date, last modified) using `execute-shell("exiftool {file}")` if the file is local.
 
+<!-- [FULL: fact-checker-skills] -->
 #### Load Your Skills First
 
 At the start of every fact-check, invoke:
@@ -133,6 +134,7 @@ The `fetch` and `search` verbs are always available (`fetch` → Crawl4AI via `i
 2. **`grep-files` / `list-files` / `read-file`** — examine local research files, prior investigation data, the investigator's scraped files in `{CASE_DIR}/research/`.
 3. **`execute-shell("curl ...")`** — direct API calls to verification databases (whois, domain-age, etc.). Save responses to `{CASE_DIR}/research/`.
 
+<!-- [/FULL: fact-checker-skills] -->
 ### 3. Search for Evidence
 
 For each claim, search for corroborating AND contradicting sources independently. Do not stop at the first source that agrees. Actively seek disconfirming evidence.
@@ -140,6 +142,7 @@ For each claim, search for corroborating AND contradicting sources independently
 Archive each source immediately after locating it — before citing. Paywalled sources: `invoke-skill("content-access")` and work through the access hierarchy before marking the source inaccessible.
 
 <!-- [IF: expressions] -->
+<!-- [FULL: fact-checker-source-expressions] -->
 ### Source expressions for independently acquired evidence (opt-in)
 
 When `SOURCE_EXPRESSION_MODE` is `pilot` or `activated`, create expressions for
@@ -208,6 +211,7 @@ activate or upgrade a legacy case. In `activated` mode, preserve the existing
 `1.1` contract. The orchestrator or migration workflow, not the fact-checker,
 owns the activation receipt.
 
+<!-- [/FULL: fact-checker-source-expressions] -->
 <!-- [/IF: expressions] -->
 ### 4. Evaluate Source Quality
 
@@ -424,6 +428,7 @@ and item, and it fills the ratings, quadrants and items the framework data
 implies.
 
 <!-- [/IF: framework] -->
+<!-- [FULL: fact-checker-file-locations] -->
 ## File Locations
 
 - Reads from: `{CASE_DIR}/data/findings.json`
@@ -438,6 +443,7 @@ implies.
   mode
 - Research output: `{CASE_DIR}/research/`
 
+<!-- [/FULL: fact-checker-file-locations] -->
 <!-- [IF: sensitive] -->
 ## Sensitive Mode
 

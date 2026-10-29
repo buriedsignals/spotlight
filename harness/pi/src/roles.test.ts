@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
-import { CHECKOUT_ROOT, PERSONA_CONDITIONS, agentSpec, allowedTools, loadComposition, systemPrompt, deliverableFor } from './roles.ts';
+import { CHECKOUT_ROOT, PERSONA_CONDITIONS, agentSpec, allowedTools, loadComposition, slicePersona, systemPrompt, deliverableFor } from './roles.ts';
 import type { AgentSpec, PersonaCondition, WorkerContext } from './roles.ts';
 
 async function compositionWith(t: TestContext, spec: AgentSpec): Promise<string> {
@@ -82,7 +82,11 @@ test('an investigator gets only the persona block of the mode its spawn implies'
 test('a worker persona keeps all of its mode\'s rules and drops a conditional section only with its condition', () => {
 	const composition = loadComposition();
 	for (const role of ['investigator', 'fact-checker']) {
-		const persona = readFileSync(`${CHECKOUT_ROOT}/agents/${role}.md`, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
+		// On the 12b each FULL block is its compact text; the rules those keep are
+		// checked by the compact-block test below.
+		const persona = readFileSync(`${CHECKOUT_ROOT}/agents/${role}.md`, 'utf8')
+			.replace(/^---\n[\s\S]*?\n---\n/, '')
+			.replace(/^<!-- \[FULL: ([\w-]+)\] -->\n[\s\S]*?^<!-- \[\/FULL: \1\] -->\n/gm, (_block, name: string) => readFileSync(`${CHECKOUT_ROOT}/agents/compact/${name}.md`, 'utf8'));
 		const markers = /^(<!-- \[\/?IF: \w+\] -->|## \[\/?MODE: \w+\])$/;
 		for (const mode of role === 'investigator' ? MODES : ['EXECUTION']) {
 			const prompt = systemPrompt(composition, role, '12b', 'solo', false, spawned('investigation', `MODE: ${mode}`));
@@ -165,4 +169,45 @@ test('each spawn names the role\'s deliverable from its return contract, and a c
 	assert.deepEqual(files('investigator', 'methodology_approval', '"MODE: EXECUTION'), ['data/methodology.json']);
 	assert.deepEqual(files('investigator', 'research', '"MODE: AMENDMENT', 'suggestions'), ['data/research-suggestions.json']);
 	assert.equal(deliverableFor('orchestrator', 'investigation', 'x'), undefined);
+});
+
+// U4 prompt shrink: on the 12b a persona's FULL blocks are swapped for
+// agents/compact/<name>.md. Skill mode reads agents/*.md as files, so the
+// persona text stays whole, and no rule may be lost in the swap.
+const FULL_BLOCK = /^<!-- \[FULL: ([\w-]+)\] -->\n([\s\S]*?)^<!-- \[\/FULL: \1\] -->\n/gm;
+const FULL_MARKER = /^<!-- \[\/?FULL: [\w-]+\] -->\n/gm;
+const WORKER_PERSONAS = ['investigator', 'fact-checker'];
+const flat = (text: string) => text.replace(/\s+/g, ' ').trim();
+const personaFile = (role: string) => readFileSync(join(CHECKOUT_ROOT, 'agents', `${role}.md`), 'utf8');
+
+test('a persona file stays its full text: off the 12b it reads as if the FULL markers were not there, and it holds no compact text', () => {
+	for (const role of WORKER_PERSONAS) {
+		const file = personaFile(role);
+		const blocks = [...file.matchAll(FULL_BLOCK)];
+		assert.ok(blocks.length > 0, role);
+		for (const [, name] of blocks) {
+			const compact = readFileSync(join(CHECKOUT_ROOT, 'agents', 'compact', `${name}.md`), 'utf8').trim();
+			if (compact) assert.ok(!file.includes(compact), `${name}: compact text is not in the persona file`);
+		}
+		for (const mode of MODES) {
+			assert.equal(slicePersona(file, mode, ALL_ON), slicePersona(file.replace(FULL_MARKER, ''), mode, ALL_ON), `${role} ${mode}`);
+		}
+	}
+});
+
+test('on the 12b each FULL block is its compact text, which keeps every rule sentence or points at a file holding the block word for word', () => {
+	for (const role of WORKER_PERSONAS) {
+		const file = personaFile(role);
+		const compactPrompts = MODES.map((mode) => flat(slicePersona(file, mode, ALL_ON, true)));
+		assert.ok([...file.matchAll(FULL_BLOCK)].length > 0, role);
+		for (const [, name, body] of file.matchAll(FULL_BLOCK)) {
+			const compact = readFileSync(join(CHECKOUT_ROOT, 'agents', 'compact', `${name}.md`), 'utf8');
+			const referenced = [...compact.matchAll(/`(agents\/references\/[\w-]+\.md)`/g)].map(([, path]) => readFileSync(join(CHECKOUT_ROOT, path), 'utf8'));
+			for (const reference of referenced) assert.equal(reference, body, `${name}: the reference file is the full block, word for word`);
+			const rules = body.split(/(?<=[.!])\s+|\n- /).filter((sentence) => /\b(MUST|NEVER|Never|never|Do not|do not|refuse[sd]?)\b/.test(sentence));
+			for (const rule of rules) assert.ok([compact, ...referenced].some((text) => flat(text).includes(flat(rule))), `${name} keeps: ${flat(rule)}`);
+			assert.ok(!compactPrompts.some((prompt) => prompt.includes(flat(body))), `${name}: the 12b prompt does not carry the full block`);
+			if (compact.trim()) assert.ok(compactPrompts.some((prompt) => prompt.includes(flat(compact))), `${name}: the 12b prompt carries the compact block`);
+		}
+	}
 });
