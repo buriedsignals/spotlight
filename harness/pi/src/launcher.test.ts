@@ -747,7 +747,7 @@ test('on the 12b after a fold a fact-checker gets its task\'s own lines, the str
 	const after = text.slice(text.indexOf('Your task, word for word'));
 	assert.match(after, /TASK-MARKER: check every finding\./);
 	assert.match(after, /Your deliverable: data\/fact-check\.json/);
-	assert.match(after, /Start from this structure/, 'the structure comes back while data/fact-check.json is not written');
+	assert.match(after, /Next to check \(1 of 1 findings still without a claim\)/, 'the checklist comes back while data/fact-check.json is not written');
 	const kept = /Case passages for this task: (\/[^;]+\/work\/fact-checker\/passages\/fact-checker-[^;]+\.md); read it if you need them again\./.exec(after)?.[1];
 	assert.ok(kept, after.slice(0, 2000));
 	assert.doesNotMatch(text, /PASSAGE-MARKER/);
@@ -757,10 +757,11 @@ test('on the 12b after a fold a fact-checker gets its task\'s own lines, the str
 	assert.deepEqual(await caseDigests(caseDir), before);
 });
 
-test('after a fold the fact-check structure comes back only while data/fact-check.json is not written', () => {
-	const env = { SPOTLIGHT_TASK_HEADER: 'Check.\n\nYour deliverable: data/fact-check.json', SPOTLIGHT_TASK_START: 'Start from this structure: {}', SPOTLIGHT_TASK_PASSAGES: 'data/worker-passages/fc.md' };
-	assert.equal(taskAfterFold(env, () => false), 'Check.\n\nYour deliverable: data/fact-check.json\nStart from this structure: {}\n\nCase passages for this task: data/worker-passages/fc.md; read it if you need them again.');
-	assert.equal(taskAfterFold(env, (path) => path === 'data/fact-check.json'), 'Check.\n\nYour deliverable: data/fact-check.json\n\nCase passages for this task: data/worker-passages/fc.md; read it if you need them again.');
+test('after a fold the first checklist comes back until data/fact-check.json is written, then the next findings to check', () => {
+	const env = { SPOTLIGHT_TASK_HEADER: 'Check.\n\nYour deliverable: data/fact-check.json', SPOTLIGHT_TASK_START: 'Next to check (3 of 3 …):\n- F1', SPOTLIGHT_TASK_PASSAGES: '/h/passages/fc.md' };
+	const pointer = '\n\nCase passages for this task: /h/passages/fc.md; read it if you need them again.';
+	assert.equal(taskAfterFold(env, () => false, () => 'Next to check (1 of 1 …)'), `Check.\n\nYour deliverable: data/fact-check.json\nNext to check (3 of 3 …):\n- F1${pointer}`);
+	assert.equal(taskAfterFold(env, () => true, () => 'Next to check (1 of 1 …):\n- F3'), `Check.\n\nYour deliverable: data/fact-check.json\nNext to check (1 of 1 …):\n- F3${pointer}`);
 	assert.equal(taskAfterFold({}, () => false), undefined);
 });
 
@@ -2029,7 +2030,8 @@ test('a first fact-check task carries the structure, one claim per finding; once
 	await chat.exited;
 
 	const first = userText(fake.requests.find((request) => isWorkerRequest(request, 'fact-checker'))!);
-	const start = JSON.parse(first.split('Start from this structure: one claim per finding, with the verdict, confidence and evidence yours to fill in.\n')[1]);
+	assert.match(first, /Next to check \(1 of 1 findings still without a claim\):\n- F1: "Acme paid Doe\."\n/);
+	const start = JSON.parse(first.split('A write with one claim, its verdict, confidence and evidence yours to fill in:\n')[1]);
 	assert.deepEqual(start.claims, [{ finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: '', confidence: '', evidence_for: [], evidence_against: [] }]);
 	assert.equal(start.schema_version, '1.1');
 	assert.deepEqual(await caseDigests(caseDir), before, 'the structure is only in the task; no case file changed');
@@ -2041,7 +2043,69 @@ test('a first fact-check task carries the structure, one claim per finding; once
 	await settledPrompt(launch(t, baseEnv(space, again.baseURL)), 'Continue.');
 	const second = again.requests.find((request) => isWorkerRequest(request, 'fact-checker'));
 	assert.ok(second, 'the fact-checker ran again');
-	assert.ok(!userText(second).includes('Start from this structure'), 'a fact-check that exists gets no structure');
+	assert.ok(!userText(second).includes('Next to check'), 'a fact-check that exists gets no checklist');
+});
+
+// wave 1 on 038df55f: on 20-35-finding cases the fact-checker gathered for
+// one whole-file write it never made, or made past the output cap.
+test('a fact-checker checks a 29-finding case one claim per write, each write small, and the harness checks the whole file once', async (t) => {
+	const findings = Array.from({ length: 29 }, (_, i) => ({ id: `F${i + 1}`, claim: `Claim number ${i + 1} about the fixture company.` }));
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) {
+			const n = toolResults(request).length;
+			if (n >= findings.length) return { text: 'Checked.' };
+			const claim = { finding_id: findings[n].id, claim_text: findings[n].claim, verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [] };
+			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ project: 'case-a', claims: [claim] }) } }] };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	await writeFile(join(caseDir, 'data', 'findings.json'), JSON.stringify({ project: 'case-a', findings }));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const file = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8'));
+	assert.deepEqual(file.claims.map((claim: { finding_id: string }) => claim.finding_id), findings.map((finding) => finding.id));
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker')).at(-1)!;
+	assert.match(userText(worker), /Write up to 3 claims at a time with write_file/);
+	assert.ok(toolResults(worker).every((result) => result.startsWith('wrote data/fact-check.json')), toolResults(worker).find((result) => !result.startsWith('wrote')));
+	const delegated = toolResults(fake.requests.at(-1)!).join('\n');
+	assert.equal(delegated.match(/validate-fact-check\.py/g)?.length, 1);
+});
+
+// ofcom on 59deb4d0: the 35-finding checklist fell back to ids, and the
+// fact-checker paged findings.json 78 times without one write. The task and
+// each accepted write carry the next findings in full.
+test('a fact-checker checks a 35-finding case from the batches the harness hands it, never reading findings.json', async (t) => {
+	const findings = Array.from({ length: 35 }, (_, i) => ({ id: `F${i + 1}`, claim: `On ${i + 1} May the fixture company filed report ${i + 1}.` }));
+	const next = (text: string) => [...text.matchAll(/^- (F\d+): "(.*)"$/gm)].map(([, id, claim]) => ({ id, claim }));
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) {
+			const results = toolResults(request);
+			const batch = next(results.at(-1) ?? userText(request));
+			if (batch.length === 0) return { text: 'Checked.' };
+			const claims = batch.map(({ id, claim }) => ({ finding_id: id, claim_text: claim, verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [] }));
+			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ project: 'case-a', claims }) } }] };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	await writeFile(join(caseDir, 'data', 'findings.json'), JSON.stringify({ project: 'case-a', findings }));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const file = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8'));
+	assert.deepEqual(file.claims.map((claim: { claim_text: string }) => claim.claim_text), findings.map((finding) => finding.claim));
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker')).at(-1)!;
+	const called = worker.messages.flatMap((message) => ((message as { tool_calls?: { function: { name: string } }[] }).tool_calls ?? []).map((call) => call.function.name));
+	assert.ok(called.length > 0 && called.every((name) => name === 'write_file'), `the fact-checker only wrote: ${called.join(', ')}`);
+	assert.match(toolResults(worker).at(-1)!, /Every finding has a claim\.$/);
 });
 
 // U3 ledger row 17: small models missed edit_file's old_text again and again,

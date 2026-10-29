@@ -9,8 +9,8 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
-import { CHECKOUT_ROOT, deliverableFor } from '../roles.ts';
-import { currentText, directionView, isDirectionFile, mergeDirection } from '../directions.ts';
+import { CHECKOUT_ROOT, deliverableFor, nextCheckText, readCheckDocs } from '../roles.ts';
+import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
 import { ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
 import type { CaseScope, ToolContext } from './run.ts';
@@ -729,6 +729,71 @@ function keptPassages(path: string): boolean {
 	return isAbsolute(path) && lstatOrUndefined(path)?.isFile() === true;
 }
 
+// The ids a write withdraws, by the key its file merges on.
+function withdrawals(name: string, written: string): string[] {
+	const field = name === 'data/fact-check.json' ? 'finding_id' : 'id';
+	try {
+		return Object.values(JSON.parse(written) as Record<string, unknown>)
+			.filter(Array.isArray)
+			.flat()
+			.filter((entry) => entry && typeof entry === 'object' && 'withdrawn' in entry)
+			.map((entry) => String((entry as Record<string, unknown>)[field]));
+	} catch {
+		return [];
+	}
+}
+
+// A recorded passage stays on record, and the validators resolve every
+// passage's finding link and evidence item, so a finding or an item a passage
+// records is never withdrawn.
+function refuseCitedWithdrawal(caseDir: string, target: string, written: string): void {
+	const name = caseRelative(caseDir, target);
+	if (name !== 'data/findings.json' && name !== 'data/evidence-bundle.json') return;
+	const ids = withdrawals(name, written);
+	if (ids.length === 0) return;
+	let passages: Record<string, unknown>[] = [];
+	try {
+		passages = (JSON.parse(readFileSync(join(caseDir, 'data', 'source-expressions.json'), 'utf8')) as { expressions?: Record<string, unknown>[] }).expressions ?? [];
+	} catch {
+		return;
+	}
+	const recorded = ids.flatMap((id) => {
+		const by = passages
+			.filter((p) => (name === 'data/findings.json' ? Array.isArray(p.finding_links) && (p.finding_links as Record<string, unknown>[]).some((link) => link?.finding_id === id) : p.original_evidence_bundle_id === id))
+			.map((p) => String(p.id));
+		return by.length > 0 ? [`${id} (recorded by ${by.join(', ')})`] : [];
+	});
+	if (recorded.length === 0) return;
+	throw new FileRefused(`refused: ${recorded.join('; ')} cannot be withdrawn, because a recorded passage stays on record; the file is unchanged. Keep it, and lower its confidence with the reason in confidence_rationale, or leave its verdict to the fact-checker.`);
+}
+
+// What still refers to an entry this write withdrew, read from the case after
+// the write, so the writer can clear each reference with its owner's tool: the
+// validators stay strict and a withdrawn finding never dangles unseen.
+function withdrawnRefs(caseDir: string, name: string, written: string): string {
+	const json = (path: string): Record<string, unknown> => {
+		try {
+			return JSON.parse(readFileSync(join(caseDir, path), 'utf8')) as Record<string, unknown>;
+		} catch {
+			return {};
+		}
+	};
+	const list = (doc: Record<string, unknown>, key: string) => (Array.isArray(doc[key]) ? (doc[key] as Record<string, unknown>[]) : []);
+	const ids = withdrawals(name, written);
+	if (ids.length === 0 || (name !== 'data/findings.json' && name !== 'data/evidence-bundle.json')) return '';
+	const lines = ids.flatMap((id) => {
+		const refs: string[] = [];
+		if (name === 'data/findings.json') {
+			if (list(json('data/fact-check.json'), 'claims').some((claim) => claim.finding_id === id)) refs.push(`the fact-check's claim for ${id} (the fact-checker withdraws it: {"finding_id": "${id}", "withdrawn": "<why>"})`);
+			for (const item of list(json('data/evidence-bundle.json'), 'items')) if (list(item, 'claim_links').some((link) => link.finding_id === id)) refs.push(`evidence item ${String(item.id)}'s claim_links (write the item again without that link)`);
+		} else {
+			for (const finding of list(json('data/findings.json'), 'findings')) if (Array.isArray(finding.evidence_bundle_refs) && finding.evidence_bundle_refs.includes(id)) refs.push(`finding ${String(finding.id)}'s evidence_bundle_refs (write the finding again without ${id})`);
+		}
+		return refs.length > 0 ? [` ${id} is withdrawn; these still refer to it and must be cleared: ${refs.join('; ')}.`] : [];
+	});
+	return lines.join('');
+}
+
 export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot' | 'scope'> & Partial<Pick<ToolContext, 'env'>>): ToolDefinition[] {
 	const { caseDir, writeRoot } = context;
 	const role = context.env?.SPOTLIGHT_ROLE;
@@ -752,10 +817,32 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 			return text;
 		}
 	};
+	// The investigator's and the fact-checker's writes to the files they build
+	// merge by id, so each write may carry a few entries (directions.ts mergeByKey).
 	const whole = (target: string, content: string) => {
 		const name = split(target);
-		return name ? mergeDirection(name, currentText(target), content, direction!) : content;
+		if (name) return mergeDirection(name, currentText(target), content, direction!);
+		const relative = caseRelative(caseDir, target);
+		return mergesByKey(role, relative) ? mergeByKey(role!, relative, currentText(target), content) : content;
 	};
+	// What a merged write did, so a writer that left entries out learns they stay.
+	const LISTS: Record<string, string> = { 'data/findings.json': 'findings', 'data/evidence-bundle.json': 'items', 'data/fact-check.json': 'claims', 'data/investigation-log.json': 'cycles' };
+	const keptNote = (target: string, written: string, merged: string) => {
+		const name = caseRelative(caseDir, target);
+		if (written === merged || !(split(target) || mergesByKey(role, name))) return '';
+		const size = (text: string) => {
+			try {
+				const list = (JSON.parse(text) as Record<string, unknown>)[LISTS[name]];
+				return Array.isArray(list) ? list.length : 0;
+			} catch {
+				return 0;
+			}
+		};
+		return ` (${size(written)} written, ${size(merged)} in the file; entries you left out stay. ${WITHDRAW_HINT})${withdrawnRefs(caseDir, name, written)}`;
+	};
+	// After the fact-checker's accepted write to its file: the next findings to
+	// check, in full (roles.ts nextCheckText).
+	const nextToCheck = (wrote: string) => (role === 'fact-checker' && wrote === 'data/fact-check.json' ? `\n${nextCheckText(readCheckDocs(caseDir))}` : '');
 	return [
 		{
 			name: 'read_file',
@@ -802,6 +889,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 					}
 				}
 				const content = whole(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
+				refuseCitedWithdrawal(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseMisplacedBrief(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseUnactivatedStart(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseRecordedFramework(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
@@ -813,7 +901,8 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseMissingCitedFiles(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseUnknownFlags(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				await refuseInvalidProposal(context, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
-				return textResult(`wrote ${writeConfined(caseDir, writeRoot, input.path, content, writes, denyWrites)}`);
+				const wrote = writeConfined(caseDir, writeRoot, input.path, content, writes, denyWrites);
+				return textResult(`wrote ${wrote}${keptNote(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, content)}${nextToCheck(wrote)}`);
 			},
 		},
 		{
