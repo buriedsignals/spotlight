@@ -3,6 +3,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { startFakeOpenAI } from './test-support/fake-openai.ts';
 import type { ChatRequest } from './test-support/fake-openai.ts';
@@ -117,6 +119,30 @@ test('an RLM error on the checkpoint falls back to the session model, and the co
 	assert.equal(fake.requests.filter(isSummaryRequest).length, 1, 'the session model writes the checkpoint');
 	assert.equal(compactions(chat).length, 1, 'the conversation folded');
 	assert.match(carriedSummary(chat), /^## Goal\n/);
+});
+
+// arms on 8699f11d: the e4b RLM served 24,576 tokens per slot while a
+// 98k-window fold sent about 57k, so every checkpoint request was refused. A
+// conversation past the RLM's context (from /props, or SPOTLIGHT_RLM_CONTEXT)
+// goes straight to the session model.
+test('a checkpoint the RLM\'s context cannot hold is written by the session model, without asking the RLM', async (t) => {
+	let chats = 0;
+	const server = createServer((request, response) => {
+		if (request.url === '/props') {
+			response.writeHead(200, { 'content-type': 'application/json' });
+			response.end(JSON.stringify({ default_generation_settings: { n_ctx: 2048 } }));
+			return;
+		}
+		chats += 1;
+		response.writeHead(400, { 'content-type': 'application/json' });
+		response.end('{"error":"the request exceeds the available context size"}');
+	});
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+	t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+	const { fake, chat } = await twoTurns(t, '12b', { SPOTLIGHT_RLM_OPENAI_BASE_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1` });
+	assert.equal(chats, 0, 'the RLM is not asked');
+	assert.equal(fake.requests.filter(isSummaryRequest).length, 1);
+	assert.equal(compactions(chat).length, 1);
 });
 
 test('a checkpoint\'s preamble before ## Goal is cut, and one with no sections from both writers leaves the conversation unfolded', async (t) => {

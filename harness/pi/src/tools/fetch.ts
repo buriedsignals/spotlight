@@ -70,6 +70,28 @@ export function rlmModel(env: ToolContext['env']): string {
 	return env.SPOTLIGHT_RLM_OPENAI_MODEL?.trim() || (JSON.parse(readFileSync(LEAD_REQUEST, 'utf8')) as LeadRequest).default_model;
 }
 
+// The RLM's context per request, in tokens: SPOTLIGHT_RLM_CONTEXT, else the
+// n_ctx a llama.cpp server reports at /props (per slot), else unknown. arms
+// on 8699f11d: the e4b served 24,576 per slot while a 98k-window fold sent
+// about 57k, and every checkpoint request got HTTP 400.
+let knownContext: Promise<number | undefined> | undefined;
+export function rlmContext(env: ToolContext['env'], baseURL: string): Promise<number | undefined> {
+	const set = Number(env.SPOTLIGHT_RLM_CONTEXT);
+	if (Number.isInteger(set) && set > 0) return Promise.resolve(set);
+	knownContext ??= (async () => {
+		try {
+			const response = await fetch(new URL('/props', baseURL), { signal: AbortSignal.timeout(5_000) });
+			if (!response.ok) return undefined;
+			const props = (await response.json()) as { n_ctx?: unknown; default_generation_settings?: { n_ctx?: unknown } };
+			const n = props.default_generation_settings?.n_ctx ?? props.n_ctx;
+			return typeof n === 'number' && n > 0 ? n : undefined;
+		} catch {
+			return undefined;
+		}
+	})();
+	return knownContext;
+}
+
 // One chat completion from the RLM; its answer text, trimmed.
 export async function rlmComplete(baseURL: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
 	const url = baseURL.endsWith('/v1') ? `${baseURL}/chat/completions` : `${baseURL}/v1/chat/completions`;

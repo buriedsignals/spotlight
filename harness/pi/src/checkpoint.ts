@@ -13,7 +13,10 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { compact, convertToLlm, serializeConversation } from '@earendil-works/pi-coding-agent';
 import { applyFixedRequestBody } from './provider-policy.ts';
-import { rlmComplete, rlmEndpoint, rlmModel } from './tools/fetch.ts';
+import { rlmComplete, rlmContext, rlmEndpoint, rlmModel } from './tools/fetch.ts';
+
+// The tokens a checkpoint answer may take in the RLM's context.
+const RLM_CHECKPOINT_ANSWER = 2048;
 
 type FixedBody = Parameters<typeof applyFixedRequestBody>[1];
 
@@ -170,8 +173,14 @@ function registerCheckpoint(pi: ExtensionAPI, fixedBody: FixedBody, env: NodeJS.
 				// fallback, and the fold was cancelled at every check until the worker
 				// overflowed at 87.6k. An RLM error falls back like an RLM answer out
 				// of shape.
+				// A conversation the RLM's context cannot hold goes to the session
+				// model; ~3 characters per token and room for the answer, so the
+				// estimate errs on the side of skipping.
+				const context = await rlmContext(env, rlm);
+				const needed = Math.ceil(text.length / 3) + RLM_CHECKPOINT_ANSWER;
 				try {
-					written = checkpointSections((await rlmComplete(rlm, { model: rlmModel(env), messages: [{ role: 'user', content: text }], temperature: 0 }, signal)) ?? '');
+					if (context !== undefined && needed > context) log(`checkpoint: rlm skipped, the conversation needs about ${needed} tokens of its ${context}`);
+					else written = checkpointSections((await rlmComplete(rlm, { model: rlmModel(env), messages: [{ role: 'user', content: text }], temperature: 0 }, signal)) ?? '');
 				} catch (error) {
 					if (signal?.aborted) throw error;
 					log(`checkpoint: rlm error, ${(error as Error).message}`);
