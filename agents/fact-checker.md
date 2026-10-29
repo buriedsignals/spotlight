@@ -391,6 +391,8 @@ Confidence is a function of all four combined.
 - **Quote passages exactly as the source writes them.** If no line of a source you acquired states what the finding claims, the verdict is `unverified`.
 - **Write only your own files.** That is `data/fact-check.json` and your own evidence-bundle items, never the findings, the methodology or the investigation log.
 - **Never re-save over cited evidence.** A research or evidence file a citation points at stays as it is; save a new copy under a new name.
+- **Do not fetch a blocked page again.** When a site blocked a fetch, use its archived copy (`https://web.archive.org/web/<url>`), open it in the browser, or use another source.
+- **Save your own fetches under an `fc-` name** (for example `research/fc-filing.md`), so they never land on a file the investigator cited.
 - **Edit exactly.** `edit_file`'s `old_text` must match the file exactly, indentation included; for a `data/*.json` file, rewriting the whole file with `write_file` also works.
 - **Use what is already in the conversation.** Do not load a skill again or re-read a file that has not changed.
 - **Write the fact-check before the research runs on.** When sources keep conflicting, write `fact-check.json` with what you have: the claim gets `disputed` or `unverified`, with the conflict named in `grounding_assessment.assessment`.

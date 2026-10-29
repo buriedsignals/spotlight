@@ -121,16 +121,22 @@ function refuseNonObjectData(caseDir: string, target: string, content: string): 
 	const path = caseRelative(caseDir, target);
 	if (!/^data\/[^/]+\.json$/.test(path)) return;
 	let value: unknown;
+	// fc-stall scan: 57 investigator writes refused as not one JSON object, with
+	// nothing on where the JSON broke.
+	let broken = '';
 	try {
 		value = JSON.parse(content);
-	} catch {
+	} catch (error) {
 		value = undefined;
+		const at = Number(/at position (\d+)/.exec((error as Error).message)?.[1]);
+		const near = Number.isFinite(at) ? ` near ${JSON.stringify(content.slice(Math.max(0, at - 40), at + 40))}` : '';
+		broken = ` ${(error as Error).message}${near}.`;
 	}
 	const bundle = path === 'data/evidence-bundle.json';
 	// The bundle's items under another key read as no items at all (12B r3 cc: "evidence_bundle").
 	if (value !== null && typeof value === 'object' && !Array.isArray(value) && (!bundle || Array.isArray((value as { items?: unknown }).items))) return;
 	const shape = bundle ? ' with an `items` list' : '';
-	throw new FileRefused(`refused: ${path} must stay one JSON object${shape}; the file is unchanged. Read it, change the part you need, and write the whole object back.`);
+	throw new FileRefused(`refused: ${path} must stay one JSON object${shape}; the file is unchanged.${broken} Read it, change the part you need, and write the whole object back.`);
 }
 
 // LFM3 r3 kde stage 3 on Osaurus (03f008b0): the analyst's proposal failed
@@ -217,6 +223,15 @@ function lstatOrUndefined(path: string): Stats | undefined {
 // Resolves a write target under `root` without following any symlink: every
 // existing parent must be a real directory, missing ones are created owner-only,
 // and an existing target must be a regular file.
+// Who writes each worker file, and the task that asks them to change it.
+const FILE_OWNERS: Record<string, { role: string; task: string }> = {
+	'data/methodology.json': { role: 'investigator', task: 'starting "MODE: METHODOLOGY CORRECTION" that says what to change' },
+	'data/findings.json': { role: 'investigator', task: 'that names the findings to change and how' },
+	'data/evidence-bundle.json': { role: 'investigator', task: 'that names the evidence items to change and how' },
+	'data/investigation-log.json': { role: 'investigator', task: 'that says what the log is missing' },
+	'data/fact-check.json': { role: 'fact-checker', task: 'that names the claims to check again and why' },
+};
+
 export function writeTarget(caseDir: string, root: string, path: string, writes?: string[], denyWrites?: string[]): string {
 	// resolve() drops a trailing slash, so "research/" would become a file named
 	// like the folder and block everything later written inside it.
@@ -236,7 +251,11 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 		// U3 census (84674fd9): a fact-checker wrote fact-check content over
 		// data/findings.json. The refusal names the writer's own file.
 		const own = deliverableFor(process.env.SPOTLIGHT_ROLE ?? '', '', '')?.files;
-		throw new FileRefused(`refused: ${path} is a case file another role writes; this agent may not write it${own ? `. Your own file is ${own.join(' and ')}.` : ''}`);
+		// fc-stall scan: 93 orchestrator writes to workers' files in 48 runs;
+		// the refusal names the owner and the spawn that changes the file.
+		const owner = FILE_OWNERS[caseRelative(caseDir, target)];
+		const next = !own && owner ? ` It is the ${owner.role}'s file: to change it, call spawn_agent with agent "${owner.role}" and a task ${owner.task}.` : '';
+		throw new FileRefused(`refused: ${path} is a case file another role writes; this agent may not write it${own ? `. Your own file is ${own.join(' and ')}.` : '.'}${next}`);
 	}
 	const parts = relative(root, target).split(sep);
 	let current = root;

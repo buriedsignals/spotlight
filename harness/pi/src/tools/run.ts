@@ -163,8 +163,14 @@ export const savePath = Type.String({ minLength: 1, maxLength: 512, pattern: '^(
 
 // A bare save_as file name goes to the agent's own folder: research/ for a
 // case role, the lane folder for a research lane.
-export function saveTarget(context: Pick<ToolContext, 'caseDir' | 'writeRoot'>, path: string): string {
-	if (/[\\/]/.test(path)) return path;
+export function saveTarget(context: Pick<ToolContext, 'caseDir' | 'writeRoot'> & Partial<Pick<ToolContext, 'env'>>, path: string): string {
 	const folder = relative(context.caseDir, context.writeRoot).split(sep).join('/');
-	return `${folder || 'research'}/${path}`;
+	const target = /[\\/]/.test(path) ? path : `${folder || 'research'}/${path}`;
+	// fc-stall scan: 48 fact-checker saves in 19 runs were refused for landing on
+	// a research file an investigator's citation points at (kde_ev_board.md.raw
+	// nine times). The fact-checker's saves take an fc- prefix, so they never do.
+	if (context.env?.SPOTLIGHT_ROLE !== 'fact-checker') return target;
+	const slash = target.lastIndexOf('/');
+	const name = target.slice(slash + 1);
+	return name.startsWith('fc-') ? target : `${target.slice(0, slash + 1)}fc-${name}`;
 }

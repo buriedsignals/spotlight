@@ -1443,6 +1443,9 @@ test('the orchestrator cannot write the files the workers write, and writes its 
 	const results = toolResults(fake.requests[fake.requests.length - 1]).join('\n');
 	assert.equal(existsSync(join(caseDir, 'data', 'indicator-framework.json')), false);
 	assert.equal(results.match(/another role writes/g)?.length, 3);
+	// fc-stall item 9: the refusal names the owner and the spawn to make.
+	assert.match(results, /refused: data\/methodology\.json is a case file another role writes; this agent may not write it\. It is the investigator's file: to change it, call spawn_agent with agent "investigator" and a task starting "MODE: METHODOLOGY CORRECTION" that says what to change\./);
+	assert.match(results, /data\/fact-check\.json [^\n]*It is the fact-checker's file: to change it, call spawn_agent with agent "fact-checker"/);
 });
 
 // D13: in an activated case the producers record passages only through

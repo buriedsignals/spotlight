@@ -217,6 +217,13 @@ def main() -> int:
                 and target.read_bytes() == before,
                 f"a quote anchored in an unlisted file was not told to add it or use the listed file: {refused.stderr}")
         twin.unlink()
+        # fc-stall item 12: a passage linked to a finding not written yet is
+        # told to write the finding first.
+        early = proposal(2, finding="D9-F1")
+        early["expressions"][0]["id"] = "SXW90"
+        refused = run_writer(case, early)
+        require(refused.returncode == 2 and "finding 'D9-F1' does not exist in data/findings.json yet. Write the finding first" in refused.stderr
+                and target.read_bytes() == before, f"a passage before its finding was not told to write the finding first: {refused.stderr}")
         # fc-stall item 6: a new passage given an id already taken is told a
         # free id in the same numbering.
         taken = proposal(4)

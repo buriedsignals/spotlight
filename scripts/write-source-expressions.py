@@ -140,7 +140,8 @@ def _bundle_hash(case: Path, bundle: dict[str, Any], bundle_id: str, anchor_path
                 return item["sha256"]
             raise WriteError(f"evidence bundle item {bundle_id!r} has no sha256 for its original artifact, and the passage "
                              "is not in that item's own file under research/; record the item's sha256 in data/evidence-bundle.json")
-    raise WriteError(f"evidence bundle item {bundle_id!r} does not exist")
+    raise WriteError(f"evidence bundle item {bundle_id!r} does not exist in data/evidence-bundle.json yet. "
+                     "Write the evidence item first, then record its passages.")
 
 
 def _bundle_item(bundle: dict[str, Any], bundle_id: Any) -> dict[str, Any] | None:
@@ -448,7 +449,10 @@ def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], 
         for link in links:
             finding_id, relation = link.get("finding_id"), link.get("relation")
             if finding_id not in findings:
-                raise WriteError(f"expression {raw['id']!r}: finding {finding_id!r} does not exist")
+                # fc-stall scan: investigators recorded passages before writing
+                # the finding they link to.
+                raise WriteError(f"expression {raw['id']!r}: finding {finding_id!r} does not exist in data/findings.json yet. "
+                                 "Write the finding first, then record its passages; the passage file is unchanged.")
             if relation not in ("supports", "contradicts", "context"):
                 raise WriteError(f"expression {raw['id']!r}: relation must be supports, contradicts or context")
             built_link = _link(target, findings[finding_id], finding_id, relation)

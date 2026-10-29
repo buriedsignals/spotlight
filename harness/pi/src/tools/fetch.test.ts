@@ -225,3 +225,13 @@ test('a failed fetch says its cause first, and a page a site blocked is refused 
 	await assert.rejects(fetchOnce(), /^Error: fetch: https:\/\/news\.example\.com\/story already failed in this case \(crawl4ai was bot-blocked[^)]*\); it is not fetched again\. Try its archived copy \(https:\/\/web\.archive\.org\/web\/https:\/\/news\.example\.com\/story\) with fetch, open it with browse, or use another source\.$/);
 	assert.equal(await readFile(runs, 'utf8'), 'x', 'the blocked page is fetched once');
 });
+
+// fc-stall item 14: 48 fact-checker saves were refused for landing on a research
+// file an investigator's citation points at. Its saves take an fc- prefix.
+test('a fact-checker\'s fetch is saved under an fc- name, an investigator\'s as given', async (t) => {
+	const checker = await fixture(t, { SPOTLIGHT_ROLE: 'fact-checker' });
+	assert.equal((await checker.call({ url: PAGE_URL, save_as: 'research/company-42.md' })).saved_to, 'research/fc-company-42.md');
+	assert.equal((await checker.call({ url: PAGE_URL, save_as: 'fc-again.md' })).saved_to, 'research/fc-again.md');
+	const investigator = await fixture(t, { SPOTLIGHT_ROLE: 'investigator' });
+	assert.equal((await investigator.call({ url: PAGE_URL, save_as: 'research/company-42.md' })).saved_to, 'research/company-42.md');
+});

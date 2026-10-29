@@ -466,6 +466,8 @@ test('a case data file written or edited into anything but one JSON object is re
 	// 12B r3 cc on f43df365: the bundle's items under another key went through.
 	await assert.rejects(call('write_file', { path: 'data/evidence-bundle.json', content: '{"evidence_bundle": [{"id": "E1"}]}' }), /must stay one JSON object with an `items` list/);
 	await assert.rejects(call('edit_file', { path: 'data/evidence-bundle.json', old_text: '"items"', new_text: '"evidence_bundle"' }), /must stay one JSON object with an `items` list/);
+	// fc-stall item 10: broken JSON is refused with where it breaks.
+	await assert.rejects(call('write_file', { path: 'data/methodology.json', content: '{\n  "a": 1\n  "b": 2\n}' }), /must stay one JSON object; the file is unchanged\. [^\n]*position \d+[^\n]* near "\{\\n  \\"a\\": 1\\n  \\"b\\": 2\\n\}"\. Read it/);
 	assert.equal(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8'), bundle);
 
 	await call('write_file', { path: 'data/evidence-bundle.json', content: '{"items": []}' });
