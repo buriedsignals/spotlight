@@ -715,3 +715,12 @@ test('a fact-check write that adds no claim says so and why', async (t) => {
 	assert.match(await call('write_file', { path: 'data/fact-check.json', content: JSON.stringify(claim('F1')) }), /^wrote data\/fact-check\.json \(0 claims added: F1 already had a claim, which this write replaced\)/);
 	assert.match(await call('write_file', { path: 'data/fact-check.json', content: JSON.stringify(claim('F9')) }), /0 claims added: F9 is not a finding id in data\/findings\.json/);
 });
+
+// arms on 8699f11d (r5-spectator): a verified claim with no finding_id was
+// refused as "no passage on record supports undefined".
+test('a verified claim with no finding_id is told to name its finding', async (t) => {
+	const { caseDir, call } = await fixture(t, undefined, 'fact-checker');
+	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
+	const content = JSON.stringify({ schema_version: '1.1', project: 'p', claims: [{ claim_text: 'One.', verdict: 'verified', confidence: 'high', evidence_for: [], evidence_against: [] }] });
+	await assert.rejects(call('write_file', { path: 'data/fact-check.json', content }), (error: Error) => error.message.includes('a verified claim has no finding_id; give it the id of the finding it checks') && !error.message.includes('undefined'));
+});

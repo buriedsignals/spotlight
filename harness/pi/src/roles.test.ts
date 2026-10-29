@@ -269,6 +269,9 @@ test('the next findings to check come in batches of 3 with their claim, evidence
 	assert.ok(!nextCheckText({ ...docs, expressions: { expressions: [] } }).includes('cite its passages'), 'no passages, no line');
 	assert.ok(!text.includes('SX2') && text.length <= 3200);
 	assert.match(factCheckChecklist(docs), /^Next to check[\s\S]*A write with one claim, its verdict, confidence and evidence yours to fill in:\n\{/);
+	// arms on 8699f11d item D: the shape starts evidence_for with the passages on record.
+	assert.deepEqual(JSON.parse(factCheckChecklist(docs).split('fill in:\n')[1]).claims[0].evidence_for, [{ source_expression_refs: ['SX1'] }]);
+	assert.deepEqual(JSON.parse(factCheckChecklist({ ...docs, expressions: { expressions: [] } }).split('fill in:\n')[1]).claims[0].evidence_for, []);
 	assert.equal(nextCheckText({ ...docs, factCheck: { claims: [1, 2, 3, 4].map((n) => ({ finding_id: `F${n}` })) } }), 'Every finding has a claim.');
 	assert.equal(nextCheckText({}), '');
 });

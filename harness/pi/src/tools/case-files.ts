@@ -9,7 +9,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
-import { CHECKOUT_ROOT, ORCHESTRATOR, deliverableFor, nextCheckText, readCheckDocs } from '../roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, deliverableFor, factCheckChecklist, readCheckDocs } from '../roles.ts';
 import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
 import { ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
@@ -364,6 +364,12 @@ function refuseUncitedVerdicts(caseDir: string, target: string, content: string)
 	const missing: string[] = [];
 	const unsupported: string[] = [];
 	for (const claim of claims as { finding_id?: unknown; evidence_for?: unknown }[]) {
+		// arms on 8699f11d (r5-spectator): "no passage on record supports undefined"
+		// for a verified claim written without its finding_id.
+		if (typeof claim.finding_id !== 'string') {
+			unsupported.push('\na verified claim has no finding_id; give it the id of the finding it checks, as in the next-to-check list.');
+			continue;
+		}
 		const items = Array.isArray(claim.evidence_for) ? claim.evidence_for : [];
 		const refs = passages.flatMap((passage) => {
 			if (passage?.lifecycle_events?.at(-1)?.event !== 'activated') return [];
@@ -882,7 +888,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 	};
 	// After the fact-checker's accepted write to its file: the next findings to
 	// check, in full (roles.ts nextCheckText).
-	const nextToCheck = (wrote: string) => (role === 'fact-checker' && wrote === 'data/fact-check.json' ? `\n${nextCheckText(readCheckDocs(caseDir))}` : '');
+	const nextToCheck = (wrote: string) => (role === 'fact-checker' && wrote === 'data/fact-check.json' ? `\n${factCheckChecklist(readCheckDocs(caseDir))}` : '');
 	// fc-stall scan (incr-test3 sp98 seq 35): a fact-check write that added no
 	// claim still read "wrote data/fact-check.json", and the count stayed put.
 	const claimsAdded = (wrote: string, before: string | undefined, written: string): string => {

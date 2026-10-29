@@ -485,16 +485,20 @@ export function nextCheckText(docs: CheckDocs, size = 3): string {
 
 // The first fact-check task's part: the next findings and the shape of one
 // write; the file merges by finding_id. '' when the case has no findings.
+// arms on 8699f11d: r5 had 10 of 11 fact-check writes refused for a verified
+// claim citing no passage. The write's shape starts each claim's evidence_for
+// with the finding's passages on record, for the fact-checker to keep or drop.
 export function factCheckChecklist(docs: CheckDocs): string {
 	const next = nextCheckText(docs);
 	const first = nextCheckBatch(docs, 1).batch[0];
 	if (!next || !first) return next;
 	const findings = (docs.findings ?? {}) as Row;
+	const evidenceFor = first.passages.length > 0 ? [{ source_expression_refs: first.passages.map((p) => p.id) }] : [];
 	const shape = JSON.stringify(
 		{
 			...(findings.schema_version === '1.1' ? { schema_version: '1.1' } : {}),
 			project: findings.project,
-			claims: [{ finding_id: first.id, claim_text: first.claim, verdict: '', confidence: '', evidence_for: [], evidence_against: [] }],
+			claims: [{ finding_id: first.id, claim_text: first.claim, verdict: '', confidence: '', evidence_for: evidenceFor, evidence_against: [] }],
 		},
 		null,
 		2,
