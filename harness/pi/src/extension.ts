@@ -9,7 +9,7 @@ import { maxOutputTokens, resolverEnv } from './config.ts';
 import { applyFixedRequestBody, parseFixedRequestBody, withoutHistoryReasoning } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, skillsFor, spawnableWorkers } from './roles.ts';
-import { READ_TRUNCATED } from './tools/case-files.ts';
+import { READ_TRUNCATED, writeConfined } from './tools/case-files.ts';
 import { typedTools } from './tools/index.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/hosted-skill.ts';
@@ -150,7 +150,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	}
 	if (role === 'analyst') registerProposalEnd(pi);
 	if (tier12b) {
-		registerReadBudget(pi);
+		registerReadBudget(pi, bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR')).caseDir);
 		registerCompletionFloor(pi);
 		registerEmptyTurnNudge(pi);
 		if (role === ORCHESTRATOR) {
@@ -283,14 +283,51 @@ function registerReadDedup(pi: ExtensionAPI): (tool: ToolDefinition) => ToolDefi
 				};
 }
 
-function registerReadBudget(pi: ExtensionAPI): void {
+// The web tools' results share the same budget. r5 swiss on a4f47704: one
+// 49,241-character http_get result right after a fold took an investigator's
+// prompt from 19.4k to 38.8k tokens of the 40,960 window (about 2.3 characters
+// per LFM3 token). A web result that does not fit is saved whole to a case
+// file, and the model gets its head and the path.
+const WEB_RESULTS = new Set(['http_get', 'fetch', 'browse']);
+const WEB_HEAD_CHARS = 2_000;
+
+function webResultSaved(head: string, length: number, path: string | undefined): string {
+	return path
+		? `${head}\n[This result is ${length} characters, more than this turn's reads leave room for. It is saved whole at ${path}: find what you need with grep_files and read only those lines with read_file offset/limit.]`
+		: `${head}\n[This result is ${length} characters and was cut here; the rest could not be saved. Call it again with save_as to keep it whole.]`;
+}
+
+// A web tool's result against what is left of the turn's budget: undefined
+// when the tool is not a web tool, otherwise the characters it uses and, when
+// it does not fit, the text the model gets instead, after `save` stored it whole.
+export function budgetedWebResult(tool: string, callId: string, text: string, left: number, save: (path: string, text: string) => string | undefined): { used: number; replacement?: string } | undefined {
+	if (!WEB_RESULTS.has(tool)) return undefined;
+	if (text.length <= left) return { used: text.length };
+	const saved = save(`research/tool-results/${tool}-${callId.replace(/[^A-Za-z0-9_-]/g, '_')}.txt`, text);
+	const head = text.slice(0, Math.min(WEB_HEAD_CHARS, left));
+	return { used: head.length, replacement: webResultSaved(head, text.length, saved) };
+}
+
+function registerReadBudget(pi: ExtensionAPI, caseDir: string): void {
 	let left = TURN_READ_CHARS_12B;
 	pi.on('turn_start', () => {
 		left = TURN_READ_CHARS_12B;
 	});
 	pi.on('tool_result', (event) => {
-		if ((event.toolName !== 'read_file' && event.toolName !== 'invoke_skill') || event.isError) return;
+		if ((event.toolName !== 'read_file' && event.toolName !== 'invoke_skill' && !WEB_RESULTS.has(event.toolName)) || event.isError) return;
 		const text = event.content.map((part) => (part.type === 'text' ? part.text : '')).join('');
+		const budgeted = budgetedWebResult(event.toolName, event.toolCallId, text, left, (path, whole) => {
+			try {
+				return writeConfined(caseDir, caseDir, path, whole);
+			} catch (error) {
+				log(`a ${event.toolName} result could not be saved: ${(error as Error).message}`);
+				return undefined;
+			}
+		});
+		if (budgeted) {
+			left -= budgeted.used;
+			return budgeted.replacement ? { content: [{ type: 'text' as const, text: budgeted.replacement }] } : undefined;
+		}
 		if (event.toolName === 'invoke_skill') {
 			if (text.length <= left) {
 				left -= text.length;
