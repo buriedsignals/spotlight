@@ -1307,8 +1307,8 @@ test('on the 12b a request left less than 512 tokens to answer is stopped with a
 	t.after(() => fake.close());
 	const space = await workspace(t);
 	// A window the system prompt and tools alone nearly fill (Pi estimates
-	// about 5,000 tokens and keeps 4,096 back).
-	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '9000', SPOTLIGHT_COMPACT_AT: '8000' });
+	// about 3,600 tokens and keeps 4,096 back).
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '7800', SPOTLIGHT_COMPACT_AT: '6800' });
 
 	await settledPrompt(chat, 'Start.');
 

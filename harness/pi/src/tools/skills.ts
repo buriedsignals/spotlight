@@ -10,7 +10,9 @@ import { skillDirectory } from '../roles.ts';
 import { INDICATOR_FRAMEWORK, indicatorFramework } from './hosted-skill.ts';
 import type { HostedSkillContext } from './hosted-skill.ts';
 
-export function invokeSkillTool(allowed: string[], hosted?: HostedSkillContext): ToolDefinition {
+// `note` gives the phase-only runtime adapter lines that come with a skill
+// (roles.ts, skillAdapterNote), appended after its text.
+export function invokeSkillTool(allowed: string[], hosted?: HostedSkillContext, note: (skill: string) => string | undefined = () => undefined): ToolDefinition {
 	const hostedNote = hosted
 		? ` Also \`${INDICATOR_FRAMEWORK}\` (Lab members, hosted on Navigator): it loads only when the approved methodology turns it on, and otherwise says whether it is available.`
 		: '';
@@ -28,7 +30,8 @@ export function invokeSkillTool(allowed: string[], hosted?: HostedSkillContext):
 				throw new Error(`invoke_skill: "${skill}" is not one of this agent's skills (${allowed.join(', ')})`);
 			}
 			const text = readFileSync(resolve(skillDirectory(skill), 'SKILL.md'), 'utf8');
-			return { content: [{ type: 'text', text }], details: undefined };
+			const extra = note(skill);
+			return { content: [{ type: 'text', text: extra ? `${text.trimEnd()}\n\n${extra}\n` : text }], details: undefined };
 		},
 	};
 }

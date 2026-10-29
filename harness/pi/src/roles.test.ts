@@ -4,10 +4,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
-import { CHECKOUT_ROOT, PERSONA_CONDITIONS, agentSpec, allowedTools, loadComposition, slicePersona, systemPrompt, deliverableFor } from './roles.ts';
+import { CHECKOUT_ROOT, PERSONA_CONDITIONS, agentSpec, allowedTools, loadComposition, skillAdapterNote, skillsFor, slicePersona, systemPrompt, deliverableFor } from './roles.ts';
+import { invokeSkillTool } from './tools/skills.ts';
 import type { AgentSpec, PersonaCondition, WorkerContext } from './roles.ts';
 
 async function compositionWith(t: TestContext, spec: AgentSpec): Promise<string> {
@@ -108,21 +109,54 @@ test('a worker persona keeps all of its mode\'s rules and drops a conditional se
 	}
 });
 
-// A worker never resolves, delegates, reaches a gate or ingests, so its adapter
-// leaves out the orchestrator's lines; the orchestrator keeps all of them.
-test('the runtime adapter gives a worker only the worker lines', () => {
+// A worker never resolves, delegates, reaches a gate or ingests, and no role
+// carries a line or shell mapping for a tool it does not hold (prompt shrink,
+// 038df55f: the orchestrator carried fetch's context hygiene and the workers'
+// shell mappings, 1.1k tokens on every 12b call). Phase-only lines leave the
+// orchestrator's prompt for their phase skill.
+test('the runtime adapter gives each role only the lines for the tools it holds', () => {
 	const composition = loadComposition();
 	for (const edition of ['solo', 'newsroom'] as const) {
 		const worker = systemPrompt(composition, 'fact-checker', '12b', edition, false, spawned('investigation', 'MODE: EXECUTION'));
+		const analyst = systemPrompt(composition, 'analyst', '12b', edition, false, spawned('ingest', 'Write the proposal.'));
 		const orchestrator = systemPrompt(composition, 'orchestrator', '12b', edition);
 		assert.doesNotMatch(worker, /orchestrator only|Gate approvals, the report decision/i, edition);
 		assert.match(worker, /- fetch -> `fetch`/, edition);
 		assert.match(worker, /-> `exiftool`/, edition);
 		assert.doesNotMatch(worker, /decision_signals|provenance_manifest|run_rlm|integration_status|anomaly_methods|build_review_html/, edition);
 		assert.match(orchestrator, /-> `decision_signals`; .* -> `build_review_html`/, edition);
+		assert.doesNotMatch(orchestrator, /- fetch -> |Context hygiene|-> `http_get`|-> `source_expressions`|-> `hash_files`/, edition);
+		assert.doesNotMatch(analyst, /- fetch -> |Context hygiene|-> `http_get`|-> `exiftool`/, edition);
+		assert.match(analyst, /- query-vault -> `query_vault`\./, edition);
 		assert.match(orchestrator, /Gate approvals, the report decision/, edition);
-		assert.equal(orchestrator.match(/orchestrator only/gi)?.length, edition === 'solo' ? 7 : 9, edition);
+		assert.doesNotMatch(orchestrator, /Preflight step 0|case-contract\.py activate-new|- Research \(orchestrator only\)|- Ingest, the /, edition);
+		assert.equal(orchestrator.match(/orchestrator only/gi)?.length, edition === 'solo' ? 3 : 5, edition);
 	}
+});
+
+// Skill mode reads skills/*/SKILL.md as written. Under the harness invoke_skill
+// returns that text unchanged, and a phase skill's phase-only adapter lines
+// after it, so every line that left the orchestrator's prompt still reaches it.
+test('a phase skill loads unchanged, followed by the adapter lines that left the system prompt', async () => {
+	const composition = loadComposition();
+	const tools = composition.orchestrator.tools;
+	const tool = invokeSkillTool(skillsFor(composition, 'orchestrator'), undefined, (skill) => skillAdapterNote(skill, tools, true));
+	const moved: Record<string, RegExp[]> = {
+		'phase-preflight': [/^- Preflight step 0 \(the shell check\): skipped\./m],
+		'phase-research': [/^- Research \(orchestrator only\): at the Research phase `spotlight_resolve` runs the approved research topics itself/m],
+		'phase-investigation': [/^- `scripts\/case-contract\.py activate-new` \(orchestrator only\) is run by the harness itself/m],
+		'phase-ingest': [/^- Ingest, the analyst proposal \(orchestrator only\)/m, /^- Ingest, the wiki write \(orchestrator only, solo edition\)/m],
+		'phase-report': [],
+	};
+	for (const [skill, lines] of Object.entries(moved)) {
+		const result = await tool.execute('call', { skill }, undefined, undefined, undefined as never);
+		const text = (result.content[0] as { text: string }).text;
+		const source = readFileSync(resolve(CHECKOUT_ROOT, 'skills', skill, 'SKILL.md'), 'utf8');
+		if (lines.length === 0) assert.equal(text, source, skill);
+		else assert.ok(text.startsWith(source.trimEnd()), `${skill}: the skill text is unchanged`);
+		for (const line of lines) assert.match(text.slice(source.trimEnd().length), line, skill);
+	}
+	assert.equal(skillAdapterNote('phase-ingest', composition.investigator.tools, false), undefined, 'a worker gets no phase lines');
 });
 
 // The 12b reads only the distilled leads and opens a raw page only for an exact
@@ -131,8 +165,9 @@ test('the raw-page rule in every prompt follows the model tier', () => {
 	const composition = loadComposition();
 	const leash = /Read only the leads\. Do not read a `\.raw` file unless you need the exact source passage for a citation; then grep it first/;
 	const longer = /Read a section of a `\.raw` file only when the leads look thin or you need exact wording for a citation/;
-	for (const role of ['orchestrator', 'investigator', 'fact-checker']) {
-		const worker = role === 'orchestrator' ? undefined : spawned('investigation', 'MODE: EXECUTION');
+	assert.doesNotMatch(systemPrompt(composition, 'orchestrator', '12b'), /\.raw/, 'the orchestrator holds no fetch');
+	for (const role of ['investigator', 'fact-checker']) {
+		const worker = spawned('investigation', 'MODE: EXECUTION');
 		assert.match(systemPrompt(composition, role, '12b', 'solo', false, worker), leash, role);
 		assert.doesNotMatch(systemPrompt(composition, role, '12b', 'solo', false, worker), longer, role);
 		for (const tier of ['26b', '31b', 'frontier'] as const) {
