@@ -2,7 +2,7 @@
 // come from harness/composition.json; worker personas come only from the
 // checkout's agents/ folder.
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Edition, ModelTier } from './config.ts';
 
@@ -325,8 +325,18 @@ export function deliverableFor(role: string, phase: string, task: string, resear
 // blocks only the active one stays, and a `<!-- [IF: name] -->` ...
 // `<!-- [/IF: name] -->` section only when its condition holds (its marker
 // lines never reach the prompt).
-export function slicePersona(persona: string, mode: string, conditions: Record<PersonaCondition, boolean>): string {
-	const modes = persona.replace(/^## \[MODE: (\w+)\]\n[\s\S]*?^## \[\/MODE: \1\]\n/gm, (block, name: string) => (name === mode ? block : ''));
+// A `<!-- [FULL: name] -->` ... `<!-- [/FULL: name] -->` block is what every
+// reader gets, skill mode included (the persona file stays its full text). On
+// the 12b tier the block is replaced by agents/compact/<name>.md: the same
+// rules, with any long procedure left in agents/references/ for the worker
+// to read at the step (U4 prompt shrink, LFM3 at 2.3 characters a token).
+const COMPACT_DIR = resolve(AGENTS_DIR, 'compact');
+
+export function slicePersona(persona: string, mode: string, conditions: Record<PersonaCondition, boolean>, compact = false): string {
+	const sized = persona.replace(/^<!-- \[FULL: ([\w-]+)\] -->\n([\s\S]*?)^<!-- \[\/FULL: \1\] -->\n/gm, (_block, name: string, body: string) =>
+		compact ? readFileSync(join(COMPACT_DIR, `${name}.md`), 'utf8') : body,
+	);
+	const modes = sized.replace(/^## \[MODE: (\w+)\]\n[\s\S]*?^## \[\/MODE: \1\]\n/gm, (block, name: string) => (name === mode ? block : ''));
 	return modes.replace(/^<!-- \[IF: (\w+)\] -->\n([\s\S]*?)^<!-- \[\/IF: \1\] -->\n/gm, (_block, name: string, body: string) => {
 		if (!(PERSONA_CONDITIONS as readonly string[]).includes(name)) throw new Error(`unknown persona condition: ${name}`);
 		return conditions[name as PersonaCondition] ? body : '';
@@ -349,7 +359,7 @@ ${adapter(tier)}`;
 	const persona = workerPersonaPath(spec);
 	if (!persona) throw new Error(`Spotlight agent ${role} has no persona in agents/`);
 	if (!worker) throw new Error(`Spotlight worker ${role} needs its spawn context (phase, task, conditions)`);
-	const body = slicePersona(stripFrontmatter(readFileSync(persona, 'utf8')), workerMode(worker.phase, worker.task), worker.conditions);
+	const body = slicePersona(stripFrontmatter(readFileSync(persona, 'utf8')), workerMode(worker.phase, worker.task), worker.conditions, tier === '12b');
 	return `You are the Spotlight ${role} worker. You were delegated a task by the orchestrator. You have no user and no gates: never wait for input or approval, and never delegate. Do the task yourself with your own tools and return your result.
 
 ${workerAdapter(tier)}

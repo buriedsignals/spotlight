@@ -80,6 +80,36 @@ test('a direction\'s worker writing an id without its tag is refused and the fil
 	assert.equal(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8'), before);
 });
 
+// U4 prompt shrink: a 12b persona points at agents/references/ for a long
+// procedure; the worker reads it there and nothing else of agents/.
+test('agents/references/ is readable from a case, and the rest of agents/ is not', async (t) => {
+	const { call } = await fixture(t);
+
+	assert.match(await call('read_file', { path: 'agents/references/investigator-source-expressions.md' }), /^### Source Expressions/);
+	await assert.rejects(call('read_file', { path: 'agents/investigator.md' }), /not found|outside the case files/);
+});
+
+// The one file outside the case a worker may read is its passages file
+// (launcher.ts keepPassages); a sibling, a ".." path or a link is refused.
+test('read_file reads the worker\'s passages file and nothing else outside the case', async (t) => {
+	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-passages-')));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const folder = join(root, 'work', 'fact-checker', 'passages');
+	await mkdir(folder, { recursive: true });
+	const kept = join(folder, 'fact-checker-1.md');
+	await writeFile(kept, 'CASE PASSAGES');
+	await writeFile(join(folder, 'other.md'), 'another worker');
+	await symlink(kept, join(folder, 'link.md'));
+	const { call } = await fixture(t, undefined, 'fact-checker', { SPOTLIGHT_TASK_PASSAGES: kept });
+	const linked = await fixture(t, undefined, 'fact-checker', { SPOTLIGHT_TASK_PASSAGES: join(folder, 'link.md') });
+
+	assert.equal(await call('read_file', { path: kept }), 'CASE PASSAGES');
+	for (const path of [join(folder, 'other.md'), `${folder}/../passages/other.md`, join(folder, 'link.md')]) {
+		await assert.rejects(call('read_file', { path }), /outside the case files this agent may read/, path);
+	}
+	await assert.rejects(linked.call('read_file', { path: join(folder, 'link.md') }), /outside the case files this agent may read/);
+});
+
 test('a write inside the case lands there and reads back', async (t) => {
 	const { caseDir, call } = await fixture(t);
 

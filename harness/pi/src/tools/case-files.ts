@@ -18,6 +18,8 @@ import type { CaseScope, ToolContext } from './run.ts';
 export class FileRefused extends Error {}
 
 const SCHEMAS_DIR = resolve(CHECKOUT_ROOT, 'schemas');
+// The procedures a 12b persona points at instead of carrying (roles.ts slicePersona).
+const AGENT_REFERENCES_DIR = resolve(CHECKOUT_ROOT, 'agents', 'references');
 const MAX_READ_CHARS = 200_000;
 export const READ_TRUNCATED = '[truncated: use offset and limit to read the rest]';
 const MAX_WRITE_BYTES = 20 * 1024 * 1024;
@@ -38,7 +40,6 @@ const PROTECTED = [
 	/^data\/editorial-case\.json$/, // newsroom case reference (the launcher)
 	/^data\/newsroom-(checks|submission)\.json$/, // newsroom check flags and submission (the launcher)
 	/^data\/case-contract\.json$/, // activation receipt (the launcher runs case-contract.py activate-new; the gate approval binds it)
-	/^data\/worker-passages\//, // the passages a worker started with (the launcher keeps them for after a fold)
 ];
 
 // Written only by scripts/write-source-expressions.py, which computes every
@@ -591,7 +592,7 @@ export function writeConfined(caseDir: string, root: string, path: string, conte
 // Inside the case and, for a narrowed role, one of its named files and none it
 // is denied; or under the checkout's schemas/.
 function readable(caseDir: string, path: string, scope: CaseScope | undefined): boolean {
-	if (inside(SCHEMAS_DIR, path)) return true;
+	if (inside(SCHEMAS_DIR, path) || inside(AGENT_REFERENCES_DIR, path)) return true;
 	return inside(caseDir, path) && mayRead(scope, caseRelative(caseDir, path));
 }
 
@@ -599,7 +600,7 @@ function readable(caseDir: string, path: string, scope: CaseScope | undefined): 
 // (within the role's scope) or the checkout's schemas/.
 export function readTarget(caseDir: string, path: string, scope?: CaseScope): string {
 	// A relative schemas/ path names the checkout's schemas, as the tool text says.
-	const target = /^schemas[\\/]/.test(path) ? requested(CHECKOUT_ROOT, path) : requested(caseDir, path);
+	const target = /^(?:schemas|agents[\\/]references)[\\/]/.test(path) ? requested(CHECKOUT_ROOT, path) : requested(caseDir, path);
 	// Refuse before looking: "not found" for an outside path would tell the model
 	// which files exist beyond the case or the scope.
 	if (!readable(caseDir, target, scope)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
@@ -722,6 +723,12 @@ function* caseFiles(caseDir: string, start: string): Generator<string> {
 	}
 }
 
+// The passages file only as the launcher wrote it: a regular file (not a
+// link) at that exact absolute path.
+function keptPassages(path: string): boolean {
+	return isAbsolute(path) && lstatOrUndefined(path)?.isFile() === true;
+}
+
 export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot' | 'scope'> & Partial<Pick<ToolContext, 'env'>>): ToolDefinition[] {
 	const { caseDir, writeRoot } = context;
 	const role = context.env?.SPOTLIGHT_ROLE;
@@ -732,6 +739,9 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 	// One research direction's investigator (directions.ts) reads only its own
 	// entries in the files it writes, and its writes merge into the whole file.
 	const direction = context.env?.SPOTLIGHT_DIRECTION;
+	// The one file outside the case a worker may read: the passages it started
+	// with, which the launcher keeps in the harness data folder (launcher.ts).
+	const passages = context.env?.SPOTLIGHT_TASK_PASSAGES;
 	const split = (target: string) => (direction && isDirectionFile(caseRelative(caseDir, target)) ? caseRelative(caseDir, target) : undefined);
 	const shown = (target: string, text: string) => {
 		const name = split(target);
@@ -758,7 +768,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				if (input.json_pointer !== undefined && (input.offset || input.limit)) {
 					throw new ToolArgumentError('read_file: use either json_pointer or offset/limit');
 				}
-				const source = readTarget(caseDir, input.path, scope);
+				const source = input.path === passages && keptPassages(passages) ? passages : readTarget(caseDir, input.path, scope);
 				const text = shown(source, readFileSync(source, 'utf8'));
 				let selected = text;
 				if (input.json_pointer !== undefined) {
