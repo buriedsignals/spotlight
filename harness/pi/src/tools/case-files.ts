@@ -3,7 +3,7 @@
 // writes stay inside the caller's write folder, never follow a symlink, and
 // never touch the files only the resolver and the review page may write.
 import { createHash } from 'node:crypto';
-import { closeSync, constants, globSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, writeSync } from 'node:fs';
+import { closeSync, constants, existsSync, globSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, writeSync } from 'node:fs';
 import type { Stats } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -514,8 +514,11 @@ export function readTarget(caseDir: string, path: string, scope?: CaseScope): st
 	try {
 		real = realpathSync(target);
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`not found: ${path}`);
-		throw error;
+		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+		// U3 census stage 1 (0af4585b): the orchestrator asked for
+		// schemas/case-contract.json about 100 times; the schema has .schema.json.
+		const schema = /^schemas[\\/].+\.json$/.test(path) && !path.endsWith('.schema.json') ? path.replace(/\.json$/, '.schema.json') : '';
+		throw new Error(schema && existsSync(requested(CHECKOUT_ROOT, schema)) ? `not found: ${path}; the schema is ${schema}` : `not found: ${path}`);
 	}
 	if (!readable(caseDir, real, scope)) throw new FileRefused(`refused: ${path} is outside the case files this agent may read`);
 	return real;
