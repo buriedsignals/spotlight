@@ -432,12 +432,17 @@ export function repeatsItself(text: string): boolean {
 }
 
 export const REPEAT_STOP = 'Spotlight stopped this turn because it ran on without calling a tool or writing anything usable; nothing in it was used. The results before it stand.';
+// lfm3-r5 on uk-cpi (rc3, 52bf6183): the server streamed two complete tool
+// calls, then held the stream open for 223 s. The stop dropped the calls and
+// the run ended with no line for the member.
+export const STALL_STOP = 'Spotlight stopped this turn because the model stopped responding. Ask Spotlight to continue.';
 
 function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 	let nudged = false;
 	let streamed = '';
 	let unchecked = 0;
 	let stopped = false;
+	let stalled = false;
 	let invisible = 0;
 	let lastVisible = 0;
 	let clock: ReturnType<typeof setInterval> | undefined;
@@ -448,6 +453,7 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 	const stopInvisible = (abort: () => void) => {
 		stopClock();
 		stopped = true;
+		stalled = true;
 		log('a turn streaming nothing visible was stopped');
 		abort();
 	};
@@ -458,6 +464,7 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 		unchecked = 0;
 		invisible = 0;
 		stopped = false;
+		stalled = false;
 		stopClock();
 	});
 	pi.on('provider_stream_event', (event, ctx) => {
@@ -500,11 +507,13 @@ function registerEmptyTurnNudge(pi: ExtensionAPI): void {
 		}
 		if (message.role !== 'assistant') return undefined;
 		stopClock();
-		if (parts.some((part) => part.type === 'toolCall')) return undefined;
 		// Pi's abort ends the whole run and drops queued follow-ups, so a stopped
 		// turn ends the run on an honest line instead of a nudge: the member sees
-		// it, and a worker's line is its answer to the orchestrator.
-		if (stopped) return { message: { ...event.message, content: [{ type: 'text', text: REPEAT_STOP }] } as typeof event.message };
+		// it, and a worker's line is its answer to the orchestrator. A turn stopped
+		// after it streamed tool calls lost them in the abort.
+		const calls = parts.some((part) => part.type === 'toolCall');
+		if (stopped) return { message: { ...event.message, content: [{ type: 'text', text: stalled && calls ? STALL_STOP : REPEAT_STOP }] } as typeof event.message };
+		if (calls) return undefined;
 		const output = (event.message as { usage?: { output?: number } }).usage?.output;
 		if (message.stopReason === 'length' && output && output < MIN_CUT_TOKENS) return undefined;
 		const cut = message.stopReason === 'length';

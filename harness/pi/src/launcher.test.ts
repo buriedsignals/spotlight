@@ -842,6 +842,8 @@ test('on the 12b a turn repeating itself or streaming nothing visible is stopped
 		['invisible', { text: '', invisible: 3000, finish: 'length' as const }],
 		// The server sends one empty chunk, then nothing, with the stream open.
 		['stalled', { text: '', invisible: 1, stall: true }],
+		// lfm3-r5 uk-cpi (rc3): two complete tool calls, then the stream held open.
+		['stalled after calls', { toolCalls: [{ name: 'list_files', arguments: { pattern: 'data/*.json' } }], stall: true }],
 		// A full context slot: cut after one token. No nudge would help.
 		['slot full', { text: '<channel|>', finish: 'length' as const, usage: { prompt_tokens: 40959, completion_tokens: 1, total_tokens: 40960 } }],
 	] as const) {
@@ -850,7 +852,7 @@ test('on the 12b a turn repeating itself or streaming nothing visible is stopped
 		const space = await workspace(t);
 		const chat = launch(t, baseEnv(space, fake.baseURL));
 
-		if (name === 'stalled') {
+		if (name === 'stalled' || name === 'stalled after calls') {
 			// The clock stops a turn after 60 s with nothing visible.
 			chat.send({ id: 'p-stalled', type: 'prompt', message: 'Start.' });
 			await chat.waitFor((record) => record.type === 'agent_settled', 0, 90_000);
@@ -866,6 +868,10 @@ test('on the 12b a turn repeating itself or streaming nothing visible is stopped
 			assert.equal(fake.requests.length, 2, 'one nudge, then the answer');
 			const history = fake.requests[1].messages;
 			assert.match(JSON.stringify(history[history.length - 1].content), /Your last turn ran on without a tool call and was cut off/);
+		} else if (name === 'stalled after calls') {
+			assert.equal(fake.requests.length, 1, `${name}: the run ends at the stop`);
+			assert.match(settled, /Spotlight stopped this turn because the model stopped responding\. Ask Spotlight to continue\./, name);
+			assert.ok(!chat.lines.some((line) => line.includes('"type":"tool_execution_start"')), `${name}: the dropped calls do not run`);
 		} else {
 			assert.equal(fake.requests.length, 1, `${name}: the run ends at the stop`);
 			assert.match(settled, /Spotlight stopped this turn because it ran on without calling a tool/, name);
