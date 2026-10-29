@@ -36,7 +36,7 @@ import { piArguments, piCliPath, writePiSettings } from './pi-process.ts';
 import { runResearchRound } from './lanes.ts';
 import type { ResearchPlan, RoundSummary } from './lanes.ts';
 import { discardIncompleteLanes } from './resume.ts';
-import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, deliverableFor, factCheckChecklist, isolationRefusal, readCheckDocs, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, deliverableFor, factCheckChecklist, isolationRefusal, nextCheckBatch, readCheckDocs, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
 import type { Composition, Deliverable, WorkerContext } from './roles.ts';
 import { approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { BRIEF_PENDING_REFUSAL, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL, WorkerQueue, runWorker } from './subagents.ts';
@@ -424,13 +424,26 @@ async function deliverable(harness: Harness, role: string, task: string): Promis
 // a file the harness wrote would read to the resolver as the fact-checker's
 // own work.
 
+// arms on 8699f11d (ds-spectator seq 96): a fact-checker re-spawned with 16 of
+// 22 findings still without a claim had no checklist, made 250 calls without
+// writing, and the case blocked. Any fact-checker task, a correction too,
+// carries the next findings while some have no claim.
 function factCheckStart(caseDir: string): string {
-	if (existsSync(resolve(caseDir, 'data/fact-check.json'))) return '';
 	try {
-		return factCheckChecklist(readCheckDocs(caseDir));
+		const docs = readCheckDocs(caseDir);
+		if (existsSync(resolve(caseDir, 'data/fact-check.json')) && nextCheckBatch(docs).left === 0) return '';
+		return factCheckChecklist(docs);
 	} catch {
 		return '';
 	}
+}
+
+// Findings with no claim after a fact-checker run are its unfinished work, not
+// an evidence error: the next step is a fact-checker that continues.
+export function unfinishedNote(caseDir: string): string {
+	const { left, total } = nextCheckBatch(readCheckDocs(caseDir));
+	if (left === 0 || !existsSync(resolve(caseDir, 'data/fact-check.json'))) return '';
+	return `\n[${left} of ${total} findings have no claim yet. That is unfinished work, not an evidence error: spawn the fact-checker again with a task to continue; it gets the next findings to check.]`;
 }
 
 // A worker that ended without an answer: when a file it had to write is still
@@ -644,7 +657,8 @@ async function withValidation(harness: Harness, role: string, text: string): Pro
 		return `${text}\n\n[Harness checks after the analyst finished: ${BATCH_BLOCKED} ${harness.batchBlocked}]`;
 	}
 	const verdict = outcome.passed ? 'all passed' : 'FAILED: send the worker the correction the phase skill describes';
-	return `${text}\n\n[Harness checks after the ${role} finished: ${verdict}]\n${outcome.report}`;
+	const unfinished = role === 'fact-checker' ? unfinishedNote(active.caseDir) : '';
+	return `${text}\n\n[Harness checks after the ${role} finished: ${verdict}]\n${outcome.report}${unfinished}`;
 }
 
 function terminate(harness: Harness): void {

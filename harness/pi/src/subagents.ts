@@ -103,8 +103,15 @@ export const GATE_DECIDED_REFUSAL = 'The Investigation gate is decided: the memb
 // What the launcher answers an investigator spawn before the brief is approved (launcher.ts refusalFor).
 export const BRIEF_PENDING_REFUSAL = 'The brief is not approved yet, so no investigator runs. Agree the direction with the member, and once they approve it write it to brief-directions.txt with write_file. Then spawn the investigator with MODE: PLANNING to design the methodology.';
 
-export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }): ToolDefinition {
+// The fact-check's progress: claims written, findings still without one.
+export type FactCheckProgress = () => { claims: number; left: number };
+
+export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }, progress?: FactCheckProgress): ToolDefinition {
 	let corrections = 0;
+	// arms on 8699f11d: a fact-checker that wrote claims but not all of them was
+	// cut off by the cap of runs per cycle. A run that added claims lets the
+	// next one continue without counting against the cap.
+	let progressed = false;
 	return {
 		name: 'spawn_agent',
 		label: 'Spawn agent',
@@ -125,12 +132,14 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 		async execute(_id, params, signal) {
 			const { agent, task } = params as { agent: string; task: string };
 			if (!workers.includes(agent)) throw new Error(`spawn_agent: unknown worker "${agent}"`);
+			const before = agent === 'fact-checker' ? progress?.() : undefined;
 			if (agent === 'fact-checker') {
-				if (cycle.spawns >= FACT_CHECKER_CAP) throw new Error(FACT_CHECKERS_SPENT);
+				const continuing = progressed && (before?.left ?? 0) > 0;
+				if (!continuing && cycle.spawns >= FACT_CHECKER_CAP) throw new Error(FACT_CHECKERS_SPENT);
 				if (!EVIDENCE_CORRECTION.test(task)) corrections = 0;
-				else if (corrections > 0) throw new Error(CORRECTION_SPENT);
+				else if (corrections > 0 && !continuing) throw new Error(CORRECTION_SPENT);
 				else corrections += 1;
-				cycle.spawns += 1;
+				if (!continuing) cycle.spawns += 1;
 			}
 			if (typeof process.send !== 'function') {
 				throw new Error('spawn_agent needs the Spotlight launcher; this process was started without it');
@@ -144,6 +153,7 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 			process.send({ kind: 'spotlight-spawn', id, agent, task } satisfies SpawnRequest);
 			try {
 				const result = await promise;
+				if (before) progressed = (progress?.().claims ?? 0) > before.claims;
 				if (!result.ok) throw new Error(result.error ?? `${agent} failed`);
 				return { content: [{ type: 'text', text: result.text || '(no output)' }], details: undefined };
 			} finally {

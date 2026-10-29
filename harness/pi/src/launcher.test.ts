@@ -3215,3 +3215,62 @@ test('a worker named with an underscore, capitals or spaces is the worker', asyn
 		assert.match(result, new RegExp(`Checked as ${agent}\\.`), `${agent}: ${result.slice(0, 300)}`);
 	}
 });
+
+// arms on 8699f11d (ds-spectator seq 96): the one evidence-correction fact-checker,
+// spawned with 16 of 22 findings still without a claim, had no checklist, made
+// 250 calls without writing, and the case blocked on the spent repair.
+test('a fact-checker spawned while findings have no claim gets the next ones, and its result calls them unfinished work', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Corrected the evidence.' };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'MODE: EVIDENCE CORRECTION\nFix the evidence the validator named.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	const factCheck = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8')) as { claims: Array<{ finding_id: string }> };
+	const findings = JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')) as { findings: Array<{ id: string }> };
+	factCheck.claims = [];
+	await writeFile(join(caseDir, 'data', 'fact-check.json'), JSON.stringify(factCheck, null, 2));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const task = JSON.stringify(fake.requests.find((request) => isWorkerRequest(request, 'fact-checker'))!.messages);
+	assert.match(task, new RegExp(`Next to check \\(\\d+ of ${findings.findings.length} findings still without a claim\\)`));
+	const result = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker')).at(-1)!).join('\n');
+	assert.match(result, new RegExp(`\\[${findings.findings.length} of ${findings.findings.length} findings have no claim yet\\. That is unfinished work, not an evidence error`));
+});
+
+// arms on 8699f11d: a fact-checker that adds claims but not all of them may be
+// spawned again past the cap of runs per cycle, until every finding has one.
+test('fact-checkers that keep adding claims continue past the cap until every finding has a claim', async (t) => {
+	const spawn = { name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Continue the fact-check.' } };
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) {
+			if (toolResults(request).length > 0) return { text: 'Wrote one claim.' };
+			const id = /Next to check \([^)]*\):\\n- ([A-Z0-9-]+):/.exec(JSON.stringify(request.messages))?.[1];
+			const claim = { finding_id: id, claim_text: `Claim ${id}.`, verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [], grounding_assessment: { support_type: 'insufficient', claim_elements_checked: [], missing_assumptions: [], confidence_cap: 'low', assessment: 'Not checked.' } };
+			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', project: 'p', claims: [claim] }) } }] };
+		}
+		return toolResults(request).length < 5 ? { toolCalls: [spawn] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	const findings = JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')) as { findings: Array<Record<string, unknown>> };
+	const first = findings.findings[0];
+	findings.findings = [1, 2, 3, 4, 5].map((n) => ({ ...first, id: `F${n}`, claim: `Claim F${n}.` }));
+	await writeFile(join(caseDir, 'data', 'findings.json'), JSON.stringify(findings, null, 2));
+	await unlink(join(caseDir, 'data', 'fact-check.json'));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const results = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker')).at(-1)!);
+	assert.equal(results.length, 5);
+	assert.ok(!results.some((result) => result.includes(FACT_CHECKERS_SPENT)), results.map((r) => r.slice(0, 120)).join(' | '));
+	const claims = (JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8')) as { claims: unknown[] }).claims;
+	assert.equal(claims.length, 5);
+});

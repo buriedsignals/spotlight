@@ -9,7 +9,7 @@ import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
 import { applyFixedRequestBody, parseFixedRequestBody, withoutHistoryReasoning } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
-import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, nextCheckBatch, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
 import { READ_TRUNCATED, writeConfined } from './tools/case-files.ts';
 import { typedTools } from './tools/index.ts';
 import { invokeSkillTool } from './tools/skills.ts';
@@ -61,7 +61,12 @@ function toolsFor(role: string): ToolDefinition[] {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
 		const cycle = { spawns: 0 };
 		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => (cycle.spawns = 0)));
-		tools.push(spawnAgentTool(spawnableWorkers(composition), cycle));
+		const progress = () => {
+			const docs = readCheckDocs(active.caseDir);
+			const claims = (docs.factCheck as { claims?: unknown } | undefined)?.claims;
+			return { claims: Array.isArray(claims) ? claims.length : 0, left: nextCheckBatch(docs).left };
+		};
+		tools.push(spawnAgentTool(spawnableWorkers(composition), cycle, progress));
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter))));
 		tools.splice(0, tools.length, ...tools.map((tool) => keepGateBound(tool, active.caseDir, async () => String((await resolveCase(active, runAdapter)).phase ?? ''))));
 	}
