@@ -362,11 +362,22 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
             if len({"\n".join(lines[start - 1:end]) for _path, start, end in found}) == 1:
                 notes.append(f"expression {label}: the text is on {len(found)} identical lines of {found[0][0]}; anchored the first")
                 found = found[:1]
+            elif anchor and found[0][0] == anchor["path"]:
+                # arm2 ds-spectator on ce4f010e: a quote found twice in the one
+                # file it was anchored to was refused; the passage is the same
+                # exact text at either place, so the first is anchored.
+                notes.append(f"expression {label}: the text is in {found[0][0]} at {len(found)} places; anchored the first "
+                             f"(lines {found[0][1]}-{found[0][2]}); give line_start and line_end to anchor another")
+                found = found[:1]
         if len(found) > 1:
             ranges = ", ".join(f"{path} lines {start}-{end}" for path, start, end in found[:8])
             raise WriteError(f"expression {label}: the text appears in {len(found)} places ({ranges}); quote a longer span that is unique, "
                              "or give anchor_ref with the path, line_start and line_end you mean")
         path, start, end = found[0]
+        # A text found at several places of one file (above) cites the item
+        # that lists that file, as a single match does.
+        if not proposal.get("original_evidence_bundle_id"):
+            cite(path)
         anchor = {"path": path, "line_start": start, "line_end": end}
         stored = "\n".join(source_lines((case / path).resolve())[start - 1:end])
         note = f"expression {label}: anchored at {path} lines {start}-{end}"

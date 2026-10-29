@@ -217,6 +217,26 @@ def main() -> int:
                 and target.read_bytes() == before,
                 f"a quote anchored in an unlisted file was not told to add it or use the listed file: {refused.stderr}")
         twin.unlink()
+        # arm2 ds-spectator on ce4f010e: a quote found at two places of the one
+        # file it was anchored to is anchored at the first, not refused.
+        twice = case / "research" / "twice.txt"
+        twice.write_text("Header line.\nThe owner is Acme Holdings, says the register.\nFooter.\nAgain: The owner is Acme Holdings, per the filing.\n", encoding="utf-8")
+        bundle_path = case / "data" / "evidence-bundle.json"
+        saved_bundle = bundle_path.read_bytes()
+        bundle = json.loads(saved_bundle)
+        extra = json.loads(json.dumps(next(i for i in bundle["items"] if i["id"] == "E2")))
+        extra.update({"id": "E7", "raw_path": "research/twice.txt", "sha256": hashlib.sha256(twice.read_bytes()).hexdigest()})
+        bundle["items"].append(extra)
+        bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+        both = proposal(5)
+        both["expressions"][0].update({"id": "SXW77", "text": "The owner is Acme Holdings", "anchor_ref": {"path": "research/twice.txt"}, "original_evidence_bundle_id": "E7"})
+        result = run_writer(case, both)
+        anchored = next((e for e in expressions(case)["expressions"] if e["id"] == "SXW77"), {})
+        require(result.returncode == 0 and anchored.get("anchor_ref", {}).get("line_start") == 2 and "at 2 places; anchored the first" in result.stdout,
+                f"a quote at two places of its anchored file was not anchored at the first: {result.stdout} {result.stderr}")
+        bundle_path.write_bytes(saved_bundle)
+        target.write_bytes(before)
+        twice.unlink()
         # fc-stall item 12: a passage linked to a finding not written yet is
         # told to write the finding first.
         early = proposal(2, finding="D9-F1")
