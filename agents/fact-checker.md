@@ -371,6 +371,10 @@ Confidence is a function of all four combined.
   alone is not positive support. A successful passage write returns these
   refs per finding and relation (`source_expression_refs`); copy them, never
   compute them.
+- **Cite the passages already on record.** When the investigator recorded
+  passages for a finding, verify it by citing their ids in one `evidence_for`
+  item's `source_expression_refs`. Record a new passage only to dispute the
+  finding or to add a source you acquired yourself.
 <!-- [/IF: expressions] -->
 - **Copy the canonical finding claim exactly for positive verdicts.** For `verified`, `claim_text` must equal the linked `findings.json` claim after Unicode and whitespace normalization. Narrow or split the finding first rather than verifying an easier paraphrase under the same `finding_id`.
 - **RLM/E4B output is a locator, never evidence.** You may reuse a `source_ref` discovered in `data/rlm-analysis.json`, but cite and independently assess the underlying stored scrape or JSON element. Never cite the RLM artifact text itself as verification.

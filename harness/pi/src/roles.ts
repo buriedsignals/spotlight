@@ -475,7 +475,12 @@ export function nextCheckText(docs: CheckDocs, size = 3): string {
 		]);
 		return `Next to check (${batch.length} of ${left} findings still without a claim):\n${lines.join('\n')}`;
 	};
-	return [200, 80, 0].map(render).find((text) => text.length <= NEXT_CHECK_CHARS) ?? render(0);
+	// fc-stall scan (315 logs): 172 verified claims refused for citing no
+	// passage, with the finding's passages listed in the task.
+	const cite = batch.some((item) => item.passages.length > 0)
+		? '\nTo verify a finding, cite its passages above by id in one evidence_for item\'s source_expression_refs. Record a new passage only to dispute it or to add a source you acquired.'
+		: '';
+	return `${[200, 80, 0].map(render).find((text) => text.length <= NEXT_CHECK_CHARS) ?? render(0)}${cite}`;
 }
 
 // The first fact-check task's part: the next findings and the shape of one

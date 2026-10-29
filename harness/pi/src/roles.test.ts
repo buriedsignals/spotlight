@@ -263,8 +263,11 @@ test('the next findings to check come in batches of 3 with their claim, evidence
 	assert.deepEqual([batch.map((item) => item.id), left, total], [['F1', 'F3', 'F4'], 3, 4]);
 	const text = nextCheckText(docs);
 	assert.ok(text.startsWith('Next to check (3 of 3 findings still without a claim):\n- F1: "Claim 1."\n  evidence: E1 research/filing.md.raw\n  passages: SX1 "Acme paid Doe in 2024.'), text);
-	assert.match(text, /- F3: "Claim 3."\n  evidence: E1 research\/filing\.md\.raw\n- F4: "Claim 4."$/);
-	assert.ok(!text.includes('SX2') && text.length <= 3000);
+	assert.match(text, /- F3: "Claim 3."\n  evidence: E1 research\/filing\.md\.raw\n- F4: "Claim 4."\n/);
+	// fc-stall item 2: 172 verified claims refused for citing no passage.
+	assert.ok(text.endsWith("\nTo verify a finding, cite its passages above by id in one evidence_for item's source_expression_refs. Record a new passage only to dispute it or to add a source you acquired."), text);
+	assert.ok(!nextCheckText({ ...docs, expressions: { expressions: [] } }).includes('cite its passages'), 'no passages, no line');
+	assert.ok(!text.includes('SX2') && text.length <= 3200);
 	assert.match(factCheckChecklist(docs), /^Next to check[\s\S]*A write with one claim, its verdict, confidence and evidence yours to fill in:\n\{/);
 	assert.equal(nextCheckText({ ...docs, factCheck: { claims: [1, 2, 3, 4].map((n) => ({ finding_id: `F${n}` })) } }), 'Every finding has a claim.');
 	assert.equal(nextCheckText({}), '');
