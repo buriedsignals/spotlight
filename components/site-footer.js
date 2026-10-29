@@ -67,7 +67,7 @@ class SiteFooter extends HTMLElement {
         <p class="footer-summary">An open-source investigative system for AI agents, built for journalists. One agent reports, one agent checks, and you stay the editor. Local when the case is too sensitive for the cloud.</p>
         <div class="footer-links">
           <a href="/docs/index.html">Docs</a>
-          <a href="/setup.html">Install</a>
+          <a href="https://indicator.media/indicator-lab">Install</a>
           <a href="https://buriedsignals.com/consulting" target="_blank" rel="noopener">Work with me ↗</a>
           <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals ↗</a>
         </div>

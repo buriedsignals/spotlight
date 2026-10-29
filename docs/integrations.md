@@ -95,7 +95,7 @@ green=2  yellow=0  red=1  unconfigured=1
 
 ## Setup flows
 
-Managed journalists join at [buriedsignals.com/join](https://buriedsignals.com/join), install
+Managed journalists join at [Indicator Lab](https://indicator.media/indicator-lab), install
 Indicator Labs, configure Spotlight from the Engine descriptor, enter secrets through the
 operating-system prompt, apply the plan, and run doctor.
 

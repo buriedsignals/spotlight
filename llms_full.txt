@@ -1,318 +1,134 @@
 # Spotlight — full public AI reference
 
-> Spotlight is a runtime-agnostic OSINT investigation system for journalists. It gives an agent runtime a reporting methodology, an investigator loop, an independent fact-checker loop, human review gates, and a case archive that can be reused across investigations.
+> An investigation workflow for AI agents, built for journalists. Spotlight takes a reporting lead through an approved methodology, evidence gathering, independent fact-checking, and editorial review, keeping the work in a local case folder.
 
-Last updated: 2026-04-24. Canonical source: https://spotlight.buriedsignals.com/llms_full.txt
+## When to use it
 
----
+Give Spotlight a lead, question, URL, document, or entity when you need to develop an investigation. It works with you on the brief and methodology, gathers and saves sources, runs investigation and independent fact-checking cycles, and brings the findings back for editorial review.
 
-## 1. Product overview
+**Input:** a reporting lead and an approved scope. **Output:** a local case folder containing evidence, source-linked findings, fact-check verdicts, gaps, and review/report artifacts. A completed agent run is not permission to publish.
 
-Spotlight is the agnostic port of the Buried Signals Spotlight and OSINT skill stack into a runtime-neutral repo. The public promise is consistent across runtimes:
+Spotlight owns the casework. Navigator helps find methods and tools; Scoutpost monitors sources over time; Anomaly provides data-source context and deterministic checks; Splash produces publication visuals from approved reporting. Each integration depends on the installed release and its configured capabilities.
 
-- turn an agent into an investigative workflow rather than a chat session
-- require human approval at the key editorial gates
-- preserve evidence locally before relying on it
-- separate reporting from verification through an independent fact-checker
-- archive completed work into a reusable vault
+## Start here
 
-Spotlight is designed for journalists, investigative workflows, and sensitive reporting. It can run through pi, Hermes, Goose, Codex, Gemini, Claude Code, or a local OpenAI-compatible harness.
+- [Managed setup](https://indicator.media/indicator-lab): Indicator Lab membership and guided installation
+- [Installation reference](https://github.com/buriedsignals/spotlight#install): signed Engine installation or the documented source-only route; follow the current release instructions
+- [Landing page](https://spotlight.buriedsignals.com/): public product overview
+- [Documentation index](https://spotlight.buriedsignals.com/docs/README.md): operator manual and reading order
+- [Runtime contract](https://spotlight.buriedsignals.com/AGENTS.md): machine-readable verb registry, agent manifests, skill registry, and case structure
+- [Full public AI reference](https://spotlight.buriedsignals.com/llms_full.txt): flattened summary for one-shot ingestion
+- [GitHub repo](https://github.com/buriedsignals/spotlight): source, issues, releases
 
-## 2. Public routes
+## What Spotlight does
 
-- Landing page: https://spotlight.buriedsignals.com/
-- Install landing page (one-command install): https://spotlight.buriedsignals.com/setup.html
-- README: https://spotlight.buriedsignals.com/README.md
-- Runtime contract: https://spotlight.buriedsignals.com/AGENTS.md
-- Docs index: https://spotlight.buriedsignals.com/docs/README.md
-- Full public AI reference: https://spotlight.buriedsignals.com/llms_full.txt
-- GitHub repo: https://github.com/buriedsignals/spotlight
+- [README](https://spotlight.buriedsignals.com/README.md): overview, supported runtimes, dependencies, and public documentation map
+- [Investigation pipeline](https://spotlight.buriedsignals.com/docs/investigating.md): brief, methodology, cycles, Investigation gate, ingestion, and readiness criteria
+- [Fact-checking model](https://spotlight.buriedsignals.com/docs/fact-checking.md): independent verification pass, SIFT workflow, verdict taxonomy, and evidence trails
+- [Monitoring](https://spotlight.buriedsignals.com/docs/monitoring.md): how ongoing monitoring feeds new leads back into investigations
+- [Integrations](https://spotlight.buriedsignals.com/docs/integrations.md): dev-browser, Junkipedia, OSINT Navigator, and manifest/preflight behavior
+- [Runtime wiring](https://spotlight.buriedsignals.com/docs/runtimes.md): pi, Hermes, Goose, Codex, Gemini, and local OpenAI-compatible setups
 
-## 3. Supported runtimes
+## Core concepts
 
-The public runtime surface documented in `README.md` and `docs/runtimes.md` is:
+- **Pipeline:** Preflight -> Brief -> Methodology -> Investigation cycles -> Investigation gate -> Report -> Ingest
+- **Two-agent model:** investigator executes the research; fact-checker independently verifies the claims
+- **Editorial control:** the user approves the brief, methodology, Investigation gate summary, and ingestion
+- **Readiness criteria:** minimum findings, source independence, no unresolved disputes, affected perspective, document trail, and gap assessment
+- **Evidence grounding:** scrape before cite, keep local copies, and archive sources before relying on them
+- **Sensitive mode:** strips web search and scraping so investigations can run local-only
 
-- **pi:** native `AGENTS.md` and `SKILL.md` support
-- **Claude Code:** install package and run from repo dir
-- **Codex CLI:** reads `AGENTS.md` natively
-- **Gemini CLI:** symlink `GEMINI.md` to `AGENTS.md`
-- **Hermes:** load `skills/` through `skills.external_dirs`
-- **Goose:** package as an extension pack
-- **opencode** (recommended local harness): native AGENTS.md, SKILL.md, sub-agents; llama.cpp / Ollama providers built in
-- **Local OpenAI-compatible runtimes:** llama-server, Ollama, vLLM behind opencode (or any compatible harness)
+## Public docs
 
-## 4. Investigation model
+- [Docs home](https://spotlight.buriedsignals.com/docs/README.md)
+- [Structure](https://spotlight.buriedsignals.com/docs/structure.md)
+- [Runtimes](https://spotlight.buriedsignals.com/docs/runtimes.md)
+- [Integrations](https://spotlight.buriedsignals.com/docs/integrations.md)
+- [Investigating](https://spotlight.buriedsignals.com/docs/investigating.md)
+- [Fact-checking](https://spotlight.buriedsignals.com/docs/fact-checking.md)
+- [Monitoring](https://spotlight.buriedsignals.com/docs/monitoring.md)
+- [Recovery](https://spotlight.buriedsignals.com/docs/recovery.md)
 
-The investigation pipeline is:
+## Skills
 
-1. **Preflight**
-2. **Brief**
-3. **Methodology**
-4. **Investigation** (cycles 1–5, ending at the Investigation gate)
-5. **Report**
-6. **Ingestion**
+- [spotlight](https://spotlight.buriedsignals.com/skills/spotlight/SKILL.md): top-level investigation orchestrator
+- [editorial-review](https://spotlight.buriedsignals.com/skills/editorial-review/SKILL.md): post-Investigation-gate review artifact and feedback loop
+- [integrations](https://spotlight.buriedsignals.com/skills/integrations/SKILL.md): routing layer for external tools
+- [ingest](https://spotlight.buriedsignals.com/skills/ingest/SKILL.md): vault ingestion and registry updates
+- [monitoring](https://spotlight.buriedsignals.com/skills/monitoring/SKILL.md): monitoring orchestration across runtimes
+- [web-archiving](https://spotlight.buriedsignals.com/skills/web-archiving/SKILL.md): archive workflow and chain of custody
+- [content-access](https://spotlight.buriedsignals.com/skills/content-access/SKILL.md): paywall and access-method handling
+- [osint](https://spotlight.buriedsignals.com/skills/osint/SKILL.md): OSINT tool routing and catalog
+- [investigation-methodology](https://spotlight.buriedsignals.com/skills/investigation-methodology/SKILL.md): investigation techniques and reference playbooks
+- [follow-the-money](https://spotlight.buriedsignals.com/skills/follow-the-money/SKILL.md): financial and ownership tracing methods
+- [social-media-intelligence](https://spotlight.buriedsignals.com/skills/social-media-intelligence/SKILL.md): account authenticity, coordination, and narrative tracking
 
-The user remains the editor at every gate. Spotlight does not auto-advance through the brief approval, methodology approval, Investigation gate approval, or ingestion approval.
+## Agents and schemas
 
-### Preflight
+- [investigator prompt](https://spotlight.buriedsignals.com/agents/investigator.md)
+- [fact-checker prompt](https://spotlight.buriedsignals.com/agents/fact-checker.md)
+- [findings schema](https://spotlight.buriedsignals.com/schemas/findings.schema.json)
+- [fact-check schema](https://spotlight.buriedsignals.com/schemas/fact-check.schema.json)
+- [methodology schema](https://spotlight.buriedsignals.com/schemas/methodology.schema.json)
+- [investigation log schema](https://spotlight.buriedsignals.com/schemas/investigation-log.schema.json)
+- [summary schema](https://spotlight.buriedsignals.com/schemas/summary.schema.json)
 
-Preflight validates the environment before research starts. It checks configuration, Firecrawl availability, skill inventory, vault configuration, project setup, duplicate projects, active investigations, optional integrations, and monitoring availability. It also asks once per install whether to enable the opt-in decision checks (a typed decision model on OpenRouter that flags weak grounding, overstated report prose and drifting knowledge-base records; flags only lower confidence).
+## Runtime contract
 
-### Brief
+- Read the [runtime contract](https://spotlight.buriedsignals.com/AGENTS.md) for the supported verbs, adapter requirements, and agent boundaries.
+- Source acquisition depends on the configured runtime and providers; see the current integration documentation.
+- `query-vault` searches the member wiki through Engine's `bsig wiki search`.
+- `vault-write` is retired with the 1.0 knowledge graph.
 
-If the lead is a URL, Spotlight scrapes it first. It then clarifies scope with the user, writes `brief-directions.txt`, and waits for approval.
+## Compatibility
 
-### Methodology
+- Canonical full reference: https://spotlight.buriedsignals.com/llms_full.txt
 
-The investigator runs in PLANNING mode and writes `methodology.json` without executing the research. The methodology includes directions, questions, steps, OSINT techniques, key sources, risks, and limitations.
+## Investigation stages in more detail
 
-### Investigation cycles
+The current workflow has seven named phases: Preflight, Brief, Methodology, optional Research, Investigation, Report, and Ingest. Research is present only when the approved methodology includes a research plan. A gate requires an explicit journalist decision; silence, an artifact appearing, or an agent finishing does not approve it.
 
-Each investigation cycle does this:
+1. **Preflight:** check the selected runtime, configuration, available skills and integrations, local case storage, and prior or duplicate work.
+2. **Brief:** read the lead, agree the scope and directions with the journalist, and obtain approval.
+3. **Methodology:** the investigator plans the questions, methods, sources, and any research topics. The journalist approves the plan before execution.
+4. **Research, when planned:** approved topics become research lanes. Saved leads and quotes are checked; the journalist marks clues and directions before the methodology is amended.
+5. **Investigation:** the investigator gathers evidence and writes findings; an independent fact-checker checks the claims. Up to three cycles address gaps. A researched case may return for one targeted research round; otherwise unresolved gaps stop the work for editorial direction.
+6. **Report:** the journalist decides whether to produce a report. Drafting and rendering retain the findings and evidence trail; the report decision is separate from approving the investigation.
+7. **Ingest:** verified material is promoted to the knowledge system only through a requested, approved transition. Do not infer permission to write into the wiki from the existence of a report.
 
-1. investigator runs in EXECUTION mode and updates findings
-2. fact-checker independently checks the claims
-3. Spotlight runs editorial standards checks
-4. monitoring recommendations are reviewed
-5. six readiness criteria are evaluated
+See [Investigating](https://spotlight.buriedsignals.com/docs/investigating.md) for the full gate and recovery contract.
 
-Spotlight runs up to five cycles before stalling for user direction.
+## Research and data boundaries
 
-### Investigation gate
+Research over local case files and the wiki runs on the local model. Cloud research lanes are opt-in and receive their approved topic brief, not the full case, findings, evidence, or journalist input. Availability and budgets depend on runtime and configuration. Provider failure stops with a repair message; it does not silently change the execution model.
 
-When readiness passes, Spotlight generates:
+A local-capable investigation can still use hosted search, scraping, or other integrations. Inspect the selected runtime and acquisition path before making a privacy assumption. Sensitive mode is the local-only path described in the runtime contract.
 
-- `summary.md`
-- `summary.json`
+Anomaly can supply data-source context and deterministic table checks where the installed integration supports it. A detector signal is a lead; Spotlight and the journalist still need to investigate and assess it.
 
-These summarize the findings, methods, limitations, and confidence margins for the user review gate.
+## Evidence and review
 
-### Ingestion
+The investigator and fact-checker have separate responsibilities. Source material is retained locally before it is cited. Findings carry evidence, confidence, limitations, and source references; fact-check verdicts do not replace the journalist's decision.
 
-After approval, Spotlight invokes the ingest skill to write case outputs into the user’s vault and update the related registries.
+The Investigation gate checks enough high-confidence findings, independent source support, unresolved disputes, affected or non-official perspectives where relevant, a primary-document trail, and stated or resolved gaps. A blocked case should report its gaps rather than manufacture readiness.
 
-## 5. Readiness criteria
+## Case artifacts
 
-All six readiness criteria must pass before the Investigation gate opens:
+A case folder contains the approved brief, `data/methodology.json`, investigation findings and logs, `data/fact-check.json`, saved research and evidence, and a review summary. Research-enabled cases also hold topic-lane results and marked clues. Activated cases can carry source expressions, source positions, and provenance records. Report outputs and knowledge-ingestion artifacts depend on the journalist's decisions and the case version.
 
-1. **Minimum findings:** at least three high-confidence findings
-2. **Source independence:** at least two independent sources for key claims
-3. **No unresolved disputes:** disputed claims need a resolution path
-4. **Affected perspective:** at least one finding from an affected community or person
-5. **Document trail:** primary documents, not just press coverage
-6. **Gap assessment:** unresolved gaps are either closed or explicitly framed as limitations
+- [Case layout and schemas](https://spotlight.buriedsignals.com/docs/structure.md)
+- [Fact-checking](https://spotlight.buriedsignals.com/docs/fact-checking.md)
+- [Recovery](https://spotlight.buriedsignals.com/docs/recovery.md)
 
-## 6. Fact-checking model
+## Installation and runtime requirements
 
-Spotlight’s fact-checker is intentionally independent from the investigator:
+Engine (`bsig`) is the managed installation authority; Indicator Labs provides guided setup. A source-only route exists for agents and developers working from a checkout, without managed credentials, updates, or repair. Follow the current installation reference rather than a copied shell command from an older release.
 
-- it reads the structured findings output, not the investigator’s reasoning trace
-- it runs in a fresh context
-- it cannot recursively spawn more agents
+The execution host needs local filesystem and shell access to the same checkout, dependencies, and durable case storage. Hosted model inference through a local harness can fit that arrangement; a remote agent without those files cannot assume it can run the workflow.
 
-The fact-checker applies SIFT before seeking corroboration:
+- [Current installation instructions](https://github.com/buriedsignals/spotlight#install)
+- [Source-only instructions](https://github.com/buriedsignals/spotlight#install-from-source-agents)
+- [Runtime contracts and compatibility](https://spotlight.buriedsignals.com/docs/runtimes.md)
+- [Provider and tool integrations](https://spotlight.buriedsignals.com/docs/integrations.md)
 
-- **Stop**
-- **Investigate the source**
-- **Find better coverage**
-- **Trace claims back**
-
-Every claim gets one of four verdicts:
-
-- `verified`
-- `unverified`
-- `disputed`
-- `false`
-
-The distinction between `unverified` and `false` is critical:
-
-- `unverified` means the evidentiary record is silent
-- `false` means reliable evidence directly contradicts the claim
-
-Each claim records evidence for, evidence against, source types, archive URLs, and access methods.
-
-## 7. Evidence and source handling
-
-Public Spotlight behavior that should be preserved:
-
-- scrape before cite
-- keep a local copy of each source
-- archive important sources before relying on them
-- distinguish primary from secondary evidence
-- cap confidence based on source access quality when needed
-
-Archive order is documented as:
-
-1. Wayback Machine
-2. Archive.today
-3. local copy
-
-## 8. Monitoring model
-
-Spotlight can turn findings into monitoring recommendations. With explicit
-approval it hands those recommendations to Mycroft, which owns any durable
-monitoring integration.
-
-Monitoring recommendations can come from the investigator or the fact-checker and are logged into the case output.
-
-## 9. Skills
-
-The public skill registry documented in `AGENTS.md` is:
-
-- `spotlight`: investigation orchestrator and gate logic
-- `editorial-review`: post-Investigation-gate HTML review artifact and feedback loop
-- `integrations`: routing layer for dev-browser, Junkipedia, OSINT Navigator, and other external tools
-- `ingest`: knowledge archival into a vault
-- `monitoring`: monitoring orchestration
-- `web-archiving`: evidence preservation workflows
-- `content-access`: paywall and access-method handling
-- `osint`: OSINT tool routing and catalog
-- `investigation-methodology`: step-by-step investigation techniques
-- `follow-the-money`: financial methodology
-- `social-media-intelligence`: account authenticity and narrative tracking
-
-Canonical URLs:
-
-- spotlight: https://spotlight.buriedsignals.com/skills/spotlight/SKILL.md
-- editorial-review: https://spotlight.buriedsignals.com/skills/editorial-review/SKILL.md
-- integrations: https://spotlight.buriedsignals.com/skills/integrations/SKILL.md
-- ingest: https://spotlight.buriedsignals.com/skills/ingest/SKILL.md
-- monitoring: https://spotlight.buriedsignals.com/skills/monitoring/SKILL.md
-- web-archiving: https://spotlight.buriedsignals.com/skills/web-archiving/SKILL.md
-- content-access: https://spotlight.buriedsignals.com/skills/content-access/SKILL.md
-- osint: https://spotlight.buriedsignals.com/skills/osint/SKILL.md
-- investigation-methodology: https://spotlight.buriedsignals.com/skills/investigation-methodology/SKILL.md
-- follow-the-money: https://spotlight.buriedsignals.com/skills/follow-the-money/SKILL.md
-- social-media-intelligence: https://spotlight.buriedsignals.com/skills/social-media-intelligence/SKILL.md
-
-## 10. Agent contract
-
-The machine-readable runtime contract is at:
-
-- https://spotlight.buriedsignals.com/AGENTS.md
-
-It defines:
-
-- the fixed 13-verb tool vocabulary
-- the investigator manifest
-- the fact-checker manifest
-- the skill registry
-- sensitive mode behavior
-- case directory structure
-- schema references
-
-The fixed verb registry is:
-
-`fetch`, `search`, `read-file`, `write-file`, `edit-file`, `list-files`, `grep-files`, `execute-shell`, `spawn-agent`, `wait-agent`, `invoke-skill`, `query-vault`, `vault-write`
-
-Universal backings documented by Spotlight:
-
-- `fetch`, `search` -> `firecrawl` CLI
-- `query-vault` -> Engine's `bsig wiki search` over the member wiki
-- `vault-write` -> retired with the 1.0 knowledge graph
-
-## 11. Agents
-
-### Investigator
-
-The investigator plans and executes the investigation. It has two modes:
-
-- **PLANNING:** designs the methodology and writes `methodology.json`
-- **EXECUTION:** follows the methodology, writes `findings.json`, and appends `investigation-log.json`
-
-Canonical prompt:
-
-- https://spotlight.buriedsignals.com/agents/investigator.md
-
-### Fact-checker
-
-The fact-checker independently verifies the investigator’s claims using SIFT and evidence search. It writes `fact-check.json`.
-
-Canonical prompt:
-
-- https://spotlight.buriedsignals.com/agents/fact-checker.md
-
-## 12. Case structure
-
-Each investigation writes to an isolated directory under `cases/{project}/`:
-
-- `brief-directions.txt`
-- `summary.md`
-- `data/methodology.json`
-- `data/findings.json`
-- `data/fact-check.json`
-- `data/investigation-log.json`
-- `data/summary.json`
-- `data/monitoring.json` when needed
-- `research/*.md`
-- `research/*.json`
-- `research/archived/`
-- `research/media/`
-
-## 13. Schemas
-
-Canonical schema URLs:
-
-- findings: https://spotlight.buriedsignals.com/schemas/findings.schema.json
-- fact-check: https://spotlight.buriedsignals.com/schemas/fact-check.schema.json
-- methodology: https://spotlight.buriedsignals.com/schemas/methodology.schema.json
-- investigation log: https://spotlight.buriedsignals.com/schemas/investigation-log.schema.json
-- summary: https://spotlight.buriedsignals.com/schemas/summary.schema.json
-
-## 14. Documentation map
-
-Primary docs:
-
-- docs index: https://spotlight.buriedsignals.com/docs/README.md
-- structure: https://spotlight.buriedsignals.com/docs/structure.md
-- runtimes: https://spotlight.buriedsignals.com/docs/runtimes.md
-- integrations: https://spotlight.buriedsignals.com/docs/integrations.md
-- investigating: https://spotlight.buriedsignals.com/docs/investigating.md
-- fact-checking: https://spotlight.buriedsignals.com/docs/fact-checking.md
-- monitoring: https://spotlight.buriedsignals.com/docs/monitoring.md
-- recovery: https://spotlight.buriedsignals.com/docs/recovery.md
-
-## 15. Install and dependencies
-
-Public setup starts at the install landing page:
-
-- https://spotlight.buriedsignals.com/setup.html
-
-One static command installs Spotlight:
-
-- `curl -fsSL https://spotlight.buriedsignals.com/install-spotlight.sh | bash`
-
-Configuration (runtime, API keys, install + vault paths) happens in a local
-configurator the installer serves from 127.0.0.1 on the journalist's machine;
-keys are live-validated with each provider and never transit Buried Signals
-infrastructure.
-
-Required dependency documented in the README:
-
-- `firecrawl` CLI with `FIRECRAWL_API_KEY`
-
-Optional dependencies documented in the README:
-
-- `open-knowledge`
-- `obsidian`
-- Python 3.11+
-- optional integration keys such as `OSINT_NAV_API_KEY`, `JUNKIPEDIA_API_KEY`, `APIFY_API_TOKEN`, `CORE_API_KEY`, and `OPENROUTER_API_KEY` (opt-in decision checks)
-- local runtimes such as llama-server or Ollama (driven by opencode)
-
-## 16. Sensitive mode
-
-Sensitive mode is part of the public runtime contract. When enabled:
-
-- `fetch` and `search` are stripped from the agents
-- research becomes local-only
-- unresolved evidence gaps are marked as sensitive-mode constrained
-
-This is intended for cases that should not send reporting context through third-party APIs.
-
-## 17. Source and attribution
-
-Public source:
-
-- GitHub repo: https://github.com/buriedsignals/spotlight
-
-Spotlight documents that the repo is the agnostic base derived from the Buried Signals Spotlight and OSINT skill stacks, while preserving the editorial invariants around readiness, evidence grounding, verification, and gate sequencing.
+This reference was refreshed on 2026-10-29 from the current README, investigation documentation, runtime documentation, and agent contract. The installed release's files remain the operational authority.

@@ -13,7 +13,7 @@ if [ -e install/configure.html ]; then
   note "install/configure.html must be deleted; both credential paths use Engine outside Spotlight"
 fi
 
-JOIN='https://buriedsignals.com/join'
+JOIN='https://indicator.media/indicator-lab'
 GITHUB='https://github.com/buriedsignals/spotlight'
 BOOTSTRAP='https://navigator.indicator.media/api/artifacts/bootstrap/bsig/<platform>'
 

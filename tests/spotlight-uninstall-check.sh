@@ -25,7 +25,7 @@ grep -q '^# SPOTLIGHT-BEGIN' "$HOME/.zshrc"
 [ -d "$channel" ]
 
 out="$(bash "$product_root/scripts/spotlight-uninstall" 2>&1)"
-printf '%s\n' "$out" | grep -qF 'https://buriedsignals.com/join' || {
+printf '%s\n' "$out" | grep -qF 'https://indicator.media/indicator-lab' || {
   echo "spotlight-uninstall must point leftover users at Indicator Labs"
   exit 1
 }
