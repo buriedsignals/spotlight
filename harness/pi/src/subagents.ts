@@ -158,6 +158,10 @@ export type WorkerLaunch = {
 // Runs one task on a fresh worker: send the prompt, wait for `agent_settled`,
 // read the last assistant text, then close stdin so Pi shuts down in order.
 const CONTROL_TOKENS = /<\|[^<>]*>|<[^<>]*\|>/g;
+// The words of NO_ROOM_STOP (extension.ts) that mark a worker that filled its
+// window, and the prompt it continues with after its one extra fold.
+const NO_ROOM = 'the conversation no longer leaves the model room to answer';
+export const CONTINUE_AFTER_FOLD = 'Your conversation was folded to make room. Continue your task from the checkpoint above.';
 
 export async function runWorker(launch: WorkerLaunch, task: string, signal: AbortSignal): Promise<string> {
 	// A task cancelled while it waited in the queue never starts a worker.
@@ -191,12 +195,18 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 	// ends on that line as its last tool result, with no answer of its own; the
 	// line is its answer.
 	let stopped = '';
+	let refolded = false;
 	const transcript = openTranscript();
 	onJsonlRecords(child.stdout, (record) => {
 		transcript?.(record);
 		if (record.type === 'tool_execution_end') {
 			const text = (record.result as { content?: Array<{ text?: string }> } | undefined)?.content?.[0]?.text ?? '';
 			stopped = text.endsWith(LOOP_STOP) || text.endsWith(REFUSAL_STOP) || text.endsWith(FACT_CHECK_DUE_STOP) ? text : '';
+		}
+		if (record.type === 'response' && record.id === 'compact') {
+			if (record.success) send({ id: 'prompt', type: 'prompt', message: CONTINUE_AFTER_FOLD });
+			else send({ id: 'last', type: 'get_last_assistant_text' });
+			return;
 		}
 		if (record.type === 'response' && record.id === 'prompt') {
 			if (!record.success) answer.reject(new Error(`worker refused the task: ${String(record.error)}`));
@@ -207,6 +217,13 @@ export async function runWorker(launch: WorkerLaunch, task: string, signal: Abor
 			send({ id: 'last', type: 'get_last_assistant_text' });
 		} else if (record.type === 'response' && record.id === 'last') {
 			const text = String((record.data as { text?: string | null } | undefined)?.text ?? '');
+			// arms on 8699f11d: a fact-checker that filled its window ended on the
+			// no-room line after 6 of 22 claims. It is folded once and continues.
+			if (!stopped && !refolded && text.includes(NO_ROOM)) {
+				refolded = true;
+				send({ id: 'compact', type: 'compact' });
+				return;
+			}
 			// A worker that ended with nothing, or only a chat-template control
 			// token such as <|tool_response>, failed; it did not answer.
 			if (stopped) answer.resolve(stopped);

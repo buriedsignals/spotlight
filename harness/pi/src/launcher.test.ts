@@ -17,6 +17,7 @@ import { CHECKOUT_ROOT, agentSpec, loadComposition, deliverableFor } from './rol
 import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
 import { registerFetchedPages } from './extension.ts';
+import { CONTINUE_AFTER_FOLD } from './subagents.ts';
 import { blockedStop, budgetedWebResult, CALL_BUDGET_SPENT, FACT_CHECK_DUE, FACT_CHECK_DUE_NOTICE, FACT_CHECK_DUE_REPEAT, FACT_CHECK_STOP, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded, UNPRODUCTIVE_NEXT, UNPRODUCTIVE_STOP } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 import { TASK_AFTER_FOLD, taskAfterFold } from './checkpoint.ts';
@@ -3161,4 +3162,34 @@ test('Stop: {"type":"abort"} on stdin reaches the orchestrator and ends the turn
 	chat.send({ type: 'abort' });
 	assert.equal((await chat.waitFor((record) => record.type === 'response' && record.command === 'abort', before)).success, true);
 	await chat.waitFor((record) => record.type === 'agent_settled', before);
+});
+
+// arms on 8699f11d (ds-spectator fact-checker-4, r5-spectator fact-checker-2):
+// a worker that filled its window ended on the no-room line, and its task
+// with it. It is folded once and continues.
+test('a worker that runs out of room is folded once and continues its task', async (t) => {
+	const checkpoint = '## Goal\nCheck the findings.\n## Progress\nRead the filing.\n## Decisions\nNone.\n## Next\nWrite the fact-check.\n## Open gate\nNone.';
+	const fake = await startFakeOpenAI((request) => {
+		// The checkpoint request carries no tools and no role prompt.
+		if ((request.tools ?? []).length === 0) return { text: checkpoint };
+		if (isWorkerRequest(request, 'fact-checker')) {
+			if (JSON.stringify(request.messages).includes(CONTINUE_AFTER_FOLD)) return { text: 'Fact-check continued after the fold.' };
+			// Large tool results and long reasoning, as fact-checker-4's 10-13k reasoning turns.
+			return { reasoning: Array.from({ length: 300 }, (_, step) => `Step ${step} of part ${toolResults(request).length}.`).join(' '), toolCalls: [{ name: 'read_file', arguments: { path: `research/part-${toolResults(request).length}.txt` } }] };
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	await unlink(join(caseDir, 'data', 'fact-check.json'));
+	for (let n = 0; n < 12; n += 1) await writeFile(join(caseDir, 'research', `part-${n}.txt`), `Part ${n}: the filing names the owner. `.repeat(400));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_CONTEXT_WINDOW: '32000', SPOTLIGHT_COMPACT_AT: '31000' });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const result = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker')).at(-1)!).join('\n');
+	assert.match(result, /Fact-check continued after the fold\./, result.slice(0, 600));
+	assert.match(chat.stderr(), /checkpoint: session-ok/, 'the worker was folded');
 });
