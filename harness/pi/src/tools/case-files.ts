@@ -481,9 +481,55 @@ function refuseMissingCitedFiles(caseDir: string, target: string, content: strin
 	throw new FileRefused(`refused: data/fact-check.json cites files that are not in the case folder; the file is unchanged.\n${[...missing].join('\n')}\nCite only a file you saved in the case (list_files shows them). If no saved source supports the finding, set the verdict to unverified.`);
 }
 
+// U4 (f9fed1d2, r5 kde stage 1): after its verdicts were accepted, the
+// fact-checker fetched again with save_as onto the research files they cite,
+// and the cited lines no longer stated the claims. A research/ or evidence/
+// file the evidence bundle, the source expressions or the fact-check cite is
+// never rewritten: the new copy goes under a new name.
+function citedPaths(caseDir: string): Set<string> {
+	const cited = new Set<string>();
+	const read = (relative: string): unknown => {
+		try {
+			return JSON.parse(readFileSync(join(caseDir, relative), 'utf8'));
+		} catch {
+			return undefined;
+		}
+	};
+	const add = (value: unknown) => {
+		if (typeof value === 'string' && value) cited.add(value.replace(/^\.\//, ''));
+	};
+	for (const item of ((read('data/evidence-bundle.json') as { items?: unknown[] } | undefined)?.items ?? []) as Array<Record<string, unknown>>) {
+		add(item?.raw_path);
+		add(item?.downloaded_document_path);
+		add(item?.path);
+		for (const derivative of (Array.isArray(item?.text_derivatives) ? item.text_derivatives : []) as Array<Record<string, unknown>>) add(derivative?.path);
+	}
+	for (const expression of ((read('data/source-expressions.json') as { expressions?: unknown[] } | undefined)?.expressions ?? []) as Array<{ anchor_ref?: { path?: unknown } }>) add(expression?.anchor_ref?.path);
+	for (const claim of ((read('data/fact-check.json') as { claims?: unknown[] } | undefined)?.claims ?? []) as Array<Record<string, unknown>>) {
+		for (const key of ['evidence_for', 'evidence_against']) {
+			for (const evidence of (Array.isArray(claim?.[key]) ? claim[key] : []) as Array<{ local_file?: unknown; source_ref?: { path?: unknown } }>) {
+				add(evidence?.local_file);
+				add(evidence?.source_ref?.path);
+			}
+		}
+	}
+	return cited;
+}
+
+function refuseCitedOverwrite(caseDir: string, target: string): void {
+	const path = caseRelative(caseDir, target);
+	if (!/^(research|evidence)\//.test(path) || lstatOrUndefined(target) === undefined || !citedPaths(caseDir).has(path)) return;
+	const dot = path.indexOf('.', path.lastIndexOf('/'));
+	const [stem, ext] = dot === -1 ? [path, ''] : [path.slice(0, dot), path.slice(dot)];
+	let n = 2;
+	while (lstatOrUndefined(join(caseDir, `${stem}-${n}${ext}`)) !== undefined) n += 1;
+	throw new FileRefused(`refused: ${path} is cited evidence and must not change; the file is unchanged. Save the new copy under a new name, such as ${stem}-${n}${ext}.`);
+}
+
 // Writes without following a symlink at the last step either.
 export function writeConfined(caseDir: string, root: string, path: string, content: string | Buffer, writes?: string[], denyWrites?: string[]): string {
 	const target = writeTarget(caseDir, root, path, writes, denyWrites);
+	refuseCitedOverwrite(caseDir, target);
 	const bytes = typeof content === 'string' ? Buffer.from(content, 'utf8') : content;
 	if (bytes.length > MAX_WRITE_BYTES) throw new FileRefused(`refused: content is larger than ${MAX_WRITE_BYTES} bytes`);
 	const fd = openSync(target, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600);

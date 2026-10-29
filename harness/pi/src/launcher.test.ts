@@ -1958,6 +1958,37 @@ test('a first fact-check task carries the structure, one claim per finding; once
 	assert.ok(!userText(second).includes('Start from this structure'), 'a fact-check that exists gets no structure');
 });
 
+// U4 (f9fed1d2, r5 kde stage 1): after its verdicts were accepted, the
+// fact-checker saved new copies over the research files they cite.
+test('on every tier a cited research file is never overwritten, and a new name saves', async (t) => {
+	for (const tier of ['12b', 'frontier']) {
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'fact-checker')) {
+				return toolResults(request).length === 0
+					? { toolCalls: [{ name: 'write_file', arguments: { path: 'research/filing.txt', content: 'overwritten\n' } }, { name: 'write_file', arguments: { path: 'research/filing-2.txt', content: 'new copy\n' } }] }
+					: { text: 'Done.' };
+			}
+			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = join(space.casesRoot, 'case-a');
+		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+		await unlink(join(caseDir, 'data', 'fact-check.json'));
+		const cited = await readFile(join(caseDir, 'research', 'filing.txt'), 'utf8');
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier });
+
+		await settledPrompt(chat, 'Continue.');
+		chat.process.stdin.end();
+		await chat.exited;
+
+		const results = toolResults(fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker')).at(-1)!);
+		assert.equal(results[0], 'refused: research/filing.txt is cited evidence and must not change; the file is unchanged. Save the new copy under a new name, such as research/filing-2.txt.', tier);
+		assert.equal(results[1], 'wrote research/filing-2.txt', tier);
+		assert.equal(await readFile(join(caseDir, 'research', 'filing.txt'), 'utf8'), cited, `${tier}: the cited file is unchanged`);
+	}
+});
+
 // U3 census (84674fd9): a fact-checker wrote fact-check content over
 // data/findings.json. Each worker writes only its own files.
 test('the fact-checker cannot write the findings and the investigator cannot write the fact-check; each is told its own file', async (t) => {
