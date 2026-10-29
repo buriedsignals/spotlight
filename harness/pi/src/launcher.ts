@@ -496,16 +496,19 @@ async function finalTask(harness: Harness, role: string, task: string, signal: A
 	return { text: `${withAnomaly}${line}${start}`, header: `${task}${anomaly}${line}`, start: owed?.start, passages: passages || undefined };
 }
 
-// The passages a worker started with, kept once in a harness-written case
-// file so a fold can point at them instead of carrying them (wave 1 on
-// 52bf6183: about 15k of the fact-checker's 21.8k-character task).
+// The passages a worker started with, kept once so a fold can point at them
+// instead of carrying them (wave 1 on 52bf6183: about 15k of the
+// fact-checker's 21.8k-character task). The file sits in the harness data
+// folder, never in the case, so nothing that lists or hashes the case sees it;
+// read_file reads exactly that one file (tools/case-files.ts).
 let passagesWritten = 0;
 function keepPassages(harness: Harness, role: string, passages: string | undefined): string | undefined {
 	if (!passages) return undefined;
-	const path = `data/worker-passages/${role}-${Date.now()}-${++passagesWritten}.md`;
+	const folder = resolve(harness.config.dataDir, 'work', role, 'passages');
+	const path = join(folder, `${role}-${Date.now()}-${++passagesWritten}.md`);
 	try {
-		mkdirSync(resolve(harness.active.caseDir, 'data', 'worker-passages'), { recursive: true, mode: 0o700 });
-		writeFileSync(resolve(harness.active.caseDir, path), `${passages}\n`, { mode: 0o600 });
+		mkdirSync(folder, { recursive: true, mode: 0o700 });
+		writeFileSync(path, `${passages}\n`, { mode: 0o600 });
 		return path;
 	} catch (error) {
 		harness.log(`the ${role}'s case passages could not be kept: ${(error as Error).message}`);

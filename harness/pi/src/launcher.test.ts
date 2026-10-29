@@ -734,6 +734,7 @@ test('on the 12b after a fold a fact-checker gets its task\'s own lines, the str
 		`#!${process.execPath}\nconst { execFileSync } = require('node:child_process');\nconst args = process.argv.slice(2);\nif (args.includes('integrations.case_search')) process.stdout.write(${JSON.stringify(passages)});\nelse { try { process.stdout.write(execFileSync(${JSON.stringify(process.env.SPOTLIGHT_PYTHON ?? 'python3')}, args, { stdio: ['inherit', 'pipe', 'inherit'] })); } catch (error) { process.stdout.write(error.stdout ?? ''); process.exitCode = error.status ?? 1; } }\n`,
 		{ mode: 0o755 },
 	);
+	const before = await caseDigests(caseDir);
 	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_PYTHON: python, SPOTLIGHT_MODEL_CONTEXT_WINDOW: '40960' });
 
 	await settledPrompt(chat, 'Continue.');
@@ -747,10 +748,13 @@ test('on the 12b after a fold a fact-checker gets its task\'s own lines, the str
 	assert.match(after, /TASK-MARKER: check every finding\./);
 	assert.match(after, /Your deliverable: data\/fact-check\.json/);
 	assert.match(after, /Start from this structure/, 'the structure comes back while data/fact-check.json is not written');
-	const kept = /Case passages for this task: (data\/worker-passages\/fact-checker-[^;]+\.md); read it if you need them again\./.exec(after)?.[1];
+	const kept = /Case passages for this task: (\/[^;]+\/work\/fact-checker\/passages\/fact-checker-[^;]+\.md); read it if you need them again\./.exec(after)?.[1];
 	assert.ok(kept, after.slice(0, 2000));
 	assert.doesNotMatch(text, /PASSAGE-MARKER/);
-	assert.match(await readFile(join(caseDir, kept), 'utf8'), /PASSAGE-MARKER/);
+	assert.match(await readFile(kept, 'utf8'), /PASSAGE-MARKER/);
+	// The passages live outside the case: nothing that lists or hashes the case,
+	// the provenance manifest included, sees a new file.
+	assert.deepEqual(await caseDigests(caseDir), before);
 });
 
 test('after a fold the fact-check structure comes back only while data/fact-check.json is not written', () => {

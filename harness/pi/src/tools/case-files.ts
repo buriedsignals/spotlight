@@ -40,7 +40,6 @@ const PROTECTED = [
 	/^data\/editorial-case\.json$/, // newsroom case reference (the launcher)
 	/^data\/newsroom-(checks|submission)\.json$/, // newsroom check flags and submission (the launcher)
 	/^data\/case-contract\.json$/, // activation receipt (the launcher runs case-contract.py activate-new; the gate approval binds it)
-	/^data\/worker-passages\//, // the passages a worker started with (the launcher keeps them for after a fold)
 ];
 
 // Written only by scripts/write-source-expressions.py, which computes every
@@ -724,6 +723,12 @@ function* caseFiles(caseDir: string, start: string): Generator<string> {
 	}
 }
 
+// The passages file only as the launcher wrote it: a regular file (not a
+// link) at that exact absolute path.
+function keptPassages(path: string): boolean {
+	return isAbsolute(path) && lstatOrUndefined(path)?.isFile() === true;
+}
+
 export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot' | 'scope'> & Partial<Pick<ToolContext, 'env'>>): ToolDefinition[] {
 	const { caseDir, writeRoot } = context;
 	const role = context.env?.SPOTLIGHT_ROLE;
@@ -734,6 +739,9 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 	// One research direction's investigator (directions.ts) reads only its own
 	// entries in the files it writes, and its writes merge into the whole file.
 	const direction = context.env?.SPOTLIGHT_DIRECTION;
+	// The one file outside the case a worker may read: the passages it started
+	// with, which the launcher keeps in the harness data folder (launcher.ts).
+	const passages = context.env?.SPOTLIGHT_TASK_PASSAGES;
 	const split = (target: string) => (direction && isDirectionFile(caseRelative(caseDir, target)) ? caseRelative(caseDir, target) : undefined);
 	const shown = (target: string, text: string) => {
 		const name = split(target);
@@ -760,7 +768,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				if (input.json_pointer !== undefined && (input.offset || input.limit)) {
 					throw new ToolArgumentError('read_file: use either json_pointer or offset/limit');
 				}
-				const source = readTarget(caseDir, input.path, scope);
+				const source = input.path === passages && keptPassages(passages) ? passages : readTarget(caseDir, input.path, scope);
 				const text = shown(source, readFileSync(source, 'utf8'));
 				let selected = text;
 				if (input.json_pointer !== undefined) {
