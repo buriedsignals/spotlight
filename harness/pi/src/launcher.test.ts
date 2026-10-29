@@ -16,7 +16,7 @@ import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, agentSpec, loadComposition, deliverableFor } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
-import { blockedStop, CALL_BUDGET_SPENT, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded } from './extension.ts';
+import { blockedStop, budgetedWebResult, CALL_BUDGET_SPENT, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded } from './extension.ts';
 import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 import { TASK_AFTER_FOLD } from './checkpoint.ts';
 import { maxOutputTokens } from './config.ts';
@@ -102,6 +102,54 @@ test('on the 12b the reads of one turn share 30,000 characters, and the next tur
 	assert.equal(kept[0].length + kept[1].length, 30_000);
 	assert.ok([first, second].some((text) => text.endsWith(notice)), 'the read past the turn budget carries the truncation notice');
 	assert.equal(next, page);
+});
+
+// r5 swiss on a4f47704: one 49,241-character http_get result right after a fold
+// took an investigator's prompt from 19.4k to 38.8k tokens of the 40,960 window.
+test('on the 12b a web result past the turn\'s read budget is saved whole to a case file, and the model gets its head and the path', async (t) => {
+	const page = `# Registry\n${'The registry lists the fixture company. '.repeat(1250)}`;
+	const fake = await startFakeOpenAI(
+		orchestratorScript([{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }], (request) =>
+			toolResults(request).length === 0 ? { toolCalls: [{ name: 'fetch', arguments: { url: 'https://registry.example.org/company/42' } }] } : { text: 'Fetched.' },
+		),
+	);
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await caseAtInvestigation(space);
+	const python = join(space.root, 'python-fetch');
+	const envelope = JSON.stringify({ markdown: page, source_url: 'https://registry.example.org/company/42', provider: 'crawl4ai', status_code: 200 });
+	await writeFile(
+		python,
+		`#!${process.execPath}\nconst { execFileSync } = require('node:child_process');\nconst args = process.argv.slice(2);\nif (args.includes('integrations.scraping')) process.stdout.write(${JSON.stringify(envelope)});\nelse { try { process.stdout.write(execFileSync(${JSON.stringify(process.env.SPOTLIGHT_PYTHON ?? 'python3')}, args, { stdio: ['inherit', 'pipe', 'inherit'] })); } catch (error) { process.stdout.write(error.stdout ?? ''); process.exitCode = error.status ?? 1; } }\n`,
+		{ mode: 0o755 },
+	);
+	// Tor mode checks the final URL without a DNS lookup, so no network is reached.
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_PYTHON: python, SPOTLIGHT_ANONYMIZE_FETCH: 'true' });
+
+	await settledPrompt(chat, 'Continue.');
+
+	const result = toolResults(fake.requests.find((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 1)!)[0];
+	const saved = /It is saved whole at (research\/tool-results\/fetch-[A-Za-z0-9_-]+\.txt):/.exec(result)?.[1];
+	assert.ok(saved, result.slice(-400));
+	assert.ok(result.length < 2_500, `${result.length} characters entered the context`);
+	const whole = await readFile(join(caseDir, saved), 'utf8');
+	assert.ok(whole.length > 30_000 && whole.startsWith(result.slice(0, 2_000)), 'the file holds the whole result the model saw the head of');
+});
+
+// The launcher test above runs fetch end to end; http_get and browse need the
+// network or a browser, so each web tool is checked against the budget here.
+test('every web tool\'s result shares the 12b turn budget, and one past it is saved and cut to its head', () => {
+	for (const tool of ['http_get', 'fetch', 'browse']) {
+		const saved: string[] = [];
+		const save = (path: string) => (saved.push(path), path);
+		assert.deepEqual(budgetedWebResult(tool, 'c1', 'x'.repeat(1_000), 30_000, save), { used: 1_000 }, tool);
+		const over = budgetedWebResult(tool, 'c/2', 'y'.repeat(49_241), 30_000, save)!;
+		assert.equal(over.used, 2_000, tool);
+		assert.deepEqual(saved, [`research/tool-results/${tool}-c_2.txt`], tool);
+		assert.ok(over.replacement!.startsWith('y'.repeat(2_000)) && over.replacement!.includes(`saved whole at ${saved[0]}`), tool);
+		assert.equal(budgetedWebResult(tool, 'c3', 'z'.repeat(5_000), 1_500, () => undefined)!.used, 1_500, tool);
+	}
+	assert.equal(budgetedWebResult('search', 'c4', 'x'.repeat(49_241), 30_000, () => 'p'), undefined);
 });
 
 // Gold run 1 on 99c6567e: the orchestrator called source_expressions and got only "Tool source_expressions not found".
