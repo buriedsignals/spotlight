@@ -103,14 +103,15 @@ export const GATE_DECIDED_REFUSAL = 'The Investigation gate is decided: the memb
 // What the launcher answers an investigator spawn before the brief is approved (launcher.ts refusalFor).
 export const BRIEF_PENDING_REFUSAL = 'The brief is not approved yet, so no investigator runs. Agree the direction with the member, and once they approve it write it to brief-directions.txt with write_file. Then spawn the investigator with MODE: PLANNING to design the methodology.';
 
-// The fact-check's progress: claims written, findings still without one.
-export type FactCheckProgress = () => { claims: number; left: number };
+// The fact-check's progress: findings still without a claim.
+export type FactCheckProgress = () => { left: number };
 
 export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }, progress?: FactCheckProgress): ToolDefinition {
 	let corrections = 0;
 	// arms on 8699f11d: a fact-checker that wrote claims but not all of them was
-	// cut off by the cap of runs per cycle. A run that added claims lets the
-	// next one continue without counting against the cap.
+	// cut off by the cap of runs per cycle. A run that checked more findings
+	// lets the next one continue without counting against the cap; with at most
+	// one finding fewer each time, the bypass ends.
 	let progressed = false;
 	return {
 		name: 'spawn_agent',
@@ -153,7 +154,9 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 			process.send({ kind: 'spotlight-spawn', id, agent, task } satisfies SpawnRequest);
 			try {
 				const result = await promise;
-				if (before) progressed = (progress?.().claims ?? 0) > before.claims;
+				// Progress is findings checked, not claims written: claims under ids
+				// that are no finding would let the bypass run on without end.
+				if (before) progressed = (progress?.().left ?? before.left) < before.left;
 				if (!result.ok) throw new Error(result.error ?? `${agent} failed`);
 				return { content: [{ type: 'text', text: result.text || '(no output)' }], details: undefined };
 			} finally {

@@ -3281,3 +3281,30 @@ test('fact-checkers that keep adding claims continue past the cap until every fi
 	const claims = (JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8')) as { claims: unknown[] }).claims;
 	assert.equal(claims.length, 5);
 });
+
+// Codex review of #273: progress counted by claims let a fact-checker writing
+// claims under ids that are no finding pass the cap without end.
+test('fact-checkers whose claims check no finding stay under the cap', async (t) => {
+	const spawn = { name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Continue the fact-check.' } };
+	let written = 0;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) {
+			if (toolResults(request).length > 0) return { text: 'Wrote one claim.' };
+			written += 1;
+			const claim = { finding_id: `X${written}`, claim_text: 'Not a finding.', verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [] };
+			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', project: 'p', claims: [claim] }) } }] };
+		}
+		return toolResults(request).length < 5 ? { toolCalls: [spawn] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	await unlink(join(caseDir, 'data', 'fact-check.json'));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const results = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker')).at(-1)!);
+	assert.equal(results.filter((result) => result.includes(FACT_CHECKERS_SPENT)).length, 2, results.map((r) => r.slice(0, 80)).join(' | '));
+});

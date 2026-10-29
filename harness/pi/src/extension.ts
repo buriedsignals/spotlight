@@ -61,11 +61,7 @@ function toolsFor(role: string): ToolDefinition[] {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
 		const cycle = { spawns: 0 };
 		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => (cycle.spawns = 0)));
-		const progress = () => {
-			const docs = readCheckDocs(active.caseDir);
-			const claims = (docs.factCheck as { claims?: unknown } | undefined)?.claims;
-			return { claims: Array.isArray(claims) ? claims.length : 0, left: nextCheckBatch(docs).left };
-		};
+		const progress = () => ({ left: nextCheckBatch(readCheckDocs(active.caseDir)).left });
 		tools.push(spawnAgentTool(spawnableWorkers(composition), cycle, progress));
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter))));
 		tools.splice(0, tools.length, ...tools.map((tool) => keepGateBound(tool, active.caseDir, async () => String((await resolveCase(active, runAdapter)).phase ?? ''))));
