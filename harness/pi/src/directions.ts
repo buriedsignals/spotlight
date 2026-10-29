@@ -124,6 +124,8 @@ export function directionView(name: string, text: string, tag: string): string {
 
 export class DirectionRefused extends Error {}
 
+const IDENTITY_FIELDS = ['schema_version', 'project', 'lead', 'run_id', 'created_at'];
+
 // The whole file after the direction's worker wrote `written` from its view:
 // the other entries as they are, its own replaced by what it wrote, the
 // other fields as it wrote them. A log cycle it writes is tagged and added;
@@ -160,6 +162,10 @@ export function mergeDirection(name: string, current: string | undefined, writte
 		}
 	}
 	const out: Doc = { ...doc, [key]: merged };
+	// The fields that name the file stay as the case has them. train-tor on
+	// 52bf6183: one direction's write renamed the project "... (direction 1)"
+	// and left out run_id and created_at, and the case failed validation.
+	for (const field of IDENTITY_FIELDS) if (base?.[field] !== undefined) out[field] = base[field];
 	// The file's other lists (gaps, connections, monitoring) gather every
 	// direction's entries: a worker that wrote without reading keeps the rest.
 	for (const [field, value] of Object.entries(base ?? {})) {

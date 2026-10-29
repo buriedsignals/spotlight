@@ -159,5 +159,10 @@ test('each spawn names the role\'s deliverable from its return contract, and a c
 	assert.deepEqual(files('investigator', 'investigation', 'MODE: AMENDMENT', 'round_topics'), ['data/research-round.json']);
 	assert.equal(deliverableFor('investigator', 'investigation', 'MODE: STRUCTURAL CORRECTION\nFix F2.'), undefined);
 	assert.equal(deliverableFor('investigator', 'investigation', 'MODE: EVIDENCE CORRECTION'), undefined);
+	// train-tor on 52bf6183: DeepSeek V4.1 Flash quoted the task string.
+	assert.equal(deliverableFor('investigator', 'investigation', '"MODE: STRUCTURAL CORRECTION — shape-only. Fix D1-F2."'), undefined);
+	assert.equal(deliverableFor('investigator', 'investigation', '**MODE: EVIDENCE CORRECTION**'), undefined);
+	assert.deepEqual(files('investigator', 'methodology_approval', '"MODE: EXECUTION'), ['data/methodology.json']);
+	assert.deepEqual(files('investigator', 'research', '"MODE: AMENDMENT', 'suggestions'), ['data/research-suggestions.json']);
 	assert.equal(deliverableFor('orchestrator', 'investigation', 'x'), undefined);
 });

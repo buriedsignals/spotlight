@@ -54,6 +54,20 @@ test('a direction\'s worker reads only its own entries, and its write keeps ever
 	assert.deepEqual(JSON.parse(await call('read_file', { path: 'data/findings.json' })).findings, [{ id: 'D2-F1', claim: 'second, corrected' }]);
 });
 
+// train-tor on 52bf6183: one direction's write renamed the project and left
+// out run_id and created_at, and validate-case failed on all three.
+test('a direction\'s write keeps the file\'s project, version, run id and creation time', async (t) => {
+	const { caseDir, call } = await fixture(t, undefined, 'investigator', { SPOTLIGHT_DIRECTION: 'D1' });
+	const bundle = { schema_version: '1.0', project: 'Tor leadership', run_id: 'run-1', created_at: '2026-10-29T00:00:00Z', items: [{ id: 'D2-E1' }] };
+	await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), JSON.stringify(bundle));
+
+	await call('write_file', { path: 'data/evidence-bundle.json', content: JSON.stringify({ project: 'Tor — Executive Director (direction 1)', direction: 'direction:executive-director', items: [{ id: 'D1-E1' }] }) });
+
+	const merged = JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8'));
+	assert.deepEqual([merged.schema_version, merged.project, merged.run_id, merged.created_at], ['1.0', 'Tor leadership', 'run-1', '2026-10-29T00:00:00Z']);
+	assert.deepEqual(merged.items.map((item: { id: string }) => item.id), ['D2-E1', 'D1-E1']);
+});
+
 test('a direction\'s worker writing an id without its tag is refused and the file is unchanged', async (t) => {
 	const { caseDir, call } = await fixture(t, undefined, 'investigator', { SPOTLIGHT_DIRECTION: 'D2' });
 	const before = JSON.stringify({ project: 'p', findings: [{ id: 'D1-F1', claim: 'first' }] });

@@ -684,6 +684,27 @@ test('on the 12b a second fold\'s checkpoint request carries the previous checkp
 	}
 });
 
+// train-tor on 52bf6183: a quoted STRUCTURAL CORRECTION task ran as five
+// direction workers, and one dropped four findings that passages still cited.
+test('a correction task on a plan of two directions runs one investigator, unsplit, even when quoted', async (t) => {
+	const plan = { investigation_plan: [{ direction: 'Owners', direction_id: 'owners', questions: [], steps: [] }, { direction: 'Board', direction_id: 'board', questions: [], steps: [] }] };
+	const task = '"MODE: STRUCTURAL CORRECTION — shape-only. Fix the bundle fields."';
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { text: 'Fixed.' };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space, undefined, plan);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+
+	await settledPrompt(chat, 'Continue.');
+
+	const tasks = [...new Set(fake.requests.filter((request) => isWorkerRequest(request, 'investigator')).map(userText))];
+	assert.equal(tasks.length, 1);
+	assert.doesNotMatch(tasks[0], /DIRECTION \d of \d|Your deliverable/);
+});
+
 // 12B r3 A2 ia: every assistant message in the requests carried its earlier
 // reasoning_content, which the Gemma 4 template renders after the last user
 // message; the 12b was trained on renders without it.

@@ -268,11 +268,21 @@ const RESEARCH_PHASES = ['research', 'research_approval'];
 // is nothing to execute, so those phases always get PLANNING. Otherwise the
 // task's mode line decides (its first line, or any line starting "MODE:"),
 // and without one the phase does.
+// A task's lines as its mode is read from them. DeepSeek V4.1 Flash wrote
+// task strings that open with a quote ('"MODE: STRUCTURAL CORRECTION — ...',
+// train-tor on 52bf6183), so a correction read as an investigation task, was
+// split into direction workers, and one of them dropped four findings.
+// Leading quotes, backticks and markdown marks are not part of the mode line.
+function modeLines(task: string): string[] {
+	return task.split('\n').map((line) => line.trim().replace(/^["'`*#>\s]+/, ''));
+}
+
 export function workerMode(phase: string, task: string): 'PLANNING' | 'EXECUTION' | 'AMENDMENT' {
 	if (PLANNING_PHASES.includes(phase)) return 'PLANNING';
-	const lines = [task.trim().split('\n')[0] ?? '', ...task.split('\n').filter((line) => line.startsWith('MODE:'))];
+	const all = modeLines(task.trim());
+	const lines = [all[0] ?? '', ...all.filter((line) => line.startsWith('MODE:'))];
 	for (const line of lines) {
-		const mode = /^(?:MODE:\s*)?(PLANNING|EXECUTION|AMENDMENT|METHODOLOGY CORRECTION|(?:[A-Z]+ )?CORRECTION)\b/.exec(line.trim())?.[1];
+		const mode = /^(?:MODE:\s*)?(PLANNING|EXECUTION|AMENDMENT|METHODOLOGY CORRECTION|(?:[A-Z]+ )?CORRECTION)\b/.exec(line)?.[1];
 		if (mode === 'PLANNING' || mode === 'EXECUTION' || mode === 'AMENDMENT') return mode;
 		if (mode === 'METHODOLOGY CORRECTION') return 'PLANNING';
 		if (mode) return 'EXECUTION';
@@ -297,7 +307,7 @@ export function deliverableFor(role: string, phase: string, task: string, resear
 	if (role === 'fact-checker') return one('data/fact-check.json', 'Your deliverable: data/fact-check.json covering every finding in data/findings.json for this cycle; write it with write_file, then finish.');
 	if (role === 'analyst') return one('data/knowledge-proposal.json');
 	if (role !== 'investigator') return undefined;
-	if (/^(?:MODE:\s*)?(?:[A-Z]+ )?CORRECTION\b/m.test(task.trim())) return undefined;
+	if (modeLines(task).some((line) => /^(?:MODE:\s*)?(?:[A-Z]+ )?CORRECTION\b/.test(line))) return undefined;
 	const mode = workerMode(phase, task);
 	if (mode === 'PLANNING') return one('data/methodology.json');
 	if (mode === 'AMENDMENT') {
