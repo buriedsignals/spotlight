@@ -28,6 +28,8 @@ export function baseEnv(space: Workspace, modelBaseURL: string, caseId = 'case-a
 		SPOTLIGHT_CASES_ROOT: space.casesRoot,
 		SPOTLIGHT_CASE_ID: caseId,
 		SPOTLIGHT_HARNESS_DATA: space.dataDir,
+		// The fact-check re-check would fetch the fixtures' source URLs (#274); tests reach no network.
+		SPOTLIGHT_RECHECK: 'off',
 		...(process.env.SPOTLIGHT_PYTHON ? { SPOTLIGHT_PYTHON: process.env.SPOTLIGHT_PYTHON } : {}),
 	};
 }

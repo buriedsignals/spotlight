@@ -357,7 +357,12 @@ def validate_source_expressions(
                 and sha256_file(path) == expression.get("original_artifact_sha256")
                 for value in original_paths
             ):
-                errors.append(f"{prefix}: original evidence artifact path/hash is not intact")
+                # u3 p1 eu-ai-act: three items carried the empty-file hash
+                # (e3b0c442...), and "not intact" did not say which part to fix.
+                named = original_paths[0] if original_paths else "no file"
+                errors.append(f"{prefix}: original evidence artifact path/hash is not intact: evidence item "
+                              f"{expression.get('original_evidence_bundle_id')} names {named}, and its sha256 is not that file's SHA-256; "
+                              "write the file's SHA-256 into the item's sha256")
             derivatives = bundle.get("text_derivatives", [])
             if bundle.get("human_verification_required") is True:
                 blocked_support.add(expression_id)

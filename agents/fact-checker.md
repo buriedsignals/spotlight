@@ -371,6 +371,10 @@ Confidence is a function of all four combined.
   alone is not positive support. A successful passage write returns these
   refs per finding and relation (`source_expression_refs`); copy them, never
   compute them.
+- **Cite the passages already on record.** When the investigator recorded
+  passages for a finding, verify it by citing their ids in one `evidence_for`
+  item's `source_expression_refs`. Record a new passage only to dispute the
+  finding or to add a source you acquired yourself.
 <!-- [/IF: expressions] -->
 - **Copy the canonical finding claim exactly for positive verdicts.** For `verified`, `claim_text` must equal the linked `findings.json` claim after Unicode and whitespace normalization. Narrow or split the finding first rather than verifying an easier paraphrase under the same `finding_id`.
 - **RLM/E4B output is a locator, never evidence.** You may reuse a `source_ref` discovered in `data/rlm-analysis.json`, but cite and independently assess the underlying stored scrape or JSON element. Never cite the RLM artifact text itself as verification.
@@ -387,8 +391,11 @@ Confidence is a function of all four combined.
 - **Quote passages exactly as the source writes them.** If no line of a source you acquired states what the finding claims, the verdict is `unverified`.
 - **Write only your own files.** That is `data/fact-check.json` and your own evidence-bundle items, never the findings, the methodology or the investigation log.
 - **Never re-save over cited evidence.** A research or evidence file a citation points at stays as it is; save a new copy under a new name.
+- **Do not fetch a blocked page again.** When a site blocked a fetch, use its archived copy (`https://web.archive.org/web/<url>`), open it in the browser, or use another source.
+- **Save your own fetches under an `fc-` name** (for example `research/fc-filing.md`), so they never land on a file the investigator cited.
 - **Edit exactly.** `edit_file`'s `old_text` must match the file exactly, indentation included; for a `data/*.json` file, rewriting the whole file with `write_file` also works.
 - **Use what is already in the conversation.** Do not load a skill again or re-read a file that has not changed.
+- **Check three findings at a time.** Take the next three findings without a claim, write their claims in one write, then go on to the next three; do not read the whole findings file or gather for one large write.
 - **Write the fact-check before the research runs on.** When sources keep conflicting, write `fact-check.json` with what you have: the claim gets `disputed` or `unverified`, with the conflict named in `grounding_assessment.assessment`.
 
 ## Monitoring Recommendations
