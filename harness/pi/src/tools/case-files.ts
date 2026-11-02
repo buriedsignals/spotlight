@@ -1384,6 +1384,33 @@ function refuseUnacquiredArchiveDocument(context: Parameters<typeof caseFileTool
 	}
 }
 
+// fz2-fix9 seq 58/59 (Gemma 26B, batch D1-F1, D1-F2): finding_id was right
+// inside assessment and repeated beside it, and the copy beside it was refused
+// with raw schema text ("root: must not have additional properties"), so the
+// fact-checker wrote nothing. A top-level finding_id is folded into the
+// assessment: the same id is dropped, a missing one moves in, and a different
+// one is refused naming both. A one-finding batch's schema has no finding_id
+// (code fills it), so there the folded id must be the batch's and is dropped.
+// It runs as the tool's prepareArguments: Pi checks the schema before execute.
+function foldFindingId(given: unknown, batch: string[], filled: string | undefined): unknown {
+	if (!given || typeof given !== 'object') return given;
+	const outer = { ...(given as Record<string, unknown>) };
+	const inner = outer.assessment && typeof outer.assessment === 'object' && !Array.isArray(outer.assessment) ? { ...(outer.assessment as Record<string, unknown>) } : undefined;
+	if (!inner || outer.finding_id === undefined) return given;
+	const yours = batch.length ? ` Your batch: ${batch.join(', ')}.` : '';
+	if (inner.finding_id !== undefined && inner.finding_id !== outer.finding_id) {
+		throw new ToolArgumentError(`record_assessment: finding_id ${JSON.stringify(outer.finding_id)} beside assessment differs from ${JSON.stringify(inner.finding_id)} inside it; give finding_id once, inside assessment.${yours}`);
+	}
+	inner.finding_id = outer.finding_id;
+	delete outer.finding_id;
+	if (filled) {
+		if (inner.finding_id !== filled) throw new ToolArgumentError(`record_assessment: your batch holds ${filled} only; omit finding_id or use ${filled}.`);
+		delete inner.finding_id;
+	}
+	outer.assessment = inner;
+	return outer;
+}
+
 export function recordTools(tools: ToolDefinition[], context: ToolContext): ToolDefinition[] {
 	const role = context.env.SPOTLIGHT_ROLE;
 	if (role !== 'investigator' && role !== 'fact-checker') return [];
@@ -1403,7 +1430,7 @@ export function recordTools(tools: ToolDefinition[], context: ToolContext): Tool
 		finding ? ['id', 'finding_fingerprint'] : ['claim_text'],
 		finding || filled ? [] : ['finding_id'],
 	);
-	const batchNote = finding ? '' : filled ? ` Your batch holds one finding, ${filled}: omit finding_id and code fills it.` : batch.length ? ` finding_id is required: one of ${batch.join(', ')} (your batch).` : ' finding_id is required.';
+	const batchNote = finding ? '' : filled ? ` Your batch holds one finding, ${filled}: omit finding_id and code fills it.` : batch.length ? ` finding_id is required inside assessment: one of ${batch.join(', ')} (your batch).` : ' finding_id is required inside assessment.';
 	const write = tools.find((tool) => tool.name === 'write_file');
 	const expressions = tools.find((tool) => tool.name === 'source_expressions');
 	if (!write) return [];
@@ -1414,7 +1441,9 @@ export function recordTools(tools: ToolDefinition[], context: ToolContext): Tool
 		executionMode: 'sequential',
 		description: finding
 			? 'Record one finding as a structured object. Supply claim, evidence, sources and confidence with any relevant grounding fields. Omit id for a stable generated ID; supply an existing id to correct it. Code supplies the file, contract, project and fingerprint. Other findings remain unchanged. Archive URLs require an actual capture. You choose evidence and judgment.'
-			: `Record one independent assessment as a structured object. Supply finding_id, verdict, confidence and your evidence/grounding assessment. Omit claim_text to copy the exact finding. Exact quotes and source_ref locators use the same acquired-capture and passage checks as a fact-check write. Other assessments remain unchanged. You choose the verdict and evidence; code supplies the canonical file and references.${batchNote}`,
+			: `Record one independent assessment as a structured object: assessment holds finding_id, verdict, confidence and your evidence/grounding assessment; finding_id goes inside assessment, not beside it. Omit claim_text to copy the exact finding. Exact quotes and source_ref locators use the same acquired-capture and passage checks as a fact-check write. Other assessments remain unchanged. You choose the verdict and evidence; code supplies the canonical file and references.${batchNote}`,
+		// Pi validates arguments against the schema before execute, after this.
+		...(finding ? {} : { prepareArguments: (args: unknown) => foldFindingId(args, batch, filled) }),
 		async execute(id, raw, signal, ...rest) {
 			const proposed = (raw as Record<string, unknown> | undefined)?.[key] as RecordRow | undefined;
 			if (!finding && !filled && proposed && typeof proposed === 'object' && proposed.finding_id === undefined) {

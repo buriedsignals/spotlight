@@ -5,6 +5,7 @@ import { mkdtemp, readFile, realpath, rm, unlink, writeFile } from 'node:fs/prom
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { validateToolArguments } from '@earendil-works/pi-ai';
 import type { TestContext } from 'node:test';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { typedTools } from './index.ts';
@@ -22,8 +23,15 @@ async function fixture(t: TestContext, role: string, extra: Record<string,string
 		assert.ok(tool,`production tools must expose ${name}`);
 		return tool.execute('call',args,undefined,undefined,undefined as never);
 	};
+	// As Pi's agent loop (pi-agent-core agent-loop.js): prepareArguments, then
+	// pi-ai's schema validation, then execute.
+	const live = async(name:string,args:Record<string,unknown>)=> {
+		const tool = tools.get(name)!;
+		const prepared = tool.prepareArguments ? tool.prepareArguments(args) : args;
+		return tool.execute('call',validateToolArguments(tool as never,{type:'toolCall',id:'call',name,arguments:prepared} as never),undefined,undefined,undefined as never);
+	};
 	const json = async(name:string)=>JSON.parse(await readFile(join(caseDir,'data',name),'utf8'));
-	return {caseDir,context,tools,call,json};
+	return {caseDir,context,tools,call,live,json};
 }
 
 test('typed finding records supply stable IDs and fingerprints while preserving other rows',async t=>{
@@ -235,7 +243,7 @@ test('evidence-bundle file aliases cannot introduce an unacquired archive', asyn
 // was refused. Code owns IDs: a one-finding batch gets its id filled and the
 // result says so; any other batch's schema requires it, and the refusal names
 // the batch.
-test('record_assessment fills finding_id for a one-finding batch and otherwise requires it, naming the batch',async t=>{
+test('record_assessment fills finding_id for a one-finding batch and otherwise requires it inside assessment, naming the batch; a copy beside assessment is folded in',async t=>{
 	const single=await fixture(t,'fact-checker',{SPOTLIGHT_FC_BATCH:'F1'});
 	const source=await single.json('findings.json');
 	const result=await single.call('record_assessment',{assessment:{verdict:'unverified',confidence:'low',evidence_for:[],evidence_against:[]}});
@@ -247,10 +255,25 @@ test('record_assessment fills finding_id for a one-finding batch and otherwise r
 	const several=await fixture(t,'fact-checker',{SPOTLIGHT_FC_BATCH:'F1,F2'});
 	const schema=several.tools.get('record_assessment')!.parameters as any;
 	assert.ok(schema.properties.assessment.required.includes('finding_id'),'the schema requires finding_id for a batch of several');
-	assert.match(several.tools.get('record_assessment')!.description,/finding_id is required: one of F1, F2/);
+	assert.match(several.tools.get('record_assessment')!.description,/finding_id is required inside assessment: one of F1, F2/);
 	const bytes=await readFile(join(several.caseDir,'data/fact-check.json'),'utf8');
 	await assert.rejects(several.call('record_assessment',{assessment:{verdict:'unverified',confidence:'low',evidence_for:[],evidence_against:[]}}),/finding_id is required\. Your batch: F1, F2/);
 	assert.equal(await readFile(join(several.caseDir,'data/fact-check.json'),'utf8'),bytes,'nothing was written');
+
+	// fz2-fix9 seq 58/59 (Gemma 26B, two-finding batch): finding_id right inside
+	// assessment and repeated beside it, refused by Pi's schema check before
+	// execute. The recorded shape, with this fixture's ids and an unverified
+	// verdict, through the same path as a live call.
+	assert.match(several.tools.get('record_assessment')!.description,/finding_id goes inside assessment, not beside it/);
+	const grounding={assessment:'The official page lists the role; a second record gives the full name.',claim_elements_checked:['name','role','organization'],confidence_cap:'low',missing_assumptions:['The two records name the same person.'],support_type:'direct'};
+	const verdict=async()=>(await several.json('fact-check.json')).claims.find((row:any)=>row.finding_id==='F1')?.verdict;
+	await several.live('record_assessment',{assessment:{confidence:'low',evidence_for:[],evidence_against:[],finding_id:'F1',grounding_assessment:grounding,verdict:'unverified'},finding_id:'F1'});
+	assert.equal(await verdict(),'unverified','the recorded shape is saved: the copy beside assessment is dropped');
+	await several.live('record_assessment',{assessment:{confidence:'medium',evidence_for:[],evidence_against:[],verdict:'disputed'},finding_id:'F1'});
+	assert.equal(await verdict(),'disputed','a finding_id given only beside assessment is moved into it and saved');
+	const after=await readFile(join(several.caseDir,'data/fact-check.json'),'utf8');
+	await assert.rejects(several.live('record_assessment',{assessment:{finding_id:'F1',verdict:'unverified',confidence:'low',evidence_for:[],evidence_against:[]},finding_id:'F2'}),/finding_id "F2" beside assessment differs from "F1" inside it; give finding_id once, inside assessment\. Your batch: F1, F2\./);
+	assert.equal(await readFile(join(several.caseDir,'data/fact-check.json'),'utf8'),after,'a mismatch writes nothing');
 });
 
 // Phase B (Gemma12): a tool's own schema refusal on an enum lists the allowed values.
