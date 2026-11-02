@@ -949,6 +949,10 @@ export const FC_BATCH_SPENT = 'made the batch\'s calls without writing all its c
 // found" (fz2 on comb: "invoke_skill ... belongs to the fact-checker", said to
 // the fact-checker). The role text still names those tools; this says they are
 // closed for this batch and what is open (review e2e 'FC tool narrowing').
+// Set while registerBatchEnd has narrowed this fact-checker's tools; only then
+// is a missing tool closed by the batch (review-fix7 B1: in sensitive mode
+// search and fetch are missing from the first call for another reason).
+const batchTools = { narrowed: false };
 export const fcBatchClosed = (tool: string) =>
 	`${tool} is closed for the rest of this batch because the batch's call budget is spent; source_expressions, invoke_skill and new sources are closed until the batch ends. Next: write this batch's claims with record_assessment (or write_file to data/fact-check.json). read_file, grep_files, list_files and hash_files stay open for saved evidence. Then finish.`;
 function registerBatchEnd(pi: ExtensionAPI, tools: string[]): void {
@@ -958,6 +962,7 @@ function registerBatchEnd(pi: ExtensionAPI, tools: string[]): void {
 	pi.on('agent_start', () => {
 		done = false;
 		calls = 0;
+		batchTools.narrowed = false;
 		pi.setActiveTools(tools);
 	});
 	// Reserve each call before execution: a model can emit many in one response.
@@ -969,7 +974,9 @@ function registerBatchEnd(pi: ExtensionAPI, tools: string[]): void {
 		return undefined;
 	});
 	pi.on('tool_execution_end', () => {
-		if (calls >= FC_BATCH_DUE) pi.setActiveTools(writingTools);
+		if (calls < FC_BATCH_DUE) return;
+		batchTools.narrowed = true;
+		pi.setActiveTools(writingTools);
 	});
 	pi.on('tool_result', async (event) => {
 		const text = event.content.map((part) => part.type === 'text' ? part.text : '').join('\n');
@@ -1261,7 +1268,7 @@ function registerToolOwners(pi: ExtensionAPI, role: string): void {
 			.map(([owner]) => owner);
 		if (!name || owners.length === 0) return undefined;
 		// The batch fact-checker's own tool is missing only because the batch closed it.
-		if (role === 'fact-checker' && process.env.SPOTLIGHT_FC_BATCH && owners.includes(role)) return { message: { ...event.message, content: [{ type: 'text', text: fcBatchClosed(name) }] } as typeof event.message };
+		if (role === 'fact-checker' && batchTools.narrowed && owners.includes(role)) return { message: { ...event.message, content: [{ type: 'text', text: fcBatchClosed(name) }] } as typeof event.message };
 		const next = role === ORCHESTRATOR ? 'Delegate that step with spawn_agent.' : 'Leave that step to them and say so in your answer.';
 		return { message: { ...event.message, content: [{ type: 'text', text: `${name} is not one of your tools; it belongs to the ${owners.join(' and the ')}. ${next}` }] } as typeof event.message };
 	});
