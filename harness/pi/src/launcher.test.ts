@@ -5238,7 +5238,9 @@ test('an orchestrator that only narrates has its authorized work continued by th
 		await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: await gateConfig(space) }), 'Continue.');
 		assert.equal(fake.requests.filter((request) => systemText(request).includes('You were delegated a task')).length, 0);
 	});
-	await t.test('at most two continuations per member turn, then a receipt', async (t) => {
+	// review-fix5 C2: a worker the continuation itself ran is this member turn's
+	// progress, so the harness does not continue a second time.
+	await t.test('after a worker the continuation ran, no second continuation', async (t) => {
 		let answers = 0;
 		const fake = await startFakeOpenAI((request) => (isWorkerRequest(request, 'investigator') ? { text: `Worked ${++answers}.` } : { text: 'I am continuing the investigation.' }));
 		t.after(() => fake.close());
@@ -5246,7 +5248,28 @@ test('an orchestrator that only narrates has its authorized work continued by th
 		await caseAtInvestigation(space);
 		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier' });
 		await settledPrompt(chat, 'Continue.');
-		assert.equal(tagged(fake.requests.filter((request) => !systemText(request).includes('You were delegated a task'))).length, 2);
-		assert.match(chat.stderr(), /\[Harness continued the authorized work\] receipt: 2 automatic continuations this member turn are spent/);
+		assert.equal(tagged(fake.requests.filter((request) => !systemText(request).includes('You were delegated a task'))).length, 1);
+		assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 0).length, 1);
 	});
+});
+
+// review-fix5 C1 (the reviewer's probe): the member's Stop reaches a worker the
+// harness's own continuation started, and no continuation follows the abort.
+test('aborting the turn stops a worker the auto-continue started, and no continuation follows', async (t) => {
+	const fake = await startFakeOpenAI((request) => (isWorkerRequest(request, 'investigator') ? 'hang' : { text: 'I am continuing to work on the plan.' }));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await briefApproved(space);
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+	await waitUntil(() => existsSync(join(space.dataDir, 'locks', 'case-a.lock')) && readFileSync(join(space.dataDir, 'locks', 'case-a.lock'), 'utf8').includes('children'), 30_000);
+	const before = new Set((await lockRecord(space)).children);
+	chat.send({ id: 'p-1', type: 'prompt', message: 'Go ahead.' });
+	await waitUntil(() => fake.requests.some((request) => isWorkerRequest(request, 'investigator')), 60_000);
+	const workers = (await lockRecord(space)).children.filter((pid) => !before.has(pid));
+	assert.ok(workers.length > 0 && workers.every(isAlive), 'the continuation started the planner');
+	const sent = fake.requests.length;
+	chat.send({ id: 'abort-1', type: 'abort' });
+	await waitUntil(() => workers.every((pid) => !isAlive(pid)), 20_000);
+	await new Promise((done) => setTimeout(done, 2000));
+	assert.equal(fake.requests.slice(sent).filter((request) => JSON.stringify(request.messages).includes(AUTO_CONTINUE_TAG)).length, 0, 'no continuation after the abort');
 });

@@ -626,7 +626,7 @@ function registerTextTurnNudge(pi: ExtensionAPI, resolve: () => Promise<Record<s
 		})();
 		if (outputs.length) progressed = true;
 	});
-	pi.on('message_end', async (event) => {
+	pi.on('message_end', async (event, ctx) => {
 		const message = event.message as { role?: string; stopReason?: string; content?: string | Array<{ type: string; text?: string }> };
 		const parts = typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : (message.content ?? []);
 		if (message.role !== 'assistant') return;
@@ -642,13 +642,28 @@ function registerTextTurnNudge(pi: ExtensionAPI, resolve: () => Promise<Record<s
 				log(`${AUTO_CONTINUE_TAG} receipt: ${AUTO_CONTINUES} automatic continuations this member turn are spent; the turn ends`);
 			} else {
 				let state: Record<string, unknown> = {};
+				// review-fix5 C1: the member's Stop must reach a worker this
+				// continuation starts, as it does a worker the model's resolve starts.
+				const controller = new AbortController();
+				const stop = () => controller.abort(ctx.signal?.reason);
+				if (ctx.signal?.aborted) stop();
+				ctx.signal?.addEventListener('abort', stop, { once: true });
 				try {
-					const result = await resolveTool.execute('auto-continue', {}, undefined, undefined, undefined as never);
+					const result = await resolveTool.execute('auto-continue', {}, controller.signal, undefined, undefined as never);
 					state = JSON.parse(result.content.map((part) => ('text' in part ? part.text : '')).join('')) as Record<string, unknown>;
 				} catch (error) {
 					log(`${AUTO_CONTINUE_TAG} skipped: ${(error as Error).message}`);
+				} finally {
+					ctx.signal?.removeEventListener('abort', stop);
+				}
+				if (controller.signal.aborted) {
+					log(`${AUTO_CONTINUE_TAG} stopped: the turn was aborted`);
+					return;
 				}
 				const receipts = Array.isArray(state.fixed_steps) ? (state.fixed_steps as Array<{ step: string; ok: boolean }>) : [];
+				// review-fix5 C2: a worker this continuation ran is this member
+				// turn's progress, so it is not continued again.
+				if (receipts.some((receipt) => receipt.ok && receipt.step.startsWith('spawn '))) progressed = true;
 				if (receipts.length) {
 					continued += 1;
 					nudged = true;
