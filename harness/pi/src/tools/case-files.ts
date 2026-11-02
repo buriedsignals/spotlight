@@ -12,9 +12,9 @@ import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT, ORCHESTRATOR, deliverableFor, factCheckChecklist, readCheckDocs } from '../roles.ts';
 import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey, removesAnonymousRows } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
-import { fetchedFile } from './fetch.ts';
+import { factCheckerAlternative, factCheckerCapture, fetchedFile } from './fetch.ts';
 import { completeNavigatorMetadata } from './navigator-receipts.ts';
-import { ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
+import { RECEIPTS, ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
 import type { CaseScope, ToolContext } from './run.ts';
 
 export class FileRefused extends Error {}
@@ -150,7 +150,7 @@ function refuseNonObjectData(caseDir: string, target: string, content: string): 
 // builder makes when written, and refused with the builder's text.
 async function refuseInvalidProposal(context: ToolContext, target: string, content: string): Promise<void> {
 	if (caseRelative(context.caseDir, target) !== 'data/knowledge-proposal.json') return;
-	const result = await runPython(context, [join(CHECKOUT_ROOT, 'scripts', 'build-knowledge-batch.py'), context.caseDir, '--check-proposal'], { input: content, timeoutMs: 60_000 });
+	const result = await runPython(context, [join(CHECKOUT_ROOT, 'scripts', 'build-knowledge-batch.py'), context.caseDir, '--check-proposal'], { input: content, timeoutMs: 60_000, keys: [RECEIPTS] });
 	// 3: the case, not the proposal, refuses the build; the harness reports
 	// that when the analyst finishes, so the write is not refused for it.
 	if (result.code !== 2) return;
@@ -361,11 +361,29 @@ function hasCaseLocalAnchor(item: unknown, verdict: unknown): boolean {
 	return nonEmpty(row.evidence_bundle_id) || (access.includes(String(row.access_method)) && (nonEmpty(row.local_file) || (!!row.source_ref && typeof row.source_ref === 'object' && !Array.isArray(row.source_ref))));
 }
 
+// r12 (r12-ingest-audit A3): both verified rows cited only the investigator's
+// capture, while the fact-checker's own identical re-fetch sat uncited. In an
+// activated case a verified row needs a passage the fact-checker acquired. The
+// fetch registry's receipt decides (Codex review of fix11: created_by can be
+// written by anyone, and an item id can name a file other than the one quoted):
+// the file the row quotes from is a registered fact-checker capture, and a
+// cited evidence item lists that same file. validate-fact-check.py and the
+// batch builder read the same receipt.
+export const ACQUIRED_FILES = ['raw_path', 'downloaded_document_path', 'screenshot_path', 'path'];
+function factCheckerAcquired(context: ToolContext, entry: Record<string, unknown>, bundle: Record<string, unknown>[]): boolean {
+	const ref = (entry.source_ref ?? {}) as Record<string, unknown>;
+	const paths = [ref.path, entry.local_file].filter((path): path is string => typeof path === 'string' && path.trim() !== '');
+	const cited = entry.evidence_bundle_id === undefined ? undefined : bundle.find((item) => item.id === entry.evidence_bundle_id);
+	const lists = (item: Record<string, unknown>, path: string) => [...ACQUIRED_FILES.map((key) => item[key]), ...(Array.isArray(item.text_derivatives) ? item.text_derivatives.map((d: { path?: unknown }) => d?.path) : [])].includes(path);
+	return paths.some((path) => !!factCheckerCapture(context, path) && (entry.evidence_bundle_id === undefined || (!!cited && lists(cited, path))));
+}
+
 // Phase B (Gemma12 worker state and the 31B live run r5): a positive verdict
 // was accepted here and validate-case.py then refused it ("positive verdict
 // needs an accessible case-local evidence anchor"). The same rule at the
 // write, after the more specific passage and file checks, naming the step.
-function refuseUnanchoredVerdicts(caseDir: string, target: string, content: string): void {
+function refuseUnanchoredVerdicts(context: ToolContext, target: string, content: string): void {
+	const caseDir = context.caseDir;
 	if (caseRelative(caseDir, target) !== 'data/fact-check.json') return;
 	let factCheck: { schema_version?: unknown; claims?: unknown };
 	try {
@@ -377,8 +395,40 @@ function refuseUnanchoredVerdicts(caseDir: string, target: string, content: stri
 		const items = Array.isArray(claim.evidence_for) ? claim.evidence_for : [];
 		return items.length > 0 && !items.some((item) => hasCaseLocalAnchor(item, (claim as { verdict?: unknown }).verdict));
 	});
-	if (!unanchored.length) return;
-	throw new FileRefused(`refused: data/fact-check.json is unchanged; ${unanchored.map((claim) => String(claim.finding_id)).join(', ')} has a verified verdict with no case-local evidence anchor: no evidence_for item has an evidence_bundle_id, or an access_method (full_text, open_access or archive_copy) with a local_file or source_ref. Cite a capture you acquired: give its source_ref.path from your fetch with the quote found there (or its line_start/line_end), and the harness adds its evidence_bundle_id; passages alone are not an anchor. Or acquire an independent capture with fetch (save_as under research/), or set the verdict to unverified.`);
+	// Codex re-review of fix11: validate-fact-check.py refuses an entry whose
+	// local_file and source_ref.path name different files; the write says so first.
+	const split = positiveClaims(factCheck).flatMap((claim) => (Array.isArray(claim.evidence_for) ? claim.evidence_for : []).flatMap((item: unknown, index: number) => {
+		const row = (item ?? {}) as Record<string, unknown>;
+		const local = row.local_file, path = ((row.source_ref ?? {}) as Record<string, unknown>).path;
+		if (typeof local !== 'string' || typeof path !== 'string' || !local.trim() || !path.trim() || resolve(caseDir, local) === resolve(caseDir, path)) return [];
+		return [`${String(claim.finding_id)} evidence_for[${index}]: local_file is ${local} but source_ref.path is ${path}; set local_file to ${path}, the file your source_ref locates the quote in, or remove local_file.`];
+	}));
+	if (split.length) throw new FileRefused(`refused: data/fact-check.json is unchanged; an evidence item must name one file:\n${split.join('\n')}`);
+	if (unanchored.length) throw new FileRefused(`refused: data/fact-check.json is unchanged; ${unanchored.map((claim) => String(claim.finding_id)).join(', ')} has a verified verdict with no case-local evidence anchor: no evidence_for item has an evidence_bundle_id, or an access_method (full_text, open_access or archive_copy) with a local_file or source_ref. Cite a capture you acquired: give its source_ref.path from your fetch with the quote found there (or its line_start/line_end), and the harness adds its evidence_bundle_id; passages alone are not an anchor. Or acquire an independent capture with fetch (save_as under research/), or set the verdict to unverified.`);
+	if (factCheck?.schema_version !== '1.1') return;
+	let bundle: Record<string, unknown>[] = [];
+	try {
+		const items = (JSON.parse(readFileSync(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')) as { items?: unknown }).items;
+		bundle = Array.isArray(items) ? items.filter((item) => item && typeof item === 'object') : [];
+	} catch {
+		// No bundle: only a registered capture can count.
+	}
+	const borrowed = (Array.isArray(factCheck.claims) ? factCheck.claims : []).filter((claim: { verdict?: unknown; evidence_for?: unknown }) => {
+		if (claim?.verdict !== 'verified') return false;
+		const items = Array.isArray(claim.evidence_for) ? claim.evidence_for : [];
+		return items.length > 0 && !items.some((item: unknown) => item && typeof item === 'object' && factCheckerAcquired(context, item as Record<string, unknown>, bundle));
+	});
+	if (!borrowed.length) return;
+	const lines = borrowed.map((claim: { finding_id?: unknown; evidence_for?: unknown[] }) => {
+		const cited = (claim.evidence_for ?? []).flatMap((item) => {
+			const row = (item ?? {}) as Record<string, unknown>;
+			const path = ((row.source_ref ?? {}) as Record<string, unknown>).path ?? row.local_file;
+			return typeof path === 'string' ? [path] : [];
+		});
+		const own = cited.map((path) => factCheckerAlternative(context, path)).find(Boolean);
+		return `${String(claim.finding_id)}: ${own ? `cite your own capture ${own}, which holds the same bytes, in your evidence item` : 'cite a capture you acquired with fetch (save_as under research/), in your evidence item'}, or set the verdict to unverified.`;
+	});
+	throw new FileRefused(`refused: data/fact-check.json is unchanged; a verified verdict needs evidence the fact-checker acquired, and these cite only another worker's capture (an investigator's saved copy alone never makes a verdict verified):\n${lines.join('\n')}`);
 }
 
 function refuseUncitedVerdicts(caseDir: string, target: string, content: string): void {
@@ -527,6 +577,68 @@ function refuseBundleRewrites(caseDir: string, target: string, content: string, 
 	});
 	if (moved.length === 0) return;
 	throw new FileRefused(`refused: data/evidence-bundle.json changes or removes the files of ${moved.join('; ')}; the file is unchanged. Recorded passages anchor to those files, so keep them as they are, and record any other file as a new item.`);
+}
+
+// r12 (r12-ingest-audit A2): the fact-checker appended FC-E1 for its own
+// re-fetch without created_by, so its own later edits were refused, and it was
+// never counted as its acquisition. Code stamps what it knows: an item the
+// fact-checker appends is the fact-checker's, and one whose raw_path is its
+// registered capture was read in full (access_method full_text). A fact-check
+// entry tied by id to such an item gets the same access_method, which is what
+// the Batch 1.1 builder reads as re_fetched (build-knowledge-batch.py).
+function stampFactCheckerRecords(context: ToolContext, target: string, content: string, role: string | undefined): string {
+	if (role !== 'fact-checker') return content;
+	const name = caseRelative(context.caseDir, target);
+	if (name !== 'data/evidence-bundle.json' && name !== 'data/fact-check.json') return content;
+	let document: Record<string, unknown>;
+	try {
+		document = JSON.parse(content);
+	} catch {
+		return content;
+	}
+	if (!document || typeof document !== 'object' || Array.isArray(document)) return content;
+	const rows = (value: unknown) => (Array.isArray(value) ? value.filter((row) => row && typeof row === 'object' && !Array.isArray(row)) : []) as Record<string, unknown>[];
+	const captured = (path: unknown) => typeof path === 'string' && !!factCheckerCapture(context, path);
+	let changed = false;
+	if (name === 'data/evidence-bundle.json') {
+		let existing = new Set<unknown>();
+		try {
+			existing = new Set(rows((JSON.parse(readFileSync(target, 'utf8')) as { items?: unknown }).items).map((item) => item.id));
+		} catch {
+			// A new bundle: every item is this write's.
+		}
+		for (const item of rows(document.items)) {
+			if (!existing.has(item.id) && item.created_by !== 'fact-checker') {
+				item.created_by = 'fact-checker';
+				changed = true;
+			}
+			if (item.created_by === 'fact-checker' && item.access_method === undefined && captured(item.raw_path)) {
+				item.access_method = 'full_text';
+				changed = true;
+			}
+		}
+	} else {
+		let bundle: Record<string, unknown>[] = [];
+		try {
+			bundle = rows((JSON.parse(readFileSync(join(context.caseDir, 'data', 'evidence-bundle.json'), 'utf8')) as { items?: unknown }).items);
+		} catch {
+			// No bundle: only a cited capture path can be stamped.
+		}
+		for (const claim of rows(document.claims)) {
+			for (const entry of [...rows(claim.evidence_for), ...rows(claim.evidence_against)]) {
+				if (entry.access_method !== undefined) continue;
+				// Only an entry already tied by id to an item that lists the
+				// registered fact-checker capture it quotes from: the quote path ties
+				// one only once the quote is found there. A line number or a path
+				// alone never counts (review-fix4 N1).
+				if (entry.evidence_bundle_id !== undefined && factCheckerAcquired(context, entry, bundle)) {
+					entry.access_method = 'full_text';
+					changed = true;
+				}
+			}
+		}
+	}
+	return changed ? `${JSON.stringify(document, null, 2)}\n` : content;
 }
 
 // A fact-check claim checks the finding it names, word for word (gold osmf
@@ -1119,7 +1231,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, true);
 				const normalized = normalizeArtifactPaths(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, scope);
 				const destination = writeTarget(caseDir, writeRoot, input.path, writes, denyWrites);
-				const content = artifactEnvelope(caseDir, destination, normalized, whole(destination, normalized));
+				const content = stampFactCheckerRecords(context, destination, artifactEnvelope(caseDir, destination, normalized, whole(destination, normalized)), role);
 				refuseCitedWithdrawal(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseMisplacedBrief(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseUnactivatedStart(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
@@ -1131,7 +1243,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseMissingCitedFiles(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseUnknownFlags(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
-				refuseUnanchoredVerdicts(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
+				refuseUnanchoredVerdicts(context, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseUnacquiredArchiveDocument(context, destination, content);
 				await refuseInvalidProposal(context, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				const before = currentText(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
@@ -1165,7 +1277,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 					throw new Error(`edit_file: old_text occurs more than once in ${input.path}; include more context`);
 				}
 				const replacement = text.slice(0, first) + input.new_text + text.slice(first + input.old_text.length);
-				const updated = artifactEnvelope(caseDir, target, replacement, whole(target, replacement, true));
+				const updated = stampFactCheckerRecords(context, target, artifactEnvelope(caseDir, target, replacement, whole(target, replacement, true)), role);
 				refuseRecordedFramework(caseDir, target);
 				refuseNonObjectData(caseDir, target, updated);
 				refuseUncitedVerdicts(caseDir, target, updated);
@@ -1174,7 +1286,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseDriftedClaims(caseDir, target, updated);
 				refuseMissingCitedFiles(caseDir, target, updated);
 				refuseUnknownFlags(caseDir, target, updated);
-				refuseUnanchoredVerdicts(caseDir, target, updated);
+				refuseUnanchoredVerdicts(context, target, updated);
 				refuseUnacquiredArchiveDocument(context, target, updated);
 				await refuseInvalidProposal(context, target, updated);
 				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes, denyWrites)}`);

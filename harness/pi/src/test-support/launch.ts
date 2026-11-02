@@ -8,6 +8,7 @@ import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TestContext } from 'node:test';
 import { CHECKOUT_ROOT } from '../roles.ts';
+import { registerFixtureCapture } from './receipts.ts';
 
 const LAUNCHER = resolve(fileURLToPath(import.meta.url), '../../launcher.ts');
 
@@ -90,6 +91,9 @@ export type Chat = {
 
 export function launch(t: TestContext, env: Record<string, string>, args: string[] = []): Chat {
 	const shim = browserShim(t);
+	// A fixture case's own fact-checker capture has its fetch receipt.
+	const fixtureCase = env.SPOTLIGHT_CASES_ROOT && env.SPOTLIGHT_CASE_ID ? join(env.SPOTLIGHT_CASES_ROOT, env.SPOTLIGHT_CASE_ID) : undefined;
+	if (fixtureCase && env.SPOTLIGHT_HARNESS_DATA && existsSync(fixtureCase)) registerFixtureCapture(env.SPOTLIGHT_HARNESS_DATA, fixtureCase);
 	const child = spawn(process.execPath, [LAUNCHER, ...args], { env: { ...env, PATH: `${shim.dir}${delimiter}${env.PATH ?? ''}` }, stdio: ['pipe', 'pipe', 'pipe'] });
 	const lines: string[] = [];
 	let partial = '';

@@ -187,6 +187,14 @@ def activate_case(case: Path) -> None:
 
     bundle = json.loads(bundle_path.read_text())
     bundle["items"][0]["sha256"] = sha(anchor_path)
+    # The fact-checker's own re-fetch (r6 shape): a verified verdict never rests
+    # on the investigator's capture alone (r12-ingest-audit A3).
+    capture_path = case / "research" / "fc-official-record.md.raw"
+    capture_path.write_text(expression_text + "\n")
+    bundle["items"].append({**bundle["items"][0], "id": "FC-E1", "created_by": "fact-checker",
+                            "query_or_task": "Fact-checker re-fetch of the official record",
+                            "raw_path": "research/fc-official-record.md.raw", "sha256": sha(capture_path),
+                            "access_method": "full_text"})
     write_json(bundle_path, bundle)
 
     core = {
@@ -233,6 +241,8 @@ def activate_case(case: Path) -> None:
 
     fact_check = json.loads(fact_check_path.read_text())
     fact_check["schema_version"] = "1.1"  # activated cases use fact-check contract 1.1
+    fact_check["claims"][0]["evidence_for"][0].update({"evidence_bundle_id": "FC-E1",
+                                                       "local_file": "research/fc-official-record.md.raw"})
     fact_check["claims"][0]["evidence_for"][0]["source_expression_refs"] = [{
         "expression_id": "SX1",
         "expression_fingerprint": expression_fp,

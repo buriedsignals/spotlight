@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { RESEARCH_SWITCH } from './config.ts';
 import { CHECKOUT_ROOT } from './roles.ts';
-import { runPython } from './tools/run.ts';
+import { RECEIPTS, runPython } from './tools/run.ts';
 import type { ToolContext } from './tools/run.ts';
 
 type Check = { name: string; args: string[] };
@@ -83,7 +83,7 @@ export type ValidationOutcome = { ran: string[]; passed: boolean; report: string
 export async function validateInvestigationInputs(context: ToolContext, signal?: AbortSignal): Promise<ValidationOutcome> {
 	const name = 'validate-case.py';
 	try {
-		const result = await runPython(context, [join(CHECKOUT_ROOT, 'scripts', name), context.caseDir, '--json'], { keys: [RESEARCH_SWITCH], timeoutMs: 300_000, signal });
+		const result = await runPython(context, [join(CHECKOUT_ROOT, 'scripts', name), context.caseDir, '--json'], { keys: [RESEARCH_SWITCH, RECEIPTS], timeoutMs: 300_000, signal });
 		const data = JSON.parse(result.stdout);
 		if (!data || typeof data.ok !== 'boolean' || !Array.isArray(data.errors) || data.errors.some((row: { message?: unknown; owner?: unknown } | null) => !row || typeof row.message !== 'string' || !row.message || (typeof row.owner !== 'string' || !['investigator', 'fact-checker'].includes(row.owner))) || ![0, 1].includes(result.code) || data.ok !== (result.code === 0) || data.ok !== (data.errors.length === 0) || result.stderr.trim()) {
 			throw new Error('invalid investigation validator JSON/exit status');
@@ -106,7 +106,7 @@ export async function validateAfterWorker(role: string, phase: string, producerM
 		let text: string;
 		let ok: boolean;
 		try {
-			const result = await runPython(context, check.args, { keys: [RESEARCH_SWITCH], timeoutMs: 300_000 });
+			const result = await runPython(context, check.args, { keys: [RESEARCH_SWITCH, RECEIPTS], timeoutMs: 300_000 });
 			ok = result.code === 0;
 			text = `${result.stdout}\n${result.stderr}`.trim();
 		} catch (error) {
@@ -139,7 +139,7 @@ export async function validateFactCheckBatch(context: ToolContext, expectedFutur
 		ran.push(check.name);
 		try {
 			const json = check.name === 'validate-fact-check.py';
-			const result = await runPython(context, [...check.args, ...(json ? ['--json'] : [])], { keys: [RESEARCH_SWITCH], timeoutMs: 300_000, signal });
+			const result = await runPython(context, [...check.args, ...(json ? ['--json'] : [])], { keys: [RESEARCH_SWITCH, RECEIPTS], timeoutMs: 300_000, signal });
 			signal?.throwIfAborted();
 			let passed = result.code === 0;
 			let report = `${result.stdout}\n${result.stderr}`.trim();
@@ -177,7 +177,7 @@ export async function validateFactCheckBatch(context: ToolContext, expectedFutur
 // repairs no refs.
 export async function factCheckDefects(context: ToolContext, signal?: AbortSignal): Promise<string> {
 	const name = 'validate-fact-check.py';
-	const result = await runPython(context, [join(CHECKOUT_ROOT, 'scripts', name), context.caseDir], { keys: [RESEARCH_SWITCH], timeoutMs: 300_000, signal });
+	const result = await runPython(context, [join(CHECKOUT_ROOT, 'scripts', name), context.caseDir], { keys: [RESEARCH_SWITCH, RECEIPTS], timeoutMs: 300_000, signal });
 	if (result.code === 0) return '';
 	const failures = `${result.stdout}\n${result.stderr}`.split('\n').filter((line) => /^\s*FAIL\b/.test(line));
 	return failures.length ? `${name}: FAILED\n${failures.join('\n')}` : '';
@@ -187,7 +187,7 @@ export async function factCheckDefects(context: ToolContext, signal?: AbortSigna
 // validate-fact-check.py both pass, as the fact-checker's repair loop checks.
 export async function evidenceValidates(context: ToolContext): Promise<boolean> {
 	for (const name of ['validate-case.py', 'validate-fact-check.py']) {
-		const result = await runPython(context, [`${CHECKOUT_ROOT}/scripts/${name}`, context.caseDir], { keys: [RESEARCH_SWITCH], timeoutMs: 300_000 });
+		const result = await runPython(context, [`${CHECKOUT_ROOT}/scripts/${name}`, context.caseDir], { keys: [RESEARCH_SWITCH, RECEIPTS], timeoutMs: 300_000 });
 		if (result.code !== 0) return false;
 	}
 	return true;

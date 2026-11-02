@@ -218,12 +218,8 @@ def build(case: Path, stage: str, excerpt: str | None, clean: bool, activated: b
         project = json.loads((case / "data/methodology.json").read_text(encoding="utf-8")).get("project", findings["project"])
         for document in (findings, check, bundle, expressions):
             document["project"] = project
-        # Anchor the fact-check evidence to the stored passage text.
-        anchor = case / "research" / "filing.txt"
-        evidence = check["claims"][0]["evidence_for"][0]
-        evidence.update({"local_file": "research/filing.txt",
-                         "source_ref": {"path": "research/filing.txt", "line_start": 2, "line_end": 2},
-                         "sha256": hashlib.sha256(anchor.read_bytes()).hexdigest()})
+        # The fact-check evidence is the fact-checker's own capture of the
+        # filing (FC-E1, activated_documents), never only the investigator's.
         if prefixed:
             findings, check, bundle, expressions = (with_direction_ids(doc) for doc in (findings, check, bundle, expressions))
             # The passage's fingerprint covers its evidence item id, and its

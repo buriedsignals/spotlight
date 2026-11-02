@@ -212,7 +212,9 @@ function fetchedPath(context: ToolContext): string | undefined {
 	const dataDir = context.env?.SPOTLIGHT_HARNESS_DATA;
 	return dataDir ? resolve(dataDir, 'work', 'fetched', `${createHash('sha256').update(context.caseDir).digest('hex').slice(0, 16)}.json`) : undefined;
 }
-function recordFetched(context: ToolContext, paths: string[], entry: Fetched): void {
+// browse and http_get record their saved captures here too (Codex re-review of
+// fix11): a fact-checker's genuine capture by either tool is its acquisition.
+export function recordFetched(context: ToolContext, paths: string[], entry: Fetched): void {
 	const path = fetchedPath(context);
 	if (!path) return;
 	let all: Record<string, Fetched> = {};

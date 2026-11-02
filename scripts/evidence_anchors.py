@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+from datetime import datetime
 import unicodedata
 from pathlib import Path
 from typing import Any
@@ -230,3 +232,73 @@ def validate_source_ref(
     if variants and not any(wanted in normalized(selected) for wanted in variants for selected in candidates):
         return {path}, [f"exact quote is not present in the selected source_ref from {path.name}"]
     return {path}, []
+
+
+# r12 (r12-ingest-audit A3, Codex review of fix11): which evidence the
+# fact-checker acquired is a runtime fact, never a model-written created_by.
+# The Pi harness records each fetch in its registry (harness/pi/src/tools/
+# fetch.ts factCheckerCapture), outside the case; these read the same receipt.
+ACQUIRED_PATH_KEYS = ("raw_path", "downloaded_document_path", "screenshot_path", "path")
+
+
+def fetch_registry(case_dir: Path) -> dict[str, Any] | None:
+    """The harness's fetch registry for this case; None outside the Pi harness
+    (SPOTLIGHT_HARNESS_DATA unset), {} when the harness recorded no fetch."""
+    data = os.environ.get("SPOTLIGHT_HARNESS_DATA")
+    if not data:
+        return None
+    key = hashlib.sha256(os.path.realpath(case_dir).encode("utf-8")).hexdigest()[:16]
+    try:
+        value = json.loads((Path(data) / "work" / "fetched" / f"{key}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def fact_checker_capture(case_dir: Path, relative: str, registry: dict[str, Any]) -> bool:
+    """A file the fact-checker fetched, unchanged since (fetch.ts factCheckerCapture)."""
+    entry = registry.get(relative)
+    if not isinstance(entry, dict) or entry.get("acquired_by") != "fact-checker":
+        return False
+    url, accessed = entry.get("url"), entry.get("accessed")
+    if not isinstance(url, str) or not re.match(r"^https?://", url) or not isinstance(accessed, str):
+        return False
+    try:
+        datetime.fromisoformat(accessed.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    path = case_evidence_path(case_dir, relative)
+    return path is not None and path.is_file() and sha256_file(path) == entry.get("sha256")
+
+
+def item_lists(case_dir: Path, item: dict[str, Any], relative: str) -> bool:
+    """Whether an evidence-bundle item lists the case file ``relative``."""
+    target = case_evidence_path(case_dir, relative)
+    if target is None:
+        return False
+    listed = [item.get(key) for key in ACQUIRED_PATH_KEYS]
+    derivatives = item.get("text_derivatives")
+    listed += [d.get("path") for d in derivatives if isinstance(d, dict)] if isinstance(derivatives, list) else []
+    return any(case_evidence_path(case_dir, value) == target for value in listed if isinstance(value, str))
+
+
+def fact_checker_acquired(case_dir: Path, entry: dict[str, Any], bundles: dict[str, dict[str, Any]],
+                          registry: dict[str, Any] | None) -> bool:
+    """Whether an evidence_for entry quotes from a file the fact-checker
+    acquired, and any evidence item it cites lists that same file.
+
+    In the Pi harness the registry receipt decides. Without it (another
+    runtime, an offline check) the best record is an item the fact-checker
+    created that lists the file."""
+    ref = entry.get("source_ref") if isinstance(entry.get("source_ref"), dict) else {}
+    paths = [p for p in (ref.get("path"), entry.get("local_file")) if isinstance(p, str) and p.strip()]
+    cites = entry.get("evidence_bundle_id") is not None
+    cited = bundles.get(normalized(entry.get("evidence_bundle_id"))) if cites else None
+    for path in paths:
+        if registry is not None:
+            acquired = fact_checker_capture(case_dir, path, registry)
+        else:
+            acquired = any(item.get("created_by") == "fact-checker" and item_lists(case_dir, item, path) for item in bundles.values())
+        if acquired and (not cites or (cited is not None and item_lists(case_dir, cited, path))):
+            return True
+    return False

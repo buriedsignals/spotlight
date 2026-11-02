@@ -85,6 +85,10 @@ export function capped(text: string, note = ''): string {
 	return text.length > RETURNED_CHARS ? `${text.slice(0, RETURNED_CHARS)}\n[... truncated at ${RETURNED_CHARS} characters${note}]` : text;
 }
 
+// Where the fetch registry lives: the validators and the batch builder read a
+// fact-checker's acquisition from it (r12-ingest-audit A3, Codex review of fix11).
+export const RECEIPTS = 'SPOTLIGHT_HARNESS_DATA';
+
 export const BASE_ENV = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'SYSTEMROOT'];
 
 // A backing program sees the system basics plus the named variables, nothing else.

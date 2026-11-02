@@ -264,7 +264,7 @@ def _owned_files(bundle: dict[str, Any], readable: set[str] | None) -> dict[str,
 
 
 def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, Any], notes: list[str],
-                      readable: set[str] | None = None) -> dict[str, Any]:
+                      readable: set[str] | None = None, actor: str = "investigator") -> dict[str, Any]:
     label = repr(proposal.get("id"))
     proposal = dict(proposal)
     dropped = sorted(COMPUTED & set(proposal))
@@ -342,6 +342,13 @@ def _build_expression(case: Path, proposal: dict[str, Any], bundle: dict[str, An
             elsewhere = sorted({path for path, _start, _end in _matches(case, proposal["text"], searchable)})
             alternative = (f" Or anchor it to {', '.join(elsewhere[:3])}, which data/evidence-bundle.json lists and which "
                            f"{'hold' if len(elsewhere) > 1 else 'holds'} the same text." if elsewhere else "")
+            if actor == "fact-checker":
+                # r12 seq 85: this hint sent the fact-checker to the investigator's
+                # capture, and its verified rows then rested on that alone. Its own
+                # step is to list its capture (r12-ingest-audit A1).
+                alternative = (f" As the fact-checker, append your own evidence item for {unlisted[0]} to "
+                               f"data/evidence-bundle.json with created_by fact-checker, raw_path and sha256, then "
+                               f"record the passage again; do not anchor it to another worker's capture.")
             named_id = proposal.get("original_evidence_bundle_id")
             missing = f" ({named_id} is not in it yet)" if isinstance(named_id, str) and not item else ""
             raise WriteError(f"expression {label}: the text is in {unlisted[0]}, but no item in data/evidence-bundle.json lists that file, "
@@ -444,7 +451,7 @@ def merge(case: Path, current: dict[str, Any] | None, proposal: dict[str, Any], 
     for raw in proposal.get("expressions", []):
         if not isinstance(raw, dict) or not isinstance(raw.get("id"), str) or not raw["id"]:
             raise WriteError("every proposed expression needs a non-empty id")
-        built = _build_expression(case, raw, bundle, notes if notes is not None else [], readable)
+        built = _build_expression(case, raw, bundle, notes if notes is not None else [], readable, actor)
         existing = by_id.get(raw["id"])
         if existing is None:
             built.update({"finding_links": [], "created_by": actor, "cycle": cycle,

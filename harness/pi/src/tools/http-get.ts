@@ -8,7 +8,7 @@ import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { writeConfined } from './case-files.ts';
 import { egressGet, refuseDirectWhenAnonymized } from './egress.ts';
-import { webURL } from './fetch.ts';
+import { recordFetched, webURL } from './fetch.ts';
 import { checkedParams, jsonResult, savePath, saveTarget } from './run.ts';
 import type { ToolContext } from './run.ts';
 
@@ -84,6 +84,7 @@ export function httpGetTool(context: ToolContext): ToolDefinition {
 			});
 			const body = response.body ?? Buffer.alloc(0);
 			const saved = input.save_as ? writeConfined(context.caseDir, context.writeRoot, saveTarget(context, input.save_as), body) : undefined;
+			if (saved) recordFetched(context, [saved], { url: response.finalURL, accessed: new Date().toISOString(), provider: 'http_get', sha256: createHash('sha256').update(body).digest('hex') });
 			const text = body.toString('utf8');
 			return jsonResult({
 				final_url: response.finalURL,

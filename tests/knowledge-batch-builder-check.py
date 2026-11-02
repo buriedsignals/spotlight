@@ -10,6 +10,7 @@ gives a changed admitted record its next version.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -154,6 +155,27 @@ def main() -> int:
                 "a passage anchored to a derivative does not name it")
         require(batch["claims"][0]["provenance"] == {"method": "agent_candidate", "model": "analyst-model-1"}, "claim provenance")
         first_ids = {r["id"] for array in RULES.ARRAYS for r in batch.get(array, [])}
+
+        # r12 (r12-ingest-audit B1): a verified row with no fetched source on
+        # record (F1's shape: the investigator's item by id, one source). The proposal cannot fix it, so --check-proposal says the
+        # case refuses (3), and the harness stops honestly instead of looping.
+        original_check = read(case, "fact-check.json")
+        unfetched = json.loads(json.dumps(original_check))
+        # A written access_method on the investigator's file is not a re-fetch
+        # (Codex review of fix11): only the fact-checker's own acquisition is.
+        filing = case / "research" / "filing.txt"
+        for entry in unfetched["claims"][0]["evidence_for"]:
+            entry.update({"access_method": "full_text", "evidence_bundle_id": read(case, "evidence-bundle.json")["items"][0]["id"],
+                          "local_file": "research/filing.txt",
+                          "source_ref": {"path": "research/filing.txt", "line_start": 2, "line_end": 2},
+                          "sha256": hashlib.sha256(filing.read_bytes()).hexdigest()})
+        write(case, "fact-check.json", unfetched)
+        checked = subprocess.run([sys.executable, str(SCRIPTS / "build-knowledge-batch.py"), str(case), "--check-proposal"],
+                                 input=json.dumps(PROPOSAL), capture_output=True, text=True)
+        require(checked.returncode == 3 and "the case cannot be built" in checked.stderr
+                and "needs a fetched source and linked passages" in checked.stderr,
+                f"a verified row with no fetched source was blamed on the proposal: {checked.returncode} {checked.stderr}")
+        write(case, "fact-check.json", original_check)
 
         # A single idless fact-check row needs no invented selector. A wrong
         # selector is still refused with an actionable correction.

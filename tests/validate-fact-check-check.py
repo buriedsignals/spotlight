@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import tempfile
 from pathlib import Path
 
@@ -306,7 +307,74 @@ def main() -> int:
         require(failed[0].get("finding_id") == "F2" and failed[0].get("locator") == "fact-check.json.claims[1]",
                 f"duplicate claim label hides the actual repair target: {failed}")
 
-    print("validate-fact-check characterization: 22 passed")
+    # r12 (r12-ingest-audit A3): in an activated case a verified verdict needs
+    # evidence the fact-checker acquired. The F1/F2 shape, the investigator's
+    # E1 alone, fails for the fact-checker; its own FC-E1 passes; unverified is
+    # the honest exit.
+    with tempfile.TemporaryDirectory() as tmp:
+        case = REPORT_FIXTURE.build_case(Path(tmp) / "activated")
+        REPORT_FIXTURE.activate_case(case)
+        results, code = VALIDATOR.validate(case)
+        require(code == 0, f"a verified verdict on the fact-checker's own capture failed: {results}")
+        fact_check_path = case / "data" / "fact-check.json"
+        contract_path = case / "data" / "case-contract.json"
+
+        def rebind() -> None:
+            # The activation binds the fact-check's hash; this edit is the test's.
+            contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            for event in contract.get("activation_events", []):
+                hashes = event.get("activated_artifact_hashes")
+                if isinstance(hashes, dict) and "fact_check_sha256" in hashes:
+                    hashes["fact_check_sha256"] = hashlib.sha256(fact_check_path.read_bytes()).hexdigest()
+            contract_path.write_text(json.dumps(contract), encoding="utf-8")
+        own = json.loads(fact_check_path.read_text(encoding="utf-8"))
+        borrowed = json.loads(json.dumps(own))
+        borrowed["claims"][0]["evidence_for"][0].update({"evidence_bundle_id": "E1", "local_file": "research/official-record.md"})
+        fact_check_path.write_text(json.dumps(borrowed), encoding="utf-8")
+        rebind()
+        results, code = VALIDATOR.validate(case)
+        require(code == 3 and any(row.get("owner") == "fact-checker" and "cites no evidence the fact-checker acquired" in row.get("reason", "")
+                                  and "or set the verdict to unverified" in row.get("reason", "") for row in results),
+                f"a verified verdict on the investigator's capture alone passed: {results}")
+        borrowed["claims"][0]["verdict"] = "unverified"
+        fact_check_path.write_text(json.dumps(borrowed), encoding="utf-8")
+        rebind()
+        results, code = VALIDATOR.validate(case)
+        require(code == 0, f"unverified on the investigator's capture is not an honest exit: {results}")
+
+        def acquired_failure() -> bool:
+            results, code = VALIDATOR.validate(case)
+            return code == 3 and any("cites no evidence the fact-checker acquired" in row.get("reason", "") for row in results)
+
+        # Codex review of fix11: the fact-checker's item id, with the quote
+        # pointed at the investigator's file, certifies nothing.
+        mismatched = json.loads(json.dumps(own))
+        mismatched["claims"][0]["evidence_for"][0]["local_file"] = "research/official-record.md"
+        fact_check_path.write_text(json.dumps(mismatched), encoding="utf-8")
+        rebind()
+        require(acquired_failure(), "an FC item id certified the investigator's file")
+
+        # Codex review of fix11: in the Pi harness the fetch receipt decides; a
+        # created_by fact-checker that anyone can write does not.
+        fact_check_path.write_text(json.dumps(own), encoding="utf-8")
+        rebind()
+        harness_data = Path(tmp) / "harness-data"
+        os.environ["SPOTLIGHT_HARNESS_DATA"] = str(harness_data)
+        try:
+            require(acquired_failure(), "a created_by fact-checker item with no fetch receipt was accepted in the harness")
+            key = hashlib.sha256(os.path.realpath(case).encode("utf-8")).hexdigest()[:16]
+            registry = harness_data / "work" / "fetched" / f"{key}.json"
+            registry.parent.mkdir(parents=True)
+            capture = "research/fc-official-record.md.raw"
+            registry.write_text(json.dumps({capture: {
+                "url": "https://example.org/official_record(v1)", "accessed": "2026-07-16T12:30:00Z", "provider": "crawl4ai",
+                "sha256": hashlib.sha256((case / capture).read_bytes()).hexdigest(), "acquired_by": "fact-checker"}}), encoding="utf-8")
+            results, code = VALIDATOR.validate(case)
+            require(code == 0, f"the fact-checker's registered capture was refused: {results}")
+        finally:
+            del os.environ["SPOTLIGHT_HARNESS_DATA"]
+
+    print("validate-fact-check characterization: 24 passed")
     return 0
 
 

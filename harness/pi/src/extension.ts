@@ -21,7 +21,7 @@ import { bindActiveCase, nextAction, pythonAdapter, resolveCase, spotlightTools,
 import type { ActiveCase, AdapterRunner } from './tools/spotlight.ts';
 import { requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
-import { PAGE_NOT_OPENED, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
+import { PAGE_NOT_OPENED, batchBlocked, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
 import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, PROGRESS_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
 import { evidenceValidates, validateFactCheckBatch } from './validators.ts';
 
@@ -80,7 +80,7 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 		const spawnTool = spawnAgentTool(spawnableWorkers(composition), cycle);
 		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context))));
 		tools.push(spawnTool);
-		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter))));
+		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter), batchBlocked(process.env.SPOTLIGHT_HARNESS_DATA, active.caseDir))));
 		tools.splice(0, tools.length, ...tools.map((tool) => keepGateBound(tool, active.caseDir, async () => String((await resolveCase(active, runAdapter)).phase ?? ''))));
 	}
 	const allowlist = new Set(allowedTools(spec, sensitive, edition));

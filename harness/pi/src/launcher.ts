@@ -29,7 +29,7 @@ import { openInBrowser } from '../../review/session.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { LEGACY_MARKERS, writeConfined } from './tools/case-files.ts';
 import { newsroomData } from './tools/editorial.ts';
-import { DESKTOP_ENV, capped, programEnv, runFixed, runPython } from './tools/run.ts';
+import { DESKTOP_ENV, RECEIPTS, capped, programEnv, runFixed, runPython } from './tools/run.ts';
 import type { HarnessConfig, LaunchArgs } from './config.ts';
 import { CaseHeldError, acquireCaseLock } from './lock.ts';
 import type { CaseLock } from './lock.ts';
@@ -48,7 +48,7 @@ import { decideAnomaly, withAnomalyBlock } from './anomaly-decision.ts';
 import { assignDirection, directionBlock, directionCallBudget, directionDeliverable, directionsToRun, planDirections } from './directions.ts';
 import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
 import { INPUTS_REFUSED, bindActiveCase, dispatchAt, nextAction, pythonAdapter, resolveCase, runsResearchRound, transitionArguments, withPlanCheck } from './tools/spotlight.ts';
-import { gateCheck } from './tools/review.ts';
+import { batchBlocked, batchBlockedFile, factCheckHash, gateCheck } from './tools/review.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
 import { PLANNING_PHASES, factCheckDefects, validateAfterWorker, validateFactCheckBatch, validateInvestigationInputs } from './validators.ts';
 import { recheckSources as recheck } from './recheck.ts';
@@ -821,7 +821,7 @@ async function finalTask(harness: Harness, role: string, task: string, signal: A
 			const result = await runPython(
 				{ caseDir: harness.active.caseDir, writeRoot: harness.active.caseDir, python: harness.config.python, configPath: harness.config.spotlightConfig, env: process.env },
 				[join(CHECKOUT_ROOT, 'scripts', 'build-knowledge-batch.py'), harness.active.caseDir, '--check-proposal'],
-				{ input: proposal, timeoutMs: 120_000, signal },
+				{ input: proposal, timeoutMs: 120_000, signal, keys: [RECEIPTS] },
 			);
 			if (result.code === 2) {
 				const message = (result.stderr || result.stdout).trim();
@@ -965,6 +965,9 @@ async function refusalFor(harness: Harness, role: string, task: string, status: 
 		harness.log(`[report-repair receipt] ${JSON.stringify(receipt)}`);
 		return `no analyst was started: ${ANALYST_CAPS[phase].capped} [report-repair receipt] ${JSON.stringify(receipt)}\nLast errors:\n${check.report}`;
 	}
+	// Codex re-review of fix11: a follow-up that changed the fact-check makes the
+	// block stale; the page then offers the analyst again, so the latch clears too.
+	if (role === 'analyst' && harness.batchBlocked && !batchBlocked(harness.config.dataDir, harness.active.caseDir)) harness.batchBlocked = undefined;
 	if (role === 'analyst' && harness.batchBlocked) return `${BATCH_BLOCKED} ${harness.batchBlocked}`;
 	if (role === 'analyst' && phase === 'ingest' && harness.config.edition === 'newsroom') return 'the analyst does not run at Ingest in the newsroom edition: the newsroom drafts the batch from the submitted case';
 	const spec = agentSpec(harness.composition, role);
@@ -998,7 +1001,7 @@ async function proposalNotAtFault(harness: Harness): Promise<boolean> {
 	const result = await runPython(
 		{ caseDir: harness.active.caseDir, writeRoot: harness.active.caseDir, python: harness.config.python, configPath: harness.config.spotlightConfig, env: process.env },
 		[join(CHECKOUT_ROOT, 'scripts', 'build-knowledge-batch.py'), harness.active.caseDir, '--check-proposal'],
-		{ input: proposal, timeoutMs: 120_000 },
+		{ input: proposal, timeoutMs: 120_000, keys: [RECEIPTS] },
 	);
 	return result.code === 0 || result.code === 3;
 }
@@ -1035,6 +1038,14 @@ async function withValidation(harness: Harness, role: string, text: string): Pro
 	}
 	if (role === 'analyst' && !outcome.passed && (await proposalNotAtFault(harness))) {
 		harness.batchBlocked = outcome.report.split('\n').slice(1).join(' ').replace(/\s+/g, ' ').trim().slice(0, 800);
+		// The review page reads it, so it names decline or a follow-up, not an analyst.
+		try {
+			const file = batchBlockedFile(config.dataDir, active.caseDir);
+			mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+			writeFileSync(file, JSON.stringify({ reason: harness.batchBlocked, fact_check_sha256: factCheckHash(active.caseDir) }), { mode: 0o600 });
+		} catch {
+			// Without the record the page only keeps its generic no-batch note.
+		}
 		harness.log(`the knowledge batch cannot be built for a reason no agent can fix: ${harness.batchBlocked}`);
 		return `${text}\n\n[Harness checks after the analyst finished: ${BATCH_BLOCKED} ${harness.batchBlocked}]`;
 	}

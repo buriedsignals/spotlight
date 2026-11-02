@@ -66,6 +66,7 @@ from spotlight_orchestration.case_writer import atomic_write_files  # noqa: E402
 from spotlight_orchestration.contract import OrchestrationError  # noqa: E402
 from spotlight_orchestration.storage import transaction  # noqa: E402
 from verdicts import FLAG_CODES, VERDICTS_1_1  # noqa: E402
+from evidence_anchors import fact_checker_acquired, fetch_registry, normalized as _normalized  # noqa: E402
 
 _SPEC = importlib.util.spec_from_file_location("validate_knowledge_batch", SCRIPT_DIR / "validate-knowledge-batch.py")
 RULES = importlib.util.module_from_spec(_SPEC)
@@ -427,7 +428,13 @@ def _build(case: Path, models: dict[str, str], draft: bool, proposal: Any, findi
             raise BuildError(f"claim {claim['key']}: the fact-check row has no rationale (grounding assessment or notes)")
         evidence = [e for e in (row.get("evidence_for") or []) + (row.get("evidence_against") or []) if isinstance(e, dict)]
         methods = []
-        if any(e.get("access_method") in FETCHED for e in evidence):
+        # re_fetched is the fact-checker's own acquisition on record, as the
+        # validator reads it: a fetched access_method on a file the
+        # fact-checker acquired (Codex review of fix11: a written access_method
+        # alone, on any file, is not a re-fetch).
+        items = {_normalized(item.get("id")): item for item in (bundle.get("items") or []) if isinstance(item, dict)} if isinstance(bundle, dict) else {}
+        registry = fetch_registry(case)
+        if any(e.get("access_method") in FETCHED and fact_checker_acquired(case, e, items, registry) for e in evidence):
             methods.append("re_fetched")
         if len({e.get("source") for e in evidence if _text(e.get("source"))}) >= 2:
             methods.append("second_source")
@@ -438,7 +445,10 @@ def _build(case: Path, models: dict[str, str], draft: bool, proposal: Any, findi
         if groundings or positions:
             assessment["basis_refs"] = groundings + positions
         if verdict in ("verified", "disputed", "false") and not (methods and assessment.get("basis_refs")):
-            raise BuildError(f"claim {claim['key']}: a {verdict} assessment needs a fetched source and linked passages")
+            # r12 (r12-ingest-audit B1): the fact-check is bound by the gate and
+            # only the fact-checker, at Investigation, can change it, so this is
+            # the case's fault, never the proposal's: exit 3, not a proposal refusal.
+            raise CaseNotReady(f"claim {claim['key']}: a {verdict} assessment needs a fetched source and linked passages")
         flags = []
         for index, flag in enumerate(row.get("flags") or []):
             if not isinstance(flag, dict) or flag.get("code") not in FLAG_CODES or not _text(flag.get("reason")):

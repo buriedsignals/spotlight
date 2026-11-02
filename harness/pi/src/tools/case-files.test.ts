@@ -12,6 +12,7 @@ import { CHECKOUT_ROOT, loadComposition } from '../roles.ts';
 import { approve } from '../test-support/hosted-skill.ts';
 import { caseFileTools } from './case-files.ts';
 import type { CaseScope } from './run.ts';
+import { registerCapture, registerFixtureCapture } from '../test-support/receipts.ts';
 
 async function fixture(t: TestContext, scope?: CaseScope, role?: string, env: Record<string, string> = {}) {
 	const root = await realpath(await mkdtemp(join(tmpdir(), 'spotlight-pi-files-')));
@@ -358,8 +359,9 @@ test('a finding a passage records is not withdrawn; another lists what refers to
 	const caseDir = join(root, 'case');
 	const python = process.env.SPOTLIGHT_PYTHON ?? 'python3';
 	execFileSync(python, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	registerFixtureCapture(join(root, 'harness'), caseDir);
 	const tools = (role: string) => {
-		const byName = new Map(caseFileTools({ caseDir, writeRoot: caseDir, env: { SPOTLIGHT_ROLE: role } }).map((tool) => [tool.name, tool]));
+		const byName = new Map(caseFileTools({ caseDir, writeRoot: caseDir, env: { SPOTLIGHT_ROLE: role, SPOTLIGHT_HARNESS_DATA: join(root, 'harness') } }).map((tool) => [tool.name, tool]));
 		return async (params: Record<string, unknown>) => {
 			const result = await (byName.get('write_file') as ToolDefinition).execute('call', params, undefined, undefined, undefined as never);
 			return (result.content[0] as { text: string }).text;
@@ -434,7 +436,8 @@ test('normalized fact-check paths pass strict validation of the stored claim', a
 	const item = document.claims[0].evidence_for[0];
 	item.local_file = `{CASE_DIR}/${item.local_file}`;
 	item.source_ref.path = `{CASE_DIR}/${item.source_ref.path}`;
-	const tools = new Map(caseFileTools({ caseDir, writeRoot: caseDir, env: { SPOTLIGHT_ROLE: 'fact-checker' } }).map((tool) => [tool.name, tool]));
+	registerFixtureCapture(join(root, 'harness'), caseDir);
+	const tools = new Map(caseFileTools({ caseDir, writeRoot: caseDir, env: { SPOTLIGHT_ROLE: 'fact-checker', SPOTLIGHT_HARNESS_DATA: join(root, 'harness') } }).map((tool) => [tool.name, tool]));
 	await (tools.get('write_file') as ToolDefinition).execute('call', { path: 'data/fact-check.json', content: JSON.stringify(document) }, undefined, undefined, undefined as never);
 	execFileSync(python, [join(CHECKOUT_ROOT, 'scripts', 'validate-fact-check.py'), caseDir]);
 });
@@ -750,7 +753,9 @@ test('a fact-check flag with an unknown code or no reason is refused, naming the
 // gold mozilla s0 a2 on a2ab7e20: the fact-checker wrote a verified claim with its ref under
 // a misspelt key, the validator blocked the case, and the one correction was spent.
 test('a verified claim citing no passage is refused, naming the refs on record, and kept', async (t) => {
-	const { caseDir, call } = await fixture(t);
+	const data = await mkdtemp(join(tmpdir(), 'spotlight-pi-data-'));
+	t.after(() => rm(data, { recursive: true, force: true }));
+	const { caseDir, call } = await fixture(t, undefined, undefined, { SPOTLIGHT_HARNESS_DATA: data });
 	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
 	const link = { finding_id: 'F1', relation: 'supports', finding_fingerprint: 'f'.repeat(64), link_fingerprint: 'l'.repeat(64) };
 	await writeFile(join(caseDir, 'data', 'source-expressions.json'), JSON.stringify({ expressions: [
@@ -760,8 +765,13 @@ test('a verified claim citing no passage is refused, naming the refs on record, 
 		{ id: 'P3', expression_fingerprint: '3'.repeat(64), lifecycle_events: [{ event: 'activated' }], finding_links: [{ ...link, finding_id: 'F2' }] },
 	] }));
 	const ref = { expression_id: 'P2', expression_fingerprint: 'e'.repeat(64), finding_fingerprint: 'f'.repeat(64), link_fingerprint: 'l'.repeat(64) };
+	// The cited item lists the fact-checker's own registered capture (r12-ingest-audit A3).
+	await mkdir(join(caseDir, 'research'), { recursive: true });
+	await writeFile(join(caseDir, 'research', 'fc-filing.md'), 'Acme paid Doe.\n');
+	registerCapture(data, caseDir, 'research/fc-filing.md');
+	await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), JSON.stringify({ items: [{ id: 'E1', created_by: 'fact-checker', raw_path: 'research/fc-filing.md' }] }));
 	// Each item carries a case-local anchor (validate-case's rule, also checked at the write).
-	const claim = (item: object, verdict = 'verified') => JSON.stringify({ schema_version: '1.1', claims: [{ finding_id: 'F1', verdict, evidence_for: [{ evidence_bundle_id: 'E1', ...item }] }] });
+	const claim = (item: object, verdict = 'verified') => JSON.stringify({ schema_version: '1.1', claims: [{ finding_id: 'F1', verdict, evidence_for: [{ evidence_bundle_id: 'E1', local_file: 'research/fc-filing.md', ...item }] }] });
 
 	await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: claim({ source_expression_ref: ref }) }),
 		(error: Error) => error.message.includes('has no source_expression_refs; the file is unchanged') && error.message.includes('F1 (the key is source_expression_refs, a list, not source_expression_ref): "source_expression_refs": ["P2"]'));
@@ -804,6 +814,13 @@ test('a fact-checker changes only its own bundle items, and no role moves the fi
 			await call('write_file', { path: 'data/evidence-bundle.json', content: bundle(kept) });
 			assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')).items.map((item: { id: string }) => item.id), ['E1', 'E2', 'E3']);
 			await assert.rejects(call('write_file', { path: 'data/evidence-bundle.json', content: bundle({ id: 'E1', withdrawn: 'not needed' }) }), /changes or removes E1, which you did not create/);
+			// r12 seq 87 (r12-ingest-audit A2): the fact-checker appended FC-E1 for its
+			// re-fetch without created_by, and its own later edits were refused as
+			// another's item. Code stamps the item it appends as the fact-checker's.
+			await call('write_file', { path: 'data/evidence-bundle.json', content: bundle({ id: 'FC-E1', query_or_task: 'Fact-checker independent acquisition', raw_path: 'research/fc-recheck-E1.md.raw', extraction_confidence: 'high' }) });
+			const appended = JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')).items.find((item: { id: string }) => item.id === 'FC-E1');
+			assert.equal(appended.created_by, 'fact-checker', 'the appended item is stamped as the fact-checker\'s');
+			await call('write_file', { path: 'data/evidence-bundle.json', content: bundle({ ...appended, extraction_confidence: 'medium' }) });
 		} else {
 			await call('write_file', { path: 'data/evidence-bundle.json', content: moved });
 			await call('write_file', { path: 'data/evidence-bundle.json', content: bundle(investigatorItem, kept) });
@@ -880,7 +897,9 @@ test('a fact-check claim that is not its finding\'s claim is refused, naming the
 // 12B r5 fsf s0 on 2f357029: the fact-checker verified F2 citing research/fsf_leadership_browse.md,
 // a file never saved in the case, and the write went through.
 test('a positive verdict citing a file that is not in the case is refused, naming each path', async (t) => {
-	const { caseDir, call } = await fixture(t);
+	const data = await mkdtemp(join(tmpdir(), 'spotlight-pi-data-'));
+	t.after(() => rm(data, { recursive: true, force: true }));
+	const { caseDir, call } = await fixture(t, undefined, undefined, { SPOTLIGHT_HARNESS_DATA: data });
 	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
 	const link = { finding_id: 'F2', relation: 'supports', finding_fingerprint: 'f'.repeat(64), link_fingerprint: 'l'.repeat(64) };
 	await writeFile(join(caseDir, 'data', 'source-expressions.json'), JSON.stringify({ expressions: [
@@ -888,6 +907,8 @@ test('a positive verdict citing a file that is not in the case is refused, namin
 	] }));
 	await mkdir(join(caseDir, 'research'), { recursive: true });
 	await writeFile(join(caseDir, 'research', 'fsf_board.md'), 'The board has five members.\n');
+	// The cited capture is the fact-checker's own, with its fetch receipt (r12-ingest-audit A3).
+	registerCapture(data, caseDir, 'research/fsf_board.md');
 	const evidence = (path: string) => ({ access_method: 'full_text', local_file: path, source_ref: { path, line_start: 1, line_end: 1 }, source_expression_refs: ['P1'] });
 	const factCheck = (item: object, verdict = 'verified') => JSON.stringify({ schema_version: '1.1', claims: [{ finding_id: 'F2', verdict, evidence_for: [item] }] }, null, 2);
 
@@ -997,8 +1018,10 @@ test('refusals name the next step, and hash_files takes one path as a string', a
 // Phase B (Gemma12 worker state, 31B live run r5): a positive verdict the
 // write accepted was then refused by validate-case.py for want of a case-local
 // evidence anchor. The write applies the same rule and names the next step.
-test('a verified verdict with no case-local evidence anchor is refused at the write, naming fetch or unverified', async (t) => {
-	const { caseDir, call } = await fixture(t);
+test('a verified verdict with no case-local evidence anchor, or one anchored only in another worker\'s capture, is refused at the write, naming fetch or unverified', async (t) => {
+	const data = await mkdtemp(join(tmpdir(), 'spotlight-pi-data-'));
+	t.after(() => rm(data, { recursive: true, force: true }));
+	const { caseDir, call } = await fixture(t, undefined, undefined, { SPOTLIGHT_HARNESS_DATA: data });
 	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
 	const link = { finding_id: 'F1', relation: 'supports', finding_fingerprint: 'f'.repeat(64), link_fingerprint: 'l'.repeat(64) };
 	await writeFile(join(caseDir, 'data', 'source-expressions.json'), JSON.stringify({ expressions: [{ id: 'P1', expression_fingerprint: 'e'.repeat(64), lifecycle_events: [{ event: 'activated' }], finding_links: [link] }] }));
@@ -1009,5 +1032,30 @@ test('a verified verdict with no case-local evidence anchor is refused at the wr
 	await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: claim(cited) }),
 		/F1 has a verified verdict with no case-local evidence anchor: no evidence_for item has an evidence_bundle_id, or an access_method \(full_text, open_access or archive_copy\)[\s\S]*Cite a capture you acquired[\s\S]*acquire an independent capture with fetch[\s\S]*set the verdict to unverified/);
 	assert.equal(existsSync(join(caseDir, 'data', 'fact-check.json')), false);
-	await call('write_file', { path: 'data/fact-check.json', content: claim({ ...cited, access_method: 'full_text' }) });
+	// r12 (r12-ingest-audit A3): anchored, but only in the investigator's capture
+	// (E1, the F1 shape). Refused, naming the fact-checker's step; once the
+	// fact-checker's own capture of the file is its item, the same claim passes.
+	await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), JSON.stringify({ items: [{ id: 'E1', raw_path: 'research/filing.md' }] }));
+	await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: claim({ ...cited, access_method: 'full_text', evidence_bundle_id: 'E1' }) }),
+		/a verified verdict needs evidence the fact-checker acquired, and these cite only another worker's capture[\s\S]*\nF1: cite a capture you acquired with fetch \(save_as under research\/\), in your evidence item, or set the verdict to unverified\./);
+	assert.equal(existsSync(join(caseDir, 'data', 'fact-check.json')), false);
+	// Codex review of fix11: created_by is anyone's to write. An item that says
+	// fact-checker over the investigator's file (as an investigator can write
+	// it) does not make it the fact-checker's acquisition.
+	await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), JSON.stringify({ items: [{ id: 'E1', raw_path: 'research/filing.md' }, { id: 'FC-E9', created_by: 'fact-checker', raw_path: 'research/filing.md' }] }));
+	await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: claim({ ...cited, access_method: 'full_text', evidence_bundle_id: 'FC-E9' }) }), /a verified verdict needs evidence the fact-checker acquired/);
+	await writeFile(join(caseDir, 'research', 'fc-filing.md'), 'Acme paid Doe.\n');
+	registerCapture(data, caseDir, 'research/fc-filing.md');
+	await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), JSON.stringify({ items: [{ id: 'E1', raw_path: 'research/filing.md' }, { id: 'FC-E1', created_by: 'fact-checker', raw_path: 'research/fc-filing.md' }] }));
+	// Codex review of fix11: the fact-checker's item id with the quote pointed at
+	// the investigator's file certifies nothing; the cited item must list the
+	// very file quoted.
+	await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: claim({ ...cited, access_method: 'full_text', evidence_bundle_id: 'FC-E1' }) }), /a verified verdict needs evidence the fact-checker acquired/);
+	assert.equal(existsSync(join(caseDir, 'data', 'fact-check.json')), false);
+	// Codex re-review of fix11: an item naming two files (validate-fact-check.py
+	// refuses it) is refused at the write, naming the one to keep.
+	await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: claim({ ...cited, source_ref: { path: 'research/fc-filing.md', line_start: 1, line_end: 1 }, local_file: 'research/filing.md', access_method: 'full_text', evidence_bundle_id: 'FC-E1' }) }),
+		/an evidence item must name one file:\nF1 evidence_for\[0\]: local_file is research\/filing\.md but source_ref\.path is research\/fc-filing\.md; set local_file to research\/fc-filing\.md/);
+	await call('write_file', { path: 'data/fact-check.json', content: claim({ ...cited, source_ref: { path: 'research/fc-filing.md', line_start: 1, line_end: 1 }, access_method: 'full_text', evidence_bundle_id: 'FC-E1' }) });
+	await call('write_file', { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', claims: [{ finding_id: 'F1', verdict: 'unverified', evidence_for: [{ ...cited, evidence_bundle_id: 'E1' }] }] }) });
 });

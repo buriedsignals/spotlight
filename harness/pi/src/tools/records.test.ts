@@ -6,10 +6,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { validateToolArguments } from '@earendil-works/pi-ai';
+import http from 'node:http';
+import { EventEmitter } from 'node:events';
+import { Readable } from 'node:stream';
+import { syncBuiltinESMExports } from 'node:module';
 import type { TestContext } from 'node:test';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { typedTools } from './index.ts';
 import type { ToolContext } from './run.ts';
+import { registerCapture, registerFixtureCapture } from '../test-support/receipts.ts';
 
 async function fixture(t: TestContext, role: string, extra: Record<string,string> = {}) {
 	const root = await realpath(await mkdtemp(join(tmpdir(),'spotlight-records-')));
@@ -17,6 +22,8 @@ async function fixture(t: TestContext, role: string, extra: Record<string,string
 	const caseDir = join(root,'case');
 	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3',[join(CHECKOUT_ROOT,'tests/fixtures/review_case.py'),caseDir,'investigation_gate','--activated','--clean']);
 	const context: ToolContext = {caseDir,writeRoot:caseDir,python:process.env.SPOTLIGHT_PYTHON ?? 'python3',configPath:join(root,'config.json'),env:{PATH:process.env.PATH,SPOTLIGHT_ROLE:role,SPOTLIGHT_HARNESS_DATA:join(root,'harness'),...extra}};
+	// The fixture's own fact-checker capture has the receipt its fetch would leave.
+	registerFixtureCapture(join(root,'harness'),caseDir);
 	const tools = new Map(typedTools(context).map(tool=>[tool.name,tool]));
 	const call = async(name:string,args:Record<string,unknown>)=> {
 		const tool = tools.get(name);
@@ -288,20 +295,33 @@ test('a record refused for an enum value names the allowed values',async t=>{
 // fact-checker's capture they count; anchored only in the investigator's
 // material they are refused with the missing field named.
 test('a verified item whose quote is in the fact-checker\'s own capture counts even when it also cites investigator passages; one without that quote, or anchored only in investigator material, is refused',async t=>{
-	for (const variant of ['quote','lines','investigator-only']) await t.test(variant, async t=>{
+	for (const variant of ['quote','lines','investigator-only','http_get']) await t.test(variant, async t=>{
 		const {call,json,context,caseDir}=await fixture(t,'fact-checker',{SPOTLIGHT_FC_BATCH:'F1'});
 		const interpreter=context.python;
 		const wrapper=join(caseDir,'python-fetch');
 		const url='https://registry.example.org/acme';
+		if (variant==='http_get') {
+			// Codex re-review of fix11: a capture saved with http_get (or browse) is
+			// the fact-checker's acquisition too, with the same fetch receipt. The
+			// transport is a stand-in, as in programs.test.ts; nothing leaves.
+			t.mock.method(http,'request',()=>{
+				const request=Object.assign(new EventEmitter(),{end(){const response=Object.assign(Readable.from([Buffer.from('Registry record\nAcme paid Doe in full.\n')]),{statusCode:200,headers:{'content-type':'text/plain'}});queueMicrotask(()=>request.emit('response',response));},destroy(){}});
+				return request;
+			});
+			syncBuiltinESMExports();
+			t.after(()=>{t.mock.restoreAll();syncBuiltinESMExports();});
+			await call('http_get',{url:'http://registry.example.org/acme',save_as:'fc-own.md'});
+		} else {
 		const envelope=JSON.stringify({markdown:'Registry record\nAcme paid Doe in full.\n',source_url:url,provider:'crawl4ai',status_code:200});
 		await writeFile(wrapper,`#!${process.execPath}\nconst {execFileSync}=require('node:child_process');\nconst args=process.argv.slice(2);\nif(args.includes('integrations.scraping')) process.stdout.write(${JSON.stringify(envelope)});\nelse {try{process.stdout.write(execFileSync(${JSON.stringify(interpreter)},args,{stdio:['inherit','pipe','inherit']}));}catch(error){process.stdout.write(error.stdout??'');process.exitCode=error.status??1;}}\n`,{mode:0o755});
 		context.python=wrapper;
 		context.env.SPOTLIGHT_ANONYMIZE_FETCH='true';
 		await call('fetch',{url,save_as:'fc-own.md'});
+		}
 		const passages=(await json('source-expressions.json')).expressions.filter((row:any)=>(row.finding_links??[]).some((link:any)=>link.finding_id==='F1'&&link.relation==='supports')).map((row:any)=>row.id);
 		assert.ok(passages.length>0,'the investigator has a passage for F1');
 		const path=variant==='investigator-only'?'research/filing.txt':'research/fc-own.md';
-		const item={description:'The registry states the payment.',source:url,source_ref:{path,line_start:2,line_end:2},source_expression_refs:passages,...(variant==='quote'?{quote:'Acme paid Doe in full.'}:{})};
+		const item={description:'The registry states the payment.',source:url,source_ref:{path,line_start:2,line_end:2},source_expression_refs:passages,...(variant==='quote'||variant==='http_get'?{quote:'Acme paid Doe in full.'}:{})};
 		const assessment={finding_id:'F1',verdict:'verified',confidence:'high',evidence_for:[item],evidence_against:[],grounding_assessment:{support_type:'direct',claim_elements_checked:['payment'],missing_assumptions:[],confidence_cap:'high',assessment:'The registry states the payment.'}};
 		// No quote: an existing line number in the fact-checker's capture is not independent support (N1).
 		if (variant==='investigator-only' || variant==='lines') {
@@ -313,6 +333,11 @@ test('a verified item whose quote is in the fact-checker\'s own capture counts e
 		const own=(await json('evidence-bundle.json')).items.find((row:any)=>row.raw_path==='research/fc-own.md');
 		assert.ok(own && own.created_by==='fact-checker','the fact-checker\'s capture has its own evidence item');
 		assert.equal(checked.evidence_for[0].evidence_bundle_id,own.id);
+		// r12-ingest-audit A2: its registered capture was read in full, which code
+		// knows and stamps on the item and on the row, so the Batch 1.1 builder
+		// counts it as re_fetched at Ingest.
+		assert.equal(own.access_method,'full_text');
+		assert.equal(checked.evidence_for[0].access_method,'full_text');
 		assert.deepEqual(checked.evidence_for[0].source_expression_refs.slice(0,passages.length).map((ref:any)=>typeof ref==='string'?ref:ref.expression_id),passages);
 	});
 });

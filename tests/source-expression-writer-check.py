@@ -256,6 +256,14 @@ def main() -> int:
                 and "Or anchor it to research/passages.txt" in refused.stderr and "places" not in refused.stderr
                 and target.read_bytes() == before,
                 f"a quote anchored in an unlisted file was not told to add it or use the listed file: {refused.stderr}")
+        # r12 seq 85 (r12-ingest-audit A1): the same refusal for the
+        # fact-checker, whose quote is in its own re-fetch, named the
+        # investigator's file. It names the fact-checker's own step instead.
+        refused = run_writer(case, anchored, actor="fact-checker")
+        require(refused.returncode == 2
+                and "append your own evidence item for research/twin.txt to data/evidence-bundle.json with created_by fact-checker, raw_path and sha256" in refused.stderr
+                and "Or anchor it to" not in refused.stderr and target.read_bytes() == before,
+                f"the fact-checker was offered another worker's capture: {refused.stderr}")
         twin.unlink()
         # arm2 ds-spectator on ce4f010e: a quote found at two places of the one
         # file it was anchored to is anchored at the first, not refused.

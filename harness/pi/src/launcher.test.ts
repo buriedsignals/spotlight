@@ -2201,6 +2201,16 @@ test('when the batch cannot be built for a reason no agent can fix, the orchestr
 			spawns += 1;
 			return { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'analyst', task: 'Propose the knowledge batch.' } }] };
 		}
+		// Codex review of fix11 (P2): the page then opened for decline only.
+		if (spawns === 2) {
+			spawns += 1;
+			return { toolCalls: [{ name: 'open_review', arguments: {} }] };
+		}
+		// After the member's next message, once more.
+		if (spawns === 3 && JSON.stringify(request.messages.at(-1)).includes('Try the batch again.')) {
+			spawns += 1;
+			return { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'analyst', task: 'Propose the knowledge batch.' } }] };
+		}
 		return { text: 'Done.' };
 	});
 	t.after(() => fake.close());
@@ -2217,6 +2227,24 @@ test('when the batch cannot be built for a reason no agent can fix, the orchestr
 	const results = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'analyst')).at(-1)!).join('\n');
 	assert.match(results, /\[Harness checks after the analyst finished: The knowledge batch cannot be built for a reason no agent can fix, so no analyst runs again\. Tell the member this in plain words and stop\. The builder said: build-knowledge-batch: refused: the case does not validate/);
 	assert.equal(results.split('The knowledge batch cannot be built for a reason no agent can fix').length - 1, 2, 'the second spawn is refused with the same reason');
+	// Continuity: the page's note names the member's exits, never an analyst
+	// the harness would refuse.
+	const page = chat.lines.map((line) => JSON.parse(line) as { type?: string; toolName?: string; result?: { content?: Array<{ text?: string }> } })
+		.filter((record) => record.type === 'tool_execution_end' && record.toolName === 'open_review')
+		.map((record) => (record.result?.content ?? []).map((part) => part.text ?? '').join('\n')).at(-1) ?? '';
+	assert.match(page, /No knowledge batch can be built for this case, and no analyst can change that: [\s\S]*The member can decline ingestion on the page, or request a follow-up to reopen Investigation/, page);
+	assert.doesNotMatch(page, /call spawn_agent with agent analyst/);
+
+	// Codex re-review of fix11: a changed fact-check (a follow-up's) makes the
+	// block stale, and the launcher's latch clears with it: the next analyst is
+	// judged afresh, not refused with the old reason.
+	const factCheck = join(caseDir, 'data', 'fact-check.json');
+	await writeFile(factCheck, `${JSON.stringify(JSON.parse(await readFile(factCheck, 'utf8')), null, 1)}\n`);
+	await settledPrompt(chat, 'Try the batch again.');
+	const again = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'analyst')).at(-1)!).at(-1) ?? '';
+	assert.doesNotMatch(again, /cannot be built for a reason no agent can fix/, again);
+	// Judged afresh: the changed fact-check left the approved gate, so Investigation answers.
+	assert.match(again, /the analyst runs only at .*; the case is at investigation/, again);
 	assert.equal(existsSync(join(caseDir, 'data', 'knowledge-batch.json')), false);
 });
 
@@ -3835,7 +3863,9 @@ test('a fact-checker spawned while findings have no claim gets the next ones, an
 // bookkeeping): a fact-check write may cite a line by its exact text and file;
 // the harness records it as the fact-checker's passage and cites it.
 test('a fact-check claim that cites a quote and its file gets the passage recorded and cited by the harness', async (t) => {
-	const claim = { finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: 'verified', confidence: 'high', evidence_for: [{ quote: 'Acme paid Doe.', source_ref: { path: 'research/filing.txt', line_start: 2, line_end: 2 }, evidence_bundle_id: 'E1' }], evidence_against: [], grounding_assessment: { support_type: 'direct', claim_elements_checked: ['payment'], missing_assumptions: [], confidence_cap: 'high', assessment: 'The filing states it.' } };
+	// The fact-checker's own capture of the filing (FC-E1): a verified claim on
+	// the investigator's file alone is refused (r12-ingest-audit A3).
+	const claim = { finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: 'verified', confidence: 'high', evidence_for: [{ quote: 'Acme paid Doe.', source_ref: { path: 'research/fc-filing.md.raw', line_start: 2, line_end: 2 }, evidence_bundle_id: 'FC-E1' }], evidence_against: [], grounding_assessment: { support_type: 'direct', claim_elements_checked: ['payment'], missing_assumptions: [], confidence_cap: 'high', assessment: 'The filing states it.' } };
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'fact-checker')) {
 			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', project: 'p', claims: [claim] }) } }] } : { text: 'Checked.' };
@@ -4507,6 +4537,8 @@ test('a fact-checker can cite the harness recheck as its independent acquired ev
 	const bundlePath = join(caseDir, 'data', 'evidence-bundle.json');
 	const bundle = JSON.parse(await readFile(bundlePath, 'utf8'));
 	bundle.items[0].source_url = url;
+	// One investigator item to recheck: the fixture's own FC-E1 re-fetch is left out.
+	bundle.items = bundle.items.filter((item: { created_by?: string }) => item.created_by !== 'fact-checker');
 	await writeFile(bundlePath, JSON.stringify(bundle));
 	const runs = join(space.root, 'recheck-runs');
 	const python = join(space.root, 'recheck-python');

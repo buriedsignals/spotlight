@@ -1,15 +1,15 @@
 // open_review: shows the member the pending gate's review page. The review
 // server runs locally and the result never carries the page address, so the
 // model cannot reach the page or post a decision.
-import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { createReviewOpener, describeOpenResult } from '../../../review/open.mjs';
 import { RESEARCH_SWITCH } from '../config.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
-import { runPython } from './run.ts';
+import { RECEIPTS, runPython } from './run.ts';
 import type { ToolContext } from './run.ts';
 import { NEXT_METHODOLOGY_FAILING, resolveCase } from './spotlight.ts';
 import type { ActiveCase, AdapterRunner, DispatchRunner } from './spotlight.ts';
@@ -50,7 +50,7 @@ export function gateCheck(active: ActiveCase, runAdapter: AdapterRunner, context
 		}
 		const checks = GATE_CHECKS[phase]?.(context) ?? [];
 		for (const { file, args } of checks) {
-			const result = await runPython(context, [join(CHECKOUT_ROOT, 'scripts', args[0]), ...args.slice(1)], { keys: [RESEARCH_SWITCH], timeoutMs: 300_000 });
+			const result = await runPython(context, [join(CHECKOUT_ROOT, 'scripts', args[0]), ...args.slice(1)], { keys: [RESEARCH_SWITCH, RECEIPTS], timeoutMs: 300_000 });
 			if (result.code !== 0) {
 				const output = `${result.stdout}\n${result.stderr}`.trim();
 				// The plan's own errors are code's to correct (spotlight.ts
@@ -68,12 +68,40 @@ export function gateCheck(active: ActiveCase, runAdapter: AdapterRunner, context
 // The page then offers only the decline (the approval is disabled with its
 // reason), so the page still opens, and the orchestrator is told what the
 // member cannot approve yet and the step that makes it possible.
-export async function missingForApproval(caseDir: string, resolved: Record<string, unknown>): Promise<string | undefined> {
+// Codex review of fix11 (P2): once the launcher has found that no batch can be
+// built (BATCH_BLOCKED), it refuses every analyst, so the page must not tell
+// the orchestrator to spawn one. The launcher records the reason with the
+// fact-check's hash; a changed fact-check makes the record stale.
+export function batchBlockedFile(dataDir: string, caseDir: string): string {
+	return join(dataDir, 'work', 'batch-blocked', `${createHash('sha256').update(caseDir).digest('hex').slice(0, 16)}.json`);
+}
+export function factCheckHash(caseDir: string): string {
+	try {
+		return createHash('sha256').update(readFileSync(join(caseDir, 'data', 'fact-check.json'))).digest('hex');
+	} catch {
+		return '';
+	}
+}
+export function batchBlocked(dataDir: string | undefined, caseDir: string): string | undefined {
+	if (!dataDir) return undefined;
+	try {
+		const record = JSON.parse(readFileSync(batchBlockedFile(dataDir, caseDir), 'utf8')) as { reason?: unknown; fact_check_sha256?: unknown };
+		return typeof record.reason === 'string' && record.fact_check_sha256 === factCheckHash(caseDir) ? record.reason : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+export async function missingForApproval(caseDir: string, resolved: Record<string, unknown>, blocked?: string): Promise<string | undefined> {
 	const has = (path: string) => existsSync(join(caseDir, path));
 	if (resolved.phase === 'report' && !has('data/report-draft.json')) {
 		return 'No report draft exists, so the member can only decline the report on the page. If the member wants the report, write data/report-draft.json as report-drafting says, then call open_review again.';
 	}
 	const ingest = resolved.ingest as { resume_at?: unknown } | undefined;
+	// A blocked batch cannot be built from any draft either.
+	if (resolved.phase === 'ingest' && ingest?.resume_at === 'decision' && !has('data/knowledge-batch.json') && blocked) {
+		return `No knowledge batch can be built for this case, and no analyst can change that: ${blocked} The member can decline ingestion on the page, or request a follow-up to reopen Investigation so the fact-check can be corrected. Do not spawn the analyst; tell the member this.`;
+	}
 	if (resolved.phase === 'ingest' && ingest?.resume_at === 'decision' && !has('data/knowledge-batch.json') && !has('data/knowledge-batch-draft.json')) {
 		return 'No knowledge batch exists, so the member can only decline ingestion on the page. If the member wants to ingest, call spawn_agent with agent analyst (phase-ingest step 1); the harness builds the batch when the analyst finishes. Then call open_review again.';
 	}

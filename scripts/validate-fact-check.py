@@ -50,6 +50,8 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from evidence_anchors import (
+    fact_checker_acquired,
+    fetch_registry,
     case_evidence_path,
     fallback_outstanding,
     normalized,
@@ -470,6 +472,7 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
     version = fact_check_version(fact_check_doc)
     verdicts = allowed_verdicts(version)
     anchored = positive_verdicts(version)
+    registry = fetch_registry(case_dir)
     results: list[dict[str, Any]] = []
     failed = 0
 
@@ -563,6 +566,15 @@ def validate(case_dir: Path) -> tuple[list[dict[str, Any]], int]:
             failures.append(
                 "verified verdict has no case-local fact-check evidence anchor; add local_file, "
                 "source_ref, or evidence_bundle_id to evidence_for"
+            )
+        elif status == "verified" and version == "1.1" and not any(
+                isinstance(entry, dict) and fact_checker_acquired(case_dir, entry, bundles, registry) for entry in evidence_for):
+            # r12 (r12-ingest-audit A3): both verified rows cited only the
+            # investigator's capture. An investigator's saved copy alone never
+            # makes a verdict verified (agents/fact-checker.md).
+            failures.append(
+                "verified verdict cites no evidence the fact-checker acquired; cite your own capture's evidence "
+                "item (created_by fact-checker) in evidence_for, or set the verdict to unverified"
             )
         by_owner = {
             "investigator": record_failures.get("investigator", []),
