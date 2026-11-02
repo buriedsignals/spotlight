@@ -2641,10 +2641,10 @@
       { count: 4, fn: (i, t) => i === 0
           ? { x: -1.1, y: 0.12 * Math.sin(t * 1.6), z: 0 }
           : { x: 0.55, y: (1 - (i - 1)) * 0.95, z: 0 } },
-      // Research: the swarm, five lanes working in parallel under one plan.
+      // Research: five lanes run in parallel; the decision model (violet) triages underneath.
       { count: 6, fn: (i, t) => i === 0
-          ? { x: 0, y: 1.45, z: 0 }
-          : { x: (i - 3) * 1.0, y: -0.35 + 0.55 * Math.sin(t * (0.9 + i * 0.23) + i * 1.7), z: 0 } },
+          ? { x: 0, y: -1.35, z: 0 }
+          : { x: (i - 3) * 1.0, y: 0.75 + 0.45 * Math.sin(t * (0.9 + i * 0.23) + i * 1.7), z: 0 } },
       // Cycles: investigator and fact-checker orbit the case.
       { count: 3, fn: (i, t) => {
           if (i === 0) return { x: 0, y: 0, z: 0 };
@@ -2658,8 +2658,23 @@
           const at = (t * 0.7) % 5, d = Math.min(Math.abs(i - at), 5 - Math.abs(i - at));
           return { x: (i - 2) * 0.95, y: 0.7 * Math.exp(-d * d * 3), z: 0 };
         } },
-      // Intelligence base: the case is filed as one ordered wall the next case builds on.
-      { count: 9, fn: (i) => ({ x: ((i % 3) - 1) * 0.98, y: (1 - Math.floor(i / 3)) * 0.98, z: 0 }) },
+      // Intelligence base: the analyst (green, cube 0) files the case into the wall the next
+      // case builds on; it sits in the wall's centre slot, stepped forward.
+      { count: 9, fn: (i, t) => {
+          const slot = i === 0 ? 4 : i <= 4 ? i - 1 : i;
+          return { x: ((slot % 3) - 1) * 0.98, y: (1 - Math.floor(slot / 3)) * 0.98, z: i === 0 ? 0.55 + 0.08 * Math.sin(t * 1.4) : 0 };
+        } },
+    ];
+    // Per-step cube colours in #what, shared with the Spotlight 2.0 launch video: lane colours,
+    // violet decision model, orange investigator, blue fact-checker, green analyst. Cubes a
+    // step does not name keep the hero theme's colour.
+    const STEP_TINTS = [
+      { 0: 0xede8dc, 1: 0xffa8a8, 2: 0xffd890, 3: 0xb8e8ae },
+      { 0: 0xa978ff, 1: 0xffa8a8, 2: 0xffd890, 3: 0xf0eaa6, 4: 0xb8e8ae, 5: 0xfff4e6 },
+      { 0: 0xede8dc, 1: 0xffc28a, 2: 0x7cb7ff },
+      {},
+      {},
+      { 0: 0x7fe39a },
     ];
     // In #what the diagram holds the left column, so the cubes sit right of centre.
     const ALIGNED_SHIFT_X = 1.8, ALIGNED_SHIFT_Y = 0.45;
@@ -3493,6 +3508,11 @@
         for (let i = 0; i < N_CELLS; i++) {
           cubeColors[i].setHex(cellCenters[i].y > 0 ? 0xffc28a : 0x7cb7ff);
         }
+        // Two existing cubes carry the other agents' colours, as in the launch video:
+        // violet decision model (top, front-right corner), green analyst (bottom, front-centre).
+        const pick = (score) => cellCenters.reduce((b, c, i) => (score(c) > score(cellCenters[b]) ? i : b), 0);
+        cubeColors[pick((c) => (c.y > 0 ? 10 : 0) + c.x + c.z)].setHex(0xa978ff);
+        cubeColors[pick((c) => (c.y < 0 ? 10 : 0) + c.z * 2 - Math.abs(c.x))].setHex(0x7fe39a);
       },
       // ——— Bi-color editorial dualities ———
       // "data sorted into boxes, verified, cross-checked, validated or not"
@@ -4452,6 +4472,20 @@
           }
         }
         window.__prevSceneMood = mood;
+      }
+      // Step colours in #what: re-apply the theme, then the step's own tints, when the step changes.
+      {
+        const tintKey = mood === 'aligned' ? 'step' + (window.__fiveThingsStep | 0) : 'theme';
+        if (tintKey !== window.__tintKey) {
+          window.__tintKey = tintKey;
+          const preset = THEME_PRESETS[params.themePreset];
+          if (preset) preset();
+          if (mood === 'aligned') {
+            const tints = STEP_TINTS[Math.max(0, Math.min(STEP_TINTS.length - 1, window.__fiveThingsStep | 0))];
+            for (const k in tints) cubeColors[k].setHex(tints[k]);
+          }
+          writeCubeColors();
+        }
       }
       // Narrative: in #what (aligned mood), the scene illustrates "five things,
       // in order" — cubes light up progressively as the user reads each step.
