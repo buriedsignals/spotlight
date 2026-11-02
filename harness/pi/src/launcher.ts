@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process';
 import { analystDeliverable } from './analyst-context.ts';
 import type { ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { ConfigError, RouteRefused, checkNewsroomInstall, checkRouteSecrets, childEnv, parseLaunchArgs, piSettings, readConfig, researchEnv, routeFor, resolverEnv, secretValues } from './config.ts';
 import {
@@ -38,7 +38,7 @@ import { piArguments, piCliPath, writePiSettings } from './pi-process.ts';
 import { runResearchRound } from './lanes.ts';
 import type { ResearchPlan, RoundSummary } from './lanes.ts';
 import { discardIncompleteLanes } from './resume.ts';
-import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, batchDeliverable, correctionDeliverable, correctionFiles, deliverableFor, factCheckChecklist, factCheckerTask, isolationRefusal, nextCheckBatch, readCheckDocs, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, analystTask, allowedTools, batchDeliverable, correctionDeliverable, correctionFiles, deliverableFor, factCheckChecklist, factCheckerTask, isolationRefusal, nextCheckBatch, readCheckDocs, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
 import type { Composition, Deliverable, WorkerContext } from './roles.ts';
 import { approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { BRIEF_PENDING_REFUSAL, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL, WorkerQueue, runWorker } from './subagents.ts';
@@ -79,7 +79,37 @@ type Harness = {
 	// The fact-check validators' last report, which a fact-checker correction
 	// repairs (roles.ts factCheckerTask); code-held, never the orchestrator's text.
 	lastFactCheckReport?: string;
+	// The analyst's last failed deliverable check outside Ingest, which its next
+	// task repairs (roles.ts analystTask), and how many checks in a row failed
+	// at that phase; code-held, cleared when the check passes or the case is at
+	// another phase. A member turn resets the count (review-ur R2).
+	lastAnalystCheck?: { phase: string; report: string; failures: number };
 };
+
+// A report draft gets its first try and this many repairs; then the harness
+// refuses another analyst and the orchestrator stops with the receipt (r6 and
+// fz1 on fix5: 16 and 17 analyst rounds, bounded only by loop notices).
+export const REPORT_REPAIRS = 2;
+
+type MemberTurn = { kind: 'spotlight-member-turn' };
+
+const REPORT_CAPPED = `the report draft failed validate-report-draft.py on its first try and on ${REPORT_REPAIRS} repairs, so the harness set it aside and runs no analyst again until the member asks. Do not spawn the analyst. Call open_review: with no draft the member can only decline the report there. Tell the member plainly that the draft could not be made valid, and that they can decline the report on the page or ask in the chat for another try.`;
+
+// review-ur R1: at the cap an invalid draft made open_review refuse, and only
+// the analyst may write or remove it, so the member could not even decline.
+// Code moves the draft text, unchanged, to the analyst's harness-checks with the
+// receipt and the validator's report; it never writes or accepts a draft.
+function setDraftAside(harness: Harness, report: string, failed: number): string {
+	const caseDir = harness.active.caseDir;
+	const draft = join(caseDir, 'data', 'report-draft.json');
+	const receipt = { cap: 'report-repairs', role: 'analyst', phase: 'report', repairs: REPORT_REPAIRS, failed_checks: failed };
+	if (!existsSync(draft)) return `[report-repair receipt] ${JSON.stringify(receipt)} ${REPORT_CAPPED}`;
+	const path = writeConfined(caseDir, caseDir, `data/harness-checks/analyst/report-draft-rejected-${new Date().toISOString().replace(/[:.]/g, '-')}.json`, JSON.stringify({ receipt, validator_report: report, draft: readFileSync(draft, 'utf8') }, null, 2));
+	unlinkSync(draft);
+	const line = `[report-repair receipt] ${JSON.stringify({ ...receipt, set_aside: path })}`;
+	harness.log(line);
+	return `${line} ${REPORT_CAPPED}`;
+}
 
 // A revoked or expired newsroom token, or an Editorial MCP that cannot be
 // used, stops the whole harness with a plain message: a newsroom case does
@@ -266,7 +296,11 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 	const workers = spawnableWorkers(harness.composition);
 	serveEditorial(harness, orchestrator, ORCHESTRATOR, running);
 	orchestrator.on('message', (message: unknown) => {
-		const request = message as SpawnRequest | CancelRequest | ResearchRequest;
+		const request = message as SpawnRequest | CancelRequest | ResearchRequest | MemberTurn;
+		if (request?.kind === 'spotlight-member-turn') {
+			if (harness.lastAnalystCheck) harness.lastAnalystCheck.failures = 0;
+			return;
+		}
 		if (request?.kind === 'spotlight-cancel') {
 			running.get(request.id)?.abort();
 			return;
@@ -302,6 +336,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 		const validatedBatch = (ids: string[]) => { for (const id of ids) factCheckProgress.add(id); };
 		queue.run(async () => {
 			const status = await caseStatus(harness);
+			if (harness.lastAnalystCheck && harness.lastAnalystCheck.phase !== String(status.phase)) harness.lastAnalystCheck = undefined;
 			const refusal = refusalFor(harness, request.agent, request.task, status);
 			if (refusal) throw new Error(`spawn_agent: ${refusal}`);
 			// The fact-checker's task is code-built: the orchestrator's text never
@@ -747,7 +782,10 @@ type WorkerTask = { text: string; header: string; start?: string; passages?: str
 
 async function finalTask(harness: Harness, role: string, task: string, signal: AbortSignal, owed?: Deliverable, phase = ''): Promise<WorkerTask> {
 	// Outside Ingest the analyst's task is its deliverable alone, code-built.
-	if (role === 'analyst' && phase !== 'ingest') return { text: owed?.line ?? '', header: owed?.line ?? '' };
+	if (role === 'analyst' && phase !== 'ingest') {
+		const text = analystTask(owed?.line ?? '', harness.lastAnalystCheck?.phase === phase ? harness.lastAnalystCheck.report : '');
+		return { text, header: text };
+	}
 	if (role === 'analyst') {
 		const canonical = 'Draft the Ingest knowledge proposal using the approved inputs and joined context. If an existing proposal needs correction, read it and revise it under the same strict contract.';
 		let diagnostic = '';
@@ -896,6 +934,12 @@ function refusalFor(harness: Harness, role: string, task: string, status: Record
 		if (phase === 'brief') return BRIEF_PENDING_REFUSAL;
 		if (!['methodology', 'methodology_approval', 'research', 'research_approval', 'investigation'].includes(phase)) return `The investigator cannot run at ${phase}. Call spotlight_resolve and follow its phase owner.`;
 	}
+	const check = harness.lastAnalystCheck;
+	if (role === 'analyst' && phase === 'report' && check?.phase === 'report' && check.failures > REPORT_REPAIRS) {
+		const receipt = { cap: 'report-repairs', role, phase, repairs: REPORT_REPAIRS, failed_checks: check.failures };
+		harness.log(`[report-repair receipt] ${JSON.stringify(receipt)}`);
+		return `no analyst was started: ${REPORT_CAPPED} [report-repair receipt] ${JSON.stringify(receipt)}\nLast errors:\n${check.report}`;
+	}
 	if (role === 'analyst' && harness.batchBlocked) return `${BATCH_BLOCKED} ${harness.batchBlocked}`;
 	if (role === 'analyst' && phase === 'ingest' && harness.config.edition === 'newsroom') return 'the analyst does not run at Ingest in the newsroom edition: the newsroom drafts the batch from the submitted case';
 	const spec = agentSpec(harness.composition, role);
@@ -957,6 +1001,11 @@ async function withValidation(harness: Harness, role: string, text: string): Pro
 	});
 	if (outcome.ran.length === 0) return text;
 	if (role === 'fact-checker') harness.lastFactCheckReport = outcome.report;
+	if (role === 'analyst' && phase !== 'ingest') {
+		const previous = harness.lastAnalystCheck?.phase === phase ? harness.lastAnalystCheck.failures : 0;
+		harness.lastAnalystCheck = outcome.passed ? undefined : { phase, report: outcome.report, failures: previous + 1 };
+		if (phase === 'report' && !outcome.passed && previous + 1 > REPORT_REPAIRS) return `${text}\n\n${setDraftAside(harness, outcome.report, previous + 1)}`;
+	}
 	if (role === 'analyst' && !outcome.passed && (await proposalNotAtFault(harness))) {
 		harness.batchBlocked = outcome.report.split('\n').slice(1).join(' ').replace(/\s+/g, ' ').trim().slice(0, 800);
 		harness.log(`the knowledge batch cannot be built for a reason no agent can fix: ${harness.batchBlocked}`);

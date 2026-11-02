@@ -67,6 +67,9 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 			if (event.messageType !== 'user') return;
 			resetFactCheckerCycle(cycle);
 			turn.investigators = 0;
+			// The launcher's report-repair count (launcher.ts REPORT_REPAIRS) resets
+			// on a member's message, never on the harness's own continuation.
+			if (!event.prompt.startsWith(AUTO_CONTINUE_TAG)) process.send?.({ kind: 'spotlight-member-turn' });
 		});
 		const spawnTool = spawnAgentTool(spawnableWorkers(composition), cycle);
 		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context), turn)));

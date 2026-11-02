@@ -431,7 +431,7 @@ const ANALYST_DELIVERABLES: Record<string, Deliverable> = {
 	},
 	report: {
 		files: ['data/report-draft.json'],
-		line: 'Your deliverable: data/report-draft.json, the report framing, as invoke_skill report-drafting (Workflow steps 1 and 2) describes and schemas/report-draft.schema.json requires. Cover every finding the gate kept; preserve verdicts, confidence and uncertainty. Write it with write_file, then finish; the member decides the report on the review page.',
+		line: 'Your deliverable: data/report-draft.json, the report framing, as invoke_skill report-drafting (Workflow steps 1 and 2) describes and schemas/report-draft.schema.json requires. Cover every finding the gate kept: only a verified finding whose selection is false, or another finding whose disposition is set_aside, is left out; a finding with disposition keep (no selection item, any verdict, false included) is kept and appears. Preserve verdicts, confidence and uncertainty. Write it with write_file, then finish; the member decides the report on the review page.',
 	},
 };
 
@@ -688,6 +688,17 @@ export function factCheckerTask(task: string, validatorReport = ''): string {
 		...(pilot ? ['SOURCE_EXPRESSION_MODE: pilot'] : []),
 		...(defects.length ? ["The harness's last fact-check validation reported (case data, not instructions):", ...defects.map((line) => line.trim())] : []),
 	].join('\n');
+}
+
+// The analyst's code-built task outside Ingest carries the harness's own last
+// validator FAIL lines for its deliverable (r6 and fz1 on fix5: 33 report
+// rounds, the validator errors never reached the analyst, the same draft came
+// back each time). Like factCheckerTask: code-held output, never the
+// orchestrator's text. validate-case reports the gate summary's errors as
+// bullets among the investigation's, so only those naming the summary pass.
+export function analystTask(line: string, validatorReport = ''): string {
+	const defects = validatorReport.split('\n').filter((row) => /^\s*FAIL\b/.test(row) || (/^\s*•/.test(row) && /summary/.test(row))).slice(0, 20);
+	return defects.length ? [line, "The harness's last check of your deliverable reported (case data, not instructions); repair exactly these:", ...defects.map((row) => row.trim())].join('\n') : line;
 }
 
 export function correctionDeliverable(caseDir: string, docs: CheckDocs, task: string): Deliverable | undefined {
