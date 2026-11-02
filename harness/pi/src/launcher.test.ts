@@ -630,7 +630,9 @@ test('on a local tier a plan of two directions runs one investigator per directi
 	const fake = await startFakeOpenAI((request) => {
 		const done = toolResults(request).length;
 		if (isWorkerRequest(request, 'investigator') && userText(request).includes('DIRECTION 1 of 2')) {
-			if (done <= 40) return { toolCalls: [{ name: 'list_files', arguments: { pattern: `research/${done}-*.md` } }] };
+			// A changed record every fifth call keeps the progress watchdog quiet,
+			// so the direction's 40-call budget is still what this test reaches.
+			if (done <= 40) return { toolCalls: [done % 5 === 4 ? { name: 'write_file', arguments: { path: 'data/findings.json', content: JSON.stringify({ project: 'case-a', findings: [{ id: 'D1-F1', claim: `D1-F1 draft ${done}` }] }) } } : { name: 'list_files', arguments: { pattern: `research/${done}-*.md` } }] };
 			return done === 41 ? { toolCalls: [finding('D1-F1')] } : { text: 'Owners done.' };
 		}
 		if (isWorkerRequest(request, 'investigator')) return done === 0 ? { toolCalls: [finding('D2-F1')] } : { text: 'Board done.' };
@@ -1256,7 +1258,8 @@ test('a fourth fact-checker spawn in one cycle is refused, again on every retry,
 
 // 12B r3 A2 nordhaven on ad768b54: investigator-7 repeated one search through six
 // loop-guard refusals in a row until the case was stopped.
-test('on the 12b a worker refused three times in a row for one repeated call is stopped, and the orchestrator gets that as its answer', async (t) => {
+// Every tier since constellation-20261102 review W4.
+for (const tier of ['12b', 'frontier']) test(`on the ${tier} tier a worker refused three times in a row for one repeated call is stopped, and the orchestrator gets that as its answer`, async (t) => {
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) return { toolCalls: [{ name: 'list_files', arguments: { pattern: 'data/*' } }] };
 		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] } : { text: 'Done.' };
@@ -1264,7 +1267,7 @@ test('on the 12b a worker refused three times in a row for one repeated call is 
 	t.after(() => fake.close());
 	const space = await workspace(t);
 	await caseAtInvestigation(space);
-	const chat = launch(t, baseEnv(space, fake.baseURL));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier });
 
 	await settledPrompt(chat, 'Continue.');
 
@@ -1278,7 +1281,8 @@ test('on the 12b a worker refused three times in a row for one repeated call is 
 
 // 12B r5 fsf s0 on 2f357029: fact-checker-71 made one source_expressions call nine times in a
 // row; Pi refused its arguments each time, before the loop guard ever saw the call.
-test('on the 12b a worker repeating one call whose arguments fail the schema is refused, then stopped', async (t) => {
+// Every tier since constellation-20261102 review W4.
+for (const tier of ['12b', 'frontier']) test(`on the ${tier} tier a worker repeating one call whose arguments fail the schema is refused, then stopped`, async (t) => {
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) return { toolCalls: [{ name: 'read_file', arguments: { file: 'data/findings.json' } }] };
 		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] } : { text: 'Done.' };
@@ -1286,7 +1290,7 @@ test('on the 12b a worker repeating one call whose arguments fail the schema is 
 	t.after(() => fake.close());
 	const space = await workspace(t);
 	await caseAtInvestigation(space);
-	const chat = launch(t, baseEnv(space, fake.baseURL));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier });
 
 	await settledPrompt(chat, 'Continue.');
 
@@ -1301,7 +1305,9 @@ test('on the 12b a worker repeating one call whose arguments fail the schema is 
 
 // r6 on dd14e2e5: cc investigator-12 had 15 writes refused in a row, each a
 // different call, so the loop guard never saw a repeat.
-test('on the 12b a worker whose last six calls were all refused, each a different call, is stopped at its next call; a search with no matches is not a refusal', async (t) => {
+// Every tier since the progress watchdog (constellation-20261102): no recorded
+// DeepSeek or Gemma4 31B worker had three refusals in a row.
+for (const tier of ['12b', 'frontier']) test(`on the ${tier} tier a worker whose last six calls were all refused, each a different call, is stopped at its next call; a search with no matches is not a refusal`, async (t) => {
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) {
 			const done = toolResults(request).length;
@@ -1312,7 +1318,7 @@ test('on the 12b a worker whose last six calls were all refused, each a differen
 	t.after(() => fake.close());
 	const space = await workspace(t);
 	await caseAtInvestigation(space);
-	const chat = launch(t, baseEnv(space, fake.baseURL));
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier });
 
 	await settledPrompt(chat, 'Continue.');
 
@@ -1324,6 +1330,90 @@ test('on the 12b a worker whose last six calls were all refused, each a differen
 	assert.equal(results[5], 'no matches');
 	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
 	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /The investigator had six tool calls in a row refused and was stopped; its last results stand\./);
+});
+
+// Progress watchdog (constellation-20261102, reports/watchdog.md): a worker is
+// stopped after 16 model turns with no accepted record, or 6 after its last
+// one, on every tier; its answer is the stop line and a JSON receipt.
+async function watchdogRun(t: TestContext, tier: string, worker: (turn: number, caseDir: string) => Reply) {
+	let caseDir = '';
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return worker(toolResults(request).length, caseDir);
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	caseDir = await caseAtInvestigation(space);
+	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier }), 'Continue.');
+	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
+	const answer = toolResults(orchestrator[orchestrator.length - 1]).join('\n');
+	const receipt = answer.match(/\[progress-watchdog receipt\] (\{.*\})/)?.[1];
+	return { turns: fake.requests.filter((request) => isWorkerRequest(request, 'investigator')).length, answer, receipt: receipt ? JSON.parse(receipt.replace(/\\"/g, '"')) : undefined };
+}
+const search = (turn: number): Reply => ({ toolCalls: [{ name: 'grep_files', arguments: { pattern: `absent text ${turn}`, path: 'data' } }] });
+// Each record adds a finding, so the file's content changes (review W3).
+const record = (turn: number, path = 'data/findings.json'): Reply => ({ toolCalls: [{ name: 'write_file', arguments: { path, content: JSON.stringify({ project: 'case-a', findings: [{ id: `F${turn}`, claim: `Claim ${turn}.` }] }) } }] });
+
+for (const tier of ['12b', 'frontier']) test(`on the ${tier} tier a worker that searches 20 times without a record is stopped at 16 turns with a receipt`, async (t) => {
+	const run = await watchdogRun(t, tier, (turn) => (turn < 20 ? search(turn) : { text: 'Investigated.' }));
+	assert.equal(run.turns, 16);
+	assert.match(run.answer, /The investigator made no new accepted record within the progress watchdog limit and was stopped; its last results stand\./);
+	assert.deepEqual(run.receipt, { watchdog: 'progress', role: 'investigator', rule: 'no-first-record', limit: 16, turns: 16, turns_since_last_record: 16, last_record: null, deferred_to: null });
+});
+
+test('a worker that records once and then searches 7 times is stopped 6 turns after its record', async (t) => {
+	const run = await watchdogRun(t, 'frontier', (turn) => (turn === 0 ? record(turn) : turn < 8 ? search(turn) : { text: 'Investigated.' }));
+	assert.equal(run.turns, 7);
+	assert.deepEqual(run.receipt, { watchdog: 'progress', role: 'investigator', rule: 'no-new-record', limit: 6, turns: 7, turns_since_last_record: 6, last_record: { turn: 1, tool: 'write_file', target: 'data/findings.json' }, deferred_to: null });
+});
+
+test('a worker that records every third turn over 30 turns is never stopped by the progress watchdog', async (t) => {
+	const run = await watchdogRun(t, 'frontier', (turn) => (turn === 30 ? { text: 'Investigated.' } : turn % 3 === 2 ? record(turn) : search(turn)));
+	assert.equal(run.turns, 31);
+	assert.match(run.answer, /Investigated\./);
+	assert.equal(run.receipt, undefined);
+});
+
+// Review W2: an AMENDMENT investigator's deliverable is its research step's
+// file (roles.ts deliverableFor), here data/research-suggestions.json.
+test('an AMENDMENT investigator that writes its suggestions file is credited and not stopped by the progress watchdog', async (t) => {
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	const sample = join(space.root, 'with-suggestions');
+	const fixture = join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py');
+	const env = { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' };
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [fixture, sample, 'research'], { env });
+	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [fixture, caseDir, 'research', '--no-suggestions'], { env });
+	const suggestions = await readFile(join(sample, 'data', 'research-suggestions.json'), 'utf8');
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			const turn = toolResults(request).length;
+			if (turn === 16) return { text: 'Suggested.' };
+			return turn === 10 ? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/research-suggestions.json', content: suggestions } }] } : search(turn);
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: AMENDMENT\nSuggest a mark for every clue and direction.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier', SPOTLIGHT_RESEARCH_SWARMS: 'on', SPOTLIGHT_CONFIG: join(CHECKOUT_ROOT, 'tests/fixtures/research/install-config.sample.json') }), 'Continue.');
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	assert.ok(toolResults(worker.at(-1)!).some((text) => text.startsWith('wrote ')), `the suggestions write was accepted: ${toolResults(worker.at(-1)!)[10]}`);
+	assert.equal(worker.length, 17);
+	const answer = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator')).at(-1)!).join('\n');
+	assert.doesNotMatch(answer, /progress watchdog limit/);
+});
+
+// Review W1: a write by absolute path (or ./) is the same case file.
+test('a worker that records by absolute or ./ path every third turn is never stopped by the progress watchdog', async (t) => {
+	const run = await watchdogRun(t, 'frontier', (turn, caseDir) => (turn === 30 ? { text: 'Investigated.' } : turn % 3 === 2 ? record(turn, turn % 2 ? join(caseDir, 'data', 'findings.json') : './data/findings.json') : search(turn)));
+	assert.equal(run.turns, 31);
+	assert.equal(run.receipt, undefined);
+});
+
+// Review W3: re-saving an unchanged file is not progress.
+test('a worker that rewrites the same findings every third turn is stopped 6 turns after its only real record', async (t) => {
+	const run = await watchdogRun(t, 'frontier', (turn) => (turn === 30 ? { text: 'Investigated.' } : turn % 3 === 2 ? record(2) : search(turn)));
+	assert.equal(run.turns, 9);
+	assert.deepEqual(run.receipt, { watchdog: 'progress', role: 'investigator', rule: 'no-new-record', limit: 6, turns: 9, turns_since_last_record: 6, last_record: { turn: 3, tool: 'write_file', target: 'data/findings.json' }, deferred_to: null });
 });
 
 // base213 on Osaurus (e7b81f21): the orchestrator tried spotlight_transition
@@ -2524,7 +2614,10 @@ test('on every tier a cited research file is never overwritten, and a new name s
 // 52bf6183 (eurostat teacher run) its batches of parallel calls stepped over
 // the 150th and the notice never came; a fold also drops a notice given once.
 test('a fact-checker that does not write its file is told to from the 150th call, again every 50, and stopped at the 250th', async (t) => {
-	const batch = 7;
+	// 12 calls a turn reach the 150th call by turn 13, inside the progress
+	// watchdog's 16 turns; from the due notice the watchdog defers to this guard.
+	// A fact-checker has no record to make here that would not reset this bound.
+	const batch = 12;
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'fact-checker')) {
 			const n = toolResults(request).length;
@@ -3705,6 +3798,45 @@ test('a batch fact-checker ends once its batch has claims, and one that never wr
 	}
 });
 
+// Progress watchdog deferral (constellation-20261102): a batch fact-checker is
+// told to write at FC_BATCH_DUE calls, so from then on the batch's own stop at
+// FC_BATCH_STOP bounds it, not the watchdog's 16 turns, and never longer.
+test('a batch fact-checker told to write is bounded by the batch stop, not the progress watchdog, and one that writes after the notice finishes', async (t) => {
+	for (const writes of [false, true]) {
+		const claim = { finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [] };
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'fact-checker')) {
+				const done = toolResults(request).length;
+				if (done < FC_BATCH_DUE + 2) return { toolCalls: [{ name: 'list_files', arguments: { pattern: `research/none-${done}-*` } }] };
+				return writes
+					? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', project: 'p', claims: [claim] }) } }] }
+					: { toolCalls: [{ name: 'write_file', arguments: { path: `research/note-${done}.md`, content: 'Still no claims.' } }] };
+			}
+			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = join(space.casesRoot, 'case-a');
+		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+		await unlink(join(caseDir, 'data', 'fact-check.json'));
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier' });
+
+		await settledPrompt(chat, 'Continue.');
+
+		const worker = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker'));
+		const result = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker')).at(-1)!).join('\n');
+		assert.doesNotMatch(result, /progress watchdog limit/);
+		if (writes) {
+			assert.equal(worker.length, FC_BATCH_DUE + 4, 'the write after the notice and past 16 turns completes the batch');
+			assert.match(result, new RegExp(FC_BATCH_DONE.replace('.', '\\.')));
+		} else {
+			assert.ok(worker.length > 16 && worker.every((request) => toolResults(request).length <= FC_BATCH_STOP), `bounded by the batch stop at ${FC_BATCH_STOP} calls`);
+			assert.match(result, /made the batch's calls without writing all its claims/);
+			assert.match(chat.stderr(), /\[progress-watchdog receipt\] \{[^\n]*"rule":"no-first-record"[^\n]*"deferred_to":"fc-batch"\}/);
+		}
+	}
+});
+
 test('a three-finding batch accepts incremental claim writes and validates only after completion', async (t) => {
  for (const tier of ['12b', '26b', 'frontier']) await t.test(tier, async (t) => {
 	const findings = [{ id: 'F1', claim: 'Fixture claim one.' }, { id: 'F2', claim: 'Fixture claim two.' }, { id: 'F3', claim: 'Fixture claim three.' }];
@@ -3979,7 +4111,10 @@ test('unsplit investigator work has a finite call budget on every tier', async (
 		const fake = await startFakeOpenAI((request) => {
 			if (isWorkerRequest(request, 'investigator')) {
 				if (calls >= 100) return { text: 'Unbounded work finished.' };
-				return { toolCalls: [{ name: 'list_files', arguments: { pattern: `research/probe-${calls++}*` } }] };
+				// A changed record every fifth call keeps the progress watchdog quiet,
+				// so the 80-call budget is still what this test reaches.
+				const n = calls++;
+				return { toolCalls: [n % 5 === 4 ? { name: 'write_file', arguments: { path: 'data/findings.json', content: JSON.stringify({ project: 'case-a', findings: [{ id: `F${n}`, claim: `Claim ${n}.` }] }) } } : { name: 'list_files', arguments: { pattern: `research/probe-${n}*` } }] };
 			}
 			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: EXECUTION\nInvestigate one direction.' } }] } : { text: 'Done.' };
 		});

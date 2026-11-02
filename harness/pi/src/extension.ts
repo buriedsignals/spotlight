@@ -9,7 +9,7 @@ import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
 import { applyFixedRequestBody, parseFixedRequestBody, withoutHistoryReasoning } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
-import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, checkPacket, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, deliverableFor, loadComposition, checkPacket, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
 import { READ_TRUNCATED, canonicalWriteCall, readTarget, writeConfined } from './tools/case-files.ts';
 import { typedTools } from './tools/index.ts';
 import { invokeSkillTool } from './tools/skills.ts';
@@ -19,7 +19,7 @@ import { bindActiveCase, nextAction, pythonAdapter, resolveCase, spotlightTools 
 import { requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
 import { PAGE_NOT_OPENED, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
-import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
+import { CALL_BUDGET_STOP, FACT_CHECK_DUE_STOP, LOOP_STOP, PROGRESS_STOP, REFUSAL_STOP, REFUSAL_STREAK, REPEAT_REASON } from './tools/run.ts';
 import { evidenceValidates, validateFactCheckBatch } from './validators.ts';
 
 const log = (message: string) => process.stderr.write(`spotlight-extension: ${message}\n`);
@@ -151,9 +151,14 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		return assigned.length ? checkPacket(caseDir, readCheckDocs(caseDir), assigned, recheck, recheckPath) : nextCheckText(readCheckDocs(caseDir));
 	} : undefined;
 	registerCompaction(pi, fixedBody, process.env.SPOTLIGHT_MODEL_TIER !== 'frontier', process.env, role !== ORCHESTRATOR, (path) => existsSync(resolve(caseDir, path)), remaining, fetched);
-	const guarded = registerLoopGuard(pi, tier12b && role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
-	// Ending the orchestrator would end the case, so only workers are stopped.
-	const streakGuarded = tier12b && role !== ORCHESTRATOR ? registerRefusalStreak(pi, `The ${role} ${REFUSAL_STOP}`) : (tool: ToolDefinition) => tool;
+	// Every tier since constellation-20261102 (review W4): no recorded DeepSeek
+	// or Gemma4 31B worker repeated one call with the same result even twice.
+	const guarded = registerLoopGuard(pi, role !== ORCHESTRATOR ? `The ${role} ${LOOP_STOP}` : undefined);
+	// Ending the orchestrator would end the case, so only workers are stopped,
+	// on every tier: in the recorded runs (watchdog.md) no productive worker had
+	// more than four refusals in a row, and no DeepSeek or Gemma4 31B worker two.
+	const streakGuarded = role !== ORCHESTRATOR ? registerRefusalStreak(pi, `The ${role} ${REFUSAL_STOP}`) : (tool: ToolDefinition) => tool;
+	if (role !== ORCHESTRATOR) registerProgressWatchdog(pi, role, caseDir);
 	if (role === ORCHESTRATOR) {
 		registerReviewRefusalCap(pi);
 		registerEndTurnOnOpen(pi);
@@ -716,6 +721,117 @@ function registerRefusalStreak(pi: ExtensionAPI, stop: string): (tool: ToolDefin
 			}
 			return tool.prepareArguments ? tool.prepareArguments(args) : args;
 		},
+	});
+}
+
+// Mandatory progress watchdog (plan 2026-11-01, "Constellation, structural
+// delegation and watchdog"). Every worker, on every tier, is stopped once it
+// has spent this many model turns without an accepted record:
+// - PROGRESS_FIRST_RECORD_TURNS before its first one. Measured on recorded
+//   workers (fine-tuning data/lfm3/u6/constellation-20261102/reports/watchdog.md):
+//   productive workers took at most 14 turns to their first record.
+// - PROGRESS_NEXT_RECORD_TURNS after its last one. ASSUMPTION: the productive
+//   maximum gap was 3 turns, and no recorded worker stalled after a record, so
+//   the stuck side of this bound is uncalibrated.
+// An accepted record is a call that changed a case file's content: a record_*
+// or source_expressions call the tool accepted, or a write_file/edit_file of
+// one of this worker's own deliverable files (the launcher's
+// SPOTLIGHT_DELIVERABLE_FILES, from roles.ts deliverableFor). Targets are
+// compared case-relative, however the path was spelled, and rewriting the same
+// content is not a record (review W1-W3, constellation-20261102). The stop ends
+// the run before its next model request; its answer is the stop line and a
+// machine-readable receipt. It is evidence for the orchestrator, not a prompt
+// to keep going. Once another guard has told the worker to write (the batch
+// fact-checker's, the fact-check due notice, the call budget), the watchdog
+// defers to that guard for the rest of the run: that guard's own hard stop
+// bounds the worker, and the watchdog only logs a receipt naming it.
+export const PROGRESS_FIRST_RECORD_TURNS = 16;
+export const PROGRESS_NEXT_RECORD_TURNS = 6;
+export const PROGRESS_RECEIPT_TAG = '[progress-watchdog receipt]';
+// The file each code-owned record tool writes, by its arguments.
+function recordTarget(tool: string, args: Record<string, unknown>): string | undefined {
+	if (tool === 'source_expressions') return args.action === 'fingerprint_findings' ? 'data/findings.json' : 'data/source-expressions.json';
+	if (tool === 'record_indicator_framework') return 'data/indicator-framework.json';
+	if (tool === 'record_finding' || tool === 'record_assessment') return canonicalWriteCall(tool, args)?.path;
+	return undefined;
+}
+
+export type ProgressReceipt = {
+	watchdog: 'progress';
+	role: string;
+	rule: 'no-first-record' | 'no-new-record';
+	limit: number;
+	turns: number;
+	turns_since_last_record: number;
+	last_record: { turn: number; tool: string; target: string } | null;
+	deferred_to: string | null;
+};
+// Each guard that tells a worker to write, by the notice the worker is shown.
+const WRITE_NOTICES: Array<[guard: string, notice: () => string]> = [
+	['fc-batch', () => FC_BATCH_NOTICE],
+	['fact-check-due', () => FACT_CHECK_DUE_NOTICE],
+	['call-budget', () => CALL_BUDGET_SPENT],
+];
+
+export const progressStop = (receipt: ProgressReceipt) => `The ${receipt.role} ${PROGRESS_STOP}\n${PROGRESS_RECEIPT_TAG} ${JSON.stringify(receipt)}`;
+
+function registerProgressWatchdog(pi: ExtensionAPI, role: string, caseDir: string): void {
+	const deliverables = new Set((process.env.SPOTLIGHT_DELIVERABLE_FILES?.split(',') ?? deliverableFor(role, '', '')?.files ?? []).filter(Boolean));
+	const caseRelativePath = (path: string) => relative(caseDir, resolve(caseDir, path.replace(/^\{CASE_DIR\}(?:[\\/]|$)/, ''))).split(sep).join('/');
+	const contentHash = (target: string) => {
+		const file = resolve(caseDir, target);
+		return existsSync(file) ? createHash('sha256').update(readFileSync(file)).digest('hex') : '';
+	};
+	const before = new Map<string, { target: string; hash: string }>();
+	// Not reset on agent_start: a fold's continuation prompt is the same task.
+	let turns = 0;
+	let last: ProgressReceipt['last_record'] = null;
+	let stopping: ProgressReceipt | undefined;
+	let deferredTo: string | null = null;
+	let deferredLogged = false;
+	pi.on('tool_execution_start', (event) => {
+		const input = (event.args ?? {}) as Record<string, unknown>;
+		const file = event.toolName === 'write_file' || event.toolName === 'edit_file' ? canonicalWriteCall(event.toolName, input)?.path : recordTarget(event.toolName, input);
+		if (typeof file !== 'string') return;
+		const target = caseRelativePath(file);
+		if ((event.toolName === 'write_file' || event.toolName === 'edit_file') && !deliverables.has(target)) return;
+		before.set(event.toolCallId, { target, hash: contentHash(target) });
+	});
+	pi.on('tool_execution_end', (event) => {
+		const pending = before.get(event.toolCallId);
+		before.delete(event.toolCallId);
+		if (!pending || event.isError || contentHash(pending.target) === pending.hash) return;
+		last = { turn: turns + 1, tool: event.toolName, target: pending.target };
+	});
+	pi.on('turn_end', (event) => {
+		turns += 1;
+		// A turn without tool calls ends the run on the worker's own answer.
+		const content = (event.message as { content?: Array<{ type: string }> }).content;
+		if (stopping || !Array.isArray(content) || !content.some((part) => part.type === 'toolCall')) return;
+		const since = turns - (last?.turn ?? 0);
+		const limit = last ? PROGRESS_NEXT_RECORD_TURNS : PROGRESS_FIRST_RECORD_TURNS;
+		if (since < limit) return;
+		const receipt: ProgressReceipt = { watchdog: 'progress', role, rule: last ? 'no-new-record' : 'no-first-record', limit, turns, turns_since_last_record: since, last_record: last, deferred_to: deferredTo };
+		if (deferredTo) {
+			if (!deferredLogged) log(`${PROGRESS_RECEIPT_TAG} ${JSON.stringify(receipt)}`);
+			deferredLogged = true;
+			return;
+		}
+		stopping = receipt;
+		log(`${PROGRESS_RECEIPT_TAG} ${JSON.stringify(stopping)}`);
+	});
+	pi.on('before_provider_request', (_event, ctx) => {
+		if (stopping) ctx.abort();
+		return undefined;
+	});
+	pi.on('message_end', (event) => {
+		const message = event.message as { role?: string; content?: Array<{ type: string; text?: string }> };
+		if (message.role === 'toolResult' && !deferredTo) {
+			const text = (message.content ?? []).map((part) => part.text ?? '').join('\n');
+			deferredTo = WRITE_NOTICES.find(([, notice]) => text.includes(notice()))?.[0] ?? null;
+		}
+		if (!stopping || message.role !== 'assistant') return undefined;
+		return { message: { ...event.message, content: [{ type: 'text', text: progressStop(stopping) }] } as typeof event.message };
 	});
 }
 

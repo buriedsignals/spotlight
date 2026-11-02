@@ -39,10 +39,13 @@ export const REPEAT_REASON = 'This is the same call as the last two. Act on what
 // What a 12b worker's run ends with on its third refusal in a row, and what the
 // orchestrator then gets as that worker's answer.
 export const LOOP_STOP = 'repeated one call and was stopped; its last results stand.';
-// What a 12b worker's run ends with when its last REFUSAL_STREAK tool calls were
+// What a worker's run ends with when its last REFUSAL_STREAK tool calls were
 // all refused or failed, whatever they were.
 export const REFUSAL_STREAK = 6;
 export const REFUSAL_STOP = 'had six tool calls in a row refused and was stopped; its last results stand.';
+// What a worker's run ends with when the progress watchdog stops it
+// (extension.ts registerProgressWatchdog); a JSON receipt line follows it.
+export const PROGRESS_STOP = 'made no new accepted record within the progress watchdog limit and was stopped; its last results stand.';
 // What a fact-checker's run ends with when it made FACT_CHECK_STOP calls
 // without writing data/fact-check.json (extension.ts registerFactCheckDue).
 export const CALL_BUDGET_STOP = 'stopped because its tool-call budget was exhausted; the deliverable may be incomplete.';

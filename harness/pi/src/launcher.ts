@@ -327,6 +327,8 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 				const fold = {
 					SPOTLIGHT_TASK_HEADER: worker.header,
 					...(worker.start ? { SPOTLIGHT_TASK_START: worker.start } : {}),
+					// The progress watchdog credits writes to these files only (extension.ts).
+					...(due?.files.length ? { SPOTLIGHT_DELIVERABLE_FILES: due.files.join(',') } : {}),
 					...(kept ? { SPOTLIGHT_TASK_PASSAGES: kept } : {}),
 					...(request.agent === 'fact-checker' && due?.packet?.length ? { SPOTLIGHT_FC_BATCH: due.packet.join(',') } : {}),
 						...(due?.recheckPath ? { SPOTLIGHT_TASK_RECHECK: due.recheckPath } : {}),
