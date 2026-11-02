@@ -50,9 +50,9 @@
         "required": { "type": "boolean" },
         "used": { "type": "boolean" },
         "outcome": { "enum": ["used", "not-needed", "unavailable", "policy-skipped"] },
-        "status": { "enum": ["green", "yellow", "red", "missing", "unknown"] },
+        "status": { "enum": ["green", "yellow", "red", "missing", "unknown", "not-needed", "unavailable", "policy-skipped"] },
 		"interface": { "enum": ["cli", "api_fallback", "none"] },
-		"capabilities": { "type": "array", "items": { "enum": ["osint_tools"] } },
+		"capabilities": { "type": "array", "items": { "enum": ["osint_tools", "data_sources"] } },
         "queries": {
           "type": "array",
           "items": {
@@ -60,7 +60,7 @@
 			"required": ["response_path"],
             "properties": {
               "direction": { "type": "string" },
-			  "mode": { "enum": ["tool_discovery"] },
+			  "mode": { "enum": ["tool_discovery", "data_source"] },
 			  "interface": { "enum": ["cli", "api_fallback"] },
 			  "command": { "type": "string" },
 			  "catalog_id": { "type": "string" },

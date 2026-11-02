@@ -25,6 +25,9 @@ from integrations.anomaly import adapter as anomaly  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "scripts"))
 import research_checks  # noqa: E402
+import schema_check  # noqa: E402
+
+METHODOLOGY_SCHEMA = ROOT / "schemas" / "methodology.schema.json"
 DEFAULT_CTI_LOCK = ROOT / "upstreams" / "cti-expert" / "source.lock.json"
 DEFAULT_CTI_REVISIONS = ROOT / "upstreams" / "cti-expert" / "reviewed-revisions.json"
 CTI_REFERENCES = {
@@ -324,6 +327,10 @@ def main() -> int:
 
     required, status = navigator_status(config)
     errors = validate_navigator(methodology, required, status, case_dir)
+    # e2e r1 (31B): this gate passed navigator.status "not-needed", which the
+    # methodology schema refused, and research-triage.py stopped after the
+    # member approved. The gate applies the same schema, so the two cannot drift.
+    errors.extend(f"methodology.json: {error}" for error in schema_check.load(METHODOLOGY_SCHEMA).errors(methodology))
     active_sha = str(cti_lock.get("active_sha", ""))
     reviewed_shas = {
         item.get("sha")

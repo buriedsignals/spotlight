@@ -229,3 +229,26 @@ test('evidence-bundle file aliases cannot introduce an unacquired archive', asyn
 		assert.equal(await readFile(join(caseDir,path),'utf8'),before);
 	}
 });
+
+// Phase B (reports/phaseb-lfm3.md): stock LFM3's fact-checker sent 6 of 6
+// assessments without finding_id, which the schema did not require, and each
+// was refused. Code owns IDs: a one-finding batch gets its id filled and the
+// result says so; any other batch's schema requires it, and the refusal names
+// the batch.
+test('record_assessment fills finding_id for a one-finding batch and otherwise requires it, naming the batch',async t=>{
+	const single=await fixture(t,'fact-checker',{SPOTLIGHT_FC_BATCH:'F1'});
+	const source=await single.json('findings.json');
+	const result=await single.call('record_assessment',{assessment:{verdict:'unverified',confidence:'low',evidence_for:[],evidence_against:[]}});
+	assert.ok(result.content.some((part:any)=>part.type==='text' && part.text.includes('finding_id F1 was filled by the harness')),'the result records that code filled the id');
+	const saved=(await single.json('fact-check.json')).claims.find((row:any)=>row.finding_id==='F1');
+	assert.equal(saved.verdict,'unverified');
+	assert.equal(saved.claim_text,source.findings[0].claim);
+
+	const several=await fixture(t,'fact-checker',{SPOTLIGHT_FC_BATCH:'F1,F2'});
+	const schema=several.tools.get('record_assessment')!.parameters as any;
+	assert.ok(schema.properties.assessment.required.includes('finding_id'),'the schema requires finding_id for a batch of several');
+	assert.match(several.tools.get('record_assessment')!.description,/finding_id is required: one of F1, F2/);
+	const bytes=await readFile(join(several.caseDir,'data/fact-check.json'),'utf8');
+	await assert.rejects(several.call('record_assessment',{assessment:{verdict:'unverified',confidence:'low',evidence_for:[],evidence_against:[]}}),/finding_id is required\. Your batch: F1, F2/);
+	assert.equal(await readFile(join(several.caseDir,'data/fact-check.json'),'utf8'),bytes,'nothing was written');
+});

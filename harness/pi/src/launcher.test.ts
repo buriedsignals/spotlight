@@ -4833,3 +4833,103 @@ test('a task with two DIRECTION_IDs or a compound one passes none of its text to
 	assert.equal(workers.filter((request) => toolResults(request).length === 0).length, 2);
 	for (const request of workers) assert.doesNotMatch(JSON.stringify(request), /OWN-SENT|COMPOUND-SENT/);
 });
+
+// e2e r1 (31B): the Methodology gate passed navigator.status values the
+// methodology schema refused; research-triage.py then stopped after approval.
+// The gate's validator applies the schema, so open_review refuses first.
+test('open_review at the Methodology gate refuses a navigator status outside the methodology schema, and opens for an on-demand one', async (t) => {
+	for (const [status, opens] of [['bogus', false], ['not-needed', true]] as const) await t.test(status, async (t) => {
+		const fake = await startFakeOpenAI(orchestratorScript([{ name: 'open_review', arguments: {} }]));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = join(space.casesRoot, 'case-a');
+		execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'methodology']);
+		const path = join(caseDir, 'data', 'methodology.json');
+		const plan = JSON.parse(await readFile(path, 'utf8'));
+		plan.navigator = { required: false, used: false, status, queries: [], fallback_used: false, fallback_reason: 'Public records are enough.' };
+		await writeFile(path, JSON.stringify(plan));
+		const config = join(space.root, 'spotlight-config.json');
+		await writeFile(config, JSON.stringify({ model_tier: 'frontier', integrations: { osint_navigator: { status: 'red', required_in_phase_2: false } } }));
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: config });
+		await settledPrompt(chat, 'Continue.');
+		const opened = chat.lines.map((line) => JSON.parse(line) as { type?: string; toolName?: string; result?: { content: Array<{ text: string }> } })
+			.filter((record) => record.type === 'tool_execution_end' && record.toolName === 'open_review').map((record) => record.result!.content[0].text);
+		assert.ok(opened.length > 0, 'open_review ran');
+		if (opens) assert.match(opened[0], /review page is open/);
+		else assert.match(opened[0], /does not pass validate-methodology-navigator\.py[\s\S]*navigator\.status/);
+	});
+});
+
+// e2e r1 (31B): the orchestrator wrote its own "MODE: METHODOLOGY AMENDMENT"
+// task and misread the persisting missing amendment file. At the amendment
+// step the investigator's task is code-built and code applies recordAmendment
+// once the worker finishes.
+test('at the amendment step the investigator gets the code-built TASK: AMEND task and code applies recordAmendment', async (t) => {
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	const prepare = [
+		'import importlib.util, json, sys',
+		'from pathlib import Path',
+		`spec = importlib.util.spec_from_file_location("rpc", ${JSON.stringify(join(CHECKOUT_ROOT, 'tests', 'research-phase-check.py'))})`,
+		'm = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)',
+		'case = Path(sys.argv[1]); (case / "data").mkdir(parents=True)',
+		'(case / "brief-directions.txt").write_text("Verify the offline fixture.\\n", encoding="utf-8")',
+		'm.write_json(case / "data/methodology.json", m.research_methodology())',
+		'import subprocess',
+		'seam = lambda *a: subprocess.run([sys.executable, str(m.SEAM), *a, str(case)], check=True, capture_output=True, env={"PATH": "", "PYTHONNOUSERSITE": "1", "SPOTLIGHT_RESEARCH_SWARMS": "on"})',
+		'seam("approve", "methodology", *m.APPROVER)',
+		'm.write_json(case / "data/leads.json", json.loads(m.LEADS_SAMPLE.read_text(encoding="utf-8")))',
+		'm.write_json(case / "data/clues.json", json.loads(m.CLUES_SAMPLE.read_text(encoding="utf-8")))',
+		'm.prepare_research_gate(case)',
+		'seam("approve", "research", *m.APPROVER)',
+	].join('\n');
+	execFileSync(PYTHON, ['-c', prepare, caseDir]);
+	const methodology = await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8');
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology-amendment.json', content: methodology } }] }
+			: { text: 'Amended.' };
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: METHODOLOGY AMENDMENT\nORCH-SENTINEL rewrite the whole plan.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_RESEARCH_SWARMS: 'on' }), 'Continue.');
+
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	assert.ok(worker.length > 0, 'the investigator ran');
+	assert.match(userText(worker[0]), /^MODE: AMENDMENT\nTASK: AMEND\n/);
+	for (const request of worker) assert.doesNotMatch(JSON.stringify(request), /ORCH-SENTINEL/);
+	assert.match(toolResults(fake.requests.at(-1)!).join('\n'), /recordAmendment applied/);
+	const status = JSON.parse(execFileSync(PYTHON, [SEAM, 'status', '--json', caseDir], { env: { PATH: process.env.PATH ?? '', PYTHONNOUSERSITE: '1', SPOTLIGHT_RESEARCH_SWARMS: 'on' } }).toString());
+	assert.equal(status.phase, 'investigation');
+});
+
+// review-integration I1: a correction task had no deliverable, so the progress
+// watchdog credited only findings and bundle writes; a METHODOLOGY CORRECTION
+// that rewrote data/methodology.json at turn 10 was stopped at 16 as making
+// no first record.
+test('a METHODOLOGY CORRECTION investigator that writes data/methodology.json is credited and not stopped at 16 turns', async (t) => {
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'methodology']);
+	const plan = JSON.parse(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8'));
+	const corrected = JSON.stringify({ ...plan, tools_required: [...(plan.tools_required ?? []), 'Corrected registry search'] });
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			const turn = toolResults(request).length;
+			if (turn === 16) return { text: 'Corrected.' };
+			return turn === 10 ? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: corrected } }] } : search(turn);
+		}
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: METHODOLOGY CORRECTION\nAdd the registry search the validator asked for.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier' }), 'Continue.');
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
+	assert.ok(toolResults(worker.at(-1)!)[10].startsWith('wrote '), `the methodology write was accepted: ${toolResults(worker.at(-1)!)[10]}`);
+	// Credited at turn 11, the worker answers at turn 17, past the 16-turn first-record limit.
+	assert.equal(worker.length, 17, 'the worker ran to its own answer');
+	const answer = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator')).at(-1)!).join('\n');
+	assert.doesNotMatch(answer, /progress-watchdog receipt/);
+	assert.match(answer, /Corrected\./);
+});

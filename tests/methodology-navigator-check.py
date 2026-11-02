@@ -366,6 +366,25 @@ def main() -> int:
         if new_plan.returncode == 0 or "must match the current reviewed CTI revision" not in new_plan.stderr:
             raise AssertionError("new methodology should require the current reviewed revision")
 
+        # e2e r1 (31B): the gate passed navigator.status "not-needed" and the
+        # methodology schema refused it in research-triage.py after approval.
+        # The gate applies that schema: an on-demand status passes both, and a
+        # status outside the schema is refused at the gate.
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import schema_check
+        write_json(config, base_config(required=False))
+        for status, passes in (("not-needed", True), ("bogus", False)):
+            plan = methodology_without_navigator()
+            plan["navigator"] = {"required": False, "used": False, "status": status, "queries": [],
+                                 "fallback_used": False, "fallback_reason": "Public records are enough."}
+            write_json(methodology_path, plan)
+            gate = run(case_dir, config)
+            triage_errors = schema_check.load(ROOT / "schemas" / "methodology.schema.json").errors(plan)
+            if passes and (gate.returncode != 0 or triage_errors):
+                raise AssertionError(f"status {status} must pass the gate and the triage schema: {gate.stderr} {triage_errors}")
+            if not passes and (gate.returncode == 0 or "navigator.status" not in gate.stderr):
+                raise AssertionError(f"status {status} must be refused at the gate: {gate.stdout} {gate.stderr}")
+
     print("methodology navigator checks: OK")
     return 0
 

@@ -281,7 +281,7 @@ const ADAPTER_LINES: AdapterLine[] = [
 		orchestrator: true,
 	},
 	{
-		text: '- Research (orchestrator only): at the Research phase `spotlight_resolve` runs the approved research topics itself and returns the round as `research_round` (what ran, the spend, the topics left out, and `stopped` with the fix when the provider failed). You never start, widen or choose topics. Pass `retry_research: true` only when the member asks to retry a stopped round.',
+		text: '- Research (orchestrator only): at the Research phase `spotlight_resolve` runs the approved research topics itself and returns the round as `research_round` (what ran, the spend, the topics left out, and `stopped` with the fix when the provider failed). You never start, widen or choose topics. Pass `retry_research: true` only when the member asks to retry a stopped round. At `resume_at: amendment` spawn the investigator with any task: the harness builds the TASK: AMEND task and applies recordAmendment itself when it finishes; do not call it.',
 		orchestrator: true,
 		skill: 'phase-research',
 	},
@@ -434,6 +434,17 @@ const ANALYST_DELIVERABLES: Record<string, Deliverable> = {
 		line: 'Your deliverable: data/report-draft.json, the report framing, as invoke_skill report-drafting (Workflow steps 1 and 2) describes and schemas/report-draft.schema.json requires. Cover every finding the gate kept; preserve verdicts, confidence and uncertainty. Write it with write_file, then finish; the member decides the report on the review page.',
 	},
 };
+
+// The files a correction task's worker is credited for writing (the progress
+// watchdog's SPOTLIGHT_DELIVERABLE_FILES; review-integration I1): a correction
+// gets no deliverable line, but a METHODOLOGY CORRECTION that writes
+// data/methodology.json is progress, and other corrections write the
+// investigation files.
+export function correctionFiles(role: string, task: string): string[] | undefined {
+	const mode = role === 'investigator' ? taskMode(task) : undefined;
+	if (mode === 'METHODOLOGY CORRECTION') return ['data/methodology.json'];
+	return mode?.endsWith('CORRECTION') ? ['data/findings.json', 'data/evidence-bundle.json', 'data/investigation-log.json'] : undefined;
+}
 
 export function deliverableFor(role: string, phase: string, task: string, researchStep?: string): Deliverable | undefined {
 	const one = (file: string, line = `Your deliverable: ${file}; write it with write_file, then finish.`) => ({ files: [file], line });

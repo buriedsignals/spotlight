@@ -1263,7 +1263,7 @@ const recordRows = (value: unknown): RecordRow[] => Array.isArray(value)
 // Project the canonical row schema into a structured tool parameter, rather
 // than maintaining a second taxonomy. Local references are inlined because
 // this row is now the top-level tool schema, not the original document.
-function recordSchema(file: string, key: string, omitted: string[]): ReturnType<typeof Type.Object> {
+function recordSchema(file: string, key: string, omitted: string[], added: string[] = []): ReturnType<typeof Type.Object> {
 	const doc = JSON.parse(readFileSync(join(SCHEMAS_DIR, file), 'utf8'));
 	const expand = (value: unknown): unknown => {
 		if (Array.isArray(value)) return value.map(expand);
@@ -1292,7 +1292,7 @@ function recordSchema(file: string, key: string, omitted: string[]): ReturnType<
 			: { ...constraints, allOf: [...(Array.isArray(constraints.allOf) ? constraints.allOf : []), union] };
 	};
 	const row = expand(doc.properties[key].items) as { required: string[]; allOf?: unknown };
-	row.required = row.required.filter((name) => !omitted.includes(name));
+	row.required = [...row.required.filter((name) => !omitted.includes(name)), ...added.filter((name) => !row.required.includes(name))];
 	// Positive anchors are completed by quote resolution, then checked by the
 	// existing strict write and final validators. A real exact-quote proposal
 	// must reach that production step before its references can be validated.
@@ -1360,11 +1360,19 @@ export function recordTools(tools: ToolDefinition[], context: ToolContext): Tool
 	const name = finding ? 'record_finding' : 'record_assessment';
 	const key = finding ? 'finding' : 'assessment';
 	const file = finding ? 'findings.json' : 'fact-check.json';
+	// Code owns IDs (Phase B, stock LFM3: 6 of 6 assessments sent without
+	// finding_id and refused). A fact-checker whose batch holds one finding may
+	// omit finding_id and code fills it; with any other batch the schema
+	// requires it and a call without it is refused naming the batch.
+	const batch = finding ? [] : (context.env.SPOTLIGHT_FC_BATCH ?? '').split(',').map((item) => item.trim()).filter(Boolean);
+	const filled = batch.length === 1 ? batch[0] : undefined;
 	const parameters = recordSchema(
 		finding ? 'findings.schema.json' : 'fact-check.schema.json',
 		finding ? 'findings' : 'claims',
 		finding ? ['id', 'finding_fingerprint'] : ['claim_text'],
+		finding || filled ? [] : ['finding_id'],
 	);
+	const batchNote = finding ? '' : filled ? ` Your batch holds one finding, ${filled}: omit finding_id and code fills it.` : batch.length ? ` finding_id is required: one of ${batch.join(', ')} (your batch).` : ' finding_id is required.';
 	const write = tools.find((tool) => tool.name === 'write_file');
 	const expressions = tools.find((tool) => tool.name === 'source_expressions');
 	if (!write) return [];
@@ -1375,10 +1383,16 @@ export function recordTools(tools: ToolDefinition[], context: ToolContext): Tool
 		executionMode: 'sequential',
 		description: finding
 			? 'Record one finding as a structured object. Supply claim, evidence, sources and confidence with any relevant grounding fields. Omit id for a stable generated ID; supply an existing id to correct it. Code supplies the file, contract, project and fingerprint. Other findings remain unchanged. Archive URLs require an actual capture. You choose evidence and judgment.'
-			: 'Record one independent assessment as a structured object. Supply finding_id, verdict, confidence and your evidence/grounding assessment. Omit claim_text to copy the exact finding. Exact quotes and source_ref locators use the same acquired-capture and passage checks as a fact-check write. Other assessments remain unchanged. You choose the verdict and evidence; code supplies the canonical file and references.',
+			: `Record one independent assessment as a structured object. Supply finding_id, verdict, confidence and your evidence/grounding assessment. Omit claim_text to copy the exact finding. Exact quotes and source_ref locators use the same acquired-capture and passage checks as a fact-check write. Other assessments remain unchanged. You choose the verdict and evidence; code supplies the canonical file and references.${batchNote}`,
 		async execute(id, raw, signal, ...rest) {
+			const proposed = (raw as Record<string, unknown> | undefined)?.[key] as RecordRow | undefined;
+			if (!finding && !filled && proposed && typeof proposed === 'object' && proposed.finding_id === undefined) {
+				throw new ToolArgumentError(`record_assessment: finding_id is required.${batch.length ? ` Your batch: ${batch.join(', ')}; record one assessment per finding with its finding_id.` : ' Use the assigned finding\'s id from the next-to-check list.'}`);
+			}
 			const input = checkedParams<Record<string, RecordRow>>(name, parameters, raw);
 			const row = structuredClone(input[key]);
+			const supplied = !finding && filled !== undefined && row.finding_id === undefined;
+			if (supplied) row.finding_id = filled;
 			const findings = recordDocument(context, 'data/findings.json');
 			const rows = recordRows(findings.findings);
 			const existing = recordDocument(context, `data/${file}`);
@@ -1418,6 +1432,7 @@ export function recordTools(tools: ToolDefinition[], context: ToolContext): Tool
 					throw new Error(`record_finding: data/findings.json was written, but fingerprint refresh failed. Do not recreate the finding. Repair the fingerprint step with source_expressions action fingerprint_findings before continuing. ${(error as Error).message}`);
 				}
 			}
+			if (supplied) return { ...result, content: [...result.content, { type: 'text' as const, text: `finding_id ${filled} was filled by the harness: it is the one finding in your batch.` }] };
 			return finding ? { ...result, content: [...result.content, { type: 'text' as const, text: `Finding id: ${String(row.id)}.` }] } : result;
 		},
 	}];
