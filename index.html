@@ -54,6 +54,10 @@
     --red: #a83838;
     /* Pre-mixed accent-warm fades (used in CTA hovers, selected states) */
     --accent-warm-14: rgba(193, 106, 52, 0.14);
+    /* Agent and lane colours, shared with the Spotlight 2.0 launch video. */
+    --agent-investigator: #ffc28a;
+    --agent-factchecker: #7cb7ff;
+    --agent-decision: #b48cff;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--ink); color: var(--paper); }
@@ -540,7 +544,11 @@
   .rn-out { background: transparent; color: var(--paper); border: 3px double var(--paper); }
   .rn-gate { background: var(--accent-warm); border-color: var(--accent-warm); color: var(--ink); width: 220px; }
   .rn-check { background: rgba(91, 143, 196, 0.16); border-color: #5b8fc4; }
-  .rn-agent { background: rgba(193, 106, 52, 0.08); border-color: rgba(193, 106, 52, 0.6); width: 210px; }
+  .rn-agent { --c: var(--accent-warm); background: color-mix(in srgb, var(--c) 9%, transparent); border-color: color-mix(in srgb, var(--c) 65%, transparent); color: var(--c); width: 210px; }
+  .rn-inv { --c: var(--agent-investigator); }
+  .rn-fc { --c: var(--agent-factchecker); }
+  .rn-triage { background: color-mix(in srgb, var(--agent-decision) 12%, transparent); border-color: var(--agent-decision); color: var(--agent-decision); }
+  .rn-triage .rsub { color: color-mix(in srgb, var(--agent-decision) 70%, var(--paper)); }
   .rlab {
     position: absolute; left: calc(100% + 14px); top: 50%; transform: translateY(-50%);
     width: 132px; text-align: left; line-height: 1.4; font-size: 11px; letter-spacing: 0.02em; color: #e7c76a;
@@ -549,12 +557,17 @@
   }
   .rpill { display: block; width: max-content; margin-top: 5px; padding: 2px 8px; border-radius: 0; border: 1px solid rgba(231, 199, 106, 0.6); font-weight: 400; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
   .rg.on .rlab { border-color: #e7c76a; }
+  /* Member chips link out (the rail is aria-hidden; the step copy carries the accessible links). */
+  a.rlab { display: block; cursor: pointer; transition: border-color 0.2s, background 0.2s, color 0.2s, transform 0.2s; }
+  a.rlab::after { content: "↗"; position: absolute; top: 5px; right: 8px; font-size: 11px; opacity: 0.55; transition: opacity 0.2s; }
+  a.rlab:hover { border-color: #e7c76a; background: rgba(231, 199, 106, 0.14); color: #f4dc8f; transform: translateY(-50%) translateX(2px); }
+  a.rlab:hover::after { opacity: 1; }
+  a.rlab:hover .rpill { background: #e7c76a; color: var(--ink); border-color: #e7c76a; }
   .rlanes { display: grid; grid-template-columns: repeat(5, 14px); gap: 26px; height: 160px; }
-  .rlanes i { display: block; border-radius: 0; border: 1px dashed rgba(193, 106, 52, 0.6); position: relative; overflow: hidden; }
-  .rlanes i.loc { border-color: rgba(237, 232, 220, 0.45); }
+  /* one colour per lane, as in the launch video */
+  .rlanes i { --c: var(--accent-warm); display: block; border-radius: 0; border: 1px dashed color-mix(in srgb, var(--c) 60%, transparent); position: relative; overflow: hidden; }
   .rlanes i::after { content: ""; position: absolute; inset: 0; transform-origin: top; transform: scaleY(0.15);
-    background: linear-gradient(to bottom, rgba(193, 106, 52, 0.2), var(--accent-warm)); transition: transform 0.6s ease; }
-  .rlanes i.loc::after { background: linear-gradient(to bottom, rgba(237, 232, 220, 0.12), rgba(237, 232, 220, 0.8)); }
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--c) 18%, transparent), var(--c)); transition: transform 0.6s ease; }
   .rg.on .rlanes i::after { animation: rail-lane var(--d) cubic-bezier(.3,.6,.3,1) forwards; }
   .rg.done .rlanes i::after { transform: scaleY(1); }
   @keyframes rail-lane { 0% { transform: scaleY(0.15); } 50% { transform: scaleY(0.6); } 100% { transform: scaleY(1); } }
@@ -1695,6 +1708,13 @@
     color: var(--paper); white-space: nowrap; will-change: transform;
   }
   .hero-tag em { display: block; font-style: normal; color: #e08a52; }
+  /* Label riding the violet decision-model cube in the Research step of #what. */
+  .step-crew { position: fixed; inset: 0; z-index: 4; pointer-events: none; opacity: 0; transition: opacity 0.5s ease; }
+  .step-crew.on { opacity: 1; transition-delay: 0.35s; }
+  .step-crew svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .step-crew line { stroke: rgba(180, 140, 255, 0.6); stroke-width: 1; }
+  .step-crew .hero-tag { border-top-color: rgba(180, 140, 255, 0.8); }
+  .step-crew .hero-tag em { color: var(--agent-decision); }
   #hero .hero-title .ln { display: block; overflow: hidden; padding: 0.04em 0 0.1em; margin-bottom: -0.1em; }
   #hero .hero-title .ln > span { display: inline-block; transform: translateY(105%); transition: transform 1.1s cubic-bezier(0.2, 0.75, 0.2, 1) 0.65s; }
   #hero .hero-title .ln.accent > span { transition-delay: 1.05s; padding-right: 0.06em; }
@@ -1907,6 +1927,10 @@
     <span class="hero-tag" data-pick="right">Fact-checker<em>checks separately</em></span>
     <span class="hero-tag" data-pick="bottom">Your call<em>at every gate</em></span>
   </div>
+  <div class="step-crew" id="step-crew" aria-hidden="true">
+    <svg><line/></svg>
+    <span class="hero-tag">Decision model<em>LFM d1-2B-spotlight</em></span>
+  </div>
   <div class="hero-gradient"></div>
   <div class="hero-content">
     <div class="hero-grid">
@@ -1945,19 +1969,20 @@
         <div class="rail-track" id="rail-track">
           <div class="rg" data-g="0">
             <span class="rn rn-io">Lead</span>
-            <span class="rn">Methodology<em class="rlab">🧭 OSINT Navigator<b class="rpill">Members</b></em></span>
+            <span class="rn">Methodology<a class="rlab" href="https://navigator.indicator.media/" target="_blank" rel="noopener" tabindex="-1">🧭 OSINT Navigator<b class="rpill">Members</b></a></span>
             <span class="rn rn-gate">You approve the plan</span>
           </div>
           <div class="rg" data-g="1">
-            <span class="rlanes"><i style="--d:2.6s"></i><i style="--d:1.9s"></i><i style="--d:3s"></i><i style="--d:2.2s"></i><i class="loc" style="--d:1.7s"></i></span>
+            <span class="rlanes"><i style="--d:2.6s;--c:#e9a3a3"></i><i style="--d:1.9s;--c:#e6c27f"></i><i style="--d:3s;--c:#d8d49a"></i><i style="--d:2.2s;--c:#a9cfa0"></i><i class="loc" style="--d:1.7s;--c:#e4ddd2"></i></span>
             <span class="rcap">Research lanes</span>
             <span class="rn rn-check">Quotes checked</span>
+            <span class="rn rn-triage">Triage<em class="rsub">decision model flags leads</em></span>
             <span class="rn rn-gate">You mark the clues</span>
           </div>
           <div class="rg" data-g="2">
             <span class="rcyc">
-              <span class="rn rn-agent">Investigator</span>
-              <span class="rn rn-agent">Fact-checker</span>
+              <span class="rn rn-agent rn-inv">Investigator</span>
+              <span class="rn rn-agent rn-fc">Fact-checker</span>
               <span class="rdots"><b>1</b><b>2</b><b>3</b></span>
             </span>
           </div>
@@ -1966,7 +1991,7 @@
             <span class="rn">Findings<em class="rsub">evidence attached</em></span>
           </div>
           <div class="rg" data-g="4">
-            <span class="rn rn-gate">Investigation gate<em class="rlab">🧩 Indicator Framework<b class="rpill">Members</b></em></span>
+            <span class="rn rn-gate">Investigation gate<a class="rlab" href="https://indicator.media/indicator-lab" target="_blank" rel="noopener" tabindex="-1">🧩 Indicator Framework<b class="rpill">Members</b></a></span>
             <span class="rn rn-gate">Report and ingest</span>
           </div>
           <div class="rg" data-g="5">
@@ -2633,10 +2658,11 @@
       { count: 4, fn: (i, t) => i === 0
           ? { x: -1.1, y: 0.12 * Math.sin(t * 1.6), z: 0 }
           : { x: 0.55, y: (1 - (i - 1)) * 0.95, z: 0 } },
-      // Research: the swarm, five lanes working in parallel under one plan.
+      // Research: five lanes run in parallel; the decision model (violet) triages under them,
+      // beside the step heading so it stays clear of the text (checked at 1440 and 1920 wide).
       { count: 6, fn: (i, t) => i === 0
-          ? { x: 0, y: 1.45, z: 0 }
-          : { x: (i - 3) * 1.0, y: -0.35 + 0.55 * Math.sin(t * (0.9 + i * 0.23) + i * 1.7), z: 0 } },
+          ? { x: 0.95, y: -0.15 + 0.06 * Math.sin(t * 1.3), z: -0.6 }
+          : { x: (i - 3) * 1.0, y: 1.0 + 0.3 * Math.sin(t * (0.9 + i * 0.23) + i * 1.7), z: 0 } },
       // Cycles: investigator and fact-checker orbit the case.
       { count: 3, fn: (i, t) => {
           if (i === 0) return { x: 0, y: 0, z: 0 };
@@ -2650,8 +2676,23 @@
           const at = (t * 0.7) % 5, d = Math.min(Math.abs(i - at), 5 - Math.abs(i - at));
           return { x: (i - 2) * 0.95, y: 0.7 * Math.exp(-d * d * 3), z: 0 };
         } },
-      // Intelligence base: the case is filed as one ordered wall the next case builds on.
-      { count: 9, fn: (i) => ({ x: ((i % 3) - 1) * 0.98, y: (1 - Math.floor(i / 3)) * 0.98, z: 0 }) },
+      // Intelligence base: the analyst (green, cube 0) files the case into the wall the next
+      // case builds on; it sits in the wall's centre slot, stepped forward.
+      { count: 9, fn: (i, t) => {
+          const slot = i === 0 ? 4 : i <= 4 ? i - 1 : i;
+          return { x: ((slot % 3) - 1) * 0.98, y: (1 - Math.floor(slot / 3)) * 0.98, z: i === 0 ? 0.55 + 0.08 * Math.sin(t * 1.4) : 0 };
+        } },
+    ];
+    // Per-step cube colours in #what, shared with the Spotlight 2.0 launch video: lane colours,
+    // violet decision model, orange investigator, blue fact-checker, green analyst. Cubes a
+    // step does not name keep the hero theme's colour.
+    const STEP_TINTS = [
+      { 0: 0xede8dc, 1: 0xffa8a8, 2: 0xffd890, 3: 0xb8e8ae },
+      { 0: 0xa978ff, 1: 0xffa8a8, 2: 0xffd890, 3: 0xf0eaa6, 4: 0xb8e8ae, 5: 0xfff4e6 },
+      { 0: 0xede8dc, 1: 0xffc28a, 2: 0x7cb7ff },
+      {},
+      {},
+      { 0: 0x7fe39a },
     ];
     // In #what the diagram holds the left column, so the cubes sit right of centre.
     const ALIGNED_SHIFT_X = 1.8, ALIGNED_SHIFT_Y = 0.45;
@@ -3485,6 +3526,11 @@
         for (let i = 0; i < N_CELLS; i++) {
           cubeColors[i].setHex(cellCenters[i].y > 0 ? 0xffc28a : 0x7cb7ff);
         }
+        // Two existing cubes carry the other agents' colours, as in the launch video:
+        // violet decision model (top, front-right corner), green analyst (bottom, front-centre).
+        const pick = (score) => cellCenters.reduce((b, c, i) => (score(c) > score(cellCenters[b]) ? i : b), 0);
+        cubeColors[pick((c) => (c.y > 0 ? 10 : 0) + c.x + c.z)].setHex(0xa978ff);
+        cubeColors[pick((c) => (c.y < 0 ? 10 : 0) + c.z * 2 - Math.abs(c.x))].setHex(0x7fe39a);
       },
       // ——— Bi-color editorial dualities ———
       // "data sorted into boxes, verified, cross-checked, validated or not"
@@ -4104,6 +4150,31 @@
       });
     }
 
+    // #what, Research step: label the violet decision-model cube (cube 0 of that layout).
+    const stepCrew = document.getElementById('step-crew');
+    const stepTag = stepCrew ? stepCrew.querySelector('.hero-tag') : null;
+    const stepLine = stepCrew ? stepCrew.querySelector('line') : null;
+    let stepEase = null;
+    function updateStepTag() {
+      if (!stepCrew) return;
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const on = window.__sceneMood === 'aligned' && (window.__fiveThingsStep | 0) === 1 && vw > 760 && activity[0] > 0.5;
+      stepCrew.classList.toggle('on', on);
+      if (!on) { stepEase = null; return; }
+      _proj.copy(cubeState[0].pos).project(camera);
+      const ax = (_proj.x + 1) / 2 * vw, ay = (1 - _proj.y) / 2 * vh;
+      const w = stepTag.offsetWidth || 180;
+      // under the cube, kept right of the step text and inside the viewport
+      const body = document.querySelector('#steps .step.active .step-body');
+      const textRight = body ? body.getBoundingClientRect().right + 24 : 0;
+      const target = { x: Math.min(Math.max(ax - 40, textRight), vw - w - 24), y: Math.min(ay + 95, vh - 80), ax, ay };
+      const e = stepEase || (stepEase = { ...target });
+      for (const key in target) e[key] += (target[key] - e[key]) * 0.12;
+      stepTag.style.transform = `translate(${Math.round(e.x)}px, ${Math.round(e.y)}px)`;
+      stepLine.setAttribute('x1', e.ax); stepLine.setAttribute('y1', e.ay);
+      stepLine.setAttribute('x2', e.x);  stepLine.setAttribute('y2', e.y);
+    }
+
     function physicsStep(dt) {
       const dtClamped = Math.min(dt, 0.033);
       const aligned   = params.alignedMode;
@@ -4445,6 +4516,20 @@
         }
         window.__prevSceneMood = mood;
       }
+      // Step colours in #what: re-apply the theme, then the step's own tints, when the step changes.
+      {
+        const tintKey = mood === 'aligned' ? 'step' + (window.__fiveThingsStep | 0) : 'theme';
+        if (tintKey !== window.__tintKey) {
+          window.__tintKey = tintKey;
+          const preset = THEME_PRESETS[params.themePreset];
+          if (preset) preset();
+          if (mood === 'aligned') {
+            const tints = STEP_TINTS[Math.max(0, Math.min(STEP_TINTS.length - 1, window.__fiveThingsStep | 0))];
+            for (const k in tints) cubeColors[k].setHex(tints[k]);
+          }
+          writeCubeColors();
+        }
+      }
       // Narrative: in #what (aligned mood), the scene illustrates "five things,
       // in order" — cubes light up progressively as the user reads each step.
       // Mapping step N → STEP_CUBE_COUNTS[N] cubes active (sorted by distance
@@ -4519,6 +4604,7 @@
       camera.lookAt(0, 0.1, 0);
       updateCubeCursor();
       updateHeroCrew();
+      updateStepTag();
 
       // —— Per-slot render ————————————————————————————————————————————
       // Every slot renders the SAME main scene. Card slots override the
