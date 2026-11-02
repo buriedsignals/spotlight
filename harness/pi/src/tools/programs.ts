@@ -1,5 +1,5 @@
 // Typed tools for the remaining fixed programs the skills used to start through
-// a shell: exiftool, the Navigator CLI, decision checks, the provenance
+// a shell: exiftool, the Navigator CLI, the provenance
 // manifest and signing, the editorial review artifact, RLM analysis, the
 // integration status check, the solo Ingest wiki write and the passage
 // writer. Each
@@ -19,6 +19,7 @@ import { FileRefused, readTarget, writeConfined } from './case-files.ts';
 import { NAVIGATOR_ENV } from './hosted-skill.ts';
 import { ToolArgumentError, RETURNED_CHARS, capped, checkedParams, jsonResult, programEnv, programOutput, runFixed, runPython, textResult } from './run.ts';
 import type { ToolContext } from './run.ts';
+import type { FixedStepRunner } from './spotlight.ts';
 
 const script = (path: string) => `${CHECKOUT_ROOT}/${path}`;
 const caseDataFile = Type.String({ pattern: '^data/[A-Za-z0-9._-]+\\.json$' });
@@ -82,32 +83,6 @@ function navigatorTool(context: ToolContext): ToolDefinition {
 			return jsonResult(JSON.stringify(response).length <= RETURNED_CHARS
 				? { outcome: 'used', receipt_path, response }
 				: { outcome: 'used', receipt_path, response_text: capped(JSON.stringify(response), '; full response is in the receipt') });
-		},
-	};
-}
-
-function decisionSignalsTool(context: ToolContext): ToolDefinition {
-	const params = Type.Object(
-		{
-			phase: Type.Union([Type.Literal('investigation_gate'), Type.Literal('report')]),
-			check: Type.Optional(Type.Boolean()),
-			case_opt_in: Type.Optional(Type.Boolean()),
-		},
-		{ additionalProperties: false },
-	);
-	return {
-		name: 'decision_signals',
-		label: 'Decision signals',
-		description:
-			'Run the optional decision checks (scripts/decision-signals.py) for the active case at a phase: investigation_gate or report. check: true reports readiness without any request; case_opt_in: true records the user\'s agreement on the first run. Refuses itself when not enabled or in sensitive mode.',
-		parameters: params,
-		async execute(_id, raw, signal) {
-			const input = checkedParams<{ phase: string; check?: boolean; case_opt_in?: boolean }>('decision_signals', params, raw);
-			const args = [script('scripts/decision-signals.py'), context.caseDir, '--phase', input.phase, '--config', context.configPath];
-			if (input.check) args.push('--check');
-			if (input.case_opt_in) args.push('--case-opt-in');
-			const result = await runPython(context, args, { keys: ['OPENROUTER_API_KEY', 'SPOTLIGHT_SENSITIVE', ...engineEnv(context.env)], signal, timeoutMs: 600_000 });
-			return textResult(programOutput('decision_signals', result));
 		},
 	};
 }
@@ -459,7 +434,6 @@ export function programTools(context: ToolContext): ToolDefinition[] {
 	return [
 		exiftoolTool(context),
 		navigatorTool(context),
-		decisionSignalsTool(context),
 		provenanceTool(context),
 		reviewHtmlTool(context),
 		rlmTool(context),
@@ -469,4 +443,31 @@ export function programTools(context: ToolContext): ToolDefinition[] {
 		wikiDestinationTool(context),
 		sourceExpressionsTool(context),
 	];
+}
+
+// The orchestrator's fixed steps (tools/spotlight.ts runFixedSteps), run
+// through the same program tools a model once called. Signing is optional:
+// when it is configured and fails, the unsigned manifest is built instead
+// (phase-investigation-gate). The newsroom edition has no wiki write: its
+// Submit step is the orchestrator's newsroom_submit.
+export function fixedStepRunner(context: ToolContext, edition: string): FixedStepRunner {
+	const tools = programTools(context);
+	const run = async (name: string, params: Record<string, unknown>, signal?: AbortSignal) => {
+		const result = await tools.find((tool) => tool.name === name)!.execute(`fixed-${name}`, params, signal, undefined, undefined as never);
+		return result.content.map((part) => ('text' in part ? part.text : '')).join('\n');
+	};
+	return async (step, signal) => {
+		if (step === 'provenance') {
+			if (!context.env.NOOSPHERE_C2PA_URL || !context.env.NOOSPHERE_C2PA_CREDENTIAL_ID) return run('provenance_manifest', { action: 'build' }, signal);
+			try {
+				return await run('provenance_manifest', { action: 'sign' }, signal);
+			} catch (error) {
+				return `signing failed, unsigned manifest built: ${(error as Error).message.slice(0, 300)}\n${await run('provenance_manifest', { action: 'build' }, signal)}`;
+			}
+		}
+		if (step === 'review') return run('build_review_html', {}, signal);
+		if (edition === 'newsroom') return undefined;
+		if (step === 'wiki') return run('wiki_destination', {}, signal);
+		return undefined;
+	};
 }

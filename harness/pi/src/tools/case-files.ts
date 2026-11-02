@@ -234,6 +234,9 @@ const FILE_OWNERS: Record<string, { role: string; task: string }> = {
 	'data/evidence-bundle.json': { role: 'investigator', task: 'that names the evidence items to change and how' },
 	'data/investigation-log.json': { role: 'investigator', task: 'that says what the log is missing' },
 	'data/fact-check.json': { role: 'fact-checker', task: 'that names the claims to check again and why' },
+	'summary.md': { role: 'analyst', task: 'at the Investigation gate (the harness builds it)' },
+	'data/summary.json': { role: 'analyst', task: 'at the Investigation gate (the harness builds it)' },
+	'data/report-draft.json': { role: 'analyst', task: 'at Report (the harness builds it)' },
 };
 
 export function writeTarget(caseDir: string, root: string, path: string, writes?: string[], denyWrites?: string[]): string {
@@ -247,10 +250,6 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 	}
 	const target = requested(caseDir, path);
 	if (!inside(root, target) || target === root) throw new FileRefused(`refused: ${path} is outside the folder this agent may write`);
-	// Checked before any parent folder is created.
-	if (!inScope(writes, caseRelative(caseDir, target))) {
-		throw new FileRefused(`refused: ${path} is not a file this agent may write (${(writes ?? []).join(', ') || 'none'})`);
-	}
 	if (denied(denyWrites, caseRelative(caseDir, target))) {
 		// U3 census (84674fd9): a fact-checker wrote fact-check content over
 		// data/findings.json. The refusal names the writer's own file.
@@ -260,6 +259,13 @@ export function writeTarget(caseDir: string, root: string, path: string, writes?
 		const owner = FILE_OWNERS[caseRelative(caseDir, target)];
 		const next = !own && owner ? ` It is the ${owner.role}'s file: to change it, call spawn_agent with agent "${owner.role}" and a task ${owner.task}.` : '';
 		throw new FileRefused(`refused: ${path} is a case file another role writes; this agent may not write it${own ? `. Your own file is ${own.join(' and ')}.` : '.'}${next}`);
+	}
+	// Checked before any parent folder is created, after the denylist so a
+	// refusal for another role's file names that role, and after the misplaced
+	// brief, whose refusal names the right path.
+	refuseMisplacedBrief(caseDir, target);
+	if (!inScope(writes, caseRelative(caseDir, target))) {
+		throw new FileRefused(`refused: ${path} is not a file this agent may write (${(writes ?? []).join(', ') || 'none'})`);
 	}
 	const parts = relative(root, target).split(sep);
 	let current = root;

@@ -6,11 +6,14 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
+import { CHECKOUT_ROOT } from './roles.ts';
 import { readConfig } from './config.ts';
 import { EditorialError, EditorialToolError } from './editorial.ts';
 import { ROUND_LEDGER, runResearchRound } from './lanes.ts';
@@ -123,6 +126,7 @@ async function round(
 	researchPlan: ResearchPlan,
 	extraEnv: Record<string, string> = {},
 	retry = false,
+	methodology: Record<string, unknown> = { schema_version: '1.0', investigation_plan: [], research_plan: researchPlan },
 ): Promise<RoundSummary> {
 	const env = {
 		...space.env,
@@ -135,7 +139,7 @@ async function round(
 		...extraEnv,
 	};
 	const config = readConfig(env);
-	await writeFile(join(space.caseDir, 'data/methodology.json'), JSON.stringify({ schema_version: '1.0', investigation_plan: [], research_plan: researchPlan }));
+	await writeFile(join(space.caseDir, 'data/methodology.json'), JSON.stringify(methodology));
 	return runResearchRound({ caseDir: space.caseDir, plan: researchPlan, config, local: { baseURL: fakes.local.baseURL, model: 'local-model' }, env, retry, retryDelayMs: 1 });
 }
 
@@ -220,6 +224,109 @@ test('a swarm request carries only its approved brief and its own web results; c
 	assert.equal(merged.round, 1);
 	assert.ok(merged.leads.some((entry: { lead: { lead_id: string } }) => entry.lead.lead_id === page.lead_id));
 	await readFile(join(space.caseDir, 'data/clues.json'));
+});
+
+// Constellation G5: the bridge from the harness to the Research-triage decision
+// model, driven with real retained leads and a stand-in for the endpoint's
+// /v1/systemone shape (tests/research-triage-check.py kev_server; the recorded
+// real call is fine-tuning/data/lfm3/u6/overnight-20261101/d1-triage).
+type Decision = { status: number; body: string } | 'hang';
+async function decisionServer(t: TestContext, answer: (questions: Record<string, { type: string; criteria?: Record<string, string> }>) => Decision) {
+	const sockets = new Set<import('node:net').Socket>();
+	const requests: Array<{ url?: string; authorization?: string; body: { model: string; state: { item: Record<string, unknown>; brief: Record<string, unknown> }; questions: Record<string, { type: string; criteria?: Record<string, string> }> } }> = [];
+	const server = createServer((req, res) => {
+		let raw = '';
+		req.on('data', (chunk) => (raw += chunk));
+		req.on('end', () => {
+			const body = JSON.parse(raw);
+			requests.push({ url: req.url, authorization: req.headers.authorization, body });
+			const reply = answer(body.questions);
+			if (reply === 'hang') return;
+			res.writeHead(reply.status, { 'content-type': 'application/json' });
+			res.end(reply.body);
+		});
+	});
+	server.on('connection', (socket) => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+	t.after(() => new Promise<void>((resolve) => { for (const socket of sockets) socket.destroy(); server.close(() => resolve()); }));
+	return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/systemone`, requests };
+}
+
+// Every question answered: a choice takes its first criterion, a noul 0.2.
+const answersAll = (questions: Record<string, { type: string; criteria?: Record<string, string> }>): Decision => ({
+	status: 200,
+	body: JSON.stringify({
+		model: 'd1-test',
+		answers: Object.fromEntries(Object.entries(questions).map(([id, q]) => {
+			const first = Object.keys(q.criteria ?? {})[0];
+			return [id, q.type === 'noul' ? { type: 'noul', noul: 0.2 } : { type: 'choice', choice: first, probabilities: { [first]: 0.9 } }];
+		})),
+	}),
+});
+
+// A one-topic round with a page lead and a snippet lead, a researched
+// methodology (triage reads its premise) and the install config naming the endpoint.
+async function triageRound(t: TestContext, endpoint: string) {
+	const space = await setup(t);
+	const config = join(space.root, 'install-config.json');
+	await writeFile(config, JSON.stringify({ integrations: { decisions: { research_triage: { backend: 'local' }, endpoint: { url: endpoint, api: 'openrouter-decisions' } } } }));
+	const fakes = await servers(
+		t,
+		scripted({ 'ownership-web': [call('search', { query: 'Analytical Engines SA president' }), call('fetch', { url: PAGE_URL }), lead('s2', VERBATIM), lead('s1', SNIPPET)] }),
+	);
+	const researchPlan = plan([topic('ownership-web')]);
+	const sample = JSON.parse(readFileSync(join(CHECKOUT_ROOT, 'tests/fixtures/research/methodology-research.sample.json'), 'utf8')) as Record<string, unknown>;
+	const methodology = { ...sample, lead: 'Analytical Engines SA hid its president.', research_plan: researchPlan };
+	const summary = await round(space, fakes, researchPlan, { SPOTLIGHT_CONFIG: config }, false, methodology);
+	return { space, fakes, summary };
+}
+
+test('G5a: with retained leads the harness sends each one, masked, to the local decision endpoint and writes a flag-only triage with an entry per lead', async (t) => {
+	const decision = await decisionServer(t, answersAll);
+	const { space, fakes, summary } = await triageRound(t, decision.url);
+
+	assert.equal(summary.merge?.ok, true, JSON.stringify(summary.merge));
+	assert.equal(summary.triage?.ok, true, JSON.stringify(summary.triage));
+	const merged = JSON.parse(await readFile(join(space.caseDir, 'data/leads.json'), 'utf8')) as { leads: Array<{ lead: { lead_id: string } }> };
+	assert.equal(merged.leads.length, 2);
+	const triage = JSON.parse(await readFile(join(space.caseDir, 'data/research-triage.json'), 'utf8')) as { mode: string; leads: Array<{ lead_id: string; backend: string }> };
+	assert.equal(triage.mode, 'flag_only');
+	assert.deepEqual(triage.leads.map((entry) => entry.lead_id).sort(), merged.leads.map((entry) => entry.lead.lead_id).sort());
+	assert.ok(triage.leads.every((entry) => entry.backend === 'local'));
+
+	assert.equal(decision.requests.length, 2, 'one decision request per lead');
+	for (const request of decision.requests) {
+		assert.equal(request.url, '/v1/systemone');
+		assert.equal(request.authorization, undefined, 'no credential goes to the local endpoint');
+		assert.deepEqual(Object.keys(request.body).sort(), ['model', 'questions', 'state']);
+		assert.deepEqual(Object.keys(request.body.state).sort(), ['brief', 'item']);
+		assert.deepEqual(Object.keys(request.body.state.item).sort(), ['excerpt', 'language', 'source_url', 'stored', 'subjects', 'summary']);
+		assert.deepEqual(request.body.state.brief, { premise: 'Analytical Engines SA hid its president.', subjects: [] });
+		const sent = JSON.stringify(request.body);
+		assert.ok(!sent.includes(FINDING_SENTINEL) && !sent.includes(JOURNALIST_SENTINEL) && !sent.includes(KEY), 'no case finding, journalist note or key leaves for the decision model');
+	}
+	assert.ok(fakes.swarm.requests.every((request) => topicOf(request) === 'ownership-web'), 'triage sends nothing to the swarm');
+	assert.equal(fakes.local.requests.length, 0, 'triage asks the decision endpoint, not the local chat model');
+});
+
+test('G5b: a decision endpoint that answers HTTP 500, garbage or an unfit answer leaves no triage, reports the error, and holds the round at triage', async (t) => {
+	const failures: Array<[string, Decision, RegExp]> = [
+		['HTTP 500', { status: 500, body: '{"error":"boom"}' }, /unavailable: HTTP 500/],
+		['not JSON', { status: 200, body: 'garbage <html>' }, /unavailable: JSONDecodeError/],
+		['answers of the wrong shape', { status: 200, body: JSON.stringify({ answers: { q1: 'yes' } }) }, /unavailable: malformed answers/],
+		['no answer at all', 'hang', /unavailable: (TimeoutError|timeout)/i],
+	];
+	for (const [name, reply, message] of failures) {
+		await t.test(name, async (t) => {
+			const decision = await decisionServer(t, () => reply);
+			const { space, summary } = await triageRound(t, decision.url);
+			assert.equal(summary.merge?.ok, true);
+			assert.equal(summary.triage?.ok, false);
+			assert.match(String((summary.triage as { error?: string }).error), message);
+			assert.equal(existsSync(join(space.caseDir, 'data/research-triage.json')), false, 'no triage is written from rules alone');
+			assert.ok(decision.requests.length >= 1);
+		});
+	}
 });
 
 test('no swarm request without the opt-in: switch off, no consent, or a local-only plan', async (t) => {

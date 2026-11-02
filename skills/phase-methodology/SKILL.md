@@ -179,7 +179,7 @@ Correct only methodology.json as required by the validator evidence. In skills_i
    `skip_reason`. Do not block methodology approval.
 
 
-   **Decision checks (optional).** If `.spotlight-config.json` has
+   **Decision checks (optional; not in the Pi harness).** If `.spotlight-config.json` has
    `integrations.decisions.enabled: true`, `scripts/spotlight-python scripts/decision-signals.py
    {CASE_DIR} --phase investigation-gate --check --case-opt-in` reports `"ready": true`, and the
    case is not sensitive, ask before the approval gate:

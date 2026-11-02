@@ -38,14 +38,14 @@ import { piArguments, piCliPath, writePiSettings } from './pi-process.ts';
 import { runResearchRound } from './lanes.ts';
 import type { ResearchPlan, RoundSummary } from './lanes.ts';
 import { discardIncompleteLanes } from './resume.ts';
-import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, batchDeliverable, correctionDeliverable, deliverableFor, factCheckChecklist, isolationRefusal, nextCheckBatch, readCheckDocs, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, batchDeliverable, correctionDeliverable, deliverableFor, factCheckChecklist, factCheckerTask, isolationRefusal, nextCheckBatch, readCheckDocs, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
 import type { Composition, Deliverable, WorkerContext } from './roles.ts';
 import { approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { BRIEF_PENDING_REFUSAL, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL, WorkerQueue, runWorker } from './subagents.ts';
 import { withCasePassages, withWikiPassages } from './case-search.ts';
 import { withInvestigationPacket } from './investigation-packet.ts';
 import { decideAnomaly, withAnomalyBlock } from './anomaly-decision.ts';
-import { directionBlock, directionCallBudget, directionDeliverable, directionsToRun, planDirections, requestedDirection } from './directions.ts';
+import { assignDirection, directionBlock, directionCallBudget, directionDeliverable, directionsToRun, planDirections } from './directions.ts';
 import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
 import { bindActiveCase, nextAction, pythonAdapter, resolveCase, runsResearchRound } from './tools/spotlight.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
@@ -76,6 +76,9 @@ type Harness = {
 	// Why the knowledge batch cannot be built for a reason no agent can fix;
 	// no analyst runs again in this chat once it is set.
 	batchBlocked?: string;
+	// The fact-check validators' last report, which a fact-checker correction
+	// repairs (roles.ts factCheckerTask); code-held, never the orchestrator's text.
+	lastFactCheckReport?: string;
 };
 
 // A revoked or expired newsroom token, or an Editorial MCP that cannot be
@@ -224,6 +227,8 @@ function processLaunch(harness: Harness, role: string, worker?: WorkerContext, d
 	const env = childEnv(harness.config, harness.composition, role, process.env);
 	if (role === 'investigator') env.SPOTLIGHT_CALL_BUDGET = '80';
 	if (direction) Object.assign(env, { SPOTLIGHT_DIRECTION: direction.tag, SPOTLIGHT_CALL_BUDGET: String(direction.budget) });
+	// A role with per-phase file scopes gets the phase it was started at.
+	if (spec.phaseScopes && worker) env.SPOTLIGHT_PHASE = worker.phase;
 	Object.assign(env, fold);
 	writePiSettings(env.PI_CODING_AGENT_DIR, piSettings(harness.config));
 	return {
@@ -298,6 +303,10 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 			const status = await caseStatus(harness);
 			const refusal = refusalFor(harness, request.agent, request.task, status);
 			if (refusal) throw new Error(`spawn_agent: ${refusal}`);
+			// The fact-checker's task is code-built: the orchestrator's text never
+			// reaches it (only the directives code reads; roles.ts factCheckerTask).
+			const workerTask = request.agent === 'fact-checker' ? factCheckerTask(request.task, harness.lastFactCheckReport) : request.task;
+			if (workerTask !== request.task) harness.log(`fact-checker: the orchestrator's task text (${request.task.length} characters) was not passed on; the harness built the task`);
 			await activateNewCase(harness, request.agent, controller.signal);
 			if (request.agent === 'fact-checker') {
 				const checked = await validateInvestigationInputs({ caseDir: harness.active.caseDir, writeRoot: harness.active.caseDir, python: harness.config.python, configPath: harness.config.spotlightConfig, env: { ...process.env, ...researchEnv(harness.config) } }, controller.signal);
@@ -363,19 +372,23 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 			if (request.agent === 'fact-checker' && owed?.packet?.length && owed.continuationTask) {
 				const caseDir = harness.active.caseDir;
 				const future = nextCheckBatch(readCheckDocs(caseDir), Number.MAX_SAFE_INTEGER).batch.map((item) => item.id).filter((id) => !owed.packet!.includes(id));
-				const answer = await run(request.task, owed);
+				const answer = await run(workerTask, owed);
 				const checked = await validateFactCheckBatch({ caseDir, writeRoot: caseDir, python: harness.config.python, configPath: harness.config.spotlightConfig, env: { ...process.env, ...researchEnv(harness.config) } }, future, controller.signal);
+				if (!checked.passed) harness.lastFactCheckReport = checked.report;
 				if (!checked.passed) return `${answer}\n[Harness checks for the correction: FAILED; no later batch was started.]\n${checked.report}`;
-				const continued = await factCheckBatches(harness, owed.continuationTask, controller.signal, (task, due, ids) => run(task, due, undefined, { SPOTLIGHT_FC_BATCH: ids.join(',') }), validatedBatch);
+				const continued = await factCheckBatches(harness, factCheckerTask(owed.continuationTask, harness.lastFactCheckReport), controller.signal, (task, due, ids) => run(task, due, undefined, { SPOTLIGHT_FC_BATCH: ids.join(',') }), validatedBatch);
 				return `${answer}\n[Harness checks for the correction: PASSED.]\n${continued}`;
 			}
 			// A named correction keeps its packet even while other findings await a claim.
 			if (request.agent === 'fact-checker' && !owed?.packet?.length && nextCheckBatch(readCheckDocs(harness.active.caseDir)).left > 0) {
-				return factCheckBatches(harness, request.task, controller.signal, (task, due, ids) => run(task, due, undefined, { SPOTLIGHT_FC_BATCH: ids.join(',') }), validatedBatch);
+				return factCheckBatches(harness, workerTask, controller.signal, (task, due, ids) => run(task, due, undefined, { SPOTLIGHT_FC_BATCH: ids.join(',') }), validatedBatch);
 			}
-			if (!owed?.files.includes('data/findings.json')) return run(request.task, owed);
+			if (!owed?.files.includes('data/findings.json')) return run(workerTask, owed);
 			const directions = planDirections(harness.active.caseDir);
-			const selected = requestedDirection(request.task, directions);
+			const idle = directionsToRun(harness.active.caseDir, directions).filter((direction) => !activeDirections.has(JSON.stringify([harness.active.caseDir, direction.tag])));
+			const { task, selected, assigned } = assignDirection(request.task, directions, idle);
+			if (assigned) harness.log(`investigator: ${assigned}`);
+			const note = assigned ? `[${assigned}]\n` : '';
 			const split = directions.length > 1 && (selected !== undefined || harness.config.modelTier !== 'frontier');
 			const todo = selected ? [selected] : split ? directionsToRun(harness.active.caseDir, directions) : directions;
 			// Reserve synchronously before any worker await: parallel scoped
@@ -384,21 +397,21 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 			if (keys.some((key) => activeDirections.has(key))) throw new Error('spawn_agent: an overlapping investigation direction is already running; wait for that task to finish before retrying.');
 			for (const key of keys) activeDirections.add(key);
 			try {
-				if (!split) return await run(request.task, owed);
+				if (!split) return note + (await run(task, owed));
 				const budget = directionCallBudget(selected ? directions.length : todo.length);
 				const answers: string[] = [];
 				for (const direction of todo) {
 					harness.log(`investigator: direction ${direction.tag} (${direction.ref}), ${budget} calls`);
 					let answer: string;
 					try {
-						answer = await run(`${request.task}\n\n${directionBlock(direction, directions.length)}`, directionDeliverable(direction.tag), { tag: direction.tag, budget });
+						answer = await run(`${task}\n\n${directionBlock(direction, directions.length)}`, directionDeliverable(direction.tag), { tag: direction.tag, budget });
 					} catch (error) {
 						if (controller.signal.aborted) throw error;
 						answer = (error as Error).message;
 					}
 					answers.push(`Direction ${direction.tag} (${direction.ref}): ${answer}`);
 				}
-				return answers.join('\n\n');
+				return note + answers.join('\n\n');
 			} finally {
 				for (const key of keys) activeDirections.delete(key);
 			}
@@ -539,7 +552,7 @@ function canonicalWorkerHeader(task: string, runtime: WorkerContext['runtime']):
 
 // The role's deliverable for this spawn (roles.ts deliverableFor), read at the spawn.
 async function deliverable(harness: Harness, role: string, task: string, status: Record<string, unknown>): Promise<Deliverable | undefined> {
-	if (role === 'analyst') return analystDeliverable(harness.active.caseDir, routeFor(harness.config).model);
+	if (role === 'analyst' && status.phase === 'ingest') return analystDeliverable(harness.active.caseDir, routeFor(harness.config).model);
 	if (role === 'fact-checker') {
 		const correction = correctionDeliverable(harness.active.caseDir, readCheckDocs(harness.active.caseDir), task);
 		if (correction) return correction;
@@ -629,6 +642,7 @@ async function factCheckBatches(harness: Harness, task: string, signal: AbortSig
 		}, future, signal);
 		answers.push(`Batch ${ids.join(', ')}: ${answer}`);
 		if (workerFailed || !checked.passed) {
+			harness.lastFactCheckReport = checked.report;
 			answers.push(`[Harness checks for this batch: FAILED; no later batch was started.]\n${checked.report}`);
 			return answers.join('\n\n');
 		}
@@ -664,6 +678,8 @@ async function recheckSources(harness: Harness, docs: ReturnType<typeof readChec
 type WorkerTask = { text: string; header: string; start?: string; passages?: string };
 
 async function finalTask(harness: Harness, role: string, task: string, signal: AbortSignal, owed?: Deliverable, phase = ''): Promise<WorkerTask> {
+	// Outside Ingest the analyst's task is its deliverable alone, code-built.
+	if (role === 'analyst' && phase !== 'ingest') return { text: owed?.line ?? '', header: owed?.line ?? '' };
 	if (role === 'analyst') {
 		const canonical = 'Draft the Ingest knowledge proposal using the approved inputs and joined context. If an existing proposal needs correction, read it and revise it under the same strict contract.';
 		let diagnostic = '';
@@ -813,6 +829,7 @@ function refusalFor(harness: Harness, role: string, task: string, status: Record
 		if (!['methodology', 'methodology_approval', 'research', 'research_approval', 'investigation'].includes(phase)) return `The investigator cannot run at ${phase}. Call spotlight_resolve and follow its phase owner.`;
 	}
 	if (role === 'analyst' && harness.batchBlocked) return `${BATCH_BLOCKED} ${harness.batchBlocked}`;
+	if (role === 'analyst' && phase === 'ingest' && harness.config.edition === 'newsroom') return 'the analyst does not run at Ingest in the newsroom edition: the newsroom drafts the batch from the submitted case';
 	const spec = agentSpec(harness.composition, role);
 	if (!spec.phases && !spec.editions) return undefined;
 	const refusal = spawnRefusal(spec, role, spec.phases ? String(status.phase ?? '') : '', harness.config.edition);
@@ -871,6 +888,7 @@ async function withValidation(harness: Harness, role: string, text: string): Pro
 		env: { ...process.env, ...researchEnv(config) },
 	});
 	if (outcome.ran.length === 0) return text;
+	if (role === 'fact-checker') harness.lastFactCheckReport = outcome.report;
 	if (role === 'analyst' && !outcome.passed && (await proposalNotAtFault(harness))) {
 		harness.batchBlocked = outcome.report.split('\n').slice(1).join(' ').replace(/\s+/g, ' ').trim().slice(0, 800);
 		harness.log(`the knowledge batch cannot be built for a reason no agent can fix: ${harness.batchBlocked}`);

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "runtime": "pi",
-  "description": "Per-agent skill bundles for the Pi harness. Each sub-agent is composed with only its role-relevant subset of the catalog, and bodies load on invoke. Grounded in agents/*.md invoke-skill() calls + the orchestrator's skill-inventory table (skills/spotlight/SKILL.md \u00a73.5). Pi harness (harness/pi): each agent runs as its own pi process that loads exactly these skills by path and declares exactly `tools`; optional `keys` lists the environment variables (secrets) that agent's process receives. An agent whose role file is absent cannot be spawned. Tools are typed (no shell): case-confined file tools, egress-guarded web tools and fixed-argument wrappers of the checkout's scripts (data/source-expressions.json and data/source-positions.json are written only through source_expressions, never by a file tool); sensitive mode removes fetch, search, http_get, browse, navigator_tools, run_rlm and integration_status from every agent. Optional `reads` and `writes` narrow an agent's file tools to those case files (such an agent may declare only file tools, invoke_skill and query_vault); optional `denyReads` hides case files from an agent's file tools and exiftool while the rest of the case stays readable (an entry ending in / is a folder, * matches within one path segment; the fact-checker is denied the research phase's material); optional `denyWrites` makes an agent's write_file and edit_file refuse those case files, same syntax (the orchestrator is denied the files the workers write and the harness validates after them, so a change goes through the worker and its checks; the investigator and the fact-checker are denied each other's files, so each writes only its own); optional `phases` and `editions` say when the launcher starts it. `runner` marks a role code runs itself (the researcher: harness/pi/src/lanes.ts runs one lane per approved research topic, with the tools its lane type in lanes/*.yaml names); it is never a spawn_agent worker, and its `skills` serve subscription hosts.",
+  "description": "Per-agent skill bundles for the Pi harness. Each sub-agent is composed with only its role-relevant subset of the catalog, and bodies load on invoke. Grounded in agents/*.md invoke-skill() calls + the orchestrator's skill-inventory table (skills/spotlight/SKILL.md \u00a73.5). Pi harness (harness/pi): each agent runs as its own pi process that loads exactly these skills by path and declares exactly `tools`; optional `keys` lists the environment variables (secrets) that agent's process receives. An agent whose role file is absent cannot be spawned. Tools are typed (no shell): case-confined file tools, egress-guarded web tools and fixed-argument wrappers of the checkout's scripts (data/source-expressions.json and data/source-positions.json are written only through source_expressions, never by a file tool); sensitive mode removes fetch, search, http_get, browse, navigator_tools, run_rlm and integration_status from every agent. Optional `reads` and `writes` narrow an agent's file tools to those case files (such an agent may declare only file tools, invoke_skill and query_vault); optional `denyReads` hides case files from an agent's file tools and exiftool while the rest of the case stays readable (an entry ending in / is a folder, * matches within one path segment; the fact-checker is denied the research phase's material); optional `denyWrites` makes an agent's write_file and edit_file refuse those case files, same syntax (the orchestrator is denied the files the workers write and the harness validates after them, so a change goes through the worker and its checks; the investigator and the fact-checker are denied each other's files, so each writes only its own); optional `phases` and `editions` say when the launcher starts it (the analyst runs at Ingest in the solo edition only; launcher.ts refusalFor); optional `phaseScopes` replace a role's `reads` and `writes` at a phase; optional `newsroomTools` are added in the newsroom edition. The orchestrator holds only dispatch tools and writes only brief-directions.txt: its dispatch tools take no case path, so it may hold them with `writes`, and spotlight_resolve runs the mechanical steps itself. `runner` marks a role code runs itself (the researcher: harness/pi/src/lanes.ts runs one lane per approved research topic, with the tools its lane type in lanes/*.yaml names); it is never a spawn_agent worker, and its `skills` serve subscription hosts.",
   "agents": {
     "orchestrator": {
       "role": "skills/spotlight/SKILL.md",
@@ -28,22 +28,15 @@
         "invoke_skill",
         "read_file",
         "write_file",
-        "list_files",
-        "grep_files",
-        "decision_signals",
-        "wiki_destination",
-        "provenance_manifest",
-        "build_review_html",
-        "run_rlm",
-        "integration_status",
-        "anomaly_methods",
-        "osint_tools",
         "open_review"
       ],
       "denyWrites": [
         "data/methodology.json",
         "data/findings.json",
         "data/fact-check.json",
+        "summary.md",
+        "data/summary.json",
+        "data/report-draft.json",
         "data/evidence-bundle.json",
         "data/investigation-log.json",
         "data/source-expressions.json",
@@ -59,6 +52,13 @@
         "NOOSPHERE_PROVENANCE_API_KEY",
         "OPENROUTER_API_KEY",
         "SPOTLIGHT_RLM_API_KEY"
+      ],
+      "writes": [
+        "brief-directions.txt"
+      ],
+      "newsroomTools": [
+        "run_checks",
+        "newsroom_submit"
       ]
     },
     "investigator": {
@@ -154,6 +154,7 @@
         "data/leads.jsonl",
         "data/clues.json",
         "data/research-*.json",
+        "data/investigation-log.json",
         "data/harness-checks/investigator/",
         "data/harness-checks/analyst/"
       ],
@@ -183,7 +184,8 @@
     "analyst": {
       "role": "agents/analyst.md",
       "skills": [
-        "epistemic-grounding"
+        "epistemic-grounding",
+        "report-drafting"
       ],
       "tools": [
         "invoke_skill",
@@ -207,10 +209,9 @@
         "data/knowledge-proposal.json"
       ],
       "phases": [
+        "investigation_gate_approval",
+        "report",
         "ingest"
-      ],
-      "editions": [
-        "solo"
       ],
       "denyWrites": [
         "data/harness-checks/",
@@ -219,7 +220,42 @@
       "denyReads": [
         "data/harness-checks/investigator/",
         "data/harness-checks/fact-checker/"
-      ]
+      ],
+      "phaseScopes": {
+        "investigation_gate_approval": {
+          "reads": [
+            "brief-directions.txt",
+            "data/methodology.json",
+            "data/findings.json",
+            "data/fact-check.json",
+            "data/evidence-bundle.json",
+            "data/investigation-log.json",
+            "data/source-expressions.json",
+            "data/summary.json",
+            "summary.md",
+            "data/harness-checks/analyst/"
+          ],
+          "writes": [
+            "summary.md",
+            "data/summary.json"
+          ]
+        },
+        "report": {
+          "reads": [
+            "brief-directions.txt",
+            "data/findings.json",
+            "data/fact-check.json",
+            "data/summary.json",
+            "data/investigation-gate-review.json",
+            "data/report-draft.json",
+            "data/decision-signals.json",
+            "data/harness-checks/analyst/"
+          ],
+          "writes": [
+            "data/report-draft.json"
+          ]
+        }
+      }
     }
   }
 }

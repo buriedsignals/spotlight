@@ -20,6 +20,8 @@ import { runFixed } from './run.ts';
 import type { ToolContext } from './run.ts';
 import { typedTools } from './index.ts';
 import { validateAfterWorker } from '../validators.ts';
+import { allowedTools, loadComposition } from '../roles.ts';
+import { fixedStepAt } from './spotlight.ts';
 
 const RECORDER = `#!/usr/bin/env node
 const { appendFileSync, existsSync, readFileSync } = require('node:fs');
@@ -153,7 +155,6 @@ test('every program-backed tool and harness validator runs without a shell', asy
 		['osint_tools', { action: 'categories' }],
 		['exiftool', { path: HOSTILE_FILE }],
 		['navigator_tools', { action: 'find', value: HOSTILE }],
-		['decision_signals', { phase: 'report' }],
 		['provenance_manifest', { action: 'check_current' }],
 		['run_rlm', { request: 'data/rlm-request.json' }],
 		['integration_status', {}],
@@ -251,7 +252,6 @@ test('each tool rejects arguments outside its schema without starting anything',
 		osint_tools: { action: 'build' },
 		exiftool: { path: ['a', 'b'] },
 		navigator_tools: { action: 'login', value: 'x' },
-		decision_signals: { phase: 'methodology' },
 		provenance_manifest: { action: 'delete' },
 		run_rlm: { request: 7 },
 		integration_status: { model_tier: '$(id)' },
@@ -538,4 +538,21 @@ test('an interrupted Navigator receipt cannot poison the next methodology write'
 	const methodology=JSON.parse(await readFile(join(caseDir,'data/methodology.json'),'utf8'));
 	assert.equal(methodology.navigator.queries.length,1);
 	assert.equal(methodology.navigator.queries[0].receipt_path,lookup.receipt_path,'only the completed retry supplies provenance');
+});
+
+// Tom, 2026-11-02: no decision checks in the Pi harness. No role holds them,
+// no tool registers them and no fixed step runs them (the newsroom edition's
+// run_checks is the newsroom's own service and stays).
+test('the Pi harness registers, grants and runs no decision checks', async (t) => {
+	const root = await mkdtemp(join(tmpdir(), 'no-decisions-'));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const names = typedTools({ caseDir: root, writeRoot: root, python: 'python3', configPath: join(root, 'config.json'), env: {} }).map((tool) => tool.name);
+	assert.ok(names.includes('provenance_manifest'), 'the program tools registered');
+	assert.ok(!names.includes('decision_signals'));
+	const composition = loadComposition();
+	for (const [role, spec] of Object.entries(composition)) for (const edition of ['solo', 'newsroom'] as const) {
+		assert.ok(!allowedTools(spec, false, edition).includes('decision_signals'), `${role} ${edition}`);
+	}
+	assert.equal(fixedStepAt({ phase: 'investigation_gate_approval', status: 'pending', missing: ['Investigation gate approval'] }), undefined);
+	assert.deepEqual(['provenance', 'review', 'seal'].map((resume_at) => fixedStepAt({ phase: 'investigation_gate_finalization', investigation_gate: { state: 'approved', resume_at } })), ['provenance', 'review', 'seal_gate']);
 });

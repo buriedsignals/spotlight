@@ -83,7 +83,9 @@ the command-line adapter (its `direct` channel):
 
 ### `requested` / `ingest`
 
-The human decision is already durable. Do not ask again.
+The human decision is already durable. Do not ask again. In the Pi harness
+`spotlight_resolve` runs the solo wiki write and the seal itself and lists
+them in `fixed_steps`.
 
 - **Activated case, solo mode:** run `scripts/spotlight-python scripts/wiki-destination.py {CASE_DIR}`.
   It checks the batch against the approved digest, admits it, appends the

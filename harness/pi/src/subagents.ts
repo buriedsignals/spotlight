@@ -111,6 +111,8 @@ export const GATE_DECIDED_REFUSAL = 'The Investigation gate is decided: the memb
 // What the launcher answers an investigator spawn before the brief is approved (launcher.ts refusalFor).
 export const BRIEF_PENDING_REFUSAL = 'The brief is not approved yet, so no investigator runs. Agree the direction with the member, and once they approve it write it to brief-directions.txt with write_file. Then spawn the investigator with MODE: PLANNING to design the methodology.';
 
+export const INVESTIGATOR_TASK_NEEDED = 'spawn_agent needs a task for the investigator that says what to do (for example MODE: EXECUTION and the approved scope). Call spotlight_resolve for the next step.';
+
 export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { spawns: 0 }): ToolDefinition {
 	return {
 		name: 'spawn_agent',
@@ -118,16 +120,21 @@ export function spawnAgentTool(workers: string[], cycle: FactCheckerCycle = { sp
 		description: `Delegate one task to a Spotlight worker in its own context and wait for its final answer. Workers: ${workers.join(', ')}.`,
 		parameters: Type.Object({
 			agent: Type.Union(workers.map((name) => Type.Literal(name))),
-			task: Type.String({ minLength: 1 }),
+			task: Type.String(),
 		}),
 		// arms on 8699f11d: stock Gemma 12B asked for "fact_checker" three times,
 		// got a schema error each time and gave up. Case, spaces and underscores
-		// in a worker's name are read as the name.
+		// in a worker's name are read as the name. A missing or unknown agent,
+		// or an investigator with no task, is refused with the fix before any
+		// worker starts; the other workers' tasks are built by code, so theirs
+		// may be empty (constellation inventory G1b).
 		prepareArguments: (args: unknown) => {
-			const input = args as { agent?: unknown } | undefined;
-			if (!input || typeof input.agent !== 'string') return args;
-			const named = input.agent.trim().toLowerCase().replace(/[\s_]+/g, '-');
-			return workers.includes(named) ? { ...input, agent: named } : args;
+			const input = (args && typeof args === 'object' ? args : {}) as { agent?: unknown; task?: unknown };
+			const named = typeof input.agent === 'string' ? input.agent.trim().toLowerCase().replace(/[\s_]+/g, '-') : '';
+			if (!workers.includes(named)) throw new Error(`spawn_agent needs agent set to one of: ${workers.join(', ')}. Call spotlight_resolve if you are unsure which worker the phase needs.`);
+			const task = typeof input.task === 'string' ? input.task : '';
+			if (named === 'investigator' && !task.trim()) throw new Error(INVESTIGATOR_TASK_NEEDED);
+			return { ...input, agent: named, task };
 		},
 		async execute(_id, params, signal) {
 			const { agent, task } = params as { agent: string; task: string };

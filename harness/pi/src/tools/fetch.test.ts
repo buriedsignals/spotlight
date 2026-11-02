@@ -56,8 +56,8 @@ async function fixture(t: TestContext, env: Record<string, string>, page = RAW_P
 		configPath: join(root, 'config.json'),
 		env: { PATH: process.env.PATH, HOME: root, SPOTLIGHT_ANONYMIZE_FETCH: 'true', ...env },
 	}) as ToolDefinition;
-	const call = async (params: Record<string, unknown>) =>
-		JSON.parse((await tool.execute('call', params, undefined, undefined, undefined as never)).content[0].text) as Record<string, unknown>;
+	const call = async (params: Record<string, unknown>, signal?: AbortSignal) =>
+		JSON.parse((await tool.execute('call', params, signal, undefined, undefined as never)).content[0].text) as Record<string, unknown>;
 	return { caseDir, call };
 }
 
@@ -147,6 +147,59 @@ test('invalid or invented selections never become source extracts', async (t) =>
 	});
 });
 
+// Constellation G4a: the helper is a small model, so every malformed shape it
+// plausibly emits must degrade to the raw page, never to a made-up extract.
+test('malformed helper selections of every plausible shape never become source extracts', async (t) => {
+	const ok = (ranges: unknown) => JSON.stringify({ ranges });
+	const shapes: Array<[string, (first: number) => string]> = [
+		['fractional start', () => ok([{ start: 5.5, end: 6 }])],
+		['fractional end', () => ok([{ start: 5, end: 5.5 }])],
+		['numeric strings', () => ok([{ start: '5', end: '5' }])],
+		['end before start', () => ok([{ start: 6, end: 5 }])],
+		['start of zero', () => ok([{ start: 0, end: 1 }])],
+		['negative start', () => ok([{ start: -3, end: 5 }])],
+		['extra key beside start and end', () => ok([{ start: 5, end: 5, reason: 'the title' }])],
+		['extra top-level key', () => JSON.stringify({ ranges: [{ start: 5, end: 5 }], reason: 'x' })],
+		['reasoning block before the JSON', () => `<think>The president line is 5.</think>${ok([{ start: 5, end: 5 }])}`],
+		['a bare range list', () => JSON.stringify([{ start: 5, end: 5 }])],
+		['one bad range among good ones', () => ok([{ start: 5, end: 5 }, { start: 5, end: 99 }])],
+		['null range', () => ok([null])],
+	];
+	for (const [name, reply] of shapes) await t.test(name, async (t) => {
+		const rlm = await standInRLM(t, 200, (request) => reply(Number(request.messages[0].content.match(/^(\d+): /m)?.[1])));
+		const { caseDir, call } = await fixture(t, { SPOTLIGHT_RLM_OPENAI_BASE_URL: rlm.baseURL, SPOTLIGHT_RLM_INFERENCE: 'own' });
+		const result = await call({ url: PAGE_URL, save_as: 'research/a.md' });
+		assert.equal(result.distilled, false);
+		assert.equal(await readFile(join(caseDir, 'research/a.md.raw'), 'utf8'), RAW_PAGE);
+		assert.equal(existsSync(join(caseDir, 'research/a.md')), false);
+		assert.equal(JSON.stringify(result).includes('Ada Lovelace'), false, 'no page text reaches the agent');
+	});
+});
+
+test('a later chunk cannot select lines of an earlier chunk, and overlapping ranges still extract only exact raw lines', async (t) => {
+	const page = Array.from({ length: 400 }, (_, i) => `line ${i + 1} ${'x'.repeat(150)}`).join('\n');
+	const numbersOf = (request: RLMRequest) => [...request.messages[0].content.matchAll(/^(\d+): /gm)].map((m) => Number(m[1]));
+	const back = await standInRLM(t, 200, (request) => {
+		const numbers = numbersOf(request);
+		return JSON.stringify({ ranges: [{ start: numbers[0] === 1 ? 1 : numbers[0] - 1, end: numbers[0] === 1 ? 1 : numbers[0] }] });
+	});
+	const rejected = await fixture(t, { SPOTLIGHT_RLM_OPENAI_BASE_URL: back.baseURL, SPOTLIGHT_RLM_INFERENCE: 'own' }, page);
+	const refused = await rejected.call({ url: PAGE_URL, save_as: 'research/back.md' });
+	assert.equal(back.requests.length, 2, 'the second chunk was asked and answered with a line from the first');
+	assert.equal(refused.distilled, false);
+	assert.match(String(refused.rlm_error), /outside the inspected range/);
+	assert.equal(existsSync(join(rejected.caseDir, 'research/back.md')), false);
+
+	const overlap = await standInRLM(t, 200, (request) => { const first = numbersOf(request)[0]; return JSON.stringify({ ranges: [{ start: first + 1, end: first + 3 }, { start: first + 2, end: first + 4 }, { start: first + 2, end: first + 4 }] }); });
+	const accepted = await fixture(t, { SPOTLIGHT_RLM_OPENAI_BASE_URL: overlap.baseURL, SPOTLIGHT_RLM_INFERENCE: 'own' }, page);
+	const result = await accepted.call({ url: PAGE_URL, save_as: 'research/overlap.md' });
+	assert.equal(result.distilled, true, String(result.rlm_error));
+	const raw = (await readFile(join(accepted.caseDir, 'research/overlap.md.raw'), 'utf8')).split('\n');
+	for (const selection of result.selections as Array<{ line_start: number; line_end: number }>) {
+		assert.ok(String(result.leads).includes(raw.slice(selection.line_start - 1, selection.line_end).join('\n')), 'every extract is the exact raw lines it names');
+	}
+});
+
 test('bounded chunks expose late exact passages and disclose uninspected tail', async (t) => {
 	for (const rangeCount of [1, 14]) await t.test(`${rangeCount} exact ranges per selected chunk`, async (t) => {
 		const width = rangeCount === 1 ? 36 : 1;
@@ -233,6 +286,30 @@ test('when the RLM fails, fetch keeps the raw page on disk and still returns no 
 	assert.equal(await readFile(join(caseDir, 'research/company-42.md.raw'), 'utf8'), RAW_PAGE);
 	assert.equal(existsSync(join(caseDir, 'research/company-42.md')), false);
 	assert.equal(JSON.stringify(result).includes('Footer boilerplate'), false);
+});
+
+// Constellation G4b: a helper that accepts the request and never answers must
+// cost the worker a bounded wait, not the page. The tool's abort signal is the
+// seam (RLM_TIMEOUT_MS joins it in rlmComplete), so no test-only knob is needed.
+test('a helper that never answers leaves the raw page on disk and returns distilled:false once the call is cut off', async (t) => {
+	const sockets = new Set<import('node:net').Socket>();
+	let asked = 0;
+	const server = createServer(() => { asked++; });
+	server.on('connection', (socket) => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+	t.after(() => new Promise<void>((resolve) => { for (const socket of sockets) socket.destroy(); server.close(() => resolve()); }));
+	const { caseDir, call } = await fixture(t, { SPOTLIGHT_RLM_OPENAI_BASE_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`, SPOTLIGHT_RLM_INFERENCE: 'own' });
+	const cutOff = new AbortController();
+	setTimeout(() => cutOff.abort(), 500).unref();
+	const started = Date.now();
+	const result = await call({ url: PAGE_URL, save_as: 'research/hang.md' }, cutOff.signal);
+	assert.ok(Date.now() - started < 10_000, 'the call returns promptly once cut off');
+	assert.equal(asked, 1, 'the helper was asked once and never retried');
+	assert.equal(result.distilled, false);
+	assert.match(String(result.rlm_error), /abort|cancel/i);
+	assert.equal(await readFile(join(caseDir, 'research/hang.md.raw'), 'utf8'), RAW_PAGE);
+	assert.equal(existsSync(join(caseDir, 'research/hang.md')), false);
+	assert.equal(JSON.stringify(result).includes('Ada Lovelace'), false, 'no page text reaches the agent');
 });
 
 test('fetch refuses an RLM endpoint the launcher did not confirm as one the operator runs, and a local-tier fetch with nowhere to keep the raw page', async (t) => {
