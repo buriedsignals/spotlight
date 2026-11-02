@@ -5,6 +5,8 @@ import { execFile, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmod, copyFile, mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
@@ -2434,6 +2436,45 @@ test('invalid investigation inputs are routed for repair before any fact-check w
  assert.equal(fake.requests.filter(request => isWorkerRequest(request,'fact-checker')).length,0, 'invalid investigator files never reach a fact-checker');
 });
 
+// Constellation G3a (orchestrator ruling 2026-11-02): the investigator's process
+// log is private reasoning the independent fact-checker must not read. The
+// approved methodology (scope) stays readable.
+test('the fact-checker cannot read the investigator\'s process log through any file tool, but still reads the approved methodology', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) {
+			return toolResults(request).length === 0
+				? {
+						toolCalls: [
+							{ name: 'read_file', arguments: { path: 'data/investigation-log.json' } },
+							{ name: 'read_file', arguments: { path: 'data/methodology.json' } },
+							{ name: 'grep_files', arguments: { pattern: 'INV-REASONING-SENTINEL' } },
+							{ name: 'list_files', arguments: { pattern: 'data/*.json' } },
+						],
+					}
+				: { text: 'Checked.' };
+		}
+		return toolResults(request).length === 0
+			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check data/findings.json.' } }] }
+			: { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = await factCheckCase(space, [{ id: 'F1', claim: 'A needle in the filing.' }]);
+	const log = JSON.parse(await readFile(join(caseDir, 'data', 'investigation-log.json'), 'utf8'));
+	log.cycles[0].focus = 'INV-REASONING-SENTINEL';
+	await writeFile(join(caseDir, 'data', 'investigation-log.json'), JSON.stringify(log));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+	await settledPrompt(chat, 'Continue.');
+
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker'));
+	const [logRead, methodologyRead, grepped, listed] = toolResults(worker[worker.length - 1]);
+	assert.match(logRead, /refused: data\/investigation-log\.json is outside the case files this agent may read/);
+	assert.match(methodologyRead, /verify a fixture claim/);
+	assert.doesNotMatch(grepped, /INV-REASONING-SENTINEL|investigation-log/);
+	assert.doesNotMatch(listed, /investigation-log/);
+	assert.ok(!toolResults(worker[worker.length - 1]).join('\n').includes('INV-REASONING-SENTINEL'), 'no fact-checker tool result carries the log');
+});
+
 test('fact-check-owned case validation failures do not route to investigator', async (t) => {
  const findings = [{id:'F1',claim:'Fixture filing 1.'},{id:'F2',claim:'Fixture filing 2.'}];
  const fake = await startFakeOpenAI(request => isWorkerRequest(request,'fact-checker') ? {text:'Checked.'} : toolResults(request).length === 0 ? {toolCalls:[{name:'spawn_agent',arguments:{agent:'fact-checker',task:'Continue checking remaining findings.'}}]} : {text:'Done.'});
@@ -2720,22 +2761,23 @@ test('once the review page opens, the turn ends with no further model request', 
 	t.after(() => fake.close());
 	const space = await workspace(t);
 	execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), join(space.casesRoot, 'case-a'), 'investigation_gate', '--activated', '--clean']);
-	// The browser opener is a stub that records each call.
-	const bin = join(space.root, 'bin');
-	await mkdir(bin);
+	// A real opener on PATH must never run: launch() puts recording stubs ahead of it.
+	const decoy = join(space.root, 'decoy');
+	await mkdir(decoy);
 	for (const name of ['open', 'xdg-open']) {
-		await writeFile(join(bin, name), `#!/bin/sh\necho "$1" >> "${join(space.root, 'opened.log')}"\n`);
-		await chmod(join(bin, name), 0o755);
+		await writeFile(join(decoy, name), `#!/bin/sh\necho "$1" >> "${join(space.root, 'real-opener.log')}"\nexit 1\n`);
+		await chmod(join(decoy, name), 0o755);
 	}
 	const env = baseEnv(space, fake.baseURL);
 	// A parent test runner's pinned interpreter must not hide a broken default.
 	delete env.SPOTLIGHT_PYTHON;
-	const chat = launch(t, { ...env, PATH: `${bin}:${env.PATH}` });
+	const chat = launch(t, { ...env, PATH: `${decoy}:${env.PATH}` });
 
 	await settledPrompt(chat, 'Continue.');
 
 	assert.equal(fake.requests.length, 1, 'no model request after the page opened');
-	assert.equal((await readFile(join(space.root, 'opened.log'), 'utf8')).trim().split('\n').length, 1, 'the page opened once');
+	assert.equal(chat.opened().length, 1, 'the page opened once');
+	assert.equal(existsSync(join(space.root, 'real-opener.log')), false, 'no real browser opener was invoked');
 	assert.ok(chat.lines.some((line) => line.includes(REVIEW_OPEN_STOP)), 'the member is told the page is open');
 	chat.process.stdin.end();
 	await chat.exited;
@@ -3084,6 +3126,81 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 	assert.ok(!chat.stderr().includes('sk-or-v1-launcher-secret'));
 });
 
+// Constellation G5b through the launcher: a decision endpoint that fails with
+// leads in hand must not let the round move on. The search and scraping seams
+// are a stand-in program (as in lanes.test.ts); the resolver, merge and triage
+// scripts run on the real interpreter behind it.
+test('G5b: when the decision endpoint fails with retained leads, the orchestrator is told, no triage exists, and the case stays at triage', async (t) => {
+	const swarm = await startFakeOpenAI((request) => {
+		const turn = request.messages.filter((message) => message.role === 'assistant').length;
+		const script = [
+			{ toolCalls: [{ name: 'search', arguments: { query: 'Northwind Holdings annual return' } }] },
+			{ toolCalls: [{ name: 'fetch', arguments: { url: 'https://registry.example.org/company/42' } }] },
+			{ toolCalls: [{ name: 'record_lead', arguments: { source_id: 's2', summary: 'Ada Lovelace is President of Analytical Engines SA.', subjects: ['Ada Lovelace'], excerpt: { text: 'Ada Lovelace is President of Analytical Engines SA since 2019.', language: 'en', direct_quote: false } } }] },
+		];
+		return script[turn] ? { ...script[turn], usage: { total_tokens: 10, cost: 0.0001 } } : { text: 'Done: one lead.', usage: { total_tokens: 10, cost: 0.0001 } };
+	});
+	const orchestratorModel = await startFakeOpenAI(resolveThenStop);
+	let asked = 0;
+	const decision = createServer((req, res) => {
+		req.resume();
+		req.on('end', () => { asked++; res.writeHead(500).end('{"error":"boom"}'); });
+	});
+	await new Promise<void>((done) => decision.listen(0, '127.0.0.1', done));
+	t.after(() => Promise.all([orchestratorModel.close(), swarm.close(), new Promise<void>((done) => { decision.closeAllConnections(); decision.close(() => done()); })]));
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	await writeFile(join(caseDir, 'brief-directions.txt'), 'Who owns the fixture company?\n');
+	const methodology = JSON.parse(await readFile(join(CHECKOUT_ROOT, 'tests/fixtures/research/methodology-research.sample.json'), 'utf8'));
+	methodology.lead = 'Northwind Holdings hid its owner.';
+	await writeFile(join(caseDir, 'data', 'methodology.json'), JSON.stringify(methodology));
+	const realPython = process.env.SPOTLIGHT_PYTHON ?? 'python3';
+	await new Promise<void>((done, fail) =>
+		execFile(
+			realPython,
+			[join(CHECKOUT_ROOT, 'scripts', 'spotlight-orchestration.py'), 'approve', 'methodology', '--approved-by', 'journalist:fixture', '--approved-at', '2026-10-23T12:00:00Z', '--authorized-cases-root', space.casesRoot, caseDir],
+			{ env: { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' } },
+			(error, _stdout, stderr) => (error ? fail(new Error(stderr || error.message)) : done()),
+		),
+	);
+	const seam = join(space.root, 'python-seam');
+	await writeFile(seam, `#!${process.execPath}
+const args = process.argv.slice(2);
+if (args.includes('integrations.scraping')) process.stdout.write(JSON.stringify({ markdown: '# Company 42\\n\\nAda Lovelace is President of Analytical Engines SA since 2019.\\n', source_url: args.at(-1), provider: 'crawl4ai', status_code: 200, title: 'Company 42' }));
+else if (args.includes('integrations.search')) process.stdout.write(JSON.stringify([{ url: 'https://news.example.org/appointment', title: 'Appointment', snippet: 'Analytical Engines SA names Ada Lovelace as its President', date: null, engine: 'stub' }]));
+else process.exit(require('node:child_process').spawnSync(${JSON.stringify(realPython)}, args, { stdio: 'inherit' }).status ?? 2);
+`);
+	await chmod(seam, 0o755);
+	const config = join(space.root, 'install-config.json');
+	await writeFile(config, JSON.stringify({ integrations: { decisions: { research_triage: { backend: 'local' }, endpoint: { url: `http://127.0.0.1:${(decision.address() as AddressInfo).port}/v1/systemone`, api: 'openrouter-decisions' } } } }));
+	const chat = launch(t, {
+		...baseEnv(space, orchestratorModel.baseURL),
+		SPOTLIGHT_PYTHON: seam,
+		SPOTLIGHT_ANONYMIZE_FETCH: 'true',
+		SPOTLIGHT_RESEARCH_SWARMS: 'on',
+		SPOTLIGHT_CONFIG: config,
+		OPENROUTER_API_KEY: 'sk-or-v1-launcher-secret',
+		SPOTLIGHT_SWARM_BASE_URL: swarm.baseURL,
+	});
+
+	await settledPrompt(chat, 'Continue.', 60_000);
+
+	const resolution = lastResolution(chat) as {
+		phase: string;
+		research: { resume_at: string };
+		research_round: { merge: { ok: boolean }; triage: { ok: boolean; error?: string } };
+	};
+	assert.equal(resolution.research_round.merge.ok, true);
+	assert.ok(asked >= 1, 'the decision endpoint was asked');
+	assert.equal(resolution.research_round.triage.ok, false);
+	assert.match(String(resolution.research_round.triage.error), /unavailable: HTTP 500/);
+	assert.equal(existsSync(join(caseDir, 'data', 'research-triage.json')), false);
+	assert.deepEqual([resolution.phase, resolution.research.resume_at], ['research', 'triage']);
+	const seen = toolResults(orchestratorModel.requests.at(-1)!).join('\n');
+	assert.match(seen, /unavailable: HTTP 500/, 'the orchestrator is shown the error');
+});
+
 test('with the Research switch off, an approved researched case resumes no lane: the resolve holds it at Research with the Research-off message', async (t) => {
 	const orchestratorModel = await startFakeOpenAI(resolveThenStop);
 	const swarm = await startFakeOpenAI(() => ({ text: 'No leads.', usage: { total_tokens: 10, cost: 0.0001 } }));
@@ -3254,13 +3371,8 @@ test('newsroom Submit: a failed integrity check leaves the case at Ingest with t
 
 	const staged = await workspace(t);
 	const stagedCase = await caseAtIngest(staged);
-	// The member's browser opener: it records the environment it was given.
-	const opener = join(staged.root, 'bin');
-	await mkdir(opener);
-	for (const name of ['open', 'xdg-open']) await writeFile(join(opener, name), `#!/bin/sh\nenv > '${join(staged.root, 'opener-env')}'\n`, { mode: 0o755 });
 	const route = [{ ...newsroomRoute(fake.baseURL)[0], key_env: 'ROUTE_AUTH' }];
 	const stagedEnv = newsroomEnv(staged, route, staging, { ROUTE_AUTH: 'route-auth-token-0123456789' });
-	stagedEnv.PATH = `${opener}:${stagedEnv.PATH}`;
 	await requestNewsroomIngest(stagedCase, stagedEnv);
 	const second = launch(t, stagedEnv);
 	await settledPrompt(second, 'Continue.');
@@ -3273,7 +3385,7 @@ test('newsroom Submit: a failed integrity check leaves the case at Ingest with t
 	// The review address is the member's: no model request carries it.
 	assert.ok(!JSON.stringify(fake.requests).includes('/review/rev-1'), 'the review address never reaches a model');
 	if (process.platform !== 'win32') {
-		const openerEnv = await readFile(join(staged.root, 'opener-env'), 'utf8');
+		const openerEnv = second.openerEnv();
 		assert.ok(!openerEnv.includes('route-auth-token') && !openerEnv.includes(staging.token), 'the opener gets no token');
 	}
 	assert.equal((JSON.parse(await readFile(join(stagedCase, 'data', 'newsroom-submission.json'), 'utf8')) as { state: string }).state, 'submitted');

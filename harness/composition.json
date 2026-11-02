@@ -154,6 +154,7 @@
         "data/leads.jsonl",
         "data/clues.json",
         "data/research-*.json",
+        "data/investigation-log.json",
         "data/harness-checks/investigator/",
         "data/harness-checks/analyst/"
       ],
