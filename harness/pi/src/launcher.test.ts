@@ -4969,3 +4969,32 @@ test('a second amendment worker that writes nothing does not re-apply the refuse
 	assert.match(results[0], /recordAmendment refused the amendment/);
 	assert.match(results[1], /unchanged since it was last applied, so recordAmendment was not applied again/);
 });
+
+// review-fix2 Z1: a resolver error is not an outcome. The amendment it never
+// checked must stay unapplied, so the next worker's finish applies it.
+test('an amendment whose recordAmendment failed with a resolver error is applied when the next worker finishes', async (t) => {
+	const space = await workspace(t);
+	const caseDir = caseAtAmendment(space);
+	const methodology = await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8');
+	// The resolver fails on the first record-amendment only.
+	const flag = join(space.root, 'record-amendment-failed');
+	const python = join(space.root, 'python-flaky-resolver');
+	await writeFile(python, `#!${process.execPath}\nconst { execFileSync } = require('node:child_process');\nconst fs = require('node:fs');\nconst args = process.argv.slice(2);\nif (args.includes('record-amendment') && !fs.existsSync(${JSON.stringify(flag)})) { fs.writeFileSync(${JSON.stringify(flag)}, ''); process.stderr.write('resolver unavailable'); process.exit(1); }\ntry { process.stdout.write(execFileSync(${JSON.stringify(PYTHON)}, args, { stdio: ['inherit', 'pipe', 'inherit'] })); } catch (error) { process.stdout.write(error.stdout ?? ''); process.exitCode = error.status ?? 1; }\n`, { mode: 0o755 });
+	let spawns = 0;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			if (toolResults(request).length > 0 || spawns === 2) return { text: 'Done.' };
+			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology-amendment.json', content: methodology } }] };
+		}
+		const done = toolResults(request).length;
+		if (done < 2) { spawns = done + 1; return { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Amend.' } }] }; }
+		return { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_RESEARCH_SWARMS: 'on', SPOTLIGHT_PYTHON: python }), 'Continue.');
+	const status = JSON.parse(execFileSync(PYTHON, [SEAM, 'status', '--json', caseDir], { env: { PATH: process.env.PATH ?? '', PYTHONNOUSERSITE: '1', SPOTLIGHT_RESEARCH_SWARMS: 'on' } }).toString());
+	assert.equal(status.phase, 'investigation', 'the unchecked amendment was applied on the retry');
+	const results = toolResults(fake.requests.at(-1)!);
+	assert.match(results[0], /did not reach an outcome \(the resolver failed\)/);
+	assert.match(results[1], /recordAmendment applied/);
+});

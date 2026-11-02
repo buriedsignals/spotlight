@@ -462,8 +462,8 @@ function amendmentTask(status: Record<string, unknown>): string {
 // review-fix1 X1: a retry worker that writes nothing leaves the refused
 // amendment in place, and re-applying it would be the second refusal that
 // blocks the case. Code applies an amendment only when its content differs
-// from the last one it applied; the hash is kept in the harness data folder,
-// per case, so a relaunch keeps it.
+// from the last one the resolver checked; the hash is kept in the harness data
+// folder, per case, so a relaunch keeps it.
 async function applyAmendment(harness: Harness): Promise<string> {
 	const { config, active } = harness;
 	const file = resolve(active.caseDir, 'data/methodology-amendment.json');
@@ -473,11 +473,15 @@ async function applyAmendment(harness: Harness): Promise<string> {
 	if (existsSync(applied) && readFileSync(applied, 'utf8').trim() === hash) {
 		return '[Harness: data/methodology-amendment.json is unchanged since it was last applied, so recordAmendment was not applied again. Spawn the investigator to write a corrected amendment.]';
 	}
-	mkdirSync(dirname(applied), { recursive: true, mode: 0o700 });
-	writeFileSync(applied, `${hash}\n`, { mode: 0o600 });
 	const runAdapter = pythonAdapter(config.python, resolverEnv({ ...process.env, ...researchEnv(config) }, harness.composition, config.routes));
 	try {
 		await runAdapter(transitionArguments('recordAmendment', {}, active, ORCHESTRATOR, true));
+		// The resolver reached an outcome (applied, or a refusal it recorded),
+		// so this content now counts as applied. A resolver error throws first
+		// and leaves the hash unset: that amendment was never checked
+		// (review-fix2 Z1).
+		mkdirSync(dirname(applied), { recursive: true, mode: 0o700 });
+		writeFileSync(applied, `${hash}\n`, { mode: 0o600 });
 		// A refusal is recorded, not raised (transitions.py record_amendment):
 		// the resolver's state says which it was.
 		const after = await caseStatus(harness);
@@ -488,7 +492,7 @@ async function applyAmendment(harness: Harness): Promise<string> {
 		}
 		return '[Harness: recordAmendment applied; the amendment passed the check against the member\'s marks. Call spotlight_resolve.]';
 	} catch (error) {
-		return `[Harness: recordAmendment refused the amendment; call spotlight_resolve for the problems to send back.]\n${harness.redact((error as Error).message).slice(0, 1500)}`;
+		return `[Harness: recordAmendment did not reach an outcome (the resolver failed), so the amendment was not checked or counted. Spawn the investigator again to retry it.]\n${harness.redact((error as Error).message).slice(0, 1500)}`;
 	}
 }
 
