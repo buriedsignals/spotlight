@@ -264,7 +264,7 @@ test('a record refused for an enum value names the allowed values',async t=>{
 // item, and validate-case.py refused the verdict. Anchored inside the
 // fact-checker's capture they count; anchored only in the investigator's
 // material they are refused with the missing field named.
-test('a verified item anchored in the fact-checker\'s own capture counts even when it also cites investigator passages; one anchored only in investigator material is refused',async t=>{
+test('a verified item whose quote is in the fact-checker\'s own capture counts even when it also cites investigator passages; one without that quote, or anchored only in investigator material, is refused',async t=>{
 	for (const variant of ['quote','lines','investigator-only']) await t.test(variant, async t=>{
 		const {call,json,context,caseDir}=await fixture(t,'fact-checker',{SPOTLIGHT_FC_BATCH:'F1'});
 		const interpreter=context.python;
@@ -280,7 +280,8 @@ test('a verified item anchored in the fact-checker\'s own capture counts even wh
 		const path=variant==='investigator-only'?'research/filing.txt':'research/fc-own.md';
 		const item={description:'The registry states the payment.',source:url,source_ref:{path,line_start:2,line_end:2},source_expression_refs:passages,...(variant==='quote'?{quote:'Acme paid Doe in full.'}:{})};
 		const assessment={finding_id:'F1',verdict:'verified',confidence:'high',evidence_for:[item],evidence_against:[],grounding_assessment:{support_type:'direct',claim_elements_checked:['payment'],missing_assumptions:[],confidence_cap:'high',assessment:'The registry states the payment.'}};
-		if (variant==='investigator-only') {
+		// No quote: an existing line number in the fact-checker's capture is not independent support (N1).
+		if (variant==='investigator-only' || variant==='lines') {
 			await assert.rejects(call('record_assessment',{assessment}),/F1 has a verified verdict with no case-local evidence anchor[\s\S]*Cite a capture you acquired[\s\S]*passages alone are not an anchor/);
 			return;
 		}

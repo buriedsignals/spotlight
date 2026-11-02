@@ -20,7 +20,7 @@ import { withCasePassages } from './case-search.ts';
 import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL } from './subagents.ts';
 import { FC_BATCH_DONE, FC_BATCH_DUE, FC_BATCH_NOTICE, FC_BATCH_STOP, registerFetchedPages } from './extension.ts';
 import { CONTINUE_AFTER_FOLD } from './subagents.ts';
-import { blockedStop, budgetedWebResult, CALL_BUDGET_SPENT, FACT_CHECK_DUE, FACT_CHECK_DUE_NOTICE, FACT_CHECK_DUE_REPEAT, FACT_CHECK_STOP, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded, UNPRODUCTIVE_NEXT, UNPRODUCTIVE_STOP } from './extension.ts';
+import { AUTO_CONTINUE_TAG, blockedStop, budgetedWebResult, CALL_BUDGET_SPENT, FACT_CHECK_DUE, FACT_CHECK_DUE_NOTICE, FACT_CHECK_DUE_REPEAT, FACT_CHECK_STOP, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded, UNPRODUCTIVE_NEXT, UNPRODUCTIVE_STOP } from './extension.ts';
 import { AUTO_INVESTIGATORS_SPENT, GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 import { TASK_AFTER_FOLD, taskAfterFold } from './checkpoint.ts';
 import { maxOutputTokens } from './config.ts';
@@ -554,7 +554,10 @@ test('on the 12b an orchestrator text turn at a phase only it can move gets one 
 		const fake = await startFakeOpenAI(() => ({ text: 'Here is the plan.' }));
 		t.after(() => fake.close());
 		const space = await workspace(t);
-		if (atInvestigation) await caseAtInvestigation(space);
+		// A member follow-up: code dispatches nothing there (the member's
+		// instructions are the model's to route), so a text turn gets the nudge,
+		// not a continuation.
+		if (atInvestigation) execFileSync(PYTHON, [SEAM, 'request-follow-up', '--instructions', 'Re-check F1 against the 2024 filing.', caseAtGate(space)]);
 		const chat = launch(t, baseEnv(space, fake.baseURL));
 
 		await settledPrompt(chat, 'Continue.');
@@ -2332,7 +2335,10 @@ test('the analyst is not started before Ingest or in the newsroom edition', asyn
 	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'analyst')).length, 0);
 	// Distinct results: at Investigation the text-turn nudge asks once more,
 	// carrying the same refusal.
-	const refusals = [...new Set(fake.requests.flatMap((request) => toolResults(request)))];
+	// At Investigation the refused spawn ran nothing, so the harness may continue
+	// the authorized investigation itself (the stall fallback); only the
+	// analyst's refusals are this test's.
+	const refusals = [...new Set(fake.requests.flatMap((request) => toolResults(request)))].filter((text) => /the analyst/.test(text));
 	assert.equal(refusals.length, 2);
 	// U3 census (84674fd9): the refusal carries the step the case waits on.
 	assert.match(refusals[0], /the analyst runs only at investigation_gate_approval, report, ingest; the case is at investigation\. Next: /);
@@ -4732,8 +4738,11 @@ test('a spawn with no agent, an unknown agent or an investigator with an empty t
 	await briefApproved(space);
 	await settledPrompt(launch(t, baseEnv(space, fake.baseURL)), 'Continue.');
 
-	assert.equal(fake.requests.filter((request) => systemText(request).includes('You were delegated a task')).length, 0);
-	const results = toolResults(fake.requests.at(-1)!);
+	// The refused calls start no worker. With every spawn refused and work
+	// due, the harness continues the turn itself (the stall fallback), and
+	// only its own code-built planning task reaches a worker.
+	for (const request of fake.requests.filter((request) => systemText(request).includes('You were delegated a task') && toolResults(request).length === 0)) assert.match(userText(request), /^MODE: PLANNING\nPlan the investigation of the approved brief/);
+	const results = toolResults(fake.requests.find((request) => !systemText(request).includes('You were delegated a task') && toolResults(request).length >= 3)!);
 	assert.match(results[0], /spawn_agent needs a task for the investigator that says what to do/);
 	for (const result of results.slice(1)) assert.match(result, /spawn_agent needs agent set to one of: investigator, fact-checker, analyst/);
 });
@@ -5182,4 +5191,62 @@ test('a schema refusal on an enum field names the allowed values from the tool s
 	const [refusal] = toolResults(worker);
 	assert.match(refusal, /finding\.grounding\.support_type: must be equal to one of the allowed values \(allowed: "direct", "indirect"/);
 	assert.match(refusal, /finding\.grounding\.source_role: must be equal to one of the allowed values \(allowed: "primary", "secondary", "contextual"\)/);
+});
+
+// e2e fp1 leg 1 (Gemma12): the orchestrator ended its turns with narrative while
+// authorized work was due, and the run ended. The harness continues that work
+// itself, never past a gate or a question to the member, at most twice per
+// member turn.
+test('an orchestrator that only narrates has its authorized work continued by the harness, never past a question, a gate or the cap', async (t) => {
+	const tagged = (requests: ChatRequest[]) => [...new Set(requests.flatMap((request) => request.messages.filter((message) => message.role === 'user').map((message) => JSON.stringify(message.content))).filter((text) => text.includes(AUTO_CONTINUE_TAG)))];
+	await t.test('narration at Methodology: the planner runs', async (t) => {
+		const space = await workspace(t);
+		const source = join(space.root, 'outputs');
+		execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), source, 'methodology']);
+		const caseDir = join(space.casesRoot, 'case-a');
+		await mkdir(join(caseDir, 'data'), { recursive: true });
+		await copyFile(join(source, 'brief-directions.txt'), join(caseDir, 'brief-directions.txt'));
+		const methodology = await readFile(join(source, 'data', 'methodology.json'), 'utf8');
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'investigator')) return toolResults(request).length === 0 ? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: methodology } }] } : { text: 'Planned.' };
+			return { text: 'I am continuing to work on the plan.' };
+		});
+		t.after(() => fake.close());
+		await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: await gateConfig(space) }), 'Go ahead.');
+		assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 0).length, 1, 'the harness started the planner');
+		assert.ok(existsSync(join(caseDir, 'data', 'methodology.json')));
+		const orchestrator = fake.requests.filter((request) => !systemText(request).includes('You were delegated a task'));
+		assert.equal(tagged(orchestrator).length, 1, 'one continuation; at the gate the harness stops');
+	});
+	await t.test('a question to the member, or a gate, is not continued', async (t) => {
+		// At Methodology the planner is due, so only the question holds it back.
+		for (const [stage, reply] of [['brief', 'Which board do you mean, current or 2019?'], ['methodology', 'Shall I plan the board and the 2019 filings first?']] as const) {
+			const fake = await startFakeOpenAI((request) => (systemText(request).includes('You were delegated a task') ? { text: 'Unexpected.' } : { text: reply }));
+			t.after(() => fake.close());
+			const space = await workspace(t);
+			if (stage === 'brief') await mkdir(join(space.casesRoot, 'case-a', 'data'), { recursive: true });
+			else await briefApproved(space);
+			await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: await gateConfig(space) }), 'Continue.');
+			assert.equal(fake.requests.filter((request) => systemText(request).includes('You were delegated a task')).length, 0, stage);
+			assert.equal(tagged(fake.requests).length, 0, stage);
+		}
+		// A valid plan at its gate, narrated without a question: nothing to do.
+		const fake = await startFakeOpenAI((request) => (systemText(request).includes('You were delegated a task') ? { text: 'Unexpected.' } : { text: 'The plan is ready.' }));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), join(space.casesRoot, 'case-a'), 'methodology']);
+		await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: await gateConfig(space) }), 'Continue.');
+		assert.equal(fake.requests.filter((request) => systemText(request).includes('You were delegated a task')).length, 0);
+	});
+	await t.test('at most two continuations per member turn, then a receipt', async (t) => {
+		let answers = 0;
+		const fake = await startFakeOpenAI((request) => (isWorkerRequest(request, 'investigator') ? { text: `Worked ${++answers}.` } : { text: 'I am continuing the investigation.' }));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		await caseAtInvestigation(space);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier' });
+		await settledPrompt(chat, 'Continue.');
+		assert.equal(tagged(fake.requests.filter((request) => !systemText(request).includes('You were delegated a task'))).length, 2);
+		assert.match(chat.stderr(), /\[Harness continued the authorized work\] receipt: 2 automatic continuations this member turn are spent/);
+	});
 });
