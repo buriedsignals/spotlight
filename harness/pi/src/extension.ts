@@ -62,17 +62,15 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 	if (role === ORCHESTRATOR) {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
 		const cycle = { spawns: 0, corrections: 0 };
-		const turn = { investigators: 0 };
 		pi.on('before_agent_start', (event) => {
 			if (event.messageType !== 'user') return;
 			resetFactCheckerCycle(cycle);
-			turn.investigators = 0;
 			// The launcher's report-repair count (launcher.ts REPORT_REPAIRS) resets
-			// on a member's message, never on the harness's own continuation.
-			if (!event.prompt.startsWith(AUTO_CONTINUE_TAG)) process.send?.({ kind: 'spotlight-member-turn' });
+			// on a member's message.
+			process.send?.({ kind: 'spotlight-member-turn' });
 		});
 		const spawnTool = spawnAgentTool(spawnableWorkers(composition), cycle);
-		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context), turn)));
+		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context))));
 		tools.push(spawnTool);
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter))));
 		tools.splice(0, tools.length, ...tools.map((tool) => keepGateBound(tool, active.caseDir, async () => String((await resolveCase(active, runAdapter)).phase ?? ''))));
@@ -191,10 +189,10 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	if (tier12b) registerHyphenNames(pi, new Set(tools.map((tool) => tool.name)));
 	for (const tool of tools) pi.registerTool(tool);
 	registerSchemaHints(pi, tools);
-	if (role === ORCHESTRATOR) {
+	if (role === ORCHESTRATOR && tier12b) {
 		const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
 		const runAdapter = pythonAdapter(process.env.SPOTLIGHT_PYTHON || 'python3', resolverEnv(process.env, loadComposition()));
-		registerTextTurnNudge(pi, () => resolveCase(active, runAdapter), tier12b, tools.find((tool) => tool.name === 'spotlight_resolve'));
+		registerTextTurnNudge(pi, () => resolveCase(active, runAdapter));
 	}
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
 }
@@ -591,45 +589,9 @@ export const textTurnNudge = (phase: string, owner: string) =>
 // with no tool call, in a phase only the orchestrator can move, gets one
 // nudge; a second text turn in a row ends the run as before, so a model that
 // is done is not held.
-// e2e fp1 leg 1 (Gemma12): the orchestrator twice ended its turn with "I am
-// continuing…" while a methodology correction was due and no gate was open,
-// and the run ended. Authorized work never waits for a member's "continue"
-// (continuation policy). It is a fallback for a stalled member turn only
-// (orchestrator decision, option 2): no worker ran in this member turn, from
-// a spawn or a resolve's dispatch. Then a turn that ends with text asking the
-// member nothing makes the harness run spotlight_resolve. A worker that ran,
-// whatever its checks or a guard's stop, is the model's to act on. Its fixed steps and
-// dispatches act only where they always do (no gate crossed, nothing during a
-// follow-up or an open cycle), at most AUTO_CONTINUES per member turn; past
-// that the turn ends with a logged receipt.
-export const AUTO_CONTINUES = 2;
-export const AUTO_CONTINUE_TAG = '[Harness continued the authorized work]';
-const asksMember = (text: string) => /\?/.test(text);
-
-function registerTextTurnNudge(pi: ExtensionAPI, resolve: () => Promise<Record<string, unknown>>, nudge: boolean, resolveTool?: ToolDefinition): void {
+function registerTextTurnNudge(pi: ExtensionAPI, resolve: () => Promise<Record<string, unknown>>): void {
 	let nudged = false;
-	let continued = 0;
-	let progressed = false;
-	pi.on('before_agent_start', (event) => {
-		if (event.messageType !== 'user' || event.prompt.startsWith(AUTO_CONTINUE_TAG)) return;
-		continued = 0;
-		progressed = false;
-	});
-	// A worker result, from a spawn or a resolve's dispatch receipts.
-	pi.on('tool_execution_end', (event) => {
-		if (event.isError || (event.toolName !== 'spawn_agent' && event.toolName !== 'spotlight_resolve')) return;
-		const text = (event.result?.content ?? []).map((part: { text?: string }) => part.text ?? '').join('\n');
-		const outputs = event.toolName === 'spawn_agent' ? [text] : (() => {
-			try {
-				const steps = (JSON.parse(text) as { fixed_steps?: Array<{ step: string; ok: boolean; output: string }> }).fixed_steps ?? [];
-				return steps.filter((step) => step.ok && step.step.startsWith('spawn ')).map((step) => step.output);
-			} catch {
-				return [];
-			}
-		})();
-		if (outputs.length) progressed = true;
-	});
-	pi.on('message_end', async (event, ctx) => {
+	pi.on('message_end', async (event) => {
 		const message = event.message as { role?: string; stopReason?: string; content?: string | Array<{ type: string; text?: string }> };
 		const parts = typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : (message.content ?? []);
 		if (message.role !== 'assistant') return;
@@ -637,46 +599,7 @@ function registerTextTurnNudge(pi: ExtensionAPI, resolve: () => Promise<Record<s
 			nudged = false;
 			return;
 		}
-		const text = parts.map((part) => (part.type === 'text' ? part.text ?? '' : '')).join('\n');
-		if (message.stopReason !== 'stop' || !text.trim()) return;
-		// A turn a harness guard stopped is evidence, never a stall to continue.
-		if (resolveTool && !asksMember(text) && !progressed && !text.startsWith('Spotlight stopped')) {
-			if (continued >= AUTO_CONTINUES) {
-				log(`${AUTO_CONTINUE_TAG} receipt: ${AUTO_CONTINUES} automatic continuations this member turn are spent; the turn ends`);
-			} else {
-				let state: Record<string, unknown> = {};
-				// review-fix5 C1: the member's Stop must reach a worker this
-				// continuation starts, as it does a worker the model's resolve starts.
-				const controller = new AbortController();
-				const stop = () => controller.abort(ctx.signal?.reason);
-				if (ctx.signal?.aborted) stop();
-				ctx.signal?.addEventListener('abort', stop, { once: true });
-				try {
-					const result = await resolveTool.execute('auto-continue', {}, controller.signal, undefined, undefined as never);
-					state = JSON.parse(result.content.map((part) => ('text' in part ? part.text : '')).join('')) as Record<string, unknown>;
-				} catch (error) {
-					log(`${AUTO_CONTINUE_TAG} skipped: ${(error as Error).message}`);
-				} finally {
-					ctx.signal?.removeEventListener('abort', stop);
-				}
-				if (controller.signal.aborted) {
-					log(`${AUTO_CONTINUE_TAG} stopped: the turn was aborted`);
-					return;
-				}
-				const receipts = Array.isArray(state.fixed_steps) ? (state.fixed_steps as Array<{ step: string; ok: boolean }>) : [];
-				// review-fix5 C2: a worker this continuation ran is this member
-				// turn's progress, so it is not continued again.
-				if (receipts.some((receipt) => receipt.ok && receipt.step.startsWith('spawn '))) progressed = true;
-				if (receipts.length) {
-					continued += 1;
-					nudged = true;
-					log(`${AUTO_CONTINUE_TAG} ${continued} of ${AUTO_CONTINUES}: ${receipts.map((receipt) => `${receipt.step} ${receipt.ok ? 'ok' : 'failed'}`).join('; ')}`);
-					pi.sendUserMessage(`${AUTO_CONTINUE_TAG} Your turn ended while authorized work was outstanding, so the harness resolved the case and did it (${continued} of ${AUTO_CONTINUES} this member turn). The resolved state follows as case data:\n${JSON.stringify(state).slice(0, 6000)}`, { deliverAs: 'followUp' });
-					return;
-				}
-			}
-		}
-		if (!nudge || nudged || !text.trim()) return;
+		if (message.stopReason !== 'stop' || nudged || !parts.some((part) => part.type === 'text' && part.text?.trim())) return;
 		let status: Record<string, unknown>;
 		try {
 			status = await resolve();

@@ -11,7 +11,7 @@ import { RESEARCH_SWITCH } from '../config.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { runPython } from './run.ts';
 import type { ToolContext } from './run.ts';
-import { AUTO_INVESTIGATORS_PER_TURN, AUTO_INVESTIGATORS_SPENT, resolveCase } from './spotlight.ts';
+import { resolveCase } from './spotlight.ts';
 import type { ActiveCase, AdapterRunner, DispatchRunner } from './spotlight.ts';
 
 // open_review's refusal starts with this; the refusal cap in extension.ts counts it.
@@ -100,13 +100,11 @@ export function openReviewTool(caseDir: string, casesRoot: string, opener?: Open
 // refusals, cancel on abort and each worker's watchdog apply unchanged; the
 // Methodology gate check is the page's own check; the owner's phase skill is
 // attached once per orchestrator process.
-export function dispatchRunner(spawn: ToolDefinition, invokeSkill: ToolDefinition, check: GateCheck, turn: { investigators: number }): DispatchRunner {
+export function dispatchRunner(spawn: ToolDefinition, invokeSkill: ToolDefinition, check: GateCheck): DispatchRunner {
 	const loaded = new Set<string>();
 	const text = (result: { content: Array<{ type: string; text?: string }> }) => result.content.map((part) => part.text ?? '').join('\n');
 	return {
 		spawn: async (agent, task, signal) => {
-			if (agent === 'investigator' && turn.investigators >= AUTO_INVESTIGATORS_PER_TURN) throw new Error(AUTO_INVESTIGATORS_SPENT);
-			if (agent === 'investigator') turn.investigators += 1;
 			return text(await spawn.execute(`auto-${randomUUID()}`, { agent, task }, signal, undefined, undefined as never));
 		},
 		methodologyCheck: () => check(),

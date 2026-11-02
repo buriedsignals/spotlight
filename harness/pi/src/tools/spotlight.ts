@@ -160,6 +160,9 @@ export const NEXT_INVESTIGATOR = 'Next: spawn the investigator in EXECUTION mode
 export const NEXT_BRIEF =
 	"Next: restate the lead in one sentence, propose the direction in plain words, ask the member to approve it (with up to three clarifying questions if scope, angle or priority is unclear), and end your turn (phase-methodology, Brief steps 2 to 5). Write brief-directions.txt with write_file only after the member has answered and approved (step 6). You need not read case or skill files first, and no investigator runs before the brief.";
 export const NEXT_PLANNING = 'Next: spawn the investigator with MODE: PLANNING to write data/methodology.json (phase-methodology, Methodology).';
+// While the plan fails its own check (fix6 b).
+export const NEXT_METHODOLOGY_FAILING =
+	'Next: the methodology does not pass its check yet (methodology_check lists why). Call spotlight_resolve: it sends the investigator the correction. Do not open the review.';
 export const NEXT_METHODOLOGY_APPROVAL =
 	'Next: call open_review so the member can approve the methodology, then end your turn and wait for their decision.';
 
@@ -181,7 +184,7 @@ export function nextAction(resolved: Record<string, unknown>, onDisk: (relative:
 		case 'brief':
 			return NEXT_BRIEF;
 		case 'methodology':
-			return NEXT_PLANNING;
+			return resolved.methodology_check ? NEXT_METHODOLOGY_FAILING : NEXT_PLANNING;
 		case 'methodology_approval':
 			return NEXT_METHODOLOGY_APPROVAL;
 		case 'investigation':
@@ -287,7 +290,6 @@ async function runFixedSteps(resolved: Record<string, unknown>, active: ActiveCa
 // page can be open for that content.
 export type Dispatch = { agent: 'investigator' | 'fact-checker' | 'analyst'; task: string; step: string };
 export type DispatchRunner = {
-	// Refuses (throws) once this member turn's automatic investigator spawns are spent.
 	spawn: (agent: string, task: string, signal?: AbortSignal) => Promise<string>;
 	// The Methodology gate's own check: its failure output, or undefined when it passes.
 	methodologyCheck: () => Promise<string | undefined>;
@@ -295,11 +297,19 @@ export type DispatchRunner = {
 	phaseSkill?: (skill: string) => Promise<string | undefined>;
 };
 export const AUTO_SPAWNS_PER_RESOLVE = 4;
-// Per member turn, as the fact-checker's allowance (FACT_CHECKER_CAP) and the
-// three investigation cycles: a model that keeps resolving starts at most
-// this many investigators on its own before the member speaks (review-fix4 A4).
-export const AUTO_INVESTIGATORS_PER_TURN = 3;
-export const AUTO_INVESTIGATORS_SPENT = `The harness has started ${AUTO_INVESTIGATORS_PER_TURN} investigators on its own this turn; it starts no more until the member's next message. Tell the member where the case stands.`;
+
+// e2e r8 on comb: resolve reported methodology_approval and "call open_review"
+// for a plan its own check failed, and the model told the member to wait. A
+// plan that fails its check is still being made, so the result reports the
+// Methodology phase with the check's FAIL lines, and the next resolve sends the
+// correction (fix6 b). A failure that is not the plan's (no config) is left to
+// the gate's own refusal, which names it.
+async function unlessPlanFails(state: Record<string, unknown>, runner: DispatchRunner): Promise<Record<string, unknown>> {
+	if (state.phase !== 'methodology_approval') return state;
+	const failure = await runner.methodologyCheck();
+	const lines = failure?.split('\n').filter((line) => /^FAIL\s+methodology\.json/.test(line.trim())).join('\n');
+	return lines ? { ...state, phase: 'methodology', next_phase: 'methodology', methodology_check: lines.slice(0, 4000) } : state;
+}
 
 export function dispatchAt(resolved: Record<string, unknown>, methodologyFailure?: string): Dispatch | undefined {
 	const missing = Array.isArray(resolved.missing) ? resolved.missing.map(String) : [];
@@ -428,7 +438,7 @@ export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, ro
 		async execute(_id, params, signal) {
 			const first = await resolveCase(active, runAdapter, signal);
 			const fixed = runStep ? await runFixedSteps(first, active, runAdapter, role, runStep, signal) : first;
-			const resolved = dispatch ? await runDispatches(fixed, active, runAdapter, dispatch, signal) : fixed;
+			const resolved = dispatch ? await unlessPlanFails(await runDispatches(fixed, active, runAdapter, dispatch, signal), dispatch) : fixed;
 			// Approval of the methodology is what starts Research: the resolver
 			// reports the phase and code runs the approved topics. The model only
 			// resolves; it chooses no topic and starts no swarm.
