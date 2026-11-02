@@ -170,6 +170,19 @@ export async function validateFactCheckBatch(context: ToolContext, expectedFutur
 	return { ran, passed: true, report: lines.join('\n\n') };
 }
 
+// The fact-check validator's FAIL lines on the case as it is now, or '' when
+// it passes. A correction's defects come from here, not from the launcher's
+// memory: after a restart that is empty, and after another batch's check it is
+// stale (audit-feedback-loop G1). Read-only: unlike the post-worker checks it
+// repairs no refs.
+export async function factCheckDefects(context: ToolContext, signal?: AbortSignal): Promise<string> {
+	const name = 'validate-fact-check.py';
+	const result = await runPython(context, [join(CHECKOUT_ROOT, 'scripts', name), context.caseDir], { keys: [RESEARCH_SWITCH], timeoutMs: 300_000, signal });
+	if (result.code === 0) return '';
+	const failures = `${result.stdout}\n${result.stderr}`.split('\n').filter((line) => /^\s*FAIL\b/.test(line));
+	return failures.length ? `${name}: FAILED\n${failures.join('\n')}` : '';
+}
+
 // Whether the evidence chain validates now: validate-case.py and
 // validate-fact-check.py both pass, as the fact-checker's repair loop checks.
 export async function evidenceValidates(context: ToolContext): Promise<boolean> {

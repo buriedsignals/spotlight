@@ -38,7 +38,7 @@ import { piArguments, piCliPath, writePiSettings } from './pi-process.ts';
 import { runResearchRound } from './lanes.ts';
 import type { ResearchPlan, RoundSummary } from './lanes.ts';
 import { discardIncompleteLanes } from './resume.ts';
-import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, analystTask, allowedTools, batchDeliverable, correctionDeliverable, correctionFiles, deliverableFor, factCheckChecklist, factCheckerTask, isolationRefusal, nextCheckBatch, readCheckDocs, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, analystTask, allowedTools, batchDeliverable, correctionDeliverable, correctionFiles, deliverableFor, factCheckChecklist, factCheckerTask, isolationRefusal, nextCheckBatch, readCheckDocs, loadComposition, skillsFor, spawnRefusal, spawnableWorkers, systemPrompt, taskMode } from './roles.ts';
 import type { Composition, Deliverable, WorkerContext } from './roles.ts';
 import { approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { BRIEF_PENDING_REFUSAL, GATE_DECIDED_REFUSAL, GATE_READY_REFUSAL, WorkerQueue, runWorker } from './subagents.ts';
@@ -47,9 +47,9 @@ import { withInvestigationPacket } from './investigation-packet.ts';
 import { decideAnomaly, withAnomalyBlock } from './anomaly-decision.ts';
 import { assignDirection, directionBlock, directionCallBudget, directionDeliverable, directionsToRun, planDirections } from './directions.ts';
 import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
-import { bindActiveCase, dispatchAt, nextAction, pythonAdapter, resolveCase, runsResearchRound, transitionArguments } from './tools/spotlight.ts';
+import { INPUTS_REFUSED, bindActiveCase, dispatchAt, nextAction, pythonAdapter, resolveCase, runsResearchRound, transitionArguments } from './tools/spotlight.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
-import { PLANNING_PHASES, validateAfterWorker, validateFactCheckBatch, validateInvestigationInputs } from './validators.ts';
+import { PLANNING_PHASES, factCheckDefects, validateAfterWorker, validateFactCheckBatch, validateInvestigationInputs } from './validators.ts';
 import { recheckSources as recheck } from './recheck.ts';
 import type { Recheck } from './roles.ts';
 
@@ -342,14 +342,19 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 			// The fact-checker's task is code-built: the orchestrator's text never
 			// reaches it (only the directives code reads; roles.ts factCheckerTask).
 			amending = request.agent === 'investigator' && atAmendment(status);
+			// A fact-check correction (the auto-dispatched one carries only its
+			// mode) gets the validator's FAIL lines read from the case now.
+			const fixing = request.agent === 'fact-checker' && Boolean(taskMode(request.task)?.endsWith('CORRECTION'));
+			const fresh = fixing ? await factCheckDefects(checkContext(harness), controller.signal) : '';
+			if (fresh) harness.lastFactCheckReport = fresh;
 			const workerTask = request.agent === 'fact-checker' ? factCheckerTask(request.task, harness.lastFactCheckReport) : amending ? amendmentTask(status) : request.task;
 			if (workerTask !== request.task) harness.log(`${request.agent}: the orchestrator's task text (${request.task.length} characters) was not passed on; the harness built the task`);
 			await activateNewCase(harness, request.agent, controller.signal);
 			if (request.agent === 'fact-checker') {
-				const checked = await validateInvestigationInputs({ caseDir: harness.active.caseDir, writeRoot: harness.active.caseDir, python: harness.config.python, configPath: harness.config.spotlightConfig, env: { ...process.env, ...researchEnv(harness.config) } }, controller.signal);
-				if (!checked.passed) throw new Error(`spawn_agent: no fact-checker was started. Send the investigator its structural input errors before further fact-checking; preserve completed fact-check claims.\n${checked.report}`);
+				const checked = await validateInvestigationInputs(checkContext(harness), controller.signal);
+				if (!checked.passed) throw new Error(`spawn_agent: ${INPUTS_REFUSED}\n${checked.report}`);
 			}
-			owed = await deliverable(harness, request.agent, amending ? workerTask : request.task, status);
+			owed = await deliverable(harness, request.agent, amending ? workerTask : fresh ? `${request.task}\n${fresh}` : request.task, status);
 			const run = async (task: string, due: Deliverable | undefined, direction?: { tag: string; budget: number }, extra: Record<string, string> = {}) => {
 				const current = await caseStatus(harness);
 				const refused = refusalFor(harness, request.agent, task, current);
@@ -651,6 +656,11 @@ function canonicalWorkerHeader(task: string, runtime: WorkerContext['runtime']):
 	}
 	for (const [index, line] of replacements) lines[index] = line;
 	return lines.join('\n');
+}
+
+// The context the harness's own case checks run in.
+function checkContext(harness: Harness) {
+	return { caseDir: harness.active.caseDir, writeRoot: harness.active.caseDir, python: harness.config.python, configPath: harness.config.spotlightConfig, env: { ...process.env, ...researchEnv(harness.config) } };
 }
 
 // The role's deliverable for this spawn (roles.ts deliverableFor), read at the spawn.

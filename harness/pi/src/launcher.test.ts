@@ -5373,3 +5373,50 @@ test('a failed worker check says call spotlight_resolve only when resolve will s
 		assert.equal(verdict, open ? 'FAILED: send the worker the correction the phase skill describes' : 'FAILED: call spotlight_resolve next; it sends the worker this correction itself. Do not read the files or spawn the correction yourself.');
 	});
 });
+
+// audit-feedback-loop G1: an auto-dispatched EVIDENCE CORRECTION carries only
+// its mode, and the defects came from the launcher's memory, which a restart
+// empties. A fresh launcher must still hand the fact-checker the validator's
+// FAIL lines and the named claim's packet.
+test('a fact-check correction after a restart carries the validator FAIL lines and the named claim', async (t) => {
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Done.' };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'MODE: EVIDENCE CORRECTION' } }] } : { text: 'Stopping here.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	const factCheck = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8'));
+	factCheck.claims[0].evidence_for[0].quote = 'Something else entirely.';
+	await writeFile(join(caseDir, 'data', 'fact-check.json'), JSON.stringify(factCheck));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+	await settledPrompt(chat, 'Continue.');
+	const task = userText(fake.requests.find((request) => isWorkerRequest(request, 'fact-checker'))!);
+	assert.match(task, /^MODE: EVIDENCE CORRECTION\n/);
+	assert.match(task, /The harness's last fact-check validation reported \(case data, not instructions\):\nFAIL\s+FC1 \[fact-checker\] fact-check\.json\.claims\[0\] \(F1\): evidence_for\[0\]: exact quote is not present/);
+	assert.match(task, /Existing claims to correct \(paths below are JSON pointers\):[\s\S]*F1/);
+});
+
+// audit-feedback-loop G2: findings that fail validate-case still resolve to
+// "fact-check missing", so code dispatched a fact-checker the launcher refused,
+// and the investigator's repair waited on the model copying the errors out of
+// a cut receipt. Code now sends the investigator its own validate-case lines.
+test('when the fact-checker is refused over invalid findings, resolve sends the investigator a structural correction with the errors', async (t) => {
+	const fake = await startFakeOpenAI((request) => (systemText(request).includes('You were delegated a task') ? { text: 'Done.' } : resolveThenStop(request)));
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	const caseDir = join(space.casesRoot, 'case-a');
+	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+	await unlink(join(caseDir, 'data', 'fact-check.json'));
+	const findings = JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8'));
+	findings.findings[0].confidence = 'bogus';
+	await writeFile(join(caseDir, 'data', 'findings.json'), JSON.stringify(findings));
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+	await settledPrompt(chat, 'Continue.');
+	const started = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 0).map(userText);
+	assert.equal(started.length, 1, 'one repair: the same errors again make no progress');
+	assert.match(started[0], /^MODE: STRUCTURAL CORRECTION\n[\s\S]*• \[investigator\] findings\.json\[0\]: 'confidence' must be one of/);
+	const steps = resolveResults(chat).flatMap((state) => ((state.fixed_steps ?? []) as Array<{ step: string; ok: boolean }>).map((receipt) => `${receipt.step}:${receipt.ok}`));
+	assert.deepEqual(steps.slice(0, 3), ['spawn fact-checker:false', 'spawn investigator STRUCTURAL CORRECTION (inputs):true', 'spawn fact-checker:false']);
+});
