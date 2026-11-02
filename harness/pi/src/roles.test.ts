@@ -179,6 +179,29 @@ test('a phase skill loads unchanged, followed by the adapter lines that left the
 	assert.equal(skillAdapterNote('phase-ingest', composition.investigator.tools, false), undefined, 'a worker gets no phase lines');
 });
 
+// LFM3 Part A on fix5: at states where code makes the move at spotlight_resolve,
+// the model read methodology.json or called recordAmendment (refused), as the
+// skill text in front of that step told it. Each such step now tells the Pi
+// orchestrator to call spotlight_resolve; other runtimes keep the step.
+test('the phase skill steps code makes in the Pi harness tell the orchestrator to call spotlight_resolve', async () => {
+	const tool = invokeSkillTool(skillsFor(loadComposition(), 'orchestrator'));
+	const skill = async (name: string) => ((await tool.execute('call', { skill: name }, undefined, undefined, undefined as never)).content[0] as { text: string }).text;
+	// The text just before a step: what the model reads on the way to it.
+	const before = (text: string, anchor: string) => {
+		const at = text.indexOf(anchor);
+		assert.ok(at > 0, anchor);
+		return text.slice(Math.max(0, at - 700), at);
+	};
+	const methodology = await skill('phase-methodology');
+	const research = await skill('phase-research');
+	for (const [label, lead] of [
+		['the PLANNING spawn', before(methodology, 'After brief approval, spawn the investigator in PLANNING mode')],
+		['the methodology review and correction', before(methodology, 'If validation fails, do not present the methodology for approval')],
+		['recordAmendment', before(research, 'spotlight_transition({operation: "recordAmendment"})')],
+	] as const) assert.match(lead, /In the Pi\s+harness[\s\S]*call `spotlight_resolve`/, label);
+	assert.match(before(research, 'spotlight_transition({operation: "recordAmendment"})'), /do not\s+call `recordAmendment`/);
+});
+
 // Compact selection must not prevent a small model from checking missing context.
 test('every fetch-capable role can inspect bounded raw context on every tier', () => {
  const composition = loadComposition();

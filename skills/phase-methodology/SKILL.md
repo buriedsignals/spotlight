@@ -29,6 +29,13 @@ This is a conversation between you and the user. Do NOT spawn agents.
 
 # Methodology (Skill -> Agent -> User)
 
+In the Pi harness, after the brief is written call `spotlight_resolve`: it
+spawns the planning investigator itself, the harness checks the plan, and
+`spotlight_resolve` sends a failing plan back as the correction. Do not
+spawn the PLANNING or METHODOLOGY CORRECTION task or read `methodology.json`
+to review it; go on at step 3 when `spotlight_resolve` returns
+`methodology_approval`. Elsewhere:
+
 After brief approval, spawn the investigator in PLANNING mode:
 
 Use installed configuration or authoritative runtime facts for environment
@@ -94,7 +101,7 @@ When the agent completes:
    execute-shell("scripts/spotlight-python scripts/validate-methodology-navigator.py {CASE_DIR}")
    ```
 
-   In a runtime without `execute-shell`, the runtime runs this validator itself when the investigator finishes and returns the outcome with the investigator's answer; act on that outcome.
+   In a runtime without `execute-shell`, the runtime runs this validator itself when the investigator finishes and returns the outcome with the investigator's answer; act on that outcome. In the Pi harness, call `spotlight_resolve` instead of the steps below; it sends the correction itself.
 
    If validation fails, do not present the methodology for approval. Re-spawn
    the investigator with one bounded correction prompt:

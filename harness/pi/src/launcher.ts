@@ -959,9 +959,14 @@ async function withValidation(harness: Harness, role: string, text: string): Pro
 	// instruction while those inputs still fail validation.
 	const failedCase = /(?:^|\n)validate-case\.py: FAILED\n([\s\S]*?)(?=\n\n\S[^\n]*: (?:PASSED|FAILED)\b|$)/.exec(outcome.report)?.[1] ?? '';
 	const investigatorRepair = role === 'fact-checker' && failedCase.split('\n').some((line) => /^\s*• (?!\[fact-checker\])/.test(line));
+	// Failures the next spotlight_resolve corrects in code (dispatchAt): the
+	// plan's own methodology errors, and the fact-check validator's.
+	const resolveCorrects = (role === 'investigator' && /^\s*FAIL\s+methodology\.json/m.test(outcome.report)) || (role === 'fact-checker' && /(?:^|\n)validate-fact-check\.py: FAILED\b/.test(outcome.report));
 	const verdict = outcome.passed ? 'all passed' : investigatorRepair
 		? 'FAILED: send the investigator its structural input errors before further fact-checking; keep fact-checker-owned errors with the fact-checker. Preserve completed valid fact-check claims.'
-		: 'FAILED: send the worker the correction the phase skill describes';
+		: resolveCorrects
+			? 'FAILED: call spotlight_resolve next; it sends the worker this correction itself. Do not read the files or spawn the correction yourself.'
+			: 'FAILED: send the worker the correction the phase skill describes';
 	const unfinished = role === 'fact-checker' ? unfinishedNote(active.caseDir, outcome.passed) : '';
 	return `${text}\n\n[Harness checks after the ${role} finished: ${verdict}]\n${outcome.report}${unfinished}`;
 }

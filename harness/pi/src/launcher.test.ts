@@ -5273,3 +5273,45 @@ test('aborting the turn stops a worker the auto-continue started, and no continu
 	await new Promise((done) => setTimeout(done, 2000));
 	assert.equal(fake.requests.slice(sent).filter((request) => JSON.stringify(request.messages).includes(AUTO_CONTINUE_TAG)).length, 0, 'no continuation after the abort');
 });
+
+// LFM3 Part A on fix5: after a failed check the result said "send the worker
+// the correction the phase skill describes", and the model read
+// methodology.json or spawned by hand where the next spotlight_resolve sends
+// the correction in code. The result now says to resolve.
+test('a worker check that spotlight_resolve corrects tells the orchestrator to call spotlight_resolve', async (t) => {
+	const checkResult = async (t: TestContext, agent: string, task: string, setUp: (space: Workspace, caseDir: string) => Promise<string | undefined>) => {
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, agent)) return { text: 'Done.' };
+			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent, task } }] } : { text: 'Stopping here.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const config = await setUp(space, join(space.casesRoot, 'case-a'));
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), ...(config ? { SPOTLIGHT_CONFIG: config } : {}) });
+		await settledPrompt(chat, 'Continue.');
+		const answered = fake.requests.find((request) => !systemText(request).includes('You were delegated a task') && toolResults(request).length > 0)!;
+		return toolResults(answered).join('\n');
+	};
+	await t.test('a plan the methodology check fails', async (t) => {
+		const result = await checkResult(t, 'investigator', 'MODE: METHODOLOGY CORRECTION\nFix the plan.', async (space, caseDir) => {
+			execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'methodology']);
+			const path = join(caseDir, 'data', 'methodology.json');
+			const plan = JSON.parse(await readFile(path, 'utf8'));
+			plan.navigator = { required: false, used: false, status: 'bogus', queries: [], fallback_used: false, fallback_reason: 'Public records are enough.' };
+			await writeFile(path, JSON.stringify(plan));
+			return gateConfig(space);
+		});
+		assert.match(result, /\[Harness checks after the investigator finished: FAILED: call spotlight_resolve next; it sends the worker this correction itself\./);
+		assert.doesNotMatch(result, /the phase skill describes/);
+	});
+	await t.test('a fact-check the fact-check validator fails', async (t) => {
+		const result = await checkResult(t, 'fact-checker', 'Check the findings.', async (_space, caseDir) => {
+			execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+			const path = join(caseDir, 'data', 'fact-check.json');
+			await writeFile(path, JSON.stringify({ ...JSON.parse(await readFile(path, 'utf8')), claims: [] }));
+			return undefined;
+		});
+		assert.match(result, /validate-fact-check\.py: FAILED/);
+		assert.match(result, /\[Harness checks after the fact-checker finished: FAILED: call spotlight_resolve next; it sends the worker this correction itself\./);
+	});
+});
