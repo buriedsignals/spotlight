@@ -47,7 +47,8 @@ import { withInvestigationPacket } from './investigation-packet.ts';
 import { decideAnomaly, withAnomalyBlock } from './anomaly-decision.ts';
 import { assignDirection, directionBlock, directionCallBudget, directionDeliverable, directionsToRun, planDirections } from './directions.ts';
 import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
-import { INPUTS_REFUSED, bindActiveCase, dispatchAt, nextAction, pythonAdapter, resolveCase, runsResearchRound, transitionArguments } from './tools/spotlight.ts';
+import { INPUTS_REFUSED, bindActiveCase, dispatchAt, nextAction, pythonAdapter, resolveCase, runsResearchRound, transitionArguments, withPlanCheck } from './tools/spotlight.ts';
+import { gateCheck } from './tools/review.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
 import { PLANNING_PHASES, factCheckDefects, validateAfterWorker, validateFactCheckBatch, validateInvestigationInputs } from './validators.ts';
 import { recheckSources as recheck } from './recheck.ts';
@@ -351,7 +352,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 		queue.run(async () => {
 			const status = await caseStatus(harness);
 			if (harness.lastAnalystCheck && harness.lastAnalystCheck.phase !== String(status.phase)) harness.lastAnalystCheck = undefined;
-			const refusal = refusalFor(harness, request.agent, request.task, status);
+			const refusal = await refusalFor(harness, request.agent, request.task, status);
 			if (refusal) throw new Error(`spawn_agent: ${refusal}`);
 			// The fact-checker's task is code-built: the orchestrator's text never
 			// reaches it (only the directives code reads; roles.ts factCheckerTask).
@@ -371,7 +372,7 @@ function serveWorkers(harness: Harness, orchestrator: ChildProcess): void {
 			owed = await deliverable(harness, request.agent, amending ? workerTask : fresh ? `${request.task}\n${fresh}` : request.task, status);
 			const run = async (task: string, due: Deliverable | undefined, direction?: { tag: string; budget: number }, extra: Record<string, string> = {}) => {
 				const current = await caseStatus(harness);
-				const refused = refusalFor(harness, request.agent, task, current);
+				const refused = await refusalFor(harness, request.agent, task, current);
 				if (refused) throw new Error(`spawn_agent: ${refused}`);
 				const caseDir = harness.active.caseDir;
 				const key = request.agent === 'fact-checker' && due?.packet?.length ? JSON.stringify([caseDir, [...due.packet].sort()]) : undefined;
@@ -945,7 +946,7 @@ async function activateOnce(harness: Harness, signal: AbortSignal): Promise<void
 // no investigator runs, on every tier.
 const GATE_DECIDED_PHASES = new Set(['investigation_gate_finalization', 'report', 'ingest', 'complete']);
 
-function refusalFor(harness: Harness, role: string, task: string, status: Record<string, unknown>): string | undefined {
+async function refusalFor(harness: Harness, role: string, task: string, status: Record<string, unknown>): Promise<string | undefined> {
 	const isolation = isolationRefusal(role, task);
 	if (isolation) return isolation;
 	const phase = String(status.phase);
@@ -971,7 +972,9 @@ function refusalFor(harness: Harness, role: string, task: string, status: Record
 	const refusal = spawnRefusal(spec, role, spec.phases ? String(status.phase ?? '') : '', harness.config.edition);
 	// U3 census (84674fd9): a refused spawn was asked again 3 to 5 times; the
 	// refusal now carries the step the case is waiting on.
-	const next = refusal ? nextAction(status, (relative) => existsSync(resolve(harness.active.caseDir, relative))) : undefined;
+	// As every orchestrator-facing path, through the plan check (review-fix6 F1).
+	const adapter = pythonAdapter(harness.config.python, resolverEnv({ ...process.env, ...researchEnv(harness.config) }, harness.composition, harness.config.routes));
+	const next = refusal ? nextAction(await withPlanCheck(status, gateCheck(harness.active, adapter, checkContext(harness))), (relative) => existsSync(resolve(harness.active.caseDir, relative))) : undefined;
 	return refusal && next ? `${refusal}. ${next}` : refusal;
 }
 

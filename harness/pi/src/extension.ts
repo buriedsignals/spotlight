@@ -17,7 +17,8 @@ import { fixedStepRunner } from './tools/programs.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
-import { bindActiveCase, nextAction, pythonAdapter, resolveCase, spotlightTools } from './tools/spotlight.ts';
+import { bindActiveCase, nextAction, pythonAdapter, resolveCase, spotlightTools, withPlanCheck } from './tools/spotlight.ts';
+import type { ActiveCase, AdapterRunner } from './tools/spotlight.ts';
 import { requestEditorial, requestResearchRound, resetFactCheckerCycle, spawnAgentTool } from './subagents.ts';
 import { editorialTools } from './tools/editorial.ts';
 import { PAGE_NOT_OPENED, gateCheck, missingForApproval, openReviewTool } from './tools/review.ts';
@@ -30,6 +31,13 @@ function required(name: string): string {
 	const value = process.env[name];
 	if (!value) throw new Error(`Spotlight extension: ${name} is not set (start Spotlight through its launcher)`);
 	return value;
+}
+
+// The case as the orchestrator is told it everywhere: resolved, with a plan
+// that fails its own check still at Methodology (spotlight.ts withPlanCheck).
+function caseForModel(active: ActiveCase, runAdapter: AdapterRunner): Promise<Record<string, unknown>> {
+	const context = { caseDir: active.caseDir, writeRoot: active.caseDir, python: process.env.SPOTLIGHT_PYTHON || 'python3', configPath: process.env.SPOTLIGHT_CONFIG || `${CHECKOUT_ROOT}/.spotlight-config.json`, env: process.env };
+	return resolveCase(active, runAdapter).then((state) => withPlanCheck(state, gateCheck(active, runAdapter, context)));
 }
 
 function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
@@ -173,7 +181,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 		registerBlockedStop(pi);
 		const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
 		const runAdapter = pythonAdapter(process.env.SPOTLIGHT_PYTHON || 'python3', resolverEnv(process.env, loadComposition()));
-		registerUnproductiveBound(pi, async () => nextAction(await resolveCase(active, runAdapter), (relative) => existsSync(resolve(active.caseDir, relative))));
+		registerUnproductiveBound(pi, async () => nextAction(await caseForModel(active, runAdapter), (relative) => existsSync(resolve(active.caseDir, relative))));
 	}
 	if (role === 'analyst') registerProposalEnd(pi);
 	const factCheckDue = role === 'fact-checker' ? registerFactCheckDue(pi) : (tool: ToolDefinition) => tool;
@@ -192,7 +200,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	if (role === ORCHESTRATOR && tier12b) {
 		const active = bindActiveCase(required('SPOTLIGHT_CASES_ROOT'), required('SPOTLIGHT_CASE_DIR'));
 		const runAdapter = pythonAdapter(process.env.SPOTLIGHT_PYTHON || 'python3', resolverEnv(process.env, loadComposition()));
-		registerTextTurnNudge(pi, () => resolveCase(active, runAdapter));
+		registerTextTurnNudge(pi, () => caseForModel(active, runAdapter));
 	}
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
 }
@@ -937,6 +945,12 @@ export const FC_BATCH_STOP = 30;
 export const FC_BATCH_DONE = 'Wrote the claims for this batch.';
 export const FC_BATCH_NOTICE = 'Write this batch\'s claims now with what you have: a claim you could not confirm gets the verdict unverified, with the reason in grounding_assessment.assessment. Use the available local file tools to inspect saved evidence and record_assessment to finish; new source acquisition is closed for this batch. Write ONLY this batch’s claims to data/fact-check.json; the harness merges by finding_id and preserves omitted claims. Do not reconstruct the file or write probe files. Then finish.';
 export const FC_BATCH_SPENT = 'made the batch\'s calls without writing all its claims; the batch is incomplete.';
+// What a call to a tool the batch has closed gets, in place of Pi's "not
+// found" (fz2 on comb: "invoke_skill ... belongs to the fact-checker", said to
+// the fact-checker). The role text still names those tools; this says they are
+// closed for this batch and what is open (review e2e 'FC tool narrowing').
+export const fcBatchClosed = (tool: string) =>
+	`${tool} is closed for the rest of this batch because the batch's call budget is spent; source_expressions, invoke_skill and new sources are closed until the batch ends. Next: write this batch's claims with record_assessment (or write_file to data/fact-check.json). read_file, grep_files, list_files and hash_files stay open for saved evidence. Then finish.`;
 function registerBatchEnd(pi: ExtensionAPI, tools: string[]): void {
 	const writingTools = tools.filter((name) => ['write_file', 'record_assessment', 'read_file', 'grep_files', 'list_files', 'hash_files'].includes(name));
 	let done = false;
@@ -951,7 +965,7 @@ function registerBatchEnd(pi: ExtensionAPI, tools: string[]): void {
 		if (done) return { block: true, reason: FC_BATCH_DONE, terminate: true };
 		calls += 1;
 		if (calls > FC_BATCH_STOP) return { block: true, reason: `The fact-checker ${FC_BATCH_SPENT}`, terminate: true };
-		if (calls > FC_BATCH_DUE && !writingTools.includes(event.toolName)) return { block: true, reason: FC_BATCH_NOTICE };
+		if (calls > FC_BATCH_DUE && !writingTools.includes(event.toolName)) return { block: true, reason: fcBatchClosed(event.toolName) };
 		return undefined;
 	});
 	pi.on('tool_execution_end', () => {
@@ -1246,6 +1260,8 @@ function registerToolOwners(pi: ExtensionAPI, role: string): void {
 			.filter(([, spec]) => spec.tools.includes(name ?? ''))
 			.map(([owner]) => owner);
 		if (!name || owners.length === 0) return undefined;
+		// The batch fact-checker's own tool is missing only because the batch closed it.
+		if (role === 'fact-checker' && process.env.SPOTLIGHT_FC_BATCH && owners.includes(role)) return { message: { ...event.message, content: [{ type: 'text', text: fcBatchClosed(name) }] } as typeof event.message };
 		const next = role === ORCHESTRATOR ? 'Delegate that step with spawn_agent.' : 'Leave that step to them and say so in your answer.';
 		return { message: { ...event.message, content: [{ type: 'text', text: `${name} is not one of your tools; it belongs to the ${owners.join(' and the ')}. ${next}` }] } as typeof event.message };
 	});

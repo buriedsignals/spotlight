@@ -11,7 +11,7 @@ import { RESEARCH_SWITCH } from '../config.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { runPython } from './run.ts';
 import type { ToolContext } from './run.ts';
-import { resolveCase } from './spotlight.ts';
+import { NEXT_METHODOLOGY_FAILING, resolveCase } from './spotlight.ts';
 import type { ActiveCase, AdapterRunner, DispatchRunner } from './spotlight.ts';
 
 // open_review's refusal starts with this; the refusal cap in extension.ts counts it.
@@ -53,6 +53,9 @@ export function gateCheck(active: ActiveCase, runAdapter: AdapterRunner, context
 			const result = await runPython(context, [join(CHECKOUT_ROOT, 'scripts', args[0]), ...args.slice(1)], { keys: [RESEARCH_SWITCH], timeoutMs: 300_000 });
 			if (result.code !== 0) {
 				const output = `${result.stdout}\n${result.stderr}`.trim();
+				// The plan's own errors are code's to correct (spotlight.ts
+				// withPlanCheck), so the refusal says what resolve says (review-fix6 F1).
+				if (phase === 'methodology_approval' && /^FAIL\s+methodology\.json/m.test(output)) return `${file} does not pass ${args[0]}. ${NEXT_METHODOLOGY_FAILING}\n${output.slice(-6000)}`;
 				return `${file} does not pass ${args[0]}. Fix it and call open_review again; nothing is rendered or recorded until the member decides on the page.\n${output.slice(-6000)}`;
 			}
 		}

@@ -303,10 +303,12 @@ export const AUTO_SPAWNS_PER_RESOLVE = 4;
 // plan that fails its check is still being made, so the result reports the
 // Methodology phase with the check's FAIL lines, and the next resolve sends the
 // correction (fix6 b). A failure that is not the plan's (no config) is left to
-// the gate's own refusal, which names it.
-async function unlessPlanFails(state: Record<string, unknown>, runner: DispatchRunner): Promise<Record<string, unknown>> {
+// the gate's own refusal, which names it. Every orchestrator-facing path reads
+// the case through this, so none of them offers the review for a failing plan
+// (review-fix6 F1).
+export async function withPlanCheck(state: Record<string, unknown>, check: () => Promise<string | undefined>): Promise<Record<string, unknown>> {
 	if (state.phase !== 'methodology_approval') return state;
-	const failure = await runner.methodologyCheck();
+	const failure = await check();
 	const lines = failure?.split('\n').filter((line) => /^FAIL\s+methodology\.json/.test(line.trim())).join('\n');
 	return lines ? { ...state, phase: 'methodology', next_phase: 'methodology', methodology_check: lines.slice(0, 4000) } : state;
 }
@@ -438,7 +440,7 @@ export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, ro
 		async execute(_id, params, signal) {
 			const first = await resolveCase(active, runAdapter, signal);
 			const fixed = runStep ? await runFixedSteps(first, active, runAdapter, role, runStep, signal) : first;
-			const resolved = dispatch ? await unlessPlanFails(await runDispatches(fixed, active, runAdapter, dispatch, signal), dispatch) : fixed;
+			const resolved = dispatch ? await withPlanCheck(await runDispatches(fixed, active, runAdapter, dispatch, signal), dispatch.methodologyCheck) : fixed;
 			// Approval of the methodology is what starts Research: the resolver
 			// reports the phase and code runs the approved topics. The model only
 			// resolves; it chooses no topic and starts no swarm.

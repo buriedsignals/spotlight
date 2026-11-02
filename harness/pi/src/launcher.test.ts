@@ -2351,9 +2351,8 @@ test('the analyst is not started before Ingest or in the newsroom edition', asyn
 	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'analyst')).length, 0);
 	// Distinct results: at Investigation the text-turn nudge asks once more,
 	// carrying the same refusal.
-	// At Investigation the refused spawn ran nothing, so the harness may continue
-	// the authorized investigation itself (the stall fallback); only the
-	// analyst's refusals are this test's.
+	// Only the analyst's refusals are this test's; other results at
+	// Investigation are filtered out.
 	const refusals = [...new Set(fake.requests.flatMap((request) => toolResults(request)))].filter((text) => /the analyst/.test(text));
 	assert.equal(refusals.length, 2);
 	// U3 census (84674fd9): the refusal carries the step the case waits on.
@@ -3922,11 +3921,19 @@ test('a quote from a file the fact-checker fetched gets its evidence item added 
 
 // arm2 ds-spectator on ce4f010e (call 51 on): after the write that completed
 // its batch the fact-checker rewrote the claims and read for 32 more calls.
-test('a batch fact-checker ends once its batch has claims, and one that never writes is ended at the batch budget', async (t) => {
-	for (const writes of [true, false]) {
+// e2e 'FC tool narrowing' (fz2 on comb): after the batch closed source_expressions
+// and invoke_skill, calling them was answered "belongs to the fact-checker".
+test('a batch fact-checker ends once its batch has claims, and one that never writes is ended at the batch budget; a tool the batch closed is refused as closed', async (t) => {
+	for (const mode of ['writes', 'never', 'narrowed'] as const) {
+		const writes = mode === 'writes';
 		const fake = await startFakeOpenAI((request) => {
 			if (isWorkerRequest(request, 'fact-checker')) {
 				const done = toolResults(request).length;
+				if (mode === 'narrowed' && done >= FC_BATCH_DUE) {
+					if (done === FC_BATCH_DUE) return { toolCalls: [{ name: 'source_expressions', arguments: { action: 'write', cycle: 1, proposal: {} } }] };
+					if (done === FC_BATCH_DUE + 1) return { toolCalls: [{ name: 'invoke_skill', arguments: { skill: 'content-access' } }] };
+					return { toolCalls: [{ name: 'record_assessment', arguments: { assessment: { finding_id: 'F1', verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [] } } }] };
+				}
 				if (writes && done === 0) {
 					const claim = { finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: 'unverified', confidence: 'low', evidence_for: [], evidence_against: [] };
 					return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', project: 'p', claims: [claim] }) } }] };
@@ -3948,7 +3955,16 @@ test('a batch fact-checker ends once its batch has claims, and one that never wr
 
 		const worker = fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker'));
 		const result = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'fact-checker')).at(-1)!).join('\n');
-		if (writes) {
+		if (mode === 'narrowed') {
+			const results = toolResults(worker.at(-1)!);
+			for (const [index, tool] of [[FC_BATCH_DUE, 'source_expressions'], [FC_BATCH_DUE + 1, 'invoke_skill']] as const) {
+				assert.ok(results[index].startsWith(`${tool} is closed for the rest of this batch`), results[index]);
+				assert.doesNotMatch(results[index], /belongs to the/);
+			}
+			// Continuity: the fact-checker takes the named next step and its batch ends written.
+			assert.ok(results.slice(FC_BATCH_DUE + 2).some((text) => text.includes('Every finding in your batch has a claim')), results.slice(FC_BATCH_DUE + 2).join(' | ').slice(0, 600));
+			assert.match(result, new RegExp(FC_BATCH_DONE.replace('.', '\\.')));
+		} else if (writes) {
 			assert.equal(worker.length, 2, 'no request after the write that completed the batch was answered with more work');
 			assert.match(result, new RegExp(FC_BATCH_DONE.replace('.', '\\.')));
 		} else {
@@ -4853,9 +4869,8 @@ test('a spawn with no agent, an unknown agent or an investigator with an empty t
 	await briefApproved(space);
 	await settledPrompt(launch(t, baseEnv(space, fake.baseURL)), 'Continue.');
 
-	// The refused calls start no worker. With every spawn refused and work
-	// due, the harness continues the turn itself (the stall fallback), and
-	// only its own code-built planning task reaches a worker.
+	// The refused calls start no worker: any worker request is code's own
+	// planning task from a resolve's dispatch, never a refused one.
 	for (const request of fake.requests.filter((request) => systemText(request).includes('You were delegated a task') && toolResults(request).length === 0)) assert.match(userText(request), /^MODE: PLANNING\nPlan the investigation of the approved brief/);
 	const results = toolResults(fake.requests.find((request) => !systemText(request).includes('You were delegated a task') && toolResults(request).length >= 3)!);
 	assert.match(results[0], /spawn_agent needs a task for the investigator that says what to do/);
@@ -5214,8 +5229,13 @@ test('at a member gate resolve starts no worker unless the gate check fails, and
 	// still said "call open_review", so the run waited on the member. Now the
 	// corrections go on until the plan passes, resolve reports the failing check
 	// meanwhile, and the review opens once the plan is valid (fix6 a, b).
-	await t.test('a research request whose plan fails the gate check is corrected by code until it passes, then the review opens', async (t) => {
+	// review-fix6 F1: a 12b orchestrator that narrates after a failing-plan
+	// resolve is nudged (the nudge reads the case as resolve reports it) and
+	// still reaches the page.
+	for (const narrate of [false, true]) await t.test(`a research request whose plan fails the gate check is corrected by code until it passes, then the review opens${narrate ? ', after the 12b orchestrator narrates once' : ''}`, async (t) => {
 		let corrections = 0;
+		let narrated = false;
+		let tried = false;
 		const fake = await startFakeOpenAI((request) => {
 			if (isWorkerRequest(request, 'investigator')) {
 				if (toolResults(request).length > 0) return { text: `Corrected the plan (${corrections}).` };
@@ -5224,10 +5244,19 @@ test('at a member gate resolve starts no worker unless the gate check fails, and
 				return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: JSON.stringify(plan) } }] };
 			}
 			const last = request.messages.at(-1)!;
-			if (last.role !== 'tool') return { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: METHODOLOGY CORRECTION\nAdd the research topic the member asked for.' } }] };
+			if (last.role !== 'tool') return { toolCalls: [{ name: narrated ? 'spotlight_resolve' : 'spawn_agent', arguments: narrated ? {} : { agent: 'investigator', task: 'MODE: METHODOLOGY CORRECTION\nAdd the research topic the member asked for.' } }] };
 			const called = (request.messages.filter((message) => message.role === 'assistant').at(-1)!.tool_calls as Array<{ function: { name: string } }>)[0].function.name;
-			if (called === 'open_review') return { text: 'The plan is on the review page.' };
+			if (called === 'open_review' && !String(last.content).includes(NEXT_METHODOLOGY_FAILING)) return { text: 'The plan is on the review page.' };
 			if (called === 'spotlight_resolve' && String(last.content).includes(NEXT_METHODOLOGY_APPROVAL)) return { toolCalls: [{ name: 'open_review', arguments: {} }] };
+			// An early open_review on the failing plan is refused with what resolve says.
+			if (!narrate && !tried && called === 'spotlight_resolve' && String(last.content).includes(NEXT_METHODOLOGY_FAILING)) {
+				tried = true;
+				return { toolCalls: [{ name: 'open_review', arguments: {} }] };
+			}
+			if (narrate && !narrated && called === 'spotlight_resolve' && String(last.content).includes(NEXT_METHODOLOGY_FAILING)) {
+				narrated = true;
+				return { text: 'I am fixing the schema and will let you know.' };
+			}
 			return { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] };
 		});
 		t.after(() => fake.close());
@@ -5237,8 +5266,13 @@ test('at a member gate resolve starts no worker unless the gate check fails, and
 		const path = join(caseDir, 'data', 'methodology.json');
 		const valid = { ...JSON.parse(await readFile(path, 'utf8')), navigator: { required: false, used: false, status: 'red', queries: [], fallback_used: false, fallback_reason: 'Public records are enough.' } };
 		await writeFile(path, JSON.stringify(valid));
-		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: await gateConfig(space) });
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: await gateConfig(space), SPOTLIGHT_MODEL_TIER: narrate ? '12b' : 'frontier' });
 		await settledPrompt(chat, 'Please add a research topic on the 2019 filings.');
+		if (narrate) assert.ok(narrated && fake.requests.some((request) => JSON.stringify(request.messages).includes('Your turn ended with text, but the case is at methodology')), 'the narration was nudged');
+		if (!narrate) {
+			const refusal = toolResults(fake.requests.filter((request) => !systemText(request).includes('You were delegated a task')).at(-1)!).find((result) => /does not pass validate-methodology-navigator/.test(result));
+			assert.ok(refusal?.includes(NEXT_METHODOLOGY_FAILING), `the early open_review refusal says what resolve says: ${refusal?.slice(0, 300)}`);
+		}
 		const started = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 0).map(userText);
 		assert.equal(started.length, 5, 'the member relay, then code corrections until the plan passes');
 		for (const text of started.slice(1)) assert.match(text, /^MODE: METHODOLOGY CORRECTION\n[\s\S]*navigator\.status/);
