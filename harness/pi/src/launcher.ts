@@ -47,7 +47,7 @@ import { withInvestigationPacket } from './investigation-packet.ts';
 import { decideAnomaly, withAnomalyBlock } from './anomaly-decision.ts';
 import { assignDirection, directionBlock, directionCallBudget, directionDeliverable, directionsToRun, planDirections } from './directions.ts';
 import type { CancelRequest, EditorialRequest, ResearchRequest, SpawnRequest, SpawnResult } from './subagents.ts';
-import { bindActiveCase, nextAction, pythonAdapter, resolveCase, runsResearchRound, transitionArguments } from './tools/spotlight.ts';
+import { bindActiveCase, dispatchAt, nextAction, pythonAdapter, resolveCase, runsResearchRound, transitionArguments } from './tools/spotlight.ts';
 import type { ActiveCase } from './tools/spotlight.ts';
 import { PLANNING_PHASES, validateAfterWorker, validateFactCheckBatch, validateInvestigationInputs } from './validators.ts';
 import { recheckSources as recheck } from './recheck.ts';
@@ -506,6 +506,14 @@ async function caseStatus(harness: Harness): Promise<Record<string, unknown>> {
 	}
 }
 
+// Whether the next spotlight_resolve sends `role` a correction itself. The
+// methodology gate check's failure is the worker's own report. A resolver
+// error means no dispatch can be promised.
+async function resolveDispatches(harness: Harness, role: string, report: string): Promise<boolean> {
+	const state = await caseStatus(harness).catch(() => undefined);
+	return state !== undefined && dispatchAt(state, state.phase === 'methodology_approval' ? report : undefined)?.agent === role;
+}
+
 async function casePhase(harness: Harness): Promise<string> {
 	return String((await caseStatus(harness)).phase ?? '');
 }
@@ -959,9 +967,11 @@ async function withValidation(harness: Harness, role: string, text: string): Pro
 	// instruction while those inputs still fail validation.
 	const failedCase = /(?:^|\n)validate-case\.py: FAILED\n([\s\S]*?)(?=\n\n\S[^\n]*: (?:PASSED|FAILED)\b|$)/.exec(outcome.report)?.[1] ?? '';
 	const investigatorRepair = role === 'fact-checker' && failedCase.split('\n').some((line) => /^\s*• (?!\[fact-checker\])/.test(line));
-	// Failures the next spotlight_resolve corrects in code (dispatchAt): the
-	// plan's own methodology errors, and the fact-check validator's.
-	const resolveCorrects = (role === 'investigator' && /^\s*FAIL\s+methodology\.json/m.test(outcome.report)) || (role === 'fact-checker' && /(?:^|\n)validate-fact-check\.py: FAILED\b/.test(outcome.report));
+	// Say "call spotlight_resolve" only when the next resolve will send this
+	// worker its correction in code (dispatchAt on the resolved state). Where
+	// code does not dispatch (a member's follow-up, an open cycle, a phase code
+	// leaves to the model), the orchestrator sends the correction itself.
+	const resolveCorrects = !outcome.passed && !investigatorRepair && (await resolveDispatches(harness, role, outcome.report));
 	const verdict = outcome.passed ? 'all passed' : investigatorRepair
 		? 'FAILED: send the investigator its structural input errors before further fact-checking; keep fact-checker-owned errors with the fact-checker. Preserve completed valid fact-check claims.'
 		: resolveCorrects

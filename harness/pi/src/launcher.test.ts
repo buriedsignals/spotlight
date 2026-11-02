@@ -5278,7 +5278,7 @@ test('aborting the turn stops a worker the auto-continue started, and no continu
 // the correction the phase skill describes", and the model read
 // methodology.json or spawned by hand where the next spotlight_resolve sends
 // the correction in code. The result now says to resolve.
-test('a worker check that spotlight_resolve corrects tells the orchestrator to call spotlight_resolve', async (t) => {
+test('a failed worker check says call spotlight_resolve only when resolve will send the correction', async (t) => {
 	const checkResult = async (t: TestContext, agent: string, task: string, setUp: (space: Workspace, caseDir: string) => Promise<string | undefined>) => {
 		const fake = await startFakeOpenAI((request) => {
 			if (isWorkerRequest(request, agent)) return { text: 'Done.' };
@@ -5304,14 +5304,18 @@ test('a worker check that spotlight_resolve corrects tells the orchestrator to c
 		assert.match(result, /\[Harness checks after the investigator finished: FAILED: call spotlight_resolve next; it sends the worker this correction itself\./);
 		assert.doesNotMatch(result, /the phase skill describes/);
 	});
-	await t.test('a fact-check the fact-check validator fails', async (t) => {
+	// With a recorded cycle open, resolve leaves the next cycle to the model
+	// (dispatchAt, review-fix4 A2), so the result keeps the orchestrator's move.
+	for (const open of [false, true]) await t.test(`a fact-check the fact-check validator fails${open ? ', with a cycle open' : ''}`, async (t) => {
 		const result = await checkResult(t, 'fact-checker', 'Check the findings.', async (_space, caseDir) => {
 			execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'investigation_gate', '--activated', '--clean']);
+			if (open) execFileSync(PYTHON, [SEAM, 'record-attempt', 'investigation-cycle', '--gap', 'F1 has no stored source.', caseDir]);
 			const path = join(caseDir, 'data', 'fact-check.json');
 			await writeFile(path, JSON.stringify({ ...JSON.parse(await readFile(path, 'utf8')), claims: [] }));
 			return undefined;
 		});
 		assert.match(result, /validate-fact-check\.py: FAILED/);
-		assert.match(result, /\[Harness checks after the fact-checker finished: FAILED: call spotlight_resolve next; it sends the worker this correction itself\./);
+		const verdict = /\[Harness checks after the fact-checker finished: ([^\]]*)\]/.exec(result)?.[1];
+		assert.equal(verdict, open ? 'FAILED: send the worker the correction the phase skill describes' : 'FAILED: call spotlight_resolve next; it sends the worker this correction itself. Do not read the files or spawn the correction yourself.');
 	});
 });
