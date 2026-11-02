@@ -49,6 +49,11 @@ function checksAfter(role: string, phase: string, producerModel: string, context
 		const resolveRefs = { name: 'write-source-expressions.py --resolve-fact-check-refs', args: [script('write-source-expressions.py'), context.caseDir, '--resolve-fact-check-refs'] };
 		return [resolveRefs, caseCheck, { name: 'validate-fact-check.py', args: [script('validate-fact-check.py'), context.caseDir] }, ...indicatorCheck];
 	}
+	// The analyst's gate summary is checked by the case validator (it checks
+	// data/summary.json against the findings and the fact-check), its report
+	// draft by the draft's own check.
+	if (role === 'analyst' && phase === 'investigation_gate_approval') return [caseCheck];
+	if (role === 'analyst' && phase === 'report') return [{ name: 'validate-report-draft.py', args: [script('validate-report-draft.py'), context.caseDir] }];
 	if (role === 'analyst' && phase === 'ingest') {
 		// --review writes the draft for the ingest page, and the final batch when
 		// no flag awaits a disposition. The producer models are needed on the

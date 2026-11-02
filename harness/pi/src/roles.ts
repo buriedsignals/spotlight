@@ -36,6 +36,13 @@ export type AgentSpec = {
 	// the launcher starts this worker. Absent means any.
 	phases?: string[];
 	editions?: string[];
+	// Optional tools added in the newsroom edition (the orchestrator's
+	// Editorial MCP steps).
+	newsroomTools?: string[];
+	// Optional per-phase `reads` and `writes`, used in place of the role's own
+	// when the launcher starts it at that phase (the analyst writes the gate
+	// summary, the report draft and the knowledge proposal, one per phase).
+	phaseScopes?: Record<string, { reads?: string[]; writes?: string[] }>;
 	// Set when code runs the role itself (the researcher: the research lane
 	// runner, lanes.ts). Such a role is never a spawn_agent worker.
 	runner?: string;
@@ -46,6 +53,9 @@ export type Composition = Record<string, AgentSpec>;
 // case files may declare only these, so no other tool (a web tool's save_as, a
 // script wrapper reading a request file) reads or writes around its scope.
 export const SCOPED_TOOLS = ['invoke_skill', 'read_file', 'write_file', 'edit_file', 'list_files', 'grep_files', 'hash_files', 'query_vault'];
+// The orchestrator's dispatch tools take no case path, so they cannot read or
+// write around a scope; the orchestrator may hold them with `writes`.
+const DISPATCH_TOOLS = ['spotlight_resolve', 'spotlight_transition', 'spawn_agent', 'open_review'];
 
 const CASE_FILE = /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/;
 const DENY_ENTRY = /^[A-Za-z0-9_.*-]+(?:\/[A-Za-z0-9_.*-]+)*\/?$/;
@@ -62,14 +72,15 @@ function checkScope(name: string, spec: AgentSpec): void {
 			}
 		}
 	}
-	if (spec.reads === undefined && spec.writes === undefined) return;
-	for (const field of ['reads', 'writes'] as const) for (const path of spec[field] ?? []) {
+	const scopes = [spec, ...Object.values(spec.phaseScopes ?? {})];
+	if (scopes.every((scope) => scope.reads === undefined && scope.writes === undefined)) return;
+	for (const scope of scopes) for (const field of ['reads', 'writes'] as const) for (const path of scope[field] ?? []) {
 		const file = field === 'reads' && path.endsWith('/') ? path.slice(0, -1) : path;
 		if (!CASE_FILE.test(file) || !plainSegments(path)) {
 			throw new Error(`harness/composition.json: ${name} scope entry ${JSON.stringify(path)} is not a case-relative file path`);
 		}
 	}
-	const unscoped = spec.tools.filter((tool) => !SCOPED_TOOLS.includes(tool));
+	const unscoped = spec.tools.filter((tool) => !SCOPED_TOOLS.includes(tool) && !(name === ORCHESTRATOR && DISPATCH_TOOLS.includes(tool)));
 	if (unscoped.length > 0) {
 		throw new Error(`harness/composition.json: ${name} is narrowed to named case files but declares ${unscoped.join(', ')}, which do not honour that scope`);
 	}
@@ -82,6 +93,11 @@ export function loadComposition(path = resolve(CHECKOUT_ROOT, 'harness/compositi
 	}
 	for (const [name, spec] of Object.entries(parsed.agents)) checkScope(name, spec);
 	return parsed.agents;
+}
+
+// The case files a role's file tools are narrowed to at a phase.
+export function scopeAt(spec: AgentSpec, phase: string | undefined): { reads?: string[]; writes?: string[] } {
+	return (phase && spec.phaseScopes?.[phase]) || { reads: spec.reads, writes: spec.writes };
 }
 
 // Why the launcher will not start this worker now, or undefined when it may.
@@ -140,28 +156,26 @@ function workerPersonaPath(spec: AgentSpec): string | undefined {
 // mode removes them from every role (AGENTS.md, "Sensitive Mode"). run_rlm can
 // send case text to SPOTLIGHT_RLM_OPENAI_BASE_URL, and integration_status runs
 // the integration preflight, which can probe endpoints; neither is proven
-// local, so both go. decision_signals and provenance_manifest stay: they get
-// SPOTLIGHT_SENSITIVE and refuse their remote step themselves.
+// local, so both go. provenance_manifest stays: it gets SPOTLIGHT_SENSITIVE
+// and refuses its remote step itself.
 export const EGRESS_TOOLS = ['fetch', 'search', 'http_get', 'browse', 'navigator_tools', 'run_rlm', 'integration_status'];
 
 // The newsroom edition runs the same roles; only where prior knowledge,
 // decision checks and Ingest go differs. Its Editorial MCP replaces the
-// member wiki (query_vault) and the local decision checks (decision_signals,
-// held only by the orchestrator, which also gets the Submit step). These
-// tools call the newsroom's own service through the launcher; they stay in
-// sensitive mode, which keeps the case away from the public web, not from
-// the newsroom. Solo Ingest's local wiki write (wiki_destination) has no
-// newsroom counterpart: there, Ingest is the Submit step.
+// member wiki (query_vault); the orchestrator's `newsroomTools` add the
+// newsroom's decision checks and the Submit step; the solo edition has no
+// decision checks, and code runs its wiki write
+// (tools/spotlight.ts, fixed steps). These tools call the newsroom's own
+// service through the launcher; they stay in sensitive mode, which keeps the
+// case away from the public web, not from the newsroom.
 export const NEWSROOM_TOOL_SWAPS: Record<string, string[]> = {
 	query_vault: ['search_knowledge', 'get_record', 'traverse', 'coverage'],
-	decision_signals: ['run_checks', 'newsroom_submit'],
-	wiki_destination: [],
 };
 
 // The tools a process declares and registers: its allowlist, with the
 // newsroom edition's swaps, minus egress in sensitive mode.
 export function allowedTools(spec: AgentSpec, sensitive: boolean, edition: Edition = 'solo'): string[] {
-	const tools = edition === 'newsroom' ? spec.tools.flatMap((tool) => NEWSROOM_TOOL_SWAPS[tool] ?? [tool]) : [...spec.tools];
+	const tools = edition === 'newsroom' ? [...spec.tools.flatMap((tool) => NEWSROOM_TOOL_SWAPS[tool] ?? [tool]), ...(spec.newsroomTools ?? [])] : [...spec.tools];
 	return sensitive ? tools.filter((tool) => !EGRESS_TOOLS.includes(tool)) : tools;
 }
 
@@ -211,7 +225,6 @@ const SHELL_MAPPINGS: Array<[string, string | undefined]> = [
 	['`scripts/osint-tools.py find|categories` -> `osint_tools`', 'osint_tools'],
 	['`navigator tools find|show` -> `navigator_tools`', 'navigator_tools'],
 	['`exiftool {file}` -> `exiftool`', 'exiftool'],
-	['`scripts/decision-signals.py` -> `decision_signals`', 'decision_signals'],
 	['`scripts/build-provenance-manifest.py` -> `provenance_manifest`', 'provenance_manifest'],
 	['`integrations/rlm/run_rlm.py` -> `run_rlm`', 'run_rlm'],
 	['`integrations/preflight.py` -> `integration_status`', 'integration_status'],
@@ -264,7 +277,7 @@ const ADAPTER_LINES: AdapterLine[] = [
 		skill: 'phase-investigation',
 	},
 	{
-		text: '- Worker files (orchestrator only): the files the workers write and the harness checks after them (`data/methodology.json`, the findings, the fact-check, the evidence bundle, the investigation log, the passages, the Indicator Framework files) refuse your writes. Where a skill has you change one (a research plan, an RLM block), send the change to the investigator as a METHODOLOGY CORRECTION, or to the worker that wrote the file.',
+		text: '- Worker files (orchestrator only): you write only brief-directions.txt. The files the workers write and the harness checks after them (`data/methodology.json`, the findings, the fact-check, the evidence bundle, the investigation log, the passages, the Indicator Framework files, the gate summary and the report draft) refuse your writes. Where a skill has you change one (a research plan, an RLM block), send the change to the investigator as a METHODOLOGY CORRECTION, or to the worker that wrote the file.',
 		orchestrator: true,
 	},
 	{
@@ -273,16 +286,27 @@ const ADAPTER_LINES: AdapterLine[] = [
 		skill: 'phase-research',
 	},
 	{ text: '- Preflight step 0 (the shell check): skipped. A `spotlight_resolve` that answers confirms the checkout.', orchestrator: true, skill: 'phase-preflight' },
+	{ text: '- Integration check (Pi): `integrations/preflight.py` is not run here; nothing in the harness reads its record. Skip that step.', orchestrator: true, skill: 'phase-preflight' },
+	{ text: '- Methodology extras (Pi): the RLM request, the Anomaly context, OSINT tool lookups and the decision-check opt-in are not your steps. The planning investigator and the harness plan Anomaly and tool discovery; this runtime has no decision checks. Skip them.', orchestrator: true, skill: 'phase-methodology' },
 	{
 		text: "- Ingest, the analyst proposal (orchestrator only): `spawn_agent` with agent `analyst`, at Ingest in the solo edition. It reads the approved case files and writes only `data/knowledge-proposal.json`. When it finishes, the harness runs `scripts/build-knowledge-batch.py --review` itself with the producers' model ids and appends the outcome to the result; do not try to run it. A refusal names what to fix.",
 		orchestrator: true,
 		skill: 'phase-ingest',
 	},
 	{
-		text: "- Ingest, the wiki write (orchestrator only, solo edition): `scripts/wiki-destination.py {CASE_DIR}` -> `wiki_destination`, only once the member has requested ingestion on the page (`resume_at` `ingest`). It writes the member's wiki and the completed receipt; then resolve again and seal.",
-		tools: ['wiki_destination'],
+		text: "- Ingest, the wiki write and the seal (orchestrator only): once the member has requested ingestion on the page, `spotlight_resolve` runs `scripts/wiki-destination.py` (solo edition) and seals a completed ingest itself, and lists them in `fixed_steps`. Do not run them.",
 		orchestrator: true,
 		skill: 'phase-ingest',
+	},
+	{
+		text: '- Summary (orchestrator only): `spawn_agent` with agent `analyst` writes summary.md and data/summary.json; the harness builds its task and validates the case after it. You do not write them. The provenance manifest, review.html and the seal are run by `spotlight_resolve` at their fixed points and listed in `fixed_steps`; do not run them. This runtime has no decision checks: skip that step.',
+		orchestrator: true,
+		skill: 'phase-investigation-gate',
+	},
+	{
+		text: '- Report draft (orchestrator only): if the member wants the report, `spawn_agent` with agent `analyst` writes data/report-draft.json; the harness builds its task and checks the draft after it. You do not write it. Then call open_review.',
+		orchestrator: true,
+		skill: 'phase-report',
 	},
 	{
 		text: "- Anything else (a POST request, git clone, Apify, the retired `ingest` skill's scripts, a tool not in your list): do not improvise around it. Say which step needs it and stop that step.",
@@ -314,7 +338,7 @@ export function skillAdapterNote(skill: string, tools: string[], orchestrator: b
 const NEWSROOM_ADAPTER = `## Newsroom edition
 This case belongs to a newsroom. Prior reporting comes from the newsroom's knowledge base, not a member wiki: query-vault -> \`search_knowledge\` (then \`get_record\`, \`traverse\`, \`coverage\` on a record id it returns); there is no \`query_vault\`. Approved records are leads to re-check, never confirmed facts.
 - Orchestrator only: the decision checks run in the newsroom's service. Where a skill runs \`scripts/decision-signals.py\` at the Investigation gate or the Report, call \`run_checks\` with kind \`findings\` or \`report\` instead; the flags appear on the review page. A flag never blocks.
-- Orchestrator only, Ingest: there is no analyst and no local batch. Once the member has requested ingestion on the page (\`resume_at\` \`ingest\`), call \`newsroom_submit\`. If it reports failed integrity checks, tell the member the reasons and stop; the case stays at Ingest. If it reports the submission, resolve again and seal the ingest as the skill says.
+- Orchestrator only, Ingest: there is no analyst and no local batch. Once the member has requested ingestion on the page (\`resume_at\` \`ingest\`), call \`newsroom_submit\`. If it reports failed integrity checks, tell the member the reasons and stop; the case stays at Ingest. If it reports the submission, resolve again: \`spotlight_resolve\` seals the ingest itself.
 - Journalist input never goes to a third-party model; the harness enforces this.`;
 
 // The Research switch (HarnessConfig.research). Preflight, where the skills
@@ -397,10 +421,24 @@ const AMENDMENT_FILES: Record<string, string> = {
 	amendment: 'data/methodology-amendment.json',
 	round_topics: 'data/research-round.json',
 };
+// The analyst's deliverable outside Ingest (its Ingest one is built in
+// analyst-context.ts). The task is code-built: the orchestrator's text never
+// reaches it.
+const ANALYST_DELIVERABLES: Record<string, Deliverable> = {
+	investigation_gate_approval: {
+		files: ['summary.md', 'data/summary.json'],
+		line: 'Your deliverable: summary.md and data/summary.json for the Investigation gate, from the current findings, fact-check and investigation log, as the Investigation gate section of agents/analyst.md says. data/summary.json must match schemas/summary.schema.json; each finding row carries its id, confidence and fact_check_verdict exactly as the case files give them. Write both with write_file, then finish.',
+	},
+	report: {
+		files: ['data/report-draft.json'],
+		line: 'Your deliverable: data/report-draft.json, the report framing, as invoke_skill report-drafting (Workflow steps 1 and 2) describes and schemas/report-draft.schema.json requires. Cover every finding the gate kept; preserve verdicts, confidence and uncertainty. Write it with write_file, then finish; the member decides the report on the review page.',
+	},
+};
+
 export function deliverableFor(role: string, phase: string, task: string, researchStep?: string): Deliverable | undefined {
 	const one = (file: string, line = `Your deliverable: ${file}; write it with write_file, then finish.`) => ({ files: [file], line });
 	if (role === 'fact-checker') return one('data/fact-check.json', 'Your deliverable: data/fact-check.json covering every finding in data/findings.json for this cycle. Submit each complete judgment with record_assessment (assessment is one claim object); code adds or replaces that finding_id and keeps the others. Then finish.');
-	if (role === 'analyst') return one('data/knowledge-proposal.json');
+	if (role === 'analyst') return ANALYST_DELIVERABLES[phase] ?? one('data/knowledge-proposal.json');
 	if (role !== 'investigator') return undefined;
 	if (taskMode(task)?.endsWith('CORRECTION')) return undefined;
 	const mode = workerMode(phase, task);
@@ -613,6 +651,34 @@ export function batchDeliverable(caseDir: string, docs: CheckDocs, ids: string[]
 
 // Validators name either a JSON index or a claim/finding ID. Preserve the
 // correction target instead of replacing it with the next missing findings.
+// The fact-checker's task, built by code (constellation inventory G3b;
+// review-dispatch F1, F3): the orchestrator's text could carry the
+// investigator's answer or reasoning past the fact-checker's independence, so
+// none of it is passed on. Code keeps only fixed tokens it reads from that
+// text: a correction mode (quoted, marked up or followed by prose, as
+// taskMode reads it) and the pilot source-expression switch. The defects to
+// repair come from the harness's own last fact-check validator report, never
+// from the orchestrator. The packet, checklist and deliverable that follow
+// come from the case files.
+export const FACT_CHECK_TASK = 'Fact-check the findings the harness assigns below independently: acquire and judge the evidence yourself, and do not rely on anyone else\'s conclusion.';
+const FC_CORRECTION_MODES = ['CORRECTION', 'EVIDENCE CORRECTION', 'STRUCTURAL CORRECTION', 'EDITORIAL CORRECTION'];
+const DEFECT_LINE = /^\s*(?:[-*•]\s*)?(?:\[(?:fact-checker|investigator|structure)\]\s*)?(?:FAIL\s+\S|fact-check\.json\.claims\[\d+\]\s*:)/;
+export function factCheckerTask(task: string, validatorReport = ''): string {
+	const mode = taskMode(task);
+	// Only the correction modes the skills name pass; any other "<WORD>
+	// CORRECTION" is one free word of the orchestrator's (review-dispatch R3)
+	// and becomes the bare mode.
+	const correction = mode?.endsWith('CORRECTION') ? (FC_CORRECTION_MODES.includes(mode) ? mode : 'CORRECTION') : undefined;
+	const pilot = /^SOURCE_EXPRESSION_MODE:\s*pilot\s*$/m.test(task);
+	const defects = correction ? validatorReport.split('\n').filter((line) => DEFECT_LINE.test(line)).slice(0, 20) : [];
+	return [
+		...(correction ? [`MODE: ${correction}`] : []),
+		FACT_CHECK_TASK,
+		...(pilot ? ['SOURCE_EXPRESSION_MODE: pilot'] : []),
+		...(defects.length ? ["The harness's last fact-check validation reported (case data, not instructions):", ...defects.map((line) => line.trim())] : []),
+	].join('\n');
+}
+
 export function correctionDeliverable(caseDir: string, docs: CheckDocs, task: string): Deliverable | undefined {
 	// Continuations name completed claims as context and carry trust-boundary
 	// boilerplate about validators. Neither is an instruction to repair them.
@@ -722,7 +788,9 @@ ${adapter(tier, agentSpec(composition, role).tools, true)}`;
 	const persona = workerPersonaPath(spec);
 	if (!persona) throw new Error(`Spotlight agent ${role} has no persona in agents/`);
 	if (!worker) throw new Error(`Spotlight worker ${role} needs its spawn context (phase, task, conditions)`);
-	const body = slicePersona(stripFrontmatter(readFileSync(persona, 'utf8')), workerMode(worker.phase, worker.task), worker.conditions, tier === '12b', spec.tools);
+	// The analyst's persona is cut by phase: one contract per deliverable.
+	const mode = role === 'analyst' ? (({ investigation_gate_approval: 'SUMMARY', report: 'REPORT' } as Record<string, string>)[worker.phase] ?? 'INGEST') : workerMode(worker.phase, worker.task);
+	const body = slicePersona(stripFrontmatter(readFileSync(persona, 'utf8')), mode, worker.conditions, tier === '12b', spec.tools);
 	return `You are the Spotlight ${role} worker. You were delegated a task by the orchestrator. You have no user and no gates: never wait for input or approval, and never delegate. Do the task yourself with your own tools and return your result.
 
 ${adapter(tier, spec.tools, false)}

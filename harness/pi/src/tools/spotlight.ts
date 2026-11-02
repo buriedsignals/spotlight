@@ -11,8 +11,10 @@ const ADAPTER = resolve(CHECKOUT_ROOT, 'scripts/spotlight-orchestration.py');
 
 // The only transitions a model may request. Gate approvals, the report
 // decision and the ingest request or decline come from the review page.
-export const MODEL_OPERATIONS = ['recordAttempt', 'sealInvestigationGate', 'decideIngest', 'startResearchRound', 'recordAmendment', 'continueWithoutResearch'] as const;
-type ModelOperation = (typeof MODEL_OPERATIONS)[number];
+export const MODEL_OPERATIONS = ['recordAttempt', 'startResearchRound', 'recordAmendment', 'continueWithoutResearch'] as const;
+// The seals are mechanical: spotlight_resolve applies them at their fixed points.
+const CODE_OPERATIONS = ['sealInvestigationGate', 'decideIngest'] as const;
+type ModelOperation = (typeof MODEL_OPERATIONS)[number] | (typeof CODE_OPERATIONS)[number];
 type Payload = Record<string, unknown>;
 
 export type AdapterRunner = (arguments_: string[], signal?: AbortSignal) => Promise<string>;
@@ -90,7 +92,7 @@ function stringField(payload: Payload, name: string): string {
 // Refuses anything outside the model's operations, whatever the schema let
 // through. The refusal names where the decision does come from.
 // `role` is the harness's: the process role that holds the tool, never model input.
-export function transitionArguments(operation: unknown, payload: Payload, active: ActiveCase, role: string): string[] {
+export function transitionArguments(operation: unknown, payload: Payload, active: ActiveCase, role: string, byCode = false): string[] {
 	const boundary = ['--authorized-cases-root', active.casesRoot, active.caseDir];
 	if (operation === 'requestFollowUp') {
 		throw new TransitionRefused(
@@ -98,7 +100,7 @@ export function transitionArguments(operation: unknown, payload: Payload, active
 		);
 	}
 
-	if (!MODEL_OPERATIONS.includes(operation as ModelOperation)) {
+	if (!MODEL_OPERATIONS.includes(operation as never) && !(byCode && CODE_OPERATIONS.includes(operation as never))) {
 		throw new TransitionRefused(
 			`spotlight_transition refuses "${String(operation)}": gate approvals and the report decision are recorded by the review page, not by the model.`,
 		);
@@ -230,6 +232,49 @@ function jsonResult(value: unknown) {
 	return { content: [{ type: 'text' as const, text: JSON.stringify(value) }], details: undefined };
 }
 
+// Dispatch audit (constellation-20261102, reports/dispatch-audit.md): in the
+// recorded runs the orchestrator ran provenance, review.html, the wiki write
+// and both seals only when the resolver's resume point named them. Code now
+// runs each at that point. A step that fails stops the run with its output;
+// nothing is retried here.
+export type FixedStep = 'provenance' | 'review' | 'wiki' | 'seal_gate' | 'seal_ingest';
+// Runs one program step; undefined when the step does not apply here (the
+// newsroom edition has no wiki write).
+export type FixedStepRunner = (step: FixedStep, signal?: AbortSignal) => Promise<string | undefined>;
+
+export function fixedStepAt(resolved: Record<string, unknown>): FixedStep | undefined {
+	const gate = (resolved.investigation_gate as { resume_at?: unknown } | undefined)?.resume_at;
+	const ingest = resolved.ingest as { resume_at?: unknown; state?: unknown } | undefined;
+	if (resolved.phase === 'investigation_gate_finalization') return ({ provenance: 'provenance', review: 'review', seal: 'seal_gate' } as Record<string, FixedStep>)[String(gate)];
+	if (resolved.phase === 'ingest' && ingest?.resume_at === 'ingest' && ingest.state === 'requested') return 'wiki';
+	if (resolved.phase === 'ingest' && ingest?.resume_at === 'seal' && ingest.state === 'completed') return 'seal_ingest';
+	return undefined;
+}
+
+// Runs the fixed steps the resolved state reaches, resolving after each, and
+// returns the last state with the steps' receipts.
+async function runFixedSteps(resolved: Record<string, unknown>, active: ActiveCase, runAdapter: AdapterRunner, role: string, runStep: FixedStepRunner, signal?: AbortSignal): Promise<Record<string, unknown>> {
+	const receipts: Array<{ step: FixedStep; ok: boolean; output: string }> = [];
+	let state = resolved;
+	for (let step = fixedStepAt(state); step && receipts.length < 6; step = fixedStepAt(state)) {
+		let output: string | undefined;
+		try {
+			if (step === 'seal_gate' || step === 'seal_ingest') {
+				output = await runAdapter(step === 'seal_gate' ? transitionArguments('sealInvestigationGate', {}, active, role, true) : transitionArguments('decideIngest', { decision: 'completed' }, active, role, true));
+			} else {
+				output = await runStep(step, signal);
+			}
+		} catch (error) {
+			receipts.push({ step, ok: false, output: (error as Error).message.slice(0, 2000) });
+			break;
+		}
+		if (output === undefined) break;
+		receipts.push({ step, ok: true, output: output.slice(0, 600) });
+		state = await resolveCase(active, runAdapter, signal);
+	}
+	return receipts.length ? { ...state, fixed_steps: receipts } : state;
+}
+
 // Code runs the round while the resolver waits for merged lanes or their
 // triage; the other Research steps (a stall round's topics, the suggested
 // marks, the amendment) are the model's.
@@ -254,15 +299,16 @@ export const GATE_APPROVAL_REFUSAL =
 	'Only the member approves a gate; spotlight_transition cannot. When the step is ready for review, call open_review to show the member the review page, then end your turn and wait for their decision.';
 const APPROVAL_LIKE = /approv|accept|confirm|reject|sign.?off|decide|gate/i;
 
-export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, role: string, research?: ResearchRunner, evidenceValidates?: EvidenceCheck, onTransition?: () => void): ToolDefinition[] {
+export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, role: string, research?: ResearchRunner, evidenceValidates?: EvidenceCheck, onTransition?: () => void, runStep?: FixedStepRunner): ToolDefinition[] {
 	const resolveTool: ToolDefinition = {
 		name: 'spotlight_resolve',
 		label: 'Spotlight resolve',
 		description:
-			'Resolve the durable phase, owner, requirements, attempts, and resume point for the harness-bound active Spotlight case. At Research the harness first runs the approved research topics itself and adds the round\'s outcome as research_round. Set retry_research only when the member asks to retry a research round that stopped.',
+			'Resolve the durable phase, owner, requirements, attempts, and resume point for the harness-bound active Spotlight case. At Research the harness first runs the approved research topics itself and adds the round\'s outcome as research_round. After an approved Investigation gate or a requested ingest it runs the mechanical steps (provenance, review.html, the wiki write, the seals) itself and lists them as fixed_steps. Set retry_research only when the member asks to retry a research round that stopped.',
 		parameters: Type.Object({ retry_research: Type.Optional(Type.Boolean()) }),
 		async execute(_id, params, signal) {
-			const resolved = await resolveCase(active, runAdapter, signal);
+			const first = await resolveCase(active, runAdapter, signal);
+			const resolved = runStep ? await runFixedSteps(first, active, runAdapter, role, runStep, signal) : first;
 			// Approval of the methodology is what starts Research: the resolver
 			// reports the phase and code runs the approved topics. The model only
 			// resolves; it chooses no topic and starts no swarm.
@@ -275,7 +321,7 @@ export function spotlightTools(active: ActiveCase, runAdapter: AdapterRunner, ro
 		name: 'spotlight_transition',
 		label: 'Spotlight transition',
 		description:
-			'Apply one validated transition to the harness-bound active Spotlight case, then return its newly resolved state. Allowed: recordAttempt {kind, gap}, sealInvestigationGate {}, decideIngest {decision: "completed"}, startResearchRound {} (after writing data/research-round.json), recordAmendment {} (after writing data/methodology-amendment.json), continueWithoutResearch {} (only when the member asks, while Research is off). Gate approvals and the report decision are recorded by the review page, never through this tool.',
+			'Apply one validated transition to the harness-bound active Spotlight case, then return its newly resolved state. Allowed: recordAttempt {kind, gap}, startResearchRound {} (after writing data/research-round.json), recordAmendment {} (after writing data/methodology-amendment.json), continueWithoutResearch {} (only when the member asks, while Research is off). Gate approvals and the report decision are recorded by the review page, and the seals are applied by spotlight_resolve, never through this tool.',
 		parameters: Type.Object({
 			operation: Type.Union(MODEL_OPERATIONS.map((name) => Type.Literal(name))),
 			payload: Type.Optional(Type.Record(Type.String(), Type.Unknown())),

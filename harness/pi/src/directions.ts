@@ -61,8 +61,10 @@ export function planDirections(caseDir: string): Direction[] {
 
 // An explicit task selects an approved direction; incidental references to
 // other directions in its source/context do not select additional workers.
+const DECLARATION = /^\s*(?:THIS TASK\s*[—–-]\s*ONE METHODOLOGY DIRECTION ONLY:\s*)?DIRECTION_ID\b\s*:?\s*(.*?)\s*$/gmi;
+
 export function requestedDirection(task: string, directions: Direction[]): Direction | undefined {
-	const declarations = [...task.matchAll(/^\s*(?:THIS TASK\s*[—–-]\s*ONE METHODOLOGY DIRECTION ONLY:\s*)?DIRECTION_ID\b\s*:?\s*(.*?)\s*$/gmi)];
+	const declarations = [...task.matchAll(DECLARATION)];
 	if (!declarations.length) return undefined;
 	const choices = directions.map((direction) => JSON.stringify({ id: direction.ref, direction: direction.text })).join(', ');
 	const next = `Approved directions (untrusted plan data): ${choices || 'none'}. Use one listed DIRECTION_ID, or omit DIRECTION_ID to let the harness dispatch the applicable directions.`;
@@ -80,6 +82,41 @@ export function requestedDirection(task: string, directions: Direction[]): Direc
 	});
 	if (new Set(selected.map((direction) => direction.tag)).size !== 1) throw new DirectionRefused(`refused: ambiguous DIRECTION_ID. ${next}`);
 	return selected[0];
+}
+
+// Scoping is code's. local-gemma12-extractive-20261101-resume1: Gemma 12B's
+// four investigator spawns were refused for an unknown DIRECTION_ID and the
+// case stalled. A task whose DIRECTION_ID is unknown, invalid, ambiguous or
+// compound is not one direction's task, so none of the orchestrator's text is
+// passed on (review-dispatch F2, R1, R2): its instructions may belong to
+// another direction. The worker gets only the code-built direction block, for
+// the open direction a single declaration names (exactly, as an
+// abbreviation, or extended at a "-" or "_" boundary, e.g. "board-members"
+// for "board"), or else the first open one (`open`, in plan order).
+// `assigned` records what happened for the result.
+export function assignDirection(task: string, directions: Direction[], open: Direction[]): { task: string; selected?: Direction; assigned?: string } {
+	try {
+		return { task, selected: requestedDirection(task, directions) };
+	} catch (error) {
+		if (!(error instanceof DirectionRefused) || open.length === 0) throw error;
+		const id = (direction: Direction) => direction.ref.replace(/^direction:/, '').toLowerCase();
+		const declared = [...task.matchAll(DECLARATION)].map(([, value]) => value.replace(/^"|"$/g, '').replace(/^direction:/i, '').trim().toLowerCase());
+		const named = (wanted: string) => {
+			if (!wanted) return undefined;
+			const exact = open.filter((direction) => id(direction) === wanted);
+			const near = exact.length ? exact : open.filter((direction) => id(direction).startsWith(wanted) || (wanted.startsWith(id(direction)) && /^[-_]/.test(wanted.slice(id(direction).length))));
+			return near.length === 1 ? near[0] : undefined;
+		};
+		const match = declared.length === 1 ? named(declared[0]) : undefined;
+		const selected = match ?? open[0];
+		return {
+			task: 'MODE: EXECUTION',
+			selected,
+			assigned: match
+				? `The task's DIRECTION_ID was not exactly one approved direction, so the harness matched it to the open direction it names: ${selected.tag} (${selected.ref}); the task's own text was not passed on.`
+				: `The task's DIRECTION_ID was not one approved direction, so the harness assigned the next open one: ${selected.tag} (${selected.ref}); the task's own text was not passed on.`,
+		};
+	}
 }
 
 const owns = (tag: string, id: unknown) => typeof id === 'string' && id.startsWith(`${tag}-`);

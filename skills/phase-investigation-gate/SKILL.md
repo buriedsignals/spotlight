@@ -19,6 +19,10 @@ inferring a substep from artifact presence.
 
 ## Generate summary
 
+In the Pi harness the analyst worker writes both files: call `spawn_agent`
+with agent `analyst`. The harness builds its task and validates the case after
+it; you do not write them. Other runtimes follow the steps below.
+
 `write-file("{CASE_DIR}/summary.md", <content>)` as a human-readable markdown document:
 
 ```markdown
@@ -94,6 +98,8 @@ Fix every reported `summary.json` error and re-run before calling
 `fact_check_verdict`.
 
 ## Decision checks (optional)
+
+**Pi harness:** this runtime has no decision checks; skip this section.
 
 **Newsroom edition:** the decision checks run in the newsroom's service, not
 here. Call `run_checks` with kind `findings` instead of the steps below; its
@@ -197,6 +203,10 @@ The human gate ends the turn. On resume, resolve and follow `resume.resume_at`;
 do not skip directly to report.
 
 ## Finalize an approved Investigation gate
+
+In the Pi harness `spotlight_resolve` runs the provenance, review and seal
+steps below itself and lists them in `fixed_steps`; resolve and follow what it
+returns. Other runtimes run them as written.
 
 ### `resume_at: provenance`
 

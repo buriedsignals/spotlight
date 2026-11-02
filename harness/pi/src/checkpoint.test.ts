@@ -233,7 +233,7 @@ test('after a fold the same skill loads in full again, with its phase lines', as
 	const loads = fake.requests
 		.filter((request) => !isSummaryRequest(request) && request.messages.at(-1)?.role === 'tool')
 		.map((request) => toolText(request.messages.at(-1)!.content));
-	const phaseLine = /- Ingest, the wiki write \(orchestrator only, solo edition\)/;
+	const phaseLine = /- Ingest, the wiki write and the seal \(orchestrator only\)/;
 	assert.match(loads[0], phaseLine, 'the first load carries the phase lines');
 	assert.equal(loads[1], skillAlreadyLoaded('phase-ingest'), 'a repeat before the fold points back at the first load');
 	const last = loads.at(-1)!;

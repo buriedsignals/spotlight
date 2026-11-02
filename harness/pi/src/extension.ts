@@ -9,9 +9,10 @@ import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
 import { applyFixedRequestBody, parseFixedRequestBody, withoutHistoryReasoning } from './provider-policy.ts';
 import { PROVIDER_ID } from './pi-process.ts';
-import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, checkPacket, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
+import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, loadComposition, checkPacket, scopeAt, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
 import { READ_TRUNCATED, canonicalWriteCall, readTarget, writeConfined } from './tools/case-files.ts';
 import { typedTools } from './tools/index.ts';
+import { fixedStepRunner } from './tools/programs.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/hosted-skill.ts';
 import { recordIndicatorFrameworkTool } from './tools/indicator-framework.ts';
@@ -47,7 +48,7 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 		python,
 		configPath: process.env.SPOTLIGHT_CONFIG || `${CHECKOUT_ROOT}/.spotlight-config.json`,
 		env: process.env,
-		scope: { reads: spec.reads, writes: spec.writes, denyReads: spec.denyReads, denyWrites: spec.denyWrites },
+		scope: { ...scopeAt(spec, process.env.SPOTLIGHT_PHASE), denyReads: spec.denyReads, denyWrites: spec.denyWrites },
 	};
 	const tools: ToolDefinition[] = [
 		invokeSkillTool(skillsFor(composition, role), hosted, (skill) => skillAdapterNote(skill, spec.tools, role === ORCHESTRATOR)),
@@ -63,7 +64,7 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 		pi.on('before_agent_start', (event) => {
 			if (event.messageType === 'user') resetFactCheckerCycle(cycle);
 		});
-		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle)));
+		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition)));
 		tools.push(spawnAgentTool(spawnableWorkers(composition), cycle));
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter))));
 		tools.splice(0, tools.length, ...tools.map((tool) => keepGateBound(tool, active.caseDir, async () => String((await resolveCase(active, runAdapter)).phase ?? ''))));
