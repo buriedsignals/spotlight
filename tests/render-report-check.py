@@ -406,6 +406,24 @@ def check_set_aside_findings(root: Path) -> None:
     assert result.returncode != 0 and "NO_REPORTABLE_FINDINGS" in result.stdout, result.stdout + result.stderr
 
 
+def check_disposition_kept_finding(root: Path) -> None:
+    """r6 on fix5: a false finding the member kept at the Investigation gate
+    has a disposition "keep" and no selection item. It is kept: a draft that
+    omits it is refused, and the refusal says why, in the words the skill and
+    the analyst's task use."""
+    case = build_case(root / "kept-false")
+    check_path = case / "data" / "fact-check.json"
+    check = json.loads(check_path.read_text())
+    check["claims"][1]["verdict"] = "false"
+    write_json(check_path, check)
+    gate_review(case, {"selection:F1": True, "disposition:F2": "keep"})
+    only_finding(case, "F1")
+    result = subprocess.run([sys.executable, str(ROOT / "scripts" / "validate-report-draft.py"), str(case)],
+                            capture_output=True, text=True)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "missing=['F2']" in result.stdout and "disposition keep (no selection item, any verdict, false included) is kept" in result.stdout, result.stdout
+
+
 def main() -> int:
     check_not_checkable_aggregation()
     with tempfile.TemporaryDirectory(prefix="render-report-") as tmp:
@@ -425,6 +443,7 @@ def main() -> int:
             assert "evidence-correction pass" not in output.read_text(), output.name
         check_public_sources(Path(tmp) / "public-sources")
         check_set_aside_findings(Path(tmp))
+        check_disposition_kept_finding(Path(tmp))
         assert "<script>alert('unsafe')</script>" not in html
         assert "&lt;script&gt;alert" in html
         assert "<script>alert('unsafe')</script>" not in markdown
