@@ -557,6 +557,12 @@
   }
   .rpill { display: block; width: max-content; margin-top: 5px; padding: 2px 8px; border-radius: 0; border: 1px solid rgba(231, 199, 106, 0.6); font-weight: 400; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
   .rg.on .rlab { border-color: #e7c76a; }
+  /* Member chips link out (the rail is aria-hidden; the step copy carries the accessible links). */
+  a.rlab { display: block; cursor: pointer; transition: border-color 0.2s, background 0.2s, color 0.2s, transform 0.2s; }
+  a.rlab::after { content: "↗"; position: absolute; top: 5px; right: 8px; font-size: 11px; opacity: 0.55; transition: opacity 0.2s; }
+  a.rlab:hover { border-color: #e7c76a; background: rgba(231, 199, 106, 0.14); color: #f4dc8f; transform: translateY(-50%) translateX(2px); }
+  a.rlab:hover::after { opacity: 1; }
+  a.rlab:hover .rpill { background: #e7c76a; color: var(--ink); border-color: #e7c76a; }
   .rlanes { display: grid; grid-template-columns: repeat(5, 14px); gap: 26px; height: 160px; }
   /* one colour per lane, as in the launch video */
   .rlanes i { --c: var(--accent-warm); display: block; border-radius: 0; border: 1px dashed color-mix(in srgb, var(--c) 60%, transparent); position: relative; overflow: hidden; }
@@ -1963,7 +1969,7 @@
         <div class="rail-track" id="rail-track">
           <div class="rg" data-g="0">
             <span class="rn rn-io">Lead</span>
-            <span class="rn">Methodology<em class="rlab">🧭 OSINT Navigator<b class="rpill">Members</b></em></span>
+            <span class="rn">Methodology<a class="rlab" href="https://navigator.indicator.media/" target="_blank" rel="noopener" tabindex="-1">🧭 OSINT Navigator<b class="rpill">Members</b></a></span>
             <span class="rn rn-gate">You approve the plan</span>
           </div>
           <div class="rg" data-g="1">
@@ -1985,7 +1991,7 @@
             <span class="rn">Findings<em class="rsub">evidence attached</em></span>
           </div>
           <div class="rg" data-g="4">
-            <span class="rn rn-gate">Investigation gate<em class="rlab">🧩 Indicator Framework<b class="rpill">Members</b></em></span>
+            <span class="rn rn-gate">Investigation gate<a class="rlab" href="https://indicator.media/indicator-lab" target="_blank" rel="noopener" tabindex="-1">🧩 Indicator Framework<b class="rpill">Members</b></a></span>
             <span class="rn rn-gate">Report and ingest</span>
           </div>
           <div class="rg" data-g="5">
