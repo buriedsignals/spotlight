@@ -54,6 +54,10 @@
     --red: #a83838;
     /* Pre-mixed accent-warm fades (used in CTA hovers, selected states) */
     --accent-warm-14: rgba(193, 106, 52, 0.14);
+    /* Agent and lane colours, shared with the Spotlight 2.0 launch video. */
+    --agent-investigator: #ffc28a;
+    --agent-factchecker: #7cb7ff;
+    --agent-decision: #b48cff;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--ink); color: var(--paper); }
@@ -540,7 +544,11 @@
   .rn-out { background: transparent; color: var(--paper); border: 3px double var(--paper); }
   .rn-gate { background: var(--accent-warm); border-color: var(--accent-warm); color: var(--ink); width: 220px; }
   .rn-check { background: rgba(91, 143, 196, 0.16); border-color: #5b8fc4; }
-  .rn-agent { background: rgba(193, 106, 52, 0.08); border-color: rgba(193, 106, 52, 0.6); width: 210px; }
+  .rn-agent { --c: var(--accent-warm); background: color-mix(in srgb, var(--c) 9%, transparent); border-color: color-mix(in srgb, var(--c) 65%, transparent); color: var(--c); width: 210px; }
+  .rn-inv { --c: var(--agent-investigator); }
+  .rn-fc { --c: var(--agent-factchecker); }
+  .rn-triage { background: color-mix(in srgb, var(--agent-decision) 12%, transparent); border-color: var(--agent-decision); color: var(--agent-decision); }
+  .rn-triage .rsub { color: color-mix(in srgb, var(--agent-decision) 70%, var(--paper)); }
   .rlab {
     position: absolute; left: calc(100% + 14px); top: 50%; transform: translateY(-50%);
     width: 132px; text-align: left; line-height: 1.4; font-size: 11px; letter-spacing: 0.02em; color: #e7c76a;
@@ -550,11 +558,10 @@
   .rpill { display: block; width: max-content; margin-top: 5px; padding: 2px 8px; border-radius: 0; border: 1px solid rgba(231, 199, 106, 0.6); font-weight: 400; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
   .rg.on .rlab { border-color: #e7c76a; }
   .rlanes { display: grid; grid-template-columns: repeat(5, 14px); gap: 26px; height: 160px; }
-  .rlanes i { display: block; border-radius: 0; border: 1px dashed rgba(193, 106, 52, 0.6); position: relative; overflow: hidden; }
-  .rlanes i.loc { border-color: rgba(237, 232, 220, 0.45); }
+  /* one colour per lane, as in the launch video */
+  .rlanes i { --c: var(--accent-warm); display: block; border-radius: 0; border: 1px dashed color-mix(in srgb, var(--c) 60%, transparent); position: relative; overflow: hidden; }
   .rlanes i::after { content: ""; position: absolute; inset: 0; transform-origin: top; transform: scaleY(0.15);
-    background: linear-gradient(to bottom, rgba(193, 106, 52, 0.2), var(--accent-warm)); transition: transform 0.6s ease; }
-  .rlanes i.loc::after { background: linear-gradient(to bottom, rgba(237, 232, 220, 0.12), rgba(237, 232, 220, 0.8)); }
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--c) 18%, transparent), var(--c)); transition: transform 0.6s ease; }
   .rg.on .rlanes i::after { animation: rail-lane var(--d) cubic-bezier(.3,.6,.3,1) forwards; }
   .rg.done .rlanes i::after { transform: scaleY(1); }
   @keyframes rail-lane { 0% { transform: scaleY(0.15); } 50% { transform: scaleY(0.6); } 100% { transform: scaleY(1); } }
@@ -1949,15 +1956,16 @@
             <span class="rn rn-gate">You approve the plan</span>
           </div>
           <div class="rg" data-g="1">
-            <span class="rlanes"><i style="--d:2.6s"></i><i style="--d:1.9s"></i><i style="--d:3s"></i><i style="--d:2.2s"></i><i class="loc" style="--d:1.7s"></i></span>
+            <span class="rlanes"><i style="--d:2.6s;--c:#e9a3a3"></i><i style="--d:1.9s;--c:#e6c27f"></i><i style="--d:3s;--c:#d8d49a"></i><i style="--d:2.2s;--c:#a9cfa0"></i><i class="loc" style="--d:1.7s;--c:#e4ddd2"></i></span>
             <span class="rcap">Research lanes</span>
             <span class="rn rn-check">Quotes checked</span>
+            <span class="rn rn-triage">Triage<em class="rsub">decision model flags leads</em></span>
             <span class="rn rn-gate">You mark the clues</span>
           </div>
           <div class="rg" data-g="2">
             <span class="rcyc">
-              <span class="rn rn-agent">Investigator</span>
-              <span class="rn rn-agent">Fact-checker</span>
+              <span class="rn rn-agent rn-inv">Investigator</span>
+              <span class="rn rn-agent rn-fc">Fact-checker</span>
               <span class="rdots"><b>1</b><b>2</b><b>3</b></span>
             </span>
           </div>
