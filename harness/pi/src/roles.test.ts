@@ -183,8 +183,9 @@ test('a phase skill loads unchanged, followed by the adapter lines that left the
 // the model read methodology.json or called recordAmendment (refused), as the
 // skill text in front of that step told it. Each such step now tells the Pi
 // orchestrator to call spotlight_resolve; other runtimes keep the step.
-test('the phase skill steps code makes in the Pi harness tell the orchestrator to call spotlight_resolve', async () => {
-	const tool = invokeSkillTool(skillsFor(loadComposition(), 'orchestrator'));
+test('the phase skill steps code makes in the Pi harness tell the orchestrator to call spotlight_resolve, the adapter lines included', async () => {
+	const composition = loadComposition();
+	const tool = invokeSkillTool(skillsFor(composition, 'orchestrator'), undefined, (name) => skillAdapterNote(name, composition.orchestrator.tools, true));
 	const skill = async (name: string) => ((await tool.execute('call', { skill: name }, undefined, undefined, undefined as never)).content[0] as { text: string }).text;
 	// The text just before a step: what the model reads on the way to it.
 	const before = (text: string, anchor: string) => {
@@ -194,11 +195,15 @@ test('the phase skill steps code makes in the Pi harness tell the orchestrator t
 	};
 	const methodology = await skill('phase-methodology');
 	const research = await skill('phase-research');
+	const gate = await skill('phase-investigation-gate');
 	for (const [label, lead] of [
 		['the PLANNING spawn', before(methodology, 'After brief approval, spawn the investigator in PLANNING mode')],
 		['the methodology review and correction', before(methodology, 'If validation fails, do not present the methodology for approval')],
 		['recordAmendment', before(research, 'spotlight_transition({operation: "recordAmendment"})')],
+		// codex-review-comb 5: resolve starts the gate-summary analyst.
+		['the gate summary', before(gate, '`write-file("{CASE_DIR}/summary.md"')],
 	] as const) assert.match(lead, /In the Pi\s+harness[\s\S]*call `spotlight_resolve`/, label);
+	assert.doesNotMatch(gate, /`spawn_agent`\s+with agent `analyst`/, 'neither the skill nor its adapter line has the model spawn the summary analyst');
 	assert.match(before(research, 'spotlight_transition({operation: "recordAmendment"})'), /do not\s+call `recordAmendment`/);
 });
 

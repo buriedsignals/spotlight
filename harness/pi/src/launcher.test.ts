@@ -1330,11 +1330,16 @@ for (const tier of ['12b', 'frontier']) test(`on the ${tier} tier a worker repea
 // different call, so the loop guard never saw a repeat.
 // Every tier since the progress watchdog (constellation-20261102): no recorded
 // DeepSeek or Gemma4 31B worker had three refusals in a row.
-for (const tier of ['12b', 'frontier']) test(`on the ${tier} tier a worker whose last six calls were all refused, each a different call, is stopped at its next call; a search with no matches is not a refusal`, async (t) => {
+for (const tier of ['12b', 'frontier']) test(`on the ${tier} tier a worker whose last six calls were all refused, each a different call, is stopped at its next call; a search with no matches and a site that does not resolve are not refusals`, async (t) => {
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) {
 			const done = toolResults(request).length;
-			return done === 5 ? { toolCalls: [{ name: 'grep_files', arguments: { pattern: 'no such text anywhere', path: 'data' } }] } : { toolCalls: [{ name: 'read_file', arguments: { path: `research/missing-${done}.md` } }] };
+			if (done === 5) return { toolCalls: [{ name: 'grep_files', arguments: { pattern: 'no such text anywhere', path: 'data' } }] };
+			// codex-review-comb 1: a site that does not resolve is the upstream's
+			// failure, not a refusal; the harness refusing a local address is one.
+			if (done === 11) return { toolCalls: [{ name: 'http_get', arguments: { url: 'http://registry.invalid/filing' } }] };
+			if (done === 12) return { toolCalls: [{ name: 'fetch', arguments: { url: 'http://127.0.0.1:9/page' } }] };
+			return { toolCalls: [{ name: 'read_file', arguments: { path: `research/missing-${done}.md` } }] };
 		}
 		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] } : { text: 'Done.' };
 	});
@@ -1347,12 +1352,19 @@ for (const tier of ['12b', 'frontier']) test(`on the ${tier} tier a worker whose
 
 	const investigator = fake.requests.filter((request) => isWorkerRequest(request, 'investigator'));
 	// Five refusals, one search that finds nothing (not a refusal: the streak
-	// starts again), six refusals, then the stop.
-	assert.equal(investigator.length, 13);
+	// starts again), five refusals, an unresolvable site (neither counted nor a
+	// reset), a refused local fetch (the sixth refusal), then the stop.
+	assert.equal(investigator.length, 14);
 	const results = toolResults(investigator[investigator.length - 1]);
 	assert.equal(results[5], 'no matches');
+	assert.match(results[11], /ENOTFOUND|getaddrinfo/);
+	assert.match(results[12], /refused: /);
 	const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
-	assert.match(toolResults(orchestrator[orchestrator.length - 1]).join('\n'), /The investigator had six tool calls in a row refused and was stopped; its last results stand\./);
+	// Continuity: the orchestrator gets the stop and the harness's checks, and
+	// goes on with its own turn.
+	const answer = toolResults(orchestrator.at(-1)!).join('\n');
+	assert.match(answer, /The investigator had six tool calls in a row refused by the harness and was stopped; its last results stand\./);
+	assert.match(answer, /\[Harness checks after the investigator finished: /);
 });
 
 // Progress watchdog (constellation-20261102, reports/watchdog.md): a worker is
@@ -1384,10 +1396,14 @@ for (const tier of ['12b', 'frontier']) test(`on the ${tier} tier a worker that 
 	assert.deepEqual(run.receipt, { watchdog: 'progress', role: 'investigator', rule: 'no-first-record', limit: 16, turns: 16, turns_since_last_record: 16, last_record: null, deferred_to: null });
 });
 
-test('a worker that records once and then searches 7 times is stopped 6 turns after its record', async (t) => {
-	const run = await watchdogRun(t, 'frontier', (turn) => (turn === 0 ? record(turn) : turn < 8 ? search(turn) : { text: 'Investigated.' }));
-	assert.equal(run.turns, 7);
-	assert.deepEqual(run.receipt, { watchdog: 'progress', role: 'investigator', rule: 'no-new-record', limit: 6, turns: 7, turns_since_last_record: 6, last_record: { turn: 1, tool: 'write_file', target: 'data/findings.json' }, deferred_to: null });
+// codex-review-comb 2: 6 turns stopped a worker gathering sources for its next
+// finding. An 8-turn gap between records is research; 12 without one stops.
+test('a worker that records, gathers sources for 8 turns and records again is not stopped; 12 turns without a record are', async (t) => {
+	const run = await watchdogRun(t, 'frontier', (turn) => (turn === 0 || turn === 9 ? record(turn) : turn < 30 ? search(turn) : { text: 'Investigated.' }));
+	assert.equal(run.turns, 22);
+	assert.deepEqual(run.receipt, { watchdog: 'progress', role: 'investigator', rule: 'no-new-record', limit: 12, turns: 22, turns_since_last_record: 12, last_record: { turn: 10, tool: 'write_file', target: 'data/findings.json' }, deferred_to: null });
+	// Continuity: the stop reaches the orchestrator with the harness's checks.
+	assert.match(run.answer, /\[Harness checks after the investigator finished: /);
 });
 
 test('a worker that records every third turn over 30 turns is never stopped by the progress watchdog', async (t) => {
@@ -1433,10 +1449,10 @@ test('a worker that records by absolute or ./ path every third turn is never sto
 });
 
 // Review W3: re-saving an unchanged file is not progress.
-test('a worker that rewrites the same findings every third turn is stopped 6 turns after its only real record', async (t) => {
+test('a worker that rewrites the same findings every third turn is stopped 12 turns after its only real record', async (t) => {
 	const run = await watchdogRun(t, 'frontier', (turn) => (turn === 30 ? { text: 'Investigated.' } : turn % 3 === 2 ? record(2) : search(turn)));
-	assert.equal(run.turns, 9);
-	assert.deepEqual(run.receipt, { watchdog: 'progress', role: 'investigator', rule: 'no-new-record', limit: 6, turns: 9, turns_since_last_record: 6, last_record: { turn: 3, tool: 'write_file', target: 'data/findings.json' }, deferred_to: null });
+	assert.equal(run.turns, 15);
+	assert.deepEqual(run.receipt, { watchdog: 'progress', role: 'investigator', rule: 'no-new-record', limit: 12, turns: 15, turns_since_last_record: 12, last_record: { turn: 3, tool: 'write_file', target: 'data/findings.json' }, deferred_to: null });
 });
 
 // base213 on Osaurus (e7b81f21): the orchestrator tried spotlight_transition
@@ -5142,7 +5158,9 @@ test('a scripted orchestrator that only resolves, answers the member and opens t
 				for (const name of ['findings.json', 'evidence-bundle.json', 'investigation-log.json', 'source-expressions.json']) if (existsSync(join(source, 'data', name))) cpSync(join(source, 'data', name), join(caseDir, 'data', name));
 				for (const folder of ['research', 'evidence']) if (existsSync(join(source, folder))) cpSync(join(source, folder), join(caseDir, folder), { recursive: true });
 			}
-			return { text: 'Done.' };
+			// A long answer, as workers often give: the receipt must still carry
+			// the harness's verdict (audit G3, codex-review-comb 4).
+			return { text: /MODE: EXECUTION/.test(text) ? `Investigated. ${'Each registry page was read in full. '.repeat(50)}` : 'Done.' };
 		}
 		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
 		const last = request.messages.at(-1)!;
@@ -5164,6 +5182,8 @@ test('a scripted orchestrator that only resolves, answers the member and opens t
 	assert.ok(steps.includes('spawn investigator PLANNING'), steps.join(', '));
 	assert.ok(steps.includes('spawn investigator EXECUTION'), steps.join(', '));
 	assert.ok(steps.includes('spawn fact-checker'), steps.join(', '));
+	const execution = resolveResults(chat).flatMap((state) => (state.fixed_steps ?? []) as Array<{ step: string; output: string }>).find((receipt) => receipt.step === 'spawn investigator EXECUTION')!;
+	assert.match(execution.output, /^Investigated\. [\s\S]*\n\n\[Harness checks after the investigator finished: all passed\]/);
 	assert.ok(fake.requests.some((request) => isWorkerRequest(request, 'fact-checker')), 'the fact-checker was handed the case');
 	assert.ok(resolveResults(chat).some((state) => (state.phase_skill as { name?: string } | undefined)?.name === 'phase-methodology'), 'the phase skill came with the resolve');
 });

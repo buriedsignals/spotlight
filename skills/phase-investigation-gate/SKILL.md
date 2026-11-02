@@ -19,9 +19,10 @@ inferring a substep from artifact presence.
 
 ## Generate summary
 
-In the Pi harness the analyst worker writes both files: call `spawn_agent`
-with agent `analyst`. The harness builds its task and validates the case after
-it; you do not write them. Other runtimes follow the steps below.
+In the Pi harness the analyst worker writes both files, and `spotlight_resolve`
+starts it itself while they are missing or stale, builds its task and
+validates the case after it: call `spotlight_resolve`, and do not spawn the
+analyst or write the files yourself. Other runtimes follow the steps below.
 
 `write-file("{CASE_DIR}/summary.md", <content>)` as a human-readable markdown document:
 

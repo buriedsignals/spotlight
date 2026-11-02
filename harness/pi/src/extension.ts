@@ -781,9 +781,14 @@ function registerLoopGuard(pi: ExtensionAPI, stop?: string): (tool: ToolDefiniti
 // refused for varied calls with no end (cc investigator-12: 15 writes refused
 // before activation; fsf fact-checker-45 and nordhaven investigator-7: about 9
 // source_expressions refusals each). Once a worker's last REFUSAL_STREAK
-// results were all errors, of any kind, its next call ends the run with
-// `stop` when the turn ends. prepareArguments runs before Pi's schema check
-// and the tool_call hook, so every next call meets it.
+// results were all harness refusals, its next call ends the run with `stop`
+// when the turn ends. prepareArguments runs before Pi's schema check and the
+// tool_call hook, so every next call meets it. A web tool's error counts only
+// when the harness refused the call (egress's "refused:"); a failed upstream
+// (a search backend or a site down) is not the worker's doing, so it neither
+// counts nor ends the streak (codex-review-comb 1).
+const WEB_TOOLS = new Set(['fetch', 'search', 'http_get', 'browse']);
+
 function registerRefusalStreak(pi: ExtensionAPI, stop: string): (tool: ToolDefinition) => ToolDefinition {
 	let streak = 0;
 	let stopping = false;
@@ -792,7 +797,8 @@ function registerRefusalStreak(pi: ExtensionAPI, stop: string): (tool: ToolDefin
 		stopping = false;
 	});
 	pi.on('tool_execution_end', (event) => {
-		streak = event.isError ? streak + 1 : 0;
+		if (!event.isError) streak = 0;
+		else if (!WEB_TOOLS.has(event.toolName) || /\brefused:/.test((event.result?.content ?? []).map((part: { text?: string }) => part.text ?? '').join('\n'))) streak += 1;
 	});
 	pi.on('turn_end', (_event, ctx) => {
 		if (stopping) ctx.abort();
@@ -817,7 +823,10 @@ function registerRefusalStreak(pi: ExtensionAPI, stop: string): (tool: ToolDefin
 //   productive workers took at most 14 turns to their first record.
 // - PROGRESS_NEXT_RECORD_TURNS after its last one. ASSUMPTION: the productive
 //   maximum gap was 3 turns, and no recorded worker stalled after a record, so
-//   the stuck side of this bound is uncalibrated.
+//   the stuck side of this bound is uncalibrated. It was 6 until
+//   codex-review-comb 2: a worker gathering sources for its next finding can
+//   honestly spend more than 6 turns, and stopping it then loses real work,
+//   while 12 still ends a stalled worker well inside its call budget.
 // An accepted record is a call that changed a case file's content: a record_*
 // or source_expressions call the tool accepted, or a write_file/edit_file of
 // one of this worker's own deliverable files (the launcher's
@@ -831,7 +840,7 @@ function registerRefusalStreak(pi: ExtensionAPI, stop: string): (tool: ToolDefin
 // defers to that guard for the rest of the run: that guard's own hard stop
 // bounds the worker, and the watchdog only logs a receipt naming it.
 export const PROGRESS_FIRST_RECORD_TURNS = 16;
-export const PROGRESS_NEXT_RECORD_TURNS = 6;
+export const PROGRESS_NEXT_RECORD_TURNS = 12;
 export const PROGRESS_RECEIPT_TAG = '[progress-watchdog receipt]';
 // The file each code-owned record tool writes, by its arguments.
 function recordTarget(tool: string, args: Record<string, unknown>): string | undefined {

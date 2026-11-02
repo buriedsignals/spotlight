@@ -299,7 +299,7 @@ const ADAPTER_LINES: AdapterLine[] = [
 		skill: 'phase-ingest',
 	},
 	{
-		text: '- Summary (orchestrator only): `spawn_agent` with agent `analyst` writes summary.md and data/summary.json; the harness builds its task and validates the case after it. You do not write them. The provenance manifest, review.html and the seal are run by `spotlight_resolve` at their fixed points and listed in `fixed_steps`; do not run them. This runtime has no decision checks: skip that step.',
+		text: '- Summary (orchestrator only): while summary.md and data/summary.json are missing or stale, `spotlight_resolve` starts the `analyst` that writes them, builds its task and validates the case after it. Call `spotlight_resolve`; do not spawn the analyst or write them yourself. The provenance manifest, review.html and the seal are run by `spotlight_resolve` at their fixed points and listed in `fixed_steps`; do not run them. This runtime has no decision checks: skip that step.',
 		orchestrator: true,
 		skill: 'phase-investigation-gate',
 	},
