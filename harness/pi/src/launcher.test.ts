@@ -4864,8 +4864,9 @@ test('open_review at the Methodology gate refuses a navigator status outside the
 // task and misread the persisting missing amendment file. At the amendment
 // step the investigator's task is code-built and code applies recordAmendment
 // once the worker finishes.
-test('at the amendment step the investigator gets the code-built TASK: AMEND task and code applies recordAmendment', async (t) => {
-	const space = await workspace(t);
+// A researched case whose Research gate the member approved: the resolver
+// is at research/amendment.
+function caseAtAmendment(space: Workspace): string {
 	const caseDir = join(space.casesRoot, 'case-a');
 	const prepare = [
 		'import importlib.util, json, sys',
@@ -4884,6 +4885,12 @@ test('at the amendment step the investigator gets the code-built TASK: AMEND tas
 		'seam("approve", "research", *m.APPROVER)',
 	].join('\n');
 	execFileSync(PYTHON, ['-c', prepare, caseDir]);
+	return caseDir;
+}
+
+test('at the amendment step the investigator gets the code-built TASK: AMEND task and code applies recordAmendment', async (t) => {
+	const space = await workspace(t);
+	const caseDir = caseAtAmendment(space);
 	const methodology = await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8');
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) return toolResults(request).length === 0
@@ -4932,4 +4939,33 @@ test('a METHODOLOGY CORRECTION investigator that writes data/methodology.json is
 	const answer = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator')).at(-1)!).join('\n');
 	assert.doesNotMatch(answer, /progress-watchdog receipt/);
 	assert.match(answer, /Corrected\./);
+});
+
+// review-fix1 X1: a retry worker that writes nothing must not re-submit the
+// refused amendment, which would be the second refusal and block the case.
+test('a second amendment worker that writes nothing does not re-apply the refused amendment, and the case is not blocked', async (t) => {
+	const space = await workspace(t);
+	const caseDir = caseAtAmendment(space);
+	const plan = JSON.parse(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8'));
+	// An amendment the resolver refuses (here, outside the methodology schema).
+	const bad = JSON.stringify({ ...plan, investigation_plan: 'not a list' });
+	let spawns = 0;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) {
+			if (toolResults(request).length > 0 || spawns === 2) return { text: 'Done.' };
+			return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology-amendment.json', content: bad } }] };
+		}
+		const done = toolResults(request).length;
+		if (done < 2) { spawns = done + 1; return { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Amend.' } }] }; }
+		return { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_RESEARCH_SWARMS: 'on' }), 'Continue.');
+	const status = JSON.parse(execFileSync(PYTHON, [SEAM, 'status', '--json', caseDir], { env: { PATH: process.env.PATH ?? '', PYTHONNOUSERSITE: '1', SPOTLIGHT_RESEARCH_SWARMS: 'on' } }).toString());
+	assert.notEqual(status.status, 'blocked', 'the unchanged amendment was not submitted a second time');
+	assert.equal(status.research?.resume_at, 'amendment');
+	// A refusal is recorded by the resolver, not raised; the result says which it was.
+	const results = toolResults(fake.requests.at(-1)!);
+	assert.match(results[0], /recordAmendment refused the amendment/);
+	assert.match(results[1], /unchanged since it was last applied, so recordAmendment was not applied again/);
 });
