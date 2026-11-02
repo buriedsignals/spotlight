@@ -1,6 +1,7 @@
 // open_review: shows the member the pending gate's review page. The review
 // server runs locally and the result never carries the page address, so the
 // model cannot reach the page or post a decision.
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Type } from 'typebox';
@@ -10,8 +11,8 @@ import { RESEARCH_SWITCH } from '../config.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { runPython } from './run.ts';
 import type { ToolContext } from './run.ts';
-import { resolveCase } from './spotlight.ts';
-import type { ActiveCase, AdapterRunner } from './spotlight.ts';
+import { AUTO_INVESTIGATORS_PER_TURN, AUTO_INVESTIGATORS_SPENT, resolveCase } from './spotlight.ts';
+import type { ActiveCase, AdapterRunner, DispatchRunner } from './spotlight.ts';
 
 // open_review's refusal starts with this; the refusal cap in extension.ts counts it.
 export const PAGE_NOT_OPENED = 'The review page was not opened: ';
@@ -90,6 +91,36 @@ export function openReviewTool(caseDir: string, casesRoot: string, opener?: Open
 			const result = await open({ caseDir });
 			const missing = result.status === 'opened' ? await note?.() : undefined;
 			return { content: [{ type: 'text', text: missing ? `${describeOpenResult(result)}\n${missing}` : describeOpenResult(result) }], details: { opened: result.status === 'opened' } };
+		},
+	};
+}
+
+// Auto-dispatch at resolve (tools/spotlight.ts runDispatches): spawns go
+// through the orchestrator's own spawn_agent tool, so its caps, the launcher's
+// refusals, cancel on abort and each worker's watchdog apply unchanged; the
+// Methodology gate check is the page's own check; the owner's phase skill is
+// attached once per orchestrator process.
+export function dispatchRunner(spawn: ToolDefinition, invokeSkill: ToolDefinition, check: GateCheck, turn: { investigators: number }): DispatchRunner {
+	const loaded = new Set<string>();
+	const text = (result: { content: Array<{ type: string; text?: string }> }) => result.content.map((part) => part.text ?? '').join('\n');
+	return {
+		spawn: async (agent, task, signal) => {
+			if (agent === 'investigator' && turn.investigators >= AUTO_INVESTIGATORS_PER_TURN) throw new Error(AUTO_INVESTIGATORS_SPENT);
+			if (agent === 'investigator') turn.investigators += 1;
+			return text(await spawn.execute(`auto-${randomUUID()}`, { agent, task }, signal, undefined, undefined as never));
+		},
+		methodologyCheck: () => check(),
+		phaseSkill: async (skill) => {
+			if (loaded.has(skill)) return undefined;
+			loaded.add(skill);
+			// The resolver's owner is always one of the orchestrator's skills; an
+			// owner that is not (none at complete) attaches nothing.
+			try {
+				return text(await invokeSkill.execute(`auto-${randomUUID()}`, { skill }, undefined, undefined, undefined as never));
+			} catch (error) {
+				if (/is not one of this agent's skills/.test((error as Error).message)) return undefined;
+				throw error;
+			}
 		},
 	};
 }

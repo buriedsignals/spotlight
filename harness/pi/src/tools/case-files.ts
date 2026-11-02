@@ -352,6 +352,35 @@ function positiveClaims(factCheck: { schema_version?: unknown; claims?: unknown 
 	return Array.isArray(factCheck?.claims) ? factCheck.claims.filter((claim) => positive.includes(claim?.verdict)) : [];
 }
 
+// validate-case.py's anchor rule for a positive verdict, unchanged.
+function hasCaseLocalAnchor(item: unknown, verdict: unknown): boolean {
+	if (!item || typeof item !== 'object') return false;
+	const row = item as { evidence_bundle_id?: unknown; access_method?: unknown; local_file?: unknown; source_ref?: unknown };
+	const nonEmpty = (value: unknown) => typeof value === 'string' && value.trim() !== '';
+	const access = ['full_text', 'open_access', 'archive_copy', ...(verdict === 'partially_verified' ? ['abstract_only'] : [])];
+	return nonEmpty(row.evidence_bundle_id) || (access.includes(String(row.access_method)) && (nonEmpty(row.local_file) || (!!row.source_ref && typeof row.source_ref === 'object' && !Array.isArray(row.source_ref))));
+}
+
+// Phase B (Gemma12 worker state and the 31B live run r5): a positive verdict
+// was accepted here and validate-case.py then refused it ("positive verdict
+// needs an accessible case-local evidence anchor"). The same rule at the
+// write, after the more specific passage and file checks, naming the step.
+function refuseUnanchoredVerdicts(caseDir: string, target: string, content: string): void {
+	if (caseRelative(caseDir, target) !== 'data/fact-check.json') return;
+	let factCheck: { schema_version?: unknown; claims?: unknown };
+	try {
+		factCheck = JSON.parse(content);
+	} catch {
+		return;
+	}
+	const unanchored = positiveClaims(factCheck).filter((claim) => {
+		const items = Array.isArray(claim.evidence_for) ? claim.evidence_for : [];
+		return items.length > 0 && !items.some((item) => hasCaseLocalAnchor(item, (claim as { verdict?: unknown }).verdict));
+	});
+	if (!unanchored.length) return;
+	throw new FileRefused(`refused: data/fact-check.json is unchanged; ${unanchored.map((claim) => String(claim.finding_id)).join(', ')} has a verified verdict with no case-local evidence anchor: no evidence_for item has an evidence_bundle_id, or an access_method (full_text, open_access or archive_copy) with a local_file or source_ref. Cite a capture you acquired: give its source_ref.path from your fetch with the quote found there (or its line_start/line_end), and the harness adds its evidence_bundle_id; passages alone are not an anchor. Or acquire an independent capture with fetch (save_as under research/), or set the verdict to unverified.`);
+}
+
 function refuseUncitedVerdicts(caseDir: string, target: string, content: string): void {
 	if (caseRelative(caseDir, target) !== 'data/fact-check.json') return;
 	let factCheck: { schema_version?: unknown; claims?: unknown };
@@ -1102,6 +1131,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseMissingCitedFiles(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseUnknownFlags(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
+				refuseUnanchoredVerdicts(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				refuseUnacquiredArchiveDocument(context, destination, content);
 				await refuseInvalidProposal(context, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), content);
 				const before = currentText(writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
@@ -1144,6 +1174,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseDriftedClaims(caseDir, target, updated);
 				refuseMissingCitedFiles(caseDir, target, updated);
 				refuseUnknownFlags(caseDir, target, updated);
+				refuseUnanchoredVerdicts(caseDir, target, updated);
 				refuseUnacquiredArchiveDocument(context, target, updated);
 				await refuseInvalidProposal(context, target, updated);
 				return textResult(`edited ${writeConfined(caseDir, writeRoot, input.path, updated, writes, denyWrites)}`);

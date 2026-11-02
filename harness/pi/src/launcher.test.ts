@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmod, copyFile, mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
@@ -21,7 +21,7 @@ import { BRIEF_PENDING_REFUSAL, FACT_CHECKERS_SPENT, GATE_DECIDED_REFUSAL, GATE_
 import { FC_BATCH_DONE, FC_BATCH_DUE, FC_BATCH_NOTICE, FC_BATCH_STOP, registerFetchedPages } from './extension.ts';
 import { CONTINUE_AFTER_FOLD } from './subagents.ts';
 import { blockedStop, budgetedWebResult, CALL_BUDGET_SPENT, FACT_CHECK_DUE, FACT_CHECK_DUE_NOTICE, FACT_CHECK_DUE_REPEAT, FACT_CHECK_STOP, GATE_BOUND, GATE_BOUND_REFUSAL, LOOP_NOTICE_CAP, ORCHESTRATOR_LOOP_STOP, PROPOSAL_DONE, readAlreadyShown, repeatsItself, REVIEW_OPEN_STOP, REVIEW_REFUSAL_CAP, skillAlreadyLoaded, UNPRODUCTIVE_NEXT, UNPRODUCTIVE_STOP } from './extension.ts';
-import { GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
+import { AUTO_INVESTIGATORS_SPENT, GATE_APPROVAL_REFUSAL } from './tools/spotlight.ts';
 import { TASK_AFTER_FOLD, taskAfterFold } from './checkpoint.ts';
 import { maxOutputTokens } from './config.ts';
 
@@ -63,7 +63,8 @@ function lastResolution(chat: Chat): Record<string, unknown> {
 // same read forty). The third identical call in a row is refused, not run.
 test('the third identical tool call in a row is blocked with the loop reason', async (t) => {
 	const fake = await startFakeOpenAI((request) =>
-		toolResults(request).length < 3 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Stopped.' },
+		// Any call whose result does not change (a resolve now may carry its phase skill once).
+		toolResults(request).length < 3 ? { toolCalls: [{ name: 'read_file', arguments: { path: 'data/nothing.json' } }] } : { text: 'Stopped.' },
 	);
 	t.after(() => fake.close());
 	const space = await workspace(t);
@@ -325,17 +326,15 @@ test('a parent killed mid-task leaves no child running; a second chat is refused
 	// First chat: resolve and delegate; the worker's model call never returns.
 	// The resumed chat only resolves.
 	let delegated = false;
+	let killed = false;
 	const fake = await startFakeOpenAI((request) => {
-		if (isWorkerRequest(request, 'investigator')) return 'hang';
+		// The first chat's worker never returns; the resumed chat's planner writes nothing.
+		if (isWorkerRequest(request, 'investigator')) return killed ? { text: 'Planned.' } : 'hang';
 		if (toolResults(request).length > 0) return { text: 'Waiting.' };
 		if (delegated) return resolveThenStop(request);
 		delegated = true;
-		return {
-			toolCalls: [
-				{ name: 'spotlight_resolve', arguments: {} },
-				{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Plan the case.' } },
-			],
-		};
+		// At Methodology the resolve itself starts the planning investigator.
+		return { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] };
 	});
 	t.after(() => fake.close());
 	const space = await workspace(t);
@@ -355,6 +354,7 @@ test('a parent killed mid-task leaves no child running; a second chat is refused
 	assert.match(second.stderr(), /already open in another Spotlight chat/);
 
 	first.process.kill('SIGKILL');
+	killed = true;
 	await first.exited;
 	await waitUntil(() => held.children.every((pid) => !isAlive(pid)), 10_000);
 
@@ -363,7 +363,8 @@ test('a parent killed mid-task leaves no child running; a second chat is refused
 	await writeFile(join(lanes, 'ownership-registries', 'lane.json'), '{"status":"completed"}');
 	await mkdir(join(lanes, 'ownership-web'), { recursive: true });
 	await writeFile(join(lanes, 'ownership-web', 'leads.jsonl'), '{}\n');
-	const before = lastResolution(first);
+	// The first chat's resolve never returned (its auto-spawned planner hung).
+	const before = JSON.parse(execFileSync(PYTHON, [SEAM, 'status', '--json', caseDir]).toString()) as Record<string, unknown>;
 
 	const resumed = launch(t, env);
 	await settledPrompt(resumed, 'Continue.');
@@ -4997,4 +4998,188 @@ test('an amendment whose recordAmendment failed with a resolver error is applied
 	const results = toolResults(fake.requests.at(-1)!);
 	assert.match(results[0], /did not reach an outcome \(the resolver failed\)/);
 	assert.match(results[1], /recordAmendment applied/);
+});
+
+// ── Auto-dispatch at resolve (reports/autodispatch-scope.md, approved 2026-11-02) ──
+
+// The install config under which the conformance methodology passes the gate.
+async function gateConfig(space: Workspace): Promise<string> {
+	const config = join(space.root, 'spotlight-config.json');
+	await writeFile(config, JSON.stringify({ model_tier: 'frontier', integrations: { osint_navigator: { status: 'red', required_in_phase_2: false } } }));
+	return config;
+}
+
+const resolveResults = (chat: Chat) => chat.lines
+	.map((line) => JSON.parse(line) as { type?: string; toolName?: string; result?: { content: Array<{ text: string }> } })
+	.filter((record) => record.type === 'tool_execution_end' && record.toolName === 'spotlight_resolve' && record.result!.content[0].text.startsWith('{'))
+	.map((record) => JSON.parse(record.result!.content[0].text) as Record<string, unknown>);
+
+test('a scripted orchestrator that only resolves, answers the member and opens the review reaches Investigation and the fact-checker; code spawns every worker', async (t) => {
+	const space = await workspace(t);
+	const source = join(space.root, 'outputs');
+	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), source, 'investigation_gate', '--activated', '--clean']);
+	const caseDir = join(space.casesRoot, 'case-a');
+	await mkdir(join(caseDir, 'data'), { recursive: true });
+	await copyFile(join(source, 'brief-directions.txt'), join(caseDir, 'brief-directions.txt'));
+	const methodology = await readFile(join(source, 'data', 'methodology.json'), 'utf8');
+	let investigated = false;
+	const fake = await startFakeOpenAI((request) => {
+		const done = toolResults(request).length;
+		if (isWorkerRequest(request, 'investigator')) {
+			const text = userText(request);
+			if (/MODE: PLANNING/.test(text) && done === 0) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: methodology } }] };
+			if (/MODE: EXECUTION/.test(text) && !investigated) {
+				// The worker's investigation, as the fixture's outputs.
+				investigated = true;
+				for (const name of ['findings.json', 'evidence-bundle.json', 'investigation-log.json', 'source-expressions.json']) if (existsSync(join(source, 'data', name))) cpSync(join(source, 'data', name), join(caseDir, 'data', name));
+				for (const folder of ['research', 'evidence']) if (existsSync(join(source, folder))) cpSync(join(source, folder), join(caseDir, folder), { recursive: true });
+			}
+			return { text: 'Done.' };
+		}
+		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
+		const last = request.messages.at(-1)!;
+		if (last.role !== 'tool') return { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] };
+		const called = (request.messages.filter((message) => message.role === 'assistant').at(-1)!.tool_calls as Array<{ function: { name: string } }>)[0].function.name;
+		if (called === 'spotlight_resolve' && /"phase":"methodology_approval"/.test(String(last.content))) return { toolCalls: [{ name: 'open_review', arguments: {} }] };
+		return { text: 'Here is where the case stands.' };
+	});
+	t.after(() => fake.close());
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: await gateConfig(space) });
+	await settledPrompt(chat, 'Go ahead with that direction.');
+	execFileSync(PYTHON, [SEAM, 'approve', 'methodology', '--approved-by', 'journalist:fixture', '--approved-at', '2026-08-23T12:00:00Z', caseDir]);
+	await settledPrompt(chat, 'I approved the plan.');
+
+	const orchestrator = fake.requests.filter((request) => !systemText(request).includes('You were delegated a task'));
+	const called = new Set(orchestrator.flatMap((request) => request.messages.filter((message) => message.role === 'assistant').flatMap((message) => ((message.tool_calls ?? []) as Array<{ function: { name: string } }>).map((call) => call.function.name))));
+	assert.deepEqual([...called].sort(), ['open_review', 'spotlight_resolve']);
+	const steps = resolveResults(chat).flatMap((state) => ((state.fixed_steps ?? []) as Array<{ step: string }>).map((receipt) => receipt.step));
+	assert.ok(steps.includes('spawn investigator PLANNING'), steps.join(', '));
+	assert.ok(steps.includes('spawn investigator EXECUTION'), steps.join(', '));
+	assert.ok(steps.includes('spawn fact-checker'), steps.join(', '));
+	assert.ok(fake.requests.some((request) => isWorkerRequest(request, 'fact-checker')), 'the fact-checker was handed the case');
+	assert.ok(resolveResults(chat).some((state) => (state.phase_skill as { name?: string } | undefined)?.name === 'phase-methodology'), 'the phase skill came with the resolve');
+});
+
+// Member consent: code never crosses a gate. At a member gate it acts only when
+// the gate's own check fails (a correction); nothing runs after the gate is
+// ready for the member, and nothing starts Investigation before the approval.
+test('at a member gate resolve starts no worker unless the gate check fails, and then only the correction', async (t) => {
+	for (const [label, status, workers] of [['valid plan awaiting approval', 'red', 0], ['plan failing the gate check', 'bogus', 1]] as const) await t.test(label, async (t) => {
+		const fake = await startFakeOpenAI((request) => (isWorkerRequest(request, 'investigator') ? { text: 'Done.' } : resolveThenStop(request)));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = join(space.casesRoot, 'case-a');
+		execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), caseDir, 'methodology']);
+		const path = join(caseDir, 'data', 'methodology.json');
+		const plan = JSON.parse(await readFile(path, 'utf8'));
+		plan.navigator = { required: false, used: false, status, queries: [], fallback_used: false, fallback_reason: 'Public records are enough.' };
+		await writeFile(path, JSON.stringify(plan));
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: await gateConfig(space) });
+		await settledPrompt(chat, 'Continue.');
+		const started = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 0).map(userText);
+		assert.equal(started.length, workers);
+		for (const text of started) assert.match(text, /^MODE: METHODOLOGY CORRECTION\n[\s\S]*navigator\.status/);
+		assert.ok(resolveResults(chat).every((state) => state.phase === 'methodology_approval'), 'the case stays at the gate for the member');
+	});
+	await t.test('Investigation gate ready for the member', async (t) => {
+		const fake = await startFakeOpenAI((request) => (systemText(request).includes('You were delegated a task') ? { text: 'Unexpected.' } : resolveThenStop(request)));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		caseAtGate(space);
+		const chat = launch(t, baseEnv(space, fake.baseURL));
+		await settledPrompt(chat, 'Continue.');
+		assert.equal(fake.requests.filter((request) => systemText(request).includes('You were delegated a task')).length, 0);
+		assert.equal(lastResolution(chat).phase, 'investigation_gate_approval');
+	});
+});
+
+// A resolve that spawns a worker runs as long as the worker: the worker keeps
+// its own progress watchdog, its stop comes back as the receipt, and an abort
+// of the orchestrator's turn reaches the worker.
+test('an auto-spawned worker keeps its own progress watchdog, and aborting the resolve stops the worker', async (t) => {
+	await t.test('watchdog', async (t) => {
+		const fake = await startFakeOpenAI((request) => (isWorkerRequest(request, 'investigator') ? search(toolResults(request).length) : resolveThenStop(request)));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		await briefApproved(space);
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier' });
+		await settledPrompt(chat, 'Continue.');
+		assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'investigator')).length, 16, 'stopped at its own 16-turn limit, once');
+		const [receipt] = (lastResolution(chat).fixed_steps as Array<{ step: string; output: string }>);
+		assert.equal(receipt.step, 'spawn investigator PLANNING');
+		assert.match(receipt.output, /progress-watchdog receipt/);
+	});
+	await t.test('abort', async (t) => {
+		const fake = await startFakeOpenAI((request) => (isWorkerRequest(request, 'investigator') ? 'hang' : resolveThenStop(request)));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		await briefApproved(space);
+		const chat = launch(t, baseEnv(space, fake.baseURL));
+		await waitUntil(() => existsSync(join(space.dataDir, 'locks', 'case-a.lock')), 30_000);
+		await waitUntil(() => readFileSync(join(space.dataDir, 'locks', 'case-a.lock'), 'utf8').includes('children'), 30_000);
+		const before = new Set((await lockRecord(space)).children);
+		chat.send({ id: 'p-1', type: 'prompt', message: 'Continue.' });
+		await waitUntil(() => fake.requests.some((request) => isWorkerRequest(request, 'investigator')), 30_000);
+		const workers = (await lockRecord(space)).children.filter((pid) => !before.has(pid));
+		assert.ok(workers.length > 0 && workers.every(isAlive), 'the auto-spawned worker is running');
+		chat.send({ id: 'abort-1', type: 'abort' });
+		await waitUntil(() => workers.every((pid) => !isAlive(pid)), 20_000);
+		assert.ok((await lockRecord(space)).children.some((pid) => before.has(pid) && isAlive(pid)), 'the orchestrator keeps running');
+	});
+});
+
+// review-fix4 A1, A2: a member's follow-up and a recorded cycle gap carry
+// instructions code does not route; that cycle stays the model's.
+test('with a member follow-up or a recorded cycle gap open, resolve starts no worker', async (t) => {
+	for (const [label, args] of [
+		['member follow-up', ['request-follow-up', '--instructions', 'Re-check F1 against the 2024 filing. FOLLOWUP-SENTINEL']],
+		['recorded cycle gap', ['record-attempt', 'investigation-cycle', '--gap', 'F1 needs the 2024 filing.']],
+	] as const) await t.test(label, async (t) => {
+		const fake = await startFakeOpenAI((request) => (systemText(request).includes('You were delegated a task') ? { text: 'Unexpected.' } : resolveThenStop(request)));
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = caseAtGate(space);
+		execFileSync(PYTHON, [SEAM, ...args, caseDir]);
+		const chat = launch(t, baseEnv(space, fake.baseURL));
+		await settledPrompt(chat, 'Continue.');
+		assert.equal(lastResolution(chat).phase, 'investigation');
+		assert.equal(fake.requests.filter((request) => systemText(request).includes('You were delegated a task')).length, 0, 'the model routes this cycle');
+		assert.equal(lastResolution(chat).fixed_steps, undefined);
+	});
+});
+
+// review-fix4 A4: a model that keeps resolving starts at most three
+// investigators on its own per member turn.
+test('a model that keeps resolving starts at most three investigators on its own in one member turn', async (t) => {
+	let answers = 0;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return { text: `Worked ${++answers}.` };
+		return toolResults(request).length < 5 ? { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] } : { text: 'Stopped.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier' });
+	await settledPrompt(chat, 'Continue.');
+	assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && toolResults(request).length === 0).length, 3);
+	const receipts = resolveResults(chat).flatMap((state) => (state.fixed_steps ?? []) as Array<{ ok: boolean; output: string }>);
+	assert.ok(receipts.some((receipt) => !receipt.ok && receipt.output === AUTO_INVESTIGATORS_SPENT), 'the fourth is refused with a receipt');
+});
+
+// Phase B (Gemma12): an enum refusal names the field and its allowed values,
+// so the worker need not retry blindly.
+test('a schema refusal on an enum field names the allowed values from the tool schema', async (t) => {
+	const finding = { claim: 'The filing names the payer.', evidence: 'The filing.', sources: [], confidence: 'medium', grounding: { support_type: 'direct_support', source_role: 'primary_source', claim_elements_supported: ['payer'], missing_assumptions: [], confidence_cap: 'medium', misgrounding_risk: 'low', grounding_rationale: 'The filing says so.' } };
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'investigator')) return toolResults(request).length === 0 ? { toolCalls: [{ name: 'record_finding', arguments: { finding } }] } : { text: 'Done.' };
+		return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: EXECUTION\nRecord the finding.' } }] } : { text: 'Done.' };
+	});
+	t.after(() => fake.close());
+	const space = await workspace(t);
+	await caseAtInvestigation(space);
+	await settledPrompt(launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: 'frontier' }), 'Continue.');
+	const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator')).at(-1)!;
+	const [refusal] = toolResults(worker);
+	assert.match(refusal, /finding\.grounding\.support_type: must be equal to one of the allowed values \(allowed: "direct", "indirect"/);
+	assert.match(refusal, /finding\.grounding\.source_role: must be equal to one of the allowed values \(allowed: "primary", "secondary", "contextual"\)/);
 });

@@ -760,7 +760,8 @@ test('a verified claim citing no passage is refused, naming the refs on record, 
 		{ id: 'P3', expression_fingerprint: '3'.repeat(64), lifecycle_events: [{ event: 'activated' }], finding_links: [{ ...link, finding_id: 'F2' }] },
 	] }));
 	const ref = { expression_id: 'P2', expression_fingerprint: 'e'.repeat(64), finding_fingerprint: 'f'.repeat(64), link_fingerprint: 'l'.repeat(64) };
-	const claim = (item: object, verdict = 'verified') => JSON.stringify({ schema_version: '1.1', claims: [{ finding_id: 'F1', verdict, evidence_for: [item] }] });
+	// Each item carries a case-local anchor (validate-case's rule, also checked at the write).
+	const claim = (item: object, verdict = 'verified') => JSON.stringify({ schema_version: '1.1', claims: [{ finding_id: 'F1', verdict, evidence_for: [{ evidence_bundle_id: 'E1', ...item }] }] });
 
 	await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: claim({ source_expression_ref: ref }) }),
 		(error: Error) => error.message.includes('has no source_expression_refs; the file is unchanged') && error.message.includes('F1 (the key is source_expression_refs, a list, not source_expression_ref): "source_expression_refs": ["P2"]'));
@@ -887,7 +888,7 @@ test('a positive verdict citing a file that is not in the case is refused, namin
 	] }));
 	await mkdir(join(caseDir, 'research'), { recursive: true });
 	await writeFile(join(caseDir, 'research', 'fsf_board.md'), 'The board has five members.\n');
-	const evidence = (path: string) => ({ local_file: path, source_ref: { path, line_start: 1, line_end: 1 }, source_expression_refs: ['P1'] });
+	const evidence = (path: string) => ({ access_method: 'full_text', local_file: path, source_ref: { path, line_start: 1, line_end: 1 }, source_expression_refs: ['P1'] });
 	const factCheck = (item: object, verdict = 'verified') => JSON.stringify({ schema_version: '1.1', claims: [{ finding_id: 'F2', verdict, evidence_for: [item] }] }, null, 2);
 
 	await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: factCheck(evidence('research/fsf_leadership_browse.md')) }),
@@ -991,4 +992,22 @@ test('refusals name the next step, and hash_files takes one path as a string', a
 	await assert.rejects(call('read_file', { path: 'data/findings.json', json_pointer: '/findings/3' }), /Read a shorter pointer to see the keys at that level\./);
 	await assert.rejects(call('read_file', { path: '../outside.txt' }), /Give a path relative to the case folder, such as data\/findings\.json\./);
 	await assert.rejects(call('write_file', { path: 'data/source-expressions.json', content: '{}' }), /Call source_expressions with action write and the passage proposal instead\./);
+});
+
+// Phase B (Gemma12 worker state, 31B live run r5): a positive verdict the
+// write accepted was then refused by validate-case.py for want of a case-local
+// evidence anchor. The write applies the same rule and names the next step.
+test('a verified verdict with no case-local evidence anchor is refused at the write, naming fetch or unverified', async (t) => {
+	const { caseDir, call } = await fixture(t);
+	await writeFile(join(caseDir, 'data', 'case-contract.json'), '{}');
+	const link = { finding_id: 'F1', relation: 'supports', finding_fingerprint: 'f'.repeat(64), link_fingerprint: 'l'.repeat(64) };
+	await writeFile(join(caseDir, 'data', 'source-expressions.json'), JSON.stringify({ expressions: [{ id: 'P1', expression_fingerprint: 'e'.repeat(64), lifecycle_events: [{ event: 'activated' }], finding_links: [link] }] }));
+	await mkdir(join(caseDir, 'research'), { recursive: true });
+	await writeFile(join(caseDir, 'research', 'filing.md'), 'Acme paid Doe.\n');
+	const claim = (item: object) => JSON.stringify({ schema_version: '1.1', claims: [{ finding_id: 'F1', verdict: 'verified', evidence_for: [item] }] });
+	const cited = { source_ref: { path: 'research/filing.md', line_start: 1, line_end: 1 }, source_expression_refs: ['P1'] };
+	await assert.rejects(call('write_file', { path: 'data/fact-check.json', content: claim(cited) }),
+		/F1 has a verified verdict with no case-local evidence anchor: no evidence_for item has an evidence_bundle_id, or an access_method \(full_text, open_access or archive_copy\)[\s\S]*Cite a capture you acquired[\s\S]*acquire an independent capture with fetch[\s\S]*set the verdict to unverified/);
+	assert.equal(existsSync(join(caseDir, 'data', 'fact-check.json')), false);
+	await call('write_file', { path: 'data/fact-check.json', content: claim({ ...cited, access_method: 'full_text' }) });
 });

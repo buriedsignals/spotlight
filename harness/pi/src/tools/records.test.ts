@@ -252,3 +252,43 @@ test('record_assessment fills finding_id for a one-finding batch and otherwise r
 	await assert.rejects(several.call('record_assessment',{assessment:{verdict:'unverified',confidence:'low',evidence_for:[],evidence_against:[]}}),/finding_id is required\. Your batch: F1, F2/);
 	assert.equal(await readFile(join(several.caseDir,'data/fact-check.json'),'utf8'),bytes,'nothing was written');
 });
+
+// Phase B (Gemma12): a tool's own schema refusal on an enum lists the allowed values.
+test('a record refused for an enum value names the allowed values',async t=>{
+	const {call}=await fixture(t,'fact-checker',{SPOTLIGHT_FC_BATCH:'F1'});
+	await assert.rejects(call('record_assessment',{assessment:{finding_id:'F1',verdict:'certain',confidence:'low',evidence_for:[],evidence_against:[]}}),/verdict[^;]*\(allowed: [^)]*"verified"[^)]*"not_checkable"/);
+});
+
+// e2e r5 resume (31B, D3-F1): items citing the investigator's passages AND a
+// source_ref into the fact-checker's own registered capture got no evidence
+// item, and validate-case.py refused the verdict. Anchored inside the
+// fact-checker's capture they count; anchored only in the investigator's
+// material they are refused with the missing field named.
+test('a verified item anchored in the fact-checker\'s own capture counts even when it also cites investigator passages; one anchored only in investigator material is refused',async t=>{
+	for (const variant of ['quote','lines','investigator-only']) await t.test(variant, async t=>{
+		const {call,json,context,caseDir}=await fixture(t,'fact-checker',{SPOTLIGHT_FC_BATCH:'F1'});
+		const interpreter=context.python;
+		const wrapper=join(caseDir,'python-fetch');
+		const url='https://registry.example.org/acme';
+		const envelope=JSON.stringify({markdown:'Registry record\nAcme paid Doe in full.\n',source_url:url,provider:'crawl4ai',status_code:200});
+		await writeFile(wrapper,`#!${process.execPath}\nconst {execFileSync}=require('node:child_process');\nconst args=process.argv.slice(2);\nif(args.includes('integrations.scraping')) process.stdout.write(${JSON.stringify(envelope)});\nelse {try{process.stdout.write(execFileSync(${JSON.stringify(interpreter)},args,{stdio:['inherit','pipe','inherit']}));}catch(error){process.stdout.write(error.stdout??'');process.exitCode=error.status??1;}}\n`,{mode:0o755});
+		context.python=wrapper;
+		context.env.SPOTLIGHT_ANONYMIZE_FETCH='true';
+		await call('fetch',{url,save_as:'fc-own.md'});
+		const passages=(await json('source-expressions.json')).expressions.filter((row:any)=>(row.finding_links??[]).some((link:any)=>link.finding_id==='F1'&&link.relation==='supports')).map((row:any)=>row.id);
+		assert.ok(passages.length>0,'the investigator has a passage for F1');
+		const path=variant==='investigator-only'?'research/filing.txt':'research/fc-own.md';
+		const item={description:'The registry states the payment.',source:url,source_ref:{path,line_start:2,line_end:2},source_expression_refs:passages,...(variant==='quote'?{quote:'Acme paid Doe in full.'}:{})};
+		const assessment={finding_id:'F1',verdict:'verified',confidence:'high',evidence_for:[item],evidence_against:[],grounding_assessment:{support_type:'direct',claim_elements_checked:['payment'],missing_assumptions:[],confidence_cap:'high',assessment:'The registry states the payment.'}};
+		if (variant==='investigator-only') {
+			await assert.rejects(call('record_assessment',{assessment}),/F1 has a verified verdict with no case-local evidence anchor[\s\S]*Cite a capture you acquired[\s\S]*passages alone are not an anchor/);
+			return;
+		}
+		await call('record_assessment',{assessment});
+		const checked=(await json('fact-check.json')).claims.find((row:any)=>row.finding_id==='F1');
+		const own=(await json('evidence-bundle.json')).items.find((row:any)=>row.raw_path==='research/fc-own.md');
+		assert.ok(own && own.created_by==='fact-checker','the fact-checker\'s capture has its own evidence item');
+		assert.equal(checked.evidence_for[0].evidence_bundle_id,own.id);
+		assert.deepEqual(checked.evidence_for[0].source_expression_refs.slice(0,passages.length).map((ref:any)=>typeof ref==='string'?ref:ref.expression_id),passages);
+	});
+});

@@ -12,6 +12,7 @@ import { PROVIDER_ID } from './pi-process.ts';
 import { CHECKOUT_ROOT, ORCHESTRATOR, agentSpec, allowedTools, deliverableFor, loadComposition, checkPacket, scopeAt, nextCheckText, readCheckDocs, skillAdapterNote, skillsFor, spawnableWorkers } from './roles.ts';
 import { READ_TRUNCATED, canonicalWriteCall, readTarget, writeConfined } from './tools/case-files.ts';
 import { typedTools } from './tools/index.ts';
+import { dispatchRunner } from './tools/review.ts';
 import { fixedStepRunner } from './tools/programs.ts';
 import { invokeSkillTool } from './tools/skills.ts';
 import { INDICATOR_FRAMEWORK_ROLES, approvedIndicatorFramework } from './tools/hosted-skill.ts';
@@ -61,11 +62,15 @@ function toolsFor(role: string, pi: ExtensionAPI): ToolDefinition[] {
 	if (role === ORCHESTRATOR) {
 		const runAdapter = pythonAdapter(python, resolverEnv(process.env, composition));
 		const cycle = { spawns: 0, corrections: 0 };
+		const turn = { investigators: 0 };
 		pi.on('before_agent_start', (event) => {
-			if (event.messageType === 'user') resetFactCheckerCycle(cycle);
+			if (event.messageType !== 'user') return;
+			resetFactCheckerCycle(cycle);
+			turn.investigators = 0;
 		});
-		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition)));
-		tools.push(spawnAgentTool(spawnableWorkers(composition), cycle));
+		const spawnTool = spawnAgentTool(spawnableWorkers(composition), cycle);
+		tools.push(...spotlightTools(active, runAdapter, role, requestResearchRound, () => evidenceValidates(context), () => resetFactCheckerCycle(cycle), fixedStepRunner(context, edition), dispatchRunner(spawnTool, tools[0], gateCheck(active, runAdapter, context), turn)));
+		tools.push(spawnTool);
 		tools.push(openReviewTool(active.caseDir, required('SPOTLIGHT_CASES_ROOT'), undefined, gateCheck(active, runAdapter, context), async () => missingForApproval(active.caseDir, await resolveCase(active, runAdapter))));
 		tools.splice(0, tools.length, ...tools.map((tool) => keepGateBound(tool, active.caseDir, async () => String((await resolveCase(active, runAdapter)).phase ?? ''))));
 	}
@@ -187,6 +192,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	if (role === 'fact-checker' && process.env.SPOTLIGHT_FC_BATCH) registerBatchEnd(pi, tools.map((tool) => tool.name));
 	if (tier12b) registerHyphenNames(pi, new Set(tools.map((tool) => tool.name)));
 	for (const tool of tools) pi.registerTool(tool);
+	registerSchemaHints(pi, tools);
 	pi.on('session_start', () => pi.setActiveTools(tools.map((tool) => tool.name)));
 }
 
@@ -1175,6 +1181,44 @@ function registerReviewRefusalCap(pi: ExtensionAPI): void {
 		const text = stop;
 		stop = undefined;
 		return { message: { ...event.message, content: [{ type: 'text', text }] } as typeof event.message };
+	});
+}
+
+// Phase B (Gemma12, 2026-11-02): record_finding was refused five times for
+// grounding.support_type "direct_support" with only "must be equal to one of
+// the allowed values". Pi validates arguments before a tool runs; each failing
+// path that is an enum in the tool's own schema gets its allowed values.
+export function allowedAt(schema: unknown, path: string): unknown[] | undefined {
+	let nodes: unknown[] = [schema];
+	for (const part of path === 'root' ? [] : path.split('.')) {
+		nodes = nodes.flatMap(function expand(node: unknown): unknown[] {
+			const at = node as { properties?: Record<string, unknown>; items?: unknown; anyOf?: unknown[]; allOf?: unknown[]; oneOf?: unknown[] } | undefined;
+			if (!at || typeof at !== 'object') return [];
+			const branches = [...(at.anyOf ?? []), ...(at.allOf ?? []), ...(at.oneOf ?? [])].flatMap(expand);
+			const own = /^\d+$/.test(part) ? (at.items === undefined ? [] : [at.items]) : at.properties?.[part] === undefined ? [] : [at.properties[part]];
+			return [...own, ...branches];
+		});
+	}
+	const values = nodes.flatMap(function enums(node: unknown): unknown[] {
+		const at = node as { enum?: unknown[]; const?: unknown; anyOf?: unknown[]; oneOf?: unknown[] } | undefined;
+		if (!at || typeof at !== 'object') return [];
+		return [...(at.enum ?? []), ...('const' in at ? [at.const] : []), ...[...(at.anyOf ?? []), ...(at.oneOf ?? [])].flatMap(enums)];
+	});
+	return values.length ? [...new Set(values)] : undefined;
+}
+
+function registerSchemaHints(pi: ExtensionAPI, tools: ToolDefinition[]): void {
+	const schemas = new Map(tools.map((tool) => [tool.name, tool.parameters]));
+	pi.on('message_end', (event) => {
+		const message = event.message as { role?: string; isError?: boolean; content?: Array<{ type: string; text?: string }> };
+		const text = message.content?.[0]?.text ?? '';
+		const name = /^Validation failed for tool "([^"]+)"/.exec(text)?.[1];
+		if (message.role !== 'toolResult' || !message.isError || !name || !schemas.has(name)) return undefined;
+		const hinted = text.replace(/^(  - ([^:\n]+): must be equal to (?:one of the allowed values|constant))$/gm, (line, _all, path: string) => {
+			const allowed = allowedAt(schemas.get(name), path);
+			return allowed ? `${line} (allowed: ${allowed.map((value) => JSON.stringify(value)).join(', ')})` : line;
+		});
+		return hinted === text ? undefined : { message: { ...event.message, content: [{ type: 'text', text: hinted }] } as typeof event.message };
 	});
 }
 

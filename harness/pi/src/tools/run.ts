@@ -57,7 +57,12 @@ export function checkedParams<T>(tool: string, schema: TSchema, params: unknown)
 	if (Value.Check(schema, params)) return params as T;
 	const reasons = [...Value.Errors(schema, params)]
 		.slice(0, 5)
-		.map((error) => `${error.instancePath || '/'} ${error.message}`);
+		// An enum or constant names its allowed values (Phase B, Gemma12).
+		.map((error) => {
+			const params = (error as { params?: { allowedValues?: unknown[]; allowedValue?: unknown } }).params;
+			const allowed = params?.allowedValues ?? (params && 'allowedValue' in params ? [params.allowedValue] : undefined);
+			return `${error.instancePath || '/'} ${error.message}${allowed ? ` (allowed: ${allowed.map((value) => JSON.stringify(value)).join(', ')})` : ''}`;
+		});
 	// Replay check on 8699f11d: schema refusals were the largest family with no
 	// next step. The refusal names the parameters the tool takes.
 	const properties = (schema as { properties?: Record<string, unknown>; required?: string[] }).properties;

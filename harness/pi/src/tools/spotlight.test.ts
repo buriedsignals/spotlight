@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { CHECKOUT_ROOT, ORCHESTRATOR } from '../roles.ts';
-import { NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, bindActiveCase, pythonAdapter, spotlightTools } from './spotlight.ts';
+import { NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, bindActiveCase, dispatchAt, pythonAdapter, spotlightTools } from './spotlight.ts';
 import type { AdapterRunner } from './spotlight.ts';
 
 const PYTHON = process.env.SPOTLIGHT_PYTHON ?? 'python3';
@@ -290,4 +290,10 @@ test('resolve names the next step at the brief, the methodology and each investi
 	// Every other phase resolves exactly as the resolver wrote it.
 	const report = { next_phase: 'report', phase: 'report', status: 'pending' };
 	assert.equal(await resolveWith(report), JSON.stringify(report));
+});
+
+// review-fix4 A3: a fresh fact-check after the investigator's update is a plain
+// batch, not the cycle's single evidence correction.
+test('the resolver\'s fresh fact-check item dispatches a plain fact-checker, not an evidence correction', () => {
+	assert.deepEqual(dispatchAt({ phase: 'investigation', status: 'active', missing: ["fresh data/fact-check.json after the investigator's update"] }), { agent: 'fact-checker', task: '', step: 'fact-checker' });
 });

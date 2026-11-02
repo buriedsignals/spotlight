@@ -102,6 +102,20 @@ async function recordFetchedItems(context: ToolContext, tools: ToolDefinition[],
 	}
 }
 
+// Whether an item's anchor is verified inside a file: its quote occurs there,
+// or with no quote the cited lines exist.
+function anchoredIn(caseDir: string, path: string, item: Row, ref: Row): boolean {
+	let text: string;
+	try {
+		text = readFileSync(join(caseDir, path), 'utf8');
+	} catch {
+		return false;
+	}
+	if (typeof item.quote === 'string' && item.quote.trim()) return text.includes(item.quote.trim());
+	const lines = text.split('\n').length;
+	return Number.isInteger(ref.line_start) && (ref.line_start as number) >= 1 && (ref.line_start as number) <= lines;
+}
+
 // The fact-check write with its quotes recorded, or the content unchanged when
 // it cites none.
 async function resolveQuotes(context: ToolContext, tools: ToolDefinition[], sourceExpressions: ToolDefinition, content: string, signal?: AbortSignal): Promise<string> {
@@ -124,7 +138,30 @@ async function resolveQuotes(context: ToolContext, tools: ToolDefinition[], sour
 			}
 		}
 	}
-	if (pending.length === 0) return content;
+	// e2e r5 resume (31B, D3-F1): items citing the investigator's passages AND
+	// a source_ref into the fact-checker's own registered capture got no bundle
+	// id, and validate-case.py refused the verdict for want of an anchor. Such an
+	// item is independent support when its anchor is verified inside the
+	// fact-checker's capture (the quote is in it, or with no quote the cited
+	// lines exist): it gets that capture's evidence item. The investigator's
+	// passages it also cites add nothing to its independence.
+	const anchored: PendingQuote[] = [];
+	for (const claim of list(doc, 'claims')) {
+		for (const [key, relation] of Object.entries(RELATION)) {
+			for (const item of list(claim, key)) {
+				const refs = item.source_expression_refs;
+				if (!(Array.isArray(refs) && refs.length > 0) || typeof claim.finding_id !== 'string' || typeof item.evidence_bundle_id === 'string') continue;
+				const ref = (item.source_ref ?? {}) as Row;
+				const path = typeof ref.path === 'string' ? ref.path : typeof item.local_file === 'string' ? item.local_file : undefined;
+				if (!path || !factCheckerCapture(context, path) || !anchoredIn(context.caseDir, path, item, ref)) continue;
+				const support = (claim.grounding_assessment as Row | undefined)?.support_type;
+				const supportType = relation === 'contradicts' ? 'contradicted' : typeof support === 'string' && ['direct', 'indirect', 'inferred', 'contradicted', 'insufficient'].includes(support) ? support : 'insufficient';
+				anchored.push({ item, finding: claim.finding_id, relation, supportType });
+			}
+		}
+	}
+	if (anchored.length) await recordFetchedItems(context, tools, anchored, signal);
+	if (pending.length === 0) return anchored.length ? JSON.stringify(doc, null, 2) : content;
 	await recordFetchedItems(context, tools, pending, signal);
 	const passages = list(readJson(context.caseDir, 'source-expressions.json'), 'expressions');
 	const taken = new Set(passages.map((p) => String(p.id)));
