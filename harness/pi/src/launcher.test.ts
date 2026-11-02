@@ -4776,6 +4776,51 @@ test('a failing report draft: repairs carry the FAIL lines, the cap sets the dra
 	assert.match(analystTasks()[3], /FAIL {2}STRUCTURE: finding_order/);
 });
 
+// Audit G4 (reports/audit-feedback-loop.md): the gate-summary analyst had no
+// cap, so each resolve or spawn started another analyst on a summary that kept
+// failing validate-case. It now shares the report's cap: repairs carry the FAIL
+// lines, the third failure sets the summary aside with a receipt, and the
+// member's next message allows another try.
+test('a failing gate summary: repairs carry the FAIL lines, the cap sets the summary aside with a receipt, and a member turn allows another try', async (t) => {
+	const space = await workspace(t);
+	const caseDir = caseAtGate(space);
+	const summaryMd = await readFile(join(caseDir, 'summary.md'), 'utf8');
+	const invalid = JSON.stringify({ ...JSON.parse(await readFile(join(caseDir, 'data', 'summary.json'), 'utf8')), schema_version: '0.9' });
+	await unlink(join(caseDir, 'summary.md'));
+	await unlink(join(caseDir, 'data', 'summary.json'));
+	let calls = 0;
+	const fake = await startFakeOpenAI((request) => {
+		if (isWorkerRequest(request, 'analyst')) {
+			return toolResults(request).length === 0
+				? { toolCalls: [{ name: 'write_file', arguments: { path: 'summary.md', content: summaryMd } }, { name: 'write_file', arguments: { path: 'data/summary.json', content: invalid } }] }
+				: { text: 'Wrote it.' };
+		}
+		calls += 1;
+		if (calls <= 4 || calls === 6) return { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'analyst', task: `Fix the summary, call ${calls}.` } }] };
+		return { text: 'Stopped.' };
+	});
+	t.after(() => fake.close());
+	const chat = launch(t, baseEnv(space, fake.baseURL));
+	await settledPrompt(chat, 'Continue.');
+
+	const analystTasks = () => fake.requests.filter((request) => isWorkerRequest(request, 'analyst') && toolResults(request).length === 0).map(userText);
+	assert.equal(analystTasks().length, 3, 'the first try and two repairs');
+	assert.doesNotMatch(analystTasks()[0], /schema_version must be 1\.0/);
+	for (const task of analystTasks().slice(1)) assert.match(task, /summary\.json: schema_version must be 1\.0/);
+	const results = toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'analyst')).at(-1)!);
+	assert.match(results[2], /\[report-repair receipt\] \{"cap":"report-repairs","role":"analyst","phase":"investigation_gate_approval","repairs":2,"failed_checks":3,"set_aside":"data\/harness-checks\/analyst\/summary-rejected-[^"]+\.json"\}[^\n]*ask in the chat for another try/);
+	assert.match(results[3], /no analyst was started[^\n]*gate summary could not be made valid[^\n]*\[report-repair receipt\]/);
+	assert.match(results[3], /schema_version must be 1\.0/);
+	assert.ok(!existsSync(join(caseDir, 'data', 'summary.json')) && !existsSync(join(caseDir, 'summary.md')), 'the invalid summary is no longer the case\'s summary');
+	const setAside = /"set_aside":"([^"]+)"/.exec(results[2])![1];
+	const kept = JSON.parse(await readFile(join(caseDir, setAside), 'utf8')) as { receipt: { failed_checks: number }; validator_report: string; files: Record<string, string> };
+	assert.deepEqual([kept.receipt.failed_checks, kept.files['data/summary.json'], kept.files['summary.md']], [3, invalid, summaryMd]);
+	assert.match(kept.validator_report, /schema_version must be 1\.0/);
+
+	await settledPrompt(chat, 'Please try the summary once more.');
+	assert.equal(analystTasks().length, 4, 'the member\'s message allows another try');
+});
+
 test('a spawn with no agent, an unknown agent or an investigator with an empty task is refused with the fix, and no worker starts', async (t) => {
 	const fake = await startFakeOpenAI((request) => {
 		if (systemText(request).includes(' worker.')) return { text: 'Unexpected worker.' };

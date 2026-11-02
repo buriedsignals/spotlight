@@ -95,20 +95,34 @@ type MemberTurn = { kind: 'spotlight-member-turn' };
 
 const REPORT_CAPPED = `the report draft failed validate-report-draft.py on its first try and on ${REPORT_REPAIRS} repairs, so the harness set it aside and runs no analyst again until the member asks. Do not spawn the analyst. Call open_review: with no draft the member can only decline the report there. Tell the member plainly that the draft could not be made valid, and that they can decline the report on the page or ask in the chat for another try.`;
 
+// The same cap holds the gate summary (audit G4): the resolver re-dispatches
+// the analyst while a summary is missing, and nothing else bounded it.
+const SUMMARY_CAPPED = `the gate summary failed validate-case.py on its first try and on ${REPORT_REPAIRS} repairs, so the harness set it aside and runs no analyst again until the member asks. Do not spawn the analyst and do not open the review page. Tell the member plainly that the Investigation gate summary could not be made valid, and that they can ask in the chat for another try.`;
+
+// What each capped analyst phase writes, and what the orchestrator is told at the cap.
+const ANALYST_CAPS: Record<string, { files: string[]; capped: string }> = {
+	report: { files: ['data/report-draft.json'], capped: REPORT_CAPPED },
+	investigation_gate_approval: { files: ['summary.md', 'data/summary.json'], capped: SUMMARY_CAPPED },
+};
+
 // review-ur R1: at the cap an invalid draft made open_review refuse, and only
 // the analyst may write or remove it, so the member could not even decline.
-// Code moves the draft text, unchanged, to the analyst's harness-checks with the
-// receipt and the validator's report; it never writes or accepts a draft.
-function setDraftAside(harness: Harness, report: string, failed: number): string {
+// Code moves the deliverable text, unchanged, to the analyst's harness-checks
+// with the receipt and the validator's report; it never writes or accepts one.
+function setDraftAside(harness: Harness, phase: string, report: string, failed: number): string {
 	const caseDir = harness.active.caseDir;
-	const draft = join(caseDir, 'data', 'report-draft.json');
-	const receipt = { cap: 'report-repairs', role: 'analyst', phase: 'report', repairs: REPORT_REPAIRS, failed_checks: failed };
-	if (!existsSync(draft)) return `[report-repair receipt] ${JSON.stringify(receipt)} ${REPORT_CAPPED}`;
-	const path = writeConfined(caseDir, caseDir, `data/harness-checks/analyst/report-draft-rejected-${new Date().toISOString().replace(/[:.]/g, '-')}.json`, JSON.stringify({ receipt, validator_report: report, draft: readFileSync(draft, 'utf8') }, null, 2));
-	unlinkSync(draft);
+	const { files, capped } = ANALYST_CAPS[phase];
+	const present = files.filter((file) => existsSync(join(caseDir, file)));
+	const receipt = { cap: 'report-repairs', role: 'analyst', phase, repairs: REPORT_REPAIRS, failed_checks: failed };
+	if (present.length === 0) return `[report-repair receipt] ${JSON.stringify(receipt)} ${capped}`;
+	const name = phase === 'report' ? 'report-draft' : 'summary';
+	const kept = Object.fromEntries(present.map((file) => [file, readFileSync(join(caseDir, file), 'utf8')]));
+	const body = phase === 'report' ? { receipt, validator_report: report, draft: kept[files[0]] } : { receipt, validator_report: report, files: kept };
+	const path = writeConfined(caseDir, caseDir, `data/harness-checks/analyst/${name}-rejected-${new Date().toISOString().replace(/[:.]/g, '-')}.json`, JSON.stringify(body, null, 2));
+	for (const file of present) unlinkSync(join(caseDir, file));
 	const line = `[report-repair receipt] ${JSON.stringify({ ...receipt, set_aside: path })}`;
 	harness.log(line);
-	return `${line} ${REPORT_CAPPED}`;
+	return `${line} ${capped}`;
 }
 
 // A revoked or expired newsroom token, or an Editorial MCP that cannot be
@@ -935,10 +949,10 @@ function refusalFor(harness: Harness, role: string, task: string, status: Record
 		if (!['methodology', 'methodology_approval', 'research', 'research_approval', 'investigation'].includes(phase)) return `The investigator cannot run at ${phase}. Call spotlight_resolve and follow its phase owner.`;
 	}
 	const check = harness.lastAnalystCheck;
-	if (role === 'analyst' && phase === 'report' && check?.phase === 'report' && check.failures > REPORT_REPAIRS) {
+	if (role === 'analyst' && Object.hasOwn(ANALYST_CAPS, phase) && check?.phase === phase && check.failures > REPORT_REPAIRS) {
 		const receipt = { cap: 'report-repairs', role, phase, repairs: REPORT_REPAIRS, failed_checks: check.failures };
 		harness.log(`[report-repair receipt] ${JSON.stringify(receipt)}`);
-		return `no analyst was started: ${REPORT_CAPPED} [report-repair receipt] ${JSON.stringify(receipt)}\nLast errors:\n${check.report}`;
+		return `no analyst was started: ${ANALYST_CAPS[phase].capped} [report-repair receipt] ${JSON.stringify(receipt)}\nLast errors:\n${check.report}`;
 	}
 	if (role === 'analyst' && harness.batchBlocked) return `${BATCH_BLOCKED} ${harness.batchBlocked}`;
 	if (role === 'analyst' && phase === 'ingest' && harness.config.edition === 'newsroom') return 'the analyst does not run at Ingest in the newsroom edition: the newsroom drafts the batch from the submitted case';
@@ -1004,7 +1018,7 @@ async function withValidation(harness: Harness, role: string, text: string): Pro
 	if (role === 'analyst' && phase !== 'ingest') {
 		const previous = harness.lastAnalystCheck?.phase === phase ? harness.lastAnalystCheck.failures : 0;
 		harness.lastAnalystCheck = outcome.passed ? undefined : { phase, report: outcome.report, failures: previous + 1 };
-		if (phase === 'report' && !outcome.passed && previous + 1 > REPORT_REPAIRS) return `${text}\n\n${setDraftAside(harness, outcome.report, previous + 1)}`;
+		if (Object.hasOwn(ANALYST_CAPS, phase) && !outcome.passed && previous + 1 > REPORT_REPAIRS) return `${text}\n\n${setDraftAside(harness, phase, outcome.report, previous + 1)}`;
 	}
 	if (role === 'analyst' && !outcome.passed && (await proposalNotAtFault(harness))) {
 		harness.batchBlocked = outcome.report.split('\n').slice(1).join(' ').replace(/\s+/g, ' ').trim().slice(0, 800);
