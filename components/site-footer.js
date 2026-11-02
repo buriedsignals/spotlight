@@ -68,7 +68,6 @@ class SiteFooter extends HTMLElement {
         <div class="footer-links">
           <a href="/docs/index.html">Docs</a>
           <a href="https://indicator.media/indicator-lab">Install</a>
-          <a href="https://buriedsignals.com/consulting" target="_blank" rel="noopener">Work with me ↗</a>
           <a href="https://buriedsignals.com" target="_blank" rel="noopener">Buried Signals ↗</a>
         </div>
       </div>

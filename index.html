@@ -848,15 +848,9 @@
     padding: 168px 48px 120px;
   }
   #offers .header { margin-bottom: 60px; }
-  .about-bs {
-    max-width: 72ch; margin: 0 48px 60px; padding: 0;
-    font-size: 14px; line-height: 1.65;
-    color: var(--muted-dark);
-  }
-  .about-bs strong { font-weight: 500; color: inherit; }
   .offers-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     gap: 0;
     border-top: 1px solid var(--muted-faint-dark);
     border-bottom: 1px solid var(--muted-faint-dark);
@@ -869,6 +863,23 @@
     min-height: 580px;
   }
   .offer:last-child { border-right: none; }
+  /* Membership is the only offer: full width, Lab on the left, newsletters on the right. */
+  .offer--lab {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 64px;
+    align-items: start;
+    min-height: auto;
+  }
+  .offer--lab .offer-main { display: flex; flex-direction: column; }
+  .offer--lab .offer-footer--newsletter {
+    margin-top: 0;
+    padding-top: 0;
+    padding-left: 64px;
+    border-top: none;
+    border-left: 1px solid var(--muted-faint-dark);
+  }
+  .offer .price { font-size: 14px; line-height: 1.65; margin: 0 0 28px; }
   .offer .kicker {
     display: flex; justify-content: flex-start; align-items: baseline; gap: 16px; flex-wrap: wrap;
     font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.82;
@@ -1468,10 +1479,11 @@
 
     #offers { padding: 24px 0 60px; }
     #offers .header { margin-bottom: 0; }
-    .about-bs { margin: 0 0 40px; padding: 0 20px; }
     .offers-grid { grid-template-columns: 1fr; padding: 0 20px; }
     .offer { padding: 36px 0; border-right: none; border-bottom: 1px solid var(--muted-faint-dark); min-height: auto; }
     .offer:last-child { border-bottom: none; }
+    .offer--lab { grid-template-columns: 1fr; }
+    .offer--lab .offer-footer--newsletter { margin-top: 36px; padding: 24px 0 0; border-left: none; border-top: 1px solid var(--muted-faint-dark); }
     .offer .actions { flex-direction: column; align-items: flex-start; }
     .offer-signup-form { flex-direction: column; }
     .offer-signup-form input[type="email"],
@@ -2122,26 +2134,25 @@
   </div>
 </section>
 
-<!-- ── OFFERS (Membership + Consulting) ────────────────── -->
+<!-- ── OFFERS (Membership) ─────────────────────────────── -->
 <section id="offers" data-screen-label="07 Offers" data-nav-theme="dark" data-scene-mood="split">
   <div class="header">
-    <span class="chap" data-reveal="meta">Ch. 04 — Work with me</span>
-    <h2 class="title" data-reveal="title" style="--rd: 120ms">Work with me</h2>
+    <span class="chap" data-reveal="meta">Ch. 04 — Membership</span>
+    <h2 class="title" data-reveal="title" style="--rd: 120ms">Join the Lab</h2>
   </div>
 
-  <p class="about-bs" data-reveal="body" style="--rd: 120ms">
-    I use Spotlight in my own reporting and in collaborative investigations with partner newsrooms. If you want to work with me around that system, these are the two ways in.
-  </p>
-
   <div class="offers-grid">
-    <article class="offer" data-reveal="card" data-stagger-idx="0">
+    <article class="offer offer--lab" data-reveal="card" data-stagger-idx="0">
+      <div class="offer-main">
       <div class="kicker">
         <span>Indicator Lab</span>
         <span class="launch">Now open</span>
       </div>
       <h3>Investigations with AI. The tools to run your own</h3>
-      <p class="lede">The Buried Signals tool suite, a monthly live workshop and Lab Newsletter, office hours every two weeks, and the training course. $10/month add-on to Indicator membership.</p>
+      <p class="lede">The Buried Signals tool suite, a monthly live workshop and Lab Newsletter, office hours every two weeks, and the training course.</p>
+      <p class="price">$22.95/month · billed monthly, cancel anytime.</p>
       <a class="indicator-lab-link" href="https://indicator.media/indicator-lab">Join Indicator Lab <span aria-hidden="true">→</span></a>
+      </div>
       <div class="offer-footer offer-footer--newsletter">
         <p class="offer-signup-error hidden" id="newsletter-error"></p>
         <p class="offer-signup-success hidden" id="newsletter-success" role="status">
@@ -2181,29 +2192,6 @@
       </div>
     </article>
 
-    <article class="offer" data-reveal="card" data-stagger-idx="1">
-      <div class="kicker">
-        <span>Hire me</span>
-      </div>
-      <h3>I train newsrooms to investigate with AI</h3>
-      <p class="lede">Talks, workshops, custom tooling, and investigation collaborations.</p>
-      <ul>
-        <li>Le Temps</li>
-        <li>Al Jazeera</li>
-        <li>MAZ Journalistenschule</li>
-        <li>Republik</li>
-        <li>20 Minuten</li>
-        <li>SRF</li>
-        <li>MediaStorm</li>
-        <li>The New Humanitarian</li>
-      </ul>
-      <div class="offer-footer">
-        <div class="actions">
-          <a href="mailto:tom@buriedsignals.com" class="btn ghost">Get in touch <span aria-hidden="true">→</span></a>
-          <a href="https://buriedsignals.com/consulting" class="aside" target="_blank" rel="noopener">See case studies</a>
-        </div>
-      </div>
-    </article>
   </div>
 </section>
 
