@@ -48,7 +48,7 @@ const ALL_ON = Object.fromEntries(PERSONA_CONDITIONS.map((name) => [name, true])
 const spawned = (phase: string, task: string, conditions = ALL_ON): WorkerContext => ({ phase, task, conditions });
 const MODES = ['PLANNING', 'EXECUTION', 'AMENDMENT'];
 
-test('every Pi role and tier receives the current UTC date', () => {
+test('every Pi role and tier receives the current UTC date, and with Research on the investigator gets the research_plan rules', () => {
  const composition = loadComposition();
  const before = new Date().toISOString().slice(0,10);
  for (const role of ['orchestrator','investigator','fact-checker','analyst']) for (const tier of ['12b','26b','frontier'] as const) {
@@ -58,6 +58,13 @@ test('every Pi role and tier receives the current UTC date', () => {
   assert.match(prompt, role === 'orchestrator' ? /^You are the Spotlight orchestrator\./ : new RegExp(`^You are the Spotlight ${role} worker\.`), `${role}/${tier}: role identity remains first`);
   assert.equal(dates.length,1,`${role}/${tier}`);
   assert.ok(dates[0] === before || dates[0] === after,`${role}/${tier}: ${dates[0]}`);
+  // research-request-diff.md: the investigator writes research_plan but cannot
+  // load phase-methodology, so with Research on its prompt carries the rules.
+  for (const edition of ['solo', 'newsroom'] as const) {
+   const researched = systemPrompt(composition,role,tier,edition,true,role === 'orchestrator' ? undefined : spawned('methodology','MODE: METHODOLOGY CORRECTION'));
+   const rules = [new RegExp(`\\\`mode\\\` is \\\`${edition === 'solo' ? 'openrouter_swarm' : 'newsroom'}\\\``), /`consent\.swarm` set to true\. You write it: the member's approval at the Methodology gate is the consent\./, /A research topic the member asks for goes into `research_plan` topics/, /Never drop `research_plan` to get past them\./];
+   for (const rule of rules) (role === 'investigator' ? assert.match : assert.doesNotMatch)(researched, rule, `${role}/${tier}/${edition}`);
+  }
  }
 });
 

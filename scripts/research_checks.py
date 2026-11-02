@@ -190,7 +190,7 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
             problems.append(f"{where}: the subscription route needs mode subscription_subagents")
         cloud = _is_cloud(topic, own_egress, lane_route)
         if cloud and consent.get("swarm") is not True:
-            problems.append(f"{where}: a swarm topic needs the member's swarm opt-in")
+            problems.append(f"{where}: a swarm topic needs research_plan.consent.swarm set to true; write it, since the member's approval at the Methodology gate is the consent")
         if cloud and mode == "local_only":
             problems.append(f"{where}: local_only mode runs no cloud topic")
         if newsroom and (topic.get("route") == "swarm" or any(e.get("destination") == "openrouter" for e in own_egress)):

@@ -348,6 +348,16 @@ const RESEARCH_LINE = {
 	on: '## Research switch\nResearch is on for this case: the methodology proposes a `research_plan` as phase-methodology describes.',
 	off: '## Research switch\nResearch is off for this case: write no `research_plan` and say nothing about research.',
 };
+// The investigator writes the plan but cannot load phase-methodology, so it
+// gets that skill's research_plan rules for this runtime (phase-methodology
+// "Research plan"; research-request-diff.md: r9 picked local_only from the
+// schema's list, read the swarm consent as the member's to give, and dropped
+// the plan).
+const researchRules = (edition: Edition) => `When you plan or correct the methodology, its \`research_plan\` (schemas/methodology.schema.json) follows these rules here:
+- \`mode\` is \`${edition === 'newsroom' ? 'newsroom' : 'openrouter_swarm'}\`; \`local_only\` only when every topic is a local lane.
+- Web topics need \`consent.swarm\` set to true. You write it: the member's approval at the Methodology gate is the consent. Never write who consented or when.
+- A research topic the member asks for goes into \`research_plan\` topics, each on one \`investigation_plan\` direction, with id \`<direction_id>-<lane_type>\`. Adding a direction does not answer it.
+- When the research checks refuse the plan, correct it. Never drop \`research_plan\` to get past them.`;
 
 // Checked before the Brief starts. Short on purpose: the 12B pays for every
 // token on every call.
@@ -360,7 +370,8 @@ export type PersonaCondition = (typeof PERSONA_CONDITIONS)[number];
 export type WorkerContext = { phase: string; task: string; conditions: Record<PersonaCondition, boolean>; runtime?: string };
 
 export function systemPrompt(composition: Composition, role: string, tier: ModelTier, edition: Edition = 'solo', research = false, worker?: WorkerContext): string {
-	const prompt = `${basePrompt(composition, role, tier, worker)}\n\nCurrent UTC date: ${new Date().toISOString().slice(0, 10)}\n\n${RESEARCH_LINE[research ? 'on' : 'off']}`;
+	const rules = research && role === 'investigator' ? `\n${researchRules(edition)}` : '';
+	const prompt = `${basePrompt(composition, role, tier, worker)}\n\nCurrent UTC date: ${new Date().toISOString().slice(0, 10)}\n\n${RESEARCH_LINE[research ? 'on' : 'off']}${rules}`;
 	if (edition !== 'newsroom') return prompt;
 	return `${prompt}\n${role === ORCHESTRATOR ? NEWSROOM_ADAPTER : workerLines(NEWSROOM_ADAPTER)}`;
 }

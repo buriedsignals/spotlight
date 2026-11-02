@@ -104,13 +104,13 @@ class D1LanePlan(unittest.TestCase):
             "needs a token budget": no_token_budget,
             "token_budget 5000 is below one lane call; set at least 20000": token_budget_below_one_call,
             'add a research_plan.egress entry {"topic_id": "ownership-registries"': no_egress,
-            "needs the member's swarm opt-in": no_opt_in,
+            "a swarm topic needs research_plan.consent.swarm set to true; write it": no_opt_in,
             "local_only mode runs no cloud topic": local_only_cloud,
             "an ad-hoc topic gets no keys": key_on_ad_hoc,
             "anomaly_methods are retired from research topics": retired_methods,
             "egress names an unknown topic": unknown_egress_topic,
             "research_plan.egress[0].destination: must be one of": unknown_destination,
-            "(ownership-web): a swarm topic needs the member's swarm opt-in": web_lane_without_opt_in,
+            "(ownership-web): a swarm topic needs research_plan.consent.swarm set to true": web_lane_without_opt_in,
             "a registries lane runs on the swarm route, not 'local'": web_lane_on_local_route,
             "the subscription route needs mode subscription_subagents": subscription_route_in_swarm_mode,
         }
@@ -237,7 +237,8 @@ class D1LanePlan(unittest.TestCase):
             Case.write_json(case / "data" / "methodology.json", method)
             result = validate()
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("needs the member's swarm opt-in", result.stderr)
+            # The line names the fix the planner makes (research-request-diff.md).
+            self.assertIn("needs research_plan.consent.swarm set to true; write it, since the member's approval at the Methodology gate is the consent", result.stderr)
 
 
 class LaneChecks(unittest.TestCase):
