@@ -1947,12 +1947,14 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 			{ name: 'nothing_found', arguments: { reason: 'Not sure yet.' } },
 			{ name: 'record_finding', arguments: { finding: { claim: 'The licence permits modification.', confidence: 'medium' }, cite: [{ path: 'research/licence-page.md', line_start: 1, line_end: 3 }] } },
 		];
+		// inv-retest-def8674f.md: LFM3 answered with two record_finding calls; the first that passes is kept, the other named.
+		const second = { name: 'record_finding', arguments: { finding: { claim: 'The licence allows redistribution.', confidence: 'low' }, cite: [{ path: 'research/licence-page.md', line_start: 2, line_end: 2 }] } };
 		const commits: ChatRequest[] = [];
 		const fake = await startFakeOpenAI((request) => {
 			if (isWorkerRequest(request, 'investigator')) {
 				if (request.tool_choice === 'required') {
 					commits.push(request);
-					return { toolCalls: [answers[commits.length - 1] ?? answers[2]] };
+					return { toolCalls: commits.length === 3 ? [answers[2], second] : [answers[commits.length - 1] ?? answers[2]] };
 				}
 				const done = toolResults(request).length;
 				if (done === 0) return { toolCalls: [{ name: 'grep_files', arguments: { pattern: 'modify', path: 'research' } }] };
@@ -1991,6 +1993,9 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 		const recordCall = worker.flatMap((request) => request.messages.flatMap((message) => (message.tool_calls ?? []) as Array<{ id: string; function: { name: string; arguments: string } }>)).find((call) => call.function.name === 'record_finding')!;
 		assert.ok(recordCall.id.startsWith('commit-'), recordCall.id);
 		assert.deepEqual(JSON.parse(recordCall.function.arguments).cite, [{ path: 'research/licence-page.md', line_start: 2, line_end: 2 }]);
+		// The second call was not recorded, and the turn names it to the model.
+		assert.ok(!findings.findings.some((row) => row.claim === 'The licence allows redistribution.'));
+		assert.ok(worker.some((request) => request.messages.some((message) => message.role === 'assistant' && JSON.stringify(message.content ?? '').includes('Commit step: kept the first finding; not recorded: record_finding \\"The licence allows redistribution.'))));
 		// Continuity: after each fall-through the model's own request followed, and the worker finished on its own words.
 		assert.match(toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator')).at(-1)!).join('\n'), /Investigator finished\./);
 	});

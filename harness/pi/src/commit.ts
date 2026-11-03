@@ -121,7 +121,8 @@ export function commitDue(state: CommitState, requestsSinceAttempt = Infinity): 
 
 // The model's commit answer, with each cite clipped to the lines it was shown
 // (runs of consecutive shown lines become separate cites); or why it is not used.
-export function acceptCommit(name: string | undefined, args: unknown, shown: Shown): { args: { finding: { claim: string; confidence: string }; cite: Array<{ path: string; line_start: number; line_end: number }> } } | { reason: string } {
+export type CommitArgs = { finding: { claim: string; confidence: string }; cite: Array<{ path: string; line_start: number; line_end: number }> };
+export function acceptCommit(name: string | undefined, args: unknown, shown: Shown): { args: CommitArgs } | { reason: string } {
 	if (name === 'nothing_found') return { reason: 'the model answered nothing_found' };
 	if (name !== 'record_finding') return { reason: `the model answered ${name ?? 'no tool call'}` };
 	const input = args as { finding?: { claim?: unknown; confidence?: unknown }; cite?: unknown };
@@ -143,4 +144,23 @@ export function acceptCommit(name: string | undefined, args: unknown, shown: Sho
 	}
 	if (!cite.length) return { reason: 'the commit answer cites no line the model was shown' };
 	return { args: { finding: { claim: claim.trim(), confidence: String(confidence) }, cite } };
+}
+
+// inv-retest-def8674f.md: LFM3's commit answer carried two record_finding calls
+// and the one-call rule dropped both. The first call that passes the cite rules
+// is kept; every other call is dropped and named, so the model sees it.
+export function pickCommit(calls: ReadonlyArray<{ name?: string; arguments?: unknown }>, shown: Shown): { args: CommitArgs; dropped: string[] } | { reason: string } {
+	let kept: CommitArgs | undefined;
+	const dropped: string[] = [];
+	const reasons: string[] = [];
+	for (const call of calls) {
+		const claim = (call.arguments as { finding?: { claim?: unknown } } | undefined)?.finding?.claim;
+		const label = `${call.name ?? 'a call'}${typeof claim === 'string' ? ` "${claim.slice(0, 120)}"` : ''}`;
+		if (kept) { dropped.push(`${label} (one finding per commit step; record it with record_finding)`); continue; }
+		const accepted = acceptCommit(call.name, call.arguments, shown);
+		if ('args' in accepted) kept = accepted.args;
+		else { reasons.push(accepted.reason); if (call.name === 'record_finding') dropped.push(`${label} (${accepted.reason})`); }
+	}
+	if (!kept) return { reason: reasons.join('; ') || 'the model answered no tool call' };
+	return { args: kept, dropped };
 }

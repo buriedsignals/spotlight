@@ -9,7 +9,7 @@ import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-age
 import { createAssistantMessageEventStream, getCurrentTools } from '@earendil-works/pi-ai';
 import { streamSimple as streamOpenAICompletions } from '@earendil-works/pi-ai/api/openai-completions';
 import { ROUTER_CALL_PREFIX, ROUTER_MODEL, routeMember, routeWithoutMember, routerOn, routerState } from './router.ts';
-import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, acceptCommit, commitDue, commitState } from './commit.ts';
+import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, commitDue, commitState, pickCommit } from './commit.ts';
 import type { Intent, RouterMove } from './router.ts';
 import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
@@ -228,16 +228,20 @@ const commitStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 				});
 				const answer = await commit.result();
 				const calls = answer.content.filter((part) => part.type === 'toolCall') as Array<{ name?: string; arguments?: unknown }>;
-				const accepted = answer.stopReason === 'error' || answer.stopReason === 'aborted' ? { reason: `the commit request ended ${answer.stopReason}` }
-					: calls.length !== 1 ? { reason: `the commit answer has ${calls.length} tool calls` }
-					: acceptCommit(calls[0].name, calls[0].arguments, state.shown);
+				const accepted = answer.stopReason === 'error' || answer.stopReason === 'aborted' ? { reason: `the commit request ended ${answer.stopReason}` } : pickCommit(calls, state.shown);
 				if ('args' in accepted) {
 					const toolCall = { type: 'toolCall' as const, id: `${COMMIT_CALL_PREFIX}${Date.now().toString(36)}`, name: 'record_finding', arguments: accepted.args };
-					const message = { ...answer, content: [toolCall], responseId: `commit step: ${state.uncommitted.length} unrecorded line(s) shown`, stopReason: 'toolUse' as const };
-					log(`[commit] record_finding at tool turn ${state.turns} (${accepted.args.cite.map((cite) => `${cite.path}:${cite.line_start}-${cite.line_end}`).join(', ')})`);
+					// The calls not kept are named in the turn itself, so the model sees them.
+					const note = accepted.dropped.length ? [{ type: 'text' as const, text: `Commit step: kept the first finding; not recorded: ${accepted.dropped.join('; ')}.` }] : [];
+					const message = { ...answer, content: [...note, toolCall], responseId: `commit step: ${state.uncommitted.length} unrecorded line(s) shown`, stopReason: 'toolUse' as const };
+					log(`[commit] record_finding at tool turn ${state.turns} (${accepted.args.cite.map((cite) => `${cite.path}:${cite.line_start}-${cite.line_end}`).join(', ')})${accepted.dropped.length ? `; dropped ${accepted.dropped.length}` : ''}`);
 					out.push({ type: 'start', partial: { ...message, content: [] } });
-					out.push({ type: 'toolcall_start', contentIndex: 0, partial: message });
-					out.push({ type: 'toolcall_end', contentIndex: 0, toolCall, partial: message });
+					if (note.length) {
+						out.push({ type: 'text_start', contentIndex: 0, partial: message });
+						out.push({ type: 'text_end', contentIndex: 0, content: note[0].text, partial: message });
+					}
+					out.push({ type: 'toolcall_start', contentIndex: note.length, partial: message });
+					out.push({ type: 'toolcall_end', contentIndex: note.length, toolCall, partial: message });
 					out.push({ type: 'done', reason: 'toolUse', message });
 					out.end(message);
 					return;
