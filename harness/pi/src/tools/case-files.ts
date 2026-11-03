@@ -1527,10 +1527,10 @@ function foldFindingId(given: unknown, batch: string[], filled: string | undefin
 // and cites the lines of a capture; code copies their exact text and keeps the
 // books (sources, evidence item, passage). A cite is checked whole before any
 // write. Code fills only what the cite determines: the evidence text (Tom,
-// 2026-11-03: the cited quote text), the sources from the capture's receipt or
-// its evidence item; never the claim, confidence or grounding.
+// 2026-11-03: the cited quote text) and the sources from the capture's receipt;
+// never the claim, confidence or grounding.
 type Cite = { path: string; line_start: number; line_end: number };
-type ResolvedCite = Cite & { text: string; url: string; accessed: string; item?: RecordRow; capture?: ReturnType<typeof registeredCapture> };
+type ResolvedCite = Cite & { text: string; url: string; accessed: string; item?: RecordRow; capture: NonNullable<ReturnType<typeof registeredCapture>> };
 const CITE = Type.Optional(Type.Array(Type.Object({
 	path: Type.String({ minLength: 1 }),
 	line_start: Type.Integer({ minimum: 1 }),
@@ -1555,12 +1555,12 @@ function resolveCites(context: ToolContext, cites: Cite[]): ResolvedCite[] {
 		if (cite.line_end < cite.line_start || cite.line_end > lines.length) throw new ToolArgumentError(`${where}: lines ${cite.line_start}-${cite.line_end} are outside the file (lines 1-${lines.length}); give line_start and line_end inside it, as read_file numbers them. Nothing was written.`);
 		const quote = lines.slice(cite.line_start - 1, cite.line_end).join('\n').trim();
 		if (!quote) throw new ToolArgumentError(`${where}: lines ${cite.line_start}-${cite.line_end} are empty; cite the lines that hold the text. Nothing was written.`);
+		// Provenance only from the investigator's own fetch receipt, never from
+		// a bundle row it could write or another role's capture (Codex review of simp-2, P1).
 		const capture = registeredCapture(context, cite.path);
-		const item = bundle.find((entry) => bundleFiles(entry).includes(cite.path));
-		const url = capture?.url ?? (typeof item?.source_url === 'string' ? item.source_url : undefined);
-		const accessed = capture?.accessed ?? (typeof item?.accessed === 'string' ? item.accessed : undefined);
-		if (!url || !accessed) throw new ToolArgumentError(`${where}: no fetch saved this file and no evidence item lists it, so it has no source to cite. Fetch the source (fetch with save_as under research/) and cite that capture. Nothing was written.`);
-		return { ...cite, text: quote, url, accessed, item, capture };
+		if (!capture || capture.acquired_by !== 'investigator') throw new ToolArgumentError(`${where}: cite works only on a capture your own fetch saved and that is unchanged since; this file is not one. Fetch the source (fetch with save_as under research/) and cite that capture, or record this finding with evidence and sources of your own. Nothing was written.`);
+		const item = bundle.find((entry) => bundleFiles(entry).includes(cite.path) && entry.created_by !== 'fact-checker');
+		return { ...cite, text: quote, url: capture.url, accessed: capture.accessed, item, capture };
 	});
 }
 
@@ -1576,15 +1576,13 @@ function applyCites(context: ToolContext, given: unknown): unknown {
 	const finding = { ...(args.finding as RecordRow) };
 	if (finding.evidence === undefined) finding.evidence = resolved.length === 1 ? resolved[0].text : resolved.map((cite) => cite.text);
 	const urls = [...new Set(resolved.map((cite) => cite.url))];
-	if (finding.sources === undefined) {
-		finding.sources = urls.map((url) => {
-			const cite = resolved.find((entry) => entry.url === url)!;
-			return { url, accessed: cite.accessed, local_file: cite.path };
-		});
-	} else {
-		const stray = recordRows(finding.sources).filter((source) => typeof source.url === 'string' && !urls.includes(source.url));
-		if (stray.length) throw new ToolArgumentError(`record_finding: sources ${stray.map((source) => JSON.stringify(source.url)).join(', ')} are not among the cited captures (${urls.join(', ')}); omit sources and code lists the cited ones. Nothing was written.`);
-	}
+	const stray = recordRows(finding.sources).filter((source) => typeof source.url === 'string' && !urls.includes(source.url));
+	if (stray.length) throw new ToolArgumentError(`record_finding: sources ${stray.map((source) => JSON.stringify(source.url)).join(', ')} are not among the cited captures (${urls.join(', ')}); omit sources and code lists the cited ones. Nothing was written.`);
+	// The sources are the receipts' (Codex review of simp-2, P2).
+	finding.sources = urls.map((url) => {
+		const cite = resolved.find((entry) => entry.url === url)!;
+		return { url, accessed: cite.accessed, local_file: cite.path };
+	});
 	return { ...args, finding };
 }
 
@@ -1612,7 +1610,7 @@ async function citeItems(context: ToolContext, write: ToolDefinition, cites: Res
 			source_url: cite.url,
 			accessed: cite.accessed,
 			raw_path: cite.path,
-			sha256: cite.capture!.sha256,
+			sha256: cite.capture.sha256,
 			extraction_confidence: 'medium',
 			human_verification_required: false,
 		});
@@ -1641,7 +1639,7 @@ async function citePassages(context: ToolContext, sourceExpressions: ToolDefinit
 			original_evidence_bundle_id: itemOf.get(cite.path),
 			language,
 			// The source's own words: copied from a capture a harness fetch saved, unchanged since.
-			...(cite.capture ? { direct_quote: true } : {}),
+			direct_quote: true,
 			finding_links: [{ finding_id: finding.id, relation: 'supports' }],
 		};
 	});

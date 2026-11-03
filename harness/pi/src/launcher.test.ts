@@ -1845,6 +1845,9 @@ test('a worker records a passage through the writer script, or by citing lines o
 		{ name: 'record_finding', arguments: { finding: { claim: 'The licence permits modification.', confidence: 'medium' }, cite: [{ path: 'research/licence-page.md', line_start: 2, line_end: 3 }] } },
 		// A source the cite does not back is refused (step 2 Codex review, P1).
 		{ name: 'record_finding', arguments: { finding: { claim: 'The licence is revoked.', confidence: 'low', sources: [{ url: 'https://invented.example/revoked' }] }, cite: [{ path: 'research/licence-page.md', line_start: 2, line_end: 2 }] } },
+		// A file with no investigator fetch receipt, only a bundle row naming a URL,
+		// cannot be cited: the row is not provenance (Codex review of simp-2, P1).
+		{ name: 'record_finding', arguments: { finding: { claim: 'SearXNG is free software.', confidence: 'low' }, cite: [{ path: 'research/notes.md', line_start: 1, line_end: 1 }] } },
 	];
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) {
@@ -1861,7 +1864,8 @@ test('a worker records a passage through the writer script, or by citing lines o
 	await mkdir(join(caseDir, 'research'));
 	await writeFile(join(caseDir, 'research', 'licence.txt'), source);
 	const sha256 = createHash('sha256').update(source).digest('hex');
-	await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), JSON.stringify({ items: [{ id: 'E1', raw_path: 'research/licence.txt', sha256 }] }));
+	await writeFile(join(caseDir, 'research', 'notes.md'), 'SearXNG is free software.\n');
+	await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), JSON.stringify({ items: [{ id: 'E1', raw_path: 'research/licence.txt', sha256 }, { id: 'E9', raw_path: 'research/notes.md', source_url: 'https://forged.example/notes', accessed: '2026-01-01T00:00:00Z' }] }));
 	// The investigator's own fetch of the licence page (its receipt).
 	await writeFile(join(caseDir, 'research', 'licence-page.md'), '# Licence\n  You may modify the software\nand distribute modified versions.\n');
 	registerCapture(space.dataDir, caseDir, 'research/licence-page.md', 'https://docs.example.org/licence', 'investigator');
@@ -1896,6 +1900,8 @@ test('a worker records a passage through the writer script, or by citing lines o
 	assert.deepEqual(cited.sources, [{ url: 'https://docs.example.org/licence', accessed: '2026-07-16T12:30:00Z', local_file: 'research/licence-page.md' }]);
 	assert.deepEqual(cited.evidence_bundle_refs, ['E2']);
 	assert.ok(!findings.findings.some((row) => row.claim === 'The licence is revoked.'));
+	assert.match(results[8], /cite works only on a capture your own fetch saved[\s\S]*Nothing was written/);
+	assert.ok(!findings.findings.some((row) => row.claim === 'SearXNG is free software.'));
 	const bundle = JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')) as { items: Array<Record<string, unknown>> };
 	assert.equal(bundle.items.find((item) => item.id === 'E2')?.source_url, 'https://docs.example.org/licence');
 	const quoted = expressions.expressions.find((expression) => expression.id === 'Q1') as unknown as Record<string, unknown>;
@@ -1908,7 +1914,11 @@ test('a worker records a passage through the writer script, or by citing lines o
 	const link = recorded.finding_links[0];
 	const factCheck = {
 		schema_version: '1.1',
-		claims: [{ finding_id: 'F1', claim_text: claim, verdict: 'verified', evidence_for: [{ source_expression_refs: [{ expression_id: 'SX1', expression_fingerprint: recorded.expression_fingerprint, finding_fingerprint: link.finding_fingerprint, link_fingerprint: link.link_fingerprint }] }] }],
+		claims: [
+			{ finding_id: 'F1', claim_text: claim, verdict: 'verified', evidence_for: [{ source_expression_refs: [{ expression_id: 'SX1', expression_fingerprint: recorded.expression_fingerprint, finding_fingerprint: link.finding_fingerprint, link_fingerprint: link.link_fingerprint }] }] },
+			// The cited finding's passage serves a verified row the same way.
+			{ finding_id: 'F2', claim_text: 'The licence permits modification.', verdict: 'verified', evidence_for: [{ source_expression_refs: [{ expression_id: 'Q1', expression_fingerprint: quoted.expression_fingerprint, finding_fingerprint: (quoted.finding_links as Array<Record<string, string>>)[0].finding_fingerprint, link_fingerprint: (quoted.finding_links as Array<Record<string, string>>)[0].link_fingerprint }] }] },
+		],
 	};
 	const check = `
 import importlib.util, json, sys
