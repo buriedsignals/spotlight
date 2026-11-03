@@ -1,0 +1,143 @@
+{
+ "_source": "e2e/r13-or31b-tor-fix11/records/e2e-tor-s0/calls.jsonl, the investigator's first data/methodology.json write (PLANNING), investigation_plan and research_plan only",
+ "investigation_plan": [
+  {
+   "direction": "Official Website Analysis",
+   "questions": [
+    "Who is listed as the Executive Director on the Tor Project official website?",
+    "Who are the listed members of the Board of Directors on the Tor Project official website?"
+   ],
+   "steps": [
+    {
+     "order": 1,
+     "action": "Identify and fetch the 'People' and 'About' pages of the Tor Project website.",
+     "tool": "search",
+     "target": "site:torproject.org 'People' 'About'",
+     "expected_evidence": "URLs for the people and about pages.",
+     "fallback": "Manual navigation of torproject.org",
+     "tool_source": "curated-catalog"
+    },
+    {
+     "order": 2,
+     "action": "Fetch the identified pages and extract the names and roles of the Executive Director and Board members.",
+     "tool": "fetch",
+     "target": "Identified URLs from step 1",
+     "expected_evidence": "Text content containing names and titles of the leadership.",
+     "fallback": "Use browse if the page is JS-heavy",
+     "tool_source": "curated-catalog"
+    }
+   ],
+   "osint_techniques": [
+    "web scraping",
+    "site search"
+   ],
+   "key_sources": [
+    "torproject.org"
+   ],
+   "risks": [
+    "Website content may be outdated."
+   ],
+   "estimated_difficulty": "quick scan"
+  },
+  {
+   "direction": "Corporate Filing Verification",
+   "questions": [
+    "Does the most recent IRS Form 990 for the Tor Project match the website's leadership list?",
+    "Are there any other official corporate filings (e.g., state-level non-profit registrations) that list the board members?"
+   ],
+   "steps": [
+    {
+     "order": 1,
+     "action": "Search for the Tor Project's most recent IRS Form 990 via ProPublica NonProfit Explorer or GuideStar.",
+     "tool": "search",
+     "target": "ProPublica NonProfit Explorer Tor Project",
+     "expected_evidence": "PDF or digital record of the most recent Form 990.",
+     "fallback": "Search other non-profit database aggregators",
+     "tool_source": "curated-catalog"
+    },
+    {
+     "order": 2,
+     "action": "Fetch and analyze the Form 990 (specifically Part VII, 'Compensation of Officers, Directors, Trustees, Key Employees, and Highest Compensated Employees').",
+     "tool": "fetch",
+     "target": "URL to the Form 990 document",
+     "expected_evidence": "List of names, titles, and dates of service for the board and executives.",
+     "fallback": "Request filing via official channels if unavailable online",
+     "tool_source": "curated-catalog"
+    }
+   ],
+   "osint_techniques": [
+    "corporate registry lookup",
+    "non-profit filing analysis"
+   ],
+   "key_sources": [
+    "IRS",
+    "ProPublica NonProfit Explorer",
+    "GuideStar"
+   ],
+   "risks": [
+    "Tax filings have a significant lag (often 12-18 months), meaning recent changes may not be reflected."
+   ],
+   "estimated_difficulty": "moderate"
+  },
+  {
+   "direction": "Independent Role Verification",
+   "questions": [
+    "Can the identities and current roles of the identified individuals be corroborated by third-party professional profiles or news reports?",
+    "Are there any discrepancies between the official site, the filings, and professional profiles?"
+   ],
+   "steps": [
+    {
+     "order": 1,
+     "action": "Search for professional profiles (LinkedIn) and public announcements for each identified individual.",
+     "tool": "search",
+     "target": "[Name] Tor Project LinkedIn / news",
+     "expected_evidence": "Current role and title as stated by the individuals themselves or in press releases.",
+     "fallback": "Search for mentions in technical forums or mailing lists",
+     "tool_source": "curated-catalog"
+    },
+    {
+     "order": 2,
+     "action": "Cross-reference findings from the website, filings, and profiles to establish a high-confidence list.",
+     "tool": "grep-files",
+     "target": "Research files collected in previous directions",
+     "expected_evidence": "Consistent mapping of names to roles across multiple independent sources.",
+     "fallback": "N/A",
+     "tool_source": "curated-catalog"
+    }
+   ],
+   "osint_techniques": [
+    "pivot chain",
+    "professional profile analysis"
+   ],
+   "key_sources": [
+    "LinkedIn",
+    "Reputable tech news outlets",
+    "Official press releases"
+   ],
+   "risks": [
+    "Self-reported profiles (LinkedIn) may be outdated or inaccurate."
+   ],
+   "estimated_difficulty": "moderate"
+  }
+ ],
+ "research_plan": {
+  "mode": "openrouter_swarm",
+  "consent": {
+   "swarm": true
+  },
+  "topics": [
+   {
+    "id": "D1-web",
+    "description": "Official website analysis of Tor Project leadership"
+   },
+   {
+    "id": "D2-corp",
+    "description": "Corporate filing and non-profit record verification"
+   },
+   {
+    "id": "D3-indep",
+    "description": "Independent professional and news corroboration"
+   }
+  ]
+ }
+}

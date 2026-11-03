@@ -297,3 +297,16 @@ test('resolve names the next step at the brief, the methodology and each investi
 test('the resolver\'s fresh fact-check item dispatches a plain fact-checker, not an evidence correction', () => {
 	assert.deepEqual(dispatchAt({ phase: 'investigation', status: 'active', missing: ["fresh data/fact-check.json after the investigator's update"] }), { agent: 'fact-checker', task: '', step: 'fact-checker' });
 });
+
+// methodology-corrections-diag.md T4 (r13 and fz2-fix11 round 1): the schema
+// lines came first and the 4000-character cut dropped the research checks'
+// rule lines, the ones that say what to write. Rule lines now come first.
+test('a long methodology correction keeps the research checks\' rule lines ahead of the schema lines', () => {
+	const schema = Array.from({ length: 60 }, (_, index) => `FAIL  methodology.json: $.research_plan.topics[${index % 3}]: missing field_${index}`);
+	const rules = ['FAIL  methodology.json: research_plan.topics[0] (no id): needs a lane type; lane types: web, ad-hoc', 'FAIL  methodology.json: research_plan.topics[0] (no id): egress is not listed; destination is one of public_web'];
+	const dispatch = dispatchAt({ phase: 'methodology_approval', status: 'active' }, [...schema, ...rules, 'methodology validator: FAILED'].join('\n'));
+	assert.equal(dispatch?.agent, 'investigator');
+	const errors = dispatch!.task.split('METHODOLOGY VALIDATOR ERRORS:\n')[1];
+	assert.ok(errors.startsWith(rules.join('\n')), errors.slice(0, 300));
+	assert.ok(errors.length <= 4000);
+});

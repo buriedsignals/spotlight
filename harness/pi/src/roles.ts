@@ -345,7 +345,7 @@ This case belongs to a newsroom. Prior reporting comes from the newsroom's knowl
 // read it from the install config, does not run in the harness, so the
 // prompt says it.
 const RESEARCH_LINE = {
-	on: '## Research switch\nResearch is on for this case: the methodology proposes a `research_plan` as phase-methodology describes.',
+	on: '## Research switch\nResearch is on for this case: the methodology proposes a `research_plan` like the one in the PLANNING example (schemas/methodology.schema.json#/properties/research_plan).',
 	off: '## Research switch\nResearch is off for this case: write no `research_plan` and say nothing about research.',
 };
 // The investigator writes the plan but cannot load phase-methodology, so it

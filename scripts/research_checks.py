@@ -129,7 +129,8 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
     round_budget, case_budget = plan.get("round_budget_usd"), plan.get("case_budget_usd")
     for name, value in (("round_budget_usd", round_budget), ("case_budget_usd", case_budget)):
         if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
-            problems.append(f"{p}.{name} must be set to a positive amount")
+            problems.append(f"{p}.{name} must be set to a positive amount, "
+                            f"at most ${CASE_BUDGET_CEILING_USD} (1 is typical)")
     if isinstance(case_budget, (int, float)) and case_budget > CASE_BUDGET_CEILING_USD:
         problems.append(f"{p}.case_budget_usd is above the ${CASE_BUDGET_CEILING_USD} per-case ceiling")
     if (isinstance(round_budget, (int, float)) and isinstance(case_budget, (int, float))
@@ -150,6 +151,9 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
         problems.append(f"{p}.topics must list at least one topic brief")
     seen: set[str] = set()
     routes = lane_routes()
+    lane_list = ", ".join(sorted(catalogue - {AD_HOC}) + [AD_HOC])
+    destinations = ", ".join(
+        checker.root["properties"][p]["properties"]["egress"]["items"]["properties"]["destination"]["enum"])
     for index, topic in enumerate(entries):
         topic_id = str(topic.get("topic_id") or "")
         where = f"{p}.topics[{index}] ({topic_id or 'no id'})"
@@ -158,19 +162,25 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
         seen.add(topic_id)
         direction, lane_type = topic.get("direction_id"), topic.get("lane_type")
         if not isinstance(lane_type, str) or not lane_type:
-            problems.append(f"{where}: needs a lane type")
+            problems.append(f"{where}: needs a lane type; lane types: {lane_list}")
             lane_type = ""
         elif lane_type not in catalogue:
-            problems.append(f"{where}: lane type {lane_type!r} is not in the lane catalogue (or ad-hoc)")
+            problems.append(f"{where}: lane type {lane_type!r} is not in the lane catalogue; lane types: {lane_list}")
         if direction not in directions:
-            problems.append(f"{where}: direction {direction!r} is not a direction_id of investigation_plan")
+            # methodology-corrections-diag.md cause 3: the line once read as
+            # "rename direction", which broke investigation_plan's required name.
+            problems.append(f"{where}: direction {direction!r} is not a direction_id of investigation_plan; "
+                            "add \"direction_id\": \"<slug>\" (such as \"d1\") to the investigation_plan entry "
+                            "this topic serves, beside its \"direction\" name (keep both), and use that slug here; "
+                            f"current direction_ids: {', '.join(sorted(directions)) or 'none'}")
         if not re.fullmatch(rf"{re.escape(str(direction))}-{re.escape(lane_type)}(-[0-9]+)?", topic_id):
             problems.append(f"{where}: topic id must be <direction_id>-<lane_type>[-n]")
         questions = topic.get("questions")
         if not isinstance(questions, list) or not any(isinstance(q, str) and q.strip() for q in questions):
             problems.append(f"{where}: needs at least one question")
         if not isinstance(topic.get("token_budget"), int) or topic["token_budget"] < 1:
-            problems.append(f"{where}: needs a token budget")
+            problems.append(f"{where}: needs a token budget; use the default {DEFAULT_TOKEN_BUDGET} "
+                            f"({MIN_TOKEN_BUDGET} is the bare floor, about one lane turn)")
         elif topic["token_budget"] < MIN_TOKEN_BUDGET:
             problems.append(f"{where}: token_budget {topic['token_budget']} is below one lane call; "
                             f"use the default {DEFAULT_TOKEN_BUDGET} ({MIN_TOKEN_BUDGET} is the bare floor, "
@@ -183,7 +193,8 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
         own_egress = [e for e in egress if e.get("topic_id") == topic_id]
         if not own_egress:
             problems.append(f"{where}: egress is not listed; add a {p}.egress entry "
-                            f"{{\"topic_id\": \"{topic_id}\", \"destination\": ...}}")
+                            f"{{\"topic_id\": \"{topic_id}\", \"destination\": ...}}; "
+                            f"destination is one of {destinations}")
         own_keys = [k.get("name") for k in keys if topic_id in (k.get("topics") or [])]
         if lane_type == AD_HOC and own_keys:
             problems.append(f"{where}: an ad-hoc topic gets no keys")

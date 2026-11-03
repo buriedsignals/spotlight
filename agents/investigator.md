@@ -309,6 +309,42 @@ For each planned step, specify the verb to use:
 }
 ```
 
+<!-- [IF: research] -->
+### Research plan (only when Research is on)
+
+Add `research_plan` to the same file, and give each `investigation_plan` entry
+a research topic serves a `direction_id` slug beside its `direction` name (keep
+both). A minimal valid plan, one web topic on direction `d1`
+(`schemas/methodology.schema.json#/properties/research_plan`):
+
+```json
+{
+  "investigation_plan": [
+    {"direction": "name of investigation direction", "direction_id": "d1",
+     "questions": ["..."], "steps": [{"order": 1, "action": "..."}]}
+  ],
+  "research_plan": {
+    "mode": "openrouter_swarm",
+    "round_budget_usd": 1,
+    "case_budget_usd": 1,
+    "topics": [
+      {"topic_id": "d1-web", "direction_id": "d1", "lane_type": "web",
+       "questions": ["the question this topic's lane should answer"],
+       "token_budget": 200000}
+    ],
+    "keys": [],
+    "egress": [{"topic_id": "d1-web", "destination": "public_web"}],
+    "consent": {"swarm": true}
+  }
+}
+```
+
+Topic ids are `<direction_id>-<lane_type>[-n]`; a lane type is a file in
+`lanes/` (such as `web` or `registries`) or `ad-hoc`. Budgets are in dollars,
+at most 5 for the case. `token_budget` 200000 is the default; 20000 is
+only the bare floor, about one lane turn.
+<!-- [/IF: research] -->
+
 ### Indicator Framework (Lab members)
 
 Propose `"indicator_framework": {"on": true, "reason": "<why>"}` only when both hold:

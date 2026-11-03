@@ -280,6 +280,11 @@ Correct only methodology.json as required by the validator evidence. In skills_i
    lookup. Without the member's agreement, no `anomaly` section.
 
 5. **Gate: user approves the methodology.** Iterate if the user has changes.
+   When the member asks for research (a topic, a lane, more research on a
+   direction), spawn the investigator with a task that starts
+   `MODE: METHODOLOGY CORRECTION`, quotes the member's words verbatim, and says
+   "write it as a research_plan per the PLANNING example". Do not list fields
+   or describe the plan's shape yourself.
    When the methodology has `indicator_framework`, the synthesis says
    "Indicator Framework: on — <reason>" (or off), as the Methodology page
    does; approving the methodology confirms it, and the member turns it off
