@@ -47,6 +47,9 @@ The renderer places this at the top of the page. Do not soften:
    findings. Never author Mermaid, SVG, HTML, JavaScript, CSS, URLs, coordinates,
    counts, or layout settings: the renderer owns those.
 
+   `quote_selections` in the example below is optional. It may cite only an
+   expression marked `direct_quote: true`; when none qualifies, omit it.
+
    ```json
    {
      "schema_version": "1.0",
@@ -93,10 +96,13 @@ The renderer places this at the top of the page. Do not soften:
    ```
 
    In an activated `1.1` case, an optional `quote_selections` item contains
-   `expression_id` only. Never copy quote text or attribution into the draft. The
-   deterministic renderer resolves the active canonical expression, escapes its exact
-   text and attribution, and records its locator, hashes, relation, and lifecycle in
-   `evidence-map.json`. Legacy `1.0` reports do not accept expression selections.
+   `expression_id` only. A selection must cite an expression marked
+   `direct_quote: true` in `data/source-expressions.json`; when none qualifies,
+   the draft omits `quote_selections`. Never copy quote text or attribution into
+   the draft. The deterministic renderer resolves the active canonical expression,
+   escapes its exact text and attribution, and records its locator, hashes,
+   relation, and lifecycle in `evidence-map.json`. Legacy `1.0` reports do not
+   accept expression selections.
 
 3. **Decision check (optional).** Pi harness: not in this runtime (the newsroom edition's `run_checks` below is the newsroom's own service). Newsroom edition: call `run_checks` with kind
    `report` instead; its flags appear on the Report page. Otherwise, if this case ran decision checks at the Investigation gate

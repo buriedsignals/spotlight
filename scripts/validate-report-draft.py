@@ -196,7 +196,9 @@ def validate_quote_selections(
             )
         if expression.get("direct_quote") is not True:
             failures.append(
-                f"STRUCTURE: {item_label} requires a direct_quote source expression"
+                f"STRUCTURE: {item_label} cites {expression_id}, which is not a direct quote "
+                "(direct_quote is not true in data/source-expressions.json); "
+                "quote_selections is optional: remove this selection"
             )
         if expression.get("derivative_type") == "translation":
             failures.append(

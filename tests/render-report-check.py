@@ -161,7 +161,7 @@ def fingerprint(value: object) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
-def activate_case(case: Path) -> None:
+def activate_case(case: Path, direct_quote: bool = True) -> None:
     data = case / "data"
     findings_path = data / "findings.json"
     fact_check_path = data / "fact-check.json"
@@ -211,6 +211,9 @@ def activate_case(case: Path) -> None:
         "attribution": "Northwind registry <editor>",
         "direct_quote": True,
     }
+    if not direct_quote:
+        # The harness quote path (quotes.ts) writes passages without the field.
+        del core["direct_quote"]
     expression_fp = fingerprint(core)
     link_payload = {
         "expression_fingerprint": expression_fp,
@@ -434,6 +437,28 @@ def check_disposition_kept_finding(root: Path) -> None:
     assert "missing=['F2']" in result.stdout and "disposition keep (no selection item, any verdict, false included) is kept" in result.stdout, result.stdout
 
 
+def check_non_direct_quote_selection(root: Path) -> None:
+    """r13 seed: every expression lacks direct_quote, so any quote selection
+    fails. The refusal names the field, the file and the exit (selections are
+    optional), and the draft without them reaches a rendered report."""
+    case = build_case(root / "non-direct-quote")
+    activate_case(case, direct_quote=False)
+    draft_path = case / "data" / "report-draft.json"
+    result = subprocess.run([sys.executable, str(ROOT / "scripts" / "validate-report-draft.py"), str(case)],
+                            capture_output=True, text=True)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert ("finding_treatments[F1].quote_selections[0] cites SX1, which is not a direct quote "
+            "(direct_quote is not true in data/source-expressions.json); quote_selections is optional: "
+            "remove this selection") in result.stdout, result.stdout
+    draft = json.loads(draft_path.read_text())
+    for treatment in draft["finding_treatments"]:
+        treatment.pop("quote_selections", None)
+    write_json(draft_path, draft)
+    result = finalize(case)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (case / "report.html").exists()
+
+
 def main() -> int:
     check_not_checkable_aggregation()
     with tempfile.TemporaryDirectory(prefix="render-report-") as tmp:
@@ -454,6 +479,7 @@ def main() -> int:
         check_public_sources(Path(tmp) / "public-sources")
         check_set_aside_findings(Path(tmp))
         check_disposition_kept_finding(Path(tmp))
+        check_non_direct_quote_selection(Path(tmp))
         assert "<script>alert('unsafe')</script>" not in html
         assert "&lt;script&gt;alert" in html
         assert "<script>alert('unsafe')</script>" not in markdown
