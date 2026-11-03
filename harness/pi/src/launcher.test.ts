@@ -5438,7 +5438,6 @@ test('a scripted orchestrator that only resolves, answers the member and opens t
 	const space = await workspace(t);
 	const decisions = route === 'router' ? await fakeDecisions(0.9, 'approval_talk') : undefined;
 	if (decisions) t.after(() => decisions.close());
-	let modelCalls = 0;
 	const source = join(space.root, 'outputs');
 	execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), source, 'investigation_gate', '--activated', '--clean']);
 	const caseDir = join(space.casesRoot, 'case-a');
@@ -5464,7 +5463,6 @@ test('a scripted orchestrator that only resolves, answers the member and opens t
 		if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
 		// The router route's model never calls a tool: it only writes words.
 		if (route === 'router') return { text: 'Here is where the case stands.' };
-		modelCalls += 1;
 		const last = request.messages.at(-1)!;
 		if (last.role !== 'tool') return { toolCalls: [{ name: 'spotlight_resolve', arguments: {} }] };
 		const called = (request.messages.filter((message) => message.role === 'assistant').at(-1)!.tool_calls as Array<{ function: { name: string } }>)[0].function.name;
@@ -5483,7 +5481,9 @@ test('a scripted orchestrator that only resolves, answers the member and opens t
 	const called = new Set(orchestrator.flatMap((request) => request.messages.filter((message) => message.role === 'assistant').flatMap((message) => ((message.tool_calls ?? []) as Array<{ function: { name: string } }>).map((call) => call.function.name))));
 	assert.deepEqual([...called].sort(), ['open_review', 'spotlight_resolve']);
 	if (route === 'router') {
-		assert.equal(modelCalls, 0, 'the model made no routing call');
+		// Every routing call in the history the model is sent is code-made: its id carries the router marker on the wire.
+		const ids = orchestrator.flatMap((request) => request.messages.filter((message) => message.role === 'assistant').flatMap((message) => ((message.tool_calls ?? []) as Array<{ id: string }>).map((call) => call.id)));
+		assert.ok(ids.length > 0 && ids.every((id) => id.startsWith('router-')), ids.join(', '));
 		// Each router call is marked code-made in the run's records (the stdout
 		// records e2e calls.jsonl is built from), and logged with its reason.
 		const routed = chat.lines.filter((line) => line.includes('"responseModel":"spotlight-code-router"'));

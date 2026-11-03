@@ -9,6 +9,9 @@
 // The router never refuses and never stops; it adds no cap.
 
 export const ROUTER_MODEL = 'spotlight-code-router';
+// Every router call's id starts with this, so a record of the request history
+// (which keeps tool-call ids) still shows the call was code-made.
+export const ROUTER_CALL_PREFIX = 'router-';
 
 export type Intent = 'change_request' | 'question' | 'approval_talk' | 'other';
 export type RouterMove = { kind: 'call'; tool: 'spotlight_resolve' | 'open_review'; reason: string } | { kind: 'model'; reason: string };

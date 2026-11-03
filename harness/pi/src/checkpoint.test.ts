@@ -5,6 +5,7 @@ import test from 'node:test';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startFakeOpenAI } from './test-support/fake-openai.ts';
 import type { ChatRequest } from './test-support/fake-openai.ts';
@@ -53,8 +54,33 @@ async function twoTurns(t: test.TestContext, tier: string, env: Record<string, s
 	return { fake, chat };
 }
 
-test('the local tier folds a conversation past its threshold into one checkpoint the next request carries', async (t) => {
-	const { fake, chat } = await twoTurns(t, '12b');
+// Codex review of simp-route (P2): with the code router on, the checkpoint
+// request (no tools) is not an orchestrator turn and goes to the model, even
+// when the decision model reads its text as a member message to resolve on.
+async function decisionsAnswering(choice: string) {
+	const server = createServer((request, response) => {
+		let body = '';
+		request.on('data', (chunk) => (body += chunk));
+		request.on('end', () => {
+			const questions = (JSON.parse(body) as { questions: Record<string, unknown> }).questions;
+			response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ model: 'd1-test', answers: Object.fromEntries(Object.keys(questions).map((key) => [key, { choice, probabilities: { [choice]: 0.9 } }])) }));
+		});
+	});
+	await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+	return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/systemone`, close: () => new Promise<void>((done) => server.close(() => done())) };
+}
+
+test('the local tier folds a conversation past its threshold into one checkpoint the next request carries, with the code router off or on', async (t) => {
+ for (const router of ['off', 'on'] as const) await t.test(router, async (t) => {
+	let env: Record<string, string> = {};
+	if (router === 'on') {
+		const decisions = await decisionsAnswering('other');
+		t.after(() => decisions.close());
+		const config = join(tmpdir(), `router-checkpoint-${process.pid}.json`);
+		writeFileSync(config, JSON.stringify({ integrations: { decisions: { endpoint: { url: decisions.url, api: 'openrouter-decisions' } } } }));
+		env = { SPOTLIGHT_CODE_ROUTER: 'on', SPOTLIGHT_CONFIG: config };
+	}
+	const { fake, chat } = await twoTurns(t, '12b', env);
 
 	assert.equal(compactions(chat).length, 1);
 	const summaries = fake.requests.filter(isSummaryRequest);
@@ -67,6 +93,7 @@ test('the local tier folds a conversation past its threshold into one checkpoint
 	const last = fake.requests.filter((request) => !isSummaryRequest(request)).at(-1)!;
 	assert.match(requestText(last), new RegExp(CHECKPOINT));
 	assert.doesNotMatch(requestText(last), new RegExp(OLD_TURN));
+ });
 });
 
 // r1 on 97f066b6: the 12B wrote its own checkpoints from ~24k tokens of

@@ -6,9 +6,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import { execFile } from 'node:child_process';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
-import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
+import { createAssistantMessageEventStream, getCurrentTools } from '@earendil-works/pi-ai';
 import { streamSimple as streamOpenAICompletions } from '@earendil-works/pi-ai/api/openai-completions';
-import { ROUTER_MODEL, routeMember, routeWithoutMember, routerOn, routerState } from './router.ts';
+import { ROUTER_CALL_PREFIX, ROUTER_MODEL, routeMember, routeWithoutMember, routerOn, routerState } from './router.ts';
 import type { Intent, RouterMove } from './router.ts';
 import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
@@ -130,9 +130,9 @@ function keepGateBound(tool: ToolDefinition, caseDir: string, phase: () => Promi
 // never count it as a model decision; every other request goes to the model
 // unchanged. Each decision is logged with its reason.
 const INTENT_TIMEOUT_MS = 8000;
-function memberIntent(message: string): Promise<Intent | undefined> {
+function memberIntent(message: string, signal?: AbortSignal): Promise<Intent | undefined> {
 	return new Promise((done) => {
-		const child = execFile(process.env.SPOTLIGHT_PYTHON || 'python3', [resolve(CHECKOUT_ROOT, 'scripts', 'member-intent.py'), ...(process.env.SPOTLIGHT_CONFIG ? ['--config', process.env.SPOTLIGHT_CONFIG] : [])], { timeout: INTENT_TIMEOUT_MS, encoding: 'utf8' }, (error, stdout) => {
+		const child = execFile(process.env.SPOTLIGHT_PYTHON || 'python3', [resolve(CHECKOUT_ROOT, 'scripts', 'member-intent.py'), ...(process.env.SPOTLIGHT_CONFIG ? ['--config', process.env.SPOTLIGHT_CONFIG] : [])], { timeout: INTENT_TIMEOUT_MS, encoding: 'utf8', signal }, (error, stdout) => {
 			if (error) { log(`[router] decision model: ${error.message.slice(0, 200)}`); done(undefined); return; }
 			try {
 				const answer = JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}') as { intent?: Intent; unavailable?: string };
@@ -150,19 +150,25 @@ const routedStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 	const out = createAssistantMessageEventStream();
 	void (async () => {
 		let move: RouterMove;
+		// Only the orchestrator's own turns are routed: a request without its
+		// tools (the session-model checkpoint, checkpoint.ts) goes to the model
+		// untouched (Codex review of simp-route, P2).
+		const routed = getCurrentTools(context.messages).some((tool) => tool.name === 'spotlight_resolve');
 		try {
 			const state = routerState(context.messages);
-			move = state.member ? routeMember(state, await memberIntent(state.member)) : routeWithoutMember(state);
+			move = !routed ? { kind: 'model', reason: 'not an orchestrator turn' } : state.member ? routeMember(state, await memberIntent(state.member, options?.signal)) : routeWithoutMember(state);
 		} catch (error) {
 			move = { kind: 'model', reason: `router error: ${(error as Error).message.slice(0, 200)}` };
 		}
-		log(`[router] ${move.kind === 'call' ? move.tool : 'model'} (${move.reason})`);
+		if (routed) log(`[router] ${move.kind === 'call' ? move.tool : 'model'} (${move.reason})`);
 		if (move.kind === 'model') {
 			for await (const event of streamOpenAICompletions(model as never, context, options)) out.push(event);
 			out.end();
 			return;
 		}
-		const call = { type: 'toolCall' as const, id: `router-${Date.now().toString(36)}`, name: move.tool, arguments: {} };
+		// The call id carries the marker on the wire too (ROUTER_CALL_PREFIX): the
+		// request history a capture records keeps tool-call ids, not responseModel.
+		const call = { type: 'toolCall' as const, id: `${ROUTER_CALL_PREFIX}${Date.now().toString(36)}`, name: move.tool, arguments: {} };
 		const message = {
 			role: 'assistant' as const, content: [call], api: model.api, provider: model.provider, model: model.id,
 			responseModel: ROUTER_MODEL, responseId: `router: ${move.reason}`,
