@@ -1675,12 +1675,17 @@ function locate(text: string, quote: string): { line_start: number; line_end: nu
 	const lines = sourceLines(text);
 	const wanted = quote.trim();
 	if (!wanted) return undefined;
-	for (const exact of [true, false]) {
-		for (let size = 1; size <= Math.min(20, lines.length); size++) {
-			for (let start = 0; start + size <= lines.length; start++) {
-				const window = lines.slice(start, start + size).join('\n');
-				if (exact ? window.includes(wanted) : flatText(window).includes(flatText(wanted))) return { line_start: start + 1, line_end: start + size, quote: exact ? wanted : window.trim() };
-			}
+	const at = lines.join('\n').indexOf(wanted);
+	if (at >= 0) {
+		const line_start = lines.join('\n').slice(0, at).split('\n').length;
+		return { line_start, line_end: line_start + wanted.split('\n').length - 1, quote: wanted };
+	}
+	// Codex review of simp-3 (P2): a window as long as the passage needs, and more.
+	const most = Math.min(lines.length, Math.max(20, 2 * wanted.split('\n').length + 2));
+	for (let size = 1; size <= most; size++) {
+		for (let start = 0; start + size <= lines.length; start++) {
+			const window = lines.slice(start, start + size).join('\n');
+			if (flatText(window).includes(flatText(wanted))) return { line_start: start + 1, line_end: start + size, quote: window.trim() };
 		}
 	}
 	return undefined;
@@ -1711,18 +1716,21 @@ function refetchedSupport(context: ToolContext, findingId: string): { item?: Rec
 		const check = recheck[url];
 		const acquisition = typeof check === 'object' ? check.acquisition : undefined;
 		const capture = typeof acquisition?.path === 'string' ? factCheckerCapture(context, acquisition.path) : undefined;
+		// The re-fetch must have landed on the item's own URL, not a redirect (Codex review of simp-3, P1).
+		if (capture && capture.url !== url) { statuses.push(`${url}: the re-fetch landed on ${capture.url}, not the cited source`); continue; }
 		if (!capture || capture.sha256 !== acquisition?.sha256) {
 			statuses.push(`${url}: ${typeof check === 'object' && check.status ? check.status : typeof check === 'string' ? check : 'no harness re-fetch'}`);
 			continue;
 		}
 		let text: string;
 		try { text = readFileSync(readTarget(context.caseDir, acquisition!.path!, context.scope), 'utf8'); } catch { statuses.push(`${url}: the re-fetched copy cannot be read`); continue; }
-		if (!sameSourceSupport(context, url, findingId)) { statuses.push(`${url}: the investigation records no direct or indirect support from this source for the finding`); continue; }
+		let unsupported = false;
 		for (const passage of own) {
 			const found = locate(text, String(passage.text));
+			if (found && !sameSourceSupport(context, url, findingId, found.quote)) { unsupported = true; continue; }
 			if (found) return { status: 'found', item: { description: `Re-fetch by the harness for the fact-checker of ${url} at ${capture.accessed}; it still contains the supporting passage. Same source as the investigation, not a second source.`, source: url, quote: found.quote, source_ref: { path: acquisition!.path, line_start: found.line_start, line_end: found.line_end } } };
 		}
-		statuses.push(`${url}: re-fetched, but the supporting passage is no longer on the page`);
+		statuses.push(unsupported ? `${url}: the investigation records no direct or indirect support from this source for the finding` : `${url}: re-fetched, but the supporting passage is no longer on the page`);
 	}
 	if (!statuses.length) return { status: passages.length ? 'no harness re-fetch of its sources' : 'no recorded supporting passage to compare' };
 	return { status: statuses.join('; ') };

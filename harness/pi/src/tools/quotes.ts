@@ -105,16 +105,26 @@ async function recordFetchedItems(context: ToolContext, tools: ToolDefinition[],
 
 // Plan C8 (Tom, 2026-11-03): a re-fetch of the same source that still holds
 // the supporting passage verifies the finding. With no grounding assessment of
-// its own, the fact-checker's capture of a URL takes the support type the
-// investigator recorded for that finding from the same URL: its item's link,
-// else the finding's grounding when the finding cites that item. Only direct
-// or indirect count; a different URL gets none.
-export function sameSourceSupport(context: ToolContext, url: string, finding: string): string | undefined {
+// its own, a fact-checker quote from its capture of a URL takes the support
+// type the investigator recorded for that finding from the same URL (its
+// item's link, else the finding's grounding when the finding cites that item),
+// and only when the quote holds that item's supporting passage. Only direct or
+// indirect count; a different URL gets none.
+// The quote must hold one of that item's active passages supporting the
+// finding (Codex review of simp-3, P1): an unrelated line of the same page
+// takes nothing.
+const flatText = (text: string) => text.replace(/\s+/g, ' ').trim();
+export function sameSourceSupport(context: ToolContext, url: string, finding: string, quote: string): string | undefined {
 	const row = list(readJson(context.caseDir, 'findings.json'), 'findings').find((entry) => entry.id === finding);
 	const refs = new Set(Array.isArray(row?.evidence_bundle_refs) ? row.evidence_bundle_refs.map(String) : []);
 	const grounding = (row?.grounding as Row | undefined)?.support_type;
+	const passages = list(readJson(context.caseDir, 'source-expressions.json'), 'expressions').filter((passage) =>
+		list(passage, 'lifecycle_events').at(-1)?.event === 'activated'
+		&& list(passage, 'finding_links').some((link) => link.finding_id === finding && link.relation === 'supports')
+		&& typeof passage.text === 'string' && flatText(passage.text) !== '' && flatText(quote).includes(flatText(passage.text)));
 	for (const item of list(readJson(context.caseDir, 'evidence-bundle.json'), 'items')) {
 		if (item.created_by === 'fact-checker' || (item.source_url ?? item.url) !== url) continue;
+		if (!passages.some((passage) => passage.original_evidence_bundle_id === item.id)) continue;
 		const link = list(item, 'claim_links').find((entry) => entry.finding_id === finding && ['direct', 'indirect'].includes(String(entry.support_type)));
 		if (link) return String(link.support_type);
 		if (refs.has(String(item.id)) && ['direct', 'indirect'].includes(String(grounding))) return String(grounding);
@@ -130,7 +140,7 @@ function quoteSupport(context: ToolContext, claim: Row, item: Row, relation: str
 	const ref = (item.source_ref ?? {}) as Row;
 	const path = typeof ref.path === 'string' ? ref.path : typeof item.local_file === 'string' ? item.local_file : undefined;
 	const capture = path ? factCheckerCapture(context, path) : undefined;
-	return (capture && typeof claim.finding_id === 'string' ? sameSourceSupport(context, capture.url, claim.finding_id) : undefined) ?? 'insufficient';
+	return (capture && typeof claim.finding_id === 'string' && typeof item.quote === 'string' ? sameSourceSupport(context, capture.url, claim.finding_id, item.quote) : undefined) ?? 'insufficient';
 }
 
 // Whether an item's quote occurs in a file. An item without a quote is not
