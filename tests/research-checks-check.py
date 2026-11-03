@@ -190,7 +190,9 @@ class D1LanePlan(unittest.TestCase):
             def triage_problems(method: dict, decisions: dict) -> list[str]:
                 return [p for p in checks.d1_from_config(method, {"integrations": {"decisions": decisions}}, local_model=True)
                         if p.startswith("research triage:")]
-            self.assertIn("integrations.decisions.research_triage.backend", " ".join(triage_problems(web, {})))
+            # k3-prep.md path A: with no triage model configured the plan is not at
+            # fault (the investigator cannot fix an install); the round holds at triage.
+            self.assertEqual(triage_problems(web, {}), [])
             self.assertEqual(triage_problems(web, JEV), [])
             self.assertEqual(triage_problems(web, KEV), [])
             # Journalist input never leaves the computer: Jev alone cannot triage it.
