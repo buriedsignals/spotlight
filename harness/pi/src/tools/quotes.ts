@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
-import { factCheckerAlternative, factCheckerCapture } from './fetch.ts';
+import { factCheckerAlternative, factCheckerCapture, registeredCapture } from './fetch.ts';
 import type { ToolContext } from './run.ts';
 
 type Row = Record<string, unknown>;
@@ -114,6 +114,11 @@ function anchoredIn(caseDir: string, path: string, item: Row): boolean {
 	return typeof item.quote === 'string' && item.quote.trim() !== '' && text.includes(item.quote.trim());
 }
 
+// Whether an item's quote occurs, exactly as written, in a file.
+function verbatimIn(caseDir: string, path: string, item: Row): boolean {
+	return typeof item.quote === 'string' && item.quote === item.quote.trim() && anchoredIn(caseDir, path, item);
+}
+
 // The fact-check write with its quotes recorded, or the content unchanged when
 // it cites none.
 async function resolveQuotes(context: ToolContext, tools: ToolDefinition[], sourceExpressions: ToolDefinition, content: string, signal?: AbortSignal): Promise<string> {
@@ -185,6 +190,10 @@ async function resolveQuotes(context: ToolContext, tools: ToolDefinition[], sour
 			...(path ? { anchor_ref: { path, ...(Number.isInteger(ref.line_start) ? { line_start: ref.line_start, line_end: Number.isInteger(ref.line_end) ? ref.line_end : ref.line_start } : {}) } } : {}),
 			original_evidence_bundle_id: typeof item.evidence_bundle_id === 'string' ? item.evidence_bundle_id : null,
 			language: typeof item.language === 'string' ? item.language : languageOf(finding),
+			// The source's own words: code found the quote, as written, in a
+			// file a harness fetch saved (report-direct-quote-diff.md). Only such
+			// a passage may be quoted in the report.
+			...(path && registeredCapture(context, path) && verbatimIn(context.caseDir, path, item) ? { direct_quote: true } : {}),
 			finding_links: [{ finding_id: finding, relation }],
 		};
 	});

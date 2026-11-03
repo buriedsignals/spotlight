@@ -247,6 +247,7 @@
             "data/fact-check.json",
             "data/summary.json",
             "data/investigation-gate-review.json",
+            "data/source-expressions.json",
             "data/report-draft.json",
             "data/decision-signals.json",
             "data/harness-checks/analyst/"

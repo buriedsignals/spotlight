@@ -3865,7 +3865,8 @@ test('a fact-checker spawned while findings have no claim gets the next ones, an
 test('a fact-check claim that cites a quote and its file gets the passage recorded and cited by the harness', async (t) => {
 	// The fact-checker's own capture of the filing (FC-E1): a verified claim on
 	// the investigator's file alone is refused (r12-ingest-audit A3).
-	const claim = { finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: 'verified', confidence: 'high', evidence_for: [{ quote: 'Acme paid Doe.', source_ref: { path: 'research/fc-filing.md.raw', line_start: 2, line_end: 2 }, evidence_bundle_id: 'FC-E1' }], evidence_against: [], grounding_assessment: { support_type: 'direct', claim_elements_checked: ['payment'], missing_assumptions: [], confidence_cap: 'high', assessment: 'The filing states it.' } };
+	// The second item quotes the investigator's file, which no harness fetch saved.
+	const claim = { finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: 'verified', confidence: 'high', evidence_for: [{ description: 'The filing states the payment.', source: 'https://registry.example.org/filing', quote: 'Acme paid Doe.', source_ref: { path: 'research/fc-filing.md.raw', line_start: 2, line_end: 2 }, evidence_bundle_id: 'FC-E1' }, { description: "The investigator's copy says the same.", source: 'https://registry.example.org/filing', access_method: 'full_text', quote: 'Acme paid Doe.', source_ref: { path: 'research/filing.txt', line_start: 2, line_end: 2 } }], evidence_against: [], grounding_assessment: { support_type: 'direct', claim_elements_checked: ['payment'], missing_assumptions: [], confidence_cap: 'high', assessment: 'The filing states it.' } };
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'fact-checker')) {
 			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', project: 'p', claims: [claim] }) } }] } : { text: 'Checked.' };
@@ -3890,6 +3891,24 @@ test('a fact-check claim that cites a quote and its file gets the passage record
 	assert.deepEqual((recorded.finding_links as Array<{ finding_id: string; relation: string }>).map((link) => [link.finding_id, link.relation]), [['F1', 'supports']]);
 	const factCheck = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8')) as { claims: Array<{ evidence_for: Array<{ source_expression_refs: unknown[] }> }> };
 	assert.match(JSON.stringify(factCheck.claims[0].evidence_for[0].source_expression_refs), /FC-Q1/);
+	// report-direct-quote-diff.md: a quote code found as written in a fetched
+	// capture is the source's own words, so the Report may quote it; a quote
+	// from a file no fetch saved is not marked.
+	assert.equal(recorded.direct_quote, true);
+	const other = expressions.expressions.find((expression) => expression.id !== 'FC-Q1' && (expression.anchor_ref as { path?: string } | undefined)?.path === 'research/filing.txt' && expression.created_by === 'fact-checker');
+	assert.ok(other, 'the second quote was recorded as a passage');
+	assert.equal(other.direct_quote, undefined);
+	// Continuity: a report draft that selects the passage passes the draft
+	// check and the report renders it.
+	await writeFile(join(caseDir, 'data', 'report-draft.json'), JSON.stringify({ schema_version: '1.0', language: 'en', title: 'Acme paid Doe', deck: 'One finding.', framing_finding_ids: ['F1'], finding_order: ['F1'], finding_treatments: [{ finding_id: 'F1', headline: 'Acme paid Doe', summary: 'The filing records the payment.', why_it_matters: 'It is the payment at issue.', quote_selections: [{ expression_id: 'FC-Q1' }] }], caveats: [], next_steps: [] }));
+	for (const script of ['validate-report-draft.py', 'finalize-report.py']) {
+		try {
+			execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', script), caseDir], { encoding: 'utf8' });
+		} catch (error) {
+			assert.fail(`${script}: ${String((error as { stdout?: string }).stdout ?? error)}`);
+		}
+	}
+	assert.match(await readFile(join(caseDir, 'report.html'), 'utf8'), /<blockquote class="source-expression"><p>“Acme paid Doe\.”<\/p><\/blockquote>/);
 });
 
 // arm2 ds-spectator on ce4f010e (calls 28, 43, 47): a quote from the
@@ -4733,7 +4752,7 @@ test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open
 		if (isWorkerRequest(request, 'analyst')) {
 			if (toolResults(request).length > 0) return { text: 'Wrote it.' };
 			return /report-draft\.json/.test(userText(request))
-				? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify(REPORT_DRAFT) } }] }
+				? { toolCalls: [{ name: 'read_file', arguments: { path: 'data/source-expressions.json' } }, { name: 'write_file', arguments: { path: 'data/report-draft.json', content: JSON.stringify(REPORT_DRAFT) } }] }
 				: { toolCalls: [{ name: 'write_file', arguments: { path: 'summary.md', content: summaryMd } }, { name: 'write_file', arguments: { path: 'data/summary.json', content: summaryJson } }] };
 		}
 		const last = request.messages.at(-1)!;
@@ -4756,6 +4775,10 @@ test('a scripted orchestrator using only spotlight_resolve, spawn_agent and open
 	assert.deepEqual([...new Set(called)].sort(), ['open_review', 'spawn_agent', 'spotlight_resolve']);
 	assert.equal(await readFile(join(caseDir, 'summary.md'), 'utf8'), summaryMd);
 	assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'report-draft.json'), 'utf8')), REPORT_DRAFT);
+	// report-direct-quote-diff.md: the Report analyst reads which passages are
+	// direct quotes, the only ones quote_selections may cite.
+	const drafted = fake.requests.find((request) => isWorkerRequest(request, 'analyst') && /report-draft\.json/.test(userText(request)) && toolResults(request).length > 0)!;
+	assert.match(toolResults(drafted)[0], /"expressions"[\s\S]*"direct_quote"/);
 	assert.equal(lastResolution(chat).phase, 'report');
 	// The turn ends once the page is open, so the stdout records carry the outcome.
 	const opened = chat.lines

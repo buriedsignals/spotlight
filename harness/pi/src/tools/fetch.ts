@@ -244,8 +244,14 @@ export function fetchedFile(context: ToolContext, relative: string): Fetched | u
 // Independent acquisition is a runtime fact, never inferred from an fc- name
 // or a model-authored bundle row. Older receipts remain readable but untrusted.
 export function factCheckerCapture(context: ToolContext, relative: string): Fetched | undefined {
+	const capture = registeredCapture(context, relative);
+	return capture?.acquired_by === 'fact-checker' ? capture : undefined;
+}
+
+// A file a harness fetch saved, unchanged since: any role's capture.
+export function registeredCapture(context: ToolContext, relative: string): Fetched | undefined {
 	const capture = fetchedFile(context, relative);
-	if (capture?.acquired_by !== 'fact-checker' || typeof capture.url !== 'string' || !Number.isFinite(Date.parse(capture.accessed))) return undefined;
+	if (!capture || typeof capture.url !== 'string' || !Number.isFinite(Date.parse(capture.accessed))) return undefined;
 	try {
 		checkURL(capture.url);
 		const bytes = readFileSync(readTarget(context.caseDir, relative));
