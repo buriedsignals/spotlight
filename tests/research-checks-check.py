@@ -304,11 +304,24 @@ class RoundOneReplays(unittest.TestCase):
                 self.assertTrue(all(entry.get("direction") for entry in corrected["investigation_plan"]))
 
     def test_the_planning_example_research_plan_passes(self) -> None:
+        # Codex review of fix14: the example is checked whole, against the
+        # full methodology schema and D1, in each edition; its mode names no
+        # edition (the research rules give it), so the edition's mode goes in.
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import schema_check
         text = (ROOT / "agents" / "investigator.md").read_text(encoding="utf-8")
         section = text.split("### Research plan (only when Research is on)", 1)[1]
         example = json.loads(section.split("```json", 1)[1].split("```", 1)[0])
-        self.assertEqual(d1(example), [])
+        self.assertNotIn(example["research_plan"]["mode"], {"openrouter_swarm", "newsroom", "local_only", "subscription_subagents"})
         self.assertEqual(example["research_plan"]["topics"][0]["token_budget"], 200000)
+        checker = schema_check.load(ROOT / "schemas" / "methodology.schema.json")
+        for edition, mode in (("solo", "openrouter_swarm"), ("newsroom", "newsroom")):
+            with self.subTest(edition):
+                method = methodology()
+                method["investigation_plan"] = example["investigation_plan"]
+                method["research_plan"] = {**example["research_plan"], "mode": mode}
+                self.assertEqual(checker.errors(method), [])
+                self.assertEqual(d1(method, newsroom=edition == "newsroom"), [])
 
 
 class LaneChecks(unittest.TestCase):

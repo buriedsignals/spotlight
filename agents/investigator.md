@@ -321,10 +321,10 @@ both). A minimal valid plan, one web topic on direction `d1`
 {
   "investigation_plan": [
     {"direction": "name of investigation direction", "direction_id": "d1",
-     "questions": ["..."], "steps": [{"order": 1, "action": "..."}]}
+     "questions": ["..."], "steps": [{"order": 1, "action": "...", "tool": "fetch"}]}
   ],
   "research_plan": {
-    "mode": "openrouter_swarm",
+    "mode": "<the mode your research_plan rules name>",
     "round_budget_usd": 1,
     "case_budget_usd": 1,
     "topics": [
