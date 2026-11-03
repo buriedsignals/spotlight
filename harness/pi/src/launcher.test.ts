@@ -3525,8 +3525,11 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 // k3-prep.md path A: with no triage model configured at all, the plan passes
 // its check (no METHODOLOGY CORRECTION the investigator could never fix) and
 // the round holds at triage the same way, naming what to configure.
+// Codex review of simp-triage: any triage setting the install cannot use
+// (here Jev without the cloud opt-in) holds the same way, and the hold tells
+// the orchestrator to give the member the options and end the turn.
 test('G5b: when the decision endpoint fails, or no triage model is configured, with retained leads, the orchestrator is told, no triage exists, and the case stays at triage', async (t) => {
- for (const backend of ['down', 'unconfigured'] as const) await t.test(backend, async (t) => {
+ for (const backend of ['down', 'unconfigured', 'cloud-off'] as const) await t.test(backend, async (t) => {
 	const swarm = await startFakeOpenAI((request) => {
 		const turn = request.messages.filter((message) => message.role === 'assistant').length;
 		const script = [
@@ -3569,7 +3572,8 @@ else process.exit(require('node:child_process').spawnSync(${JSON.stringify(realP
 `);
 	await chmod(seam, 0o755);
 	const config = join(space.root, 'install-config.json');
-	await writeFile(config, JSON.stringify(backend === 'down' ? { integrations: { decisions: { research_triage: { backend: 'local' }, endpoint: { url: `http://127.0.0.1:${(decision.address() as AddressInfo).port}/v1/systemone`, api: 'openrouter-decisions' } } } } : {}));
+	await writeFile(config, JSON.stringify(backend === 'down' ? { integrations: { decisions: { research_triage: { backend: 'local' }, endpoint: { url: `http://127.0.0.1:${(decision.address() as AddressInfo).port}/v1/systemone`, api: 'openrouter-decisions' } } } }
+		: backend === 'cloud-off' ? { integrations: { decisions: { research_triage: { backend: 'jev' }, enabled: false } } } : {}));
 	// The Methodology gate's own check passes either way: a missing triage model is not the plan's to fix.
 	const gate = await new Promise<{ code: number; out: string }>((done) => execFile(realPython, [join(CHECKOUT_ROOT, 'scripts', 'validate-methodology-navigator.py'), caseDir, '--config', config], { env: { ...process.env, SPOTLIGHT_RESEARCH_SWARMS: 'on' } }, (error, stdout, stderr) => done({ code: error ? Number((error as { code?: number }).code ?? 1) : 0, out: `${stdout}${stderr}` })));
 	assert.doesNotMatch(gate.out, /research triage:/, gate.out);
@@ -3598,12 +3602,14 @@ else process.exit(require('node:child_process').spawnSync(${JSON.stringify(realP
 		assert.match(String(resolution.research_round.triage.error), /unavailable: HTTP 500/);
 	} else {
 		assert.equal(asked, 0);
-		assert.match(String(resolution.research_round.triage.error), /research_triage\.backend/, 'the hold names what to configure');
+		assert.match(String(resolution.research_round.triage.error), backend === 'unconfigured' ? /research_triage\.backend/ : /cloud decision models are not enabled/, 'the hold names what to configure');
 	}
+	// The hold's next step: tell the member what is missing and the options, then end the turn.
+	assert.match(String((resolution as { next_action?: unknown }).next_action), /Tell the member[\s\S]*fix that setting in the app, or turn Research off and continue without research\. Then end your turn/);
 	assert.equal(existsSync(join(caseDir, 'data', 'research-triage.json')), false);
 	assert.deepEqual([resolution.phase, resolution.research.resume_at], ['research', 'triage']);
 	const seen = toolResults(orchestratorModel.requests.at(-1)!).join('\n');
-	assert.match(seen, backend === 'down' ? /unavailable: HTTP 500/ : /research_triage\.backend/, 'the orchestrator is shown the error');
+	assert.match(seen, backend === 'down' ? /unavailable: HTTP 500/ : backend === 'unconfigured' ? /research_triage\.backend/ : /cloud decision models are not enabled/, 'the orchestrator is shown the error');
  });
 });
 

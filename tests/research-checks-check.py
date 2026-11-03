@@ -195,11 +195,16 @@ class D1LanePlan(unittest.TestCase):
             self.assertEqual(triage_problems(web, {}), [])
             self.assertEqual(triage_problems(web, JEV), [])
             self.assertEqual(triage_problems(web, KEV), [])
-            # Journalist input never leaves the computer: Jev alone cannot triage it.
-            self.assertIn("no local triage model is configured", " ".join(triage_problems(journalist, JEV)))
-            self.assertEqual(triage_problems(journalist, {**JEV, "endpoint": KEV["endpoint"]}), [])
-            # Jev without the cloud opt-in has nowhere to go either.
-            self.assertIn("cloud decision models are not enabled", " ".join(triage_problems(web, {**JEV, "enabled": False})))
+            # Nor is any other install setting triage cannot use (Jev without the
+            # cloud opt-in; journalist input with no local model): the round holds
+            # at triage naming it, never a methodology correction.
+            self.assertEqual(triage_problems(journalist, JEV), [])
+            self.assertEqual(triage_problems(web, {**JEV, "enabled": False}), [])
+            # The triage step itself still refuses them, with the reason.
+            self.assertIn("no local triage model is configured", " ".join(checks.research_backends.plan_problems(
+                {"integrations": {"decisions": JEV}}, sensitive=False, newsroom=False, journalist_input=True)))
+            self.assertIn("cloud decision models are not enabled", " ".join(checks.research_backends.plan_problems(
+                {"integrations": {"decisions": {**JEV, "enabled": False}}}, sensitive=False, newsroom=False, journalist_input=False)))
 
     def test_newsroom_mode_sends_nothing_to_openrouter(self) -> None:
         method = methodology()

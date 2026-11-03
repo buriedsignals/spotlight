@@ -294,12 +294,13 @@ def d1_from_config(methodology: Mapping[str, Any], config: Mapping[str, Any],
     if isinstance(plan, Mapping):
         # Research always triages its leads with a decision model (Kev or Jev).
         journalist_input = any(topic.get("journalist_input") is True for topic in topics(plan))
-        # k3-prep.md (path A): no triage model configured is an install fact the
-        # investigator cannot fix, so it is not the plan's error; the round then
-        # holds at triage with that reason, as when the model is down (path B).
+        # k3-prep.md: a triage model the install cannot reach is not the plan's
+        # error (the investigator cannot fix an install), so no 'research triage:'
+        # problem is listed here; the round then holds at triage with the reason,
+        # as when the model is down, and the member is told what to set.
         problems += [problem for problem in research_backends.plan_problems(config, sensitive=sensitive, newsroom=newsroom,
                                                                              journalist_input=journalist_input)
-                     if research_backends.NO_TRIAGE_MODEL not in problem]
+                     if not problem.startswith("research triage:")]
     return problems
 
 

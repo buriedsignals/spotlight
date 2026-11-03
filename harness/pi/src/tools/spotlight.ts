@@ -163,6 +163,11 @@ export const NEXT_PLANNING = 'Next: spawn the investigator with MODE: PLANNING t
 // While the plan fails its own check (fix6 b).
 export const NEXT_METHODOLOGY_FAILING =
 	'Next: the methodology does not pass its check yet (methodology_check lists why). Call spotlight_resolve: it sends the investigator the correction. Do not open the review.';
+// k3-prep.md / Codex review of simp-triage: the round holds at triage when the
+// decision model that triages the leads is missing, cannot be used or is down.
+// Nothing the agents do fixes that, so the member is told and the turn ends.
+export const NEXT_TRIAGE_HELD =
+	'Next: the research round is held because its leads could not be triaged (research_round.triage.error says why). Tell the member, in plain words, which decision-model setting is missing or unreachable, and their two options: fix that setting in the app, or turn Research off and continue without research. Then end your turn; resolving again before the member changes something only repeats the hold.';
 export const NEXT_METHODOLOGY_APPROVAL =
 	'Next: call open_review so the member can approve the methodology, then end your turn and wait for their decision.';
 
@@ -187,6 +192,8 @@ export function nextAction(resolved: Record<string, unknown>, onDisk: (relative:
 			return resolved.methodology_check ? NEXT_METHODOLOGY_FAILING : NEXT_PLANNING;
 		case 'methodology_approval':
 			return NEXT_METHODOLOGY_APPROVAL;
+		case 'research':
+			return (resolved.research as { resume_at?: unknown } | undefined)?.resume_at === 'triage' ? NEXT_TRIAGE_HELD : undefined;
 		case 'investigation':
 			break;
 		default:
