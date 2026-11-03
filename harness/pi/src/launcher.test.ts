@@ -1417,8 +1417,8 @@ test('a worker that records every third turn over 30 turns is never stopped by t
 // file (roles.ts deliverableFor), here data/research-suggestions.json.
 // step1-routing.md (fz1s1:10, :19): at research resume_at suggestions the move
 // is fixed, so resolving launches that investigator; the orchestrator only
-// resolves, and the case then reaches the Research page.
-test('resolving at Research suggestions launches the AMENDMENT investigator; its suggestions file is credited, not stopped by the progress watchdog, and the case reaches the Research page', async (t) => {
+// resolves, and the resolver then reaches research_approval (the page is next).
+test('resolving at Research suggestions launches the AMENDMENT investigator; its suggestions file is credited, not stopped by the progress watchdog, and the resolver reaches research_approval', async (t) => {
 	const space = await workspace(t);
 	const caseDir = join(space.casesRoot, 'case-a');
 	const sample = join(space.root, 'with-suggestions');
@@ -3331,6 +3331,8 @@ test('at Research the orchestrator\'s resolve runs the approved topics in code: 
 	assert.equal(resolution.research_round.triage.ok, true, JSON.stringify(resolution.research_round.triage));
 	await readFile(join(caseDir, 'data/research-triage.json'));
 	assert.deepEqual([resolution.phase, resolution.research.resume_at], ['research', 'suggestions']);
+	// The same resolve launches the investigator for those marks (Codex review of simp-1b).
+	assert.ok(orchestratorModel.requests.some((request) => isWorkerRequest(request, 'investigator') && /^MODE: AMENDMENT\nTASK: SUGGEST\n/.test(userText(request))), 'the suggestions investigator ran in the same resolve');
 	assert.deepEqual(resolution.research_round.ran, ['ownership-registries']);
 	assert.deepEqual(resolution.research_round.completed, ['ownership-registries']);
 	const lane = JSON.parse(await readFile(join(caseDir, 'research/swarm/ownership-registries/lane.json'), 'utf8'));
