@@ -1058,4 +1058,22 @@ test('a verified verdict with no case-local evidence anchor, or one anchored onl
 		/an evidence item must name one file:\nF1 evidence_for\[0\]: local_file is research\/filing\.md but source_ref\.path is research\/fc-filing\.md; set local_file to research\/fc-filing\.md/);
 	await call('write_file', { path: 'data/fact-check.json', content: claim({ ...cited, source_ref: { path: 'research/fc-filing.md', line_start: 1, line_end: 1 }, access_method: 'full_text', evidence_bundle_id: 'FC-E1' }) });
 	await call('write_file', { path: 'data/fact-check.json', content: JSON.stringify({ schema_version: '1.1', claims: [{ finding_id: 'F1', verdict: 'unverified', evidence_for: [{ ...cited, evidence_bundle_id: 'E1' }] }] }) });
+	// Codex re-review of fix11, finding 1 (fix14): a legacy 1.0 case gets the
+	// same rule once the harness has recorded a fetch for it; with none, the
+	// 1.0 write is as it was.
+	const legacyData = await mkdtemp(join(tmpdir(), 'spotlight-pi-data-'));
+	t.after(() => rm(legacyData, { recursive: true, force: true }));
+	const legacy = await fixture(t, undefined, undefined, { SPOTLIGHT_HARNESS_DATA: legacyData });
+	await writeFile(join(legacy.caseDir, 'data', 'findings.json'), JSON.stringify({ schema_version: '1.0', findings: [{ id: 'F1', claim: 'Acme paid Doe.' }] }));
+	await mkdir(join(legacy.caseDir, 'research'), { recursive: true });
+	await writeFile(join(legacy.caseDir, 'research', 'filing.md'), 'Acme paid Doe.\n');
+	await writeFile(join(legacy.caseDir, 'data', 'evidence-bundle.json'), JSON.stringify({ items: [{ id: 'E1', raw_path: 'research/filing.md' }, { id: 'FC-E1', created_by: 'fact-checker', raw_path: 'research/fc-filing.md' }] }));
+	const legacyClaim = (item: object) => JSON.stringify({ schema_version: '1.0', claims: [{ finding_id: 'F1', claim_text: 'Acme paid Doe.', verdict: 'verified', evidence_for: [item] }] });
+	const borrowed = { source_ref: { path: 'research/filing.md', line_start: 1, line_end: 1 }, access_method: 'full_text', evidence_bundle_id: 'E1' };
+	await legacy.call('write_file', { path: 'data/fact-check.json', content: legacyClaim(borrowed) });
+	registerCapture(legacyData, legacy.caseDir, 'research/filing.md', undefined, 'investigator');
+	await assert.rejects(legacy.call('write_file', { path: 'data/fact-check.json', content: legacyClaim(borrowed) }), /a verified verdict needs evidence the fact-checker acquired/);
+	await writeFile(join(legacy.caseDir, 'research', 'fc-filing.md'), 'Acme paid Doe.\n');
+	registerCapture(legacyData, legacy.caseDir, 'research/fc-filing.md');
+	await legacy.call('write_file', { path: 'data/fact-check.json', content: legacyClaim({ ...borrowed, source_ref: { path: 'research/fc-filing.md', line_start: 1, line_end: 1 }, evidence_bundle_id: 'FC-E1' }) });
 });

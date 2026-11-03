@@ -374,7 +374,46 @@ def main() -> int:
         finally:
             del os.environ["SPOTLIGHT_HARNESS_DATA"]
 
-    print("validate-fact-check characterization: 24 passed")
+    # Codex re-review of fix11, finding 1 (fix14): a legacy 1.0 case run in the
+    # Pi harness gets the same receipt rule once the harness has recorded a
+    # fetch for it. With no registry (another runtime, an old case) the 1.0
+    # rule is unchanged; with one, the investigator's capture alone fails and
+    # the fact-checker's registered capture passes.
+    with tempfile.TemporaryDirectory() as tmp:
+        case = REPORT_FIXTURE.build_case(Path(tmp) / "legacy")
+        fact_check_path = case / "data" / "fact-check.json"
+        require(json.loads(fact_check_path.read_text(encoding="utf-8"))["schema_version"] == "1.0", "the fixture is legacy 1.0")
+        results, code = VALIDATOR.validate(case)
+        require(code == 0, f"a legacy case outside the harness changed: {results}")
+        harness_data = Path(tmp) / "harness-data"
+        os.environ["SPOTLIGHT_HARNESS_DATA"] = str(harness_data)
+        try:
+            results, code = VALIDATOR.validate(case)
+            require(code == 0, f"a legacy case with no recorded fetch changed: {results}")
+            key = hashlib.sha256(os.path.realpath(case).encode("utf-8")).hexdigest()[:16]
+            registry = harness_data / "work" / "fetched" / f"{key}.json"
+            registry.parent.mkdir(parents=True)
+            entry = {"url": "https://example.org/official_record", "accessed": "2026-07-16T12:30:00Z", "provider": "crawl4ai"}
+            receipts = {"research/official-record.md": {**entry, "acquired_by": "investigator",
+                        "sha256": hashlib.sha256((case / "research" / "official-record.md").read_bytes()).hexdigest()}}
+            registry.write_text(json.dumps(receipts), encoding="utf-8")
+            results, code = VALIDATOR.validate(case)
+            require(code == 3 and any(row.get("owner") == "fact-checker" and "cites no evidence the fact-checker acquired" in row.get("reason", "")
+                                      for row in results), f"a legacy verified verdict on the investigator's capture passed in the harness: {results}")
+            capture = case / "research" / "fc-official-record.md"
+            capture.write_bytes((case / "research" / "official-record.md").read_bytes())
+            receipts[capture.relative_to(case).as_posix()] = {**entry, "acquired_by": "fact-checker",
+                                                             "sha256": hashlib.sha256(capture.read_bytes()).hexdigest()}
+            registry.write_text(json.dumps(receipts), encoding="utf-8")
+            document = json.loads(fact_check_path.read_text(encoding="utf-8"))
+            document["claims"][0]["evidence_for"][0]["local_file"] = "research/fc-official-record.md"
+            fact_check_path.write_text(json.dumps(document), encoding="utf-8")
+            results, code = VALIDATOR.validate(case)
+            require(code == 0, f"a legacy verified verdict on the fact-checker's registered capture failed: {results}")
+        finally:
+            del os.environ["SPOTLIGHT_HARNESS_DATA"]
+
+    print("validate-fact-check characterization: 25 passed")
     return 0
 
 

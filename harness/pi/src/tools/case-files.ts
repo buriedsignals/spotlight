@@ -12,7 +12,7 @@ import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT, ORCHESTRATOR, deliverableFor, factCheckChecklist, readCheckDocs } from '../roles.ts';
 import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey, removesAnonymousRows } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
-import { factCheckerAlternative, factCheckerCapture, fetchedFile } from './fetch.ts';
+import { factCheckerAlternative, factCheckerCapture, fetchedFile, hasFetchReceipts } from './fetch.ts';
 import { completeNavigatorMetadata } from './navigator-receipts.ts';
 import { RECEIPTS, ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
 import type { CaseScope, ToolContext } from './run.ts';
@@ -405,7 +405,9 @@ function refuseUnanchoredVerdicts(context: ToolContext, target: string, content:
 	}));
 	if (split.length) throw new FileRefused(`refused: data/fact-check.json is unchanged; an evidence item must name one file:\n${split.join('\n')}`);
 	if (unanchored.length) throw new FileRefused(`refused: data/fact-check.json is unchanged; ${unanchored.map((claim) => String(claim.finding_id)).join(', ')} has a verified verdict with no case-local evidence anchor: no evidence_for item has an evidence_bundle_id, or an access_method (full_text, open_access or archive_copy) with a local_file or source_ref. Cite a capture you acquired: give its source_ref.path from your fetch with the quote found there (or its line_start/line_end), and the harness adds its evidence_bundle_id; passages alone are not an anchor. Or acquire an independent capture with fetch (save_as under research/), or set the verdict to unverified.`);
-	if (factCheck?.schema_version !== '1.1') return;
+	// A legacy 1.0 case gets the same rule once the harness has recorded a fetch
+	// for it (Codex re-review of fix11, finding 1); with none it is unchanged.
+	if (factCheck?.schema_version !== '1.1' && !hasFetchReceipts(context)) return;
 	let bundle: Record<string, unknown>[] = [];
 	try {
 		const items = (JSON.parse(readFileSync(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')) as { items?: unknown }).items;

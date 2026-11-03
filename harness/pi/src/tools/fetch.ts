@@ -231,6 +231,16 @@ export function recordFetched(context: ToolContext, paths: string[], entry: Fetc
 		// Without the record the file is cited as before: its item added by hand.
 	}
 }
+// Whether the harness has recorded any fetch for this case.
+export function hasFetchReceipts(context: ToolContext): boolean {
+	const path = fetchedPath(context);
+	if (!path) return false;
+	try {
+		return Object.keys(JSON.parse(readFileSync(path, 'utf8')) as object).length > 0;
+	} catch {
+		return false;
+	}
+}
 export function fetchedFile(context: ToolContext, relative: string): Fetched | undefined {
 	const path = fetchedPath(context);
 	if (!path) return undefined;
