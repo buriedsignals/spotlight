@@ -15,6 +15,7 @@ import { approvedIndicatorFramework } from './hosted-skill.ts';
 import { factCheckerAlternative, factCheckerCapture, fetchedFile, registeredCapture } from './fetch.ts';
 import { sameSourceSupport } from './quotes.ts';
 import { completeNavigatorMetadata } from './navigator-receipts.ts';
+import { completeAmendment, fillMethodology } from './methodology-paperwork.ts';
 import { HARNESS_PROPOSALS, RECEIPTS, ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
 import type { CaseScope, ToolContext } from './run.ts';
 
@@ -827,8 +828,14 @@ export function readTarget(caseDir: string, path: string, scope?: CaseScope): st
 // These are record-envelope facts, never source dates or semantic judgments.
 // Derive the active format after merging: mergeByKey preserves the old header,
 // so an explicit repair of a stale 1.0 header otherwise cannot take effect.
-function artifactEnvelope(caseDir: string, target: string, submitted: string, merged: string): string {
+function artifactEnvelope(caseDir: string, target: string, submitted: string, merged: string, env: Record<string, string | undefined> = {}): string {
 	const name = caseRelative(caseDir, target);
+	if (name === 'data/methodology-amendment.json') {
+		let fragment: unknown;
+		try { fragment = JSON.parse(submitted); } catch { return merged; }
+		const whole = fragment && typeof fragment === 'object' && !Array.isArray(fragment) ? completeAmendment(caseDir, fragment as Record<string, unknown>) : undefined;
+		return whole ? `${JSON.stringify(whole, null, 2)}\n` : merged;
+	}
 	if (!['data/methodology.json', 'data/findings.json', 'data/fact-check.json', 'data/evidence-bundle.json', 'data/investigation-log.json'].includes(name)) return merged;
 	const object = (text: string | undefined): Record<string, unknown> | undefined => {
 		if (text === undefined) return undefined;
@@ -859,6 +866,7 @@ function artifactEnvelope(caseDir: string, target: string, submitted: string, me
 	}
 	const created = name === 'data/methodology.json' ? 'planned_at' : name === 'data/evidence-bundle.json' ? 'created_at' : undefined;
 	if (created) document[created] = existing?.[created] ?? new Date().toISOString();
+	if (name === 'data/methodology.json') fillMethodology(caseDir, env, document);
 	return JSON.stringify(document) === before ? merged : `${JSON.stringify(document, null, 2)}\n`;
 }
 
@@ -1232,7 +1240,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 				refuseDriftedClaims(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, true);
 				const normalized = normalizeArtifactPaths(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content, scope);
 				const destination = writeTarget(caseDir, writeRoot, input.path, writes, denyWrites);
-				const content = stampFactCheckerRecords(context, destination, artifactEnvelope(caseDir, destination, normalized, whole(destination, normalized)), role);
+				const content = stampFactCheckerRecords(context, destination, artifactEnvelope(caseDir, destination, normalized, whole(destination, normalized), context.env), role);
 				refuseCitedWithdrawal(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites), input.content);
 				refuseMisplacedBrief(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
 				refuseUnactivatedStart(caseDir, writeTarget(caseDir, writeRoot, input.path, writes, denyWrites));
@@ -1278,7 +1286,7 @@ export function caseFileTools(context: Pick<ToolContext, 'caseDir' | 'writeRoot'
 					throw new Error(`edit_file: old_text occurs more than once in ${input.path}; include more context`);
 				}
 				const replacement = text.slice(0, first) + input.new_text + text.slice(first + input.old_text.length);
-				const updated = stampFactCheckerRecords(context, target, artifactEnvelope(caseDir, target, replacement, whole(target, replacement, true)), role);
+				const updated = stampFactCheckerRecords(context, target, artifactEnvelope(caseDir, target, replacement, whole(target, replacement, true), context.env), role);
 				refuseRecordedFramework(caseDir, target);
 				refuseNonObjectData(caseDir, target, updated);
 				refuseUncitedVerdicts(caseDir, target, updated);

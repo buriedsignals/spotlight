@@ -2091,9 +2091,19 @@ test('after a planning task the harness runs the methodology check, not the find
 	assert.doesNotMatch(delegated, /validate-case\.py/);
 });
 
-test('with the Research switch off, the methodology check refuses a research plan; with it on, the plan is checked as usual', async (t) => {
-	const methodology = await readFile(join(CHECKOUT_ROOT, 'tests/fixtures/research/methodology-research.sample.json'), 'utf8');
-	for (const research of ['off', 'on']) {
+// step2-design.md section 4: with Research on, an investigator that writes
+// only the plan's content (directions, steps, topics on d1) gets the
+// paperwork from code: the brief, IDs, mode, keys, egress, consent, budgets,
+// tools_required and Navigator's skip reason; the plan then passes its check.
+const CONTENT_ONLY_PLAN = JSON.stringify({
+	schema_version: '1.0', project: 'case-a',
+	investigation_plan: [{ direction: 'Ownership', questions: ['Who owns the fixture company?'], steps: [{ order: 1, action: 'Read the registry entry', tool: 'fetch' }] }],
+	research_plan: { topics: [{ direction_id: 'd1', lane_type: 'web', questions: ['Which registry names the owner?'] }] },
+});
+test('with the Research switch off, the methodology check refuses a research plan; with it on, the plan is checked as usual, and a plan of content only gets its paperwork from code', async (t) => {
+	const sample = await readFile(join(CHECKOUT_ROOT, 'tests/fixtures/research/methodology-research.sample.json'), 'utf8');
+	for (const research of ['off', 'on', 'content-only']) {
+		const methodology = research === 'content-only' ? CONTENT_ONLY_PLAN : sample;
 		const fake = await startFakeOpenAI((request) => {
 			if (isWorkerRequest(request, 'investigator')) {
 				return toolResults(request).length === 0
@@ -2112,12 +2122,36 @@ test('with the Research switch off, the methodology check refuses a research pla
 		// The install config says the opposite, so only the harness's switch can decide.
 		const config = join(space.root, 'spotlight-config.json');
 		await writeFile(config, JSON.stringify({ model_tier: '12b', integrations: { research_swarms: { enabled: research === 'off' } } }));
-		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_CONFIG: config, SPOTLIGHT_RESEARCH_SWARMS: research });
+		// content-only: the Navigator lookup runs, against a navigator that is not set up.
+		const stubs = join(space.root, 'stub-bin');
+		if (research === 'content-only') {
+			await mkdir(stubs, { recursive: true });
+			await writeFile(join(stubs, 'navigator'), '#!/bin/sh\necho "navigator: not signed in" >&2\nexit 1\n', { mode: 0o755 });
+		}
+		const env = baseEnv(space, fake.baseURL);
+		const chat = launch(t, { ...env, SPOTLIGHT_CONFIG: research === 'content-only' ? join(CHECKOUT_ROOT, 'tests/fixtures/research/install-config.sample.json') : config, SPOTLIGHT_RESEARCH_SWARMS: research === 'off' ? 'off' : 'on', ...(research === 'content-only' ? { SPOTLIGHT_NAVIGATOR_PRESTEP: 'on', PATH: `${stubs}:${env.PATH}` } : {}) });
 
 		await settledPrompt(chat, 'Continue.');
 
 		const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
 		const delegated = toolResults(orchestrator[orchestrator.length - 1]).join('\n');
+		if (research === 'content-only') {
+			const task = userText(fake.requests.find((request) => isWorkerRequest(request, 'investigator'))!);
+			assert.match(task, /NAVIGATOR: code tried to look up the brief's directions and Navigator was not available/);
+			const written = JSON.parse(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8'));
+			assert.deepEqual(written.brief_directions, ['Who owns the fixture company?']);
+			assert.equal(written.investigation_plan[0].direction_id, 'd1');
+			assert.deepEqual(written.tools_required, ['fetch']);
+			assert.deepEqual([written.navigator.used, written.navigator.outcome, typeof written.navigator.fallback_reason], [false, 'unavailable', 'string']);
+			const plan = written.research_plan;
+			assert.deepEqual([plan.topics[0].topic_id, plan.topics[0].token_budget, plan.mode, plan.round_budget_usd, plan.case_budget_usd], ['d1-web', 200000, 'openrouter_swarm', 1, 1]);
+			assert.deepEqual(plan.egress, [{ topic_id: 'd1-web', destination: 'public_web' }]);
+			assert.deepEqual(plan.keys, [{ name: 'FIRECRAWL_API_KEY', topics: ['d1-web'] }]);
+			assert.deepEqual(plan.consent, { swarm: true });
+			// Continuity: the plan passes its check, so the Methodology gate is next.
+			assert.match(delegated, /validate-methodology-navigator\.py: PASSED/, delegated);
+			continue;
+		}
 		assert.match(delegated, /validate-methodology-navigator\.py/, research);
 		if (research === 'off') assert.match(delegated, /Research is off; turn on Research in the app to add a research plan/);
 		else assert.doesNotMatch(delegated, /Research is off/);
@@ -5232,13 +5266,17 @@ function caseAtAmendment(space: Workspace): string {
 	return caseDir;
 }
 
-test('at the amendment step the investigator gets the code-built TASK: AMEND task and code applies recordAmendment', async (t) => {
+// step2-design.md section 4: the amendment may also be only the directions it
+// changes; code completes it from the approved methodology and the marks.
+test('at the amendment step the investigator gets the code-built TASK: AMEND task and code applies recordAmendment, for a whole methodology or only the changed direction', async (t) => {
+ for (const shape of ['whole', 'fragment'] as const) await t.test(shape, async (t) => {
 	const space = await workspace(t);
 	const caseDir = caseAtAmendment(space);
 	const methodology = await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8');
+	const content = shape === 'whole' ? methodology : JSON.stringify({ investigation_plan: [JSON.parse(methodology).investigation_plan[0]] });
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) return toolResults(request).length === 0
-			? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology-amendment.json', content: methodology } }] }
+			? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology-amendment.json', content } }] }
 			: { text: 'Amended.' };
 		return toolResults(request).length === 0
 			? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: METHODOLOGY AMENDMENT\nORCH-SENTINEL rewrite the whole plan.' } }] }
@@ -5254,6 +5292,8 @@ test('at the amendment step the investigator gets the code-built TASK: AMEND tas
 	assert.match(toolResults(fake.requests.at(-1)!).join('\n'), /recordAmendment applied/);
 	const status = JSON.parse(execFileSync(PYTHON, [SEAM, 'status', '--json', caseDir], { env: { PATH: process.env.PATH ?? '', PYTHONNOUSERSITE: '1', SPOTLIGHT_RESEARCH_SWARMS: 'on' } }).toString());
 	assert.equal(status.phase, 'investigation');
+	assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8')), JSON.parse(methodology), 'the completed amendment is the approved methodology');
+ });
 });
 
 // review-integration I1: a correction task had no deliverable, so the progress

@@ -31,6 +31,8 @@ export function baseEnv(space: Workspace, modelBaseURL: string, caseId = 'case-a
 		SPOTLIGHT_HARNESS_DATA: space.dataDir,
 		// The fact-check re-check would fetch the fixtures' source URLs (#274); tests reach no network.
 		SPOTLIGHT_RECHECK: 'off',
+		// The Navigator lookup before planning would reach Navigator (step2-design.md section 4).
+		SPOTLIGHT_NAVIGATOR_PRESTEP: 'off',
 		...(process.env.SPOTLIGHT_PYTHON ? { SPOTLIGHT_PYTHON: process.env.SPOTLIGHT_PYTHON } : {}),
 	};
 }

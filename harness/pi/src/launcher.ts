@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process';
 import { analystDeliverable } from './analyst-context.ts';
 import type { ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { ConfigError, RouteRefused, checkNewsroomInstall, checkRouteSecrets, childEnv, parseLaunchArgs, piSettings, readConfig, researchEnv, routeFor, resolverEnv, secretValues } from './config.ts';
 import {
@@ -28,6 +28,8 @@ import type { CheckKind, EditorialClient, RunPackage } from './editorial.ts';
 import { openInBrowser } from '../../review/session.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { LEGACY_MARKERS, writeConfined } from './tools/case-files.ts';
+import { NAVIGATOR_PRE_STEP } from './tools/methodology-paperwork.ts';
+import { programTools } from './tools/programs.ts';
 import { newsroomData } from './tools/editorial.ts';
 import { DESKTOP_ENV, RECEIPTS, capped, programEnv, runFixed, runPython } from './tools/run.ts';
 import type { HarnessConfig, LaunchArgs } from './config.ts';
@@ -805,6 +807,46 @@ async function recheckSources(harness: Harness, docs: ReturnType<typeof readChec
 
 type WorkerTask = { text: string; header: string; start?: string; passages?: string };
 
+// step2-design.md section 4: before the first plan, code looks each brief
+// direction up in Navigator (tool discovery, not evidence) and hands the
+// planner what came back; the write boundary turns the receipts into the
+// navigator block. A lookup that fails or is not allowed never blocks the
+// planner: when none ran, its reason is kept for the block's fallback_reason.
+async function navigatorPreStep(harness: Harness, signal: AbortSignal): Promise<string> {
+	const caseDir = harness.active.caseDir;
+	if (existsSync(join(caseDir, NAVIGATOR_PRE_STEP))) return '';
+	try {
+		if (readdirSync(join(caseDir, 'research', 'navigator')).some((name) => name.endsWith('-receipt.json'))) return '';
+	} catch {
+		// No lookup yet.
+	}
+	let brief: string[];
+	try {
+		brief = readFileSync(join(caseDir, 'brief-directions.txt'), 'utf8').split('\n').map((text) => text.trim()).filter(Boolean).slice(0, 8);
+	} catch {
+		return '';
+	}
+	const context = { caseDir, writeRoot: caseDir, python: harness.config.python, configPath: harness.config.spotlightConfig, env: { ...process.env, SPOTLIGHT_ROLE: 'investigator', SPOTLIGHT_SENSITIVE: harness.config.sensitive ? 'true' : 'false' } };
+	const tool = programTools(context).find((entry) => entry.name === 'navigator_tools');
+	if (!tool || !brief.length) return '';
+	const found: string[] = [];
+	const skipped: Array<{ outcome: string; reason: string }> = [];
+	for (const direction of brief) {
+		let result: { outcome?: string; reason?: string; receipt_path?: string; response?: unknown; response_text?: string };
+		try {
+			result = JSON.parse((await tool.execute('navigator-pre-step', { action: 'find', value: direction.slice(0, 500) }, signal, undefined, undefined as never)).content[0].text);
+		} catch (error) {
+			signal.throwIfAborted();
+			result = { outcome: 'unavailable', reason: (error as Error).message.slice(0, 300) };
+		}
+		if (result.outcome === 'used') found.push(`- ${JSON.stringify(direction)}: ${result.receipt_path} ${(result.response_text ?? JSON.stringify(result.response)).slice(0, 600)}`);
+		else skipped.push({ outcome: result.outcome === 'policy-skipped' ? 'policy-skipped' : 'unavailable', reason: String(result.reason ?? 'Navigator gave no result') });
+	}
+	if (found.length) return `\n\nNAVIGATOR (code looked up each brief direction before planning; tool discovery, not evidence; the harness records these lookups in the methodology's navigator block, and you choose selected_tools):\n${found.join('\n')}`;
+	writeConfined(caseDir, caseDir, NAVIGATOR_PRE_STEP, JSON.stringify(skipped[0]));
+	return `\n\nNAVIGATOR: code tried to look up the brief's directions and Navigator was not available (${skipped[0].reason}). The harness records that in the methodology's navigator block. Plan with search and fetch, or osint_tools.`;
+}
+
 // LFM3 e2 kde stage 2 on Osaurus (03f008b0): all 23 report drafts failed on
 // structure; fz2-fix11 seeded Report: every treatment cited non-direct quotes.
 // Before the Report analyst starts, code writes the draft's structure when no
@@ -863,6 +905,8 @@ async function finalTask(harness: Harness, role: string, task: string, signal: A
 	}
 	const line = owed ? `\n\n${owed.line}` : '';
 	const start = owed?.start ? `\n${owed.start}` : '';
+	// SPOTLIGHT_NAVIGATOR_PRESTEP=off turns the lookup off (tests, which reach no network).
+	if (role === 'investigator' && PLANNING_PHASES.has(phase) && process.env.SPOTLIGHT_NAVIGATOR_PRESTEP !== 'off' && !existsSync(join(harness.active.caseDir, 'data', 'methodology.json'))) task = `${task}${await navigatorPreStep(harness, signal)}`;
 	const prepared = withInvestigationPacket(role, task, { caseDir: harness.active.caseDir, phase });
 	const withCase = await withCasePassages(role, prepared, {
 		caseDir: harness.active.caseDir,

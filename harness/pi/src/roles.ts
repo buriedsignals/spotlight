@@ -353,11 +353,12 @@ const RESEARCH_LINE = {
 // "Research plan"; research-request-diff.md: r9 picked local_only from the
 // schema's list, read the swarm consent as the member's to give, and dropped
 // the plan).
+// step2-design.md section 4: in this harness code fills the plan's paperwork
+// when it is left out (tools/methodology-paperwork.ts), so the rules name
+// only what the investigator writes.
 const researchRules = (edition: Edition) => `When you plan or correct the methodology, its \`research_plan\` (schemas/methodology.schema.json) follows these rules here:
-- \`mode\` is \`${edition === 'newsroom' ? 'newsroom' : 'openrouter_swarm'}\`; \`local_only\` only when every topic is a local lane.
-- Web topics need \`consent.swarm\` set to true. You write it: the member's approval at the Methodology gate is the consent. Never write who consented or when.
-- A research topic the member asks for goes into \`research_plan\` topics, each on one \`investigation_plan\` direction, with id \`<direction_id>-<lane_type>\`. Adding a direction does not answer it.
-- Give each topic \`token_budget\` 200000, the default; 20000 is the bare floor, about one lane turn.
+- Write the topics: for each, the \`direction_id\` of the \`investigation_plan\` direction it serves (d1 is the first direction, d2 the second), its \`lane_type\` and its questions. A research topic the member asks for goes there; adding a direction does not answer it.
+- Leave out what code fills: topic ids, \`token_budget\`, \`mode\` (\`${edition === 'newsroom' ? 'newsroom' : 'openrouter_swarm'}\` here), \`keys\`, \`egress\`, \`consent\` and the budgets, and \`brief_directions\`. Values you do write are kept and checked.
 - When the research checks refuse the plan, correct it. Never drop \`research_plan\` to get past them.`;
 
 // Checked before the Brief starts. Short on purpose: the 12B pays for every
