@@ -177,6 +177,17 @@ def main() -> int:
                 f"a verified row with no fetched source was blamed on the proposal: {checked.returncode} {checked.stderr}")
         write(case, "fact-check.json", original_check)
 
+        # review-simp.md #1: a row with no confidence (judge_finding before
+        # simp-review) cannot be fixed by the proposal either: exit 3, not 2.
+        no_confidence = json.loads(json.dumps(original_check))
+        no_confidence["claims"][0].pop("confidence", None)
+        write(case, "fact-check.json", no_confidence)
+        checked = subprocess.run([sys.executable, str(SCRIPTS / "build-knowledge-batch.py"), str(case), "--check-proposal"],
+                                 input=json.dumps(PROPOSAL), capture_output=True, text=True)
+        require(checked.returncode == 3 and "needs a 1.1 verdict and a confidence" in checked.stderr,
+                f"a fact-check row with no confidence was blamed on the proposal: {checked.returncode} {checked.stderr}")
+        write(case, "fact-check.json", original_check)
+
         # A single idless fact-check row needs no invented selector. A wrong
         # selector is still refused with an actionable correction.
         original_check = read(case, "fact-check.json")

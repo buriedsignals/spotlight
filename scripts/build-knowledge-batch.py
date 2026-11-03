@@ -422,7 +422,10 @@ def _build(case: Path, models: dict[str, str], draft: bool, proposal: Any, findi
         row = candidates[0]
         verdict, confidence = row.get("verdict"), row.get("confidence")
         if verdict not in VERDICTS_1_1 or confidence not in ("high", "medium", "low"):
-            raise BuildError(f"claim {claim['key']}: the fact-check row needs a 1.1 verdict and a confidence")
+            # review-simp.md #1: the fact-check is bound by the gate and only the
+            # fact-checker, at Investigation, can add a verdict or confidence, so
+            # this is the case's fault, never the proposal's (exit 3, as B1).
+            raise CaseNotReady(f"claim {claim['key']}: the fact-check row needs a 1.1 verdict and a confidence")
         rationale = (row.get("grounding_assessment") or {}).get("assessment") or row.get("notes")
         if not _text(rationale):
             raise BuildError(f"claim {claim['key']}: the fact-check row has no rationale (grounding assessment or notes)")

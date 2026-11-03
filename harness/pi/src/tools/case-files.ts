@@ -1671,9 +1671,11 @@ async function citePassages(context: ToolContext, sourceExpressions: ToolDefinit
 // Verified needs Tom's rule (2026-11-03, plan C8): the harness re-fetch of the
 // same source, under the fact-checker's receipt and unchanged since, still
 // holds the passage that supports the finding. Otherwise the claim is
-// unverified with the reason; partly adds the partial_support flag. Code
-// writes no confidence. A second source stays on record_assessment, whose
-// quote path records its passage.
+// unverified with the reason; partly adds the partial_support flag. A second
+// source stays on record_assessment, whose quote path records its passage.
+// Confidence is paperwork from the same rule (review-simp.md #1, plan C13):
+// medium for a verified row (one source, re-fetched), low for every other
+// answer. Without it Ingest's builder refuses the row and the report caps it.
 const ANSWERS = ['supports', 'partly', 'doesnt', 'cant_tell'] as const;
 
 // The lines of `text` that hold `quote`: as written first, else with spacing
@@ -1772,6 +1774,7 @@ function judgeTool(context: ToolContext, assess: ToolDefinition, batch: string[]
 			const assessment: RecordRow = {
 				finding_id: findingId,
 				verdict,
+				confidence: verdict === 'verified' ? 'medium' : 'low',
 				evidence_for: evidence,
 				evidence_against: [],
 				notes: status ? `${reason} (Harness re-check: ${status}.)` : reason,

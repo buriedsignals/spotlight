@@ -358,7 +358,7 @@ const RESEARCH_LINE = {
 // only what the investigator writes.
 const researchRules = (edition: Edition) => `When you plan or correct the methodology, its \`research_plan\` (schemas/methodology.schema.json) follows these rules here:
 - Write the topics: for each, the \`direction_id\` of the \`investigation_plan\` direction it serves (d1 is the first direction, d2 the second), its \`lane_type\` and its questions. A research topic the member asks for goes there; adding a direction does not answer it.
-- Leave out what code fills: topic ids, \`token_budget\`, \`mode\` (\`${edition === 'newsroom' ? 'newsroom' : 'openrouter_swarm'}\` here), \`keys\`, \`egress\`, \`consent\` and the budgets, and \`brief_directions\`. Values you do write are kept and checked.
+- Leave out what code fills, even where the PLANNING example shows it (that example serves runtimes without this code): topic ids, \`token_budget\`, \`mode\` (\`${edition === 'newsroom' ? 'newsroom' : 'openrouter_swarm'}\` here), \`keys\`, \`egress\`, \`consent\` and the budgets, and \`brief_directions\`. Values you do write are kept and checked.
 - When the research checks refuse the plan, correct it. Never drop \`research_plan\` to get past them.`;
 
 // Checked before the Brief starts. Short on purpose: the 12B pays for every

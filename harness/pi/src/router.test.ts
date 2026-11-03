@@ -33,6 +33,8 @@ test('a member message: approval talk writes the brief only while the Brief reso
 	assert.equal(routeMember(routerState(stale), undefined).kind, 'model');
 	// A turn the harness wrote is not a member message.
 	assert.equal(routerState([...brief, member('Your turn ended with text and no tool call.')]).member, undefined);
+	assert.equal(routerState([...brief, member('Your last turn was empty. Call the next tool, or give your answer.')]).member, undefined);
+	assert.equal(routerState([...brief, member('Your last turn ran on without a tool call and was cut off. Call the next tool, or give your answer in a few sentences.')]).member, undefined);
 });
 
 test('the router hands the turn to the model rather than repeat its own call with nothing new, and is on for the local tiers only', () => {

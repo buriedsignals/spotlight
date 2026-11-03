@@ -122,9 +122,12 @@ export function completeAmendment(caseDir: string, submitted: Row): Row | undefi
 	const approved = readJson(caseDir, 'data/methodology.json');
 	if (!approved) return undefined;
 	const key = (entry: Row) => String(entry.direction_id ?? entry.direction);
+	// The same direction by its id or by its name (review-simp.md #3: a fragment
+	// that names the direction but omits the id code gave it).
+	const same = (old: Row, entry: Row) => (entry.direction_id !== undefined && old.direction_id === entry.direction_id) || (entry.direction !== undefined && old.direction === entry.direction);
 	const plan = rows(approved.investigation_plan).map((entry) => ({ ...entry }));
 	for (const entry of rows(submitted.investigation_plan)) {
-		const at = plan.findIndex((old) => key(old) === key(entry));
+		const at = plan.findIndex((old) => same(old, entry));
 		if (at >= 0) plan[at] = entry;
 		else plan.push(entry);
 	}

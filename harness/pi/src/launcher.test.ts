@@ -4802,12 +4802,12 @@ test('a fact-checker can cite the harness recheck as its independent acquired ev
 	if (route === 'judge-changed') {
 		// Continuity: the claim is written, unverified with the reason, and validates.
 		assert.equal(checked.claims[0].verdict, 'unverified');
+		assert.equal(checked.claims[0].confidence, 'low');
 		assert.match(checked.claims[0].notes, /The registry states the payment\. \(Harness re-check: .*supporting passage is no longer on the page/);
 		execFileSync(process.env.SPOTLIGHT_PYTHON ?? 'python3', [join(CHECKOUT_ROOT, 'scripts', 'validate-fact-check.py'), caseDir]);
 		return;
 	}
 	const items = JSON.parse(await readFile(bundlePath, 'utf8')).items;
-	console.log('DEBUG', JSON.stringify(checked.claims), JSON.stringify(toolResults(fake.requests.filter((request) => isWorkerRequest(request, 'fact-checker')).at(-1)!)).slice(0, 1500));
 	const item = items.find((entry: { raw_path?: string }) => entry.raw_path?.startsWith('research/fc-recheck-E1.md'));
 	assert.ok(item);
 	assert.equal(item.created_by, 'fact-checker');
@@ -4816,7 +4816,8 @@ test('a fact-checker can cite the harness recheck as its independent acquired ev
 	assert.equal(checked.claims[0].evidence_for[0].evidence_bundle_id, item.id);
 	if (route === 'judge') {
 		assert.equal(checked.claims[0].verdict, 'verified');
-		assert.equal(checked.claims[0].confidence, undefined, 'code writes no confidence');
+		// review-simp.md #1: confidence is code's paperwork from the rule, so Ingest can build the row.
+		assert.equal(checked.claims[0].confidence, 'medium');
 		assert.match(checked.claims[0].evidence_for[0].description, /Same source as the investigation, not a second source/);
 	}
 	try {

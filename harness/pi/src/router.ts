@@ -29,7 +29,8 @@ type Part = { type?: string; text?: string; name?: string };
 type Msg = { role?: string; content?: unknown; toolName?: string; responseModel?: string };
 
 // Turns the harness writes into the chat, not the member (step1 intents_build HARNESS).
-const HARNESS_TURN = /^(The conversation history before this point was compacted|Your turn ended with text)/;
+// review-simp.md #4: also the empty-turn and runaway-turn nudges (extension.ts).
+const HARNESS_TURN = /^(The conversation history before this point was compacted|Your turn ended with text|Your last turn was empty\.|Your last turn ran on without a tool call)/;
 
 const parts = (content: unknown): Part[] => (Array.isArray(content) ? (content as Part[]) : typeof content === 'string' ? [{ type: 'text', text: content }] : []);
 const text = (content: unknown) => parts(content).filter((part) => part.type === 'text').map((part) => part.text ?? '').join('\n');

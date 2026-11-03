@@ -63,7 +63,7 @@ test('every Pi role and tier receives the current UTC date, and with Research on
   for (const edition of ['solo', 'newsroom'] as const) {
    const researched = systemPrompt(composition,role,tier,edition,true,role === 'orchestrator' ? undefined : spawned('methodology','MODE: METHODOLOGY CORRECTION'));
    // step2-design.md section 4: code fills the paperwork, so the rules name what the investigator writes.
-   const rules = [new RegExp(`\\\`mode\\\` \\(\\\`${edition === 'solo' ? 'openrouter_swarm' : 'newsroom'}\\\` here\\)`), /Leave out what code fills: topic ids, `token_budget`/, /A research topic the member asks for goes there/, /Never drop `research_plan` to get past them\./, /### Research plan \(only when Research is on\)[\s\S]*"topic_id": "d1-web", "direction_id": "d1"/];
+   const rules = [new RegExp(`\\\`mode\\\` \\(\\\`${edition === 'solo' ? 'openrouter_swarm' : 'newsroom'}\\\` here\\)`), /Leave out what code fills, even where the PLANNING example shows it \(that example serves runtimes without this code\): topic ids, `token_budget`/, /A research topic the member asks for goes there/, /Never drop `research_plan` to get past them\./, /### Research plan \(only when Research is on\)[\s\S]*"topic_id": "d1-web", "direction_id": "d1"/];
    for (const rule of rules) (role === 'investigator' ? assert.match : assert.doesNotMatch)(researched, rule, `${role}/${tier}/${edition}`);
    // methodology-corrections-diag.md T1: the example appears only with Research on.
    if (role === 'investigator') assert.doesNotMatch(systemPrompt(composition,role,tier,edition,false,spawned('methodology','MODE: METHODOLOGY CORRECTION',{ ...ALL_ON, research: false })), /### Research plan \(only when Research is on\)/);
