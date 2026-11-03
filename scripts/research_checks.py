@@ -298,9 +298,13 @@ def d1_from_config(methodology: Mapping[str, Any], config: Mapping[str, Any],
         # error (the investigator cannot fix an install), so no 'research triage:'
         # problem is listed here; the round then holds at triage with the reason,
         # as when the model is down, and the member is told what to set.
+        # A problem the plan causes (journalist-input topics that need a local
+        # triage model) stays the plan's to fix (Codex review of simp-triage2):
+        # only the problems the install has without them are dropped.
+        install = set(research_backends.plan_problems(config, sensitive=sensitive, newsroom=newsroom, journalist_input=False))
         problems += [problem for problem in research_backends.plan_problems(config, sensitive=sensitive, newsroom=newsroom,
                                                                              journalist_input=journalist_input)
-                     if not problem.startswith("research triage:")]
+                     if problem not in install]
     return problems
 
 

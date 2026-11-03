@@ -196,9 +196,10 @@ class D1LanePlan(unittest.TestCase):
             self.assertEqual(triage_problems(web, JEV), [])
             self.assertEqual(triage_problems(web, KEV), [])
             # Nor is any other install setting triage cannot use (Jev without the
-            # cloud opt-in; journalist input with no local model): the round holds
-            # at triage naming it, never a methodology correction.
-            self.assertEqual(triage_problems(journalist, JEV), [])
+            # cloud opt-in): the round holds at triage naming it, never a correction.
+            # Journalist input with no local model is the plan's to fix (drop that
+            # topic), so it stays (Codex review of simp-triage2).
+            self.assertIn("no local triage model is configured", " ".join(triage_problems(journalist, JEV)))
             self.assertEqual(triage_problems(web, {**JEV, "enabled": False}), [])
             # The triage step itself still refuses them, with the reason.
             self.assertIn("no local triage model is configured", " ".join(checks.research_backends.plan_problems(

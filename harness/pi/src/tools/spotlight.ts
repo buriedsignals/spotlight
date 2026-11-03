@@ -193,7 +193,8 @@ export function nextAction(resolved: Record<string, unknown>, onDisk: (relative:
 		case 'methodology_approval':
 			return NEXT_METHODOLOGY_APPROVAL;
 		case 'research':
-			return (resolved.research as { resume_at?: unknown } | undefined)?.resume_at === 'triage' ? NEXT_TRIAGE_HELD : undefined;
+			// Only a round whose triage failed is a hold; a triage still owed is code's next step (Codex review of simp-triage2).
+			return (resolved.research as { resume_at?: unknown } | undefined)?.resume_at === 'triage' && (resolved.research_round as { triage?: { ok?: unknown } } | undefined)?.triage?.ok === false ? NEXT_TRIAGE_HELD : undefined;
 		case 'investigation':
 			break;
 		default:

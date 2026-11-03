@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { CHECKOUT_ROOT, ORCHESTRATOR } from '../roles.ts';
-import { NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, bindActiveCase, dispatchAt, pythonAdapter, spotlightTools } from './spotlight.ts';
+import { NEXT_BRIEF, NEXT_FACT_CHECKER, NEXT_INVESTIGATOR, NEXT_PLANNING, NEXT_TRIAGE_HELD, bindActiveCase, dispatchAt, nextAction, pythonAdapter, spotlightTools } from './spotlight.ts';
 import type { AdapterRunner } from './spotlight.ts';
 
 const PYTHON = process.env.SPOTLIGHT_PYTHON ?? 'python3';
@@ -309,4 +309,11 @@ test('a long methodology correction keeps the research checks\' rule lines ahead
 	const errors = dispatch!.task.split('METHODOLOGY VALIDATOR ERRORS:\n')[1];
 	assert.ok(errors.startsWith(rules.join('\n')), errors.slice(0, 300));
 	assert.ok(errors.length <= 4000);
+});
+
+// Codex review of simp-triage2: the triage-hold step is given only when the round's triage failed, never for a triage still owed.
+test('the triage hold names the member options only after a failed triage', () => {
+	const held = { phase: 'research', research: { resume_at: 'triage' } };
+	assert.equal(nextAction(held, () => false), undefined);
+	assert.equal(nextAction({ ...held, research_round: { triage: { ok: false, error: 'research triage: research needs a decision model' } } }, () => false), NEXT_TRIAGE_HELD);
 });
