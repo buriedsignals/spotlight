@@ -304,6 +304,15 @@ class ReviewGate(CaseFixture):
         self.assertEqual(json.loads(self.seam(before, "report-skeleton").stdout)["written"], False)
         self.assertFalse((before / "data/report-draft.json").exists(), "only at Report")
 
+        # Codex review of simp-1 (P2): a finding the member left out offers
+        # no quote, since the draft may not name it.
+        left_out = self.build("left-out", "investigation_gate", "--activated", "--clean")
+        self.edit(left_out, "investigation_gate", {"kind": "mark", "key": "selection:F1", "value": False})
+        self.assertTrue(review.report_quotes(left_out.resolve()).get("F1"), "F1's passage is quotable before the gate")
+        view = self.view(left_out, "investigation_gate")
+        self.page_approve(left_out, "investigation_gate", self.nonce(left_out, "investigation_gate"), view["digest"])
+        self.assertEqual(json.loads(self.seam(left_out, "report-skeleton").stdout)["quotes"], {})
+
         # A gate review the approval does not bind makes the kept findings
         # unreadable: no skeleton, and no error, so the analyst still runs and
         # the draft validator names the problem (step2-design.md section 1).

@@ -1040,7 +1040,12 @@ def report_quotes(case: Path) -> dict[str, list[dict[str, str]]]:
     """The passages a report draft may select per finding, as
     validate-report-draft.py accepts them: an activated case, an active
     passage the harness marked direct_quote, not a translation, linked to the
-    finding. Listed for the analyst; the validator still decides."""
+    finding the member kept (a set-aside finding is not in the report).
+    Listed for the analyst; the validator still decides."""
+    try:
+        kept_out = set_aside_findings(case)
+    except OrchestrationError:
+        kept_out = set()  # the validator names the unbound review
     findings_doc = _read_case_json(case, "data/findings.json")
     activated = isinstance(findings_doc, dict) and findings_doc.get("schema_version") == "1.1" and case_path(
         case, "data/case-contract.json").is_file()
@@ -1055,7 +1060,7 @@ def report_quotes(case: Path) -> dict[str, list[dict[str, str]]]:
             continue
         for link in item.get("finding_links") or []:
             finding = link.get("finding_id") if isinstance(link, dict) else None
-            if isinstance(finding, str) and finding.strip():
+            if isinstance(finding, str) and finding.strip() and finding.strip() not in kept_out:
                 quotes.setdefault(finding.strip(), []).append({"expression_id": item["id"].strip(), "text": str(item.get("text", ""))})
     return quotes
 
