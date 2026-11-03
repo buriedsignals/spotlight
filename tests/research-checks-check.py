@@ -51,6 +51,10 @@ class D1LanePlan(unittest.TestCase):
         # Consent is the Methodology approval: an older plan's model-written stamp stays valid and is not read.
         plan_of(method)["consent"].update(decided_by="Tom Vaillant", decided_at="2025-01-15T12:00:00Z")
         self.assertEqual(d1(method), [])
+        # r13: the value the refusal names is one the plan can use.
+        for brief in plan_of(method)["topics"]:
+            brief["token_budget"] = 200000
+        self.assertEqual(d1(method), [])
 
     def test_a_case_without_a_research_plan_has_nothing_to_check(self) -> None:
         method = methodology()
@@ -102,7 +106,7 @@ class D1LanePlan(unittest.TestCase):
             "is not in the lane catalogue": unknown_lane,
             "is not a direction_id of investigation_plan": unknown_direction,
             "needs a token budget": no_token_budget,
-            "token_budget 5000 is below one lane call; set at least 20000": token_budget_below_one_call,
+            "token_budget 5000 is below one lane call; use the default 200000 (20000 is the bare floor, about one lane turn)": token_budget_below_one_call,
             'add a research_plan.egress entry {"topic_id": "ownership-registries"': no_egress,
             "a swarm topic needs research_plan.consent.swarm set to true; write it": no_opt_in,
             "local_only mode runs no cloud topic": local_only_cloud,

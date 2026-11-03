@@ -54,6 +54,9 @@ CASE_BUDGET_CEILING_USD = 5
 # about 5,000 tokens) sent twice and three 4,096-token answers
 # (harness/pi/src/lanes.ts); below this it ends before its first call.
 MIN_TOKEN_BUDGET = 20_000
+# The lane runner's default (harness/pi/src/lanes.ts DEFAULT_TOKEN_BUDGET): the
+# floor allows about one turn, so a refusal names the default as the value to use.
+DEFAULT_TOKEN_BUDGET = 200_000
 CLUE_MARKS = {"pursue", "dismiss"}
 DIRECTION_MARKS = {"keep", "drop", "add"}
 
@@ -170,7 +173,8 @@ def d1_lane_plan(methodology: Mapping[str, Any], *, catalogue: set[str], sensiti
             problems.append(f"{where}: needs a token budget")
         elif topic["token_budget"] < MIN_TOKEN_BUDGET:
             problems.append(f"{where}: token_budget {topic['token_budget']} is below one lane call; "
-                            f"set at least {MIN_TOKEN_BUDGET}")
+                            f"use the default {DEFAULT_TOKEN_BUDGET} ({MIN_TOKEN_BUDGET} is the bare floor, "
+                            "about one lane turn)")
         # Anomaly runs in Investigation now (integrations/anomaly/integration.md);
         # an empty list from a plan written before the move is fine.
         if topic.get("anomaly_methods"):

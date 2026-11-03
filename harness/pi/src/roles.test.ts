@@ -62,7 +62,7 @@ test('every Pi role and tier receives the current UTC date, and with Research on
   // load phase-methodology, so with Research on its prompt carries the rules.
   for (const edition of ['solo', 'newsroom'] as const) {
    const researched = systemPrompt(composition,role,tier,edition,true,role === 'orchestrator' ? undefined : spawned('methodology','MODE: METHODOLOGY CORRECTION'));
-   const rules = [new RegExp(`\\\`mode\\\` is \\\`${edition === 'solo' ? 'openrouter_swarm' : 'newsroom'}\\\``), /`consent\.swarm` set to true\. You write it: the member's approval at the Methodology gate is the consent\./, /A research topic the member asks for goes into `research_plan` topics/, /Never drop `research_plan` to get past them\./];
+   const rules = [new RegExp(`\\\`mode\\\` is \\\`${edition === 'solo' ? 'openrouter_swarm' : 'newsroom'}\\\``), /`consent\.swarm` set to true\. You write it: the member's approval at the Methodology gate is the consent\./, /A research topic the member asks for goes into `research_plan` topics/, /Never drop `research_plan` to get past them\./, /Give each topic `token_budget` 200000, the default; 20000 is the bare floor, about one lane turn\./];
    for (const rule of rules) (role === 'investigator' ? assert.match : assert.doesNotMatch)(researched, rule, `${role}/${tier}/${edition}`);
   }
  }

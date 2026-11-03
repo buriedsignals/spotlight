@@ -357,6 +357,7 @@ const researchRules = (edition: Edition) => `When you plan or correct the method
 - \`mode\` is \`${edition === 'newsroom' ? 'newsroom' : 'openrouter_swarm'}\`; \`local_only\` only when every topic is a local lane.
 - Web topics need \`consent.swarm\` set to true. You write it: the member's approval at the Methodology gate is the consent. Never write who consented or when.
 - A research topic the member asks for goes into \`research_plan\` topics, each on one \`investigation_plan\` direction, with id \`<direction_id>-<lane_type>\`. Adding a direction does not answer it.
+- Give each topic \`token_budget\` 200000, the default; 20000 is the bare floor, about one lane turn.
 - When the research checks refuse the plan, correct it. Never drop \`research_plan\` to get past them.`;
 
 // Checked before the Brief starts. Short on purpose: the 12B pays for every
