@@ -1573,7 +1573,13 @@ function resolveCites(context: ToolContext, cites: Cite[]): ResolvedCite[] {
 		// a bundle row it could write or another role's capture (Codex review of simp-2, P1).
 		const capture = registeredCapture(context, cite.path);
 		if (!capture || capture.acquired_by !== 'investigator') throw new ToolArgumentError(`${where}: cite works only on a capture your own fetch saved and that is unchanged since; this file is not one. Fetch the source (fetch with save_as under research/) and cite that capture, or record this finding with evidence and sources of your own. Nothing was written.`);
-		const item = bundle.find((entry) => bundleFiles(entry).includes(cite.path) && entry.created_by !== 'fact-checker');
+		// Reuse an existing item only when it is this role's and direction's and records
+		// this very capture (Codex review of simp-link: a foreign-direction item is
+		// refused by the direction merge; a hand-written one may name another source).
+		const direction = context.env.SPOTLIGHT_DIRECTION;
+		const item = bundle.find((entry) => bundleFiles(entry).includes(cite.path) && entry.created_by !== 'fact-checker'
+			&& (!direction || String(entry.id).startsWith(`${direction}-`))
+			&& entry.source_url === capture.url && (entry.sha256 === undefined || entry.sha256 === capture.sha256));
 		return { ...cite, text: quote, url: capture.url, accessed: capture.accessed, item, capture };
 	});
 }
@@ -1610,7 +1616,7 @@ function applyCites(context: ToolContext, given: unknown): unknown {
 // inv-retest-def8674f.md: the cited item must also link the finding (its claim
 // and how the cited lines support it), or validate-fact-check refuses any
 // verdict on it ('no explicit finding link') and judge_finding cannot verify.
-type ClaimLink = { finding_id: string; claim_text: string; support_type: 'direct' | 'indirect' };
+type ClaimLink = { finding_id: string; claim_text: string; support_type: 'direct' | 'indirect' | 'inferred' | 'contradicted' | 'insufficient' };
 const linked = (item: RecordRow, link: ClaimLink): RecordRow => ({ ...item, claim_links: [...recordRows(item.claim_links).filter((entry) => entry.finding_id !== link.finding_id), link] });
 async function citeItems(context: ToolContext, write: ToolDefinition, cites: ResolvedCite[], id: string, signal: AbortSignal | undefined, link: ClaimLink): Promise<{ itemOf: Map<string, string>; added: string[] }> {
 	const prefix = context.env.SPOTLIGHT_DIRECTION ? `${context.env.SPOTLIGHT_DIRECTION}-` : '';
@@ -1875,8 +1881,18 @@ export function recordTools(tools: ToolDefinition[], context: ToolContext): Tool
 			const cites = finding && Array.isArray(input.cite) ? resolveCites(context, input.cite as unknown as Cite[]) : [];
 			const project = existing.project ?? contract.project ?? findings.project ?? recordDocument(context, 'data/methodology.json').project;
 			if (typeof project !== 'string' || !project.trim()) throw new FileRefused(`${name}: the approved case has no project label; repair the methodology through its owner before recording results.`);
-			// The cited lines are the claim's support: direct, unless the model says indirect.
-			const support = (input as Record<string, unknown>).support_type === 'indirect' ? 'indirect' : 'direct';
+			// How the cited lines support the claim: the model's word (support_type, or its
+			// grounding's support_type, so a non-supporting grounding never becomes a
+			// direct link: Codex review of simp-link), else direct.
+			const grounded = ((row.grounding ?? {}) as RecordRow).support_type;
+			const support = ((input as Record<string, unknown>).support_type ?? (['direct', 'indirect', 'inferred', 'contradicted', 'insufficient'].includes(String(grounded)) ? grounded : 'direct')) as ClaimLink['support_type'];
+			// A corrected claim keeps this role's links in step: their claim_text is the claim (validate-case).
+			const before = finding ? rows.find((item) => item.id === row.id) : undefined;
+			if (before && typeof before.claim === 'string' && before.claim !== row.claim) {
+				const direction = context.env.SPOTLIGHT_DIRECTION;
+				const stale = recordRows(recordDocument(context, 'data/evidence-bundle.json').items).filter((item) => item.created_by !== 'fact-checker' && (!direction || String(item.id).startsWith(`${direction}-`)) && recordRows(item.claim_links).some((link) => link.finding_id === row.id));
+				if (stale.length) await write.execute(`${id}-relink`, { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: stale.map((item) => ({ ...item, claim_links: recordRows(item.claim_links).map((link) => (link.finding_id === row.id ? { ...link, claim_text: row.claim } : link)) })) }) }, signal, undefined, undefined as never);
+			}
 			const items = cites.length ? await citeItems(context, write, cites, id, signal, { finding_id: String(row.id), claim_text: String(row.claim), support_type: support }) : undefined;
 			if (items) row.evidence_bundle_refs = [...new Set([...(Array.isArray(row.evidence_bundle_refs) ? row.evidence_bundle_refs.map(String) : []), ...items.itemOf.values()])];
 			const content = JSON.stringify({

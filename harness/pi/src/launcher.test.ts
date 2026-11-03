@@ -1848,6 +1848,10 @@ test('a worker records a passage through the writer script, or by citing lines o
 		{ name: 'record_finding', arguments: { finding: { claim: 'The licence permits distribution.', confidence: 'low', evidence: ['I', 'n'] }, cite: [{ path: 'research/licence-page.md', line_start: 3, line_end: 3 }] } },
 		// A source the cite does not back is refused (step 2 Codex review, P1).
 		{ name: 'record_finding', arguments: { finding: { claim: 'The licence is revoked.', confidence: 'low', sources: [{ url: 'https://invented.example/revoked' }] }, cite: [{ path: 'research/licence-page.md', line_start: 2, line_end: 2 }] } },
+		// A corrected claim (same id, no cite) keeps the cited item's link in step (Codex review of simp-link).
+		{ name: 'record_finding', arguments: { finding: { id: 'F2', claim: 'The licence permits modification of the software.', confidence: 'medium', evidence: ['You may modify the software\nand distribute modified versions.'], sources: [{ url: 'https://docs.example.org/licence', accessed: '2026-07-16T12:30:00Z', local_file: 'research/licence-page.md' }], evidence_bundle_refs: ['E2'] } } },
+		// A grounding that says the lines do not suffice is linked as such, never as direct support.
+		{ name: 'record_finding', arguments: { finding: { claim: 'The licence covers documentation.', confidence: 'low', grounding: { support_type: 'insufficient', source_role: 'primary', claim_elements_supported: [], missing_assumptions: ['documentation is not named'], confidence_cap: 'low', misgrounding_risk: 'The page does not mention documentation.', grounding_rationale: 'Only software is named.' } }, cite: [{ path: 'research/licence-page.md', line_start: 3, line_end: 3 }] } },
 		// A file with no investigator fetch receipt, only a bundle row naming a URL,
 		// cannot be cited: the row is not provenance (Codex review of simp-2, P1).
 		{ name: 'record_finding', arguments: { finding: { claim: 'SearXNG is free software.', confidence: 'low' }, cite: [{ path: 'research/notes.md', line_start: 1, line_end: 1 }] } },
@@ -1868,7 +1872,8 @@ test('a worker records a passage through the writer script, or by citing lines o
 	await writeFile(join(caseDir, 'research', 'licence.txt'), source);
 	const sha256 = createHash('sha256').update(source).digest('hex');
 	await writeFile(join(caseDir, 'research', 'notes.md'), 'SearXNG is free software.\n');
-	await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), JSON.stringify({ items: [{ id: 'E1', raw_path: 'research/licence.txt', sha256 }, { id: 'E9', raw_path: 'research/notes.md', source_url: 'https://forged.example/notes', accessed: '2026-01-01T00:00:00Z' }] }));
+	// E5 lists the licence page but records another source: the cite route does not reuse it (Codex review of simp-link).
+	await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), JSON.stringify({ items: [{ id: 'E1', raw_path: 'research/licence.txt', sha256 }, { id: 'E9', raw_path: 'research/notes.md', source_url: 'https://forged.example/notes', accessed: '2026-01-01T00:00:00Z' }, { id: 'E5', raw_path: 'research/licence-page.md', source_url: 'https://elsewhere.example/licence', accessed: '2026-01-01T00:00:00Z' }] }));
 	// The investigator's own fetch of the licence page (its receipt).
 	await writeFile(join(caseDir, 'research', 'licence-page.md'), '# Licence\n  You may modify the software\nand distribute modified versions.\n');
 	registerCapture(space.dataDir, caseDir, 'research/licence-page.md', 'https://docs.example.org/licence', 'investigator');
@@ -1903,11 +1908,18 @@ test('a worker records a passage through the writer script, or by citing lines o
 	assert.deepEqual(findings.findings.find((row) => row.claim === 'The licence permits distribution.')?.evidence, ['and distribute modified versions.'], 'typed evidence is replaced by the cited lines');
 	assert.deepEqual(cited.sources, [{ url: 'https://docs.example.org/licence', accessed: '2026-07-16T12:30:00Z', local_file: 'research/licence-page.md' }]);
 	assert.deepEqual(cited.evidence_bundle_refs, ['E2']);
+	assert.ok(results[9].startsWith('wrote '), results[9]);
+	assert.ok(results[10].includes('Finding id:'), results[10]);
 	assert.ok(!findings.findings.some((row) => row.claim === 'The licence is revoked.'));
-	assert.match(results[9], /cite works only on a capture your own fetch saved[\s\S]*Nothing was written/);
+	assert.match(results[11], /cite works only on a capture your own fetch saved[\s\S]*Nothing was written/);
 	assert.ok(!findings.findings.some((row) => row.claim === 'SearXNG is free software.'));
 	const bundle = JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')) as { items: Array<Record<string, unknown>> };
 	assert.equal(bundle.items.find((item) => item.id === 'E2')?.source_url, 'https://docs.example.org/licence');
+	const links = (item: Record<string, unknown> | undefined) => (item?.claim_links ?? []) as Array<Record<string, string>>;
+	assert.equal(links(bundle.items.find((item) => item.id === 'E2')).find((link) => link.finding_id === 'F2')?.claim_text, 'The licence permits modification of the software.', 'the corrected claim is in the link');
+	const documentation = findings.findings.find((row) => row.claim === 'The licence covers documentation.')!;
+	assert.equal(links(bundle.items.find((item) => links(item).some((link) => link.finding_id === documentation.id))).find((link) => link.finding_id === documentation.id)?.support_type, 'insufficient');
+	assert.equal(links(bundle.items.find((item) => item.id === 'E5')).length, 0, 'the item naming another source is not reused');
 	const quoted = expressions.expressions.find((expression) => expression.id === 'Q1') as unknown as Record<string, unknown>;
 	// The writer stores the selected lines as the file has them.
 	assert.equal(quoted.text, `  ${copied}`);
@@ -1921,7 +1933,7 @@ test('a worker records a passage through the writer script, or by citing lines o
 		claims: [
 			{ finding_id: 'F1', claim_text: claim, verdict: 'verified', evidence_for: [{ source_expression_refs: [{ expression_id: 'SX1', expression_fingerprint: recorded.expression_fingerprint, finding_fingerprint: link.finding_fingerprint, link_fingerprint: link.link_fingerprint }] }] },
 			// The cited finding's passage serves a verified row the same way.
-			{ finding_id: 'F2', claim_text: 'The licence permits modification.', verdict: 'verified', evidence_for: [{ source_expression_refs: [{ expression_id: 'Q1', expression_fingerprint: quoted.expression_fingerprint, finding_fingerprint: (quoted.finding_links as Array<Record<string, string>>)[0].finding_fingerprint, link_fingerprint: (quoted.finding_links as Array<Record<string, string>>)[0].link_fingerprint }] }] },
+			{ finding_id: 'F2', claim_text: 'The licence permits modification of the software.', verdict: 'verified', evidence_for: [{ source_expression_refs: [{ expression_id: 'Q1', expression_fingerprint: quoted.expression_fingerprint, finding_fingerprint: (quoted.finding_links as Array<Record<string, string>>)[0].finding_fingerprint, link_fingerprint: (quoted.finding_links as Array<Record<string, string>>)[0].link_fingerprint }] }] },
 		],
 	};
 	const check = `
