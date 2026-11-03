@@ -1935,6 +1935,64 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 		),
 	);
 	assert.deepEqual(JSON.parse(errors), []);
+
+	// step3c (reports/step3c-commit-design.md): an investigator that only reads
+	// and never records gets a commit step on the local tiers. A cite of lines
+	// it was never shown leaves no finding, nothing_found changes nothing, and a
+	// cite clipped to the lines it was shown is recorded through the real tool.
+	// On frontier no commit request is ever made.
+	for (const tier of ['12b', 'frontier'] as const) await t.test(`commit step (${tier})`, async (t) => {
+		const answers = [
+			{ name: 'record_finding', arguments: { finding: { claim: 'The page is about something else.', confidence: 'low' }, cite: [{ path: 'research/licence-page.md', line_start: 4, line_end: 4 }] } },
+			{ name: 'nothing_found', arguments: { reason: 'Not sure yet.' } },
+			{ name: 'record_finding', arguments: { finding: { claim: 'The licence permits modification.', confidence: 'medium' }, cite: [{ path: 'research/licence-page.md', line_start: 1, line_end: 3 }] } },
+		];
+		const commits: ChatRequest[] = [];
+		const fake = await startFakeOpenAI((request) => {
+			if (isWorkerRequest(request, 'investigator')) {
+				if (request.tool_choice === 'required') {
+					commits.push(request);
+					return { toolCalls: [answers[commits.length - 1] ?? answers[2]] };
+				}
+				const done = toolResults(request).length;
+				if (done === 0) return { toolCalls: [{ name: 'grep_files', arguments: { pattern: 'modify', path: 'research' } }] };
+				// A different look each turn (the same call three times trips the loop guard).
+				return done < 13 ? { toolCalls: [{ name: 'list_files', arguments: { pattern: `research/*${done}*` } }] } : { text: 'Investigator finished.' };
+			}
+			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] } : { text: 'Done.' };
+		});
+		t.after(() => fake.close());
+		const space = await workspace(t);
+		const caseDir = await caseAtInvestigation(space);
+		await mkdir(join(caseDir, 'research'), { recursive: true });
+		await writeFile(join(caseDir, 'research', 'licence-page.md'), '# Licence\n  You may modify the software\nand distribute modified versions.\nUnrelated footer.\n');
+		registerCapture(space.dataDir, caseDir, 'research/licence-page.md', 'https://docs.example.org/licence', 'investigator');
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier, SPOTLIGHT_CODE_ROUTER: tier === 'frontier' ? '' : 'on' });
+		await settledPrompt(chat, 'Continue.');
+
+		const findings = (existsSync(join(caseDir, 'data', 'findings.json')) ? JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')) : { findings: [] }) as { findings: Array<Record<string, unknown>> };
+		if (tier === 'frontier') {
+			assert.equal(commits.length, 0, 'no commit request on frontier');
+			// Exactly the model's own requests: one per tool turn and the final answer, nothing extra.
+			assert.equal(fake.requests.filter((request) => isWorkerRequest(request, 'investigator')).length, 14);
+			assert.ok(fake.requests.every((request) => request.tool_choice === undefined && !JSON.stringify(request.messages).includes('Commit step (from the harness')));
+			assert.ok(!findings.findings.some((row) => row.claim === 'The licence permits modification.'));
+			return;
+		}
+		assert.equal(commits.length, 3, 'three commit attempts, four turns apart');
+		assert.deepEqual(toolNames(commits[0]), ['nothing_found', 'record_finding']);
+		assert.match(JSON.stringify(commits[0].messages.at(-1)), /Commit step \(from the harness, not the member\)/);
+		// Only the clipped, shown line is recorded; the unseen cite and nothing_found left nothing.
+		assert.ok(!findings.findings.some((row) => row.claim === 'The page is about something else.'));
+		const committed = findings.findings.find((row) => row.claim === 'The licence permits modification.')!;
+		assert.equal(committed.evidence, 'You may modify the software');
+		const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && request.tool_choice === undefined);
+		const recordCall = worker.flatMap((request) => request.messages.flatMap((message) => (message.tool_calls ?? []) as Array<{ id: string; function: { name: string; arguments: string } }>)).find((call) => call.function.name === 'record_finding')!;
+		assert.ok(recordCall.id.startsWith('commit-'), recordCall.id);
+		assert.deepEqual(JSON.parse(recordCall.function.arguments).cite, [{ path: 'research/licence-page.md', line_start: 2, line_end: 2 }]);
+		// Continuity: after each fall-through the model's own request followed, and the worker finished on its own words.
+		assert.match(toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator')).at(-1)!).join('\n'), /Investigator finished\./);
+	});
 });
 
 // Tools whose effects stay on this machine (case files, the local vault, its

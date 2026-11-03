@@ -9,6 +9,7 @@ import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-age
 import { createAssistantMessageEventStream, getCurrentTools } from '@earendil-works/pi-ai';
 import { streamSimple as streamOpenAICompletions } from '@earendil-works/pi-ai/api/openai-completions';
 import { ROUTER_CALL_PREFIX, ROUTER_MODEL, routeMember, routeWithoutMember, routerOn, routerState } from './router.ts';
+import { COMMIT_CALL_PREFIX, COMMIT_TEXT, COMMIT_TOOLS, acceptCommit, commitDue, commitState } from './commit.ts';
 import type { Intent, RouterMove } from './router.ts';
 import { registerCompaction } from './checkpoint.ts';
 import { maxOutputTokens, resolverEnv } from './config.ts';
@@ -184,6 +185,71 @@ const routedStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 	return out;
 };
 
+// step3c (reports/step3c-commit-design.md): the investigator's commit step on
+// the local tiers (commit.ts). One extra request with only the narrowed
+// record_finding and nothing_found, tool_choice required, through the same
+// provider path (the extension's onPayload hooks run first; then the wire tools
+// are replaced). An accepted answer becomes this turn's record_finding call,
+// marked by its id; anything else sends the model's own request unchanged.
+// Process memory across folds: the requests since the last attempt, and the
+// lines seen recorded.
+let requestsSinceCommit = Infinity;
+const recordedLines = new Set<string>();
+const commitStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1]['streamSimple']> = (model, context, options) => {
+	const out = createAssistantMessageEventStream();
+	void (async () => {
+		// Lines a recorded passage already anchors count as recorded, whichever process recorded them.
+		try {
+			const passages = (JSON.parse(readFileSync(resolve(required('SPOTLIGHT_CASE_DIR'), 'data', 'source-expressions.json'), 'utf8')) as { expressions?: Array<{ anchor_ref?: { path?: unknown; line_start?: unknown; line_end?: unknown } }> }).expressions ?? [];
+			for (const anchor of passages.map((passage) => passage?.anchor_ref)) {
+				if (typeof anchor?.path !== 'string' || !Number.isInteger(anchor.line_start)) continue;
+				for (let line = Number(anchor.line_start); line <= Number(Number.isInteger(anchor.line_end) ? anchor.line_end : anchor.line_start); line++) recordedLines.add(`${anchor.path}:${line}`);
+			}
+		} catch {
+			// No passages yet.
+		}
+		const state = commitState(context.messages, recordedLines);
+		for (const line of state.committed) recordedLines.add(line);
+		let reason = '';
+		const own = getCurrentTools(context.messages).some((tool) => tool.name === 'record_finding');
+		if (own) requestsSinceCommit += 1;
+		if (own && commitDue(state, requestsSinceCommit)) {
+			requestsSinceCommit = 0;
+			try {
+				const commit = streamOpenAICompletions(model as never, { ...context, messages: [...context.messages, { role: 'user', content: [{ type: 'text', text: COMMIT_TEXT }], timestamp: Date.now() }] } as typeof context, {
+					...options,
+					toolChoice: 'required',
+					onPayload: async (payload, payloadModel) => {
+						const prepared = ((await options?.onPayload?.(payload, payloadModel)) ?? payload) as Record<string, unknown>;
+						return { ...prepared, tools: COMMIT_TOOLS, tool_choice: 'required' };
+					},
+				});
+				const answer = await commit.result();
+				const call = answer.content.find((part) => part.type === 'toolCall') as { name?: string; arguments?: unknown } | undefined;
+				const accepted = answer.stopReason === 'error' || answer.stopReason === 'aborted' ? { reason: `the commit request ended ${answer.stopReason}` } : acceptCommit(call?.name, call?.arguments, state.shown);
+				if ('args' in accepted) {
+					const toolCall = { type: 'toolCall' as const, id: `${COMMIT_CALL_PREFIX}${Date.now().toString(36)}`, name: 'record_finding', arguments: accepted.args };
+					const message = { ...answer, content: [toolCall], responseId: `commit step: ${state.uncommitted.length} unrecorded line(s) shown`, stopReason: 'toolUse' as const };
+					log(`[commit] record_finding at tool turn ${state.turns} (${accepted.args.cite.map((cite) => `${cite.path}:${cite.line_start}-${cite.line_end}`).join(', ')})`);
+					out.push({ type: 'start', partial: { ...message, content: [] } });
+					out.push({ type: 'toolcall_start', contentIndex: 0, partial: message });
+					out.push({ type: 'toolcall_end', contentIndex: 0, toolCall, partial: message });
+					out.push({ type: 'done', reason: 'toolUse', message });
+					out.end(message);
+					return;
+				}
+				reason = accepted.reason;
+			} catch (error) {
+				reason = `commit request failed: ${(error as Error).message.slice(0, 200)}`;
+			}
+			log(`[commit] model's own request at tool turn ${state.turns} (${reason})`);
+		}
+		for await (const event of streamOpenAICompletions(model as never, context, options)) out.push(event);
+		out.end();
+	})();
+	return out;
+};
+
 export default function spotlightExtension(pi: ExtensionAPI): void {
 	const role = required('SPOTLIGHT_ROLE');
 	if (process.env.SPOTLIGHT_ROUTE_INFERENCE !== 'own') {
@@ -194,7 +260,7 @@ export default function spotlightExtension(pi: ExtensionAPI): void {
 	const fixedBody = parseFixedRequestBody(process.env.SPOTLIGHT_PROVIDER_REQUEST_BODY);
 	const contextWindow = Number(process.env.SPOTLIGHT_MODEL_CONTEXT_WINDOW || 32768);
 	pi.registerProvider(PROVIDER_ID, {
-		...(role === ORCHESTRATOR && routerOn(process.env) ? { streamSimple: routedStream } : {}),
+		...(role === ORCHESTRATOR && routerOn(process.env) ? { streamSimple: routedStream } : role === 'investigator' && routerOn(process.env) ? { streamSimple: commitStream } : {}),
 		name: 'Spotlight',
 		baseUrl: required('SPOTLIGHT_MODEL_BASE_URL'),
 		api: 'openai-completions',
