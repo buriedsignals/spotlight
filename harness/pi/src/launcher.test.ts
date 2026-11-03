@@ -1819,6 +1819,9 @@ test('a worker records a passage through the writer script, and a hand write of 
 		anchor_ref: { path: 'research/licence.txt', line_start: 1, line_end: 1 },
 		original_evidence_bundle_id: 'E1',
 		language: 'en',
+		// Codex review of fix14: only the harness sets direct_quote (quotes.ts,
+		// for a quote found as written in a fetched capture); a worker's is dropped.
+		direct_quote: true,
 		finding_links: [{ finding_id: 'F1', relation: 'supports' }],
 	};
 	const steps = [
@@ -1859,6 +1862,8 @@ test('a worker records a passage through the writer script, and a hand write of 
 	const [recorded] = expressions.expressions;
 	assert.equal(recorded.id, 'SX1');
 	assert.equal(recorded.created_by, 'investigator');
+	assert.equal((recorded as { direct_quote?: unknown }).direct_quote, undefined);
+	assert.match(results[2], /direct_quote is set by the harness only/);
 	assert.equal(existsSync(join(caseDir, 'data', 'source-positions.json')), false);
 	// The case validator's own check: a verified verdict citing the passage
 	// has its active supporting source expression, and every fingerprint holds.

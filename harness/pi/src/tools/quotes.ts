@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { factCheckerAlternative, factCheckerCapture, registeredCapture } from './fetch.ts';
+import { HARNESS_PROPOSALS } from './run.ts';
 import type { ToolContext } from './run.ts';
 
 type Row = Record<string, unknown>;
@@ -198,7 +199,9 @@ async function resolveQuotes(context: ToolContext, tools: ToolDefinition[], sour
 		};
 	});
 	try {
-		await sourceExpressions.execute('quotes', { action: 'write', cycle: Math.max(1, cycles), proposal: { expressions } }, signal, undefined, undefined as never);
+		const proposal = { action: 'write', cycle: Math.max(1, cycles), proposal: { expressions } };
+		HARNESS_PROPOSALS.add(proposal);
+		await sourceExpressions.execute('quotes', proposal, signal, undefined, undefined as never);
 		// Only hash anchors the strict passage writer has accepted, never model-supplied hashes.
 		for (const { item } of pending) {
 			const path = (item.source_ref as Row | undefined)?.path ?? item.local_file;

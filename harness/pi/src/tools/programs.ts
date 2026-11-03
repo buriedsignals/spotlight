@@ -17,7 +17,7 @@ import { recordNavigatorLookup } from './navigator-receipts.ts';
 import { CHECKOUT_ROOT } from '../roles.ts';
 import { FileRefused, readTarget, writeConfined } from './case-files.ts';
 import { NAVIGATOR_ENV } from './hosted-skill.ts';
-import { ToolArgumentError, RETURNED_CHARS, capped, checkedParams, jsonResult, programEnv, programOutput, runFixed, runPython, textResult } from './run.ts';
+import { HARNESS_PROPOSALS, ToolArgumentError, RETURNED_CHARS, capped, checkedParams, jsonResult, programEnv, programOutput, runFixed, runPython, textResult } from './run.ts';
 import type { ToolContext } from './run.ts';
 import type { FixedStepRunner } from './spotlight.ts';
 
@@ -421,11 +421,26 @@ function sourceExpressionsTool(context: ToolContext): ToolDefinition {
 				if (path !== undefined) readTarget(context.caseDir, path, context.scope);
 			}
 			const readable = ['--readable=', ...readableEvidence(context).map((path) => `--readable=${path}`)];
+			let proposal = input.proposal;
+			let dropped = 0;
+			if (!HARNESS_PROPOSALS.has(raw as object) && Array.isArray(expressions)) {
+				proposal = {
+					...proposal,
+					expressions: expressions.map((expression) => {
+						// false (a translation, a paraphrase) claims nothing and stays.
+						if (!expression || typeof expression !== 'object' || !('direct_quote' in expression) || (expression as Record<string, unknown>).direct_quote === false) return expression;
+						dropped += 1;
+						const { direct_quote: _dropped, ...rest } = expression as Record<string, unknown>;
+						return rest;
+					}),
+				};
+			}
 			const result = await runPython(context, [writer, context.caseDir, '--actor', actor, '--cycle', String(input.cycle), ...readable], {
-				input: JSON.stringify(input.proposal),
+				input: JSON.stringify(proposal),
 				signal,
 			});
-			return textResult(programOutput('source_expressions', result));
+			const note = dropped ? `\nNote: direct_quote is set by the harness only, for a quote it finds as written in a fetched capture; removed from ${dropped} passage(s).` : '';
+			return textResult(programOutput('source_expressions', result) + note);
 		},
 	};
 }

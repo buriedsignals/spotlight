@@ -192,3 +192,9 @@ export function saveTarget(context: Pick<ToolContext, 'caseDir' | 'writeRoot'> &
 	const name = target.slice(slash + 1);
 	return name.startsWith('fc-') ? target : `${target.slice(0, slash + 1)}fc-${name}`;
 }
+
+// Proposals the harness itself builds for source_expressions (quotes.ts: a
+// quote found as written in a fetched, unchanged capture). Only these may
+// carry direct_quote; a model's arguments are never in this set (Codex review
+// of fix14).
+export const HARNESS_PROPOSALS = new WeakSet<object>();
