@@ -113,7 +113,8 @@ async function recordFetchedItems(context: ToolContext, tools: ToolDefinition[],
 // The quote must hold one of that item's active passages supporting the
 // finding (Codex review of simp-3, P1): an unrelated line of the same page
 // takes nothing.
-const flatText = (text: string) => text.replace(/\s+/g, ' ').trim();
+// Text with runs of whitespace as one space: the re-check's comparison.
+export const flatText = (text: string) => text.replace(/\s+/g, ' ').trim();
 export function sameSourceSupport(context: ToolContext, url: string, finding: string, quote: string): string | undefined {
 	const row = list(readJson(context.caseDir, 'findings.json'), 'findings').find((entry) => entry.id === finding);
 	const refs = new Set(Array.isArray(row?.evidence_bundle_refs) ? row.evidence_bundle_refs.map(String) : []);

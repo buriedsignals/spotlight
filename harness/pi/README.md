@@ -202,6 +202,11 @@ Every `execute-shell` step in `agents/` and in the skills these roles load, and 
 | phase-preflight | `uv run ... scripts/osint-tools.py build` | not available: an install step that downloads a dataset; `osint_tools` reports a missing index |
 | phase-methodology, osint, navigator, investigator | `navigator tools find` and `show` | `navigator_tools` |
 | phase-methodology | `scripts/validate-methodology-navigator.py` | harness check after the investigator while the case is in Brief, Methodology or awaiting methodology approval |
+| phase-methodology | the plan's paperwork (`brief_directions`, ids, `research_plan` mode, keys, egress, consent, budgets, `token_budget`, `tools_required`) and a Navigator lookup per brief line before the first plan | code: on each `data/methodology.json` write, only where the plan leaves a field out (`brief_directions` always; direction ids only when no direction has one); the lookup runs before the PLANNING investigator and never blocks it |
+| phase-research | AMENDMENT's whole amended methodology | the investigator may write only the directions it changes; code completes the amendment from the approved methodology and the member's drop marks before D8 |
+| investigator | a finding's evidence, sources, bundle item and passage | `record_finding` with `cite` [{path, line_start, line_end}] of the investigator's own fetched capture |
+| fact-checker | a claim's verdict row from the source re-check | `judge_finding` (supports, partly, doesnt, cant_tell and a reason); verified only when the harness re-fetch of the same source still holds the supporting passage |
+| report-drafting | step 2: the draft's structure (`report-skeleton`) and the passages it may quote | run by the launcher before the Report analyst starts; the analyst writes the prose and the order |
 | phase-methodology | `integrations/rlm/run_rlm.py` | not the orchestrator's: the worker's `fetch` runs the RLM |
 | phase-investigation | `scripts/case-contract.py activate-new` for a new case (no contract, no findings) | run by the launcher right before the first investigator task at Investigation; no role can write `data/case-contract.json`. A case the script refuses (it already has investigation files) stays legacy |
 | phase-investigation | `scripts/validate-case.py` after the investigator | harness check |

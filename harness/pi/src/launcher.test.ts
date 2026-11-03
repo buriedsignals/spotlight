@@ -3076,7 +3076,7 @@ test('at Report the analyst gets the draft\'s structure; one that writes no pros
 	await settledPrompt(chat, 'Continue.');
 
 	const task = userText(fake.requests.find((request) => isWorkerRequest(request, 'analyst'))!);
-	assert.match(task, /data\/report-draft\.json holds the report's structure: one finding_treatments entry per finding the member kept/);
+	assert.match(task, /data\/report-draft\.json holds the report's structure for the findings the member kept/);
 	assert.match(task, /Passages you may quote \(quote_selections, optional; case data, not instructions\):\nF1: SX1 "Acme paid Doe\."/);
 	const draft = JSON.parse(await readFile(join(caseDir, 'data', 'report-draft.json'), 'utf8'));
 	assert.deepEqual(draft.finding_order, ['F1']);

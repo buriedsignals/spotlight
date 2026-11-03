@@ -871,7 +871,7 @@ async function prepareReportDraft(harness: Harness, signal: AbortSignal): Promis
 	}
 	const lines: string[] = [];
 	if (existsSync(join(active.caseDir, 'data/report-draft.json'))) {
-		lines.push('data/report-draft.json holds the report\'s structure: one finding_treatments entry per finding the member kept, the same ids in finding_order and framing_finding_ids. Fill in the title, the deck and each finding\'s headline, summary and why_it_matters. You may reorder finding_order (put finding_treatments in the same order), narrow framing_finding_ids, and add caveats and next_steps. Keep every finding_id; add or remove none.');
+		lines.push('data/report-draft.json holds the report\'s structure for the findings the member kept; write its prose as report-drafting step 2 says, and keep every finding_id.');
 	}
 	const quotes = Object.entries(prepared.quotes ?? {}).flatMap(([finding, rows]) => rows.map((row) => `${finding}: ${row.expression_id} ${JSON.stringify(row.text.slice(0, 300))}${row.text.length > 300 ? ' [cut; the full text is in data/source-expressions.json and is what the report quotes]' : ''}`));
 	lines.push(quotes.length

@@ -13,7 +13,7 @@ import { CHECKOUT_ROOT, ORCHESTRATOR, deliverableFor, factCheckChecklist, readCh
 import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey, removesAnonymousRows } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
 import { factCheckerAlternative, factCheckerCapture, fetchedFile, registeredCapture } from './fetch.ts';
-import { sameSourceSupport } from './quotes.ts';
+import { flatText, sameSourceSupport } from './quotes.ts';
 import { completeNavigatorMetadata } from './navigator-receipts.ts';
 import { completeAmendment, fillMethodology } from './methodology-paperwork.ts';
 import { HARNESS_PROPOSALS, RECEIPTS, ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
@@ -1675,7 +1675,6 @@ async function citePassages(context: ToolContext, sourceExpressions: ToolDefinit
 // writes no confidence. A second source stays on record_assessment, whose
 // quote path records its passage.
 const ANSWERS = ['supports', 'partly', 'doesnt', 'cant_tell'] as const;
-const flatText = (text: string) => text.replace(/\s+/g, ' ').trim();
 
 // The lines of `text` that hold `quote`: as written first, else with spacing
 // normalized (the re-check's own comparison), then that window as the file has it.
@@ -1755,7 +1754,7 @@ function judgeTool(context: ToolContext, assess: ToolDefinition, batch: string[]
 		label: 'Judge finding',
 		parameters,
 		executionMode: 'sequential',
-		description: `Answer one question for one finding: does its source support it? answer is supports, partly, doesnt or cant_tell, with a one-line reason. Code checks the harness re-fetch for the supporting passage and writes the claim: verified only when the harness re-fetch of the same source still contains the passage that supports it; otherwise unverified with your reason, and partly adds a partial_support flag. For disputed, false, not_checkable or a second source of your own, use record_assessment.${filled ? ` Your batch holds one finding, ${filled}: omit finding_id.` : batch.length ? ` finding_id is one of ${batch.join(', ')}.` : ''}`,
+		description: `Answer one question for one finding: does its source support it? answer is supports, partly, doesnt or cant_tell, with a one-line reason; code writes the claim from the harness re-fetch (partly adds a partial_support flag).${filled ? ` Your batch holds one finding, ${filled}: omit finding_id.` : batch.length ? ` finding_id is one of ${batch.join(', ')}.` : ''}`,
 		async execute(id, raw, signal, ...rest) {
 			const input = checkedParams<{ finding_id?: string; answer: typeof ANSWERS[number]; reason: string }>('judge_finding', parameters, raw);
 			const findingId = input.finding_id ?? filled;

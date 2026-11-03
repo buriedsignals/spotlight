@@ -10,6 +10,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { CheckDocs, Recheck, SourceRecheck } from './roles.ts';
 import { factCheckerCapture, fetchTool } from './tools/fetch.ts';
+import { flatText } from './tools/quotes.ts';
 import type { ToolContext } from './tools/run.ts';
 
 type Row = Record<string, unknown>;
@@ -17,7 +18,6 @@ const rows = (doc: unknown, key: string): Row[] => {
 	const value = (doc as Row | undefined)?.[key];
 	return Array.isArray(value) ? value.filter((row): row is Row => !!row && typeof row === 'object') : [];
 };
-const flat = (text: string) => text.replace(/\s+/g, ' ').trim();
 
 // Re-fetches in flight at once.
 export const RECHECK_PARALLEL = 4;
@@ -54,12 +54,12 @@ export async function recheckSources(docs: CheckDocs, ids: string[], options: Re
 		for (let next = queue.shift(); next && !options.signal?.aborted; next = queue.shift()) await recheckOne(next[0], next[1]);
 	};
 	const recheckOne = async (url: string, item: Row) => {
-		const quotes = passages.filter((p) => p.original_evidence_bundle_id === item.id).map((p) => flat(String(p.text ?? ''))).filter(Boolean);
+		const quotes = passages.filter((p) => p.original_evidence_bundle_id === item.id).map((p) => flatText(String(p.text ?? ''))).filter(Boolean);
 		const stamp = new Date().toISOString();
 		try {
 			const result = JSON.parse((await tool.execute('recheck', { url, save_as: `fc-recheck-${String(item.id)}.md` }, options.signal, undefined, undefined as never)).content[0].text) as { raw_path?: string; saved_to?: string; markdown?: string };
 			const path = result.raw_path ?? result.saved_to;
-			const page = flat(path ? readFileSync(resolve(options.context.caseDir, path), 'utf8') : (result.markdown ?? ''));
+			const page = flatText(path ? readFileSync(resolve(options.context.caseDir, path), 'utf8') : (result.markdown ?? ''));
 			const missing = quotes.filter((quote) => !page.includes(quote)).length;
 			const status = quotes.length === 0 ? 're-fetched, no recorded passage to compare' : missing === 0 ? `still says the ${quotes.length} recorded passage${quotes.length === 1 ? '' : 's'}` : `changed: ${missing} of ${quotes.length} recorded passages are no longer on the page`;
 			const capture = path ? factCheckerCapture(options.context, path) : undefined;
