@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmod, copyFile, mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { chmod, copyFile, mkdir, readFile, readdir, rm, unlink, writeFile } from 'node:fs/promises';
 import { cpSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -1896,7 +1897,7 @@ test('a worker records a passage through the writer script, or by citing lines o
 	const copied = 'You may modify the software\nand distribute modified versions.';
 	const findings = JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')) as { findings: Array<Record<string, unknown>> };
 	const cited = findings.findings.find((row) => row.id === 'F2')!;
-	assert.equal(cited.evidence, copied);
+	assert.deepEqual(cited.evidence, [copied], 'one entry per cite');
 	assert.deepEqual(cited.sources, [{ url: 'https://docs.example.org/licence', accessed: '2026-07-16T12:30:00Z', local_file: 'research/licence-page.md' }]);
 	assert.deepEqual(cited.evidence_bundle_refs, ['E2']);
 	assert.ok(!findings.findings.some((row) => row.claim === 'The licence is revoked.'));
@@ -1950,6 +1951,11 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 		// inv-retest-def8674f.md: LFM3 answered with two record_finding calls; the first that passes is kept, the other named.
 		const second = { name: 'record_finding', arguments: { finding: { claim: 'The licence allows redistribution.', confidence: 'low' }, cite: [{ path: 'research/licence-page.md', line_start: 2, line_end: 2 }] } };
 		const commits: ChatRequest[] = [];
+		// The cycle's log as the investigator keeps it (the review fixture's), written on its last turn.
+		const outputs = join(tmpdir(), `commit-log-${process.pid}-${tier}`);
+		execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'tests', 'fixtures', 'review_case.py'), outputs, 'investigation_gate', '--activated', '--clean']);
+		const log = await readFile(join(outputs, 'data', 'investigation-log.json'), 'utf8');
+		t.after(() => rm(outputs, { recursive: true, force: true }));
 		const fake = await startFakeOpenAI((request) => {
 			if (isWorkerRequest(request, 'investigator')) {
 				if (request.tool_choice === 'required') {
@@ -1959,15 +1965,21 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 				const done = toolResults(request).length;
 				if (done === 0) return { toolCalls: [{ name: 'grep_files', arguments: { pattern: 'modify', path: 'research' } }] };
 				// A different look each turn (the same call three times trips the loop guard).
+				if (done === 13) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/investigation-log.json', content: log } }] };
 				return done < 13 ? { toolCalls: [{ name: 'list_files', arguments: { pattern: `research/*${done}*` } }] } : { text: 'Investigator finished.' };
 			}
-			return toolResults(request).length === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] } : { text: 'Done.' };
+			if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
+			const step = toolResults(request).length;
+			return step === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
+				: step === 1 && tier !== 'frontier' ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
 		});
 		t.after(() => fake.close());
 		const space = await workspace(t);
 		const caseDir = await caseAtInvestigation(space);
 		await mkdir(join(caseDir, 'research'), { recursive: true });
 		await writeFile(join(caseDir, 'research', 'licence-page.md'), '# Licence\n  You may modify the software\nand distribute modified versions.\nUnrelated footer.\n');
+		// No bundle yet: the commit step's evidence item creates it.
+		if (existsSync(join(caseDir, 'data', 'evidence-bundle.json'))) await unlink(join(caseDir, 'data', 'evidence-bundle.json'));
 		registerCapture(space.dataDir, caseDir, 'research/licence-page.md', 'https://docs.example.org/licence', 'investigator');
 		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier, SPOTLIGHT_CODE_ROUTER: 'on' });
 		await settledPrompt(chat, 'Continue.');
@@ -1988,7 +2000,10 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 		// Only the clipped, shown line is recorded; the unseen cite and nothing_found left nothing.
 		assert.ok(!findings.findings.some((row) => row.claim === 'The page is about something else.'));
 		const committed = findings.findings.find((row) => row.claim === 'The licence permits modification.')!;
-		assert.equal(committed.evidence, 'You may modify the software');
+		assert.deepEqual(committed.evidence, ['You may modify the software'], 'a one-cite commit keeps evidence as a list of the cited text');
+		// inv-retest-def8674f.md: the bundle the commit created carries its schema_version, the case validates and the fact-checker starts.
+		assert.equal(JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')).schema_version, '1.0');
+		assert.ok(fake.requests.some((request) => isWorkerRequest(request, 'fact-checker')), `the fact-checker started: ${toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator') && !isWorkerRequest(request, 'fact-checker')).at(-1)!).join('\n').slice(0, 800)}`);
 		const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && request.tool_choice === undefined);
 		const recordCall = worker.flatMap((request) => request.messages.flatMap((message) => (message.tool_calls ?? []) as Array<{ id: string; function: { name: string; arguments: string } }>)).find((call) => call.function.name === 'record_finding')!;
 		assert.ok(recordCall.id.startsWith('commit-'), recordCall.id);
@@ -5554,7 +5569,7 @@ test('a scripted orchestrator that only resolves, answers the member and opens t
 		const routed = chat.lines.filter((line) => line.includes('"responseModel":"spotlight-code-router"'));
 		assert.ok(routed.length > 0, 'router calls are marked in the records');
 		assert.ok(routed.some((line) => line.includes('"responseId":"router: member approval_talk"')));
-		assert.match(chat.stderr(), /\[router\] spotlight_resolve \(member approval_talk\)/);
+		assert.match(chat.stderr(), /\[router\] spotlight_resolve \(member approval_talk\) \[D1 approval_talk p=0\.90 \d+ ms\]/);
 		assert.match(chat.stderr(), /\[router\] open_review \(the resolver names open_review\)/);
 		assert.ok(decisions!.states.length >= 2, 'the decision model read each member message');
 	}

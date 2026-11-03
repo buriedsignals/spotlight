@@ -406,6 +406,7 @@ def _build(case: Path, models: dict[str, str], draft: bool, proposal: Any, findi
                              "record who said it before ingesting")
         # The assessment comes from the fact-check row for this claim.
         candidates = [r for r in rows if r.get("finding_id") == finding_id]
+        all_candidates = list(candidates)
         if "fact_check_id" in claim:
             matching = [r for r in candidates if r.get("id") is not None and str(r["id"]) == str(claim["fact_check_id"])]
             if not matching:
@@ -424,7 +425,13 @@ def _build(case: Path, models: dict[str, str], draft: bool, proposal: Any, findi
         if verdict not in VERDICTS_1_1 or confidence not in ("high", "medium", "low"):
             # review-simp.md #1: the fact-check is bound by the gate and only the
             # fact-checker, at Investigation, can add a verdict or confidence, so
-            # this is the case's fault, never the proposal's (exit 3, as B1).
+            # this is the case's fault (exit 3, as B1), unless another row for the
+            # finding is complete: then the proposal selected the wrong one.
+            complete = [r for r in all_candidates if r is not row and r.get("verdict") in VERDICTS_1_1
+                        and r.get("confidence") in ("high", "medium", "low")]
+            if complete:
+                raise BuildError(f"claim {claim['key']}: the selected fact-check row has no 1.1 verdict and confidence; "
+                                 f"select a complete row with fact_check_id (such as {complete[0].get('id')!r})")
             raise CaseNotReady(f"claim {claim['key']}: the fact-check row needs a 1.1 verdict and a confidence")
         rationale = (row.get("grounding_assessment") or {}).get("assessment") or row.get("notes")
         if not _text(rationale):

@@ -18,8 +18,11 @@ test('a changed direction sent by its name replaces the approved one that code n
 	const changed = { direction: 'Ownership', questions: ['Who?'], steps: [{ order: 1, action: 'Read the register', tool: 'fetch' }] };
 	const completed = completeAmendment(caseDir, { investigation_plan: [changed] })!;
 	assert.deepEqual((completed.investigation_plan as unknown[]).length, 2);
-	assert.deepEqual((completed.investigation_plan as unknown[])[0], changed);
+	assert.deepEqual((completed.investigation_plan as unknown[])[0], { ...changed, direction_id: 'd1' }, 'the approved id is kept');
 	// By id, as before.
 	const byId = completeAmendment(caseDir, { investigation_plan: [{ ...approved.investigation_plan[1], steps: [{ order: 1, action: 'Sum the payments', tool: 'fetch' }] }] })!;
 	assert.equal(((byId.investigation_plan as Array<{ steps: unknown[] }>)[1]).steps.length, 1);
+	// A name two approved directions share matches neither: the entry is new, for D8 to judge.
+	await writeFile(join(caseDir, 'data', 'methodology.json'), JSON.stringify({ ...approved, investigation_plan: [approved.investigation_plan[0], { ...approved.investigation_plan[1], direction: 'Ownership' }] }));
+	assert.equal((completeAmendment(caseDir, { investigation_plan: [changed] })!.investigation_plan as unknown[]).length, 3);
 });

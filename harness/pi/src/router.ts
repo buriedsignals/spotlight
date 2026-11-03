@@ -29,8 +29,10 @@ type Part = { type?: string; text?: string; name?: string };
 type Msg = { role?: string; content?: unknown; toolName?: string; responseModel?: string };
 
 // Turns the harness writes into the chat, not the member (step1 intents_build HARNESS).
-// review-simp.md #4: also the empty-turn and runaway-turn nudges (extension.ts).
-const HARNESS_TURN = /^(The conversation history before this point was compacted|Your turn ended with text|Your last turn was empty\.|Your last turn ran on without a tool call)/;
+const HARNESS_TURN = /^(The conversation history before this point was compacted|Your turn ended with text)/;
+// review-simp.md #4: the empty-turn and runaway-turn nudges (extension.ts), matched
+// whole so a member message that merely starts the same way stays the member's.
+const HARNESS_NUDGES = ['Your last turn was empty. Call the next tool, or give your answer.', 'Your last turn ran on without a tool call and was cut off. Call the next tool, or give your answer in a few sentences.'];
 
 const parts = (content: unknown): Part[] => (Array.isArray(content) ? (content as Part[]) : typeof content === 'string' ? [{ type: 'text', text: content }] : []);
 const text = (content: unknown) => parts(content).filter((part) => part.type === 'text').map((part) => part.text ?? '').join('\n');
@@ -51,7 +53,8 @@ export function routerState(messages: readonly unknown[]): RouterState {
 	}
 	const callsSince = list.slice(resolvedAt + 1).filter((message) => message.role === 'assistant').flatMap((message) => parts(message.content).filter((part) => part.type === 'toolCall')).length;
 	const last = [...list].reverse().find((message) => message.role === 'user' || message.role === 'assistant' || message.role === 'toolResult');
-	const member = last?.role === 'user' && !HARNESS_TURN.test(text(last.content).trim()) ? text(last.content).trim() : undefined;
+	const said = last?.role === 'user' ? text(last.content).trim() : '';
+	const member = said && !HARNESS_TURN.test(said) && !HARNESS_NUDGES.includes(said) ? said : undefined;
 	const lastTool = [...list].reverse().find((message) => message.role === 'toolResult')?.toolName;
 	const lastAssistant = [...list].reverse().find((message) => message.role === 'assistant');
 	const lastRouted = lastAssistant?.responseModel === ROUTER_MODEL ? parts(lastAssistant.content).find((part) => part.type === 'toolCall')?.name : undefined;

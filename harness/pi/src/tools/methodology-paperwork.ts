@@ -122,13 +122,17 @@ export function completeAmendment(caseDir: string, submitted: Row): Row | undefi
 	const approved = readJson(caseDir, 'data/methodology.json');
 	if (!approved) return undefined;
 	const key = (entry: Row) => String(entry.direction_id ?? entry.direction);
-	// The same direction by its id or by its name (review-simp.md #3: a fragment
-	// that names the direction but omits the id code gave it).
-	const same = (old: Row, entry: Row) => (entry.direction_id !== undefined && old.direction_id === entry.direction_id) || (entry.direction !== undefined && old.direction === entry.direction);
 	const plan = rows(approved.investigation_plan).map((entry) => ({ ...entry }));
 	for (const entry of rows(submitted.investigation_plan)) {
-		const at = plan.findIndex((old) => same(old, entry));
-		if (at >= 0) plan[at] = entry;
+		// By its id; or, for a fragment that omits the id code gave the direction
+		// (review-simp.md #3), by a name only one approved direction has, keeping
+		// that direction's id (Codex review of simp-review). Otherwise it is new.
+		let at = entry.direction_id !== undefined ? plan.findIndex((old) => old.direction_id === entry.direction_id) : -1;
+		if (at < 0 && entry.direction_id === undefined && entry.direction !== undefined) {
+			const named = plan.flatMap((old, index) => (old.direction === entry.direction ? [index] : []));
+			if (named.length === 1) at = named[0];
+		}
+		if (at >= 0) plan[at] = plan[at].direction_id !== undefined && entry.direction_id === undefined ? { ...entry, direction_id: plan[at].direction_id } : entry;
 		else plan.push(entry);
 	}
 	const review = readJson(caseDir, 'data/research-review.json');

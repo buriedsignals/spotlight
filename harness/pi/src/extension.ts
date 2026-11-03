@@ -131,14 +131,16 @@ function keepGateBound(tool: ToolDefinition, caseDir: string, phase: () => Promi
 // never count it as a model decision; every other request goes to the model
 // unchanged. Each decision is logged with its reason.
 const INTENT_TIMEOUT_MS = 8000;
-function memberIntent(message: string, signal?: AbortSignal): Promise<Intent | undefined> {
-	return new Promise((done) => {
+function memberIntent(message: string, signal?: AbortSignal): Promise<{ intent?: Intent; probability?: number; ms: number }> {
+	const started = Date.now();
+	return new Promise((answered) => {
+		const done = (intent?: Intent, probability?: number) => answered({ intent, probability, ms: Date.now() - started });
 		const child = execFile(process.env.SPOTLIGHT_PYTHON || 'python3', [resolve(CHECKOUT_ROOT, 'scripts', 'member-intent.py'), ...(process.env.SPOTLIGHT_CONFIG ? ['--config', process.env.SPOTLIGHT_CONFIG] : [])], { timeout: INTENT_TIMEOUT_MS, encoding: 'utf8', signal }, (error, stdout) => {
 			if (error) { log(`[router] decision model: ${error.message.slice(0, 200)}`); done(undefined); return; }
 			try {
-				const answer = JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}') as { intent?: Intent; unavailable?: string };
+				const answer = JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}') as { intent?: Intent; probability?: number; unavailable?: string };
 				if (answer.unavailable) log(`[router] decision model unavailable: ${answer.unavailable.slice(0, 200)}`);
-				done(answer.intent);
+				done(answer.intent, answer.probability);
 			} catch {
 				done(undefined);
 			}
@@ -151,17 +153,24 @@ const routedStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 	const out = createAssistantMessageEventStream();
 	void (async () => {
 		let move: RouterMove;
+		let d1 = '';
 		// Only the orchestrator's own turns are routed: a request without its
 		// tools (the session-model checkpoint, checkpoint.ts) goes to the model
 		// untouched (Codex review of simp-route, P2).
 		const routed = getCurrentTools(context.messages).some((tool) => tool.name === 'spotlight_resolve');
 		try {
 			const state = routerState(context.messages);
-			move = !routed ? { kind: 'model', reason: 'not an orchestrator turn' } : state.member ? routeMember(state, await memberIntent(state.member, options?.signal)) : routeWithoutMember(state);
+			if (!routed) move = { kind: 'model', reason: 'not an orchestrator turn' };
+			else if (state.member) {
+				const asked = await memberIntent(state.member, options?.signal);
+				// r1-router-smoke.md: each decision logs D1's probability and latency.
+				d1 = ` [D1 ${asked.intent ?? 'none'}${asked.probability !== undefined ? ` p=${asked.probability.toFixed(2)}` : ''} ${asked.ms} ms]`;
+				move = routeMember(state, asked.intent);
+			} else move = routeWithoutMember(state);
 		} catch (error) {
 			move = { kind: 'model', reason: `router error: ${(error as Error).message.slice(0, 200)}` };
 		}
-		if (routed) log(`[router] ${move.kind === 'call' ? move.tool : 'model'} (${move.reason})`);
+		if (routed) log(`[router] ${move.kind === 'call' ? move.tool : 'model'} (${move.reason})${d1}`);
 		if (move.kind === 'model') {
 			for await (const event of streamOpenAICompletions(model as never, context, options)) out.push(event);
 			out.end();
