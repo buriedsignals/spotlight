@@ -2099,16 +2099,21 @@ const CONTENT_ONLY_PLAN = JSON.stringify({
 	schema_version: '1.0', project: 'case-a',
 	investigation_plan: [{ direction: 'Ownership', questions: ['Who owns the fixture company?'], steps: [{ order: 1, action: 'Read the registry entry', tool: 'fetch' }] }],
 	research_plan: { topics: [{ direction_id: 'd1', lane_type: 'web', questions: ['Which registry names the owner?'] }] },
+	// A 'used' Navigator claim with no receipt (Codex review of simp-4): replaced by what ran.
+	navigator: { required: true, used: true, queries: [{ direction: 'Ownership', selected_tools: ['Invented tool'] }] },
 });
 test('with the Research switch off, the methodology check refuses a research plan; with it on, the plan is checked as usual, and a plan of content only gets its paperwork from code', async (t) => {
 	const sample = await readFile(join(CHECKOUT_ROOT, 'tests/fixtures/research/methodology-research.sample.json'), 'utf8');
-	for (const research of ['off', 'on', 'content-only']) {
+	for (const research of ['off', 'on', 'content-only', 'content-navigator']) {
 		const methodology = research === 'content-only' ? CONTENT_ONLY_PLAN : sample;
 		const fake = await startFakeOpenAI((request) => {
 			if (isWorkerRequest(request, 'investigator')) {
-				return toolResults(request).length === 0
-					? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: methodology } }] }
-					: { text: 'Plan written.' };
+				if (toolResults(request).length) return { text: 'Plan written.' };
+				if (research !== 'content-navigator') return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: methodology } }] };
+				// The planner picks a tool from the lookup code ran, by its receipt.
+				const receipt = /research\/navigator\/[0-9a-f-]{36}-receipt\.json/.exec(userText(request))?.[0];
+				const plan = { ...JSON.parse(CONTENT_ONLY_PLAN), navigator: { required: false, used: true, queries: [{ receipt_path: receipt, selected_tools: ['WhiteIntel'] }] } };
+				return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology.json', content: JSON.stringify(plan) } }] };
 			}
 			return toolResults(request).length === 0
 				? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'MODE: PLANNING' } }] }
@@ -2124,17 +2129,30 @@ test('with the Research switch off, the methodology check refuses a research pla
 		await writeFile(config, JSON.stringify({ model_tier: '12b', integrations: { research_swarms: { enabled: research === 'off' } } }));
 		// content-only: the Navigator lookup runs, against a navigator that is not set up.
 		const stubs = join(space.root, 'stub-bin');
-		if (research === 'content-only') {
+		if (research.startsWith('content')) {
 			await mkdir(stubs, { recursive: true });
-			await writeFile(join(stubs, 'navigator'), '#!/bin/sh\necho "navigator: not signed in" >&2\nexit 1\n', { mode: 0o755 });
+			await writeFile(join(stubs, 'navigator'), research === 'content-only'
+				? '#!/bin/sh\necho "navigator: not signed in" >&2\nexit 1\n'
+				: '#!/bin/sh\necho \'{"tools": [{"tool_name": "WhiteIntel", "category": "companies"}]}\'\n', { mode: 0o755 });
 		}
 		const env = baseEnv(space, fake.baseURL);
-		const chat = launch(t, { ...env, SPOTLIGHT_CONFIG: research === 'content-only' ? join(CHECKOUT_ROOT, 'tests/fixtures/research/install-config.sample.json') : config, SPOTLIGHT_RESEARCH_SWARMS: research === 'off' ? 'off' : 'on', ...(research === 'content-only' ? { SPOTLIGHT_NAVIGATOR_PRESTEP: 'on', PATH: `${stubs}:${env.PATH}` } : {}) });
+		const content = research.startsWith('content');
+		const chat = launch(t, { ...env, SPOTLIGHT_CONFIG: content ? join(CHECKOUT_ROOT, 'tests/fixtures/research/install-config.sample.json') : config, SPOTLIGHT_RESEARCH_SWARMS: research === 'off' ? 'off' : 'on', ...(content ? { SPOTLIGHT_NAVIGATOR_PRESTEP: 'on', PATH: `${stubs}:${env.PATH}` } : {}) });
 
 		await settledPrompt(chat, 'Continue.');
 
 		const orchestrator = fake.requests.filter((request) => !isWorkerRequest(request, 'investigator'));
 		const delegated = toolResults(orchestrator[orchestrator.length - 1]).join('\n');
+		if (research === 'content-navigator') {
+			const task = userText(fake.requests.find((request) => isWorkerRequest(request, 'investigator'))!);
+			assert.match(task, /NAVIGATOR \(code looked up each brief direction before planning[\s\S]*WhiteIntel/);
+			const written = JSON.parse(await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8'));
+			assert.equal(written.navigator.used, true);
+			assert.match(written.navigator.queries[0].response_sha256, /^[0-9a-f]{64}$/);
+			assert.deepEqual(written.tools_required, ['fetch', 'WhiteIntel']);
+			assert.match(delegated, /validate-methodology-navigator\.py: PASSED/, delegated);
+			continue;
+		}
 		if (research === 'content-only') {
 			const task = userText(fake.requests.find((request) => isWorkerRequest(request, 'investigator'))!);
 			assert.match(task, /NAVIGATOR: code tried to look up the brief's directions and Navigator was not available/);
@@ -5269,11 +5287,16 @@ function caseAtAmendment(space: Workspace): string {
 // step2-design.md section 4: the amendment may also be only the directions it
 // changes; code completes it from the approved methodology and the marks.
 test('at the amendment step the investigator gets the code-built TASK: AMEND task and code applies recordAmendment, for a whole methodology or only the changed direction', async (t) => {
- for (const shape of ['whole', 'fragment'] as const) await t.test(shape, async (t) => {
+ for (const shape of ['whole', 'fragment', 'fragment-changed'] as const) await t.test(shape, async (t) => {
 	const space = await workspace(t);
 	const caseDir = caseAtAmendment(space);
 	const methodology = await readFile(join(caseDir, 'data', 'methodology.json'), 'utf8');
-	const content = shape === 'whole' ? methodology : JSON.stringify({ investigation_plan: [JSON.parse(methodology).investigation_plan[0]] });
+	// fragment: the first direction as approved. fragment-changed: that direction
+	// with one new step; this fixture's Research approval carries no marks, so
+	// D8 refuses the step itself, and only it (Codex review of simp-4, P3).
+	const first = JSON.parse(methodology).investigation_plan[0];
+	const added = { ...first, steps: [...first.steps, { order: first.steps.length + 1, action: 'Check the filing the research found', tool: 'fetch' }] };
+	const content = shape === 'whole' ? methodology : JSON.stringify({ investigation_plan: [shape === 'fragment' ? first : added] });
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) return toolResults(request).length === 0
 			? { toolCalls: [{ name: 'write_file', arguments: { path: 'data/methodology-amendment.json', content } }] }
@@ -5289,6 +5312,15 @@ test('at the amendment step the investigator gets the code-built TASK: AMEND tas
 	assert.ok(worker.length > 0, 'the investigator ran');
 	assert.match(userText(worker[0]), /^MODE: AMENDMENT\nTASK: AMEND\n/);
 	for (const request of worker) assert.doesNotMatch(JSON.stringify(request), /ORCH-SENTINEL/);
+	if (shape === 'fragment-changed') {
+		const completed = JSON.parse(methodology);
+		completed.investigation_plan[0] = added;
+		assert.deepEqual(JSON.parse(await readFile(join(caseDir, 'data', 'methodology-amendment.json'), 'utf8')), completed, 'code completed the fragment from the approved methodology');
+		const refused = toolResults(fake.requests.at(-1)!).join('\n');
+		assert.match(refused, /recordAmendment refused[\s\S]*new step \d+ cites no pursued clue or direction/);
+		assert.doesNotMatch(refused, /an amendment changes only investigation_plan/);
+		return;
+	}
 	assert.match(toolResults(fake.requests.at(-1)!).join('\n'), /recordAmendment applied/);
 	const status = JSON.parse(execFileSync(PYTHON, [SEAM, 'status', '--json', caseDir], { env: { PATH: process.env.PATH ?? '', PYTHONNOUSERSITE: '1', SPOTLIGHT_RESEARCH_SWARMS: 'on' } }).toString());
 	assert.equal(status.phase, 'investigation');

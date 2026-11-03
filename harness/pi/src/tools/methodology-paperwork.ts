@@ -60,13 +60,17 @@ export function fillMethodology(caseDir: string, env: Record<string, string | un
 	const brief = briefLines(caseDir);
 	if (brief) document.brief_directions = brief;
 	const plan = rows(document.investigation_plan);
-	const taken = new Set(plan.map((entry) => entry.direction_id).filter((id): id is string => typeof id === 'string'));
-	let next = 1;
-	for (const entry of plan) {
-		if (typeof entry.direction_id === 'string') continue;
-		while (taken.has(`d${next}`)) next += 1;
-		entry.direction_id = `d${next}`;
-		taken.add(`d${next}`);
+	// d1 is the first direction, d2 the second (the rule the prompt gives).
+	// Only a plan with no direction_id at all is numbered, so a topic's
+	// reference never shifts to another direction (Codex review of simp-4).
+	if (plan.every((entry) => entry.direction_id === undefined)) plan.forEach((entry, index) => { entry.direction_id = `d${index + 1}`; });
+	// When the pre-planning lookup found Navigator unavailable and no lookup
+	// left a receipt, the block says what ran: a 'used' claim without a
+	// receipt is not kept (Codex review of simp-4).
+	const pre = readJson(caseDir, NAVIGATOR_PRE_STEP);
+	const receipted = rows(object(document.navigator)?.queries).some((query) => typeof query.receipt_path === 'string');
+	if (pre && typeof pre.reason === 'string' && typeof pre.outcome === 'string' && !receipted) {
+		document.navigator = { required: false, used: false, outcome: pre.outcome, fallback_reason: pre.reason };
 	}
 	const navigator = object(document.navigator);
 	const steps = plan.flatMap((entry) => rows(entry.steps));
@@ -74,11 +78,6 @@ export function fillMethodology(caseDir: string, env: Record<string, string | un
 	const tools = [...(Array.isArray(document.tools_required) ? document.tools_required : []), ...steps.map((step) => step.tool), ...selected]
 		.filter((tool): tool is string => typeof tool === 'string' && tool.trim() !== '');
 	if (tools.length) document.tools_required = [...new Set(tools)];
-	const pre = readJson(caseDir, NAVIGATOR_PRE_STEP);
-	if (pre && typeof pre.reason === 'string' && typeof pre.outcome === 'string') {
-		if (!navigator) document.navigator = { required: false, used: false, outcome: pre.outcome, fallback_reason: pre.reason };
-		else if (navigator.used === false && typeof navigator.fallback_reason !== 'string') navigator.fallback_reason = pre.reason;
-	}
 	const research = object(document.research_plan);
 	if (research) fillResearchPlan(research, env);
 }

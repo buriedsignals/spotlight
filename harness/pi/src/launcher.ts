@@ -815,14 +815,18 @@ type WorkerTask = { text: string; header: string; start?: string; passages?: str
 async function navigatorPreStep(harness: Harness, signal: AbortSignal): Promise<string> {
 	const caseDir = harness.active.caseDir;
 	if (existsSync(join(caseDir, NAVIGATOR_PRE_STEP))) return '';
+	// A direction already looked up (its receipt's query) is not looked up again.
+	const done = new Set<string>();
 	try {
-		if (readdirSync(join(caseDir, 'research', 'navigator')).some((name) => name.endsWith('-receipt.json'))) return '';
+		for (const name of readdirSync(join(caseDir, 'research', 'navigator')).filter((entry) => entry.endsWith('-receipt.json'))) {
+			try { done.add(String((JSON.parse(readFileSync(join(caseDir, 'research', 'navigator', name), 'utf8')) as { query?: unknown }).query)); } catch { /* unreadable receipt: looked up again */ }
+		}
 	} catch {
 		// No lookup yet.
 	}
 	let brief: string[];
 	try {
-		brief = readFileSync(join(caseDir, 'brief-directions.txt'), 'utf8').split('\n').map((text) => text.trim()).filter(Boolean).slice(0, 8);
+		brief = [...new Set(readFileSync(join(caseDir, 'brief-directions.txt'), 'utf8').split('\n').map((text) => text.trim().slice(0, 500)).filter(Boolean))].filter((line) => !done.has(line));
 	} catch {
 		return '';
 	}
@@ -834,7 +838,7 @@ async function navigatorPreStep(harness: Harness, signal: AbortSignal): Promise<
 	for (const direction of brief) {
 		let result: { outcome?: string; reason?: string; receipt_path?: string; response?: unknown; response_text?: string };
 		try {
-			result = JSON.parse((await tool.execute('navigator-pre-step', { action: 'find', value: direction.slice(0, 500) }, signal, undefined, undefined as never)).content[0].text);
+			result = JSON.parse((await tool.execute('navigator-pre-step', { action: 'find', value: direction }, signal, undefined, undefined as never)).content[0].text);
 		} catch (error) {
 			signal.throwIfAborted();
 			result = { outcome: 'unavailable', reason: (error as Error).message.slice(0, 300) };
