@@ -1995,7 +1995,7 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 		assert.deepEqual(JSON.parse(recordCall.function.arguments).cite, [{ path: 'research/licence-page.md', line_start: 2, line_end: 2 }]);
 		// The second call was not recorded, and the turn names it to the model.
 		assert.ok(!findings.findings.some((row) => row.claim === 'The licence allows redistribution.'));
-		assert.ok(worker.some((request) => request.messages.some((message) => message.role === 'assistant' && JSON.stringify(message.content ?? '').includes('Commit step: kept the first finding; not recorded: record_finding \\"The licence allows redistribution.'))));
+		assert.ok(worker.some((request) => request.messages.some((message) => message.role === 'assistant' && JSON.stringify(message.content ?? '').includes('Commit step: kept the first finding; not recorded: call 2 (record_finding: one finding per commit step'))));
 		// Continuity: after each fall-through the model's own request followed, and the worker finished on its own words.
 		assert.match(toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator')).at(-1)!).join('\n'), /Investigator finished\./);
 	});

@@ -150,17 +150,27 @@ export function acceptCommit(name: string | undefined, args: unknown, shown: Sho
 // and the one-call rule dropped both. The first call that passes the cite rules
 // is kept; every other call is dropped and named, so the model sees it.
 export function pickCommit(calls: ReadonlyArray<{ name?: string; arguments?: unknown }>, shown: Shown): { args: CommitArgs; dropped: string[] } | { reason: string } {
-	let kept: CommitArgs | undefined;
-	const dropped: string[] = [];
-	const reasons: string[] = [];
-	for (const call of calls) {
-		const claim = (call.arguments as { finding?: { claim?: unknown } } | undefined)?.finding?.claim;
-		const label = `${call.name ?? 'a call'}${typeof claim === 'string' ? ` "${claim.slice(0, 120)}"` : ''}`;
-		if (kept) { dropped.push(`${label} (one finding per commit step; record it with record_finding)`); continue; }
+	let kept: number | undefined;
+	let args: CommitArgs | undefined;
+	const reasons = calls.map((call) => {
 		const accepted = acceptCommit(call.name, call.arguments, shown);
-		if ('args' in accepted) kept = accepted.args;
-		else { reasons.push(accepted.reason); if (call.name === 'record_finding') dropped.push(`${label} (${accepted.reason})`); }
+		return 'args' in accepted ? undefined : accepted.reason;
+	});
+	for (const [index, call] of calls.entries()) {
+		if (reasons[index] !== undefined) continue;
+		kept = index;
+		args = (acceptCommit(call.name, call.arguments, shown) as { args: CommitArgs }).args;
+		break;
 	}
-	if (!kept) return { reason: reasons.join('; ') || 'the model answered no tool call' };
-	return { args: kept, dropped };
+	if (kept === undefined || !args) return { reason: reasons.filter(Boolean).join('; ') || 'the model answered no tool call' };
+	// Calls are named by number, tool and reason only: the model's own text
+	// never reappears as harness prose (Codex review of simp-commit2, P2).
+	const dropped = calls.flatMap((call, index) => {
+		if (index === kept) return [];
+		const why = call.name === 'nothing_found' ? 'a finding was recorded'
+			: call.name === 'record_finding' && reasons[index] === undefined ? 'one finding per commit step; record it with record_finding'
+			: reasons[index] ?? 'not used';
+		return [`call ${index + 1} (${call.name === 'record_finding' || call.name === 'nothing_found' ? call.name : 'another tool'}: ${why})`];
+	});
+	return { args, dropped };
 }

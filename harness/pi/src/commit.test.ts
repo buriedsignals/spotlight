@@ -56,9 +56,14 @@ test('of several commit calls the first that passes the cite rules is kept; the 
 	const picked = pickCommit([unseen, first, later], shown);
 	assert.ok('args' in picked);
 	assert.equal(picked.args.finding.claim, 'Acme paid Doe.');
-	assert.equal(picked.dropped.length, 2);
-	assert.match(picked.dropped[0], /"Unseen\." \(the commit answer cites no line the model was shown\)/);
-	assert.match(picked.dropped[1], /"Doe was paid twice\." \(one finding per commit step/);
+	assert.deepEqual(picked.dropped, ['call 1 (record_finding: the commit answer cites no line the model was shown)', 'call 3 (record_finding: one finding per commit step; record it with record_finding)']);
+	assert.ok(!picked.dropped.join(' ').includes('Doe was paid twice'), "the model's text is not repeated");
+	// nothing_found before or after the kept call is named with its own reason.
+	const nothing = { name: 'nothing_found', arguments: { reason: 'none' } };
+	for (const calls of [[nothing, first], [first, nothing]]) {
+		const mixed = pickCommit(calls, shown);
+		assert.ok('args' in mixed && mixed.dropped.length === 1 && /nothing_found: a finding was recorded/.test(mixed.dropped[0]));
+	}
 	assert.ok('reason' in pickCommit([unseen], shown));
 	assert.ok('reason' in pickCommit([], shown));
 });

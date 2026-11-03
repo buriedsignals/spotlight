@@ -234,13 +234,14 @@ const commitStream: NonNullable<Parameters<ExtensionAPI['registerProvider']>[1][
 					// The calls not kept are named in the turn itself, so the model sees them.
 					const note = accepted.dropped.length ? [{ type: 'text' as const, text: `Commit step: kept the first finding; not recorded: ${accepted.dropped.join('; ')}.` }] : [];
 					const message = { ...answer, content: [...note, toolCall], responseId: `commit step: ${state.uncommitted.length} unrecorded line(s) shown`, stopReason: 'toolUse' as const };
-					log(`[commit] record_finding at tool turn ${state.turns} (${accepted.args.cite.map((cite) => `${cite.path}:${cite.line_start}-${cite.line_end}`).join(', ')})${accepted.dropped.length ? `; dropped ${accepted.dropped.length}` : ''}`);
+					log(`[commit] record_finding at tool turn ${state.turns} (${accepted.args.cite.map((cite) => `${cite.path}:${cite.line_start}-${cite.line_end}`).join(', ')})${accepted.dropped.length ? `; dropped ${accepted.dropped.join('; ')}` : ''}`);
+					// Each block is in the partial only from its own event on (Pi's provider contract).
 					out.push({ type: 'start', partial: { ...message, content: [] } });
 					if (note.length) {
-						out.push({ type: 'text_start', contentIndex: 0, partial: message });
-						out.push({ type: 'text_end', contentIndex: 0, content: note[0].text, partial: message });
+						out.push({ type: 'text_start', contentIndex: 0, partial: { ...message, content: [{ type: 'text', text: '' }] } });
+						out.push({ type: 'text_end', contentIndex: 0, content: note[0].text, partial: { ...message, content: [...note] } });
 					}
-					out.push({ type: 'toolcall_start', contentIndex: note.length, partial: message });
+					out.push({ type: 'toolcall_start', contentIndex: note.length, partial: { ...message, content: [...note, { ...toolCall, arguments: {} }] } });
 					out.push({ type: 'toolcall_end', contentIndex: note.length, toolCall, partial: message });
 					out.push({ type: 'done', reason: 'toolUse', message });
 					out.end(message);
