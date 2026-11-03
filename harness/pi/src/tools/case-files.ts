@@ -1454,7 +1454,7 @@ function recordSchema(file: string, key: string, omitted: string[], added: strin
 	// existing strict write and final validators. A real exact-quote proposal
 	// must reach that production step before its references can be validated.
 	delete row.allOf;
-	return Type.Object({ [key === 'findings' ? 'finding' : 'assessment']: Type.Unsafe(row), ...(cite ? { cite: CITE } : {}) }, { additionalProperties: false });
+	return Type.Object({ [key === 'findings' ? 'finding' : 'assessment']: Type.Unsafe(row), ...(cite ? { cite: CITE, support_type: Type.Optional(Type.Union([Type.Literal('direct'), Type.Literal('indirect')], { description: 'How the cited lines support the claim; direct unless you say indirect.' })) } : {}) }, { additionalProperties: false });
 }
 
 function recordDocument(context: ToolContext, path: string): RecordRow {
@@ -1607,14 +1607,24 @@ function applyCites(context: ToolContext, given: unknown): unknown {
 // The evidence item for each cited capture that has none, written before the
 // finding so its evidence_bundle_refs resolve (the fact-checker's re-fetch
 // finds a finding's sources through them).
-async function citeItems(context: ToolContext, write: ToolDefinition, cites: ResolvedCite[], id: string, signal: AbortSignal | undefined): Promise<{ itemOf: Map<string, string>; added: string[] }> {
+// inv-retest-def8674f.md: the cited item must also link the finding (its claim
+// and how the cited lines support it), or validate-fact-check refuses any
+// verdict on it ('no explicit finding link') and judge_finding cannot verify.
+type ClaimLink = { finding_id: string; claim_text: string; support_type: 'direct' | 'indirect' };
+const linked = (item: RecordRow, link: ClaimLink): RecordRow => ({ ...item, claim_links: [...recordRows(item.claim_links).filter((entry) => entry.finding_id !== link.finding_id), link] });
+async function citeItems(context: ToolContext, write: ToolDefinition, cites: ResolvedCite[], id: string, signal: AbortSignal | undefined, link: ClaimLink): Promise<{ itemOf: Map<string, string>; added: string[] }> {
 	const prefix = context.env.SPOTLIGHT_DIRECTION ? `${context.env.SPOTLIGHT_DIRECTION}-` : '';
 	const taken = new Set(recordRows(recordDocument(context, 'data/evidence-bundle.json').items).map((item) => String(item.id)));
 	const added: RecordRow[] = [];
+	const relinked = new Map<string, RecordRow>();
 	const itemOf = new Map<string, string>();
 	for (const cite of cites) {
 		const existing = cite.item ?? added.find((item) => item.raw_path === cite.path);
-		if (existing) { itemOf.set(cite.path, String(existing.id)); continue; }
+		if (existing) {
+			itemOf.set(cite.path, String(existing.id));
+			if (cite.item) relinked.set(String(cite.item.id), linked(relinked.get(String(cite.item.id)) ?? cite.item, link));
+			continue;
+		}
 		let next = 1;
 		while (taken.has(`${prefix}E${next}`)) next += 1;
 		const itemId = `${prefix}E${next}`;
@@ -1631,10 +1641,12 @@ async function citeItems(context: ToolContext, write: ToolDefinition, cites: Res
 			sha256: cite.capture.sha256,
 			extraction_confidence: 'medium',
 			human_verification_required: false,
+			claim_links: [link],
 		});
 		itemOf.set(cite.path, itemId);
 	}
-	if (added.length) await write.execute(`${id}-cite-items`, { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: added }) }, signal, undefined, undefined as never);
+	const items = [...added, ...relinked.values()];
+	if (items.length) await write.execute(`${id}-cite-items`, { path: 'data/evidence-bundle.json', content: JSON.stringify({ items }) }, signal, undefined, undefined as never);
 	return { itemOf, added: added.map((item) => String(item.id)) };
 }
 
@@ -1824,7 +1836,7 @@ export function recordTools(tools: ToolDefinition[], context: ToolContext): Tool
 		parameters,
 		executionMode: 'sequential',
 		description: finding
-			? 'Record one finding as a structured object. Supply claim and confidence with any relevant grounding fields, and cite the lines that support it: cite [{path, line_start, line_end}] of a capture you fetched (lines as read_file numbers them). Code then copies those lines as the evidence, lists the capture as the source, adds its evidence item and records the passage; you need not retype a quote. Without cite, supply evidence and sources yourself. Omit id for a stable generated ID; supply an existing id to correct it. Code supplies the file, contract, project and fingerprint. Other findings remain unchanged. Archive URLs require an actual capture. You choose the claim, the lines and the judgment.'
+			? 'Record one finding as a structured object. Supply claim and confidence with any relevant grounding fields, and cite the lines that support it: cite [{path, line_start, line_end}] of a capture you fetched (lines as read_file numbers them). Code then copies those lines as the evidence, lists the capture as the source, adds its evidence item linking the finding (support_type direct, or say support_type indirect) and records the passage; you need not retype a quote. Without cite, supply evidence and sources yourself. Omit id for a stable generated ID; supply an existing id to correct it. Code supplies the file, contract, project and fingerprint. Other findings remain unchanged. Archive URLs require an actual capture. You choose the claim, the lines and the judgment.'
 			: `Record one independent assessment as a structured object: assessment holds finding_id, verdict, confidence and your evidence/grounding assessment; finding_id goes inside assessment, not beside it. Omit claim_text to copy the exact finding. Exact quotes and source_ref locators use the same acquired-capture and passage checks as a fact-check write. Other assessments remain unchanged. You choose the verdict and evidence; code supplies the canonical file and references.${batchNote}`,
 		// Pi validates arguments against the schema before execute, after this.
 		prepareArguments: (args: unknown) => (finding ? applyCites(context, args) : foldFindingId(args, batch, filled)),
@@ -1863,7 +1875,9 @@ export function recordTools(tools: ToolDefinition[], context: ToolContext): Tool
 			const cites = finding && Array.isArray(input.cite) ? resolveCites(context, input.cite as unknown as Cite[]) : [];
 			const project = existing.project ?? contract.project ?? findings.project ?? recordDocument(context, 'data/methodology.json').project;
 			if (typeof project !== 'string' || !project.trim()) throw new FileRefused(`${name}: the approved case has no project label; repair the methodology through its owner before recording results.`);
-			const items = cites.length ? await citeItems(context, write, cites, id, signal) : undefined;
+			// The cited lines are the claim's support: direct, unless the model says indirect.
+			const support = (input as Record<string, unknown>).support_type === 'indirect' ? 'indirect' : 'direct';
+			const items = cites.length ? await citeItems(context, write, cites, id, signal, { finding_id: String(row.id), claim_text: String(row.claim), support_type: support }) : undefined;
 			if (items) row.evidence_bundle_refs = [...new Set([...(Array.isArray(row.evidence_bundle_refs) ? row.evidence_bundle_refs.map(String) : []), ...items.itemOf.values()])];
 			const content = JSON.stringify({
 				project,

@@ -1971,7 +1971,8 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 				if (done === 13) return { toolCalls: [{ name: 'write_file', arguments: { path: 'data/investigation-log.json', content: log } }] };
 				return done < 13 ? { toolCalls: [{ name: 'list_files', arguments: { pattern: `research/*${done}*` } }] } : { text: 'Investigator finished.' };
 			}
-			if (isWorkerRequest(request, 'fact-checker')) return { text: 'Checked.' };
+			// inv-retest-def8674f.md: the fact-checker answers on the committed finding; code verifies it from the re-fetch.
+			if (isWorkerRequest(request, 'fact-checker')) return toolResults(request).length === 0 ? { toolCalls: [{ name: 'judge_finding', arguments: { answer: 'supports', reason: 'The licence page says modification is allowed.' } }] } : { text: 'Checked.' };
 			const step = toolResults(request).length;
 			return step === 0 ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'investigator', task: 'Investigate.' } }] }
 				: step === 1 && tier !== 'frontier' ? { toolCalls: [{ name: 'spawn_agent', arguments: { agent: 'fact-checker', task: 'Check the findings.' } }] } : { text: 'Done.' };
@@ -1984,7 +1985,10 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 		// No bundle yet: the commit step's evidence item creates it.
 		if (existsSync(join(caseDir, 'data', 'evidence-bundle.json'))) await unlink(join(caseDir, 'data', 'evidence-bundle.json'));
 		registerCapture(space.dataDir, caseDir, 'research/licence-page.md', 'https://docs.example.org/licence', 'investigator');
-		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier, SPOTLIGHT_CODE_ROUTER: 'on' });
+		// The fact-checker's re-fetch of the licence page (a stand-in for the scraping seam).
+		const seam = join(space.root, 'recheck-python');
+		await writeFile(seam, `#!${process.execPath}\nconst cp = require('node:child_process');\nconst args = process.argv.slice(2);\nif (args.includes('integrations.scraping')) process.stdout.write(JSON.stringify({ markdown: '# Licence\\n  You may modify the software\\nand distribute modified versions.\\n', source_url: args.at(-1), provider: 'crawl4ai', status_code: 200 }));\nelse { try { process.stdout.write(cp.execFileSync(${JSON.stringify(PYTHON)}, args, { stdio: ['inherit', 'pipe', 'inherit'] })); } catch (error) { process.stdout.write(error.stdout ?? ''); process.exit(error.status ?? 1); } }\n`, { mode: 0o755 });
+		const chat = launch(t, { ...baseEnv(space, fake.baseURL), SPOTLIGHT_MODEL_TIER: tier, SPOTLIGHT_CODE_ROUTER: 'on', SPOTLIGHT_PYTHON: seam, SPOTLIGHT_RECHECK: 'on', SPOTLIGHT_ANONYMIZE_FETCH: 'true' });
 		await settledPrompt(chat, 'Continue.');
 
 		const findings = (existsSync(join(caseDir, 'data', 'findings.json')) ? JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')) : { findings: [] }) as { findings: Array<Record<string, unknown>> };
@@ -2007,6 +2011,17 @@ print(json.dumps(module.validate_source_expressions(case, load("source-expressio
 		// inv-retest-def8674f.md: the bundle the commit created carries its schema_version, the case validates and the fact-checker starts.
 		assert.equal(JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')).schema_version, '1.0');
 		assert.ok(fake.requests.some((request) => !isWorkerRequest(request, 'investigator') && !isWorkerRequest(request, 'fact-checker') && toolResults(request).some((text) => text.includes('[Harness checks after the investigator finished: all passed]') && text.includes('validate-case.py: PASSED'))), 'the investigator\'s case check passed');
+		// The cited item links the finding (direct), so the fact-checker's judge_finding verifies it and the fact-check validates.
+		const bundle = JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')) as { items: Array<{ id: string; created_by?: string; claim_links?: Array<Record<string, string>> }> };
+		const citedItem = bundle.items.find((item) => item.created_by === 'investigator' && item.claim_links?.some((link) => link.finding_id === committed.id));
+		assert.deepEqual(citedItem?.claim_links?.find((link) => link.finding_id === committed.id), { finding_id: committed.id, claim_text: 'The licence permits modification.', support_type: 'direct' });
+		const factCheck = JSON.parse(await readFile(join(caseDir, 'data', 'fact-check.json'), 'utf8')) as { claims: Array<Record<string, unknown>> };
+		assert.equal(factCheck.claims.find((claim) => claim.finding_id === committed.id)?.verdict, 'verified', JSON.stringify(factCheck.claims));
+		try {
+			execFileSync(PYTHON, [join(CHECKOUT_ROOT, 'scripts', 'validate-fact-check.py'), caseDir], { encoding: 'utf8' });
+		} catch (error) {
+			assert.fail(`validate-fact-check.py: ${String((error as { stdout?: string }).stdout ?? error)}`);
+		}
 		assert.ok(fake.requests.some((request) => isWorkerRequest(request, 'fact-checker')), `the fact-checker started: ${toolResults(fake.requests.filter((request) => !isWorkerRequest(request, 'investigator') && !isWorkerRequest(request, 'fact-checker')).at(-1)!).join('\n').slice(0, 800)}`);
 		const worker = fake.requests.filter((request) => isWorkerRequest(request, 'investigator') && request.tool_choice === undefined);
 		const recordCall = worker.flatMap((request) => request.messages.flatMap((message) => (message.tool_calls ?? []) as Array<{ id: string; function: { name: string; arguments: string } }>)).find((call) => call.function.name === 'record_finding')!;
