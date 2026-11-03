@@ -14,6 +14,7 @@ import { isWorkerRequest, startFakeOpenAI, systemText, toolNames, toolResults } 
 import type { ChatRequest, Reply } from './test-support/fake-openai.ts';
 import { baseEnv, caseAtIngest, launch, newsroomEnv, requestNewsroomIngest, settledPrompt, waitUntil, workspace } from './test-support/launch.ts';
 import { startFakeEditorial } from './test-support/fake-editorial.ts';
+import { registerCapture } from './test-support/receipts.ts';
 import type { Chat, Workspace } from './test-support/launch.ts';
 import { CHECKOUT_ROOT, FACT_CHECK_TASK, agentSpec, loadComposition, deliverableFor } from './roles.ts';
 import { withCasePassages } from './case-search.ts';
@@ -1815,7 +1816,10 @@ test('the orchestrator cannot write the files the workers write, and writes its 
 // scripts/write-source-expressions.py, which computes every hash and
 // fingerprint. The investigator reaches it through source_expressions; a
 // hand-written passages file is refused.
-test('a worker records a passage through the writer script, and a hand write of the passages file is refused', async (t) => {
+// step2-design.md section 2 (TUNE W1, W2): the investigator may instead state
+// the claim and cite lines of its capture; code copies the text, lists the
+// source, adds the evidence item and records the passage through the same writer.
+test('a worker records a passage through the writer script, or by citing lines of its capture, and a hand write of the passages file is refused', async (t) => {
 	const source = 'SearXNG is released under the AGPL-3.0 licence.\n';
 	const claim = 'SearXNG is released under the AGPL-3.0 licence.';
 	const finding = { project: 'case-a', schema_version: '1.1', findings: [{ id: 'F1', claim }] };
@@ -1836,6 +1840,11 @@ test('a worker records a passage through the writer script, and a hand write of 
 		{ name: 'source_expressions', arguments: { action: 'write', cycle: 1, proposal: { expressions: [passage] } } },
 		{ name: 'write_file', arguments: { path: 'data/source-expressions.json', content: '{"schema_version": "1.0", "expressions": []}' } },
 		{ name: 'write_file', arguments: { path: 'data/source-positions.json', content: '{"positions": []}' } },
+		// A cite outside the file is refused before any write.
+		{ name: 'record_finding', arguments: { finding: { claim: 'The licence permits modification.', confidence: 'medium' }, cite: [{ path: 'research/licence-page.md', line_start: 3, line_end: 9 }] } },
+		{ name: 'record_finding', arguments: { finding: { claim: 'The licence permits modification.', confidence: 'medium' }, cite: [{ path: 'research/licence-page.md', line_start: 2, line_end: 3 }] } },
+		// A source the cite does not back is refused (step 2 Codex review, P1).
+		{ name: 'record_finding', arguments: { finding: { claim: 'The licence is revoked.', confidence: 'low', sources: [{ url: 'https://invented.example/revoked' }] }, cite: [{ path: 'research/licence-page.md', line_start: 2, line_end: 2 }] } },
 	];
 	const fake = await startFakeOpenAI((request) => {
 		if (isWorkerRequest(request, 'investigator')) {
@@ -1853,6 +1862,9 @@ test('a worker records a passage through the writer script, and a hand write of 
 	await writeFile(join(caseDir, 'research', 'licence.txt'), source);
 	const sha256 = createHash('sha256').update(source).digest('hex');
 	await writeFile(join(caseDir, 'data', 'evidence-bundle.json'), JSON.stringify({ items: [{ id: 'E1', raw_path: 'research/licence.txt', sha256 }] }));
+	// The investigator's own fetch of the licence page (its receipt).
+	await writeFile(join(caseDir, 'research', 'licence-page.md'), '# Licence\n  You may modify the software\nand distribute modified versions.\n');
+	registerCapture(space.dataDir, caseDir, 'research/licence-page.md', 'https://docs.example.org/licence', 'investigator');
 	const chat = launch(t, baseEnv(space, fake.baseURL));
 
 	await settledPrompt(chat, 'Continue.');
@@ -1871,6 +1883,26 @@ test('a worker records a passage through the writer script, and a hand write of 
 	assert.equal((recorded as { direct_quote?: unknown }).direct_quote, undefined);
 	assert.match(results[2], /direct_quote is set by the harness only/);
 	assert.equal(existsSync(join(caseDir, 'data', 'source-positions.json')), false);
+	// The cited finding: refused out of range with the valid range, then recorded
+	// with the copied text as its evidence, the receipt's URL as its source, a
+	// new evidence item and a passage the Report may quote.
+	assert.match(results[5], /lines 3-9 are outside the file \(lines 1-3\)[\s\S]*Nothing was written/);
+	assert.match(results[6], /Finding id: F2\. Evidence item\(s\) E2 added[\s\S]*Passage\(s\) Q1 recorded/);
+	assert.match(results[7], /sources "https:\/\/invented\.example\/revoked" are not among the cited captures \(https:\/\/docs\.example\.org\/licence\)[\s\S]*Nothing was written/);
+	const copied = 'You may modify the software\nand distribute modified versions.';
+	const findings = JSON.parse(await readFile(join(caseDir, 'data', 'findings.json'), 'utf8')) as { findings: Array<Record<string, unknown>> };
+	const cited = findings.findings.find((row) => row.id === 'F2')!;
+	assert.equal(cited.evidence, copied);
+	assert.deepEqual(cited.sources, [{ url: 'https://docs.example.org/licence', accessed: '2026-07-16T12:30:00Z', local_file: 'research/licence-page.md' }]);
+	assert.deepEqual(cited.evidence_bundle_refs, ['E2']);
+	assert.ok(!findings.findings.some((row) => row.claim === 'The licence is revoked.'));
+	const bundle = JSON.parse(await readFile(join(caseDir, 'data', 'evidence-bundle.json'), 'utf8')) as { items: Array<Record<string, unknown>> };
+	assert.equal(bundle.items.find((item) => item.id === 'E2')?.source_url, 'https://docs.example.org/licence');
+	const quoted = expressions.expressions.find((expression) => expression.id === 'Q1') as unknown as Record<string, unknown>;
+	// The writer stores the selected lines as the file has them.
+	assert.equal(quoted.text, `  ${copied}`);
+	assert.equal(quoted.original_evidence_bundle_id, 'E2');
+	assert.equal(quoted.direct_quote, true);
 	// The case validator's own check: a verified verdict citing the passage
 	// has its active supporting source expression, and every fingerprint holds.
 	const link = recorded.finding_links[0];

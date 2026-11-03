@@ -12,9 +12,9 @@ import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { CHECKOUT_ROOT, ORCHESTRATOR, deliverableFor, factCheckChecklist, readCheckDocs } from '../roles.ts';
 import { WITHDRAW_HINT, currentText, directionView, isDirectionFile, mergeByKey, mergeDirection, mergesByKey, removesAnonymousRows } from '../directions.ts';
 import { approvedIndicatorFramework } from './hosted-skill.ts';
-import { factCheckerAlternative, factCheckerCapture, fetchedFile } from './fetch.ts';
+import { factCheckerAlternative, factCheckerCapture, fetchedFile, registeredCapture } from './fetch.ts';
 import { completeNavigatorMetadata } from './navigator-receipts.ts';
-import { RECEIPTS, ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
+import { HARNESS_PROPOSALS, RECEIPTS, ToolArgumentError, checkedParams, jsonResult, runPython, textResult } from './run.ts';
 import type { CaseScope, ToolContext } from './run.ts';
 
 export class FileRefused extends Error {}
@@ -1406,7 +1406,7 @@ const recordRows = (value: unknown): RecordRow[] => Array.isArray(value)
 // Project the canonical row schema into a structured tool parameter, rather
 // than maintaining a second taxonomy. Local references are inlined because
 // this row is now the top-level tool schema, not the original document.
-function recordSchema(file: string, key: string, omitted: string[], added: string[] = []): ReturnType<typeof Type.Object> {
+function recordSchema(file: string, key: string, omitted: string[], added: string[] = [], cite = false): ReturnType<typeof Type.Object> {
 	const doc = JSON.parse(readFileSync(join(SCHEMAS_DIR, file), 'utf8'));
 	const expand = (value: unknown): unknown => {
 		if (Array.isArray(value)) return value.map(expand);
@@ -1440,7 +1440,7 @@ function recordSchema(file: string, key: string, omitted: string[], added: strin
 	// existing strict write and final validators. A real exact-quote proposal
 	// must reach that production step before its references can be validated.
 	delete row.allOf;
-	return Type.Object({ [key === 'findings' ? 'finding' : 'assessment']: Type.Unsafe(row) }, { additionalProperties: false });
+	return Type.Object({ [key === 'findings' ? 'finding' : 'assessment']: Type.Unsafe(row), ...(cite ? { cite: CITE } : {}) }, { additionalProperties: false });
 }
 
 function recordDocument(context: ToolContext, path: string): RecordRow {
@@ -1523,6 +1523,139 @@ function foldFindingId(given: unknown, batch: string[], filled: string | undefin
 	return outer;
 }
 
+// step2-design.md section 2 (TUNE W1, W2): the investigator states the claim
+// and cites the lines of a capture; code copies their exact text and keeps the
+// books (sources, evidence item, passage). A cite is checked whole before any
+// write. Code fills only what the cite determines: the evidence text (Tom,
+// 2026-11-03: the cited quote text), the sources from the capture's receipt or
+// its evidence item; never the claim, confidence or grounding.
+type Cite = { path: string; line_start: number; line_end: number };
+type ResolvedCite = Cite & { text: string; url: string; accessed: string; item?: RecordRow; capture?: ReturnType<typeof registeredCapture> };
+const CITE = Type.Optional(Type.Array(Type.Object({
+	path: Type.String({ minLength: 1 }),
+	line_start: Type.Integer({ minimum: 1 }),
+	line_end: Type.Integer({ minimum: 1 }),
+}, { additionalProperties: false }), { minItems: 1, maxItems: 10 }));
+
+function bundleFiles(item: RecordRow): unknown[] {
+	return [...['raw_path', 'downloaded_document_path', 'screenshot_path', 'path'].map((key) => item[key]), ...recordRows(item.text_derivatives).map((entry) => entry.path)];
+}
+
+function resolveCites(context: ToolContext, cites: Cite[]): ResolvedCite[] {
+	const bundle = recordRows(recordDocument(context, 'data/evidence-bundle.json').items);
+	return cites.map((cite, index) => {
+		const where = `record_finding: cite[${index}] (${cite.path})`;
+		let text: string;
+		try {
+			text = readFileSync(readTarget(context.caseDir, cite.path, context.scope), 'utf8');
+		} catch (error) {
+			throw new ToolArgumentError(`${where}: ${(error as Error).message} Nothing was written.`);
+		}
+		const lines = sourceLines(text);
+		if (cite.line_end < cite.line_start || cite.line_end > lines.length) throw new ToolArgumentError(`${where}: lines ${cite.line_start}-${cite.line_end} are outside the file (lines 1-${lines.length}); give line_start and line_end inside it, as read_file numbers them. Nothing was written.`);
+		const quote = lines.slice(cite.line_start - 1, cite.line_end).join('\n').trim();
+		if (!quote) throw new ToolArgumentError(`${where}: lines ${cite.line_start}-${cite.line_end} are empty; cite the lines that hold the text. Nothing was written.`);
+		const capture = registeredCapture(context, cite.path);
+		const item = bundle.find((entry) => bundleFiles(entry).includes(cite.path));
+		const url = capture?.url ?? (typeof item?.source_url === 'string' ? item.source_url : undefined);
+		const accessed = capture?.accessed ?? (typeof item?.accessed === 'string' ? item.accessed : undefined);
+		if (!url || !accessed) throw new ToolArgumentError(`${where}: no fetch saved this file and no evidence item lists it, so it has no source to cite. Fetch the source (fetch with save_as under research/) and cite that capture. Nothing was written.`);
+		return { ...cite, text: quote, url, accessed, item, capture };
+	});
+}
+
+// Before Pi's schema check: the cite supplies a missing evidence and sources,
+// and a model-written source must be one of the cited ones (Codex review of
+// the step 2 design, P1: a source is otherwise checked only for its shape).
+function applyCites(context: ToolContext, given: unknown): unknown {
+	const args = given as { finding?: unknown; cite?: unknown } | undefined;
+	if (!args || !Array.isArray(args.cite) || !args.cite.length || !args.finding || typeof args.finding !== 'object' || Array.isArray(args.finding)) return given;
+	const cites = args.cite as Cite[];
+	if (cites.some((cite) => !cite || typeof cite.path !== 'string' || !Number.isInteger(cite.line_start) || !Number.isInteger(cite.line_end))) return given;
+	const resolved = resolveCites(context, cites);
+	const finding = { ...(args.finding as RecordRow) };
+	if (finding.evidence === undefined) finding.evidence = resolved.length === 1 ? resolved[0].text : resolved.map((cite) => cite.text);
+	const urls = [...new Set(resolved.map((cite) => cite.url))];
+	if (finding.sources === undefined) {
+		finding.sources = urls.map((url) => {
+			const cite = resolved.find((entry) => entry.url === url)!;
+			return { url, accessed: cite.accessed, local_file: cite.path };
+		});
+	} else {
+		const stray = recordRows(finding.sources).filter((source) => typeof source.url === 'string' && !urls.includes(source.url));
+		if (stray.length) throw new ToolArgumentError(`record_finding: sources ${stray.map((source) => JSON.stringify(source.url)).join(', ')} are not among the cited captures (${urls.join(', ')}); omit sources and code lists the cited ones. Nothing was written.`);
+	}
+	return { ...args, finding };
+}
+
+// The evidence item for each cited capture that has none, written before the
+// finding so its evidence_bundle_refs resolve (the fact-checker's re-fetch
+// finds a finding's sources through them).
+async function citeItems(context: ToolContext, write: ToolDefinition, cites: ResolvedCite[], id: string, signal: AbortSignal | undefined): Promise<{ itemOf: Map<string, string>; added: string[] }> {
+	const prefix = context.env.SPOTLIGHT_DIRECTION ? `${context.env.SPOTLIGHT_DIRECTION}-` : '';
+	const taken = new Set(recordRows(recordDocument(context, 'data/evidence-bundle.json').items).map((item) => String(item.id)));
+	const added: RecordRow[] = [];
+	const itemOf = new Map<string, string>();
+	for (const cite of cites) {
+		const existing = cite.item ?? added.find((item) => item.raw_path === cite.path);
+		if (existing) { itemOf.set(cite.path, String(existing.id)); continue; }
+		let next = 1;
+		while (taken.has(`${prefix}E${next}`)) next += 1;
+		const itemId = `${prefix}E${next}`;
+		taken.add(itemId);
+		const provider = cite.capture?.provider;
+		added.push({
+			id: itemId,
+			created_by: 'investigator',
+			query_or_task: `Fetched by the investigator: ${cite.url}`,
+			acquisition_method: provider === 'crawl4ai' || provider === 'firecrawl' ? provider : 'other',
+			source_url: cite.url,
+			accessed: cite.accessed,
+			raw_path: cite.path,
+			sha256: cite.capture!.sha256,
+			extraction_confidence: 'medium',
+			human_verification_required: false,
+		});
+		itemOf.set(cite.path, itemId);
+	}
+	if (added.length) await write.execute(`${id}-cite-items`, { path: 'data/evidence-bundle.json', content: JSON.stringify({ items: added }) }, signal, undefined, undefined as never);
+	return { itemOf, added: added.map((item) => String(item.id)) };
+}
+
+// After the finding is written, the passage for each cite (activated cases),
+// through the one passage writer as a harness proposal, so direct_quote may be set.
+async function citePassages(context: ToolContext, sourceExpressions: ToolDefinition, finding: RecordRow, cites: ResolvedCite[], itemOf: Map<string, string>, id: string, signal: AbortSignal | undefined): Promise<string> {
+	const prefix = context.env.SPOTLIGHT_DIRECTION ? `${context.env.SPOTLIGHT_DIRECTION}-` : '';
+	const passages = recordRows(recordDocument(context, 'data/source-expressions.json').expressions);
+	const used = new Set(passages.map((passage) => String(passage.id)));
+	const language = passages.find((passage) => recordRows(passage.finding_links).some((link) => link.finding_id === finding.id) && typeof passage.language === 'string')?.language ?? 'und';
+	let next = 1;
+	const expressions = cites.map((cite) => {
+		while (used.has(`${prefix}Q${next}`)) next += 1;
+		const passageId = `${prefix}Q${next}`;
+		used.add(passageId);
+		return {
+			id: passageId,
+			text: cite.text,
+			anchor_ref: { path: cite.path, line_start: cite.line_start, line_end: cite.line_end },
+			original_evidence_bundle_id: itemOf.get(cite.path),
+			language,
+			// The source's own words: copied from a capture a harness fetch saved, unchanged since.
+			...(cite.capture ? { direct_quote: true } : {}),
+			finding_links: [{ finding_id: finding.id, relation: 'supports' }],
+		};
+	});
+	const cycles = recordRows(recordDocument(context, 'data/investigation-log.json').cycles).length;
+	const proposal = { action: 'write', cycle: Math.max(1, cycles), proposal: { expressions } };
+	HARNESS_PROPOSALS.add(proposal);
+	try {
+		await sourceExpressions.execute(`${id}-cite-passages`, proposal, signal, undefined, undefined as never);
+	} catch (error) {
+		throw new Error(`record_finding: finding ${String(finding.id)} is recorded, but its cited passage was not: ${(error as Error).message} Call record_finding again with the same claim and a corrected cite, omitting id; the finding keeps its id.`);
+	}
+	return `Passage(s) ${expressions.map((expression) => expression.id).join(', ')} recorded from the cited lines.`;
+}
+
 export function recordTools(tools: ToolDefinition[], context: ToolContext): ToolDefinition[] {
 	const role = context.env.SPOTLIGHT_ROLE;
 	if (role !== 'investigator' && role !== 'fact-checker') return [];
@@ -1541,6 +1674,7 @@ export function recordTools(tools: ToolDefinition[], context: ToolContext): Tool
 		finding ? 'findings' : 'claims',
 		finding ? ['id', 'finding_fingerprint'] : ['claim_text'],
 		finding || filled ? [] : ['finding_id'],
+		finding,
 	);
 	const batchNote = finding ? '' : filled ? ` Your batch holds one finding, ${filled}: omit finding_id and code fills it.` : batch.length ? ` finding_id is required inside assessment: one of ${batch.join(', ')} (your batch).` : ' finding_id is required inside assessment.';
 	const write = tools.find((tool) => tool.name === 'write_file');
@@ -1552,10 +1686,10 @@ export function recordTools(tools: ToolDefinition[], context: ToolContext): Tool
 		parameters,
 		executionMode: 'sequential',
 		description: finding
-			? 'Record one finding as a structured object. Supply claim, evidence, sources and confidence with any relevant grounding fields. Omit id for a stable generated ID; supply an existing id to correct it. Code supplies the file, contract, project and fingerprint. Other findings remain unchanged. Archive URLs require an actual capture. You choose evidence and judgment.'
+			? 'Record one finding as a structured object. Supply claim and confidence with any relevant grounding fields, and cite the lines that support it: cite [{path, line_start, line_end}] of a capture you fetched (lines as read_file numbers them). Code then copies those lines as the evidence, lists the capture as the source, adds its evidence item and records the passage; you need not retype a quote. Without cite, supply evidence and sources yourself. Omit id for a stable generated ID; supply an existing id to correct it. Code supplies the file, contract, project and fingerprint. Other findings remain unchanged. Archive URLs require an actual capture. You choose the claim, the lines and the judgment.'
 			: `Record one independent assessment as a structured object: assessment holds finding_id, verdict, confidence and your evidence/grounding assessment; finding_id goes inside assessment, not beside it. Omit claim_text to copy the exact finding. Exact quotes and source_ref locators use the same acquired-capture and passage checks as a fact-check write. Other assessments remain unchanged. You choose the verdict and evidence; code supplies the canonical file and references.${batchNote}`,
 		// Pi validates arguments against the schema before execute, after this.
-		...(finding ? {} : { prepareArguments: (args: unknown) => foldFindingId(args, batch, filled) }),
+		prepareArguments: (args: unknown) => (finding ? applyCites(context, args) : foldFindingId(args, batch, filled)),
 		async execute(id, raw, signal, ...rest) {
 			const proposed = (raw as Record<string, unknown> | undefined)?.[key] as RecordRow | undefined;
 			if (!finding && !filled && proposed && typeof proposed === 'object' && proposed.finding_id === undefined) {
@@ -1588,8 +1722,11 @@ export function recordTools(tools: ToolDefinition[], context: ToolContext): Tool
 				if (row.claim_text === undefined) row.claim_text = source.claim;
 				if (active && !['verified', 'unverified', 'disputed', 'false', 'not_checkable'].includes(String(row.verdict))) throw new ToolArgumentError('record_assessment: activated cases use verdict verified, unverified, disputed, false or not_checkable.');
 			}
+			const cites = finding && Array.isArray(input.cite) ? resolveCites(context, input.cite as unknown as Cite[]) : [];
 			const project = existing.project ?? contract.project ?? findings.project ?? recordDocument(context, 'data/methodology.json').project;
 			if (typeof project !== 'string' || !project.trim()) throw new FileRefused(`${name}: the approved case has no project label; repair the methodology through its owner before recording results.`);
+			const items = cites.length ? await citeItems(context, write, cites, id, signal) : undefined;
+			if (items) row.evidence_bundle_refs = [...new Set([...(Array.isArray(row.evidence_bundle_refs) ? row.evidence_bundle_refs.map(String) : []), ...items.itemOf.values()])];
 			const content = JSON.stringify({
 				project,
 				...(!active && existing.schema_version ? { schema_version: existing.schema_version } : {}),
@@ -1605,7 +1742,11 @@ export function recordTools(tools: ToolDefinition[], context: ToolContext): Tool
 				}
 			}
 			if (supplied) return { ...result, content: [...result.content, { type: 'text' as const, text: `finding_id ${filled} was filled by the harness: it is the one finding in your batch.` }] };
-			return finding ? { ...result, content: [...result.content, { type: 'text' as const, text: `Finding id: ${String(row.id)}.` }] } : result;
+			const cited = [
+				...(items?.added.length ? [`Evidence item(s) ${items.added.join(', ')} added for the cited capture(s).`] : []),
+				...(items && active && expressions ? [await citePassages(context, expressions, row, cites, items.itemOf, id, signal)] : []),
+			];
+			return finding ? { ...result, content: [...result.content, { type: 'text' as const, text: [`Finding id: ${String(row.id)}.`, ...cited].join(' ') }] } : result;
 		},
 	}];
 }

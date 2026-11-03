@@ -156,7 +156,7 @@ export function directionBlock(direction: Direction, count: number): string {
 export function directionDeliverable(tag: string): Deliverable {
 	return {
 		files: ['data/findings.json', 'data/evidence-bundle.json'],
-		line: `Your deliverable: data/findings.json and data/evidence-bundle.json for this direction, every finding id starting ${tag}-F (${tag}-F1, ${tag}-F2) and every evidence item id starting ${tag}-E (${tag}-E1), with this direction's cycle appended to data/investigation-log.json. Submit each complete finding with record_finding (finding is one object); use write_file for bundle items and logs. Code merges submitted entries and preserves unrelated rows. Then finish.`,
+		line: `Your deliverable: data/findings.json and data/evidence-bundle.json for this direction, every finding id starting ${tag}-F (${tag}-F1, ${tag}-F2) and every evidence item id starting ${tag}-E (${tag}-E1), with this direction's cycle appended to data/investigation-log.json. Submit each complete finding with record_finding (finding is one object, with cite for the lines that support it: code adds the bundle item for a cited capture); use write_file for other bundle items and logs. Code merges submitted entries and preserves unrelated rows. Then finish.`,
 	};
 }
 
